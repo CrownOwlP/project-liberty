@@ -1,0 +1,36 @@
+{
+  "name": "project-liberty",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Project Liberty - agent-friendly media platform monorepo",
+  "engines": {
+    "node": ">=22"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "repo:validate": "node scripts/validate-repo.mjs",
+    "repo:validate:quick": "node scripts/validate-repo.mjs --quick",
+    "check": "npm run repo:validate && npm run lint && npm run typecheck && npm run test && npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "eslint": "^9.0.0",
+    "eslint-config-next": "^16.0.0",
+    "prettier": "^3.0.0",
+    "turbo": "^2.8.0",
+    "typescript": "^5.9.0",
+    "vitest": "^3.0.0"
+  }
+}
