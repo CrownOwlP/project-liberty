@@ -21,15 +21,24 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          # Single source of truth for the Node version; keeps CI and local
+          # development from drifting apart.
+          node-version-file: .nvmrc
+          cache: npm
+      # These three run before install: they depend only on Node builtins, so
+      # a dependency problem cannot mask a control-plane or structure failure.
       - name: Validate AI control plane
         run: node scripts/ai-control-plane.mjs validate
       - name: Test AI control plane
         run: node scripts/test-ai-control-plane.mjs
       - name: Validate repository structure
         run: node scripts/validate-repo.mjs
+      # `npm ci` (not `npm install`): installs strictly from package-lock.json,
+      # fails if the lockfile is missing or out of sync with package.json, and
+      # never silently rewrites the lockfile in CI. This requires the lockfile
+      # to be committed -- see PL-0001.
       - name: Install dependencies
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
       - name: Lint
         run: npm run lint
       - name: Typecheck
