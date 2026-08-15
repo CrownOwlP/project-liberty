@@ -177,18 +177,18 @@
       "gateResults": {
         "typecheck": {
           "status": "pass",
-          "at": "2026-08-15T03:46:57.977Z",
-          "evidence": "npm run check at b3a955aa21ca9d1da9b11826288e82ec1b8bdb8f: turbo typecheck passed 5/5 packages"
+          "at": "2026-08-15T04:10:37.717Z",
+          "evidence": "Full npm run check at b3a955aa21ca9d1da9b11826288e82ec1b8bdb8f passed typecheck across all packages"
         },
         "unit": {
           "status": "pass",
-          "at": "2026-08-15T03:46:58.391Z",
-          "evidence": "npm run check at b3a955aa21ca9d1da9b11826288e82ec1b8bdb8f: @liberty/media-engine Vitest passed 26/26 tests"
+          "at": "2026-08-15T04:10:38.114Z",
+          "evidence": "Media-engine Vitest at b3a955aa21ca9d1da9b11826288e82ec1b8bdb8f passed 26/26 tests"
         },
         "architecture-review": {
           "status": "pass",
-          "at": "2026-08-15T03:46:58.800Z",
-          "evidence": "GPT-5.6 Sol independent GitHub review of b3a955aa21ca9d1da9b11826288e82ec1b8bdb8f: APPROVED; deterministic explainable score model, rights-first eligibility, precision invariants, deterministic tie-break and regression coverage verified"
+          "at": "2026-08-15T04:10:38.518Z",
+          "evidence": "GPT-5.6 Sol independent GitHub review of b3a955aa21ca9d1da9b11826288e82ec1b8bdb8f: APPROVED; deterministic explainable scoring, rights-first eligibility, stored-score precision invariants and deterministic tie-breaking verified"
         }
       },
       "implementationAgent": "claude-media",
