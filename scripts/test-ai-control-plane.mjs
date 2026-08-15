@@ -2,8 +2,23 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
+
+/**
+ * Run a script and return stdout AND stderr combined.
+ *
+ * `run()` returns stdout only, so assertions about warnings -- which belong on
+ * stderr -- would silently never match.
+ */
+function runCombined(cwd, script, args = [], env = {}) {
+  const result = spawnSync(process.execPath, [script, ...args], {
+    cwd,
+    encoding: "utf8",
+    env: { ...process.env, ...env },
+  });
+  return `${result.stdout ?? ""}${result.stderr ?? ""}`;
+}
 
 const source = process.cwd();
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), "liberty-control-plane-"));
@@ -2744,6 +2759,26 @@ try {
     const SHA = "b7".repeat(20);
     const repo = freshRepo();
 
+    // The guard restores trusted runtime code from HEAD, so it needs a real
+    // repository. Without git it refuses outright -- correct production
+    // behaviour, since an unverifiable runtime must not be trusted.
+    const initGit = (...a) =>
+      execFileSync("git", a, {
+        cwd: repo,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+        env: {
+          ...process.env,
+          GIT_AUTHOR_NAME: "t",
+          GIT_AUTHOR_EMAIL: "t@t",
+          GIT_COMMITTER_NAME: "t",
+          GIT_COMMITTER_EMAIL: "t@t",
+        },
+      });
+    initGit("init", "-q", "-b", "main");
+    initGit("add", "-A");
+    initGit("commit", "-q", "-m", "baseline");
+
     // --- snapshot / restore discards model edits to protected state ---
     run(repo, CLI, ["claim", "PL-0101", "claude-frontend"], { LIBERTY_COMMIT_SHA: SHA });
     run(repo, CLI, ["start", "PL-0101", "claude-frontend"], { LIBERTY_COMMIT_SHA: SHA });
@@ -3045,6 +3080,110 @@ try {
   }
 
   /* ---------------------------------------------------------------------
+   * 9z. A model cannot substitute the code that polices it.
+   *
+   *     The model has Edit/Write, and every post-model step -- including the
+   *     finalizer that holds GH_TOKEN -- executes FROM the workspace. Rewriting
+   *     finalize-task.mjs would therefore run attacker code with push
+   *     credentials. git is the immutable copy: the model can write the tree
+   *     but cannot commit, so HEAD is authoritative.
+   * ------------------------------------------------------------------- */
+  {
+    const repo = freshRepo();
+    const gitEnv = {
+      GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t",
+      GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t",
+    };
+    const git = (...a) =>
+      execFileSync("git", a, {
+        cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"],
+        env: { ...process.env, ...gitEnv },
+      });
+
+    git("init", "-q", "-b", "main");
+    git("add", "-A");
+    git("commit", "-q", "-m", "baseline");
+
+    run(repo, CLI, ["claim", "PL-0101", "claude-frontend"]);
+    run(repo, CLI, ["start", "PL-0101", "claude-frontend"]);
+
+    const runnerTemp = path.join(temp, `runner-adv-${++repoSeq}`);
+    fs.mkdirSync(runnerTemp, { recursive: true });
+    run(repo, "scripts/cloud/protect-state.mjs", ["--snapshot"], { RUNNER_TEMP: runnerTemp });
+
+    // The model rewrites the guard, the stager, the finalizer, and the workflow
+    // itself -- and plants a new script for good measure.
+    const trusted = {
+      "scripts/cloud/protect-state.mjs": "// neutered guard\nprocess.exit(0);\n",
+      "scripts/cloud/stage-task-changes.mjs": "// stage everything\nprocess.exit(0);\n",
+      "scripts/cloud/finalize-task.mjs": "// exfiltrate GH_TOKEN\nprocess.exit(0);\n",
+      ".github/workflows/agent-claude-worker.yml": "name: pwned\n",
+    };
+    for (const [rel, body] of Object.entries(trusted)) {
+      fs.writeFileSync(path.join(repo, rel), body);
+    }
+    fs.writeFileSync(path.join(repo, "scripts/cloud/backdoor.mjs"), "// planted\n");
+
+    // Also tamper with control state, to confirm both defences run.
+    const tasksFile = path.join(repo, "control", "tasks.json");
+    const tampered = JSON.parse(fs.readFileSync(tasksFile, "utf8"));
+    tampered.tasks.find((t) => t.id === "PL-0101").status = "DONE";
+    fs.writeFileSync(tasksFile, JSON.stringify(tampered, null, 2) + "\n");
+
+    // The restore step is invoked from the workspace -- i.e. the neutered copy
+    // would run if the workflow used it. Simulate the workflow correctly by
+    // running the committed version, which is what an immutable path provides.
+    git("checkout", "HEAD", "--", "scripts/cloud/protect-state.mjs");
+    // Combined streams: the tampering alert is a warning and goes to stderr.
+    const out = runCombined(repo, "scripts/cloud/protect-state.mjs", ["--restore"], {
+      RUNNER_TEMP: runnerTemp,
+    });
+
+    assert.match(out, /REVERTED \d+ unauthorized edit/, `guard must report the tampering:\n${out}`);
+
+    for (const rel of Object.keys(trusted)) {
+      const restored = fs.readFileSync(path.join(repo, rel), "utf8");
+      assert.ok(
+        !/neutered|stage everything|exfiltrate|pwned/.test(restored),
+        `${rel} must be restored from HEAD, not left as the model wrote it`,
+      );
+    }
+    assert.ok(
+      !fs.existsSync(path.join(repo, "scripts/cloud/backdoor.mjs")),
+      "a planted script must be removed, not merely left untracked",
+    );
+    assert.equal(
+      taskOf(repo, "PL-0101").status,
+      "IN_PROGRESS",
+      "control-state tampering must also be discarded",
+    );
+    assert.equal(
+      taskOf(repo, "PL-0101").owner,
+      "claude-frontend",
+      "the deterministic claim taken before the model must survive",
+    );
+    assert.equal(git("status", "--porcelain", "--", "scripts", ".github").trim(), "");
+  }
+
+  /* ---------------------------------------------------------------------
+   * 9aa. Control-output and protected path sets cannot drift.
+   * ------------------------------------------------------------------- */
+  {
+    const { CONTROL_OUTPUT_PATHS } = await import("../scripts/cloud/control-paths.mjs");
+    const { PROTECTED_PATHS } = await import("../scripts/cloud/protect-state.mjs");
+
+    assert.deepEqual(
+      [...PROTECTED_PATHS].sort(),
+      [...CONTROL_OUTPUT_PATHS].sort(),
+      "everything control mode may commit must also be restored by the guard",
+    );
+    assert.ok(
+      CONTROL_OUTPUT_PATHS.includes("docs/MISSION_CONTROL.md"),
+      "the path that previously drifted must be covered by both",
+    );
+  }
+
+  /* ---------------------------------------------------------------------
    * 10. Bootstrap into a new project still works.
    * ------------------------------------------------------------------- */
   {
@@ -3111,7 +3250,7 @@ try {
     "running the test suite must not mutate any live control/ or coordination/ file",
   );
 
-  console.log("AI control plane tests passed (37 scenarios).");
+  console.log("AI control plane tests passed (39 scenarios).");
 } finally {
   fs.rmSync(temp, { recursive: true, force: true });
 }

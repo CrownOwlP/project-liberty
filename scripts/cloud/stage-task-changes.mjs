@@ -56,18 +56,12 @@ const ACTIVE = ["CLAIMED", "IN_PROGRESS", "REVIEW"];
 
 /**
  * Outputs produced by deterministic control-plane and bus operations.
- * Deliberately enumerated rather than wildcarded.
+ *
+ * Imported from the shared source so this set and the guard's protected set
+ * cannot drift. A path committable here but unprotected there is a path where
+ * a model edit survives and gets committed as deterministic state.
  */
-const CONTROL_PLANE_OUTPUTS = [
-  "control/tasks.json",
-  "control/events.jsonl",
-  "control/queues",
-  "control/mission-control.json",
-  "docs/MISSION_CONTROL.md",
-  "coordination/agent-bus",
-  "coordination/PROJECT_STATUS.md",
-  "coordination/TASKS.md",
-];
+import { CONTROL_OUTPUT_PATHS as CONTROL_PLANE_OUTPUTS } from "./control-paths.mjs";
 
 function git(...a) {
   return execFileSync("git", a, { cwd: root, encoding: "utf8", maxBuffer: 32 * 1024 * 1024 });

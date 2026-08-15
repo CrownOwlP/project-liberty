@@ -60,26 +60,60 @@ jobs:
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
 
-      - name: Check orchestrator activation gate
-        id: gate
-        # PL-AI-0002 groundwork lands on main before the task is claimable. This
-        # keeps autonomous implementation dormant until the control plane allows
-        # it, WITHOUT blocking the deterministic steps that let the bootstrap
-        # task finish -- gating those would be circular.
-        run: node scripts/cloud/orchestrator-gate.mjs
+      # ---------------------------------------------------------------------
+      # Deterministic front half. ORDERING IS LOAD-BEARING.
+      #
+      # The gate used to be computed BEFORE the inbox was processed. An incoming
+      # approval was then applied locally, the already-computed gate still read
+      # complete=false, completion was skipped, and the applied review was never
+      # pushed -- so the next runner started from the same old remote state and
+      # repeated forever. Every mutation is now published BEFORE the next
+      # decision is made from it.
+      # ---------------------------------------------------------------------
 
       - name: Validate the control plane (fail closed)
         # NOT continue-on-error. A corrupt or self-inconsistent control plane
-        # means the model would be reasoning about state we cannot trust, so the
-        # job stops here rather than letting an autonomous agent act on it.
+        # means everything downstream would reason about state we cannot trust.
         run: node scripts/ai-control-plane.mjs validate
 
       - name: Recover and process the Claude inbox
-        # Separate step, and tolerant by design: a single permanently-rejected
-        # bus message is quarantined and processing continues. That is a
-        # per-message fault, not a reason to halt the whole worker.
+        # Tolerant by design: a single permanently-rejected bus message is
+        # quarantined and processing continues. That is a per-message fault, not
+        # a reason to halt the worker.
         continue-on-error: true
         run: node scripts/agent-bus.mjs process claude-lead
+
+      - name: Publish inbox results
+        # Applied reviews, acknowledgements and quarantines must be durable
+        # before anything decides what to do next.
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config --local url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
+          node scripts/cloud/publish-control-state.mjs --agent claude-lead --reason "inbox processed"
+
+      - name: Complete approved tasks deterministically
+        # No model involved: re-runs each required gate and moves an approved
+        # task to DONE. Runs unconditionally -- gating this on a stale
+        # activation gate is what deadlocked the PL-AI-0002 bootstrap.
+        continue-on-error: true
+        run: node scripts/cloud/advance-completable.mjs
+
+      - name: Publish completion results
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config --local url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
+          node scripts/cloud/publish-control-state.mjs --agent claude-lead --reason "completed approved tasks"
+
+      - name: Check orchestrator activation gate
+        id: gate
+        # Computed AFTER the inbox and completions are durable, so it reflects
+        # the state those steps just produced -- not the state this runner
+        # happened to start with.
+        run: node scripts/cloud/orchestrator-gate.mjs
 
       - name: Select, claim and start exactly one task
         id: select
@@ -88,14 +122,6 @@ jobs:
         # transition or publish.
         if: steps.gate.outputs.orchestrate == 'true'
         run: node scripts/cloud/select-task.mjs --agent claude-lead
-
-      - name: Complete approved tasks deterministically
-        # No model involved: records real gate evidence for a task whose
-        # independent review already approved it, then moves it to DONE. This is
-        # what lets PL-AI-0001 finish and unblock PL-AI-0002 while dormant.
-        if: steps.gate.outputs.complete == 'true'
-        continue-on-error: true
-        run: node scripts/cloud/advance-completable.mjs
 
       - name: Snapshot protected control/bus state
         # The model has Edit and Write, so removing mutating CLI commands is not
