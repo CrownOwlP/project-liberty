@@ -41,6 +41,18 @@ const project = {
     policies: "control/policies.json",
     milestones: "control/milestones.json"
   },
+  agentBus: {
+    path: "coordination/agent-bus",
+    trustModel: "cooperative-github-writers",
+    authenticatesSenderIdentity: false,
+    description: "GitHub-transported handoff between agent lanes. The `fromAgent` field is self-asserted and is NOT authenticated: any principal with write access to this repository can publish a message claiming any agent identity. The control plane enforces that the CLAIMED reviewer is the designated one and is not the implementer, but cannot prove authorship.",
+    notProvided: [
+      "cryptographic agent identity",
+      "protection against a malicious peer holding the same repository credential",
+      "resistance to identity spoofing"
+    ],
+    recoveryScope: "persistent local worker checkout; the crash-recovery journal is local and is NOT sufficient for an ephemeral CI runner"
+  },
   operatingPrinciples: ["maximize safe parallelism", "protect independent path ownership", "require explicit quality evidence before completion"]
 };
 const tasks = { "$schemaVersion": 1, tasks: [] };
@@ -51,7 +63,20 @@ const writes = [
 ];
 for (const [rel, value] of writes) fs.writeFileSync(path.join(dest, rel), JSON.stringify(value, null, 2) + "\n");
 fs.writeFileSync(path.join(dest, "control", "events.jsonl"), "");
-fs.copyFileSync(path.join(sourceRoot, "scripts", "ai-control-plane.mjs"), path.join(dest, "scripts", "ai-control-plane.mjs"));
+// Every runtime module the control-plane CLI needs. `ai-control-plane.mjs`
+// imports `agent-bus.mjs`, so copying the CLI alone produces a child project
+// that fails at module resolution on its first command. Add to this list
+// whenever the CLI gains another local import.
+const runtimeScripts = ["ai-control-plane.mjs", "agent-bus.mjs"];
+for (const name of runtimeScripts) {
+  fs.copyFileSync(path.join(sourceRoot, "scripts", name), path.join(dest, "scripts", name));
+}
+for (const dir of ["gpt-to-claude", "claude-to-gpt", "acknowledgements", "rejections"]) {
+  fs.mkdirSync(path.join(dest, "coordination", "agent-bus", dir), { recursive: true });
+  fs.writeFileSync(path.join(dest, "coordination", "agent-bus", dir, ".gitkeep"), "");
+}
+fs.mkdirSync(path.join(dest, "coordination", "agent-bus", "journal"), { recursive: true });
+fs.writeFileSync(path.join(dest, "coordination", "agent-bus", "journal", ".gitignore"), "*\n!.gitignore\n");
 fs.writeFileSync(path.join(dest, "coordination", "PROJECT_STATUS.md"), `# ${name} - Project Status\n\nRun the control-plane sync command after adding tasks.\n`);
 fs.writeFileSync(path.join(dest, "coordination", "TASKS.md"), `# ${name} Task Board\n\nMachine source of truth: control/tasks.json\n`);
 

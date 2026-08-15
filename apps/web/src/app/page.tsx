@@ -2,9 +2,16 @@ import Link from "next/link";
 import { CatalogRail } from "../components/catalog-rail";
 import { loadHomeCatalog } from "../lib/catalog";
 
+/**
+ * Rendered per request rather than prerendered at build time. The catalog is
+ * request-scoped data, and a statically baked page would also mean the
+ * loading state below could never actually appear.
+ */
+export const revalidate = 0;
+
 function CatalogUnavailable({ reason }: { reason: string }) {
   return (
-    <section className="section" id="catalog">
+    <section className="section">
       <div className="state-panel" role="alert">
         <h2>We couldn&apos;t load the catalog</h2>
         <p>
@@ -19,7 +26,7 @@ function CatalogUnavailable({ reason }: { reason: string }) {
 
 function CatalogEmpty() {
   return (
-    <section className="section" id="catalog">
+    <section className="section">
       <div className="state-panel">
         <h2>Nothing to watch yet</h2>
         <p>

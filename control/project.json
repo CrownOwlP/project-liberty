@@ -15,6 +15,27 @@
     "policies": "control/policies.json",
     "milestones": "control/milestones.json"
   },
+  "agentBus": {
+    "path": "coordination/agent-bus",
+    "trustModel": "cooperative-github-writers",
+    "authenticatesSenderIdentity": false,
+    "description": "GitHub-transported handoff between the GPT and Claude lanes. Removes the human relay. The `fromAgent` field is self-asserted and is NOT authenticated: any principal with write access to this repository can publish a message claiming any agent identity. The control plane enforces that the CLAIMED reviewer is the designated one and is not the implementer, but cannot prove authorship.",
+    "notProvided": [
+      "cryptographic agent identity",
+      "protection against a malicious peer holding the same GitHub credential",
+      "resistance to identity spoofing"
+    ],
+    "hardenedModeRequires": [
+      "separate GitHub App or service identities per lane",
+      "protected main branch / repository ruleset",
+      "pull requests required for bus directories",
+      "required status checks",
+      "required Code Owner review",
+      "no unrestricted direct-push bypass",
+      "CODEOWNERS covering both bus directions, and CODEOWNERS itself protected"
+    ],
+    "note": "CODEOWNERS alone is not a security control. It only has effect when branch/ruleset enforcement actually requires the pull-request and code-owner-review path."
+  },
   "operatingPrinciples": [
     "maximize safe parallelism rather than raw agent count",
     "prefer independent path ownership",

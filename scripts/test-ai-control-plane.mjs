@@ -10,14 +10,19 @@ const temp = fs.mkdtempSync(path.join(os.tmpdir(), "liberty-control-plane-"));
 const CLI = "scripts/ai-control-plane.mjs";
 let repoSeq = 0;
 
-function run(cwd, script, args = []) {
-  return execFileSync(process.execPath, [script, ...args], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+function run(cwd, script, args = [], env = {}) {
+  return execFileSync(process.execPath, [script, ...args], {
+    cwd,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+    env: { ...process.env, ...env }
+  });
 }
-function runFail(cwd, args, matcher) {
+function runFail(cwd, args, matcher, env = {}) {
   let failed = false;
   let output = "";
   try {
-    run(cwd, CLI, args);
+    run(cwd, CLI, args, env);
   } catch (error) {
     failed = true;
     output = `${error.stdout ?? ""}${error.stderr ?? ""}`;
@@ -25,6 +30,16 @@ function runFail(cwd, args, matcher) {
   assert.ok(failed, `expected "${args.join(" ")}" to fail but it succeeded`);
   if (matcher) assert.match(output, matcher, `unexpected failure output for "${args.join(" ")}":\n${output}`);
   return output;
+}
+/** Publish a handoff message and return its id, parsed from CLI output. */
+function publish(repo, args, env = {}) {
+  const out = run(repo, CLI, ["handoff", ...args], env);
+  const match = out.match(/Published (MSG-\S+)/);
+  assert.ok(match, `could not parse message id from:\n${out}`);
+  return match[1];
+}
+function busFile(repo, ...parts) {
+  return path.join(repo, "coordination", "agent-bus", ...parts);
 }
 /**
  * Reset the *copied* control/tasks.json to a clean runtime state.
@@ -72,7 +87,76 @@ function freshRepo() {
       !src.includes(`${path.sep}node_modules${path.sep}`) && !src.endsWith(`${path.sep}node_modules`)
   });
   resetRuntimeState(repo);
+  resetBusState(repo);
+  resetEventLog(repo);
   return repo;
+}
+
+/**
+ * Truncate the copied audit log.
+ *
+ * `control/events.jsonl` is append-only runtime history, so a copy inherits
+ * every real event the project has ever recorded -- including genuine
+ * `task.review_recorded` entries from completed work. Scenarios that assert on
+ * event COUNTS would then be measuring project history rather than the
+ * behaviour under test.
+ */
+function resetEventLog(repo) {
+  fs.writeFileSync(path.join(repo, "control", "events.jsonl"), "");
+}
+
+/**
+ * Clear inherited handoff traffic from the copy.
+ *
+ * Without this, every scenario would inherit whatever real messages happen to be
+ * committed at the time -- which is guaranteed to happen once the bus is in
+ * actual use -- and inbox/process assertions would start failing for reasons
+ * that have nothing to do with the code under test.
+ */
+function resetBusState(repo) {
+  for (const lane of ["gpt-to-claude", "claude-to-gpt", "acknowledgements", "rejections", "journal"]) {
+    const dir = path.join(repo, "coordination", "agent-bus", lane);
+    if (!fs.existsSync(dir)) continue;
+    for (const name of fs.readdirSync(dir)) {
+      if (name.endsWith(".json")) fs.rmSync(path.join(dir, name));
+    }
+  }
+}
+
+function journalOf(repo, messageId) {
+  const file = path.join(repo, "coordination", "agent-bus", "journal", `${messageId}.json`);
+  return fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, "utf8")) : null;
+}
+function ackOf(repo, messageId) {
+  const file = path.join(repo, "coordination", "agent-bus", "acknowledgements", `${messageId}.json`);
+  return fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, "utf8")) : null;
+}
+function rejectionOf(repo, messageId) {
+  const file = path.join(repo, "coordination", "agent-bus", "rejections", `${messageId}.json`);
+  return fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, "utf8")) : null;
+}
+/** Copy a repo to simulate a second checkout observing shared bus state. */
+function cloneRepo(repo) {
+  const clone = path.join(temp, `clone-${++repoSeq}`);
+  fs.cpSync(repo, clone, { recursive: true });
+  // The journal is local-only state; a real clone would not carry it.
+  const journal = path.join(clone, "coordination", "agent-bus", "journal");
+  if (fs.existsSync(journal)) {
+    for (const name of fs.readdirSync(journal)) {
+      if (name.endsWith(".json")) fs.rmSync(path.join(journal, name));
+    }
+  }
+  return clone;
+}
+function eventsOf(repo) {
+  return fs.readFileSync(path.join(repo, "control", "events.jsonl"), "utf8")
+    .split("\n").filter(Boolean).map((line) => JSON.parse(line));
+}
+/** Simulate a crash by writing a journal state directly, as a killed run would leave it. */
+function simulateCrash(repo, messageId, state, extra = {}) {
+  const file = path.join(repo, "coordination", "agent-bus", "journal", `${messageId}.json`);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify({ messageId, state, claimedBy: "claude-lead", ...extra }, null, 2) + "\n");
 }
 function tasksOf(repo) {
   return JSON.parse(fs.readFileSync(path.join(repo, "control", "tasks.json"), "utf8")).tasks;
@@ -337,7 +421,432 @@ try {
   }
 
   /* ---------------------------------------------------------------------
-   * 9. Bootstrap into a new project still works.
+   * 9. Handoff bus: GPT <-> Claude with no human in the loop.
+   * ------------------------------------------------------------------- */
+  {
+    const SHA = "a".repeat(40);
+    const repo = freshRepo();
+    implementToReview(repo);
+
+    // --- GPT -> Claude delivery ---
+    const approvalId = publish(repo, [
+      "--from", "gpt-architect", "--to", "claude-lead",
+      "--type", "review_approved", "--task", "PL-AI-0001", "--sha", SHA,
+      "--summary", "control plane reviewed against pushed SHA",
+      "--evidence", "https://github.com/CrownOwlP/project-liberty/commit/" + SHA
+    ], { LIBERTY_COMMIT_SHA: SHA });
+
+    assert.ok(fs.existsSync(busFile(repo, "gpt-to-claude", `${approvalId}.json`)), "message must land in the gpt-to-claude lane");
+
+    const inbox = run(repo, CLI, ["inbox", "claude-lead"]);
+    assert.match(inbox, new RegExp(approvalId));
+    assert.match(inbox, /review_approved/);
+    assert.match(inbox, /status=open/);
+
+    // --- processing applies the decision through the enforced path ---
+    run(repo, CLI, ["process", "claude-lead"], { LIBERTY_COMMIT_SHA: SHA });
+    const reviewed = taskOf(repo, "PL-AI-0001");
+    assert.equal(reviewed.review.outcome, "APPROVED");
+    assert.equal(reviewed.review.reviewerAgent, "gpt-architect");
+    assert.equal(reviewed.review.implementationAgent, "claude-lead");
+    assert.equal(reviewed.review.reviewedCommitSha, SHA, "the recorded SHA must be the reviewed one, not HEAD-at-apply-time");
+
+    // --- acknowledgement is explicit and durable ---
+    assert.ok(fs.existsSync(busFile(repo, "acknowledgements", `${approvalId}.json`)));
+    const ack = JSON.parse(fs.readFileSync(busFile(repo, "acknowledgements", `${approvalId}.json`), "utf8"));
+    assert.equal(ack.acknowledgedBy, "claude-lead");
+    assert.equal(ack.outcome, "processed");
+
+    // --- duplicate processing prevention ---
+    assert.match(run(repo, CLI, ["inbox", "claude-lead"]), /No unacknowledged messages/);
+    assert.match(run(repo, CLI, ["process", "claude-lead"], { LIBERTY_COMMIT_SHA: SHA }), /No unacknowledged messages/);
+    runFail(repo, ["ack", approvalId], /already acknowledged/);
+    assert.equal(taskOf(repo, "PL-AI-0001").reviewHistory.length, 1, "re-processing must not duplicate the review");
+
+    // The bus-delivered approval satisfies the real completion rules.
+    run(repo, CLI, ["done", "PL-AI-0001"], { LIBERTY_COMMIT_SHA: SHA });
+    assert.equal(taskOf(repo, "PL-AI-0001").status, "DONE");
+
+    // --- Claude -> GPT review request ---
+    const requestId = publish(repo, [
+      "--from", "claude-lead", "--to", "gpt-architect",
+      "--type", "review_request", "--task", "PL-0101", "--sha", SHA,
+      "--summary", "PL-0101 catalog contract ready for review",
+      "--evidence", "npm run check green"
+    ], { LIBERTY_COMMIT_SHA: SHA });
+    assert.ok(fs.existsSync(busFile(repo, "claude-to-gpt", `${requestId}.json`)), "outbound message must land in the claude-to-gpt lane");
+    assert.match(run(repo, CLI, ["inbox", "gpt-architect"]), /review_request/);
+
+    // --- wrong recipient rejection ---
+    assert.doesNotMatch(run(repo, CLI, ["inbox", "claude-lead"]), new RegExp(requestId));
+    runFail(repo, ["ack", requestId, "--agent", "claude-lead"], /addressed to gpt-architect, not claude-lead/);
+
+    // --- missing SHA on a review request ---
+    runFail(repo, [
+      "handoff", "--from", "claude-lead", "--to", "gpt-architect",
+      "--type", "review_request", "--task", "PL-0101", "--summary", "no sha"
+    ], /review_request requires commitSha/);
+
+    // --- unknown message type ---
+    runFail(repo, [
+      "handoff", "--from", "gpt-architect", "--to", "claude-lead",
+      "--type", "gossip", "--summary", "hello"
+    ], /Unknown message type/);
+  }
+
+  /* ---------------------------------------------------------------------
+   * 9b. Stale decisions and reviewer substitution cannot cross the bus.
+   * ------------------------------------------------------------------- */
+  {
+    const OLD = "b".repeat(40);
+    const MOVED = "c".repeat(40);
+    const repo = freshRepo();
+    implementToReview(repo);
+
+    const staleId = publish(repo, [
+      "--from", "gpt-architect", "--to", "claude-lead",
+      "--type", "review_approved", "--task", "PL-AI-0001", "--sha", OLD,
+      "--summary", "approved at an older commit"
+    ], { LIBERTY_COMMIT_SHA: OLD });
+
+    // HEAD has moved since GPT reviewed: applying now would stamp unreviewed
+    // code as approved, so it must be refused.
+    runFail(repo, ["process", "claude-lead"], /stale handoff/, { LIBERTY_COMMIT_SHA: MOVED });
+    assert.equal(taskOf(repo, "PL-AI-0001").review, undefined, "a stale decision must not be recorded");
+    assert.ok(
+      !fs.existsSync(busFile(repo, "acknowledgements", `${staleId}.json`)),
+      "a rejected message must stay unacknowledged so it can be retried"
+    );
+    assert.equal(taskOf(repo, "PL-AI-0001").status, "REVIEW");
+
+    // Fail closed: with no resolvable HEAD the decision cannot be verified, so
+    // it must be refused rather than accepted on trust.
+    runFail(repo, ["process", "claude-lead"], /cannot resolve HEAD/);
+    assert.equal(taskOf(repo, "PL-AI-0001").review, undefined);
+
+    // A ref name or abbreviated sha is rejected at publish time.
+    runFail(repo, [
+      "handoff", "--from", "gpt-architect", "--to", "claude-lead",
+      "--type", "review_approved", "--task", "PL-AI-0001", "--sha", "HEAD",
+      "--summary", "approving whatever main points at"
+    ], /commitSha must be a full 40-character hex sha/);
+
+    // Message ids are path-constrained: a peer cannot steer the acknowledgement
+    // write outside the bus directory.
+    runFail(repo, ["ack", "../../../scripts/agent-bus"], /unsafe or malformed message id/);
+
+    // Reviewer substitution is still refused even when it arrives over the bus.
+    publish(repo, [
+      "--from", "claude-security", "--to", "claude-lead",
+      "--type", "review_approved", "--task", "PL-AI-0001", "--sha", MOVED,
+      "--summary", "standing in for the gpt lane"
+    ], { LIBERTY_COMMIT_SHA: MOVED });
+    runFail(repo, ["process", "claude-lead"], /requires independent review by gpt-architect/, { LIBERTY_COMMIT_SHA: MOVED });
+    assert.equal(taskOf(repo, "PL-AI-0001").review, undefined);
+  }
+
+  /* ---------------------------------------------------------------------
+   * 9c. changes_requested and out-of-state decisions.
+   * ------------------------------------------------------------------- */
+  {
+    const SHA = "d".repeat(40);
+    const repo = freshRepo();
+    implementToReview(repo);
+
+    publish(repo, [
+      "--from", "gpt-architect", "--to", "claude-lead",
+      "--type", "changes_requested", "--task", "PL-AI-0001", "--sha", SHA,
+      "--summary", "dispatcher still starves executable lanes"
+    ], { LIBERTY_COMMIT_SHA: SHA });
+
+    run(repo, CLI, ["process", "claude-lead"], { LIBERTY_COMMIT_SHA: SHA });
+    const task = taskOf(repo, "PL-AI-0001");
+    assert.equal(task.status, "IN_PROGRESS", "changes_requested must return the task to IN_PROGRESS");
+    assert.equal(task.review.outcome, "CHANGES_REQUESTED");
+
+    run(repo, CLI, ["review", "PL-AI-0001"]);
+    runFail(repo, ["done", "PL-AI-0001"], /review outcome is CHANGES_REQUESTED/);
+
+    // A decision aimed at a task that is not in REVIEW is refused rather than
+    // silently applied.
+    publish(repo, [
+      "--from", "gpt-architect", "--to", "claude-lead",
+      "--type", "review_approved", "--task", "PL-0101", "--sha", SHA,
+      "--summary", "approving something that was never submitted"
+    ], { LIBERTY_COMMIT_SHA: SHA });
+    const earlyId = publish(repo, [
+      "--from", "gpt-architect", "--to", "claude-lead",
+      "--type", "review_approved", "--task", "PL-0101", "--sha", SHA,
+      "--summary", "approving something that was never submitted"
+    ], { LIBERTY_COMMIT_SHA: SHA });
+    runFail(repo, ["process", "claude-lead"], /only applies to a task in REVIEW/, { LIBERTY_COMMIT_SHA: SHA });
+
+    // Arriving early is a property of repository state, not of the message, so
+    // it must be retried rather than permanently quarantined.
+    assert.equal(rejectionOf(repo, earlyId), null, "a transient failure must not be quarantined");
+    assert.equal(ackOf(repo, earlyId), null);
+    assert.match(run(repo, CLI, ["inbox", "claude-lead"]), new RegExp(earlyId), "it must stay in the inbox for retry");
+  }
+
+  /* ---------------------------------------------------------------------
+   * 9d. Informational traffic is acknowledged without moving task state.
+   * ------------------------------------------------------------------- */
+  {
+    const repo = freshRepo();
+    const before = JSON.stringify(tasksOf(repo));
+
+    publish(repo, [
+      "--from", "gpt-architect", "--to", "claude-lead",
+      "--type", "task_instruction",
+      "--summary", "prioritise the GitHub bridge over product work"
+    ]);
+    publish(repo, [
+      "--from", "gpt-architect", "--to", "claude-lead",
+      "--type", "architecture_decision", "--task", "PL-0401",
+      "--summary", "better-auth pulls zod 4; contracts stay on zod 3 behind a nominal boundary"
+    ]);
+
+    run(repo, CLI, ["process", "claude-lead"]);
+    assert.equal(
+      JSON.stringify(tasksOf(repo)),
+      before,
+      "informational messages must not move task state"
+    );
+    assert.match(run(repo, CLI, ["inbox", "claude-lead"]), /No unacknowledged messages/);
+  }
+
+  /* ---------------------------------------------------------------------
+   * 9e. Audit events are emitted only after the durable commit.
+   * ------------------------------------------------------------------- */
+  {
+    const SHA = "e".repeat(40);
+    const repo = freshRepo();
+    implementToReview(repo);
+
+    // A message that will fail during validation must leave NO audit trace.
+    const badId = publish(repo, [
+      "--from", "claude-security", "--to", "claude-lead",
+      "--type", "review_approved", "--task", "PL-AI-0001", "--sha", SHA,
+      "--summary", "not the designated reviewer"
+    ], { LIBERTY_COMMIT_SHA: SHA });
+    runFail(repo, ["process", "claude-lead"], /requires independent review/, { LIBERTY_COMMIT_SHA: SHA });
+
+    const afterFailure = eventsOf(repo);
+    assert.equal(
+      afterFailure.filter((e) => e.type === "task.review_recorded").length, 0,
+      "a rejected review must not appear in the audit log"
+    );
+    assert.equal(taskOf(repo, "PL-AI-0001").review, undefined);
+
+    // It was quarantined on first detection, so it no longer blocks later runs.
+    assert.ok(rejectionOf(repo, badId), "a permanently-invalid message must be quarantined");
+    assert.equal(ackOf(repo, badId), null, "quarantine must not create a success acknowledgement");
+
+    // A successful message emits exactly one review event, and only after the
+    // task state and acknowledgement are durable.
+    const okId = publish(repo, [
+      "--from", "gpt-architect", "--to", "claude-lead",
+      "--type", "review_approved", "--task", "PL-AI-0001", "--sha", SHA,
+      "--summary", "approved"
+    ], { LIBERTY_COMMIT_SHA: SHA });
+    run(repo, CLI, ["process", "claude-lead"], { LIBERTY_COMMIT_SHA: SHA });
+
+    const events = eventsOf(repo);
+    const reviewEvents = events.filter((e) => e.type === "task.review_recorded");
+    assert.equal(reviewEvents.length, 1);
+    assert.equal(reviewEvents[0]?.reviewedCommitSha, SHA);
+    assert.equal(journalOf(repo, okId)?.state, "ACKNOWLEDGED");
+    assert.ok(ackOf(repo, okId));
+
+    // Ordering: the review event must come after the task state was written,
+    // which is observable as the processed event following it in the log.
+    const reviewIndex = events.findIndex((e) => e.type === "task.review_recorded");
+    const processedIndex = events.findIndex((e) => e.type === "bus.message_processed");
+    assert.ok(reviewIndex >= 0 && processedIndex > reviewIndex, "processed event must follow the review event");
+  }
+
+  /* ---------------------------------------------------------------------
+   * 9f. Crash AFTER claim, BEFORE task save -> redo, losing nothing.
+   * ------------------------------------------------------------------- */
+  {
+    const SHA = "f".repeat(40);
+    const repo = freshRepo();
+    implementToReview(repo);
+
+    const id = publish(repo, [
+      "--from", "gpt-architect", "--to", "claude-lead",
+      "--type", "review_approved", "--task", "PL-AI-0001", "--sha", SHA,
+      "--summary", "approved before the crash"
+    ], { LIBERTY_COMMIT_SHA: SHA });
+
+    // The run died holding the claim, before task state was persisted.
+    simulateCrash(repo, id, "APPLYING");
+    assert.equal(taskOf(repo, "PL-AI-0001").review, undefined);
+
+    // Recovery releases the claim; the same run then reprocesses it cleanly.
+    run(repo, CLI, ["process", "claude-lead"], { LIBERTY_COMMIT_SHA: SHA });
+
+    const task = taskOf(repo, "PL-AI-0001");
+    assert.equal(task.review.outcome, "APPROVED", "an interrupted claim must not lose the transition");
+    assert.equal(task.reviewHistory.length, 1, "recovery must not duplicate the review");
+    assert.equal(journalOf(repo, id)?.state, "ACKNOWLEDGED");
+    assert.equal(
+      eventsOf(repo).filter((e) => e.type === "task.review_recorded").length, 1,
+      "recovery must not duplicate the audit event"
+    );
+  }
+
+  /* ---------------------------------------------------------------------
+   * 9g. Crash AFTER task save, BEFORE acknowledgement -> finish, never redo.
+   * ------------------------------------------------------------------- */
+  {
+    const SHA = "1".repeat(40);
+    const repo = freshRepo();
+    implementToReview(repo);
+
+    const id = publish(repo, [
+      "--from", "gpt-architect", "--to", "claude-lead",
+      "--type", "review_approved", "--task", "PL-AI-0001", "--sha", SHA,
+      "--summary", "approved, crash before ack"
+    ], { LIBERTY_COMMIT_SHA: SHA });
+
+    run(repo, CLI, ["process", "claude-lead"], { LIBERTY_COMMIT_SHA: SHA });
+    const historyLength = taskOf(repo, "PL-AI-0001").reviewHistory.length;
+    assert.equal(historyLength, 1);
+
+    // Rewind to the exact crash window: task state persisted, journal APPLIED,
+    // acknowledgement not yet written.
+    fs.rmSync(path.join(repo, "coordination", "agent-bus", "acknowledgements", `${id}.json`));
+    simulateCrash(repo, id, "APPLIED", { applied: "APPROVED recorded on PL-AI-0001 by gpt-architect" });
+
+    run(repo, CLI, ["recover", "claude-lead"], { LIBERTY_COMMIT_SHA: SHA });
+
+    assert.ok(ackOf(repo, id), "recovery must finalize the acknowledgement");
+    assert.equal(journalOf(repo, id)?.state, "ACKNOWLEDGED");
+    assert.equal(
+      taskOf(repo, "PL-AI-0001").reviewHistory.length, historyLength,
+      "recovery of an APPLIED message must NOT re-apply the review"
+    );
+
+    // Repeated recovery is idempotent.
+    run(repo, CLI, ["recover", "claude-lead"], { LIBERTY_COMMIT_SHA: SHA });
+    run(repo, CLI, ["recover", "claude-lead"], { LIBERTY_COMMIT_SHA: SHA });
+    assert.equal(taskOf(repo, "PL-AI-0001").reviewHistory.length, historyLength);
+    assert.match(run(repo, CLI, ["process", "claude-lead"], { LIBERTY_COMMIT_SHA: SHA }), /No unacknowledged messages/);
+  }
+
+  /* ---------------------------------------------------------------------
+   * 9h. Malformed peer messages are isolated, not fatal.
+   * ------------------------------------------------------------------- */
+  {
+    const repo = freshRepo();
+    const lane = path.join(repo, "coordination", "agent-bus", "gpt-to-claude");
+
+    // Unparseable, structurally invalid, and filename/id mismatch respectively.
+    fs.writeFileSync(path.join(lane, "MSG-20260815T000000000Z-blocker-deadbeef.json"), "{ not json");
+    fs.writeFileSync(
+      path.join(lane, "MSG-20260815T000000001Z-blocker-deadbeee.json"),
+      JSON.stringify({ id: "MSG-20260815T000000001Z-blocker-deadbeee", fromAgent: "gpt-architect" })
+    );
+    fs.writeFileSync(
+      path.join(lane, "MSG-20260815T000000002Z-blocker-deadbeef.json"),
+      JSON.stringify({
+        id: "MSG-20260815T000000009Z-blocker-cafebabe", fromAgent: "gpt-architect", toAgent: "claude-lead",
+        type: "blocker", summary: "id does not match filename", createdAt: "2026-08-15T00:00:00.002Z", status: "open"
+      })
+    );
+
+    // A good message still gets through despite the malformed neighbours.
+    const goodId = publish(repo, [
+      "--from", "gpt-architect", "--to", "claude-lead",
+      "--type", "task_instruction", "--summary", "still deliverable"
+    ]);
+
+    const inbox = run(repo, CLI, ["inbox", "claude-lead"]);
+    assert.match(inbox, new RegExp(goodId));
+    assert.doesNotMatch(inbox, /cafebabe/, "a filename/id mismatch must be ignored");
+
+    run(repo, CLI, ["process", "claude-lead"]);
+    assert.ok(ackOf(repo, goodId));
+  }
+
+  /* ---------------------------------------------------------------------
+   * 9i. Quarantine: a permanently-invalid message is rejected once, never
+   *     acknowledged, never blocks valid traffic, and never wedges the queue.
+   * ------------------------------------------------------------------- */
+  {
+    const SHA = "2".repeat(40);
+    const repo = freshRepo();
+    implementToReview(repo);
+    const stateBefore = JSON.stringify(tasksOf(repo));
+
+    // Permanently invalid: wrong reviewer for this task. The message is
+    // immutable, so this can never become valid.
+    const badId = publish(repo, [
+      "--from", "claude-security", "--to", "claude-lead",
+      "--type", "review_approved", "--task", "PL-AI-0001", "--sha", SHA,
+      "--summary", "not the designated reviewer"
+    ], { LIBERTY_COMMIT_SHA: SHA });
+
+    // A valid message queued behind it must still get through.
+    const goodId = publish(repo, [
+      "--from", "gpt-architect", "--to", "claude-lead",
+      "--type", "review_approved", "--task", "PL-AI-0001", "--sha", SHA,
+      "--summary", "genuine independent approval"
+    ], { LIBERTY_COMMIT_SHA: SHA });
+
+    // First detection reports failure...
+    const firstRun = runFail(repo, ["process", "claude-lead"], /REJECT/, { LIBERTY_COMMIT_SHA: SHA });
+    assert.match(firstRun, /newly rejected/);
+
+    // ...but the valid message behind it was still applied.
+    assert.equal(taskOf(repo, "PL-AI-0001").review?.reviewerAgent, "gpt-architect");
+    assert.ok(ackOf(repo, goodId));
+
+    // The rejection is durable, shared, and carries a reason.
+    const rejection = rejectionOf(repo, badId);
+    assert.ok(rejection, "rejection record must be written");
+    assert.equal(rejection.messageId, badId);
+    assert.equal(rejection.rejectedBy, "claude-lead");
+    assert.match(rejection.reason, /requires independent review by gpt-architect/);
+    assert.ok(rejection.rejectedAt);
+    assert.equal(rejection.fromAgent, "claude-security");
+
+    // A rejection is NOT an acknowledgement, and the two must stay disjoint:
+    // acking a quarantined message would report it as successfully processed.
+    assert.equal(ackOf(repo, badId), null, "rejection must not create a success acknowledgement");
+    runFail(repo, ["ack", badId, "--agent", "claude-lead"], /a rejection is not an acknowledgement/);
+    assert.equal(ackOf(repo, badId), null);
+
+    // The rejected message never touched task state: the only change is the
+    // review that the VALID message applied.
+    const afterState = JSON.parse(JSON.stringify(tasksOf(repo)));
+    const beforeState = JSON.parse(stateBefore);
+    for (const task of afterState) {
+      if (task.id === "PL-AI-0001") continue;
+      assert.deepEqual(task, beforeState.find((t) => t.id === task.id), `${task.id} must be untouched`);
+    }
+    assert.equal(taskOf(repo, "PL-AI-0001").reviewHistory.length, 1, "only the valid review may be recorded");
+
+    // A second run does NOT fail again on the same immutable rejection.
+    const secondRun = run(repo, CLI, ["process", "claude-lead"], { LIBERTY_COMMIT_SHA: SHA });
+    assert.match(secondRun, /previously rejected|No unacknowledged messages/);
+
+    // A rejected message is hidden from the working inbox but visible with --all.
+    assert.doesNotMatch(run(repo, CLI, ["inbox", "claude-lead"]), new RegExp(badId));
+    const full = run(repo, CLI, ["inbox", "claude-lead", "--all"]);
+    assert.match(full, new RegExp(badId));
+    assert.match(full, /rejected: /);
+
+    // Another checkout observes the SHARED rejection and does not re-trigger it.
+    const other = cloneRepo(repo);
+    assert.ok(rejectionOf(other, badId), "rejection must travel with the repository");
+    const otherRun = run(other, CLI, ["process", "claude-lead"], { LIBERTY_COMMIT_SHA: SHA });
+    assert.doesNotMatch(otherRun, /REJECT/, "a second checkout must not re-reject a known-bad message");
+  }
+
+  /* ---------------------------------------------------------------------
+   * 10. Bootstrap into a new project still works.
    * ------------------------------------------------------------------- */
   {
     const repo = freshRepo();
@@ -346,10 +855,28 @@ try {
     run(child, CLI, ["validate"]);
     run(child, CLI, ["sync"]);
     assert.match(fs.readFileSync(path.join(child, "coordination", "PROJECT_STATUS.md"), "utf8"), /Child Project/);
+
+    // The bus must work in a bootstrapped project too: the CLI imports
+    // agent-bus.mjs, so a skeleton missing it fails at module resolution on the
+    // very first command.
+    assert.match(run(child, CLI, ["inbox", "claude-lead"]), /No unacknowledged messages/);
+    assert.match(
+      run(child, "scripts/agent-bus.mjs", ["inbox", "claude-lead"]),
+      /No unacknowledged messages/,
+      "the direct bus entry point must work in a bootstrapped project"
+    );
+
+    // The honest trust model travels with the skeleton rather than being
+    // silently dropped when the control plane is reused.
+    const childProject = JSON.parse(fs.readFileSync(path.join(child, "control", "project.json"), "utf8"));
+    assert.equal(childProject.agentBus.trustModel, "cooperative-github-writers");
+    assert.equal(childProject.agentBus.authenticatesSenderIdentity, false);
   }
 
   /* ---------------------------------------------------------------------
-   * 10. The live repository state must be untouched by the whole run.
+   * 11. The live repository state must be untouched by the whole run.
+   *     This now also guards coordination/agent-bus, so a test that forgets
+   *     freshRepo() cannot publish a real handoff message.
    * ------------------------------------------------------------------- */
   assert.equal(
     fs.readFileSync(liveTasksPath, "utf8"),
@@ -364,7 +891,7 @@ try {
     "running the test suite must not mutate any live control/ or coordination/ file"
   );
 
-  console.log("AI control plane tests passed (11 scenarios).");
+  console.log("AI control plane tests passed (20 scenarios).");
 } finally {
   fs.rmSync(temp, { recursive: true, force: true });
 }

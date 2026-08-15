@@ -7,7 +7,7 @@ export default function HomeLoading() {
   const placeholders = Array.from({ length: 5 }, (_, index) => index);
 
   return (
-    <main className="shell" aria-busy="true" aria-live="polite">
+    <main className="shell" aria-busy="true">
       <header className="topbar">
         <div className="brand">PROJECT <span>LIBERTY</span></div>
         <div className="status">Loading…</div>
@@ -30,7 +30,7 @@ export default function HomeLoading() {
         </div>
       </section>
 
-      <span className="visually-hidden">Loading catalog…</span>
+      <span className="visually-hidden" role="status">Loading catalog…</span>
     </main>
   );
 }

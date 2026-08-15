@@ -42,10 +42,25 @@ export function formatCatalogMeta(item: CatalogItem): string {
   return parts.join(" · ");
 }
 
+/**
+ * Home rails are intentionally limited to top-level browsable kinds. Individual
+ * `episode` items are reachable through their series (PL-0103), never as a
+ * standalone home-rail entry, so they are deliberately not surfaced here.
+ */
 const RAIL_DEFINITIONS: ReadonlyArray<{ id: string; title: string; kind: CatalogItem["kind"] }> = [
   { id: "movies", title: "Films", kind: "movie" },
   { id: "series", title: "Series", kind: "series" }
 ];
+
+/** Kinds that appear on the home surface. */
+export const HOME_RAIL_KINDS: ReadonlyArray<CatalogItem["kind"]> = RAIL_DEFINITIONS.map(
+  (definition) => definition.kind
+);
+
+/** True when an item is both rights-cleared and eligible for a home rail. */
+export function appearsOnHome(item: CatalogItem): boolean {
+  return isSurfaceable(item) && HOME_RAIL_KINDS.includes(item.kind);
+}
 
 /**
  * Pure and deterministic: same items in, same rails out. Rails with no
@@ -81,16 +96,23 @@ export function getHomeCatalog(
 }
 
 /**
+ * Where the home catalog comes from. Injectable so the loader's failure paths
+ * are testable, and so PL-0301 can swap the fixtures for a provider adapter
+ * without touching the route.
+ */
+export type CatalogSource = () => CatalogHomeResponse | Promise<CatalogHomeResponse>;
+
+/**
  * Loader used by the home route. Validates against the published contract so a
  * malformed fixture or provider payload becomes a handled error state instead
- * of a runtime crash mid-render.
+ * of a runtime crash mid-render. A source that throws (network, timeout, an
+ * adapter fault) is likewise converted rather than propagated.
  */
 export async function loadHomeCatalog(
-  now: Date = new Date(),
-  items: readonly CatalogItem[] = demoCatalog
+  source: CatalogSource = () => getHomeCatalog()
 ): Promise<CatalogLoadResult> {
   try {
-    const parsed = catalogHomeResponseSchema.safeParse(getHomeCatalog(now, items));
+    const parsed = catalogHomeResponseSchema.safeParse(await source());
 
     if (!parsed.success) {
       return { status: "error", reason: "catalog_response_failed_validation" };

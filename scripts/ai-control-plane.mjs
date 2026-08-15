@@ -3,6 +3,22 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { execFileSync } from "node:child_process";
+import {
+  MESSAGE_TYPES,
+  acknowledge,
+  advanceJournal,
+  claimJournal,
+  createMessage,
+  findMessage,
+  laneFor,
+  listJournal,
+  listMessages,
+  readJournal,
+  readRejection,
+  rejectMessage,
+  releaseJournal,
+  validateMessage
+} from "./agent-bus.mjs";
 
 const root = process.cwd();
 const controlDir = path.join(root, "control");
@@ -24,7 +40,16 @@ function readJson(file) {
   return JSON.parse(fs.readFileSync(file, "utf8"));
 }
 function writeJson(file, value) {
-  fs.writeFileSync(file, JSON.stringify(value, null, 2) + "\n");
+  // Write-then-rename: a crash mid-write leaves the previous file intact rather
+  // than a truncated one. Task state is the durable commit point of the bus
+  // transaction, so a partial write there would be unrecoverable.
+  const tmp = `${file}.${process.pid}.tmp`;
+  try {
+    fs.writeFileSync(tmp, JSON.stringify(value, null, 2) + "\n");
+    fs.renameSync(tmp, file);
+  } finally {
+    if (fs.existsSync(tmp)) fs.rmSync(tmp, { force: true });
+  }
 }
 function now() { return new Date().toISOString(); }
 function event(type, details = {}) {
@@ -278,9 +303,15 @@ const fingerprintExclusions = [
   "control/events.jsonl",
   "control/queues",
   "coordination/PROJECT_STATUS.md",
-  "coordination/TASKS.md"
+  "coordination/TASKS.md",
+  // Handoff traffic is coordination metadata, not implementation. Without this
+  // exclusion, publishing a review request would change the fingerprint of the
+  // very task being reviewed and invalidate the approval that came back.
+  "coordination/agent-bus"
 ];
 function excludedFromFingerprint(rel) {
+  // Write-then-rename temporaries are transient artefacts, never implementation.
+  if (rel.endsWith(".tmp")) return true;
   return fingerprintExclusions.some((ex) => rel === ex || rel.startsWith(ex + "/"));
 }
 function filesForPattern(pattern) {
@@ -317,6 +348,10 @@ function implementationFingerprint(task) {
   return { treeHash: hash.digest("hex"), fileCount: sorted.length };
 }
 function currentCommitSha() {
+  // Explicit override exists so the handoff-bus commit-binding rules can be
+  // exercised in a test repository that has no git history. It is read before
+  // git so a test can simulate "HEAD moved since GPT reviewed".
+  if (process.env.LIBERTY_COMMIT_SHA) return process.env.LIBERTY_COMMIT_SHA;
   try {
     return execFileSync("git", ["rev-parse", "HEAD"], {
       cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"]
@@ -363,7 +398,12 @@ function reviewProblems(task, policies) {
   }
   return problems;
 }
-function recordReview(task, reviewer, outcome, evidence) {
+/**
+ * Every precondition for recording a review, with no mutation and no side
+ * effects. Separated so the bus can validate a message BEFORE it consumes an
+ * exclusive claim, and so a rejection never leaves a half-applied transition.
+ */
+function assertReviewAllowed(task, reviewer, outcome, evidence) {
   const implementationAgent = task.implementationAgent ?? task.owner ?? null;
   if (!implementationAgent) throw new Error(`${task.id} has no recorded implementation agent; claim and start it through the control plane first`);
   if (reviewer.id === implementationAgent) throw new Error(`self-approval is prohibited: ${reviewer.id} implemented ${task.id}`);
@@ -372,6 +412,16 @@ function recordReview(task, reviewer, outcome, evidence) {
   }
   if (!REVIEW_OUTCOMES.includes(outcome)) throw new Error(`Review outcome must be one of ${REVIEW_OUTCOMES.join(", ")}`);
   if (!evidence) throw new Error("Review evidence/reference is required");
+  return implementationAgent;
+}
+
+/**
+ * Stages a review onto the in-memory task. Emits NO event: the audit record is
+ * appended by the caller only after task state is durably persisted, so
+ * events.jsonl can never claim a review that task state does not show.
+ */
+function recordReview(task, reviewer, outcome, evidence, boundCommitSha = null) {
+  const implementationAgent = assertReviewAllowed(task, reviewer, outcome, evidence);
   const fingerprint = implementationFingerprint(task);
   const record = {
     taskId: task.id,
@@ -379,7 +429,7 @@ function recordReview(task, reviewer, outcome, evidence) {
     reviewerAgent: reviewer.id,
     reviewerClass: reviewer.kind,
     reviewerProvider: reviewer.provider,
-    reviewedCommitSha: currentCommitSha() ?? "unavailable-no-git",
+    reviewedCommitSha: boundCommitSha ?? currentCommitSha() ?? "unavailable-no-git",
     reviewedTreeHash: fingerprint.treeHash,
     reviewedFileCount: fingerprint.fileCount,
     outcome,
@@ -389,8 +439,285 @@ function recordReview(task, reviewer, outcome, evidence) {
   task.review = record;
   task.reviewHistory ??= [];
   task.reviewHistory.push(record);
-  event("task.review_recorded", { taskId: task.id, reviewerAgent: reviewer.id, implementationAgent, outcome, reviewedTreeHash: record.reviewedTreeHash, evidence });
   return record;
+}
+
+/** Serializable audit payload for a review. Emitted only AFTER task state is saved. */
+function reviewEventPayload(task, record) {
+  return {
+    type: "task.review_recorded",
+    details: {
+      taskId: task.id,
+      reviewerAgent: record.reviewerAgent,
+      implementationAgent: record.implementationAgent,
+      outcome: record.outcome,
+      reviewedCommitSha: record.reviewedCommitSha,
+      reviewedTreeHash: record.reviewedTreeHash,
+      evidence: record.evidence
+    }
+  };
+}
+function emitAudit(entries = []) {
+  for (const entry of entries) event(entry.type, entry.details);
+}
+
+/* ---------------------------------------------------------------------------
+ * Handoff bus -> control plane
+ *
+ * The bus only transports. Everything a decision asserts is re-checked here
+ * against the control plane before any state moves.
+ * ------------------------------------------------------------------------- */
+
+/**
+ * A review decision is made against a specific commit. If HEAD has moved since
+ * the reviewer looked at the code, applying the decision now would stamp the
+ * CURRENT tree as approved -- silently laundering unreviewed code through the
+ * bus. Refuse instead.
+ */
+function worktreeIsDirty() {
+  if (process.env.LIBERTY_COMMIT_SHA) return false; // test harness has no git
+  try {
+    const status = execFileSync("git", ["status", "--porcelain"], {
+      cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"]
+    });
+    return status
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
+      // Our own write-then-rename temporaries are not user changes; a crashed
+      // write leaving one behind must not permanently refuse every decision.
+      .some((line) => !line.endsWith(".tmp"))
+      ;
+  } catch {
+    return false;
+  }
+}
+
+function isAncestorCommit(ancestor, descendant) {
+  try {
+    execFileSync("git", ["merge-base", "--is-ancestor", ancestor, descendant], {
+      cwd: root, stdio: ["ignore", "ignore", "ignore"]
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Files under the task's allowedPaths that changed between the reviewed commit
+ * and HEAD. Returns null if the comparison cannot be made at all.
+ */
+function reviewedPathsDrifted(sha, task) {
+  try {
+    const out = execFileSync("git", ["diff", "--name-only", sha, "HEAD"], {
+      cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"]
+    });
+    return out
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .filter((rel) => !excludedFromFingerprint(rel) && pathsOverlap([rel], task.allowedPaths ?? []));
+  } catch {
+    return null;
+  }
+}
+
+function assertCommitBinding(message, task) {
+  if (!message.commitSha) {
+    throw new Error(`${message.id} carries no commitSha; a review decision must bind to reviewed code`);
+  }
+  const current = currentCommitSha();
+  // Fail CLOSED. If HEAD cannot be resolved we cannot prove the decision applies
+  // to the code in front of us, and accepting it would let any fabricated sha
+  // through.
+  if (!current) {
+    throw new Error(
+      `${message.id}: cannot resolve HEAD, so a commit-bound review decision cannot be verified; refusing to apply it`
+    );
+  }
+
+  if (process.env.LIBERTY_COMMIT_SHA) {
+    // Test harness: the fixture repositories have no git history, so fall back
+    // to strict equality.
+    if (current !== message.commitSha) {
+      throw new Error(
+        `stale handoff: ${message.id} reviewed ${message.commitSha.slice(0, 12)} but HEAD is ${current.slice(0, 12)}`
+      );
+    }
+  } else if (current !== message.commitSha) {
+    // HEAD moving is NORMAL: publishing a handoff is itself a commit, so a round
+    // trip always advances it. Requiring equality would deadlock every exchange.
+    // What must actually hold is that nothing the reviewer looked at has changed.
+    if (!isAncestorCommit(message.commitSha, current)) {
+      throw new Error(
+        `stale handoff: ${message.id} reviewed ${message.commitSha.slice(0, 12)}, which is not an ancestor of HEAD ` +
+        `${current.slice(0, 12)}; the branch was rewritten or the review targets unrelated history`
+      );
+    }
+    const drifted = reviewedPathsDrifted(message.commitSha, task);
+    if (drifted === null) {
+      throw new Error(`${message.id}: cannot diff ${message.commitSha.slice(0, 12)} against HEAD; refusing to apply`);
+    }
+    if (drifted.length) {
+      throw new Error(
+        `stale handoff: ${message.id} reviewed ${message.commitSha.slice(0, 12)}, but ${drifted.length} reviewed file(s) ` +
+        `changed since: ${drifted.slice(0, 5).join(", ")}${drifted.length > 5 ? ", ..." : ""}; request a fresh review`
+      );
+    }
+  }
+  // Matching HEAD is not the same as matching the reviewed tree. The fingerprint
+  // recorded below is taken from the WORKING TREE, so an uncommitted edit would
+  // otherwise be stamped as reviewed.
+  if (worktreeIsDirty()) {
+    throw new Error(
+      `${message.id}: the working tree has uncommitted changes, so it does not match reviewed commit ` +
+      `${message.commitSha.slice(0, 12)}; commit or stash before applying a review decision`
+    );
+  }
+}
+
+/**
+ * A defect in the message itself. Messages are immutable, so this can never
+ * become valid and the message is quarantined permanently.
+ */
+class PermanentRejection extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "PermanentRejection";
+    this.permanent = true;
+  }
+}
+
+/**
+ * Every precondition, checked without mutating anything.
+ *
+ * Runs BEFORE the exclusive claim is taken, so a message that can never apply
+ * does not consume a claim and does not need rollback. Failures are classified:
+ * PermanentRejection means the message is defective and is quarantined; a plain
+ * Error means the repository is not ready yet and the message will be retried.
+ */
+function validateBusMessage(d, message, actingAgent) {
+  // --- permanent: intrinsic to the message ---
+  if (message.toAgent !== actingAgent) {
+    throw new PermanentRejection(`${message.id} is addressed to ${message.toAgent}, not ${actingAgent}`);
+  }
+  const structural = validateMessage(message);
+  if (structural.length) {
+    throw new PermanentRejection(`${message.id} is malformed:\n  - ${structural.join("\n  - ")}`);
+  }
+
+  if (message.type === "review_approved" || message.type === "changes_requested") {
+    let task;
+    let reviewer;
+    try {
+      task = requireTask(d.taskDoc, message.taskId);
+      reviewer = requireAgent(d, message.fromAgent);
+    } catch (error) {
+      throw new PermanentRejection(error.message);
+    }
+    const outcome = message.type === "review_approved" ? "APPROVED" : "CHANGES_REQUESTED";
+
+    // --- transient: depends on repository state, so it may resolve later ---
+    // Checked FIRST. A task that is not yet in REVIEW has no owner and no
+    // implementation agent, so the reviewer checks below would fail for a purely
+    // situational reason and permanently quarantine a decision that is merely
+    // early. A stale sha, a moved HEAD and a dirty tree are the same class.
+    if (task.status !== "REVIEW") {
+      throw new Error(`${task.id} is ${task.status}; a review decision only applies to a task in REVIEW`);
+    }
+
+    // --- permanent: reviewer identity is intrinsic to the message ---
+    // Only meaningful once the task is in REVIEW and an implementation agent
+    // exists to compare against.
+    try {
+      assertReviewAllowed(task, reviewer, outcome, busEvidence(message));
+    } catch (error) {
+      throw new PermanentRejection(error.message);
+    }
+
+    assertCommitBinding(message, task);
+  }
+
+  if (message.type === "blocker" && message.taskId) {
+    try {
+      requireTask(d.taskDoc, message.taskId);
+    } catch (error) {
+      throw new PermanentRejection(error.message);
+    }
+  }
+}
+
+function busEvidence(message) {
+  return message.evidence?.length
+    ? `${message.summary} [${message.evidence.join("; ")}] (via ${message.id})`
+    : `${message.summary} (via ${message.id})`;
+}
+
+function applyBusMessage(d, message, actingAgent) {
+  validateBusMessage(d, message, actingAgent);
+
+  switch (message.type) {
+    case "review_approved":
+    case "changes_requested": {
+      const task = requireTask(d.taskDoc, message.taskId);
+      const reviewer = requireAgent(d, message.fromAgent);
+      const outcome = message.type === "review_approved" ? "APPROVED" : "CHANGES_REQUESTED";
+      // Routed through the same enforcement path as a manual review: reviewer
+      // identity, self-approval, designated reviewer and fingerprint binding all
+      // still apply. The bus cannot bypass any of them.
+      const record = recordReview(task, reviewer, outcome, busEvidence(message), message.commitSha);
+      if (outcome === "CHANGES_REQUESTED") transition(task, "IN_PROGRESS", d.policies);
+      return {
+        summary: `${outcome} recorded on ${task.id} by ${reviewer.id}`,
+        // Audit entries are DATA, not closures, so the journal can persist them
+        // and crash recovery can emit exactly the same records.
+        audit: [reviewEventPayload(task, record)]
+      };
+    }
+    case "blocker": {
+      if (!message.taskId) return { summary: "blocker noted (no task referenced)", audit: [] };
+      const task = requireTask(d.taskDoc, message.taskId);
+      if (task.status !== "BLOCKED") transition(task, "BLOCKED", d.policies);
+      const reason = `${message.summary} (via ${message.id})`;
+      task.blocker = reason;
+      return {
+        summary: `${task.id} BLOCKED`,
+        audit: [{ type: "task.blocked", details: { taskId: task.id, reason, source: message.id } }]
+      };
+    }
+    case "task_instruction":
+    case "architecture_decision":
+    case "implementation_ready":
+    case "review_request":
+      // Informational on receipt. These drive work, not automatic transitions:
+      // nothing should silently change task state because a peer said so.
+      return { summary: `${message.type} recorded for follow-up`, audit: [] };
+    default:
+      throw new Error(`no handler for message type ${message.type}`);
+  }
+}
+
+function flagValue(args, name, fallback = null) {
+  const index = args.indexOf(name);
+  return index >= 0 && args[index + 1] !== undefined ? args[index + 1] : fallback;
+}
+function flagValues(args, name) {
+  const out = [];
+  args.forEach((arg, index) => {
+    if (arg === name && args[index + 1] !== undefined) out.push(args[index + 1]);
+  });
+  return out;
+}
+function describeMessage(m) {
+  return [
+    `${m.id}`,
+    `  ${m.fromAgent} -> ${m.toAgent}  [${m.type}]  status=${m.status}`,
+    m.taskId ? `  task: ${m.taskId}` : null,
+    m.commitSha ? `  commit: ${m.commitSha}` : null,
+    `  ${m.summary}`,
+    m.evidence?.length ? `  evidence: ${m.evidence.join("; ")}` : null
+  ].filter(Boolean).join("\n");
 }
 
 function saveTasks(taskDoc) { writeJson(files.tasks, taskDoc); }
@@ -713,8 +1040,9 @@ try {
     const outcome = command === "approve" ? "APPROVED" : "CHANGES_REQUESTED";
     const record = recordReview(task, reviewer, outcome, noteParts.join(" "));
     if (outcome === "CHANGES_REQUESTED") transition(task, "IN_PROGRESS", d.policies);
-    saveTasks(d.taskDoc);
     syncAll(d, false);
+    // Audit event only after the transition is durably persisted.
+    emitAudit([reviewEventPayload(task, record)]);
     console.log(`${taskId} review recorded: ${outcome} by ${reviewer.id} (${reviewer.provider}) against ${record.reviewedTreeHash.slice(0, 12)}.`);
     if (outcome === "CHANGES_REQUESTED") console.log(`${taskId} returned to IN_PROGRESS.`);
   } else if (command === "review-status") {
@@ -796,6 +1124,239 @@ try {
     event("task.released", { taskId, owner });
     syncAll(d, false);
     console.log(`${taskId} released.`);
+  } else if (command === "handoff") {
+    const from = flagValue(args, "--from");
+    const to = flagValue(args, "--to");
+    const type = flagValue(args, "--type");
+    const summary = flagValue(args, "--summary");
+    if (!from || !to || !type || !summary) {
+      throw new Error('Usage: handoff --from <agent> --to <agent> --type <type> --summary "..." [--task ID] [--sha SHA] [--evidence REF]...');
+    }
+    if (!MESSAGE_TYPES.includes(type)) {
+      throw new Error(`Unknown message type ${type}. Known types: ${MESSAGE_TYPES.join(", ")}`);
+    }
+    const fromAgent = requireAgent(d, from);
+    requireAgent(d, to);
+    const taskId = flagValue(args, "--task");
+    if (taskId) requireTask(d.taskDoc, taskId);
+
+    // `--sha auto` resolves to HEAD so a review request can never quote a commit
+    // the author retyped by hand.
+    const shaArg = flagValue(args, "--sha");
+    const commitSha = shaArg === "auto" ? currentCommitSha() : shaArg;
+    if (shaArg === "auto" && !commitSha) {
+      throw new Error("--sha auto requested but the current commit could not be resolved");
+    }
+
+    const { message, file } = createMessage(root, {
+      fromAgent: from,
+      toAgent: to,
+      type,
+      taskId,
+      commitSha,
+      summary,
+      evidence: flagValues(args, "--evidence"),
+      lane: laneFor(fromAgent.provider)
+    });
+    event("bus.message_published", { messageId: message.id, fromAgent: from, toAgent: to, type, taskId: taskId ?? null, commitSha: commitSha ?? null });
+    console.log(`Published ${message.id}`);
+    console.log(path.relative(root, file).replace(/\\/g, "/"));
+  } else if (command === "inbox") {
+    const agentId = args.find((a) => !a.startsWith("--"));
+    if (!agentId) throw new Error("Usage: inbox <agentId> [--all]");
+    requireAgent(d, agentId);
+    const all = args.includes("--all");
+    const messages = listMessages(root, { toAgent: agentId, includeAcknowledged: all, includeRejected: all });
+    if (!messages.length) {
+      console.log(`No unacknowledged messages for ${agentId}.`);
+    } else {
+      console.log(`${messages.length} message(s) for ${agentId}:\n`);
+      for (const m of messages) {
+        const rejection = m.status === "rejected" ? readRejection(root, m.id) : null;
+        console.log(describeMessage(m) + (rejection ? `\n  rejected: ${rejection.reason}` : "") + "\n");
+      }
+    }
+  } else if (command === "ack") {
+    const messageId = args.find((a) => !a.startsWith("--"));
+    if (!messageId) throw new Error('Usage: ack <messageId> [--agent <agentId>] [--note "..."]');
+    const found = findMessage(root, messageId);
+    if (!found) throw new Error(`Unknown message ${messageId}`);
+    const agentId = flagValue(args, "--agent", found.message.toAgent);
+    requireAgent(d, agentId);
+    if (found.message.toAgent !== agentId) {
+      throw new Error(`${messageId} is addressed to ${found.message.toAgent}, not ${agentId}`);
+    }
+    // A rejection and an acknowledgement are mutually exclusive verdicts.
+    // Acking a quarantined message would make the audit trail report it as
+    // successfully processed and hide the rejection reason.
+    const quarantined = readRejection(root, messageId);
+    if (quarantined) {
+      throw new Error(
+        `${messageId} was quarantined (${quarantined.reason}); a rejection is not an acknowledgement and must not be acked`
+      );
+    }
+    const record = acknowledge(root, messageId, {
+      agent: agentId,
+      outcome: "acknowledged",
+      note: flagValue(args, "--note")
+    });
+    event("bus.message_acknowledged", { messageId, acknowledgedBy: agentId, outcome: record.outcome });
+    console.log(`${messageId} acknowledged by ${agentId}.`);
+  } else if (command === "process" || command === "recover") {
+    const agentId = args.find((a) => !a.startsWith("--"));
+    if (!agentId) throw new Error(`Usage: ${command} <agentId>`);
+    requireAgent(d, agentId);
+
+    /* ---------------------------------------------------------------------
+     * Recovery pass.
+     *
+     * The journal records which side of the durable commit a crash happened on:
+     *
+     *   CLAIMED / APPLYING  task state was NOT saved -> release the claim so the
+     *                       message is reprocessed cleanly from scratch
+     *   APPLIED             task state WAS saved -> must not re-apply; finish the
+     *                       transaction by writing the acknowledgement and event
+     *   FAILED              retryable -> release the claim
+     *
+     * Both branches are idempotent, so running recovery repeatedly is safe.
+     * ------------------------------------------------------------------- */
+    let recovered = 0;
+    for (const entry of listJournal(root)) {
+      // Terminal only once the audit records are also durable; otherwise a crash
+      // between the acknowledgement and the event would lose them silently.
+      if (entry.state === "ACKNOWLEDGED" && entry.eventsEmitted === true) continue;
+      if (entry.state === "APPLIED" || entry.state === "ACKNOWLEDGED") {
+        try {
+          acknowledge(root, entry.messageId, {
+            agent: agentId,
+            outcome: "processed",
+            applied: entry.applied,
+            note: "finalized by crash recovery"
+          });
+        } catch (error) {
+          if (!/already acknowledged/.test(error.message)) throw error;
+        }
+        // Replayed from the journal, so recovery emits exactly the records the
+        // interrupted run would have emitted -- no more, no fewer.
+        emitAudit(entry.audit ?? []);
+        event("bus.message_processed", { messageId: entry.messageId, agentId, applied: entry.applied, recovered: true });
+        advanceJournal(root, entry.messageId, "ACKNOWLEDGED", { recovered: true, eventsEmitted: true });
+        recovered++;
+        console.log(`RECOVERED ${entry.messageId}: ${entry.applied} (task state was already persisted)`);
+      } else {
+        // Nothing was durably applied, so discarding the claim cannot lose work.
+        releaseJournal(root, entry.messageId);
+        recovered++;
+        console.log(`RELEASED  ${entry.messageId}: incomplete (${entry.state}); will be reprocessed`);
+      }
+    }
+    if (command === "recover") {
+      console.log(`\nRecovered ${recovered} incomplete message(s).`);
+      // Recovery only; do not start new work.
+    } else {
+
+    const pending = listMessages(root, { toAgent: agentId });
+    if (!pending.length) {
+      console.log(`No unacknowledged messages for ${agentId}.`);
+    }
+    let applied = 0;
+    let failed = 0;
+    let quarantined = 0;
+
+    for (const message of pending) {
+      // 1. VALIDATE -- before any claim, so a rejected message costs nothing.
+      try {
+        validateBusMessage(d, message, agentId);
+      } catch (error) {
+        if (error.permanent) {
+          // Quarantine: durable, shared, and NOT an acknowledgement. Only the
+          // first run to discover it reports failure; later runs -- and other
+          // checkouts -- skip it, so one bad file cannot wedge the queue.
+          const { created } = rejectMessage(root, message.id, {
+            agent: agentId, reason: error.message, message
+          });
+          if (created) {
+            quarantined++;
+            event("bus.message_rejected", { messageId: message.id, agentId, reason: error.message });
+            console.error(`REJECT ${message.id}: ${error.message}`);
+          } else {
+            console.log(`SKIP   ${message.id}: previously rejected`);
+          }
+        } else {
+          // Transient: repository state may change and make this valid later.
+          failed++;
+          console.error(`RETRY  ${message.id}: ${error.message}`);
+        }
+        continue;
+      }
+
+      // 2. CLAIM -- atomic (O_CREAT|O_EXCL). Only one run can ever hold it.
+      try {
+        claimJournal(root, message.id, agentId);
+      } catch (error) {
+        failed++;
+        console.error(`SKIP ${message.id}: ${error.message}`);
+        continue;
+      }
+
+      const rollback = JSON.stringify(d.taskDoc);
+      let outcome;
+      try {
+        // 3. STAGE -- mutate in memory only.
+        advanceJournal(root, message.id, "APPLYING");
+        outcome = applyBusMessage(d, message, agentId);
+
+        // 4. PERSIST TASK STATE -- the durable commit point. Nothing that can
+        //    fail may run between this write and the APPLIED marker below, or a
+        //    crash would look like "redo" when the state is already on disk.
+        refreshReadiness(d.taskDoc.tasks);
+        saveTasks(d.taskDoc);
+        advanceJournal(root, message.id, "APPLIED", { applied: outcome.summary, audit: outcome.audit ?? [] });
+
+        // Derived views are regenerated best-effort; they are reproducible from
+        // tasks.json, so a failure here must not fail the transaction.
+        try {
+          syncAll(d, false);
+        } catch (viewError) {
+          console.error(`WARN ${message.id}: derived views not regenerated (${viewError.message}); run sync`);
+        }
+
+        // 5. PERSIST ACKNOWLEDGEMENT.
+        acknowledge(root, message.id, { agent: agentId, outcome: "processed", applied: outcome.summary });
+        advanceJournal(root, message.id, "ACKNOWLEDGED", { eventsEmitted: false });
+
+        // 6. AUDIT -- only now, once task state and acknowledgement are durable.
+        emitAudit(outcome.audit ?? []);
+        event("bus.message_processed", { messageId: message.id, agentId, applied: outcome.summary });
+        advanceJournal(root, message.id, "ACKNOWLEDGED", { eventsEmitted: true });
+
+        applied++;
+        console.log(`OK   ${message.id}: ${outcome.summary}`);
+      } catch (error) {
+        // Nothing durable was written on this path unless we got past step 4;
+        // if we did, the journal says APPLIED and recovery will finish it.
+        const journal = readJournal(root, message.id);
+        if (journal?.state === "APPLIED" || journal?.state === "ACKNOWLEDGED") {
+          console.error(`PARTIAL ${message.id}: task state persisted; run recover to finalize`);
+        } else {
+          d.taskDoc = JSON.parse(rollback);
+          advanceJournal(root, message.id, "FAILED", { error: error.message });
+          console.error(`SKIP ${message.id}: ${error.message}`);
+        }
+        failed++;
+      }
+    }
+    console.log(
+      `\nProcessed ${applied} message(s)` +
+      `${failed ? `, ${failed} retryable` : ""}` +
+      `${quarantined ? `, ${quarantined} newly rejected` : ""}` +
+      `${recovered ? `, ${recovered} recovered` : ""}.`
+    );
+    // Non-zero for a NEW rejection or a retryable failure. A previously-recorded
+    // rejection is not a failure of this run.
+    if (failed || quarantined) process.exitCode = 1;
+
+    }
   } else if (command === "event") {
     const [type, ...message] = args;
     if (!type) throw new Error("Usage: event <type> [message]");
@@ -821,6 +1382,26 @@ try {
   unblock <taskId>
   release <taskId>
   event <type> [message]
+
+Handoff bus (GitHub is the transport; no human relay):
+  handoff --from <agent> --to <agent> --type <type> --summary "..." [--task ID] [--sha SHA|auto] [--evidence REF]...
+  inbox <agentId> [--all]     --all also shows acknowledged and quarantined messages
+  ack <messageId> [--agent <agentId>] [--note "..."]   refused for quarantined messages
+  process <agentId>          recover, then apply pending messages
+  recover <agentId>           recovery pass only
+
+Also runnable directly as: node scripts/agent-bus.mjs <inbox|process|handoff|ack|recover> ...
+
+Message types:
+  ${MESSAGE_TYPES.join(", ")}
+
+The bus transports decisions; it never bypasses designated reviewer, independent
+review, self-approval rules, fingerprint binding, commit binding, or gates.
+
+A message that is defective in itself (malformed, wrong recipient, wrong
+reviewer) is quarantined to coordination/agent-bus/rejections/ -- durable and
+shared, so no other checkout re-discovers it. A message that is merely early
+(task not yet in REVIEW, stale sha, dirty tree) is retried, not quarantined.
 
 Dispatch classes:
   READY_AND_EXECUTABLE  dependency-clear and a locally executable agent can take it now
