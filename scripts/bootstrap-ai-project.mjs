@@ -63,14 +63,29 @@ const writes = [
 ];
 for (const [rel, value] of writes) fs.writeFileSync(path.join(dest, rel), JSON.stringify(value, null, 2) + "\n");
 fs.writeFileSync(path.join(dest, "control", "events.jsonl"), "");
-// Every runtime module the control-plane CLI needs. `ai-control-plane.mjs`
-// imports `agent-bus.mjs`, so copying the CLI alone produces a child project
-// that fails at module resolution on its first command. Add to this list
-// whenever the CLI gains another local import.
-const runtimeScripts = ["ai-control-plane.mjs", "agent-bus.mjs"];
+/*
+ * Copy the control-plane CLI and everything it imports, TRANSITIVELY.
+ *
+ * A hardcoded list is a trap: adding a new local import to the CLI silently
+ * produces a child project that dies at module resolution on its first command,
+ * and the failure surfaces far from the change that caused it. Resolving the
+ * import graph means the list can never drift again.
+ */
+function collectLocalModules(entry, seen = new Set()) {
+  if (seen.has(entry)) return seen;
+  seen.add(entry);
+  const source = fs.readFileSync(path.join(sourceRoot, "scripts", entry), "utf8");
+  for (const match of source.matchAll(/from\s+["']\.\/([A-Za-z0-9._-]+\.mjs)["']/g)) {
+    collectLocalModules(match[1], seen);
+  }
+  return seen;
+}
+
+const runtimeScripts = [...collectLocalModules("ai-control-plane.mjs")];
 for (const name of runtimeScripts) {
   fs.copyFileSync(path.join(sourceRoot, "scripts", name), path.join(dest, "scripts", name));
 }
+console.log(`Copied control-plane runtime: ${runtimeScripts.join(", ")}`);
 for (const dir of ["gpt-to-claude", "claude-to-gpt", "acknowledgements", "rejections"]) {
   fs.mkdirSync(path.join(dest, "coordination", "agent-bus", dir), { recursive: true });
   fs.writeFileSync(path.join(dest, "coordination", "agent-bus", dir, ".gitkeep"), "");

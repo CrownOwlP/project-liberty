@@ -2497,6 +2497,116 @@ try {
   }
 
   /* ---------------------------------------------------------------------
+   * 9s. A WIDENED base is rejected exactly like a narrowed one.
+   *
+   *     The GPT worker used to accept a wider base, review it, publish a
+   *     decision, and only then have the control plane reject it -- wasting a
+   *     model review and stranding the task. Both sides now use the shared
+   *     validator, which requires the expected base EXACTLY.
+   * ------------------------------------------------------------------- */
+  {
+    const OLDER = "e1".repeat(20);
+    const START = "e2".repeat(20);
+    const HEAD = "e3".repeat(20);
+    const repo = freshRepo();
+    const lane = busFile(repo, "gpt-to-claude");
+
+    run(repo, CLI, ["claim", "PL-AI-0001", "claude-lead"], { LIBERTY_COMMIT_SHA: START });
+    run(repo, CLI, ["start", "PL-AI-0001", "claude-lead"], { LIBERTY_COMMIT_SHA: START });
+    run(repo, CLI, ["gate", "PL-AI-0001", "repo-validate", "pass", "smoke"], { LIBERTY_COMMIT_SHA: HEAD });
+    run(repo, CLI, ["gate", "PL-AI-0001", "architecture-review", "pass", "smoke"], { LIBERTY_COMMIT_SHA: HEAD });
+    run(repo, CLI, ["review", "PL-AI-0001"], { LIBERTY_COMMIT_SHA: HEAD });
+
+    const forge = (id, baseSha) => {
+      fs.writeFileSync(
+        path.join(lane, `${id}.json`),
+        JSON.stringify(
+          {
+            id,
+            fromAgent: "gpt-architect",
+            toAgent: "claude-lead",
+            taskId: "PL-AI-0001",
+            type: "review_approved",
+            commitSha: HEAD,
+            baseSha,
+            summary: "decision with a non-exact base",
+            evidence: [],
+            createdAt: "2026-08-15T00:00:00.000Z",
+            status: "open",
+          },
+          null,
+          2,
+        ) + "\n",
+      );
+    };
+
+    // WIDER than expected: starts before implementation began.
+    forge("MSG-20260815T000000010Z-review_approved-aaaa1111", OLDER);
+    runFail(repo, ["process", "claude-lead"], /expects a review starting at exactly/, {
+      LIBERTY_COMMIT_SHA: HEAD,
+    });
+    assert.equal(taskOf(repo, "PL-AI-0001").review, undefined, "a widened range must not be recorded");
+
+    // The exact expected base is accepted.
+    forge("MSG-20260815T000000011Z-review_approved-aaaa2222", START);
+    run(repo, CLI, ["process", "claude-lead"], { LIBERTY_COMMIT_SHA: HEAD });
+    assert.equal(taskOf(repo, "PL-AI-0001").review?.reviewedBaseSha, START);
+  }
+
+  /* ---------------------------------------------------------------------
+   * 9t. The orchestrator stays enabled after its own bootstrap completes.
+   *
+   *     Gating on PL-AI-0002 being IN_PROGRESS switched the factory off the
+   *     moment it became ready to run.
+   * ------------------------------------------------------------------- */
+  {
+    const SHA = "f1".repeat(20);
+    const repo = freshRepo();
+    // The gate prints its JSON decision followed by a human-readable summary,
+    // so extract the object rather than parsing the whole stream.
+    const gate = () => {
+      const out = run(repo, "scripts/cloud/orchestrator-gate.mjs", [], {
+        LIBERTY_COMMIT_SHA: SHA,
+      });
+      const start = out.indexOf("{");
+      const end = out.lastIndexOf("}");
+      assert.ok(start >= 0 && end > start, `no JSON decision in gate output:\n${out}`);
+      return JSON.parse(out.slice(start, end + 1));
+    };
+
+    // Nothing done yet: dormant.
+    assert.equal(gate().orchestrate, false, "dormant before the bootstrap completes");
+
+    const complete = (id) => {
+      run(repo, CLI, ["claim", id, "claude-lead"], { LIBERTY_COMMIT_SHA: SHA });
+      run(repo, CLI, ["start", id, "claude-lead"], { LIBERTY_COMMIT_SHA: SHA });
+      for (const g of taskOf(repo, id).qualityGates) {
+        run(repo, CLI, ["gate", id, g, "pass", "smoke"], { LIBERTY_COMMIT_SHA: SHA });
+      }
+      run(repo, CLI, ["review", id], { LIBERTY_COMMIT_SHA: SHA });
+      run(repo, CLI, ["approve", id, "gpt-architect", "reviewed"], { LIBERTY_COMMIT_SHA: SHA });
+      run(repo, CLI, ["done", id], { LIBERTY_COMMIT_SHA: SHA });
+    };
+
+    complete("PL-AI-0001");
+    assert.equal(
+      gate().orchestrate,
+      false,
+      "still dormant while PL-AI-0002 is unfinished",
+    );
+
+    complete("PL-AI-0002");
+    const after = gate();
+    assert.equal(after.bootstrapStatus, "DONE");
+    assert.equal(after.orchestratorStatus, "DONE");
+    assert.equal(
+      after.orchestrate,
+      true,
+      "the orchestrator must stay ENABLED once both bootstrap tasks are DONE",
+    );
+  }
+
+  /* ---------------------------------------------------------------------
    * 10. Bootstrap into a new project still works.
    * ------------------------------------------------------------------- */
   {
@@ -2563,7 +2673,7 @@ try {
     "running the test suite must not mutate any live control/ or coordination/ file",
   );
 
-  console.log("AI control plane tests passed (30 scenarios).");
+  console.log("AI control plane tests passed (32 scenarios).");
 } finally {
   fs.rmSync(temp, { recursive: true, force: true });
 }

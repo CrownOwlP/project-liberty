@@ -20,6 +20,13 @@ import {
   releaseJournal,
   validateMessage,
 } from "./agent-bus.mjs";
+import {
+  RANGE_PERMANENT,
+  RANGE_TRANSIENT,
+  expectedReviewBase,
+  gitAdapter,
+  validateReviewRange,
+} from "./review-range.mjs";
 
 const root = process.cwd();
 const controlDir = path.join(root, "control");
@@ -1099,14 +1106,7 @@ class PermanentRejection extends Error {
  * PermanentRejection means the message is defective and is quarantined; a plain
  * Error means the repository is not ready yet and the message will be retried.
  */
-/** The range this task's next review is expected to cover. */
-function expectedReviewBase(task, commitSha) {
-  const priorReviewed = [...(task.reviewHistory ?? [])]
-    .reverse()
-    .map((entry) => entry.reviewedCommitSha)
-    .find((sha) => /^[0-9a-f]{40}$/.test(String(sha)) && sha !== commitSha);
-  return priorReviewed ?? task.implementationBaseSha ?? null;
-}
+const reviewGit = gitAdapter(execFileSync, root);
 
 /**
  * Validate an INBOUND review range.
@@ -1117,61 +1117,20 @@ function expectedReviewBase(task, commitSha) {
  * range is the dangerous case, because it looks correct while covering less
  * work than the reviewer was asked to judge.
  */
+/**
+ * Thin mapping of the SHARED validator onto this module's error types.
+ * The GPT worker uses the same implementation, so the two sides cannot drift.
+ */
 function assertReviewRange(message, task) {
-  if (!message.baseSha) {
-    throw new PermanentRejection(
-      `${message.id} carries no baseSha; a review decision must state the exact range it covers`,
-    );
-  }
-  if (!/^[0-9a-f]{40}$/.test(message.baseSha)) {
-    throw new PermanentRejection(
-      `${message.id} baseSha is not a full 40-character hex sha: ${message.baseSha}`,
-    );
-  }
-  if (message.baseSha === message.commitSha) {
-    throw new PermanentRejection(
-      `${message.id} baseSha equals commitSha; an empty range reviews nothing`,
-    );
-  }
-
-  const expected = expectedReviewBase(task, message.commitSha);
-  if (expected && expected !== message.baseSha) {
-    throw new PermanentRejection(
-      `${message.id} claims range ${message.baseSha.slice(0, 12)}..${message.commitSha.slice(0, 12)}, ` +
-      `but ${task.id} expects a review starting at ${expected.slice(0, 12)}. ` +
-      "The decision does not cover the work actually under review.",
-    );
-  }
-
-  /*
-   * Ancestry needs real history.
-   *
-   * The distinction matters: "the base is not an ancestor" is a defect in the
-   * MESSAGE and is quarantined permanently. "I cannot see those commits" is a
-   * property of this CHECKOUT -- a shallow clone, a missing fetch -- and must
-   * be retried, never quarantined, or an environment problem would permanently
-   * destroy a valid decision.
-   */
-  if (!gitAvailable()) return;
-
-  if (!commitResolves(message.commitSha)) {
-    throw new Error(
-      `${message.id}: reviewed commit ${message.commitSha.slice(0, 12)} is not present in this checkout ` +
-      "(shallow clone or missing fetch); cannot verify the review range",
-    );
-  }
-  if (!commitResolves(message.baseSha)) {
-    throw new Error(
-      `${message.id}: base commit ${message.baseSha.slice(0, 12)} is not present in this checkout ` +
-      "(shallow clone or missing fetch); cannot verify the review range",
-    );
-  }
-  if (!isAncestorCommit(message.baseSha, message.commitSha)) {
-    throw new PermanentRejection(
-      `${message.id} baseSha ${message.baseSha.slice(0, 12)} is not an ancestor of ` +
-      `${message.commitSha.slice(0, 12)}; that range is not a real line of history`,
-    );
-  }
+  const result = validateReviewRange({
+    baseSha: message.baseSha,
+    commitSha: message.commitSha,
+    task,
+    label: message.id,
+    git: reviewGit,
+  });
+  if (result.status === RANGE_PERMANENT) throw new PermanentRejection(result.reason);
+  if (result.status === RANGE_TRANSIENT) throw new Error(result.reason);
 }
 
 function validateBusMessage(d, message, actingAgent) {

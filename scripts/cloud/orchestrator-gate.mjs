@@ -29,8 +29,14 @@ const byId = (id) => tasks.find((t) => t.id === id);
 const bootstrap = byId("PL-AI-0001");
 const orchestrator = byId("PL-AI-0002");
 
-const CLAIMABLE = ["READY", "CLAIMED", "IN_PROGRESS"];
-
+/*
+ * "The system is installed" is a DURABLE condition, not a transient one.
+ *
+ * Gating orchestration on PL-AI-0002 being *in progress* would switch the
+ * autonomous system off the moment its own bootstrap task completed -- the
+ * factory would shut down exactly when it became ready to run. The condition is
+ * therefore both bootstrap tasks being DONE, which stays true forever after.
+ */
 const reasons = [];
 if (!bootstrap) reasons.push("PL-AI-0001 is missing from the control plane");
 if (!orchestrator) reasons.push("PL-AI-0002 is missing from the control plane");
@@ -38,8 +44,13 @@ if (!orchestrator) reasons.push("PL-AI-0002 is missing from the control plane");
 const bootstrapDone = bootstrap?.status === "DONE";
 if (!bootstrapDone) reasons.push(`PL-AI-0001 is ${bootstrap?.status ?? "unknown"}, not DONE`);
 
-const orchestratorClaimable = CLAIMABLE.includes(orchestrator?.status);
-if (!orchestratorClaimable) reasons.push(`PL-AI-0002 is ${orchestrator?.status ?? "unknown"}, not one of ${CLAIMABLE.join("/")}`);
+const orchestratorDone = orchestrator?.status === "DONE";
+if (!orchestratorDone) {
+  reasons.push(
+    `PL-AI-0002 is ${orchestrator?.status ?? "unknown"}, not DONE; ` +
+    "the orchestrator stays dormant until its own bootstrap is reviewed and complete",
+  );
+}
 
 // Anything sitting in REVIEW keeps the review lane open regardless of the gate.
 const awaitingReview = tasks.filter((t) => t.status === "REVIEW");
@@ -49,8 +60,7 @@ const completable = tasks.filter((t) => t.status === "REVIEW" && t.review?.outco
 const decision = {
   review: true,
   complete: completable.length > 0,
-  orchestrate: Boolean(bootstrapDone && orchestratorClaimable),
-  needsClaim: orchestrator?.status === "READY",
+  orchestrate: Boolean(bootstrapDone && orchestratorDone),
   bootstrapStatus: bootstrap?.status ?? null,
   orchestratorStatus: orchestrator?.status ?? null,
   awaitingReview: awaitingReview.map((t) => t.id),
@@ -63,7 +73,6 @@ if (process.env.GITHUB_OUTPUT) {
     `review=${decision.review}`,
     `complete=${decision.complete}`,
     `orchestrate=${decision.orchestrate}`,
-    `needs_claim=${decision.needsClaim}`,
     `reason=${reasons.join("; ") || "all gates open"}`
   ].join("\n");
   fs.appendFileSync(process.env.GITHUB_OUTPUT, out + "\n");

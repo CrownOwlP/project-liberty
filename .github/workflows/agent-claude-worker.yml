@@ -85,20 +85,24 @@ jobs:
         continue-on-error: true
         run: node scripts/cloud/advance-completable.mjs
 
-      - name: Claim PL-AI-0002 when it becomes available
-        if: steps.gate.outputs.orchestrate == 'true' && steps.gate.outputs.needs_claim == 'true'
-        run: |
-          node scripts/ai-control-plane.mjs claim PL-AI-0002 claude-lead
-          node scripts/ai-control-plane.mjs start PL-AI-0002 claude-lead
-
       - name: Implement the next dispatchable task
         if: steps.gate.outputs.orchestrate == 'true'
         uses: anthropics/claude-code-action@v1
+        env:
+          # No push credential is exposed to the model step. Committing and
+          # pushing happen in the deterministic finalizer below, outside the
+          # model's reach.
+          GIT_TERMINAL_PROMPT: "0"
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Explicit allowlist. The action does not grant arbitrary shell access
+          # by default, and it should not: the model gets exactly the commands
+          # it needs to read state, edit, test and record gate evidence -- and
+          # notably NOT git commit/push or the bus handoff.
           claude_args: |
             --max-turns 60
             --model claude-sonnet-5
+            --allowedTools "Read,Edit,Write,Glob,Grep,Bash(node scripts/ai-control-plane.mjs:*),Bash(node scripts/validate-repo.mjs),Bash(node scripts/test-ai-control-plane.mjs),Bash(npm run lint),Bash(npm run typecheck),Bash(npm run test),Bash(npm run build),Bash(npm run check),Bash(git status:*),Bash(git diff:*),Bash(git log:*)"
           prompt: |
             You are the autonomous claude-lead worker for Project Liberty, running
             unattended in CI. Read CLAUDE.md and coordination/agent-bus/README.md first.
@@ -119,18 +123,15 @@ jobs:
                `node scripts/validate-repo.mjs`, `node scripts/test-ai-control-plane.mjs`.
                NEVER record a gate you did not actually run. If a check fails, fix it
                or block the task with a reason. Do not fabricate evidence.
-            7. Commit and push your work to main.
-            8. Move the task to REVIEW and publish a review request. `--base auto` is
-               MANDATORY: it resolves the previously reviewed commit, or the commit
-               implementation started from, so the reviewer receives the full cumulative
-               range. There is no parent-commit fallback and the publish will be rejected
-               without it.
-               `node scripts/agent-bus.mjs handoff --from claude-lead --to gpt-architect
-                --type review_request --task <ID> --sha auto --base auto
-                --summary "..." --evidence "..."`
-               Push again so the request is visible to the GPT lane.
-            9. Stop working on that task. Independent review is mandatory and you may
-               not approve your own work.
+            7. STOP. Do NOT commit. Do NOT push. Do NOT publish a review request.
+               Leave the task IN_PROGRESS with your edits in the working tree.
+
+               A deterministic step runs after you and owns that boundary: it stages
+               only your task's allowedPaths, commits, fast-forward pushes, moves the
+               task to REVIEW, and publishes the review request with the exact
+               cumulative range. You do not have git push credentials and must not
+               attempt to obtain them. Independent review is mandatory and you may
+               never approve your own work.
 
             Constraints you must not violate:
             - Only licensed, user-owned or public-domain content may enter playback resolution.
@@ -143,35 +144,19 @@ jobs:
         if: always()
         run: node scripts/cloud/mission-control-status.mjs --worker claude-lead --phase implement
 
-      - name: Publish worker state
+      - name: Finalize the task deterministically
         id: publish
+        # Owns the whole commit/push/handoff boundary in code. The model above
+        # only edited and tested; this decides what is committed, attributes it
+        # to exactly one task, refuses on unexpected dirt, fast-forwards without
+        # rebasing, and publishes the review request with --sha auto --base auto.
         run: |
-          git config user.name "liberty-claude-lead[bot]"
-          git config user.email "claude-lead@project-liberty.local"
-
-          # Explicit, ownership-aware staging. Never `git add -A`: an
-          # unattended worker must not sweep unrelated dirty files into a commit
-          # attributed to the task it is working on. Exits non-zero if anything
-          # dirty belongs to no active task.
-          node scripts/cloud/stage-task-changes.mjs --agent claude-lead
-
-          if git diff --cached --quiet; then
+          node scripts/cloud/finalize-task.mjs --agent claude-lead
+          if git diff HEAD@{1} HEAD --quiet 2>/dev/null; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
-            exit 0
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
-
-          git commit -m "claude-lead: autonomous worker state"
-
-          # Never rebase. Review records are bound to commit shas, so rewriting
-          # history would invalidate approvals. Require a clean fast-forward and
-          # halt on divergence so orchestration resolves it deliberately.
-          git fetch origin main
-          if ! git merge-base --is-ancestor origin/main HEAD; then
-            echo "::error::origin/main has diverged from HEAD. Refusing to rewrite reviewed history; halting for orchestration to resolve."
-            exit 1
-          fi
-          git push origin HEAD:main
-          echo "changed=true" >> "$GITHUB_OUTPUT"
 
       - name: Verify the pushed commit in CI
         # A bot push does not trigger CI on its own, so the worker's work would
