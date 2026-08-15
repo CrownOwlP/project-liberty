@@ -6,13 +6,13 @@ Statuses: `BACKLOG`, `READY`, `CLAIMED`, `IN_PROGRESS`, `REVIEW`, `BLOCKED`, `DO
 
 | ID | Priority | Lane | Status | Owner | Review | Task | Acceptance |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| PL-0001 | P0 | Infra | READY | - | - | Generate and commit dependency lockfile | npm install and full npm run check are green; CI uses npm ci once lockfile exists |
+| PL-0001 | P0 | Infra | IN_PROGRESS | claude-infra | - | Generate and commit dependency lockfile | npm install and full npm run check are green; CI uses npm ci once lockfile exists |
 | PL-0002 | P0 | Architecture | READY | - | - | Review scaffold contracts | No unresolved contradiction across product, architecture, API, security, and content-rights contracts |
 | PL-0003 | P0 | Infra | READY | - | - | Environment validation | Missing required environment is reported clearly; local PostgreSQL and Redis health are documented |
-| PL-0101 | P0 | Frontend | READY | - | - | Catalog home data contract | Home route consumes typed catalog response and handles loading, error, and empty states |
+| PL-0101 | P0 | Frontend | IN_PROGRESS | claude-frontend | - | Catalog home data contract | Home route consumes typed catalog response and handles loading, error, and empty states |
 | PL-0102 | P0 | Frontend | BACKLOG | - | - | Search experience | Debounced accessible search with typed results and URL-addressable query |
 | PL-0103 | P0 | Frontend | BACKLOG | - | - | Title details | Movie, series, and episode details with play CTA using normalized IDs |
-| PL-0201 | P0 | Media | READY | - | - | Expand candidate score model | Score dimensions are documented, deterministic, explainable, and regression-tested |
+| PL-0201 | P0 | Media | IN_PROGRESS | claude-media | - | Expand candidate score model | Score dimensions are documented, deterministic, explainable, and regression-tested |
 | PL-0202 | P0 | Media | BACKLOG | - | - | Audio selection policy | Preferred language, codec, channels, and fallback reasons are deterministic and tested |
 | PL-0203 | P0 | Media | BACKLOG | - | - | Subtitle selection policy | Preferred language, forced, default, and off policies are explicit and tested |
 | PL-0204 | P0 | Media | BACKLOG | - | - | Candidate failover policy | Retry and fallback behavior is bounded, deterministic, observable, and testable |
@@ -25,7 +25,7 @@ Statuses: `BACKLOG`, `READY`, `CLAIMED`, `IN_PROGRESS`, `REVIEW`, `BLOCKED`, `DO
 | PL-0502 | P0 | Player | BACKLOG | - | - | Player state machine | Loading, ready, stalled, recoverable error, failover, and fatal error states are explicit |
 | PL-0701 | P0 | Test | BACKLOG | - | - | Critical E2E harness | Catalog to title to player to progress fixture journey is reproducible in CI |
 | PL-0702 | P0 | Security | BACKLOG | - | - | Provider and URL security review | SSRF, secret exposure, redirect, allowlist, and rights-bypass findings are resolved or explicitly accepted |
-| PL-AI-0001 | P0 | Coordination | READY | - | - | Operationalize AI control plane in Claude Code Desktop | Claude Code uses machine-readable queues, claims tasks through the CLI, syncs status, and records handoffs rather than manually drifting task state |
+| PL-AI-0001 | P0 | Coordination | IN_PROGRESS | claude-lead | - | Operationalize AI control plane in Claude Code Desktop | Claude Code uses machine-readable queues, claims tasks through the CLI, syncs status, and records handoffs rather than manually drifting task state |
 | PL-0303 | P1 | Provider | BACKLOG | - | - | Provider health contract | Health sample shape, freshness, failure classes, and cache semantics are defined |
 | PL-0404 | P1 | Backend | BACKLOG | - | - | Watchlist persistence | Typed add, remove, and list APIs with authorization |
 | PL-0503 | P1 | Player | BACKLOG | - | - | Playback telemetry | Startup, rebuffer, quality switch, and failure events are observable with privacy redaction |

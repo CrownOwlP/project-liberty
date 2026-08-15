@@ -5,7 +5,7 @@
       "id": "PL-0001",
       "priority": "P0",
       "lane": "Infra",
-      "status": "READY",
+      "status": "IN_PROGRESS",
       "title": "Generate and commit dependency lockfile",
       "dependencies": [],
       "allowedPaths": [
@@ -23,8 +23,10 @@
         "build"
       ],
       "acceptance": "npm install and full npm run check are green; CI uses npm ci once lockfile exists",
-      "owner": null,
-      "gateResults": {}
+      "owner": "claude-infra",
+      "gateResults": {},
+      "implementationAgent": "claude-infra",
+      "updatedAt": "2026-08-15T03:16:26.688Z"
     },
     {
       "id": "PL-0002",
@@ -76,7 +78,7 @@
       "id": "PL-0101",
       "priority": "P0",
       "lane": "Frontend",
-      "status": "READY",
+      "status": "IN_PROGRESS",
       "title": "Catalog home data contract",
       "dependencies": [],
       "allowedPaths": [
@@ -94,8 +96,10 @@
         "build"
       ],
       "acceptance": "Home route consumes typed catalog response and handles loading, error, and empty states",
-      "owner": null,
-      "gateResults": {}
+      "owner": "claude-frontend",
+      "gateResults": {},
+      "implementationAgent": "claude-frontend",
+      "updatedAt": "2026-08-15T03:16:27.067Z"
     },
     {
       "id": "PL-0102",
@@ -153,7 +157,7 @@
       "id": "PL-0201",
       "priority": "P0",
       "lane": "Media",
-      "status": "READY",
+      "status": "IN_PROGRESS",
       "title": "Expand candidate score model",
       "dependencies": [],
       "allowedPaths": [
@@ -169,8 +173,10 @@
         "architecture-review"
       ],
       "acceptance": "Score dimensions are documented, deterministic, explainable, and regression-tested",
-      "owner": null,
-      "gateResults": {}
+      "owner": "claude-media",
+      "gateResults": {},
+      "implementationAgent": "claude-media",
+      "updatedAt": "2026-08-15T03:16:27.456Z"
     },
     {
       "id": "PL-0202",
@@ -655,7 +661,7 @@
       "id": "PL-AI-0001",
       "priority": "P0",
       "lane": "Coordination",
-      "status": "READY",
+      "status": "IN_PROGRESS",
       "title": "Operationalize AI control plane in Claude Code Desktop",
       "dependencies": [],
       "allowedPaths": [
@@ -674,8 +680,10 @@
         "architecture-review"
       ],
       "acceptance": "Claude Code uses machine-readable queues, claims tasks through the CLI, syncs status, and records handoffs rather than manually drifting task state",
-      "owner": null,
-      "gateResults": {}
+      "owner": "claude-lead",
+      "gateResults": {},
+      "implementationAgent": "claude-lead",
+      "updatedAt": "2026-08-15T03:16:27.843Z"
     },
     {
       "id": "PL-AI-0002",
@@ -692,8 +700,8 @@
         "scripts/**",
         "docs/**"
       ],
-      "preferredAgent": "gpt-architect",
-      "reviewAgent": "claude-lead",
+      "preferredAgent": "claude-lead",
+      "reviewAgent": "gpt-architect",
       "qualityGates": [
         "architecture-review",
         "security-review"

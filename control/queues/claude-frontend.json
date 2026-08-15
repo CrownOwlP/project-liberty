@@ -1,16 +1,13 @@
 {
-  "generatedAt": "2026-08-15T02:55:17.464Z",
+  "generatedAt": "2026-08-15T03:20:32.754Z",
   "agent": "claude-frontend",
   "executionAvailable": true,
-  "assigned": [],
-  "review": [],
-  "reservedExternal": [],
-  "recommended": [
+  "assigned": [
     {
       "id": "PL-0101",
       "priority": "P0",
       "lane": "Frontend",
-      "status": "READY",
+      "status": "IN_PROGRESS",
       "title": "Catalog home data contract",
       "dependencies": [],
       "allowedPaths": [
@@ -28,8 +25,13 @@
         "build"
       ],
       "acceptance": "Home route consumes typed catalog response and handles loading, error, and empty states",
-      "owner": null,
-      "gateResults": {}
+      "owner": "claude-frontend",
+      "gateResults": {},
+      "implementationAgent": "claude-frontend",
+      "updatedAt": "2026-08-15T03:16:27.067Z"
     }
-  ]
+  ],
+  "review": [],
+  "reservedExternal": [],
+  "recommended": []
 }

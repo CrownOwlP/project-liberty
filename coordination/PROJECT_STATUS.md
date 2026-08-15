@@ -1,15 +1,15 @@
 # Project Liberty - Project Status
 
-> Generated 2026-08-15T02:55:17.462Z from the AI control plane.
+> Generated 2026-08-15T03:20:32.752Z from the AI control plane.
 
 **Overall completion:** 0/29 executable tasks (0%)
 
 ## Status summary
 
 - **BACKLOG:** 18
-- **READY:** 9
+- **READY:** 5
 - **CLAIMED:** 0
-- **IN_PROGRESS:** 0
+- **IN_PROGRESS:** 4
 - **REVIEW:** 0
 - **BLOCKED:** 2
 - **DONE:** 0
@@ -17,9 +17,9 @@
 
 ## Milestones / phases
 
-- **M0 — AI Engineering System + Repository Foundation:** NOT_STARTED, 0/4 (0%)
-- **M1 — Core Discovery Experience:** NOT_STARTED, 0/3 (0%)
-- **M2 — Media Resolution + Provider Foundation:** NOT_STARTED, 0/6 (0%)
+- **M0 — AI Engineering System + Repository Foundation:** IN_PROGRESS, 0/4 (0%)
+- **M1 — Core Discovery Experience:** IN_PROGRESS, 0/3 (0%)
+- **M2 — Media Resolution + Provider Foundation:** IN_PROGRESS, 0/6 (0%)
 - **M3 — Identity + Personal State:** NOT_STARTED, 0/4 (0%)
 - **M4 — Playback Vertical Slice:** NOT_STARTED, 0/6 (0%)
 - **M5 — Live + Intelligence Boundaries:** NOT_STARTED, 0/2 (0%)
@@ -28,21 +28,21 @@
 
 ## Active work
 
-No tasks are currently claimed, in progress, or in review.
+- **PL-0001** [IN_PROGRESS] Generate and commit dependency lockfile — owner: claude-infra
+- **PL-0101** [IN_PROGRESS] Catalog home data contract — owner: claude-frontend
+- **PL-0201** [IN_PROGRESS] Expand candidate score model — owner: claude-media
+- **PL-AI-0001** [IN_PROGRESS] Operationalize AI control plane in Claude Code Desktop — owner: claude-lead
 
 ## Dispatch classification
 
-- **READY_AND_EXECUTABLE:** 6
+- **READY_AND_EXECUTABLE:** 2
 - **READY_BUT_EXTERNAL:** 3
 - **BLOCKED:** 2
 - **BACKLOG (dependency-gated):** 18
 
 ## Recommended executable wave
 
-- **PL-0001** -> claude-infra (P0/Infra) Generate and commit dependency lockfile
-- **PL-0101** -> claude-frontend (P0/Frontend) Catalog home data contract
-- **PL-0201** -> claude-media (P0/Media) Expand candidate score model
-- **PL-AI-0001** -> claude-lead (P0/Coordination) Operationalize AI control plane in Claude Code Desktop
+No conflict-free executable tasks can be assigned with current agent capacity.
 
 ## Queued for external agents
 
@@ -58,11 +58,11 @@ No tasks are currently claimed, in progress, or in review.
 ## Agent capacity
 
 - **gpt-architect:** 0/6 active (external lane; not locally executable)
-- **claude-lead:** 0/2 active
-- **claude-frontend:** 0/1 active
+- **claude-lead:** 1/2 active
+- **claude-frontend:** 1/1 active
 - **claude-backend:** 0/1 active
-- **claude-media:** 0/1 active
+- **claude-media:** 1/1 active
 - **claude-test:** 0/1 active
 - **claude-security:** 0/1 active
-- **claude-infra:** 0/1 active
+- **claude-infra:** 1/1 active
 - **human-commander:** 0/99 active (external lane; not locally executable)

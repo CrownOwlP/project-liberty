@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-15T02:55:17.463Z",
+  "generatedAt": "2026-08-15T03:20:32.753Z",
   "agent": "gpt-architect",
   "executionAvailable": false,
   "assigned": [],
@@ -70,29 +70,6 @@
         "security-review"
       ],
       "acceptance": "ADR selects auth approach and defines protected profile boundary",
-      "owner": null,
-      "gateResults": {}
-    },
-    {
-      "id": "PL-0201",
-      "priority": "P0",
-      "lane": "Media",
-      "status": "READY",
-      "title": "Expand candidate score model",
-      "dependencies": [],
-      "allowedPaths": [
-        "packages/media-engine/**",
-        "docs/ARCHITECTURE.md",
-        "docs/DECISIONS.md"
-      ],
-      "preferredAgent": "claude-media",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "typecheck",
-        "unit",
-        "architecture-review"
-      ],
-      "acceptance": "Score dimensions are documented, deterministic, explainable, and regression-tested",
       "owner": null,
       "gateResults": {}
     },

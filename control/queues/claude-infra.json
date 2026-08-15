@@ -1,16 +1,13 @@
 {
-  "generatedAt": "2026-08-15T02:55:17.465Z",
+  "generatedAt": "2026-08-15T03:20:32.755Z",
   "agent": "claude-infra",
   "executionAvailable": true,
-  "assigned": [],
-  "review": [],
-  "reservedExternal": [],
-  "recommended": [
+  "assigned": [
     {
       "id": "PL-0001",
       "priority": "P0",
       "lane": "Infra",
-      "status": "READY",
+      "status": "IN_PROGRESS",
       "title": "Generate and commit dependency lockfile",
       "dependencies": [],
       "allowedPaths": [
@@ -28,9 +25,15 @@
         "build"
       ],
       "acceptance": "npm install and full npm run check are green; CI uses npm ci once lockfile exists",
-      "owner": null,
-      "gateResults": {}
-    },
+      "owner": "claude-infra",
+      "gateResults": {},
+      "implementationAgent": "claude-infra",
+      "updatedAt": "2026-08-15T03:16:26.688Z"
+    }
+  ],
+  "review": [],
+  "reservedExternal": [],
+  "recommended": [
     {
       "id": "PL-0003",
       "priority": "P0",

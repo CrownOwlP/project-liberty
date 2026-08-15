@@ -1,9 +1,11 @@
-import type { PlaybackCapabilities, StreamCandidate } from "@liberty/contracts";
+import type { ContentRights, PlaybackCapabilities, StreamCandidate } from "@liberty/contracts";
+import { type CandidateScore, explainScore, scoreCandidate } from "./scoring";
 
 export interface RankedCandidate {
   candidate: StreamCandidate;
   score: number;
   reason: string;
+  breakdown: CandidateScore["components"];
 }
 
 export interface PlaybackDecision {
@@ -13,14 +15,39 @@ export interface PlaybackDecision {
   reason: string;
 }
 
-function scoreCandidate(candidate: StreamCandidate, capabilities: PlaybackCapabilities): number {
-  const resolutionRatio = Math.min(candidate.height, capabilities.maxHeight) / capabilities.maxHeight;
-  const qualityScore = resolutionRatio * 42;
-  const healthScore = candidate.healthScore * 38;
-  const latencyPenalty = Math.min(candidate.estimatedLatencyMs / 500, 1) * 14;
-  const bitrateEfficiency = Math.min(candidate.bitrateKbps / 20000, 1) * 6;
+/**
+ * Rights boundary. Only content the platform is actually entitled to serve may
+ * enter playback resolution. This is an explicit allowlist rather than a
+ * denylist so that any new rights value is non-playable until it is reviewed.
+ */
+export const PLAYABLE_RIGHTS: readonly ContentRights[] = ["licensed", "owned", "public-domain"];
 
-  return Number((qualityScore + healthScore + bitrateEfficiency - latencyPenalty).toFixed(4));
+/** Providers below this health floor are excluded regardless of quality. */
+export const PROVIDER_HEALTH_FLOOR = 0.5;
+
+export type RejectionReason =
+  | "rights_not_playable"
+  | "unsupported_video_codec"
+  | "unsupported_audio_codec"
+  | "resolution_exceeds_capability"
+  | "provider_health_below_floor";
+
+/**
+ * Eligibility is evaluated before scoring and in a fixed order, so a candidate
+ * always reports the first (most fundamental) reason it was excluded. Rights
+ * are checked first: an unlicensed candidate must never be scored, ranked, or
+ * surfaced, whatever its technical quality.
+ */
+function firstRejectionReason(
+  candidate: StreamCandidate,
+  capabilities: PlaybackCapabilities
+): RejectionReason | null {
+  if (!PLAYABLE_RIGHTS.includes(candidate.rights)) return "rights_not_playable";
+  if (!capabilities.supportedVideoCodecs.includes(candidate.videoCodec)) return "unsupported_video_codec";
+  if (!capabilities.supportedAudioCodecs.includes(candidate.audioCodec)) return "unsupported_audio_codec";
+  if (candidate.height > capabilities.maxHeight) return "resolution_exceeds_capability";
+  if (candidate.healthScore < PROVIDER_HEALTH_FLOOR) return "provider_health_below_floor";
+  return null;
 }
 
 export function rankStreamCandidates(
@@ -28,36 +55,26 @@ export function rankStreamCandidates(
   capabilities: PlaybackCapabilities
 ): PlaybackDecision {
   const rejected: PlaybackDecision["rejected"] = [];
-  const eligible = candidates.filter((candidate) => {
-    if (!capabilities.supportedVideoCodecs.includes(candidate.videoCodec)) {
-      rejected.push({ candidateId: candidate.id, reason: "unsupported_video_codec" });
-      return false;
-    }
+  const eligible: StreamCandidate[] = [];
 
-    if (!capabilities.supportedAudioCodecs.includes(candidate.audioCodec)) {
-      rejected.push({ candidateId: candidate.id, reason: "unsupported_audio_codec" });
-      return false;
-    }
-
-    if (candidate.height > capabilities.maxHeight) {
-      rejected.push({ candidateId: candidate.id, reason: "resolution_exceeds_capability" });
-      return false;
-    }
-
-    if (candidate.healthScore < 0.5) {
-      rejected.push({ candidateId: candidate.id, reason: "provider_health_below_floor" });
-      return false;
-    }
-
-    return true;
-  });
+  for (const candidate of candidates) {
+    const reason = firstRejectionReason(candidate, capabilities);
+    if (reason) rejected.push({ candidateId: candidate.id, reason });
+    else eligible.push(candidate);
+  }
 
   const ranked = eligible
-    .map((candidate) => ({
-      candidate,
-      score: scoreCandidate(candidate, capabilities),
-      reason: `quality=${candidate.height}p health=${candidate.healthScore.toFixed(2)} latency=${candidate.estimatedLatencyMs}ms`
-    }))
+    .map((candidate) => {
+      const score = scoreCandidate(candidate, capabilities);
+      return {
+        candidate,
+        score: score.total,
+        reason: explainScore(score),
+        breakdown: score.components
+      };
+    })
+    // Deterministic: score descending, then candidate id ascending so equal
+    // scores never depend on input ordering.
     .sort((a, b) => b.score - a.score || a.candidate.id.localeCompare(b.candidate.id));
 
   return {
