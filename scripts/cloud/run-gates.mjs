@@ -32,13 +32,22 @@ if (!TASK_ID) {
 
 const CLI = "scripts/ai-control-plane.mjs";
 
-/** Gate -> the command that proves it. Anything absent is a review gate. */
-const RUNNABLE = {
+/**
+ * Executors for gates this runner can actually prove.
+ *
+ * Gate TYPE is derived from control/quality-gates.json, never from absence
+ * here. Treating "no executor" as "review gate" silently relabels an
+ * unimplemented executable gate as somebody else's problem -- which is how a
+ * task with integration/e2e/performance requirements would appear to pass
+ * without those ever running.
+ */
+const EXECUTORS = {
   "repo-validate": [process.execPath, ["scripts/validate-repo.mjs"]],
   lint: ["npm", ["run", "lint"]],
   typecheck: ["npm", ["run", "typecheck"]],
   unit: ["npm", ["run", "test"]],
   build: ["npm", ["run", "build"]],
+  integration: ["npm", ["run", "test", "--", "--runInBand"]],
 };
 
 const tasks = JSON.parse(fs.readFileSync(path.join(root, "control", "tasks.json"), "utf8")).tasks;
@@ -50,11 +59,36 @@ if (!task) {
 
 const node = (...a) => execFileSync(process.execPath, a, { cwd: root, encoding: "utf8" });
 
+const registry = JSON.parse(
+  fs.readFileSync(path.join(root, "control", "quality-gates.json"), "utf8"),
+).gates;
+
 let failed = 0;
+let blocked = 0;
 for (const gate of task.qualityGates ?? []) {
-  const runnable = RUNNABLE[gate];
+  const definition = registry[gate];
+  if (!definition) {
+    console.error(`${gate}: not defined in control/quality-gates.json; cannot classify it`);
+    blocked++;
+    continue;
+  }
+
+  // ONLY an explicit agent-review command is a reviewer gate.
+  if (definition.command === "agent-review") {
+    console.log(`${gate}: agent-review gate, left for the independent reviewer`);
+    continue;
+  }
+
+  const runnable = EXECUTORS[gate];
   if (!runnable) {
-    console.log(`${gate}: review gate, left for the independent reviewer`);
+    // Defined as executable or task-specific, but this runner has no way to
+    // prove it. Fail closed rather than pretend it belongs to the reviewer.
+    console.error(
+      `${gate}: defined as "${definition.command}" but no executor is implemented. ` +
+      "Blocking rather than misreporting it as a review gate.",
+    );
+    node(CLI, "block", TASK_ID, `gate "${gate}" (${definition.command}) has no automated executor in the cloud worker`);
+    blocked++;
     continue;
   }
 
@@ -75,8 +109,11 @@ for (const gate of task.qualityGates ?? []) {
   }
 }
 
-if (failed) {
-  console.error(`\n${failed} gate(s) failed for ${TASK_ID}. The task stays IN_PROGRESS and is not finalized.`);
+if (failed || blocked) {
+  console.error(
+    `\n${TASK_ID}: ${failed} gate(s) failed, ${blocked} gate(s) had no executor. ` +
+    "The task is not finalized.",
+  );
   process.exit(1);
 }
-console.log(`\nAll runnable gates recorded for ${TASK_ID}.`);
+console.log(`\nAll executable gates run and recorded for ${TASK_ID}.`);

@@ -2738,6 +2738,107 @@ try {
   }
 
   /* ---------------------------------------------------------------------
+   * 9v. Model filesystem boundary and orchestration self-modification guard.
+   * ------------------------------------------------------------------- */
+  {
+    const SHA = "b7".repeat(20);
+    const repo = freshRepo();
+
+    // --- snapshot / restore discards model edits to protected state ---
+    run(repo, CLI, ["claim", "PL-0101", "claude-frontend"], { LIBERTY_COMMIT_SHA: SHA });
+    run(repo, CLI, ["start", "PL-0101", "claude-frontend"], { LIBERTY_COMMIT_SHA: SHA });
+
+    const runnerTemp = path.join(temp, `runner-${++repoSeq}`);
+    fs.mkdirSync(runnerTemp, { recursive: true });
+    const protectEnv = { RUNNER_TEMP: runnerTemp };
+
+    run(repo, "scripts/cloud/protect-state.mjs", ["--snapshot"], protectEnv);
+
+    // Simulate a model rewriting control state directly, bypassing the CLI.
+    const tasksFile = path.join(repo, "control", "tasks.json");
+    const tampered = JSON.parse(fs.readFileSync(tasksFile, "utf8"));
+    const victim = tampered.tasks.find((t) => t.id === "PL-0101");
+    victim.status = "DONE";
+    victim.review = {
+      taskId: "PL-0101",
+      reviewerAgent: "gpt-architect",
+      implementationAgent: "claude-frontend",
+      outcome: "APPROVED",
+      evidence: "self-granted",
+    };
+    fs.writeFileSync(tasksFile, JSON.stringify(tampered, null, 2) + "\n");
+    assert.equal(taskOf(repo, "PL-0101").status, "DONE", "the tamper must land before restore");
+
+    run(repo, "scripts/cloud/protect-state.mjs", ["--restore"], protectEnv);
+
+    assert.equal(
+      taskOf(repo, "PL-0101").status,
+      "IN_PROGRESS",
+      "a direct edit to control/tasks.json must be discarded, not honoured",
+    );
+    assert.equal(
+      taskOf(repo, "PL-0101").review,
+      undefined,
+      "a self-granted review must not survive the restore",
+    );
+
+    // Restore without a snapshot fails closed rather than continuing blind.
+    const noSnapshot = path.join(temp, `runner-empty-${repoSeq}`);
+    fs.mkdirSync(noSnapshot, { recursive: true });
+    let failedClosed = false;
+    try {
+      run(repo, "scripts/cloud/protect-state.mjs", ["--restore"], { RUNNER_TEMP: noSnapshot });
+    } catch (error) {
+      failedClosed = /No protected-state snapshot/.test(
+        `${error.stdout ?? ""}${error.stderr ?? ""}`,
+      );
+    }
+    assert.ok(failedClosed, "restore without a snapshot must fail closed");
+  }
+
+  /* ---------------------------------------------------------------------
+   * 9w. Orchestration paths are refused for autonomous selection.
+   * ------------------------------------------------------------------- */
+  {
+    const SHA = "b8".repeat(20);
+    const repo = freshRepo();
+
+    // PL-AI-0002 owns .github/**, control/**, scripts/**, docs/** -- it IS the
+    // orchestration machinery, so an autonomous worker must never select it.
+    const doneBootstrap = (id) => {
+      run(repo, CLI, ["claim", id, "claude-lead"], { LIBERTY_COMMIT_SHA: SHA });
+      run(repo, CLI, ["start", id, "claude-lead"], { LIBERTY_COMMIT_SHA: SHA });
+      for (const g of taskOf(repo, id).qualityGates) {
+        run(repo, CLI, ["gate", id, g, "pass", "smoke"], { LIBERTY_COMMIT_SHA: SHA });
+      }
+      run(repo, CLI, ["review", id], { LIBERTY_COMMIT_SHA: SHA });
+      run(repo, CLI, ["approve", id, "gpt-architect", "reviewed"], { LIBERTY_COMMIT_SHA: SHA });
+      run(repo, CLI, ["done", id], { LIBERTY_COMMIT_SHA: SHA });
+    };
+    doneBootstrap("PL-AI-0001");
+    doneBootstrap("PL-AI-0002");
+
+    const out = run(repo, "scripts/cloud/select-task.mjs", ["--agent", "claude-lead"], {
+      LIBERTY_COMMIT_SHA: SHA,
+    });
+    assert.match(
+      out,
+      /privileged review-before-main lane|No autonomously workable task/,
+      `an orchestration-owning task must not be auto-selected:\n${out}`,
+    );
+    // Nothing was claimed as a side effect.
+    const claimedByLead = tasksOf(repo).filter(
+      (t) => t.owner === "claude-lead" && ["CLAIMED", "IN_PROGRESS"].includes(t.status),
+    );
+    for (const t of claimedByLead) {
+      assert.ok(
+        !(t.allowedPaths ?? []).some((p) => /^(\.github|scripts|control|coordination\/agent-bus)/.test(p)),
+        `${t.id} owns orchestration paths and must not have been claimed autonomously`,
+      );
+    }
+  }
+
+  /* ---------------------------------------------------------------------
    * 10. Bootstrap into a new project still works.
    * ------------------------------------------------------------------- */
   {
@@ -2804,7 +2905,7 @@ try {
     "running the test suite must not mutate any live control/ or coordination/ file",
   );
 
-  console.log("AI control plane tests passed (33 scenarios).");
+  console.log("AI control plane tests passed (35 scenarios).");
 } finally {
   fs.rmSync(temp, { recursive: true, force: true });
 }

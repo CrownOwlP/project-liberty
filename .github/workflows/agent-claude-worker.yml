@@ -97,6 +97,13 @@ jobs:
         continue-on-error: true
         run: node scripts/cloud/advance-completable.mjs
 
+      - name: Snapshot protected control/bus state
+        # The model has Edit and Write, so removing mutating CLI commands is not
+        # a boundary on its own. This copies control/bus state outside the
+        # workspace so any model edit to it can be discarded afterwards.
+        if: steps.select.outputs.selected == 'true'
+        run: node scripts/cloud/protect-state.mjs --snapshot
+
       - name: Implement the selected task
         if: steps.gate.outputs.orchestrate == 'true' && steps.select.outputs.selected == 'true'
         uses: anthropics/claude-code-action@v1
@@ -152,6 +159,13 @@ jobs:
             - Never invent provider credentials or claim external access you do not have.
             - If every remaining task is blocked on a human or provider dependency, say so
               and stop cleanly rather than inventing work.
+
+      - name: Restore protected control/bus state
+        # Runs BEFORE any deterministic step reads control state, so a model
+        # edit to control/tasks.json is discarded rather than later staged as a
+        # legitimate control-plane output.
+        if: always() && steps.select.outputs.selected == 'true'
+        run: node scripts/cloud/protect-state.mjs --restore
 
       - name: Refresh mission control
         if: always()

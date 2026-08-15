@@ -36,6 +36,31 @@ function emit(taskId, note) {
   }
 }
 
+/**
+ * Paths that ARE the orchestration machinery.
+ *
+ * A task allowed to edit these could rewrite the reviewer, the workflows or the
+ * control plane, push to main, and then have its own modified reviewer judge
+ * that change from main. Autonomy over the machinery that supervises autonomy
+ * is the one loop this system must not close by itself, so such tasks are
+ * refused here and left for a privileged review-before-main lane.
+ */
+const ORCHESTRATION_PREFIXES = [".github", "scripts", "control", "coordination/agent-bus"];
+
+function normalizePrefix(pattern) {
+  return pattern.replace(/\\/g, "/").replace(/\*\*.*$/, "").replace(/\*.*$/, "").replace(/\/$/, "");
+}
+function touchesOrchestration(task) {
+  return (task.allowedPaths ?? [])
+    .map(normalizePrefix)
+    .filter(Boolean)
+    .filter((p) =>
+      ORCHESTRATION_PREFIXES.some(
+        (o) => p === o || p.startsWith(o + "/") || o.startsWith(p + "/"),
+      ),
+    );
+}
+
 // 1. Rework first: a task sent back by changes_requested is already IN_PROGRESS.
 const inProgress = tasks().filter((t) => t.owner === AGENT && t.status === "IN_PROGRESS");
 if (inProgress.length > 1) {
@@ -46,21 +71,49 @@ if (inProgress.length > 1) {
   process.exit(1);
 }
 if (inProgress.length === 1) {
+  const blocked = touchesOrchestration(inProgress[0]);
+  if (blocked.length) {
+    emit(
+      null,
+      `${inProgress[0].id} owns orchestration paths (${blocked.join(", ")}) and cannot be worked ` +
+      "autonomously. It requires the privileged review-before-main lane.",
+    );
+    process.exit(0);
+  }
   emit(inProgress[0].id, `Continuing ${inProgress[0].id}: ${inProgress[0].title}`);
   process.exit(0);
 }
 
 // 2. Otherwise take the head of the dispatchable wave.
 const dispatch = node(CLI, "dispatch");
-const line = dispatch
+const candidates = dispatch
   .split("\n")
-  .find((l) => new RegExp(`-> ${AGENT}\\b`).test(l));
+  .filter((l) => new RegExp(`-> ${AGENT}\\b`).test(l))
+  .map((l) => l.trim().split(" ")[0]);
 
-if (!line) {
-  emit(null, `No dispatchable task for ${AGENT}. Nothing to implement this run.`);
+const all = tasks();
+const skipped = [];
+let taskId = null;
+for (const id of candidates) {
+  const candidate = all.find((t) => t.id === id);
+  const blocked = candidate ? touchesOrchestration(candidate) : [];
+  if (blocked.length) {
+    skipped.push(`${id} (${blocked.join(", ")})`);
+    continue;
+  }
+  taskId = id;
+  break;
+}
+
+if (skipped.length) {
+  console.log(
+    `Skipped, requires the privileged review-before-main lane: ${skipped.join("; ")}`,
+  );
+}
+if (!taskId) {
+  emit(null, `No autonomously workable task for ${AGENT}. Nothing to implement this run.`);
   process.exit(0);
 }
-const taskId = line.trim().split(" ")[0];
 
 node(CLI, "claim", taskId, AGENT);
 node(CLI, "start", taskId, AGENT);

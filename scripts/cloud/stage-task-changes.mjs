@@ -36,11 +36,27 @@ if (!AGENT) {
   process.exit(1);
 }
 
+/**
+ * Staging mode.
+ *
+ *   implementation  ONLY the selected task's allowedPaths. No control-plane
+ *                   exception -- otherwise a model that edited control/tasks.json
+ *                   directly would have that rewrite staged as a legitimate
+ *                   "worker output".
+ *   control         ONLY the enumerated control/bus outputs, run AFTER the
+ *                   deterministic gate/review/handoff mutations produced them.
+ */
+const MODE = flag("--mode") || "implementation";
+if (!["implementation", "control"].includes(MODE)) {
+  console.error(`Unknown --mode ${MODE}; expected implementation or control`);
+  process.exit(1);
+}
+
 const ACTIVE = ["CLAIMED", "IN_PROGRESS", "REVIEW"];
 
 /**
- * Outputs every worker produces as a side effect of running the control plane
- * and the bus. Deliberately enumerated rather than wildcarded.
+ * Outputs produced by deterministic control-plane and bus operations.
+ * Deliberately enumerated rather than wildcarded.
  */
 const CONTROL_PLANE_OUTPUTS = [
   "control/tasks.json",
@@ -77,14 +93,15 @@ if (TASK_ID && owned[0].owner !== AGENT) {
   process.exit(1);
 }
 
-const taskPrefixes = owned.flatMap((t) =>
-  (t.allowedPaths ?? []).map(normalizePrefix).filter(Boolean),
-);
-const outputPrefixes = CONTROL_PLANE_OUTPUTS.map(normalizePrefix);
+const taskPrefixes =
+  MODE === "implementation"
+    ? owned.flatMap((t) => (t.allowedPaths ?? []).map(normalizePrefix).filter(Boolean))
+    : [];
+const outputPrefixes = MODE === "control" ? CONTROL_PLANE_OUTPUTS.map(normalizePrefix) : [];
 
-console.log(`Agent: ${AGENT}`);
-console.log(`Active owned tasks: ${owned.map((t) => `${t.id} [${t.status}]`).join(", ") || "(none)"}`);
-console.log(`Task-owned prefixes: ${taskPrefixes.join(", ") || "(none)"}`);
+console.log(`Agent: ${AGENT} | mode: ${MODE}`);
+console.log(`Scoped tasks: ${owned.map((t) => `${t.id} [${t.status}]`).join(", ") || "(none)"}`);
+console.log(`Stageable prefixes: ${[...taskPrefixes, ...outputPrefixes].join(", ") || "(none)"}`);
 
 // `-z` and NUL splitting: filenames can contain spaces, and a quoted path would
 // otherwise be staged under the wrong name.
@@ -109,11 +126,14 @@ console.log(`\nStaged ${staged.length} file(s):`);
 for (const rel of staged) console.log(`  + ${rel}`);
 
 if (rejected.length) {
-  console.error(`\nREFUSING TO COMMIT: ${rejected.length} dirty path(s) belong to no active task of ${AGENT}:`);
+  console.error(`\nREFUSING TO COMMIT (${MODE} mode): ${rejected.length} dirty path(s) are not stageable here:`);
   for (const rel of rejected) console.error(`  ! ${rel}`);
   console.error(
-    "\nAn autonomous worker must not commit files outside the task it is working on. " +
-    "Either claim the task that owns them, or resolve them before the worker runs again.",
+    MODE === "implementation"
+      ? "\nImplementation staging covers ONLY the selected task's allowedPaths. Control-plane and bus " +
+        "state is staged separately, after the deterministic steps that legitimately produce it -- so a " +
+        "direct edit to control/tasks.json can never be committed as an implementation change."
+      : "\nControl staging covers ONLY the enumerated control-plane and bus outputs.",
   );
   process.exit(1);
 }

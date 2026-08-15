@@ -396,8 +396,9 @@ if (!pending.length) {
   process.exit(0);
 }
 
-let handled = 0;
-let failed = 0;
+let reviewed = 0;
+let quarantined = 0;
+let retryableFailed = 0;
 for (const message of pending) {
   if (readRejection(root, message.id)) continue;
   console.log(`\n=== Reviewing ${message.id} (${message.taskId} @ ${message.commitSha?.slice(0, 12)}) ===`);
@@ -412,7 +413,7 @@ for (const message of pending) {
       applied: `${decision.decision} published as ${publishedId}`
     });
     console.log(`${message.id}: ${decision.decision} (${decision.blockingFindings.length} blocking)`);
-    handled++;
+    reviewed++;
   } catch (error) {
     // These defects are intrinsic to the message: the range cannot be
     // established, the task is gone, or the request is stale. None can become
@@ -424,14 +425,26 @@ for (const message of pending) {
       error.permanent === true ||
       /unknown task|must not review its own work|stale review request/.test(error.message);
     if (permanent) {
+      // A permanent rejection is a message the worker HANDLED successfully: it
+      // is durably quarantined and will never be seen again. Counting it as a
+      // worker failure made the job exit non-zero, which prevented the publish
+      // step from pushing the quarantine -- so the next run rediscovered the
+      // same message and failed identically, forever.
       rejectMessage(root, message.id, { agent: AGENT, reason: error.message, message });
       console.error(`REJECT ${message.id}: ${error.message}`);
+      quarantined++;
     } else {
       console.error(`RETRY ${message.id}: ${error.message}`);
+      retryableFailed++;
     }
-    failed++;
   }
 }
 
-console.log(`\nReviewed ${handled} request(s)${failed ? `, ${failed} unresolved` : ""}.`);
-if (failed) process.exitCode = 1;
+console.log(
+  `\nReviewed ${reviewed} request(s)` +
+  `${quarantined ? `, ${quarantined} quarantined` : ""}` +
+  `${retryableFailed ? `, ${retryableFailed} retryable` : ""}.`
+);
+// Only an unresolved retryable failure is a worker failure. Quarantines are
+// resolved outcomes and must not block publishing them.
+if (retryableFailed) process.exitCode = 1;

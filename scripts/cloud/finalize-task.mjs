@@ -80,17 +80,21 @@ console.log(`Finalizing ${task.id}: ${task.title}`);
 git("config", "user.name", `liberty-${AGENT}[bot]`);
 git("config", "user.email", `${AGENT}@project-liberty.local`);
 
-function stage(label) {
+function stage(mode) {
   try {
-    console.log(node("scripts/cloud/stage-task-changes.mjs", "--agent", AGENT, "--task", task.id));
+    console.log(
+      node("scripts/cloud/stage-task-changes.mjs", "--agent", AGENT, "--task", task.id, "--mode", mode),
+    );
   } catch (error) {
     console.error(error.stdout ?? "");
     console.error(error.stderr ?? "");
-    console.error(`Refusing to finalize (${label}): dirty paths outside ${task.id}.`);
+    console.error(`Refusing to finalize: ${mode} staging rejected the working tree.`);
     process.exit(1);
   }
 }
 
+// Implementation staging covers ONLY the task's own allowedPaths. Control and
+// bus outputs are staged later, after the deterministic steps that produce them.
 stage("implementation");
 
 const staged = git("diff", "--cached", "--name-only").trim();
@@ -142,7 +146,7 @@ const handoffArgs = [
 ];
 console.log(node(...handoffArgs));
 
-stage("review request");
+stage("control");
 if (git("diff", "--cached", "--name-only").trim()) {
   git("commit", "-m", `${task.id}: request ${task.reviewAgent} review via agent bus`);
 }

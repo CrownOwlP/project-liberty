@@ -72,7 +72,7 @@ jobs:
         if: steps.gate.outputs.review == 'true'
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          OPENAI_REVIEW_MODEL: ${{ vars.OPENAI_REVIEW_MODEL || 'gpt-5' }}
+          OPENAI_REVIEW_MODEL: ${{ vars.OPENAI_REVIEW_MODEL || 'gpt-5.6' }}
         run: node scripts/cloud/gpt-review-worker.mjs
 
       - name: Refresh mission control
@@ -81,6 +81,10 @@ jobs:
 
       - name: Publish bus changes
         id: publish
+        # ALWAYS publish. A retryable failure in the review step must not strand
+        # decisions and quarantines that were already produced -- otherwise the
+        # next run rediscovers the same messages and fails identically.
+        if: always() && steps.gate.outputs.review == 'true'
         run: |
           git config user.name "liberty-gpt-architect[bot]"
           git config user.email "gpt-architect@project-liberty.local"
