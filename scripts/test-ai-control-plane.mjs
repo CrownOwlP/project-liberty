@@ -36,9 +36,36 @@ function runFail(cwd, args, matcher, env = {}) {
     );
   return output;
 }
+/**
+ * Types that cannot be published without an explicit review range.
+ * Mirrors BASE_REQUIRED_TYPES in agent-bus.mjs.
+ */
+const BASE_REQUIRED = [
+  "implementation_ready",
+  "review_request",
+  "review_approved",
+  "changes_requested",
+];
+
+/**
+ * A range base for scenarios that are not about the range contract.
+ *
+ * Distinct from every --sha value used in this suite, so it can never collapse
+ * into an empty range. Scenarios that DO test the range contract (9m, 9n, 9o,
+ * 9p) pass --base explicitly and are unaffected by this default.
+ */
+const DEFAULT_TEST_BASE = "0".repeat(39) + "1";
+
 /** Publish a handoff message and return its id, parsed from CLI output. */
 function publish(repo, args, env = {}) {
-  const out = run(repo, CLI, ["handoff", ...args], env);
+  const typeIndex = args.indexOf("--type");
+  const type = typeIndex >= 0 ? args[typeIndex + 1] : null;
+  const withBase =
+    BASE_REQUIRED.includes(type) && !args.includes("--base")
+      ? [...args, "--base", DEFAULT_TEST_BASE]
+      : args;
+
+  const out = run(repo, CLI, ["handoff", ...withBase], env);
   const match = out.match(/Published (MSG-\S+)/);
   assert.ok(match, `could not parse message id from:\n${out}`);
   return match[1];

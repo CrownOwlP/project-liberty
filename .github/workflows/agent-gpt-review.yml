@@ -84,16 +84,28 @@ jobs:
         run: |
           git config user.name "liberty-gpt-architect[bot]"
           git config user.email "gpt-architect@project-liberty.local"
-          git add coordination/agent-bus control/mission-control.json docs/MISSION_CONTROL.md control/events.jsonl control/tasks.json coordination/PROJECT_STATUS.md coordination/TASKS.md control/queues || true
+          # Explicit, ownership-aware staging. The reviewer owns no task, so this
+          # stages only the enumerated control-plane and bus outputs and fails if
+          # anything else is dirty.
+          node scripts/cloud/stage-task-changes.mjs --agent gpt-architect
+
           if git diff --cached --quiet; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
-          else
-            git commit -m "gpt-architect: publish review decisions via agent bus"
-            # Rebase rather than force: another lane may have pushed meanwhile.
-            git pull --rebase --autostash origin main
-            git push origin HEAD:main
-            echo "changed=true" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+
+          git commit -m "gpt-architect: publish review decisions via agent bus"
+
+          # Never rebase. A review decision names the commit it reviewed, so
+          # rewriting history would silently invalidate it. Require a clean
+          # fast-forward and halt on divergence.
+          git fetch origin main
+          if ! git merge-base --is-ancestor origin/main HEAD; then
+            echo "::error::origin/main has diverged from HEAD. Refusing to rewrite reviewed history; halting for orchestration to resolve."
+            exit 1
+          fi
+          git push origin HEAD:main
+          echo "changed=true" >> "$GITHUB_OUTPUT"
 
       - name: Hand control back to the Claude lane
         if: steps.publish.outputs.changed == 'true'

@@ -803,24 +803,30 @@ function historicalReviewProblems(task, policies) {
 
   const declaredCanonical = source === "git-object";
 
+  // Inability to verify is NEVER by itself a reason to accept a record. An
+  // unresolvable commit is exactly what a tampered record would present, so the
+  // only thing that excuses it is an exact match in the legacy registry.
   if (!commitResolves(r.reviewedCommitSha)) {
-    if (declaredCanonical) {
-      problems.push(
-        `reviewed commit ${String(r.reviewedCommitSha).slice(0, 12)} cannot be resolved in this repository; ` +
-        "the historical review cannot be verified",
-      );
-    }
-    // Absent source and no resolvable commit: nothing to attempt.
+    if (!declaredCanonical && isKnownLegacyReview(task, r)) return problems;
+    problems.push(
+      `reviewed commit ${String(r.reviewedCommitSha).slice(0, 12)} cannot be resolved in this repository, ` +
+      "so the historical review cannot be verified" +
+      (declaredCanonical
+        ? ""
+        : ", and this record is not a known pre-canonical record in control/legacy-review-fingerprints.json"),
+    );
     return problems;
   }
 
   const atReviewed = gitFingerprint(task, r.reviewedCommitSha);
   if (!atReviewed) {
-    if (declaredCanonical) {
-      problems.push(
-        `cannot recompute the fingerprint at reviewed commit ${String(r.reviewedCommitSha).slice(0, 12)}`,
-      );
-    }
+    if (!declaredCanonical && isKnownLegacyReview(task, r)) return problems;
+    problems.push(
+      `cannot recompute the fingerprint at reviewed commit ${String(r.reviewedCommitSha).slice(0, 12)}` +
+      (declaredCanonical
+        ? ""
+        : ", and this record is not a known pre-canonical record in control/legacy-review-fingerprints.json"),
+    );
     return problems;
   }
 
@@ -1137,8 +1143,30 @@ function assertReviewRange(message, task) {
     );
   }
 
-  // Ancestry needs real history; the test harness has none.
-  if (!process.env.LIBERTY_COMMIT_SHA && !isAncestorCommit(message.baseSha, message.commitSha)) {
+  /*
+   * Ancestry needs real history.
+   *
+   * The distinction matters: "the base is not an ancestor" is a defect in the
+   * MESSAGE and is quarantined permanently. "I cannot see those commits" is a
+   * property of this CHECKOUT -- a shallow clone, a missing fetch -- and must
+   * be retried, never quarantined, or an environment problem would permanently
+   * destroy a valid decision.
+   */
+  if (!gitAvailable()) return;
+
+  if (!commitResolves(message.commitSha)) {
+    throw new Error(
+      `${message.id}: reviewed commit ${message.commitSha.slice(0, 12)} is not present in this checkout ` +
+      "(shallow clone or missing fetch); cannot verify the review range",
+    );
+  }
+  if (!commitResolves(message.baseSha)) {
+    throw new Error(
+      `${message.id}: base commit ${message.baseSha.slice(0, 12)} is not present in this checkout ` +
+      "(shallow clone or missing fetch); cannot verify the review range",
+    );
+  }
+  if (!isAncestorCommit(message.baseSha, message.commitSha)) {
     throw new PermanentRejection(
       `${message.id} baseSha ${message.baseSha.slice(0, 12)} is not an ancestor of ` +
       `${message.commitSha.slice(0, 12)}; that range is not a real line of history`,
