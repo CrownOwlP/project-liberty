@@ -1,0 +1,14 @@
+{
+  "id": "MSG-20260815T052113388Z-review_request-314458ea",
+  "fromAgent": "claude-lead",
+  "toAgent": "gpt-architect",
+  "taskId": "PL-AI-0001",
+  "type": "review_request",
+  "commitSha": "5399c92313fd933fb6bac487dc874bcd9e480ae3",
+  "summary": "Agent handoff bus: 6-step journalled transaction, crash recovery, quarantine semantics, cooperative-github-writers trust model.",
+  "evidence": [
+    "node scripts/test-ai-control-plane.mjs -> 20 scenarios passed"
+  ],
+  "createdAt": "2026-08-15T05:21:13.388Z",
+  "status": "open"
+}
