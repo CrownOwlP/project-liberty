@@ -1,36 +1,8 @@
 {
-  "generatedAt": "2026-08-15T13:22:23.221Z",
+  "generatedAt": "2026-08-15T14:40:21.980Z",
   "agent": "claude-infra",
   "executionAvailable": true,
-  "assigned": [
-    {
-      "id": "PL-0001",
-      "priority": "P0",
-      "lane": "Infra",
-      "status": "IN_PROGRESS",
-      "title": "Generate and commit dependency lockfile",
-      "dependencies": [],
-      "allowedPaths": [
-        "package-lock.json",
-        "package.json",
-        ".github/workflows/**"
-      ],
-      "preferredAgent": "claude-infra",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "repo-validate",
-        "lint",
-        "typecheck",
-        "unit",
-        "build"
-      ],
-      "acceptance": "npm install and full npm run check are green; CI uses npm ci once lockfile exists",
-      "owner": "claude-infra",
-      "gateResults": {},
-      "implementationAgent": "claude-infra",
-      "updatedAt": "2026-08-15T03:16:26.688Z"
-    }
-  ],
+  "assigned": [],
   "review": [],
   "reservedExternal": [],
   "recommended": [

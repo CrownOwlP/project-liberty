@@ -5,7 +5,7 @@
       "id": "PL-0001",
       "priority": "P0",
       "lane": "Infra",
-      "status": "IN_PROGRESS",
+      "status": "DONE",
       "title": "Generate and commit dependency lockfile",
       "dependencies": [],
       "allowedPaths": [
@@ -23,10 +23,65 @@
         "build"
       ],
       "acceptance": "npm install and full npm run check are green; CI uses npm ci once lockfile exists",
-      "owner": "claude-infra",
-      "gateResults": {},
+      "owner": null,
+      "gateResults": {
+        "repo-validate": {
+          "status": "pass",
+          "at": "2026-08-15T14:40:21.146Z",
+          "evidence": "npm run check exit 0 on Node v22.23.2 (covers ai:validate, repo:validate, lint, typecheck, test, build)"
+        },
+        "lint": {
+          "status": "pass",
+          "at": "2026-08-15T14:40:21.235Z",
+          "evidence": "npm run check exit 0 on Node v22.23.2 (covers ai:validate, repo:validate, lint, typecheck, test, build)"
+        },
+        "typecheck": {
+          "status": "pass",
+          "at": "2026-08-15T14:40:21.323Z",
+          "evidence": "npm run check exit 0 on Node v22.23.2 (covers ai:validate, repo:validate, lint, typecheck, test, build)"
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-08-15T14:40:21.407Z",
+          "evidence": "npm run check exit 0 on Node v22.23.2 (covers ai:validate, repo:validate, lint, typecheck, test, build)"
+        },
+        "build": {
+          "status": "pass",
+          "at": "2026-08-15T14:40:21.492Z",
+          "evidence": "npm run check exit 0 on Node v22.23.2 (covers ai:validate, repo:validate, lint, typecheck, test, build)"
+        }
+      },
       "implementationAgent": "claude-infra",
-      "updatedAt": "2026-08-15T03:16:26.688Z"
+      "updatedAt": "2026-08-15T14:40:21.875Z",
+      "review": {
+        "taskId": "PL-0001",
+        "implementationAgent": "claude-infra",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "80aebc8d50184849af86aec8620e1e6c83f310b6",
+        "reviewedTreeHash": "a94126cbce57bef72710bac7b7c6211fb9f6188a020b8837d1186e06f0ee78a2",
+        "reviewedFileCount": 3,
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-08-15T14:40:21.723Z",
+        "evidence": "gpt-architect approved the PL-0001 implementation at 80bef048 (lockfile committed, Node pinned via .nvmrc, CI switched to npm ci, GitHub CI green). Verified: the PL-0001 reviewed surface (package.json, package-lock.json, .github/workflows/) is unchanged from 80bef048 through current HEAD. This approval covers that surface, not the intervening commits."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PL-0001",
+          "implementationAgent": "claude-infra",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "80aebc8d50184849af86aec8620e1e6c83f310b6",
+          "reviewedTreeHash": "a94126cbce57bef72710bac7b7c6211fb9f6188a020b8837d1186e06f0ee78a2",
+          "reviewedFileCount": 3,
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-08-15T14:40:21.723Z",
+          "evidence": "gpt-architect approved the PL-0001 implementation at 80bef048 (lockfile committed, Node pinned via .nvmrc, CI switched to npm ci, GitHub CI green). Verified: the PL-0001 reviewed surface (package.json, package-lock.json, .github/workflows/) is unchanged from 80bef048 through current HEAD. This approval covers that surface, not the intervening commits."
+        }
+      ],
+      "completedAt": "2026-08-15T14:40:21.875Z"
     },
     {
       "id": "PL-0002",
@@ -706,7 +761,7 @@
       "id": "PL-AI-0001",
       "priority": "P0",
       "lane": "Coordination",
-      "status": "REVIEW",
+      "status": "DONE",
       "title": "Operationalize AI control plane in Claude Code Desktop",
       "dependencies": [],
       "allowedPaths": [
@@ -725,27 +780,56 @@
         "architecture-review"
       ],
       "acceptance": "Claude Code uses machine-readable queues, claims tasks through the CLI, syncs status, and records handoffs rather than manually drifting task state",
-      "owner": "claude-lead",
+      "owner": null,
       "gateResults": {
         "repo-validate": {
           "status": "pass",
-          "at": "2026-08-15T05:22:47.764Z",
-          "evidence": "node scripts/validate-repo.mjs exit 0"
+          "at": "2026-08-15T14:40:20.788Z",
+          "evidence": "node scripts/validate-repo.mjs exit 0 on Node v22.23.2"
         },
         "architecture-review": {
           "status": "pass",
-          "at": "2026-08-15T05:22:47.850Z",
-          "evidence": "gpt-architect approval via agent bus, see coordination/agent-bus/gpt-to-claude/"
+          "at": "2026-08-15T14:40:20.876Z",
+          "evidence": "gpt-architect approval of 5399c92..80aebc8d recorded on the review record"
         }
       },
       "implementationAgent": "claude-lead",
-      "updatedAt": "2026-08-15T05:21:13.210Z"
+      "updatedAt": "2026-08-15T14:40:21.043Z",
+      "review": {
+        "taskId": "PL-AI-0001",
+        "implementationAgent": "claude-lead",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "80aebc8d50184849af86aec8620e1e6c83f310b6",
+        "reviewedTreeHash": "0b4f7897bc94fac35a86c0447ae029b777edbf8105d721c7c36c4a70b6f5b05e",
+        "reviewedFileCount": 37,
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-08-15T14:40:20.705Z",
+        "evidence": "gpt-architect independently reviewed the cumulative corrective delta 5399c92..80aebc8d. Exactly-once audit, malformed-message quarantine and canonical git fingerprint/CRLF blockers all resolved. GPT's GitHub connector is read-only (403 on writes), so the decision is recorded through the enforced control-plane path."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PL-AI-0001",
+          "implementationAgent": "claude-lead",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "80aebc8d50184849af86aec8620e1e6c83f310b6",
+          "reviewedTreeHash": "0b4f7897bc94fac35a86c0447ae029b777edbf8105d721c7c36c4a70b6f5b05e",
+          "reviewedFileCount": 37,
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-08-15T14:40:20.705Z",
+          "evidence": "gpt-architect independently reviewed the cumulative corrective delta 5399c92..80aebc8d. Exactly-once audit, malformed-message quarantine and canonical git fingerprint/CRLF blockers all resolved. GPT's GitHub connector is read-only (403 on writes), so the decision is recorded through the enforced control-plane path."
+        }
+      ],
+      "completedAt": "2026-08-15T14:40:21.043Z"
     },
     {
       "id": "PL-AI-0002",
       "priority": "P1",
       "lane": "Coordination",
-      "status": "BACKLOG",
+      "status": "READY",
       "title": "GitHub bridge for cross-agent review",
       "dependencies": [
         "PL-AI-0001"

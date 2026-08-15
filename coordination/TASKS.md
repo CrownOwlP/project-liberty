@@ -6,7 +6,7 @@ Statuses: `BACKLOG`, `READY`, `CLAIMED`, `IN_PROGRESS`, `REVIEW`, `BLOCKED`, `DO
 
 | ID | Priority | Lane | Status | Owner | Review | Task | Acceptance |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| PL-0001 | P0 | Infra | IN_PROGRESS | claude-infra | - | Generate and commit dependency lockfile | npm install and full npm run check are green; CI uses npm ci once lockfile exists |
+| PL-0001 | P0 | Infra | DONE | - | APPROVED by gpt-architect | Generate and commit dependency lockfile | npm install and full npm run check are green; CI uses npm ci once lockfile exists |
 | PL-0002 | P0 | Architecture | READY | - | - | Review scaffold contracts | No unresolved contradiction across product, architecture, API, security, and content-rights contracts |
 | PL-0003 | P0 | Infra | READY | - | - | Environment validation | Missing required environment is reported clearly; local PostgreSQL and Redis health are documented |
 | PL-0101 | P0 | Frontend | IN_PROGRESS | claude-frontend | - | Catalog home data contract | Home route consumes typed catalog response and handles loading, error, and empty states |
@@ -25,7 +25,7 @@ Statuses: `BACKLOG`, `READY`, `CLAIMED`, `IN_PROGRESS`, `REVIEW`, `BLOCKED`, `DO
 | PL-0502 | P0 | Player | BACKLOG | - | - | Player state machine | Loading, ready, stalled, recoverable error, failover, and fatal error states are explicit |
 | PL-0701 | P0 | Test | BACKLOG | - | - | Critical E2E harness | Catalog to title to player to progress fixture journey is reproducible in CI |
 | PL-0702 | P0 | Security | BACKLOG | - | - | Provider and URL security review | SSRF, secret exposure, redirect, allowlist, and rights-bypass findings are resolved or explicitly accepted |
-| PL-AI-0001 | P0 | Coordination | REVIEW | claude-lead | - | Operationalize AI control plane in Claude Code Desktop | Claude Code uses machine-readable queues, claims tasks through the CLI, syncs status, and records handoffs rather than manually drifting task state |
+| PL-AI-0001 | P0 | Coordination | DONE | - | APPROVED by gpt-architect | Operationalize AI control plane in Claude Code Desktop | Claude Code uses machine-readable queues, claims tasks through the CLI, syncs status, and records handoffs rather than manually drifting task state |
 | PL-0303 | P1 | Provider | BACKLOG | - | - | Provider health contract | Health sample shape, freshness, failure classes, and cache semantics are defined |
 | PL-0404 | P1 | Backend | BACKLOG | - | - | Watchlist persistence | Typed add, remove, and list APIs with authorization |
 | PL-0503 | P1 | Player | BACKLOG | - | - | Playback telemetry | Startup, rebuffer, quality switch, and failure events are observable with privacy redaction |
@@ -33,5 +33,5 @@ Statuses: `BACKLOG`, `READY`, `CLAIMED`, `IN_PROGRESS`, `REVIEW`, `BLOCKED`, `DO
 | PL-0601 | P1 | Live | READY | - | - | Channel and EPG contracts | Licensed channel, program, schedule, and EPG contracts are typed and documented |
 | PL-0602 | P1 | Live | BLOCKED | - | - | Live provider integration | Licensed live provider integrated with normalized channel/EPG contracts |
 | PL-0801 | P1 | Recommendations | BACKLOG | - | - | Recommendation boundary | Explainable initial recommendation contract using catalog and history signals with privacy constraints |
-| PL-AI-0002 | P1 | Coordination | BACKLOG | - | - | GitHub bridge for cross-agent review | GitHub becomes the shared state bridge for Claude Desktop and OpenAI review without manual file copying |
+| PL-AI-0002 | P1 | Coordination | READY | - | - | GitHub bridge for cross-agent review | GitHub becomes the shared state bridge for Claude Desktop and OpenAI review without manual file copying |
 | PL-AI-0003 | P1 | Coordination | BACKLOG | - | - | Optional API-driven autonomous dispatcher | Optional external agent runner can dispatch queued tasks to configured providers with budgets, audit logs, retries, and human approval gates |
