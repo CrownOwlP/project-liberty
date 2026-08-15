@@ -4,6 +4,7 @@ export {
   scoreCandidate,
   explainScore,
   SCORE_WEIGHTS,
+  SCORE_PRECISION,
   CODEC_EFFICIENCY,
   PROTOCOL_ADAPTIVITY,
   BITRATE_KBPS_PER_LINE,

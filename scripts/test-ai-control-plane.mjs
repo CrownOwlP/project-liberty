@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 
 const source = process.cwd();
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), "liberty-control-plane-"));
@@ -25,12 +26,52 @@ function runFail(cwd, args, matcher) {
   if (matcher) assert.match(output, matcher, `unexpected failure output for "${args.join(" ")}":\n${output}`);
   return output;
 }
+/**
+ * Reset the *copied* control/tasks.json to a clean runtime state.
+ *
+ * Task definitions and routing (id, lane, priority, dependencies, allowedPaths,
+ * preferredAgent, reviewAgent, qualityGates, acceptance) are preserved exactly
+ * as authored. Only runtime state is cleared, so scenarios never depend on how
+ * far the real project has progressed.
+ *
+ * This only ever touches the temp copy; the live control/tasks.json is not read
+ * for mutation and never written.
+ */
+function resetRuntimeState(repo) {
+  const file = path.join(repo, "control", "tasks.json");
+  const doc = JSON.parse(fs.readFileSync(file, "utf8"));
+
+  for (const task of doc.tasks) {
+    task.owner = null;
+    task.gateResults = {};
+    delete task.implementationAgent;
+    delete task.updatedAt;
+    delete task.completedAt;
+    delete task.review;
+    delete task.reviewHistory;
+
+    // Externally BLOCKED tasks are a definition, not runtime drift: a blocked
+    // task carries an explicit blocker reason and must stay blocked.
+    if (task.status === "BLOCKED" || task.status === "CANCELED") continue;
+
+    task.status = (task.dependencies ?? []).length === 0 ? "READY" : "BACKLOG";
+  }
+
+  fs.writeFileSync(file, JSON.stringify(doc, null, 2) + "\n");
+}
+
 function freshRepo() {
   const repo = path.join(temp, `repo-${++repoSeq}`);
   fs.cpSync(source, repo, {
     recursive: true,
-    filter: (src) => !src.includes(`${path.sep}.git${path.sep}`) && !src.endsWith(`${path.sep}.git`) && !src.includes(`${path.sep}node_modules${path.sep}`)
+    // Both an `includes` and an `endsWith` check per directory: without the
+    // `endsWith`, cpSync recurses into the directory itself and walks the whole
+    // subtree before filtering each entry.
+    filter: (src) =>
+      !src.includes(`${path.sep}.git${path.sep}`) && !src.endsWith(`${path.sep}.git`) &&
+      !src.includes(`${path.sep}node_modules${path.sep}`) && !src.endsWith(`${path.sep}node_modules`)
   });
+  resetRuntimeState(repo);
   return repo;
 }
 function tasksOf(repo) {
@@ -40,7 +81,8 @@ function taskOf(repo, id) {
   return tasksOf(repo).find((t) => t.id === id);
 }
 /** Drive PL-AI-0001 from READY up to (but not including) DONE. */
-function implementToReview(repo, { implementer = "claude-lead" } = {}) {
+function implementToReview(repo) {
+  const implementer = "claude-lead";
   run(repo, CLI, ["claim", "PL-AI-0001", implementer]);
   run(repo, CLI, ["start", "PL-AI-0001", implementer]);
   run(repo, CLI, ["gate", "PL-AI-0001", "repo-validate", "pass", "automated smoke"]);
@@ -48,7 +90,77 @@ function implementToReview(repo, { implementer = "claude-lead" } = {}) {
   run(repo, CLI, ["review", "PL-AI-0001"]);
 }
 
+const liveTasksPath = path.join(source, "control", "tasks.json");
+const liveTasksBefore = fs.readFileSync(liveTasksPath, "utf8");
+
+/**
+ * Hash every file the control plane can write, so a scenario that forgets
+ * freshRepo() and runs against the real repository fails loudly instead of
+ * silently corrupting the live event log, queues, or status views.
+ */
+function snapshotLiveState() {
+  const snapshot = new Map();
+  for (const dir of ["control", "coordination"]) {
+    const abs = path.join(source, dir);
+    if (!fs.existsSync(abs)) continue;
+    const stack = [dir];
+    while (stack.length) {
+      const rel = stack.pop();
+      for (const entry of fs.readdirSync(path.join(source, rel), { withFileTypes: true })) {
+        const childRel = `${rel}/${entry.name}`;
+        if (entry.isDirectory()) stack.push(childRel);
+        else if (entry.isFile()) {
+          snapshot.set(childRel, createHash("sha256").update(fs.readFileSync(path.join(source, childRel))).digest("hex"));
+        }
+      }
+    }
+  }
+  return snapshot;
+}
+const liveStateBefore = snapshotLiveState();
+
 try {
+  /* ---------------------------------------------------------------------
+   * 0. Test isolation: scenarios must not depend on live runtime state,
+   *    and must never mutate the real control/tasks.json.
+   * ------------------------------------------------------------------- */
+  {
+    const repo = freshRepo();
+    const tasks = tasksOf(repo);
+    const live = JSON.parse(liveTasksBefore).tasks;
+    const liveById = new Map(live.map((t) => [t.id, t]));
+
+    for (const task of tasks) {
+      assert.equal(task.owner, null, `${task.id} should have no owner in a fresh scenario`);
+      assert.deepEqual(task.gateResults, {}, `${task.id} should have no gate results`);
+      assert.equal(task.review, undefined, `${task.id} should have no review record`);
+      assert.equal(task.reviewHistory, undefined, `${task.id} should have no review history`);
+      assert.equal(task.implementationAgent, undefined, `${task.id} should have no implementation agent`);
+      assert.equal(task.updatedAt, undefined, `${task.id} should have no updatedAt timestamp`);
+      assert.equal(task.completedAt, undefined, `${task.id} should have no completedAt timestamp`);
+
+      // Definitions and routing survive the reset untouched.
+      const source_ = liveById.get(task.id);
+      assert.equal(task.preferredAgent, source_.preferredAgent, `${task.id} preferredAgent must be preserved`);
+      assert.equal(task.reviewAgent, source_.reviewAgent, `${task.id} reviewAgent must be preserved`);
+      assert.deepEqual(task.dependencies, source_.dependencies, `${task.id} dependencies must be preserved`);
+      assert.deepEqual(task.allowedPaths, source_.allowedPaths, `${task.id} allowedPaths must be preserved`);
+
+      if (source_.status === "BLOCKED") {
+        assert.equal(task.status, "BLOCKED", `${task.id} must stay BLOCKED`);
+        assert.equal(task.blocker, source_.blocker, `${task.id} blocker reason must be preserved`);
+      } else if (source_.status !== "CANCELED") {
+        const expected = (task.dependencies ?? []).length === 0 ? "READY" : "BACKLOG";
+        assert.equal(task.status, expected, `${task.id} should reset to ${expected}`);
+      }
+    }
+
+    // Isolation holds even though the live project has tasks IN_PROGRESS.
+    assert.equal(taskOf(repo, "PL-AI-0001").status, "READY");
+    assert.equal(taskOf(repo, "PL-0302").status, "BLOCKED");
+    run(repo, CLI, ["validate"]);
+  }
+
   /* ---------------------------------------------------------------------
    * 1. Happy path: independent approval by the designated reviewer.
    * ------------------------------------------------------------------- */
@@ -168,6 +280,13 @@ try {
     const repo = freshRepo();
     const out = run(repo, CLI, ["dispatch"]);
 
+    // NOTE: {PL-0001, PL-0101, PL-0201, PL-AI-0001} and {PL-0001, PL-0201,
+    // PL-0301, PL-AI-0001} are BOTH maximum 4-task waves with identical
+    // priority sums. PL-0101 wins purely on betterWave()'s lexicographic
+    // waveKey tie-break. If a task id or an allowedPaths entry changes, this
+    // may flip to PL-0301 -- that is a tie-break change, not a dispatcher
+    // regression. The invariants that actually matter are asserted below:
+    // the wave is size 4, and PL-0002 is never assigned locally.
     const executableBlock = out.split("--- deferred")[0];
     const externalBlock = out.split("=== READY_BUT_EXTERNAL")[1] ?? "";
 
@@ -229,7 +348,23 @@ try {
     assert.match(fs.readFileSync(path.join(child, "coordination", "PROJECT_STATUS.md"), "utf8"), /Child Project/);
   }
 
-  console.log("AI control plane tests passed (9 scenarios).");
+  /* ---------------------------------------------------------------------
+   * 10. The live repository state must be untouched by the whole run.
+   * ------------------------------------------------------------------- */
+  assert.equal(
+    fs.readFileSync(liveTasksPath, "utf8"),
+    liveTasksBefore,
+    "running the test suite must not mutate the real control/tasks.json"
+  );
+
+  const liveStateAfter = snapshotLiveState();
+  assert.deepEqual(
+    [...liveStateAfter.entries()].sort(),
+    [...liveStateBefore.entries()].sort(),
+    "running the test suite must not mutate any live control/ or coordination/ file"
+  );
+
+  console.log("AI control plane tests passed (11 scenarios).");
 } finally {
   fs.rmSync(temp, { recursive: true, force: true });
 }

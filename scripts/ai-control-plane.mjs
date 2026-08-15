@@ -80,9 +80,10 @@ function usageByAgent(tasks, policies) {
   }
   return usage;
 }
-function conflictWithActive(task, tasks, policies, extra = []) {
-  const contenders = [...tasks.filter((t) => active(t, policies) && t.id !== task.id), ...extra];
-  return contenders.find((other) => pathsOverlap(task.allowedPaths, other.allowedPaths));
+function conflictWithActive(task, tasks, policies) {
+  return tasks
+    .filter((t) => active(t, policies) && t.id !== task.id)
+    .find((other) => pathsOverlap(task.allowedPaths, other.allowedPaths));
 }
 function refreshReadiness(tasks) {
   const map = taskMap(tasks);
@@ -185,7 +186,7 @@ function betterWave(a, b) {
   if (pa !== pb) return pa < pb;
   return waveKey(a) < waveKey(b);
 }
-function greedyWave(candidates, agents, baseUsage, d) {
+function greedyWave(candidates, agents, baseUsage) {
   const usage = new Map(baseUsage);
   const selected = [];
   for (const task of candidates) {
@@ -241,7 +242,7 @@ function planExecutableWave(d, classification) {
 
   dfs(0, [], new Map(baseUsage));
   if (exhausted) {
-    const fallback = greedyWave(candidates, agents, baseUsage, d);
+    const fallback = greedyWave(candidates, agents, baseUsage);
     if (betterWave(fallback, best)) best = fallback;
   }
   return best;
@@ -362,7 +363,7 @@ function reviewProblems(task, policies) {
   }
   return problems;
 }
-function recordReview(d, task, reviewer, outcome, evidence) {
+function recordReview(task, reviewer, outcome, evidence) {
   const implementationAgent = task.implementationAgent ?? task.owner ?? null;
   if (!implementationAgent) throw new Error(`${task.id} has no recorded implementation agent; claim and start it through the control plane first`);
   if (reviewer.id === implementationAgent) throw new Error(`self-approval is prohibited: ${reviewer.id} implemented ${task.id}`);
@@ -710,7 +711,7 @@ try {
     const reviewer = requireAgent(d, reviewerId);
     if (task.status !== "REVIEW") throw new Error(`${taskId} is ${task.status}; move it to REVIEW before recording a review`);
     const outcome = command === "approve" ? "APPROVED" : "CHANGES_REQUESTED";
-    const record = recordReview(d, task, reviewer, outcome, noteParts.join(" "));
+    const record = recordReview(task, reviewer, outcome, noteParts.join(" "));
     if (outcome === "CHANGES_REQUESTED") transition(task, "IN_PROGRESS", d.policies);
     saveTasks(d.taskDoc);
     syncAll(d, false);

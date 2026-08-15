@@ -54,6 +54,19 @@ regression-testable for monotonicity.
   bandwidth and raise rebuffer risk, so they are penalised like under-provisioned ones.
 - Determinism is a hard requirement: no clocks, randomness, I/O, or ambient state. Ties break on
   candidate id so results never depend on input ordering.
+- **Stored values must be internally consistent.** `raw` is rounded to `SCORE_PRECISION` (4 dp)
+  first and `weighted` is derived from that rounded value, giving the exact invariant
+  `round(raw * weight) === weighted` for every component, and `round(Σ weighted) === total`.
+  Deriving `weighted` from the unrounded value instead would publish a breakdown that does not add
+  up to the published score, making the reason trail untrustworthy for exactly the debugging it
+  exists to support.
+- The invariant is stated *at* `SCORE_PRECISION` deliberately. Plain floating-point equality
+  (`raw * weight === weighted`) is not guaranteed: the product can land a fraction of an ulp away
+  from the stored value. Rounding both sides to the declared precision is what makes the guarantee
+  exact rather than incidental.
+- Weights must stay **integers**, which keeps `raw * weight` at 4 dp so the rounding above is a
+  no-op correction rather than a real loss. A fractional weight would reintroduce drift. Asserted
+  in tests.
 
 ## ADR-006 - Rights checked before scoring, via allowlist
 

@@ -35,9 +35,19 @@ export interface CandidateScore {
   components: ScoreComponent[];
 }
 
+/** Decimal places every stored score value is rounded to. */
+export const SCORE_PRECISION = 4;
+
 /**
  * Positive weights sum to 100; `latency` is the only penalty. Changing any
  * weight is a deliberate product decision — see docs/DECISIONS.md.
+ *
+ * Weights must remain integers. `weighted` is derived from the *rounded* `raw`,
+ * so with an integer weight the exact invariant
+ * `round(raw * weight) === weighted` holds for every component. (Plain IEEE
+ * equality `raw * weight === weighted` is *not* guaranteed — the product can
+ * land a fraction of an ulp off the stored value — which is why the invariant
+ * is stated at SCORE_PRECISION.)
  */
 export const SCORE_WEIGHTS: Record<ScoreDimension, number> = {
   resolution: 40,
@@ -79,7 +89,7 @@ function clamp01(value: number): number {
 }
 
 function round(value: number): number {
-  return Number(value.toFixed(4));
+  return Number(value.toFixed(SCORE_PRECISION));
 }
 
 function component(
@@ -88,12 +98,16 @@ function component(
   explanation: string
 ): ScoreComponent {
   const weight = SCORE_WEIGHTS[dimension];
-  const bounded = clamp01(raw);
+  // Round first, then derive `weighted` from the rounded value. Deriving from
+  // the unrounded value would leave the published `raw` and `weighted`
+  // inconsistent with each other, so the breakdown would not reconstruct the
+  // published total at SCORE_PRECISION.
+  const storedRaw = round(clamp01(raw));
   return {
     dimension,
     weight,
-    raw: round(bounded),
-    weighted: round(bounded * weight),
+    raw: storedRaw,
+    weighted: round(storedRaw * weight),
     explanation
   };
 }

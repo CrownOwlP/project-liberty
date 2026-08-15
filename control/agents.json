@@ -5,7 +5,7 @@
       "id": "gpt-architect",
       "provider": "openai",
       "kind": "external-reasoning",
-      "capabilities": ["Architecture", "Product", "Media", "Provider", "Backend", "Security", "Live", "Recommendations", "Review", "Research", "Integration"],
+      "capabilities": ["Architecture", "Product", "Media", "Provider", "Backend", "Security", "Live", "Coordination", "Recommendations", "Review", "Research", "Integration"],
       "maxParallel": 6,
       "writeMode": "branch-or-review",
       "notes": "Architecture, decomposition, complex reasoning, review, integration design, and high-leverage implementation. Requires repository/GitHub visibility to operate on current code."

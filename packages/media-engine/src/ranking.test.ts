@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { PlaybackCapabilities, StreamCandidate } from "@liberty/contracts";
 import { PLAYABLE_RIGHTS, PROVIDER_HEALTH_FLOOR, rankStreamCandidates } from "./ranking";
-import { SCORE_WEIGHTS, explainScore, scoreCandidate } from "./scoring";
+import { SCORE_PRECISION, SCORE_WEIGHTS, explainScore, scoreCandidate } from "./scoring";
 
 const capabilities: PlaybackCapabilities = {
   maxHeight: 2160,
@@ -78,7 +78,7 @@ describe("rights boundary", () => {
       candidate({ id: "x", rights: "unlicensed" as never, videoCodec: "vp9" })
     ], capabilities);
 
-    expect(decision.rejected[0].reason).toBe("rights_not_playable");
+    expect(decision.rejected).toEqual([{ candidateId: "x", reason: "rights_not_playable" }]);
   });
 
   it("admits every rights value on the playable allowlist", () => {
@@ -132,7 +132,42 @@ describe("score model", () => {
   it("decomposes exactly into its weighted components", () => {
     const score = scoreCandidate(candidate({ id: "explain" }), capabilities);
     const summed = score.components.reduce((total, item) => total + item.weighted, 0);
-    expect(summed).toBeCloseTo(score.total, 4);
+    expect(summed).toBeCloseTo(score.total, 8);
+  });
+
+  it("reconstructs stored weighted from stored raw and weight", () => {
+    // The published breakdown must be internally consistent: a reader who
+    // multiplies the stored raw by the stored weight must get the stored
+    // weighted value, not merely something close to it.
+    const probes = [
+      candidate({ id: "a", height: 1440, bitrateKbps: 10800 }),
+      candidate({ id: "b", height: 720, bitrateKbps: 1200, healthScore: 0.6133, protocol: "hls" }),
+      candidate({ id: "c", height: 2160, bitrateKbps: 39000, videoCodec: "hevc", audioCodec: "eac3", estimatedLatencyMs: 913 })
+    ];
+
+    const atPrecision = (value: number) => Number(value.toFixed(SCORE_PRECISION));
+
+    for (const probe of probes) {
+      const score = scoreCandidate(probe, capabilities);
+      for (const item of score.components) {
+        // Exact, not approximate: the stored weighted value is exactly what a
+        // reader gets by multiplying stored raw by stored weight and rounding
+        // to the declared precision.
+        expect(atPrecision(item.raw * item.weight)).toBe(item.weighted);
+      }
+      const summed = score.components.reduce((total, item) => total + item.weighted, 0);
+      expect(atPrecision(summed)).toBe(score.total);
+    }
+  });
+
+  it("stores every value at the declared precision", () => {
+    const score = scoreCandidate(candidate({ id: "precise", height: 1440, bitrateKbps: 9337 }), capabilities);
+    const atPrecision = (value: number) => Number(value.toFixed(SCORE_PRECISION)) === value;
+    for (const item of score.components) {
+      expect(atPrecision(item.raw)).toBe(true);
+      expect(atPrecision(item.weighted)).toBe(true);
+    }
+    expect(atPrecision(score.total)).toBe(true);
   });
 
   it("keeps every component consistent with its own weight and raw value", () => {
@@ -140,8 +175,14 @@ describe("score model", () => {
     for (const item of score.components) {
       expect(item.raw).toBeGreaterThanOrEqual(0);
       expect(item.raw).toBeLessThanOrEqual(1);
-      expect(item.weighted).toBeCloseTo(item.raw * item.weight, 4);
+      expect(Number((item.raw * item.weight).toFixed(SCORE_PRECISION))).toBe(item.weighted);
       expect(item.explanation.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("uses integer weights so the decomposition stays exact", () => {
+    for (const weight of Object.values(SCORE_WEIGHTS)) {
+      expect(Number.isInteger(weight)).toBe(true);
     }
   });
 
