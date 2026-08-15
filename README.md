@@ -71,3 +71,7 @@ The first end-to-end vertical slice is:
 `home catalog -> title detail -> authorized provider resolution -> ranked playback decision -> watch page -> progress persistence contract`
 
 See `coordination/TASKS.md` for the executable backlog.
+
+## Publish to GitHub
+
+This generated archive already contains Git history. See `docs/GITHUB_SETUP.md` for the two-command private-repository publish path.
