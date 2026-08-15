@@ -1897,6 +1897,9 @@ try {
       execFileSync("git", args, {
         cwd: repo,
         encoding: "utf8",
+        // Drop stderr: `git add -A` emits a CRLF advisory per file under a
+        // global core.autocrlf, which buries the actual test output.
+        stdio: ["ignore", "pipe", "ignore"],
         env: { ...process.env, ...gitEnv },
       });
 

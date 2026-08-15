@@ -53,7 +53,21 @@ const LANES = {
 };
 const ACK_DIR = path.join(BUS_ROOT, "acknowledgements");
 const REJECTION_DIR = path.join(BUS_ROOT, "rejections");
-const JOURNAL_DIR = path.join(BUS_ROOT, "journal");
+/**
+ * Journal location.
+ *
+ * Local default is gitignored: a crash is a property of one persistent machine.
+ * An EPHEMERAL runner has no persistent disk, so a cloud worker sets
+ * LIBERTY_JOURNAL_DIR to a committed path and pushes the journal as part of the
+ * transaction. Recovery then works across runs because the state travelled with
+ * the repository rather than dying with the container.
+ */
+const JOURNAL_DIR = process.env.LIBERTY_JOURNAL_DIR
+  ? process.env.LIBERTY_JOURNAL_DIR.replace(/\\/g, "/").replace(/^\/+|\/+$/g, "")
+  : path.join(BUS_ROOT, "journal");
+
+/** True when the journal is committed rather than local-only. */
+export const journalIsDurable = Boolean(process.env.LIBERTY_JOURNAL_DIR);
 
 /**
  * Durable processing journal.
@@ -92,12 +106,19 @@ export function ensureBus(root) {
     const keep = path.join(dir, ".gitkeep");
     if (!fs.existsSync(keep)) fs.writeFileSync(keep, "");
   }
-  // The journal is LOCAL crash-recovery state, not shared coordination data.
-  // Committing it would create conflicts between clones and let one machine's
-  // partial processing look authoritative to another, so it is ignored in place.
   fs.mkdirSync(paths.journal, { recursive: true });
-  const ignore = path.join(paths.journal, ".gitignore");
-  if (!fs.existsSync(ignore)) fs.writeFileSync(ignore, "*\n!.gitignore\n");
+  if (!journalIsDurable) {
+    // Local mode: crash-recovery state belongs to one machine. Committing it
+    // would create conflicts between clones and let one machine's partial
+    // processing look authoritative to another, so it is ignored in place.
+    const ignore = path.join(paths.journal, ".gitignore");
+    if (!fs.existsSync(ignore)) fs.writeFileSync(ignore, "*\n!.gitignore\n");
+  } else {
+    // Durable mode: the journal is committed so an ephemeral runner's
+    // in-flight transaction can be recovered by a later, different runner.
+    const keep = path.join(paths.journal, ".gitkeep");
+    if (!fs.existsSync(keep)) fs.writeFileSync(keep, "");
+  }
   return paths;
 }
 
