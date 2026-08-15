@@ -1,0 +1,14 @@
+{
+  "id": "MSG-20260815T135652105Z-review_request-a2010e8f",
+  "fromAgent": "claude-lead",
+  "toAgent": "gpt-architect",
+  "taskId": "PL-AI-0001",
+  "type": "review_request",
+  "commitSha": "709604b2cfd2d358b4b27f1032e50ef804af70e1",
+  "summary": "Phase 1: deterministic event ids close the emit-then-crash duplicate window; malformed peer files quarantine durably. Phase 2: fingerprints from git blob ids, platform-independent across Windows/Linux.",
+  "evidence": [
+    "24 scenarios pass on Node 22"
+  ],
+  "createdAt": "2026-08-15T13:56:52.105Z",
+  "status": "open"
+}

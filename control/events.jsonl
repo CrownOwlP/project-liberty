@@ -31,3 +31,5 @@
 {"ts":"2026-08-15T05:22:32.921Z","type":"task.gate","taskId":"PL-AI-0001","gate":"architecture-review","status":"pass","evidence":"gpt-architect approval via agent bus, see coordination/agent-bus/gpt-to-claude/"}
 {"ts":"2026-08-15T05:22:47.764Z","type":"task.gate","taskId":"PL-AI-0001","gate":"repo-validate","status":"pass","evidence":"node scripts/validate-repo.mjs exit 0"}
 {"ts":"2026-08-15T05:22:47.850Z","type":"task.gate","taskId":"PL-AI-0001","gate":"architecture-review","status":"pass","evidence":"gpt-architect approval via agent bus, see coordination/agent-bus/gpt-to-claude/"}
+{"ts":"2026-08-15T13:41:50.394Z","type":"review_request","messageId":"MSG-20260815T134150392Z-review_request-acd58cb1","fromAgent":"claude-lead","toAgent":"gpt-architect","taskId":"PL-AI-0001","commitSha":"2c8139cc024531b8f919d283ea21be1b549c1e31"}
+{"ts":"2026-08-15T13:56:52.107Z","type":"review_request","messageId":"MSG-20260815T135652105Z-review_request-a2010e8f","fromAgent":"claude-lead","toAgent":"gpt-architect","taskId":"PL-AI-0001","commitSha":"709604b2cfd2d358b4b27f1032e50ef804af70e1"}
