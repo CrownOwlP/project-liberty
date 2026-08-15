@@ -1,8 +1,39 @@
 import Link from "next/link";
-import { CatalogCard } from "../components/catalog-card";
-import { demoCatalog } from "../lib/demo-catalog";
+import { CatalogRail } from "../components/catalog-rail";
+import { loadHomeCatalog } from "../lib/catalog";
 
-export default function HomePage() {
+function CatalogUnavailable({ reason }: { reason: string }) {
+  return (
+    <section className="section" id="catalog">
+      <div className="state-panel" role="alert">
+        <h2>We couldn&apos;t load the catalog</h2>
+        <p>
+          The catalog service didn&apos;t return a usable response. Nothing is wrong with your
+          account — try again in a moment.
+        </p>
+        <p className="code state-detail">{reason}</p>
+      </div>
+    </section>
+  );
+}
+
+function CatalogEmpty() {
+  return (
+    <section className="section" id="catalog">
+      <div className="state-panel">
+        <h2>Nothing to watch yet</h2>
+        <p>
+          No titles are currently available in your region. New titles appear here as soon as
+          they are licensed.
+        </p>
+      </div>
+    </section>
+  );
+}
+
+export default async function HomePage() {
+  const result = await loadHomeCatalog();
+
   return (
     <main className="shell">
       <header className="topbar">
@@ -31,15 +62,12 @@ export default function HomePage() {
         </div>
       </section>
 
-      <section className="section" id="catalog">
-        <div className="section-head">
-          <h2>Continue building</h2>
-          <small>Fictional development fixtures</small>
-        </div>
-        <div className="rail">
-          {demoCatalog.map((item) => <CatalogCard key={item.id} title={item.title} meta={item.meta} />)}
-        </div>
-      </section>
+      <div id="catalog">
+        {result.status === "error" && <CatalogUnavailable reason={result.reason} />}
+        {result.status === "empty" && <CatalogEmpty />}
+        {result.status === "ok" &&
+          result.response.rails.map((rail) => <CatalogRail key={rail.id} rail={rail} />)}
+      </div>
     </main>
   );
 }

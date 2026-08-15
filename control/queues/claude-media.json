@@ -1,37 +1,81 @@
 {
-  "generatedAt": "2026-08-15T03:20:32.754Z",
+  "generatedAt": "2026-08-15T03:47:00.455Z",
   "agent": "claude-media",
   "executionAvailable": true,
-  "assigned": [
+  "assigned": [],
+  "review": [],
+  "reservedExternal": [],
+  "recommended": [
     {
-      "id": "PL-0201",
+      "id": "PL-0202",
       "priority": "P0",
       "lane": "Media",
-      "status": "IN_PROGRESS",
-      "title": "Expand candidate score model",
-      "dependencies": [],
+      "status": "READY",
+      "title": "Audio selection policy",
+      "dependencies": [
+        "PL-0201"
+      ],
       "allowedPaths": [
         "packages/media-engine/**",
-        "docs/ARCHITECTURE.md",
-        "docs/DECISIONS.md"
+        "packages/contracts/**"
+      ],
+      "preferredAgent": "claude-media",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit"
+      ],
+      "acceptance": "Preferred language, codec, channels, and fallback reasons are deterministic and tested",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PL-0203",
+      "priority": "P0",
+      "lane": "Media",
+      "status": "READY",
+      "title": "Subtitle selection policy",
+      "dependencies": [
+        "PL-0201"
+      ],
+      "allowedPaths": [
+        "packages/media-engine/**",
+        "packages/contracts/**"
+      ],
+      "preferredAgent": "claude-media",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit"
+      ],
+      "acceptance": "Preferred language, forced, default, and off policies are explicit and tested",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PL-0204",
+      "priority": "P0",
+      "lane": "Media",
+      "status": "READY",
+      "title": "Candidate failover policy",
+      "dependencies": [
+        "PL-0201"
+      ],
+      "allowedPaths": [
+        "packages/media-engine/**",
+        "packages/contracts/**"
       ],
       "preferredAgent": "claude-media",
       "reviewAgent": "gpt-architect",
       "qualityGates": [
         "typecheck",
         "unit",
-        "architecture-review"
+        "performance"
       ],
-      "acceptance": "Score dimensions are documented, deterministic, explainable, and regression-tested",
-      "owner": "claude-media",
-      "gateResults": {},
-      "implementationAgent": "claude-media",
-      "updatedAt": "2026-08-15T03:16:27.456Z"
-    }
-  ],
-  "review": [],
-  "reservedExternal": [],
-  "recommended": [
+      "acceptance": "Retry and fallback behavior is bounded, deterministic, observable, and testable",
+      "owner": null,
+      "gateResults": {}
+    },
     {
       "id": "PL-0601",
       "priority": "P1",

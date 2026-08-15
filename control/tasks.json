@@ -157,7 +157,7 @@
       "id": "PL-0201",
       "priority": "P0",
       "lane": "Media",
-      "status": "IN_PROGRESS",
+      "status": "DONE",
       "title": "Expand candidate score model",
       "dependencies": [],
       "allowedPaths": [
@@ -173,16 +173,61 @@
         "architecture-review"
       ],
       "acceptance": "Score dimensions are documented, deterministic, explainable, and regression-tested",
-      "owner": "claude-media",
-      "gateResults": {},
+      "owner": null,
+      "gateResults": {
+        "typecheck": {
+          "status": "pass",
+          "at": "2026-08-15T03:46:57.977Z",
+          "evidence": "npm run check at b3a955aa21ca9d1da9b11826288e82ec1b8bdb8f: turbo typecheck passed 5/5 packages"
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-08-15T03:46:58.391Z",
+          "evidence": "npm run check at b3a955aa21ca9d1da9b11826288e82ec1b8bdb8f: @liberty/media-engine Vitest passed 26/26 tests"
+        },
+        "architecture-review": {
+          "status": "pass",
+          "at": "2026-08-15T03:46:58.800Z",
+          "evidence": "GPT-5.6 Sol independent GitHub review of b3a955aa21ca9d1da9b11826288e82ec1b8bdb8f: APPROVED; deterministic explainable score model, rights-first eligibility, precision invariants, deterministic tie-break and regression coverage verified"
+        }
+      },
       "implementationAgent": "claude-media",
-      "updatedAt": "2026-08-15T03:16:27.456Z"
+      "updatedAt": "2026-08-15T03:47:00.067Z",
+      "review": {
+        "taskId": "PL-0201",
+        "implementationAgent": "claude-media",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "b3a955aa21ca9d1da9b11826288e82ec1b8bdb8f",
+        "reviewedTreeHash": "1f9d209716e2b1050ae2b9833ef8144eff91ce4339b0037c14072339219e0b15",
+        "reviewedFileCount": 12,
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-08-15T03:46:59.660Z",
+        "evidence": "GPT-5.6 Sol independent review of GitHub commit b3a955aa21ca9d1da9b11826288e82ec1b8bdb8f: APPROVED with no blocking findings"
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PL-0201",
+          "implementationAgent": "claude-media",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "b3a955aa21ca9d1da9b11826288e82ec1b8bdb8f",
+          "reviewedTreeHash": "1f9d209716e2b1050ae2b9833ef8144eff91ce4339b0037c14072339219e0b15",
+          "reviewedFileCount": 12,
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-08-15T03:46:59.660Z",
+          "evidence": "GPT-5.6 Sol independent review of GitHub commit b3a955aa21ca9d1da9b11826288e82ec1b8bdb8f: APPROVED with no blocking findings"
+        }
+      ],
+      "completedAt": "2026-08-15T03:47:00.067Z"
     },
     {
       "id": "PL-0202",
       "priority": "P0",
       "lane": "Media",
-      "status": "BACKLOG",
+      "status": "READY",
       "title": "Audio selection policy",
       "dependencies": [
         "PL-0201"
@@ -205,7 +250,7 @@
       "id": "PL-0203",
       "priority": "P0",
       "lane": "Media",
-      "status": "BACKLOG",
+      "status": "READY",
       "title": "Subtitle selection policy",
       "dependencies": [
         "PL-0201"
@@ -228,7 +273,7 @@
       "id": "PL-0204",
       "priority": "P0",
       "lane": "Media",
-      "status": "BACKLOG",
+      "status": "READY",
       "title": "Candidate failover policy",
       "dependencies": [
         "PL-0201"

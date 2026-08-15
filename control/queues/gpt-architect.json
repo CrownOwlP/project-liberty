@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-15T03:20:32.753Z",
+  "generatedAt": "2026-08-15T03:47:00.455Z",
   "agent": "gpt-architect",
   "executionAvailable": false,
   "assigned": [],
@@ -70,6 +70,76 @@
         "security-review"
       ],
       "acceptance": "ADR selects auth approach and defines protected profile boundary",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PL-0202",
+      "priority": "P0",
+      "lane": "Media",
+      "status": "READY",
+      "title": "Audio selection policy",
+      "dependencies": [
+        "PL-0201"
+      ],
+      "allowedPaths": [
+        "packages/media-engine/**",
+        "packages/contracts/**"
+      ],
+      "preferredAgent": "claude-media",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit"
+      ],
+      "acceptance": "Preferred language, codec, channels, and fallback reasons are deterministic and tested",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PL-0203",
+      "priority": "P0",
+      "lane": "Media",
+      "status": "READY",
+      "title": "Subtitle selection policy",
+      "dependencies": [
+        "PL-0201"
+      ],
+      "allowedPaths": [
+        "packages/media-engine/**",
+        "packages/contracts/**"
+      ],
+      "preferredAgent": "claude-media",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit"
+      ],
+      "acceptance": "Preferred language, forced, default, and off policies are explicit and tested",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PL-0204",
+      "priority": "P0",
+      "lane": "Media",
+      "status": "READY",
+      "title": "Candidate failover policy",
+      "dependencies": [
+        "PL-0201"
+      ],
+      "allowedPaths": [
+        "packages/media-engine/**",
+        "packages/contracts/**"
+      ],
+      "preferredAgent": "claude-media",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "performance"
+      ],
+      "acceptance": "Retry and fallback behavior is bounded, deterministic, observable, and testable",
       "owner": null,
       "gateResults": {}
     },
