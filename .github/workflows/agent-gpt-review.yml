@@ -88,10 +88,10 @@ jobs:
         run: |
           git config user.name "liberty-gpt-architect[bot]"
           git config user.email "gpt-architect@project-liberty.local"
-          # Explicit, ownership-aware staging. The reviewer owns no task, so this
-          # stages only the enumerated control-plane and bus outputs and fails if
-          # anything else is dirty.
-          node scripts/cloud/stage-task-changes.mjs --agent gpt-architect
+          # --mode control is REQUIRED: the reviewer owns no implementation task,
+          # so implementation mode would have an empty stageable set and reject
+          # every decision, acknowledgement and quarantine it just produced.
+          node scripts/cloud/stage-task-changes.mjs --agent gpt-architect --mode control
 
           if git diff --cached --quiet; then
             echo "changed=false" >> "$GITHUB_OUTPUT"

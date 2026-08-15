@@ -172,14 +172,35 @@ jobs:
         run: node scripts/cloud/mission-control-status.mjs --worker claude-lead --phase implement
 
       - name: Run and record the required gates
+        id: gates
         # The gate runner executes each runnable gate ITSELF and records the real
         # outcome. Gate evidence is never taken from the model's self-report.
+        # continue-on-error so a failure can still be PUBLISHED below; a gate
+        # failure that dies with the runner is a failure nobody ever learns about.
         if: steps.select.outputs.selected == 'true'
+        continue-on-error: true
         run: node scripts/cloud/run-gates.mjs --task ${{ steps.select.outputs.task }}
+
+      - name: Publish gate failure state
+        # Failed or blocked gates exist only in this ephemeral checkout. Without
+        # pushing them, remote main never learns the task failed and the
+        # scheduler reselects it forever. Commits control state ONLY -- the
+        # model's implementation must not reach main on a failure path.
+        if: always() && steps.select.outputs.selected == 'true' && steps.gates.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config --local url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
+          node scripts/cloud/publish-control-state.mjs \
+            --agent claude-lead \
+            --task ${{ steps.select.outputs.task }} \
+            --reason "gate failure or blocked gate; implementation not committed"
+          echo "::error::Gates failed for ${{ steps.select.outputs.task }}. Failure state published; no review requested."
+          exit 1
 
       - name: Finalize the task deterministically
         id: publish
-        if: steps.select.outputs.selected == 'true'
+        if: steps.select.outputs.selected == 'true' && steps.gates.outcome == 'success'
         # The ONLY step with a repository write credential. Owns the whole
         # commit/push/handoff boundary: stages just this task, commits the
         # implementation and the review-request state locally, then pushes both

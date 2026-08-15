@@ -93,15 +93,29 @@ if (TASK_ID && owned[0].owner !== AGENT) {
   process.exit(1);
 }
 
-const taskPrefixes =
-  MODE === "implementation"
-    ? owned.flatMap((t) => (t.allowedPaths ?? []).map(normalizePrefix).filter(Boolean))
-    : [];
-const outputPrefixes = MODE === "control" ? CONTROL_PLANE_OUTPUTS.map(normalizePrefix) : [];
+/*
+ * Three categories, not two.
+ *
+ * A single run legitimately produces BOTH kinds of dirt: select/start, mission
+ * control and the gate runner mutate control state, while the model mutates the
+ * task's own files. Each staging pass must commit its own category, leave the
+ * other alone for the pass that owns it, and still refuse anything unexpected.
+ *
+ * Treating the other category as "unexpected" is what made the first ordinary
+ * autonomous task impossible to finalize.
+ */
+const allTaskPrefixes = owned
+  .flatMap((t) => (t.allowedPaths ?? []).map(normalizePrefix))
+  .filter(Boolean);
+const allOutputPrefixes = CONTROL_PLANE_OUTPUTS.map(normalizePrefix);
+
+const stagePrefixes = MODE === "implementation" ? allTaskPrefixes : allOutputPrefixes;
+const toleratePrefixes = MODE === "implementation" ? allOutputPrefixes : allTaskPrefixes;
 
 console.log(`Agent: ${AGENT} | mode: ${MODE}`);
 console.log(`Scoped tasks: ${owned.map((t) => `${t.id} [${t.status}]`).join(", ") || "(none)"}`);
-console.log(`Stageable prefixes: ${[...taskPrefixes, ...outputPrefixes].join(", ") || "(none)"}`);
+console.log(`Stage: ${stagePrefixes.join(", ") || "(none)"}`);
+console.log(`Tolerate (left for the other pass): ${toleratePrefixes.join(", ") || "(none)"}`);
 
 // `-z` and NUL splitting: filenames can contain spaces, and a quoted path would
 // otherwise be staged under the wrong name.
@@ -112,11 +126,11 @@ const dirty = git("status", "--porcelain", "-z", "--untracked-files=all")
   .filter(Boolean);
 
 const staged = [];
+const tolerated = [];
 const rejected = [];
 for (const rel of dirty) {
-  const ownedByTask = taskPrefixes.some((p) => underPrefix(rel, p));
-  const isOutput = outputPrefixes.some((p) => underPrefix(rel, p));
-  if (ownedByTask || isOutput) staged.push(rel);
+  if (stagePrefixes.some((p) => underPrefix(rel, p))) staged.push(rel);
+  else if (toleratePrefixes.some((p) => underPrefix(rel, p))) tolerated.push(rel);
   else rejected.push(rel);
 }
 
@@ -124,16 +138,20 @@ for (const rel of staged) git("add", "--", rel);
 
 console.log(`\nStaged ${staged.length} file(s):`);
 for (const rel of staged) console.log(`  + ${rel}`);
+if (tolerated.length) {
+  console.log(`\nLeft for the other staging pass (${tolerated.length}):`);
+  for (const rel of tolerated) console.log(`  ~ ${rel}`);
+}
 
 if (rejected.length) {
   console.error(`\nREFUSING TO COMMIT (${MODE} mode): ${rejected.length} dirty path(s) are not stageable here:`);
   for (const rel of rejected) console.error(`  ! ${rel}`);
   console.error(
     MODE === "implementation"
-      ? "\nImplementation staging covers ONLY the selected task's allowedPaths. Control-plane and bus " +
-        "state is staged separately, after the deterministic steps that legitimately produce it -- so a " +
-        "direct edit to control/tasks.json can never be committed as an implementation change."
-      : "\nControl staging covers ONLY the enumerated control-plane and bus outputs.",
+      ? "\nImplementation staging commits ONLY the selected task's allowedPaths, and leaves deterministic " +
+        "control/bus outputs for the control pass. A path in neither set belongs to no task at all."
+      : "\nControl staging commits ONLY the enumerated control-plane and bus outputs, and leaves the " +
+        "selected task's implementation files for the implementation pass.",
   );
   process.exit(1);
 }

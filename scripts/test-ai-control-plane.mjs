@@ -2839,6 +2839,212 @@ try {
   }
 
   /* ---------------------------------------------------------------------
+   * 9x. End-to-end staging transaction, in the real workflow order.
+   *
+   *     select/start -> snapshot -> model edit -> restore -> gate mutation
+   *     -> implementation staging -> control staging.
+   *
+   *     Both passes must commit exactly their own class of files. Rejecting the
+   *     other class made the first ordinary autonomous task impossible to
+   *     finalize, and no unit test caught it because the failure only appears
+   *     when the passes run in sequence against real dirt.
+   * ------------------------------------------------------------------- */
+  {
+    const repo = freshRepo();
+    const gitEnv = {
+      GIT_AUTHOR_NAME: "t",
+      GIT_AUTHOR_EMAIL: "t@t",
+      GIT_COMMITTER_NAME: "t",
+      GIT_COMMITTER_EMAIL: "t@t",
+    };
+    const git = (...a) =>
+      execFileSync("git", a, {
+        cwd: repo,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+        env: { ...process.env, ...gitEnv },
+      });
+    const stage = (mode, extra = []) =>
+      run(repo, "scripts/cloud/stage-task-changes.mjs", [
+        "--agent", "claude-frontend",
+        "--task", "PL-0101",
+        "--mode", mode,
+        ...extra,
+      ]);
+    const stagedFiles = () =>
+      git("diff", "--cached", "--name-only").split("\n").map((s) => s.trim()).filter(Boolean);
+
+    git("init", "-q", "-b", "main");
+    git("add", "-A");
+    git("commit", "-q", "-m", "baseline");
+
+    // 1. Deterministic select/start dirties control state.
+    run(repo, CLI, ["claim", "PL-0101", "claude-frontend"]);
+    run(repo, CLI, ["start", "PL-0101", "claude-frontend"]);
+
+    // 2. Snapshot AFTER the deterministic mutation, as the workflow does.
+    const runnerTemp = path.join(temp, `runner-e2e-${++repoSeq}`);
+    fs.mkdirSync(runnerTemp, { recursive: true });
+    run(repo, "scripts/cloud/protect-state.mjs", ["--snapshot"], { RUNNER_TEMP: runnerTemp });
+
+    // 3. Model edits its own task paths (legitimate) AND control state (not).
+    fs.appendFileSync(path.join(repo, "apps/web/src/lib/catalog.ts"), "\n// model work\n");
+    const tasksFile = path.join(repo, "control", "tasks.json");
+    const tampered = JSON.parse(fs.readFileSync(tasksFile, "utf8"));
+    tampered.tasks.find((t) => t.id === "PL-0101").status = "DONE";
+    fs.writeFileSync(tasksFile, JSON.stringify(tampered, null, 2) + "\n");
+
+    // 4. Restore discards the tamper but keeps the deterministic start state.
+    run(repo, "scripts/cloud/protect-state.mjs", ["--restore"], { RUNNER_TEMP: runnerTemp });
+    assert.equal(taskOf(repo, "PL-0101").status, "IN_PROGRESS", "restore must undo the tamper");
+    assert.equal(taskOf(repo, "PL-0101").owner, "claude-frontend", "restore must keep the deterministic claim");
+
+    // 5. Deterministic gate mutation dirties control state again.
+    run(repo, CLI, ["gate", "PL-0101", "lint", "pass", "npm run lint exit 0"]);
+
+    // 6. IMPLEMENTATION pass: commits task files, tolerates control dirt.
+    const implOut = stage("implementation");
+    const implStaged = stagedFiles();
+    assert.ok(
+      implStaged.includes("apps/web/src/lib/catalog.ts"),
+      `implementation pass must stage the task's own file:\n${implOut}`,
+    );
+    assert.ok(
+      implStaged.every((f) => !f.startsWith("control/") && !f.startsWith("coordination/")),
+      `implementation pass must not stage control state, got: ${implStaged.join(", ")}`,
+    );
+    assert.match(implOut, /Left for the other staging pass/, "control dirt must be tolerated, not rejected");
+    git("commit", "-q", "-m", "implementation");
+
+    // 7. CONTROL pass: commits the deterministic state left behind.
+    stage("control");
+    const controlStaged = stagedFiles();
+    assert.ok(controlStaged.includes("control/tasks.json"), "control pass must stage tasks.json");
+    assert.ok(
+      controlStaged.every((f) => f.startsWith("control/") || f.startsWith("coordination/") || f.startsWith("docs/MISSION_CONTROL")),
+      `control pass must stage only control outputs, got: ${controlStaged.join(", ")}`,
+    );
+    assert.ok(
+      !controlStaged.includes("apps/web/src/lib/catalog.ts"),
+      "control pass must not re-stage implementation files",
+    );
+    git("commit", "-q", "-m", "control state");
+
+    // 8. Nothing left behind, and an unrelated dirty path is still refused.
+    assert.equal(git("status", "--porcelain").trim(), "", "both passes together must account for all dirt");
+    fs.writeFileSync(path.join(repo, "UNRELATED.md"), "not owned by any task\n");
+    let refused = false;
+    try {
+      stage("implementation");
+    } catch (error) {
+      refused = /REFUSING TO COMMIT/.test(`${error.stdout ?? ""}${error.stderr ?? ""}`);
+    }
+    assert.ok(refused, "a path owned by no task must still be refused");
+  }
+
+  /* ---------------------------------------------------------------------
+   * 9y. A GPT quarantine is publishable in control mode.
+   * ------------------------------------------------------------------- */
+  {
+    const repo = freshRepo();
+    const lane = busFile(repo, "gpt-to-claude");
+    const SHA = "c9".repeat(20);
+
+    // The stager inspects the working tree with git, so the fixture needs a
+    // real repository. Committing a baseline first means every mutation below
+    // shows up as dirt, which is what the staging passes operate on.
+    const git = (...a) =>
+      execFileSync("git", a, {
+        cwd: repo,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+        env: {
+          ...process.env,
+          GIT_AUTHOR_NAME: "t",
+          GIT_AUTHOR_EMAIL: "t@t",
+          GIT_COMMITTER_NAME: "t",
+          GIT_COMMITTER_EMAIL: "t@t",
+        },
+      });
+    git("init", "-q", "-b", "main");
+    git("add", "-A");
+    git("commit", "-q", "-m", "baseline");
+
+    // Put the task in REVIEW first. Task status is checked BEFORE the range,
+    // deliberately: an early-arriving decision is transient and must not be
+    // permanently quarantined just because it landed before the task was
+    // submitted. Without this setup the fixture exercises the wrong branch.
+    run(repo, CLI, ["claim", "PL-AI-0001", "claude-lead"], { LIBERTY_COMMIT_SHA: SHA });
+    run(repo, CLI, ["start", "PL-AI-0001", "claude-lead"], { LIBERTY_COMMIT_SHA: SHA });
+    run(repo, CLI, ["gate", "PL-AI-0001", "repo-validate", "pass", "smoke"], { LIBERTY_COMMIT_SHA: SHA });
+    run(repo, CLI, ["gate", "PL-AI-0001", "architecture-review", "pass", "smoke"], { LIBERTY_COMMIT_SHA: SHA });
+    run(repo, CLI, ["review", "PL-AI-0001"], { LIBERTY_COMMIT_SHA: SHA });
+
+    // A legacy decision with no baseSha, exactly as it sits on main today.
+    const legacyId = "MSG-20260815T052113388Z-review_request-31445899";
+    fs.writeFileSync(
+      path.join(lane, `${legacyId}.json`),
+      JSON.stringify(
+        {
+          id: legacyId,
+          fromAgent: "gpt-architect",
+          toAgent: "claude-lead",
+          taskId: "PL-AI-0001",
+          type: "review_approved",
+          commitSha: SHA,
+          summary: "legacy decision with no baseSha",
+          evidence: [],
+          createdAt: "2026-08-15T05:21:13.388Z",
+          status: "open",
+        },
+        null,
+        2,
+      ) + "\n",
+    );
+
+    // Processing quarantines it durably.
+    runFail(repo, ["process", "claude-lead"], /carries no baseSha/, {
+      LIBERTY_COMMIT_SHA: SHA,
+    });
+    const rejections = fs
+      .readdirSync(busFile(repo, "rejections"))
+      .filter((n) => n.endsWith(".json"));
+    assert.equal(rejections.length, 1, "the legacy decision must be quarantined");
+
+    // gpt-architect owns no implementation task, so control mode is the ONLY
+    // mode that can publish its output. Implementation mode has an empty
+    // stageable set and would reject the quarantine it just produced.
+    // Implementation mode FIRST, on a clean index. gpt-architect owns no
+    // implementation task, so its stageable set is empty and every control
+    // output is tolerated. It does not error -- it silently stages NOTHING,
+    // which is the more dangerous failure: the publisher would commit an empty
+    // change and the quarantine would never reach main, so the same legacy
+    // message would be rediscovered on every run forever.
+    run(repo, "scripts/cloud/stage-task-changes.mjs", [
+      "--agent", "gpt-architect",
+      "--mode", "implementation",
+    ]);
+    assert.equal(
+      git("diff", "--cached", "--name-only").trim(),
+      "",
+      "implementation mode stages nothing for a reviewer -- exactly why the publisher must pass --mode control",
+    );
+
+    // Control mode stages the quarantine, making it committable and durable.
+    const controlOut = run(repo, "scripts/cloud/stage-task-changes.mjs", [
+      "--agent", "gpt-architect",
+      "--mode", "control",
+    ]);
+    assert.match(controlOut, /agent-bus\/rejections/, `quarantine must be staged:\n${controlOut}`);
+    assert.ok(
+      git("diff", "--cached", "--name-only")
+        .split("\n")
+        .some((f) => f.includes("agent-bus/rejections")),
+      "the quarantine record must reach the index so it can be pushed",
+    );
+  }
+
+  /* ---------------------------------------------------------------------
    * 10. Bootstrap into a new project still works.
    * ------------------------------------------------------------------- */
   {
@@ -2905,7 +3111,7 @@ try {
     "running the test suite must not mutate any live control/ or coordination/ file",
   );
 
-  console.log("AI control plane tests passed (35 scenarios).");
+  console.log("AI control plane tests passed (37 scenarios).");
 } finally {
   fs.rmSync(temp, { recursive: true, force: true });
 }
