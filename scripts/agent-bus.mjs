@@ -191,11 +191,30 @@ function compactTimestamp(iso) {
  */
 export const MESSAGE_ID_PATTERN = /^MSG-\d{8}T\d{9}Z-[a-z_]+-[0-9a-f]{8}$/;
 
+/**
+ * Quarantine key for a file whose own identity is unusable — unparseable, or a
+ * filename that is not a safe message id. Derived from the filename so it is
+ * deterministic and stable across machines and runs.
+ */
+export const REJECTION_KEY_PATTERN = /^(MSG-\d{8}T\d{9}Z-[a-z_]+-[0-9a-f]{8}|MALFORMED-[0-9a-f]{16})$/;
+
+export function malformedRejectionKey(fileName) {
+  return `MALFORMED-${crypto.createHash("sha256").update(fileName).digest("hex").slice(0, 16)}`;
+}
+
 export function assertSafeMessageId(messageId) {
   if (typeof messageId !== "string" || !MESSAGE_ID_PATTERN.test(messageId)) {
     throw new Error(`unsafe or malformed message id: ${String(messageId)}`);
   }
   return messageId;
+}
+
+/** Accepts a real message id OR a derived malformed key. */
+export function assertSafeRejectionKey(key) {
+  if (typeof key !== "string" || !REJECTION_KEY_PATTERN.test(key)) {
+    throw new Error(`unsafe or malformed rejection key: ${String(key)}`);
+  }
+  return key;
 }
 
 export function newMessageId(type, createdAt) {
@@ -281,10 +300,56 @@ export function readAcknowledgement(root, messageId) {
   );
 }
 
-export function readRejection(root, messageId) {
+export function readRejection(root, key) {
   return readJsonIfPresent(
-    path.join(busPaths(root).rejections, `${assertSafeMessageId(messageId)}.json`)
+    path.join(busPaths(root).rejections, `${assertSafeRejectionKey(key)}.json`)
   );
+}
+
+/**
+ * Files in the agent's inbound lane that could not be interpreted as messages.
+ *
+ * These must NOT be silently skipped: a permanently malformed peer file has to
+ * become a durable rejection record, otherwise it stays invisible forever and
+ * every checkout rediscovers it as a fresh anomaly. The lane determines the
+ * recipient, because a file we cannot parse cannot tell us who it is for.
+ */
+export function listMalformed(root, { toAgent = null } = {}) {
+  const paths = ensureBus(root);
+  const lanes = [
+    { dir: paths.gptToClaude, recipientHint: "claude" },
+    { dir: paths.claudeToGpt, recipientHint: "gpt" }
+  ];
+  const out = [];
+  for (const { dir, recipientHint } of lanes) {
+    if (!fs.existsSync(dir)) continue;
+    for (const name of fs.readdirSync(dir).sort()) {
+      if (!name.endsWith(".json")) continue;
+      const stem = name.slice(0, -".json".length);
+      const raw = readJsonIfPresent(path.join(dir, name));
+
+      let reason = null;
+      if (!raw) reason = "file is not valid JSON";
+      else if (!MESSAGE_ID_PATTERN.test(stem)) reason = `filename is not a safe message id: ${name}`;
+      else if (raw.id !== stem) reason = `id "${String(raw.id)}" does not match filename "${name}"`;
+      else {
+        const errors = validateMessage(raw);
+        if (errors.length) reason = `structurally invalid: ${errors.join("; ")}`;
+      }
+      if (!reason) continue;
+
+      // An unparseable file cannot name its recipient, so the lane decides.
+      if (toAgent) {
+        const claimed = raw && typeof raw.toAgent === "string" ? raw.toAgent : null;
+        const belongs = claimed ? claimed === toAgent : toAgent.startsWith(recipientHint);
+        if (!belongs) continue;
+      }
+
+      const key = MESSAGE_ID_PATTERN.test(stem) ? stem : malformedRejectionKey(name);
+      out.push({ key, fileName: name, lane: path.basename(dir), reason, raw });
+    }
+  }
+  return out;
 }
 
 /**
@@ -298,11 +363,14 @@ export function readRejection(root, messageId) {
  * A rejection is NOT an acknowledgement. `acknowledged` means "successfully
  * processed"; these two must never be conflated.
  */
-export function rejectMessage(root, messageId, { agent, reason, message = null }) {
-  assertSafeMessageId(messageId);
+export function rejectMessage(root, key, { agent, reason, message = null, originalFilename = null }) {
+  assertSafeRejectionKey(key);
   const paths = ensureBus(root);
   const record = {
-    messageId,
+    messageId: key,
+    // Preserved as evidence when the file's own identity was unusable and the
+    // key had to be derived from the filename instead.
+    originalFilename,
     rejectedBy: agent,
     rejectedAt: new Date().toISOString(),
     reason,
@@ -312,7 +380,7 @@ export function rejectMessage(root, messageId, { agent, reason, message = null }
     taskId: message?.taskId ?? null,
     commitSha: message?.commitSha ?? null
   };
-  const file = path.join(paths.rejections, `${messageId}.json`);
+  const file = path.join(paths.rejections, `${key}.json`);
   try {
     fs.writeFileSync(file, JSON.stringify(record, null, 2) + "\n", { flag: "wx" });
     return { record, created: true };

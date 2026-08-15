@@ -25,7 +25,7 @@ Statuses: `BACKLOG`, `READY`, `CLAIMED`, `IN_PROGRESS`, `REVIEW`, `BLOCKED`, `DO
 | PL-0502 | P0 | Player | BACKLOG | - | - | Player state machine | Loading, ready, stalled, recoverable error, failover, and fatal error states are explicit |
 | PL-0701 | P0 | Test | BACKLOG | - | - | Critical E2E harness | Catalog to title to player to progress fixture journey is reproducible in CI |
 | PL-0702 | P0 | Security | BACKLOG | - | - | Provider and URL security review | SSRF, secret exposure, redirect, allowlist, and rights-bypass findings are resolved or explicitly accepted |
-| PL-AI-0001 | P0 | Coordination | IN_PROGRESS | claude-lead | - | Operationalize AI control plane in Claude Code Desktop | Claude Code uses machine-readable queues, claims tasks through the CLI, syncs status, and records handoffs rather than manually drifting task state |
+| PL-AI-0001 | P0 | Coordination | REVIEW | claude-lead | - | Operationalize AI control plane in Claude Code Desktop | Claude Code uses machine-readable queues, claims tasks through the CLI, syncs status, and records handoffs rather than manually drifting task state |
 | PL-0303 | P1 | Provider | BACKLOG | - | - | Provider health contract | Health sample shape, freshness, failure classes, and cache semantics are defined |
 | PL-0404 | P1 | Backend | BACKLOG | - | - | Watchlist persistence | Typed add, remove, and list APIs with authorization |
 | PL-0503 | P1 | Player | BACKLOG | - | - | Playback telemetry | Startup, rebuffer, quality switch, and failure events are observable with privacy redaction |

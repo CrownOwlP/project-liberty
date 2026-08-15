@@ -12,12 +12,13 @@ import {
   findMessage,
   laneFor,
   listJournal,
+  listMalformed,
   listMessages,
   readJournal,
   readRejection,
   rejectMessage,
   releaseJournal,
-  validateMessage
+  validateMessage,
 } from "./agent-bus.mjs";
 
 const root = process.cwd();
@@ -33,7 +34,7 @@ const files = {
   events: path.join(controlDir, "events.jsonl"),
   queues: path.join(controlDir, "queues"),
   statusMd: path.join(root, "coordination", "PROJECT_STATUS.md"),
-  tasksMd: path.join(root, "coordination", "TASKS.md")
+  tasksMd: path.join(root, "coordination", "TASKS.md"),
 };
 
 function readJson(file) {
@@ -51,10 +52,56 @@ function writeJson(file, value) {
     if (fs.existsSync(tmp)) fs.rmSync(tmp, { force: true });
   }
 }
-function now() { return new Date().toISOString(); }
-function event(type, details = {}) {
+function now() {
+  return new Date().toISOString();
+}
+
+/**
+ * Audit log with exactly-once semantics.
+ *
+ * An event may carry a deterministic `eventId`. Emission checks the log for that
+ * id first, so a crash anywhere between "event appended" and "journal marked
+ * finalized" cannot produce a physical duplicate on replay: recovery recomputes
+ * the same ids and finds them already present.
+ *
+ * Events without an id (ordinary CLI operations) are appended unconditionally.
+ */
+let emittedEventIds = null;
+function loadEmittedEventIds() {
+  if (emittedEventIds) return emittedEventIds;
+  emittedEventIds = new Set();
+  if (!fs.existsSync(files.events)) return emittedEventIds;
+  for (const line of fs.readFileSync(files.events, "utf8").split("\n")) {
+    if (!line.trim()) continue;
+    try {
+      const parsed = JSON.parse(line);
+      if (parsed.eventId) emittedEventIds.add(parsed.eventId);
+    } catch {
+      /* a torn trailing line must not break emission */
+    }
+  }
+  return emittedEventIds;
+}
+function event(type, details = {}, eventId = null) {
   fs.mkdirSync(controlDir, { recursive: true });
-  fs.appendFileSync(files.events, JSON.stringify({ ts: now(), type, ...details }) + "\n");
+  if (eventId) {
+    const seen = loadEmittedEventIds();
+    if (seen.has(eventId)) return false;
+    seen.add(eventId);
+  }
+  const record = eventId
+    ? { ts: now(), eventId, type, ...details }
+    : { ts: now(), type, ...details };
+  fs.appendFileSync(files.events, JSON.stringify(record) + "\n");
+  return true;
+}
+/** Stable across runs and machines: same message + slot + type => same id. */
+function deterministicEventId(messageId, slot, type) {
+  return crypto
+    .createHash("sha256")
+    .update(`${messageId}\0${slot}\0${type}`)
+    .digest("hex")
+    .slice(0, 32);
 }
 function data() {
   return {
@@ -63,17 +110,35 @@ function data() {
     agentDoc: readJson(files.agents),
     gateDoc: readJson(files.gates),
     policies: readJson(files.policies),
-    milestoneDoc: fs.existsSync(files.milestones) ? readJson(files.milestones) : { milestones: [] },
-    adapterDoc: fs.existsSync(files.adapters) ? readJson(files.adapters) : { adapters: [] }
+    milestoneDoc: fs.existsSync(files.milestones)
+      ? readJson(files.milestones)
+      : { milestones: [] },
+    adapterDoc: fs.existsSync(files.adapters)
+      ? readJson(files.adapters)
+      : { adapters: [] },
   };
 }
-function taskMap(tasks) { return new Map(tasks.map((t) => [t.id, t])); }
-function agentMap(agents) { return new Map(agents.map((a) => [a.id, a])); }
-function priorityRank(p) { return ({ P0: 0, P1: 1, P2: 2, P3: 3 })[p] ?? 9; }
-function isDone(id, map) { return map.get(id)?.status === "DONE"; }
-function depsDone(task, map) { return (task.dependencies ?? []).every((id) => isDone(id, map)); }
+function taskMap(tasks) {
+  return new Map(tasks.map((t) => [t.id, t]));
+}
+function agentMap(agents) {
+  return new Map(agents.map((a) => [a.id, a]));
+}
+function priorityRank(p) {
+  return { P0: 0, P1: 1, P2: 2, P3: 3 }[p] ?? 9;
+}
+function isDone(id, map) {
+  return map.get(id)?.status === "DONE";
+}
+function depsDone(task, map) {
+  return (task.dependencies ?? []).every((id) => isDone(id, map));
+}
 function normalizePrefix(pattern) {
-  return pattern.replace(/\\/g, "/").replace(/\*\*.*$/, "").replace(/\*.*$/, "").replace(/\/$/, "");
+  return pattern
+    .replace(/\\/g, "/")
+    .replace(/\*\*.*$/, "")
+    .replace(/\*.*$/, "")
+    .replace(/\/$/, "");
 }
 function pathsOverlap(aPaths = [], bPaths = []) {
   for (const aRaw of aPaths) {
@@ -81,14 +146,21 @@ function pathsOverlap(aPaths = [], bPaths = []) {
       const a = normalizePrefix(aRaw);
       const b = normalizePrefix(bRaw);
       if (!a || !b) return true;
-      if (a === b || a.startsWith(b + "/") || b.startsWith(a + "/")) return true;
+      if (a === b || a.startsWith(b + "/") || b.startsWith(a + "/"))
+        return true;
     }
   }
   return false;
 }
-function active(task, policies) { return policies.activeStatuses.includes(task.status); }
+function active(task, policies) {
+  return policies.activeStatuses.includes(task.status);
+}
 function capabilityScore(agent, task) {
-  if (!agent.capabilities?.includes(task.lane) && !agent.capabilities?.includes("*")) return -1;
+  if (
+    !agent.capabilities?.includes(task.lane) &&
+    !agent.capabilities?.includes("*")
+  )
+    return -1;
   let score = 10;
   if (task.preferredAgent === agent.id) score += 100;
   if (agent.kind === "local-subagent") score += 10;
@@ -101,7 +173,8 @@ function capabilityScore(agent, task) {
 function usageByAgent(tasks, policies) {
   const usage = new Map();
   for (const task of tasks) {
-    if (task.owner && active(task, policies)) usage.set(task.owner, (usage.get(task.owner) ?? 0) + 1);
+    if (task.owner && active(task, policies))
+      usage.set(task.owner, (usage.get(task.owner) ?? 0) + 1);
   }
   return usage;
 }
@@ -114,9 +187,22 @@ function refreshReadiness(tasks) {
   const map = taskMap(tasks);
   let changed = 0;
   for (const task of tasks) {
-    if (["DONE", "CANCELED", "CLAIMED", "IN_PROGRESS", "REVIEW", "BLOCKED"].includes(task.status)) continue;
+    if (
+      [
+        "DONE",
+        "CANCELED",
+        "CLAIMED",
+        "IN_PROGRESS",
+        "REVIEW",
+        "BLOCKED",
+      ].includes(task.status)
+    )
+      continue;
     const next = depsDone(task, map) ? "READY" : "BACKLOG";
-    if (task.status !== next) { task.status = next; changed++; }
+    if (task.status !== next) {
+      task.status = next;
+      changed++;
+    }
   }
   return changed;
 }
@@ -130,14 +216,21 @@ function refreshReadiness(tasks) {
  * agent, but must never consume path ownership or capacity from the local wave.
  * ------------------------------------------------------------------------- */
 function adapterFor(agent, d) {
-  return (d.adapterDoc.adapters ?? []).find((a) => (a.agentKinds ?? []).includes(agent.kind)) ?? null;
+  return (
+    (d.adapterDoc.adapters ?? []).find((a) =>
+      (a.agentKinds ?? []).includes(agent.kind),
+    ) ?? null
+  );
 }
 function agentExecutable(agent, d) {
-  if (typeof agent.executionAvailable === "boolean") return agent.executionAvailable;
+  if (typeof agent.executionAvailable === "boolean")
+    return agent.executionAvailable;
   if (agent.kind === "executive") return false;
   const adapter = adapterFor(agent, d);
   if (!adapter) return false;
-  return adapter.canExecuteCommands === true && adapter.canEditLocalFiles === true;
+  return (
+    adapter.canExecuteCommands === true && adapter.canEditLocalFiles === true
+  );
 }
 function executableAgents(d) {
   return d.agentDoc.agents.filter((a) => agentExecutable(a, d));
@@ -152,29 +245,54 @@ function classifyTasks(d) {
   const map = taskMap(tasks);
   const amap = agentMap(d.agentDoc.agents);
   const local = executableAgents(d);
-  const out = { readyAndExecutable: [], readyButExternal: [], blocked: [], active: [], backlog: [], done: [] };
+  const out = {
+    readyAndExecutable: [],
+    readyButExternal: [],
+    blocked: [],
+    active: [],
+    backlog: [],
+    done: [],
+  };
 
   for (const task of tasks) {
     if (task.status === "CANCELED") continue;
-    if (task.status === "DONE") { out.done.push(task); continue; }
-    if (task.status === "BLOCKED") {
-      out.blocked.push({ task, reason: task.blocker ?? "blocked without recorded reason" });
+    if (task.status === "DONE") {
+      out.done.push(task);
       continue;
     }
-    if (active(task, d.policies)) { out.active.push(task); continue; }
+    if (task.status === "BLOCKED") {
+      out.blocked.push({
+        task,
+        reason: task.blocker ?? "blocked without recorded reason",
+      });
+      continue;
+    }
+    if (active(task, d.policies)) {
+      out.active.push(task);
+      continue;
+    }
     if (task.status !== "READY") {
-      const missing = (task.dependencies ?? []).filter((id) => !isDone(id, map));
-      out.backlog.push({ task, reason: missing.length ? `waiting on ${missing.join(", ")}` : "not READY" });
+      const missing = (task.dependencies ?? []).filter(
+        (id) => !isDone(id, map),
+      );
+      out.backlog.push({
+        task,
+        reason: missing.length
+          ? `waiting on ${missing.join(", ")}`
+          : "not READY",
+      });
       continue;
     }
 
-    const preferred = task.preferredAgent ? amap.get(task.preferredAgent) : null;
+    const preferred = task.preferredAgent
+      ? amap.get(task.preferredAgent)
+      : null;
     if (preferred && !agentExecutable(preferred, d)) {
       const adapter = adapterFor(preferred, d);
       out.readyButExternal.push({
         task,
         agent: preferred,
-        reason: `reserved for ${preferred.id} via ${adapter?.id ?? "external adapter"}; not locally executable`
+        reason: `reserved for ${preferred.id} via ${adapter?.id ?? "external adapter"}; not locally executable`,
       });
       continue;
     }
@@ -183,7 +301,7 @@ function classifyTasks(d) {
       out.readyButExternal.push({
         task,
         agent: preferred,
-        reason: `no locally executable agent advertises lane ${task.lane}`
+        reason: `no locally executable agent advertises lane ${task.lane}`,
       });
       continue;
     }
@@ -202,7 +320,10 @@ function classifyTasks(d) {
  * set instead and only fall back to greedy if the search budget is exhausted.
  * ------------------------------------------------------------------------- */
 function waveKey(sel) {
-  return sel.map((x) => x.task.id).sort().join(",");
+  return sel
+    .map((x) => x.task.id)
+    .sort()
+    .join(",");
 }
 function betterWave(a, b) {
   if (a.length !== b.length) return a.length > b.length;
@@ -215,10 +336,21 @@ function greedyWave(candidates, agents, baseUsage) {
   const usage = new Map(baseUsage);
   const selected = [];
   for (const task of candidates) {
-    if (selected.some((c) => pathsOverlap(task.allowedPaths, c.task.allowedPaths))) continue;
+    if (
+      selected.some((c) => pathsOverlap(task.allowedPaths, c.task.allowedPaths))
+    )
+      continue;
     const options = agents
-      .filter((a) => capabilityScore(a, task) >= 0 && (usage.get(a.id) ?? 0) < a.maxParallel)
-      .sort((x, y) => capabilityScore(y, task) - capabilityScore(x, task) || x.id.localeCompare(y.id));
+      .filter(
+        (a) =>
+          capabilityScore(a, task) >= 0 &&
+          (usage.get(a.id) ?? 0) < a.maxParallel,
+      )
+      .sort(
+        (x, y) =>
+          capabilityScore(y, task) - capabilityScore(x, task) ||
+          x.id.localeCompare(y.id),
+      );
     if (!options.length) continue;
     selected.push({ task, agent: options[0] });
     usage.set(options[0].id, (usage.get(options[0].id) ?? 0) + 1);
@@ -231,7 +363,11 @@ function planExecutableWave(d, classification) {
   const baseUsage = usageByAgent(tasks, d.policies);
   const candidates = classification.readyAndExecutable
     .filter((t) => !conflictWithActive(t, tasks, d.policies))
-    .sort((a, b) => priorityRank(a.priority) - priorityRank(b.priority) || a.id.localeCompare(b.id));
+    .sort(
+      (a, b) =>
+        priorityRank(a.priority) - priorityRank(b.priority) ||
+        a.id.localeCompare(b.id),
+    );
 
   let best = [];
   let nodes = 0;
@@ -240,7 +376,10 @@ function planExecutableWave(d, classification) {
 
   function dfs(i, chosen, usage) {
     if (exhausted) return;
-    if (++nodes > budget) { exhausted = true; return; }
+    if (++nodes > budget) {
+      exhausted = true;
+      return;
+    }
     // Must stay `<`, not `<=`: equal-length branches have to remain reachable
     // so betterWave() can apply the priority and lexicographic tie-breaks.
     if (chosen.length + (candidates.length - i) < best.length) return;
@@ -249,10 +388,20 @@ function planExecutableWave(d, classification) {
       return;
     }
     const task = candidates[i];
-    if (!chosen.some((c) => pathsOverlap(task.allowedPaths, c.task.allowedPaths))) {
+    if (
+      !chosen.some((c) => pathsOverlap(task.allowedPaths, c.task.allowedPaths))
+    ) {
       const options = agents
-        .filter((a) => capabilityScore(a, task) >= 0 && (usage.get(a.id) ?? 0) < a.maxParallel)
-        .sort((x, y) => capabilityScore(y, task) - capabilityScore(x, task) || x.id.localeCompare(y.id));
+        .filter(
+          (a) =>
+            capabilityScore(a, task) >= 0 &&
+            (usage.get(a.id) ?? 0) < a.maxParallel,
+        )
+        .sort(
+          (x, y) =>
+            capabilityScore(y, task) - capabilityScore(x, task) ||
+            x.id.localeCompare(y.id),
+        );
       for (const agent of options) {
         usage.set(agent.id, (usage.get(agent.id) ?? 0) + 1);
         chosen.push({ task, agent });
@@ -278,14 +427,16 @@ function deferredReasons(d, classification, wave) {
   for (const task of classification.readyAndExecutable) {
     if (chosen.has(task.id)) continue;
     const activeClash = conflictWithActive(task, d.taskDoc.tasks, d.policies);
-    const waveClash = wave.find((w) => pathsOverlap(task.allowedPaths, w.task.allowedPaths));
+    const waveClash = wave.find((w) =>
+      pathsOverlap(task.allowedPaths, w.task.allowedPaths),
+    );
     out.push({
       task,
       reason: activeClash
         ? `allowedPaths overlap active ${activeClash.id} (owner ${activeClash.owner ?? "unassigned"})`
         : waveClash
           ? `allowedPaths overlap dispatched ${waveClash.task.id}`
-          : "no locally executable agent has capacity for this lane in this wave"
+          : "no locally executable agent has capacity for this lane in this wave",
     });
   }
   return out;
@@ -307,24 +458,29 @@ const fingerprintExclusions = [
   // Handoff traffic is coordination metadata, not implementation. Without this
   // exclusion, publishing a review request would change the fingerprint of the
   // very task being reviewed and invalidate the approval that came back.
-  "coordination/agent-bus"
+  "coordination/agent-bus",
 ];
 function excludedFromFingerprint(rel) {
   // Write-then-rename temporaries are transient artefacts, never implementation.
   if (rel.endsWith(".tmp")) return true;
-  return fingerprintExclusions.some((ex) => rel === ex || rel.startsWith(ex + "/"));
+  return fingerprintExclusions.some(
+    (ex) => rel === ex || rel.startsWith(ex + "/"),
+  );
 }
 function filesForPattern(pattern) {
   const prefix = normalizePrefix(pattern);
   if (!prefix) return [];
   const abs = path.join(root, prefix);
   if (!fs.existsSync(abs)) return [];
-  if (fs.statSync(abs).isFile()) return excludedFromFingerprint(prefix) ? [] : [prefix];
+  if (fs.statSync(abs).isFile())
+    return excludedFromFingerprint(prefix) ? [] : [prefix];
   const out = [];
   const stack = [prefix];
   while (stack.length) {
     const rel = stack.pop();
-    for (const entry of fs.readdirSync(path.join(root, rel), { withFileTypes: true })) {
+    for (const entry of fs.readdirSync(path.join(root, rel), {
+      withFileTypes: true,
+    })) {
       if (entry.name === "node_modules" || entry.name === ".git") continue;
       const childRel = `${rel}/${entry.name}`;
       if (excludedFromFingerprint(childRel)) continue;
@@ -334,9 +490,73 @@ function filesForPattern(pattern) {
   }
   return out;
 }
-function implementationFingerprint(task) {
+function taskPathspecs(task) {
+  return [
+    ...new Set((task.allowedPaths ?? []).map(normalizePrefix).filter(Boolean)),
+  ];
+}
+
+/**
+ * Canonical fingerprint from git object ids.
+ *
+ * Hashing working-tree bytes makes the fingerprint depend on the platform:
+ * `core.autocrlf` rewrites line endings on checkout, so Windows and Linux
+ * clones of the SAME commit produce different hashes and an approval recorded
+ * on one machine reads as stale on the other. Git blob ids are computed over
+ * canonical repository content, so they are identical everywhere.
+ *
+ * Returns null when git or the commit is unavailable, so callers can decide.
+ */
+function gitFingerprint(task, commitish = "HEAD") {
+  const pathspecs = taskPathspecs(task);
+  if (!pathspecs.length) return null;
+  try {
+    const out = execFileSync(
+      "git",
+      ["ls-tree", "-r", "-z", commitish, "--", ...pathspecs],
+      {
+        cwd: root,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+        maxBuffer: 64 * 1024 * 1024,
+      },
+    );
+    const entries = [];
+    for (const record of out.split("\0")) {
+      if (!record.trim()) continue;
+      // "<mode> <type> <objectid>\t<path>"
+      const tab = record.indexOf("\t");
+      if (tab < 0) continue;
+      const meta = record.slice(0, tab).split(/\s+/);
+      const rel = record.slice(tab + 1);
+      const objectId = meta[2];
+      if (!objectId || meta[1] !== "blob") continue;
+      if (excludedFromFingerprint(rel)) continue;
+      entries.push([rel, objectId]);
+    }
+    entries.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
+    const hash = crypto.createHash("sha256");
+    for (const [rel, objectId] of entries) {
+      hash.update(rel);
+      hash.update("\0");
+      hash.update(objectId);
+      hash.update("\0");
+    }
+    return {
+      treeHash: hash.digest("hex"),
+      fileCount: entries.length,
+      source: "git-object",
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Working-tree fallback for environments without git (the test fixtures). */
+function worktreeFingerprint(task) {
   const set = new Set();
-  for (const pattern of task.allowedPaths ?? []) for (const rel of filesForPattern(pattern)) set.add(rel);
+  for (const pattern of task.allowedPaths ?? [])
+    for (const rel of filesForPattern(pattern)) set.add(rel);
   const sorted = [...set].sort();
   const hash = crypto.createHash("sha256");
   for (const rel of sorted) {
@@ -345,7 +565,48 @@ function implementationFingerprint(task) {
     hash.update(fs.readFileSync(path.join(root, rel)));
     hash.update("\0");
   }
-  return { treeHash: hash.digest("hex"), fileCount: sorted.length };
+  return {
+    treeHash: hash.digest("hex"),
+    fileCount: sorted.length,
+    source: "worktree",
+  };
+}
+
+function implementationFingerprint(task, commitish = "HEAD") {
+  return gitFingerprint(task, commitish) ?? worktreeFingerprint(task);
+}
+
+/**
+ * Uncommitted changes to files this task owns. Scoped to allowedPaths so an
+ * unrelated edit elsewhere in the repo cannot block a review decision, while a
+ * dirty implementation tree still does.
+ */
+function taskWorktreeIsDirty(task) {
+  if (process.env.LIBERTY_COMMIT_SHA) return false; // test harness has no git
+  const pathspecs = taskPathspecs(task);
+  if (!pathspecs.length) return false;
+  try {
+    const status = execFileSync(
+      "git",
+      ["status", "--porcelain", "--", ...pathspecs],
+      {
+        cwd: root,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+      },
+    );
+    return (
+      status
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .map((line) => line.replace(/^\S+\s+/, ""))
+        .filter((rel) => !excludedFromFingerprint(rel) && !rel.endsWith(".tmp"))
+        .length > 0
+    );
+  } catch {
+    return false;
+  }
 }
 function currentCommitSha() {
   // Explicit override exists so the handoff-bus commit-binding rules can be
@@ -353,18 +614,32 @@ function currentCommitSha() {
   // git so a test can simulate "HEAD moved since GPT reviewed".
   if (process.env.LIBERTY_COMMIT_SHA) return process.env.LIBERTY_COMMIT_SHA;
   try {
-    return execFileSync("git", ["rev-parse", "HEAD"], {
-      cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"]
-    }).trim() || null;
-  } catch { return null; }
+    return (
+      execFileSync("git", ["rev-parse", "HEAD"], {
+        cwd: root,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+      }).trim() || null
+    );
+  } catch {
+    return null;
+  }
 }
 
 /* ---------------------------------------------------------------------------
  * Independent review enforcement
  * ------------------------------------------------------------------------- */
 const REVIEW_REQUIRED_FIELDS = [
-  "taskId", "implementationAgent", "reviewerAgent", "reviewerClass", "reviewerProvider",
-  "reviewedCommitSha", "reviewedTreeHash", "outcome", "reviewedAt", "evidence"
+  "taskId",
+  "implementationAgent",
+  "reviewerAgent",
+  "reviewerClass",
+  "reviewerProvider",
+  "reviewedCommitSha",
+  "reviewedTreeHash",
+  "outcome",
+  "reviewedAt",
+  "evidence",
 ];
 const REVIEW_OUTCOMES = ["APPROVED", "CHANGES_REQUESTED"];
 
@@ -378,23 +653,45 @@ function reviewProblems(task, policies) {
   if (!reviewRequired(task, policies)) return problems;
   const r = task.review;
   if (!r) {
-    problems.push(`no independent review record; run: node scripts/ai-control-plane.mjs approve ${task.id} ${task.reviewAgent} "<evidence>"`);
+    problems.push(
+      `no independent review record; run: node scripts/ai-control-plane.mjs approve ${task.id} ${task.reviewAgent} "<evidence>"`,
+    );
     return problems;
   }
   for (const field of REVIEW_REQUIRED_FIELDS) {
-    if (r[field] === undefined || r[field] === null || r[field] === "") problems.push(`review record missing required field: ${field}`);
+    if (r[field] === undefined || r[field] === null || r[field] === "")
+      problems.push(`review record missing required field: ${field}`);
   }
-  if (r.outcome === "CHANGES_REQUESTED") problems.push("review outcome is CHANGES_REQUESTED; rework and obtain a new approval");
-  else if (r.outcome !== "APPROVED") problems.push(`review outcome ${r.outcome} is not APPROVED`);
+  if (r.outcome === "CHANGES_REQUESTED")
+    problems.push(
+      "review outcome is CHANGES_REQUESTED; rework and obtain a new approval",
+    );
+  else if (r.outcome !== "APPROVED")
+    problems.push(`review outcome ${r.outcome} is not APPROVED`);
   if (r.reviewerAgent && r.reviewerAgent === r.implementationAgent) {
-    problems.push(`self-approval is prohibited: ${r.reviewerAgent} implemented and approved ${task.id}`);
+    problems.push(
+      `self-approval is prohibited: ${r.reviewerAgent} implemented and approved ${task.id}`,
+    );
   }
   if (task.reviewAgent && r.reviewerAgent !== task.reviewAgent) {
-    problems.push(`independent review must come from ${task.reviewAgent}, but record names ${r.reviewerAgent}; automatic reviewer substitution is not permitted`);
+    problems.push(
+      `independent review must come from ${task.reviewAgent}, but record names ${r.reviewerAgent}; automatic reviewer substitution is not permitted`,
+    );
   }
   const current = implementationFingerprint(task);
   if (r.reviewedTreeHash !== current.treeHash) {
-    problems.push(`stale review: implementation under allowedPaths changed after approval (approved ${String(r.reviewedTreeHash).slice(0, 12)}, current ${current.treeHash.slice(0, 12)})`);
+    problems.push(
+      `stale review: implementation under allowedPaths changed after approval (approved ${String(r.reviewedTreeHash).slice(0, 12)}, current ${current.treeHash.slice(0, 12)})`,
+    );
+  }
+  // The fingerprint above is canonical git content, which by design cannot see
+  // uncommitted work. Dirty implementation files are therefore checked
+  // separately -- otherwise a task could reach DONE with unreviewed edits
+  // sitting in the working tree.
+  if (taskWorktreeIsDirty(task)) {
+    problems.push(
+      "uncommitted changes under this task's allowedPaths; commit or stash them before completing",
+    );
   }
   return problems;
 }
@@ -405,12 +702,23 @@ function reviewProblems(task, policies) {
  */
 function assertReviewAllowed(task, reviewer, outcome, evidence) {
   const implementationAgent = task.implementationAgent ?? task.owner ?? null;
-  if (!implementationAgent) throw new Error(`${task.id} has no recorded implementation agent; claim and start it through the control plane first`);
-  if (reviewer.id === implementationAgent) throw new Error(`self-approval is prohibited: ${reviewer.id} implemented ${task.id}`);
+  if (!implementationAgent)
+    throw new Error(
+      `${task.id} has no recorded implementation agent; claim and start it through the control plane first`,
+    );
+  if (reviewer.id === implementationAgent)
+    throw new Error(
+      `self-approval is prohibited: ${reviewer.id} implemented ${task.id}`,
+    );
   if (task.reviewAgent && reviewer.id !== task.reviewAgent) {
-    throw new Error(`${task.id} requires independent review by ${task.reviewAgent}; ${reviewer.id} may not substitute automatically`);
+    throw new Error(
+      `${task.id} requires independent review by ${task.reviewAgent}; ${reviewer.id} may not substitute automatically`,
+    );
   }
-  if (!REVIEW_OUTCOMES.includes(outcome)) throw new Error(`Review outcome must be one of ${REVIEW_OUTCOMES.join(", ")}`);
+  if (!REVIEW_OUTCOMES.includes(outcome))
+    throw new Error(
+      `Review outcome must be one of ${REVIEW_OUTCOMES.join(", ")}`,
+    );
   if (!evidence) throw new Error("Review evidence/reference is required");
   return implementationAgent;
 }
@@ -420,21 +728,35 @@ function assertReviewAllowed(task, reviewer, outcome, evidence) {
  * appended by the caller only after task state is durably persisted, so
  * events.jsonl can never claim a review that task state does not show.
  */
-function recordReview(task, reviewer, outcome, evidence, boundCommitSha = null) {
-  const implementationAgent = assertReviewAllowed(task, reviewer, outcome, evidence);
-  const fingerprint = implementationFingerprint(task);
+function recordReview(
+  task,
+  reviewer,
+  outcome,
+  evidence,
+  boundCommitSha = null,
+) {
+  const implementationAgent = assertReviewAllowed(
+    task,
+    reviewer,
+    outcome,
+    evidence,
+  );
+  // Fingerprint the REVIEWED commit, not the working tree, so the record binds
+  // to exactly the content the reviewer saw.
+  const fingerprint = implementationFingerprint(task, boundCommitSha ?? "HEAD");
   const record = {
     taskId: task.id,
     implementationAgent,
     reviewerAgent: reviewer.id,
     reviewerClass: reviewer.kind,
     reviewerProvider: reviewer.provider,
-    reviewedCommitSha: boundCommitSha ?? currentCommitSha() ?? "unavailable-no-git",
+    reviewedCommitSha:
+      boundCommitSha ?? currentCommitSha() ?? "unavailable-no-git",
     reviewedTreeHash: fingerprint.treeHash,
     reviewedFileCount: fingerprint.fileCount,
     outcome,
     reviewedAt: now(),
-    evidence
+    evidence,
   };
   task.review = record;
   task.reviewHistory ??= [];
@@ -453,12 +775,31 @@ function reviewEventPayload(task, record) {
       outcome: record.outcome,
       reviewedCommitSha: record.reviewedCommitSha,
       reviewedTreeHash: record.reviewedTreeHash,
-      evidence: record.evidence
-    }
+      evidence: record.evidence,
+    },
   };
 }
-function emitAudit(entries = []) {
-  for (const entry of entries) event(entry.type, entry.details);
+/**
+ * Emit the audit records a bus message intends to produce.
+ *
+ * Each entry is stamped with a deterministic id derived from the message id and
+ * its slot in the list, so replaying the exact same intent is a no-op. Returns
+ * the number actually written.
+ */
+function emitAudit(messageId, entries = []) {
+  let written = 0;
+  entries.forEach((entry, index) => {
+    const id = deterministicEventId(messageId, `audit:${index}`, entry.type);
+    if (event(entry.type, entry.details, id)) written++;
+  });
+  return written;
+}
+function emitProcessed(messageId, details) {
+  return event(
+    "bus.message_processed",
+    details,
+    deterministicEventId(messageId, "processed", "bus.message_processed"),
+  );
 }
 
 /* ---------------------------------------------------------------------------
@@ -474,29 +815,11 @@ function emitAudit(entries = []) {
  * CURRENT tree as approved -- silently laundering unreviewed code through the
  * bus. Refuse instead.
  */
-function worktreeIsDirty() {
-  if (process.env.LIBERTY_COMMIT_SHA) return false; // test harness has no git
-  try {
-    const status = execFileSync("git", ["status", "--porcelain"], {
-      cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"]
-    });
-    return status
-      .split("\n")
-      .map((line) => line.trim())
-      .filter(Boolean)
-      // Our own write-then-rename temporaries are not user changes; a crashed
-      // write leaving one behind must not permanently refuse every decision.
-      .some((line) => !line.endsWith(".tmp"))
-      ;
-  } catch {
-    return false;
-  }
-}
-
 function isAncestorCommit(ancestor, descendant) {
   try {
     execFileSync("git", ["merge-base", "--is-ancestor", ancestor, descendant], {
-      cwd: root, stdio: ["ignore", "ignore", "ignore"]
+      cwd: root,
+      stdio: ["ignore", "ignore", "ignore"],
     });
     return true;
   } catch {
@@ -511,13 +834,19 @@ function isAncestorCommit(ancestor, descendant) {
 function reviewedPathsDrifted(sha, task) {
   try {
     const out = execFileSync("git", ["diff", "--name-only", sha, "HEAD"], {
-      cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"]
+      cwd: root,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
     });
     return out
       .split("\n")
       .map((line) => line.trim())
       .filter(Boolean)
-      .filter((rel) => !excludedFromFingerprint(rel) && pathsOverlap([rel], task.allowedPaths ?? []));
+      .filter(
+        (rel) =>
+          !excludedFromFingerprint(rel) &&
+          pathsOverlap([rel], task.allowedPaths ?? []),
+      );
   } catch {
     return null;
   }
@@ -525,7 +854,9 @@ function reviewedPathsDrifted(sha, task) {
 
 function assertCommitBinding(message, task) {
   if (!message.commitSha) {
-    throw new Error(`${message.id} carries no commitSha; a review decision must bind to reviewed code`);
+    throw new Error(
+      `${message.id} carries no commitSha; a review decision must bind to reviewed code`,
+    );
   }
   const current = currentCommitSha();
   // Fail CLOSED. If HEAD cannot be resolved we cannot prove the decision applies
@@ -533,7 +864,7 @@ function assertCommitBinding(message, task) {
   // through.
   if (!current) {
     throw new Error(
-      `${message.id}: cannot resolve HEAD, so a commit-bound review decision cannot be verified; refusing to apply it`
+      `${message.id}: cannot resolve HEAD, so a commit-bound review decision cannot be verified; refusing to apply it`,
     );
   }
 
@@ -542,7 +873,7 @@ function assertCommitBinding(message, task) {
     // to strict equality.
     if (current !== message.commitSha) {
       throw new Error(
-        `stale handoff: ${message.id} reviewed ${message.commitSha.slice(0, 12)} but HEAD is ${current.slice(0, 12)}`
+        `stale handoff: ${message.id} reviewed ${message.commitSha.slice(0, 12)} but HEAD is ${current.slice(0, 12)}`,
       );
     }
   } else if (current !== message.commitSha) {
@@ -552,27 +883,28 @@ function assertCommitBinding(message, task) {
     if (!isAncestorCommit(message.commitSha, current)) {
       throw new Error(
         `stale handoff: ${message.id} reviewed ${message.commitSha.slice(0, 12)}, which is not an ancestor of HEAD ` +
-        `${current.slice(0, 12)}; the branch was rewritten or the review targets unrelated history`
+          `${current.slice(0, 12)}; the branch was rewritten or the review targets unrelated history`,
       );
     }
     const drifted = reviewedPathsDrifted(message.commitSha, task);
     if (drifted === null) {
-      throw new Error(`${message.id}: cannot diff ${message.commitSha.slice(0, 12)} against HEAD; refusing to apply`);
+      throw new Error(
+        `${message.id}: cannot diff ${message.commitSha.slice(0, 12)} against HEAD; refusing to apply`,
+      );
     }
     if (drifted.length) {
       throw new Error(
         `stale handoff: ${message.id} reviewed ${message.commitSha.slice(0, 12)}, but ${drifted.length} reviewed file(s) ` +
-        `changed since: ${drifted.slice(0, 5).join(", ")}${drifted.length > 5 ? ", ..." : ""}; request a fresh review`
+          `changed since: ${drifted.slice(0, 5).join(", ")}${drifted.length > 5 ? ", ..." : ""}; request a fresh review`,
       );
     }
   }
-  // Matching HEAD is not the same as matching the reviewed tree. The fingerprint
-  // recorded below is taken from the WORKING TREE, so an uncommitted edit would
-  // otherwise be stamped as reviewed.
-  if (worktreeIsDirty()) {
+  // Canonical fingerprints cannot see uncommitted work, so a dirty
+  // implementation tree is rejected explicitly rather than silently accepted.
+  if (taskWorktreeIsDirty(task)) {
     throw new Error(
-      `${message.id}: the working tree has uncommitted changes, so it does not match reviewed commit ` +
-      `${message.commitSha.slice(0, 12)}; commit or stash before applying a review decision`
+      `${message.id}: this task's allowedPaths have uncommitted changes, so the working tree does not match ` +
+        `reviewed commit ${message.commitSha.slice(0, 12)}; commit or stash before applying a review decision`,
     );
   }
 }
@@ -600,14 +932,21 @@ class PermanentRejection extends Error {
 function validateBusMessage(d, message, actingAgent) {
   // --- permanent: intrinsic to the message ---
   if (message.toAgent !== actingAgent) {
-    throw new PermanentRejection(`${message.id} is addressed to ${message.toAgent}, not ${actingAgent}`);
+    throw new PermanentRejection(
+      `${message.id} is addressed to ${message.toAgent}, not ${actingAgent}`,
+    );
   }
   const structural = validateMessage(message);
   if (structural.length) {
-    throw new PermanentRejection(`${message.id} is malformed:\n  - ${structural.join("\n  - ")}`);
+    throw new PermanentRejection(
+      `${message.id} is malformed:\n  - ${structural.join("\n  - ")}`,
+    );
   }
 
-  if (message.type === "review_approved" || message.type === "changes_requested") {
+  if (
+    message.type === "review_approved" ||
+    message.type === "changes_requested"
+  ) {
     let task;
     let reviewer;
     try {
@@ -616,7 +955,8 @@ function validateBusMessage(d, message, actingAgent) {
     } catch (error) {
       throw new PermanentRejection(error.message);
     }
-    const outcome = message.type === "review_approved" ? "APPROVED" : "CHANGES_REQUESTED";
+    const outcome =
+      message.type === "review_approved" ? "APPROVED" : "CHANGES_REQUESTED";
 
     // --- transient: depends on repository state, so it may resolve later ---
     // Checked FIRST. A task that is not yet in REVIEW has no owner and no
@@ -624,7 +964,9 @@ function validateBusMessage(d, message, actingAgent) {
     // situational reason and permanently quarantine a decision that is merely
     // early. A stale sha, a moved HEAD and a dirty tree are the same class.
     if (task.status !== "REVIEW") {
-      throw new Error(`${task.id} is ${task.status}; a review decision only applies to a task in REVIEW`);
+      throw new Error(
+        `${task.id} is ${task.status}; a review decision only applies to a task in REVIEW`,
+      );
     }
 
     // --- permanent: reviewer identity is intrinsic to the message ---
@@ -636,6 +978,52 @@ function validateBusMessage(d, message, actingAgent) {
       throw new PermanentRejection(error.message);
     }
 
+    assertCommitBinding(message, task);
+  }
+
+  if (message.type === "review_request") {
+    let task;
+    let requester;
+    try {
+      task = requireTask(d.taskDoc, message.taskId);
+      requester = requireAgent(d, message.fromAgent);
+    } catch (error) {
+      throw new PermanentRejection(error.message);
+    }
+
+    // Repository state can legitimately lag behind an immutable request, so an
+    // early request remains retryable. Once implementation is in progress, the
+    // sender and recipient are fixed properties and identity failures are final.
+    if (task.status !== "IN_PROGRESS") {
+      throw new Error(
+        `${task.id} is ${task.status}; a review request only applies to a task in IN_PROGRESS`,
+      );
+    }
+
+    const implementationAgent = task.implementationAgent ?? task.owner ?? null;
+    if (!implementationAgent) {
+      throw new Error(
+        `${task.id} has no recorded implementation agent; claim and start it through the control plane first`,
+      );
+    }
+    if (requester.id !== implementationAgent) {
+      throw new PermanentRejection(
+        `${message.id} claims ${requester.id} requested review, but ${implementationAgent} implements ${task.id}`,
+      );
+    }
+    if (message.toAgent !== task.reviewAgent) {
+      throw new PermanentRejection(
+        `${task.id} requires independent review by ${task.reviewAgent}, not ${message.toAgent}`,
+      );
+    }
+    if (requester.id === message.toAgent) {
+      throw new PermanentRejection(
+        `self-review is prohibited: ${requester.id} cannot request review from itself for ${task.id}`,
+      );
+    }
+
+    // Enter review only against the same committed implementation named by the
+    // requester. The returning decision is independently bound again.
     assertCommitBinding(message, task);
   }
 
@@ -662,37 +1050,70 @@ function applyBusMessage(d, message, actingAgent) {
     case "changes_requested": {
       const task = requireTask(d.taskDoc, message.taskId);
       const reviewer = requireAgent(d, message.fromAgent);
-      const outcome = message.type === "review_approved" ? "APPROVED" : "CHANGES_REQUESTED";
+      const outcome =
+        message.type === "review_approved" ? "APPROVED" : "CHANGES_REQUESTED";
       // Routed through the same enforcement path as a manual review: reviewer
       // identity, self-approval, designated reviewer and fingerprint binding all
       // still apply. The bus cannot bypass any of them.
-      const record = recordReview(task, reviewer, outcome, busEvidence(message), message.commitSha);
-      if (outcome === "CHANGES_REQUESTED") transition(task, "IN_PROGRESS", d.policies);
+      const record = recordReview(
+        task,
+        reviewer,
+        outcome,
+        busEvidence(message),
+        message.commitSha,
+      );
+      if (outcome === "CHANGES_REQUESTED")
+        transition(task, "IN_PROGRESS", d.policies);
       return {
         summary: `${outcome} recorded on ${task.id} by ${reviewer.id}`,
         // Audit entries are DATA, not closures, so the journal can persist them
         // and crash recovery can emit exactly the same records.
-        audit: [reviewEventPayload(task, record)]
+        audit: [reviewEventPayload(task, record)],
       };
     }
     case "blocker": {
-      if (!message.taskId) return { summary: "blocker noted (no task referenced)", audit: [] };
+      if (!message.taskId)
+        return { summary: "blocker noted (no task referenced)", audit: [] };
       const task = requireTask(d.taskDoc, message.taskId);
       if (task.status !== "BLOCKED") transition(task, "BLOCKED", d.policies);
       const reason = `${message.summary} (via ${message.id})`;
       task.blocker = reason;
       return {
         summary: `${task.id} BLOCKED`,
-        audit: [{ type: "task.blocked", details: { taskId: task.id, reason, source: message.id } }]
+        audit: [
+          {
+            type: "task.blocked",
+            details: { taskId: task.id, reason, source: message.id },
+          },
+        ],
       };
     }
     case "task_instruction":
     case "architecture_decision":
     case "implementation_ready":
-    case "review_request":
       // Informational on receipt. These drive work, not automatic transitions:
       // nothing should silently change task state because a peer said so.
       return { summary: `${message.type} recorded for follow-up`, audit: [] };
+    case "review_request": {
+      const task = requireTask(d.taskDoc, message.taskId);
+      transition(task, "REVIEW", d.policies);
+      return {
+        summary: `${task.id} moved to REVIEW for ${task.reviewAgent}`,
+        audit: [
+          {
+            type: "task.review_requested",
+            details: {
+              taskId: task.id,
+              owner: task.owner,
+              reviewAgent: task.reviewAgent,
+              requestedBy: message.fromAgent,
+              reviewedCommitSha: message.commitSha,
+              source: message.id,
+            },
+          },
+        ],
+      };
+    }
     default:
       throw new Error(`no handler for message type ${message.type}`);
   }
@@ -700,12 +1121,15 @@ function applyBusMessage(d, message, actingAgent) {
 
 function flagValue(args, name, fallback = null) {
   const index = args.indexOf(name);
-  return index >= 0 && args[index + 1] !== undefined ? args[index + 1] : fallback;
+  return index >= 0 && args[index + 1] !== undefined
+    ? args[index + 1]
+    : fallback;
 }
 function flagValues(args, name) {
   const out = [];
   args.forEach((arg, index) => {
-    if (arg === name && args[index + 1] !== undefined) out.push(args[index + 1]);
+    if (arg === name && args[index + 1] !== undefined)
+      out.push(args[index + 1]);
   });
   return out;
 }
@@ -716,11 +1140,15 @@ function describeMessage(m) {
     m.taskId ? `  task: ${m.taskId}` : null,
     m.commitSha ? `  commit: ${m.commitSha}` : null,
     `  ${m.summary}`,
-    m.evidence?.length ? `  evidence: ${m.evidence.join("; ")}` : null
-  ].filter(Boolean).join("\n");
+    m.evidence?.length ? `  evidence: ${m.evidence.join("; ")}` : null,
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
-function saveTasks(taskDoc) { writeJson(files.tasks, taskDoc); }
+function saveTasks(taskDoc) {
+  writeJson(files.tasks, taskDoc);
+}
 function requireTask(taskDoc, id) {
   const task = taskDoc.tasks.find((t) => t.id === id);
   if (!task) throw new Error(`Unknown task ${id}`);
@@ -733,15 +1161,26 @@ function requireAgent(d, id) {
 }
 function transition(task, next, policies) {
   const allowed = policies.transitions[task.status] ?? [];
-  if (!allowed.includes(next)) throw new Error(`Invalid transition ${task.status} -> ${next} for ${task.id}`);
+  if (!allowed.includes(next))
+    throw new Error(
+      `Invalid transition ${task.status} -> ${next} for ${task.id}`,
+    );
   task.status = next;
   task.updatedAt = now();
 }
 function allGatesPassed(task) {
-  return (task.qualityGates ?? []).every((gate) => task.gateResults?.[gate]?.status === "pass");
+  return (task.qualityGates ?? []).every(
+    (gate) => task.gateResults?.[gate]?.status === "pass",
+  );
 }
 function validateState(d) {
-  const { taskDoc, agentDoc, gateDoc, policies, milestoneDoc = { milestones: [] } } = d;
+  const {
+    taskDoc,
+    agentDoc,
+    gateDoc,
+    policies,
+    milestoneDoc = { milestones: [] },
+  } = d;
   const errors = [];
   const warnings = [];
   const tasks = taskDoc.tasks ?? [];
@@ -753,31 +1192,66 @@ function validateState(d) {
   for (const task of tasks) {
     if (ids.has(task.id)) errors.push(`duplicate task id: ${task.id}`);
     ids.add(task.id);
-    if (!policies.statuses.includes(task.status)) errors.push(`${task.id}: invalid status ${task.status}`);
-    for (const dep of task.dependencies ?? []) if (!map.has(dep)) errors.push(`${task.id}: missing dependency ${dep}`);
-    if (task.preferredAgent && !amap.has(task.preferredAgent)) errors.push(`${task.id}: unknown preferredAgent ${task.preferredAgent}`);
-    if (task.reviewAgent && !amap.has(task.reviewAgent)) errors.push(`${task.id}: unknown reviewAgent ${task.reviewAgent}`);
-    if (task.owner && !amap.has(task.owner)) errors.push(`${task.id}: unknown owner ${task.owner}`);
-    for (const gate of task.qualityGates ?? []) if (!gates[gate]) errors.push(`${task.id}: unknown quality gate ${gate}`);
+    if (!policies.statuses.includes(task.status))
+      errors.push(`${task.id}: invalid status ${task.status}`);
+    for (const dep of task.dependencies ?? [])
+      if (!map.has(dep)) errors.push(`${task.id}: missing dependency ${dep}`);
+    if (task.preferredAgent && !amap.has(task.preferredAgent))
+      errors.push(`${task.id}: unknown preferredAgent ${task.preferredAgent}`);
+    if (task.reviewAgent && !amap.has(task.reviewAgent))
+      errors.push(`${task.id}: unknown reviewAgent ${task.reviewAgent}`);
+    if (task.owner && !amap.has(task.owner))
+      errors.push(`${task.id}: unknown owner ${task.owner}`);
+    for (const gate of task.qualityGates ?? [])
+      if (!gates[gate]) errors.push(`${task.id}: unknown quality gate ${gate}`);
     if (!task.acceptance) warnings.push(`${task.id}: missing acceptance text`);
-    if (!task.allowedPaths?.length) warnings.push(`${task.id}: no allowedPaths; parallel write protection is weaker`);
+    if (!task.allowedPaths?.length)
+      warnings.push(
+        `${task.id}: no allowedPaths; parallel write protection is weaker`,
+      );
     for (const p of task.allowedPaths ?? []) {
-      if (!normalizePrefix(p)) warnings.push(`${task.id}: allowedPath "${p}" normalizes to the repository root and will conflict with every other task`);
+      if (!normalizePrefix(p))
+        warnings.push(
+          `${task.id}: allowedPath "${p}" normalizes to the repository root and will conflict with every other task`,
+        );
     }
-    if (task.preferredAgent && amap.has(task.preferredAgent) && capabilityScore(amap.get(task.preferredAgent), task) < 0) {
-      warnings.push(`${task.id}: preferredAgent ${task.preferredAgent} does not advertise lane ${task.lane}`);
+    if (
+      task.preferredAgent &&
+      amap.has(task.preferredAgent) &&
+      capabilityScore(amap.get(task.preferredAgent), task) < 0
+    ) {
+      warnings.push(
+        `${task.id}: preferredAgent ${task.preferredAgent} does not advertise lane ${task.lane}`,
+      );
     }
-    if (task.status === "READY" && !agents.some((a) => capabilityScore(a, task) >= 0)) {
-      errors.push(`${task.id}: READY but no registered agent advertises lane ${task.lane}`);
+    if (
+      task.status === "READY" &&
+      !agents.some((a) => capabilityScore(a, task) >= 0)
+    ) {
+      errors.push(
+        `${task.id}: READY but no registered agent advertises lane ${task.lane}`,
+      );
     }
 
     if (task.review) {
-      if (!amap.has(task.review.reviewerAgent)) errors.push(`${task.id}: review record names unknown reviewer ${task.review.reviewerAgent}`);
-      if (task.review.reviewerAgent === task.review.implementationAgent) errors.push(`${task.id}: review record is a self-approval by ${task.review.reviewerAgent}`);
-      if (!REVIEW_OUTCOMES.includes(task.review.outcome)) errors.push(`${task.id}: invalid review outcome ${task.review.outcome}`);
+      if (!amap.has(task.review.reviewerAgent))
+        errors.push(
+          `${task.id}: review record names unknown reviewer ${task.review.reviewerAgent}`,
+        );
+      if (task.review.reviewerAgent === task.review.implementationAgent)
+        errors.push(
+          `${task.id}: review record is a self-approval by ${task.review.reviewerAgent}`,
+        );
+      if (!REVIEW_OUTCOMES.includes(task.review.outcome))
+        errors.push(
+          `${task.id}: invalid review outcome ${task.review.outcome}`,
+        );
       if (task.status !== "DONE" && task.review.outcome === "APPROVED") {
         const current = implementationFingerprint(task);
-        if (current.treeHash !== task.review.reviewedTreeHash) warnings.push(`${task.id}: approval is stale; implementation changed since review`);
+        if (current.treeHash !== task.review.reviewedTreeHash)
+          warnings.push(
+            `${task.id}: approval is stale; implementation changed since review`,
+          );
       }
     }
     if (task.status === "DONE") {
@@ -788,26 +1262,36 @@ function validateState(d) {
   }
 
   for (const milestone of milestoneDoc.milestones ?? []) {
-    for (const id of milestone.tasks ?? []) if (!map.has(id)) errors.push(`milestone ${milestone.id}: unknown task ${id}`);
+    for (const id of milestone.tasks ?? [])
+      if (!map.has(id))
+        errors.push(`milestone ${milestone.id}: unknown task ${id}`);
   }
 
   const visiting = new Set();
   const visited = new Set();
   function visit(id, trail = []) {
-    if (visiting.has(id)) { errors.push(`dependency cycle: ${[...trail, id].join(" -> ")}`); return; }
+    if (visiting.has(id)) {
+      errors.push(`dependency cycle: ${[...trail, id].join(" -> ")}`);
+      return;
+    }
     if (visited.has(id)) return;
     visiting.add(id);
-    for (const dep of map.get(id)?.dependencies ?? []) visit(dep, [...trail, id]);
-    visiting.delete(id); visited.add(id);
+    for (const dep of map.get(id)?.dependencies ?? [])
+      visit(dep, [...trail, id]);
+    visiting.delete(id);
+    visited.add(id);
   }
   for (const id of ids) visit(id);
 
   const activeTasks = tasks.filter((t) => active(t, policies));
   for (let i = 0; i < activeTasks.length; i++) {
     for (let j = i + 1; j < activeTasks.length; j++) {
-      const a = activeTasks[i], b = activeTasks[j];
+      const a = activeTasks[i],
+        b = activeTasks[j];
       if (a.owner !== b.owner && pathsOverlap(a.allowedPaths, b.allowedPaths)) {
-        errors.push(`active write-path conflict: ${a.id} (${a.owner}) overlaps ${b.id} (${b.owner})`);
+        errors.push(
+          `active write-path conflict: ${a.id} (${a.owner}) overlaps ${b.id} (${b.owner})`,
+        );
       }
     }
   }
@@ -822,71 +1306,138 @@ function renderTaskBoard(project, tasks) {
     "Statuses: `BACKLOG`, `READY`, `CLAIMED`, `IN_PROGRESS`, `REVIEW`, `BLOCKED`, `DONE`, `CANCELED`.",
     "",
     "| ID | Priority | Lane | Status | Owner | Review | Task | Acceptance |",
-    "| --- | --- | --- | --- | --- | --- | --- | --- |"
+    "| --- | --- | --- | --- | --- | --- | --- | --- |",
   ];
-  for (const t of [...tasks].sort((a, b) => priorityRank(a.priority) - priorityRank(b.priority) || a.id.localeCompare(b.id))) {
-    const review = t.review ? `${t.review.outcome} by ${t.review.reviewerAgent}` : "-";
-    lines.push(`| ${t.id} | ${t.priority} | ${t.lane} | ${t.status} | ${t.owner ?? "-"} | ${review} | ${t.title.replaceAll("|", "\\|")} | ${t.acceptance.replaceAll("|", "\\|")} |`);
+  for (const t of [...tasks].sort(
+    (a, b) =>
+      priorityRank(a.priority) - priorityRank(b.priority) ||
+      a.id.localeCompare(b.id),
+  )) {
+    const review = t.review
+      ? `${t.review.outcome} by ${t.review.reviewerAgent}`
+      : "-";
+    lines.push(
+      `| ${t.id} | ${t.priority} | ${t.lane} | ${t.status} | ${t.owner ?? "-"} | ${review} | ${t.title.replaceAll("|", "\\|")} | ${t.acceptance.replaceAll("|", "\\|")} |`,
+    );
   }
   return lines.join("\n") + "\n";
 }
 function renderStatus(d) {
-  const { project, taskDoc, agentDoc, policies, milestoneDoc = { milestones: [] } } = d;
+  const {
+    project,
+    taskDoc,
+    agentDoc,
+    policies,
+    milestoneDoc = { milestones: [] },
+  } = d;
   // Refresh first so the status counts below and the dispatch classification
   // further down are computed from the same task statuses.
   refreshReadiness(taskDoc.tasks);
   const tasks = taskDoc.tasks;
   const agents = agentDoc.agents;
-  const counts = Object.fromEntries(policies.statuses.map((s) => [s, tasks.filter((t) => t.status === s).length]));
+  const counts = Object.fromEntries(
+    policies.statuses.map((s) => [
+      s,
+      tasks.filter((t) => t.status === s).length,
+    ]),
+  );
   const activeTasks = tasks.filter((t) => active(t, policies));
   const blockers = tasks.filter((t) => t.status === "BLOCKED");
   const done = counts.DONE ?? 0;
   const total = tasks.filter((t) => t.status !== "CANCELED").length;
-  const pct = total ? Math.round(done / total * 100) : 0;
+  const pct = total ? Math.round((done / total) * 100) : 0;
   const classification = classifyTasks(d);
   const wave = planExecutableWave(d, classification);
   const lines = [
-    `# ${project.name} - Project Status`, "",
-    `> Generated ${now()} from the AI control plane.`, "",
-    `**Overall completion:** ${done}/${total} executable tasks (${pct}%)`, "",
-    "## Status summary", "",
-    ...policies.statuses.map((s) => `- **${s}:** ${counts[s] ?? 0}`), "",
-    "## Milestones / phases", ""
+    `# ${project.name} - Project Status`,
+    "",
+    `> Generated ${now()} from the AI control plane.`,
+    "",
+    `**Overall completion:** ${done}/${total} executable tasks (${pct}%)`,
+    "",
+    "## Status summary",
+    "",
+    ...policies.statuses.map((s) => `- **${s}:** ${counts[s] ?? 0}`),
+    "",
+    "## Milestones / phases",
+    "",
   ];
   for (const milestone of milestoneDoc.milestones ?? []) {
-    const mtasks = (milestone.tasks ?? []).map((id) => tasks.find((t) => t.id === id)).filter(Boolean);
+    const mtasks = (milestone.tasks ?? [])
+      .map((id) => tasks.find((t) => t.id === id))
+      .filter(Boolean);
     const mdone = mtasks.filter((t) => t.status === "DONE").length;
     const mblocked = mtasks.filter((t) => t.status === "BLOCKED").length;
     const mactive = mtasks.filter((t) => active(t, policies)).length;
-    const mpct = mtasks.length ? Math.round(mdone / mtasks.length * 100) : 0;
-    const state = mdone === mtasks.length && mtasks.length ? "COMPLETE" : mblocked && !mactive && !mtasks.some((t) => ["READY", "BACKLOG"].includes(t.status)) ? "BLOCKED" : (mactive || mdone > 0) ? "IN_PROGRESS" : "NOT_STARTED";
-    lines.push(`- **${milestone.id} — ${milestone.name}:** ${state}, ${mdone}/${mtasks.length} (${mpct}%)${mblocked ? `, ${mblocked} blocked` : ""}`);
+    const mpct = mtasks.length ? Math.round((mdone / mtasks.length) * 100) : 0;
+    const state =
+      mdone === mtasks.length && mtasks.length
+        ? "COMPLETE"
+        : mblocked &&
+            !mactive &&
+            !mtasks.some((t) => ["READY", "BACKLOG"].includes(t.status))
+          ? "BLOCKED"
+          : mactive || mdone > 0
+            ? "IN_PROGRESS"
+            : "NOT_STARTED";
+    lines.push(
+      `- **${milestone.id} — ${milestone.name}:** ${state}, ${mdone}/${mtasks.length} (${mpct}%)${mblocked ? `, ${mblocked} blocked` : ""}`,
+    );
   }
   lines.push("", "## Active work", "");
-  if (!activeTasks.length) lines.push("No tasks are currently claimed, in progress, or in review.");
-  else for (const t of activeTasks) lines.push(`- **${t.id}** [${t.status}] ${t.title} — owner: ${t.owner ?? "unassigned"}`);
+  if (!activeTasks.length)
+    lines.push("No tasks are currently claimed, in progress, or in review.");
+  else
+    for (const t of activeTasks)
+      lines.push(
+        `- **${t.id}** [${t.status}] ${t.title} — owner: ${t.owner ?? "unassigned"}`,
+      );
 
   lines.push("", "## Dispatch classification", "");
-  lines.push(`- **READY_AND_EXECUTABLE:** ${classification.readyAndExecutable.length}`);
-  lines.push(`- **READY_BUT_EXTERNAL:** ${classification.readyButExternal.length}`);
+  lines.push(
+    `- **READY_AND_EXECUTABLE:** ${classification.readyAndExecutable.length}`,
+  );
+  lines.push(
+    `- **READY_BUT_EXTERNAL:** ${classification.readyButExternal.length}`,
+  );
   lines.push(`- **BLOCKED:** ${classification.blocked.length}`);
-  lines.push(`- **BACKLOG (dependency-gated):** ${classification.backlog.length}`);
+  lines.push(
+    `- **BACKLOG (dependency-gated):** ${classification.backlog.length}`,
+  );
 
   lines.push("", "## Recommended executable wave", "");
-  if (!wave.length) lines.push("No conflict-free executable tasks can be assigned with current agent capacity.");
-  else for (const { task, agent } of wave) lines.push(`- **${task.id}** -> ${agent.id} (${task.priority}/${task.lane}) ${task.title}`);
+  if (!wave.length)
+    lines.push(
+      "No conflict-free executable tasks can be assigned with current agent capacity.",
+    );
+  else
+    for (const { task, agent } of wave)
+      lines.push(
+        `- **${task.id}** -> ${agent.id} (${task.priority}/${task.lane}) ${task.title}`,
+      );
 
   lines.push("", "## Queued for external agents", "");
-  if (!classification.readyButExternal.length) lines.push("No READY work is waiting on an external agent lane.");
-  else for (const { task, reason } of classification.readyButExternal) lines.push(`- **${task.id}** (${task.priority}/${task.lane}) ${task.title} — ${reason}`);
+  if (!classification.readyButExternal.length)
+    lines.push("No READY work is waiting on an external agent lane.");
+  else
+    for (const { task, reason } of classification.readyButExternal)
+      lines.push(
+        `- **${task.id}** (${task.priority}/${task.lane}) ${task.title} — ${reason}`,
+      );
 
   lines.push("", "## Blockers", "");
   if (!blockers.length) lines.push("No blockers recorded.");
-  else for (const t of blockers) lines.push(`- **${t.id}** ${t.title}: ${t.blocker ?? "reason not recorded"}`);
+  else
+    for (const t of blockers)
+      lines.push(
+        `- **${t.id}** ${t.title}: ${t.blocker ?? "reason not recorded"}`,
+      );
   lines.push("", "## Agent capacity", "");
   const usage = usageByAgent(tasks, policies);
   for (const a of agents) {
-    lines.push(`- **${a.id}:** ${usage.get(a.id) ?? 0}/${a.maxParallel} active${agentExecutable(a, d) ? "" : " (external lane; not locally executable)"}`);
+    lines.push(
+      `- **${a.id}:** ${usage.get(a.id) ?? 0}/${a.maxParallel} active${agentExecutable(a, d) ? "" : " (external lane; not locally executable)"}`,
+    );
   }
   return lines.join("\n") + "\n";
 }
@@ -899,13 +1450,28 @@ function generateQueues(d) {
   for (const entry of classification.readyButExternal) {
     const key = entry.agent?.id ?? "unassigned";
     if (!externalByAgent.has(key)) externalByAgent.set(key, []);
-    externalByAgent.get(key).push({ id: entry.task.id, title: entry.task.title, priority: entry.task.priority, lane: entry.task.lane, reason: entry.reason });
+    externalByAgent.get(key).push({
+      id: entry.task.id,
+      title: entry.task.title,
+      priority: entry.task.priority,
+      lane: entry.task.lane,
+      reason: entry.reason,
+    });
   }
   for (const agent of agentDoc.agents) {
-    const assigned = tasks.filter((t) => t.owner === agent.id && active(t, policies));
-    const review = tasks.filter((t) => t.status === "REVIEW" && t.reviewAgent === agent.id);
-    const recommended = tasks.filter((t) => t.status === "READY" && capabilityScore(agent, t) >= 0)
-      .sort((a, b) => priorityRank(a.priority) - priorityRank(b.priority) || capabilityScore(agent, b) - capabilityScore(agent, a))
+    const assigned = tasks.filter(
+      (t) => t.owner === agent.id && active(t, policies),
+    );
+    const review = tasks.filter(
+      (t) => t.status === "REVIEW" && t.reviewAgent === agent.id,
+    );
+    const recommended = tasks
+      .filter((t) => t.status === "READY" && capabilityScore(agent, t) >= 0)
+      .sort(
+        (a, b) =>
+          priorityRank(a.priority) - priorityRank(b.priority) ||
+          capabilityScore(agent, b) - capabilityScore(agent, a),
+      )
       .slice(0, 20);
     writeJson(path.join(files.queues, `${agent.id}.json`), {
       generatedAt: now(),
@@ -914,7 +1480,7 @@ function generateQueues(d) {
       assigned,
       review,
       reservedExternal: externalByAgent.get(agent.id) ?? [],
-      recommended
+      recommended,
     });
   }
 }
@@ -939,22 +1505,34 @@ try {
       for (const e of result.errors) console.error(`ERROR: ${e}`);
       process.exit(1);
     }
-    console.log(`AI control plane valid: ${d.taskDoc.tasks.length} tasks, ${d.agentDoc.agents.length} agents.`);
+    console.log(
+      `AI control plane valid: ${d.taskDoc.tasks.length} tasks, ${d.agentDoc.agents.length} agents.`,
+    );
   } else if (command === "sync") {
     syncAll(d);
-    console.log("Synced machine state to human-readable status and agent queues.");
+    console.log(
+      "Synced machine state to human-readable status and agent queues.",
+    );
   } else if (command === "status") {
     console.log(renderStatus(d));
   } else if (command === "ready") {
     const c = classifyTasks(d);
-    for (const t of [...c.readyAndExecutable].sort((a, b) => priorityRank(a.priority) - priorityRank(b.priority))) {
-      console.log(`READY_AND_EXECUTABLE\t${t.id}\t${t.priority}\t${t.lane}\t${t.preferredAgent ?? "auto"}\t${t.title}`);
+    for (const t of [...c.readyAndExecutable].sort(
+      (a, b) => priorityRank(a.priority) - priorityRank(b.priority),
+    )) {
+      console.log(
+        `READY_AND_EXECUTABLE\t${t.id}\t${t.priority}\t${t.lane}\t${t.preferredAgent ?? "auto"}\t${t.title}`,
+      );
     }
     for (const { task: t, agent } of c.readyButExternal) {
-      console.log(`READY_BUT_EXTERNAL\t${t.id}\t${t.priority}\t${t.lane}\t${agent?.id ?? "unassigned"}\t${t.title}`);
+      console.log(
+        `READY_BUT_EXTERNAL\t${t.id}\t${t.priority}\t${t.lane}\t${agent?.id ?? "unassigned"}\t${t.title}`,
+      );
     }
     for (const { task: t, reason } of c.blocked) {
-      console.log(`BLOCKED\t${t.id}\t${t.priority}\t${t.lane}\t-\t${t.title} (${reason})`);
+      console.log(
+        `BLOCKED\t${t.id}\t${t.priority}\t${t.lane}\t-\t${t.title} (${reason})`,
+      );
     }
   } else if (command === "dispatch") {
     const apply = args.includes("--apply");
@@ -962,31 +1540,51 @@ try {
     const wave = planExecutableWave(d, c);
 
     console.log("=== READY_AND_EXECUTABLE (dispatchable now) ===");
-    if (!wave.length) console.log("(none) No conflict-free executable tasks can be assigned with current agent capacity.");
-    for (const { task, agent } of wave) console.log(`${task.id} -> ${agent.id} (${task.priority}/${task.lane}) ${task.title}`);
+    if (!wave.length)
+      console.log(
+        "(none) No conflict-free executable tasks can be assigned with current agent capacity.",
+      );
+    for (const { task, agent } of wave)
+      console.log(
+        `${task.id} -> ${agent.id} (${task.priority}/${task.lane}) ${task.title}`,
+      );
 
     const deferred = deferredReasons(d, c, wave);
     if (deferred.length) {
       console.log("\n--- deferred to a later wave ---");
-      for (const { task, reason } of deferred) console.log(`${task.id} (${task.priority}/${task.lane}) ${task.title} — ${reason}`);
+      for (const { task, reason } of deferred)
+        console.log(
+          `${task.id} (${task.priority}/${task.lane}) ${task.title} — ${reason}`,
+        );
     }
 
-    console.log("\n=== READY_BUT_EXTERNAL (reserved; does not reduce the local wave) ===");
+    console.log(
+      "\n=== READY_BUT_EXTERNAL (reserved; does not reduce the local wave) ===",
+    );
     if (!c.readyButExternal.length) console.log("(none)");
     for (const { task, agent, reason } of c.readyButExternal) {
-      console.log(`${task.id} [${agent?.id ?? "unassigned"}] (${task.priority}/${task.lane}) ${task.title} — ${reason}`);
+      console.log(
+        `${task.id} [${agent?.id ?? "unassigned"}] (${task.priority}/${task.lane}) ${task.title} — ${reason}`,
+      );
     }
 
     console.log("\n=== BLOCKED ===");
     if (!c.blocked.length) console.log("(none)");
-    for (const { task, reason } of c.blocked) console.log(`${task.id} (${task.priority}/${task.lane}) ${task.title} — ${reason}`);
+    for (const { task, reason } of c.blocked)
+      console.log(
+        `${task.id} (${task.priority}/${task.lane}) ${task.title} — ${reason}`,
+      );
 
     if (apply) {
       for (const { task, agent } of wave) {
         task.owner = agent.id;
         task.implementationAgent = agent.id;
         transition(task, "CLAIMED", d.policies);
-        event("task.claimed", { taskId: task.id, agentId: agent.id, source: "dispatch" });
+        event("task.claimed", {
+          taskId: task.id,
+          agentId: agent.id,
+          source: "dispatch",
+        });
       }
       syncAll(d, false);
       console.log(`\nClaimed ${wave.length} tasks.`);
@@ -996,19 +1594,29 @@ try {
     if (!agentId) throw new Error("Usage: queue <agentId>");
     requireAgent(d, agentId);
     syncAll(d, false);
-    console.log(fs.readFileSync(path.join(files.queues, `${agentId}.json`), "utf8"));
+    console.log(
+      fs.readFileSync(path.join(files.queues, `${agentId}.json`), "utf8"),
+    );
   } else if (command === "claim") {
     const [taskId, agentId] = args;
     if (!taskId || !agentId) throw new Error("Usage: claim <taskId> <agentId>");
     refreshReadiness(d.taskDoc.tasks);
     const task = requireTask(d.taskDoc, taskId);
     const agent = requireAgent(d, agentId);
-    if (task.status !== "READY") throw new Error(`${taskId} is ${task.status}, not READY`);
-    if (capabilityScore(agent, task) < 0) throw new Error(`${agentId} does not advertise capability for lane ${task.lane}`);
+    if (task.status !== "READY")
+      throw new Error(`${taskId} is ${task.status}, not READY`);
+    if (capabilityScore(agent, task) < 0)
+      throw new Error(
+        `${agentId} does not advertise capability for lane ${task.lane}`,
+      );
     const usage = usageByAgent(d.taskDoc.tasks, d.policies).get(agentId) ?? 0;
-    if (usage >= agent.maxParallel) throw new Error(`${agentId} is at maxParallel ${agent.maxParallel}`);
+    if (usage >= agent.maxParallel)
+      throw new Error(`${agentId} is at maxParallel ${agent.maxParallel}`);
     const conflict = conflictWithActive(task, d.taskDoc.tasks, d.policies);
-    if (conflict) throw new Error(`${task.id} paths overlap active task ${conflict.id} owned by ${conflict.owner}`);
+    if (conflict)
+      throw new Error(
+        `${task.id} paths overlap active task ${conflict.id} owned by ${conflict.owner}`,
+      );
     task.owner = agentId;
     task.implementationAgent = agentId;
     transition(task, "CLAIMED", d.policies);
@@ -1018,7 +1626,8 @@ try {
   } else if (command === "start") {
     const [taskId, agentId] = args;
     const task = requireTask(d.taskDoc, taskId);
-    if (agentId && task.owner !== agentId) throw new Error(`${taskId} is owned by ${task.owner}, not ${agentId}`);
+    if (agentId && task.owner !== agentId)
+      throw new Error(`${taskId} is owned by ${task.owner}, not ${agentId}`);
     task.implementationAgent = task.owner ?? task.implementationAgent;
     transition(task, "IN_PROGRESS", d.policies);
     event("task.started", { taskId, agentId: task.owner });
@@ -1028,46 +1637,70 @@ try {
     const [taskId] = args;
     const task = requireTask(d.taskDoc, taskId);
     transition(task, "REVIEW", d.policies);
-    event("task.review_requested", { taskId, owner: task.owner, reviewAgent: task.reviewAgent });
+    event("task.review_requested", {
+      taskId,
+      owner: task.owner,
+      reviewAgent: task.reviewAgent,
+    });
     syncAll(d, false);
     console.log(`${taskId} moved to REVIEW for ${task.reviewAgent}.`);
   } else if (command === "approve" || command === "request-changes") {
     const [taskId, reviewerId, ...noteParts] = args;
-    if (!taskId || !reviewerId) throw new Error(`Usage: ${command} <taskId> <reviewerAgent> <evidence>`);
+    if (!taskId || !reviewerId)
+      throw new Error(`Usage: ${command} <taskId> <reviewerAgent> <evidence>`);
     const task = requireTask(d.taskDoc, taskId);
     const reviewer = requireAgent(d, reviewerId);
-    if (task.status !== "REVIEW") throw new Error(`${taskId} is ${task.status}; move it to REVIEW before recording a review`);
+    if (task.status !== "REVIEW")
+      throw new Error(
+        `${taskId} is ${task.status}; move it to REVIEW before recording a review`,
+      );
     const outcome = command === "approve" ? "APPROVED" : "CHANGES_REQUESTED";
     const record = recordReview(task, reviewer, outcome, noteParts.join(" "));
-    if (outcome === "CHANGES_REQUESTED") transition(task, "IN_PROGRESS", d.policies);
+    if (outcome === "CHANGES_REQUESTED")
+      transition(task, "IN_PROGRESS", d.policies);
     syncAll(d, false);
     // Audit event only after the transition is durably persisted.
-    emitAudit([reviewEventPayload(task, record)]);
-    console.log(`${taskId} review recorded: ${outcome} by ${reviewer.id} (${reviewer.provider}) against ${record.reviewedTreeHash.slice(0, 12)}.`);
-    if (outcome === "CHANGES_REQUESTED") console.log(`${taskId} returned to IN_PROGRESS.`);
+    const payload = reviewEventPayload(task, record);
+    event(payload.type, payload.details);
+    console.log(
+      `${taskId} review recorded: ${outcome} by ${reviewer.id} (${reviewer.provider}) against ${record.reviewedTreeHash.slice(0, 12)}.`,
+    );
+    if (outcome === "CHANGES_REQUESTED")
+      console.log(`${taskId} returned to IN_PROGRESS.`);
   } else if (command === "review-status") {
     const [taskId] = args;
     const task = requireTask(d.taskDoc, taskId);
     const problems = reviewProblems(task, d.policies);
-    console.log(JSON.stringify({
-      taskId: task.id,
-      status: task.status,
-      reviewRequired: reviewRequired(task, d.policies),
-      requiredReviewer: task.reviewAgent ?? null,
-      implementationAgent: task.implementationAgent ?? task.owner ?? null,
-      review: task.review ?? null,
-      currentTreeHash: implementationFingerprint(task).treeHash,
-      gatesPassed: allGatesPassed(task),
-      blockingProblems: problems
-    }, null, 2));
+    console.log(
+      JSON.stringify(
+        {
+          taskId: task.id,
+          status: task.status,
+          reviewRequired: reviewRequired(task, d.policies),
+          requiredReviewer: task.reviewAgent ?? null,
+          implementationAgent: task.implementationAgent ?? task.owner ?? null,
+          review: task.review ?? null,
+          currentTreeHash: implementationFingerprint(task).treeHash,
+          gatesPassed: allGatesPassed(task),
+          blockingProblems: problems,
+        },
+        null,
+        2,
+      ),
+    );
   } else if (command === "gate") {
     const [taskId, gate, status, ...noteParts] = args;
     const task = requireTask(d.taskDoc, taskId);
-    if (!task.qualityGates.includes(gate)) throw new Error(`${gate} is not required by ${taskId}`);
+    if (!task.qualityGates.includes(gate))
+      throw new Error(`${gate} is not required by ${taskId}`);
     if (!d.gateDoc.gates[gate]) throw new Error(`Unknown gate ${gate}`);
-    if (!["pass", "fail"].includes(status)) throw new Error("Gate status must be pass or fail");
+    if (!["pass", "fail"].includes(status))
+      throw new Error("Gate status must be pass or fail");
     const evidence = noteParts.join(" ");
-    if (!evidence) throw new Error("Gate evidence is required; it must identify the command, review, benchmark, or test performed");
+    if (!evidence)
+      throw new Error(
+        "Gate evidence is required; it must identify the command, review, benchmark, or test performed",
+      );
     task.gateResults ??= {};
     task.gateResults[gate] = { status, at: now(), evidence };
     event("task.gate", { taskId, gate, status, evidence });
@@ -1077,19 +1710,32 @@ try {
   } else if (command === "done") {
     const [taskId] = args;
     const task = requireTask(d.taskDoc, taskId);
-    if (task.status !== "REVIEW") throw new Error(`${taskId} must be in REVIEW before DONE`);
-    if (!depsDone(task, taskMap(d.taskDoc.tasks))) throw new Error(`${taskId} has incomplete dependencies`);
+    if (task.status !== "REVIEW")
+      throw new Error(`${taskId} must be in REVIEW before DONE`);
+    if (!depsDone(task, taskMap(d.taskDoc.tasks)))
+      throw new Error(`${taskId} has incomplete dependencies`);
     if (!allGatesPassed(task)) {
-      const missing = task.qualityGates.filter((g) => task.gateResults?.[g]?.status !== "pass");
-      throw new Error(`${taskId} cannot complete; gates not passed: ${missing.join(", ")}`);
+      const missing = task.qualityGates.filter(
+        (g) => task.gateResults?.[g]?.status !== "pass",
+      );
+      throw new Error(
+        `${taskId} cannot complete; gates not passed: ${missing.join(", ")}`,
+      );
     }
     const problems = reviewProblems(task, d.policies);
     if (problems.length) {
-      throw new Error(`${taskId} cannot complete; independent review requirements unmet:\n  - ${problems.join("\n  - ")}`);
+      throw new Error(
+        `${taskId} cannot complete; independent review requirements unmet:\n  - ${problems.join("\n  - ")}`,
+      );
     }
     transition(task, "DONE", d.policies);
     task.completedAt = now();
-    event("task.done", { taskId, owner: task.owner, reviewerAgent: task.review?.reviewerAgent ?? null, reviewedCommitSha: task.review?.reviewedCommitSha ?? null });
+    event("task.done", {
+      taskId,
+      owner: task.owner,
+      reviewerAgent: task.review?.reviewerAgent ?? null,
+      reviewedCommitSha: task.review?.reviewedCommitSha ?? null,
+    });
     task.owner = null;
     syncAll(d, false);
     console.log(`${taskId} DONE.`);
@@ -1117,7 +1763,8 @@ try {
   } else if (command === "release") {
     const [taskId] = args;
     const task = requireTask(d.taskDoc, taskId);
-    if (!["CLAIMED", "IN_PROGRESS"].includes(task.status)) throw new Error(`${taskId} is not releasable from ${task.status}`);
+    if (!["CLAIMED", "IN_PROGRESS"].includes(task.status))
+      throw new Error(`${taskId} is not releasable from ${task.status}`);
     transition(task, "READY", d.policies);
     const owner = task.owner;
     task.owner = null;
@@ -1130,10 +1777,14 @@ try {
     const type = flagValue(args, "--type");
     const summary = flagValue(args, "--summary");
     if (!from || !to || !type || !summary) {
-      throw new Error('Usage: handoff --from <agent> --to <agent> --type <type> --summary "..." [--task ID] [--sha SHA] [--evidence REF]...');
+      throw new Error(
+        'Usage: handoff --from <agent> --to <agent> --type <type> --summary "..." [--task ID] [--sha SHA] [--evidence REF]...',
+      );
     }
     if (!MESSAGE_TYPES.includes(type)) {
-      throw new Error(`Unknown message type ${type}. Known types: ${MESSAGE_TYPES.join(", ")}`);
+      throw new Error(
+        `Unknown message type ${type}. Known types: ${MESSAGE_TYPES.join(", ")}`,
+      );
     }
     const fromAgent = requireAgent(d, from);
     requireAgent(d, to);
@@ -1145,7 +1796,9 @@ try {
     const shaArg = flagValue(args, "--sha");
     const commitSha = shaArg === "auto" ? currentCommitSha() : shaArg;
     if (shaArg === "auto" && !commitSha) {
-      throw new Error("--sha auto requested but the current commit could not be resolved");
+      throw new Error(
+        "--sha auto requested but the current commit could not be resolved",
+      );
     }
 
     const { message, file } = createMessage(root, {
@@ -1156,9 +1809,16 @@ try {
       commitSha,
       summary,
       evidence: flagValues(args, "--evidence"),
-      lane: laneFor(fromAgent.provider)
+      lane: laneFor(fromAgent.provider),
     });
-    event("bus.message_published", { messageId: message.id, fromAgent: from, toAgent: to, type, taskId: taskId ?? null, commitSha: commitSha ?? null });
+    event("bus.message_published", {
+      messageId: message.id,
+      fromAgent: from,
+      toAgent: to,
+      type,
+      taskId: taskId ?? null,
+      commitSha: commitSha ?? null,
+    });
     console.log(`Published ${message.id}`);
     console.log(path.relative(root, file).replace(/\\/g, "/"));
   } else if (command === "inbox") {
@@ -1166,25 +1826,39 @@ try {
     if (!agentId) throw new Error("Usage: inbox <agentId> [--all]");
     requireAgent(d, agentId);
     const all = args.includes("--all");
-    const messages = listMessages(root, { toAgent: agentId, includeAcknowledged: all, includeRejected: all });
+    const messages = listMessages(root, {
+      toAgent: agentId,
+      includeAcknowledged: all,
+      includeRejected: all,
+    });
     if (!messages.length) {
       console.log(`No unacknowledged messages for ${agentId}.`);
     } else {
       console.log(`${messages.length} message(s) for ${agentId}:\n`);
       for (const m of messages) {
-        const rejection = m.status === "rejected" ? readRejection(root, m.id) : null;
-        console.log(describeMessage(m) + (rejection ? `\n  rejected: ${rejection.reason}` : "") + "\n");
+        const rejection =
+          m.status === "rejected" ? readRejection(root, m.id) : null;
+        console.log(
+          describeMessage(m) +
+            (rejection ? `\n  rejected: ${rejection.reason}` : "") +
+            "\n",
+        );
       }
     }
   } else if (command === "ack") {
     const messageId = args.find((a) => !a.startsWith("--"));
-    if (!messageId) throw new Error('Usage: ack <messageId> [--agent <agentId>] [--note "..."]');
+    if (!messageId)
+      throw new Error(
+        'Usage: ack <messageId> [--agent <agentId>] [--note "..."]',
+      );
     const found = findMessage(root, messageId);
     if (!found) throw new Error(`Unknown message ${messageId}`);
     const agentId = flagValue(args, "--agent", found.message.toAgent);
     requireAgent(d, agentId);
     if (found.message.toAgent !== agentId) {
-      throw new Error(`${messageId} is addressed to ${found.message.toAgent}, not ${agentId}`);
+      throw new Error(
+        `${messageId} is addressed to ${found.message.toAgent}, not ${agentId}`,
+      );
     }
     // A rejection and an acknowledgement are mutually exclusive verdicts.
     // Acking a quarantined message would make the audit trail report it as
@@ -1192,15 +1866,19 @@ try {
     const quarantined = readRejection(root, messageId);
     if (quarantined) {
       throw new Error(
-        `${messageId} was quarantined (${quarantined.reason}); a rejection is not an acknowledgement and must not be acked`
+        `${messageId} was quarantined (${quarantined.reason}); a rejection is not an acknowledgement and must not be acked`,
       );
     }
     const record = acknowledge(root, messageId, {
       agent: agentId,
       outcome: "acknowledged",
-      note: flagValue(args, "--note")
+      note: flagValue(args, "--note"),
     });
-    event("bus.message_acknowledged", { messageId, acknowledgedBy: agentId, outcome: record.outcome });
+    event("bus.message_acknowledged", {
+      messageId,
+      acknowledgedBy: agentId,
+      outcome: record.outcome,
+    });
     console.log(`${messageId} acknowledged by ${agentId}.`);
   } else if (command === "process" || command === "recover") {
     const agentId = args.find((a) => !a.startsWith("--"));
@@ -1218,144 +1896,253 @@ try {
      *                       transaction by writing the acknowledgement and event
      *   FAILED              retryable -> release the claim
      *
+     * Recovery is agent-scoped. A run may touch an entry only when both the
+     * journal claimant and the immutable message recipient match agentId.
      * Both branches are idempotent, so running recovery repeatedly is safe.
      * ------------------------------------------------------------------- */
     let recovered = 0;
+    let recoverySkipped = 0;
     for (const entry of listJournal(root)) {
       // Terminal only once the audit records are also durable; otherwise a crash
       // between the acknowledgement and the event would lose them silently.
-      if (entry.state === "ACKNOWLEDGED" && entry.eventsEmitted === true) continue;
+      if (entry.state === "ACKNOWLEDGED" && entry.eventsEmitted === true)
+        continue;
+
+      const found = findMessage(root, entry.messageId);
+      const message = found?.message ?? null;
+      const ownershipProblem =
+        entry.claimedBy !== agentId
+          ? `claimed by ${entry.claimedBy ?? "unknown"}`
+          : !message
+            ? "source message is missing or unreadable"
+            : message.id !== entry.messageId
+              ? `source message id is ${message.id ?? "missing"}`
+              : validateMessage(message).length
+                ? "source message is structurally invalid"
+                : message.toAgent !== agentId
+                  ? `addressed to ${message.toAgent}`
+                  : null;
+
+      if (ownershipProblem) {
+        // Fail closed without releasing, acknowledging, advancing, or emitting
+        // audit for a transaction owned by another agent (or with unverifiable
+        // ownership). Its rightful recipient can recover it later.
+        recoverySkipped++;
+        console.log(
+          `SKIP FOREIGN ${entry.messageId}: ${ownershipProblem}; ${agentId} cannot recover it`,
+        );
+        continue;
+      }
+
       if (entry.state === "APPLIED" || entry.state === "ACKNOWLEDGED") {
         try {
           acknowledge(root, entry.messageId, {
             agent: agentId,
             outcome: "processed",
             applied: entry.applied,
-            note: "finalized by crash recovery"
+            note: "finalized by crash recovery",
           });
         } catch (error) {
           if (!/already acknowledged/.test(error.message)) throw error;
         }
-        // Replayed from the journal, so recovery emits exactly the records the
-        // interrupted run would have emitted -- no more, no fewer.
-        emitAudit(entry.audit ?? []);
-        event("bus.message_processed", { messageId: entry.messageId, agentId, applied: entry.applied, recovered: true });
-        advanceJournal(root, entry.messageId, "ACKNOWLEDGED", { recovered: true, eventsEmitted: true });
+        // Replayed from the journal with the SAME deterministic ids, so any
+        // record the interrupted run already wrote is skipped rather than
+        // duplicated. This is what closes the "emitted, then crashed before the
+        // journal was finalized" window.
+        emitAudit(entry.messageId, entry.audit ?? []);
+        emitProcessed(entry.messageId, {
+          messageId: entry.messageId,
+          agentId,
+          applied: entry.applied,
+          recovered: true,
+        });
+        advanceJournal(root, entry.messageId, "ACKNOWLEDGED", {
+          recovered: true,
+          eventsEmitted: true,
+        });
         recovered++;
-        console.log(`RECOVERED ${entry.messageId}: ${entry.applied} (task state was already persisted)`);
+        console.log(
+          `RECOVERED ${entry.messageId}: ${entry.applied} (task state was already persisted)`,
+        );
       } else {
         // Nothing was durably applied, so discarding the claim cannot lose work.
         releaseJournal(root, entry.messageId);
         recovered++;
-        console.log(`RELEASED  ${entry.messageId}: incomplete (${entry.state}); will be reprocessed`);
+        console.log(
+          `RELEASED  ${entry.messageId}: incomplete (${entry.state}); will be reprocessed`,
+        );
       }
     }
     if (command === "recover") {
-      console.log(`\nRecovered ${recovered} incomplete message(s).`);
+      console.log(
+        `\nRecovered ${recovered} incomplete message(s)` +
+          `${recoverySkipped ? `; skipped ${recoverySkipped} foreign transaction(s)` : ""}.`,
+      );
       // Recovery only; do not start new work.
     } else {
+      let applied = 0;
+      let failed = 0;
+      let quarantined = 0;
 
-    const pending = listMessages(root, { toAgent: agentId });
-    if (!pending.length) {
-      console.log(`No unacknowledged messages for ${agentId}.`);
-    }
-    let applied = 0;
-    let failed = 0;
-    let quarantined = 0;
-
-    for (const message of pending) {
-      // 1. VALIDATE -- before any claim, so a rejected message costs nothing.
-      try {
-        validateBusMessage(d, message, agentId);
-      } catch (error) {
-        if (error.permanent) {
-          // Quarantine: durable, shared, and NOT an acknowledgement. Only the
-          // first run to discover it reports failure; later runs -- and other
-          // checkouts -- skip it, so one bad file cannot wedge the queue.
-          const { created } = rejectMessage(root, message.id, {
-            agent: agentId, reason: error.message, message
+      /* ---------------------------------------------------------------------
+       * Quarantine malformed inbound files FIRST.
+       *
+       * These can never be interpreted as messages, so they cannot be validated
+       * or applied -- but they must not silently vanish either. Each becomes a
+       * durable rejection record keyed by its message id where that is safe, or
+       * by a deterministic hash of the filename where it is not, with the
+       * original filename preserved as evidence.
+       * ------------------------------------------------------------------- */
+      for (const bad of listMalformed(root, { toAgent: agentId })) {
+        if (readRejection(root, bad.key)) continue;
+        const { created } = rejectMessage(root, bad.key, {
+          agent: agentId,
+          reason: bad.reason,
+          message: bad.raw,
+          originalFilename: bad.fileName,
+        });
+        if (created) {
+          quarantined++;
+          event("bus.message_rejected", {
+            key: bad.key,
+            agentId,
+            reason: bad.reason,
+            originalFilename: bad.fileName,
           });
-          if (created) {
-            quarantined++;
-            event("bus.message_rejected", { messageId: message.id, agentId, reason: error.message });
-            console.error(`REJECT ${message.id}: ${error.message}`);
-          } else {
-            console.log(`SKIP   ${message.id}: previously rejected`);
-          }
-        } else {
-          // Transient: repository state may change and make this valid later.
-          failed++;
-          console.error(`RETRY  ${message.id}: ${error.message}`);
+          console.error(`REJECT ${bad.key} (${bad.fileName}): ${bad.reason}`);
         }
-        continue;
       }
 
-      // 2. CLAIM -- atomic (O_CREAT|O_EXCL). Only one run can ever hold it.
-      try {
-        claimJournal(root, message.id, agentId);
-      } catch (error) {
-        failed++;
-        console.error(`SKIP ${message.id}: ${error.message}`);
-        continue;
+      const pending = listMessages(root, { toAgent: agentId });
+      if (!pending.length && !quarantined) {
+        console.log(`No unacknowledged messages for ${agentId}.`);
       }
 
-      const rollback = JSON.stringify(d.taskDoc);
-      let outcome;
-      try {
-        // 3. STAGE -- mutate in memory only.
-        advanceJournal(root, message.id, "APPLYING");
-        outcome = applyBusMessage(d, message, agentId);
-
-        // 4. PERSIST TASK STATE -- the durable commit point. Nothing that can
-        //    fail may run between this write and the APPLIED marker below, or a
-        //    crash would look like "redo" when the state is already on disk.
-        refreshReadiness(d.taskDoc.tasks);
-        saveTasks(d.taskDoc);
-        advanceJournal(root, message.id, "APPLIED", { applied: outcome.summary, audit: outcome.audit ?? [] });
-
-        // Derived views are regenerated best-effort; they are reproducible from
-        // tasks.json, so a failure here must not fail the transaction.
+      for (const message of pending) {
+        // 1. VALIDATE -- before any claim, so a rejected message costs nothing.
         try {
-          syncAll(d, false);
-        } catch (viewError) {
-          console.error(`WARN ${message.id}: derived views not regenerated (${viewError.message}); run sync`);
+          validateBusMessage(d, message, agentId);
+        } catch (error) {
+          if (error.permanent) {
+            // Quarantine: durable, shared, and NOT an acknowledgement. Only the
+            // first run to discover it reports failure; later runs -- and other
+            // checkouts -- skip it, so one bad file cannot wedge the queue.
+            const { created } = rejectMessage(root, message.id, {
+              agent: agentId,
+              reason: error.message,
+              message,
+            });
+            if (created) {
+              quarantined++;
+              event("bus.message_rejected", {
+                messageId: message.id,
+                agentId,
+                reason: error.message,
+              });
+              console.error(`REJECT ${message.id}: ${error.message}`);
+            } else {
+              console.log(`SKIP   ${message.id}: previously rejected`);
+            }
+          } else {
+            // Transient: repository state may change and make this valid later.
+            failed++;
+            console.error(`RETRY  ${message.id}: ${error.message}`);
+          }
+          continue;
         }
 
-        // 5. PERSIST ACKNOWLEDGEMENT.
-        acknowledge(root, message.id, { agent: agentId, outcome: "processed", applied: outcome.summary });
-        advanceJournal(root, message.id, "ACKNOWLEDGED", { eventsEmitted: false });
-
-        // 6. AUDIT -- only now, once task state and acknowledgement are durable.
-        emitAudit(outcome.audit ?? []);
-        event("bus.message_processed", { messageId: message.id, agentId, applied: outcome.summary });
-        advanceJournal(root, message.id, "ACKNOWLEDGED", { eventsEmitted: true });
-
-        applied++;
-        console.log(`OK   ${message.id}: ${outcome.summary}`);
-      } catch (error) {
-        // Nothing durable was written on this path unless we got past step 4;
-        // if we did, the journal says APPLIED and recovery will finish it.
-        const journal = readJournal(root, message.id);
-        if (journal?.state === "APPLIED" || journal?.state === "ACKNOWLEDGED") {
-          console.error(`PARTIAL ${message.id}: task state persisted; run recover to finalize`);
-        } else {
-          d.taskDoc = JSON.parse(rollback);
-          advanceJournal(root, message.id, "FAILED", { error: error.message });
+        // 2. CLAIM -- atomic (O_CREAT|O_EXCL). Only one run can ever hold it.
+        try {
+          claimJournal(root, message.id, agentId);
+        } catch (error) {
+          failed++;
           console.error(`SKIP ${message.id}: ${error.message}`);
+          continue;
         }
-        failed++;
-      }
-    }
-    console.log(
-      `\nProcessed ${applied} message(s)` +
-      `${failed ? `, ${failed} retryable` : ""}` +
-      `${quarantined ? `, ${quarantined} newly rejected` : ""}` +
-      `${recovered ? `, ${recovered} recovered` : ""}.`
-    );
-    // Non-zero for a NEW rejection or a retryable failure. A previously-recorded
-    // rejection is not a failure of this run.
-    if (failed || quarantined) process.exitCode = 1;
 
+        const rollback = JSON.stringify(d.taskDoc);
+        let outcome;
+        try {
+          // 3. STAGE -- mutate in memory only.
+          advanceJournal(root, message.id, "APPLYING");
+          outcome = applyBusMessage(d, message, agentId);
+
+          // 4. PERSIST TASK STATE -- the durable commit point. Nothing that can
+          //    fail may run between this write and the APPLIED marker below, or a
+          //    crash would look like "redo" when the state is already on disk.
+          refreshReadiness(d.taskDoc.tasks);
+          saveTasks(d.taskDoc);
+          advanceJournal(root, message.id, "APPLIED", {
+            applied: outcome.summary,
+            audit: outcome.audit ?? [],
+          });
+
+          // Derived views are regenerated best-effort; they are reproducible from
+          // tasks.json, so a failure here must not fail the transaction.
+          try {
+            syncAll(d, false);
+          } catch (viewError) {
+            console.error(
+              `WARN ${message.id}: derived views not regenerated (${viewError.message}); run sync`,
+            );
+          }
+
+          // 5. PERSIST ACKNOWLEDGEMENT.
+          acknowledge(root, message.id, {
+            agent: agentId,
+            outcome: "processed",
+            applied: outcome.summary,
+          });
+          advanceJournal(root, message.id, "ACKNOWLEDGED", {
+            eventsEmitted: false,
+          });
+
+          // 6. AUDIT -- only now, once task state and acknowledgement are durable.
+          //    Ids are deterministic, so a crash before the journal is finalized
+          //    cannot cause a second physical copy on recovery.
+          emitAudit(message.id, outcome.audit ?? []);
+          emitProcessed(message.id, {
+            messageId: message.id,
+            agentId,
+            applied: outcome.summary,
+          });
+          advanceJournal(root, message.id, "ACKNOWLEDGED", {
+            eventsEmitted: true,
+          });
+
+          applied++;
+          console.log(`OK   ${message.id}: ${outcome.summary}`);
+        } catch (error) {
+          // Nothing durable was written on this path unless we got past step 4;
+          // if we did, the journal says APPLIED and recovery will finish it.
+          const journal = readJournal(root, message.id);
+          if (
+            journal?.state === "APPLIED" ||
+            journal?.state === "ACKNOWLEDGED"
+          ) {
+            console.error(
+              `PARTIAL ${message.id}: task state persisted; run recover to finalize`,
+            );
+          } else {
+            d.taskDoc = JSON.parse(rollback);
+            advanceJournal(root, message.id, "FAILED", {
+              error: error.message,
+            });
+            console.error(`SKIP ${message.id}: ${error.message}`);
+          }
+          failed++;
+        }
+      }
+      console.log(
+        `\nProcessed ${applied} message(s)` +
+          `${failed ? `, ${failed} retryable` : ""}` +
+          `${quarantined ? `, ${quarantined} newly rejected` : ""}` +
+          `${recovered ? `, ${recovered} recovered` : ""}` +
+          `${recoverySkipped ? `, ${recoverySkipped} foreign recovery skipped` : ""}.`,
+      );
+      // Non-zero for a NEW rejection or a retryable failure. A previously-recorded
+      // rejection is not a failure of this run.
+      if (failed || quarantined) process.exitCode = 1;
     }
   } else if (command === "event") {
     const [type, ...message] = args;

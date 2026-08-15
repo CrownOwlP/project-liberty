@@ -1,6 +1,6 @@
 # Project Liberty - Project Status
 
-> Generated 2026-08-15T04:10:40.070Z from the AI control plane.
+> Generated 2026-08-15T13:22:23.214Z from the AI control plane.
 
 **Overall completion:** 1/29 executable tasks (3%)
 
@@ -9,8 +9,8 @@
 - **BACKLOG:** 15
 - **READY:** 8
 - **CLAIMED:** 0
-- **IN_PROGRESS:** 3
-- **REVIEW:** 0
+- **IN_PROGRESS:** 2
+- **REVIEW:** 1
 - **BLOCKED:** 2
 - **DONE:** 1
 - **CANCELED:** 0
@@ -30,7 +30,7 @@
 
 - **PL-0001** [IN_PROGRESS] Generate and commit dependency lockfile — owner: claude-infra
 - **PL-0101** [IN_PROGRESS] Catalog home data contract — owner: claude-frontend
-- **PL-AI-0001** [IN_PROGRESS] Operationalize AI control plane in Claude Code Desktop — owner: claude-lead
+- **PL-AI-0001** [REVIEW] Operationalize AI control plane in Claude Code Desktop — owner: claude-lead
 
 ## Dispatch classification
 

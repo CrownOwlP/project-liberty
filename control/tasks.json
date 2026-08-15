@@ -706,7 +706,7 @@
       "id": "PL-AI-0001",
       "priority": "P0",
       "lane": "Coordination",
-      "status": "IN_PROGRESS",
+      "status": "REVIEW",
       "title": "Operationalize AI control plane in Claude Code Desktop",
       "dependencies": [],
       "allowedPaths": [
@@ -726,9 +726,20 @@
       ],
       "acceptance": "Claude Code uses machine-readable queues, claims tasks through the CLI, syncs status, and records handoffs rather than manually drifting task state",
       "owner": "claude-lead",
-      "gateResults": {},
+      "gateResults": {
+        "repo-validate": {
+          "status": "pass",
+          "at": "2026-08-15T05:22:47.764Z",
+          "evidence": "node scripts/validate-repo.mjs exit 0"
+        },
+        "architecture-review": {
+          "status": "pass",
+          "at": "2026-08-15T05:22:47.850Z",
+          "evidence": "gpt-architect approval via agent bus, see coordination/agent-bus/gpt-to-claude/"
+        }
+      },
       "implementationAgent": "claude-lead",
-      "updatedAt": "2026-08-15T03:16:27.843Z"
+      "updatedAt": "2026-08-15T05:21:13.210Z"
     },
     {
       "id": "PL-AI-0002",

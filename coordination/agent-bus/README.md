@@ -39,15 +39,15 @@ merge-conflict queue.
 }
 ```
 
-| Type | Direction | Effect on the control plane |
-| --- | --- | --- |
-| `task_instruction` | either | informational; acknowledged, no state change |
-| `architecture_decision` | either | informational; acknowledged, no state change |
-| `implementation_ready` | claude → gpt | informational to the reviewer |
-| `review_request` | either | informational to the reviewer |
-| `review_approved` | reviewer → implementer | records an APPROVED review through the enforced path |
-| `changes_requested` | reviewer → implementer | records CHANGES_REQUESTED, returns task to IN_PROGRESS |
-| `blocker` | either | marks the referenced task BLOCKED with a reason |
+| Type                    | Direction              | Effect on the control plane                                                                     |
+| ----------------------- | ---------------------- | ----------------------------------------------------------------------------------------------- |
+| `task_instruction`      | either                 | informational; acknowledged, no state change                                                    |
+| `architecture_decision` | either                 | informational; acknowledged, no state change                                                    |
+| `implementation_ready`  | claude → gpt           | informational to the reviewer                                                                   |
+| `review_request`        | implementer → reviewer | validates implementer/reviewer identity and commit binding, then moves `IN_PROGRESS` → `REVIEW` |
+| `review_approved`       | reviewer → implementer | records an APPROVED review through the enforced path                                            |
+| `changes_requested`     | reviewer → implementer | records CHANGES_REQUESTED, returns task to IN_PROGRESS                                          |
+| `blocker`               | either                 | marks the referenced task BLOCKED with a reason                                                 |
 
 `taskId` and `commitSha` are **required** for `implementation_ready`, `review_request`,
 `review_approved` and `changes_requested`. A decision that does not name the commit it was made
@@ -84,13 +84,12 @@ retyped by hand.
 ## GPT session loop
 
 1. `git pull`
-2. read `coordination/agent-bus/claude-to-gpt/` for messages where `toAgent` is `gpt-architect`
-   and no file of the same id exists in **either** `acknowledgements/` or `rejections/`
+2. `node scripts/agent-bus.mjs process gpt-architect` — this validates and acknowledges the
+   implementer's `review_request`, and moves the task from `IN_PROGRESS` to `REVIEW`
 3. review **at the exact `commitSha` named in the message** — not at `main`, not at latest
 4. publish the decision:
    `node scripts/agent-bus.mjs handoff --from gpt-architect --to claude-lead --type review_approved --task <ID> --sha <the reviewed sha> --summary "..." --evidence "..."`
-5. `node scripts/agent-bus.mjs ack <the review_request id> --agent gpt-architect`
-6. `git push`
+5. `git push`
 
 ## What the bus enforces
 
@@ -121,7 +120,7 @@ and are retried; **permanent** defects are quarantined and hidden from the defau
 Declared machine-readably at `control/project.json` → `agentBus.trustModel`.
 
 **The bus does not authenticate anything.** `fromAgent` is a self-asserted string in a file. The
-control plane checks that the *claimed* reviewer is the designated one and is not the implementer,
+control plane checks that the _claimed_ reviewer is the designated one and is not the implementer,
 but it cannot check that the message was really written by that lane.
 
 This mode removes Diego as the human relay. It explicitly does **not** provide:
@@ -182,7 +181,7 @@ does not show. A rejected message produces no event at all.
 
 Nothing that can fail runs between the `tasks.json` write and the `APPLIED` marker — otherwise a
 crash there would look like "redo" when the state is already on disk. Derived views
-(`PROJECT_STATUS.md`, `TASKS.md`, `queues/`) are regenerated *after* the commit point and are
+(`PROJECT_STATUS.md`, `TASKS.md`, `queues/`) are regenerated _after_ the commit point and are
 allowed to fail, because they are reproducible from `tasks.json` with `sync`.
 
 Audit records are persisted into the journal as **data**, not as callbacks, so recovery emits
@@ -191,16 +190,20 @@ exactly the records the interrupted run would have emitted — no more, no fewer
 Recovery runs automatically at the start of every `process`, and can be run alone with
 `recover <agentId>`. It reads the journal and branches on which side of step 4 the crash landed:
 
-| Journal state at startup | Meaning | Recovery |
-| --- | --- | --- |
-| `CLAIMED` / `APPLYING` | task state was **not** saved | release the claim; message is reprocessed from scratch |
-| `APPLIED` | task state **was** saved | finish only: write the acknowledgement and replay the journalled audit records. Never re-apply. |
-| `ACKNOWLEDGED`, `eventsEmitted: false` | acknowledged, audit incomplete | replay the journalled audit records only |
-| `ACKNOWLEDGED`, `eventsEmitted: true` | complete | skip |
-| `FAILED` | transient failure, retryable | release the claim |
-| unparseable / unknown | treated as an incomplete claim | release the claim |
+Before either branch runs, recovery verifies that the journal's `claimedBy` and the immutable
+message's `toAgent` both equal `<agentId>`. Entries owned by or addressed to another agent are
+left completely untouched: no release, acknowledgement, journal finalization, or audit emission.
 
-Both branches are idempotent, so recovery can run any number of times. Nothing is duplicated:
+| Journal state at startup               | Meaning                        | Recovery                                                                                        |
+| -------------------------------------- | ------------------------------ | ----------------------------------------------------------------------------------------------- |
+| `CLAIMED` / `APPLYING`                 | task state was **not** saved   | release the claim; message is reprocessed from scratch                                          |
+| `APPLIED`                              | task state **was** saved       | finish only: write the acknowledgement and replay the journalled audit records. Never re-apply. |
+| `ACKNOWLEDGED`, `eventsEmitted: false` | acknowledged, audit incomplete | replay the journalled audit records only                                                        |
+| `ACKNOWLEDGED`, `eventsEmitted: true`  | complete                       | skip                                                                                            |
+| `FAILED`                               | transient failure, retryable   | release the claim                                                                               |
+| unparseable / unknown                  | treated as an incomplete claim | release the claim                                                                               |
+
+Both branches are idempotent and agent-isolated, so recovery can run any number of times. Nothing is duplicated:
 not reviews, not task transitions, not gates, not acknowledgements, not events.
 
 ## Idempotency
@@ -211,8 +214,8 @@ a review, or republish a handoff — already-acknowledged messages are not even 
 
 ## Rejection and quarantine
 
-A message that cannot be applied is never acknowledged — `acknowledged` means *successfully
-processed*, and conflating the two would make the audit trail lie. Failures split in two:
+A message that cannot be applied is never acknowledged — `acknowledged` means _successfully
+processed_, and conflating the two would make the audit trail lie. Failures split in two:
 
 **Permanent** — a defect in the message itself: malformed, wrong recipient, unknown type, unknown
 task or agent, or a reviewer who is not the task's designated `reviewAgent` (or is the
