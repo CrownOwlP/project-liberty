@@ -22,10 +22,17 @@ import { execFileSync } from "node:child_process";
 
 const root = process.cwd();
 const args = process.argv.slice(2);
-const agentIndex = args.indexOf("--agent");
-const AGENT = agentIndex >= 0 ? args[agentIndex + 1] : null;
+const flag = (n) => {
+  const i = args.indexOf(n);
+  return i >= 0 ? args[i + 1] : null;
+};
+const AGENT = flag("--agent");
+// Optional but strongly preferred. Without it, prefixes come from EVERY active
+// task this agent owns -- and claude-lead has maxParallel 2, so a commit could
+// silently include a second task's paths.
+const TASK_ID = flag("--task");
 if (!AGENT) {
-  console.error("Usage: stage-task-changes.mjs --agent <agentId>");
+  console.error("Usage: stage-task-changes.mjs --agent <agentId> [--task <taskId>]");
   process.exit(1);
 }
 
@@ -57,7 +64,18 @@ function underPrefix(rel, prefix) {
 }
 
 const tasks = JSON.parse(fs.readFileSync(path.join(root, "control", "tasks.json"), "utf8")).tasks;
-const owned = tasks.filter((t) => t.owner === AGENT && ACTIVE.includes(t.status));
+const owned = TASK_ID
+  ? tasks.filter((t) => t.id === TASK_ID)
+  : tasks.filter((t) => t.owner === AGENT && ACTIVE.includes(t.status));
+
+if (TASK_ID && !owned.length) {
+  console.error(`Unknown task ${TASK_ID}`);
+  process.exit(1);
+}
+if (TASK_ID && owned[0].owner !== AGENT) {
+  console.error(`${TASK_ID} is owned by ${owned[0].owner ?? "nobody"}, not ${AGENT}`);
+  process.exit(1);
+}
 
 const taskPrefixes = owned.flatMap((t) =>
   (t.allowedPaths ?? []).map(normalizePrefix).filter(Boolean),

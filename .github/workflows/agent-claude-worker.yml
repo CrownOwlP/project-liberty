@@ -26,7 +26,6 @@ concurrency:
 permissions:
   contents: write
   actions: write
-  id-token: write
 
 jobs:
   work:
@@ -38,6 +37,11 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          # actions/checkout persists the job token in .git/config by DEFAULT.
+          # With contents: write that is a reusable repository write credential
+          # sitting in the workspace the model can read. The finalizer supplies
+          # its own auth for the one step that legitimately pushes.
+          persist-credentials: false
 
       - uses: actions/setup-node@v4
         with:
@@ -77,6 +81,14 @@ jobs:
         continue-on-error: true
         run: node scripts/agent-bus.mjs process claude-lead
 
+      - name: Select, claim and start exactly one task
+        id: select
+        # Control-plane MUTATIONS happen here, not in the model. The model is
+        # given a task id and may edit and test; it cannot claim, start, gate,
+        # transition or publish.
+        if: steps.gate.outputs.orchestrate == 'true'
+        run: node scripts/cloud/select-task.mjs --agent claude-lead
+
       - name: Complete approved tasks deterministically
         # No model involved: records real gate evidence for a task whose
         # independent review already approved it, then moves it to DONE. This is
@@ -85,8 +97,8 @@ jobs:
         continue-on-error: true
         run: node scripts/cloud/advance-completable.mjs
 
-      - name: Implement the next dispatchable task
-        if: steps.gate.outputs.orchestrate == 'true'
+      - name: Implement the selected task
+        if: steps.gate.outputs.orchestrate == 'true' && steps.select.outputs.selected == 'true'
         uses: anthropics/claude-code-action@v1
         env:
           # No push credential is exposed to the model step. Committing and
@@ -95,43 +107,44 @@ jobs:
           GIT_TERMINAL_PROMPT: "0"
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          # Explicit allowlist. The action does not grant arbitrary shell access
-          # by default, and it should not: the model gets exactly the commands
-          # it needs to read state, edit, test and record gate evidence -- and
-          # notably NOT git commit/push or the bus handoff.
+          # Read-only inspection plus test execution. Deliberately EXCLUDES
+          # every control-plane mutation (claim/start/gate/review/approve/done),
+          # the bus, and all git writes. `ai-control-plane.mjs status|dispatch|
+          # review-status` are read-only subcommands, enumerated individually
+          # rather than granting the whole CLI.
           claude_args: |
             --max-turns 60
             --model claude-sonnet-5
-            --allowedTools "Read,Edit,Write,Glob,Grep,Bash(node scripts/ai-control-plane.mjs:*),Bash(node scripts/validate-repo.mjs),Bash(node scripts/test-ai-control-plane.mjs),Bash(npm run lint),Bash(npm run typecheck),Bash(npm run test),Bash(npm run build),Bash(npm run check),Bash(git status:*),Bash(git diff:*),Bash(git log:*)"
+            --allowedTools "Read,Edit,Write,Glob,Grep,Bash(node scripts/ai-control-plane.mjs status),Bash(node scripts/ai-control-plane.mjs dispatch),Bash(node scripts/ai-control-plane.mjs review-status:*),Bash(node scripts/validate-repo.mjs),Bash(node scripts/test-ai-control-plane.mjs),Bash(npm run lint),Bash(npm run typecheck),Bash(npm run test),Bash(npm run build),Bash(npm run check),Bash(git status:*),Bash(git diff:*),Bash(git log:*)"
           prompt: |
             You are the autonomous claude-lead worker for Project Liberty, running
             unattended in CI. Read CLAUDE.md and coordination/agent-bus/README.md first.
 
+            A task has ALREADY been claimed and started for you by a deterministic
+            step: ${{ steps.select.outputs.task }}. You do not choose it, and you
+            cannot change task state.
+
             Do exactly this, then stop:
 
-            1. Run `node scripts/ai-control-plane.mjs status` and
-               `node scripts/ai-control-plane.mjs dispatch` to see the real state.
-            2. If any task is IN_PROGRESS with CHANGES_REQUESTED on its review record,
-               address those blocking findings first. That is the highest priority.
-            3. Otherwise pick the single highest-priority task from the
-               READY_AND_EXECUTABLE wave. Never touch a READY_BUT_EXTERNAL task.
-            4. Claim and start it through the control plane. Never hand-edit
-               control/tasks.json.
-            5. Implement ONLY within that task's allowedPaths.
-            6. Run the required checks and record each gate with real evidence:
-               `npm run lint`, `npm run typecheck`, `npm run test`, `npm run build`,
+            1. Run `node scripts/ai-control-plane.mjs review-status ${{ steps.select.outputs.task }}`
+               to see its acceptance criteria, allowedPaths and any review findings.
+            2. If its review record shows CHANGES_REQUESTED, address every blocking
+               finding. That is the whole job for this run.
+            3. Otherwise implement the task's acceptance criteria.
+            4. Edit ONLY within that task's allowedPaths.
+            5. Run the checks to verify your work locally: `npm run lint`,
+               `npm run typecheck`, `npm run test`, `npm run build`,
                `node scripts/validate-repo.mjs`, `node scripts/test-ai-control-plane.mjs`.
-               NEVER record a gate you did not actually run. If a check fails, fix it
-               or block the task with a reason. Do not fabricate evidence.
-            7. STOP. Do NOT commit. Do NOT push. Do NOT publish a review request.
-               Leave the task IN_PROGRESS with your edits in the working tree.
+               Fix what you break. These runs are for YOUR verification only.
+            6. STOP. Leave your edits in the working tree.
 
-               A deterministic step runs after you and owns that boundary: it stages
-               only your task's allowedPaths, commits, fast-forward pushes, moves the
-               task to REVIEW, and publishes the review request with the exact
-               cumulative range. You do not have git push credentials and must not
-               attempt to obtain them. Independent review is mandatory and you may
-               never approve your own work.
+               You cannot claim, start, gate, transition, approve, publish, commit or
+               push -- those tools are not available to you, by design. A deterministic
+               step after you re-runs every required gate itself and records the real
+               results, then stages only this task's allowedPaths, commits, pushes, moves
+               the task to REVIEW and publishes the review request with the exact
+               cumulative range. Do not attempt to obtain git credentials. Independent
+               review is mandatory and you may never approve your own work.
 
             Constraints you must not violate:
             - Only licensed, user-owned or public-domain content may enter playback resolution.
@@ -144,19 +157,25 @@ jobs:
         if: always()
         run: node scripts/cloud/mission-control-status.mjs --worker claude-lead --phase implement
 
+      - name: Run and record the required gates
+        # The gate runner executes each runnable gate ITSELF and records the real
+        # outcome. Gate evidence is never taken from the model's self-report.
+        if: steps.select.outputs.selected == 'true'
+        run: node scripts/cloud/run-gates.mjs --task ${{ steps.select.outputs.task }}
+
       - name: Finalize the task deterministically
         id: publish
-        # Owns the whole commit/push/handoff boundary in code. The model above
-        # only edited and tested; this decides what is committed, attributes it
-        # to exactly one task, refuses on unexpected dirt, fast-forwards without
-        # rebasing, and publishes the review request with --sha auto --base auto.
+        if: steps.select.outputs.selected == 'true'
+        # The ONLY step with a repository write credential. Owns the whole
+        # commit/push/handoff boundary: stages just this task, commits the
+        # implementation and the review-request state locally, then pushes both
+        # together in a single remote transaction.
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          node scripts/cloud/finalize-task.mjs --agent claude-lead
-          if git diff HEAD@{1} HEAD --quiet 2>/dev/null; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-          fi
+          git config --local url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
+          node scripts/cloud/finalize-task.mjs --agent claude-lead --task ${{ steps.select.outputs.task }}
+          echo "changed=true" >> "$GITHUB_OUTPUT"
 
       - name: Verify the pushed commit in CI
         # A bot push does not trigger CI on its own, so the worker's work would

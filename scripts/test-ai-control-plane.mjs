@@ -2607,6 +2607,137 @@ try {
   }
 
   /* ---------------------------------------------------------------------
+   * 9u. Reviewer safety mechanisms, executed without an API key.
+   *
+   *     These are the paths that stop unseen code being approved, so static
+   *     inspection is not sufficient evidence for them.
+   * ------------------------------------------------------------------- */
+  {
+    const {
+      buildReviewChunks,
+      unreviewableDecision,
+      assertPartCoherent,
+      aggregateDecision,
+      isBinaryDiff,
+    } = await import("../scripts/cloud/review-chunking.mjs");
+
+    const approved = (summary, extra = {}) => ({
+      decision: "review_approved",
+      summary,
+      reviewedScopeConfirmed: true,
+      blockingFindings: [],
+      nonBlockingFindings: [],
+      ...extra,
+    });
+    const rejected = (summary) => ({
+      decision: "changes_requested",
+      summary,
+      reviewedScopeConfirmed: true,
+      blockingFindings: [
+        { severity: "high", file: "a.ts", finding: "f", requestedChange: "c" },
+      ],
+      nonBlockingFindings: [],
+    });
+
+    // --- chunking covers every file, never truncates ---
+    {
+      const files = ["a.ts", "b.ts", "c.ts"];
+      const { chunks, oversizedFiles, binaryFiles } = buildReviewChunks({
+        inScope: files,
+        maxBytes: 100,
+        diffFor: () => "x".repeat(60),
+      });
+      assert.equal(oversizedFiles.length, 0);
+      assert.equal(binaryFiles.length, 0);
+      assert.ok(chunks.length > 1, "60-byte files under a 100-byte budget must split");
+      assert.deepEqual(
+        chunks.flatMap((c) => c.files).sort(),
+        [...files].sort(),
+        "every in-scope file must appear in exactly one chunk",
+      );
+      for (const chunk of chunks) {
+        assert.ok(chunk.patch.length <= 100, "no chunk may exceed the budget");
+      }
+    }
+
+    // --- a single oversized file is refused, with no model call ---
+    {
+      const { chunks, oversizedFiles } = buildReviewChunks({
+        inScope: ["huge.ts"],
+        maxBytes: 100,
+        diffFor: () => "x".repeat(5000),
+      });
+      assert.equal(chunks.length, 0, "an unreviewable file must not become a chunk");
+      assert.equal(oversizedFiles.length, 1);
+
+      const decision = unreviewableDecision({
+        oversizedFiles,
+        binaryFiles: [],
+        maxBytes: 100,
+      });
+      assert.equal(decision.decision, "changes_requested");
+      assert.equal(decision.reviewedScopeConfirmed, false);
+      assert.match(decision.blockingFindings[0].finding, /above the 100-byte review budget/);
+    }
+
+    // --- binary diffs fail closed ---
+    {
+      assert.equal(isBinaryDiff("Binary files a/x.png and b/x.png differ"), true);
+      assert.equal(isBinaryDiff("GIT binary patch\nliteral 1234"), true);
+      assert.equal(isBinaryDiff("@@ -1 +1 @@\n-a\n+b"), false);
+
+      const { chunks, binaryFiles } = buildReviewChunks({
+        inScope: ["logo.png"],
+        maxBytes: 10_000,
+        diffFor: () => "diff --git a/logo.png b/logo.png\nBinary files a/logo.png and b/logo.png differ",
+      });
+      assert.equal(chunks.length, 0, "a binary change must never be treated as reviewed content");
+      assert.deepEqual(binaryFiles, ["logo.png"]);
+
+      const decision = unreviewableDecision({ oversizedFiles: [], binaryFiles, maxBytes: 10_000 });
+      assert.equal(decision.decision, "changes_requested");
+      assert.match(decision.blockingFindings[0].finding, /binary change/);
+    }
+
+    // --- an approval without scope confirmation is refused ---
+    assert.throws(
+      () => assertPartCoherent(approved("looks fine", { reviewedScopeConfirmed: false }), 0, 1),
+      /without reviewedScopeConfirmed/,
+      "an approval the reviewer will not confirm must be refused",
+    );
+    assert.throws(
+      () => assertPartCoherent({ ...approved("x"), blockingFindings: [{ severity: "high", file: "a", finding: "f", requestedChange: "c" }] }, 0, 1),
+      /review_approved with blocking findings/,
+    );
+    assert.throws(
+      () => assertPartCoherent({ ...rejected("x"), blockingFindings: [] }, 0, 1),
+      /changes_requested with no blocking findings/,
+    );
+
+    // --- multi-chunk aggregation ---
+    {
+      const all = aggregateDecision([approved("part one"), approved("part two")], { inScopeCount: 4 });
+      assert.equal(all.decision, "review_approved");
+      assert.equal(all.reviewedScopeConfirmed, true);
+      assert.match(all.summary, /Reviewed in 2 parts covering all 4 in-scope files/);
+
+      const mixed = aggregateDecision([approved("part one"), rejected("part two")], { inScopeCount: 4 });
+      assert.equal(mixed.decision, "changes_requested", "one rejecting part must reject the range");
+      assert.equal(mixed.blockingFindings.length, 1);
+
+      assert.throws(
+        () =>
+          aggregateDecision(
+            [approved("one"), { ...approved("two"), reviewedScopeConfirmed: false }],
+            { inScopeCount: 2 },
+          ),
+        /aggregate approval lacks full scope confirmation/,
+        "one unconfirmed part must sink the whole approval",
+      );
+    }
+  }
+
+  /* ---------------------------------------------------------------------
    * 10. Bootstrap into a new project still works.
    * ------------------------------------------------------------------- */
   {
@@ -2673,7 +2804,7 @@ try {
     "running the test suite must not mutate any live control/ or coordination/ file",
   );
 
-  console.log("AI control plane tests passed (32 scenarios).");
+  console.log("AI control plane tests passed (33 scenarios).");
 } finally {
   fs.rmSync(temp, { recursive: true, force: true });
 }

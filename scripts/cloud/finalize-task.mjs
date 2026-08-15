@@ -29,8 +29,9 @@ const flag = (name) => {
   return i >= 0 ? args[i + 1] : null;
 };
 const AGENT = flag("--agent");
+const TASK_ID = flag("--task");
 if (!AGENT) {
-  console.error("Usage: finalize-task.mjs --agent <agentId>");
+  console.error("Usage: finalize-task.mjs --agent <agentId> [--task <taskId>]");
   process.exit(1);
 }
 
@@ -50,19 +51,27 @@ function readTasks() {
  * ------------------------------------------------------------------------ */
 const inProgress = readTasks().filter((t) => t.owner === AGENT && t.status === "IN_PROGRESS");
 
-if (!inProgress.length) {
-  console.log(`No IN_PROGRESS task owned by ${AGENT}; nothing to finalize.`);
-  process.exit(0);
+let task;
+if (TASK_ID) {
+  task = inProgress.find((t) => t.id === TASK_ID);
+  if (!task) {
+    console.error(`${TASK_ID} is not IN_PROGRESS for ${AGENT}; refusing to finalize a task that was not selected.`);
+    process.exit(1);
+  }
+} else {
+  if (!inProgress.length) {
+    console.log(`No IN_PROGRESS task owned by ${AGENT}; nothing to finalize.`);
+    process.exit(0);
+  }
+  if (inProgress.length > 1) {
+    console.error(
+      `${AGENT} owns ${inProgress.length} IN_PROGRESS tasks: ${inProgress.map((t) => t.id).join(", ")}. ` +
+      "Pass --task to name the one being finalized; a commit must map to exactly one review.",
+    );
+    process.exit(1);
+  }
+  task = inProgress[0];
 }
-if (inProgress.length > 1) {
-  console.error(
-    `${AGENT} owns ${inProgress.length} IN_PROGRESS tasks: ${inProgress.map((t) => t.id).join(", ")}. ` +
-    "Finalization is deliberately single-task so a commit can be attributed to exactly one review. " +
-    "Resolve this before the worker runs again.",
-  );
-  process.exit(1);
-}
-const task = inProgress[0];
 console.log(`Finalizing ${task.id}: ${task.title}`);
 
 /* ---------------------------------------------------------------------------
@@ -71,14 +80,18 @@ console.log(`Finalizing ${task.id}: ${task.title}`);
 git("config", "user.name", `liberty-${AGENT}[bot]`);
 git("config", "user.email", `${AGENT}@project-liberty.local`);
 
-try {
-  console.log(node("scripts/cloud/stage-task-changes.mjs", "--agent", AGENT));
-} catch (error) {
-  console.error(error.stdout ?? "");
-  console.error(error.stderr ?? "");
-  console.error("Refusing to finalize: dirty paths outside the active task.");
-  process.exit(1);
+function stage(label) {
+  try {
+    console.log(node("scripts/cloud/stage-task-changes.mjs", "--agent", AGENT, "--task", task.id));
+  } catch (error) {
+    console.error(error.stdout ?? "");
+    console.error(error.stderr ?? "");
+    console.error(`Refusing to finalize (${label}): dirty paths outside ${task.id}.`);
+    process.exit(1);
+  }
 }
+
+stage("implementation");
 
 const staged = git("diff", "--cached", "--name-only").trim();
 if (!staged) {
@@ -88,71 +101,68 @@ if (!staged) {
 console.log(`Staged:\n${staged}`);
 
 /* ---------------------------------------------------------------------------
- * 3/4. Commit and fast-forward push. Never rebase.
+ * 3. Commit the implementation LOCALLY. Nothing is pushed yet.
+ *
+ * The implementation commit and its review-request state must reach the remote
+ * together. Pushing the implementation first opens a window where a crash, a
+ * permission failure or a divergence leaves unreviewed code on main with no
+ * corresponding review request -- which is precisely the state the whole
+ * enforcement model exists to prevent.
  * ------------------------------------------------------------------------ */
 git("commit", "-m", `${task.id}: ${task.title} (autonomous ${AGENT})`);
-
-git("fetch", "origin", "main");
-try {
-  execFileSync("git", ["merge-base", "--is-ancestor", "origin/main", "HEAD"], { cwd: root, stdio: "ignore" });
-} catch {
-  console.error(
-    "origin/main has diverged from HEAD. Refusing to rewrite reviewed history; " +
-    "halting so orchestration can resolve it deliberately.",
-  );
-  process.exit(1);
-}
-git("push", "origin", "HEAD:main");
 const implementationSha = git("rev-parse", "HEAD").trim();
-console.log(`Pushed implementation ${implementationSha}`);
+console.log(`Implementation committed locally: ${implementationSha}`);
 
 /* ---------------------------------------------------------------------------
- * 5/6/7. Transition, publish the request, push the bus state.
+ * 4. Transition and publish the handoff, still locally.
  * ------------------------------------------------------------------------ */
 node(CLI, "review", task.id);
 
-// --sha auto pins the commit just pushed; --base auto resolves the previously
-// reviewed commit, or the commit implementation started from, so the reviewer
-// receives the full cumulative range. Neither may be omitted.
+// The explicit implementation sha, not `auto`: `auto` would resolve to whatever
+// HEAD happens to be, and HEAD is about to move again for the bus commit.
+// `--base auto` resolves the previously reviewed commit, or the commit
+// implementation started from, giving the reviewer the full cumulative range.
 const summary = `${task.id} ready for independent review: ${task.title}`;
-const evidence = [
-  `implementation=${implementationSha}`,
-  `gates=${Object.entries(task.gateResults ?? {})
+const gateSummary =
+  Object.entries(readTasks().find((t) => t.id === task.id)?.gateResults ?? {})
     .map(([gate, r]) => `${gate}:${r.status}`)
-    .join(",") || "none recorded"}`,
-];
+    .join(",") || "none recorded";
+
 const handoffArgs = [
   CLI, "handoff",
   "--from", AGENT,
   "--to", task.reviewAgent,
   "--type", "review_request",
   "--task", task.id,
-  "--sha", "auto",
+  "--sha", implementationSha,
   "--base", "auto",
   "--summary", summary,
+  "--evidence", `implementation=${implementationSha}`,
+  "--evidence", `gates=${gateSummary}`,
 ];
-for (const item of evidence) handoffArgs.push("--evidence", item);
 console.log(node(...handoffArgs));
 
-try {
-  console.log(node("scripts/cloud/stage-task-changes.mjs", "--agent", AGENT));
-} catch (error) {
-  console.error(error.stdout ?? "");
-  console.error(error.stderr ?? "");
-  process.exit(1);
-}
-
+stage("review request");
 if (git("diff", "--cached", "--name-only").trim()) {
   git("commit", "-m", `${task.id}: request ${task.reviewAgent} review via agent bus`);
-  git("fetch", "origin", "main");
-  try {
-    execFileSync("git", ["merge-base", "--is-ancestor", "origin/main", "HEAD"], { cwd: root, stdio: "ignore" });
-  } catch {
-    console.error("origin/main diverged before the handoff push; halting rather than rewriting history.");
-    process.exit(1);
-  }
-  git("push", "origin", "HEAD:main");
-  console.log("Review request published and pushed.");
 }
 
-console.log(`\n${task.id} is now in REVIEW awaiting ${task.reviewAgent}. Implementation stops here.`);
+/* ---------------------------------------------------------------------------
+ * 5. ONE remote transaction. Both commits, or neither.
+ * ------------------------------------------------------------------------ */
+git("fetch", "origin", "main");
+try {
+  execFileSync("git", ["merge-base", "--is-ancestor", "origin/main", "HEAD"], { cwd: root, stdio: "ignore" });
+} catch {
+  console.error(
+    "origin/main has diverged from HEAD. Nothing has been pushed. Refusing to rewrite reviewed " +
+    "history; halting so orchestration can resolve it deliberately.",
+  );
+  process.exit(1);
+}
+git("push", "origin", "HEAD:main");
+
+console.log(
+  `\nPushed implementation ${implementationSha.slice(0, 12)} together with its review request.\n` +
+  `${task.id} is now in REVIEW awaiting ${task.reviewAgent}. Implementation stops here.`,
+);

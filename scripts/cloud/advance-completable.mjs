@@ -53,11 +53,9 @@ for (const task of candidates) {
   let ok = true;
 
   for (const gate of task.qualityGates ?? []) {
-    if (task.gateResults?.[gate]?.status === "pass") {
-      console.log(`  ${gate}: already recorded`);
-      continue;
-    }
-
+    // Deliberately does NOT skip an already-recorded pass. Trusting a recorded
+    // result makes it completion evidence without this process ever proving the
+    // command ran -- which is exactly what an untrusted writer would exploit.
     const runnable = RUNNABLE[gate];
     if (runnable) {
       const [cmd, ...args] = runnable;

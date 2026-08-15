@@ -32,6 +32,12 @@ import {
   gitAdapter,
   validateReviewRange
 } from "../review-range.mjs";
+import {
+  aggregateDecision,
+  assertPartCoherent,
+  buildReviewChunks,
+  unreviewableDecision
+} from "./review-chunking.mjs";
 
 const root = process.cwd();
 const AGENT = "gpt-architect";
@@ -201,36 +207,15 @@ function buildReviewContext(task, message) {
   const inScope = changed.filter((rel) => withinAllowedPaths(rel, allowed));
   const outOfScope = changed.filter((rel) => !withinAllowedPaths(rel, allowed));
 
-  /*
-   * Split into chunks that each fit the budget. NEVER truncate.
-   *
-   * Truncating a diff and still allowing review_approved means approving code
-   * the reviewer was never shown -- the single most dangerous failure this
-   * worker can have. Every in-scope byte goes into exactly one chunk, and every
-   * chunk must pass for the range to be approved.
-   */
-  const chunks = [];
-  let current = { files: [], patch: "" };
-  const oversizedFiles = [];
+  // Chunking, binary detection and aggregation live in review-chunking.mjs so
+  // they can be executed in tests without an API key.
+  const { chunks, oversizedFiles, binaryFiles } = buildReviewChunks({
+    inScope,
+    maxBytes: MAX_PATCH_BYTES,
+    diffFor: (rel) => git("diff", base, commitSha, "--", rel)
+  });
 
-  for (const rel of inScope) {
-    const filePatch = git("diff", base, commitSha, "--", rel);
-    if (filePatch.length > MAX_PATCH_BYTES) {
-      // A single file bigger than the whole budget cannot be covered by
-      // splitting. It is reported as unreviewable rather than silently cut.
-      oversizedFiles.push({ rel, bytes: filePatch.length });
-      continue;
-    }
-    if (current.patch.length + filePatch.length > MAX_PATCH_BYTES && current.files.length) {
-      chunks.push(current);
-      current = { files: [], patch: "" };
-    }
-    current.files.push(rel);
-    current.patch += filePatch;
-  }
-  if (current.files.length) chunks.push(current);
-
-  return { base, source, inScope, outOfScope, chunks, oversizedFiles };
+  return { base, source, inScope, outOfScope, chunks, oversizedFiles, binaryFiles };
 }
 
 function contextDoc(rel) {
@@ -322,27 +307,18 @@ async function reviewMessage(message) {
     contextDoc("docs/CONTENT_RIGHTS.md")
   ].filter((line) => line !== "").join("\n");
 
-  // A file whose own diff exceeds the whole budget cannot be covered by
-  // splitting. Refuse rather than approve something unseen.
-  if (ctx.oversizedFiles.length) {
+  // Content that cannot be shown in full -- oversized or binary -- is refused
+  // deterministically, with ZERO model calls. There is nothing a model could
+  // add, and asking would risk an approval of unseen content.
+  if (ctx.oversizedFiles.length || ctx.binaryFiles.length) {
     return {
       task,
       ctx,
-      decision: {
-        decision: "changes_requested",
-        summary:
-          `Cannot review this range: ${ctx.oversizedFiles.length} file(s) have a diff larger than the ` +
-          "per-request budget and cannot be shown in full. Approving would mean approving unseen code. " +
-          "Split the change into smaller commits.",
-        reviewedScopeConfirmed: false,
-        blockingFindings: ctx.oversizedFiles.map((f) => ({
-          severity: "high",
-          file: f.rel,
-          finding: `diff is ${f.bytes} bytes, above the ${MAX_PATCH_BYTES}-byte review budget, so it cannot be shown in full`,
-          requestedChange: "split this change into smaller, individually reviewable commits"
-        })),
-        nonBlockingFindings: []
-      }
+      decision: unreviewableDecision({
+        oversizedFiles: ctx.oversizedFiles,
+        binaryFiles: ctx.binaryFiles,
+        maxBytes: MAX_PATCH_BYTES
+      })
     };
   }
 
@@ -369,41 +345,10 @@ async function reviewMessage(message) {
       }
     });
 
-    const part = extractStructured(result);
-
-    if (part.decision === "review_approved" && part.blockingFindings.length > 0) {
-      throw new Error("model returned review_approved with blocking findings; refusing an inconsistent verdict");
-    }
-    if (part.decision === "changes_requested" && part.blockingFindings.length === 0) {
-      throw new Error("model returned changes_requested with no blocking findings; refusing an unactionable verdict");
-    }
-    // An approval is only meaningful if the reviewer confirms it actually saw
-    // the material. Without this the schema field was decorative.
-    if (part.decision === "review_approved" && part.reviewedScopeConfirmed !== true) {
-      throw new Error(
-        `part ${index + 1}/${total} returned review_approved without reviewedScopeConfirmed; ` +
-        "refusing an approval the reviewer will not confirm it fully reviewed"
-      );
-    }
-    parts.push(part);
+    parts.push(assertPartCoherent(extractStructured(result), index, total));
   }
 
-  // Every part must approve for the range to be approved.
-  const blocking = parts.flatMap((p) => p.blockingFindings);
-  const decision = {
-    decision: blocking.length ? "changes_requested" : "review_approved",
-    summary: total > 1
-      ? `Reviewed in ${total} parts covering all ${ctx.inScope.length} in-scope files. ` +
-        parts.map((p, i) => `[${i + 1}] ${p.summary}`).join(" ")
-      : parts[0].summary,
-    reviewedScopeConfirmed: parts.every((p) => p.reviewedScopeConfirmed === true),
-    blockingFindings: blocking,
-    nonBlockingFindings: parts.flatMap((p) => p.nonBlockingFindings)
-  };
-
-  if (decision.decision === "review_approved" && decision.reviewedScopeConfirmed !== true) {
-    throw new Error("aggregate approval lacks full scope confirmation; refusing to approve unseen code");
-  }
+  const decision = aggregateDecision(parts, { inScopeCount: ctx.inScope.length });
   return { task, decision, ctx };
 }
 
