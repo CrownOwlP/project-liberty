@@ -1,0 +1,106 @@
+name: Agent - GPT Review
+
+# Autonomous gpt-architect reviewer.
+#
+# Chaining is EXPLICIT (workflow_dispatch), never implicit. GitHub deliberately
+# does not fire workflows for commits pushed with the default GITHUB_TOKEN, so a
+# push-triggered loop would silently never chain. Explicit dispatch is both the
+# mechanism and the recursion guard.
+
+on:
+  workflow_dispatch:
+    inputs:
+      depth:
+        description: Chain depth; the loop halts at max-depth to prevent storms.
+        required: false
+        default: "0"
+  schedule:
+    # Safety net: catches anything a dispatch missed. Cheap because the worker
+    # exits immediately when the inbox is empty.
+    - cron: "*/30 * * * *"
+
+# One bus job at a time, repo-wide. This serialises claims so two runners can
+# never process the same message, and makes the committed journal coherent.
+concurrency:
+  group: project-liberty-agent-bus
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # Ephemeral runners have no persistent disk, so recovery state must travel
+      # with the repository instead of dying with the container.
+      LIBERTY_JOURNAL_DIR: coordination/agent-bus/cloud-journal
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history: the reviewer diffs an exact commit against its parent.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: Halt runaway chains
+        run: |
+          DEPTH="${{ github.event.inputs.depth || '0' }}"
+          if [ "$DEPTH" -ge 12 ]; then
+            echo "::error::chain depth $DEPTH reached the limit; halting to prevent a workflow storm"
+            exit 1
+          fi
+          echo "DEPTH=$DEPTH" >> "$GITHUB_ENV"
+          echo "NEXT_DEPTH=$((DEPTH + 1))" >> "$GITHUB_ENV"
+
+      - name: Verify control plane before acting
+        run: node scripts/ai-control-plane.mjs validate
+
+      - name: Check activation gate
+        id: gate
+        # The review lane stays open even while the orchestrator is dormant:
+        # PL-AI-0001 cannot reach DONE without its own independent review, so
+        # gating review on PL-AI-0001 being DONE would deadlock the system.
+        run: node scripts/cloud/orchestrator-gate.mjs
+
+      - name: Review pending requests
+        id: review
+        if: steps.gate.outputs.review == 'true'
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_REVIEW_MODEL: ${{ vars.OPENAI_REVIEW_MODEL || 'gpt-5' }}
+        run: node scripts/cloud/gpt-review-worker.mjs
+
+      - name: Refresh mission control
+        if: always()
+        run: node scripts/cloud/mission-control-status.mjs --worker gpt-architect --phase review
+
+      - name: Publish bus changes
+        id: publish
+        run: |
+          git config user.name "liberty-gpt-architect[bot]"
+          git config user.email "gpt-architect@project-liberty.local"
+          git add coordination/agent-bus control/mission-control.json docs/MISSION_CONTROL.md control/events.jsonl control/tasks.json coordination/PROJECT_STATUS.md coordination/TASKS.md control/queues || true
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            git commit -m "gpt-architect: publish review decisions via agent bus"
+            # Rebase rather than force: another lane may have pushed meanwhile.
+            git pull --rebase --autostash origin main
+            git push origin HEAD:main
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Hand control back to the Claude lane
+        if: steps.publish.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run agent-claude-worker.yml \
+            --ref main \
+            --field depth="${NEXT_DEPTH}" \
+            --field reason="gpt review decisions published"

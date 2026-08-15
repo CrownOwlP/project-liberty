@@ -1,8 +1,37 @@
 {
-  "generatedAt": "2026-08-15T14:40:21.976Z",
+  "generatedAt": "2026-08-15T15:23:45.811Z",
   "agent": "claude-lead",
   "executionAvailable": true,
-  "assigned": [],
+  "assigned": [
+    {
+      "id": "PL-AI-0002",
+      "priority": "P1",
+      "lane": "Coordination",
+      "status": "IN_PROGRESS",
+      "title": "GitHub bridge for cross-agent review",
+      "dependencies": [
+        "PL-AI-0001"
+      ],
+      "allowedPaths": [
+        ".github/**",
+        "control/**",
+        "scripts/**",
+        "docs/**"
+      ],
+      "preferredAgent": "claude-lead",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "architecture-review",
+        "security-review"
+      ],
+      "acceptance": "GitHub becomes the shared state bridge for Claude Desktop and OpenAI review without manual file copying",
+      "owner": "claude-lead",
+      "gateResults": {},
+      "implementationAgent": "claude-lead",
+      "updatedAt": "2026-08-15T15:23:45.795Z",
+      "implementationBaseSha": "b157a5846d45568f516240f581d6b317a544aa12"
+    }
+  ],
   "review": [],
   "reservedExternal": [],
   "recommended": [
@@ -26,31 +55,6 @@
         "repo-validate"
       ],
       "acceptance": "No unresolved contradiction across product, architecture, API, security, and content-rights contracts",
-      "owner": null,
-      "gateResults": {}
-    },
-    {
-      "id": "PL-AI-0002",
-      "priority": "P1",
-      "lane": "Coordination",
-      "status": "READY",
-      "title": "GitHub bridge for cross-agent review",
-      "dependencies": [
-        "PL-AI-0001"
-      ],
-      "allowedPaths": [
-        ".github/**",
-        "control/**",
-        "scripts/**",
-        "docs/**"
-      ],
-      "preferredAgent": "claude-lead",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "architecture-review",
-        "security-review"
-      ],
-      "acceptance": "GitHub becomes the shared state bridge for Claude Desktop and OpenAI review without manual file copying",
       "owner": null,
       "gateResults": {}
     }

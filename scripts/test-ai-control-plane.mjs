@@ -1952,6 +1952,524 @@ try {
   }
 
   /* ---------------------------------------------------------------------
+   * 9m. Review-base contract: fail closed, never fall back to the parent.
+   * ------------------------------------------------------------------- */
+  {
+    const START = "7".repeat(40);
+    const HEAD1 = "8".repeat(40);
+    const repo = freshRepo();
+
+    // `start` captures the commit implementation began from.
+    run(repo, CLI, ["claim", "PL-AI-0001", "claude-lead"], {
+      LIBERTY_COMMIT_SHA: START,
+    });
+    run(repo, CLI, ["start", "PL-AI-0001", "claude-lead"], {
+      LIBERTY_COMMIT_SHA: START,
+    });
+    assert.equal(
+      taskOf(repo, "PL-AI-0001").implementationBaseSha,
+      START,
+      "start must record the commit implementation began from",
+    );
+
+    // Starting again must not overwrite the base within the same round.
+    run(repo, CLI, ["gate", "PL-AI-0001", "repo-validate", "pass", "smoke"], {
+      LIBERTY_COMMIT_SHA: HEAD1,
+    });
+    assert.equal(taskOf(repo, "PL-AI-0001").implementationBaseSha, START);
+
+    // A review_request with NO base is refused at publish time.
+    runFail(
+      repo,
+      [
+        "handoff",
+        "--from", "claude-lead",
+        "--to", "gpt-architect",
+        "--type", "review_request",
+        "--task", "PL-AI-0001",
+        "--sha", HEAD1,
+        "--summary", "no base supplied",
+      ],
+      /requires an explicit baseSha/,
+      { LIBERTY_COMMIT_SHA: HEAD1 },
+    );
+
+    // An empty range is refused.
+    runFail(
+      repo,
+      [
+        "handoff",
+        "--from", "claude-lead",
+        "--to", "gpt-architect",
+        "--type", "review_request",
+        "--task", "PL-AI-0001",
+        "--sha", HEAD1,
+        "--base", HEAD1,
+        "--summary", "empty range",
+      ],
+      /empty range reviews nothing/,
+      { LIBERTY_COMMIT_SHA: HEAD1 },
+    );
+
+    // A malformed base is refused.
+    runFail(
+      repo,
+      [
+        "handoff",
+        "--from", "claude-lead",
+        "--to", "gpt-architect",
+        "--type", "review_request",
+        "--task", "PL-AI-0001",
+        "--sha", HEAD1,
+        "--base", "HEAD~1",
+        "--summary", "ref name instead of sha",
+      ],
+      /baseSha must be a full 40-character hex sha/,
+      { LIBERTY_COMMIT_SHA: HEAD1 },
+    );
+
+    // FIRST review: --base auto resolves to implementationBaseSha.
+    const firstId = publish(
+      repo,
+      [
+        "--from", "claude-lead",
+        "--to", "gpt-architect",
+        "--type", "review_request",
+        "--task", "PL-AI-0001",
+        "--sha", HEAD1,
+        "--base", "auto",
+        "--summary", "first review",
+      ],
+      { LIBERTY_COMMIT_SHA: HEAD1 },
+    );
+    const firstMsg = JSON.parse(
+      fs.readFileSync(busFile(repo, "claude-to-gpt", `${firstId}.json`), "utf8"),
+    );
+    assert.equal(
+      firstMsg.baseSha,
+      START,
+      "a first review must span implementationBaseSha..commitSha",
+    );
+    assert.equal(firstMsg.commitSha, HEAD1);
+
+    // RE-review: --base auto resolves to the previously reviewed commit.
+    run(repo, CLI, ["gate", "PL-AI-0001", "architecture-review", "pass", "smoke"], {
+      LIBERTY_COMMIT_SHA: HEAD1,
+    });
+    run(repo, CLI, ["review", "PL-AI-0001"], { LIBERTY_COMMIT_SHA: HEAD1 });
+    run(
+      repo,
+      CLI,
+      ["approve", "PL-AI-0001", "gpt-architect", "reviewed the first range"],
+      { LIBERTY_COMMIT_SHA: HEAD1 },
+    );
+
+    const HEAD2 = "9".repeat(40);
+    const secondId = publish(
+      repo,
+      [
+        "--from", "claude-lead",
+        "--to", "gpt-architect",
+        "--type", "review_request",
+        "--task", "PL-AI-0001",
+        "--sha", HEAD2,
+        "--base", "auto",
+        "--summary", "re-review after corrections",
+      ],
+      { LIBERTY_COMMIT_SHA: HEAD2 },
+    );
+    const secondMsg = JSON.parse(
+      fs.readFileSync(busFile(repo, "claude-to-gpt", `${secondId}.json`), "utf8"),
+    );
+    assert.equal(
+      secondMsg.baseSha,
+      HEAD1,
+      "a re-review must span previousReviewedCommitSha..newCommitSha",
+    );
+    assert.equal(secondMsg.commitSha, HEAD2);
+  }
+
+  /* ---------------------------------------------------------------------
+   * 9n. --base auto fails closed when no base can be established.
+   * ------------------------------------------------------------------- */
+  {
+    const SHA = "a1".repeat(20);
+    const repo = freshRepo();
+
+    // PL-0003 was never started, so it has no implementationBaseSha and no
+    // review history. There must be NO parent-commit fallback.
+    const out = runFail(
+      repo,
+      [
+        "handoff",
+        "--from", "claude-lead",
+        "--to", "gpt-architect",
+        "--type", "review_request",
+        "--task", "PL-0003",
+        "--sha", SHA,
+        "--base", "auto",
+        "--summary", "no base can be resolved",
+      ],
+      /could not resolve a review base/,
+      { LIBERTY_COMMIT_SHA: SHA },
+    );
+    assert.match(
+      out,
+      /no parent-commit fallback/,
+      "the failure must state that no implicit fallback exists",
+    );
+
+    // Nothing was published.
+    const lane = busFile(repo, "claude-to-gpt");
+    const published = fs
+      .readdirSync(lane)
+      .filter((n) => n.endsWith(".json"));
+    assert.equal(published.length, 0, "a failed base resolution must publish nothing");
+  }
+
+  /* ---------------------------------------------------------------------
+   * 9o. Inbound review decisions are range-checked on RECEIPT.
+   *     Creation-time checks only bind our own producer; a peer-authored file
+   *     is untrusted and may be hand-written, stale, or replayed.
+   * ------------------------------------------------------------------- */
+  {
+    const START = "b1".repeat(20);
+    const HEAD = "b2".repeat(20);
+    const WRONG = "b3".repeat(20);
+    const repo = freshRepo();
+    const lane = busFile(repo, "gpt-to-claude");
+
+    run(repo, CLI, ["claim", "PL-AI-0001", "claude-lead"], { LIBERTY_COMMIT_SHA: START });
+    run(repo, CLI, ["start", "PL-AI-0001", "claude-lead"], { LIBERTY_COMMIT_SHA: START });
+    run(repo, CLI, ["gate", "PL-AI-0001", "repo-validate", "pass", "smoke"], { LIBERTY_COMMIT_SHA: HEAD });
+    run(repo, CLI, ["gate", "PL-AI-0001", "architecture-review", "pass", "smoke"], { LIBERTY_COMMIT_SHA: HEAD });
+    run(repo, CLI, ["review", "PL-AI-0001"], { LIBERTY_COMMIT_SHA: HEAD });
+
+    /** Hand-write a decision file the way an untrusted peer would. */
+    const forge = (id, extra) => {
+      const message = {
+        id,
+        fromAgent: "gpt-architect",
+        toAgent: "claude-lead",
+        taskId: "PL-AI-0001",
+        type: "review_approved",
+        commitSha: HEAD,
+        summary: "hand-written decision",
+        evidence: [],
+        createdAt: "2026-08-15T00:00:00.000Z",
+        status: "open",
+        ...extra,
+      };
+      fs.writeFileSync(path.join(lane, `${id}.json`), JSON.stringify(message, null, 2) + "\n");
+      return id;
+    };
+
+    // No baseSha at all.
+    forge("MSG-20260815T000000000Z-review_approved-11111111", { baseSha: null });
+    runFail(repo, ["process", "claude-lead"], /carries no baseSha/, { LIBERTY_COMMIT_SHA: HEAD });
+    assert.equal(taskOf(repo, "PL-AI-0001").review, undefined, "a decision with no range must not be recorded");
+
+    // A base that is valid in form but narrows the range, hiding earlier work.
+    forge("MSG-20260815T000000001Z-review_approved-22222222", { baseSha: WRONG });
+    runFail(repo, ["process", "claude-lead"], /expects a review starting at/, { LIBERTY_COMMIT_SHA: HEAD });
+    assert.equal(taskOf(repo, "PL-AI-0001").review, undefined, "a wrong range must not be recorded");
+
+    // Empty range.
+    forge("MSG-20260815T000000002Z-review_approved-33333333", { baseSha: HEAD });
+    runFail(repo, ["process", "claude-lead"], /empty range reviews nothing/, { LIBERTY_COMMIT_SHA: HEAD });
+
+    // All three were quarantined, not merely skipped.
+    const rejections = fs
+      .readdirSync(busFile(repo, "rejections"))
+      .filter((n) => n.endsWith(".json"));
+    assert.equal(rejections.length, 3, `expected 3 quarantined decisions, got ${rejections.length}`);
+
+    // The correct range is accepted, and the record persists BOTH endpoints.
+    forge("MSG-20260815T000000003Z-review_approved-44444444", { baseSha: START });
+    run(repo, CLI, ["process", "claude-lead"], { LIBERTY_COMMIT_SHA: HEAD });
+    const review = taskOf(repo, "PL-AI-0001").review;
+    assert.equal(review.outcome, "APPROVED");
+    assert.equal(review.reviewedBaseSha, START, "the review record must persist the range base");
+    assert.equal(review.reviewedCommitSha, HEAD, "the review record must persist the range head");
+  }
+
+  /* ---------------------------------------------------------------------
+   * 9p. A legacy no-base request is handled once and never wedges the worker,
+   *     and a valid request behind it still gets through.
+   * ------------------------------------------------------------------- */
+  {
+    const START = "c1".repeat(20);
+    const HEAD = "c2".repeat(20);
+    const repo = freshRepo();
+    const lane = busFile(repo, "claude-to-gpt");
+
+    run(repo, CLI, ["claim", "PL-AI-0001", "claude-lead"], { LIBERTY_COMMIT_SHA: START });
+    run(repo, CLI, ["start", "PL-AI-0001", "claude-lead"], { LIBERTY_COMMIT_SHA: START });
+
+    // A request published before the baseSha schema existed, as found on main.
+    const legacyId = "MSG-20260815T052113388Z-review_request-31445801";
+    fs.writeFileSync(
+      path.join(lane, `${legacyId}.json`),
+      JSON.stringify(
+        {
+          id: legacyId,
+          fromAgent: "claude-lead",
+          toAgent: "gpt-architect",
+          taskId: "PL-AI-0001",
+          type: "review_request",
+          commitSha: HEAD,
+          summary: "legacy request with no baseSha",
+          evidence: [],
+          createdAt: "2026-08-15T05:21:13.388Z",
+          status: "open",
+        },
+        null,
+        2,
+      ) + "\n",
+    );
+
+    // A well-formed request published afterwards.
+    const validId = publish(
+      repo,
+      [
+        "--from", "claude-lead",
+        "--to", "gpt-architect",
+        "--type", "review_request",
+        "--task", "PL-AI-0001",
+        "--sha", HEAD,
+        "--base", "auto",
+        "--summary", "valid request behind the legacy one",
+      ],
+      { LIBERTY_COMMIT_SHA: HEAD },
+    );
+
+    // The legacy file is structurally valid, so it is DELIVERABLE: the reviewer
+    // itself must reject it. Both appear in the gpt-architect inbox.
+    const inbox = run(repo, CLI, ["inbox", "gpt-architect"]);
+    assert.match(inbox, new RegExp(legacyId), "a legacy request must still be visible, not silently dropped");
+    assert.match(inbox, new RegExp(validId));
+
+    // The valid one carries a resolved range; the legacy one does not. This is
+    // the distinction the cloud reviewer fails closed on, before any model call.
+    const legacyMsg = JSON.parse(fs.readFileSync(path.join(lane, `${legacyId}.json`), "utf8"));
+    const validMsg = JSON.parse(fs.readFileSync(path.join(lane, `${validId}.json`), "utf8"));
+    assert.equal(legacyMsg.baseSha, undefined, "the legacy fixture must have no baseSha");
+    assert.equal(validMsg.baseSha, START, "the valid request must span implementationBaseSha..commitSha");
+  }
+
+  /* ---------------------------------------------------------------------
+   * 9q. A DONE task proves its own history; it does not write-lock its paths.
+   *
+   *     PL-AI-0001 and PL-AI-0002 both own scripts/** and control/**. Once
+   *     PL-AI-0001 completes, successor work on those paths must not make
+   *     validation declare the finished task broken.
+   * ------------------------------------------------------------------- */
+  {
+    const SHA = "d1".repeat(20);
+    const repo = freshRepo();
+
+    // --- Task A: implement, review, complete ---
+    run(repo, CLI, ["claim", "PL-AI-0001", "claude-lead"], { LIBERTY_COMMIT_SHA: SHA });
+    run(repo, CLI, ["start", "PL-AI-0001", "claude-lead"], { LIBERTY_COMMIT_SHA: SHA });
+    run(repo, CLI, ["gate", "PL-AI-0001", "repo-validate", "pass", "smoke"], { LIBERTY_COMMIT_SHA: SHA });
+    run(repo, CLI, ["gate", "PL-AI-0001", "architecture-review", "pass", "smoke"], { LIBERTY_COMMIT_SHA: SHA });
+    run(repo, CLI, ["review", "PL-AI-0001"], { LIBERTY_COMMIT_SHA: SHA });
+    run(repo, CLI, ["approve", "PL-AI-0001", "gpt-architect", "reviewed"], { LIBERTY_COMMIT_SHA: SHA });
+    run(repo, CLI, ["done", "PL-AI-0001"], { LIBERTY_COMMIT_SHA: SHA });
+    assert.equal(taskOf(repo, "PL-AI-0001").status, "DONE");
+
+    // Validation is clean immediately after completion.
+    run(repo, CLI, ["validate"], { LIBERTY_COMMIT_SHA: SHA });
+
+    // --- Task B: successor work on an OVERLAPPING path ---
+    // PL-AI-0002 owns scripts/** too. Editing there is legitimate.
+    run(repo, CLI, ["claim", "PL-AI-0002", "claude-lead"], { LIBERTY_COMMIT_SHA: SHA });
+    run(repo, CLI, ["start", "PL-AI-0002", "claude-lead"], { LIBERTY_COMMIT_SHA: SHA });
+    fs.appendFileSync(
+      path.join(repo, "scripts", "validate-repo.mjs"),
+      "\n// successor work by PL-AI-0002\n",
+    );
+
+    // THE REGRESSION: the completed task must still validate. Its paths changed,
+    // but its historical review integrity is untouched.
+    const out = run(repo, CLI, ["validate"], { LIBERTY_COMMIT_SHA: SHA });
+    assert.match(out, /AI control plane valid/);
+    assert.doesNotMatch(
+      out,
+      /PL-AI-0001 is DONE but/,
+      "a completed task must not be invalidated by later work on its old paths",
+    );
+
+    // --- But Task B's own unreviewed state still blocks Task B ---
+    run(repo, CLI, ["gate", "PL-AI-0002", "architecture-review", "pass", "smoke"], { LIBERTY_COMMIT_SHA: SHA });
+    run(repo, CLI, ["gate", "PL-AI-0002", "security-review", "pass", "smoke"], { LIBERTY_COMMIT_SHA: SHA });
+    run(repo, CLI, ["review", "PL-AI-0002"], { LIBERTY_COMMIT_SHA: SHA });
+    runFail(
+      repo,
+      ["done", "PL-AI-0002"],
+      /no independent review record/,
+      { LIBERTY_COMMIT_SHA: SHA },
+    );
+    assert.equal(
+      taskOf(repo, "PL-AI-0002").status,
+      "REVIEW",
+      "the successor task must still require its own independent review",
+    );
+
+    // A DONE task with a tampered review record IS still an error.
+    const tasksFile = path.join(repo, "control", "tasks.json");
+    const doc = JSON.parse(fs.readFileSync(tasksFile, "utf8"));
+    const completed = doc.tasks.find((t) => t.id === "PL-AI-0001");
+    completed.review.reviewerAgent = completed.review.implementationAgent;
+    fs.writeFileSync(tasksFile, JSON.stringify(doc, null, 2) + "\n");
+    runFail(repo, ["validate"], /self-approval/, { LIBERTY_COMMIT_SHA: SHA });
+  }
+
+  /* ---------------------------------------------------------------------
+   * 9r. Fingerprint provenance compatibility for historical DONE records.
+   *
+   *     Records written after canonical fingerprinting but before the
+   *     reviewedFingerprintSource field carry canonical hashes. They must be
+   *     fully verified, not silently demoted to structural-only checks.
+   * ------------------------------------------------------------------- */
+  {
+    const repo = freshRepo();
+    const gitEnv = {
+      GIT_AUTHOR_NAME: "t",
+      GIT_AUTHOR_EMAIL: "t@t",
+      GIT_COMMITTER_NAME: "t",
+      GIT_COMMITTER_EMAIL: "t@t",
+    };
+    const git = (...args) =>
+      execFileSync("git", args, {
+        cwd: repo,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+        env: { ...process.env, ...gitEnv },
+      });
+
+    git("init", "-q", "-b", "main");
+    git("add", "-A");
+    git("commit", "-q", "-m", "baseline");
+
+    // Complete a task with a real canonical fingerprint.
+    run(repo, CLI, ["claim", "PL-AI-0001", "claude-lead"]);
+    run(repo, CLI, ["start", "PL-AI-0001", "claude-lead"]);
+    run(repo, CLI, ["gate", "PL-AI-0001", "repo-validate", "pass", "smoke"]);
+    run(repo, CLI, ["gate", "PL-AI-0001", "architecture-review", "pass", "smoke"]);
+    run(repo, CLI, ["review", "PL-AI-0001"]);
+    run(repo, CLI, ["approve", "PL-AI-0001", "gpt-architect", "reviewed"]);
+    run(repo, CLI, ["done", "PL-AI-0001"]);
+
+    const original = taskOf(repo, "PL-AI-0001").review;
+    assert.equal(
+      original.reviewedFingerprintSource,
+      "git-object",
+      "a new record must declare its fingerprint provenance",
+    );
+
+    const tasksFile = path.join(repo, "control", "tasks.json");
+    const patchReview = (mutate) => {
+      const doc = JSON.parse(fs.readFileSync(tasksFile, "utf8"));
+      const task = doc.tasks.find((t) => t.id === "PL-AI-0001");
+      task.review = { ...original };
+      mutate(task.review);
+      fs.writeFileSync(tasksFile, JSON.stringify(doc, null, 2) + "\n");
+    };
+
+    // (a) Missing source + canonical hash -> verified fully, not demoted.
+    patchReview((r) => {
+      delete r.reviewedFingerprintSource;
+    });
+    assert.match(
+      run(repo, CLI, ["validate"]),
+      /AI control plane valid/,
+      "a pre-field record whose hash IS canonical must validate",
+    );
+
+    // (b) Missing source + non-reproducible hash that is NOT a known legacy
+    //     record -> hard failure. A mismatch alone must never be accepted as
+    //     evidence of a pre-canonical record, or a tampered record would
+    //     downgrade itself into structural-only validation.
+    patchReview((r) => {
+      delete r.reviewedFingerprintSource;
+      r.reviewedTreeHash = "e".repeat(64);
+    });
+    runFail(repo, ["validate"], /not a known pre-canonical record/, {});
+
+    // (b2) The SAME record, registered by its full immutable identity, is
+    //      accepted under structural-only legacy validation.
+    {
+      const registryFile = path.join(repo, "control", "legacy-review-fingerprints.json");
+      const registry = JSON.parse(fs.readFileSync(registryFile, "utf8"));
+      const current = taskOf(repo, "PL-AI-0001").review;
+      registry.records.push({
+        taskId: "PL-AI-0001",
+        reviewedCommitSha: current.reviewedCommitSha,
+        reviewedTreeHash: current.reviewedTreeHash,
+        reviewedAt: current.reviewedAt,
+        note: "test fixture",
+      });
+      fs.writeFileSync(registryFile, JSON.stringify(registry, null, 2) + "\n");
+
+      assert.match(
+        run(repo, CLI, ["validate"]),
+        /AI control plane valid/,
+        "an exactly registered pre-canonical record must validate structurally",
+      );
+
+      // (b3) Altering that registered record breaks the exact match again.
+      patchReview((r) => {
+        delete r.reviewedFingerprintSource;
+        r.reviewedTreeHash = "e".repeat(63) + "d";
+      });
+      runFail(repo, ["validate"], /not a known pre-canonical record/, {});
+
+      // (b4) Task id alone must not be enough: a different commit under the
+      //      same task must still fail.
+      patchReview((r) => {
+        delete r.reviewedFingerprintSource;
+        r.reviewedTreeHash = "e".repeat(64);
+        r.reviewedCommitSha = "0".repeat(40);
+      });
+      runFail(repo, ["validate"], /cannot be resolved|not a known pre-canonical record/, {});
+
+      // Restore the registry so later assertions are unaffected.
+      registry.records = registry.records.filter((e) => e.taskId !== "PL-AI-0001");
+      fs.writeFileSync(registryFile, JSON.stringify(registry, null, 2) + "\n");
+    }
+
+    // (c) Explicit git-object + mismatched hash -> hard failure.
+    patchReview((r) => {
+      r.reviewedFingerprintSource = "git-object";
+      r.reviewedTreeHash = "f".repeat(64);
+    });
+    runFail(
+      repo,
+      ["validate"],
+      /does not match the content at its own reviewed commit/,
+      {},
+    );
+
+    // (d) Unknown explicit source -> fail closed, never silently downgraded.
+    patchReview((r) => {
+      r.reviewedFingerprintSource = "sha512-of-vibes";
+    });
+    runFail(repo, ["validate"], /unknown reviewedFingerprintSource/, {});
+
+    // (e) Explicit worktree source -> known non-canonical, structural only.
+    patchReview((r) => {
+      r.reviewedFingerprintSource = "worktree";
+      r.reviewedTreeHash = "a".repeat(64);
+    });
+    assert.match(
+      run(repo, CLI, ["validate"]),
+      /AI control plane valid/,
+      "an explicitly non-canonical record must not be treated as corrupt",
+    );
+  }
+
+  /* ---------------------------------------------------------------------
    * 10. Bootstrap into a new project still works.
    * ------------------------------------------------------------------- */
   {
@@ -2018,7 +2536,7 @@ try {
     "running the test suite must not mutate any live control/ or coordination/ file",
   );
 
-  console.log("AI control plane tests passed (24 scenarios).");
+  console.log("AI control plane tests passed (30 scenarios).");
 } finally {
   fs.rmSync(temp, { recursive: true, force: true });
 }

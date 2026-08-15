@@ -1,0 +1,18 @@
+{
+  "$schemaVersion": 1,
+  "purpose": "Exact compatibility registry for completed review records whose reviewedTreeHash predates canonical git-object fingerprinting. Historical validation accepts a source-less record with a non-reproducible hash ONLY when its full immutable identity appears here. Inferring legacy status from a hash mismatch alone would let a tampered record downgrade itself into structural-only validation.",
+  "rules": [
+    "Keyed by the full tuple taskId + reviewedCommitSha + reviewedTreeHash + reviewedAt. Task id alone is not sufficient: a modified legacy record must not match.",
+    "Entries are immutable. Never add an entry to make a failing validation pass; a mismatch on a record that is not listed here is a real integrity failure.",
+    "This registry is closed. Every review recorded after canonical fingerprinting carries reviewedFingerprintSource and must never be added."
+  ],
+  "records": [
+    {
+      "taskId": "PL-0201",
+      "reviewedCommitSha": "b3a955aa21ca9d1da9b11826288e82ec1b8bdb8f",
+      "reviewedTreeHash": "1f9d209716e2b1050ae2b9833ef8144eff91ce4339b0037c14072339219e0b15",
+      "reviewedAt": "2026-08-15T03:46:59.660Z",
+      "note": "Expand candidate score model. Reviewed before canonical git-object fingerprinting; hash is working-tree bytes and is not reproducible from the commit."
+    }
+  ]
+}

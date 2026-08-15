@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-15T14:40:21.975Z",
+  "generatedAt": "2026-08-15T15:23:45.810Z",
   "agent": "gpt-architect",
   "executionAvailable": false,
   "assigned": [],
@@ -187,31 +187,6 @@
         "typecheck"
       ],
       "acceptance": "Licensed channel, program, schedule, and EPG contracts are typed and documented",
-      "owner": null,
-      "gateResults": {}
-    },
-    {
-      "id": "PL-AI-0002",
-      "priority": "P1",
-      "lane": "Coordination",
-      "status": "READY",
-      "title": "GitHub bridge for cross-agent review",
-      "dependencies": [
-        "PL-AI-0001"
-      ],
-      "allowedPaths": [
-        ".github/**",
-        "control/**",
-        "scripts/**",
-        "docs/**"
-      ],
-      "preferredAgent": "claude-lead",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "architecture-review",
-        "security-review"
-      ],
-      "acceptance": "GitHub becomes the shared state bridge for Claude Desktop and OpenAI review without manual file copying",
       "owner": null,
       "gateResults": {}
     }

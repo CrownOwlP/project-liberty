@@ -4,6 +4,11 @@ on:
   pull_request:
   push:
     branches: [main]
+  # Required for the autonomous loop: GitHub does not fire push-triggered
+  # workflows for commits made with the default GITHUB_TOKEN, so a cloud
+  # worker's push would otherwise never be verified by CI. The workers
+  # dispatch this explicitly after pushing.
+  workflow_dispatch:
 
 permissions:
   contents: read

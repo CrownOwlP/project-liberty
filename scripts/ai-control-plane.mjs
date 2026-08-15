@@ -31,6 +31,7 @@ const files = {
   policies: path.join(controlDir, "policies.json"),
   milestones: path.join(controlDir, "milestones.json"),
   adapters: path.join(controlDir, "adapters.json"),
+  legacyReviews: path.join(controlDir, "legacy-review-fingerprints.json"),
   events: path.join(controlDir, "events.jsonl"),
   queues: path.join(controlDir, "queues"),
   statusMd: path.join(root, "coordination", "PROJECT_STATUS.md"),
@@ -648,7 +649,15 @@ function reviewRequired(task, policies) {
   if (policies.review?.requireIndependentReview === false) return false;
   return Boolean(task.reviewAgent);
 }
-function reviewProblems(task, policies) {
+/**
+ * Everything about a review record that is true regardless of WHEN it is
+ * checked: required fields, outcome, reviewer identity and independence.
+ *
+ * Deliberately excludes anything about the current working tree, so the same
+ * checks can be applied to a task being completed now AND to a task that
+ * completed months ago.
+ */
+function reviewRecordProblems(task, policies) {
   const problems = [];
   if (!reviewRequired(task, policies)) return problems;
   const r = task.review;
@@ -678,21 +687,168 @@ function reviewProblems(task, policies) {
       `independent review must come from ${task.reviewAgent}, but record names ${r.reviewerAgent}; automatic reviewer substitution is not permitted`,
     );
   }
+  return problems;
+}
+
+/**
+ * Checks for a task being reviewed or completed RIGHT NOW.
+ *
+ * Current-HEAD drift and working-tree dirt matter here: the task is about to
+ * claim that what was reviewed is what exists.
+ */
+function reviewProblems(task, policies) {
+  const problems = reviewRecordProblems(task, policies);
+  if (!reviewRequired(task, policies) || !task.review) return problems;
+  const r = task.review;
+
   const current = implementationFingerprint(task);
   if (r.reviewedTreeHash !== current.treeHash) {
     problems.push(
       `stale review: implementation under allowedPaths changed after approval (approved ${String(r.reviewedTreeHash).slice(0, 12)}, current ${current.treeHash.slice(0, 12)})`,
     );
   }
-  // The fingerprint above is canonical git content, which by design cannot see
-  // uncommitted work. Dirty implementation files are therefore checked
-  // separately -- otherwise a task could reach DONE with unreviewed edits
-  // sitting in the working tree.
+  // Canonical fingerprints are git content and by design cannot see uncommitted
+  // work, so dirt is checked separately -- otherwise a task could reach DONE
+  // with unreviewed edits sitting in the working tree.
   if (taskWorktreeIsDirty(task)) {
     problems.push(
       "uncommitted changes under this task's allowedPaths; commit or stash them before completing",
     );
   }
+  return problems;
+}
+
+/**
+ * Exact compatibility registry for pre-canonical review records.
+ *
+ * Matched on the FULL immutable identity of a review, never on task id alone:
+ * keying by task would let a modified legacy record keep bypassing verification.
+ */
+function isKnownLegacyReview(task, review) {
+  let records = [];
+  try {
+    records = JSON.parse(fs.readFileSync(files.legacyReviews, "utf8")).records ?? [];
+  } catch {
+    return false;
+  }
+  return records.some(
+    (entry) =>
+      entry.taskId === task.id &&
+      entry.reviewedCommitSha === review.reviewedCommitSha &&
+      entry.reviewedTreeHash === review.reviewedTreeHash &&
+      entry.reviewedAt === review.reviewedAt,
+  );
+}
+
+function gitAvailable() {
+  try {
+    execFileSync("git", ["rev-parse", "--git-dir"], { cwd: root, stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+function commitResolves(sha) {
+  if (!/^[0-9a-f]{40}$/.test(String(sha))) return false;
+  try {
+    execFileSync("git", ["rev-parse", "--verify", `${sha}^{commit}`], { cwd: root, stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Checks for a task that is ALREADY DONE.
+ *
+ * A completed task must prove what it reviewed at the commit it reviewed --
+ * not that its paths were never touched again. Applying current-HEAD drift or
+ * working-tree dirt here would turn every finished broad-scope task into a
+ * permanent write-lock on those paths, so a later task legitimately editing an
+ * overlapping path would "invalidate" completed history.
+ */
+function historicalReviewProblems(task, policies) {
+  const problems = reviewRecordProblems(task, policies);
+  if (problems.length) return problems;
+  if (!reviewRequired(task, policies) || !task.review) return problems;
+  const r = task.review;
+
+  // Without a repository there is no history to verify against; the structural
+  // checks above still applied.
+  if (!gitAvailable()) return problems;
+
+  /*
+   * Fingerprint provenance.
+   *
+   *   "git-object"  canonical, reproducible from the commit -> verify strictly
+   *   "worktree"    explicitly non-canonical -> structural checks only
+   *   absent        AMBIGUOUS. Records written after canonical fingerprinting
+   *                 but before this field existed carry canonical hashes and
+   *                 must be fully verified. Treating every missing field as
+   *                 unverifiable legacy would silently demote exactly the most
+   *                 recent reviews. So: attempt the canonical recomputation. A
+   *                 match proves it was canonical; only a mismatch means it is
+   *                 genuinely pre-canonical.
+   *   anything else fail closed rather than guess.
+   */
+  const source = r.reviewedFingerprintSource;
+  const KNOWN_SOURCES = ["git-object", "worktree"];
+  if (source !== undefined && source !== null && !KNOWN_SOURCES.includes(source)) {
+    problems.push(
+      `unknown reviewedFingerprintSource "${source}"; refusing to guess how this review was fingerprinted`,
+    );
+    return problems;
+  }
+  if (source === "worktree") return problems;
+
+  const declaredCanonical = source === "git-object";
+
+  if (!commitResolves(r.reviewedCommitSha)) {
+    if (declaredCanonical) {
+      problems.push(
+        `reviewed commit ${String(r.reviewedCommitSha).slice(0, 12)} cannot be resolved in this repository; ` +
+        "the historical review cannot be verified",
+      );
+    }
+    // Absent source and no resolvable commit: nothing to attempt.
+    return problems;
+  }
+
+  const atReviewed = gitFingerprint(task, r.reviewedCommitSha);
+  if (!atReviewed) {
+    if (declaredCanonical) {
+      problems.push(
+        `cannot recompute the fingerprint at reviewed commit ${String(r.reviewedCommitSha).slice(0, 12)}`,
+      );
+    }
+    return problems;
+  }
+
+  if (atReviewed.treeHash === r.reviewedTreeHash) return problems; // verified
+
+  if (declaredCanonical) {
+    problems.push(
+      `review record does not match the content at its own reviewed commit ` +
+      `${String(r.reviewedCommitSha).slice(0, 12)} (recorded ${String(r.reviewedTreeHash).slice(0, 12)}, ` +
+      `actual ${atReviewed.treeHash.slice(0, 12)})`,
+    );
+    return problems;
+  }
+
+  // Absent source AND the canonical recomputation does not match.
+  //
+  // A mismatch is NOT evidence of a pre-canonical record: a tampered canonical
+  // record produces exactly the same mismatch and would downgrade itself into
+  // structural-only validation. Compatibility must be proven against an exact,
+  // immutable identity, never inferred.
+  if (isKnownLegacyReview(task, r)) return problems;
+
+  problems.push(
+    `review record does not match the content at its own reviewed commit ` +
+    `${String(r.reviewedCommitSha).slice(0, 12)} (recorded ${String(r.reviewedTreeHash).slice(0, 12)}, ` +
+    `actual ${atReviewed.treeHash.slice(0, 12)}), and it is not a known pre-canonical record in ` +
+    "control/legacy-review-fingerprints.json",
+  );
   return problems;
 }
 /**
@@ -734,6 +890,7 @@ function recordReview(
   outcome,
   evidence,
   boundCommitSha = null,
+  boundBaseSha = null,
 ) {
   const implementationAgent = assertReviewAllowed(
     task,
@@ -752,8 +909,14 @@ function recordReview(
     reviewerProvider: reviewer.provider,
     reviewedCommitSha:
       boundCommitSha ?? currentCommitSha() ?? "unavailable-no-git",
+    // The range is part of the record, not just the message evidence: an
+    // endpoint alone does not say how much work the reviewer actually saw.
+    reviewedBaseSha: boundBaseSha ?? task.implementationBaseSha ?? null,
     reviewedTreeHash: fingerprint.treeHash,
     reviewedFileCount: fingerprint.fileCount,
+    // Records the hashing scheme so a historical check knows whether the value
+    // is reproducible from a commit at all.
+    reviewedFingerprintSource: fingerprint.source,
     outcome,
     reviewedAt: now(),
     evidence,
@@ -773,6 +936,7 @@ function reviewEventPayload(task, record) {
       reviewerAgent: record.reviewerAgent,
       implementationAgent: record.implementationAgent,
       outcome: record.outcome,
+      reviewedBaseSha: record.reviewedBaseSha,
       reviewedCommitSha: record.reviewedCommitSha,
       reviewedTreeHash: record.reviewedTreeHash,
       evidence: record.evidence,
@@ -929,6 +1093,59 @@ class PermanentRejection extends Error {
  * PermanentRejection means the message is defective and is quarantined; a plain
  * Error means the repository is not ready yet and the message will be retried.
  */
+/** The range this task's next review is expected to cover. */
+function expectedReviewBase(task, commitSha) {
+  const priorReviewed = [...(task.reviewHistory ?? [])]
+    .reverse()
+    .map((entry) => entry.reviewedCommitSha)
+    .find((sha) => /^[0-9a-f]{40}$/.test(String(sha)) && sha !== commitSha);
+  return priorReviewed ?? task.implementationBaseSha ?? null;
+}
+
+/**
+ * Validate an INBOUND review range.
+ *
+ * Creation-time checks only protect messages we publish ourselves. A message
+ * arriving over the bus is peer-authored and untrusted: it may be hand-written,
+ * stale, or replayed. A decision that names a valid commitSha but the wrong
+ * range is the dangerous case, because it looks correct while covering less
+ * work than the reviewer was asked to judge.
+ */
+function assertReviewRange(message, task) {
+  if (!message.baseSha) {
+    throw new PermanentRejection(
+      `${message.id} carries no baseSha; a review decision must state the exact range it covers`,
+    );
+  }
+  if (!/^[0-9a-f]{40}$/.test(message.baseSha)) {
+    throw new PermanentRejection(
+      `${message.id} baseSha is not a full 40-character hex sha: ${message.baseSha}`,
+    );
+  }
+  if (message.baseSha === message.commitSha) {
+    throw new PermanentRejection(
+      `${message.id} baseSha equals commitSha; an empty range reviews nothing`,
+    );
+  }
+
+  const expected = expectedReviewBase(task, message.commitSha);
+  if (expected && expected !== message.baseSha) {
+    throw new PermanentRejection(
+      `${message.id} claims range ${message.baseSha.slice(0, 12)}..${message.commitSha.slice(0, 12)}, ` +
+      `but ${task.id} expects a review starting at ${expected.slice(0, 12)}. ` +
+      "The decision does not cover the work actually under review.",
+    );
+  }
+
+  // Ancestry needs real history; the test harness has none.
+  if (!process.env.LIBERTY_COMMIT_SHA && !isAncestorCommit(message.baseSha, message.commitSha)) {
+    throw new PermanentRejection(
+      `${message.id} baseSha ${message.baseSha.slice(0, 12)} is not an ancestor of ` +
+      `${message.commitSha.slice(0, 12)}; that range is not a real line of history`,
+    );
+  }
+}
+
 function validateBusMessage(d, message, actingAgent) {
   // --- permanent: intrinsic to the message ---
   if (message.toAgent !== actingAgent) {
@@ -969,7 +1186,7 @@ function validateBusMessage(d, message, actingAgent) {
       );
     }
 
-    // --- permanent: reviewer identity is intrinsic to the message ---
+    // --- permanent: reviewer identity and range are intrinsic to the message ---
     // Only meaningful once the task is in REVIEW and an implementation agent
     // exists to compare against.
     try {
@@ -977,6 +1194,7 @@ function validateBusMessage(d, message, actingAgent) {
     } catch (error) {
       throw new PermanentRejection(error.message);
     }
+    assertReviewRange(message, task);
 
     assertCommitBinding(message, task);
   }
@@ -1061,6 +1279,7 @@ function applyBusMessage(d, message, actingAgent) {
         outcome,
         busEvidence(message),
         message.commitSha,
+        message.baseSha,
       );
       if (outcome === "CHANGES_REQUESTED")
         transition(task, "IN_PROGRESS", d.policies);
@@ -1255,9 +1474,12 @@ function validateState(d) {
       }
     }
     if (task.status === "DONE") {
-      const problems = reviewProblems(task, policies);
-      const blocking = problems.filter((p) => !p.startsWith("stale review"));
-      for (const p of blocking) errors.push(`${task.id} is DONE but ${p}`);
+      // Historical integrity only: a completed task proves what it reviewed at
+      // its own reviewed commit. It does not get to write-lock those paths
+      // against every future task.
+      for (const p of historicalReviewProblems(task, policies)) {
+        errors.push(`${task.id} is DONE but ${p}`);
+      }
     }
   }
 
@@ -1629,10 +1851,25 @@ try {
     if (agentId && task.owner !== agentId)
       throw new Error(`${taskId} is owned by ${task.owner}, not ${agentId}`);
     task.implementationAgent = task.owner ?? task.implementationAgent;
+    // Capture the commit implementation started from, so the FIRST review has a
+    // real lower bound instead of guessing at the parent commit. Never
+    // overwritten within an implementation round: a task returned to
+    // IN_PROGRESS by changes_requested keeps its original base, and re-reviews
+    // use the previously reviewed commit anyway.
+    if (!task.implementationBaseSha) {
+      const startedFrom = currentCommitSha();
+      if (startedFrom) task.implementationBaseSha = startedFrom;
+    }
     transition(task, "IN_PROGRESS", d.policies);
-    event("task.started", { taskId, agentId: task.owner });
+    event("task.started", {
+      taskId,
+      agentId: task.owner,
+      implementationBaseSha: task.implementationBaseSha ?? null
+    });
     syncAll(d, false);
-    console.log(`${taskId} started.`);
+    console.log(
+      `${taskId} started${task.implementationBaseSha ? ` from ${task.implementationBaseSha.slice(0, 12)}` : ""}.`,
+    );
   } else if (command === "review") {
     const [taskId] = args;
     const task = requireTask(d.taskDoc, taskId);
@@ -1645,17 +1882,51 @@ try {
     syncAll(d, false);
     console.log(`${taskId} moved to REVIEW for ${task.reviewAgent}.`);
   } else if (command === "approve" || command === "request-changes") {
-    const [taskId, reviewerId, ...noteParts] = args;
+    // `--sha` states the commit the reviewer actually looked at. Without it the
+    // record binds to whatever HEAD happens to be, which is wrong whenever the
+    // review was performed out-of-band -- for example an external reviewer whose
+    // connector cannot write back to the repository.
+    const reviewedSha = flagValue(args, "--sha");
+    const positional = [];
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === "--sha") {
+        i++;
+        continue;
+      }
+      positional.push(args[i]);
+    }
+    const [taskId, reviewerId, ...noteParts] = positional;
     if (!taskId || !reviewerId)
-      throw new Error(`Usage: ${command} <taskId> <reviewerAgent> <evidence>`);
+      throw new Error(
+        `Usage: ${command} <taskId> <reviewerAgent> [--sha <sha>] <evidence>`,
+      );
     const task = requireTask(d.taskDoc, taskId);
     const reviewer = requireAgent(d, reviewerId);
     if (task.status !== "REVIEW")
       throw new Error(
         `${taskId} is ${task.status}; move it to REVIEW before recording a review`,
       );
+
+    if (reviewedSha) {
+      if (!/^[0-9a-f]{40}$/.test(reviewedSha)) {
+        throw new Error("--sha must be a full 40-character hex sha");
+      }
+      // Exactly the enforcement the bus applies: ancestor of HEAD, no drift in
+      // the task's allowedPaths since, and a clean implementation tree.
+      assertCommitBinding(
+        { id: `${command}:${taskId}`, commitSha: reviewedSha },
+        task,
+      );
+    }
+
     const outcome = command === "approve" ? "APPROVED" : "CHANGES_REQUESTED";
-    const record = recordReview(task, reviewer, outcome, noteParts.join(" "));
+    const record = recordReview(
+      task,
+      reviewer,
+      outcome,
+      noteParts.join(" "),
+      reviewedSha ?? null,
+    );
     if (outcome === "CHANGES_REQUESTED")
       transition(task, "IN_PROGRESS", d.policies);
     syncAll(d, false);
@@ -1801,12 +2072,47 @@ try {
       );
     }
 
+    // `--base auto` resolves to the last commit this task was reviewed at, so a
+    // re-review covers the whole corrective delta instead of only the newest
+    // commit. Without it a reviewer re-reading `sha~1..sha` would miss earlier
+    // fixes in the same round.
+    const baseArg = flagValue(args, "--base");
+    let baseSha = baseArg;
+    if (baseArg === "auto") {
+      if (!taskId) throw new Error("--base auto requires --task");
+      const prior = requireTask(d.taskDoc, taskId);
+
+      // RE-review: everything since the reviewer last looked.
+      const lastReviewed = [...(prior.reviewHistory ?? [])]
+        .reverse()
+        .map((entry) => entry.reviewedCommitSha)
+        .find((sha) => /^[0-9a-f]{40}$/.test(String(sha)) && sha !== commitSha);
+
+      // FIRST review: everything since implementation began.
+      baseSha = lastReviewed ?? prior.implementationBaseSha ?? null;
+
+      if (!baseSha) {
+        throw new Error(
+          `--base auto could not resolve a review base for ${taskId}: no prior review and no implementationBaseSha. ` +
+          "Start the task through the control plane so the base is captured, or pass --base <sha> explicitly. " +
+          "There is deliberately no parent-commit fallback -- a reviewer must never be handed a narrower range than the work it is judging."
+        );
+      }
+      console.log(
+        `Review base: ${baseSha.slice(0, 12)} (${lastReviewed ? "previous review" : "implementation start"})`,
+      );
+    }
+    if (baseSha && baseSha === commitSha) {
+      throw new Error("--base equals --sha; an empty range reviews nothing");
+    }
+
     const { message, file } = createMessage(root, {
       fromAgent: from,
       toAgent: to,
       type,
       taskId,
       commitSha,
+      baseSha,
       summary,
       evidence: flagValues(args, "--evidence"),
       lane: laneFor(fromAgent.provider),

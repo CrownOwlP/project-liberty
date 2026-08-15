@@ -1,0 +1,85 @@
+{
+  "generatedAt": "2026-08-15T15:23:47.239Z",
+  "worker": {
+    "active": "claude-lead",
+    "phase": "bootstrap",
+    "runId": null,
+    "runUrl": null
+  },
+  "progress": {
+    "done": 3,
+    "total": 29,
+    "percent": 10
+  },
+  "currentTasks": [
+    {
+      "id": "PL-0101",
+      "title": "Catalog home data contract",
+      "status": "IN_PROGRESS",
+      "owner": "claude-frontend"
+    },
+    {
+      "id": "PL-AI-0002",
+      "title": "GitHub bridge for cross-agent review",
+      "status": "IN_PROGRESS",
+      "owner": "claude-lead"
+    }
+  ],
+  "pendingGptReview": [
+    {
+      "id": "MSG-20260815T052113388Z-review_request-314458ea",
+      "taskId": "PL-AI-0001",
+      "commitSha": "5399c92313fd933fb6bac487dc874bcd9e480ae3",
+      "createdAt": "2026-08-15T05:21:13.388Z"
+    },
+    {
+      "id": "MSG-20260815T134150392Z-review_request-acd58cb1",
+      "taskId": "PL-AI-0001",
+      "commitSha": "2c8139cc024531b8f919d283ea21be1b549c1e31",
+      "createdAt": "2026-08-15T13:41:50.392Z"
+    },
+    {
+      "id": "MSG-20260815T135652105Z-review_request-a2010e8f",
+      "taskId": "PL-AI-0001",
+      "commitSha": "709604b2cfd2d358b4b27f1032e50ef804af70e1",
+      "createdAt": "2026-08-15T13:56:52.105Z"
+    }
+  ],
+  "pendingClaudeRework": [],
+  "nextSelectedTask": null,
+  "readyCount": 8,
+  "blockers": [
+    {
+      "id": "PL-0302",
+      "title": "First production provider",
+      "reason": "Requires a confirmed licensed API/provider and credentials"
+    },
+    {
+      "id": "PL-0602",
+      "title": "Live provider integration",
+      "reason": "Requires licensed live feed/provider access"
+    }
+  ],
+  "commit": {
+    "sha": "b157a5846d45568f516240f581d6b317a544aa12",
+    "subject": "PL-AI-0001 and PL-0001: independent reviews applied, gates recorded, DONE",
+    "committedAt": "2026-08-15T10:40:22-04:00"
+  },
+  "ci": {
+    "conclusion": null,
+    "workflow": null
+  },
+  "lastSuccessfulTransition": {
+    "ts": "2026-08-15T14:40:21.875Z",
+    "type": "task.done",
+    "taskId": "PL-0001",
+    "owner": "claude-infra",
+    "reviewerAgent": "gpt-architect",
+    "reviewedCommitSha": "80aebc8d50184849af86aec8620e1e6c83f310b6"
+  },
+  "recovery": {
+    "inFlight": [],
+    "durableJournal": false
+  },
+  "quarantined": []
+}

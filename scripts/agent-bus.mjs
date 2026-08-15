@@ -38,6 +38,20 @@ export const SHA_REQUIRED_TYPES = [
   "changes_requested"
 ];
 
+/**
+ * Types that must state the LOWER BOUND of the range they refer to.
+ *
+ * Enforced at publish time. There is deliberately no implicit parent-commit
+ * fallback anywhere: a reviewer that silently narrows its own range when the
+ * base is unknown ends up approving code it never read.
+ */
+export const BASE_REQUIRED_TYPES = [
+  "implementation_ready",
+  "review_request",
+  "review_approved",
+  "changes_requested"
+];
+
 /** Types that name a specific task and cannot omit it. */
 export const TASK_REQUIRED_TYPES = [
   "implementation_ready",
@@ -272,6 +286,12 @@ export function validateMessage(message) {
   if (message?.commitSha && !/^[0-9a-f]{40}$/.test(message.commitSha)) {
     errors.push("commitSha must be a full 40-character hex sha, not a ref name or abbreviation");
   }
+  if (message?.baseSha && !/^[0-9a-f]{40}$/.test(message.baseSha)) {
+    errors.push("baseSha must be a full 40-character hex sha, not a ref name or abbreviation");
+  }
+  if (message?.baseSha && message.baseSha === message.commitSha) {
+    errors.push("baseSha must differ from commitSha; an empty range reviews nothing");
+  }
   if (message?.id !== undefined && !MESSAGE_ID_PATTERN.test(String(message.id))) {
     errors.push(`malformed id: ${String(message.id)}`);
   }
@@ -287,6 +307,10 @@ export function createMessage(root, fields) {
     taskId: fields.taskId ?? null,
     type: fields.type,
     commitSha: fields.commitSha ?? null,
+    // Optional lower bound of the review range. On a RE-review this is the
+    // previously reviewed commit, so the reviewer sees the cumulative
+    // corrective delta rather than only the most recent commit.
+    baseSha: fields.baseSha ?? null,
     summary: fields.summary,
     evidence: fields.evidence ?? [],
     createdAt,
@@ -297,6 +321,16 @@ export function createMessage(root, fields) {
 
   const errors = validateMessage(message);
   if (errors.length) throw new Error(`invalid handoff message:\n  - ${errors.join("\n  - ")}`);
+
+  // Enforced on CREATION rather than in validateMessage, so historical messages
+  // published before this rule are not retroactively treated as malformed.
+  if (BASE_REQUIRED_TYPES.includes(message.type) && !message.baseSha) {
+    throw new Error(
+      `${message.type} requires an explicit baseSha (full 40-hex). ` +
+      "A review must state the exact range it covers; there is no parent-commit fallback. " +
+      "Pass --base <sha>, or --base auto to resolve it from the task's review history."
+    );
+  }
 
   const paths = ensureBus(root);
   const dir = paths[fields.lane];
