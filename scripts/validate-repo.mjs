@@ -8,12 +8,15 @@ const required = [
   "AGENTS.md",
   "CLAUDE.md",
   ".claude/settings.json",
+  ".claude/agents/orchestration-lead.md",
   "package.json",
   "turbo.json",
   "docs/PRODUCT_SPEC.md",
   "docs/ARCHITECTURE.md",
   "docs/API_CONTRACTS.md",
   "docs/CONTENT_RIGHTS.md",
+  "coordination/AI_OPERATING_MODEL.md",
+  "coordination/PROJECT_STATUS.md",
   "coordination/MASTER_PLAN.md",
   "coordination/TASKS.md",
   "coordination/OWNERSHIP.md",
@@ -23,7 +26,19 @@ const required = [
   "apps/web/package.json",
   "packages/contracts/package.json",
   "packages/media-engine/package.json",
-  "packages/provider-sdk/package.json"
+  "packages/provider-sdk/package.json",
+  "control/project.json",
+  "control/tasks.json",
+  "control/milestones.json",
+  "control/agents.json",
+  "control/policies.json",
+  "control/quality-gates.json",
+  "control/adapters.json",
+  "scripts/ai-control-plane.mjs",
+  "scripts/bootstrap-ai-project.mjs",
+  "scripts/test-ai-control-plane.mjs",
+  "scripts/start-ai-engineering.ps1",
+  "scripts/start-ai-engineering.cmd"
 ];
 
 const errors = [];
@@ -31,7 +46,7 @@ for (const file of required) {
   if (!fs.existsSync(path.join(root, file))) errors.push(`missing required file: ${file}`);
 }
 
-for (const file of ["package.json", "turbo.json", ".claude/settings.json", "apps/web/package.json", "packages/contracts/package.json", "packages/media-engine/package.json", "packages/provider-sdk/package.json", "packages/observability/package.json"]) {
+for (const file of ["package.json", "turbo.json", ".claude/settings.json", "apps/web/package.json", "packages/contracts/package.json", "packages/media-engine/package.json", "packages/provider-sdk/package.json", "packages/observability/package.json", "control/project.json", "control/tasks.json", "control/milestones.json", "control/agents.json", "control/policies.json", "control/quality-gates.json", "control/adapters.json"]) {
   const full = path.join(root, file);
   if (!fs.existsSync(full)) continue;
   try {
@@ -42,10 +57,11 @@ for (const file of ["package.json", "turbo.json", ".claude/settings.json", "apps
 }
 
 if (!quick) {
-  const taskBoard = fs.readFileSync(path.join(root, "coordination/TASKS.md"), "utf8");
-  const ids = [...taskBoard.matchAll(/\bPL-\d{4}\b/g)].map((match) => match[0]);
+  const taskDoc = JSON.parse(fs.readFileSync(path.join(root, "control/tasks.json"), "utf8"));
+  const ids = (taskDoc.tasks ?? []).map((task) => task.id);
   const unique = new Set(ids);
-  if (unique.size < 20) errors.push("task board has fewer than 20 unique executable task IDs");
+  if (unique.size < 20) errors.push("control plane has fewer than 20 unique executable task IDs");
+  if (unique.size !== ids.length) errors.push("control plane contains duplicate task IDs");
 
   const rights = fs.readFileSync(path.join(root, "docs/CONTENT_RIGHTS.md"), "utf8");
   for (const phrase of ["DRM circumvention", "paywalls", "geographic restrictions"]) {

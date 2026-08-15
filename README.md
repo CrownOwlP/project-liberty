@@ -75,3 +75,27 @@ See `coordination/TASKS.md` for the executable backlog.
 ## Publish to GitHub
 
 This generated archive already contains Git history. See `docs/GITHUB_SETUP.md` for the two-command private-repository publish path.
+
+## AI engineering control plane
+
+Project Liberty is also the first workload for a reusable multi-agent engineering system.
+
+The machine-readable source of truth lives in `control/`. It tracks dependencies, ownership, safe write paths, agent capabilities, quality gates, review routing, and project events. Human-readable status is generated into `coordination/PROJECT_STATUS.md` and `coordination/TASKS.md`.
+
+Core commands:
+
+```bash
+npm run ai:validate
+npm run ai:sync
+npm run ai:status
+npm run ai:dispatch
+npm run ai:dispatch -- --apply
+```
+
+See `control/README.md`, `coordination/AI_OPERATING_MODEL.md`, and `docs/AI_ENGINEERING_SYSTEM.md`.
+
+To install the same control-plane skeleton into another repository:
+
+```bash
+node scripts/bootstrap-ai-project.mjs --target ../new-project --name "New Project" --prefix NP
+```

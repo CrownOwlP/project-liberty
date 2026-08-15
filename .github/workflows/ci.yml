@@ -22,6 +22,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Validate AI control plane
+        run: node scripts/ai-control-plane.mjs validate
+      - name: Test AI control plane
+        run: node scripts/test-ai-control-plane.mjs
       - name: Validate repository structure
         run: node scripts/validate-repo.mjs
       - name: Install dependencies

@@ -9,7 +9,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PROJECT_DIR}/scripts/validate-repo.mjs\" --quick"
+            "command": "node \"${CLAUDE_PROJECT_DIR}/scripts/validate-repo.mjs\" --quick && node \"${CLAUDE_PROJECT_DIR}/scripts/ai-control-plane.mjs\" validate"
           }
         ]
       }

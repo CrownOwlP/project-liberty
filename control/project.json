@@ -1,0 +1,27 @@
+{
+  "$schemaVersion": 1,
+  "id": "project-liberty",
+  "name": "Project Liberty",
+  "taskPrefix": "PL",
+  "mission": "Build a premium, rights-respecting media platform with excellent discovery, playback quality, reliability, and extensibility.",
+  "repositoryRoot": ".",
+  "controlPlane": {
+    "sourceOfTruth": "control/tasks.json",
+    "humanStatus": "coordination/PROJECT_STATUS.md",
+    "humanTaskBoard": "coordination/TASKS.md",
+    "eventLog": "control/events.jsonl",
+    "agentRegistry": "control/agents.json",
+    "qualityGates": "control/quality-gates.json",
+    "policies": "control/policies.json",
+    "milestones": "control/milestones.json"
+  },
+  "operatingPrinciples": [
+    "maximize safe parallelism rather than raw agent count",
+    "prefer independent path ownership",
+    "keep the task graph machine-readable",
+    "require explicit quality evidence before DONE",
+    "route architecture and high-leverage review work to the best-suited reasoning agent",
+    "route local execution and repository-integrated implementation to the best-suited coding agent",
+    "escalate only decisions that genuinely require the project commander"
+  ]
+}

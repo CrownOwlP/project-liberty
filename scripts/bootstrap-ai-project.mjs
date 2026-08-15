@@ -1,0 +1,68 @@
+#!/usr/bin/env node
+import fs from "node:fs";
+import path from "node:path";
+
+const args = process.argv.slice(2);
+function arg(name, fallback = null) {
+  const i = args.indexOf(name);
+  return i >= 0 ? args[i + 1] : fallback;
+}
+const target = arg("--target");
+const name = arg("--name");
+const prefix = arg("--prefix");
+if (!target || !name || !prefix) {
+  console.error('Usage: node scripts/bootstrap-ai-project.mjs --target <path> --name "Project Name" --prefix ABC');
+  process.exit(1);
+}
+const sourceRoot = process.cwd();
+const dest = path.resolve(target);
+fs.mkdirSync(path.join(dest, "control", "queues"), { recursive: true });
+fs.mkdirSync(path.join(dest, "coordination"), { recursive: true });
+fs.mkdirSync(path.join(dest, "scripts"), { recursive: true });
+
+const baseAgents = JSON.parse(fs.readFileSync(path.join(sourceRoot, "control", "agents.json"), "utf8"));
+const baseGates = JSON.parse(fs.readFileSync(path.join(sourceRoot, "control", "quality-gates.json"), "utf8"));
+const basePolicies = JSON.parse(fs.readFileSync(path.join(sourceRoot, "control", "policies.json"), "utf8"));
+const baseAdapters = JSON.parse(fs.readFileSync(path.join(sourceRoot, "control", "adapters.json"), "utf8"));
+const project = {
+  "$schemaVersion": 1,
+  id: name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""),
+  name,
+  taskPrefix: prefix.toUpperCase(),
+  mission: "Define the project mission here.",
+  repositoryRoot: ".",
+  controlPlane: {
+    sourceOfTruth: "control/tasks.json",
+    humanStatus: "coordination/PROJECT_STATUS.md",
+    humanTaskBoard: "coordination/TASKS.md",
+    eventLog: "control/events.jsonl",
+    agentRegistry: "control/agents.json",
+    qualityGates: "control/quality-gates.json",
+    policies: "control/policies.json",
+    milestones: "control/milestones.json"
+  },
+  operatingPrinciples: ["maximize safe parallelism", "protect independent path ownership", "require explicit quality evidence before completion"]
+};
+const tasks = { "$schemaVersion": 1, tasks: [] };
+const milestones = { "$schemaVersion": 1, milestones: [] };
+const writes = [
+  ["control/project.json", project], ["control/tasks.json", tasks], ["control/milestones.json", milestones], ["control/agents.json", baseAgents],
+  ["control/quality-gates.json", baseGates], ["control/policies.json", basePolicies], ["control/adapters.json", baseAdapters]
+];
+for (const [rel, value] of writes) fs.writeFileSync(path.join(dest, rel), JSON.stringify(value, null, 2) + "\n");
+fs.writeFileSync(path.join(dest, "control", "events.jsonl"), "");
+fs.copyFileSync(path.join(sourceRoot, "scripts", "ai-control-plane.mjs"), path.join(dest, "scripts", "ai-control-plane.mjs"));
+fs.writeFileSync(path.join(dest, "coordination", "PROJECT_STATUS.md"), `# ${name} - Project Status\n\nRun the control-plane sync command after adding tasks.\n`);
+fs.writeFileSync(path.join(dest, "coordination", "TASKS.md"), `# ${name} Task Board\n\nMachine source of truth: control/tasks.json\n`);
+
+const packagePath = path.join(dest, "package.json");
+if (fs.existsSync(packagePath)) {
+  const pkg = JSON.parse(fs.readFileSync(packagePath, "utf8"));
+  pkg.scripts ??= {};
+  pkg.scripts["ai:validate"] ??= "node scripts/ai-control-plane.mjs validate";
+  pkg.scripts["ai:status"] ??= "node scripts/ai-control-plane.mjs status";
+  pkg.scripts["ai:sync"] ??= "node scripts/ai-control-plane.mjs sync";
+  pkg.scripts["ai:dispatch"] ??= "node scripts/ai-control-plane.mjs dispatch";
+  fs.writeFileSync(packagePath, JSON.stringify(pkg, null, 2) + "\n");
+}
+console.log(`AI engineering control plane initialized at ${dest}. Add ${prefix.toUpperCase()}-* tasks to control/tasks.json, then run the sync command.`);

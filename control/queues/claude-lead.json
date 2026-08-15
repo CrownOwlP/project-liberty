@@ -1,0 +1,59 @@
+{
+  "generatedAt": "2026-08-15T02:55:17.464Z",
+  "agent": "claude-lead",
+  "executionAvailable": true,
+  "assigned": [],
+  "review": [],
+  "reservedExternal": [],
+  "recommended": [
+    {
+      "id": "PL-AI-0001",
+      "priority": "P0",
+      "lane": "Coordination",
+      "status": "READY",
+      "title": "Operationalize AI control plane in Claude Code Desktop",
+      "dependencies": [],
+      "allowedPaths": [
+        "control/**",
+        "coordination/**",
+        "CLAUDE.md",
+        "AGENTS.md",
+        "scripts/**",
+        ".claude/**",
+        "README.md"
+      ],
+      "preferredAgent": "claude-lead",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "repo-validate",
+        "architecture-review"
+      ],
+      "acceptance": "Claude Code uses machine-readable queues, claims tasks through the CLI, syncs status, and records handoffs rather than manually drifting task state",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PL-0002",
+      "priority": "P0",
+      "lane": "Architecture",
+      "status": "READY",
+      "title": "Review scaffold contracts",
+      "dependencies": [],
+      "allowedPaths": [
+        "docs/**",
+        "control/**",
+        "coordination/**"
+      ],
+      "preferredAgent": "gpt-architect",
+      "reviewAgent": "claude-lead",
+      "qualityGates": [
+        "architecture-review",
+        "rights-review",
+        "repo-validate"
+      ],
+      "acceptance": "No unresolved contradiction across product, architecture, API, security, and content-rights contracts",
+      "owner": null,
+      "gateResults": {}
+    }
+  ]
+}

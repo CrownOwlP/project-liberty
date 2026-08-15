@@ -1,0 +1,833 @@
+#!/usr/bin/env node
+import fs from "node:fs";
+import path from "node:path";
+import crypto from "node:crypto";
+import { execFileSync } from "node:child_process";
+
+const root = process.cwd();
+const controlDir = path.join(root, "control");
+const files = {
+  project: path.join(controlDir, "project.json"),
+  tasks: path.join(controlDir, "tasks.json"),
+  agents: path.join(controlDir, "agents.json"),
+  gates: path.join(controlDir, "quality-gates.json"),
+  policies: path.join(controlDir, "policies.json"),
+  milestones: path.join(controlDir, "milestones.json"),
+  adapters: path.join(controlDir, "adapters.json"),
+  events: path.join(controlDir, "events.jsonl"),
+  queues: path.join(controlDir, "queues"),
+  statusMd: path.join(root, "coordination", "PROJECT_STATUS.md"),
+  tasksMd: path.join(root, "coordination", "TASKS.md")
+};
+
+function readJson(file) {
+  return JSON.parse(fs.readFileSync(file, "utf8"));
+}
+function writeJson(file, value) {
+  fs.writeFileSync(file, JSON.stringify(value, null, 2) + "\n");
+}
+function now() { return new Date().toISOString(); }
+function event(type, details = {}) {
+  fs.mkdirSync(controlDir, { recursive: true });
+  fs.appendFileSync(files.events, JSON.stringify({ ts: now(), type, ...details }) + "\n");
+}
+function data() {
+  return {
+    project: readJson(files.project),
+    taskDoc: readJson(files.tasks),
+    agentDoc: readJson(files.agents),
+    gateDoc: readJson(files.gates),
+    policies: readJson(files.policies),
+    milestoneDoc: fs.existsSync(files.milestones) ? readJson(files.milestones) : { milestones: [] },
+    adapterDoc: fs.existsSync(files.adapters) ? readJson(files.adapters) : { adapters: [] }
+  };
+}
+function taskMap(tasks) { return new Map(tasks.map((t) => [t.id, t])); }
+function agentMap(agents) { return new Map(agents.map((a) => [a.id, a])); }
+function priorityRank(p) { return ({ P0: 0, P1: 1, P2: 2, P3: 3 })[p] ?? 9; }
+function isDone(id, map) { return map.get(id)?.status === "DONE"; }
+function depsDone(task, map) { return (task.dependencies ?? []).every((id) => isDone(id, map)); }
+function normalizePrefix(pattern) {
+  return pattern.replace(/\\/g, "/").replace(/\*\*.*$/, "").replace(/\*.*$/, "").replace(/\/$/, "");
+}
+function pathsOverlap(aPaths = [], bPaths = []) {
+  for (const aRaw of aPaths) {
+    for (const bRaw of bPaths) {
+      const a = normalizePrefix(aRaw);
+      const b = normalizePrefix(bRaw);
+      if (!a || !b) return true;
+      if (a === b || a.startsWith(b + "/") || b.startsWith(a + "/")) return true;
+    }
+  }
+  return false;
+}
+function active(task, policies) { return policies.activeStatuses.includes(task.status); }
+function capabilityScore(agent, task) {
+  if (!agent.capabilities?.includes(task.lane) && !agent.capabilities?.includes("*")) return -1;
+  let score = 10;
+  if (task.preferredAgent === agent.id) score += 100;
+  if (agent.kind === "local-subagent") score += 10;
+  if (task.lane === "Architecture" || task.lane === "Recommendations") {
+    if (agent.id === "gpt-architect") score += 40;
+  }
+  if (task.lane === "Coordination" && agent.id === "claude-lead") score += 30;
+  return score;
+}
+function usageByAgent(tasks, policies) {
+  const usage = new Map();
+  for (const task of tasks) {
+    if (task.owner && active(task, policies)) usage.set(task.owner, (usage.get(task.owner) ?? 0) + 1);
+  }
+  return usage;
+}
+function conflictWithActive(task, tasks, policies, extra = []) {
+  const contenders = [...tasks.filter((t) => active(t, policies) && t.id !== task.id), ...extra];
+  return contenders.find((other) => pathsOverlap(task.allowedPaths, other.allowedPaths));
+}
+function refreshReadiness(tasks) {
+  const map = taskMap(tasks);
+  let changed = 0;
+  for (const task of tasks) {
+    if (["DONE", "CANCELED", "CLAIMED", "IN_PROGRESS", "REVIEW", "BLOCKED"].includes(task.status)) continue;
+    const next = depsDone(task, map) ? "READY" : "BACKLOG";
+    if (task.status !== next) { task.status = next; changed++; }
+  }
+  return changed;
+}
+
+/* ---------------------------------------------------------------------------
+ * Execution availability
+ *
+ * An agent lane is "locally executable" when the adapter serving its kind can
+ * both run commands and edit local files. External reasoning lanes (for example
+ * gpt-architect via the shared-repository adapter) stay queued for their own
+ * agent, but must never consume path ownership or capacity from the local wave.
+ * ------------------------------------------------------------------------- */
+function adapterFor(agent, d) {
+  return (d.adapterDoc.adapters ?? []).find((a) => (a.agentKinds ?? []).includes(agent.kind)) ?? null;
+}
+function agentExecutable(agent, d) {
+  if (typeof agent.executionAvailable === "boolean") return agent.executionAvailable;
+  if (agent.kind === "executive") return false;
+  const adapter = adapterFor(agent, d);
+  if (!adapter) return false;
+  return adapter.canExecuteCommands === true && adapter.canEditLocalFiles === true;
+}
+function executableAgents(d) {
+  return d.agentDoc.agents.filter((a) => agentExecutable(a, d));
+}
+
+/* ---------------------------------------------------------------------------
+ * Dispatch classification
+ * ------------------------------------------------------------------------- */
+function classifyTasks(d) {
+  refreshReadiness(d.taskDoc.tasks);
+  const tasks = d.taskDoc.tasks;
+  const map = taskMap(tasks);
+  const amap = agentMap(d.agentDoc.agents);
+  const local = executableAgents(d);
+  const out = { readyAndExecutable: [], readyButExternal: [], blocked: [], active: [], backlog: [], done: [] };
+
+  for (const task of tasks) {
+    if (task.status === "CANCELED") continue;
+    if (task.status === "DONE") { out.done.push(task); continue; }
+    if (task.status === "BLOCKED") {
+      out.blocked.push({ task, reason: task.blocker ?? "blocked without recorded reason" });
+      continue;
+    }
+    if (active(task, d.policies)) { out.active.push(task); continue; }
+    if (task.status !== "READY") {
+      const missing = (task.dependencies ?? []).filter((id) => !isDone(id, map));
+      out.backlog.push({ task, reason: missing.length ? `waiting on ${missing.join(", ")}` : "not READY" });
+      continue;
+    }
+
+    const preferred = task.preferredAgent ? amap.get(task.preferredAgent) : null;
+    if (preferred && !agentExecutable(preferred, d)) {
+      const adapter = adapterFor(preferred, d);
+      out.readyButExternal.push({
+        task,
+        agent: preferred,
+        reason: `reserved for ${preferred.id} via ${adapter?.id ?? "external adapter"}; not locally executable`
+      });
+      continue;
+    }
+    const eligible = local.filter((a) => capabilityScore(a, task) >= 0);
+    if (!eligible.length) {
+      out.readyButExternal.push({
+        task,
+        agent: preferred,
+        reason: `no locally executable agent advertises lane ${task.lane}`
+      });
+      continue;
+    }
+    out.readyAndExecutable.push(task);
+  }
+  return out;
+}
+
+/* ---------------------------------------------------------------------------
+ * Wave planning
+ *
+ * Maximizes the number of simultaneously dispatchable tasks subject to
+ * dependencies, allowedPaths disjointness, agent capability and agent capacity.
+ * A naive priority-ordered greedy scan can pick an early task whose broad
+ * allowedPaths starve several other lanes, so we search for a maximum feasible
+ * set instead and only fall back to greedy if the search budget is exhausted.
+ * ------------------------------------------------------------------------- */
+function waveKey(sel) {
+  return sel.map((x) => x.task.id).sort().join(",");
+}
+function betterWave(a, b) {
+  if (a.length !== b.length) return a.length > b.length;
+  const pa = a.reduce((s, x) => s + priorityRank(x.task.priority), 0);
+  const pb = b.reduce((s, x) => s + priorityRank(x.task.priority), 0);
+  if (pa !== pb) return pa < pb;
+  return waveKey(a) < waveKey(b);
+}
+function greedyWave(candidates, agents, baseUsage, d) {
+  const usage = new Map(baseUsage);
+  const selected = [];
+  for (const task of candidates) {
+    if (selected.some((c) => pathsOverlap(task.allowedPaths, c.task.allowedPaths))) continue;
+    const options = agents
+      .filter((a) => capabilityScore(a, task) >= 0 && (usage.get(a.id) ?? 0) < a.maxParallel)
+      .sort((x, y) => capabilityScore(y, task) - capabilityScore(x, task) || x.id.localeCompare(y.id));
+    if (!options.length) continue;
+    selected.push({ task, agent: options[0] });
+    usage.set(options[0].id, (usage.get(options[0].id) ?? 0) + 1);
+  }
+  return selected;
+}
+function planExecutableWave(d, classification) {
+  const tasks = d.taskDoc.tasks;
+  const agents = executableAgents(d);
+  const baseUsage = usageByAgent(tasks, d.policies);
+  const candidates = classification.readyAndExecutable
+    .filter((t) => !conflictWithActive(t, tasks, d.policies))
+    .sort((a, b) => priorityRank(a.priority) - priorityRank(b.priority) || a.id.localeCompare(b.id));
+
+  let best = [];
+  let nodes = 0;
+  let exhausted = false;
+  const budget = 300000;
+
+  function dfs(i, chosen, usage) {
+    if (exhausted) return;
+    if (++nodes > budget) { exhausted = true; return; }
+    // Must stay `<`, not `<=`: equal-length branches have to remain reachable
+    // so betterWave() can apply the priority and lexicographic tie-breaks.
+    if (chosen.length + (candidates.length - i) < best.length) return;
+    if (i === candidates.length) {
+      if (betterWave(chosen, best)) best = chosen.map((x) => ({ ...x }));
+      return;
+    }
+    const task = candidates[i];
+    if (!chosen.some((c) => pathsOverlap(task.allowedPaths, c.task.allowedPaths))) {
+      const options = agents
+        .filter((a) => capabilityScore(a, task) >= 0 && (usage.get(a.id) ?? 0) < a.maxParallel)
+        .sort((x, y) => capabilityScore(y, task) - capabilityScore(x, task) || x.id.localeCompare(y.id));
+      for (const agent of options) {
+        usage.set(agent.id, (usage.get(agent.id) ?? 0) + 1);
+        chosen.push({ task, agent });
+        dfs(i + 1, chosen, usage);
+        chosen.pop();
+        usage.set(agent.id, usage.get(agent.id) - 1);
+        if (exhausted) return;
+      }
+    }
+    dfs(i + 1, chosen, usage);
+  }
+
+  dfs(0, [], new Map(baseUsage));
+  if (exhausted) {
+    const fallback = greedyWave(candidates, agents, baseUsage, d);
+    if (betterWave(fallback, best)) best = fallback;
+  }
+  return best;
+}
+function deferredReasons(d, classification, wave) {
+  const chosen = new Set(wave.map((w) => w.task.id));
+  const out = [];
+  for (const task of classification.readyAndExecutable) {
+    if (chosen.has(task.id)) continue;
+    const activeClash = conflictWithActive(task, d.taskDoc.tasks, d.policies);
+    const waveClash = wave.find((w) => pathsOverlap(task.allowedPaths, w.task.allowedPaths));
+    out.push({
+      task,
+      reason: activeClash
+        ? `allowedPaths overlap active ${activeClash.id} (owner ${activeClash.owner ?? "unassigned"})`
+        : waveClash
+          ? `allowedPaths overlap dispatched ${waveClash.task.id}`
+          : "no locally executable agent has capacity for this lane in this wave"
+    });
+  }
+  return out;
+}
+
+/* ---------------------------------------------------------------------------
+ * Implementation fingerprinting
+ *
+ * Binds a review approval to the exact implementation content it reviewed.
+ * Generated control-plane bookkeeping is excluded, otherwise recording the
+ * approval itself would immediately invalidate the approval.
+ * ------------------------------------------------------------------------- */
+const fingerprintExclusions = [
+  "control/tasks.json",
+  "control/events.jsonl",
+  "control/queues",
+  "coordination/PROJECT_STATUS.md",
+  "coordination/TASKS.md"
+];
+function excludedFromFingerprint(rel) {
+  return fingerprintExclusions.some((ex) => rel === ex || rel.startsWith(ex + "/"));
+}
+function filesForPattern(pattern) {
+  const prefix = normalizePrefix(pattern);
+  if (!prefix) return [];
+  const abs = path.join(root, prefix);
+  if (!fs.existsSync(abs)) return [];
+  if (fs.statSync(abs).isFile()) return excludedFromFingerprint(prefix) ? [] : [prefix];
+  const out = [];
+  const stack = [prefix];
+  while (stack.length) {
+    const rel = stack.pop();
+    for (const entry of fs.readdirSync(path.join(root, rel), { withFileTypes: true })) {
+      if (entry.name === "node_modules" || entry.name === ".git") continue;
+      const childRel = `${rel}/${entry.name}`;
+      if (excludedFromFingerprint(childRel)) continue;
+      if (entry.isDirectory()) stack.push(childRel);
+      else if (entry.isFile()) out.push(childRel);
+    }
+  }
+  return out;
+}
+function implementationFingerprint(task) {
+  const set = new Set();
+  for (const pattern of task.allowedPaths ?? []) for (const rel of filesForPattern(pattern)) set.add(rel);
+  const sorted = [...set].sort();
+  const hash = crypto.createHash("sha256");
+  for (const rel of sorted) {
+    hash.update(rel);
+    hash.update("\0");
+    hash.update(fs.readFileSync(path.join(root, rel)));
+    hash.update("\0");
+  }
+  return { treeHash: hash.digest("hex"), fileCount: sorted.length };
+}
+function currentCommitSha() {
+  try {
+    return execFileSync("git", ["rev-parse", "HEAD"], {
+      cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"]
+    }).trim() || null;
+  } catch { return null; }
+}
+
+/* ---------------------------------------------------------------------------
+ * Independent review enforcement
+ * ------------------------------------------------------------------------- */
+const REVIEW_REQUIRED_FIELDS = [
+  "taskId", "implementationAgent", "reviewerAgent", "reviewerClass", "reviewerProvider",
+  "reviewedCommitSha", "reviewedTreeHash", "outcome", "reviewedAt", "evidence"
+];
+const REVIEW_OUTCOMES = ["APPROVED", "CHANGES_REQUESTED"];
+
+function reviewRequired(task, policies) {
+  if (task.requiresIndependentReview === false) return false;
+  if (policies.review?.requireIndependentReview === false) return false;
+  return Boolean(task.reviewAgent);
+}
+function reviewProblems(task, policies) {
+  const problems = [];
+  if (!reviewRequired(task, policies)) return problems;
+  const r = task.review;
+  if (!r) {
+    problems.push(`no independent review record; run: node scripts/ai-control-plane.mjs approve ${task.id} ${task.reviewAgent} "<evidence>"`);
+    return problems;
+  }
+  for (const field of REVIEW_REQUIRED_FIELDS) {
+    if (r[field] === undefined || r[field] === null || r[field] === "") problems.push(`review record missing required field: ${field}`);
+  }
+  if (r.outcome === "CHANGES_REQUESTED") problems.push("review outcome is CHANGES_REQUESTED; rework and obtain a new approval");
+  else if (r.outcome !== "APPROVED") problems.push(`review outcome ${r.outcome} is not APPROVED`);
+  if (r.reviewerAgent && r.reviewerAgent === r.implementationAgent) {
+    problems.push(`self-approval is prohibited: ${r.reviewerAgent} implemented and approved ${task.id}`);
+  }
+  if (task.reviewAgent && r.reviewerAgent !== task.reviewAgent) {
+    problems.push(`independent review must come from ${task.reviewAgent}, but record names ${r.reviewerAgent}; automatic reviewer substitution is not permitted`);
+  }
+  const current = implementationFingerprint(task);
+  if (r.reviewedTreeHash !== current.treeHash) {
+    problems.push(`stale review: implementation under allowedPaths changed after approval (approved ${String(r.reviewedTreeHash).slice(0, 12)}, current ${current.treeHash.slice(0, 12)})`);
+  }
+  return problems;
+}
+function recordReview(d, task, reviewer, outcome, evidence) {
+  const implementationAgent = task.implementationAgent ?? task.owner ?? null;
+  if (!implementationAgent) throw new Error(`${task.id} has no recorded implementation agent; claim and start it through the control plane first`);
+  if (reviewer.id === implementationAgent) throw new Error(`self-approval is prohibited: ${reviewer.id} implemented ${task.id}`);
+  if (task.reviewAgent && reviewer.id !== task.reviewAgent) {
+    throw new Error(`${task.id} requires independent review by ${task.reviewAgent}; ${reviewer.id} may not substitute automatically`);
+  }
+  if (!REVIEW_OUTCOMES.includes(outcome)) throw new Error(`Review outcome must be one of ${REVIEW_OUTCOMES.join(", ")}`);
+  if (!evidence) throw new Error("Review evidence/reference is required");
+  const fingerprint = implementationFingerprint(task);
+  const record = {
+    taskId: task.id,
+    implementationAgent,
+    reviewerAgent: reviewer.id,
+    reviewerClass: reviewer.kind,
+    reviewerProvider: reviewer.provider,
+    reviewedCommitSha: currentCommitSha() ?? "unavailable-no-git",
+    reviewedTreeHash: fingerprint.treeHash,
+    reviewedFileCount: fingerprint.fileCount,
+    outcome,
+    reviewedAt: now(),
+    evidence
+  };
+  task.review = record;
+  task.reviewHistory ??= [];
+  task.reviewHistory.push(record);
+  event("task.review_recorded", { taskId: task.id, reviewerAgent: reviewer.id, implementationAgent, outcome, reviewedTreeHash: record.reviewedTreeHash, evidence });
+  return record;
+}
+
+function saveTasks(taskDoc) { writeJson(files.tasks, taskDoc); }
+function requireTask(taskDoc, id) {
+  const task = taskDoc.tasks.find((t) => t.id === id);
+  if (!task) throw new Error(`Unknown task ${id}`);
+  return task;
+}
+function requireAgent(d, id) {
+  const agent = d.agentDoc.agents.find((a) => a.id === id);
+  if (!agent) throw new Error(`Unknown agent ${id}`);
+  return agent;
+}
+function transition(task, next, policies) {
+  const allowed = policies.transitions[task.status] ?? [];
+  if (!allowed.includes(next)) throw new Error(`Invalid transition ${task.status} -> ${next} for ${task.id}`);
+  task.status = next;
+  task.updatedAt = now();
+}
+function allGatesPassed(task) {
+  return (task.qualityGates ?? []).every((gate) => task.gateResults?.[gate]?.status === "pass");
+}
+function validateState(d) {
+  const { taskDoc, agentDoc, gateDoc, policies, milestoneDoc = { milestones: [] } } = d;
+  const errors = [];
+  const warnings = [];
+  const tasks = taskDoc.tasks ?? [];
+  const agents = agentDoc.agents ?? [];
+  const gates = gateDoc.gates ?? {};
+  const map = taskMap(tasks);
+  const amap = agentMap(agents);
+  const ids = new Set();
+  for (const task of tasks) {
+    if (ids.has(task.id)) errors.push(`duplicate task id: ${task.id}`);
+    ids.add(task.id);
+    if (!policies.statuses.includes(task.status)) errors.push(`${task.id}: invalid status ${task.status}`);
+    for (const dep of task.dependencies ?? []) if (!map.has(dep)) errors.push(`${task.id}: missing dependency ${dep}`);
+    if (task.preferredAgent && !amap.has(task.preferredAgent)) errors.push(`${task.id}: unknown preferredAgent ${task.preferredAgent}`);
+    if (task.reviewAgent && !amap.has(task.reviewAgent)) errors.push(`${task.id}: unknown reviewAgent ${task.reviewAgent}`);
+    if (task.owner && !amap.has(task.owner)) errors.push(`${task.id}: unknown owner ${task.owner}`);
+    for (const gate of task.qualityGates ?? []) if (!gates[gate]) errors.push(`${task.id}: unknown quality gate ${gate}`);
+    if (!task.acceptance) warnings.push(`${task.id}: missing acceptance text`);
+    if (!task.allowedPaths?.length) warnings.push(`${task.id}: no allowedPaths; parallel write protection is weaker`);
+    for (const p of task.allowedPaths ?? []) {
+      if (!normalizePrefix(p)) warnings.push(`${task.id}: allowedPath "${p}" normalizes to the repository root and will conflict with every other task`);
+    }
+    if (task.preferredAgent && amap.has(task.preferredAgent) && capabilityScore(amap.get(task.preferredAgent), task) < 0) {
+      warnings.push(`${task.id}: preferredAgent ${task.preferredAgent} does not advertise lane ${task.lane}`);
+    }
+    if (task.status === "READY" && !agents.some((a) => capabilityScore(a, task) >= 0)) {
+      errors.push(`${task.id}: READY but no registered agent advertises lane ${task.lane}`);
+    }
+
+    if (task.review) {
+      if (!amap.has(task.review.reviewerAgent)) errors.push(`${task.id}: review record names unknown reviewer ${task.review.reviewerAgent}`);
+      if (task.review.reviewerAgent === task.review.implementationAgent) errors.push(`${task.id}: review record is a self-approval by ${task.review.reviewerAgent}`);
+      if (!REVIEW_OUTCOMES.includes(task.review.outcome)) errors.push(`${task.id}: invalid review outcome ${task.review.outcome}`);
+      if (task.status !== "DONE" && task.review.outcome === "APPROVED") {
+        const current = implementationFingerprint(task);
+        if (current.treeHash !== task.review.reviewedTreeHash) warnings.push(`${task.id}: approval is stale; implementation changed since review`);
+      }
+    }
+    if (task.status === "DONE") {
+      const problems = reviewProblems(task, policies);
+      const blocking = problems.filter((p) => !p.startsWith("stale review"));
+      for (const p of blocking) errors.push(`${task.id} is DONE but ${p}`);
+    }
+  }
+
+  for (const milestone of milestoneDoc.milestones ?? []) {
+    for (const id of milestone.tasks ?? []) if (!map.has(id)) errors.push(`milestone ${milestone.id}: unknown task ${id}`);
+  }
+
+  const visiting = new Set();
+  const visited = new Set();
+  function visit(id, trail = []) {
+    if (visiting.has(id)) { errors.push(`dependency cycle: ${[...trail, id].join(" -> ")}`); return; }
+    if (visited.has(id)) return;
+    visiting.add(id);
+    for (const dep of map.get(id)?.dependencies ?? []) visit(dep, [...trail, id]);
+    visiting.delete(id); visited.add(id);
+  }
+  for (const id of ids) visit(id);
+
+  const activeTasks = tasks.filter((t) => active(t, policies));
+  for (let i = 0; i < activeTasks.length; i++) {
+    for (let j = i + 1; j < activeTasks.length; j++) {
+      const a = activeTasks[i], b = activeTasks[j];
+      if (a.owner !== b.owner && pathsOverlap(a.allowedPaths, b.allowedPaths)) {
+        errors.push(`active write-path conflict: ${a.id} (${a.owner}) overlaps ${b.id} (${b.owner})`);
+      }
+    }
+  }
+  return { errors: [...new Set(errors)], warnings: [...new Set(warnings)] };
+}
+function renderTaskBoard(project, tasks) {
+  const lines = [
+    `# ${project.name} Task Board`,
+    "",
+    "> Generated from `control/tasks.json`. Do not edit status here; use `npm run ai:*` commands.",
+    "",
+    "Statuses: `BACKLOG`, `READY`, `CLAIMED`, `IN_PROGRESS`, `REVIEW`, `BLOCKED`, `DONE`, `CANCELED`.",
+    "",
+    "| ID | Priority | Lane | Status | Owner | Review | Task | Acceptance |",
+    "| --- | --- | --- | --- | --- | --- | --- | --- |"
+  ];
+  for (const t of [...tasks].sort((a, b) => priorityRank(a.priority) - priorityRank(b.priority) || a.id.localeCompare(b.id))) {
+    const review = t.review ? `${t.review.outcome} by ${t.review.reviewerAgent}` : "-";
+    lines.push(`| ${t.id} | ${t.priority} | ${t.lane} | ${t.status} | ${t.owner ?? "-"} | ${review} | ${t.title.replaceAll("|", "\\|")} | ${t.acceptance.replaceAll("|", "\\|")} |`);
+  }
+  return lines.join("\n") + "\n";
+}
+function renderStatus(d) {
+  const { project, taskDoc, agentDoc, policies, milestoneDoc = { milestones: [] } } = d;
+  // Refresh first so the status counts below and the dispatch classification
+  // further down are computed from the same task statuses.
+  refreshReadiness(taskDoc.tasks);
+  const tasks = taskDoc.tasks;
+  const agents = agentDoc.agents;
+  const counts = Object.fromEntries(policies.statuses.map((s) => [s, tasks.filter((t) => t.status === s).length]));
+  const activeTasks = tasks.filter((t) => active(t, policies));
+  const blockers = tasks.filter((t) => t.status === "BLOCKED");
+  const done = counts.DONE ?? 0;
+  const total = tasks.filter((t) => t.status !== "CANCELED").length;
+  const pct = total ? Math.round(done / total * 100) : 0;
+  const classification = classifyTasks(d);
+  const wave = planExecutableWave(d, classification);
+  const lines = [
+    `# ${project.name} - Project Status`, "",
+    `> Generated ${now()} from the AI control plane.`, "",
+    `**Overall completion:** ${done}/${total} executable tasks (${pct}%)`, "",
+    "## Status summary", "",
+    ...policies.statuses.map((s) => `- **${s}:** ${counts[s] ?? 0}`), "",
+    "## Milestones / phases", ""
+  ];
+  for (const milestone of milestoneDoc.milestones ?? []) {
+    const mtasks = (milestone.tasks ?? []).map((id) => tasks.find((t) => t.id === id)).filter(Boolean);
+    const mdone = mtasks.filter((t) => t.status === "DONE").length;
+    const mblocked = mtasks.filter((t) => t.status === "BLOCKED").length;
+    const mactive = mtasks.filter((t) => active(t, policies)).length;
+    const mpct = mtasks.length ? Math.round(mdone / mtasks.length * 100) : 0;
+    const state = mdone === mtasks.length && mtasks.length ? "COMPLETE" : mblocked && !mactive && !mtasks.some((t) => ["READY", "BACKLOG"].includes(t.status)) ? "BLOCKED" : (mactive || mdone > 0) ? "IN_PROGRESS" : "NOT_STARTED";
+    lines.push(`- **${milestone.id} — ${milestone.name}:** ${state}, ${mdone}/${mtasks.length} (${mpct}%)${mblocked ? `, ${mblocked} blocked` : ""}`);
+  }
+  lines.push("", "## Active work", "");
+  if (!activeTasks.length) lines.push("No tasks are currently claimed, in progress, or in review.");
+  else for (const t of activeTasks) lines.push(`- **${t.id}** [${t.status}] ${t.title} — owner: ${t.owner ?? "unassigned"}`);
+
+  lines.push("", "## Dispatch classification", "");
+  lines.push(`- **READY_AND_EXECUTABLE:** ${classification.readyAndExecutable.length}`);
+  lines.push(`- **READY_BUT_EXTERNAL:** ${classification.readyButExternal.length}`);
+  lines.push(`- **BLOCKED:** ${classification.blocked.length}`);
+  lines.push(`- **BACKLOG (dependency-gated):** ${classification.backlog.length}`);
+
+  lines.push("", "## Recommended executable wave", "");
+  if (!wave.length) lines.push("No conflict-free executable tasks can be assigned with current agent capacity.");
+  else for (const { task, agent } of wave) lines.push(`- **${task.id}** -> ${agent.id} (${task.priority}/${task.lane}) ${task.title}`);
+
+  lines.push("", "## Queued for external agents", "");
+  if (!classification.readyButExternal.length) lines.push("No READY work is waiting on an external agent lane.");
+  else for (const { task, reason } of classification.readyButExternal) lines.push(`- **${task.id}** (${task.priority}/${task.lane}) ${task.title} — ${reason}`);
+
+  lines.push("", "## Blockers", "");
+  if (!blockers.length) lines.push("No blockers recorded.");
+  else for (const t of blockers) lines.push(`- **${t.id}** ${t.title}: ${t.blocker ?? "reason not recorded"}`);
+  lines.push("", "## Agent capacity", "");
+  const usage = usageByAgent(tasks, policies);
+  for (const a of agents) {
+    lines.push(`- **${a.id}:** ${usage.get(a.id) ?? 0}/${a.maxParallel} active${agentExecutable(a, d) ? "" : " (external lane; not locally executable)"}`);
+  }
+  return lines.join("\n") + "\n";
+}
+function generateQueues(d) {
+  const { taskDoc, agentDoc, policies } = d;
+  const tasks = taskDoc.tasks;
+  fs.mkdirSync(files.queues, { recursive: true });
+  const classification = classifyTasks(d);
+  const externalByAgent = new Map();
+  for (const entry of classification.readyButExternal) {
+    const key = entry.agent?.id ?? "unassigned";
+    if (!externalByAgent.has(key)) externalByAgent.set(key, []);
+    externalByAgent.get(key).push({ id: entry.task.id, title: entry.task.title, priority: entry.task.priority, lane: entry.task.lane, reason: entry.reason });
+  }
+  for (const agent of agentDoc.agents) {
+    const assigned = tasks.filter((t) => t.owner === agent.id && active(t, policies));
+    const review = tasks.filter((t) => t.status === "REVIEW" && t.reviewAgent === agent.id);
+    const recommended = tasks.filter((t) => t.status === "READY" && capabilityScore(agent, t) >= 0)
+      .sort((a, b) => priorityRank(a.priority) - priorityRank(b.priority) || capabilityScore(agent, b) - capabilityScore(agent, a))
+      .slice(0, 20);
+    writeJson(path.join(files.queues, `${agent.id}.json`), {
+      generatedAt: now(),
+      agent: agent.id,
+      executionAvailable: agentExecutable(agent, d),
+      assigned,
+      review,
+      reservedExternal: externalByAgent.get(agent.id) ?? [],
+      recommended
+    });
+  }
+}
+function syncAll(d, shouldEvent = true) {
+  refreshReadiness(d.taskDoc.tasks);
+  saveTasks(d.taskDoc);
+  fs.mkdirSync(path.dirname(files.statusMd), { recursive: true });
+  fs.writeFileSync(files.tasksMd, renderTaskBoard(d.project, d.taskDoc.tasks));
+  fs.writeFileSync(files.statusMd, renderStatus(d));
+  generateQueues(d);
+  if (shouldEvent) event("control.sync", { tasks: d.taskDoc.tasks.length });
+}
+
+const [command = "help", ...args] = process.argv.slice(2);
+try {
+  const d = data();
+  if (command === "validate") {
+    refreshReadiness(d.taskDoc.tasks);
+    const result = validateState(d);
+    for (const w of result.warnings) console.warn(`WARN: ${w}`);
+    if (result.errors.length) {
+      for (const e of result.errors) console.error(`ERROR: ${e}`);
+      process.exit(1);
+    }
+    console.log(`AI control plane valid: ${d.taskDoc.tasks.length} tasks, ${d.agentDoc.agents.length} agents.`);
+  } else if (command === "sync") {
+    syncAll(d);
+    console.log("Synced machine state to human-readable status and agent queues.");
+  } else if (command === "status") {
+    console.log(renderStatus(d));
+  } else if (command === "ready") {
+    const c = classifyTasks(d);
+    for (const t of [...c.readyAndExecutable].sort((a, b) => priorityRank(a.priority) - priorityRank(b.priority))) {
+      console.log(`READY_AND_EXECUTABLE\t${t.id}\t${t.priority}\t${t.lane}\t${t.preferredAgent ?? "auto"}\t${t.title}`);
+    }
+    for (const { task: t, agent } of c.readyButExternal) {
+      console.log(`READY_BUT_EXTERNAL\t${t.id}\t${t.priority}\t${t.lane}\t${agent?.id ?? "unassigned"}\t${t.title}`);
+    }
+    for (const { task: t, reason } of c.blocked) {
+      console.log(`BLOCKED\t${t.id}\t${t.priority}\t${t.lane}\t-\t${t.title} (${reason})`);
+    }
+  } else if (command === "dispatch") {
+    const apply = args.includes("--apply");
+    const c = classifyTasks(d);
+    const wave = planExecutableWave(d, c);
+
+    console.log("=== READY_AND_EXECUTABLE (dispatchable now) ===");
+    if (!wave.length) console.log("(none) No conflict-free executable tasks can be assigned with current agent capacity.");
+    for (const { task, agent } of wave) console.log(`${task.id} -> ${agent.id} (${task.priority}/${task.lane}) ${task.title}`);
+
+    const deferred = deferredReasons(d, c, wave);
+    if (deferred.length) {
+      console.log("\n--- deferred to a later wave ---");
+      for (const { task, reason } of deferred) console.log(`${task.id} (${task.priority}/${task.lane}) ${task.title} — ${reason}`);
+    }
+
+    console.log("\n=== READY_BUT_EXTERNAL (reserved; does not reduce the local wave) ===");
+    if (!c.readyButExternal.length) console.log("(none)");
+    for (const { task, agent, reason } of c.readyButExternal) {
+      console.log(`${task.id} [${agent?.id ?? "unassigned"}] (${task.priority}/${task.lane}) ${task.title} — ${reason}`);
+    }
+
+    console.log("\n=== BLOCKED ===");
+    if (!c.blocked.length) console.log("(none)");
+    for (const { task, reason } of c.blocked) console.log(`${task.id} (${task.priority}/${task.lane}) ${task.title} — ${reason}`);
+
+    if (apply) {
+      for (const { task, agent } of wave) {
+        task.owner = agent.id;
+        task.implementationAgent = agent.id;
+        transition(task, "CLAIMED", d.policies);
+        event("task.claimed", { taskId: task.id, agentId: agent.id, source: "dispatch" });
+      }
+      syncAll(d, false);
+      console.log(`\nClaimed ${wave.length} tasks.`);
+    }
+  } else if (command === "queue") {
+    const agentId = args[0];
+    if (!agentId) throw new Error("Usage: queue <agentId>");
+    requireAgent(d, agentId);
+    syncAll(d, false);
+    console.log(fs.readFileSync(path.join(files.queues, `${agentId}.json`), "utf8"));
+  } else if (command === "claim") {
+    const [taskId, agentId] = args;
+    if (!taskId || !agentId) throw new Error("Usage: claim <taskId> <agentId>");
+    refreshReadiness(d.taskDoc.tasks);
+    const task = requireTask(d.taskDoc, taskId);
+    const agent = requireAgent(d, agentId);
+    if (task.status !== "READY") throw new Error(`${taskId} is ${task.status}, not READY`);
+    if (capabilityScore(agent, task) < 0) throw new Error(`${agentId} does not advertise capability for lane ${task.lane}`);
+    const usage = usageByAgent(d.taskDoc.tasks, d.policies).get(agentId) ?? 0;
+    if (usage >= agent.maxParallel) throw new Error(`${agentId} is at maxParallel ${agent.maxParallel}`);
+    const conflict = conflictWithActive(task, d.taskDoc.tasks, d.policies);
+    if (conflict) throw new Error(`${task.id} paths overlap active task ${conflict.id} owned by ${conflict.owner}`);
+    task.owner = agentId;
+    task.implementationAgent = agentId;
+    transition(task, "CLAIMED", d.policies);
+    event("task.claimed", { taskId, agentId });
+    syncAll(d, false);
+    console.log(`${taskId} claimed by ${agentId}.`);
+  } else if (command === "start") {
+    const [taskId, agentId] = args;
+    const task = requireTask(d.taskDoc, taskId);
+    if (agentId && task.owner !== agentId) throw new Error(`${taskId} is owned by ${task.owner}, not ${agentId}`);
+    task.implementationAgent = task.owner ?? task.implementationAgent;
+    transition(task, "IN_PROGRESS", d.policies);
+    event("task.started", { taskId, agentId: task.owner });
+    syncAll(d, false);
+    console.log(`${taskId} started.`);
+  } else if (command === "review") {
+    const [taskId] = args;
+    const task = requireTask(d.taskDoc, taskId);
+    transition(task, "REVIEW", d.policies);
+    event("task.review_requested", { taskId, owner: task.owner, reviewAgent: task.reviewAgent });
+    syncAll(d, false);
+    console.log(`${taskId} moved to REVIEW for ${task.reviewAgent}.`);
+  } else if (command === "approve" || command === "request-changes") {
+    const [taskId, reviewerId, ...noteParts] = args;
+    if (!taskId || !reviewerId) throw new Error(`Usage: ${command} <taskId> <reviewerAgent> <evidence>`);
+    const task = requireTask(d.taskDoc, taskId);
+    const reviewer = requireAgent(d, reviewerId);
+    if (task.status !== "REVIEW") throw new Error(`${taskId} is ${task.status}; move it to REVIEW before recording a review`);
+    const outcome = command === "approve" ? "APPROVED" : "CHANGES_REQUESTED";
+    const record = recordReview(d, task, reviewer, outcome, noteParts.join(" "));
+    if (outcome === "CHANGES_REQUESTED") transition(task, "IN_PROGRESS", d.policies);
+    saveTasks(d.taskDoc);
+    syncAll(d, false);
+    console.log(`${taskId} review recorded: ${outcome} by ${reviewer.id} (${reviewer.provider}) against ${record.reviewedTreeHash.slice(0, 12)}.`);
+    if (outcome === "CHANGES_REQUESTED") console.log(`${taskId} returned to IN_PROGRESS.`);
+  } else if (command === "review-status") {
+    const [taskId] = args;
+    const task = requireTask(d.taskDoc, taskId);
+    const problems = reviewProblems(task, d.policies);
+    console.log(JSON.stringify({
+      taskId: task.id,
+      status: task.status,
+      reviewRequired: reviewRequired(task, d.policies),
+      requiredReviewer: task.reviewAgent ?? null,
+      implementationAgent: task.implementationAgent ?? task.owner ?? null,
+      review: task.review ?? null,
+      currentTreeHash: implementationFingerprint(task).treeHash,
+      gatesPassed: allGatesPassed(task),
+      blockingProblems: problems
+    }, null, 2));
+  } else if (command === "gate") {
+    const [taskId, gate, status, ...noteParts] = args;
+    const task = requireTask(d.taskDoc, taskId);
+    if (!task.qualityGates.includes(gate)) throw new Error(`${gate} is not required by ${taskId}`);
+    if (!d.gateDoc.gates[gate]) throw new Error(`Unknown gate ${gate}`);
+    if (!["pass", "fail"].includes(status)) throw new Error("Gate status must be pass or fail");
+    const evidence = noteParts.join(" ");
+    if (!evidence) throw new Error("Gate evidence is required; it must identify the command, review, benchmark, or test performed");
+    task.gateResults ??= {};
+    task.gateResults[gate] = { status, at: now(), evidence };
+    event("task.gate", { taskId, gate, status, evidence });
+    saveTasks(d.taskDoc);
+    syncAll(d, false);
+    console.log(`${taskId} gate ${gate}: ${status}.`);
+  } else if (command === "done") {
+    const [taskId] = args;
+    const task = requireTask(d.taskDoc, taskId);
+    if (task.status !== "REVIEW") throw new Error(`${taskId} must be in REVIEW before DONE`);
+    if (!depsDone(task, taskMap(d.taskDoc.tasks))) throw new Error(`${taskId} has incomplete dependencies`);
+    if (!allGatesPassed(task)) {
+      const missing = task.qualityGates.filter((g) => task.gateResults?.[g]?.status !== "pass");
+      throw new Error(`${taskId} cannot complete; gates not passed: ${missing.join(", ")}`);
+    }
+    const problems = reviewProblems(task, d.policies);
+    if (problems.length) {
+      throw new Error(`${taskId} cannot complete; independent review requirements unmet:\n  - ${problems.join("\n  - ")}`);
+    }
+    transition(task, "DONE", d.policies);
+    task.completedAt = now();
+    event("task.done", { taskId, owner: task.owner, reviewerAgent: task.review?.reviewerAgent ?? null, reviewedCommitSha: task.review?.reviewedCommitSha ?? null });
+    task.owner = null;
+    syncAll(d, false);
+    console.log(`${taskId} DONE.`);
+  } else if (command === "block") {
+    const [taskId, ...reasonParts] = args;
+    const reason = reasonParts.join(" ");
+    if (!reason) throw new Error("Usage: block <taskId> <reason>");
+    const task = requireTask(d.taskDoc, taskId);
+    if (task.status !== "BLOCKED") transition(task, "BLOCKED", d.policies);
+    task.blocker = reason;
+    event("task.blocked", { taskId, reason });
+    syncAll(d, false);
+    console.log(`${taskId} BLOCKED: ${reason}`);
+  } else if (command === "unblock") {
+    const [taskId] = args;
+    const task = requireTask(d.taskDoc, taskId);
+    if (task.status !== "BLOCKED") throw new Error(`${taskId} is not BLOCKED`);
+    task.owner = null;
+    delete task.blocker;
+    const next = depsDone(task, taskMap(d.taskDoc.tasks)) ? "READY" : "BACKLOG";
+    transition(task, next, d.policies);
+    event("task.unblocked", { taskId, status: next });
+    syncAll(d, false);
+    console.log(`${taskId} -> ${next}.`);
+  } else if (command === "release") {
+    const [taskId] = args;
+    const task = requireTask(d.taskDoc, taskId);
+    if (!["CLAIMED", "IN_PROGRESS"].includes(task.status)) throw new Error(`${taskId} is not releasable from ${task.status}`);
+    transition(task, "READY", d.policies);
+    const owner = task.owner;
+    task.owner = null;
+    event("task.released", { taskId, owner });
+    syncAll(d, false);
+    console.log(`${taskId} released.`);
+  } else if (command === "event") {
+    const [type, ...message] = args;
+    if (!type) throw new Error("Usage: event <type> [message]");
+    event(type, { message: message.join(" ") });
+    console.log("Event recorded.");
+  } else {
+    console.log(`AI control plane commands:
+  validate
+  sync
+  status
+  ready
+  dispatch [--apply]
+  queue <agentId>
+  claim <taskId> <agentId>
+  start <taskId> [agentId]
+  review <taskId>
+  approve <taskId> <reviewerAgent> <evidence>
+  request-changes <taskId> <reviewerAgent> <evidence>
+  review-status <taskId>
+  gate <taskId> <gate> <pass|fail> <evidence>
+  done <taskId>
+  block <taskId> <reason>
+  unblock <taskId>
+  release <taskId>
+  event <type> [message]
+
+Dispatch classes:
+  READY_AND_EXECUTABLE  dependency-clear and a locally executable agent can take it now
+  READY_BUT_EXTERNAL    reserved for an external agent lane; never reduces the local wave
+  BLOCKED               explicitly blocked with a recorded reason
+  BACKLOG               dependency-gated`);
+  }
+} catch (error) {
+  console.error(`AI control plane error: ${error.message}`);
+  process.exit(1);
+}

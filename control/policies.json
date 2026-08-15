@@ -1,0 +1,106 @@
+{
+  "$schemaVersion": 1,
+  "statuses": [
+    "BACKLOG",
+    "READY",
+    "CLAIMED",
+    "IN_PROGRESS",
+    "REVIEW",
+    "BLOCKED",
+    "DONE",
+    "CANCELED"
+  ],
+  "activeStatuses": [
+    "CLAIMED",
+    "IN_PROGRESS",
+    "REVIEW"
+  ],
+  "transitions": {
+    "BACKLOG": [
+      "READY",
+      "BLOCKED",
+      "CANCELED"
+    ],
+    "READY": [
+      "CLAIMED",
+      "BLOCKED",
+      "CANCELED"
+    ],
+    "CLAIMED": [
+      "IN_PROGRESS",
+      "READY",
+      "BLOCKED",
+      "CANCELED"
+    ],
+    "IN_PROGRESS": [
+      "REVIEW",
+      "READY",
+      "BLOCKED",
+      "CANCELED"
+    ],
+    "REVIEW": [
+      "DONE",
+      "IN_PROGRESS",
+      "BLOCKED",
+      "CANCELED"
+    ],
+    "BLOCKED": [
+      "BACKLOG",
+      "READY",
+      "CANCELED"
+    ],
+    "DONE": [],
+    "CANCELED": []
+  },
+  "completion": {
+    "requireAllDependenciesDone": true,
+    "requireAllQualityGatesPassed": true,
+    "requireReviewStatusBeforeDone": true,
+    "requireIndependentReviewRecordBeforeDone": true
+  },
+  "review": {
+    "requireIndependentReview": true,
+    "allowSelfApproval": false,
+    "allowAutomaticReviewerSubstitution": false,
+    "invalidateApprovalOnImplementationChange": true,
+    "bindApprovalTo": ["reviewedCommitSha", "reviewedTreeHash"],
+    "requiredRecordFields": [
+      "taskId",
+      "implementationAgent",
+      "reviewerAgent",
+      "reviewerClass",
+      "reviewerProvider",
+      "reviewedCommitSha",
+      "reviewedTreeHash",
+      "outcome",
+      "reviewedAt",
+      "evidence"
+    ],
+    "outcomes": ["APPROVED", "CHANGES_REQUESTED"],
+    "blockingOutcomes": ["CHANGES_REQUESTED"],
+    "notes": "A task whose reviewAgent is set cannot reach DONE without an APPROVED record from exactly that agent, bound to the current implementation fingerprint. Reviewer substitution requires an explicit human decision, not an automatic fallback."
+  },
+  "parallelism": {
+    "forbidOverlappingWritePaths": true,
+    "preferSpecialists": true,
+    "allowIndependentTasksSameLane": true
+  },
+  "escalation": {
+    "humanOnly": [
+      "Credentials",
+      "Budget",
+      "Licensing",
+      "IrreversibleProductionChange"
+    ],
+    "architectureQueueAgent": "gpt-architect"
+  },
+  "ambition": {
+    "doNotSilentlyNarrowRequestedScope": true,
+    "preferHighestLeverageFeasiblePlan": true,
+    "distinguishTemporaryToolingLimitsFromProjectCeiling": true,
+    "stateHardConstraintsExplicitly": true,
+    "preserveScaleUpPath": true,
+    "avoidArtificialRoleLimits": true,
+    "principle": "Do not sell the project short: maximize achievable capability and speed without pretending away safety, legal, dependency, quality, or environment constraints."
+  }
+}

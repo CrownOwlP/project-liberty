@@ -1,0 +1,15 @@
+{
+  "id": "NP-0001",
+  "priority": "P0",
+  "lane": "Backend",
+  "status": "READY",
+  "title": "Example task",
+  "dependencies": [],
+  "allowedPaths": ["src/backend/**"],
+  "preferredAgent": "claude-backend",
+  "reviewAgent": "gpt-architect",
+  "qualityGates": ["unit"],
+  "acceptance": "Observable acceptance criteria",
+  "owner": null,
+  "gateResults": {}
+}

@@ -1,0 +1,147 @@
+{
+  "generatedAt": "2026-08-15T02:55:17.463Z",
+  "agent": "gpt-architect",
+  "executionAvailable": false,
+  "assigned": [],
+  "review": [],
+  "reservedExternal": [
+    {
+      "id": "PL-0002",
+      "title": "Review scaffold contracts",
+      "priority": "P0",
+      "lane": "Architecture",
+      "reason": "reserved for gpt-architect via openai-chatgpt; not locally executable"
+    },
+    {
+      "id": "PL-0401",
+      "title": "Auth integration decision",
+      "priority": "P0",
+      "lane": "Backend",
+      "reason": "reserved for gpt-architect via openai-chatgpt; not locally executable"
+    },
+    {
+      "id": "PL-0601",
+      "title": "Channel and EPG contracts",
+      "priority": "P1",
+      "lane": "Live",
+      "reason": "reserved for gpt-architect via openai-chatgpt; not locally executable"
+    }
+  ],
+  "recommended": [
+    {
+      "id": "PL-0002",
+      "priority": "P0",
+      "lane": "Architecture",
+      "status": "READY",
+      "title": "Review scaffold contracts",
+      "dependencies": [],
+      "allowedPaths": [
+        "docs/**",
+        "control/**",
+        "coordination/**"
+      ],
+      "preferredAgent": "gpt-architect",
+      "reviewAgent": "claude-lead",
+      "qualityGates": [
+        "architecture-review",
+        "rights-review",
+        "repo-validate"
+      ],
+      "acceptance": "No unresolved contradiction across product, architecture, API, security, and content-rights contracts",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PL-0401",
+      "priority": "P0",
+      "lane": "Backend",
+      "status": "READY",
+      "title": "Auth integration decision",
+      "dependencies": [],
+      "allowedPaths": [
+        "docs/**",
+        "apps/web/src/**",
+        "packages/contracts/**"
+      ],
+      "preferredAgent": "gpt-architect",
+      "reviewAgent": "claude-lead",
+      "qualityGates": [
+        "architecture-review",
+        "security-review"
+      ],
+      "acceptance": "ADR selects auth approach and defines protected profile boundary",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PL-0201",
+      "priority": "P0",
+      "lane": "Media",
+      "status": "READY",
+      "title": "Expand candidate score model",
+      "dependencies": [],
+      "allowedPaths": [
+        "packages/media-engine/**",
+        "docs/ARCHITECTURE.md",
+        "docs/DECISIONS.md"
+      ],
+      "preferredAgent": "claude-media",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "architecture-review"
+      ],
+      "acceptance": "Score dimensions are documented, deterministic, explainable, and regression-tested",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PL-0301",
+      "priority": "P0",
+      "lane": "Provider",
+      "status": "READY",
+      "title": "Authorized fixture provider",
+      "dependencies": [],
+      "allowedPaths": [
+        "packages/provider-sdk/**",
+        "packages/contracts/**",
+        "apps/web/src/app/api/**"
+      ],
+      "preferredAgent": "claude-backend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "security-review",
+        "rights-review"
+      ],
+      "acceptance": "Server-side fixture adapter returns normalized authorized candidates only",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PL-0601",
+      "priority": "P1",
+      "lane": "Live",
+      "status": "READY",
+      "title": "Channel and EPG contracts",
+      "dependencies": [],
+      "allowedPaths": [
+        "packages/contracts/**",
+        "docs/LIVE_TV.md",
+        "docs/API_CONTRACTS.md"
+      ],
+      "preferredAgent": "gpt-architect",
+      "reviewAgent": "claude-lead",
+      "qualityGates": [
+        "architecture-review",
+        "rights-review",
+        "typecheck"
+      ],
+      "acceptance": "Licensed channel, program, schedule, and EPG contracts are typed and documented",
+      "owner": null,
+      "gateResults": {}
+    }
+  ]
+}

@@ -1,0 +1,53 @@
+{
+  "$schemaVersion": 1,
+  "milestones": [
+    {
+      "id": "M0",
+      "name": "AI Engineering System + Repository Foundation",
+      "objective": "Make the repository self-coordinating, buildable, and ready for parallel agents.",
+      "tasks": ["PL-AI-0001", "PL-0001", "PL-0002", "PL-0003"]
+    },
+    {
+      "id": "M1",
+      "name": "Core Discovery Experience",
+      "objective": "Deliver typed catalog, search, title details, and a coherent user-facing discovery flow.",
+      "tasks": ["PL-0101", "PL-0102", "PL-0103"]
+    },
+    {
+      "id": "M2",
+      "name": "Media Resolution + Provider Foundation",
+      "objective": "Build deterministic stream/audio/subtitle/failover policy and authorized provider boundaries.",
+      "tasks": ["PL-0201", "PL-0202", "PL-0203", "PL-0204", "PL-0301", "PL-0303"]
+    },
+    {
+      "id": "M3",
+      "name": "Identity + Personal State",
+      "objective": "Add authentication, profiles, progress, and watchlist persistence.",
+      "tasks": ["PL-0401", "PL-0402", "PL-0403", "PL-0404"]
+    },
+    {
+      "id": "M4",
+      "name": "Playback Vertical Slice",
+      "objective": "Resolve an authorized source, play it through an explicit state machine, and record progress/telemetry.",
+      "tasks": ["PL-0501", "PL-0502", "PL-0503", "PL-0504", "PL-0701", "PL-0702"]
+    },
+    {
+      "id": "M5",
+      "name": "Live + Intelligence Boundaries",
+      "objective": "Prepare live-TV contracts and initial explainable recommendations while external provider work remains rights-gated.",
+      "tasks": ["PL-0601", "PL-0801"]
+    },
+    {
+      "id": "M6",
+      "name": "Shared-Agent Automation Bridge",
+      "objective": "Move cross-agent collaboration from manual handoffs toward GitHub-backed and optional API-driven dispatch.",
+      "tasks": ["PL-AI-0002", "PL-AI-0003"]
+    },
+    {
+      "id": "EXT",
+      "name": "External Licensed Integrations",
+      "objective": "Integrate production media/live providers only after licensing and credentials are approved.",
+      "tasks": ["PL-0302", "PL-0602"]
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "$schemaVersion": 1,
+  "gates": {
+    "repo-validate": {"command": "npm run repo:validate", "requiredEvidence": "exit-code"},
+    "lint": {"command": "npm run lint", "requiredEvidence": "exit-code"},
+    "typecheck": {"command": "npm run typecheck", "requiredEvidence": "exit-code"},
+    "unit": {"command": "npm run test", "requiredEvidence": "exit-code"},
+    "build": {"command": "npm run build", "requiredEvidence": "exit-code"},
+    "integration": {"command": "npm run test -- --runInBand", "requiredEvidence": "exit-code-or-task-specific"},
+    "e2e": {"command": "task-specific", "requiredEvidence": "test-report"},
+    "security-review": {"command": "agent-review", "requiredEvidence": "review-note"},
+    "architecture-review": {"command": "agent-review", "requiredEvidence": "decision-or-approval"},
+    "rights-review": {"command": "agent-review", "requiredEvidence": "rights-compliance-note"},
+    "performance": {"command": "task-specific", "requiredEvidence": "benchmark-or-budget"}
+  }
+}

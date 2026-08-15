@@ -1,0 +1,56 @@
+{
+  "generatedAt": "2026-08-15T02:55:17.464Z",
+  "agent": "claude-media",
+  "executionAvailable": true,
+  "assigned": [],
+  "review": [],
+  "reservedExternal": [],
+  "recommended": [
+    {
+      "id": "PL-0201",
+      "priority": "P0",
+      "lane": "Media",
+      "status": "READY",
+      "title": "Expand candidate score model",
+      "dependencies": [],
+      "allowedPaths": [
+        "packages/media-engine/**",
+        "docs/ARCHITECTURE.md",
+        "docs/DECISIONS.md"
+      ],
+      "preferredAgent": "claude-media",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "architecture-review"
+      ],
+      "acceptance": "Score dimensions are documented, deterministic, explainable, and regression-tested",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PL-0601",
+      "priority": "P1",
+      "lane": "Live",
+      "status": "READY",
+      "title": "Channel and EPG contracts",
+      "dependencies": [],
+      "allowedPaths": [
+        "packages/contracts/**",
+        "docs/LIVE_TV.md",
+        "docs/API_CONTRACTS.md"
+      ],
+      "preferredAgent": "gpt-architect",
+      "reviewAgent": "claude-lead",
+      "qualityGates": [
+        "architecture-review",
+        "rights-review",
+        "typecheck"
+      ],
+      "acceptance": "Licensed channel, program, schedule, and EPG contracts are typed and documented",
+      "owner": null,
+      "gateResults": {}
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "$schemaVersion": 1,
+  "adapters": [
+    {
+      "id": "claude-code-desktop",
+      "agentKinds": ["local-lead", "local-subagent"],
+      "mode": "local-repository",
+      "handoff": "control/tasks.json + coordination/PROJECT_STATUS.md",
+      "canExecuteCommands": true,
+      "canEditLocalFiles": true,
+      "automaticInvocation": "Claude Code team/subagent orchestration"
+    },
+    {
+      "id": "openai-chatgpt",
+      "agentKinds": ["external-reasoning"],
+      "mode": "shared-repository",
+      "handoff": "GitHub repository + control queues + coordination/CLAUDE_TO_GPT.md",
+      "canExecuteCommands": "environment-dependent",
+      "canEditLocalFiles": false,
+      "automaticInvocation": "requires an external API/agent runner or a user-triggered ChatGPT turn"
+    },
+    {
+      "id": "human-commander",
+      "agentKinds": ["executive"],
+      "mode": "approval",
+      "handoff": "decision queue",
+      "canExecuteCommands": false,
+      "canEditLocalFiles": false,
+      "automaticInvocation": "never"
+    }
+  ]
+}

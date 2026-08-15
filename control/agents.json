@@ -1,0 +1,85 @@
+{
+  "$schemaVersion": 1,
+  "agents": [
+    {
+      "id": "gpt-architect",
+      "provider": "openai",
+      "kind": "external-reasoning",
+      "capabilities": ["Architecture", "Product", "Media", "Provider", "Backend", "Security", "Live", "Recommendations", "Review", "Research", "Integration"],
+      "maxParallel": 6,
+      "writeMode": "branch-or-review",
+      "notes": "Architecture, decomposition, complex reasoning, review, integration design, and high-leverage implementation. Requires repository/GitHub visibility to operate on current code."
+    },
+    {
+      "id": "claude-lead",
+      "provider": "anthropic",
+      "kind": "local-lead",
+      "capabilities": ["Coordination", "Integration", "Architecture", "Review"],
+      "maxParallel": 2,
+      "writeMode": "worktree",
+      "notes": "Claude Code Desktop lead. Decomposes work, coordinates subagents, integrates and verifies."
+    },
+    {
+      "id": "claude-frontend",
+      "provider": "anthropic",
+      "kind": "local-subagent",
+      "capabilities": ["Frontend", "Player"],
+      "maxParallel": 1,
+      "writeMode": "worktree",
+      "definition": ".claude/agents/frontend-builder.md"
+    },
+    {
+      "id": "claude-backend",
+      "provider": "anthropic",
+      "kind": "local-subagent",
+      "capabilities": ["Backend", "Provider"],
+      "maxParallel": 1,
+      "writeMode": "worktree",
+      "definition": ".claude/agents/backend-builder.md"
+    },
+    {
+      "id": "claude-media",
+      "provider": "anthropic",
+      "kind": "local-subagent",
+      "capabilities": ["Media", "Player", "Live"],
+      "maxParallel": 1,
+      "writeMode": "worktree",
+      "definition": ".claude/agents/media-engineer.md"
+    },
+    {
+      "id": "claude-test",
+      "provider": "anthropic",
+      "kind": "local-subagent",
+      "capabilities": ["Test", "Review"],
+      "maxParallel": 1,
+      "writeMode": "worktree",
+      "definition": ".claude/agents/test-engineer.md"
+    },
+    {
+      "id": "claude-security",
+      "provider": "anthropic",
+      "kind": "local-subagent",
+      "capabilities": ["Security", "Review"],
+      "maxParallel": 1,
+      "writeMode": "read-mostly",
+      "definition": ".claude/agents/security-reviewer.md"
+    },
+    {
+      "id": "claude-infra",
+      "provider": "anthropic",
+      "kind": "local-subagent",
+      "capabilities": ["Infra", "Observability"],
+      "maxParallel": 1,
+      "writeMode": "worktree",
+      "definition": ".claude/agents/infra-engineer.md"
+    },
+    {
+      "id": "human-commander",
+      "provider": "human",
+      "kind": "executive",
+      "capabilities": ["ExecutiveDecision", "Credentials", "Budget", "Licensing"],
+      "maxParallel": 99,
+      "writeMode": "approval"
+    }
+  ]
+}

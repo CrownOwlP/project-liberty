@@ -1,0 +1,733 @@
+{
+  "$schemaVersion": 1,
+  "tasks": [
+    {
+      "id": "PL-0001",
+      "priority": "P0",
+      "lane": "Infra",
+      "status": "READY",
+      "title": "Generate and commit dependency lockfile",
+      "dependencies": [],
+      "allowedPaths": [
+        "package-lock.json",
+        "package.json",
+        ".github/workflows/**"
+      ],
+      "preferredAgent": "claude-infra",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "repo-validate",
+        "lint",
+        "typecheck",
+        "unit",
+        "build"
+      ],
+      "acceptance": "npm install and full npm run check are green; CI uses npm ci once lockfile exists",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PL-0002",
+      "priority": "P0",
+      "lane": "Architecture",
+      "status": "READY",
+      "title": "Review scaffold contracts",
+      "dependencies": [],
+      "allowedPaths": [
+        "docs/**",
+        "control/**",
+        "coordination/**"
+      ],
+      "preferredAgent": "gpt-architect",
+      "reviewAgent": "claude-lead",
+      "qualityGates": [
+        "architecture-review",
+        "rights-review",
+        "repo-validate"
+      ],
+      "acceptance": "No unresolved contradiction across product, architecture, API, security, and content-rights contracts",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PL-0003",
+      "priority": "P0",
+      "lane": "Infra",
+      "status": "READY",
+      "title": "Environment validation",
+      "dependencies": [],
+      "allowedPaths": [
+        "scripts/**",
+        "infra/**",
+        ".env.example",
+        "docs/DEVELOPMENT.md"
+      ],
+      "preferredAgent": "claude-infra",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "repo-validate",
+        "unit"
+      ],
+      "acceptance": "Missing required environment is reported clearly; local PostgreSQL and Redis health are documented",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PL-0101",
+      "priority": "P0",
+      "lane": "Frontend",
+      "status": "READY",
+      "title": "Catalog home data contract",
+      "dependencies": [],
+      "allowedPaths": [
+        "apps/web/src/app/**",
+        "apps/web/src/components/**",
+        "apps/web/src/lib/**",
+        "packages/contracts/**"
+      ],
+      "preferredAgent": "claude-frontend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "lint",
+        "typecheck",
+        "unit",
+        "build"
+      ],
+      "acceptance": "Home route consumes typed catalog response and handles loading, error, and empty states",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PL-0102",
+      "priority": "P0",
+      "lane": "Frontend",
+      "status": "BACKLOG",
+      "title": "Search experience",
+      "dependencies": [
+        "PL-0101"
+      ],
+      "allowedPaths": [
+        "apps/web/src/app/search/**",
+        "apps/web/src/components/search/**",
+        "packages/contracts/**"
+      ],
+      "preferredAgent": "claude-frontend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "lint",
+        "typecheck",
+        "unit",
+        "build"
+      ],
+      "acceptance": "Debounced accessible search with typed results and URL-addressable query",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PL-0103",
+      "priority": "P0",
+      "lane": "Frontend",
+      "status": "BACKLOG",
+      "title": "Title details",
+      "dependencies": [
+        "PL-0101"
+      ],
+      "allowedPaths": [
+        "apps/web/src/app/title/**",
+        "apps/web/src/components/title/**",
+        "packages/contracts/**"
+      ],
+      "preferredAgent": "claude-frontend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "lint",
+        "typecheck",
+        "unit",
+        "build"
+      ],
+      "acceptance": "Movie, series, and episode details with play CTA using normalized IDs",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PL-0201",
+      "priority": "P0",
+      "lane": "Media",
+      "status": "READY",
+      "title": "Expand candidate score model",
+      "dependencies": [],
+      "allowedPaths": [
+        "packages/media-engine/**",
+        "docs/ARCHITECTURE.md",
+        "docs/DECISIONS.md"
+      ],
+      "preferredAgent": "claude-media",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "architecture-review"
+      ],
+      "acceptance": "Score dimensions are documented, deterministic, explainable, and regression-tested",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PL-0202",
+      "priority": "P0",
+      "lane": "Media",
+      "status": "BACKLOG",
+      "title": "Audio selection policy",
+      "dependencies": [
+        "PL-0201"
+      ],
+      "allowedPaths": [
+        "packages/media-engine/**",
+        "packages/contracts/**"
+      ],
+      "preferredAgent": "claude-media",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit"
+      ],
+      "acceptance": "Preferred language, codec, channels, and fallback reasons are deterministic and tested",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PL-0203",
+      "priority": "P0",
+      "lane": "Media",
+      "status": "BACKLOG",
+      "title": "Subtitle selection policy",
+      "dependencies": [
+        "PL-0201"
+      ],
+      "allowedPaths": [
+        "packages/media-engine/**",
+        "packages/contracts/**"
+      ],
+      "preferredAgent": "claude-media",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit"
+      ],
+      "acceptance": "Preferred language, forced, default, and off policies are explicit and tested",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PL-0204",
+      "priority": "P0",
+      "lane": "Media",
+      "status": "BACKLOG",
+      "title": "Candidate failover policy",
+      "dependencies": [
+        "PL-0201"
+      ],
+      "allowedPaths": [
+        "packages/media-engine/**",
+        "packages/contracts/**"
+      ],
+      "preferredAgent": "claude-media",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "performance"
+      ],
+      "acceptance": "Retry and fallback behavior is bounded, deterministic, observable, and testable",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PL-0301",
+      "priority": "P0",
+      "lane": "Provider",
+      "status": "READY",
+      "title": "Authorized fixture provider",
+      "dependencies": [],
+      "allowedPaths": [
+        "packages/provider-sdk/**",
+        "packages/contracts/**",
+        "apps/web/src/app/api/**"
+      ],
+      "preferredAgent": "claude-backend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "security-review",
+        "rights-review"
+      ],
+      "acceptance": "Server-side fixture adapter returns normalized authorized candidates only",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PL-0302",
+      "priority": "P0",
+      "lane": "Provider",
+      "status": "BLOCKED",
+      "title": "First production provider",
+      "dependencies": [
+        "PL-0301"
+      ],
+      "allowedPaths": [
+        "packages/provider-sdk/**",
+        "apps/web/src/app/api/**"
+      ],
+      "preferredAgent": "claude-backend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "integration",
+        "security-review",
+        "rights-review"
+      ],
+      "acceptance": "Licensed provider integrated through provider SDK with credentials isolated server-side",
+      "owner": null,
+      "blocker": "Requires a confirmed licensed API/provider and credentials",
+      "gateResults": {}
+    },
+    {
+      "id": "PL-0303",
+      "priority": "P1",
+      "lane": "Provider",
+      "status": "BACKLOG",
+      "title": "Provider health contract",
+      "dependencies": [
+        "PL-0301"
+      ],
+      "allowedPaths": [
+        "packages/provider-sdk/**",
+        "packages/contracts/**",
+        "packages/observability/**"
+      ],
+      "preferredAgent": "claude-backend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit"
+      ],
+      "acceptance": "Health sample shape, freshness, failure classes, and cache semantics are defined",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PL-0401",
+      "priority": "P0",
+      "lane": "Backend",
+      "status": "READY",
+      "title": "Auth integration decision",
+      "dependencies": [],
+      "allowedPaths": [
+        "docs/**",
+        "apps/web/src/**",
+        "packages/contracts/**"
+      ],
+      "preferredAgent": "gpt-architect",
+      "reviewAgent": "claude-lead",
+      "qualityGates": [
+        "architecture-review",
+        "security-review"
+      ],
+      "acceptance": "ADR selects auth approach and defines protected profile boundary",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PL-0402",
+      "priority": "P0",
+      "lane": "Backend",
+      "status": "BACKLOG",
+      "title": "Profile model",
+      "dependencies": [
+        "PL-0401"
+      ],
+      "allowedPaths": [
+        "apps/web/src/**",
+        "packages/contracts/**",
+        "packages/**"
+      ],
+      "preferredAgent": "claude-backend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "integration",
+        "security-review"
+      ],
+      "acceptance": "Profiles can be created and selected with authorization tests",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PL-0403",
+      "priority": "P0",
+      "lane": "Backend",
+      "status": "BACKLOG",
+      "title": "Progress persistence",
+      "dependencies": [
+        "PL-0401",
+        "PL-0402"
+      ],
+      "allowedPaths": [
+        "apps/web/src/**",
+        "packages/contracts/**",
+        "packages/**"
+      ],
+      "preferredAgent": "claude-backend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "integration",
+        "security-review"
+      ],
+      "acceptance": "Idempotent progress write/read and resume contract with authorization",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PL-0404",
+      "priority": "P1",
+      "lane": "Backend",
+      "status": "BACKLOG",
+      "title": "Watchlist persistence",
+      "dependencies": [
+        "PL-0401",
+        "PL-0402"
+      ],
+      "allowedPaths": [
+        "apps/web/src/**",
+        "packages/contracts/**",
+        "packages/**"
+      ],
+      "preferredAgent": "claude-backend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "integration",
+        "security-review"
+      ],
+      "acceptance": "Typed add, remove, and list APIs with authorization",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PL-0501",
+      "priority": "P0",
+      "lane": "Player",
+      "status": "BACKLOG",
+      "title": "Playback session API",
+      "dependencies": [
+        "PL-0201",
+        "PL-0301"
+      ],
+      "allowedPaths": [
+        "apps/web/src/app/api/v1/playback/**",
+        "packages/media-engine/**",
+        "packages/provider-sdk/**",
+        "packages/contracts/**"
+      ],
+      "preferredAgent": "claude-media",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "integration",
+        "security-review",
+        "rights-review"
+      ],
+      "acceptance": "Server resolves authorized provider candidates; clients cannot submit arbitrary media URLs",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PL-0502",
+      "priority": "P0",
+      "lane": "Player",
+      "status": "BACKLOG",
+      "title": "Player state machine",
+      "dependencies": [
+        "PL-0501"
+      ],
+      "allowedPaths": [
+        "apps/web/src/app/watch/**",
+        "apps/web/src/components/player/**",
+        "packages/contracts/**"
+      ],
+      "preferredAgent": "claude-frontend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "lint",
+        "typecheck",
+        "unit",
+        "build"
+      ],
+      "acceptance": "Loading, ready, stalled, recoverable error, failover, and fatal error states are explicit",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PL-0503",
+      "priority": "P1",
+      "lane": "Player",
+      "status": "BACKLOG",
+      "title": "Playback telemetry",
+      "dependencies": [
+        "PL-0501",
+        "PL-0502"
+      ],
+      "allowedPaths": [
+        "apps/web/src/**",
+        "packages/observability/**",
+        "packages/contracts/**"
+      ],
+      "preferredAgent": "claude-media",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "security-review"
+      ],
+      "acceptance": "Startup, rebuffer, quality switch, and failure events are observable with privacy redaction",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PL-0504",
+      "priority": "P1",
+      "lane": "Player",
+      "status": "BACKLOG",
+      "title": "A/V sync telemetry and recovery experiment",
+      "dependencies": [
+        "PL-0502",
+        "PL-0503"
+      ],
+      "allowedPaths": [
+        "apps/web/src/**",
+        "packages/media-engine/**",
+        "packages/observability/**"
+      ],
+      "preferredAgent": "claude-media",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "performance"
+      ],
+      "acceptance": "Drift measurement contract, thresholds, and bounded recovery experiment are implemented",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PL-0601",
+      "priority": "P1",
+      "lane": "Live",
+      "status": "READY",
+      "title": "Channel and EPG contracts",
+      "dependencies": [],
+      "allowedPaths": [
+        "packages/contracts/**",
+        "docs/LIVE_TV.md",
+        "docs/API_CONTRACTS.md"
+      ],
+      "preferredAgent": "gpt-architect",
+      "reviewAgent": "claude-lead",
+      "qualityGates": [
+        "architecture-review",
+        "rights-review",
+        "typecheck"
+      ],
+      "acceptance": "Licensed channel, program, schedule, and EPG contracts are typed and documented",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PL-0602",
+      "priority": "P1",
+      "lane": "Live",
+      "status": "BLOCKED",
+      "title": "Live provider integration",
+      "dependencies": [
+        "PL-0601"
+      ],
+      "allowedPaths": [
+        "packages/provider-sdk/**",
+        "apps/web/src/**"
+      ],
+      "preferredAgent": "claude-media",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "integration",
+        "security-review",
+        "rights-review"
+      ],
+      "acceptance": "Licensed live provider integrated with normalized channel/EPG contracts",
+      "owner": null,
+      "blocker": "Requires licensed live feed/provider access",
+      "gateResults": {}
+    },
+    {
+      "id": "PL-0701",
+      "priority": "P0",
+      "lane": "Test",
+      "status": "BACKLOG",
+      "title": "Critical E2E harness",
+      "dependencies": [
+        "PL-0101",
+        "PL-0501",
+        "PL-0502",
+        "PL-0403"
+      ],
+      "allowedPaths": [
+        "tests/**",
+        "apps/web/**",
+        "scripts/**"
+      ],
+      "preferredAgent": "claude-test",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "e2e"
+      ],
+      "acceptance": "Catalog to title to player to progress fixture journey is reproducible in CI",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PL-0702",
+      "priority": "P0",
+      "lane": "Security",
+      "status": "BACKLOG",
+      "title": "Provider and URL security review",
+      "dependencies": [
+        "PL-0301",
+        "PL-0501"
+      ],
+      "allowedPaths": [
+        "packages/provider-sdk/**",
+        "apps/web/src/app/api/**",
+        "docs/SECURITY.md"
+      ],
+      "preferredAgent": "claude-security",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "security-review",
+        "rights-review"
+      ],
+      "acceptance": "SSRF, secret exposure, redirect, allowlist, and rights-bypass findings are resolved or explicitly accepted",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PL-0801",
+      "priority": "P1",
+      "lane": "Recommendations",
+      "status": "BACKLOG",
+      "title": "Recommendation boundary",
+      "dependencies": [
+        "PL-0101",
+        "PL-0403"
+      ],
+      "allowedPaths": [
+        "packages/**",
+        "apps/web/src/**",
+        "docs/**"
+      ],
+      "preferredAgent": "gpt-architect",
+      "reviewAgent": "claude-lead",
+      "qualityGates": [
+        "architecture-review",
+        "unit"
+      ],
+      "acceptance": "Explainable initial recommendation contract using catalog and history signals with privacy constraints",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PL-AI-0001",
+      "priority": "P0",
+      "lane": "Coordination",
+      "status": "READY",
+      "title": "Operationalize AI control plane in Claude Code Desktop",
+      "dependencies": [],
+      "allowedPaths": [
+        "control/**",
+        "coordination/**",
+        "CLAUDE.md",
+        "AGENTS.md",
+        "scripts/**",
+        ".claude/**",
+        "README.md"
+      ],
+      "preferredAgent": "claude-lead",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "repo-validate",
+        "architecture-review"
+      ],
+      "acceptance": "Claude Code uses machine-readable queues, claims tasks through the CLI, syncs status, and records handoffs rather than manually drifting task state",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PL-AI-0002",
+      "priority": "P1",
+      "lane": "Coordination",
+      "status": "BACKLOG",
+      "title": "GitHub bridge for cross-agent review",
+      "dependencies": [
+        "PL-AI-0001"
+      ],
+      "allowedPaths": [
+        ".github/**",
+        "control/**",
+        "scripts/**",
+        "docs/**"
+      ],
+      "preferredAgent": "gpt-architect",
+      "reviewAgent": "claude-lead",
+      "qualityGates": [
+        "architecture-review",
+        "security-review"
+      ],
+      "acceptance": "GitHub becomes the shared state bridge for Claude Desktop and OpenAI review without manual file copying",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PL-AI-0003",
+      "priority": "P1",
+      "lane": "Coordination",
+      "status": "BACKLOG",
+      "title": "Optional API-driven autonomous dispatcher",
+      "dependencies": [
+        "PL-AI-0001",
+        "PL-AI-0002"
+      ],
+      "allowedPaths": [
+        "control/**",
+        "scripts/**",
+        "packages/**",
+        "docs/**"
+      ],
+      "preferredAgent": "gpt-architect",
+      "reviewAgent": "claude-lead",
+      "qualityGates": [
+        "architecture-review",
+        "security-review",
+        "unit"
+      ],
+      "acceptance": "Optional external agent runner can dispatch queued tasks to configured providers with budgets, audit logs, retries, and human approval gates",
+      "owner": null,
+      "gateResults": {}
+    }
+  ]
+}

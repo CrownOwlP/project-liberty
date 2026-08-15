@@ -1,15 +1,11 @@
-# GPT -> Claude Review Queue
+# GPT -> Claude Handoff
 
-Append new entries at the top under this line. Claude should resolve critical/high items before unrelated polish.
+This file holds implementation/review context from GPT that does not fit a task's machine-readable fields.
 
----
+Claude must check the relevant task in `control/tasks.json` before acting. Never treat prose here as permission to bypass task ownership, dependencies, allowed paths, or quality gates.
 
-## Template
+For review findings, include severity, evidence, files, requested change, and acceptance criteria.
 
-### TASK_ID - review title
+## Current direction
 
-- Severity: critical | high | medium | low
-- Finding:
-- Why it matters:
-- Required change:
-- Acceptance criteria:
+Operate through the AI control plane. Prefer `npm run ai:dispatch` for the next safe work wave, claim tasks through the CLI, record gate evidence, and keep unrelated lanes moving when an external review is pending.

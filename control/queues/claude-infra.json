@@ -1,0 +1,58 @@
+{
+  "generatedAt": "2026-08-15T02:55:17.465Z",
+  "agent": "claude-infra",
+  "executionAvailable": true,
+  "assigned": [],
+  "review": [],
+  "reservedExternal": [],
+  "recommended": [
+    {
+      "id": "PL-0001",
+      "priority": "P0",
+      "lane": "Infra",
+      "status": "READY",
+      "title": "Generate and commit dependency lockfile",
+      "dependencies": [],
+      "allowedPaths": [
+        "package-lock.json",
+        "package.json",
+        ".github/workflows/**"
+      ],
+      "preferredAgent": "claude-infra",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "repo-validate",
+        "lint",
+        "typecheck",
+        "unit",
+        "build"
+      ],
+      "acceptance": "npm install and full npm run check are green; CI uses npm ci once lockfile exists",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PL-0003",
+      "priority": "P0",
+      "lane": "Infra",
+      "status": "READY",
+      "title": "Environment validation",
+      "dependencies": [],
+      "allowedPaths": [
+        "scripts/**",
+        "infra/**",
+        ".env.example",
+        "docs/DEVELOPMENT.md"
+      ],
+      "preferredAgent": "claude-infra",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "repo-validate",
+        "unit"
+      ],
+      "acceptance": "Missing required environment is reported clearly; local PostgreSQL and Redis health are documented",
+      "owner": null,
+      "gateResults": {}
+    }
+  ]
+}

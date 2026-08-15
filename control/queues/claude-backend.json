@@ -1,0 +1,56 @@
+{
+  "generatedAt": "2026-08-15T02:55:17.464Z",
+  "agent": "claude-backend",
+  "executionAvailable": true,
+  "assigned": [],
+  "review": [],
+  "reservedExternal": [],
+  "recommended": [
+    {
+      "id": "PL-0301",
+      "priority": "P0",
+      "lane": "Provider",
+      "status": "READY",
+      "title": "Authorized fixture provider",
+      "dependencies": [],
+      "allowedPaths": [
+        "packages/provider-sdk/**",
+        "packages/contracts/**",
+        "apps/web/src/app/api/**"
+      ],
+      "preferredAgent": "claude-backend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "security-review",
+        "rights-review"
+      ],
+      "acceptance": "Server-side fixture adapter returns normalized authorized candidates only",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PL-0401",
+      "priority": "P0",
+      "lane": "Backend",
+      "status": "READY",
+      "title": "Auth integration decision",
+      "dependencies": [],
+      "allowedPaths": [
+        "docs/**",
+        "apps/web/src/**",
+        "packages/contracts/**"
+      ],
+      "preferredAgent": "gpt-architect",
+      "reviewAgent": "claude-lead",
+      "qualityGates": [
+        "architecture-review",
+        "security-review"
+      ],
+      "acceptance": "ADR selects auth approach and defines protected profile boundary",
+      "owner": null,
+      "gateResults": {}
+    }
+  ]
+}
