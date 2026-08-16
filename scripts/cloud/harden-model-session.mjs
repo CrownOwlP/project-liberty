@@ -70,6 +70,23 @@ export const EXECUTABLE_PROJECT_CONFIG = [
   ".claude-plugin"
 ];
 
+/*
+ * Every path stripped here MUST also be in TRUSTED_RUNTIME_PATHS, or the
+ * "strip -> trusted copy -> restore from HEAD" invariant is false for it and
+ * the strip becomes a permanent deletion. Asserted at module load rather than
+ * documented, because the two lists previously disagreed about `.claude-plugin`
+ * and nothing noticed.
+ */
+import { TRUSTED_RUNTIME_PATHS } from "./trusted-runtime.mjs";
+const unrestorable = EXECUTABLE_PROJECT_CONFIG.filter((p) => !TRUSTED_RUNTIME_PATHS.includes(p));
+if (unrestorable.length) {
+  console.error(
+    `${unrestorable.join(", ")} would be stripped but never restored: absent from ` +
+    "TRUSTED_RUNTIME_PATHS in trusted-runtime.mjs."
+  );
+  process.exit(1);
+}
+
 function present() {
   return EXECUTABLE_PROJECT_CONFIG.filter((rel) => fs.existsSync(path.join(root, rel)));
 }

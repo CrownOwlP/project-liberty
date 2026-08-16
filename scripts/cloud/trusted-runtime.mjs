@@ -64,7 +64,19 @@ const args = process.argv.slice(2);
  * from HEAD afterwards, so they must be part of this set or the restore would
  * leave the repository permanently missing them.
  */
-export const TRUSTED_RUNTIME_PATHS = ["scripts", ".github", ".claude", ".mcp.json"];
+export const TRUSTED_RUNTIME_PATHS = [
+  "scripts",
+  ".github",
+  ".claude",
+  ".mcp.json",
+  // Must match EXECUTABLE_PROJECT_CONFIG in harden-model-session.mjs exactly.
+  // `.claude-plugin` was stripped before the model ran but was missing here, so
+  // the stated invariant -- strip, carry in the trusted copy, restore from HEAD
+  // -- did not actually hold for it: once stripped it would never have come
+  // back. A path that one list knows about and the other does not is the same
+  // drift that produced the gate-executor defect.
+  ".claude-plugin"
+];
 
 export function storeRoot() {
   return path.join(process.env.RUNNER_TEMP || os.tmpdir(), "liberty-trusted-runtime");

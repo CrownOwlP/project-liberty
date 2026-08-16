@@ -86,7 +86,18 @@ export function assertNoPersistedCredential(root = process.cwd(), when = "before
    */
   let gitDir;
   try {
-    gitDir = execFileSync("git", ["rev-parse", "--absolute-git-dir"], {
+    /*
+     * --git-common-dir, not --absolute-git-dir.
+     *
+     * In a linked worktree those differ: --absolute-git-dir points at the
+     * worktree-specific directory, while the repository config that actually
+     * carries credentials lives in the SHARED common directory. Checking the
+     * worktree directory would look at a location where `config` normally does
+     * not exist -- so the check would have failed closed rather than passed
+     * silently, which is safe, but it would have been failing for the wrong
+     * reason while claiming linked-worktree support it did not have.
+     */
+    gitDir = execFileSync("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], {
       cwd: root,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"]
@@ -145,9 +156,63 @@ export function remoteIsAncestorOfHead(root = process.cwd()) {
   }
 }
 
+/**
+ * The remote a credential may be sent to.
+ *
+ * Protecting how the token is STORED says nothing about who RECEIVES it.
+ * `origin` is read from workspace Git configuration, which deterministic steps
+ * do restore -- but the correct property is not "the config was restored", it
+ * is "this token only ever goes to the repository this workflow belongs to".
+ * GITHUB_REPOSITORY comes from the workflow context, not from the workspace, so
+ * it is the authority here.
+ *
+ * Both github.com forms are accepted because actions/checkout may configure
+ * either; anything else, including a host that merely contains "github.com"
+ * as a substring, is refused.
+ */
+export function assertRemoteIsExpected(root = process.cwd()) {
+  const repository = process.env.GITHUB_REPOSITORY;
+  if (!repository) {
+    // Local invocation, no workflow context to check against. Say so rather
+    // than pretending the destination was verified.
+    console.log("GITHUB_REPOSITORY is unset; skipping remote verification (not a workflow run).");
+    return;
+  }
+
+  let url;
+  try {
+    url = execFileSync("git", ["remote", "get-url", "origin"], {
+      cwd: root,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"]
+    }).trim();
+  } catch {
+    console.error("origin has no URL. Refusing to authenticate against an unknown destination.");
+    process.exit(1);
+  }
+
+  const expected = [
+    `https://github.com/${repository}`,
+    `https://github.com/${repository}.git`,
+    `git@github.com:${repository}`,
+    `git@github.com:${repository}.git`
+  ];
+
+  if (!expected.includes(url)) {
+    console.error(
+      `origin is ${url}, which is not this workflow's repository (${repository}).\n` +
+      "Refusing to supply a credential to it. The token's destination is read from workspace Git " +
+      "configuration, so verifying it against the workflow context is what keeps a rewritten " +
+      "remote from receiving a valid repository write token."
+    );
+    process.exit(1);
+  }
+}
+
 /** Fast-forward push of HEAD onto main. Never force, never rebase. */
 export function pushHeadToMain(root = process.cwd()) {
   assertNoPersistedCredential(root, "before pushing");
+  assertRemoteIsExpected(root);
   execFileSync("git", [...authArgs(), "push", "origin", "HEAD:main"], {
     cwd: root,
     stdio: "inherit"
