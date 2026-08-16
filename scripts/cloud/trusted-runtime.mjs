@@ -31,6 +31,14 @@
  * silently, and this repository has already shipped that bug twice in the
  * bootstrap copier. Everything, or a provable subset -- not a guess.
  *
+ * STATUS NOTE. The workflow no longer relies on this to separate the model from
+ * the credentialed steps: those are now different JOBS on different runners,
+ * because an in-job trusted copy could not survive a step writing $GITHUB_ENV
+ * to redirect a later step. TRUSTED_RUNTIME_PATHS is still the shared list that
+ * protect-state.mjs restores and harden-model-session.mjs checks itself
+ * against, and --install/--verify remain for privileged single-runner
+ * maintenance runs. Do not read the workflow as depending on them.
+ *
  *   node scripts/cloud/trusted-runtime.mjs --install
  *   node "$(...)/scripts/cloud/trusted-runtime.mjs" --verify
  *   node scripts/cloud/trusted-runtime.mjs --path        # prints the store root

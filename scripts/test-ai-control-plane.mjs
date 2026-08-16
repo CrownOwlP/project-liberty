@@ -3657,7 +3657,7 @@ try {
     );
     assert.match(
       workflow,
-      /harden-model-session\.mjs" --preflight/,
+      /harden-model-session\.mjs --preflight/,
       "managed settings outrank CLI arguments; their absence must be checked, not assumed",
     );
 
@@ -3795,8 +3795,8 @@ try {
 
     // Split into steps on the `- name:` boundary at step indentation.
     const steps = workflow.split(/\n      - name: /).slice(1);
-    const gateStep = steps.find((s) => s.startsWith("Run and record the required gates"));
-    assert.ok(gateStep, "the gate step must exist");
+    const gateStep = steps.find((s) => s.startsWith("Execute the required gates"));
+    assert.ok(gateStep, "the gate-execution step must exist");
 
     /*
      * Comment lines are stripped first. The step's own comment NAMES the
@@ -3820,18 +3820,80 @@ try {
       "the gate step must declare no env block at all; that absence is the security property",
     );
 
-    // The pre-gate scope check must come BEFORE the gate step, from $TRUSTED.
-    const checkIndex = workflow.indexOf("--check-only");
-    const gateIndex = workflow.indexOf("Run and record the required gates");
-    assert.ok(checkIndex > 0, "the pre-gate allowed-path check must exist");
+    /*
+     * TRUST DOMAINS ARE SEPARATE JOBS.
+     *
+     * In-job guards were not enough and could not be: a step can write
+     * $GITHUB_ENV and affect LATER steps in the same job, so model-authored
+     * test code running during the gate step could redirect a credentialed step
+     * that followed it. These assertions are about job structure because that
+     * is where the boundary actually lives.
+     */
+    const jobOf = (name) => {
+      const start = workflow.indexOf(`\n  ${name}:\n`);
+      assert.ok(start > 0, `job "${name}" must exist`);
+      const rest = workflow.slice(start + 1);
+      const next = rest.slice(1).search(/\n  [a-z_]+:\n/);
+      return next === -1 ? rest : rest.slice(0, next + 1);
+    };
+
+    const modelJob = jobOf("model");
+    const gateJob = jobOf("gate");
+    const publishJob = jobOf("publish");
+
+    // The model must not hold a write-capable token AT THE JOB LEVEL. An action
+    // can reach github.token through its security context regardless of what
+    // the workflow passes it, so persist-credentials: false is not sufficient.
+    assert.match(modelJob, /permissions:\s*\n\s*#[^\n]*\n(\s*#[^\n]*\n)*\s*contents: read/,
+      "the model job must be granted contents: read, not write");
     assert.ok(
-      checkIndex < gateIndex,
-      "the scope check must run before the gates, or it rejects a command that already ran",
+      !/contents: write/.test(modelJob),
+      "the model job must never be granted contents: write",
     );
+
+    // The gate job executes model-authored code, so it must hold nothing.
+    const gateDirectivesOnly = gateJob
+      .split("\n").filter((l) => !l.trim().startsWith("#")).join("\n");
+    for (const secret of ["secrets.", "GH_TOKEN", "GITHUB_TOKEN", "ANTHROPIC_API_KEY", "OPENAI_API_KEY"]) {
+      assert.ok(
+        !gateDirectivesOnly.includes(secret),
+        `the gate job must not reference ${secret}: it executes model-authored code`,
+      );
+    }
+    assert.ok(!/contents: write/.test(gateJob), "the gate job must not be able to write");
     assert.match(
-      workflow.slice(checkIndex - 400, checkIndex),
-      /\$TRUSTED\/scripts\/cloud\/stage-task-changes\.mjs/,
-      "the scope check must be invoked from the trusted store, not the workspace",
+      gateJob,
+      /npm ci[^\n]*--ignore-scripts/,
+      "the gate job must install its own dependencies, after the model is gone, without lifecycle scripts",
+    );
+    assert.ok(
+      gateJob.indexOf("npm ci") > gateJob.indexOf("task-patch.mjs --apply"),
+      "dependencies must be installed AFTER the patch, in this job, never inherited from the model's runner",
+    );
+
+    // The publisher holds the token and must execute nothing the model wrote.
+    assert.match(publishJob, /contents: write/, "the publisher needs a write token");
+    assert.ok(
+      !/npm ci|npm run/.test(publishJob.split("\n").filter((l) => !l.trim().startsWith("#")).join("\n")),
+      "the publisher must not install or run npm: that is how model-authored code would execute beside a credential",
+    );
+
+    // Every job that receives the patch must re-verify it from its own checkout.
+    for (const [name, body] of [["gate", gateJob], ["publish", publishJob]]) {
+      assert.match(
+        body,
+        /task-patch\.mjs --verify/,
+        `the ${name} job must re-verify the patch rather than trust the producing job`,
+      );
+    }
+
+    // Gates are executed where there is no credential and recorded where there
+    // is no model code. The two must not be the same job.
+    assert.match(gateJob, /--execute-only/, "the gate job must execute without recording");
+    assert.match(publishJob, /--record-only/, "the publisher must record without executing");
+    assert.ok(
+      !/--record-only/.test(gateJob) && !/--execute-only/.test(publishJob),
+      "executing and recording gates must not both happen in either job",
     );
 
     /*
@@ -3858,6 +3920,124 @@ try {
         `${rel} must not embed a token in any git URL`,
       );
     }
+  }
+
+  /* ---------------------------------------------------------------------
+   * 9ai. The patch is the only thing that crosses a trust boundary.
+   *
+   *      Each receiving job re-derives scope from its OWN control plane, so a
+   *      producing job cannot widen its scope by asserting that it did not.
+   *      This exercises export, verify and apply the way the jobs do.
+   * ------------------------------------------------------------------- */
+  {
+    const repo = freshRepo();
+    const gitEnv = {
+      GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t",
+      GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t",
+    };
+    const git = (...a) =>
+      execFileSync("git", a, {
+        cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"],
+        env: { ...process.env, ...gitEnv },
+      });
+    git("init", "-q", "-b", "main");
+    git("add", "-A");
+    git("commit", "-q", "-m", "baseline");
+
+    run(repo, CLI, ["claim", "PL-0101", "claude-frontend"]);
+    run(repo, CLI, ["start", "PL-0101", "claude-frontend"]);
+
+    // One in-scope edit, one out-of-scope edit, exactly as a real run could
+    // produce: the model has unrestricted Write inside the working directory.
+    const libDir = path.join(repo, "apps", "web", "src", "lib");
+    fs.mkdirSync(libDir, { recursive: true });
+    fs.writeFileSync(path.join(libDir, "patch-me.ts"), "export const answer = 42;\n");
+
+    const pkgPath = path.join(repo, "package.json");
+    const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
+    pkg.scripts = { ...pkg.scripts, test: "node -e \"require('fs').writeFileSync('PWNED','x')\"" };
+    fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + "\n");
+
+    const patchFile = path.join(repo, "task.patch");
+    run(repo, "scripts/cloud/task-patch.mjs", [
+      "--export", "--task", "PL-0101", "--agent", "claude-frontend", "--out", patchFile,
+    ]);
+
+    const patch = fs.readFileSync(patchFile, "utf8");
+    assert.match(patch, /apps\/web\/src\/lib\/patch-me\.ts/, "the in-scope file must be carried");
+    assert.ok(
+      !/package\.json/.test(patch),
+      "the out-of-scope rewrite must never enter the patch: a pathspec-limited diff cannot emit it",
+    );
+
+    // Applying into a FRESH checkout of the base, as the gate and publish jobs
+    // do -- so the out-of-scope edit simply does not exist there.
+    const fresh = path.join(temp, `fresh-${++repoSeq}`);
+    fs.cpSync(repo, fresh, { recursive: true });
+    // `reset --hard` and `clean -fdx`, not `checkout HEAD -- .` plus `clean -fd`.
+    // The weaker pair leaves an intent-to-add entry in place -- such a path is
+    // neither untracked nor committed, so clean will not remove it and checkout
+    // will not restore it. That is exactly what made this scenario fail against
+    // a receiving checkout that was supposed to be pristine.
+    execFileSync("git", ["reset", "--hard", "--quiet"], { cwd: fresh, stdio: "ignore" });
+    execFileSync("git", ["clean", "-fdxq"], { cwd: fresh, stdio: "ignore" });
+    assert.ok(
+      !fs.existsSync(path.join(fresh, "apps", "web", "src", "lib", "patch-me.ts")),
+      "the receiving checkout must genuinely be at the base commit before the patch is applied",
+    );
+
+    run(fresh, "scripts/cloud/task-patch.mjs", ["--verify", "--task", "PL-0101", "--in", patchFile]);
+    run(fresh, "scripts/cloud/task-patch.mjs", ["--apply", "--task", "PL-0101", "--in", patchFile]);
+
+    /*
+     * Line endings normalised before comparing. `git apply` honours the
+     * checkout's autocrlf setting, so the same patch lands as CRLF on a Windows
+     * developer machine and LF on the Linux runner. What this scenario is about
+     * is whether the in-scope content crossed the boundary, not which newline
+     * convention the receiving checkout uses -- and the same distinction is why
+     * the fingerprinting code compares git blob ids rather than worktree bytes.
+     */
+    assert.equal(
+      fs.readFileSync(path.join(fresh, "apps", "web", "src", "lib", "patch-me.ts"), "utf8")
+        .replace(/\r\n/g, "\n"),
+      "export const answer = 42;\n",
+    );
+    const receivedPkg = fs.readFileSync(path.join(fresh, "package.json"), "utf8");
+    assert.ok(
+      !receivedPkg.includes("PWNED"),
+      "the receiving checkout's package.json must be the committed one; the gate runner resolves " +
+      "its whole toolchain from it, so a rewritten script would execute before anything rejected it",
+    );
+
+    // A hand-forged patch that reaches outside allowedPaths must be refused by
+    // the RECEIVER, not merely by the producer.
+    const forged = path.join(temp, `forged-${repoSeq}.patch`);
+    fs.writeFileSync(
+      forged,
+      "diff --git a/package.json b/package.json\n" +
+      "--- a/package.json\n+++ b/package.json\n" +
+      "@@ -1,1 +1,1 @@\n-{\n+{ \n",
+    );
+    const refused = runCombined(fresh, "scripts/cloud/task-patch.mjs", [
+      "--verify", "--task", "PL-0101", "--in", forged,
+    ]);
+    assert.match(refused, /outside PL-0101's allowedPaths/, refused);
+    assert.match(refused, /package\.json/, refused);
+
+    // A patch whose paths this checker cannot parse is refused rather than
+    // guessed at. A path it misreads is a path it does not really check.
+    const quoted = path.join(temp, `quoted-${repoSeq}.patch`);
+    fs.writeFileSync(quoted, 'diff --git "a/od d.ts" "b/od d.ts"\n');
+    const unparseable = runCombined(fresh, "scripts/cloud/task-patch.mjs", [
+      "--verify", "--task", "PL-0101", "--in", quoted,
+    ]);
+    assert.match(unparseable, /quoted path this checker will not parse/, unparseable);
+
+    // A missing patch must not read as "no changes".
+    const absent = runCombined(fresh, "scripts/cloud/task-patch.mjs", [
+      "--verify", "--task", "PL-0101", "--in", path.join(temp, "does-not-exist.patch"),
+    ]);
+    assert.match(absent, /Refusing to continue as though there were no changes/, absent);
   }
 
   /* ---------------------------------------------------------------------
@@ -3927,7 +4107,7 @@ try {
     "running the test suite must not mutate any live control/ or coordination/ file",
   );
 
-  console.log("AI control plane tests passed (46 scenarios).");
+  console.log("AI control plane tests passed (47 scenarios).");
 } finally {
   fs.rmSync(temp, { recursive: true, force: true });
 }

@@ -30,7 +30,49 @@ const flag = (n) => {
 };
 const TASK_ID = flag("--task");
 if (!TASK_ID) {
-  console.error("Usage: run-gates.mjs --task <taskId>");
+  console.error("Usage: run-gates.mjs --task <taskId> [--execute-only | --record-only --evidence <text>]");
+  process.exit(1);
+}
+
+/**
+ * Executing gates and recording gates now happen in DIFFERENT JOBS, so they are
+ * different modes.
+ *
+ *   --execute-only  Runs every executable gate and exits non-zero if any fails.
+ *                   Records nothing. This runs in the gate job, which holds no
+ *                   secret and no write token, because executing a gate means
+ *                   executing model-authored code.
+ *
+ *   --record-only   Records the outcome without running anything. This runs in
+ *                   the publisher job, which holds the write token and executes
+ *                   no model-authored code.
+ *
+ * The obvious objection is that recording without running is exactly the
+ * fabrication this system forbids. It is not, and the distinction is the whole
+ * design: the publisher runs `if: success()` against the gate JOB, and a job's
+ * conclusion is determined by GitHub from step exit codes. Model-authored code
+ * cannot write it. Had the gate job instead emitted a results FILE, that file
+ * would be an artifact produced by a runner where untrusted code executed, and
+ * trusting it would be trusting the thing under test.
+ *
+ * What this does NOT claim: that the gates cannot be made to pass. The model
+ * writes the tests, so of course it can write a passing one. Gate execution is
+ * evidence that the declared checks ran and exited zero -- never evidence that
+ * the change is correct. Independent review is what covers correctness, which
+ * is why no task reaches DONE without it.
+ */
+const EXECUTE_ONLY = args.includes("--execute-only");
+const RECORD_ONLY = args.includes("--record-only");
+if (EXECUTE_ONLY && RECORD_ONLY) {
+  console.error("--execute-only and --record-only are mutually exclusive.");
+  process.exit(1);
+}
+const RECORD_EVIDENCE = flag("--evidence");
+if (RECORD_ONLY && !RECORD_EVIDENCE) {
+  console.error(
+    "--record-only requires --evidence naming the job whose conclusion is being recorded. " +
+    "Evidence that does not identify what was run is not evidence."
+  );
   process.exit(1);
 }
 
@@ -90,11 +132,23 @@ for (const gate of task.qualityGates ?? []) {
     continue;
   }
 
+  if (RECORD_ONLY) {
+    // Runs nothing. The gate job already did, in isolation, and this job only
+    // reaches this line when GitHub concluded that job succeeded.
+    node(CLI, "gate", TASK_ID, gate, "pass", `${classification.executor && ""}${RECORD_EVIDENCE}`.slice(0, 500));
+    console.log(`${gate}: recorded pass (${RECORD_EVIDENCE})`);
+    continue;
+  }
+
   const result = runExecutableGate(classification.executor, {
     cwd: root,
-    source: "deterministic gate runner",
+    source: "isolated gate job",
   });
-  node(CLI, "gate", TASK_ID, gate, result.passed ? "pass" : "fail", result.evidence);
+
+  if (!EXECUTE_ONLY) {
+    node(CLI, "gate", TASK_ID, gate, result.passed ? "pass" : "fail", result.evidence);
+  }
+
   if (result.passed) {
     console.log(`${gate}: pass`);
   } else {
