@@ -32,6 +32,7 @@
  * from anything the producing job asserted.
  */
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 
@@ -73,37 +74,80 @@ if (!prefixes.length) {
 }
 
 /**
- * Paths a patch touches.
+ * Paths a patch touches, according to GIT -- not according to a parser here.
  *
- * Read from `diff --git a/X b/X` headers rather than from `+++`/`---`, because
- * those carry /dev/null for additions and deletions and would silently drop
- * exactly the cases worth checking. Quoted paths (spaces, unicode) are refused
- * rather than parsed: this is a security boundary, and a path the checker
- * misreads is a path it does not really check.
+ * THE BUG THIS REPLACES. This function used to read `diff --git a/X b/X`
+ * headers and deliberately ignore the `---`/`+++` lines. But git apply does not
+ * take the target from the `diff --git` line. A patch can say:
+ *
+ *   diff --git a/apps/web/src/lib/looks-safe.ts b/apps/web/src/lib/looks-safe.ts
+ *   --- a/scripts/cloud/run-gates.mjs
+ *   +++ b/scripts/cloud/run-gates.mjs
+ *
+ * and the checker would report one in-scope path while git modified a different,
+ * out-of-scope one. In the publisher -- which applies the "verified" patch and
+ * then runs run-gates.mjs and the finalizer, holding a write token -- that is
+ * patch data rewriting trusted code immediately before that code executes. The
+ * whole fresh-job boundary was bypassable through it.
+ *
+ * The root error was implementing git's patch semantics by hand. So this no
+ * longer does. The patch is applied inside a DISPOSABLE WORKTREE and git is
+ * asked what changed; the answer is authoritative by construction, and it also
+ * covers renames, copies and deletions without another custom parser. Nothing
+ * is ever executed from the disposable worktree -- `git apply` writes files, it
+ * does not run them -- and it is destroyed before the real checkout is touched.
  */
-function pathsInPatch(patch) {
-  const touched = new Set();
-  for (const line of patch.split("\n")) {
-    if (!line.startsWith("diff --git ")) continue;
-    const rest = line.slice("diff --git ".length);
-    if (rest.includes('"')) {
-      console.error(`Patch contains a quoted path this checker will not parse:\n  ${line}`);
-      console.error("Refusing rather than guessing at its scope.");
-      process.exit(1);
+function pathsGitWouldChange(patchFile) {
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "liberty-patch-probe-"));
+  const worktree = path.join(scratch, "wt");
+
+  const cleanup = () => {
+    try {
+      execFileSync("git", ["worktree", "remove", "--force", worktree], { cwd: root, stdio: "ignore" });
+    } catch {
+      /* removed below regardless */
     }
-    const match = rest.match(/^a\/(.+) b\/(.+)$/);
-    if (!match) {
-      console.error(`Unparseable diff header:\n  ${line}`);
-      process.exit(1);
-    }
-    touched.add(match[1]);
-    touched.add(match[2]);
+    fs.rmSync(scratch, { recursive: true, force: true });
+  };
+
+  try {
+    execFileSync("git", ["worktree", "add", "--detach", "--quiet", worktree, "HEAD"], {
+      cwd: root,
+      stdio: "pipe"
+    });
+  } catch (error) {
+    cleanup();
+    console.error(`Could not create a disposable worktree to probe the patch: ${error.message}`);
+    console.error("Refusing to verify by parsing the patch myself; that is the defect this replaces.");
+    process.exit(1);
   }
-  return [...touched];
+
+  try {
+    execFileSync("git", ["apply", "--whitespace=nowarn", patchFile], { cwd: worktree, stdio: "pipe" });
+  } catch (error) {
+    cleanup();
+    console.error(
+      `Patch does not apply to a clean checkout of HEAD: ${error.stderr?.toString() || error.message}`
+    );
+    process.exit(1);
+  }
+
+  const changed = execFileSync(
+    "git",
+    ["status", "--porcelain", "-z", "--untracked-files=all"],
+    { cwd: worktree, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 }
+  )
+    .split("\0")
+    .filter(Boolean)
+    .map((entry) => entry.slice(3))
+    .filter(Boolean);
+
+  cleanup();
+  return changed;
 }
 
-function assertInScope(patch, label) {
-  const touched = pathsInPatch(patch);
+function assertInScope(patchFile, label) {
+  const touched = pathsGitWouldChange(patchFile);
   if (!touched.length) {
     console.log(`${label}: patch is empty.`);
     return touched;
@@ -173,8 +217,8 @@ if (args.includes("--export")) {
     }
   }
 
-  assertInScope(patch, "export");
   fs.writeFileSync(out, patch);
+  assertInScope(out, "export");
 
   console.log(`Wrote ${Buffer.byteLength(patch)} byte(s) to ${out}.`);
   console.log("This patch is the ONLY thing that leaves this job. It is data, not code.");
@@ -190,15 +234,13 @@ if (!fs.existsSync(inFile)) {
   console.error(`No patch at ${inFile}. Refusing to continue as though there were no changes.`);
   process.exit(1);
 }
-const patch = fs.readFileSync(inFile, "utf8");
-
 if (args.includes("--verify")) {
-  assertInScope(patch, "verify");
+  assertInScope(inFile, "verify");
   process.exit(0);
 }
 
 if (args.includes("--apply")) {
-  const touched = assertInScope(patch, "apply");
+  const touched = assertInScope(inFile, "apply");
   if (!touched.length) {
     console.log("Nothing to apply.");
     process.exit(0);

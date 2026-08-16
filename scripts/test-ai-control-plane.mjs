@@ -3840,6 +3840,50 @@ try {
     const modelJob = jobOf("model");
     const gateJob = jobOf("gate");
     const publishJob = jobOf("publish");
+    const dispatchJob = jobOf("dispatch");
+    const completionGatesJob = jobOf("completion_gates");
+
+    /*
+     * COMPLETION EXECUTES GATES TOO, so it needs the same split.
+     *
+     * advance-completable re-runs every required gate, which for a product task
+     * is npm run lint/test/build over model-authored code. It was being called
+     * from the write-capable job, breaking the rule on the completion path
+     * while the implementation path obeyed it -- unnoticed because the
+     * sequencing regression completes a task whose gates are review-backed.
+     */
+    assert.ok(!/contents: write/.test(completionGatesJob), "the completion gate job must not be able to write");
+    for (const secret of ["secrets.", "GH_TOKEN", "GITHUB_TOKEN"]) {
+      assert.ok(
+        !completionGatesJob.split("\n").filter((l) => !l.trim().startsWith("#")).join("\n").includes(secret),
+        `the completion gate job must not reference ${secret}: it re-runs gates over model-authored code`,
+      );
+    }
+    assert.match(
+      completionGatesJob,
+      /--execute-only/,
+      "the completion gate job must execute without recording",
+    );
+    assert.match(
+      completionGatesJob,
+      /npm ci[^\n]*--ignore-scripts/,
+      "the completion gate job must install its own dependencies; the job that used to call " +
+      "advance-completable installed none at all, so product gates would fail for want of node_modules",
+    );
+    assert.match(dispatchJob, /contents: write/, "dispatch records completions and needs a write token");
+    assert.match(
+      dispatchJob,
+      /advance-completable\.mjs \\\n\s*--record-only/,
+      "dispatch must record completions without executing them",
+    );
+    assert.ok(
+      !/--execute-only/.test(dispatchJob),
+      "dispatch must never execute gates: it holds a write token",
+    );
+    assert.ok(
+      !/npm ci|npm run/.test(dispatchJob.split("\n").filter((l) => !l.trim().startsWith("#")).join("\n")),
+      "dispatch must not install or run npm",
+    );
 
     // The model must not hold a write-capable token AT THE JOB LEVEL. An action
     // can reach github.token through its security context regardless of what
@@ -4011,12 +4055,33 @@ try {
 
     // A hand-forged patch that reaches outside allowedPaths must be refused by
     // the RECEIVER, not merely by the producer.
+    /*
+     * Generated with git, not hand-written. A hand-written patch tends not to
+     * apply, and the verifier refuses inapplicable patches BEFORE it reaches
+     * the scope question -- so such a fixture would pass for the wrong reason
+     * and prove nothing about scope enforcement.
+     */
+    const gitIn = (cwd, ...a) =>
+      execFileSync("git", a, {
+        cwd, encoding: "utf8", maxBuffer: 32 * 1024 * 1024,
+        stdio: ["ignore", "pipe", "ignore"], env: { ...process.env, ...gitEnv },
+      });
+
+    const makeRealPatch = (relPath, mutate) => {
+      const abs = path.join(fresh, relPath);
+      const original = fs.readFileSync(abs, "utf8");
+      fs.writeFileSync(abs, mutate(original));
+      const diff = gitIn(fresh, "diff", "--", relPath);
+      fs.writeFileSync(abs, original);
+      gitIn(fresh, "checkout", "HEAD", "--", relPath);
+      assert.ok(diff.trim(), `expected a non-empty diff for ${relPath}`);
+      return diff;
+    };
+
     const forged = path.join(temp, `forged-${repoSeq}.patch`);
     fs.writeFileSync(
       forged,
-      "diff --git a/package.json b/package.json\n" +
-      "--- a/package.json\n+++ b/package.json\n" +
-      "@@ -1,1 +1,1 @@\n-{\n+{ \n",
+      makeRealPatch("package.json", (body) => body.replace(/^\{/, "{\n  \"_forged\": true,")),
     );
     const refused = runCombined(fresh, "scripts/cloud/task-patch.mjs", [
       "--verify", "--task", "PL-0101", "--in", forged,
@@ -4024,14 +4089,55 @@ try {
     assert.match(refused, /outside PL-0101's allowedPaths/, refused);
     assert.match(refused, /package\.json/, refused);
 
-    // A patch whose paths this checker cannot parse is refused rather than
-    // guessed at. A path it misreads is a path it does not really check.
-    const quoted = path.join(temp, `quoted-${repoSeq}.patch`);
-    fs.writeFileSync(quoted, 'diff --git "a/od d.ts" "b/od d.ts"\n');
-    const unparseable = runCombined(fresh, "scripts/cloud/task-patch.mjs", [
-      "--verify", "--task", "PL-0101", "--in", quoted,
+    /*
+     * THE HEADER/TARGET MISMATCH.
+     *
+     * `git apply` does not take its target from the `diff --git` line. A patch
+     * can name an in-scope file there and an out-of-scope file in the ---/+++
+     * lines, and git writes the latter. The previous verifier read only the
+     * `diff --git` header, so it reported the in-scope path and approved the
+     * patch -- and the publisher then applied it and immediately executed
+     * run-gates.mjs and the finalizer while holding a write token. That is
+     * patch data rewriting trusted code just before that code runs.
+     *
+     * The fix was to stop implementing git's patch semantics at all: the patch
+     * is applied in a disposable worktree and git is asked what changed.
+     */
+    const mismatched = path.join(temp, `mismatch-${repoSeq}.patch`);
+    fs.writeFileSync(
+      mismatched,
+      // A REAL, applicable diff against an out-of-scope trusted script, with
+      // only its `diff --git` header rewritten to name an in-scope file. git
+      // takes the target from ---/+++, so this applies to run-gates.mjs while
+      // announcing looks-safe.ts. That is precisely the exploit.
+      makeRealPatch("scripts/cloud/run-gates.mjs", (body) => `// owned\n${body}`)
+        .replace(
+          /^diff --git a\/scripts\/cloud\/run-gates\.mjs b\/scripts\/cloud\/run-gates\.mjs$/m,
+          "diff --git a/apps/web/src/lib/looks-safe.ts b/apps/web/src/lib/looks-safe.ts",
+        ),
+    );
+    const caughtMismatch = runCombined(fresh, "scripts/cloud/task-patch.mjs", [
+      "--verify", "--task", "PL-0101", "--in", mismatched,
     ]);
-    assert.match(unparseable, /quoted path this checker will not parse/, unparseable);
+    assert.match(
+      caughtMismatch,
+      /scripts\/cloud\/run-gates\.mjs/,
+      `the verifier must report the path git would actually write, not the one the header names:\n${caughtMismatch}`,
+    );
+    assert.match(caughtMismatch, /outside PL-0101's allowedPaths/, caughtMismatch);
+    assert.ok(
+      !fs.readFileSync(path.join(fresh, "scripts", "cloud", "run-gates.mjs"), "utf8").includes("// owned"),
+      "verification must not have modified the real checkout; the probe is a disposable worktree",
+    );
+
+    // A patch git itself cannot apply is refused, rather than being parsed by
+    // hand into a verdict about what it would have done.
+    const nonsense = path.join(temp, `nonsense-${repoSeq}.patch`);
+    fs.writeFileSync(nonsense, 'diff --git "a/od d.ts" "b/od d.ts"\n');
+    const unparseable = runCombined(fresh, "scripts/cloud/task-patch.mjs", [
+      "--verify", "--task", "PL-0101", "--in", nonsense,
+    ]);
+    assert.match(unparseable, /does not apply to a clean checkout of HEAD/, unparseable);
 
     // A missing patch must not read as "no changes".
     const absent = runCombined(fresh, "scripts/cloud/task-patch.mjs", [

@@ -140,7 +140,14 @@ export function assertNoPersistedCredential(root = process.cwd(), when = "before
  * about the remote at push time.
  */
 export function fetchMain(root = process.cwd()) {
-  execFileSync("git", [...authArgs(), "fetch", "origin", "main"], { cwd: root, stdio: "inherit" });
+  // Checked BEFORE the credential is supplied, not after. This was the first
+  // authenticated network call in every run and it used to be the unchecked one.
+  assertNoPersistedCredential(root, "before fetching");
+  assertRemoteIsExpected(root);
+  execFileSync("git", [...authArgs(), "fetch", trustedRemoteUrl(), "main"], {
+    cwd: root,
+    stdio: "inherit"
+  });
 }
 
 /** True when the remote main just fetched is already an ancestor of HEAD. */
@@ -169,6 +176,39 @@ export function remoteIsAncestorOfHead(root = process.cwd()) {
  * Both github.com forms are accepted because actions/checkout may configure
  * either; anything else, including a host that merely contains "github.com"
  * as a substring, is refused.
+ */
+/**
+ * The URL every authenticated operation uses, built from workflow context.
+ *
+ * `origin` is NOT used. Validating it and then using it was still wrong in a
+ * subtle way: `fetchMain` authenticated first and `pushHeadToMain` validated
+ * second, so the first credentialed network call in every run went to whatever
+ * workspace Git configuration said -- exactly the property the validation was
+ * supposed to establish. Ordering fixes are fragile; removing the mutable input
+ * is not. GITHUB_REPOSITORY comes from the runner's workflow context, which
+ * nothing in the checkout can rewrite, so a poisoned `origin` has nowhere to
+ * send a credential.
+ */
+export function trustedRemoteUrl() {
+  const repository = process.env.GITHUB_REPOSITORY;
+  if (!repository) {
+    throw new Error(
+      "GITHUB_REPOSITORY is unset. Refusing to construct an authenticated remote from workspace " +
+      "configuration; outside a workflow there is no trusted source for the destination."
+    );
+  }
+  if (!/^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/.test(repository)) {
+    throw new Error(`GITHUB_REPOSITORY is not a plain owner/repo value: ${repository}`);
+  }
+  return `https://github.com/${repository}.git`;
+}
+
+/**
+ * Retained as a secondary check on the workspace's own remote.
+ *
+ * Not load-bearing any more -- the credential goes to trustedRemoteUrl()
+ * regardless -- but a rewritten `origin` is still a signal that something
+ * tampered with the checkout, and noticing it is worth more than ignoring it.
  */
 export function assertRemoteIsExpected(root = process.cwd()) {
   const repository = process.env.GITHUB_REPOSITORY;
@@ -213,7 +253,7 @@ export function assertRemoteIsExpected(root = process.cwd()) {
 export function pushHeadToMain(root = process.cwd()) {
   assertNoPersistedCredential(root, "before pushing");
   assertRemoteIsExpected(root);
-  execFileSync("git", [...authArgs(), "push", "origin", "HEAD:main"], {
+  execFileSync("git", [...authArgs(), "push", trustedRemoteUrl(), "HEAD:main"], {
     cwd: root,
     stdio: "inherit"
   });

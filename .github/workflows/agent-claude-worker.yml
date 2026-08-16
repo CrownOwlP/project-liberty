@@ -77,16 +77,13 @@ jobs:
   # ==========================================================================
   # 1. PREPARE -- deterministic control plane. No model, no model-authored code.
   # ==========================================================================
-  prepare:
+  inbox:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
       contents: write
     outputs:
-      selected: ${{ steps.select.outputs.selected }}
-      task: ${{ steps.select.outputs.task }}
-      orchestrate: ${{ steps.gate.outputs.orchestrate }}
-      base_sha: ${{ steps.base.outputs.sha }}
+      has_approved: ${{ steps.approved.outputs.has_approved }}
       next_depth: ${{ steps.depth.outputs.next }}
     steps:
       - uses: actions/checkout@v4
@@ -130,9 +127,82 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: node scripts/cloud/publish-control-state.mjs --agent claude-lead --reason "inbox processed"
 
-      - name: Complete approved tasks deterministically
-        continue-on-error: true
-        run: node scripts/cloud/advance-completable.mjs
+      - name: List tasks awaiting completion
+        id: approved
+        # Completion RE-EXECUTES every required gate, which for a product task
+        # means npm run lint/test/build over model-authored code. Doing that
+        # here would execute model code in a job holding a write token -- the
+        # same rule the split exists to enforce, broken on the completion path.
+        # So this job only names them; the split below runs and records them.
+        run: node scripts/cloud/advance-completable.mjs --list-approved
+
+  # ==========================================================================
+  # 2. COMPLETION GATES -- re-runs approved tasks' gates. No credential.
+  # ==========================================================================
+  completion_gates:
+    needs: inbox
+    if: needs.inbox.outputs.has_approved == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      # Installed HERE, in the job that runs the gates. The previous structure
+      # called advance-completable from a job that installed nothing at all, so
+      # the first approved product task would have failed its lint/typecheck/
+      # unit/build gates for want of node_modules rather than on its merits.
+      - run: npm ci --no-audit --no-fund --ignore-scripts
+      - name: Execute the gates of approved tasks
+        run: node scripts/cloud/advance-completable.mjs --execute-only
+
+  # ==========================================================================
+  # 3. DISPATCH -- records completions and selects the next task. Credentialed.
+  # ==========================================================================
+  dispatch:
+    needs: [inbox, completion_gates]
+    # `always()` plus an explicit result check: `completion_gates` is SKIPPED
+    # when nothing is awaiting completion, and a skipped dependency would
+    # otherwise cancel this job and stall the whole loop.
+    if: always() && needs.inbox.result == 'success' && needs.completion_gates.result != 'failure'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    outputs:
+      selected: ${{ steps.select.outputs.selected }}
+      task: ${{ steps.select.outputs.task }}
+      orchestrate: ${{ steps.gate.outputs.orchestrate }}
+      base_sha: ${{ steps.base.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      # No npm install. Every script below uses Node builtins only, so this
+      # credentialed job has no dependency tree and executes nothing the model
+      # wrote -- including no install lifecycle scripts.
+
+      - name: Record completions and move approved tasks to DONE
+        # Records without running. Sound only because this step is reached only
+        # when GitHub concluded the no-credential gate job succeeded -- a fact
+        # model code cannot write.
+        if: needs.completion_gates.result == 'success'
+        run: |
+          node scripts/cloud/advance-completable.mjs \
+            --record-only \
+            --evidence "executed in isolated completion gate job, conclusion success: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
       - name: Publish completion results
         if: always()
@@ -169,7 +239,7 @@ jobs:
         run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Publish the task briefing
-        # Generated here, deterministically, and carried to the model job as an
+        # Generated deterministically and carried to the model job as an
         # artifact. The model reads it with Read; it needs no command execution
         # to learn what it is doing.
         if: steps.select.outputs.selected == 'true'
@@ -185,11 +255,11 @@ jobs:
           retention-days: 1
 
   # ==========================================================================
-  # 2. MODEL -- the only job the model runs in. No write token. Emits a patch.
+  # 4. MODEL -- the only job the model runs in. No write token. Emits a patch.
   # ==========================================================================
   model:
-    needs: prepare
-    if: needs.prepare.outputs.selected == 'true'
+    needs: dispatch
+    if: needs.dispatch.outputs.selected == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -200,7 +270,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ needs.prepare.outputs.base_sha }}
+          ref: ${{ needs.dispatch.outputs.base_sha }}
           persist-credentials: false
 
       - uses: actions/setup-node@v4
@@ -273,7 +343,7 @@ jobs:
             You are the autonomous claude-lead worker for Project Liberty,
             running unattended in CI. Read CLAUDE.md first.
 
-            A task has ALREADY been claimed and started for you: ${{ needs.prepare.outputs.task }}.
+            A task has ALREADY been claimed and started for you: ${{ needs.dispatch.outputs.task }}.
             You do not choose it and you cannot change task state.
 
             Do exactly this, then stop:
@@ -323,7 +393,7 @@ jobs:
           rm -f task-briefing.md
           node scripts/cloud/task-patch.mjs \
             --export \
-            --task ${{ needs.prepare.outputs.task }} \
+            --task ${{ needs.dispatch.outputs.task }} \
             --agent claude-lead \
             --out task.patch
 
@@ -334,10 +404,10 @@ jobs:
           retention-days: 1
 
   # ==========================================================================
-  # 3. GATE -- executes model-authored code. Nothing here is worth stealing.
+  # 5. GATE -- executes model-authored code. Nothing here is worth stealing.
   # ==========================================================================
   gate:
-    needs: [prepare, model]
+    needs: [dispatch, model]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -354,7 +424,7 @@ jobs:
         with:
           # FRESH checkout of the base commit. The model's runner is gone; its
           # filesystem, its node_modules and its environment do not exist here.
-          ref: ${{ needs.prepare.outputs.base_sha }}
+          ref: ${{ needs.dispatch.outputs.base_sha }}
           persist-credentials: false
 
       - uses: actions/setup-node@v4
@@ -369,8 +439,8 @@ jobs:
         # Scope is re-derived from THIS checkout's control/tasks.json. The model
         # job's assertion that it stayed in scope is not evidence.
         run: |
-          node scripts/cloud/task-patch.mjs --verify --task ${{ needs.prepare.outputs.task }} --in task.patch
-          node scripts/cloud/task-patch.mjs --apply  --task ${{ needs.prepare.outputs.task }} --in task.patch
+          node scripts/cloud/task-patch.mjs --verify --task ${{ needs.dispatch.outputs.task }} --in task.patch
+          node scripts/cloud/task-patch.mjs --apply  --task ${{ needs.dispatch.outputs.task }} --in task.patch
 
       - name: Install dependencies AFTER the model is gone
         # --ignore-scripts: install lifecycle scripts are arbitrary code from the
@@ -387,14 +457,14 @@ jobs:
         # code executed would not be evidence anyway. The signal that travels
         # onward is this JOB'S CONCLUSION, which GitHub determines from step exit
         # codes and model code cannot forge.
-        run: node scripts/cloud/run-gates.mjs --task ${{ needs.prepare.outputs.task }} --execute-only
+        run: node scripts/cloud/run-gates.mjs --task ${{ needs.dispatch.outputs.task }} --execute-only
 
   # ==========================================================================
-  # 4. PUBLISH -- holds the write token. Executes no model-authored code.
+  # 6. PUBLISH -- holds the write token. Executes no model-authored code.
   # ==========================================================================
   publish:
-    needs: [prepare, model, gate]
-    if: always() && needs.prepare.outputs.selected == 'true'
+    needs: [inbox, dispatch, model, gate]
+    if: always() && needs.dispatch.outputs.selected == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -403,7 +473,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ needs.prepare.outputs.base_sha }}
+          ref: ${{ needs.dispatch.outputs.base_sha }}
           fetch-depth: 0
           persist-credentials: false
 
@@ -424,13 +494,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          node scripts/ai-control-plane.mjs block ${{ needs.prepare.outputs.task }} \
+          node scripts/ai-control-plane.mjs block ${{ needs.dispatch.outputs.task }} \
             "gates failed or were skipped in the isolated gate job (run ${{ github.run_id }})"
           node scripts/cloud/publish-control-state.mjs \
             --agent claude-lead \
-            --task ${{ needs.prepare.outputs.task }} \
+            --task ${{ needs.dispatch.outputs.task }} \
             --reason "gate job ${{ needs.gate.result }}; implementation not committed"
-          echo "::error::Gate job ${{ needs.gate.result }} for ${{ needs.prepare.outputs.task }}. Failure published; no review requested."
+          echo "::error::Gate job ${{ needs.gate.result }} for ${{ needs.dispatch.outputs.task }}. Failure published; no review requested."
           exit 1
 
       - uses: actions/download-artifact@v4
@@ -440,8 +510,8 @@ jobs:
       - name: Verify and apply the patch
         # Third independent verification, from this job's own control plane.
         run: |
-          node scripts/cloud/task-patch.mjs --verify --task ${{ needs.prepare.outputs.task }} --in task.patch
-          node scripts/cloud/task-patch.mjs --apply  --task ${{ needs.prepare.outputs.task }} --in task.patch
+          node scripts/cloud/task-patch.mjs --verify --task ${{ needs.dispatch.outputs.task }} --in task.patch
+          node scripts/cloud/task-patch.mjs --apply  --task ${{ needs.dispatch.outputs.task }} --in task.patch
           rm -f task.patch
 
       - name: Record the gate outcomes
@@ -450,7 +520,7 @@ jobs:
         # cannot write. Evidence names that job, so the trail is checkable.
         run: |
           node scripts/cloud/run-gates.mjs \
-            --task ${{ needs.prepare.outputs.task }} \
+            --task ${{ needs.dispatch.outputs.task }} \
             --record-only \
             --evidence "executed in isolated gate job, conclusion success: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
@@ -463,7 +533,7 @@ jobs:
         # transaction. Asserts the workspace holds no credential material and
         # that origin is this workflow's repository before authenticating.
         run: |
-          node scripts/cloud/finalize-task.mjs --agent claude-lead --task ${{ needs.prepare.outputs.task }}
+          node scripts/cloud/finalize-task.mjs --agent claude-lead --task ${{ needs.dispatch.outputs.task }}
           echo "changed=true" >> "$GITHUB_OUTPUT"
 
       - name: Refresh mission control
@@ -485,7 +555,7 @@ jobs:
           if node scripts/ai-control-plane.mjs inbox gpt-architect | grep -q "review_request"; then
             gh workflow run agent-gpt-review.yml \
               --ref main \
-              --field depth="${{ needs.prepare.outputs.next_depth }}"
+              --field depth="${{ needs.inbox.outputs.next_depth }}"
           else
             echo "Nothing awaiting GPT review; chain ends here."
           fi
