@@ -356,12 +356,12 @@
       "gateResults": {
         "typecheck": {
           "status": "pass",
-          "at": "2026-08-16T23:17:34.468Z",
+          "at": "2026-08-16T23:22:54.655Z",
           "evidence": "npm run check exit 0 (turbo run typecheck across 5 packages), Node 22"
         },
         "unit": {
           "status": "pass",
-          "at": "2026-08-16T23:17:35.996Z",
+          "at": "2026-08-16T23:22:56.195Z",
           "evidence": "npm run check exit 0 (vitest: media-engine audio.test.ts and contracts), Node 22"
         }
       },
