@@ -59,6 +59,75 @@ describe("catalogItemSchema", () => {
   });
 });
 
+/**
+ * The shape fields are not independently nullable. Before these tests the
+ * schema was a plain object with two `.nullable()` fields, so every invalid
+ * combination below parsed successfully while a comment claimed otherwise.
+ * These assert the invariant itself, not the comment.
+ */
+describe("catalogItemSchema cross-field invariants", () => {
+  const movie = { ...validItem, kind: "movie", runtimeMinutes: 128, episodeCount: null };
+  const series = {
+    ...validItem,
+    id: "northstar",
+    kind: "series",
+    runtimeMinutes: null,
+    episodeCount: 8
+  };
+  const episode = {
+    ...validItem,
+    id: "northstar-s01e01",
+    kind: "episode",
+    runtimeMinutes: 47,
+    episodeCount: null
+  };
+
+  it("accepts the one valid shape for each kind", () => {
+    for (const item of [movie, series, episode]) {
+      expect(catalogItemSchema.safeParse(item).success).toBe(true);
+    }
+  });
+
+  it("rejects a series that carries a runtime", () => {
+    expect(catalogItemSchema.safeParse({ ...series, runtimeMinutes: 90 }).success).toBe(false);
+  });
+
+  it("rejects a series with no episode count", () => {
+    expect(catalogItemSchema.safeParse({ ...series, episodeCount: null }).success).toBe(false);
+  });
+
+  it("rejects a movie that carries an episode count", () => {
+    expect(catalogItemSchema.safeParse({ ...movie, episodeCount: 8 }).success).toBe(false);
+  });
+
+  it("rejects a movie with no runtime", () => {
+    expect(catalogItemSchema.safeParse({ ...movie, runtimeMinutes: null }).success).toBe(false);
+  });
+
+  it("rejects an episode that carries an episode count", () => {
+    expect(catalogItemSchema.safeParse({ ...episode, episodeCount: 3 }).success).toBe(false);
+  });
+
+  it("rejects an episode with no runtime", () => {
+    expect(catalogItemSchema.safeParse({ ...episode, runtimeMinutes: null }).success).toBe(false);
+  });
+
+  it("rejects an item that carries neither shape field", () => {
+    expect(
+      catalogItemSchema.safeParse({ ...movie, runtimeMinutes: null, episodeCount: null }).success
+    ).toBe(false);
+  });
+
+  it("reports the failure against the branch the discriminator selected", () => {
+    const result = catalogItemSchema.safeParse({ ...series, runtimeMinutes: 90 });
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    // A non-discriminated union would union every branch's complaints, which is
+    // why the discriminator is worth having: the error names the real field.
+    expect(result.error.issues.every((issue) => issue.path[0] === "runtimeMinutes")).toBe(true);
+  });
+});
+
 describe("catalogRailSchema", () => {
   it("accepts an empty rail", () => {
     expect(catalogRailSchema.safeParse({ id: "movies", title: "Films", items: [] }).success).toBe(true);

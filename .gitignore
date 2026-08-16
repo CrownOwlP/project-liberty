@@ -12,3 +12,7 @@ coverage/
 .vercel/
 .claude/settings.local.json
 *.tsbuildinfo
+
+# Generated for the cloud worker's model step to read with Read, because it has
+# no command execution. Regenerated every run; never an implementation artifact.
+.liberty-task-briefing.md

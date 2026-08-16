@@ -14,7 +14,16 @@
  *
  * Usage: node scripts/cloud/publish-control-state.mjs --agent claude-lead --task PL-0101 --reason "gate failure"
  */
+import fs from "node:fs";
+import path from "node:path";
 import { execFileSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+import {
+  assertNoPersistedCredential,
+  fetchMain,
+  pushHeadToMain,
+  remoteIsAncestorOfHead
+} from "./git-auth.mjs";
 
 const root = process.cwd();
 const args = process.argv.slice(2);
@@ -33,10 +42,17 @@ if (!AGENT) {
 const git = (...a) => execFileSync("git", a, { cwd: root, encoding: "utf8", maxBuffer: 32 * 1024 * 1024 });
 const node = (...a) => execFileSync(process.execPath, a, { cwd: root, encoding: "utf8" });
 
+// The workspace must be free of persisted credentials before this process does
+// anything, not merely at push time -- if one is already there, the model step
+// that follows in this same checkout could read it.
+assertNoPersistedCredential(root, "before publishing control state");
+
 git("config", "user.name", `liberty-${AGENT}[bot]`);
 git("config", "user.email", `${AGENT}@project-liberty.local`);
 
-const stageArgs = ["scripts/cloud/stage-task-changes.mjs", "--agent", AGENT, "--mode", "control"];
+// Sibling resolution, not cwd: see the note in run-gates.mjs.
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const stageArgs = [path.join(HERE, "stage-task-changes.mjs"), "--agent", AGENT, "--mode", "control"];
 if (TASK_ID) stageArgs.push("--task", TASK_ID);
 
 try {
@@ -48,23 +64,35 @@ try {
   process.exit(1);
 }
 
+/**
+ * Reports whether anything was actually published, so a workflow can chain on
+ * it without re-deriving the answer from git. Emitted by the publisher rather
+ * than by inline shell in each workflow: two places computing "did we push?"
+ * is how they end up disagreeing.
+ */
+function reportChanged(changed) {
+  if (process.env.GITHUB_OUTPUT) {
+    fs.appendFileSync(process.env.GITHUB_OUTPUT, `changed=${changed}\n`);
+  }
+}
+
 if (!git("diff", "--cached", "--name-only").trim()) {
   console.log("No control-plane state to publish.");
+  reportChanged(false);
   process.exit(0);
 }
 
 git("commit", "-m", `${TASK_ID ? `${TASK_ID}: ` : ""}${REASON} (autonomous ${AGENT})`);
 
-git("fetch", "origin", "main");
-try {
-  execFileSync("git", ["merge-base", "--is-ancestor", "origin/main", "HEAD"], { cwd: root, stdio: "ignore" });
-} catch {
+fetchMain(root);
+if (!remoteIsAncestorOfHead(root)) {
   console.error(
-    "origin/main has diverged from HEAD. Nothing pushed; refusing to rewrite reviewed history.",
+    "Remote main has diverged from HEAD. Nothing pushed; refusing to rewrite reviewed history.",
   );
   process.exit(1);
 }
-git("push", "origin", "HEAD:main");
+pushHeadToMain(root);
+reportChanged(true);
 
 console.log(
   `Published control state: ${REASON}. The model's implementation changes were NOT committed.`,

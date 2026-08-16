@@ -21,6 +21,13 @@
 import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+import {
+  assertNoPersistedCredential,
+  fetchMain,
+  pushHeadToMain,
+  remoteIsAncestorOfHead
+} from "./git-auth.mjs";
 
 const root = process.cwd();
 const args = process.argv.slice(2);
@@ -35,7 +42,15 @@ if (!AGENT) {
   process.exit(1);
 }
 
-const CLI = "scripts/ai-control-plane.mjs";
+/*
+ * Sibling resolution, not cwd. This is the step that holds the push credential:
+ * if it reached back into the workspace for the control plane or the stager, a
+ * model that rewrote either would be running code inside the one privileged
+ * step. See the fuller note in run-gates.mjs.
+ */
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const CLI = path.join(HERE, "..", "ai-control-plane.mjs");
+const STAGER = path.join(HERE, "stage-task-changes.mjs");
 function git(...a) {
   return execFileSync("git", a, { cwd: root, encoding: "utf8", maxBuffer: 32 * 1024 * 1024 });
 }
@@ -45,6 +60,14 @@ function node(...a) {
 function readTasks() {
   return JSON.parse(fs.readFileSync(path.join(root, "control", "tasks.json"), "utf8")).tasks;
 }
+
+/*
+ * The model has just finished running in this checkout. If a credential is
+ * sitting in .git/config at this point it was readable by the model for the
+ * whole of that run, so the correct response is to halt rather than to push and
+ * hope. Checked before any work, so the failure is unambiguous.
+ */
+assertNoPersistedCredential(root, "before finalizing");
 
 /* ---------------------------------------------------------------------------
  * 1. Which task is being finalized?
@@ -83,7 +106,7 @@ git("config", "user.email", `${AGENT}@project-liberty.local`);
 function stage(mode) {
   try {
     console.log(
-      node("scripts/cloud/stage-task-changes.mjs", "--agent", AGENT, "--task", task.id, "--mode", mode),
+      node(STAGER, "--agent", AGENT, "--task", task.id, "--mode", mode),
     );
   } catch (error) {
     console.error(error.stdout ?? "");
@@ -154,17 +177,15 @@ if (git("diff", "--cached", "--name-only").trim()) {
 /* ---------------------------------------------------------------------------
  * 5. ONE remote transaction. Both commits, or neither.
  * ------------------------------------------------------------------------ */
-git("fetch", "origin", "main");
-try {
-  execFileSync("git", ["merge-base", "--is-ancestor", "origin/main", "HEAD"], { cwd: root, stdio: "ignore" });
-} catch {
+fetchMain(root);
+if (!remoteIsAncestorOfHead(root)) {
   console.error(
-    "origin/main has diverged from HEAD. Nothing has been pushed. Refusing to rewrite reviewed " +
+    "Remote main has diverged from HEAD. Nothing has been pushed. Refusing to rewrite reviewed " +
     "history; halting so orchestration can resolve it deliberately.",
   );
   process.exit(1);
 }
-git("push", "origin", "HEAD:main");
+pushHeadToMain(root);
 
 console.log(
   `\nPushed implementation ${implementationSha.slice(0, 12)} together with its review request.\n` +

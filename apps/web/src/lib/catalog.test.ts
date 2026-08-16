@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { CatalogItem } from "@liberty/contracts";
+import type {
+  EpisodeCatalogItem,
+  MovieCatalogItem,
+  SeriesCatalogItem
+} from "@liberty/contracts";
 import {
   appearsOnHome,
   buildHomeCatalog,
@@ -14,19 +18,50 @@ import { demoCatalog } from "./demo-catalog";
 const NOW = new Date("2026-08-14T00:00:00.000Z");
 const ISO = NOW.toISOString();
 
-const movie = (over: Partial<CatalogItem> & { id: string }): CatalogItem => ({
+/*
+ * One builder per kind rather than one builder plus overrides.
+ *
+ * `CatalogItem` is a discriminated union, so `Partial<CatalogItem>` distributes
+ * into a union of partials and stops being a usable override bag — and a single
+ * builder could no longer produce a valid series without also being able to
+ * produce an invalid movie. Per-kind builders make each override set exactly
+ * the fields that kind allows, so a test cannot silently construct an item the
+ * contract would reject.
+ */
+type Overrides<T> = Partial<Omit<T, "kind">> & { id: string };
+
+const movie = (over: Overrides<MovieCatalogItem>): MovieCatalogItem => ({
   title: "Untitled",
-  kind: "movie",
   rights: "owned",
   genre: "Drama",
   releaseYear: 2024,
   runtimeMinutes: 100,
   episodeCount: null,
-  ...over
+  ...over,
+  kind: "movie"
 });
 
-const series = (over: Partial<CatalogItem> & { id: string }): CatalogItem =>
-  movie({ kind: "series", runtimeMinutes: null, episodeCount: 6, ...over });
+const series = (over: Overrides<SeriesCatalogItem>): SeriesCatalogItem => ({
+  title: "Untitled",
+  rights: "owned",
+  genre: "Drama",
+  releaseYear: 2024,
+  runtimeMinutes: null,
+  episodeCount: 6,
+  ...over,
+  kind: "series"
+});
+
+const episode = (over: Overrides<EpisodeCatalogItem>): EpisodeCatalogItem => ({
+  title: "Untitled",
+  rights: "owned",
+  genre: "Drama",
+  releaseYear: 2024,
+  runtimeMinutes: 47,
+  episodeCount: null,
+  ...over,
+  kind: "episode"
+});
 
 describe("formatRuntime", () => {
   it("renders sub-hour runtimes without an hour component", () => {
@@ -54,9 +89,27 @@ describe("formatCatalogMeta", () => {
       .toBe("Drama · 8 episodes");
   });
 
-  it("falls back to genre alone when neither runtime nor episodes are known", () => {
-    expect(formatCatalogMeta(movie({ id: "c", genre: "Documentary", runtimeMinutes: null })))
-      .toBe("Documentary");
+  it("uses runtime for an individual episode", () => {
+    expect(formatCatalogMeta(episode({ id: "c", genre: "Mystery", runtimeMinutes: 47 })))
+      .toBe("Mystery · 47m");
+  });
+
+  /*
+   * There used to be a "falls back to genre alone when neither runtime nor
+   * episodes are known" case here. That state is now unrepresentable: the
+   * contract requires a runtime on movies and episodes and an episode count on
+   * series, so the fallback it covered was dead code. Asserting every kind
+   * renders a shape component is the invariant that replaced it.
+   */
+  it("always renders a shape component for every kind", () => {
+    const rendered = [
+      formatCatalogMeta(movie({ id: "m" })),
+      formatCatalogMeta(series({ id: "s" })),
+      formatCatalogMeta(episode({ id: "e" }))
+    ];
+    for (const meta of rendered) {
+      expect(meta).toContain(" · ");
+    }
   });
 });
 
@@ -172,10 +225,14 @@ describe("loadHomeCatalog", () => {
   });
 
   it("does not place standalone episodes on a home rail", async () => {
-    const episode = movie({ id: "ep-1", kind: "episode" });
-    expect(appearsOnHome(episode)).toBe(false);
+    // Built by the episode builder rather than `movie({ kind: "episode" })`.
+    // Overriding `kind` on another kind's builder no longer type-checks, which
+    // is the point: it was previously possible to construct a "movie" carrying
+    // an episode's discriminator and nothing caught it.
+    const standalone = episode({ id: "ep-1" });
+    expect(appearsOnHome(standalone)).toBe(false);
 
-    const result = await loadHomeCatalog(() => getHomeCatalog(NOW, [episode]));
+    const result = await loadHomeCatalog(() => getHomeCatalog(NOW, [standalone]));
     expect(result.status).toBe("empty");
   });
 });

@@ -89,8 +89,12 @@ jobs:
         if: always()
         env:
           GH_TOKEN: ${{ github.token }}
+        # No `git config url.insteadOf` rewrite here. That persisted a reusable
+        # write credential into .git/config, in the same checkout the model
+        # later reads. publish-control-state.mjs authenticates per-command via
+        # scripts/cloud/git-auth.mjs and asserts the workspace is credential-free
+        # both before and after.
         run: |
-          git config --local url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
           node scripts/cloud/publish-control-state.mjs --agent claude-lead --reason "inbox processed"
 
       - name: Complete approved tasks deterministically
@@ -104,8 +108,12 @@ jobs:
         if: always()
         env:
           GH_TOKEN: ${{ github.token }}
+        # No `git config url.insteadOf` rewrite here. That persisted a reusable
+        # write credential into .git/config, in the same checkout the model
+        # later reads. publish-control-state.mjs authenticates per-command via
+        # scripts/cloud/git-auth.mjs and asserts the workspace is credential-free
+        # both before and after.
         run: |
-          git config --local url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
           node scripts/cloud/publish-control-state.mjs --agent claude-lead --reason "completed approved tasks"
 
       - name: Check orchestrator activation gate
@@ -114,6 +122,19 @@ jobs:
         # the state those steps just produced -- not the state this runner
         # happened to start with.
         run: node scripts/cloud/orchestrator-gate.mjs
+
+      - name: Install the trusted runtime outside the workspace
+        # MUST come after the two front-half publishes (they commit, which moves
+        # HEAD, and --verify pins the copy to a specific HEAD) and before the
+        # model runs. Everything privileged afterwards is invoked from this copy
+        # by absolute path.
+        #
+        # Invoking a guard that lives in the model-writable workspace proves
+        # nothing: the model can replace the guard. See
+        # scripts/cloud/trusted-runtime.mjs.
+        run: |
+          node scripts/cloud/trusted-runtime.mjs --install
+          echo "TRUSTED=$(node scripts/cloud/trusted-runtime.mjs --path)" >> "$GITHUB_ENV"
 
       - name: Select, claim and start exactly one task
         id: select
@@ -128,7 +149,51 @@ jobs:
         # a boundary on its own. This copies control/bus state outside the
         # workspace so any model edit to it can be discarded afterwards.
         if: steps.select.outputs.selected == 'true'
-        run: node scripts/cloud/protect-state.mjs --snapshot
+        run: node "$TRUSTED/scripts/cloud/protect-state.mjs" --snapshot
+
+      - name: Write the task briefing the model reads
+        # The model used to obtain this by running
+        # `node scripts/ai-control-plane.mjs review-status <task>` through the
+        # Bash allowlist. Every allowlisted command was a trampoline: the model
+        # holds Write, so it could rewrite the script (or the npm script the
+        # command resolves to) and then invoke the nominally-allowed name.
+        # Rejecting that edit afterwards is useless -- the command already ran.
+        #
+        # So the briefing is produced HERE, deterministically, and the model
+        # reads it as a file with Read. It needs no command execution at all.
+        if: steps.select.outputs.selected == 'true'
+        run: |
+          node scripts/ai-control-plane.mjs review-status ${{ steps.select.outputs.task }} \
+            > .liberty-task-briefing.md
+
+      - name: Strip executable project configuration
+        # Removing Bash from the model did NOT end command execution in this
+        # job. `.claude/settings.json` registers a PostToolUse hook -- a shell
+        # command fired automatically by Write/Edit, outside the Bash permission
+        # system -- and this repository's hook runs
+        # `node ${CLAUDE_PROJECT_DIR}/scripts/validate-repo.mjs`. So the model
+        # could write that file and have its own code executed by the very Write
+        # that created it, with no Bash tool involved.
+        #
+        # The configuration is physically removed rather than disabled by flag:
+        # a file that is not there cannot be honoured by any configuration layer,
+        # and this worker has never executed once, so unverified flag semantics
+        # are not something to depend on. It is restored from HEAD by
+        # protect-state.mjs --restore after the model step.
+        #
+        # The strip alone is NOT sufficient, and that matters: the model can
+        # re-create `.claude/settings.json` DURING its session, and settings are
+        # picked up by a file watcher, so the next Write could fire a hook it
+        # just wrote. Restoring afterwards is too late. The strip removes the
+        # committed configuration; the flags on the model step below stop a
+        # re-created one from ever becoming an active configuration source.
+        # Neither control is sufficient alone.
+        id: harden
+        if: steps.select.outputs.selected == 'true'
+        run: |
+          node "$TRUSTED/scripts/cloud/harden-model-session.mjs" --preflight
+          node "$TRUSTED/scripts/cloud/harden-model-session.mjs" --strip
+          node "$TRUSTED/scripts/cloud/harden-model-session.mjs" --assert
 
       - name: Implement the selected task
         if: steps.gate.outputs.orchestrate == 'true' && steps.select.outputs.selected == 'true'
@@ -138,17 +203,72 @@ jobs:
           # pushing happen in the deterministic finalizer below, outside the
           # model's reach.
           GIT_TERMINAL_PROMPT: "0"
+          # Relocates the USER-level configuration to a freshly created empty
+          # directory. Without this, `--setting-sources user` would mean "load
+          # whatever ~/.claude the runner image happens to contain"; with it,
+          # the user source is provably empty, so the selection below leaves no
+          # settings source able to register a hook.
+          CLAUDE_CONFIG_DIR: ${{ steps.harden.outputs.config_dir }}
+          # Auto memory is documented as one of the inputs NOT governed by
+          # setting sources, so it is disabled by its own variable.
+          CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1"
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          # Read-only inspection plus test execution. Deliberately EXCLUDES
-          # every control-plane mutation (claim/start/gate/review/approve/done),
-          # the bus, and all git writes. `ai-control-plane.mjs status|dispatch|
-          # review-status` are read-only subcommands, enumerated individually
-          # rather than granting the whole CLI.
+          # NO Bash. This is the whole of the fix for the command trampoline.
+          #
+          # The previous allowlist granted `npm run lint|typecheck|test|build`
+          # and `node scripts/...` alongside unrestricted Edit and Write. Those
+          # are not independent grants: `npm run test` means "run whatever
+          # package.json currently says test is", and package.json is writable.
+          # The model could redefine an allowed script, or rewrite the script
+          # file behind an allowed `node scripts/...` path, and then invoke the
+          # permitted name to execute anything. A Bash allowlist is only a
+          # boundary when the commands it names are immutable; here they were
+          # not, so it was decoration.
+          #
+          # Removing execution costs the model its local verification loop. That
+          # is an acceptable trade: the deterministic gate runner after this step
+          # executes every required gate itself and its results were already the
+          # only ones that counted. A failing gate now surfaces as a published
+          # failure and a CHANGES_REQUESTED cycle rather than as a fix inside the
+          # same run -- slower, and not a path to arbitrary code execution in a
+          # job that shares a runner with credentialed steps.
+          #
+          # Each flag does a DIFFERENT job; none of them is redundant.
+          #
+          # --tools           restricts which built-in tools are AVAILABLE.
+          #                   Documented as the availability control, whereas
+          #                   --allowedTools is permission configuration (which
+          #                   tools run without prompting). An allowlist alone
+          #                   does not remove a tool from the session.
+          # --allowedTools    keeps the same set from prompting, since there is
+          #                   no human to answer a prompt in CI.
+          # --setting-sources selects which settings sources load at all. `user`
+          #                   is the documented syntax; combined with the empty
+          #                   CLAUDE_CONFIG_DIR above it leaves every source
+          #                   empty, so a `.claude/settings.json` the model
+          #                   re-creates mid-session is not an active source and
+          #                   its hooks never register.
+          # --strict-mcp-config  ignores every MCP configuration except one
+          #                   passed explicitly; none is, so no MCP tools exist.
+          #
+          # Bash is absent from both lists. Note that its absence was NEVER what
+          # prevented command execution -- hooks are shell commands outside the
+          # tool permission system entirely, which is why the strip step and
+          # --setting-sources are the controls that actually close that path.
+          #
+          # One honest limitation: the docs state that `--setting-sources user`
+          # excludes project and local for the SDK's equivalent option; the CLI
+          # flag's page lists the accepted values without spelling out the
+          # exclusion. The filesystem strip is what does not depend on that
+          # reading. The first canary should confirm the flag behaves as read.
           claude_args: |
             --max-turns 60
             --model claude-sonnet-5
-            --allowedTools "Read,Edit,Write,Glob,Grep,Bash(node scripts/ai-control-plane.mjs status),Bash(node scripts/ai-control-plane.mjs dispatch),Bash(node scripts/ai-control-plane.mjs review-status:*),Bash(node scripts/validate-repo.mjs),Bash(node scripts/test-ai-control-plane.mjs),Bash(npm run lint),Bash(npm run typecheck),Bash(npm run test),Bash(npm run build),Bash(npm run check),Bash(git status:*),Bash(git diff:*),Bash(git log:*)"
+            --setting-sources user
+            --strict-mcp-config
+            --tools "Read,Edit,Write,Glob,Grep"
+            --allowedTools "Read,Edit,Write,Glob,Grep"
           prompt: |
             You are the autonomous claude-lead worker for Project Liberty, running
             unattended in CI. Read CLAUDE.md and coordination/agent-bus/README.md first.
@@ -159,25 +279,33 @@ jobs:
 
             Do exactly this, then stop:
 
-            1. Run `node scripts/ai-control-plane.mjs review-status ${{ steps.select.outputs.task }}`
-               to see its acceptance criteria, allowedPaths and any review findings.
+            1. Read `.liberty-task-briefing.md` in the repository root. It was
+               generated for you and contains this task's acceptance criteria,
+               allowedPaths and any review findings.
             2. If its review record shows CHANGES_REQUESTED, address every blocking
                finding. That is the whole job for this run.
             3. Otherwise implement the task's acceptance criteria.
             4. Edit ONLY within that task's allowedPaths.
-            5. Run the checks to verify your work locally: `npm run lint`,
-               `npm run typecheck`, `npm run test`, `npm run build`,
-               `node scripts/validate-repo.mjs`, `node scripts/test-ai-control-plane.mjs`.
-               Fix what you break. These runs are for YOUR verification only.
-            6. STOP. Leave your edits in the working tree.
+            5. STOP. Leave your edits in the working tree.
 
-               You cannot claim, start, gate, transition, approve, publish, commit or
-               push -- those tools are not available to you, by design. A deterministic
-               step after you re-runs every required gate itself and records the real
-               results, then stages only this task's allowedPaths, commits, pushes, moves
-               the task to REVIEW and publishes the review request with the exact
-               cumulative range. Do not attempt to obtain git credentials. Independent
-               review is mandatory and you may never approve your own work.
+            You have NO command execution in this run. That is deliberate, not an
+            outage: every runnable command was reachable through files you can
+            write, so the allowlist was not a real boundary. Do not look for a way
+            around it, and do not ask for one.
+
+            What this means practically: you cannot run the tests, so write code
+            you can defend by reading it. Prefer changes whose correctness is
+            evident from the source over changes you would normally confirm by
+            running something. Where you are genuinely unsure whether something
+            passes, say so in your final message rather than assuming.
+
+            A deterministic step after you runs every required gate itself and
+            records the real results, then stages only this task's allowedPaths,
+            commits, pushes, moves the task to REVIEW and publishes the review
+            request with the exact cumulative range. You cannot claim, start, gate,
+            transition, approve, publish, commit or push. Do not attempt to obtain
+            git credentials. Independent review is mandatory and you may never
+            approve your own work.
 
             Constraints you must not violate:
             - Only licensed, user-owned or public-domain content may enter playback resolution.
@@ -186,26 +314,84 @@ jobs:
             - If every remaining task is blocked on a human or provider dependency, say so
               and stop cleanly rather than inventing work.
 
+      # ---------------------------------------------------------------------
+      # EVERYTHING BELOW RUNS FROM $TRUSTED, NOT FROM THE WORKSPACE.
+      #
+      # The model has now had write access to the checkout. Any step invoked as
+      # `node scripts/...` from here on would be running code the model could
+      # have replaced -- including the guard that is supposed to undo exactly
+      # that. $TRUSTED is the copy taken before the model ran, on a filesystem
+      # the model cannot reach.
+      # ---------------------------------------------------------------------
+
+      - name: Verify the trusted runtime is intact
+        # Confirms the store exists, that HEAD has not moved since it was taken,
+        # and -- by refusing to pass when it is itself running from the
+        # workspace -- that this step really is invoking the trusted copy.
+        if: always() && steps.select.outputs.selected == 'true'
+        run: node "$TRUSTED/scripts/cloud/trusted-runtime.mjs" --verify
+
       - name: Restore protected control/bus state
         # Runs BEFORE any deterministic step reads control state, so a model
         # edit to control/tasks.json is discarded rather than later staged as a
-        # legitimate control-plane output.
+        # legitimate control-plane output. Also restores scripts/ and .github/ in
+        # the WORKSPACE from HEAD, so the gates below test committed code -- the
+        # trusted copy protects execution, this protects what is under test.
         if: always() && steps.select.outputs.selected == 'true'
-        run: node scripts/cloud/protect-state.mjs --restore
+        run: node "$TRUSTED/scripts/cloud/protect-state.mjs" --restore
+
+      - name: Discard the task briefing
+        # Generated for the model; not an implementation artifact. Removed
+        # explicitly rather than relying on the stager to tolerate it.
+        if: always()
+        run: rm -f .liberty-task-briefing.md
 
       - name: Refresh mission control
         if: always()
-        run: node scripts/cloud/mission-control-status.mjs --worker claude-lead --phase implement
+        run: node "$TRUSTED/scripts/cloud/mission-control-status.mjs" --worker claude-lead --phase implement
+
+      - name: Verify the model stayed inside its allowed paths
+        # MUST run before the gate step, and from $TRUSTED.
+        #
+        # Allowed-path enforcement used to live only in the finalizer, which
+        # runs AFTER the gates. That left the npm-script trampoline intact,
+        # merely relocated: the model rewrites root package.json, `npm run test`
+        # executes the rewritten script, and the finalizer rejects the file long
+        # after the command ran. The gate runner is a trusted step reading
+        # untrusted definitions, so the scope check has to happen while those
+        # definitions are still inert.
+        if: steps.select.outputs.selected == 'true'
+        run: |
+          node "$TRUSTED/scripts/cloud/stage-task-changes.mjs" \
+            --agent claude-lead \
+            --task ${{ steps.select.outputs.task }} \
+            --check-only
 
       - name: Run and record the required gates
         id: gates
+        # SECURITY MODEL OF THIS STEP, stated precisely rather than optimistically.
+        #
+        # This is an UNTRUSTED-CODE EXECUTION ZONE. `npm run test` and
+        # `npm run build` import model-authored application code, and imported
+        # code can call any Node API. "The model cannot cause code execution
+        # anywhere in the job" is not a property this design has, or can have,
+        # while it automatically tests what the model wrote.
+        #
+        # What makes that acceptable is that there is nothing here worth
+        # stealing: this step declares NO env block, so it inherits no secret.
+        # GH_TOKEN, ANTHROPIC_API_KEY and OPENAI_API_KEY are all step-scoped to
+        # the steps that genuinely need them, checkout ran with
+        # persist-credentials: false, and the finalizer asserts the workspace is
+        # credential-free before it authenticates. Do not add an env block here.
         # The gate runner executes each runnable gate ITSELF and records the real
-        # outcome. Gate evidence is never taken from the model's self-report.
+        # outcome. Gate evidence is never taken from the model's self-report --
+        # and since the model has no command execution at all now, there is no
+        # self-report to be tempted by.
         # continue-on-error so a failure can still be PUBLISHED below; a gate
         # failure that dies with the runner is a failure nobody ever learns about.
         if: steps.select.outputs.selected == 'true'
         continue-on-error: true
-        run: node scripts/cloud/run-gates.mjs --task ${{ steps.select.outputs.task }}
+        run: node "$TRUSTED/scripts/cloud/run-gates.mjs" --task ${{ steps.select.outputs.task }}
 
       - name: Publish gate failure state
         # Failed or blocked gates exist only in this ephemeral checkout. Without
@@ -215,9 +401,13 @@ jobs:
         if: always() && steps.select.outputs.selected == 'true' && steps.gates.outcome == 'failure'
         env:
           GH_TOKEN: ${{ github.token }}
+        # No `git config url.insteadOf` rewrite here. That persisted a reusable
+        # write credential into .git/config, in the same checkout the model
+        # later reads. publish-control-state.mjs authenticates per-command via
+        # scripts/cloud/git-auth.mjs and asserts the workspace is credential-free
+        # both before and after.
         run: |
-          git config --local url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
-          node scripts/cloud/publish-control-state.mjs \
+          node "$TRUSTED/scripts/cloud/publish-control-state.mjs" \
             --agent claude-lead \
             --task ${{ steps.select.outputs.task }} \
             --reason "gate failure or blocked gate; implementation not committed"
@@ -234,8 +424,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          git config --local url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
-          node scripts/cloud/finalize-task.mjs --agent claude-lead --task ${{ steps.select.outputs.task }}
+          node "$TRUSTED/scripts/cloud/finalize-task.mjs" --agent claude-lead --task ${{ steps.select.outputs.task }}
           echo "changed=true" >> "$GITHUB_OUTPUT"
 
       - name: Verify the pushed commit in CI
@@ -252,7 +441,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if node scripts/ai-control-plane.mjs inbox gpt-architect | grep -q "review_request"; then
+          if node "$TRUSTED/scripts/ai-control-plane.mjs" inbox gpt-architect | grep -q "review_request"; then
             gh workflow run agent-gpt-review.yml \
               --ref main \
               --field depth="${NEXT_DEPTH}"

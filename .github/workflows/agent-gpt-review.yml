@@ -42,6 +42,11 @@ jobs:
         with:
           # Full history: the reviewer diffs an exact commit against its parent.
           fetch-depth: 0
+          # checkout persists the job token in .git/config by default. The
+          # publisher now asserts the workspace holds no credential material and
+          # authenticates per-command instead, so leaving the default on would
+          # both weaken the boundary and fail that assertion.
+          persist-credentials: false
 
       - uses: actions/setup-node@v4
         with:
@@ -85,31 +90,20 @@ jobs:
         # decisions and quarantines that were already produced -- otherwise the
         # next run rediscovers the same messages and fails identically.
         if: always() && steps.gate.outputs.review == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        # This used to be inline shell that duplicated the Claude lane's publish
+        # logic -- stage, commit, fetch, ancestor-check, push -- and the two had
+        # already begun to differ. It now calls the same publisher, which also
+        # means it inherits the per-command authentication and the assertion that
+        # no credential is left persisted in the workspace. `--mode control` is
+        # REQUIRED: the reviewer owns no implementation task, so implementation
+        # mode would have an empty stageable set and reject every decision,
+        # acknowledgement and quarantine it just produced.
         run: |
-          git config user.name "liberty-gpt-architect[bot]"
-          git config user.email "gpt-architect@project-liberty.local"
-          # --mode control is REQUIRED: the reviewer owns no implementation task,
-          # so implementation mode would have an empty stageable set and reject
-          # every decision, acknowledgement and quarantine it just produced.
-          node scripts/cloud/stage-task-changes.mjs --agent gpt-architect --mode control
-
-          if git diff --cached --quiet; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          git commit -m "gpt-architect: publish review decisions via agent bus"
-
-          # Never rebase. A review decision names the commit it reviewed, so
-          # rewriting history would silently invalidate it. Require a clean
-          # fast-forward and halt on divergence.
-          git fetch origin main
-          if ! git merge-base --is-ancestor origin/main HEAD; then
-            echo "::error::origin/main has diverged from HEAD. Refusing to rewrite reviewed history; halting for orchestration to resolve."
-            exit 1
-          fi
-          git push origin HEAD:main
-          echo "changed=true" >> "$GITHUB_OUTPUT"
+          node scripts/cloud/publish-control-state.mjs \
+            --agent gpt-architect \
+            --reason "publish review decisions via agent bus"
 
       - name: Hand control back to the Claude lane
         if: steps.publish.outputs.changed == 'true'

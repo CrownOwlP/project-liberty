@@ -52,6 +52,29 @@ if (!["implementation", "control"].includes(MODE)) {
   process.exit(1);
 }
 
+/**
+ * Classify without staging, and fail if anything is out of scope.
+ *
+ * WHY THIS MODE EXISTS. Allowed-path enforcement used to happen only inside the
+ * finalizer -- which runs AFTER the deterministic gate runner. So this was
+ * still possible:
+ *
+ *   model rewrites root package.json  ("test": "<anything>")
+ *     -> run-gates executes `npm run test`
+ *       -> the rewritten script runs
+ *         -> finalizer rejects package.json, far too late
+ *
+ * That is the npm-script trampoline again, relocated from the model step into
+ * the gate step. Removing Bash from the model did nothing about it, because the
+ * command is executed by a trusted step reading an untrusted file.
+ *
+ * Run from the trusted store immediately after the restore and BEFORE any
+ * workspace-derived command, this refuses the checkout while the sentinel is
+ * still inert. Because both staging passes happen later in the run, anything in
+ * EITHER category is acceptable here; only a path in neither is a problem.
+ */
+const CHECK_ONLY = args.includes("--check-only");
+
 const ACTIVE = ["CLAIMED", "IN_PROGRESS", "REVIEW"];
 
 /**
@@ -126,6 +149,27 @@ for (const rel of dirty) {
   if (stagePrefixes.some((p) => underPrefix(rel, p))) staged.push(rel);
   else if (toleratePrefixes.some((p) => underPrefix(rel, p))) tolerated.push(rel);
   else rejected.push(rel);
+}
+
+if (CHECK_ONLY) {
+  if (rejected.length) {
+    console.error(
+      `\nOUT-OF-SCOPE EDITS (${rejected.length}). Refusing to run any workspace-derived command:`,
+    );
+    for (const rel of rejected) console.error(`  ! ${rel}`);
+    console.error(
+      "\nThese belong to no active task's allowedPaths and to no deterministic control output. " +
+      "The gate runner would execute definitions read from the workspace -- root package.json " +
+      "scripts, config files, test setup -- so an out-of-scope edit must stop the job BEFORE the " +
+      "gates, not be rejected by the finalizer after they have already run it.",
+    );
+    process.exit(1);
+  }
+  console.log(
+    `\nAll ${staged.length + tolerated.length} dirty path(s) are in scope ` +
+    "(task allowedPaths or deterministic control outputs). Safe to run the gates.",
+  );
+  process.exit(0);
 }
 
 for (const rel of staged) git("add", "--", rel);

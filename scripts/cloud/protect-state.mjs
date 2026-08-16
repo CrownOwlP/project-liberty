@@ -45,12 +45,23 @@ export const PROTECTED_PATHS = CONTROL_OUTPUT_PATHS;
 /**
  * Executable code the model must never be able to substitute.
  *
- * Restored from HEAD rather than a snapshot: git is already an immutable
- * trusted copy the model cannot alter, because it can edit the working tree but
- * cannot commit. `select-task.mjs` refuses any task owning these paths, so a
- * legitimate model edit here never exists.
+ * Imported, not redeclared: `trusted-runtime.mjs` copies exactly these paths
+ * into $RUNNER_TEMP, and a workspace restore that covered a different set than
+ * the trusted copy would leave a gap in whichever list was shorter.
+ *
+ * Restoring them here from HEAD is a SECOND line, not the boundary. It exists
+ * so the gates below test committed code rather than model edits to the
+ * runtime. The actual boundary is that privileged steps execute from the
+ * trusted copy outside the workspace -- because this guard cannot protect
+ * itself: the workflow used to invoke it as `node scripts/cloud/protect-state.mjs`
+ * from the very tree it was restoring, so a model that replaced this file with
+ * `process.exit(0)` would have disabled it before it ever ran.
+ *
+ * `select-task.mjs` refuses any task owning these paths, so a legitimate model
+ * edit here never exists.
  */
-export const TRUSTED_RUNTIME_PATHS = ["scripts", ".github"];
+export { TRUSTED_RUNTIME_PATHS } from "./trusted-runtime.mjs";
+import { TRUSTED_RUNTIME_PATHS } from "./trusted-runtime.mjs";
 
 const store = path.join(
   process.env.RUNNER_TEMP || os.tmpdir(),
@@ -120,9 +131,36 @@ if (!isEntryPoint()) {
    * git is the immutable copy: the model can write the working tree but cannot
    * commit, so HEAD is authoritative and needs no separate snapshot.
    */
+  /*
+   * Presence in HEAD decides whether a path is restorable -- NOT presence in
+   * the working tree.
+   *
+   * The guard here used to skip any path missing from the workspace, which
+   * inverted its purpose: deletion is the one form of tampering the guard could
+   * not undo. It also broke the deliberate case, since
+   * harden-model-session.mjs removes .claude before the model runs precisely so
+   * it can be restored afterwards. A path absent from BOTH is genuinely nothing
+   * to restore.
+   */
+  const inHead = (rel) => {
+    try {
+      execFileSync("git", ["cat-file", "-e", `HEAD:${rel}`], { cwd: root, stdio: "ignore" });
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
   const restoredRuntime = [];
   for (const rel of TRUSTED_RUNTIME_PATHS) {
-    if (!fs.existsSync(path.join(root, rel))) continue;
+    if (!inHead(rel) && !fs.existsSync(path.join(root, rel))) continue;
+    if (!inHead(rel)) {
+      // Present in the tree but not in HEAD: an addition the model made to a
+      // trusted path. `git clean` removes it; `git checkout` would error.
+      execFileSync("git", ["clean", "-fdx", "--", rel], { cwd: root, stdio: "ignore" });
+      restoredRuntime.push(`?? ${rel} (untracked addition to a trusted path)`);
+      continue;
+    }
     try {
       const changed = execFileSync("git", ["status", "--porcelain", "--", rel], {
         cwd: root, encoding: "utf8",
@@ -142,7 +180,7 @@ if (!isEntryPoint()) {
     for (const line of restoredRuntime) console.error(`  ! ${line}`);
     console.error("Privileged steps will run the committed versions, not these.");
   } else {
-    console.log("Trusted runtime clean; no unauthorized edits to scripts/ or .github/.");
+    console.log(`Trusted runtime clean; no unauthorized edits to ${TRUSTED_RUNTIME_PATHS.join(", ")}.`);
   }
 
   // SECOND: restore deterministic control/bus state from the snapshot.

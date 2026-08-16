@@ -31,15 +31,22 @@ export function formatRuntime(minutes: number): string {
   return `${hours}h ${String(rest).padStart(2, "0")}m`;
 }
 
-/** Display string for a card, derived from structured fields rather than stored. */
+/**
+ * Display string for a card, derived from structured fields rather than stored.
+ *
+ * This used to carry null-guards on both shape fields and a genre-only
+ * fallback for the case where neither was known. `CatalogItem` is now a
+ * discriminated union in which a series always has an episode count and a
+ * movie or episode always has a runtime, so that third state is unrepresentable
+ * and the guards would be dead code. Everything reaching here has been parsed
+ * through `catalogHomeResponseSchema`, so the invariant holds at runtime too.
+ */
 export function formatCatalogMeta(item: CatalogItem): string {
-  const parts: string[] = [item.genre];
-  if (item.kind === "series" && item.episodeCount !== null) {
-    parts.push(`${item.episodeCount} episodes`);
-  } else if (item.runtimeMinutes !== null) {
-    parts.push(formatRuntime(item.runtimeMinutes));
-  }
-  return parts.join(" · ");
+  const shape =
+    item.kind === "series"
+      ? `${item.episodeCount} episodes`
+      : formatRuntime(item.runtimeMinutes);
+  return [item.genre, shape].join(" · ");
 }
 
 /**

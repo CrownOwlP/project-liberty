@@ -16,9 +16,17 @@
 import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+// Same classification and executors run-gates.mjs uses. These two used to keep
+// separate tables and drifted; see scripts/cloud/gate-registry.mjs.
+import { classifyGate, runExecutableGate } from "./gate-registry.mjs";
 
 const root = process.cwd();
-const CLI = "scripts/ai-control-plane.mjs";
+// Sibling resolution, not cwd: see the note in run-gates.mjs. A trusted copy
+// invoked from $RUNNER_TEMP must reach the trusted control plane, not the
+// workspace one.
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const CLI = path.join(HERE, "..", "ai-control-plane.mjs");
 
 function readJson(rel) {
   return JSON.parse(fs.readFileSync(path.join(root, rel), "utf8"));
@@ -29,15 +37,6 @@ function cli(...args) {
 
 const gates = readJson("control/quality-gates.json").gates;
 const tasks = readJson("control/tasks.json").tasks;
-
-/** Gate command -> how to actually run it. Anything absent is agent-review. */
-const RUNNABLE = {
-  "repo-validate": ["node", "scripts/validate-repo.mjs"],
-  lint: ["npm", "run", "lint"],
-  typecheck: ["npm", "run", "typecheck"],
-  unit: ["npm", "run", "test"],
-  build: ["npm", "run", "build"]
-};
 
 const candidates = tasks.filter((t) => t.status === "REVIEW" && t.review?.outcome === "APPROVED");
 if (!candidates.length) {
@@ -53,29 +52,11 @@ for (const task of candidates) {
   let ok = true;
 
   for (const gate of task.qualityGates ?? []) {
-    // Deliberately does NOT skip an already-recorded pass. Trusting a recorded
-    // result makes it completion evidence without this process ever proving the
-    // command ran -- which is exactly what an untrusted writer would exploit.
-    const runnable = RUNNABLE[gate];
-    if (runnable) {
-      const [cmd, ...args] = runnable;
-      const shell = process.platform === "win32" && cmd === "npm" ? "npm.cmd" : cmd;
-      try {
-        execFileSync(shell, args, { cwd: root, encoding: "utf8", stdio: "pipe" });
-        cli("gate", task.id, gate, "pass", `${runnable.join(" ")} exit 0 (autonomous worker)`);
-        console.log(`  ${gate}: pass`);
-      } catch (error) {
-        const detail = `${runnable.join(" ")} exit ${error.status ?? "non-zero"}`;
-        cli("gate", task.id, gate, "fail", detail);
-        console.error(`  ${gate}: FAIL - ${detail}`);
-        ok = false;
-      }
-      continue;
-    }
+    const classification = classifyGate(gate, gates);
 
     // An agent-review gate is satisfied by the independent review itself. The
     // evidence cites that review record rather than asserting a test ran.
-    if (gates[gate]?.command === "agent-review") {
+    if (classification.kind === "review") {
       const evidence = `independent review by ${task.review.reviewerAgent} at ` +
         `${String(task.review.reviewedCommitSha).slice(0, 12)}: ${task.review.evidence}`;
       cli("gate", task.id, gate, "pass", evidence.slice(0, 500));
@@ -83,7 +64,28 @@ for (const task of candidates) {
       continue;
     }
 
-    console.error(`  ${gate}: no automated evidence available; leaving ${task.id} in REVIEW`);
+    if (classification.kind === "executable") {
+      // Deliberately does NOT skip an already-recorded pass. Trusting a recorded
+      // result makes it completion evidence without this process ever proving the
+      // command ran -- which is exactly what an untrusted writer would exploit.
+      const result = runExecutableGate(classification.executor, {
+        cwd: root,
+        source: "autonomous worker"
+      });
+      cli("gate", task.id, gate, result.passed ? "pass" : "fail", result.evidence);
+      if (result.passed) {
+        console.log(`  ${gate}: pass`);
+      } else {
+        console.error(`  ${gate}: FAIL - ${result.evidence}`);
+        ok = false;
+      }
+      continue;
+    }
+
+    // `undefined` or `unimplemented`. Fail closed and say which, so the reason a
+    // task is stuck is visible rather than inferred.
+    console.error(`  ${gate}: ${classification.reason}`);
+    console.error(`  leaving ${task.id} in REVIEW`);
     ok = false;
   }
 

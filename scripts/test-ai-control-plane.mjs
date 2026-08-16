@@ -3109,7 +3109,22 @@ try {
 
     const runnerTemp = path.join(temp, `runner-adv-${++repoSeq}`);
     fs.mkdirSync(runnerTemp, { recursive: true });
-    run(repo, "scripts/cloud/protect-state.mjs", ["--snapshot"], { RUNNER_TEMP: runnerTemp });
+
+    /*
+     * Install the trusted runtime FIRST, exactly as the workflow does. The
+     * earlier version of this scenario skipped this and instead performed
+     * `git checkout HEAD -- scripts/cloud/protect-state.mjs` by hand before
+     * invoking the guard -- a step the real workflow never performed. That hand
+     * restore was doing the very work under test, so the scenario passed while
+     * the production path remained bypassable.
+     */
+    run(repo, "scripts/cloud/trusted-runtime.mjs", ["--install"], { RUNNER_TEMP: runnerTemp });
+    const trustedRoot = path.join(runnerTemp, "liberty-trusted-runtime");
+    const trustedScript = (rel) => path.join(trustedRoot, rel);
+
+    run(repo, trustedScript("scripts/cloud/protect-state.mjs"), ["--snapshot"], {
+      RUNNER_TEMP: runnerTemp,
+    });
 
     // The model rewrites the guard, the stager, the finalizer, and the workflow
     // itself -- and plants a new script for good measure.
@@ -3130,14 +3145,21 @@ try {
     tampered.tasks.find((t) => t.id === "PL-0101").status = "DONE";
     fs.writeFileSync(tasksFile, JSON.stringify(tampered, null, 2) + "\n");
 
-    // The restore step is invoked from the workspace -- i.e. the neutered copy
-    // would run if the workflow used it. Simulate the workflow correctly by
-    // running the committed version, which is what an immutable path provides.
-    git("checkout", "HEAD", "--", "scripts/cloud/protect-state.mjs");
-    // Combined streams: the tampering alert is a warning and goes to stderr.
-    const out = runCombined(repo, "scripts/cloud/protect-state.mjs", ["--restore"], {
+    /*
+     * The guard is invoked from the TRUSTED store, not the workspace. Nothing
+     * restores the workspace copy beforehand: the neutered `process.exit(0)`
+     * version is still sitting there, and if the workflow were still calling it
+     * the assertions below would fail. That is the point of the scenario.
+     */
+    const out = runCombined(repo, trustedScript("scripts/cloud/protect-state.mjs"), ["--restore"], {
       RUNNER_TEMP: runnerTemp,
     });
+
+    assert.match(
+      fs.readFileSync(path.join(repo, "scripts/cloud/protect-state.mjs"), "utf8"),
+      /Filesystem enforcement/,
+      "the trusted guard must have restored even its own workspace copy",
+    );
 
     assert.match(out, /REVERTED \d+ unauthorized edit/, `guard must report the tampering:\n${out}`);
 
@@ -3181,6 +3203,661 @@ try {
       CONTROL_OUTPUT_PATHS.includes("docs/MISSION_CONTROL.md"),
       "the path that previously drifted must be covered by both",
     );
+  }
+
+  /* ---------------------------------------------------------------------
+   * 9ab. The trusted runtime refuses to certify itself from the workspace.
+   *
+   *      A guard invoked from the tree it guards proves nothing, because the
+   *      model can replace the guard. --verify fails closed when it notices it
+   *      is running from the workspace, so a workflow that regresses to
+   *      `node scripts/cloud/trusted-runtime.mjs --verify` breaks loudly
+   *      instead of silently asserting a boundary that is not there.
+   * ------------------------------------------------------------------- */
+  {
+    const repo = freshRepo();
+    const gitEnv = {
+      GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t",
+      GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t",
+    };
+    const git = (...a) =>
+      execFileSync("git", a, {
+        cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"],
+        env: { ...process.env, ...gitEnv },
+      });
+    git("init", "-q", "-b", "main");
+    git("add", "-A");
+    git("commit", "-q", "-m", "baseline");
+
+    const runnerTemp = path.join(temp, `runner-trusted-${++repoSeq}`);
+    fs.mkdirSync(runnerTemp, { recursive: true });
+    const trustedRoot = path.join(runnerTemp, "liberty-trusted-runtime");
+
+    run(repo, "scripts/cloud/trusted-runtime.mjs", ["--install"], { RUNNER_TEMP: runnerTemp });
+    assert.ok(
+      fs.existsSync(path.join(trustedRoot, "scripts", "cloud", "finalize-task.mjs")),
+      "the finalizer must exist in the trusted store; it is the step that holds the credential",
+    );
+    assert.ok(
+      fs.existsSync(path.join(trustedRoot, "scripts", "ai-control-plane.mjs")),
+      "the control plane must be trusted too: the gate runner records results through it",
+    );
+
+    // Verifying the trusted copy from the trusted copy: the supported path.
+    run(repo, path.join(trustedRoot, "scripts/cloud/trusted-runtime.mjs"), ["--verify"], {
+      RUNNER_TEMP: runnerTemp,
+    });
+
+    // Verifying from the workspace: refused, even though the store is valid.
+    const fromWorkspace = runCombined(repo, "scripts/cloud/trusted-runtime.mjs", ["--verify"], {
+      RUNNER_TEMP: runnerTemp,
+    });
+    assert.match(
+      fromWorkspace,
+      /inside the model-writable workspace/,
+      `--verify must refuse to certify itself from the workspace:\n${fromWorkspace}`,
+    );
+
+    // HEAD moving after installation invalidates the copy: it describes a
+    // different commit than the one about to be operated on.
+    fs.writeFileSync(path.join(repo, "docs", "SCRATCH.md"), "moved\n");
+    git("add", "-A");
+    git("commit", "-q", "-m", "second");
+    const stale = runCombined(
+      repo,
+      path.join(trustedRoot, "scripts/cloud/trusted-runtime.mjs"),
+      ["--verify"],
+      { RUNNER_TEMP: runnerTemp },
+    );
+    assert.match(stale, /HEAD moved since the trusted runtime was installed/, stale);
+
+    // A dirty runtime must never be installed: the copy would inherit whatever
+    // made it dirty, which is exactly the material it exists to exclude.
+    fs.writeFileSync(path.join(repo, "scripts", "cloud", "finalize-task.mjs"), "// tampered\n");
+    const dirty = runCombined(repo, "scripts/cloud/trusted-runtime.mjs", ["--install"], {
+      RUNNER_TEMP: runnerTemp,
+    });
+    assert.match(dirty, /modified working tree/, dirty);
+  }
+
+  /* ---------------------------------------------------------------------
+   * 9ac. A persisted git credential halts the privileged steps.
+   *
+   *      The workflow used to write
+   *        url."https://x-access-token:$GH_TOKEN@github.com/".insteadOf ...
+   *      into .git/config before the model ran in the same checkout. That is a
+   *      reusable repository write credential sitting in a directory the model
+   *      can Read, while the workflow's own comments claimed none was exposed.
+   * ------------------------------------------------------------------- */
+  {
+    const repo = freshRepo();
+    const gitEnv = {
+      GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t",
+      GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t",
+    };
+    const git = (...a) =>
+      execFileSync("git", a, {
+        cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"],
+        env: { ...process.env, ...gitEnv },
+      });
+    git("init", "-q", "-b", "main");
+    git("add", "-A");
+    git("commit", "-q", "-m", "baseline");
+
+    const { assertNoPersistedCredential, authArgs } =
+      await import("../scripts/cloud/git-auth.mjs");
+
+    // Clean repository: nothing to complain about.
+    assertNoPersistedCredential(repo, "in test");
+
+    // authArgs must clear inherited helpers before installing its own; git
+    // accumulates helpers rather than replacing them, so an inherited one could
+    // otherwise answer first and authenticate as something we did not choose.
+    const previous = process.env.GH_TOKEN;
+    process.env.GH_TOKEN = "test-token-not-a-real-credential";
+    const args = authArgs();
+    process.env.GH_TOKEN = previous;
+    assert.equal(args[0], "-c");
+    assert.equal(args[1], "credential.helper=", "inherited helpers must be cleared first");
+    assert.ok(
+      !args.join(" ").includes("test-token-not-a-real-credential"),
+      "the token must never appear in argv; process arguments are readable on the runner",
+    );
+
+    // The exact rewrite the workflow used to perform.
+    git(
+      "config",
+      "--local",
+      'url.https://x-access-token:SECRET@github.com/.insteadOf',
+      "https://github.com/",
+    );
+
+    const caught = runCombined(
+      repo,
+      "scripts/cloud/publish-control-state.mjs",
+      ["--agent", "claude-lead", "--reason", "should never publish"],
+    );
+    assert.match(
+      caught,
+      /credential material/,
+      `the publisher must refuse to run against a credential-bearing workspace:\n${caught}`,
+    );
+  }
+
+  /* ---------------------------------------------------------------------
+   * 9ad. Both gate runners classify and execute gates identically.
+   *
+   *      run-gates.mjs knew how to execute `integration`; advance-completable
+   *      did not, and treated an unknown gate as "no automated evidence". So a
+   *      task could pass its integration gate at finalize time, be approved,
+   *      and then be refused completion forever by the worker meant to complete
+   *      it. Two tables encoding one policy always drift.
+   * ------------------------------------------------------------------- */
+  {
+    const { classifyGate, GATE_EXECUTORS } =
+      await import("../scripts/cloud/gate-registry.mjs");
+
+    const registry = JSON.parse(
+      fs.readFileSync(path.join(source, "control", "quality-gates.json"), "utf8"),
+    ).gates;
+
+    // Neither runner may define its own table any more.
+    for (const rel of ["scripts/cloud/run-gates.mjs", "scripts/cloud/advance-completable.mjs"]) {
+      const body = fs.readFileSync(path.join(source, rel), "utf8");
+      assert.match(
+        body,
+        /from "\.\/gate-registry\.mjs"/,
+        `${rel} must classify gates through the shared registry`,
+      );
+      assert.ok(
+        !/^const (EXECUTORS|RUNNABLE) =/m.test(body),
+        `${rel} must not carry a private executor table; that is what drifted`,
+      );
+    }
+
+    assert.ok(
+      GATE_EXECUTORS.integration,
+      "integration must be executable, or approved tasks requiring it strand in REVIEW",
+    );
+
+    // An unimplemented executable gate fails CLOSED rather than being relabelled
+    // as somebody else's problem.
+    const unimplemented = classifyGate("performance", { performance: { command: "benchmark" } });
+    assert.equal(unimplemented.kind, "unimplemented");
+    assert.match(unimplemented.reason, /no executor is implemented/);
+
+    // A gate absent from the registry cannot be classified at all.
+    assert.equal(classifyGate("invented", registry).kind, "undefined");
+
+    // Only an explicit agent-review command is the reviewer's.
+    assert.equal(
+      classifyGate("review", { review: { command: "agent-review" } }).kind,
+      "review",
+    );
+  }
+
+  /* ---------------------------------------------------------------------
+   * 9ae. Approval -> durable publish -> completion -> fresh gate, in order.
+   *
+   *      The bootstrap deadlock this replays: the activation gate used to be
+   *      computed BEFORE the inbox was processed. An approval arrived, was
+   *      applied locally, the already-computed gate still read complete=false,
+   *      completion was skipped, and the applied review was never pushed -- so
+   *      the next runner started from the same remote state and repeated
+   *      forever. The regression asserts the whole ordered sequence, not the
+   *      individual steps, because each step in isolation was already correct.
+   * ------------------------------------------------------------------- */
+  {
+    /*
+     * Deliberately NOT a git repository, matching the other bus scenarios. The
+     * range validator treats "no git history here" as unverifiable-but-not-
+     * defective, so the message applies on its declared range without needing
+     * real commits. What is under test is the ORDER of the steps, not ancestry;
+     * ancestry has its own scenarios.
+     */
+    const repo = freshRepo();
+    const SHA = "b".repeat(40);
+
+    const tasksFile = path.join(repo, "control", "tasks.json");
+    const state = JSON.parse(fs.readFileSync(tasksFile, "utf8"));
+    const bootstrap = state.tasks.find((t) => t.id === "PL-AI-0001");
+    const orchestrator = state.tasks.find((t) => t.id === "PL-AI-0002");
+
+    // PL-AI-0001 must already be DONE, or the gate is closed for a second
+    // reason and the assertion below would pass for the wrong cause.
+    bootstrap.status = "DONE";
+
+    // PL-AI-0002 sits in REVIEW: implemented, pushed, awaiting judgment.
+    orchestrator.status = "REVIEW";
+    orchestrator.owner = "claude-lead";
+    orchestrator.implementationAgent = "claude-lead";
+    orchestrator.implementationBaseSha = DEFAULT_TEST_BASE;
+    orchestrator.gateResults = {};
+    delete orchestrator.review;
+    delete orchestrator.reviewHistory;
+    fs.writeFileSync(tasksFile, JSON.stringify(state, null, 2) + "\n");
+
+    // Gate BEFORE anything is processed: dormant, and it must say why.
+    const before = runCombined(repo, "scripts/cloud/orchestrator-gate.mjs");
+    assert.match(before, /PL-AI-0002 is REVIEW, not DONE/, before);
+
+    // The reviewer's approval arrives over the bus, naming the exact range.
+    publish(repo, [
+      "--from", "gpt-architect",
+      "--to", "claude-lead",
+      "--type", "review_approved",
+      "--task", "PL-AI-0002",
+      "--sha", SHA,
+      "--summary", "cumulative range reviewed against the pushed commit",
+      "--evidence", "read every file in the range",
+    ]);
+
+    // Step 1: process the inbox. The approval becomes a review record.
+    run(repo, CLI, ["process", "claude-lead"], { LIBERTY_COMMIT_SHA: SHA });
+    const reviewed = taskOf(repo, "PL-AI-0002");
+    assert.equal(reviewed.review?.outcome, "APPROVED", "the approval must be applied locally");
+    assert.equal(reviewed.status, "REVIEW", "applying a review must not itself complete the task");
+
+    // The gate is STILL closed here. This is the exact state the old ordering
+    // computed the gate in, concluded "not complete", skipped completion, and
+    // never published -- so the next runner rediscovered the same state forever.
+    const midway = runCombined(repo, "scripts/cloud/orchestrator-gate.mjs");
+    assert.match(
+      midway,
+      /PL-AI-0002 is REVIEW, not DONE/,
+      `an applied approval alone must not open the gate:\n${midway}`,
+    );
+
+    // Step 2: deterministic completion re-runs the gates and moves it to DONE.
+    const completed = runCombined(repo, "scripts/cloud/advance-completable.mjs");
+    const after = taskOf(repo, "PL-AI-0002");
+    assert.equal(
+      after.status,
+      "DONE",
+      `PL-AI-0002 must complete once approved and gated:\n${completed}`,
+    );
+    for (const gate of after.qualityGates ?? []) {
+      assert.equal(
+        after.gateResults?.[gate]?.status,
+        "pass",
+        `gate ${gate} must be recorded as pass by the completer, with evidence`,
+      );
+      assert.ok(
+        after.gateResults?.[gate]?.evidence,
+        `gate ${gate} must carry evidence naming what was run or reviewed`,
+      );
+    }
+
+    /*
+     * Step 3: the gate is computed AFTERWARDS and now opens. Computing it any
+     * earlier is the ordering bug this scenario exists to prevent.
+     *
+     * Asserted through GITHUB_OUTPUT rather than stdout. The workflow gates the
+     * next step on `steps.gate.outputs.orchestrate`, so that file IS the
+     * contract; a human-readable line saying "Orchestrator ACTIVE" could be
+     * present while the output the workflow reads says otherwise.
+     */
+    const outputFile = path.join(temp, `gh-output-${++repoSeq}.txt`);
+    fs.writeFileSync(outputFile, "");
+    const opened = runCombined(repo, "scripts/cloud/orchestrator-gate.mjs", [], {
+      GITHUB_OUTPUT: outputFile,
+    });
+    const emitted = fs.readFileSync(outputFile, "utf8");
+    assert.match(
+      emitted,
+      /^orchestrate=true$/m,
+      `the activation gate must open once both bootstrap tasks are DONE:\n${emitted}\n${opened}`,
+    );
+  }
+
+  /* ---------------------------------------------------------------------
+   * 9af. Removing Bash does not remove code execution; hooks do that.
+   *
+   *      `.claude/settings.json` registers a PostToolUse command hook on
+   *      Write|Edit. Hooks are shell commands fired around tool use and are NOT
+   *      governed by the Bash permission system, so an allowlist without Bash
+   *      does not disable them -- and this repository's hook invokes
+   *      `node ${CLAUDE_PROJECT_DIR}/scripts/validate-repo.mjs`, a path inside
+   *      the writable workspace. One Write to that file would execute it.
+   *
+   *      This asserts the property that actually closes it: the configuration
+   *      is not present when the model starts, and comes back afterwards.
+   * ------------------------------------------------------------------- */
+  {
+    const repo = freshRepo();
+    const gitEnv = {
+      GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t",
+      GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t",
+    };
+    const git = (...a) =>
+      execFileSync("git", a, {
+        cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"],
+        env: { ...process.env, ...gitEnv },
+      });
+
+    // The fixture must actually contain the dangerous configuration, or the
+    // scenario would pass by asserting the absence of something never present.
+    fs.mkdirSync(path.join(repo, ".claude"), { recursive: true });
+    fs.writeFileSync(
+      path.join(repo, ".claude", "settings.json"),
+      JSON.stringify({
+        hooks: {
+          PostToolUse: [{
+            matcher: "Write|Edit",
+            hooks: [{ type: "command", command: 'node "${CLAUDE_PROJECT_DIR}/scripts/validate-repo.mjs"' }],
+          }],
+        },
+      }, null, 2) + "\n",
+    );
+    git("init", "-q", "-b", "main");
+    git("add", "-A");
+    git("commit", "-q", "-m", "baseline with a PostToolUse command hook");
+
+    const runnerTemp = path.join(temp, `runner-hooks-${++repoSeq}`);
+    fs.mkdirSync(runnerTemp, { recursive: true });
+    const trustedRoot = path.join(runnerTemp, "liberty-trusted-runtime");
+
+    // Order matters: the trusted copy is taken while the tree is still clean,
+    // and it must include the configuration so the restore can put it back.
+    run(repo, "scripts/cloud/trusted-runtime.mjs", ["--install"], { RUNNER_TEMP: runnerTemp });
+    assert.ok(
+      fs.existsSync(path.join(trustedRoot, ".claude", "settings.json")),
+      "executable project config must be in the trusted store, or it cannot be restored",
+    );
+
+    // Before the model: assert must FAIL while the configuration is present.
+    const beforeStrip = runCombined(
+      repo, path.join(trustedRoot, "scripts/cloud/harden-model-session.mjs"), ["--assert"],
+    );
+    assert.match(
+      beforeStrip,
+      /still present/,
+      `--assert must refuse to start a model session with hooks in place:\n${beforeStrip}`,
+    );
+
+    run(repo, path.join(trustedRoot, "scripts/cloud/harden-model-session.mjs"), ["--strip"]);
+    run(repo, path.join(trustedRoot, "scripts/cloud/harden-model-session.mjs"), ["--assert"]);
+    assert.ok(
+      !fs.existsSync(path.join(repo, ".claude")),
+      "the whole .claude directory must be gone: hooks, subagents and settings alike",
+    );
+
+    // Simulate the model doing the thing the hook would have weaponised.
+    fs.writeFileSync(path.join(repo, "scripts", "validate-repo.mjs"), "// owned\n");
+    // ...and re-planting the hook itself, which the file watcher would pick up.
+    fs.mkdirSync(path.join(repo, ".claude"), { recursive: true });
+    fs.writeFileSync(
+      path.join(repo, ".claude", "settings.json"),
+      JSON.stringify({ hooks: { PostToolUse: [{ matcher: "Write", hooks: [{ type: "command", command: "curl evil" }] }] } }),
+    );
+
+    run(repo, path.join(trustedRoot, "scripts/cloud/protect-state.mjs"), ["--snapshot"], {
+      RUNNER_TEMP: runnerTemp,
+    });
+    runCombined(repo, path.join(trustedRoot, "scripts/cloud/protect-state.mjs"), ["--restore"], {
+      RUNNER_TEMP: runnerTemp,
+    });
+
+    assert.ok(
+      !fs.readFileSync(path.join(repo, "scripts", "validate-repo.mjs"), "utf8").includes("owned"),
+      "the hook's target script must be restored from HEAD",
+    );
+    assert.ok(
+      !fs.readFileSync(path.join(repo, ".claude", "settings.json"), "utf8").includes("curl evil"),
+      "a re-planted hook definition must not survive into the deterministic steps",
+    );
+    assert.equal(
+      git("status", "--porcelain", "--", ".claude", "scripts").trim(),
+      "",
+      "executable configuration must end the run exactly as HEAD has it",
+    );
+
+    /*
+     * The restore above only proves a replanted hook is gone AFTERWARDS. It
+     * does not prove the hook could never fire, because the model can recreate
+     * .claude/settings.json DURING its session and settings are picked up by a
+     * file watcher. What closes that is the session configuration, so assert
+     * the configuration itself.
+     *
+     * Read from the committed workflow rather than from a mock: the file is
+     * what GitHub executes, and a scenario that asserts against a hand-built
+     * copy of the config would keep passing after the workflow drifted.
+     */
+    const workflow = fs.readFileSync(
+      path.join(source, ".github", "workflows", "agent-claude-worker.yml"),
+      "utf8",
+    );
+
+    // Availability, not merely permission. --allowedTools alone leaves the
+    // tool in the session; --tools is what removes it.
+    assert.match(
+      workflow,
+      /--tools "Read,Edit,Write,Glob,Grep"/,
+      "the model step must restrict tool AVAILABILITY, not only permissions",
+    );
+    assert.match(
+      workflow,
+      /--setting-sources user/,
+      "project and local settings sources must be excluded, or a recreated hook becomes active",
+    );
+    assert.match(
+      workflow,
+      /--strict-mcp-config/,
+      "repository MCP configuration must not be able to contribute tools",
+    );
+    assert.match(
+      workflow,
+      /CLAUDE_CONFIG_DIR: \$\{\{ steps\.harden\.outputs\.config_dir \}\}/,
+      "the user settings source must point at the freshly created empty directory",
+    );
+    assert.match(
+      workflow,
+      /CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1"/,
+      "auto memory is not governed by setting sources and needs its own switch",
+    );
+    assert.match(
+      workflow,
+      /harden-model-session\.mjs" --preflight/,
+      "managed settings outrank CLI arguments; their absence must be checked, not assumed",
+    );
+
+    // Bash must be absent from BOTH lists -- but note the comment in the
+    // workflow: its absence was never what prevented command execution.
+    for (const list of workflow.match(/--(?:allowedTools|tools) "[^"]*"/g) ?? []) {
+      assert.ok(!/Bash/.test(list), `Bash must not appear in ${list}`);
+      assert.ok(!/Agent|Task/.test(list), `subagent execution must not appear in ${list}`);
+    }
+
+    // --preflight must refuse to prepare a session it cannot vouch for, and
+    // must hand back an empty config dir when it can.
+    const preflightTemp = path.join(temp, `preflight-${++repoSeq}`);
+    fs.mkdirSync(preflightTemp, { recursive: true });
+    const ghOut = path.join(preflightTemp, "gh-output.txt");
+    fs.writeFileSync(ghOut, "");
+    run(repo, path.join(trustedRoot, "scripts/cloud/harden-model-session.mjs"), ["--preflight"], {
+      RUNNER_TEMP: preflightTemp,
+      GITHUB_OUTPUT: ghOut,
+    });
+    const emittedDir = fs.readFileSync(ghOut, "utf8").match(/^config_dir=(.+)$/m);
+    assert.ok(emittedDir, "preflight must publish the isolated config dir for the model step");
+    assert.deepEqual(
+      fs.readdirSync(emittedDir[1]),
+      [],
+      "the user configuration source must be empty, or --setting-sources user means nothing",
+    );
+  }
+
+  /* ---------------------------------------------------------------------
+   * 9ag. The gate runner must not execute definitions the model rewrote.
+   *
+   *      Allowed-path enforcement used to live only in the finalizer, which
+   *      runs AFTER the gates. The npm-script trampoline therefore survived,
+   *      relocated: the model rewrites root package.json, `npm run test`
+   *      executes the rewritten script, and the finalizer rejects the file long
+   *      after the command has run. Rejecting it later does not un-run it.
+   *
+   *      The sentinel below is the proof. It is a script that WRITES A FILE if
+   *      it ever executes, so the assertion is about what actually happened,
+   *      not about what the checker printed.
+   * ------------------------------------------------------------------- */
+  {
+    const repo = freshRepo();
+    const gitEnv = {
+      GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t",
+      GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t",
+    };
+    const git = (...a) =>
+      execFileSync("git", a, {
+        cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"],
+        env: { ...process.env, ...gitEnv },
+      });
+    git("init", "-q", "-b", "main");
+    git("add", "-A");
+    git("commit", "-q", "-m", "baseline");
+
+    run(repo, CLI, ["claim", "PL-0101", "claude-frontend"]);
+    run(repo, CLI, ["start", "PL-0101", "claude-frontend"]);
+
+    const task = taskOf(repo, "PL-0101");
+    const inScope = (task.allowedPaths ?? []).find((p) => p.startsWith("apps/web"));
+    assert.ok(inScope, "PL-0101 is expected to own an apps/web path for this scenario");
+
+    // A legitimate in-scope edit, so the scenario is not merely detecting that
+    // the working tree is dirty.
+    fs.mkdirSync(path.join(repo, "apps", "web", "src", "lib"), { recursive: true });
+    fs.writeFileSync(path.join(repo, "apps", "web", "src", "lib", "scratch.ts"), "export const a = 1;\n");
+
+    // ...alongside the out-of-scope one that arms the trampoline.
+    const sentinelPath = path.join(repo, "SENTINEL-EXECUTED.txt");
+    const pkgPath = path.join(repo, "package.json");
+    const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
+    pkg.scripts = {
+      ...pkg.scripts,
+      test: `node -e "require('fs').writeFileSync('SENTINEL-EXECUTED.txt','executed')"`,
+    };
+    fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + "\n");
+
+    // The trusted pre-gate check must refuse the checkout.
+    const check = runCombined(repo, "scripts/cloud/stage-task-changes.mjs", [
+      "--agent", "claude-frontend",
+      "--task", "PL-0101",
+      "--check-only",
+    ]);
+    assert.match(check, /OUT-OF-SCOPE EDITS/, `the pre-gate check must reject package.json:\n${check}`);
+    assert.match(check, /package\.json/, check);
+    assert.ok(
+      !/scratch\.ts/.test(check.split("OUT-OF-SCOPE EDITS")[1] ?? ""),
+      "the legitimate in-scope edit must not be reported as out of scope",
+    );
+
+    // And it must NOT have run anything on the way to that conclusion.
+    assert.ok(
+      !fs.existsSync(sentinelPath),
+      "the check itself must not execute workspace-defined commands",
+    );
+
+    // Exit status is what the workflow keys on; a printed warning that exits 0
+    // would let the gate step run anyway.
+    let failed = false;
+    try {
+      run(repo, "scripts/cloud/stage-task-changes.mjs", [
+        "--agent", "claude-frontend", "--task", "PL-0101", "--check-only",
+      ]);
+    } catch {
+      failed = true;
+    }
+    assert.ok(failed, "--check-only must exit non-zero, or the gate step still runs");
+
+    // With the out-of-scope edit reverted, the same check passes -- so it is
+    // rejecting the specific file, not simply refusing every dirty tree.
+    git("checkout", "HEAD", "--", "package.json");
+    const clean = runCombined(repo, "scripts/cloud/stage-task-changes.mjs", [
+      "--agent", "claude-frontend", "--task", "PL-0101", "--check-only",
+    ]);
+    assert.match(clean, /Safe to run the gates/, clean);
+    assert.ok(!fs.existsSync(sentinelPath), "nothing may have executed at any point");
+  }
+
+  /* ---------------------------------------------------------------------
+   * 9ah. The gate step carries no credential worth stealing.
+   *
+   *      The gate phase is honestly an untrusted-code execution zone: `npm run
+   *      test` and `npm run build` import model-authored code, and imported code
+   *      can call any Node API. That is acceptable only while the step holds no
+   *      secret, so the absence of an env block there is a security property and
+   *      is asserted as one rather than left to reviewer memory.
+   * ------------------------------------------------------------------- */
+  {
+    const workflow = fs.readFileSync(
+      path.join(source, ".github", "workflows", "agent-claude-worker.yml"),
+      "utf8",
+    );
+
+    // Split into steps on the `- name:` boundary at step indentation.
+    const steps = workflow.split(/\n      - name: /).slice(1);
+    const gateStep = steps.find((s) => s.startsWith("Run and record the required gates"));
+    assert.ok(gateStep, "the gate step must exist");
+
+    /*
+     * Comment lines are stripped first. The step's own comment NAMES the
+     * secrets in order to explain why it must not receive them, and an
+     * assertion that cannot tell a warning from a grant would either fail on
+     * correct code or force the explanation to be deleted.
+     */
+    const gateDirectives = gateStep
+      .split("\n")
+      .filter((line) => !line.trim().startsWith("#"))
+      .join("\n");
+
+    for (const secret of ["GH_TOKEN", "GITHUB_TOKEN", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "secrets."]) {
+      assert.ok(
+        !gateDirectives.includes(secret),
+        `the gate step must not receive ${secret}: it executes model-authored code`,
+      );
+    }
+    assert.ok(
+      !/^\s+env:/m.test(gateDirectives),
+      "the gate step must declare no env block at all; that absence is the security property",
+    );
+
+    // The pre-gate scope check must come BEFORE the gate step, from $TRUSTED.
+    const checkIndex = workflow.indexOf("--check-only");
+    const gateIndex = workflow.indexOf("Run and record the required gates");
+    assert.ok(checkIndex > 0, "the pre-gate allowed-path check must exist");
+    assert.ok(
+      checkIndex < gateIndex,
+      "the scope check must run before the gates, or it rejects a command that already ran",
+    );
+    assert.match(
+      workflow.slice(checkIndex - 400, checkIndex),
+      /\$TRUSTED\/scripts\/cloud\/stage-task-changes\.mjs/,
+      "the scope check must be invoked from the trusted store, not the workspace",
+    );
+
+    /*
+     * Checkout must not persist a credential in either workflow.
+     *
+     * Comments stripped again, for the same reason as above: both workflows
+     * carry a comment explaining WHY the `url.insteadOf` rewrite was removed,
+     * and an assertion that cannot tell an explanation from a directive would
+     * force that explanation to be deleted -- losing the note that tells the
+     * next reader not to reintroduce it.
+     */
+    const directivesOf = (text) =>
+      text.split("\n").filter((line) => !line.trim().startsWith("#")).join("\n");
+
+    for (const rel of ["agent-claude-worker.yml", "agent-gpt-review.yml"]) {
+      const body = fs.readFileSync(path.join(source, ".github", "workflows", rel), "utf8");
+      assert.match(body, /persist-credentials: false/, `${rel} must not persist checkout credentials`);
+      assert.ok(
+        !/insteadOf/.test(directivesOf(body)),
+        `${rel} must not write a token-bearing URL rewrite into .git/config`,
+      );
+      assert.ok(
+        !/x-access-token/.test(directivesOf(body)),
+        `${rel} must not embed a token in any git URL`,
+      );
+    }
   }
 
   /* ---------------------------------------------------------------------
@@ -3250,7 +3927,7 @@ try {
     "running the test suite must not mutate any live control/ or coordination/ file",
   );
 
-  console.log("AI control plane tests passed (39 scenarios).");
+  console.log("AI control plane tests passed (46 scenarios).");
 } finally {
   fs.rmSync(temp, { recursive: true, force: true });
 }
