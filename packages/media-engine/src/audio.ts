@@ -35,6 +35,7 @@ export type AudioSelectionReason =
   | "fallback_original_language"
   | "fallback_provider_default"
   | "fallback_first_eligible"
+  | "no_audio_tracks"
   | "no_eligible_tracks";
 
 export interface AudioSelection {
@@ -50,13 +51,22 @@ export interface AudioSelection {
 /**
  * Role preference, most to least appropriate as a default.
  *
+ * `original` outranks `main`, which looks wrong until you notice when role is
+ * consulted at all: only after language has tied. If the viewer's language
+ * matched, every remaining track is in that language and the two are
+ * interchangeable. If NOTHING matched, the contract states that the
+ * original-language track is the correct fallback -- and with `main` ranked
+ * first that outcome was unreachable whenever a main mix existed, which is
+ * nearly always, making `fallback_original_language` dead code the tests never
+ * exercised because they only ever paired `original` against `dub`.
+ *
  * `descriptive` (audio description for blind and low-vision viewers) and
  * `commentary` rank last NOT because they matter less, but because neither
  * should ever be selected by accident. A viewer who wants audio description
  * chooses it deliberately; auto-selecting it for someone who did not ask is a
  * broken experience for both groups.
  */
-const ROLE_ORDER: readonly AudioRole[] = ["main", "original", "dub", "descriptive", "commentary"];
+const ROLE_ORDER: readonly AudioRole[] = ["original", "main", "dub", "descriptive", "commentary"];
 
 function roleRank(role: AudioRole): number {
   const index = ROLE_ORDER.indexOf(role);
@@ -78,9 +88,19 @@ function codecRank(codec: AudioTrack["codec"]): number {
   return index === -1 ? CODEC_ORDER.length : index;
 }
 
-/** "en-GB" -> "en". Case is already normalised by the contract. */
+/**
+ * "en-GB" -> "en".
+ *
+ * Lowercases here rather than trusting the contract to have done it. The
+ * schema's `.transform()` only runs on `.parse()`, and `selectAudioTrack` takes
+ * the TYPE, not parsed output -- so a provider adapter constructing an
+ * AudioTrack literally never invokes the transform, and `z.infer` cannot tell
+ * normalised from raw. This is exported, so an external caller passing "EN-GB"
+ * would otherwise get "EN", which never equals an internally derived "en".
+ */
 export function primarySubtag(language: string): string {
-  return language.split("-")[0] ?? language;
+  const lower = language.toLowerCase();
+  return lower.split("-")[0] ?? lower;
 }
 
 /**
@@ -98,17 +118,33 @@ export function languageMatch(
   const track = trackLanguage.toLowerCase();
   const trackPrimary = primarySubtag(track);
 
-  let bestPrimary: number | null = null;
+  /*
+   * `index` is the GROUP position -- the first preference sharing this track's
+   * primary subtag -- and `exact` is an independent property of the track.
+   *
+   * They must be orthogonal, because compareTracks compares index before exact.
+   * An earlier version returned the exact preference's own index, so the two
+   * fields measured different things and lexicographic comparison between them
+   * was meaningless. With preferences ["en-us", "en-gb"], an "en-gb" track
+   * scored {index:1, exact:true} while an unrequested "en-au" track scored
+   * {index:0, exact:false} -- and index being compared first meant en-AU beat
+   * the exact en-GB the viewer had actually asked for. Generalised: within one
+   * language, an exact match anywhere but the first position could never win.
+   */
+  let index: number | null = null;
+  let exact = false;
+
   for (let i = 0; i < preferred.length; i++) {
-    const want = (preferred[i] ?? "").toLowerCase();
-    if (!want) continue;
-    // Exact wins immediately at the first preference that matches, because the
-    // list is ordered: a later exact match must not beat an earlier one.
-    if (want === track) return { index: i, exact: true };
-    if (bestPrimary === null && primarySubtag(want) === trackPrimary) bestPrimary = i;
+    const want = (preferred[i] ?? "").trim().toLowerCase();
+    if (!want || primarySubtag(want) !== trackPrimary) continue;
+    if (index === null) index = i;
+    if (want === track) {
+      exact = true;
+      break;
+    }
   }
 
-  return bestPrimary === null ? null : { index: bestPrimary, exact: false };
+  return index === null ? null : { index, exact };
 }
 
 function firstRejectionReason(
@@ -167,18 +203,50 @@ function compareTracks(
   const codecDelta = codecRank(a.codec) - codecRank(b.codec);
   if (codecDelta !== 0) return codecDelta;
 
-  // 8. Determinism.
-  return a.id.localeCompare(b.id);
+  /*
+   * 8. Determinism -- by CODE POINT, not localeCompare.
+   *
+   * localeCompare without an explicit locale uses the host's collation, so the
+   * same tracks on a device with Swedish collation can order differently from
+   * one with en-US. "Same input, same output" would then be false across
+   * devices, which is precisely the property this task exists to provide.
+   */
+  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
 }
 
+/**
+ * Why the winner won -- derived from the criterion that ACTUALLY decided it.
+ *
+ * This used to read the winner's own fields and infer a reason from them, which
+ * let it attribute the choice to something that played no part. With
+ * preferences ["fr"] and tracks {de, 8ch, isDefault} versus {it, 2ch}, the
+ * German track wins on CHANNELS at step 5 and step 6 is never reached -- yet
+ * the old code saw `isDefault: true` and reported "used the provider's default
+ * track". A support engineer would go and inspect the manifest's default flag
+ * for a decision the channel count made. A reason trail that names the wrong
+ * cause is worse than none, because it is trusted.
+ *
+ * So the runner-up is compared against the winner criterion by criterion, and
+ * the first one that separates them is the reason. With a single eligible track
+ * nothing was chosen over anything, and the honest answer is first-eligible.
+ */
 function reasonFor(
   selected: AudioTrack,
+  runnerUp: AudioTrack | undefined,
   capabilities: PlaybackCapabilities
 ): AudioSelectionReason {
-  const match = languageMatch(selected.language, capabilities.preferredAudioLanguages ?? []);
+  const preferred = capabilities.preferredAudioLanguages;
+  const match = languageMatch(selected.language, preferred);
   if (match) return match.exact ? "preferred_language_exact" : "preferred_language_primary_subtag";
-  if (selected.role === "original") return "fallback_original_language";
-  if (selected.isDefault) return "fallback_provider_default";
+
+  // No language matched. Which fallback criterion actually broke the tie?
+  if (!runnerUp) return "fallback_first_eligible";
+
+  if (roleRank(selected.role) !== roleRank(runnerUp.role)) {
+    return selected.role === "original" ? "fallback_original_language" : "fallback_first_eligible";
+  }
+  if (selected.channels !== runnerUp.channels) return "fallback_first_eligible";
+  if (selected.isDefault !== runnerUp.isDefault) return "fallback_provider_default";
   return "fallback_first_eligible";
 }
 
@@ -188,6 +256,7 @@ const REASON_TEXT: Record<AudioSelectionReason, string> = {
   fallback_original_language: "no preferred language available; used the original-language track",
   fallback_provider_default: "no preferred language available; used the provider's default track",
   fallback_first_eligible: "no preferred language available; used the highest-ranked eligible track",
+  no_audio_tracks: "the stream offered no audio tracks at all",
   no_eligible_tracks: "no track satisfied the device's codec and channel capabilities"
 };
 
@@ -208,19 +277,32 @@ export function selectAudioTrack(
     else eligible.push(track);
   }
 
+  // Sorted, so the whole result is order-invariant. `ordered` and `selected`
+  // were already deterministic; leaving `rejected` in provider order made the
+  // claim above it false for the AudioSelection as a whole.
+  rejected.sort((a, b) => (a.trackId < b.trackId ? -1 : a.trackId > b.trackId ? 1 : 0));
+
   if (!eligible.length) {
+    /*
+     * "No tracks were offered" and "tracks were offered but none was playable"
+     * are different faults -- a provider/manifest defect versus a device
+     * capability limit -- and reporting the first as the second sends whoever
+     * debugs it to the wrong place. This is the same conflation the header
+     * comment argues against for language fallbacks.
+     */
+    const reason: AudioSelectionReason = tracks.length === 0 ? "no_audio_tracks" : "no_eligible_tracks";
     return {
       selected: null,
-      reason: "no_eligible_tracks",
+      reason,
       ordered: [],
       rejected,
-      explanation: `${REASON_TEXT.no_eligible_tracks} (${rejected.length} track(s) rejected)`
+      explanation: `${REASON_TEXT[reason]} (${rejected.length} track(s) rejected)`
     };
   }
 
   const ordered = [...eligible].sort((a, b) => compareTracks(a, b, capabilities));
   const selected = ordered[0] as AudioTrack;
-  const reason = reasonFor(selected, capabilities);
+  const reason = reasonFor(selected, ordered[1], capabilities);
 
   return {
     selected,

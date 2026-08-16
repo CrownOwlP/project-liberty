@@ -53,6 +53,28 @@ describe("languageMatch", () => {
     // position is what carries.
     expect(languageMatch("en-gb", ["en", "de"])).toEqual({ index: 0, exact: false });
   });
+
+  it("reports the GROUP position, so index and exact stay comparable", () => {
+    // The regression that mattered: index used to be the exact preference's own
+    // position while a subtag match reported the group's, so the two fields
+    // measured different things. compareTracks compares index first, which made
+    // an unrequested variant beat an explicitly requested one.
+    expect(languageMatch("en-gb", ["en-us", "en-gb"])).toEqual({ index: 0, exact: true });
+    expect(languageMatch("en-au", ["en-us", "en-gb"])).toEqual({ index: 0, exact: false });
+  });
+
+  it("takes the FIRST same-language preference, not the last", () => {
+    expect(languageMatch("en-au", ["en-gb", "en-us"])).toEqual({ index: 0, exact: false });
+  });
+
+  it("ignores blank and whitespace-only preference entries", () => {
+    expect(languageMatch("fr", ["", "  ", "fr"])).toEqual({ index: 2, exact: true });
+  });
+
+  it("normalises case on both sides", () => {
+    expect(languageMatch("EN-GB", ["en-gb"])).toEqual({ index: 0, exact: true });
+    expect(primarySubtag("EN-GB")).toBe("en");
+  });
 });
 
 describe("selectAudioTrack eligibility", () => {
@@ -69,6 +91,18 @@ describe("selectAudioTrack eligibility", () => {
       caps({ maxAudioChannels: 2 })
     );
     expect(result.rejected).toEqual([{ trackId: "surround", reason: "channels_exceed_capability" }]);
+  });
+
+  it("accepts a track that exactly meets the channel limit", () => {
+    // Boundary. With `>` mutated to `>=`, a stereo track on a stereo-only
+    // device becomes ineligible -- total playback failure on the most common
+    // device class -- and every other test in this file still passes.
+    const result = selectAudioTrack(
+      [track({ id: "stereo", channels: 2 })],
+      caps({ maxAudioChannels: 2 })
+    );
+    expect(result.selected?.id).toBe("stereo");
+    expect(result.rejected).toEqual([]);
   });
 
   it("treats an absent channel capability as unconstrained, not as stereo", () => {
@@ -106,6 +140,21 @@ describe("selectAudioTrack ordering", () => {
     const result = selectAudioTrack(
       [track({ id: "en-us", language: "en-us" }), track({ id: "en-gb", language: "en-gb" })],
       caps({ preferredAudioLanguages: ["en-gb"] })
+    );
+    expect(result.selected?.id).toBe("en-gb");
+    expect(result.reason).toBe("preferred_language_exact");
+  });
+
+  it("serves the requested variant even when it is not first in the list", () => {
+    /*
+     * The defect this pins: with preferences ["en-us", "en-gb"], the en-GB
+     * track scored {index:1, exact:true} while an unrequested en-AU track
+     * scored {index:0, exact:false}. index is compared first, so en-AU won --
+     * a language the viewer never asked for beating one they explicitly did.
+     */
+    const result = selectAudioTrack(
+      [track({ id: "en-au", language: "en-au" }), track({ id: "en-gb", language: "en-gb" })],
+      caps({ preferredAudioLanguages: ["en-us", "en-gb"] })
     );
     expect(result.selected?.id).toBe("en-gb");
     expect(result.reason).toBe("preferred_language_exact");
@@ -153,6 +202,49 @@ describe("selectAudioTrack ordering", () => {
       caps({ preferredAudioLanguages: ["en"] })
     );
     expect(result.selected?.id).toBe("surround");
+  });
+
+  it("does let the provider default decide once everything above it has tied", () => {
+    // Ids are ordered AGAINST the expected winner, so deleting the isDefault
+    // criterion entirely would change the result. Without that, the previous
+    // test alone left the criterion unverified: the id tiebreak below it
+    // happened to produce the same answer.
+    const result = selectAudioTrack(
+      [track({ id: "aaa", isDefault: false }), track({ id: "zzz", isDefault: true })],
+      caps({ preferredAudioLanguages: ["en"] })
+    );
+    expect(result.selected?.id).toBe("zzz");
+  });
+
+  it("prefers the original-language track over a main mix when nothing matched", () => {
+    // The contract names the original-language track as the correct fallback.
+    // With `main` ranked above `original` that outcome was unreachable whenever
+    // a main mix existed, and no test paired the two roles directly.
+    const result = selectAudioTrack(
+      [track({ id: "en-main", language: "en", role: "main" }), track({ id: "ja-orig", language: "ja", role: "original" })],
+      caps({ preferredAudioLanguages: ["fr"] })
+    );
+    expect(result.selected?.id).toBe("ja-orig");
+    expect(result.reason).toBe("fallback_original_language");
+  });
+
+  it("still prefers a preferred language over the original-language track", () => {
+    // Role must never outrank language, in either direction.
+    const result = selectAudioTrack(
+      [track({ id: "ja-orig", language: "ja", role: "original" }), track({ id: "fr-dub", language: "fr", role: "dub" })],
+      caps({ preferredAudioLanguages: ["fr"] })
+    );
+    expect(result.selected?.id).toBe("fr-dub");
+  });
+
+  it("orders codecs by the documented efficiency sequence", () => {
+    // Pins the middle of the order, not just its endpoints: eac3's position was
+    // asserted only by a comment.
+    const result = selectAudioTrack(
+      [track({ id: "a-ac3", codec: "ac3" }), track({ id: "b-eac3", codec: "eac3" })],
+      caps({ supportedAudioCodecs: ["aac", "ac3", "eac3", "opus"] })
+    );
+    expect(result.selected?.id).toBe("b-eac3");
   });
 
   it("uses codec efficiency as a late tiebreak", () => {
@@ -205,6 +297,33 @@ describe("selectAudioTrack fallback reasons", () => {
     expect(result.reason).toBe("fallback_provider_default");
   });
 
+  it("does not credit the provider default for a decision the channels made", () => {
+    /*
+     * The German track wins on CHANNELS; isDefault is never consulted. Reading
+     * the winner's own fields made this report "used the provider's default
+     * track", sending anyone debugging it to inspect a manifest flag that
+     * played no part. A reason trail that names the wrong cause is worse than
+     * none, because it gets believed.
+     */
+    const result = selectAudioTrack(
+      [
+        track({ id: "de", language: "de", channels: 8, isDefault: true }),
+        track({ id: "it", language: "it", channels: 2 })
+      ],
+      caps({ preferredAudioLanguages: ["fr"] })
+    );
+    expect(result.selected?.id).toBe("de");
+    expect(result.reason).toBe("fallback_first_eligible");
+  });
+
+  it("does not credit a criterion when there was nothing to choose between", () => {
+    const result = selectAudioTrack(
+      [track({ id: "only", language: "de", isDefault: true })],
+      caps({ preferredAudioLanguages: ["fr"] })
+    );
+    expect(result.reason).toBe("fallback_first_eligible");
+  });
+
   it("reports a plain first-eligible fallback when there is no better signal", () => {
     const result = selectAudioTrack(
       [track({ id: "de", language: "de" }), track({ id: "it", language: "it" })],
@@ -239,7 +358,58 @@ describe("selectAudioTrack fallback reasons", () => {
 
   it("says why nothing was selected", () => {
     const result = selectAudioTrack([track({ id: "a", codec: "ac3" })], caps());
+    expect(result.reason).toBe("no_eligible_tracks");
     expect(result.explanation).toContain("codec and channel capabilities");
     expect(result.ordered).toEqual([]);
+  });
+
+  it("distinguishes no tracks offered from no track playable", () => {
+    // A manifest with no audio is a provider defect; a manifest whose tracks
+    // the device cannot decode is a capability limit. Reporting the first as
+    // the second sends whoever debugs it to the wrong system.
+    const result = selectAudioTrack([], caps());
+    expect(result.reason).toBe("no_audio_tracks");
+    expect(result.explanation).toContain("no audio tracks at all");
+  });
+
+  it("names every field a debugger would need in the explanation", () => {
+    const result = selectAudioTrack(
+      [track({ id: "fr-51", language: "fr", role: "dub", channels: 6, codec: "eac3" })],
+      caps({ preferredAudioLanguages: ["fr"] })
+    );
+    for (const part of ["fr-51", "fr", "dub", "6ch", "eac3"]) {
+      expect(result.explanation).toContain(part);
+    }
+  });
+});
+
+describe("selectAudioTrack whole-result determinism", () => {
+  it("orders rejections by id, so the entire result is input-order invariant", () => {
+    // `selected` and `ordered` were already deterministic; `rejected` was left
+    // in provider order, which made the order-invariance claim false for the
+    // AudioSelection as a whole.
+    const tracks = [
+      track({ id: "zzz", codec: "ac3" }),
+      track({ id: "aaa", codec: "ac3" }),
+      track({ id: "mmm", channels: 8 })
+    ];
+    const capabilities = caps({ maxAudioChannels: 2 });
+
+    const forward = selectAudioTrack(tracks, capabilities);
+    const reverse = selectAudioTrack([...tracks].reverse(), capabilities);
+
+    expect(forward.rejected.map((r) => r.trackId)).toEqual(["aaa", "mmm", "zzz"]);
+    expect(reverse.rejected).toEqual(forward.rejected);
+  });
+
+  it("orders ids by code point rather than host collation", () => {
+    // localeCompare without an explicit locale uses the host's collation, so
+    // the same tracks could order differently on different devices -- which is
+    // exactly the property this task exists to provide.
+    const result = selectAudioTrack(
+      [track({ id: "a" }), track({ id: "B" })],
+      caps()
+    );
+    expect(result.ordered.map((t) => t.id)).toEqual(["B", "a"]);
   });
 });
