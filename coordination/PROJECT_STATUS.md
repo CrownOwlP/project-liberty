@@ -1,45 +1,46 @@
 # Project Liberty - Project Status
 
-> Generated 2026-08-15T14:40:21.974Z from the AI control plane.
+> Generated 2026-08-16T23:01:41.328Z from the AI control plane.
 
-**Overall completion:** 3/29 executable tasks (10%)
+**Overall completion:** 4/29 executable tasks (14%)
 
 ## Status summary
 
-- **BACKLOG:** 14
+- **BACKLOG:** 12
 - **READY:** 9
 - **CLAIMED:** 0
-- **IN_PROGRESS:** 1
+- **IN_PROGRESS:** 2
 - **REVIEW:** 0
 - **BLOCKED:** 2
-- **DONE:** 3
+- **DONE:** 4
 - **CANCELED:** 0
 
 ## Milestones / phases
 
 - **M0 — AI Engineering System + Repository Foundation:** IN_PROGRESS, 2/4 (50%)
-- **M1 — Core Discovery Experience:** IN_PROGRESS, 0/3 (0%)
+- **M1 — Core Discovery Experience:** IN_PROGRESS, 1/3 (33%)
 - **M2 — Media Resolution + Provider Foundation:** IN_PROGRESS, 1/6 (17%)
 - **M3 — Identity + Personal State:** NOT_STARTED, 0/4 (0%)
 - **M4 — Playback Vertical Slice:** NOT_STARTED, 0/6 (0%)
 - **M5 — Live + Intelligence Boundaries:** NOT_STARTED, 0/2 (0%)
-- **M6 — Shared-Agent Automation Bridge:** NOT_STARTED, 0/2 (0%)
+- **M6 — Shared-Agent Automation Bridge:** IN_PROGRESS, 0/2 (0%)
 - **EXT — External Licensed Integrations:** BLOCKED, 0/2 (0%), 2 blocked
 
 ## Active work
 
-- **PL-0101** [IN_PROGRESS] Catalog home data contract — owner: claude-frontend
+- **PL-0202** [IN_PROGRESS] Audio selection policy — owner: claude-media
+- **PL-AI-0002** [IN_PROGRESS] GitHub bridge for cross-agent review — owner: claude-lead
 
 ## Dispatch classification
 
 - **READY_AND_EXECUTABLE:** 6
 - **READY_BUT_EXTERNAL:** 3
 - **BLOCKED:** 2
-- **BACKLOG (dependency-gated):** 14
+- **BACKLOG (dependency-gated):** 12
 
 ## Recommended executable wave
 
-- **PL-0003** -> claude-infra (P0/Infra) Environment validation
+No conflict-free executable tasks can be assigned with current agent capacity.
 
 ## Queued for external agents
 
@@ -55,10 +56,10 @@
 ## Agent capacity
 
 - **gpt-architect:** 0/6 active (external lane; not locally executable)
-- **claude-lead:** 0/2 active
-- **claude-frontend:** 1/1 active
+- **claude-lead:** 1/2 active
+- **claude-frontend:** 0/1 active
 - **claude-backend:** 0/1 active
-- **claude-media:** 0/1 active
+- **claude-media:** 1/1 active
 - **claude-test:** 0/1 active
 - **claude-security:** 0/1 active
 - **claude-infra:** 0/1 active

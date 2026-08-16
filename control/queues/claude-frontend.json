@@ -1,19 +1,23 @@
 {
-  "generatedAt": "2026-08-15T15:23:45.811Z",
+  "generatedAt": "2026-08-16T23:01:41.330Z",
   "agent": "claude-frontend",
   "executionAvailable": true,
-  "assigned": [
+  "assigned": [],
+  "review": [],
+  "reservedExternal": [],
+  "recommended": [
     {
-      "id": "PL-0101",
+      "id": "PL-0102",
       "priority": "P0",
       "lane": "Frontend",
-      "status": "IN_PROGRESS",
-      "title": "Catalog home data contract",
-      "dependencies": [],
+      "status": "READY",
+      "title": "Search experience",
+      "dependencies": [
+        "PL-0101"
+      ],
       "allowedPaths": [
-        "apps/web/src/app/**",
-        "apps/web/src/components/**",
-        "apps/web/src/lib/**",
+        "apps/web/src/app/search/**",
+        "apps/web/src/components/search/**",
         "packages/contracts/**"
       ],
       "preferredAgent": "claude-frontend",
@@ -24,14 +28,35 @@
         "unit",
         "build"
       ],
-      "acceptance": "Home route consumes typed catalog response and handles loading, error, and empty states",
-      "owner": "claude-frontend",
-      "gateResults": {},
-      "implementationAgent": "claude-frontend",
-      "updatedAt": "2026-08-15T03:16:27.067Z"
+      "acceptance": "Debounced accessible search with typed results and URL-addressable query",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PL-0103",
+      "priority": "P0",
+      "lane": "Frontend",
+      "status": "READY",
+      "title": "Title details",
+      "dependencies": [
+        "PL-0101"
+      ],
+      "allowedPaths": [
+        "apps/web/src/app/title/**",
+        "apps/web/src/components/title/**",
+        "packages/contracts/**"
+      ],
+      "preferredAgent": "claude-frontend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "lint",
+        "typecheck",
+        "unit",
+        "build"
+      ],
+      "acceptance": "Movie, series, and episode details with play CTA using normalized IDs",
+      "owner": null,
+      "gateResults": {}
     }
-  ],
-  "review": [],
-  "reservedExternal": [],
-  "recommended": []
+  ]
 }

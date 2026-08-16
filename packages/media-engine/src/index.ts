@@ -11,3 +11,5 @@ export {
   LATENCY_CEILING_MS
 } from "./scoring";
 export type { CandidateScore, ScoreComponent, ScoreDimension } from "./scoring";
+export { selectAudioTrack, languageMatch, primarySubtag } from "./audio";
+export type { AudioSelection, AudioSelectionReason, AudioRejectionReason } from "./audio";

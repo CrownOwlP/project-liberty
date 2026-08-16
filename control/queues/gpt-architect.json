@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-15T15:23:45.810Z",
+  "generatedAt": "2026-08-16T23:01:41.329Z",
   "agent": "gpt-architect",
   "executionAvailable": false,
   "assigned": [],
@@ -70,29 +70,6 @@
         "security-review"
       ],
       "acceptance": "ADR selects auth approach and defines protected profile boundary",
-      "owner": null,
-      "gateResults": {}
-    },
-    {
-      "id": "PL-0202",
-      "priority": "P0",
-      "lane": "Media",
-      "status": "READY",
-      "title": "Audio selection policy",
-      "dependencies": [
-        "PL-0201"
-      ],
-      "allowedPaths": [
-        "packages/media-engine/**",
-        "packages/contracts/**"
-      ],
-      "preferredAgent": "claude-media",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "typecheck",
-        "unit"
-      ],
-      "acceptance": "Preferred language, codec, channels, and fallback reasons are deterministic and tested",
       "owner": null,
       "gateResults": {}
     },

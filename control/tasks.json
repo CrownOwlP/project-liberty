@@ -133,7 +133,7 @@
       "id": "PL-0101",
       "priority": "P0",
       "lane": "Frontend",
-      "status": "IN_PROGRESS",
+      "status": "DONE",
       "title": "Catalog home data contract",
       "dependencies": [],
       "allowedPaths": [
@@ -151,16 +151,70 @@
         "build"
       ],
       "acceptance": "Home route consumes typed catalog response and handles loading, error, and empty states",
-      "owner": "claude-frontend",
-      "gateResults": {},
+      "owner": null,
+      "gateResults": {
+        "lint": {
+          "status": "pass",
+          "at": "2026-08-16T22:48:58.934Z",
+          "evidence": "npm run check exit 0 (turbo run lint across 5 packages), Node 22"
+        },
+        "typecheck": {
+          "status": "pass",
+          "at": "2026-08-16T22:49:00.500Z",
+          "evidence": "npm run check exit 0 (turbo run typecheck across 5 packages), Node 22"
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-08-16T22:49:02.022Z",
+          "evidence": "npm run check exit 0 (vitest: contracts, media-engine, web), Node 22"
+        },
+        "build": {
+          "status": "pass",
+          "at": "2026-08-16T22:49:03.573Z",
+          "evidence": "npm run check exit 0 (next build, routes incl /api/v1/catalog/home), Node 22"
+        }
+      },
       "implementationAgent": "claude-frontend",
-      "updatedAt": "2026-08-15T03:16:27.067Z"
+      "updatedAt": "2026-08-16T22:49:08.377Z",
+      "review": {
+        "taskId": "PL-0101",
+        "implementationAgent": "claude-frontend",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "c23199ee584d8d6000a1b21b922691a868ca9ee4",
+        "reviewedBaseSha": null,
+        "reviewedTreeHash": "6dbc5f2ebd94a79a5630305c8a39a929dffb6896e43cdcb06ec5ad9b61105694",
+        "reviewedFileCount": 19,
+        "reviewedFingerprintSource": "git-object",
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-08-16T22:49:06.772Z",
+        "evidence": "GPT independent review of the pushed commit: discriminated union structurally enforces the movie/series/episode runtime-vs-episode-count invariant, both fields remain required, tests cover valid and invalid combinations for all three kinds, formatCatalogMeta consumes the narrowed type. No remaining blocking defect in the PL-0101 surface."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PL-0101",
+          "implementationAgent": "claude-frontend",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "c23199ee584d8d6000a1b21b922691a868ca9ee4",
+          "reviewedBaseSha": null,
+          "reviewedTreeHash": "6dbc5f2ebd94a79a5630305c8a39a929dffb6896e43cdcb06ec5ad9b61105694",
+          "reviewedFileCount": 19,
+          "reviewedFingerprintSource": "git-object",
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-08-16T22:49:06.772Z",
+          "evidence": "GPT independent review of the pushed commit: discriminated union structurally enforces the movie/series/episode runtime-vs-episode-count invariant, both fields remain required, tests cover valid and invalid combinations for all three kinds, formatCatalogMeta consumes the narrowed type. No remaining blocking defect in the PL-0101 surface."
+        }
+      ],
+      "completedAt": "2026-08-16T22:49:08.378Z"
     },
     {
       "id": "PL-0102",
       "priority": "P0",
       "lane": "Frontend",
-      "status": "BACKLOG",
+      "status": "READY",
       "title": "Search experience",
       "dependencies": [
         "PL-0101"
@@ -186,7 +240,7 @@
       "id": "PL-0103",
       "priority": "P0",
       "lane": "Frontend",
-      "status": "BACKLOG",
+      "status": "READY",
       "title": "Title details",
       "dependencies": [
         "PL-0101"
@@ -282,7 +336,7 @@
       "id": "PL-0202",
       "priority": "P0",
       "lane": "Media",
-      "status": "READY",
+      "status": "IN_PROGRESS",
       "title": "Audio selection policy",
       "dependencies": [
         "PL-0201"
@@ -298,8 +352,22 @@
         "unit"
       ],
       "acceptance": "Preferred language, codec, channels, and fallback reasons are deterministic and tested",
-      "owner": null,
-      "gateResults": {}
+      "owner": "claude-media",
+      "gateResults": {
+        "typecheck": {
+          "status": "pass",
+          "at": "2026-08-16T23:01:39.725Z",
+          "evidence": "npm run check exit 0 (turbo run typecheck across 5 packages), Node 22"
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-08-16T23:01:41.314Z",
+          "evidence": "npm run check exit 0 (vitest: media-engine audio.test.ts and contracts), Node 22"
+        }
+      },
+      "implementationAgent": "claude-media",
+      "updatedAt": "2026-08-16T22:49:12.957Z",
+      "implementationBaseSha": "8a6dec901569c1b2ada8e1b5da351e370125cb81"
     },
     {
       "id": "PL-0203",
