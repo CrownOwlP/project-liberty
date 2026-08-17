@@ -25,12 +25,11 @@
  *      Every other scheme -- `magnet:`, `file:`, `data:`, `ftp:`, `ws:` -- is
  *      rejected here as well as at the mapping layer.
  *
- *   2. Loopback is allowed only when the SOURCE opted in. "Explicit loopback"
- *      means both that the host is a literal loopback address (never a DNS name
- *      we hope resolves to one) and that the operator declared this source as a
- *      local one. A source configured against a public addon has no business
- *      reaching our own machine, and without the opt-in a compromised public
- *      addon could redirect us onto our own admin ports.
+ *   2. Loopback requires TWO independent permissions, never either one alone:
+ *      the SOURCE opted in, AND this Project Liberty instance is running as a
+ *      local/development deployment. The host must also be a literal loopback
+ *      address, never a DNS name we hope resolves to one. See the check itself
+ *      for why the source's opt-in is not sufficient on its own.
  *
  *   3. Private, link-local, CGNAT, multicast and reserved ranges are rejected
  *      unconditionally -- including when loopback is permitted. Allowing a local
@@ -43,13 +42,22 @@
  *
  * KNOWN RESIDUAL RISK, deliberately not solved here: this validates the host
  * LITERAL, not the address the host resolves to. A public name with an A record
- * of 10.0.0.5, or a name that answers differently on the second lookup (DNS
- * rebinding), still passes. Closing that requires resolving the name ourselves
- * and pinning the connection to the resolved address, which the WHATWG `fetch`
- * API gives no hook for -- it needs a custom dispatcher/agent. That is a
- * follow-up for the security hardening pass (PL-0701), and it is recorded here
- * rather than left as an unstated assumption, because the check below looks
- * complete enough to be mistaken for one.
+ * of 10.0.0.5, or a name that answers differently between the check and the
+ * connect (DNS rebinding), still passes. Closing that requires resolving the
+ * name ourselves and pinning the connection to the resolved address, which the
+ * WHATWG `fetch` API gives no hook for -- it needs a custom dispatcher/agent.
+ *
+ * Documenting the limitation rather than closing it is acceptable ONLY while
+ * this is what it is today: a controlled adapter pointed at a small set of
+ * operator-fixed endpoints, where the set of names ever passed to `fetch` is
+ * known at configuration time and can be reviewed by a human. The moment this
+ * becomes the general server-side client for arbitrary operator- or
+ * user-configured addons, host-string checks are no longer a control at all --
+ * an attacker chooses the name, so checking the name proves nothing -- and
+ * resolve-and-pin has to land BEFORE that ships to production, not as a later
+ * hardening pass. It is recorded here rather than left as an unstated
+ * assumption, because the check below looks complete enough to be mistaken for
+ * one. Tracked as PL-0701.
  */
 
 export type HostClass = "public" | "loopback" | "private" | "unparseable";
@@ -67,15 +75,29 @@ export type UrlRejectionReason =
   | "url_host_unparseable"
   | "url_plaintext_http_not_loopback"
   | "url_loopback_not_permitted"
+  | "url_loopback_not_local_deployment"
   | "url_private_address";
 
 export interface UrlPolicyOptions {
   /**
-   * Whether this source is allowed to address the machine Liberty runs on.
+   * Whether this SOURCE is allowed to address the machine Liberty runs on.
    * Defaults to false everywhere it is derived from configuration: a source that
-   * did not say it was local is not local.
+   * did not say it was local is not local. Necessary for loopback; not
+   * sufficient -- see `localDeployment`.
    */
   readonly allowLoopback: boolean;
+  /**
+   * Whether this INSTANCE of Project Liberty is a local or development
+   * deployment rather than a hosted one.
+   *
+   * A property of the running deployment, not of a source, and deliberately not
+   * readable from source configuration: if the config file could set it, it
+   * would be the same switch as `allowLoopback` wearing a second name. It is
+   * threaded in from the process boundary, and defaults to false everywhere it
+   * is not stated, so an instance that never says it is local is treated as
+   * hosted.
+   */
+  readonly localDeployment: boolean;
 }
 
 export type UrlCheckResult =
@@ -305,11 +327,43 @@ export function checkUrl(raw: string, options: UrlPolicyOptions, base?: string):
   }
 
   if (hostClass === "loopback") {
+    /*
+     * TWO conditions, both required, neither sufficient.
+     *
+     * `allowLoopback` alone used to open loopback, and that is wrong in the one
+     * deployment that matters most. On a hosted Project Liberty instance,
+     * 127.0.0.1 is the Liberty SERVER -- its admin endpoints, its metrics port,
+     * its database bound to localhost, its sidecars. A source config saying "I
+     * am a local addon" is a claim about the operator's laptop; honouring it in
+     * a hosted process turns this package into a general request-forgery
+     * capability aimed at ourselves, reachable by whoever can add or edit a
+     * source (and, through redirects, by any addon that source talks to). The
+     * private-address rules above deliberately do not save us here, because
+     * loopback is exactly the class they exempt.
+     *
+     * So the deployment must ALSO say it is local. The two facts have different
+     * owners -- a source config file and the process environment -- and
+     * requiring both means neither owner can grant loopback by themselves.
+     *
+     * The source's opt-in is checked first so the reasons stay distinct and each
+     * one names the thing to fix: "this source is not declared local" is a
+     * config error, "this instance is not a local deployment" is a statement
+     * that no config change can satisfy in production.
+     */
     if (!options.allowLoopback) {
       return {
         ok: false,
         reason: "url_loopback_not_permitted",
         detail: `host ${url.hostname} is loopback and this source is not configured as local`
+      };
+    }
+    if (!options.localDeployment) {
+      return {
+        ok: false,
+        reason: "url_loopback_not_local_deployment",
+        detail:
+          `host ${url.hostname} is loopback and this instance is not a local deployment; ` +
+          "a source opt-in alone never makes this machine reachable"
       };
     }
     return { ok: true, url, hostClass };

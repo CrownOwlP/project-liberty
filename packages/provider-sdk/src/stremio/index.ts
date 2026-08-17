@@ -31,10 +31,18 @@ export {
 } from "./client";
 export type { ResolutionReason, StremioProvider, StremioProviderOptions, StremioResolution } from "./client";
 
-export { defineStremioSource, defineStremioSources, MIN_RIGHTS_BASIS_LENGTH } from "./source";
+export {
+  defineStremioSource,
+  defineStremioSources,
+  describeRightsBasis,
+  RIGHTS_BASIS_FOR_RIGHTS
+} from "./source";
 export type {
   AuthorizedStremioSource,
   DefineStremioSourceResult,
+  DeploymentContext,
+  RightsBasis,
+  RightsBasisKind,
   SourceRejectionReason,
   StremioSourceInput
 } from "./source";
@@ -44,21 +52,22 @@ export {
   mapStremioStream,
   mapStremioStreams,
   observedHealthScore,
+  observeStreamMedia,
+  resolveStreamMedia,
   stableStreamKey,
-  streamLabel,
-  UNKNOWN_AUDIO_CODEC,
-  UNKNOWN_BITRATE_KBPS,
-  UNKNOWN_HEIGHT,
-  UNKNOWN_VIDEO_CODEC
+  streamLabel
 } from "./mapping";
 export type {
+  KnownMedia,
   MappedStream,
+  MediaResolutionResult,
+  ObservedMedia,
   RejectedStream,
   StreamMappingBatch,
   StreamMappingContext,
   StreamMappingResult,
   StreamRejectionReason,
-  UnknownField
+  UnknownMediaReason
 } from "./mapping";
 
 export {

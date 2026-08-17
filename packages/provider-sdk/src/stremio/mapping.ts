@@ -17,7 +17,7 @@ import { checkUrl, truncate, type UrlRejectionReason } from "./url-policy";
  * without a network or a fake timer. This is the same separation media-engine
  * draws between `scoreCandidate` and the request that produced the candidates.
  *
- * Two things this file refuses to do, and why:
+ * Three things this file refuses to do, and why:
  *
  *   1. It never resolves an indirect source. `infoHash`, `sources` (trackers and
  *      DHT hints), `magnet:` URLs, YouTube ids and `externalUrl` are all
@@ -34,7 +34,21 @@ import { checkUrl, truncate, type UrlRejectionReason } from "./url-policy";
  *      it is kept because this function is exported and pure, so it will
  *      eventually be called by something that did not come through the
  *      constructor.
+ *
+ *   3. It never invents the media facts the contract requires. Codec, resolution
+ *      and bitrate are refused with a named reason when the protocol does not
+ *      state them, exactly like a torrent is refused -- see `resolveStreamMedia`.
  */
+
+/**
+ * The contract fields the Stremio protocol does not state, each naming the fact
+ * a stream was refused for lacking. See `resolveStreamMedia`.
+ */
+export type UnknownMediaReason =
+  | "unknown_video_codec"
+  | "unknown_audio_codec"
+  | "unknown_resolution"
+  | "unknown_bitrate";
 
 export type StreamRejectionReason =
   | "rights_not_playable"
@@ -47,10 +61,8 @@ export type StreamRejectionReason =
   | "stream_not_web_ready"
   | "duplicate_stream_url"
   | "candidate_failed_contract"
+  | UnknownMediaReason
   | UrlRejectionReason;
-
-/** Contract fields the Stremio protocol simply does not carry a value for. */
-export type UnknownField = "height" | "bitrateKbps" | "videoCodec" | "audioCodec";
 
 export interface StreamMappingContext {
   /** Becomes `providerId`, and namespaces the candidate id. */
@@ -58,6 +70,12 @@ export interface StreamMappingContext {
   /** The operator's declared rights. Copied onto the candidate unchanged. */
   readonly rights: ContentRights;
   readonly allowLoopback: boolean;
+  /**
+   * Whether this instance is a local/development deployment. Required alongside
+   * `allowLoopback` before any loopback URL is reachable, and threaded here from
+   * the authorized source rather than re-derived. See url-policy.ts.
+   */
+  readonly localDeployment: boolean;
   readonly acceptNotWebReady: boolean;
   /** Measured round trip of the request that produced this stream, in ms. */
   readonly observedLatencyMs: number;
@@ -69,14 +87,6 @@ export interface MappedStream {
   readonly candidate: StreamCandidate;
   /** The validated, directly playable URL the candidate refers to. */
   readonly url: string;
-  /**
-   * Which of the candidate's fields are placeholders rather than facts.
-   *
-   * Published rather than buried, because a downstream reader comparing a
-   * Stremio candidate against one from a provider that reports real values needs
-   * to know that this candidate's `height` is a floor and not a measurement.
-   */
-  readonly unknownFields: readonly UnknownField[];
   /** The addon's own `notWebReady` flag, preserved for the reason trail. */
   readonly notWebReady: boolean;
   /** The addon's display text, for logs. Never parsed for meaning. */
@@ -88,81 +98,140 @@ export type StreamMappingResult =
   | { readonly ok: false; readonly reason: StreamRejectionReason; readonly detail: string };
 
 /**
- * Placeholder height for a stream whose resolution the protocol does not state.
+ * What the addon actually told us about the media itself.
  *
- * The Stremio protocol has no resolution field. Real addons put "1080p" in the
- * free-text `name`/`title`, and parsing it was rejected on purpose: that string
- * is authored by the same party whose stream is being ranked, media-engine
- * rewards `height` with the single largest weight in its score model, and a
- * release-name parser would therefore let any addon promote its own streams by
- * renaming them. Advertising is not measurement.
- *
- * 480 is the SD floor, so an unknown-resolution stream ranks BELOW every stream
- * whose resolution is actually known, and never above one. The cost of being
- * wrong in this direction is that a genuinely-1080p stream is under-ranked,
- * which is a quality regression; the cost of being wrong in the other direction
- * is that a 360p stream outranks a real 1080p one and the viewer watches the
- * worse copy, believing the platform chose it. Under-ranking is recoverable.
- *
- * The honest long-term fix is probing the delivered manifest (HLS/DASH variant
- * lists state their resolutions) and a contract that can express "unknown".
- * Both are follow-ups; until then `unknownFields` says which numbers are real.
+ * Every field is optional because the Stremio protocol carries none of them, and
+ * an absent field here means ABSENT -- not "assume the common case". That
+ * distinction is the whole point of this type existing rather than the mapper
+ * filling the contract in with defaults.
  */
-export const UNKNOWN_HEIGHT = 480;
+export interface ObservedMedia {
+  readonly videoCodec?: StreamCandidate["videoCodec"] | undefined;
+  readonly audioCodec?: StreamCandidate["audioCodec"] | undefined;
+  readonly height?: number | undefined;
+  readonly bitrateKbps?: number | undefined;
+}
 
 /**
- * Bitrate target coefficient, in kbps per line of vertical resolution.
+ * Everything the protocol lets us STATE about the media. Today: nothing.
  *
- * DUPLICATED from `@liberty/media-engine`'s `BITRATE_KBPS_PER_LINE`, and
- * deliberately not imported: provider-sdk must not depend on the playback engine
- * (adapters sit below policy, and the dependency would invert the layering that
- * docs/ARCHITECTURE.md draws). The right home for a constant both layers need is
- * `@liberty/contracts`; that package is owned by another task right now, so this
- * is a knowing duplication with a note rather than a silent one. If the engine's
- * value changes and this one does not, the only consequence is that the
- * placeholder pair below stops being neutral -- see `UNKNOWN_BITRATE_KBPS`.
+ * Separated from the refusal below so that the mapper's decision is driven by
+ * what is known rather than by a constant, and so the day a probe can genuinely
+ * answer one of these -- reading an HLS variant list from the delivered
+ * manifest, a contract that carries container metadata -- the change is to this
+ * function and the other three keep failing closed on their own.
  */
-const BITRATE_KBPS_PER_LINE = 7.5;
+export function observeStreamMedia(stream: StremioStream): ObservedMedia {
+  /*
+   * The protocol has no codec, resolution or bitrate field. What it does have is
+   * free-text `name`/`title` (where real addons write "1080p H.264") and
+   * `behaviorHints.videoSize`, and neither is usable:
+   *
+   *   - the title is authored by the same party whose stream is being ranked, so
+   *     reading quality out of it lets any addon promote its own streams by
+   *     renaming them. Advertising is not measurement.
+   *   - `videoSize` is a file size in bytes. A bitrate needs a duration, which
+   *     no field carries, so the one number present would still have to be
+   *     combined with an invented one.
+   */
+  void stream;
+  return {};
+}
 
 /**
- * Placeholder bitrate, chosen to be CONSISTENT with `UNKNOWN_HEIGHT`.
+ * The contract fields that must be FACTS, checked in a fixed order.
  *
- * media-engine scores bitrate as a distance from `height * 7.5`, penalising
- * both under- and over-provisioning. Any bitrate picked independently of the
- * height placeholder would therefore add a second, meaningless penalty (or a
- * meaningless bonus) on top of the resolution one -- the candidate would be
- * marked down for a mismatch between two numbers we invented.
+ * These were placeholders: height 480, bitrate 3600, codecs h264/aac. The pair
+ * of numbers was chosen to be neutral inside media-engine's current score model,
+ * which was true and beside the point -- a neutral lie is still recorded on the
+ * candidate as a fact. Downstream code could no longer tell "480p at 3.6 Mbps"
+ * from "we have no idea", and any future policy reading `height` outside that
+ * one weighted formula -- a data-saver mode, a per-device resolution cap, an
+ * analytics rollup of what viewers actually receive -- would have consumed
+ * fabricated metadata without any way of noticing.
  *
- * Pairing them so the distance is zero keeps the cost of not knowing the
- * resolution in exactly one place: the `resolution` dimension, where it belongs.
+ * The codec defaults were worse than merely wrong. h264/aac is not a neutral
+ * guess; it is the most widely supported pair in existence, so claiming it made
+ * a stream pass media-engine's capability eligibility PRECISELY BECAUSE we
+ * supplied values every device accepts. That converts "we do not know whether
+ * this plays here" into "we know this plays here", which is the one direction a
+ * compatibility check must never be nudged.
+ *
+ * So an unknown field is a refusal with a name, like a torrent or a magnet link:
+ * the stream produces no candidate and the reason says which fact was missing.
+ *
+ * DELIBERATE FOLLOW-UP, and the only acceptable way to get these candidates
+ * back: `StreamCandidate` requires all four fields, so today a Stremio stream
+ * cannot be represented at all and every one of them is refused. If losing them
+ * turns out to be materially harmful, the fix is to change the CONTRACT so it
+ * can represent unknown metadata, and to teach `@liberty/media-engine` what
+ * unknown means when it ranks and when it checks device capability -- probably
+ * "rank last, never claim compatible". The fix is NOT to re-derive plausible
+ * values here. Unknown must arrive downstream labelled as unknown; it must never
+ * be smuggled through the system wearing the shape of something we measured.
+ * `@liberty/contracts` and `@liberty/media-engine` belong to other tasks, which
+ * is why this adapter fails closed instead of editing them.
  */
-export const UNKNOWN_BITRATE_KBPS = UNKNOWN_HEIGHT * BITRATE_KBPS_PER_LINE;
+const UNKNOWN_MEDIA_DETAIL: Record<UnknownMediaReason, string> = {
+  unknown_video_codec:
+    "the addon states no video codec; guessing one would decide device compatibility on our " +
+    "behalf rather than report it",
+  unknown_audio_codec:
+    "the addon states no audio codec; guessing one would decide device compatibility on our " +
+    "behalf rather than report it",
+  unknown_resolution:
+    "the addon states no resolution, and the resolution written in its own title text is a " +
+    "claim by the party being ranked, not a measurement",
+  unknown_bitrate: "the addon states no bitrate, and a file size without a duration is not one"
+};
+
+/** Every media fact the contract requires, all of them observed. */
+export interface KnownMedia {
+  readonly videoCodec: StreamCandidate["videoCodec"];
+  readonly audioCodec: StreamCandidate["audioCodec"];
+  readonly height: number;
+  readonly bitrateKbps: number;
+}
+
+export type MediaResolutionResult =
+  | { readonly ok: true; readonly media: KnownMedia }
+  | { readonly ok: false; readonly reason: UnknownMediaReason; readonly detail: string };
 
 /**
- * Codec placeholders.
+ * Turns observations into the facts the contract needs, or names the first one
+ * we do not have.
  *
- * The protocol states no codec, and the contract's enums have no "unknown"
- * member, so SOMETHING has to be written down. h264/aac is the baseline pair
- * that every device profile in this repo supports.
- *
- * Note which way this errs, because it is not the cautious direction and should
- * not be mistaken for it: claiming h264 for a stream that is really HEVC makes
- * media-engine admit a candidate the device may fail to decode. That failure is
- * visible and recoverable -- the player fails over to the next candidate
- * (PL-0502) -- whereas claiming HEVC for everything would hide every stream from
- * every h264-only device, permanently and silently. A rights value is defaulted
- * conservatively because a wrong one is unrecoverable; a codec value is
- * defaulted usefully because a wrong one is not. `unknownFields` records that
- * neither value was observed.
+ * One reason rather than four, for the same purpose as media-engine's
+ * `firstRejectionReason`: a stream reports the single most important thing wrong
+ * with it. The order is the order in which the missing values matter -- codecs
+ * decide whether the stream can play at all, resolution and bitrate only decide
+ * how well.
  */
-export const UNKNOWN_VIDEO_CODEC: StreamCandidate["videoCodec"] = "h264";
-export const UNKNOWN_AUDIO_CODEC: StreamCandidate["audioCodec"] = "aac";
+export function resolveStreamMedia(observed: ObservedMedia): MediaResolutionResult {
+  const { videoCodec, audioCodec, height, bitrateKbps } = observed;
+  const unknown = (reason: UnknownMediaReason): MediaResolutionResult => ({
+    ok: false,
+    reason,
+    detail: UNKNOWN_MEDIA_DETAIL[reason]
+  });
+
+  if (videoCodec === undefined) return unknown("unknown_video_codec");
+  if (audioCodec === undefined) return unknown("unknown_audio_codec");
+  if (height === undefined) return unknown("unknown_resolution");
+  if (bitrateKbps === undefined) return unknown("unknown_bitrate");
+
+  return { ok: true, media: { videoCodec, audioCodec, height, bitrateKbps } };
+}
 
 /** Decimal places health is stored at, matching media-engine's score precision. */
 const HEALTH_PRECISION = 4;
 
 /**
  * Health from observed request outcomes, never from a hopeful constant.
+ *
+ * PROVISIONAL. This is an initial policy, not a validated one: it was chosen
+ * because it has the right shape and the right failure behaviour, and it has not
+ * been calibrated against how Stremio addons actually behave over time.
  *
  * `(successes + 1) / (successes + failures + 2)` is Laplace's rule of
  * succession. Three properties matter here:
@@ -178,6 +247,19 @@ const HEALTH_PRECISION = 4;
  * The alternative -- a fixed `healthScore: 0.9` on every candidate -- is the
  * flattering default this adapter is not allowed to invent, and it would make
  * media-engine's health dimension a constant, i.e. dead weight in the ranking.
+ *
+ * SAMPLE SCOPE, which the number does not carry and a reader should not assume:
+ * the counters are held in one `createStremioProvider` instance, in memory. They
+ * cover only the requests THAT provider object has made to THAT source since it
+ * was constructed -- manifest fetches, stream lookups and health probes, counted
+ * alike and weighted alike. So the score is per-process and unshared across a
+ * multi-instance deployment, it resets to 0.5 on restart or reconfiguration, and
+ * it has no decay: an outage from six hours ago counts exactly as much as the
+ * request that just failed. A source that has been broken all week and recovered
+ * an hour ago still scores as damaged. Fixing that means a windowed or
+ * time-decayed estimator over shared, persisted observations, which is a
+ * different piece of work with its own storage; until then this ranks sources
+ * within one process's own experience and nothing more.
  */
 export function observedHealthScore(successes: number, failures: number): number {
   const s = Math.max(0, Math.floor(successes));
@@ -319,7 +401,10 @@ export function mapStremioStream(
     );
   }
 
-  const checked = checkUrl(stream.url.trim(), { allowLoopback: context.allowLoopback });
+  const checked = checkUrl(stream.url.trim(), {
+    allowLoopback: context.allowLoopback,
+    localDeployment: context.localDeployment
+  });
   if (!checked.ok) return reject(checked.reason, checked.detail);
 
   const notWebReady = stream.behaviorHints?.notWebReady === true;
@@ -330,6 +415,14 @@ export function mapStremioStream(
     );
   }
 
+  /*
+   * Last, because it is the least fundamental refusal: everything above says
+   * this is not a thing we may play or may fetch, while this says we cannot
+   * describe it honestly. See `UNKNOWN_MEDIA_DETAIL`.
+   */
+  const media = resolveStreamMedia(observeStreamMedia(stream));
+  if (!media.ok) return reject(media.reason, media.detail);
+
   const url = checked.url.toString();
   const candidate: StreamCandidate = {
     id: `${context.sourceId}:${stableStreamKey(url)}`,
@@ -337,12 +430,13 @@ export function mapStremioStream(
     // The declared value, copied. Not derived, not defaulted, not corrected.
     rights: context.rights,
     protocol: deriveProtocol(checked.url),
-    height: UNKNOWN_HEIGHT,
-    bitrateKbps: UNKNOWN_BITRATE_KBPS,
+    // Observed, or this stream was refused above. Never defaulted.
+    height: media.media.height,
+    bitrateKbps: media.media.bitrateKbps,
     estimatedLatencyMs: Math.max(0, Math.round(context.observedLatencyMs)),
     healthScore: context.healthScore,
-    videoCodec: UNKNOWN_VIDEO_CODEC,
-    audioCodec: UNKNOWN_AUDIO_CODEC
+    videoCodec: media.media.videoCodec,
+    audioCodec: media.media.audioCodec
   };
 
   /*
@@ -367,7 +461,6 @@ export function mapStremioStream(
     mapped: {
       candidate,
       url,
-      unknownFields: ["height", "bitrateKbps", "videoCodec", "audioCodec"],
       notWebReady,
       label: streamLabel(stream)
     }

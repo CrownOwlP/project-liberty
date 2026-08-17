@@ -48,6 +48,8 @@ export interface HttpOptions {
   readonly maxResponseBytes: number;
   readonly maxRedirects: number;
   readonly allowLoopback: boolean;
+  /** See url-policy.ts: loopback needs this AND `allowLoopback`, never either. */
+  readonly localDeployment: boolean;
   readonly userAgent: string;
   readonly now: () => number;
 }
@@ -155,7 +157,10 @@ export async function fetchJson(rawUrl: string, options: HttpOptions): Promise<H
     let target = rawUrl;
 
     for (let hop = 0; hop <= options.maxRedirects; hop++) {
-      const checked = checkUrl(target, { allowLoopback: options.allowLoopback });
+      const checked = checkUrl(target, {
+        allowLoopback: options.allowLoopback,
+        localDeployment: options.localDeployment
+      });
       if (!checked.ok) {
         return fail(
           checked.reason,
@@ -195,7 +200,11 @@ export async function fetchJson(rawUrl: string, options: HttpOptions): Promise<H
         }
         // Resolved against the URL that issued it, so a relative redirect cannot
         // be misread as a bare hostname, then re-validated on the next pass.
-        const resolved = checkUrl(location, { allowLoopback: options.allowLoopback }, current);
+        const resolved = checkUrl(
+          location,
+          { allowLoopback: options.allowLoopback, localDeployment: options.localDeployment },
+          current
+        );
         if (!resolved.ok) {
           return fail(resolved.reason, `redirect target rejected: ${resolved.detail}`);
         }

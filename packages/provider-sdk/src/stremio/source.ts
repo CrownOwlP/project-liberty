@@ -35,6 +35,60 @@ import { checkUrl, truncate, type UrlRejectionReason } from "./url-policy";
  */
 
 /**
+ * How the declaration above is EVIDENCED.
+ *
+ * This was free text with a minimum length, which enforced nothing: an
+ * eight-character string proves that somebody typed eight characters, and
+ * "abcdefgh" passed while a genuine one-word collection id would not have. The
+ * runtime demand for evidence was right; measuring evidence by length was not.
+ *
+ * So the basis is structured, and the structure is what is checked:
+ *
+ *   - `rights` restates the entitlement being evidenced;
+ *   - `basis` names the KIND of authorization -- a contract with the provider,
+ *     the operator's own library, or a public-domain determination;
+ *   - `reference` identifies the specific instance of that kind: the contract
+ *     id, the collection id, or the documented determination.
+ *
+ * `reference` has no length rule on purpose. A short collection id is a real
+ * reference and a long sentence of prose is not necessarily one, so length was
+ * never the property worth testing; what is checked is that the reference exists
+ * and that the classification around it is internally consistent.
+ */
+export type RightsBasisKind = "provider-contract" | "user-library" | "public-domain";
+
+export interface RightsBasis {
+  /** Must equal the source's declared `rights`. See `RIGHTS_BASIS_FOR_RIGHTS`. */
+  readonly rights: ContentRights;
+  readonly basis: RightsBasisKind;
+  /** Contract id, collection id, or documented public-domain source. */
+  readonly reference: string;
+}
+
+/**
+ * The one basis that can support each rights class.
+ *
+ * Each rights value is a claim about WHY we may serve something, and each basis
+ * names WHERE that permission comes from; there is exactly one origin per claim.
+ * A source declaring `licensed` with a `public-domain` basis is not a stricter
+ * or a looser source, it is a source whose config contradicts itself, and the
+ * two halves imply different obligations -- a licence has terms and an expiry, a
+ * public-domain determination has neither. Refusing the contradiction is the
+ * only reading that does not silently pick one half to believe.
+ *
+ * The redundancy between `rights` and `basis` is the point. They are stated
+ * independently by the operator and must agree, so the common config accident --
+ * copying an entry for a new source and updating one field but not the other --
+ * fails closed instead of producing candidates under rights nobody declared for
+ * them.
+ */
+export const RIGHTS_BASIS_FOR_RIGHTS: Readonly<Record<ContentRights, RightsBasisKind>> = {
+  licensed: "provider-contract",
+  owned: "user-library",
+  "public-domain": "public-domain"
+};
+
+/**
  * Compile-time proof that a source passed the rights gate.
  *
  * NOT exported, on purpose: an exported brand is a forgeable brand. The only way
@@ -53,9 +107,8 @@ export interface StremioSourceInput {
    */
   readonly rights: ContentRights;
   /**
-   * Free text recording WHY the declaration above is true -- the licence, the
-   * public-domain determination, or the fact that this is the operator's own
-   * library. Required, and required to be non-trivial.
+   * The auditable evidence for the declaration above. Required, and required to
+   * classify itself consistently with `rights`.
    *
    * docs/CONTENT_RIGHTS.md asks for a documented rights basis on every provider
    * integration. Asking for it in a pull-request checklist means it exists for
@@ -64,12 +117,13 @@ export interface StremioSourceInput {
    * carried into the reason trail so that "why are we allowed to serve this"
    * is answerable from a playback decision rather than from repository history.
    */
-  readonly rightsBasis: string;
+  readonly rightsBasis: RightsBasis;
   readonly displayName?: string | undefined;
   /**
-   * Declares this source as an addon running on THIS machine, permitting
-   * loopback URLs (and plaintext http to them). Defaults to false: a source that
-   * did not say it was local is not local. See url-policy.ts.
+   * Declares this source as an addon running on THIS machine. NECESSARY for
+   * loopback URLs (and plaintext http to them), and never sufficient: the
+   * deployment must independently be a local one. Defaults to false -- a source
+   * that did not say it was local is not local. See url-policy.ts.
    */
   readonly allowLoopback?: boolean | undefined;
   /**
@@ -91,11 +145,22 @@ export interface AuthorizedStremioSource {
   readonly id: string;
   readonly displayName: string;
   readonly rights: ContentRights;
-  readonly rightsBasis: string;
+  readonly rightsBasis: RightsBasis;
   readonly manifestUrl: string;
   /** `manifestUrl` with the trailing `/manifest.json` removed. */
   readonly baseUrl: string;
   readonly allowLoopback: boolean;
+  /**
+   * The deployment mode this source was authorized UNDER, recorded so the
+   * adapter built from it cannot be handed a different answer later.
+   *
+   * It is a property of the instance rather than of the source, and it is
+   * carried here for the same reason `rights` is: the branded object is the
+   * record of the conditions under which this source passed its gate, and
+   * everything downstream reads those conditions from it rather than re-deriving
+   * them from an environment it may be running in a different corner of.
+   */
+  readonly localDeployment: boolean;
   readonly acceptNotWebReady: boolean;
 }
 
@@ -104,6 +169,9 @@ export type SourceRejectionReason =
   | "rights_not_declared"
   | "rights_not_playable"
   | "rights_basis_missing"
+  | "rights_basis_malformed"
+  | "rights_basis_incoherent"
+  | "local_deployment_not_source_configurable"
   | "source_id_invalid"
   | "manifest_url_not_manifest_json"
   | UrlRejectionReason;
@@ -113,6 +181,18 @@ export type DefineStremioSourceResult =
   | { readonly ok: false; readonly reason: SourceRejectionReason; readonly detail: string };
 
 /**
+ * Facts about the running instance, not about any source.
+ *
+ * Passed as a separate argument rather than read from `process.env` inside this
+ * module, and rather than accepted as a field of the source config: this gate is
+ * pure and testable, and the deployment's answer must come from the deployment.
+ * Absent, it is false -- an instance that has not said it is local is hosted.
+ */
+export interface DeploymentContext {
+  readonly localDeployment?: boolean | undefined;
+}
+
+/**
  * Ids appear in candidate ids, log lines and metric labels. Constrained to a
  * boring charset so a source id can never smuggle a delimiter into the
  * `${sourceId}:${key}` candidate id and make two different sources produce
@@ -120,19 +200,41 @@ export type DefineStremioSourceResult =
  */
 const SOURCE_ID_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}$/i;
 
-/** Long enough that "yes" and "ok" do not count as a documented rights basis. */
-export const MIN_RIGHTS_BASIS_LENGTH = 8;
+const RIGHTS_BASIS_KINDS: readonly RightsBasisKind[] = [
+  "provider-contract",
+  "user-library",
+  "public-domain"
+];
+
+/**
+ * Validated as a shape, not as a length. Only the field TYPES are checked here;
+ * membership of the two closed vocabularies is checked against the same
+ * allowlists the rest of the package uses, rather than against a second copy of
+ * them written as a zod enum. `reference` only has to exist -- see the
+ * `RightsBasis` header for why measuring it would be measuring the wrong thing.
+ */
+const rightsBasisSchema = z.object({
+  rights: z.string(),
+  basis: z.string(),
+  reference: z.string()
+});
 
 const sourceShapeSchema = z.object({
   id: z.string(),
   manifestUrl: z.string().min(1),
-  // Optional in the SHAPE so that an absent basis is reported as the missing
-  // rights basis it is, rather than as a generic malformed config.
-  rightsBasis: z.string().optional(),
+  // `unknown` in the SHAPE so that a basis which is absent, or present but
+  // malformed, is reported as the specific rights-basis fault it is rather than
+  // as a generic malformed config.
+  rightsBasis: z.unknown(),
   displayName: z.string().min(1).optional(),
   allowLoopback: z.boolean().optional(),
   acceptNotWebReady: z.boolean().optional()
 });
+
+/** One line naming the authorization, for reason trails and logs. */
+export function describeRightsBasis(basis: RightsBasis): string {
+  return `${basis.rights} via ${basis.basis} (${truncate(basis.reference, 60)})`;
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -155,8 +257,14 @@ function fail(reason: SourceRejectionReason, detail: string): DefineStremioSourc
  * missing its rights and missing its id reports the rights problem. The ordering
  * mirrors media-engine's `firstRejectionReason`: the most fundamental reason a
  * thing was refused is the one worth reporting.
+ *
+ * `deployment` is the second parameter and not a config field. See
+ * `DeploymentContext`.
  */
-export function defineStremioSource(input: unknown): DefineStremioSourceResult {
+export function defineStremioSource(
+  input: unknown,
+  deployment: DeploymentContext = {}
+): DefineStremioSourceResult {
   if (!isRecord(input)) {
     return fail("source_config_malformed", `expected an object, received ${typeof input}`);
   }
@@ -181,20 +289,104 @@ export function defineStremioSource(input: unknown): DefineStremioSourceResult {
   }
   const rights = declaredRights as ContentRights;
 
+  /*
+   * A source config that tries to declare the DEPLOYMENT's mode is refused
+   * rather than ignored.
+   *
+   * Ignoring it would be safe -- the value is never read -- and it would leave
+   * an operator looking at a config file that says `localDeployment: true`,
+   * believing they enabled something, while the adapter behaves as though they
+   * had not. For a flag whose whole purpose is to be a SECOND, independently
+   * owned condition on reaching this machine, silently accepting the config's
+   * opinion of it and then discarding it is the worst of both readings.
+   */
+  if ("localDeployment" in input) {
+    return fail(
+      "local_deployment_not_source_configurable",
+      "localDeployment describes the running deployment, not a source; it is supplied by the " +
+        "process that defines sources and cannot be granted by source configuration"
+    );
+  }
+
   const shape = sourceShapeSchema.safeParse(input);
   if (!shape.success) {
     return fail("source_config_malformed", formatIssues(shape.error.issues));
   }
   const config = shape.data;
 
-  const rightsBasis = (config.rightsBasis ?? "").trim();
-  if (rightsBasis.length < MIN_RIGHTS_BASIS_LENGTH) {
+  if (config.rightsBasis === undefined || config.rightsBasis === null) {
     return fail(
       "rights_basis_missing",
-      `rightsBasis must be at least ${MIN_RIGHTS_BASIS_LENGTH} characters describing why this ` +
-        "source may be served"
+      "source states no rightsBasis; a declaration with no evidence behind it is not a declaration"
     );
   }
+
+  const parsedBasis = rightsBasisSchema.safeParse(config.rightsBasis);
+  if (!parsedBasis.success) {
+    return fail(
+      "rights_basis_malformed",
+      "rightsBasis must be an object of {rights, basis, reference}, not free text: " +
+        formatIssues(parsedBasis.error.issues)
+    );
+  }
+  const declaredBasis = parsedBasis.data;
+
+  if (!PLAYABLE_CONTENT_RIGHTS.includes(declaredBasis.rights as ContentRights)) {
+    return fail(
+      "rights_basis_malformed",
+      `rightsBasis.rights ${JSON.stringify(declaredBasis.rights)} is outside the playable ` +
+        `allowlist (${PLAYABLE_CONTENT_RIGHTS.join(", ")})`
+    );
+  }
+
+  if (!RIGHTS_BASIS_KINDS.includes(declaredBasis.basis as RightsBasisKind)) {
+    return fail(
+      "rights_basis_malformed",
+      `rightsBasis.basis ${JSON.stringify(declaredBasis.basis)} is not a kind of authorization ` +
+        `this system recognises (${RIGHTS_BASIS_KINDS.join(", ")})`
+    );
+  }
+
+  const reference = declaredBasis.reference.trim();
+  if (reference === "") {
+    return fail(
+      "rights_basis_malformed",
+      "rightsBasis.reference is empty; it must identify the contract, collection or documented " +
+        "public-domain source the declaration rests on"
+    );
+  }
+
+  /*
+   * The evidence must classify itself the way the source does.
+   *
+   * Two independent statements of the same fact, refused when they disagree
+   * rather than reconciled. Picking one to believe would mean the system serves
+   * content under an entitlement nobody actually declared for it -- the same
+   * unverifiable state `resolve` refuses to resolve when a catalog item and its
+   * source disagree.
+   */
+  if (declaredBasis.rights !== rights) {
+    return fail(
+      "rights_basis_incoherent",
+      `source declares rights ${JSON.stringify(rights)} but its rightsBasis evidences ` +
+        `${JSON.stringify(declaredBasis.rights)}; refusing to choose between them`
+    );
+  }
+
+  const expectedBasis = RIGHTS_BASIS_FOR_RIGHTS[rights];
+  if (declaredBasis.basis !== expectedBasis) {
+    return fail(
+      "rights_basis_incoherent",
+      `rights ${JSON.stringify(rights)} is evidenced by ${JSON.stringify(expectedBasis)}, not by ` +
+        `${JSON.stringify(declaredBasis.basis)}`
+    );
+  }
+
+  const rightsBasis: RightsBasis = {
+    rights,
+    basis: declaredBasis.basis as RightsBasisKind,
+    reference
+  };
 
   if (!SOURCE_ID_PATTERN.test(config.id)) {
     return fail(
@@ -204,7 +396,8 @@ export function defineStremioSource(input: unknown): DefineStremioSourceResult {
   }
 
   const allowLoopback = config.allowLoopback ?? false;
-  const checked = checkUrl(config.manifestUrl, { allowLoopback });
+  const localDeployment = deployment.localDeployment ?? false;
+  const checked = checkUrl(config.manifestUrl, { allowLoopback, localDeployment });
   if (!checked.ok) return fail(checked.reason, checked.detail);
 
   /*
@@ -242,6 +435,7 @@ export function defineStremioSource(input: unknown): DefineStremioSourceResult {
       manifestUrl,
       baseUrl,
       allowLoopback,
+      localDeployment,
       acceptNotWebReady: config.acceptNotWebReady ?? false
     }
   };
@@ -255,7 +449,10 @@ export function defineStremioSource(input: unknown): DefineStremioSourceResult {
  * offline, and a silently shorter list is how a source disappears from
  * production without anyone noticing.
  */
-export function defineStremioSources(inputs: readonly unknown[]): {
+export function defineStremioSources(
+  inputs: readonly unknown[],
+  deployment: DeploymentContext = {}
+): {
   readonly sources: AuthorizedStremioSource[];
   readonly rejected: Array<{ readonly index: number; readonly reason: SourceRejectionReason; readonly detail: string }>;
 } {
@@ -263,7 +460,7 @@ export function defineStremioSources(inputs: readonly unknown[]): {
   const rejected: Array<{ index: number; reason: SourceRejectionReason; detail: string }> = [];
 
   inputs.forEach((input, index) => {
-    const result = defineStremioSource(input);
+    const result = defineStremioSource(input, deployment);
     if (result.ok) sources.push(result.source);
     else rejected.push({ index, reason: result.reason, detail: result.detail });
   });

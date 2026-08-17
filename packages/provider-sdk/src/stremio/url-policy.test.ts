@@ -1,11 +1,20 @@
 import { describe, expect, it } from "vitest";
 import { checkUrl, classifyHost } from "./url-policy";
 
-const remote = { allowLoopback: false } as const;
-const local = { allowLoopback: true } as const;
+/** An ordinary hosted instance talking to an ordinary remote addon. */
+const remote = { allowLoopback: false, localDeployment: false } as const;
+/** Both loopback conditions satisfied: a local addon on a local deployment. */
+const local = { allowLoopback: true, localDeployment: true } as const;
+/** The dangerous half: a source that says it is local, in a hosted process. */
+const optedInButHosted = { allowLoopback: true, localDeployment: false } as const;
+/** The other half: a local deployment, and a source that never opted in. */
+const localWithoutOptIn = { allowLoopback: false, localDeployment: true } as const;
 
 /** Reason or "ok" -- keeps the assertions readable when a case flips. */
-const outcome = (raw: string, options: { allowLoopback: boolean }): string => {
+const outcome = (
+  raw: string,
+  options: { allowLoopback: boolean; localDeployment: boolean }
+): string => {
   const result = checkUrl(raw, options);
   return result.ok ? "ok" : result.reason;
 };
@@ -129,7 +138,34 @@ describe("checkUrl SSRF policy", () => {
     expect(outcome("https://[::1]/manifest.json", remote)).toBe("url_loopback_not_permitted");
   });
 
+  it("does not let a source opt itself into reaching this machine in a hosted deployment", () => {
+    // The failure this prevents: on a hosted instance, 127.0.0.1 is the Liberty
+    // server. `allowLoopback` is written by whoever can edit a source config, so
+    // if it were sufficient, adding a source would be enough to aim the server's
+    // own fetches at its admin ports.
+    for (const raw of [
+      "http://127.0.0.1:8096/manifest.json",
+      "http://localhost:11470/manifest.json",
+      "https://[::1]/manifest.json",
+      "http://[::ffff:127.0.0.1]/manifest.json"
+    ]) {
+      expect(outcome(raw, optedInButHosted)).toBe("url_loopback_not_local_deployment");
+    }
+  });
+
+  it("does not let a local deployment reach loopback for a source that never opted in", () => {
+    // The mirror image, and the reason the two conditions are separate: running
+    // the dev stack must not silently widen every configured public addon.
+    expect(outcome("http://127.0.0.1:8096/manifest.json", localWithoutOptIn)).toBe(
+      "url_loopback_not_permitted"
+    );
+    expect(outcome("http://localhost:11470/manifest.json", localWithoutOptIn)).toBe(
+      "url_loopback_not_permitted"
+    );
+  });
+
   it("permits a declared local addon over plaintext http, which is the point of the exemption", () => {
+    // Only with BOTH conditions: a local source AND a local deployment.
     expect(outcome("http://127.0.0.1:8096/manifest.json", local)).toBe("ok");
     expect(outcome("http://localhost:11470/manifest.json", local)).toBe("ok");
     expect(outcome("https://127.0.0.1:8096/manifest.json", local)).toBe("ok");

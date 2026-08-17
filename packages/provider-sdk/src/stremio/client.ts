@@ -14,7 +14,7 @@ import {
   parseStremioStreamResponse,
   type StremioManifest
 } from "./protocol";
-import type { AuthorizedStremioSource } from "./source";
+import { describeRightsBasis, type AuthorizedStremioSource, type RightsBasis } from "./source";
 import { truncate } from "./url-policy";
 
 /**
@@ -33,10 +33,13 @@ import { truncate } from "./url-policy";
  * source's rights were declared and validated.
  *
  * The two numbers on every candidate that are real -- `estimatedLatencyMs` and
- * `healthScore` -- are measured here, from the requests actually made. The rest
- * are documented placeholders (see mapping.ts), which is a worse outcome than
- * measuring them and a much better one than inventing values that look like
- * measurements.
+ * `healthScore` -- are measured here, from the requests actually made. Nothing
+ * else on a candidate is invented either: a stream whose codec, resolution or
+ * bitrate the protocol does not state is refused by the mapper rather than
+ * filled in, so a resolution that returns no candidates for a source that plainly
+ * lists streams is an expected outcome today and the reason trail says which
+ * fact was missing. See `resolveStreamMedia` in mapping.ts for why that is the
+ * correct failure and what would have to change to recover those candidates.
  */
 
 export const DEFAULT_TIMEOUT_MS = 5_000;
@@ -85,7 +88,7 @@ export interface StremioResolution {
   /** The source's declared rights -- the value every candidate carries. */
   readonly rights: ContentRights;
   /** The operator's stated basis for that declaration, carried into the trail. */
-  readonly rightsBasis: string;
+  readonly rightsBasis: RightsBasis;
   readonly candidates: StreamCandidate[];
   /** The same candidates plus what the adapter knows and the contract cannot hold. */
   readonly mapped: MappedStream[];
@@ -179,6 +182,10 @@ export function createStremioProvider(
     maxResponseBytes: options.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES,
     maxRedirects: options.maxRedirects ?? DEFAULT_MAX_REDIRECTS,
     allowLoopback: source.allowLoopback,
+    // Read from the source the rights gate produced, never re-derived here: the
+    // conditions this source was authorized under are the conditions it is
+    // fetched under.
+    localDeployment: source.localDeployment,
     userAgent: options.userAgent ?? DEFAULT_USER_AGENT,
     now
   });
@@ -377,6 +384,7 @@ export function createStremioProvider(
       sourceId: source.id,
       rights: source.rights,
       allowLoopback: source.allowLoopback,
+      localDeployment: source.localDeployment,
       acceptNotWebReady: source.acceptNotWebReady,
       observedLatencyMs: response.elapsedMs,
       healthScore: observedHealthScore(successes, failures)
@@ -408,7 +416,7 @@ export function createStremioProvider(
       reason: "resolved",
       detail:
         `${batch.mapped.length} playable of ${parsed.value.streams.length} offered; ` +
-        `rights ${source.rights} (${truncate(source.rightsBasis, 60)})`,
+        `authorized as ${describeRightsBasis(source.rightsBasis)}`,
       requestId: context.requestId,
       elapsedMs: elapsed()
     };
