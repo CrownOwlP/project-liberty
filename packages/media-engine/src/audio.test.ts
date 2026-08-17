@@ -32,11 +32,11 @@ describe("primarySubtag", () => {
 
 describe("languageMatch", () => {
   it("reports an exact match with its position in the preference list", () => {
-    expect(languageMatch("fr", ["en", "fr"])).toEqual({ index: 1, exact: true });
+    expect(languageMatch("fr", ["en", "fr"])).toEqual({ groupIndex: 1, exactIndex: 1 });
   });
 
   it("matches on the primary subtag when the region differs", () => {
-    expect(languageMatch("en-us", ["en-gb"])).toEqual({ index: 0, exact: false });
+    expect(languageMatch("en-us", ["en-gb"])).toEqual({ groupIndex: 0, exactIndex: null });
   });
 
   it("returns null when the language was not asked for at all", () => {
@@ -45,34 +45,36 @@ describe("languageMatch", () => {
 
   it("prefers an earlier exact match over a later one", () => {
     // Ordering is meaningful: the list is preferences, not a set.
-    expect(languageMatch("en", ["en", "en-us"])).toEqual({ index: 0, exact: true });
+    expect(languageMatch("en", ["en", "en-us"])).toEqual({ groupIndex: 0, exactIndex: 0 });
   });
 
   it("does not let a later exact match beat an earlier subtag match's position", () => {
-    // "en-gb" matches preference 0 by subtag; nothing matches exactly, so the
-    // position is what carries.
-    expect(languageMatch("en-gb", ["en", "de"])).toEqual({ index: 0, exact: false });
+    expect(languageMatch("en-gb", ["en", "de"])).toEqual({ groupIndex: 0, exactIndex: null });
   });
 
-  it("reports the GROUP position, so index and exact stay comparable", () => {
-    // The regression that mattered: index used to be the exact preference's own
-    // position while a subtag match reported the group's, so the two fields
-    // measured different things. compareTracks compares index first, which made
-    // an unrequested variant beat an explicitly requested one.
-    expect(languageMatch("en-gb", ["en-us", "en-gb"])).toEqual({ index: 0, exact: true });
-    expect(languageMatch("en-au", ["en-us", "en-gb"])).toEqual({ index: 0, exact: false });
+  /*
+   * groupIndex and exactIndex are separate because one number cannot carry both
+   * facts, and the two failed attempts were mirror images of each other:
+   * returning the exact position let an unrequested en-AU beat an explicit
+   * en-GB; collapsing everything to the group position let en-GB tie with en-US
+   * and win on channels, discarding the viewer's stated order.
+   */
+  it("keeps the language group and the exact position as separate coordinates", () => {
+    expect(languageMatch("en-us", ["en-us", "en-gb"])).toEqual({ groupIndex: 0, exactIndex: 0 });
+    expect(languageMatch("en-gb", ["en-us", "en-gb"])).toEqual({ groupIndex: 0, exactIndex: 1 });
+    expect(languageMatch("en-au", ["en-us", "en-gb"])).toEqual({ groupIndex: 0, exactIndex: null });
   });
 
-  it("takes the FIRST same-language preference, not the last", () => {
-    expect(languageMatch("en-au", ["en-gb", "en-us"])).toEqual({ index: 0, exact: false });
+  it("takes the FIRST same-language preference as the group, not the last", () => {
+    expect(languageMatch("en-au", ["en-gb", "en-us"])).toEqual({ groupIndex: 0, exactIndex: null });
   });
 
   it("ignores blank and whitespace-only preference entries", () => {
-    expect(languageMatch("fr", ["", "  ", "fr"])).toEqual({ index: 2, exact: true });
+    expect(languageMatch("fr", ["", "  ", "fr"])).toEqual({ groupIndex: 2, exactIndex: 2 });
   });
 
   it("normalises case on both sides", () => {
-    expect(languageMatch("EN-GB", ["en-gb"])).toEqual({ index: 0, exact: true });
+    expect(languageMatch("EN-GB", ["en-gb"])).toEqual({ groupIndex: 0, exactIndex: 0 });
     expect(primarySubtag("EN-GB")).toBe("en");
   });
 });
@@ -145,6 +147,25 @@ describe("selectAudioTrack ordering", () => {
     expect(result.reason).toBe("preferred_language_exact");
   });
 
+  it("respects the viewer's ordering of regional variants", () => {
+    /*
+     * The mirror of the bug below. Once both variants reported the same group
+     * index and both counted as exact, they tied on language -- and a later
+     * criterion handed the win to en-GB even though the viewer put en-US first.
+     * Channel counts differ here so the tie, if it existed, would be broken the
+     * wrong way.
+     */
+    const result = selectAudioTrack(
+      [
+        track({ id: "en-gb", language: "en-gb", channels: 8 }),
+        track({ id: "en-us", language: "en-us", channels: 2 })
+      ],
+      caps({ preferredAudioLanguages: ["en-us", "en-gb"] })
+    );
+    expect(result.selected?.id).toBe("en-us");
+    expect(result.reason).toBe("preferred_language_exact");
+  });
+
   it("serves the requested variant even when it is not first in the list", () => {
     /*
      * The defect this pins: with preferences ["en-us", "en-gb"], the en-GB
@@ -170,9 +191,6 @@ describe("selectAudioTrack ordering", () => {
   });
 
   it("never auto-selects commentary or audio description over a main mix", () => {
-    // Both would win on channels. Neither may be chosen for someone who did not
-    // ask: commentary is jarring, and audio description is a deliberate choice
-    // that is a broken experience when imposed on someone who did not make it.
     const result = selectAudioTrack(
       [
         track({ id: "commentary", role: "commentary", channels: 8 }),
@@ -182,7 +200,55 @@ describe("selectAudioTrack ordering", () => {
       caps({ preferredAudioLanguages: ["en"] })
     );
     expect(result.selected?.id).toBe("main");
-    expect(result.ordered.map((t) => t.id)).toEqual(["main", "described", "commentary"]);
+    // Outside the automatic pool entirely, not merely ranked below it.
+    expect(result.ordered.map((t) => t.id)).toEqual(["main"]);
+    expect(result.manualOnly.map((t) => t.id)).toEqual(["commentary", "described"]);
+  });
+
+  it("does not let commentary in the preferred language beat an unmatched main mix", () => {
+    /*
+     * Ranking alone never guaranteed this. Language is compared BEFORE role, so
+     * a French commentary track beat a Japanese original for a viewer who
+     * preferred French -- the role penalty was never reached. "Never
+     * auto-selected" was a claim in a comment, not a property of the code.
+     */
+    const result = selectAudioTrack(
+      [
+        track({ id: "fr-commentary", language: "fr", role: "commentary" }),
+        track({ id: "ja-original", language: "ja", role: "original" })
+      ],
+      caps({ preferredAudioLanguages: ["fr"] })
+    );
+    expect(result.selected?.id).toBe("ja-original");
+    expect(result.manualOnly.map((t) => t.id)).toEqual(["fr-commentary"]);
+  });
+
+  it("selects nothing rather than imposing audio description when it is all that plays", () => {
+    // The other half of the same defect: if commentary or description were the
+    // only eligible tracks, one of them was necessarily chosen.
+    const result = selectAudioTrack(
+      [
+        track({ id: "described", role: "descriptive" }),
+        track({ id: "commentary", role: "commentary" })
+      ],
+      caps({ preferredAudioLanguages: ["en"] })
+    );
+    expect(result.selected).toBeNull();
+    expect(result.reason).toBe("no_auto_selectable_tracks");
+    // Still offered, so a viewer who wants them can choose.
+    expect(result.manualOnly.map((t) => t.id)).toEqual(["described", "commentary"]);
+    expect(result.explanation).toContain("explicit choice");
+  });
+
+  it("reports an undecodable commentary track as a codec rejection, not as manual-only", () => {
+    // The auto/manual split happens after eligibility, so the reason a track is
+    // unavailable stays accurate.
+    const result = selectAudioTrack(
+      [track({ id: "commentary", role: "commentary", codec: "ac3" })],
+      caps()
+    );
+    expect(result.rejected).toEqual([{ trackId: "commentary", reason: "unsupported_audio_codec" }]);
+    expect(result.manualOnly).toEqual([]);
   });
 
   it("prefers more channels once language and role have tied", () => {
@@ -370,6 +436,7 @@ describe("selectAudioTrack fallback reasons", () => {
     const result = selectAudioTrack([], caps());
     expect(result.reason).toBe("no_audio_tracks");
     expect(result.explanation).toContain("no audio tracks at all");
+    expect(result.manualOnly).toEqual([]);
   });
 
   it("names every field a debugger would need in the explanation", () => {

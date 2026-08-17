@@ -1,9 +1,47 @@
 {
-  "generatedAt": "2026-08-16T23:22:56.213Z",
+  "generatedAt": "2026-08-17T01:09:04.293Z",
   "agent": "gpt-architect",
   "executionAvailable": false,
   "assigned": [],
-  "review": [],
+  "review": [
+    {
+      "id": "PL-0202",
+      "priority": "P0",
+      "lane": "Media",
+      "status": "REVIEW",
+      "title": "Audio selection policy",
+      "dependencies": [
+        "PL-0201"
+      ],
+      "allowedPaths": [
+        "packages/media-engine/**",
+        "packages/contracts/**"
+      ],
+      "preferredAgent": "claude-media",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit"
+      ],
+      "acceptance": "Preferred language, codec, channels, and fallback reasons are deterministic and tested",
+      "owner": "claude-media",
+      "gateResults": {
+        "typecheck": {
+          "status": "pass",
+          "at": "2026-08-17T01:09:02.830Z",
+          "evidence": "npm run check exit 0 (turbo run typecheck across 5 packages), Node 22"
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-08-17T01:09:04.279Z",
+          "evidence": "npm run check exit 0 (vitest: media-engine audio.test.ts and contracts), Node 22"
+        }
+      },
+      "implementationAgent": "claude-media",
+      "updatedAt": "2026-08-17T00:57:15.786Z",
+      "implementationBaseSha": "8a6dec901569c1b2ada8e1b5da351e370125cb81"
+    }
+  ],
   "reservedExternal": [
     {
       "id": "PL-0002",

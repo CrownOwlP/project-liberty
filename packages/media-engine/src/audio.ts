@@ -36,6 +36,7 @@ export type AudioSelectionReason =
   | "fallback_provider_default"
   | "fallback_first_eligible"
   | "no_audio_tracks"
+  | "no_auto_selectable_tracks"
   | "no_eligible_tracks";
 
 export interface AudioSelection {
@@ -43,6 +44,12 @@ export interface AudioSelection {
   reason: AudioSelectionReason;
   /** Ordered exactly as the policy ranked them; index 0 is `selected`. */
   ordered: AudioTrack[];
+  /**
+   * Playable, but only on an explicit request: commentary and audio
+   * description. Returned rather than discarded so a player can offer them;
+   * never a candidate for automatic selection.
+   */
+  manualOnly: AudioTrack[];
   rejected: Array<{ trackId: string; reason: AudioRejectionReason }>;
   /** Human-readable trail, sufficient to debug a surprising choice. */
   explanation: string;
@@ -67,6 +74,22 @@ export interface AudioSelection {
  * broken experience for both groups.
  */
 const ROLE_ORDER: readonly AudioRole[] = ["original", "main", "dub", "descriptive", "commentary"];
+
+/**
+ * Roles eligible for AUTOMATIC selection. Ranking was not enough.
+ *
+ * Ordering commentary and description last only protected them once language
+ * had tied. Language is compared first, so a French commentary track still beat
+ * a Japanese original for a viewer preferring French -- and if commentary or
+ * description were the only technically playable tracks, one of them was
+ * necessarily selected. The comment claimed "never auto-selected" while the
+ * code guaranteed nothing of the kind.
+ *
+ * They are now outside the automatic pool entirely and returned separately, so
+ * a player can still offer them. That is the honest arrangement: a viewer who
+ * wants audio description picks it, and nobody is given it by accident.
+ */
+const AUTO_SELECTABLE_ROLES: readonly AudioRole[] = ["original", "main", "dub"];
 
 function roleRank(role: AudioRole): number {
   const index = ROLE_ORDER.indexOf(role);
@@ -114,37 +137,44 @@ export function primarySubtag(language: string): string {
 export function languageMatch(
   trackLanguage: string,
   preferred: readonly string[]
-): { index: number; exact: boolean } | null {
+): { groupIndex: number; exactIndex: number | null } | null {
   const track = trackLanguage.toLowerCase();
   const trackPrimary = primarySubtag(track);
 
   /*
-   * `index` is the GROUP position -- the first preference sharing this track's
-   * primary subtag -- and `exact` is an independent property of the track.
+   * TWO independent coordinates, because one number cannot carry both facts.
    *
-   * They must be orthogonal, because compareTracks compares index before exact.
-   * An earlier version returned the exact preference's own index, so the two
-   * fields measured different things and lexicographic comparison between them
-   * was meaningless. With preferences ["en-us", "en-gb"], an "en-gb" track
-   * scored {index:1, exact:true} while an unrequested "en-au" track scored
-   * {index:0, exact:false} -- and index being compared first meant en-AU beat
-   * the exact en-GB the viewer had actually asked for. Generalised: within one
-   * language, an exact match anywhere but the first position could never win.
+   * `groupIndex` is where this track's LANGUAGE first appears in the list.
+   * `exactIndex` is where this track's exact tag appears, or null.
+   *
+   * The first attempt returned the exact preference's own index for exact
+   * matches and the group's first index otherwise, so the field meant different
+   * things in different branches: with ["en-us","en-gb"], an "en-gb" track
+   * scored {index:1,exact:true} while an unrequested "en-au" scored
+   * {index:0,exact:false}, and comparing index first meant en-AU beat the
+   * en-GB the viewer had explicitly listed.
+   *
+   * Collapsing everything to the group index fixed that and introduced the
+   * mirror image: with the same preferences, "en-us" and "en-gb" both became
+   * {index:0,exact:true}, tying on language so channels or codec could hand the
+   * win to en-GB even though the viewer put en-US first. Preference ORDER is
+   * meaningful, and that ordering was being discarded.
+   *
+   * Keeping both coordinates preserves both behaviours at once: language group
+   * decides first, an exact match beats a mere subtag match within the group,
+   * and between two exact matches the earlier preference wins.
    */
-  let index: number | null = null;
-  let exact = false;
+  let groupIndex: number | null = null;
+  let exactIndex: number | null = null;
 
   for (let i = 0; i < preferred.length; i++) {
     const want = (preferred[i] ?? "").trim().toLowerCase();
     if (!want || primarySubtag(want) !== trackPrimary) continue;
-    if (index === null) index = i;
-    if (want === track) {
-      exact = true;
-      break;
-    }
+    if (groupIndex === null) groupIndex = i;
+    if (want === track && exactIndex === null) exactIndex = i;
   }
 
-  return index === null ? null : { index, exact };
+  return groupIndex === null ? null : { groupIndex, exactIndex };
 }
 
 function firstRejectionReason(
@@ -182,10 +212,20 @@ function compareTracks(
   if ((matchA === null) !== (matchB === null)) return matchA === null ? 1 : -1;
 
   if (matchA && matchB) {
-    // 2. Earlier position in the preference list wins.
-    if (matchA.index !== matchB.index) return matchA.index - matchB.index;
-    // 3. At the same position, an exact region match beats a primary-subtag one.
-    if (matchA.exact !== matchB.exact) return matchA.exact ? -1 : 1;
+    // 2. Whichever LANGUAGE the viewer listed first.
+    if (matchA.groupIndex !== matchB.groupIndex) return matchA.groupIndex - matchB.groupIndex;
+
+    // 3. Within that language, an exact tag match beats a subtag-only one.
+    const exactA = matchA.exactIndex !== null;
+    const exactB = matchB.exactIndex !== null;
+    if (exactA !== exactB) return exactA ? -1 : 1;
+
+    // 4. Between two exact matches, the earlier preference wins. Without this
+    //    the viewer's ordering of regional variants is silently discarded and
+    //    a later criterion decides something they had already decided.
+    if (exactA && exactB && matchA.exactIndex !== matchB.exactIndex) {
+      return (matchA.exactIndex as number) - (matchB.exactIndex as number);
+    }
   }
 
   // 4. Role: never let a commentary track win on channel count.
@@ -237,7 +277,11 @@ function reasonFor(
 ): AudioSelectionReason {
   const preferred = capabilities.preferredAudioLanguages;
   const match = languageMatch(selected.language, preferred);
-  if (match) return match.exact ? "preferred_language_exact" : "preferred_language_primary_subtag";
+  if (match) {
+    return match.exactIndex !== null
+      ? "preferred_language_exact"
+      : "preferred_language_primary_subtag";
+  }
 
   // No language matched. Which fallback criterion actually broke the tie?
   if (!runnerUp) return "fallback_first_eligible";
@@ -257,6 +301,8 @@ const REASON_TEXT: Record<AudioSelectionReason, string> = {
   fallback_provider_default: "no preferred language available; used the provider's default track",
   fallback_first_eligible: "no preferred language available; used the highest-ranked eligible track",
   no_audio_tracks: "the stream offered no audio tracks at all",
+  no_auto_selectable_tracks:
+    "only commentary or audio-description tracks are playable; those require an explicit choice",
   no_eligible_tracks: "no track satisfied the device's codec and channel capabilities"
 };
 
@@ -282,6 +328,24 @@ export function selectAudioTrack(
   // claim above it false for the AudioSelection as a whole.
   rejected.sort((a, b) => (a.trackId < b.trackId ? -1 : a.trackId > b.trackId ? 1 : 0));
 
+  // Split AFTER eligibility, so a commentary track the device cannot decode is
+  // still reported as a codec rejection rather than silently reclassified.
+  const manualOnly = eligible.filter((t) => !AUTO_SELECTABLE_ROLES.includes(t.role));
+  const autoSelectable = eligible.filter((t) => AUTO_SELECTABLE_ROLES.includes(t.role));
+
+  if (eligible.length && !autoSelectable.length) {
+    return {
+      selected: null,
+      reason: "no_auto_selectable_tracks",
+      ordered: [],
+      manualOnly,
+      rejected,
+      explanation:
+        `${REASON_TEXT.no_auto_selectable_tracks} ` +
+        `(${manualOnly.map((t) => t.id).join(", ")})`
+    };
+  }
+
   if (!eligible.length) {
     /*
      * "No tracks were offered" and "tracks were offered but none was playable"
@@ -295,12 +359,13 @@ export function selectAudioTrack(
       selected: null,
       reason,
       ordered: [],
+      manualOnly,
       rejected,
       explanation: `${REASON_TEXT[reason]} (${rejected.length} track(s) rejected)`
     };
   }
 
-  const ordered = [...eligible].sort((a, b) => compareTracks(a, b, capabilities));
+  const ordered = [...autoSelectable].sort((a, b) => compareTracks(a, b, capabilities));
   const selected = ordered[0] as AudioTrack;
   const reason = reasonFor(selected, ordered[1], capabilities);
 
@@ -308,6 +373,7 @@ export function selectAudioTrack(
     selected,
     reason,
     ordered,
+    manualOnly,
     rejected,
     explanation:
       `${selected.id} (${selected.language}, ${selected.role}, ${selected.channels}ch, ` +

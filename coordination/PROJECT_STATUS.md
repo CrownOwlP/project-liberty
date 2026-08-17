@@ -1,6 +1,6 @@
 # Project Liberty - Project Status
 
-> Generated 2026-08-16T23:22:56.212Z from the AI control plane.
+> Generated 2026-08-17T01:09:04.292Z from the AI control plane.
 
 **Overall completion:** 4/29 executable tasks (14%)
 
@@ -9,8 +9,8 @@
 - **BACKLOG:** 12
 - **READY:** 9
 - **CLAIMED:** 0
-- **IN_PROGRESS:** 2
-- **REVIEW:** 0
+- **IN_PROGRESS:** 1
+- **REVIEW:** 1
 - **BLOCKED:** 2
 - **DONE:** 4
 - **CANCELED:** 0
@@ -28,7 +28,7 @@
 
 ## Active work
 
-- **PL-0202** [IN_PROGRESS] Audio selection policy — owner: claude-media
+- **PL-0202** [REVIEW] Audio selection policy — owner: claude-media
 - **PL-AI-0002** [IN_PROGRESS] GitHub bridge for cross-agent review — owner: claude-lead
 
 ## Dispatch classification
