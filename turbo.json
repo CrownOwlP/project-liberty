@@ -1,6 +1,15 @@
 {
   "$schema": "https://turborepo.dev/schema.json",
-  "globalDependencies": [".env", ".env.local"],
+  "globalDependencies": [
+    ".env",
+    ".env.development",
+    ".env.development.local",
+    ".env.local",
+    ".env.production",
+    ".env.production.local",
+    ".env.test",
+    ".env.test.local"
+  ],
   "globalEnv": ["NODE_ENV", "CONTENT_RIGHTS_ENFORCEMENT"],
   "tasks": {
     "build": {

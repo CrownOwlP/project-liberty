@@ -20,6 +20,14 @@ concurrency:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    # Pinned rather than left to the documented default. turbo.json lists this in
+    # globalEnv, so while it is unset it hashes as ABSENT into a build cache that
+    # is shared between runs, and one entry can then serve builds that meant
+    # different enforcement modes. `validate-env.mjs --scope ci` fails on an unset
+    # cache-key variable for that reason; setting it here is the fix it asks for,
+    # not a way around it.
+    env:
+      CONTENT_RIGHTS_ENFORCEMENT: strict
     steps:
       - uses: actions/checkout@v4
         with:
@@ -30,20 +38,32 @@ jobs:
           # development from drifting apart.
           node-version-file: .nvmrc
           cache: npm
-      # These three run before install: they depend only on Node builtins, so
-      # a dependency problem cannot mask a control-plane or structure failure.
+      # These four run before install: they depend only on Node builtins, so
+      # a dependency problem cannot mask a control-plane, structure, or
+      # env-validator failure.
       - name: Validate AI control plane
         run: node scripts/ai-control-plane.mjs validate
       - name: Test AI control plane
         run: node scripts/test-ai-control-plane.mjs
       - name: Validate repository structure
         run: node scripts/validate-repo.mjs
+      - name: Test environment validator
+        run: node scripts/test-validate-env.mjs
       # `npm ci` (not `npm install`): installs strictly from package-lock.json,
       # fails if the lockfile is missing or out of sync with package.json, and
       # never silently rewrites the lockfile in CI. This requires the lockfile
       # to be committed -- see PL-0001.
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
+      # After install, because it inspects node_modules, the lockfile, and where
+      # the workspace links resolve. `--scope ci` because the two escalations it
+      # turns on -- an unset cache-key variable, a runtime newer than .nvmrc --
+      # are a laptop's business locally and a misconfiguration here, where the
+      # cache is shared and the run is what gate evidence is recorded from.
+      # `npm run env:validate` does not pass it, so the script is called
+      # directly; the mode list has to be kept in step with that script by hand.
+      - name: Validate environment
+        run: node scripts/validate-env.mjs --scope ci --mode development --mode test --mode production
       - name: Lint
         run: npm run lint
       - name: Typecheck

@@ -4,9 +4,14 @@ dist/
 build/
 coverage/
 .turbo/
-.env
-.env.local
-.env.*.local
+
+# Dotenv files are ignored by pattern, with the committed contract named back in
+# by exception. Enumerating the ones Next.js reads today would mean the next mode
+# file somebody adds is tracked by default and noticed only once it is already in
+# the history. The exception has to come after the pattern: git applies the last
+# rule that matches.
+.env*
+!.env.example
 
 # Credential-bearing exports that have no business in version control.
 # A Stremio addon-cloner export was dropped into the repo root once and carried
