@@ -16,7 +16,8 @@ Statuses: `BACKLOG`, `READY`, `CLAIMED`, `IN_PROGRESS`, `REVIEW`, `BLOCKED`, `DO
 | PL-0202 | P0 | Media | REVIEW | claude-media | - | Audio selection policy | Preferred language, codec, channels, and fallback reasons are deterministic and tested |
 | PL-0203 | P0 | Media | READY | - | - | Subtitle selection policy | Preferred language, forced, default, and off policies are explicit and tested |
 | PL-0204 | P0 | Media | READY | - | - | Candidate failover policy | Retry and fallback behavior is bounded, deterministic, observable, and testable |
-| PL-0301 | P0 | Provider | READY | - | - | Authorized fixture provider | Server-side fixture adapter returns normalized authorized candidates only |
+| PL-0205 | P0 | Media | READY | - | - | Unknown media metadata semantics | StreamCandidate can represent genuinely unknown videoCodec, audioCodec, height and bitrateKbps, and the media engine treats unknown as unknown rather than as a value: eligibility must not pass on an unverified codec, and scoring must not award or penalise a fabricated number |
+| PL-0301 | P0 | Provider | BACKLOG | - | - | Authorized fixture provider | Server-side fixture adapter returns normalized authorized candidates only |
 | PL-0302 | P0 | Provider | BLOCKED | - | - | First production provider | Licensed provider integrated through provider SDK with credentials isolated server-side |
 | PL-0401 | P0 | Backend | READY | - | - | Auth integration decision | ADR selects auth approach and defines protected profile boundary |
 | PL-0402 | P0 | Backend | BACKLOG | - | - | Profile model | Profiles can be created and selected with authorization tests |

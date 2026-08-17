@@ -1,35 +1,11 @@
 {
-  "generatedAt": "2026-08-17T01:53:48.709Z",
+  "generatedAt": "2026-08-17T03:04:00.799Z",
   "agent": "claude-backend",
   "executionAvailable": true,
   "assigned": [],
   "review": [],
   "reservedExternal": [],
   "recommended": [
-    {
-      "id": "PL-0301",
-      "priority": "P0",
-      "lane": "Provider",
-      "status": "READY",
-      "title": "Authorized fixture provider",
-      "dependencies": [],
-      "allowedPaths": [
-        "packages/provider-sdk/**",
-        "packages/contracts/**",
-        "apps/web/src/app/api/**"
-      ],
-      "preferredAgent": "claude-backend",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "typecheck",
-        "unit",
-        "security-review",
-        "rights-review"
-      ],
-      "acceptance": "Server-side fixture adapter returns normalized authorized candidates only",
-      "owner": null,
-      "gateResults": {}
-    },
     {
       "id": "PL-0401",
       "priority": "P0",

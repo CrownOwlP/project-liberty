@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-17T01:53:48.708Z",
+  "generatedAt": "2026-08-17T03:04:00.797Z",
   "agent": "gpt-architect",
   "executionAvailable": false,
   "assigned": [],
@@ -129,26 +129,25 @@
       "gateResults": {}
     },
     {
-      "id": "PL-0301",
+      "id": "PL-0205",
       "priority": "P0",
-      "lane": "Provider",
+      "lane": "Media",
       "status": "READY",
-      "title": "Authorized fixture provider",
-      "dependencies": [],
-      "allowedPaths": [
-        "packages/provider-sdk/**",
-        "packages/contracts/**",
-        "apps/web/src/app/api/**"
+      "title": "Unknown media metadata semantics",
+      "dependencies": [
+        "PL-0201"
       ],
-      "preferredAgent": "claude-backend",
+      "allowedPaths": [
+        "packages/contracts/**",
+        "packages/media-engine/**"
+      ],
+      "preferredAgent": "claude-media",
       "reviewAgent": "gpt-architect",
       "qualityGates": [
         "typecheck",
-        "unit",
-        "security-review",
-        "rights-review"
+        "unit"
       ],
-      "acceptance": "Server-side fixture adapter returns normalized authorized candidates only",
+      "acceptance": "StreamCandidate can represent genuinely unknown videoCodec, audioCodec, height and bitrateKbps, and the media engine treats unknown as unknown rather than as a value: eligibility must not pass on an unverified codec, and scoring must not award or penalise a fabricated number",
       "owner": null,
       "gateResults": {}
     },

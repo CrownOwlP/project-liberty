@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-17T01:53:48.710Z",
+  "generatedAt": "2026-08-17T03:04:00.800Z",
   "agent": "claude-media",
   "executionAvailable": true,
   "assigned": [
@@ -88,6 +88,29 @@
         "performance"
       ],
       "acceptance": "Retry and fallback behavior is bounded, deterministic, observable, and testable",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PL-0205",
+      "priority": "P0",
+      "lane": "Media",
+      "status": "READY",
+      "title": "Unknown media metadata semantics",
+      "dependencies": [
+        "PL-0201"
+      ],
+      "allowedPaths": [
+        "packages/contracts/**",
+        "packages/media-engine/**"
+      ],
+      "preferredAgent": "claude-media",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit"
+      ],
+      "acceptance": "StreamCandidate can represent genuinely unknown videoCodec, audioCodec, height and bitrateKbps, and the media engine treats unknown as unknown rather than as a value: eligibility must not pass on an unverified codec, and scoring must not award or penalise a fabricated number",
       "owner": null,
       "gateResults": {}
     },
