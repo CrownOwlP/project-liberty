@@ -1,8 +1,8 @@
 # Project Liberty - Project Status
 
-> Generated 2026-08-17T15:37:56.428Z from the AI control plane.
+> Generated 2026-08-17T16:37:41.801Z from the AI control plane.
 
-**Overall completion:** 5/30 executable tasks (17%)
+**Overall completion:** 6/30 executable tasks (20%)
 
 ## Status summary
 
@@ -10,16 +10,16 @@
 - **READY:** 8
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 1
-- **REVIEW:** 1
+- **REVIEW:** 0
 - **BLOCKED:** 2
-- **DONE:** 5
+- **DONE:** 6
 - **CANCELED:** 0
 
 ## Milestones / phases
 
 - **M0 — AI Engineering System + Repository Foundation:** IN_PROGRESS, 3/4 (75%)
 - **M1 — Core Discovery Experience:** IN_PROGRESS, 1/3 (33%)
-- **M2 — Media Resolution + Provider Foundation:** IN_PROGRESS, 1/6 (17%)
+- **M2 — Media Resolution + Provider Foundation:** IN_PROGRESS, 2/6 (33%)
 - **M3 — Identity + Personal State:** NOT_STARTED, 0/4 (0%)
 - **M4 — Playback Vertical Slice:** NOT_STARTED, 0/6 (0%)
 - **M5 — Live + Intelligence Boundaries:** NOT_STARTED, 0/2 (0%)
@@ -29,7 +29,6 @@
 ## Active work
 
 - **PL-0003** [IN_PROGRESS] Environment validation — owner: claude-infra
-- **PL-0202** [REVIEW] Audio selection policy — owner: claude-media
 
 ## Dispatch classification
 
@@ -40,7 +39,7 @@
 
 ## Recommended executable wave
 
-No conflict-free executable tasks can be assigned with current agent capacity.
+- **PL-0102** -> claude-frontend (P0/Frontend) Search experience
 
 ## Queued for external agents
 
@@ -58,7 +57,7 @@ No conflict-free executable tasks can be assigned with current agent capacity.
 - **claude-lead:** 0/2 active
 - **claude-frontend:** 0/1 active
 - **claude-backend:** 0/1 active
-- **claude-media:** 1/1 active
+- **claude-media:** 0/1 active
 - **claude-test:** 0/1 active
 - **claude-security:** 0/1 active
 - **claude-infra:** 1/1 active

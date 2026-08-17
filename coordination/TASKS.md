@@ -13,7 +13,7 @@ Statuses: `BACKLOG`, `READY`, `CLAIMED`, `IN_PROGRESS`, `REVIEW`, `BLOCKED`, `DO
 | PL-0102 | P0 | Frontend | READY | - | - | Search experience | Debounced accessible search with typed results and URL-addressable query |
 | PL-0103 | P0 | Frontend | READY | - | - | Title details | Movie, series, and episode details with play CTA using normalized IDs |
 | PL-0201 | P0 | Media | DONE | - | APPROVED by gpt-architect | Expand candidate score model | Score dimensions are documented, deterministic, explainable, and regression-tested |
-| PL-0202 | P0 | Media | REVIEW | claude-media | - | Audio selection policy | Preferred language, codec, channels, and fallback reasons are deterministic and tested |
+| PL-0202 | P0 | Media | DONE | - | APPROVED by gpt-architect | Audio selection policy | Preferred language, codec, channels, and fallback reasons are deterministic and tested |
 | PL-0203 | P0 | Media | READY | - | - | Subtitle selection policy | Preferred language, forced, default, and off policies are explicit and tested |
 | PL-0204 | P0 | Media | READY | - | - | Candidate failover policy | Retry and fallback behavior is bounded, deterministic, observable, and testable |
 | PL-0205 | P0 | Media | READY | - | - | Unknown media metadata semantics | StreamCandidate can represent genuinely unknown videoCodec, audioCodec, height and bitrateKbps, and the media engine treats unknown as unknown rather than as a value: eligibility must not pass on an unverified codec, and scoring must not award or penalise a fabricated number |

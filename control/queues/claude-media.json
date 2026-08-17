@@ -1,46 +1,8 @@
 {
-  "generatedAt": "2026-08-17T15:37:56.432Z",
+  "generatedAt": "2026-08-17T16:37:41.806Z",
   "agent": "claude-media",
   "executionAvailable": true,
-  "assigned": [
-    {
-      "id": "PL-0202",
-      "priority": "P0",
-      "lane": "Media",
-      "status": "REVIEW",
-      "title": "Audio selection policy",
-      "dependencies": [
-        "PL-0201"
-      ],
-      "allowedPaths": [
-        "packages/media-engine/**",
-        "packages/contracts/**"
-      ],
-      "preferredAgent": "claude-media",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "typecheck",
-        "unit"
-      ],
-      "acceptance": "Preferred language, codec, channels, and fallback reasons are deterministic and tested",
-      "owner": "claude-media",
-      "gateResults": {
-        "typecheck": {
-          "status": "pass",
-          "at": "2026-08-17T03:12:26.633Z",
-          "evidence": "npm run check exit 0 (turbo run typecheck, 5 packages), Node 22"
-        },
-        "unit": {
-          "status": "pass",
-          "at": "2026-08-17T03:12:28.077Z",
-          "evidence": "npm run check exit 0 (vitest: media-engine audio + ranking, contracts), Node 22"
-        }
-      },
-      "implementationAgent": "claude-media",
-      "updatedAt": "2026-08-17T00:57:15.786Z",
-      "implementationBaseSha": "8a6dec901569c1b2ada8e1b5da351e370125cb81"
-    }
-  ],
+  "assigned": [],
   "review": [],
   "reservedExternal": [],
   "recommended": [

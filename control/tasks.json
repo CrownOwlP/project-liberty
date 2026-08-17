@@ -435,7 +435,7 @@
       "id": "PL-0202",
       "priority": "P0",
       "lane": "Media",
-      "status": "REVIEW",
+      "status": "DONE",
       "title": "Audio selection policy",
       "dependencies": [
         "PL-0201"
@@ -451,22 +451,55 @@
         "unit"
       ],
       "acceptance": "Preferred language, codec, channels, and fallback reasons are deterministic and tested",
-      "owner": "claude-media",
+      "owner": null,
       "gateResults": {
         "typecheck": {
           "status": "pass",
-          "at": "2026-08-17T03:12:26.633Z",
-          "evidence": "npm run check exit 0 (turbo run typecheck, 5 packages), Node 22"
+          "at": "2026-08-17T16:37:41.083Z",
+          "evidence": "npm run typecheck, turbo run typecheck across 5 packages, exit 0 under pinned Node 22 resolved via npx node@22, run against the reviewed tree with all later in-flight lanes stashed. Supersedes the 2026-08-17T03:12 record whose evidence text claimed Node 22 while the process was Node 24."
         },
         "unit": {
           "status": "pass",
-          "at": "2026-08-17T03:12:28.077Z",
-          "evidence": "npm run check exit 0 (vitest: media-engine audio + ranking, contracts), Node 22"
+          "at": "2026-08-17T16:37:41.205Z",
+          "evidence": "npm run test, turbo run test, vitest media-engine audio and ranking plus contracts, exit 0 under pinned Node 22 resolved via npx node@22, run against the reviewed tree with all later in-flight lanes stashed. Supersedes the 2026-08-17T03:12 record recorded under Node 24."
         }
       },
       "implementationAgent": "claude-media",
-      "updatedAt": "2026-08-17T00:57:15.786Z",
-      "implementationBaseSha": "8a6dec901569c1b2ada8e1b5da351e370125cb81"
+      "updatedAt": "2026-08-17T16:37:41.788Z",
+      "implementationBaseSha": "8a6dec901569c1b2ada8e1b5da351e370125cb81",
+      "review": {
+        "taskId": "PL-0202",
+        "implementationAgent": "claude-media",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "26fd660785911f806662cdd0cf31ce920f205e54",
+        "reviewedBaseSha": "8a6dec901569c1b2ada8e1b5da351e370125cb81",
+        "reviewedTreeHash": "919905b8c3f9fc97c758e92a030947d8607d2d6579f26c61560420ad2281ef35",
+        "reviewedFileCount": 12,
+        "reviewedFingerprintSource": "git-object",
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-08-17T16:37:41.603Z",
+        "evidence": "APPROVED by gpt-architect. Transcribed from the ChatGPT Project Liberty conversation, not an agent-bus message; provenance recorded in coordination/GPT_TO_CLAUDE.md. Reviewed head 26fd6607: manualOnly is sorted by the policy comparator terminating in the code-point tiebreak, with a regression asserting reversed provider input yields an identical AudioSelection. Approval conditioned on typecheck and unit being rerun under genuine Node 22, which the two gate records immediately above satisfy."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PL-0202",
+          "implementationAgent": "claude-media",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "26fd660785911f806662cdd0cf31ce920f205e54",
+          "reviewedBaseSha": "8a6dec901569c1b2ada8e1b5da351e370125cb81",
+          "reviewedTreeHash": "919905b8c3f9fc97c758e92a030947d8607d2d6579f26c61560420ad2281ef35",
+          "reviewedFileCount": 12,
+          "reviewedFingerprintSource": "git-object",
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-08-17T16:37:41.603Z",
+          "evidence": "APPROVED by gpt-architect. Transcribed from the ChatGPT Project Liberty conversation, not an agent-bus message; provenance recorded in coordination/GPT_TO_CLAUDE.md. Reviewed head 26fd6607: manualOnly is sorted by the policy comparator terminating in the code-point tiebreak, with a regression asserting reversed provider input yields an identical AudioSelection. Approval conditioned on typecheck and unit being rerun under genuine Node 22, which the two gate records immediately above satisfy."
+        }
+      ],
+      "completedAt": "2026-08-17T16:37:41.788Z"
     },
     {
       "id": "PL-0203",
