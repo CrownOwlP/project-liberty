@@ -87,7 +87,7 @@
       "id": "PL-0002",
       "priority": "P0",
       "lane": "Architecture",
-      "status": "IN_PROGRESS",
+      "status": "REVIEW",
       "title": "Review scaffold contracts",
       "dependencies": [],
       "allowedPaths": [
@@ -95,8 +95,8 @@
         "control/**",
         "coordination/**"
       ],
-      "preferredAgent": "gpt-architect",
-      "reviewAgent": "claude-lead",
+      "preferredAgent": "claude-lead",
+      "reviewAgent": "gpt-architect",
       "qualityGates": [
         "architecture-review",
         "rights-review",
@@ -109,10 +109,20 @@
           "status": "pass",
           "at": "2026-08-17T01:53:48.694Z",
           "evidence": "npm run check exit 0 including repo:validate; docs/API_CONTRACTS.md examples reconciled against packages/contracts schemas"
+        },
+        "architecture-review": {
+          "status": "pass",
+          "at": "2026-08-17T03:12:29.555Z",
+          "evidence": "GPT independent review: documented contracts coherent with shipped API behavior"
+        },
+        "rights-review": {
+          "status": "pass",
+          "at": "2026-08-17T03:12:31.041Z",
+          "evidence": "GPT independent review: rights architecture coherent across product, API and content-rights contracts"
         }
       },
       "implementationAgent": "claude-lead",
-      "updatedAt": "2026-08-17T01:53:47.233Z",
+      "updatedAt": "2026-08-17T03:12:32.541Z",
       "implementationBaseSha": "fb217b96add37ed41e5c7bf1a35e693c39b5138b"
     },
     {
@@ -365,13 +375,13 @@
       "gateResults": {
         "typecheck": {
           "status": "pass",
-          "at": "2026-08-17T01:09:02.830Z",
-          "evidence": "npm run check exit 0 (turbo run typecheck across 5 packages), Node 22"
+          "at": "2026-08-17T03:12:26.633Z",
+          "evidence": "npm run check exit 0 (turbo run typecheck, 5 packages), Node 22"
         },
         "unit": {
           "status": "pass",
-          "at": "2026-08-17T01:09:04.279Z",
-          "evidence": "npm run check exit 0 (vitest: media-engine audio.test.ts and contracts), Node 22"
+          "at": "2026-08-17T03:12:28.077Z",
+          "evidence": "npm run check exit 0 (vitest: media-engine audio + ranking, contracts), Node 22"
         }
       },
       "implementationAgent": "claude-media",

@@ -330,8 +330,24 @@ export function selectAudioTrack(
 
   // Split AFTER eligibility, so a commentary track the device cannot decode is
   // still reported as a codec rejection rather than silently reclassified.
-  const manualOnly = eligible.filter((t) => !AUTO_SELECTABLE_ROLES.includes(t.role));
   const autoSelectable = eligible.filter((t) => AUTO_SELECTABLE_ROLES.includes(t.role));
+
+  /*
+   * Sorted, not filtered-and-returned.
+   *
+   * `manualOnly` was the last piece of this result still carrying provider
+   * input order: reversing the incoming tracks reversed it, which contradicted
+   * the order-invariance this function claims two lines above. Determinism that
+   * holds for three of four fields is not determinism -- a player rendering
+   * this list would show a different running order for the same stream.
+   *
+   * The same comparator is used rather than a bare id sort, so the list a
+   * viewer is offered is ordered by something meaningful (their language
+   * first), and it terminates in the code-point id tiebreak either way.
+   */
+  const manualOnly = eligible
+    .filter((t) => !AUTO_SELECTABLE_ROLES.includes(t.role))
+    .sort((a, b) => compareTracks(a, b, capabilities));
 
   if (eligible.length && !autoSelectable.length) {
     return {

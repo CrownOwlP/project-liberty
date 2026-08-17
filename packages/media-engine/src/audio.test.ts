@@ -202,7 +202,9 @@ describe("selectAudioTrack ordering", () => {
     expect(result.selected?.id).toBe("main");
     // Outside the automatic pool entirely, not merely ranked below it.
     expect(result.ordered.map((t) => t.id)).toEqual(["main"]);
-    expect(result.manualOnly.map((t) => t.id)).toEqual(["commentary", "described"]);
+    // Ordered by the policy, not by provider input order: descriptive outranks
+    // commentary, so it is offered first regardless of how they arrived.
+    expect(result.manualOnly.map((t) => t.id)).toEqual(["described", "commentary"]);
   });
 
   it("does not let commentary in the preferred language beat an unmatched main mix", () => {
@@ -467,6 +469,25 @@ describe("selectAudioTrack whole-result determinism", () => {
 
     expect(forward.rejected.map((r) => r.trackId)).toEqual(["aaa", "mmm", "zzz"]);
     expect(reverse.rejected).toEqual(forward.rejected);
+  });
+
+  it("orders manual-only tracks deterministically too", () => {
+    // The last field still carrying provider input order. Determinism that
+    // holds for three of four fields is not determinism: a player rendering
+    // this list would show a different running order for the same stream.
+    const tracks = [
+      track({ id: "zz-commentary", role: "commentary" }),
+      track({ id: "aa-described", role: "descriptive" }),
+      track({ id: "main", role: "main" })
+    ];
+    const capabilities = caps({ preferredAudioLanguages: ["en"] });
+
+    const forward = selectAudioTrack(tracks, capabilities);
+    const reverse = selectAudioTrack([...tracks].reverse(), capabilities);
+
+    expect(reverse.manualOnly.map((t) => t.id)).toEqual(forward.manualOnly.map((t) => t.id));
+    // Ordered by the policy, so descriptive precedes commentary regardless of id.
+    expect(forward.manualOnly.map((t) => t.id)).toEqual(["aa-described", "zz-commentary"]);
   });
 
   it("orders ids by code point rather than host collation", () => {

@@ -1,6 +1,6 @@
 # Project Liberty - Project Status
 
-> Generated 2026-08-17T03:04:00.796Z from the AI control plane.
+> Generated 2026-08-17T03:12:37.016Z from the AI control plane.
 
 **Overall completion:** 4/30 executable tasks (13%)
 
@@ -9,8 +9,8 @@
 - **BACKLOG:** 13
 - **READY:** 9
 - **CLAIMED:** 0
-- **IN_PROGRESS:** 1
-- **REVIEW:** 1
+- **IN_PROGRESS:** 0
+- **REVIEW:** 2
 - **BLOCKED:** 2
 - **DONE:** 4
 - **CANCELED:** 0
@@ -28,7 +28,7 @@
 
 ## Active work
 
-- **PL-0002** [IN_PROGRESS] Review scaffold contracts — owner: claude-lead
+- **PL-0002** [REVIEW] Review scaffold contracts — owner: claude-lead
 - **PL-0202** [REVIEW] Audio selection policy — owner: claude-media
 
 ## Dispatch classification
