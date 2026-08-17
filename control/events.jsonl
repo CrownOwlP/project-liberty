@@ -93,3 +93,6 @@
 {"ts":"2026-08-17T03:46:08.185Z","type":"task.started","taskId":"PL-0003","agentId":"claude-infra","implementationBaseSha":"239eac25cfcf1cfc2d282f5612469d6de50d1c94"}
 {"ts":"2026-08-17T04:00:41.851Z","type":"task.gate","taskId":"PL-0003","gate":"repo-validate","status":"pass","evidence":"npm run check exit 0 including repo:validate and test:scripts"}
 {"ts":"2026-08-17T04:00:43.318Z","type":"task.gate","taskId":"PL-0003","gate":"unit","status":"pass","evidence":"scripts/test-validate-env.mjs 27 scenarios, wired into check via test:scripts so it actually executes"}
+{"ts":"2026-08-17T04:03:46.323Z","type":"task.gate","taskId":"PL-0003","gate":"repo-validate","status":"pass","evidence":"npm run check exit 0 under the pinned Node 22 runtime, including repo:validate, env:validate and test:scripts"}
+{"ts":"2026-08-17T04:03:47.777Z","type":"task.gate","taskId":"PL-0003","gate":"unit","status":"pass","evidence":"scripts/test-validate-env.mjs 27 scenarios under pinned Node 22, wired into check via test:scripts"}
+{"ts":"2026-08-17T04:03:49.240Z","type":"task.review_requested","taskId":"PL-0003","owner":"claude-infra","reviewAgent":"gpt-architect"}

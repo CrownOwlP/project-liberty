@@ -162,7 +162,7 @@
       "id": "PL-0003",
       "priority": "P0",
       "lane": "Infra",
-      "status": "IN_PROGRESS",
+      "status": "REVIEW",
       "title": "Environment validation",
       "dependencies": [],
       "allowedPaths": [
@@ -183,17 +183,17 @@
       "gateResults": {
         "repo-validate": {
           "status": "pass",
-          "at": "2026-08-17T04:00:41.851Z",
-          "evidence": "npm run check exit 0 including repo:validate and test:scripts"
+          "at": "2026-08-17T04:03:46.322Z",
+          "evidence": "npm run check exit 0 under the pinned Node 22 runtime, including repo:validate, env:validate and test:scripts"
         },
         "unit": {
           "status": "pass",
-          "at": "2026-08-17T04:00:43.317Z",
-          "evidence": "scripts/test-validate-env.mjs 27 scenarios, wired into check via test:scripts so it actually executes"
+          "at": "2026-08-17T04:03:47.776Z",
+          "evidence": "scripts/test-validate-env.mjs 27 scenarios under pinned Node 22, wired into check via test:scripts"
         }
       },
       "implementationAgent": "claude-infra",
-      "updatedAt": "2026-08-17T03:46:08.184Z",
+      "updatedAt": "2026-08-17T04:03:49.239Z",
       "implementationBaseSha": "239eac25cfcf1cfc2d282f5612469d6de50d1c94"
     },
     {
