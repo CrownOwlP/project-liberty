@@ -244,14 +244,72 @@ export async function fetchJson(rawUrl: string, options: HttpOptions): Promise<H
 
     return fail(
       "too_many_redirects",
-      `exceeded ${options.maxRedirects} redirects starting at ${truncate(rawUrl)}`
+      `exceeded ${options.maxRedirects} redirects starting at ${describeOrigin(rawUrl)}`
     );
   } finally {
     clearTimeout(timer);
   }
 }
 
+/**
+ * A URL named by its ORIGIN, for a message that is not a place to keep one.
+ *
+ * `rawUrl` is the operator's configured endpoint today, so it carries no
+ * addon-supplied token -- but that is a property of who happens to call
+ * `fetchJson`, not of `fetchJson`, and this file is the boundary at which a URL
+ * stops being ours. Path, query and fragment are dropped: where a redirect chain
+ * STARTED identifies it well enough to debug, and a signed path is precisely the
+ * kind of thing logs must not accumulate. Mirrors what `mapping.ts` already does
+ * to a refused stream's target.
+ */
+function describeOrigin(raw: string): string {
+  try {
+    return new URL(raw).origin;
+  } catch {
+    return "(unparseable url)";
+  }
+}
+
+/**
+ * The shape of a platform error code, and the reason one is safe to repeat: it
+ * is a short screaming-snake token from a vocabulary the runtime owns, so
+ * nothing a peer wrote can be smuggled through it wearing that shape.
+ */
+const ERROR_CODE_PATTERN = /^[A-Z][A-Z0-9_]{0,31}$/;
+
+function errorCode(error: Error): string | undefined {
+  // `code` is not on the `Error` type; it is a Node/undici convention, and it
+  // sits either on the error or on the `cause` undici wraps around it.
+  for (const candidate of [error, error.cause]) {
+    if (typeof candidate !== "object" || candidate === null) continue;
+    const code = (candidate as { readonly code?: unknown }).code;
+    if (typeof code === "string" && ERROR_CODE_PATTERN.test(code)) return code;
+  }
+  return undefined;
+}
+
+/**
+ * An error named by its TYPE, never by its message.
+ *
+ * The message used to be surfaced verbatim, and a message is written by whoever
+ * threw: some `fetch` implementations put the target URL in theirs, and
+ * `JSON.parse` puts in a slice of the document it choked on -- which here is a
+ * third party's response body. Neither can carry an addon-supplied secret
+ * through the call sites that exist today, but that is a fact about the call
+ * sites rather than about this function, and it is inconsistent with the
+ * sanitising every other reason string in this package does.
+ *
+ * What is kept is the name plus, when the runtime supplies one, a system error
+ * code (`ECONNREFUSED`, `ENOTFOUND`, `UND_ERR_SOCKET`) -- the part of a network
+ * failure anybody actually reads. What is lost is `JSON.parse`'s byte offset;
+ * the reason already says the response was not JSON, and an offset is worth less
+ * than not copying an addon's payload into our logs to find it.
+ */
 function describeError(error: unknown): string {
-  if (error instanceof Error) return truncate(`${error.name}: ${error.message}`);
-  return truncate(String(error));
+  if (!(error instanceof Error)) return `a non-Error ${typeof error} was thrown`;
+  // Capped even though every error reaching here is constructed by the runtime:
+  // `name` is a writable property, so its length is not ours to assume.
+  const name = truncate(error.name, 40);
+  const code = errorCode(error);
+  return code === undefined ? name : `${name} (${code})`;
 }

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { CatalogItemRef, ProviderContext } from "../provider";
 import { createStremioProvider, declaredStreamTypes, parseStremioItemId } from "./client";
 import type { FetchLike } from "./http";
+import { stableStreamKey } from "./mapping";
 import {
   defineStremioSource,
   type AuthorizedStremioSource,
@@ -36,7 +37,7 @@ function makeSource(
       rights: "public-domain",
       rightsBasis: {
         rights: "public-domain",
-        basis: "public-domain",
+        basis: "public-domain-determination",
         reference: "US public domain catalogue, verified 2026-01"
       },
       ...over
@@ -93,14 +94,14 @@ const steppingClock = (step: number): (() => number) => {
 };
 
 describe("resolving candidates end to end", () => {
-  it("yields no candidates for streams whose media facts the protocol omits", async () => {
+  it("returns normalized authorized candidates that state what they do not know", async () => {
     /*
-     * The blunt consequence of refusing to invent metadata: a well-formed addon
-     * returning two perfectly playable URLs produces nothing, because
-     * `StreamCandidate` requires a codec, a resolution and a bitrate that the
-     * Stremio protocol never states. The reason trail says so per stream rather
-     * than reporting an empty list with no explanation, and the rights the
-     * candidates WOULD have carried are still on the resolution.
+     * PL-0301's acceptance criterion, end to end. Two playable public-domain
+     * URLs become two normalized candidates carrying the operator's declared
+     * rights -- and `null` for every media fact the Stremio protocol does not
+     * supply, rather than the 480/3600/h264/aac placeholders that used to make
+     * an unmeasured stream look measured, or the blanket refusal that replaced
+     * them and left this adapter unable to return anything at all.
      */
     const stub = stubFetch({
       [MANIFEST_URL]: () => json(manifestBody),
@@ -116,19 +117,75 @@ describe("resolving candidates end to end", () => {
     const provider = createStremioProvider(makeSource(), { fetch: stub.fetch, now: frozenClock() });
     const resolution = await provider.resolve(item, requestContext);
 
-    expect(resolution.reason).toBe("no_playable_streams");
-    expect(resolution.candidates).toEqual([]);
-    expect(resolution.rejected.map((entry) => entry.reason)).toEqual([
-      "unknown_video_codec",
-      "unknown_video_codec"
+    expect(resolution.reason).toBe("resolved");
+    expect(resolution.rejected).toEqual([]);
+    expect(resolution.candidates).toHaveLength(2);
+
+    for (const candidate of resolution.candidates) {
+      expect(candidate.providerId).toBe("archive");
+      // The operator's declaration, copied. Nothing in the response influenced it.
+      expect(candidate.rights).toBe("public-domain");
+      expect(candidate.videoCodec).toBeNull();
+      expect(candidate.audioCodec).toBeNull();
+      expect(candidate.height).toBeNull();
+      expect(candidate.bitrateKbps).toBeNull();
+      // Measured, not defaulted: a stopped clock gives 0, and health starts at
+      // the floor plus the manifest fetch this resolution already made.
+      expect(candidate.estimatedLatencyMs).toBe(0);
+      expect(candidate.healthScore).toBeCloseTo(0.75, 4);
+    }
+
+    // Delivery IS stated by the URL, so it is read rather than left unknown.
+    const byId = new Map(resolution.candidates.map((candidate) => [candidate.id, candidate] as const));
+    expect(byId.get(`archive:${stableStreamKey("https://cdn.example.com/film.mp4")}`)?.protocol).toBe(
+      "https"
+    );
+    expect(byId.get(`archive:${stableStreamKey("https://cdn.example.com/film.m3u8")}`)?.protocol).toBe(
+      "hls"
+    );
+
+    expect(resolution.mapped.map((entry) => entry.unknownFacts)).toEqual([
+      ["videoCodec", "audioCodec", "height", "bitrateKbps"],
+      ["videoCodec", "audioCodec", "height", "bitrateKbps"]
     ]);
-    expect(resolution.detail).toContain("unknown_video_codec=2");
+    expect(resolution.detail).toContain("2 playable of 2 offered, 2 with unstated media facts");
+    expect(resolution.detail).toContain("public-domain via public-domain-determination");
     expect(resolution.rights).toBe("public-domain");
     expect(resolution.rightsBasis).toEqual({
       rights: "public-domain",
-      basis: "public-domain",
+      basis: "public-domain-determination",
       reference: "US public domain catalogue, verified 2026-01"
     });
+  });
+
+  it("returns candidates in an order the addon cannot choose", async () => {
+    /*
+     * The same two streams, listed the other way round, resolve to an identical
+     * candidate list. Preserving the addon's order would hand its own preference
+     * to anything that reads `candidates[0]`, and would make two runs of the
+     * same resolution diff as different outcomes.
+     */
+    const streams = [
+      { url: "https://cdn.example.com/film.mp4", name: "Archive" },
+      { url: "https://cdn.example.com/film.m3u8", name: "Archive HLS" }
+    ];
+
+    const resolve = async (order: typeof streams) => {
+      const stub = stubFetch({
+        [MANIFEST_URL]: () => json(manifestBody),
+        [STREAM_URL]: () => json({ streams: order })
+      });
+      const provider = createStremioProvider(makeSource(), { fetch: stub.fetch, now: frozenClock() });
+      return provider.resolve(item, requestContext);
+    };
+
+    const forwards = await resolve(streams);
+    const backwards = await resolve([...streams].reverse());
+
+    expect(backwards.candidates).toEqual(forwards.candidates);
+    expect(backwards.mapped).toEqual(forwards.mapped);
+    expect(backwards.rejected).toEqual(forwards.rejected);
+    expect(backwards.detail).toEqual(forwards.detail);
   });
 
   it("measures elapsed time instead of asserting one", async () => {
@@ -144,11 +201,12 @@ describe("resolving candidates end to end", () => {
     const running = await moving.resolve(item, requestContext);
 
     // With a stopped clock the honest answer is zero. A hard-coded default would
-    // report the same number under both clocks. (`estimatedLatencyMs` on a
-    // candidate is measured from the same clock, and is unobservable here only
-    // because no stream currently becomes a candidate.)
+    // report the same number under both clocks, and so would a candidate whose
+    // `estimatedLatencyMs` was a placeholder rather than a measurement.
     expect(stopped.elapsedMs).toBe(0);
     expect(running.elapsedMs).toBeGreaterThan(0);
+    expect(stopped.candidates[0]?.estimatedLatencyMs).toBe(0);
+    expect(running.candidates[0]?.estimatedLatencyMs).toBeGreaterThan(0);
   });
 
   it("never sends the viewer's profile or request id to the addon", async () => {
@@ -210,12 +268,20 @@ describe("nothing indirect is ever fetched", () => {
 
     expect(resolution.candidates).toEqual([]);
     expect(resolution.reason).toBe("no_playable_streams");
+    // Ordered by ref, not by the addon: `(info hash)`, `(youtube id)`, then the
+    // two whose refs start with their scheme.
     expect(resolution.rejected.map((entry) => entry.reason)).toEqual([
       "torrent_source_unsupported",
-      "magnet_source_unsupported",
       "youtube_id_unsupported",
-      "url_private_address"
+      "url_private_address",
+      "magnet_source_unsupported"
     ]);
+    expect(resolution.detail).toBe(
+      "magnet_source_unsupported=1 torrent_source_unsupported=1 url_private_address=1 " +
+        "youtube_id_unsupported=1"
+    );
+    // The refused torrent's info hash is named as a kind and never reproduced.
+    expect(JSON.stringify(resolution)).not.toContain("0123456789abcdef");
     // Only the manifest and the stream endpoint were contacted. Nothing was
     // resolved, unlocked, or looked up on behalf of a refused stream.
     expect(stub.calls.map((call) => call.url)).toEqual([MANIFEST_URL, STREAM_URL]);
@@ -332,9 +398,10 @@ describe("redirects are re-validated, not followed blindly", () => {
     const provider = createStremioProvider(makeSource(), { fetch: stub.fetch, now: frozenClock() });
 
     const resolution = await provider.resolve(item, requestContext);
-    // The redirect was followed and the addon answered; the stream is refused
-    // afterwards for its missing media facts, which is a different stage.
-    expect(resolution.reason).toBe("no_playable_streams");
+    // The redirect was followed, the addon answered, and the stream it offered
+    // became a candidate.
+    expect(resolution.reason).toBe("resolved");
+    expect(resolution.candidates).toHaveLength(1);
     expect(stub.calls.map((call) => call.url)).toEqual([MANIFEST_URL, moved, STREAM_URL]);
   });
 
@@ -440,10 +507,10 @@ describe("the item and the source must agree", () => {
     });
     const singleProvider = createStremioProvider(makeSource(), { fetch: single.fetch, now: frozenClock() });
     const resolved = await singleProvider.resolve({ ...item, externalId: "tt0111161" }, requestContext);
-    // The inference succeeded: the unqualified id was addressed as a movie and
-    // the addon was asked. What comes back is refused later, for its media.
+    // The inference succeeded: the unqualified id was addressed as a movie, the
+    // addon was asked, and what came back resolved.
     expect(single.calls.map((call) => call.url)).toEqual([MANIFEST_URL, STREAM_URL]);
-    expect(resolved.reason).toBe("no_playable_streams");
+    expect(resolved.reason).toBe("resolved");
   });
 });
 
@@ -478,6 +545,85 @@ describe("item id parsing", () => {
   });
 });
 
+describe("a forged source is refused before a provider exists", () => {
+  /*
+   * The brand itself cannot be forged -- the symbol is module-private -- but
+   * `AuthorizedStremioSource` is exported as a TYPE, so a cast produces a value
+   * the compiler accepts and the rights gate never saw. `mapStremioStream`
+   * already re-checks the rights VALUE for exactly this reason. Until
+   * `createStremioProvider` did the same, the EVIDENCE for those rights was the
+   * one thing nobody re-checked: a source without a `rightsBasis` was built into
+   * a provider, made both of its requests, and only failed when
+   * `describeRightsBasis` read `basis.rights` off `undefined` and threw an
+   * uncaught `TypeError` while composing the detail line.
+   */
+  const forge = (over: Record<string, unknown>): AuthorizedStremioSource =>
+    ({ ...makeSource(), ...over }) as unknown as AuthorizedStremioSource;
+
+  it("refuses rights outside the playable allowlist", () => {
+    expect(() => createStremioProvider(forge({ rights: "pirated" }))).toThrow(/playable allowlist/);
+  });
+
+  it("refuses a source that carries no evidence at all", () => {
+    expect(() => createStremioProvider(forge({ rightsBasis: undefined }))).toThrow(/rightsBasis/);
+    // Free text is what the structured basis replaced; a cast reintroduces it.
+    expect(() => createStremioProvider(forge({ rightsBasis: "we are allowed, honestly" }))).toThrow(
+      /rightsBasis/
+    );
+  });
+
+  it("refuses evidence that classifies itself differently from the source", () => {
+    expect(() =>
+      createStremioProvider(
+        forge({ rightsBasis: { rights: "licensed", basis: "direct-license", reference: "LIC-1" } })
+      )
+    ).toThrow(/refusing to choose between them/);
+  });
+
+  it("refuses a basis the compatibility table does not permit for those rights", () => {
+    expect(() =>
+      createStremioProvider(
+        forge({
+          rightsBasis: { rights: "public-domain", basis: "direct-license", reference: "LIC-1" }
+        })
+      )
+    ).toThrow(/cannot rest on/);
+  });
+
+  it("refuses a basis with no reference behind it", () => {
+    expect(() =>
+      createStremioProvider(
+        forge({
+          rightsBasis: {
+            rights: "public-domain",
+            basis: "public-domain-determination",
+            reference: "   "
+          }
+        })
+      )
+    ).toThrow(/reference is empty/);
+  });
+
+  it("fails closed at construction, so nothing is ever fetched on its behalf", () => {
+    const stub = stubFetch({
+      [MANIFEST_URL]: () => json(manifestBody),
+      [STREAM_URL]: () => json({ streams: [{ url: "https://cdn.example.com/film.mp4" }] })
+    });
+
+    expect(() =>
+      createStremioProvider(forge({ rightsBasis: undefined }), {
+        fetch: stub.fetch,
+        now: frozenClock()
+      })
+    ).toThrow();
+    expect(stub.calls).toEqual([]);
+  });
+
+  it("still builds a provider from a source the gate actually produced", () => {
+    expect(() => createStremioProvider(makeSource())).not.toThrow();
+  });
+});
+
 describe("resolveAuthorizedCandidates", () => {
   it("returns only the candidates, with the trail available separately", async () => {
     const stub = stubFetch({
@@ -495,13 +641,11 @@ describe("resolveAuthorizedCandidates", () => {
     const candidates = await provider.resolveAuthorizedCandidates(item, requestContext);
     const resolution = await provider.resolve(item, requestContext);
 
-    // The contract method returns candidates and nothing else, so an empty
-    // result is indistinguishable from a missing addon through it alone. That is
-    // exactly why `resolve` exists and why every refusal is named there.
-    expect(candidates).toEqual([]);
-    expect(resolution.rejected.map((entry) => entry.reason)).toEqual([
-      "unknown_video_codec",
-      "torrent_source_unsupported"
-    ]);
+    // The contract method returns candidates and nothing else, so the refused
+    // torrent is invisible through it. That is exactly why `resolve` exists and
+    // why every refusal is named there.
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]?.rights).toBe("public-domain");
+    expect(resolution.rejected.map((entry) => entry.reason)).toEqual(["torrent_source_unsupported"]);
   });
 });

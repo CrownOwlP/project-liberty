@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { PLAYABLE_CONTENT_RIGHTS, type ContentRights } from "@liberty/contracts";
+import { compareCodePoint } from "./order";
 import { formatIssues } from "./protocol";
 import { checkUrl, truncate, type UrlRejectionReason } from "./url-policy";
 
@@ -34,7 +35,7 @@ import { checkUrl, truncate, type UrlRejectionReason } from "./url-policy";
  * system rather than a fact about reviewer attention.
  */
 
-/**
+/* -------------------------------------------------------------------------
  * How the declaration above is EVIDENCED.
  *
  * This was free text with a minimum length, which enforced nothing: an
@@ -45,48 +46,131 @@ import { checkUrl, truncate, type UrlRejectionReason } from "./url-policy";
  * So the basis is structured, and the structure is what is checked:
  *
  *   - `rights` restates the entitlement being evidenced;
- *   - `basis` names the KIND of authorization -- a contract with the provider,
- *     the operator's own library, or a public-domain determination;
+ *   - `basis` names the KIND of authorization it rests on -- see
+ *     `RightsBasisKind` and the compatibility table below it;
  *   - `reference` identifies the specific instance of that kind: the contract
  *     id, the collection id, or the documented determination.
  *
  * `reference` has no length rule on purpose. A short collection id is a real
  * reference and a long sentence of prose is not necessarily one, so length was
  * never the property worth testing; what is checked is that the reference exists
- * and that the classification around it is internally consistent.
+ * and that the classification around it is coherent.
+ * ---------------------------------------------------------------------- */
+
+/**
+ * HOW the entitlement was established.
+ *
+ * `rights` answers WHAT CLASS of entitlement a candidate has; `basis` answers
+ * HOW that entitlement came about. The vocabulary was previously one value per
+ * rights class -- `licensed -> provider-contract`, `owned -> user-library`,
+ * `public-domain -> public-domain` -- which made the field a restatement rather
+ * than an explanation: it could be derived from `rights` mechanically, so it
+ * added no auditable fact and its "coherence" check only ever caught a typo.
+ *
+ * Many-to-one instead. Each class has several genuinely different origins, and
+ * which one applies changes what an operator has to be able to produce when
+ * asked:
+ *
+ *   - `provider-contract` -- a commercial agreement with the party operating the
+ *     source. Expires, has territory and window terms.
+ *   - `direct-license` -- a licence obtained from the rightsholder for this
+ *     work or catalogue, independent of who serves the bytes.
+ *   - `partner-entitlement` -- served under a partner's own licence, on their
+ *     authority rather than ours. The obligations sit with the partner, so a
+ *     rights question about one of these goes to a different party entirely.
+ *   - `user-owned-copy` -- media the viewer owns, accessed with their
+ *     authorization. The docs/CONTENT_RIGHTS.md "owned by the user" case.
+ *   - `operator-owned-master` -- first-party media the operator owns outright,
+ *     with no third party to ask.
+ *   - `public-domain-determination` -- a documented finding that this work is in
+ *     the public domain in the relevant jurisdiction.
+ *   - `public-domain-collection` -- membership of a curated public-domain
+ *     collection whose curator made that determination.
+ *
+ * The distinctions are not cosmetic: `direct-license` and `partner-entitlement`
+ * are both `licensed` and they fail differently -- one lapses when our contract
+ * lapses, the other when the partner's does -- and a determination we can show
+ * is a different position from one we inherited with a collection.
  */
-export type RightsBasisKind = "provider-contract" | "user-library" | "public-domain";
+export type RightsBasisKind =
+  | "provider-contract"
+  | "direct-license"
+  | "partner-entitlement"
+  | "user-owned-copy"
+  | "operator-owned-master"
+  | "public-domain-determination"
+  | "public-domain-collection";
 
 export interface RightsBasis {
-  /** Must equal the source's declared `rights`. See `RIGHTS_BASIS_FOR_RIGHTS`. */
+  /** Must equal the source's declared `rights`. See `RIGHTS_BASES_FOR_RIGHTS`. */
   readonly rights: ContentRights;
   readonly basis: RightsBasisKind;
-  /** Contract id, collection id, or documented public-domain source. */
+  /** Contract id, collection id, or documented public-domain determination. */
   readonly reference: string;
 }
 
 /**
- * The one basis that can support each rights class.
+ * Which bases can support which rights class -- the compatibility table.
  *
- * Each rights value is a claim about WHY we may serve something, and each basis
- * names WHERE that permission comes from; there is exactly one origin per claim.
- * A source declaring `licensed` with a `public-domain` basis is not a stricter
- * or a looser source, it is a source whose config contradicts itself, and the
- * two halves imply different obligations -- a licence has terms and an expiry, a
- * public-domain determination has neither. Refusing the contradiction is the
- * only reading that does not silently pick one half to believe.
+ * An allowlist per class, so every combination outside it is refused. A source
+ * declaring `licensed` on a public-domain determination is not a stricter or a
+ * looser source, it is a source whose config contradicts itself, and the two
+ * halves imply different obligations: a licence has terms and an expiry, a
+ * determination has neither. Refusing the contradiction is the only reading that
+ * does not silently pick one half to believe. The redundancy is the point --
+ * `rights` and `basis` are stated independently by the operator, so the common
+ * config accident of copying an entry and updating one field fails closed.
  *
- * The redundancy between `rights` and `basis` is the point. They are stated
- * independently by the operator and must agree, so the common config accident --
- * copying an entry for a new source and updating one field but not the other --
- * fails closed instead of producing candidates under rights nobody declared for
- * them.
+ * CUSTODY IS NOT A LEGAL BASIS, which is why the old `user-library` value is
+ * gone rather than renamed. Where a file happens to be stored says nothing about
+ * why we may serve it. A licensed film cached in a user's local library is still
+ * `licensed`, and its basis is still the licence or contract that permits it; if
+ * the media is genuinely the viewer's own, that is `owned` with
+ * `user-owned-copy`. Allowing a storage location to evidence a licence would let
+ * "we have a copy" stand in for "we are allowed to serve it", which is precisely
+ * the inference docs/CONTENT_RIGHTS.md exists to forbid.
+ *
+ * Each list is in code-point order, and it is the order the error messages and
+ * `RIGHTS_BASIS_KINDS` are derived from, so no published list depends on the
+ * order an object literal happened to be written in.
  */
-export const RIGHTS_BASIS_FOR_RIGHTS: Readonly<Record<ContentRights, RightsBasisKind>> = {
-  licensed: "provider-contract",
-  owned: "user-library",
-  "public-domain": "public-domain"
+export const RIGHTS_BASES_FOR_RIGHTS: Readonly<Record<ContentRights, readonly RightsBasisKind[]>> = {
+  licensed: ["direct-license", "partner-entitlement", "provider-contract"],
+  owned: ["operator-owned-master", "user-owned-copy"],
+  "public-domain": ["public-domain-collection", "public-domain-determination"]
 };
+
+/**
+ * One line per basis, used to explain a refusal rather than merely name it.
+ *
+ * An operator who typed the wrong pair needs to know which fact the two halves
+ * of their config disagree about, and "basis X is not permitted for rights Y" on
+ * its own sends them to look up a table. Kept beside the table so a new basis
+ * cannot be added without stating what it means -- `Record` makes omitting one a
+ * compile error.
+ */
+export const RIGHTS_BASIS_MEANING: Readonly<Record<RightsBasisKind, string>> = {
+  "provider-contract": "a commercial agreement with the party operating this source",
+  "direct-license": "a licence obtained from the rightsholder for this work or catalogue",
+  "partner-entitlement": "served under a partner's own licence, on the partner's authority",
+  "user-owned-copy": "media the viewer owns, accessed with their authorization",
+  "operator-owned-master": "first-party media the operator owns outright",
+  "public-domain-determination": "a documented public-domain finding for the relevant jurisdiction",
+  "public-domain-collection": "membership of a curated public-domain collection"
+};
+
+/**
+ * The bases an operator is most likely to reach for by mistake, because they
+ * describe where media is HELD.
+ *
+ * Refusing the combination is enough to be correct; saying why is what stops the
+ * operator "fixing" it by changing the rights instead of the basis. Somebody
+ * looking at a licensed film sitting in a user's local library will reasonably
+ * think "the user has it, so it is theirs" -- and downgrading a licensed work to
+ * `owned` to make the config validate is a rights error dressed up as a config
+ * fix, which is a worse outcome than the original typo.
+ */
+const CUSTODY_BASES: readonly RightsBasisKind[] = ["user-owned-copy"];
 
 /**
  * Compile-time proof that a source passed the rights gate.
@@ -200,11 +284,25 @@ export interface DeploymentContext {
  */
 const SOURCE_ID_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}$/i;
 
-const RIGHTS_BASIS_KINDS: readonly RightsBasisKind[] = [
-  "provider-contract",
-  "user-library",
-  "public-domain"
-];
+/**
+ * The whole vocabulary, DERIVED from the compatibility table rather than written
+ * out beside it.
+ *
+ * A second hand-maintained list is a second thing to forget: a basis added to
+ * the table but not to the list would be rejected as unrecognised even though
+ * the table permits it, and one added to the list but not the table would be
+ * recognised and then refused as incoherent for every rights class -- two
+ * different confusing failures, both from the same duplication. Sorted by code
+ * point so the enumeration in the error messages is stable regardless of the
+ * order the table's entries happen to be written in.
+ *
+ * Walked through `PLAYABLE_CONTENT_RIGHTS` rather than the table's own keys, so
+ * a rights value the contract stops treating as playable takes its bases out of
+ * the recognised vocabulary with it.
+ */
+export const RIGHTS_BASIS_KINDS: readonly RightsBasisKind[] = [
+  ...new Set(PLAYABLE_CONTENT_RIGHTS.flatMap((rights) => RIGHTS_BASES_FOR_RIGHTS[rights]))
+].sort(compareCodePoint);
 
 /**
  * Validated as a shape, not as a length. Only the field TYPES are checked here;
@@ -238,6 +336,18 @@ export function describeRightsBasis(basis: RightsBasis): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Orders a permission flag, closed position first.
+ *
+ * The direction is arbitrary as far as determinism goes -- what matters is that
+ * there IS one. It is `false` first so that if a human ever reads the list, the
+ * more restricted of two otherwise identical sources is the one at the top,
+ * which is the reading least likely to be mistaken for an endorsement.
+ */
+function comparePermission(a: boolean, b: boolean): number {
+  return a === b ? 0 : a ? 1 : -1;
 }
 
 function fail(reason: SourceRejectionReason, detail: string): DefineStremioSourceResult {
@@ -373,20 +483,26 @@ export function defineStremioSource(
     );
   }
 
-  const expectedBasis = RIGHTS_BASIS_FOR_RIGHTS[rights];
-  if (declaredBasis.basis !== expectedBasis) {
+  /*
+   * The compatibility table, applied. Membership of the vocabulary was already
+   * checked above; this asks the different question of whether this KIND of
+   * authorization can support this CLASS of entitlement.
+   */
+  const basis = declaredBasis.basis as RightsBasisKind;
+  const permitted = RIGHTS_BASES_FOR_RIGHTS[rights];
+  if (!permitted.includes(basis)) {
     return fail(
       "rights_basis_incoherent",
-      `rights ${JSON.stringify(rights)} is evidenced by ${JSON.stringify(expectedBasis)}, not by ` +
-        `${JSON.stringify(declaredBasis.basis)}`
+      `rights ${JSON.stringify(rights)} cannot rest on ${JSON.stringify(basis)} ` +
+        `(${RIGHTS_BASIS_MEANING[basis]}); permitted bases are ${permitted.join(", ")}` +
+        (CUSTODY_BASES.includes(basis) && rights !== "owned"
+          ? ". Where a copy is STORED is not a legal basis: a licensed film cached in a user's " +
+            "library is still licensed, and its basis is still the licence or contract that permits it"
+          : "")
     );
   }
 
-  const rightsBasis: RightsBasis = {
-    rights,
-    basis: declaredBasis.basis as RightsBasisKind,
-    reference
-  };
+  const rightsBasis: RightsBasis = { rights, basis, reference };
 
   if (!SOURCE_ID_PATTERN.test(config.id)) {
     return fail(
@@ -448,6 +564,21 @@ export function defineStremioSource(
  * first bad entry: one misconfigured source must not take the other five
  * offline, and a silently shorter list is how a source disappears from
  * production without anyone noticing.
+ *
+ * `sources` is sorted so that the accepted set does not depend on the order the
+ * operator happened to list their config in -- whatever consumes this must not
+ * acquire a preference for whichever source was typed first. Two entries may
+ * legitimately share an id AND a manifest URL, since nothing here enforces
+ * uniqueness of either, which is why the comparator below runs on to every
+ * remaining field instead of stopping at those two.
+ *
+ * `rejected` keeps `index` and stays in index order, and that is deliberate
+ * rather than an oversight of the same rule. A rejected config entry may have
+ * failed before it had a usable id -- that is the commonest case, since rights
+ * are checked before shape -- so its position is the only handle an operator
+ * has on it. Position is part of a config array's identity in a way it is never
+ * part of a `/stream` response's, so reordering the config is a different input,
+ * not the same input in a different order.
  */
 export function defineStremioSources(
   inputs: readonly unknown[],
@@ -464,6 +595,60 @@ export function defineStremioSources(
     if (result.ok) sources.push(result.source);
     else rejected.push({ index, reason: result.reason, detail: result.detail });
   });
+
+  /*
+   * A TOTAL order, and total is the requirement rather than a refinement of it.
+   *
+   * Sorting by id then manifest URL left a tie between two accepted entries that
+   * share both -- which this function explicitly permits, since nothing here
+   * enforces id uniqueness -- and `Array.prototype.sort` is stable, so that tie
+   * resolved to the operator's config order: exactly the preference this sort
+   * exists to remove, surviving in the one case where it does damage. Two such
+   * entries can still differ in `rights`, `rightsBasis`, `displayName` or either
+   * permission flag, so a downstream `new Map(sources.map((s) => [s.id, s]))`
+   * would resolve the source as `licensed` or as `owned` depending on which line
+   * was typed first.
+   *
+   * Every field that can differ is therefore compared, and a remaining tie now
+   * means the two entries are equal in every field, so their relative order
+   * carries no information. Two are deliberately absent: `baseUrl`, which is
+   * `manifestUrl` with a fixed suffix removed and so cannot differ once that
+   * matches, and `rightsBasis.rights`, which the gate above refused the source
+   * unless it equalled `rights`. `localDeployment` IS compared even though one
+   * call passes one `deployment` to every entry -- that is a fact about this
+   * function's argument list, not about the type, and the next reader should not
+   * have to reconstruct it to trust the sort.
+   */
+  sources.sort((a, b) => {
+    const byId = compareCodePoint(a.id, b.id);
+    if (byId !== 0) return byId;
+    const byManifestUrl = compareCodePoint(a.manifestUrl, b.manifestUrl);
+    if (byManifestUrl !== 0) return byManifestUrl;
+    const byRights = compareCodePoint(a.rights, b.rights);
+    if (byRights !== 0) return byRights;
+    const byBasis = compareCodePoint(a.rightsBasis.basis, b.rightsBasis.basis);
+    if (byBasis !== 0) return byBasis;
+    const byReference = compareCodePoint(a.rightsBasis.reference, b.rightsBasis.reference);
+    if (byReference !== 0) return byReference;
+    const byDisplayName = compareCodePoint(a.displayName, b.displayName);
+    if (byDisplayName !== 0) return byDisplayName;
+    const byLoopback = comparePermission(a.allowLoopback, b.allowLoopback);
+    if (byLoopback !== 0) return byLoopback;
+    const byLocalDeployment = comparePermission(a.localDeployment, b.localDeployment);
+    if (byLocalDeployment !== 0) return byLocalDeployment;
+    return comparePermission(a.acceptNotWebReady, b.acceptNotWebReady);
+  });
+
+  /*
+   * Index order, kept on purpose and not an oversight of the rule above. See
+   * this function's header: a rejected entry may have failed before it had a
+   * usable id, since rights are checked before shape, so its position is the
+   * only handle an operator has on it -- and position is part of a config
+   * array's identity in a way it is never part of a `/stream` response's.
+   * Re-sorted rather than left as built, so a future change to the loop cannot
+   * quietly make the output depend on the loop again.
+   */
+  rejected.sort((a, b) => a.index - b.index);
 
   return { sources, rejected };
 }

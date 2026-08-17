@@ -1,4 +1,4 @@
-import type { ContentRights, StreamCandidate } from "@liberty/contracts";
+import { PLAYABLE_CONTENT_RIGHTS, type ContentRights, type StreamCandidate } from "@liberty/contracts";
 import type { AuthorizedMediaProvider, CatalogItemRef, ProviderContext } from "../provider";
 import { fetchJson, type FetchLike, type HttpFailureReason, type HttpOptions } from "./http";
 import {
@@ -8,13 +8,19 @@ import {
   type RejectedStream,
   type StreamMappingContext
 } from "./mapping";
+import { compareCodePoint } from "./order";
 import {
   manifestServes,
   parseStremioManifest,
   parseStremioStreamResponse,
   type StremioManifest
 } from "./protocol";
-import { describeRightsBasis, type AuthorizedStremioSource, type RightsBasis } from "./source";
+import {
+  describeRightsBasis,
+  RIGHTS_BASES_FOR_RIGHTS,
+  type AuthorizedStremioSource,
+  type RightsBasis
+} from "./source";
 import { truncate } from "./url-policy";
 
 /**
@@ -35,11 +41,11 @@ import { truncate } from "./url-policy";
  * The two numbers on every candidate that are real -- `estimatedLatencyMs` and
  * `healthScore` -- are measured here, from the requests actually made. Nothing
  * else on a candidate is invented either: a stream whose codec, resolution or
- * bitrate the protocol does not state is refused by the mapper rather than
- * filled in, so a resolution that returns no candidates for a source that plainly
- * lists streams is an expected outcome today and the reason trail says which
- * fact was missing. See `resolveStreamMedia` in mapping.ts for why that is the
- * correct failure and what would have to change to recover those candidates.
+ * bitrate the protocol does not state carries `null` for that field, which is
+ * the contract's word for UNKNOWN, rather than a plausible-looking value. Every
+ * candidate this adapter produces today is therefore unverified on all four
+ * media facts, `detail` says so, and media-engine ranks it accordingly without
+ * ever treating the absence as either compatibility or incompatibility.
  */
 
 export const DEFAULT_TIMEOUT_MS = 5_000;
@@ -165,10 +171,102 @@ function isSafeSegment(value: string): boolean {
   return /^[a-z][a-z0-9_-]{0,31}$/i.test(value);
 }
 
+/**
+ * Whether a value has the SHAPE of a rights basis, asked of `unknown`.
+ *
+ * `source.rightsBasis` is typed `RightsBasis`, so the type system believes the
+ * three fields are there. This function exists to disbelieve it: the value being
+ * checked arrived through a type assertion, and asking a typed value whether it
+ * is `undefined` is a comparison TypeScript is entitled to reject as pointless.
+ */
+function statesRightsBasis(value: unknown): value is RightsBasis {
+  if (typeof value !== "object" || value === null) return false;
+  const stated = value as { readonly rights?: unknown; readonly basis?: unknown; readonly reference?: unknown };
+  return (
+    typeof stated.rights === "string" &&
+    typeof stated.basis === "string" &&
+    typeof stated.reference === "string"
+  );
+}
+
+/**
+ * The rights gate, re-established on the DECLARATION and on its EVIDENCE.
+ *
+ * `mapStremioStream` already re-checks `PLAYABLE_CONTENT_RIGHTS` against the
+ * context it is handed, on the stated reasoning that an exported function will
+ * eventually be called by something that did not come through the constructor.
+ * The identical argument applies here and was not being made: the brand is
+ * unforgeable, but `AuthorizedStremioSource` is exported as a TYPE, so
+ * `whatever as AuthorizedStremioSource` produces one that satisfies the compiler
+ * and never passed `defineStremioSource`. The redundancy was applied to the
+ * rights value and withheld from the evidence for it, which is the half that
+ * failed worse: a forged source with no `rightsBasis` reached
+ * `describeRightsBasis` mid-resolution and threw an uncaught `TypeError` off
+ * `basis.rights`. Failing on a `TypeError` is not failing closed, it is failing
+ * wherever the first property read happens to be.
+ *
+ * The checks are the ones `defineStremioSource` makes, in the order it makes
+ * them -- rights before shape, shape before coherence -- so that a source that
+ * somehow acquired two faults reports the more fundamental one, and so that the
+ * two gates cannot drift into disagreeing about what "authorized" means.
+ *
+ * It THROWS rather than returning a reason. `defineStremioSource` reports rights
+ * failures as data because configuration is expected to be wrong; a source that
+ * reached this function without passing that gate is a programming error, and
+ * there is no honest provider object to hand back for one.
+ */
+function assertRightsRemainEvidenced(source: AuthorizedStremioSource): void {
+  const refuse = (detail: string): Error =>
+    new Error(
+      `refusing to build a Stremio provider for source ${JSON.stringify(truncate(String(source.id), 40))}: ${detail}`
+    );
+
+  if (!PLAYABLE_CONTENT_RIGHTS.includes(source.rights)) {
+    throw refuse(
+      `declared rights ${JSON.stringify(source.rights)} are outside the playable allowlist ` +
+        `(${PLAYABLE_CONTENT_RIGHTS.join(", ")})`
+    );
+  }
+
+  const stated: unknown = source.rightsBasis;
+  if (!statesRightsBasis(stated)) {
+    throw refuse(
+      "rightsBasis is absent or is not an object of {rights, basis, reference}; a declaration " +
+        "with no evidence behind it is not a declaration"
+    );
+  }
+
+  if (stated.rights !== source.rights) {
+    throw refuse(
+      `rightsBasis evidences ${JSON.stringify(stated.rights)} but the source declares ` +
+        `${JSON.stringify(source.rights)}; refusing to choose between them`
+    );
+  }
+
+  const permitted = RIGHTS_BASES_FOR_RIGHTS[source.rights];
+  if (!permitted.includes(stated.basis)) {
+    throw refuse(
+      `rights ${JSON.stringify(source.rights)} cannot rest on ${JSON.stringify(stated.basis)}; ` +
+        `permitted bases are ${permitted.join(", ")}`
+    );
+  }
+
+  if (stated.reference.trim() === "") {
+    throw refuse(
+      "rightsBasis.reference is empty; it must identify the contract, collection or documented " +
+        "public-domain source the declaration rests on"
+    );
+  }
+}
+
 export function createStremioProvider(
   source: AuthorizedStremioSource,
   options: StremioProviderOptions = {}
 ): StremioProvider {
+  // Before the clock, the fetch wrapper or anything that could make a request:
+  // an unauthorized source must not reach a state where it has an adapter.
+  assertRightsRemainEvidenced(source);
+
   const now = options.now ?? (() => Date.now());
   const fetchImpl: FetchLike =
     options.fetch ??
@@ -414,9 +512,17 @@ export function createStremioProvider(
       mapped: batch.mapped,
       rejected: batch.rejected,
       reason: "resolved",
+      /*
+       * The unverified count is part of the trail, not a detail for a debugger
+       * to derive. "Two playable candidates" and "two playable candidates, both
+       * of which state nothing about their codecs" describe very different
+       * expectations of what happens next at the <video> element, and a support
+       * engineer reading a stalled playback needs the second sentence.
+       */
       detail:
-        `${batch.mapped.length} playable of ${parsed.value.streams.length} offered; ` +
-        `authorized as ${describeRightsBasis(source.rightsBasis)}`,
+        `${batch.mapped.length} playable of ${parsed.value.streams.length} offered, ` +
+        `${batch.mapped.filter((entry) => entry.unknownFacts.length > 0).length} with unstated ` +
+        `media facts; authorized as ${describeRightsBasis(source.rightsBasis)}`,
       requestId: context.requestId,
       elapsedMs: elapsed()
     };
@@ -451,7 +557,9 @@ function summarise(rejected: readonly RejectedStream[]): string {
   const counts = new Map<string, number>();
   for (const entry of rejected) counts.set(entry.reason, (counts.get(entry.reason) ?? 0) + 1);
   return [...counts.entries()]
-    .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
+    // Map iteration is insertion-ordered, so without this the summary line would
+    // reorder itself whenever the addon reordered its streams.
+    .sort((a, b) => compareCodePoint(a[0], b[0]))
     .map(([reason, count]) => `${reason}=${count}`)
     .join(" ");
 }

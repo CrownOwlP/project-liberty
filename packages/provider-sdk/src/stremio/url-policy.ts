@@ -273,6 +273,35 @@ export function classifyHost(hostname: string): HostClass {
 }
 
 /**
+ * The scheme of a string that did NOT parse, or the fact that it has none.
+ *
+ * Everything after the scheme is discarded. A `detail` here reaches a candidate's
+ * reason trail verbatim through `mapping.ts`, and unlike every other branch of
+ * `checkUrl` this one has no parsed URL to reduce -- so echoing the input meant
+ * echoing up to 120 characters of addon-authored string, query included. Both
+ * strings this function is ever handed can be chosen by an addon: a stream URL,
+ * where `//cdn.example.test/f.mp4?token=...` is protocol-relative and so is
+ * refused outright by `new URL()`, and a `Location:` header, which resolves
+ * against its base and therefore reaches this branch less often but reaches it
+ * with `http.ts` waiting to re-report it as a rejected redirect target.
+ *
+ * The scheme is the one part that can be named safely: RFC 3986 bounds its
+ * charset, and telling "the operator typed a relative path" apart from "the
+ * addon offered `http://` with no host" is the whole diagnostic value of the
+ * message. It is length-capped as well, because a bounded charset does not stop
+ * anyone encoding a token in a very long scheme-shaped prefix. The character
+ * count replaces the string itself: it distinguishes an empty config field from
+ * a mangled URL without reproducing either.
+ */
+const SCHEME_PATTERN = /^[a-z][a-z0-9+.-]*(?=:)/i;
+
+function describeUnparseable(raw: string): string {
+  const scheme = SCHEME_PATTERN.exec(raw)?.[0];
+  const named = scheme === undefined ? "(no scheme)" : `scheme ${truncate(scheme, 16)}:`;
+  return `${named}, ${raw.length} characters`;
+}
+
+/**
  * The single gate. Pure: no DNS, no sockets, no clock.
  *
  * `base` lets a relative `Location:` header be resolved against the URL that
@@ -285,7 +314,11 @@ export function checkUrl(raw: string, options: UrlPolicyOptions, base?: string):
   try {
     url = base === undefined ? new URL(raw) : new URL(raw, base);
   } catch {
-    return { ok: false, reason: "url_unparseable", detail: `not an absolute URL: ${truncate(raw)}` };
+    return {
+      ok: false,
+      reason: "url_unparseable",
+      detail: `not an absolute URL: ${describeUnparseable(raw)}`
+    };
   }
 
   if (url.protocol !== "https:" && url.protocol !== "http:") {

@@ -35,7 +35,9 @@ export {
   defineStremioSource,
   defineStremioSources,
   describeRightsBasis,
-  RIGHTS_BASIS_FOR_RIGHTS
+  RIGHTS_BASES_FOR_RIGHTS,
+  RIGHTS_BASIS_KINDS,
+  RIGHTS_BASIS_MEANING
 } from "./source";
 export type {
   AuthorizedStremioSource,
@@ -55,20 +57,23 @@ export {
   observeStreamMedia,
   resolveStreamMedia,
   stableStreamKey,
-  streamLabel
+  streamLabel,
+  streamRef,
+  streamTarget
 } from "./mapping";
 export type {
   KnownMedia,
   MappedStream,
-  MediaResolutionResult,
   ObservedMedia,
   RejectedStream,
   StreamMappingBatch,
   StreamMappingContext,
   StreamMappingResult,
-  StreamRejectionReason,
-  UnknownMediaReason
+  StreamMedia,
+  StreamRejectionReason
 } from "./mapping";
+
+export { compareCodePoint } from "./order";
 
 export {
   formatIssues,

@@ -4,8 +4,11 @@ import {
   defineStremioSource,
   defineStremioSources,
   describeRightsBasis,
-  RIGHTS_BASIS_FOR_RIGHTS,
-  type DeploymentContext
+  RIGHTS_BASES_FOR_RIGHTS,
+  RIGHTS_BASIS_KINDS,
+  RIGHTS_BASIS_MEANING,
+  type DeploymentContext,
+  type RightsBasisKind
 } from "./source";
 
 const valid = {
@@ -14,7 +17,7 @@ const valid = {
   rights: "public-domain",
   rightsBasis: {
     rights: "public-domain",
-    basis: "public-domain",
+    basis: "public-domain-determination",
     reference: "US public domain, pre-1929 catalogue, verified 2026-01"
   }
 };
@@ -22,6 +25,11 @@ const valid = {
 const reasonOf = (input: unknown, deployment: DeploymentContext = {}): string => {
   const result = defineStremioSource(input, deployment);
   return result.ok ? "ok" : result.reason;
+};
+
+const detailOf = (input: unknown): string => {
+  const result = defineStremioSource(input);
+  return result.ok ? "" : result.detail;
 };
 
 describe("rights are declared, never inferred", () => {
@@ -33,12 +41,10 @@ describe("rights are declared, never inferred", () => {
 
   it("accepts every value on the contract's allowlist and nothing else", () => {
     for (const rights of PLAYABLE_CONTENT_RIGHTS) {
-      const rightsBasis = {
-        rights,
-        basis: RIGHTS_BASIS_FOR_RIGHTS[rights],
-        reference: `evidence-for-${rights}`
-      };
-      expect(reasonOf({ ...valid, rights, rightsBasis })).toBe("ok");
+      for (const basis of RIGHTS_BASES_FOR_RIGHTS[rights]) {
+        const rightsBasis = { rights, basis, reference: `evidence-for-${basis}` };
+        expect(reasonOf({ ...valid, rights, rightsBasis })).toBe("ok");
+      }
     }
   });
 
@@ -107,6 +113,21 @@ describe("the rights basis is auditable evidence, not a length", () => {
         rightsBasis: { ...valid.rightsBasis, basis: "fair-use" }
       })
     ).toBe("rights_basis_malformed");
+    // The retired one-to-one vocabulary. `user-library` was custody wearing the
+    // clothes of a legal basis, so it is gone rather than remapped: a config
+    // still carrying it must fail loudly, not be quietly reinterpreted.
+    expect(
+      reasonOf({
+        ...valid,
+        rightsBasis: { ...valid.rightsBasis, basis: "user-library" }
+      })
+    ).toBe("rights_basis_malformed");
+    expect(
+      reasonOf({
+        ...valid,
+        rightsBasis: { ...valid.rightsBasis, basis: "public-domain" }
+      })
+    ).toBe("rights_basis_malformed");
     expect(
       reasonOf({
         ...valid,
@@ -115,6 +136,25 @@ describe("the rights basis is auditable evidence, not a length", () => {
     ).toBe("rights_basis_malformed");
     const { reference: _dropped, ...withoutReference } = valid.rightsBasis;
     expect(reasonOf({ ...valid, rightsBasis: withoutReference })).toBe("rights_basis_malformed");
+  });
+
+  it("derives the whole vocabulary from the compatibility table", () => {
+    // One list, not two. A basis the table permits but a separate allowlist does
+    // not would be refused as unrecognised even though it is permitted, and the
+    // reverse would be recognised and then refused for every rights class.
+    expect(RIGHTS_BASIS_KINDS).toEqual([
+      "direct-license",
+      "operator-owned-master",
+      "partner-entitlement",
+      "provider-contract",
+      "public-domain-collection",
+      "public-domain-determination",
+      "user-owned-copy"
+    ]);
+    expect([...RIGHTS_BASIS_KINDS].sort()).toEqual([...RIGHTS_BASIS_KINDS]);
+    for (const basis of RIGHTS_BASIS_KINDS) {
+      expect(RIGHTS_BASIS_MEANING[basis]).toBeTruthy();
+    }
   });
 
   it("requires a reference, and does not care how long it is", () => {
@@ -134,7 +174,11 @@ describe("the rights basis is auditable evidence, not a length", () => {
       reasonOf({
         ...valid,
         rights: "licensed",
-        rightsBasis: { rights: "public-domain", basis: "public-domain", reference: "pd-1928" }
+        rightsBasis: {
+          rights: "public-domain",
+          basis: "public-domain-determination",
+          reference: "pd-1928"
+        }
       })
     ).toBe("rights_basis_incoherent");
   });
@@ -147,10 +191,15 @@ describe("the rights basis is auditable evidence, not a length", () => {
       reasonOf({
         ...valid,
         rights: "licensed",
-        rightsBasis: { rights: "licensed", basis: "public-domain", reference: "pd-1928" }
+        rightsBasis: {
+          rights: "licensed",
+          basis: "public-domain-determination",
+          reference: "pd-1928"
+        }
       })
     ).toBe("rights_basis_incoherent");
 
+    // A contract permits USE; it does not transfer ownership.
     expect(
       reasonOf({
         ...valid,
@@ -159,25 +208,79 @@ describe("the rights basis is auditable evidence, not a length", () => {
       })
     ).toBe("rights_basis_incoherent");
 
+    // Public domain is a status of the WORK. Nobody grants it to us, so no
+    // licence and no ownership claim can be what establishes it.
     expect(
       reasonOf({
         ...valid,
-        rightsBasis: { ...valid.rightsBasis, basis: "user-library" }
+        rightsBasis: { ...valid.rightsBasis, basis: "direct-license" }
       })
     ).toBe("rights_basis_incoherent");
   });
 
-  it("has exactly one basis per rights value, and accepts only that pairing", () => {
+  it("refuses custody as the basis for a licence, and says why", () => {
+    /*
+     * The specific confusion this vocabulary exists to prevent. A licensed film
+     * cached in a user's local library is STILL licensed, and its basis is still
+     * the licence or contract that permits it -- where the bytes are sitting is
+     * not a legal position. Accepting `user-owned-copy` here would let "we have
+     * a copy" stand in for "we are allowed to serve it".
+     */
+    const custodyAsLicence = {
+      ...valid,
+      rights: "licensed",
+      rightsBasis: {
+        rights: "licensed",
+        basis: "user-owned-copy",
+        reference: "cached in the household library"
+      }
+    };
+
+    expect(reasonOf(custodyAsLicence)).toBe("rights_basis_incoherent");
+    expect(detailOf(custodyAsLicence)).toContain("is not a legal basis");
+    // And the honest alternative is available: media that genuinely is the
+    // viewer's own is `owned`, evidenced by the copy they own.
+    expect(
+      reasonOf({
+        ...valid,
+        rights: "owned",
+        rightsBasis: {
+          rights: "owned",
+          basis: "user-owned-copy",
+          reference: "household library, disc rip of purchased copy"
+        }
+      })
+    ).toBe("ok");
+  });
+
+  it("accepts exactly the combinations the compatibility table permits", () => {
+    // The full matrix: 7 bases x 3 rights classes. Seven coherent pairings, and
+    // fourteen refusals -- every one of which used to be unrepresentable rather
+    // than checked, because there was only one basis per class to choose from.
+    let accepted = 0;
     for (const rights of PLAYABLE_CONTENT_RIGHTS) {
-      for (const basis of ["provider-contract", "user-library", "public-domain"] as const) {
-        const outcome = reasonOf({
-          ...valid,
-          rights,
-          rightsBasis: { rights, basis, reference: "ref-1" }
-        });
-        expect(outcome).toBe(basis === RIGHTS_BASIS_FOR_RIGHTS[rights] ? "ok" : "rights_basis_incoherent");
+      for (const basis of RIGHTS_BASIS_KINDS) {
+        const permitted = RIGHTS_BASES_FOR_RIGHTS[rights].includes(basis);
+        expect(
+          reasonOf({ ...valid, rights, rightsBasis: { rights, basis, reference: "ref-1" } })
+        ).toBe(permitted ? "ok" : "rights_basis_incoherent");
+        if (permitted) accepted++;
       }
     }
+    expect(accepted).toBe(7);
+  });
+
+  it("partitions the vocabulary, so no basis evidences two different classes", () => {
+    // `RIGHTS_BASIS_KINDS` is derived by flattening the table through a Set, so
+    // a basis listed under two rights classes would silently deduplicate and the
+    // matrix above would still pass. Asserted directly instead.
+    const counts = new Map<RightsBasisKind, number>();
+    for (const rights of PLAYABLE_CONTENT_RIGHTS) {
+      for (const basis of RIGHTS_BASES_FOR_RIGHTS[rights]) {
+        counts.set(basis, (counts.get(basis) ?? 0) + 1);
+      }
+    }
+    expect([...counts.values()]).toEqual(RIGHTS_BASIS_KINDS.map(() => 1));
   });
 
   it("summarises the authorization in one line for the reason trail", () => {
@@ -305,5 +408,86 @@ describe("defineStremioSources", () => {
     expect(rejected).toEqual([
       { index: 1, reason: "rights_not_declared", detail: expect.any(String) }
     ]);
+  });
+
+  it("orders the accepted sources by id, not by the order they were configured", () => {
+    // Nothing downstream may acquire a preference for whichever source the
+    // operator happened to type first.
+    const configured = [
+      { ...valid, id: "zulu" },
+      { ...valid, id: "alpha" },
+      { ...valid, id: "mike" }
+    ];
+
+    expect(defineStremioSources(configured).sources.map((source) => source.id)).toEqual([
+      "alpha",
+      "mike",
+      "zulu"
+    ]);
+    expect(defineStremioSources([...configured].reverse()).sources).toEqual(
+      defineStremioSources(configured).sources
+    );
+  });
+
+  it("orders two entries that share an id and a manifest URL by their rights and basis", () => {
+    /*
+     * The fixture the old comparator could not order. It compared id then
+     * manifest URL and nothing else, so these two returned 0 -- and
+     * `Array.prototype.sort` is stable, which means the tie resolved to the
+     * operator's config order, the one thing this function promises to discard.
+     * Nothing here enforces id uniqueness, so the tie is a configuration an
+     * operator can actually write, and a downstream
+     * `new Map(sources.map((source) => [source.id, source]))` would then resolve
+     * "shared" as licensed or as owned depending on which line was typed first.
+     */
+    const licensed = {
+      ...valid,
+      id: "shared",
+      rights: "licensed",
+      rightsBasis: { rights: "licensed", basis: "direct-license", reference: "LIC-1" }
+    };
+    const owned = {
+      ...valid,
+      id: "shared",
+      rights: "owned",
+      rightsBasis: { rights: "owned", basis: "user-owned-copy", reference: "household copy" }
+    };
+
+    const forwards = defineStremioSources([licensed, owned]);
+    const backwards = defineStremioSources([owned, licensed]);
+
+    expect(forwards.sources).toHaveLength(2);
+    expect(forwards.sources).toEqual(backwards.sources);
+    expect(forwards.sources.map((source) => source.rights)).toEqual(["licensed", "owned"]);
+  });
+
+  it("orders two otherwise identical entries by display name, then by permission", () => {
+    const base = { ...valid, id: "shared" };
+
+    const named = defineStremioSources([
+      { ...base, displayName: "Zulu" },
+      { ...base, displayName: "Alpha" }
+    ]);
+    expect(named.sources.map((source) => source.displayName)).toEqual(["Alpha", "Zulu"]);
+    expect(named.sources).toEqual(
+      defineStremioSources([
+        { ...base, displayName: "Alpha" },
+        { ...base, displayName: "Zulu" }
+      ]).sources
+    );
+
+    const flagged = defineStremioSources([
+      { ...base, acceptNotWebReady: true },
+      { ...base, acceptNotWebReady: false }
+    ]);
+    // Closed position first, so a human skimming the list does not read the more
+    // permissive of two identical sources as the canonical one.
+    expect(flagged.sources.map((source) => source.acceptNotWebReady)).toEqual([false, true]);
+    expect(flagged.sources).toEqual(
+      defineStremioSources([
+        { ...base, acceptNotWebReady: false },
+        { ...base, acceptNotWebReady: true }
+      ]).sources
+    );
   });
 });

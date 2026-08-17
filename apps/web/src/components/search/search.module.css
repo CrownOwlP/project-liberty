@@ -1,0 +1,86 @@
+/*
+ * Scoped to the search surface (PL-0102).
+ *
+ * A CSS module rather than additions to `globals.css`: the search field and the
+ * result grid are the only things that need styles the catalog surface does not
+ * already provide, and a module keeps them from becoming another set of global
+ * class names every future surface has to avoid colliding with. Everything that
+ * already exists globally — .shell, .section, .card, .state-panel, .button,
+ * .visually-hidden, .skeleton — is reused as-is so the two surfaces cannot
+ * drift apart visually.
+ */
+
+.heading {
+  margin: 0;
+  font-size: 28px;
+  line-height: 1.15;
+  letter-spacing: -0.03em;
+}
+
+.form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.input {
+  flex: 1 1 320px;
+  min-width: 0;
+  padding: 11px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.input::placeholder {
+  color: var(--muted);
+}
+
+/*
+ * Focus is never removed, only replaced. The field is the one control on this
+ * page, so a keyboard user losing track of it loses the surface entirely.
+ */
+.input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.hint {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* Sized to the real field so the layout does not jump when it replaces this. */
+.fieldSkeleton {
+  flex: 1 1 320px;
+  height: 44px;
+}
+
+.results {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.result {
+  min-width: 0;
+}
+
+.matchReason {
+  margin: 6px 2px 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+@media (max-width: 900px) {
+  .results {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}

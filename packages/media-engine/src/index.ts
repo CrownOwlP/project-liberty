@@ -1,10 +1,16 @@
 export { rankStreamCandidates, PLAYABLE_RIGHTS, PROVIDER_HEALTH_FLOOR } from "./ranking";
-export type { PlaybackDecision, RankedCandidate, RejectionReason } from "./ranking";
+export type {
+  PlaybackDecision,
+  PlaybackDecisionReason,
+  RankedCandidate,
+  RejectionReason
+} from "./ranking";
 export {
   scoreCandidate,
   explainScore,
   SCORE_WEIGHTS,
   SCORE_PRECISION,
+  UNKNOWABLE_DIMENSIONS,
   CODEC_EFFICIENCY,
   PROTOCOL_ADAPTIVITY,
   BITRATE_KBPS_PER_LINE,
@@ -13,3 +19,6 @@ export {
 export type { CandidateScore, ScoreComponent, ScoreDimension } from "./scoring";
 export { selectAudioTrack, languageMatch, primarySubtag } from "./audio";
 export type { AudioSelection, AudioSelectionReason, AudioRejectionReason } from "./audio";
+export * from "./failover";
+export { selectSubtitleTrack } from "./subtitles";
+export type { SubtitleSelection, SubtitleSelectionReason, SubtitleRejectionReason } from "./subtitles";

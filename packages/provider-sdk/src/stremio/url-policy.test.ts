@@ -115,6 +115,37 @@ describe("checkUrl scheme policy", () => {
     expect(outcome("manifest.json", remote)).toBe("url_unparseable");
     expect(outcome("", remote)).toBe("url_unparseable");
   });
+
+  it("describes an unparseable URL instead of reproducing it", () => {
+    /*
+     * The one branch with no parsed URL to reduce, and therefore the one that
+     * used to echo its input -- up to 120 characters of it. `detail` is copied
+     * verbatim into a candidate's reason trail by `mapping.ts`, and this case is
+     * reachable with content the addon chose: a protocol-relative stream URL
+     * throws in `new URL()`, so the token below went straight through.
+     */
+    const signed = "//cdn.example.com/f.mp4?token=super-secret-token";
+    const result = checkUrl(signed, remote);
+
+    expect(result.ok).toBe(false);
+    expect(!result.ok && result.reason).toBe("url_unparseable");
+    expect(!result.ok && result.detail).not.toContain("super-secret-token");
+    expect(!result.ok && result.detail).not.toContain("cdn.example.com");
+    // What survives cannot carry a secret and still tells the two failures
+    // apart: an operator's relative path has no scheme, and the length
+    // distinguishes an empty config field from a mangled URL.
+    expect(!result.ok && result.detail).toContain("(no scheme)");
+    expect(!result.ok && result.detail).toContain(`${signed.length} characters`);
+  });
+
+  it("names the scheme when the string has one", () => {
+    // `http://` is a valid scheme with an invalid (empty) host, so the parser
+    // throws before `url_host_missing` can be reached -- which is why this
+    // branch has to say something useful on its own.
+    const result = checkUrl("http://", remote);
+    expect(!result.ok && result.reason).toBe("url_unparseable");
+    expect(!result.ok && result.detail).toContain("scheme http:");
+  });
 });
 
 describe("checkUrl SSRF policy", () => {
