@@ -6,6 +6,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 
 import {
+  ALL_ENV_FILES,
   EXIT_INVALID,
   EXIT_OK,
   EXIT_USAGE,
@@ -15,13 +16,17 @@ import {
   checkInstall,
   checkNodeVersion,
   checkServices,
+  dedupeEnvFindings,
+  defaultModes,
   describeFormat,
+  envFilesForMode,
   evaluate,
   formatFinding,
   parseArgs,
   parseEnvContract,
   parseEnvFile,
   probePort,
+  resolveVariable,
 } from "./validate-env.mjs";
 
 /**
@@ -53,7 +58,16 @@ function contractOf(text) {
   return parsed;
 }
 
-/** Minimal snapshot in the shape gatherRepoState() produces. */
+/**
+ * Minimal snapshot in the shape gatherRepoState() produces.
+ *
+ * Every file any mode can read is represented, and missing by default, so a
+ * scenario that cares about one names it in `envFiles` and the rest stay absent.
+ * Enumerating ALL_ENV_FILES rather than listing two of them by hand is what
+ * keeps this honest as the list grows: a file the snapshot forgot would be
+ * `undefined` here and skipped by buildSources for the wrong reason -- the
+ * scenario would pass while proving nothing.
+ */
 function snapshotFor({
   manifest = { name: "fixture", workspaces: [], devDependencies: {} },
   lock = { name: "fixture", lockfileVersion: 3, packages: { "": { devDependencies: {} } } },
@@ -61,29 +75,35 @@ function snapshotFor({
   nodeModulesExists = true,
   workspaces = [],
   emptyPatterns = [],
+  envFiles = {},
 } = {}) {
   const json = (value) =>
     value === null
       ? { text: null, json: null, parseError: null }
       : { text: JSON.stringify(value), json: value, parseError: null };
+  const files = {
+    "package.json": json(manifest),
+    "package-lock.json": json(lock),
+    "node_modules/.package-lock.json": json(hidden),
+    ".nvmrc": { text: `${NODE_MAJOR}\n` },
+    ".env.example": { text: "" },
+  };
+  for (const file of ALL_ENV_FILES) {
+    files[file] = { text: envFiles[file] ?? null };
+  }
+  for (const name of Object.keys(envFiles)) {
+    assert.ok(ALL_ENV_FILES.includes(name), `${name} is not a file any mode reads`);
+  }
   return {
     root: "/fixture",
-    files: {
-      "package.json": json(manifest),
-      "package-lock.json": json(lock),
-      "node_modules/.package-lock.json": json(hidden),
-      ".nvmrc": { text: `${NODE_MAJOR}\n` },
-      ".env.example": { text: "" },
-      ".env.local": { text: null },
-      ".env": { text: null },
-    },
+    files,
     nodeModulesExists,
     workspaces,
     emptyPatterns,
   };
 }
 
-function freshRepo({ envExample, envLocal, manifest, lock, hidden, nvmrc } = {}) {
+function freshRepo({ envExample, envLocal, envFiles = {}, manifest, lock, hidden, nvmrc } = {}) {
   const repo = path.join(temp, `repo-${++repoSeq}`);
   fs.mkdirSync(path.join(repo, "node_modules"), { recursive: true });
   fs.writeFileSync(
@@ -126,15 +146,30 @@ function freshRepo({ envExample, envLocal, manifest, lock, hidden, nvmrc } = {})
       ["# A variable the fixture requires.", "# @required", "# @format nonempty", "LIBERTY_TEST_REQUIRED=example", ""].join("\n"),
   );
   if (envLocal !== undefined) fs.writeFileSync(path.join(repo, ".env.local"), envLocal);
+  // The mode-specific files are written by name, so a scenario about
+  // `.env.production.local` cannot quietly become a scenario about a typo.
+  for (const [name, text] of Object.entries(envFiles)) {
+    assert.ok(ALL_ENV_FILES.includes(name), `${name} is not a file any mode reads`);
+    fs.writeFileSync(path.join(repo, name), text);
+  }
   return repo;
 }
 
-/** Environment with the fixture's own variables stripped, so the parent shell cannot satisfy them. */
+/**
+ * Environment with the fixture's own variables stripped, so the parent shell
+ * cannot satisfy them.
+ *
+ * NODE_ENV goes too. It selects the default mode, and therefore which .env files
+ * a scenario reads at all -- a suite whose answer depends on the shell that
+ * launched it is not testing the script. Scenarios that care pass `--mode`
+ * explicitly; the rest get `development`, deterministically.
+ */
 function cleanEnv(extra = {}) {
   const env = { ...process.env };
   for (const name of Object.keys(env)) {
     if (name.startsWith("LIBERTY_TEST_")) delete env[name];
   }
+  delete env.NODE_ENV;
   return { ...env, ...extra };
 }
 
@@ -943,7 +978,13 @@ try {
    * 17. Argument parsing, including the usage/invalid distinction.
    * ------------------------------------------------------------------- */
   {
-    assert.deepEqual(parseArgs([]).options, { quiet: false, scope: "app", services: false, help: false });
+    assert.deepEqual(parseArgs([]).options, {
+      quiet: false,
+      scope: "app",
+      services: false,
+      help: false,
+      modes: [],
+    });
     assert.equal(parseArgs(["--quiet", "--services", "--scope", "ci"]).options.scope, "ci");
     assert.equal(parseArgs(["--scope=ci"]).options.scope, "ci");
     assert.match(parseArgs(["--scope", "nowhere"]).error, /--scope must be app or ci/);
@@ -1174,7 +1215,7 @@ try {
     });
     assert.deepEqual(clean.findings, []);
     assert.deepEqual(
-      clean.sources.map((source) => source.label),
+      clean.sourcesByMode.get("development").map((source) => source.label),
       ["process.env", ".env.local"],
     );
 
@@ -1187,7 +1228,495 @@ try {
     );
   }
 
-  console.log("Environment validation tests passed (27 scenarios).");
+  /* ---------------------------------------------------------------------
+   * 26. The file list each mode reads, asserted literally.
+   *
+   *     There is no cleverer form for this. The arrays ARE the contract with
+   *     @next/env, and paraphrasing them into a property ("the .local variants
+   *     come first") would restate the same assumption the original defect was
+   *     made of. If Next.js ever changes the order, this is the assertion that
+   *     has to be edited deliberately rather than drifted past.
+   * ------------------------------------------------------------------- */
+  {
+    assert.deepEqual(envFilesForMode("development"), [
+      ".env.development.local",
+      ".env.local",
+      ".env.development",
+      ".env",
+    ]);
+    assert.deepEqual(envFilesForMode("test"), [".env.test.local", ".env.test", ".env"]);
+    assert.deepEqual(envFilesForMode("production"), [
+      ".env.production.local",
+      ".env.local",
+      ".env.production",
+      ".env",
+    ]);
+
+    // .env.local is omitted under test, not merely demoted.
+    assert.equal(envFilesForMode("test").includes(".env.local"), false);
+
+    // The snapshot has to cover every file any mode can reach, exactly once, or
+    // a mode would be evaluated against bytes that were never read.
+    assert.equal(ALL_ENV_FILES.length, 8);
+    assert.equal(new Set(ALL_ENV_FILES).size, ALL_ENV_FILES.length);
+    for (const mode of ["development", "test", "production"]) {
+      for (const file of envFilesForMode(mode)) {
+        assert.ok(
+          ALL_ENV_FILES.includes(file),
+          `${file} is readable in ${mode} but is not in the snapshot`,
+        );
+      }
+    }
+
+    // With no --mode, NODE_ENV picks the one mode to validate when it names one.
+    // (A default, not a reproduction of @next/env: `next build` under
+    // NODE_ENV=staging reads the production files while this says development,
+    // which is why env:validate names all three modes rather than relying on it.)
+    assert.deepEqual(defaultModes({ NODE_ENV: "production" }), ["production"]);
+    assert.deepEqual(defaultModes({ NODE_ENV: "staging" }), ["development"]);
+    assert.deepEqual(defaultModes({}), ["development"]);
+  }
+
+  /* ---------------------------------------------------------------------
+   * 27. The mode-specific files outrank the shared ones.
+   *
+   *     This is the regression for the defect itself. Resolving .env.local and
+   *     then .env means a value in .env.production.local wins at runtime while
+   *     the validator never opens the file that won -- so it validates one
+   *     value and the app runs with another, and the run still passes.
+   * ------------------------------------------------------------------- */
+  {
+    const layered = snapshotFor({
+      envFiles: {
+        ".env.production.local": "PICK=production-local\n",
+        ".env.local": "PICK=local\n",
+        ".env.production": "PICK=production\n",
+        ".env": "PICK=env\n",
+      },
+    });
+    assert.deepEqual(
+      buildSources(layered, {}, "production").map((source) => source.label),
+      ["process.env", ".env.production.local", ".env.local", ".env.production", ".env"],
+    );
+    assert.deepEqual(resolveVariable("PICK", buildSources(layered, {}, "production")), {
+      value: "production-local",
+      source: ".env.production.local",
+    });
+
+    // ...and .env.production still beats .env once the .local files are gone.
+    // That is the second half of the same override and can break separately.
+    const committed = snapshotFor({
+      envFiles: { ".env.production": "PICK=production\n", ".env": "PICK=env\n" },
+    });
+    assert.deepEqual(resolveVariable("PICK", buildSources(committed, {}, "production")), {
+      value: "production",
+      source: ".env.production",
+    });
+
+    // Files that do not exist are skipped rather than searched, so `found:`
+    // names the places that were really looked in.
+    assert.deepEqual(
+      buildSources(committed, {}, "production").map((source) => source.label),
+      ["process.env", ".env.production", ".env"],
+    );
+  }
+
+  /* ---------------------------------------------------------------------
+   * 28. .env.local does not exist as far as test mode is concerned.
+   *
+   *     Next.js skips it so a test run means the same thing on every machine.
+   *     The consequence cuts both ways and both directions are asserted: a
+   *     value living only there does not satisfy a required variable in test,
+   *     and a malformed value there is not reported in test either -- reporting
+   *     it would describe a value that mode never loads.
+   * ------------------------------------------------------------------- */
+  {
+    const snapshot = snapshotFor({ envFiles: { ".env.local": "PICK=local\n" } });
+    assert.deepEqual(
+      buildSources(snapshot, {}, "test").map((source) => source.label),
+      ["process.env"],
+    );
+    assert.equal(resolveVariable("PICK", buildSources(snapshot, {}, "test")), null);
+
+    const repo = freshRepo({ envLocal: "LIBERTY_TEST_REQUIRED=set\n" });
+    assert.equal(runScript(repo, ["--mode", "development"]).code, EXIT_OK);
+    const inTest = runScript(repo, ["--mode", "test"]);
+    assert.equal(inTest.code, EXIT_INVALID, "test mode must not be satisfied by .env.local");
+    assert.match(inTest.stderr, /FAIL env\.missing/);
+    assert.match(inTest.stderr, /LIBERTY_TEST_REQUIRED/);
+
+    const malformed = freshRepo({
+      envExample: [
+        "# An origin.",
+        "# @optional",
+        "# @format url",
+        "LIBERTY_TEST_URL=https://example.test",
+        "",
+      ].join("\n"),
+      envLocal: "LIBERTY_TEST_URL=SENTINEL-not-a-url\n",
+    });
+    const quiet = runScript(malformed, ["--mode", "test"]);
+    assert.equal(quiet.code, EXIT_OK, `test mode must not read .env.local:\n${quiet.stderr}`);
+    assert.equal(quiet.stderr.includes("SENTINEL"), false);
+    assert.equal(runScript(malformed, ["--mode", "development"]).code, EXIT_INVALID);
+  }
+
+  /* ---------------------------------------------------------------------
+   * 29. process.env outranks every file, in every mode. This is the one part
+   *     of the precedence that does not vary, and a mode-aware rewrite is
+   *     exactly the change that could accidentally make it vary.
+   * ------------------------------------------------------------------- */
+  {
+    const everywhere = snapshotFor({
+      envFiles: Object.fromEntries(ALL_ENV_FILES.map((file) => [file, `PICK=from-${file}\n`])),
+    });
+    for (const mode of ["development", "test", "production"]) {
+      assert.deepEqual(
+        resolveVariable("PICK", buildSources(everywhere, { PICK: "from-process" }, mode)),
+        { value: "from-process", source: "process.env" },
+        `process.env must win in ${mode}`,
+      );
+    }
+  }
+
+  /* ---------------------------------------------------------------------
+   * 30. One problem prints once.
+   *
+   *     Validating three modes finds the same broken variable three times, and
+   *     the reader wants one line unless the modes genuinely disagree. Note
+   *     what dedupe cannot key on: `found` embeds the list of files that were
+   *     searched, and that list differs per mode by construction, so comparing
+   *     the sentence would collapse nothing at all.
+   * ------------------------------------------------------------------- */
+  {
+    const modes = ["development", "test", "production"];
+
+    const everyMode = snapshotFor();
+    everyMode.files[".env.example"] = {
+      text: ["# A required value.", "# @required", "# @format nonempty", "V=example", ""].join("\n"),
+    };
+    const shared = evaluate(everyMode, {
+      actualVersion: `${NODE_MAJOR}.0.0`,
+      processEnv: {},
+      scope: "app",
+      modes,
+    });
+    const missing = shared.findings.filter((finding) => finding.check === "env.missing");
+    assert.equal(missing.length, 1, `one problem must print once:\n${render(shared.findings)}`);
+    assert.equal(missing[0].key, "env.missing:V");
+    assert.equal(missing[0].modes, undefined, "a problem true of every mode needs no annotation");
+    assert.equal(formatFinding(missing[0]).includes("modes:"), false);
+    assert.deepEqual([...shared.sourcesByMode.keys()], modes);
+
+    const oneMode = snapshotFor({ envFiles: { ".env.test.local": "V=not a url\n" } });
+    oneMode.files[".env.example"] = {
+      text: ["# An origin.", "# @optional", "# @format url", "V=https://example.test", ""].join("\n"),
+    };
+    const specific = evaluate(oneMode, {
+      actualVersion: `${NODE_MAJOR}.0.0`,
+      processEnv: {},
+      scope: "app",
+      modes,
+    });
+    const malformed = specific.findings.filter((finding) => finding.check === "env.malformed");
+    assert.equal(malformed.length, 1, `one mode, one finding:\n${render(specific.findings)}`);
+    assert.deepEqual(malformed[0].modes, ["test"]);
+    assert.match(formatFinding(malformed[0]), /\n {2}modes: {4}test$/);
+    assert.equal(malformed[0].key, "env.malformed:V");
+  }
+
+  /* ---------------------------------------------------------------------
+   * 31. --mode parsing: repeatable, deduplicated, and a typo is a usage error
+   *     rather than a machine that looks broken.
+   * ------------------------------------------------------------------- */
+  {
+    assert.deepEqual(parseArgs(["--mode", "production"]).options.modes, ["production"]);
+    assert.deepEqual(parseArgs(["--mode=production"]).options.modes, ["production"]);
+    // Duplicates collapse and the order is the order first asked for, because
+    // that is the order the output is going to be read in.
+    assert.deepEqual(
+      parseArgs(["--mode", "test", "--mode", "development", "--mode=test"]).options.modes,
+      ["test", "development"],
+    );
+    const badMode = /--mode must be development, test, or production/;
+    assert.match(parseArgs(["--mode", "bogus"]).error, badMode);
+    assert.match(parseArgs(["--mode=bogus"]).error, badMode);
+    assert.match(parseArgs(["--mode"]).error, badMode);
+
+    const repo = freshRepo({ envLocal: "LIBERTY_TEST_REQUIRED=set\n" });
+    const usage = runScript(repo, ["--mode", "bogus"]);
+    assert.equal(usage.code, EXIT_USAGE, "a mistyped flag is not a broken machine");
+    assert.match(usage.stderr, badMode);
+    assert.match(usage.stderr, /Usage: node scripts\/validate-env\.mjs/);
+
+    // The success line names the modes, because they decide which files were
+    // opened at all: "passed" alone cannot be told apart from a pass that never
+    // read the file the reader is asking about.
+    const one = runScript(repo, ["--mode", "production"]);
+    assert.equal(one.code, EXIT_OK, `expected success, got:\n${one.stdout}${one.stderr}`);
+    assert.match(one.stdout, /mode production,/);
+
+    const both = runScript(repo, ["--mode", "development", "--mode=production"]);
+    assert.equal(both.code, EXIT_OK, `expected success, got:\n${both.stdout}${both.stderr}`);
+    assert.match(both.stdout, /modes development, production,/);
+  }
+
+  /* ---------------------------------------------------------------------
+   * 32. End to end, the defect as reported: a good value in .env.local and a
+   *     malformed one in .env.production.local. Before the fix this passed --
+   *     the validator read the file that loses and never opened the file that
+   *     wins, so it certified a value the production build does not use.
+   * ------------------------------------------------------------------- */
+  {
+    const repo = freshRepo({
+      envExample: [
+        "# The database this deployment connects to.",
+        "# @optional",
+        "# @format postgres-url",
+        "LIBERTY_TEST_DATABASE_URL=postgresql://liberty:liberty@localhost:5432/liberty",
+        "",
+      ].join("\n"),
+      envLocal: "LIBERTY_TEST_DATABASE_URL=postgresql://liberty:SENTINELGOOD@localhost:5432/liberty\n",
+      envFiles: { ".env.production.local": "LIBERTY_TEST_DATABASE_URL=SENTINELBAD-not-a-url\n" },
+    });
+
+    const production = runScript(repo, ["--mode", "production"]);
+    assert.equal(
+      production.code,
+      EXIT_INVALID,
+      `the overriding file must be read:\n${production.stdout}${production.stderr}`,
+    );
+    assert.match(production.stderr, /FAIL env\.malformed/);
+    assert.match(production.stderr, /LIBERTY_TEST_DATABASE_URL/);
+    assert.match(production.stderr, /from \.env\.production\.local/);
+    // Rule 3 still holds on the new path: neither the malformed value nor the
+    // good one it overrode appears, and neither does the password in either.
+    assert.equal(
+      production.stderr.includes("SENTINEL"),
+      false,
+      `values leaked into output:\n${production.stderr}`,
+    );
+
+    // The same checkout is fine in development, where that file is not read --
+    // which is precisely why validating one mode and calling it "the
+    // environment" was the defect rather than a shortcut.
+    const development = runScript(repo, ["--mode", "development"]);
+    assert.equal(development.code, EXIT_OK, `expected success, got:\n${development.stderr}`);
+
+    const both = runScript(repo, ["--mode", "development", "--mode", "production"]);
+    assert.equal(both.code, EXIT_INVALID);
+    assert.equal((both.stderr.match(/FAIL env\.malformed/g) ?? []).length, 1);
+    assert.match(both.stderr, /modes: {4}production/);
+  }
+
+  /* ---------------------------------------------------------------------
+   * 33. A fresh clone with no .env files at all passes in every mode.
+   *
+   *     The constraint the whole warn/fail split exists to protect, restated
+   *     per mode: adding modes must not turn absence into failure anywhere,
+   *     or the check becomes one people run with their eyes closed.
+   * ------------------------------------------------------------------- */
+  {
+    const repo = freshRepo({
+      envExample: [
+        "# An optional value.",
+        "# @optional",
+        "# @format nonempty",
+        "LIBERTY_TEST_OPTIONAL=example",
+        "",
+        "# A value with a documented fallback.",
+        "# @default info",
+        "# @format enum:debug,info",
+        "LIBERTY_TEST_LEVEL=info",
+        "",
+      ].join("\n"),
+    });
+    for (const mode of ["development", "test", "production"]) {
+      const result = runScript(repo, ["--mode", mode]);
+      assert.equal(
+        result.code,
+        EXIT_OK,
+        `a clone with no .env files must pass in ${mode}:\n${result.stderr}`,
+      );
+    }
+    const all = runScript(repo, ["--mode", "development", "--mode", "test", "--mode", "production"]);
+    assert.equal(all.code, EXIT_OK, `...and with all three at once:\n${all.stderr}`);
+    // The defaulted variable warns once, not once per mode.
+    assert.equal((all.stderr.match(/WARN env\.default/g) ?? []).length, 1);
+    assert.equal(
+      all.stderr.includes("modes:"),
+      false,
+      "a warning true of every mode needs no annotation",
+    );
+  }
+
+  /* ---------------------------------------------------------------------
+   * 34. dedupeEnvFindings, directly.
+   *
+   *     The branch that distinguishes the design -- one key, several distinct
+   *     details, each annotated with the modes that produced it -- was reachable
+   *     only through evaluate() and never asserted on its own, which is how a
+   *     defect in what counts as "the same detail" got through review. Asserted
+   *     here at the level it is decided.
+   * ------------------------------------------------------------------- */
+  {
+    const modes = ["development", "test", "production"];
+    const under = (mode, extra) => ({
+      level: "warn",
+      check: "env.default",
+      key: "env.default:LEVEL",
+      mode,
+      expected: "LEVEL to be set explicitly (A value with a documented fallback.)",
+      fix: "set LEVEL=info in .env.local to pin it explicitly",
+      ...extra,
+    });
+
+    // One key, two genuinely different facts: both survive, each carrying the
+    // modes that produced it, sorted so the annotation does not depend on the
+    // order the modes happened to be validated in.
+    const split = dedupeEnvFindings(
+      [
+        under("development", { found: "set to something outside the accepted set" }),
+        under("production", { found: "set to something outside the accepted set" }),
+        under("test", { found: "not set" }),
+      ],
+      modes,
+    );
+    assert.equal(split.length, 2, `two facts, two findings:\n${render(split)}`);
+    const byModes = new Map(split.map((finding) => [finding.modes.join(","), finding]));
+    assert.deepEqual([...byModes.keys()].sort(), ["development,production", "test"]);
+    assert.deepEqual(byModes.get("development,production").modes, ["development", "production"]);
+    assert.deepEqual(byModes.get("test").modes, ["test"]);
+    assert.equal(byModes.get("test").found, "not set");
+    assert.match(
+      formatFinding(byModes.get("development,production")),
+      /modes: {4}development, production$/,
+    );
+
+    /*
+     * ...and `dedupeFound` is what decides that. Three per-mode sentences that
+     * describe one unset variable collapse to one unannotated finding, and the
+     * internal field does not survive the collapse: it names no value today, but
+     * a field that outlives its purpose is one a later formatter prints.
+     */
+    const collapsed = dedupeEnvFindings(
+      [
+        under("development", {
+          found: "not set in process.env, .env.local, so the documented default `info` applies",
+          dedupeFound: "not set, so the documented default `info` applies",
+        }),
+        under("test", {
+          found: "not set in process.env, so the documented default `info` applies",
+          dedupeFound: "not set, so the documented default `info` applies",
+        }),
+        under("production", {
+          found: "not set in process.env, .env.local, so the documented default `info` applies",
+          dedupeFound: "not set, so the documented default `info` applies",
+        }),
+      ],
+      modes,
+    );
+    assert.equal(collapsed.length, 1, `one problem, one finding:\n${render(collapsed)}`);
+    assert.equal(collapsed[0].modes, undefined, "a problem true of every mode needs no annotation");
+    assert.equal(
+      collapsed[0].found,
+      "not set in process.env, .env.local, so the documented default `info` applies",
+      "the printed sentence is the one the first mode produced, unchanged",
+    );
+    assert.equal(Object.hasOwn(collapsed[0], "dedupeFound"), false, "internal field must not survive");
+    assert.equal(Object.hasOwn(collapsed[0], "mode"), false);
+
+    // A single-mode run has no disagreement to annotate, even when one key
+    // yields two findings -- the same undeclared name sitting in two files.
+    const stray = (label) => ({
+      level: "warn",
+      check: "env.undeclared",
+      key: "env.undeclared:STRAY",
+      mode: "development",
+      expected: `every variable in ${label} to be declared in .env.example`,
+      found: "STRAY is set there but not declared",
+      fix: "document STRAY in .env.example, or remove it if it is a typo",
+    });
+    const oneMode = dedupeEnvFindings([stray(".env.local"), stray(".env")], ["development"]);
+    assert.equal(oneMode.length, 2, "two files are two lines to edit");
+    for (const finding of oneMode) {
+      assert.equal(finding.modes, undefined);
+      assert.equal(
+        formatFinding(finding).includes("modes:"),
+        false,
+        `one mode validated is nothing to annotate:\n${formatFinding(finding)}`,
+      );
+    }
+  }
+
+  /* ---------------------------------------------------------------------
+   * 35. The same collapse end to end, on a repo that HAS a .env.local.
+   *
+   *     Scenario 33 asserts the same "warns once" property on a clone with no
+   *     .env files, and that is exactly why it could not catch this: with no
+   *     .env.local every mode searches the identical list, the sentences match,
+   *     and the collapse fires for the wrong reason. On the documented developer
+   *     setup they do not match -- development and production search
+   *     "process.env, .env.local", test searches "process.env" -- so keying the
+   *     collapse on the printed sentence reports one unset variable twice, once
+   *     annotated `development, production` and once `test`.
+   * ------------------------------------------------------------------- */
+  {
+    const repo = freshRepo({
+      envExample: [
+        "# A variable the fixture requires.",
+        "# @required",
+        "# @format nonempty",
+        "LIBERTY_TEST_REQUIRED=example",
+        "",
+        "# A value with a documented fallback that nobody sets.",
+        "# @default info",
+        "# @format enum:debug,info",
+        "LIBERTY_TEST_LEVEL=info",
+        "",
+        "# Declared only so .env.local has a reason to exist and be read.",
+        "# @optional",
+        "# @format nonempty",
+        "LIBERTY_TEST_OPTIONAL=example",
+        "",
+      ].join("\n"),
+      envLocal: "LIBERTY_TEST_OPTIONAL=set\n",
+    });
+
+    const all = runScript(
+      repo,
+      ["--mode", "development", "--mode", "test", "--mode", "production"],
+      // The required variable is satisfied from the real environment rather than
+      // .env.local, because test mode does not read that file and a failure there
+      // would be scenario 28 rather than this one.
+      { LIBERTY_TEST_REQUIRED: "set" },
+    );
+    assert.equal(all.code, EXIT_OK, `expected success, got:\n${all.stdout}${all.stderr}`);
+
+    /*
+     * The precondition, asserted rather than assumed. If .env.local ever stopped
+     * being read in development this scenario would silently become scenario 33
+     * -- passing while proving nothing -- and the defect it exists for would be
+     * reachable again.
+     */
+    assert.match(
+      all.stderr,
+      /not set in process\.env, \.env\.local/,
+      `the modes must really search different lists here:\n${all.stderr}`,
+    );
+    assert.equal(
+      (all.stderr.match(/WARN env\.default/g) ?? []).length,
+      1,
+      `one unset default is one warning, not one per searched-source list:\n${all.stderr}`,
+    );
+    assert.equal(
+      all.stderr.includes("modes:"),
+      false,
+      `a problem true of every mode needs no annotation:\n${all.stderr}`,
+    );
+  }
+
+  console.log("Environment validation tests passed (37 scenarios).");
 } finally {
   fs.rmSync(temp, { recursive: true, force: true });
 }

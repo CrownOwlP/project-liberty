@@ -48,10 +48,18 @@
  * only arrangement where the two cannot drift apart.
  *
  * Usage:
- *   node scripts/validate-env.mjs [--quiet] [--scope app|ci] [--services]
+ *   node scripts/validate-env.mjs [--quiet] [--scope app|ci]
+ *                                 [--mode development|test|production]...
+ *                                 [--services]
  *
  *   --quiet      suppress success output; failures and warnings still print
  *   --scope ci   also require variables annotated `@scope ci`
+ *   --mode <m>   which NODE_ENV to resolve variables as; repeatable, because
+ *                the set of dotenv files Next.js reads depends on it and one
+ *                mode's answer does not cover another's. Defaults to NODE_ENV
+ *                when that names a known mode, otherwise development -- a
+ *                reasonable guess for a single invocation, which is why
+ *                `env:validate` names all three modes rather than relying on it.
  *   --services   additionally probe PostgreSQL/Redis reachability (opt-in;
  *                the local stack is documented as optional)
  *
@@ -68,11 +76,47 @@ export const EXIT_OK = 0;
 export const EXIT_INVALID = 1;
 export const EXIT_USAGE = 2;
 
-/** Sources are consulted in this order; the first one holding a name wins. */
-const ENV_FILES = [".env.local", ".env"];
-
 const NAME_PATTERN = /^[A-Z][A-Z0-9_]*$/;
 const KNOWN_SCOPES = new Set(["app", "ci"]);
+const KNOWN_MODES = new Set(["development", "test", "production"]);
+
+/**
+ * Which dotenv files a given mode reads, highest precedence first.
+ *
+ * This mirrors `loadEnvConfig` in @next/env rather than approximating it,
+ * because the approximation was a real defect. Consulting `.env.local` then
+ * `.env` and calling that "the order Next.js applies" means a malformed
+ * DATABASE_URL in `.env.production.local` overrides a good one at runtime while
+ * this script never opens the file that won -- so it validates one value and the
+ * app runs with another. That is the single worst outcome available here: not a
+ * missed problem but a confident pass over the wrong bytes, recorded as gate
+ * evidence the control plane then trusts.
+ *
+ * The `.env.local` omission under `test` is Next.js's own rule, not a
+ * simplification. A test run is supposed to mean the same thing on every
+ * machine, and a git-ignored per-developer file is precisely what would stop it
+ * meaning that -- so a value that lives only in `.env.local` does NOT satisfy a
+ * required variable in test mode, and this script has to agree.
+ */
+export function envFilesForMode(mode) {
+  const files = [`.env.${mode}.local`];
+  if (mode !== "test") files.push(".env.local");
+  files.push(`.env.${mode}`, ".env");
+  return files;
+}
+
+/**
+ * Every file any mode can read, deduplicated.
+ *
+ * `gatherRepoState` reads this rather than one mode's list, so the snapshot is
+ * mode-independent: the filesystem is touched once and every requested mode is
+ * then evaluated from identical bytes. A snapshot that depended on the mode
+ * would let "the same repository" mean two things inside one run, which is the
+ * class of bug this whole file exists to prevent.
+ */
+export const ALL_ENV_FILES = [
+  ...new Set([...KNOWN_MODES].flatMap((mode) => envFilesForMode(mode))),
+];
 
 /**
  * What counts as "not a real value" in `.env.example`.
@@ -107,6 +151,18 @@ export function formatFinding(finding) {
   if (finding.expected) lines.push(`  expected: ${finding.expected}`);
   if (finding.found) lines.push(`  found:    ${finding.found}`);
   if (finding.fix) lines.push(`  fix:      ${finding.fix}`);
+  /*
+   * The mode annotation appears only when the problem is specific to some of the
+   * modes that were validated. A finding true of all of them -- and every
+   * node/install/contract finding, which cannot vary by mode at all -- prints
+   * without it, because "modes: development, test, production" on every line is
+   * a column of noise that makes the one line where the mode MATTERS harder to
+   * spot rather than easier.
+   */
+  if (finding.modes) {
+    const modes = Array.isArray(finding.modes) ? finding.modes.join(", ") : finding.modes;
+    lines.push(`  modes:    ${modes}`);
+  }
   return lines.join("\n");
 }
 
@@ -929,10 +985,12 @@ export function checkInstall(snapshot) {
  * ========================================================================== */
 
 /**
- * @param sources ordered [{ label, values: Map }]; the first hit wins, matching
- *        the precedence Next.js applies (process.env, then .env.local, then
- *        .env). Reporting WHICH source supplied a name is not a value
- *        disclosure and is usually the whole answer to "but I set that".
+ * @param sources ordered [{ label, values: Map }]; the first hit wins. The order
+ *        is `process.env` followed by `envFilesForMode(mode)`, which is the
+ *        precedence @next/env applies for that mode -- see the comment there for
+ *        why the mode is load-bearing rather than cosmetic. Reporting WHICH
+ *        source supplied a name is not a value disclosure and is usually the
+ *        whole answer to "but I set that".
  */
 export function resolveVariable(name, sources) {
   for (const source of sources) {
@@ -986,6 +1044,18 @@ function unsetWithDefault({ variable, resolved, where, scope }) {
     found: resolved
       ? `declared in ${resolved.source} but empty, so the documented default \`${variable.defaultValue}\` applies`
       : `not set in ${where}, so the documented default \`${variable.defaultValue}\` applies`,
+    /*
+     * The same sentence with the searched-source list removed, so `dedupeEnvFindings`
+     * can tell that one unset variable found under three modes is one problem:
+     * `where` is "process.env, .env.local" under development and "process.env"
+     * under test on any machine that has a .env.local, which is the documented
+     * developer setup, so keying the collapse on `found` printed the identical
+     * warning twice. The resolved branch keeps `resolved.source`, because a value
+     * that is empty in a DIFFERENT file per mode is a different line to go and fix.
+     */
+    dedupeFound: resolved
+      ? `declared in ${resolved.source} but empty, so the documented default \`${variable.defaultValue}\` applies`
+      : `not set, so the documented default \`${variable.defaultValue}\` applies`,
     fix: variable.cacheKey
       ? `set ${variable.name}=${variable.defaultValue} in .env.local. turbo.json lists it in ` +
         `globalEnv, so it is hashed into the build cache key; while it is unset it hashes as ` +
@@ -997,8 +1067,34 @@ function unsetWithDefault({ variable, resolved, where, scope }) {
     : warn("env.default", detail);
 }
 
-export function checkEnvironmentVariables({ contract, sources, scope }) {
+export function checkEnvironmentVariables({ contract, sources, scope, mode }) {
   const findings = [];
+
+  /*
+   * Every finding carries a dedupe key -- the check plus the variable it is
+   * about -- and, when one was supplied, the mode it was found under.
+   *
+   * The key exists because the same repository is validated under several modes
+   * in one run, so one broken variable is discovered several times, and `found`
+   * cannot be used to recognise the repeat: it names the sources that were
+   * searched, and those differ between modes by construction. Deduping on the
+   * message would therefore collapse nothing at all, and the reader would get
+   * three paragraphs about one typo.
+   *
+   * The key alone is not enough either, because two modes can disagree about a
+   * variable and that disagreement is the one thing worth printing. So a finding
+   * whose `found` embeds the searched-source list also carries `dedupeFound`:
+   * the same fact with the per-mode part removed, which is what the collapse
+   * compares. It is internal and never printed -- and, like `found`, it never
+   * contains a value (header rule 3), because a field that exists is a field
+   * something will eventually print.
+   */
+  const record = (finding, name) => {
+    finding.key = `${finding.check}:${name}`;
+    if (mode) finding.mode = mode;
+    findings.push(finding);
+  };
+
   const applicable = contract.variables.filter(
     (variable) => variable.scope === "app" || variable.scope === scope,
   );
@@ -1010,18 +1106,22 @@ export function checkEnvironmentVariables({ contract, sources, scope }) {
     // Unset and set-to-empty are the same state for a defaulted variable: in
     // both, the value the project runs with is the one in .env.example.
     if (variable.defaultValue !== null && (!resolved || resolved.value.trim() === "")) {
-      findings.push(unsetWithDefault({ variable, resolved, where, scope }));
+      record(unsetWithDefault({ variable, resolved, where, scope }), variable.name);
       continue;
     }
 
     if (!resolved) {
       if (variable.required) {
-        findings.push(
+        record(
           fail("env.missing", {
             expected: `${variable.name} to be set (${summarize(variable.description)})`,
             found: `not set in ${where}`,
+            // Flattened: "nowhere at all" is one problem however many places were
+            // searched, and the searched list is exactly what differs per mode.
+            dedupeFound: "not set",
             fix: `add ${variable.name} to .env.local (see .env.example for the accepted values)`,
           }),
+          variable.name,
         );
       }
       continue;
@@ -1032,12 +1132,16 @@ export function checkEnvironmentVariables({ contract, sources, scope }) {
     // looking at is how a two-minute fix becomes an argument with the tool.
     if (resolved.value.trim() === "") {
       if (variable.required) {
-        findings.push(
+        record(
           fail("env.empty", {
             expected: `${variable.name} to have a value (${summarize(variable.description)})`,
+            // Not flattened: this names the file the empty line is IN, not the
+            // files that were searched, and two modes naming two files is two
+            // lines to go and edit.
             found: `declared in ${resolved.source} but empty`,
             fix: `set a value for ${variable.name}; see .env.example`,
           }),
+          variable.name,
         );
       }
       continue;
@@ -1050,11 +1154,15 @@ export function checkEnvironmentVariables({ contract, sources, scope }) {
     if (variable.secret && PLACEHOLDER.test(resolved.value)) {
       const finding = {
         expected: `${variable.name} to hold a real credential (${summarize(variable.description)})`,
+        // Not flattened, for the same reason as env.empty: an unfilled placeholder
+        // sitting in .env.local and one sitting in .env.production.local are two
+        // credentials to go and fill in, and the fix line names each file.
         found: `still the placeholder from .env.example, in ${resolved.source}`,
         fix: `put the real value in ${resolved.source === "process.env" ? "the environment" : resolved.source}`,
       };
-      findings.push(
+      record(
         variable.required ? fail("env.placeholder", finding) : warn("env.placeholder", finding),
+        variable.name,
       );
       continue;
     }
@@ -1062,12 +1170,16 @@ export function checkEnvironmentVariables({ contract, sources, scope }) {
     if (variable.format) {
       const problem = checkFormat(variable.format, resolved.value);
       if (problem) {
-        findings.push(
+        record(
           fail("env.malformed", {
             expected: `${variable.name} to be ${describeFormat(variable.format)}`,
+            // Not flattened: the source here is where the winning value came
+            // from, so a mode that reads a different file is reporting a
+            // different bad value -- the defect scenario 32 exists for.
             found: `${problem} (from ${resolved.source}; value not shown)`,
             fix: `correct ${variable.name} in ${resolved.source === "process.env" ? "the environment" : resolved.source}`,
           }),
+          variable.name,
         );
       }
     }
@@ -1086,17 +1198,100 @@ export function checkEnvironmentVariables({ contract, sources, scope }) {
     if (source.label === "process.env") continue;
     for (const name of source.values.keys()) {
       if (declared.has(name)) continue;
-      findings.push(
+      record(
         warn("env.undeclared", {
+          // Not flattened: `found` carries no source list at all, and the file
+          // named in `expected` is the one to edit -- the same stray name in two
+          // files is two lines to delete, not one finding printed twice.
           expected: `every variable in ${source.label} to be declared in .env.example`,
           found: `${name} is set there but not declared`,
           fix: `document ${name} in .env.example, or remove it if it is a typo`,
         }),
+        name,
       );
     }
   }
 
   return findings;
+}
+
+/**
+ * Collapse the same problem reported under several modes.
+ *
+ * Two rules, and the second one is why this is not a one-liner. A problem found
+ * in EVERY validated mode, described identically each time, is one problem and
+ * prints once with no mode annotation -- annotating it would only say "always",
+ * at the cost of a line on every finding. A problem that differs -- present in
+ * one mode and not another, or a failure in one and a warning in another -- is
+ * genuinely several facts, so each distinct description survives, carrying the
+ * modes that produced it. That is the case worth printing: it is the shape a
+ * mode-specific override makes.
+ *
+ * Grouping is by `key` rather than by message, because the message embeds the
+ * list of files that were searched and that list differs per mode by
+ * construction. For the same reason "described identically" is decided on
+ * `dedupeFound` where the finding supplies one: comparing the printed sentence
+ * would call one unset variable two problems on every machine that has a
+ * .env.local, since test does not read it and the other two modes do.
+ */
+export function dedupeEnvFindings(findings, modes) {
+  const detailOf = (finding) =>
+    JSON.stringify([
+      finding.level,
+      finding.expected ?? "",
+      finding.dedupeFound ?? finding.found ?? "",
+      finding.fix ?? "",
+    ]);
+
+  const groups = new Map();
+  for (const finding of findings) {
+    if (!groups.has(finding.key)) groups.set(finding.key, []);
+    groups.get(finding.key).push(finding);
+  }
+
+  // The per-mode `mode` field is an implementation detail of this collapse and
+  // does not survive it; `modes` is what the reader sees, and only when it says
+  // something the reader could not have assumed. `dedupeFound` goes the same way
+  // and for a stronger reason: it exists only to be compared here, and a field
+  // that outlives its purpose is one a later formatter prints by accident.
+  const withoutMode = (finding) => {
+    const copy = { ...finding };
+    delete copy.mode;
+    delete copy.dedupeFound;
+    return copy;
+  };
+
+  const deduped = [];
+  for (const group of groups.values()) {
+    const covered = new Set(group.map((finding) => finding.mode));
+    const details = new Set(group.map(detailOf));
+    if (details.size === 1 && modes.every((mode) => covered.has(mode))) {
+      deduped.push(withoutMode(group[0]));
+      continue;
+    }
+    const byDetail = new Map();
+    for (const finding of group) {
+      const detail = detailOf(finding);
+      if (!byDetail.has(detail)) byDetail.set(detail, { finding, modes: new Set() });
+      byDetail.get(detail).modes.add(finding.mode);
+    }
+    for (const entry of byDetail.values()) {
+      /*
+       * One mode was validated, so there is no disagreement to report and
+       * `modes: development` on the line would only repeat the success line.
+       * This branch is still reached in a single-mode run, because one mode can
+       * produce two findings under one key -- the same undeclared name in two
+       * files -- and those are two facts about one variable, not two modes
+       * describing one fact.
+       */
+      if (modes.length === 1) {
+        deduped.push(withoutMode(entry.finding));
+        continue;
+      }
+      deduped.push({ ...withoutMode(entry.finding), modes: [...entry.modes].sort() });
+    }
+  }
+  return deduped;
 }
 
 /* ==========================================================================
@@ -1279,7 +1474,7 @@ export function gatherRepoState(root) {
     ".nvmrc": { text: readText(root, ".nvmrc") },
     ".env.example": { text: readText(root, ".env.example") },
   };
-  for (const file of ENV_FILES) files[file] = { text: readText(root, file) };
+  for (const file of ALL_ENV_FILES) files[file] = { text: readText(root, file) };
 
   const nodeModulesExists = fs.existsSync(path.join(root, "node_modules"));
   const manifest = files["package.json"].json;
@@ -1304,9 +1499,17 @@ export function gatherRepoState(root) {
  * Evaluation
  * ========================================================================== */
 
-export function buildSources(snapshot, processEnv) {
+/**
+ * Real environment always outranks any file, then the mode's files in order.
+ *
+ * A file that does not exist is skipped rather than added as an empty source, so
+ * the `found:` line names the places that were actually searched. Telling
+ * someone a variable is "not set in .env.production" when there is no such file
+ * sends them to write one, which is rarely the fix.
+ */
+export function buildSources(snapshot, processEnv, mode = "development") {
   const sources = [{ label: "process.env", values: new Map(Object.entries(processEnv)) }];
-  for (const file of ENV_FILES) {
+  for (const file of envFilesForMode(mode)) {
     const text = snapshot.files[file]?.text;
     if (text !== null && text !== undefined) {
       sources.push({ label: file, values: parseEnvFile(text) });
@@ -1319,8 +1522,19 @@ export function buildSources(snapshot, processEnv) {
  * Pure: snapshot and options in, findings out. Nothing here reads the clock,
  * the filesystem, or the process -- which is what makes every branch above
  * reachable from a test that does not have to build a real environment first.
+ *
+ * `modes` is a list because one repository has several answers at once: the same
+ * checkout resolves DATABASE_URL differently under `next build` and under the
+ * test runner, and validating only one of them is how a malformed value in
+ * `.env.production.local` survives a green run. Everything that cannot vary by
+ * mode -- the runtime, the install, the contract file itself -- is computed once
+ * regardless of how many modes were asked for, because reporting a missing
+ * `node_modules` three times would bury the two findings that do differ.
  */
-export function evaluate(snapshot, { actualVersion, processEnv, scope = "app" }) {
+export function evaluate(
+  snapshot,
+  { actualVersion, processEnv, scope = "app", modes = ["development"] },
+) {
   const findings = [];
 
   findings.push(
@@ -1345,25 +1559,48 @@ export function evaluate(snapshot, { actualVersion, processEnv, scope = "app" })
     );
   }
 
-  const sources = buildSources(snapshot, processEnv);
-  findings.push(...checkEnvironmentVariables({ contract, sources, scope }));
+  const sourcesByMode = new Map();
+  const perMode = [];
+  for (const mode of modes) {
+    const sources = buildSources(snapshot, processEnv, mode);
+    sourcesByMode.set(mode, sources);
+    perMode.push(...checkEnvironmentVariables({ contract, sources, scope, mode }));
+  }
+  findings.push(...dedupeEnvFindings(perMode, modes));
 
-  return { findings, contract, sources };
+  return { findings, contract, sourcesByMode };
 }
 
 /* ==========================================================================
  * Process layer
  * ========================================================================== */
 
-const USAGE = `Usage: node scripts/validate-env.mjs [--quiet] [--scope app|ci] [--services]
+const USAGE = `Usage: node scripts/validate-env.mjs [--quiet] [--scope app|ci] [--mode <m>]... [--services]
 
   --quiet         suppress success output; failures and warnings still print
   --scope <s>     app (default) or ci; ci additionally requires @scope ci vars
+  --mode <m>      development, test or production; repeatable, since each reads a
+                  different set of .env files. Defaults to NODE_ENV when that
+                  names one of the three, otherwise development
   --services      probe PostgreSQL/Redis reachability (opt-in; TCP connect only)
   --help          show this message`;
 
+const MODE_ERROR = "--mode must be development, test, or production";
+
 export function parseArgs(argv) {
-  const options = { quiet: false, scope: "app", services: false, help: false };
+  const options = { quiet: false, scope: "app", services: false, help: false, modes: [] };
+  /*
+   * Repeated --mode accumulates and duplicates collapse, so `--mode test --mode
+   * test` is not a request to validate twice; the order is the order first
+   * asked for, because that is the order the output will be read in. An empty
+   * list here means "no mode was requested" rather than "no modes" -- the
+   * default depends on NODE_ENV, which this function deliberately cannot see.
+   */
+  const addMode = (value) => {
+    if (!KNOWN_MODES.has(value)) return `${MODE_ERROR}, got "${value ?? ""}"`;
+    if (!options.modes.includes(value)) options.modes.push(value);
+    return null;
+  };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "--quiet") options.quiet = true;
@@ -1377,9 +1614,35 @@ export function parseArgs(argv) {
       const value = arg.slice("--scope=".length);
       if (!KNOWN_SCOPES.has(value)) return { error: `--scope must be app or ci, got "${value}"` };
       options.scope = value;
+    } else if (arg === "--mode") {
+      const error = addMode(argv[++i]);
+      if (error) return { error };
+    } else if (arg.startsWith("--mode=")) {
+      const error = addMode(arg.slice("--mode=".length));
+      if (error) return { error };
     } else return { error: `unknown option "${arg}"` };
   }
   return { options };
+}
+
+/**
+ * Which single mode to validate when nobody said.
+ *
+ * NODE_ENV is the best signal available to a process that was not told, and
+ * guessing `development` unconditionally would be wrong in exactly the place it
+ * matters -- a CI step that exports NODE_ENV=production and then validates the
+ * development file set has validated the wrong repository.
+ *
+ * It is a reasonable default, not a reproduction of @next/env, which derives the
+ * mode from the COMMAND (`next dev` -> development, `next build` -> production)
+ * and only reads NODE_ENV to spot `test`. Under NODE_ENV=staging, `next build`
+ * loads the production file set while this returns development. That gap is
+ * unfixable from here -- there is no command to inspect -- which is why
+ * `env:validate` passes all three modes explicitly rather than trusting a guess.
+ */
+export function defaultModes(processEnv) {
+  const fromEnvironment = processEnv?.NODE_ENV;
+  return [KNOWN_MODES.has(fromEnvironment) ? fromEnvironment : "development"];
 }
 
 export async function main(argv, { root = process.cwd(), processEnv = process.env } = {}) {
@@ -1394,15 +1657,27 @@ export async function main(argv, { root = process.cwd(), processEnv = process.en
     return EXIT_OK;
   }
 
+  const modes = options.modes.length ? options.modes : defaultModes(processEnv);
+
   const snapshot = gatherRepoState(root);
-  const { findings, contract, sources } = evaluate(snapshot, {
+  const { findings, contract, sourcesByMode } = evaluate(snapshot, {
     actualVersion: process.versions.node,
     processEnv,
     scope: options.scope,
+    modes,
   });
 
   if (options.services) {
-    findings.push(...(await checkServices({ sources })));
+    /*
+     * Probed with the first requested mode's sources only. Every mode resolves
+     * DATABASE_URL from the same short list of candidates, so probing each in
+     * turn would usually open the same socket to the same host two more times
+     * and learn nothing -- and where the modes genuinely disagree about the URL,
+     * the format checks above have already said so per mode. Reachability is the
+     * one check here that costs a network round trip, so it is not repeated for
+     * an answer that is already in the output.
+     */
+    findings.push(...(await checkServices({ sources: sourcesByMode.get(modes[0]) })));
   }
 
   const errors = findings.filter((finding) => finding.level === "error");
@@ -1434,9 +1709,14 @@ export async function main(argv, { root = process.cwd(), processEnv = process.en
     const noted = warnings.length
       ? `, with ${warnings.length} warning${warnings.length === 1 ? "" : "s"} above`
       : "";
+    // The modes are named because they decide which files were read at all: a
+    // pass that says only "passed" cannot be distinguished from a pass that
+    // never opened the file the reader is asking about.
+    const validated = `mode${modes.length === 1 ? "" : "s"} ${modes.join(", ")}`;
     console.log(
       `Project Liberty environment validation passed ` +
-        `(Node ${process.versions.node}, scope ${options.scope}, ${checked} declared variables` +
+        `(Node ${process.versions.node}, scope ${options.scope}, ${validated}, ` +
+        `${checked} declared variables` +
         `${options.services ? ", services reachable" : ""})${noted}.`,
     );
   }

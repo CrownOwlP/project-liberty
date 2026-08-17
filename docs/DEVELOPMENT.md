@@ -9,9 +9,11 @@ node scripts/validate-env.mjs
 ```
 
 It exits `0` when the machine can actually run this project, `1` when it cannot,
-and `2` when the command line itself was wrong. `npm run check` runs it, and
-`npm run env:validate` is the same thing by a shorter name. Every failure names
-what was expected, what was found, and what to type next:
+and `2` when the command line itself was wrong. `npm run check` runs it through
+`npm run env:validate`, which is the same script asked for all three build modes
+at once rather than for whichever one the shell happens to be in — the reason
+that distinction matters has a section of its own below. Every failure names what
+was expected, what was found, and what to type next:
 
 ```text
 FAIL node.version
@@ -55,6 +57,7 @@ Flags:
 | ---------------- | ------------------------------------------------------------------------ |
 | `--quiet`        | Suppress the success line. Failures and warnings still print. For hooks.  |
 | `--scope ci`     | Also require variables annotated `@scope ci` (see below).                 |
+| `--mode <m>`     | Resolve variables as `development`, `test`, or `production`. Repeatable; each mode reads a different set of `.env` files. Defaults to `NODE_ENV` when it names one of the three, otherwise `development`. |
 | `--services`     | Additionally probe PostgreSQL and Redis reachability. Opt-in.             |
 | `--help`         | Usage.                                                                    |
 
@@ -73,7 +76,9 @@ What it checks:
   package shadowing a `@liberty/*` name is caught rather than silently imported.
   Platform-gated optional dependencies are excluded from the comparison; they
   are absent by design on every machine but one.
-- **Environment variables**, against `.env.example` as the declared contract.
+- **Environment variables**, against `.env.example` as the declared contract, and
+  resolved separately for each build mode that was asked for — see *Which files a
+  variable is resolved from*.
 - Nothing else. Docker, git, and a running database are not required to build,
   test, or gate this repository, so it does not pretend they are.
 
@@ -101,14 +106,70 @@ merely copied: the `@`-prefixed comment lines are machine-read annotations.
 cp .env.example .env.local
 ```
 
-`.env.local` is git-ignored and is where real values go. Precedence when
-resolving a variable is `process.env`, then `.env.local`, then `.env` — the same
-order Next.js applies, and the reported source is part of every finding.
+`.env.local` is git-ignored and is where real values go.
 
 Never put a real secret in `.env.example`. It is committed, and a credential
 that reaches version control has to be rotated even if nobody ever used it.
 Variables annotated `@secret` must stay blank or `replace-me`; the validator
 fails the contract file itself otherwise.
+
+### Which files a variable is resolved from
+
+Next.js does not read one fixed list of `.env` files. `loadEnvConfig` in
+`@next/env` chooses the list from `NODE_ENV`, and the validator mirrors that
+choice rather than approximating it. The approximation it replaced is worth
+describing, because it is the failure this check exists to prevent, committed by
+the check itself: resolving `.env.local` and then `.env`, and calling that "the
+order Next.js applies", means a malformed `DATABASE_URL` in
+`.env.production.local` wins at runtime while the validator never opens the file
+that won. It then passes, having validated a value the application does not use.
+A confident pass over the wrong bytes is worse than no check at all, because gate
+evidence is recorded on the strength of it.
+
+`process.env` outranks every file, in every mode. After that, highest precedence
+first:
+
+| `NODE_ENV`    | Files consulted, in order                                            |
+| ------------- | --------------------------------------------------------------------- |
+| `development` | `.env.development.local`, `.env.local`, `.env.development`, `.env`     |
+| `test`        | `.env.test.local`, `.env.test`, `.env`                                 |
+| `production`  | `.env.production.local`, `.env.local`, `.env.production`, `.env`       |
+
+`.env.local` is absent from the `test` row deliberately, and that is Next.js's
+rule rather than a simplification here. A test run is supposed to mean the same
+thing on every machine, and a git-ignored per-developer file is precisely what
+would stop it meaning that. The consequence is worth stating plainly rather than
+leaving to be discovered: a value that lives only in `.env.local` does **not**
+satisfy a `@required` variable under `--mode test`, and a malformed value there
+is not reported under `--mode test` either, because in that mode nothing reads
+it.
+
+Files that do not exist are skipped rather than searched, so the `found:` line
+names the places that were really looked in — being told a variable is "not set
+in `.env.production`" when there is no such file sends you to write one, which is
+rarely the fix. The source that did supply a value is part of every finding, and
+is usually the whole answer to "but I set that".
+
+`--mode` chooses which of those lists to resolve against, and it is repeatable.
+`--mode development --mode test --mode production` validates all three from a
+single pass over the filesystem, which is what `npm run env:validate`, and
+therefore `npm run check`, does: the gate exercises all three modes, so letting
+one of them stand in for the others would be recording evidence about a question
+nobody asked. With no `--mode` at all the validator uses `NODE_ENV` when it names
+one of the three and `development` otherwise, which is the choice Next.js itself
+would make on that machine.
+
+A problem that is true of every mode validated prints once, unannotated. A
+problem true of only some of them — the shape a mode-specific override makes —
+prints with the modes that produced it:
+
+```text
+FAIL env.malformed
+  expected: DATABASE_URL to be a postgresql:// URL including host, port, and database name
+  found:    not a parseable URL (from .env.production.local; value not shown)
+  fix:      correct DATABASE_URL in .env.production.local
+  modes:    production
+```
 
 ### Annotations
 
