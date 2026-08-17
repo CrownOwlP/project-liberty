@@ -1,6 +1,6 @@
 # Project Liberty - Project Status
 
-> Generated 2026-08-17T01:09:04.292Z from the AI control plane.
+> Generated 2026-08-17T01:53:48.707Z from the AI control plane.
 
 **Overall completion:** 4/29 executable tasks (14%)
 
@@ -23,18 +23,18 @@
 - **M3 — Identity + Personal State:** NOT_STARTED, 0/4 (0%)
 - **M4 — Playback Vertical Slice:** NOT_STARTED, 0/6 (0%)
 - **M5 — Live + Intelligence Boundaries:** NOT_STARTED, 0/2 (0%)
-- **M6 — Shared-Agent Automation Bridge:** IN_PROGRESS, 0/2 (0%)
+- **M6 — Shared-Agent Automation Bridge:** NOT_STARTED, 0/2 (0%)
 - **EXT — External Licensed Integrations:** BLOCKED, 0/2 (0%), 2 blocked
 
 ## Active work
 
+- **PL-0002** [IN_PROGRESS] Review scaffold contracts — owner: claude-lead
 - **PL-0202** [REVIEW] Audio selection policy — owner: claude-media
-- **PL-AI-0002** [IN_PROGRESS] GitHub bridge for cross-agent review — owner: claude-lead
 
 ## Dispatch classification
 
-- **READY_AND_EXECUTABLE:** 6
-- **READY_BUT_EXTERNAL:** 3
+- **READY_AND_EXECUTABLE:** 7
+- **READY_BUT_EXTERNAL:** 2
 - **BLOCKED:** 2
 - **BACKLOG (dependency-gated):** 12
 
@@ -44,7 +44,6 @@ No conflict-free executable tasks can be assigned with current agent capacity.
 
 ## Queued for external agents
 
-- **PL-0002** (P0/Architecture) Review scaffold contracts — reserved for gpt-architect via openai-chatgpt; not locally executable
 - **PL-0401** (P0/Backend) Auth integration decision — reserved for gpt-architect via openai-chatgpt; not locally executable
 - **PL-0601** (P1/Live) Channel and EPG contracts — reserved for gpt-architect via openai-chatgpt; not locally executable
 

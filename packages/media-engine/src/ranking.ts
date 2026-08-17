@@ -73,9 +73,21 @@ export function rankStreamCandidates(
         breakdown: score.components
       };
     })
-    // Deterministic: score descending, then candidate id ascending so equal
-    // scores never depend on input ordering.
-    .sort((a, b) => b.score - a.score || a.candidate.id.localeCompare(b.candidate.id));
+    /*
+     * Deterministic: score descending, then candidate id ascending so equal
+     * scores never depend on input ordering.
+     *
+     * By CODE POINT, not localeCompare. Without an explicit locale that uses
+     * the host's collation, so two devices could rank the same candidates
+     * differently -- and candidate ids are not contractually restricted to
+     * ASCII. The architecture requires deterministic playback for identical
+     * inputs, which this quietly violated. Same defect was found and removed
+     * from the audio policy; fixed here rather than left inconsistent.
+     */
+    .sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      return a.candidate.id < b.candidate.id ? -1 : a.candidate.id > b.candidate.id ? 1 : 0;
+    });
 
   return {
     selected: ranked[0] ?? null,

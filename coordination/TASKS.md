@@ -7,7 +7,7 @@ Statuses: `BACKLOG`, `READY`, `CLAIMED`, `IN_PROGRESS`, `REVIEW`, `BLOCKED`, `DO
 | ID | Priority | Lane | Status | Owner | Review | Task | Acceptance |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | PL-0001 | P0 | Infra | DONE | - | APPROVED by gpt-architect | Generate and commit dependency lockfile | npm install and full npm run check are green; CI uses npm ci once lockfile exists |
-| PL-0002 | P0 | Architecture | READY | - | - | Review scaffold contracts | No unresolved contradiction across product, architecture, API, security, and content-rights contracts |
+| PL-0002 | P0 | Architecture | IN_PROGRESS | claude-lead | - | Review scaffold contracts | No unresolved contradiction across product, architecture, API, security, and content-rights contracts |
 | PL-0003 | P0 | Infra | READY | - | - | Environment validation | Missing required environment is reported clearly; local PostgreSQL and Redis health are documented |
 | PL-0101 | P0 | Frontend | DONE | - | APPROVED by gpt-architect | Catalog home data contract | Home route consumes typed catalog response and handles loading, error, and empty states |
 | PL-0102 | P0 | Frontend | READY | - | - | Search experience | Debounced accessible search with typed results and URL-addressable query |
@@ -33,5 +33,5 @@ Statuses: `BACKLOG`, `READY`, `CLAIMED`, `IN_PROGRESS`, `REVIEW`, `BLOCKED`, `DO
 | PL-0601 | P1 | Live | READY | - | - | Channel and EPG contracts | Licensed channel, program, schedule, and EPG contracts are typed and documented |
 | PL-0602 | P1 | Live | BLOCKED | - | - | Live provider integration | Licensed live provider integrated with normalized channel/EPG contracts |
 | PL-0801 | P1 | Recommendations | BACKLOG | - | - | Recommendation boundary | Explainable initial recommendation contract using catalog and history signals with privacy constraints |
-| PL-AI-0002 | P1 | Coordination | IN_PROGRESS | claude-lead | - | GitHub bridge for cross-agent review | GitHub becomes the shared state bridge for Claude Desktop and OpenAI review without manual file copying |
+| PL-AI-0002 | P1 | Coordination | READY | - | - | GitHub bridge for cross-agent review | GitHub becomes the shared state bridge for Claude Desktop and OpenAI review without manual file copying |
 | PL-AI-0003 | P1 | Coordination | BACKLOG | - | - | Optional API-driven autonomous dispatcher | Optional external agent runner can dispatch queued tasks to configured providers with budgets, audit logs, retries, and human approval gates |

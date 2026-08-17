@@ -9,10 +9,11 @@
     "build": "tsc --noEmit",
     "lint": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run"
   },
   "dependencies": {
-    "@liberty/contracts": "0.1.0"
+    "@liberty/contracts": "0.1.0",
+    "zod": "^3.0.0"
   },
   "devDependencies": {
     "typescript": "^5.9.0",

@@ -7,6 +7,16 @@ coverage/
 .env
 .env.local
 .env.*.local
+
+# Credential-bearing exports that have no business in version control.
+# A Stremio addon-cloner export was dropped into the repo root once and carried
+# an account password in plaintext. Ignored by pattern rather than by exact
+# name, because the next one will have a different filename.
+*export*.json
+*credentials*.json
+*secrets*.json
+*.pem
+*.key
 *.log
 .DS_Store
 .vercel/

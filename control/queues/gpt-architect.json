@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-17T01:09:04.293Z",
+  "generatedAt": "2026-08-17T01:53:48.708Z",
   "agent": "gpt-architect",
   "executionAvailable": false,
   "assigned": [],
@@ -44,13 +44,6 @@
   ],
   "reservedExternal": [
     {
-      "id": "PL-0002",
-      "title": "Review scaffold contracts",
-      "priority": "P0",
-      "lane": "Architecture",
-      "reason": "reserved for gpt-architect via openai-chatgpt; not locally executable"
-    },
-    {
       "id": "PL-0401",
       "title": "Auth integration decision",
       "priority": "P0",
@@ -66,29 +59,6 @@
     }
   ],
   "recommended": [
-    {
-      "id": "PL-0002",
-      "priority": "P0",
-      "lane": "Architecture",
-      "status": "READY",
-      "title": "Review scaffold contracts",
-      "dependencies": [],
-      "allowedPaths": [
-        "docs/**",
-        "control/**",
-        "coordination/**"
-      ],
-      "preferredAgent": "gpt-architect",
-      "reviewAgent": "claude-lead",
-      "qualityGates": [
-        "architecture-review",
-        "rights-review",
-        "repo-validate"
-      ],
-      "acceptance": "No unresolved contradiction across product, architecture, API, security, and content-rights contracts",
-      "owner": null,
-      "gateResults": {}
-    },
     {
       "id": "PL-0401",
       "priority": "P0",
@@ -204,6 +174,34 @@
       "acceptance": "Licensed channel, program, schedule, and EPG contracts are typed and documented",
       "owner": null,
       "gateResults": {}
+    },
+    {
+      "id": "PL-AI-0002",
+      "priority": "P1",
+      "lane": "Coordination",
+      "status": "READY",
+      "title": "GitHub bridge for cross-agent review",
+      "dependencies": [
+        "PL-AI-0001"
+      ],
+      "allowedPaths": [
+        ".github/**",
+        "control/**",
+        "scripts/**",
+        "docs/**"
+      ],
+      "preferredAgent": "claude-lead",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "architecture-review",
+        "security-review"
+      ],
+      "acceptance": "GitHub becomes the shared state bridge for Claude Desktop and OpenAI review without manual file copying",
+      "owner": null,
+      "gateResults": {},
+      "implementationAgent": "claude-lead",
+      "updatedAt": "2026-08-17T01:53:44.285Z",
+      "implementationBaseSha": "b157a5846d45568f516240f581d6b317a544aa12"
     }
   ]
 }

@@ -87,7 +87,7 @@
       "id": "PL-0002",
       "priority": "P0",
       "lane": "Architecture",
-      "status": "READY",
+      "status": "IN_PROGRESS",
       "title": "Review scaffold contracts",
       "dependencies": [],
       "allowedPaths": [
@@ -103,8 +103,17 @@
         "repo-validate"
       ],
       "acceptance": "No unresolved contradiction across product, architecture, API, security, and content-rights contracts",
-      "owner": null,
-      "gateResults": {}
+      "owner": "claude-lead",
+      "gateResults": {
+        "repo-validate": {
+          "status": "pass",
+          "at": "2026-08-17T01:53:48.694Z",
+          "evidence": "npm run check exit 0 including repo:validate; docs/API_CONTRACTS.md examples reconciled against packages/contracts schemas"
+        }
+      },
+      "implementationAgent": "claude-lead",
+      "updatedAt": "2026-08-17T01:53:47.233Z",
+      "implementationBaseSha": "fb217b96add37ed41e5c7bf1a35e693c39b5138b"
     },
     {
       "id": "PL-0003",
@@ -897,7 +906,7 @@
       "id": "PL-AI-0002",
       "priority": "P1",
       "lane": "Coordination",
-      "status": "IN_PROGRESS",
+      "status": "READY",
       "title": "GitHub bridge for cross-agent review",
       "dependencies": [
         "PL-AI-0001"
@@ -915,10 +924,10 @@
         "security-review"
       ],
       "acceptance": "GitHub becomes the shared state bridge for Claude Desktop and OpenAI review without manual file copying",
-      "owner": "claude-lead",
+      "owner": null,
       "gateResults": {},
       "implementationAgent": "claude-lead",
-      "updatedAt": "2026-08-15T15:23:45.795Z",
+      "updatedAt": "2026-08-17T01:53:44.285Z",
       "implementationBaseSha": "b157a5846d45568f516240f581d6b317a544aa12"
     },
     {
