@@ -89,3 +89,7 @@
 {"ts":"2026-08-17T03:24:03.145Z","type":"task.review_recorded","taskId":"PL-0002","reviewerAgent":"gpt-architect","implementationAgent":"claude-lead","outcome":"APPROVED","reviewedBaseSha":"fb217b96add37ed41e5c7bf1a35e693c39b5138b","reviewedCommitSha":"8b65f2c61821a34f3b2766a9ca047cbf386fdd84","reviewedTreeHash":"3171df09fb2c91d6ee1249ac57dc2731e7a6c68d012fb211c2453af5001d5c08","evidence":"PL-0002 APPROVED by GPT: architecture-review PASS and rights-review PASS. Documented contracts remain coherent with shipped API behavior and with the rights architecture. The reviewed surface is unchanged by the later provider-sdk correction."}
 {"ts":"2026-08-17T03:24:04.656Z","type":"task.done","taskId":"PL-0002","owner":"claude-lead","reviewerAgent":"gpt-architect","reviewedCommitSha":"8b65f2c61821a34f3b2766a9ca047cbf386fdd84"}
 {"ts":"2026-08-17T03:24:06.166Z","type":"control.sync","tasks":30}
+{"ts":"2026-08-17T03:46:06.658Z","type":"task.claimed","taskId":"PL-0003","agentId":"claude-infra"}
+{"ts":"2026-08-17T03:46:08.185Z","type":"task.started","taskId":"PL-0003","agentId":"claude-infra","implementationBaseSha":"239eac25cfcf1cfc2d282f5612469d6de50d1c94"}
+{"ts":"2026-08-17T04:00:41.851Z","type":"task.gate","taskId":"PL-0003","gate":"repo-validate","status":"pass","evidence":"npm run check exit 0 including repo:validate and test:scripts"}
+{"ts":"2026-08-17T04:00:43.318Z","type":"task.gate","taskId":"PL-0003","gate":"unit","status":"pass","evidence":"scripts/test-validate-env.mjs 27 scenarios, wired into check via test:scripts so it actually executes"}

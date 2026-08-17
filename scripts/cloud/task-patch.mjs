@@ -98,6 +98,17 @@ if (!prefixes.length) {
  * does not run them -- and it is destroyed before the real checkout is touched.
  */
 function pathsGitWouldChange(patchFile) {
+  /*
+   * Absolute, because the probe changes cwd.
+   *
+   * `git apply` resolves a relative patch path against its cwd, and the probe's
+   * cwd is the disposable worktree -- where the patch file does not exist. The
+   * workflow passes `--in task.patch`, a relative path in the real checkout, so
+   * this would have failed on the very first real patch. Scenario 9ai missed it
+   * because the fixture built an absolute path before calling the script, which
+   * is exactly the kind of convenience that makes a test agree with a bug.
+   */
+  const absolutePatch = path.resolve(root, patchFile);
   const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "liberty-patch-probe-"));
   const worktree = path.join(scratch, "wt");
 
@@ -123,7 +134,7 @@ function pathsGitWouldChange(patchFile) {
   }
 
   try {
-    execFileSync("git", ["apply", "--whitespace=nowarn", patchFile], { cwd: worktree, stdio: "pipe" });
+    execFileSync("git", ["apply", "--whitespace=nowarn", absolutePatch], { cwd: worktree, stdio: "pipe" });
   } catch (error) {
     cleanup();
     console.error(

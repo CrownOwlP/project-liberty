@@ -186,3 +186,26 @@ for (const task of candidates) {
 }
 
 console.log(`\nCompleted ${completed} task(s)${stalled ? `, ${stalled} still blocked` : ""}.`);
+
+/*
+ * A STALLED TASK MUST FAIL THE PROCESS. This exit code is load-bearing.
+ *
+ * runExecutableGate deliberately returns {passed:false} rather than throwing,
+ * so a failing lint/test/build set ok=false, incremented `stalled`, and the
+ * script then exited ZERO. In the split workflow that is a silent catastrophe:
+ * GitHub concludes the no-credential completion_gates job SUCCEEDED, and the
+ * credentialed job records executable gates as passes on the strength of that
+ * conclusion -- turning a genuinely failing gate into durable PASS evidence and
+ * potentially moving the task to DONE.
+ *
+ * The whole --execute-only / --record-only design rests on the job conclusion
+ * being an honest signal. A non-zero exit here is what makes it one.
+ */
+if (stalled) {
+  console.error(
+    `\n${stalled} approved task(s) could not be completed. Exiting non-zero so the job ` +
+    "conclusion reflects it: a later step records gate passes on the strength of that " +
+    "conclusion, so reporting success here would manufacture evidence."
+  );
+  process.exit(1);
+}

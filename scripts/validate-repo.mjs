@@ -37,6 +37,14 @@ const required = [
   "scripts/ai-control-plane.mjs",
   "scripts/bootstrap-ai-project.mjs",
   "scripts/test-ai-control-plane.mjs",
+  // The environment contract and its validator. Required here because a repo
+  // that has lost .env.example has not lost documentation -- it has lost the
+  // only declaration of which variables exist, and validate-env.mjs would then
+  // report a clean environment over an empty contract.
+  ".env.example",
+  "scripts/validate-env.mjs",
+  "scripts/test-validate-env.mjs",
+  "infra/docker-compose.yml",
   "scripts/start-ai-engineering.ps1",
   "scripts/start-ai-engineering.cmd"
 ];

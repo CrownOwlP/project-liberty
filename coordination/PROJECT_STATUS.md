@@ -1,15 +1,15 @@
 # Project Liberty - Project Status
 
-> Generated 2026-08-17T03:24:06.159Z from the AI control plane.
+> Generated 2026-08-17T04:00:43.332Z from the AI control plane.
 
 **Overall completion:** 5/30 executable tasks (17%)
 
 ## Status summary
 
 - **BACKLOG:** 13
-- **READY:** 9
+- **READY:** 8
 - **CLAIMED:** 0
-- **IN_PROGRESS:** 0
+- **IN_PROGRESS:** 1
 - **REVIEW:** 1
 - **BLOCKED:** 2
 - **DONE:** 5
@@ -28,18 +28,19 @@
 
 ## Active work
 
+- **PL-0003** [IN_PROGRESS] Environment validation — owner: claude-infra
 - **PL-0202** [REVIEW] Audio selection policy — owner: claude-media
 
 ## Dispatch classification
 
-- **READY_AND_EXECUTABLE:** 7
+- **READY_AND_EXECUTABLE:** 6
 - **READY_BUT_EXTERNAL:** 2
 - **BLOCKED:** 2
 - **BACKLOG (dependency-gated):** 13
 
 ## Recommended executable wave
 
-- **PL-0003** -> claude-infra (P0/Infra) Environment validation
+No conflict-free executable tasks can be assigned with current agent capacity.
 
 ## Queued for external agents
 
@@ -60,5 +61,5 @@
 - **claude-media:** 1/1 active
 - **claude-test:** 0/1 active
 - **claude-security:** 0/1 active
-- **claude-infra:** 0/1 active
+- **claude-infra:** 1/1 active
 - **human-commander:** 0/99 active (external lane; not locally executable)

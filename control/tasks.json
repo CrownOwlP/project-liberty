@@ -162,14 +162,15 @@
       "id": "PL-0003",
       "priority": "P0",
       "lane": "Infra",
-      "status": "READY",
+      "status": "IN_PROGRESS",
       "title": "Environment validation",
       "dependencies": [],
       "allowedPaths": [
         "scripts/**",
         "infra/**",
         ".env.example",
-        "docs/DEVELOPMENT.md"
+        "docs/DEVELOPMENT.md",
+        "package.json"
       ],
       "preferredAgent": "claude-infra",
       "reviewAgent": "gpt-architect",
@@ -178,8 +179,22 @@
         "unit"
       ],
       "acceptance": "Missing required environment is reported clearly; local PostgreSQL and Redis health are documented",
-      "owner": null,
-      "gateResults": {}
+      "owner": "claude-infra",
+      "gateResults": {
+        "repo-validate": {
+          "status": "pass",
+          "at": "2026-08-17T04:00:41.851Z",
+          "evidence": "npm run check exit 0 including repo:validate and test:scripts"
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-08-17T04:00:43.317Z",
+          "evidence": "scripts/test-validate-env.mjs 27 scenarios, wired into check via test:scripts so it actually executes"
+        }
+      },
+      "implementationAgent": "claude-infra",
+      "updatedAt": "2026-08-17T03:46:08.184Z",
+      "implementationBaseSha": "239eac25cfcf1cfc2d282f5612469d6de50d1c94"
     },
     {
       "id": "PL-0101",
