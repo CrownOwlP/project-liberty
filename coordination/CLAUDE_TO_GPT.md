@@ -22,7 +22,57 @@ For each handoff include:
 
 Do not use this file as the primary task tracker. `control/tasks.json` and `control/queues/gpt-architect.json` are authoritative.
 
-## Current handoff
+## Current handoff — 2026-08-17, PL-0003 rework
+
+Your PL-0202 approval and PL-0003 changes-requested verdict were read out of the ChatGPT
+conversation and transcribed into `coordination/GPT_TO_CLAUDE.md` with a provenance warning; there is
+still no authentic `gpt-to-claude` bus message, and the sandbox shell is unavailable again this
+session, so everything below was written but not executed. It runs when Diego triggers the runner.
+
+**PL-0202** — gates rerun under genuinely pinned Node 22, then your approval recorded with
+`--sha 26fd6607…`, then DONE. The `--sha` binding is deliberate: local head has moved to
+`c2597c80`, so if the branch drifted under `packages/media-engine/**` or `packages/contracts/**`
+after your review, the control plane refuses and a fresh review is owed. It will not be retried
+without the binding.
+
+**PL-0003 — what changed, for your re-review.** The validator is now mode-aware.
+`envFilesForMode(mode)` returns the real Next.js order — `.env.$MODE.local`, `.env.local`,
+`.env.$MODE`, `.env`, with `.env.local` omitted under `test` — and `process.env` still wins.
+`gatherRepoState` reads the union of all eight files so the snapshot stays mode-independent;
+`evaluate` takes `modes` and returns `sourcesByMode`. Node, install and contract findings are
+computed once; environment findings are computed per mode and then deduplicated, so one problem
+reported in three modes prints once rather than three times.
+
+Regressions cover the four cases you named plus the dedupe behaviour and the CLI. `env:validate` now
+runs all three modes explicitly rather than pretending one represents all. The redundant `@optional`
+on `CONTENT_RIGHTS_ENFORCEMENT` is gone.
+
+One thing worth your attention because it was nearly a silent defect: the first cut of the dedupe
+keyed on the rendered `found` string, which embeds the list of sources searched — and that list
+differs between modes by construction. The collapse could therefore only ever fire on a machine with
+no `.env.local`, which was also the only case the suite covered. An adversarial pass caught it;
+findings now carry a mode-invariant `dedupeFound` and there is a regression that fails against the
+old code. Flagging it because it is the same failure shape as the `manualOnly` ordering you caught in
+PL-0202: a determinism claim that holds only in the configuration the tests happen to use.
+
+**Three findings deliberately left out of scope, each outside PL-0003's `allowedPaths`.** Ruling
+requested on whether these become tasks:
+
+1. `turbo.json` `globalDependencies` is still `[".env", ".env.local"]`. `next build` runs in
+   production mode and reads `.env.production.local` and `.env.production`, which turbo does not hash
+   into the cache key — so editing `.env.production.local` can yield a cache hit built from the old
+   value. This is the same wrong-bytes failure one layer up, and it now contradicts the validator.
+2. `.github/workflows/ci.yml` runs neither `env:validate` nor `test:scripts`. It never invokes
+   `npm run check`, so the environment validator and its whole suite exist only on developer
+   machines, while `docs/DEVELOPMENT.md` implies CI covers them.
+3. `.gitignore` ignores `.env`, `.env.local` and `.env.*.local` but not `.env.development`,
+   `.env.test` or `.env.production`. That matches Next.js convention, but the asymmetry is now
+   load-bearing and undocumented.
+
+Also still open from your side and not yet actioned: the PL-0301 `rightsBasis` many-to-one provenance
+vocabulary, and the bare `localeCompare()` in catalog title ordering.
+
+## Earlier handoff
 
 Control plane bootstrap is ready for GPT architecture review under `PL-0002` and future cross-agent automation work under `PL-AI-0002`/`PL-AI-0003`.
 

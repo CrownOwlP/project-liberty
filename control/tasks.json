@@ -162,7 +162,7 @@
       "id": "PL-0003",
       "priority": "P0",
       "lane": "Infra",
-      "status": "REVIEW",
+      "status": "IN_PROGRESS",
       "title": "Environment validation",
       "dependencies": [],
       "allowedPaths": [
@@ -193,8 +193,40 @@
         }
       },
       "implementationAgent": "claude-infra",
-      "updatedAt": "2026-08-17T04:03:49.239Z",
-      "implementationBaseSha": "239eac25cfcf1cfc2d282f5612469d6de50d1c94"
+      "updatedAt": "2026-08-17T15:37:18.334Z",
+      "implementationBaseSha": "239eac25cfcf1cfc2d282f5612469d6de50d1c94",
+      "review": {
+        "taskId": "PL-0003",
+        "implementationAgent": "claude-infra",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "c2597c80bb75dcf6a8262e263d0d5d0e5424bf62",
+        "reviewedBaseSha": "239eac25cfcf1cfc2d282f5612469d6de50d1c94",
+        "reviewedTreeHash": "4f9a8d17772221cbe0cd91dd543bfa9b3b2f402d88ae7880e9cb0d9ffceec9d6",
+        "reviewedFileCount": 32,
+        "reviewedFingerprintSource": "git-object",
+        "outcome": "CHANGES_REQUESTED",
+        "reviewedAt": "2026-08-17T15:37:18.334Z",
+        "evidence": "CHANGES_REQUESTED by gpt-architect against head 26fd660785911f806662cdd0cf31ce920f205e54. Transcribed from the ChatGPT Project Liberty conversation, not an agent-bus message; provenance in coordination/GPT_TO_CLAUDE.md. Blocking defect: validate-env.mjs resolved only .env.local then .env while claiming to match Next.js precedence, so a value in .env.MODE.local silently overrode the file the validator inspected and the validator could pass a value the app never uses. Next.js resolves process.env, then .env.MODE.local, then .env.local, then .env.MODE, then .env, skipping .env.local under NODE_ENV=test. Non-blocking: CONTENT_RIGHTS_ENFORCEMENT carried both @optional and @default."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PL-0003",
+          "implementationAgent": "claude-infra",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "c2597c80bb75dcf6a8262e263d0d5d0e5424bf62",
+          "reviewedBaseSha": "239eac25cfcf1cfc2d282f5612469d6de50d1c94",
+          "reviewedTreeHash": "4f9a8d17772221cbe0cd91dd543bfa9b3b2f402d88ae7880e9cb0d9ffceec9d6",
+          "reviewedFileCount": 32,
+          "reviewedFingerprintSource": "git-object",
+          "outcome": "CHANGES_REQUESTED",
+          "reviewedAt": "2026-08-17T15:37:18.334Z",
+          "evidence": "CHANGES_REQUESTED by gpt-architect against head 26fd660785911f806662cdd0cf31ce920f205e54. Transcribed from the ChatGPT Project Liberty conversation, not an agent-bus message; provenance in coordination/GPT_TO_CLAUDE.md. Blocking defect: validate-env.mjs resolved only .env.local then .env while claiming to match Next.js precedence, so a value in .env.MODE.local silently overrode the file the validator inspected and the validator could pass a value the app never uses. Next.js resolves process.env, then .env.MODE.local, then .env.local, then .env.MODE, then .env, skipping .env.local under NODE_ENV=test. Non-blocking: CONTENT_RIGHTS_ENFORCEMENT carried both @optional and @default."
+        }
+      ]
     },
     {
       "id": "PL-0101",

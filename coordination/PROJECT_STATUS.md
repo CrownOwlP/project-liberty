@@ -1,6 +1,6 @@
 # Project Liberty - Project Status
 
-> Generated 2026-08-17T04:03:49.253Z from the AI control plane.
+> Generated 2026-08-17T15:37:56.428Z from the AI control plane.
 
 **Overall completion:** 5/30 executable tasks (17%)
 
@@ -9,8 +9,8 @@
 - **BACKLOG:** 13
 - **READY:** 8
 - **CLAIMED:** 0
-- **IN_PROGRESS:** 0
-- **REVIEW:** 2
+- **IN_PROGRESS:** 1
+- **REVIEW:** 1
 - **BLOCKED:** 2
 - **DONE:** 5
 - **CANCELED:** 0
@@ -28,7 +28,7 @@
 
 ## Active work
 
-- **PL-0003** [REVIEW] Environment validation — owner: claude-infra
+- **PL-0003** [IN_PROGRESS] Environment validation — owner: claude-infra
 - **PL-0202** [REVIEW] Audio selection policy — owner: claude-media
 
 ## Dispatch classification
