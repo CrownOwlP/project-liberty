@@ -48,3 +48,41 @@
 {"ts":"2026-08-15T14:40:21.982Z","type":"control.sync","tasks":29}
 {"ts":"2026-08-15T15:23:44.311Z","type":"task.claimed","taskId":"PL-AI-0002","agentId":"claude-lead"}
 {"ts":"2026-08-15T15:23:45.795Z","type":"task.started","taskId":"PL-AI-0002","agentId":"claude-lead","implementationBaseSha":"b157a5846d45568f516240f581d6b317a544aa12"}
+{"ts":"2026-08-16T22:48:58.935Z","type":"task.gate","taskId":"PL-0101","gate":"lint","status":"pass","evidence":"npm run check exit 0 (turbo run lint across 5 packages), Node 22"}
+{"ts":"2026-08-16T22:49:00.501Z","type":"task.gate","taskId":"PL-0101","gate":"typecheck","status":"pass","evidence":"npm run check exit 0 (turbo run typecheck across 5 packages), Node 22"}
+{"ts":"2026-08-16T22:49:02.022Z","type":"task.gate","taskId":"PL-0101","gate":"unit","status":"pass","evidence":"npm run check exit 0 (vitest: contracts, media-engine, web), Node 22"}
+{"ts":"2026-08-16T22:49:03.574Z","type":"task.gate","taskId":"PL-0101","gate":"build","status":"pass","evidence":"npm run check exit 0 (next build, routes incl /api/v1/catalog/home), Node 22"}
+{"ts":"2026-08-16T22:49:05.087Z","type":"task.review_requested","taskId":"PL-0101","owner":"claude-frontend","reviewAgent":"gpt-architect"}
+{"ts":"2026-08-16T22:49:06.792Z","type":"task.review_recorded","taskId":"PL-0101","reviewerAgent":"gpt-architect","implementationAgent":"claude-frontend","outcome":"APPROVED","reviewedBaseSha":null,"reviewedCommitSha":"c23199ee584d8d6000a1b21b922691a868ca9ee4","reviewedTreeHash":"6dbc5f2ebd94a79a5630305c8a39a929dffb6896e43cdcb06ec5ad9b61105694","evidence":"GPT independent review of the pushed commit: discriminated union structurally enforces the movie/series/episode runtime-vs-episode-count invariant, both fields remain required, tests cover valid and invalid combinations for all three kinds, formatCatalogMeta consumes the narrowed type. No remaining blocking defect in the PL-0101 surface."}
+{"ts":"2026-08-16T22:49:08.378Z","type":"task.done","taskId":"PL-0101","owner":"claude-frontend","reviewerAgent":"gpt-architect","reviewedCommitSha":"c23199ee584d8d6000a1b21b922691a868ca9ee4"}
+{"ts":"2026-08-16T22:49:09.894Z","type":"control.sync","tasks":29}
+{"ts":"2026-08-16T22:49:11.416Z","type":"task.claimed","taskId":"PL-0202","agentId":"claude-media"}
+{"ts":"2026-08-16T22:49:12.957Z","type":"task.started","taskId":"PL-0202","agentId":"claude-media","implementationBaseSha":"8a6dec901569c1b2ada8e1b5da351e370125cb81"}
+{"ts":"2026-08-16T23:01:39.729Z","type":"task.gate","taskId":"PL-0202","gate":"typecheck","status":"pass","evidence":"npm run check exit 0 (turbo run typecheck across 5 packages), Node 22"}
+{"ts":"2026-08-16T23:01:41.315Z","type":"task.gate","taskId":"PL-0202","gate":"unit","status":"pass","evidence":"npm run check exit 0 (vitest: media-engine audio.test.ts and contracts), Node 22"}
+{"ts":"2026-08-16T23:06:19.503Z","type":"task.gate","taskId":"PL-0202","gate":"typecheck","status":"pass","evidence":"npm run check exit 0 (turbo run typecheck across 5 packages), Node 22"}
+{"ts":"2026-08-16T23:06:21.082Z","type":"task.gate","taskId":"PL-0202","gate":"unit","status":"pass","evidence":"npm run check exit 0 (vitest: media-engine audio.test.ts and contracts), Node 22"}
+{"ts":"2026-08-16T23:17:34.472Z","type":"task.gate","taskId":"PL-0202","gate":"typecheck","status":"pass","evidence":"npm run check exit 0 (turbo run typecheck across 5 packages), Node 22"}
+{"ts":"2026-08-16T23:17:35.997Z","type":"task.gate","taskId":"PL-0202","gate":"unit","status":"pass","evidence":"npm run check exit 0 (vitest: media-engine audio.test.ts and contracts), Node 22"}
+{"ts":"2026-08-16T23:22:54.659Z","type":"task.gate","taskId":"PL-0202","gate":"typecheck","status":"pass","evidence":"npm run check exit 0 (turbo run typecheck across 5 packages), Node 22"}
+{"ts":"2026-08-16T23:22:56.195Z","type":"task.gate","taskId":"PL-0202","gate":"unit","status":"pass","evidence":"npm run check exit 0 (vitest: media-engine audio.test.ts and contracts), Node 22"}
+{"ts":"2026-08-17T00:57:12.805Z","type":"task.gate","taskId":"PL-0202","gate":"typecheck","status":"pass","evidence":"npm run check exit 0 (turbo run typecheck, 5 packages), Node 22"}
+{"ts":"2026-08-17T00:57:14.298Z","type":"task.gate","taskId":"PL-0202","gate":"unit","status":"pass","evidence":"npm run check exit 0 (vitest: media-engine audio.test.ts, contracts), Node 22"}
+{"ts":"2026-08-17T00:57:15.787Z","type":"task.review_requested","taskId":"PL-0202","owner":"claude-media","reviewAgent":"gpt-architect"}
+{"ts":"2026-08-17T01:09:02.835Z","type":"task.gate","taskId":"PL-0202","gate":"typecheck","status":"pass","evidence":"npm run check exit 0 (turbo run typecheck across 5 packages), Node 22"}
+{"ts":"2026-08-17T01:09:04.279Z","type":"task.gate","taskId":"PL-0202","gate":"unit","status":"pass","evidence":"npm run check exit 0 (vitest: media-engine audio.test.ts and contracts), Node 22"}
+{"ts":"2026-08-17T01:53:44.289Z","type":"task.released","taskId":"PL-AI-0002","owner":"claude-lead"}
+{"ts":"2026-08-17T01:53:45.748Z","type":"task.claimed","taskId":"PL-0002","agentId":"claude-lead"}
+{"ts":"2026-08-17T01:53:47.234Z","type":"task.started","taskId":"PL-0002","agentId":"claude-lead","implementationBaseSha":"fb217b96add37ed41e5c7bf1a35e693c39b5138b"}
+{"ts":"2026-08-17T01:53:48.694Z","type":"task.gate","taskId":"PL-0002","gate":"repo-validate","status":"pass","evidence":"npm run check exit 0 including repo:validate; docs/API_CONTRACTS.md examples reconciled against packages/contracts schemas"}
+{"ts":"2026-08-17T03:04:00.804Z","type":"control.sync","tasks":30}
+{"ts":"2026-08-17T03:12:26.633Z","type":"task.gate","taskId":"PL-0202","gate":"typecheck","status":"pass","evidence":"npm run check exit 0 (turbo run typecheck, 5 packages), Node 22"}
+{"ts":"2026-08-17T03:12:28.078Z","type":"task.gate","taskId":"PL-0202","gate":"unit","status":"pass","evidence":"npm run check exit 0 (vitest: media-engine audio + ranking, contracts), Node 22"}
+{"ts":"2026-08-17T03:12:29.555Z","type":"task.gate","taskId":"PL-0002","gate":"architecture-review","status":"pass","evidence":"GPT independent review: documented contracts coherent with shipped API behavior"}
+{"ts":"2026-08-17T03:12:31.042Z","type":"task.gate","taskId":"PL-0002","gate":"rights-review","status":"pass","evidence":"GPT independent review: rights architecture coherent across product, API and content-rights contracts"}
+{"ts":"2026-08-17T03:12:32.542Z","type":"task.review_requested","taskId":"PL-0002","owner":"claude-lead","reviewAgent":"gpt-architect"}
+{"ts":"2026-08-17T03:12:37.023Z","type":"control.sync","tasks":30}
+{"ts":"2026-08-17T03:16:47.820Z","type":"task.gate","taskId":"PL-0002","gate":"architecture-review","status":"pass","evidence":"GPT independent review: documented contracts coherent with shipped API behavior"}
+{"ts":"2026-08-17T03:16:49.304Z","type":"task.gate","taskId":"PL-0002","gate":"rights-review","status":"pass","evidence":"GPT independent review: rights architecture coherent across product, API and content-rights contracts"}
+{"ts":"2026-08-17T03:20:10.547Z","type":"task.gate","taskId":"PL-0002","gate":"architecture-review","status":"pass","evidence":"GPT independent review: documented contracts coherent with shipped API behavior"}
+{"ts":"2026-08-17T03:20:11.970Z","type":"task.gate","taskId":"PL-0002","gate":"rights-review","status":"pass","evidence":"GPT independent review: rights architecture coherent across product, API and content-rights contracts"}
