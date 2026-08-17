@@ -112,12 +112,12 @@
         },
         "architecture-review": {
           "status": "pass",
-          "at": "2026-08-17T03:12:29.555Z",
+          "at": "2026-08-17T03:16:47.819Z",
           "evidence": "GPT independent review: documented contracts coherent with shipped API behavior"
         },
         "rights-review": {
           "status": "pass",
-          "at": "2026-08-17T03:12:31.041Z",
+          "at": "2026-08-17T03:16:49.303Z",
           "evidence": "GPT independent review: rights architecture coherent across product, API and content-rights contracts"
         }
       },
