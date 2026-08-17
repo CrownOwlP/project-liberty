@@ -87,7 +87,7 @@
       "id": "PL-0002",
       "priority": "P0",
       "lane": "Architecture",
-      "status": "REVIEW",
+      "status": "DONE",
       "title": "Review scaffold contracts",
       "dependencies": [],
       "allowedPaths": [
@@ -103,7 +103,7 @@
         "repo-validate"
       ],
       "acceptance": "No unresolved contradiction across product, architecture, API, security, and content-rights contracts",
-      "owner": "claude-lead",
+      "owner": null,
       "gateResults": {
         "repo-validate": {
           "status": "pass",
@@ -122,8 +122,41 @@
         }
       },
       "implementationAgent": "claude-lead",
-      "updatedAt": "2026-08-17T03:12:32.541Z",
-      "implementationBaseSha": "fb217b96add37ed41e5c7bf1a35e693c39b5138b"
+      "updatedAt": "2026-08-17T03:24:04.655Z",
+      "implementationBaseSha": "fb217b96add37ed41e5c7bf1a35e693c39b5138b",
+      "review": {
+        "taskId": "PL-0002",
+        "implementationAgent": "claude-lead",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "8b65f2c61821a34f3b2766a9ca047cbf386fdd84",
+        "reviewedBaseSha": "fb217b96add37ed41e5c7bf1a35e693c39b5138b",
+        "reviewedTreeHash": "3171df09fb2c91d6ee1249ac57dc2731e7a6c68d012fb211c2453af5001d5c08",
+        "reviewedFileCount": 35,
+        "reviewedFingerprintSource": "git-object",
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-08-17T03:24:03.126Z",
+        "evidence": "PL-0002 APPROVED by GPT: architecture-review PASS and rights-review PASS. Documented contracts remain coherent with shipped API behavior and with the rights architecture. The reviewed surface is unchanged by the later provider-sdk correction."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PL-0002",
+          "implementationAgent": "claude-lead",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "8b65f2c61821a34f3b2766a9ca047cbf386fdd84",
+          "reviewedBaseSha": "fb217b96add37ed41e5c7bf1a35e693c39b5138b",
+          "reviewedTreeHash": "3171df09fb2c91d6ee1249ac57dc2731e7a6c68d012fb211c2453af5001d5c08",
+          "reviewedFileCount": 35,
+          "reviewedFingerprintSource": "git-object",
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-08-17T03:24:03.126Z",
+          "evidence": "PL-0002 APPROVED by GPT: architecture-review PASS and rights-review PASS. Documented contracts remain coherent with shipped API behavior and with the rights architecture. The reviewed surface is unchanged by the later provider-sdk correction."
+        }
+      ],
+      "completedAt": "2026-08-17T03:24:04.656Z"
     },
     {
       "id": "PL-0003",

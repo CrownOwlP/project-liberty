@@ -7,7 +7,7 @@ Statuses: `BACKLOG`, `READY`, `CLAIMED`, `IN_PROGRESS`, `REVIEW`, `BLOCKED`, `DO
 | ID | Priority | Lane | Status | Owner | Review | Task | Acceptance |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | PL-0001 | P0 | Infra | DONE | - | APPROVED by gpt-architect | Generate and commit dependency lockfile | npm install and full npm run check are green; CI uses npm ci once lockfile exists |
-| PL-0002 | P0 | Architecture | REVIEW | claude-lead | - | Review scaffold contracts | No unresolved contradiction across product, architecture, API, security, and content-rights contracts |
+| PL-0002 | P0 | Architecture | DONE | - | APPROVED by gpt-architect | Review scaffold contracts | No unresolved contradiction across product, architecture, API, security, and content-rights contracts |
 | PL-0003 | P0 | Infra | READY | - | - | Environment validation | Missing required environment is reported clearly; local PostgreSQL and Redis health are documented |
 | PL-0101 | P0 | Frontend | DONE | - | APPROVED by gpt-architect | Catalog home data contract | Home route consumes typed catalog response and handles loading, error, and empty states |
 | PL-0102 | P0 | Frontend | READY | - | - | Search experience | Debounced accessible search with typed results and URL-addressable query |

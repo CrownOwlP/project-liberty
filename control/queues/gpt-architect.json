@@ -1,51 +1,9 @@
 {
-  "generatedAt": "2026-08-17T03:20:11.984Z",
+  "generatedAt": "2026-08-17T03:24:06.160Z",
   "agent": "gpt-architect",
   "executionAvailable": false,
   "assigned": [],
   "review": [
-    {
-      "id": "PL-0002",
-      "priority": "P0",
-      "lane": "Architecture",
-      "status": "REVIEW",
-      "title": "Review scaffold contracts",
-      "dependencies": [],
-      "allowedPaths": [
-        "docs/**",
-        "control/**",
-        "coordination/**"
-      ],
-      "preferredAgent": "claude-lead",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "architecture-review",
-        "rights-review",
-        "repo-validate"
-      ],
-      "acceptance": "No unresolved contradiction across product, architecture, API, security, and content-rights contracts",
-      "owner": "claude-lead",
-      "gateResults": {
-        "repo-validate": {
-          "status": "pass",
-          "at": "2026-08-17T01:53:48.694Z",
-          "evidence": "npm run check exit 0 including repo:validate; docs/API_CONTRACTS.md examples reconciled against packages/contracts schemas"
-        },
-        "architecture-review": {
-          "status": "pass",
-          "at": "2026-08-17T03:20:10.547Z",
-          "evidence": "GPT independent review: documented contracts coherent with shipped API behavior"
-        },
-        "rights-review": {
-          "status": "pass",
-          "at": "2026-08-17T03:20:11.969Z",
-          "evidence": "GPT independent review: rights architecture coherent across product, API and content-rights contracts"
-        }
-      },
-      "implementationAgent": "claude-lead",
-      "updatedAt": "2026-08-17T03:12:32.541Z",
-      "implementationBaseSha": "fb217b96add37ed41e5c7bf1a35e693c39b5138b"
-    },
     {
       "id": "PL-0202",
       "priority": "P0",
