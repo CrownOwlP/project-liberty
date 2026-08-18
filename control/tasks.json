@@ -162,7 +162,7 @@
       "id": "PL-0003",
       "priority": "P0",
       "lane": "Infra",
-      "status": "IN_PROGRESS",
+      "status": "DONE",
       "title": "Environment validation",
       "dependencies": [],
       "allowedPaths": [
@@ -179,7 +179,7 @@
         "unit"
       ],
       "acceptance": "Missing required environment is reported clearly; local PostgreSQL and Redis health are documented",
-      "owner": "claude-infra",
+      "owner": null,
       "gateResults": {
         "repo-validate": {
           "status": "pass",
@@ -193,7 +193,7 @@
         }
       },
       "implementationAgent": "claude-infra",
-      "updatedAt": "2026-08-17T15:37:18.334Z",
+      "updatedAt": "2026-08-18T03:50:28.114Z",
       "implementationBaseSha": "239eac25cfcf1cfc2d282f5612469d6de50d1c94",
       "review": {
         "taskId": "PL-0003",
@@ -201,14 +201,14 @@
         "reviewerAgent": "gpt-architect",
         "reviewerClass": "external-reasoning",
         "reviewerProvider": "openai",
-        "reviewedCommitSha": "c2597c80bb75dcf6a8262e263d0d5d0e5424bf62",
+        "reviewedCommitSha": "cb9883aea20729b7697effd24c637a4609949ac2",
         "reviewedBaseSha": "239eac25cfcf1cfc2d282f5612469d6de50d1c94",
-        "reviewedTreeHash": "4f9a8d17772221cbe0cd91dd543bfa9b3b2f402d88ae7880e9cb0d9ffceec9d6",
+        "reviewedTreeHash": "df49968f6abc4d186414cf625145a4aa5529b8e3daadc3f95eb89e98e4d52887",
         "reviewedFileCount": 32,
         "reviewedFingerprintSource": "git-object",
-        "outcome": "CHANGES_REQUESTED",
-        "reviewedAt": "2026-08-17T15:37:18.334Z",
-        "evidence": "CHANGES_REQUESTED by gpt-architect against head 26fd660785911f806662cdd0cf31ce920f205e54. Transcribed from the ChatGPT Project Liberty conversation, not an agent-bus message; provenance in coordination/GPT_TO_CLAUDE.md. Blocking defect: validate-env.mjs resolved only .env.local then .env while claiming to match Next.js precedence, so a value in .env.MODE.local silently overrode the file the validator inspected and the validator could pass a value the app never uses. Next.js resolves process.env, then .env.MODE.local, then .env.local, then .env.MODE, then .env, skipping .env.local under NODE_ENV=test. Non-blocking: CONTENT_RIGHTS_ENFORCEMENT carried both @optional and @default."
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-08-18T03:50:27.939Z",
+        "evidence": "PL-0003 APPROVED by gpt-architect at cb9883aea20729b7697effd24c637a4609949ac2. The corrective implementation matches Next.js dotenv precedence for development, test and production, preserves process.env priority, excludes .env.local in test, evaluates every mode from one mode-independent snapshot, and regression-tests the reported precedence and deduplication defects. Transcribed from the ChatGPT Project Liberty conversation, not an agent-bus message; provenance recorded in coordination/GPT_TO_CLAUDE.md. GPT reviewed the narrow corrective commit c2597c80 to cb9883a rather than the later product lanes, and required the gate records to supersede the 27-scenario Node-24 evidence, which they now do."
       },
       "reviewHistory": [
         {
@@ -225,8 +225,24 @@
           "outcome": "CHANGES_REQUESTED",
           "reviewedAt": "2026-08-17T15:37:18.334Z",
           "evidence": "CHANGES_REQUESTED by gpt-architect against head 26fd660785911f806662cdd0cf31ce920f205e54. Transcribed from the ChatGPT Project Liberty conversation, not an agent-bus message; provenance in coordination/GPT_TO_CLAUDE.md. Blocking defect: validate-env.mjs resolved only .env.local then .env while claiming to match Next.js precedence, so a value in .env.MODE.local silently overrode the file the validator inspected and the validator could pass a value the app never uses. Next.js resolves process.env, then .env.MODE.local, then .env.local, then .env.MODE, then .env, skipping .env.local under NODE_ENV=test. Non-blocking: CONTENT_RIGHTS_ENFORCEMENT carried both @optional and @default."
+        },
+        {
+          "taskId": "PL-0003",
+          "implementationAgent": "claude-infra",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "cb9883aea20729b7697effd24c637a4609949ac2",
+          "reviewedBaseSha": "239eac25cfcf1cfc2d282f5612469d6de50d1c94",
+          "reviewedTreeHash": "df49968f6abc4d186414cf625145a4aa5529b8e3daadc3f95eb89e98e4d52887",
+          "reviewedFileCount": 32,
+          "reviewedFingerprintSource": "git-object",
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-08-18T03:50:27.939Z",
+          "evidence": "PL-0003 APPROVED by gpt-architect at cb9883aea20729b7697effd24c637a4609949ac2. The corrective implementation matches Next.js dotenv precedence for development, test and production, preserves process.env priority, excludes .env.local in test, evaluates every mode from one mode-independent snapshot, and regression-tests the reported precedence and deduplication defects. Transcribed from the ChatGPT Project Liberty conversation, not an agent-bus message; provenance recorded in coordination/GPT_TO_CLAUDE.md. GPT reviewed the narrow corrective commit c2597c80 to cb9883a rather than the later product lanes, and required the gate records to supersede the 27-scenario Node-24 evidence, which they now do."
         }
-      ]
+      ],
+      "completedAt": "2026-08-18T03:50:28.114Z"
     },
     {
       "id": "PL-0101",

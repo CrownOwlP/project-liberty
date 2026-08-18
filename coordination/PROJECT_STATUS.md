@@ -1,23 +1,23 @@
 # Project Liberty - Project Status
 
-> Generated 2026-08-18T03:47:18.525Z from the AI control plane.
+> Generated 2026-08-18T03:50:28.235Z from the AI control plane.
 
-**Overall completion:** 6/30 executable tasks (20%)
+**Overall completion:** 7/30 executable tasks (23%)
 
 ## Status summary
 
 - **BACKLOG:** 13
 - **READY:** 8
 - **CLAIMED:** 0
-- **IN_PROGRESS:** 1
+- **IN_PROGRESS:** 0
 - **REVIEW:** 0
 - **BLOCKED:** 2
-- **DONE:** 6
+- **DONE:** 7
 - **CANCELED:** 0
 
 ## Milestones / phases
 
-- **M0 — AI Engineering System + Repository Foundation:** IN_PROGRESS, 3/4 (75%)
+- **M0 — AI Engineering System + Repository Foundation:** COMPLETE, 4/4 (100%)
 - **M1 — Core Discovery Experience:** IN_PROGRESS, 1/3 (33%)
 - **M2 — Media Resolution + Provider Foundation:** IN_PROGRESS, 2/6 (33%)
 - **M3 — Identity + Personal State:** NOT_STARTED, 0/4 (0%)
@@ -28,7 +28,7 @@
 
 ## Active work
 
-- **PL-0003** [IN_PROGRESS] Environment validation — owner: claude-infra
+No tasks are currently claimed, in progress, or in review.
 
 ## Dispatch classification
 
@@ -40,6 +40,7 @@
 ## Recommended executable wave
 
 - **PL-0102** -> claude-frontend (P0/Frontend) Search experience
+- **PL-AI-0002** -> claude-lead (P1/Coordination) GitHub bridge for cross-agent review
 
 ## Queued for external agents
 
@@ -60,5 +61,5 @@
 - **claude-media:** 0/1 active
 - **claude-test:** 0/1 active
 - **claude-security:** 0/1 active
-- **claude-infra:** 1/1 active
+- **claude-infra:** 0/1 active
 - **human-commander:** 0/99 active (external lane; not locally executable)
