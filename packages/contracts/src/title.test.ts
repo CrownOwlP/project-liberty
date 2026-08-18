@@ -1,22 +1,24 @@
 import { describe, expect, it } from "vitest";
 import {
-  contentRightsSchema,
-  normalizedContentIdSchema,
   titleDetailResponseSchema,
   titleDetailSchema,
   titleEpisodeSummarySchema,
   titleRightsBasisSchema,
   titleTechnicalMetadataSchema
-} from "./index";
+} from "./domains/title";
+import { normalizedContentIdSchema } from "./shared/ids";
+import { contentRightsSchema } from "./shared/rights";
 
 /*
- * Imported through the barrel on purpose.
+ * Imported from the modules that own these schemas, not through the barrel.
  *
- * `index.ts` re-exports `title.ts` and `title.ts` reads the rights vocabulary
- * back out of `index.ts`, which is a module cycle. If that reference is ever
- * made eager, every one of these tests fails at import time rather than on an
- * assertion -- which is exactly the signal wanted, because that is also how it
- * would fail for the application.
+ * This file used to import everything from `./index` deliberately, because
+ * `index.ts` re-exported `title.ts` while `title.ts` read the rights vocabulary
+ * back out of `index.ts` -- a module cycle that only survived because the
+ * reference was deferred with `z.lazy`. The cycle is gone: `domains/title.ts`
+ * imports `shared/rights.ts` directly and `shared/` has no path back. The
+ * eager-reference hazard those imports were watching for no longer exists, and
+ * `module-boundary.test.ts` asserts structurally that it cannot come back.
  */
 
 const NOTHING_REPORTED = {
@@ -38,7 +40,7 @@ const movie = {
 };
 
 describe("rights basis", () => {
-  it("resolves the shared rights vocabulary through the cycle", () => {
+  it("is built on the one shared rights vocabulary", () => {
     expect(contentRightsSchema.parse("owned")).toBe("owned");
     expect(titleRightsBasisSchema.parse("public-domain")).toBe("public-domain");
   });

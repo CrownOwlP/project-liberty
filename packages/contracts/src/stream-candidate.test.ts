@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
-  MEDIA_FACTS,
   playbackResolveRequestSchema,
   streamCandidateSchema,
   unknownMediaFacts
-} from "./index";
+} from "./domains/playback";
+import { MEDIA_FACTS } from "./shared/media-facts";
 
 /**
  * Unknown media metadata (PL-0205).

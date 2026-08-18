@@ -1,35 +1,17 @@
 import { z } from "zod";
-import { contentRightsSchema } from "./index";
+import { normalizedContentIdSchema } from "../shared/ids";
+import { contentRightsSchema } from "../shared/rights";
 
 /* -------------------------------------------------------------------------
  * Title detail (PL-0103)
+ *
+ * Both of this module's dependencies are shared leaf vocabularies, imported
+ * directly. They used to be reached through the barrel -- the rights enum via
+ * `z.lazy`, because `index.ts` re-exported this file and so had not initialised
+ * its own bindings when this file's body ran, and the normalized id by
+ * declaring it here. Neither workaround survives the module split: `../shared`
+ * has no path back into this file, so there is no cycle and nothing to defer.
  * ---------------------------------------------------------------------- */
-
-/**
- * The shared rights vocabulary, reached through a deferred reference.
- *
- * `index.ts` re-exports this module, so the import above closes a module cycle:
- * this file is evaluated before `index.ts`'s own body runs, which means reading
- * `contentRightsSchema` at module scope here would touch a `const` that is
- * still in its temporal dead zone. That does not fail a test, it fails the
- * import -- every consumer of `@liberty/contracts` would throw on load, and
- * under a CommonJS interop build it would be worse still: the binding reads as
- * `undefined` and the failure moves to the first `.nullable()` call. `z.lazy`
- * defers the read to the first parse, by which point `index.ts` has finished
- * initialising.
- *
- * Re-declaring the three rights values locally would also break the cycle, but
- * it would leave a second rights vocabulary free to drift from the one the
- * playback path enforces. A rights boundary that disagrees with itself is the
- * one thing this file must not introduce.
- *
- * `search.ts` reaches `catalogItemSchema` the same way for the same reason. The
- * structural fix is to move the shared vocabularies out of `index.ts` into
- * their own module and have every sibling import that; that is a change to the
- * layout of shared contracts and belongs in a deliberate follow-up rather than
- * folded into either task.
- */
-const rightsBasisSchema = z.lazy(() => contentRightsSchema);
 
 /**
  * A rights basis that may not have been established yet.
@@ -42,24 +24,13 @@ const rightsBasisSchema = z.lazy(() => contentRightsSchema);
  * already passed the gate -- but a detail surface has to be able to say "we do
  * not know", and a client that cannot tell "undeclared" from "owned" will
  * render an undeclared work as playable.
- */
-export const titleRightsBasisSchema = rightsBasisSchema.nullable();
-export type TitleRightsBasis = z.infer<typeof titleRightsBasisSchema>;
-
-/**
- * A normalized content id: the id every surface agrees on, independent of which
- * provider supplied the metadata.
  *
- * Constrained rather than free-form because these ids are interpolated into
- * routes (`/title/<id>`, `/watch/<id>`) and compared across the catalog,
- * playback and progress surfaces. A provider-native id carrying a slash, a
- * space or upper case would produce a different URL than the one the catalog
- * links to, and two spellings of the same work would resolve as two works.
+ * Built on the shared `contentRightsSchema` rather than on a local re-spelling
+ * of the three values. A second rights vocabulary free to drift from the one
+ * the playback path enforces is the one thing this file must not introduce.
  */
-export const normalizedContentIdSchema = z
-  .string()
-  .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "must be a lower-case, hyphen-separated normalized id");
-export type NormalizedContentId = z.infer<typeof normalizedContentIdSchema>;
+export const titleRightsBasisSchema = contentRightsSchema.nullable();
+export type TitleRightsBasis = z.infer<typeof titleRightsBasisSchema>;
 
 const runtimeMinutes = z.number().int().positive();
 const ordinal = z.number().int().positive();
@@ -128,9 +99,13 @@ const titleDetailBaseShape = {
  * `episodes` and `seriesId` are not fields a provider withholds for a movie --
  * they are structurally meaningless for it, so there is nothing to distinguish.
  *
- * The three `kind` literals mirror `catalogItemKindSchema`. They are written as
- * literals rather than derived from it because a value import from `./index`
- * would close the module cycle described at the top of this file.
+ * The three `kind` literals mirror `catalogItemKindSchema` but are written out
+ * rather than derived from it, and that is now a deliberate boundary choice
+ * rather than a way around the old barrel cycle: importing `./catalog` here
+ * would add a second domain-to-domain edge to buy nothing but three string
+ * literals, and it would make every catalog-kind change a title-contract
+ * change. Browse kinds and detail kinds happen to coincide today; the contract
+ * does not require them to move together.
  */
 export const movieTitleDetailSchema = z.object({
   ...titleDetailBaseShape,

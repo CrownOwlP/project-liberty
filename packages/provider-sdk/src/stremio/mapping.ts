@@ -1,14 +1,11 @@
 import {
-  MEDIA_FACTS,
-  PLAYABLE_CONTENT_RIGHTS,
   streamCandidateSchema,
   unknownMediaFacts,
-  type AudioCodec,
-  type ContentRights,
-  type MediaFact,
-  type StreamCandidate,
-  type VideoCodec
-} from "@liberty/contracts";
+  type StreamCandidate
+} from "@liberty/contracts/domains/playback";
+import type { AudioCodec, VideoCodec } from "@liberty/contracts/shared/codecs";
+import { MEDIA_FACTS, type MediaFact } from "@liberty/contracts/shared/media-facts";
+import { PLAYABLE_CONTENT_RIGHTS, type ContentRights } from "@liberty/contracts/shared/rights";
 import { compareCodePoint } from "./order";
 import { formatIssues, type StremioStream } from "./protocol";
 import { checkUrl, truncate, type UrlRejectionReason } from "./url-policy";

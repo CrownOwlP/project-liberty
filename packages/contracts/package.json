@@ -3,7 +3,21 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "exports": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./domains/*": {
+      "types": "./src/domains/*.ts",
+      "default": "./src/domains/*.ts"
+    },
+    "./shared/*": {
+      "types": "./src/shared/*.ts",
+      "default": "./src/shared/*.ts"
+    },
+    "./package.json": "./package.json"
+  },
   "types": "./src/index.ts",
   "scripts": {
     "build": "tsc --noEmit",

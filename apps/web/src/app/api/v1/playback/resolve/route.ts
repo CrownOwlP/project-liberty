@@ -1,4 +1,4 @@
-import { playbackResolveRequestSchema } from "@liberty/contracts";
+import { playbackResolveRequestSchema } from "@liberty/contracts/domains/playback";
 import { rankStreamCandidates } from "@liberty/media-engine";
 
 export async function POST(request: Request) {

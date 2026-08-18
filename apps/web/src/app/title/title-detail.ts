@@ -1,12 +1,12 @@
 import {
-  PLAYABLE_CONTENT_RIGHTS,
-  normalizedContentIdSchema,
   titleDetailResponseSchema,
   type TitleDetail,
   type TitleDetailResponse,
   type TitleEpisodeSummary,
   type TitleRightsBasis
-} from "@liberty/contracts";
+} from "@liberty/contracts/domains/title";
+import { normalizedContentIdSchema } from "@liberty/contracts/shared/ids";
+import { PLAYABLE_CONTENT_RIGHTS } from "@liberty/contracts/shared/rights";
 import { formatRuntime } from "../../lib/catalog";
 import { findDemoTitleDetail } from "./demo-title-details";
 

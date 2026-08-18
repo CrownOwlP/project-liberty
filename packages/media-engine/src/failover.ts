@@ -1,12 +1,14 @@
+import {
+  PLAYBACK_FAILURE_KINDS,
+  type FailoverPolicy,
+  type PlaybackAttemptFailure,
+  type PlaybackFailureKind
+} from "@liberty/contracts/domains/failover";
 import type {
   CompatibilityConfidence,
-  FailoverPolicy,
-  PlaybackAttemptFailure,
   PlaybackCapabilities,
-  PlaybackFailureKind,
   StreamCandidate
-} from "@liberty/contracts";
-import { PLAYBACK_FAILURE_KINDS } from "@liberty/contracts";
+} from "@liberty/contracts/domains/playback";
 import { type PlaybackDecision, type RankedCandidate, rankStreamCandidates } from "./ranking";
 
 /**

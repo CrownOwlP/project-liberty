@@ -1,4 +1,4 @@
-import { catalogHomeResponseSchema } from "@liberty/contracts";
+import { catalogHomeResponseSchema } from "@liberty/contracts/domains/catalog";
 import { getHomeCatalog } from "../../../../../lib/catalog";
 
 /**

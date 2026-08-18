@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { unknownMediaFacts } from "@liberty/contracts";
+import { unknownMediaFacts } from "@liberty/contracts/domains/playback";
 import {
   deriveProtocol,
   mapStremioStream,

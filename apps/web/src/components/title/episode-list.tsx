@@ -1,5 +1,5 @@
 import Link from "next/link";
-import type { TitleEpisodeSummary } from "@liberty/contracts";
+import type { TitleEpisodeSummary } from "@liberty/contracts/domains/title";
 import {
   formatEpisodeCount,
   formatEpisodeLabel,

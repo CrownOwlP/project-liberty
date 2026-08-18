@@ -1,11 +1,11 @@
-import type {
-  CompatibilityConfidence,
-  ContentRights,
-  MediaFact,
-  PlaybackCapabilities,
-  StreamCandidate
-} from "@liberty/contracts";
-import { unknownMediaFacts } from "@liberty/contracts";
+import {
+  unknownMediaFacts,
+  type CompatibilityConfidence,
+  type PlaybackCapabilities,
+  type StreamCandidate
+} from "@liberty/contracts/domains/playback";
+import type { MediaFact } from "@liberty/contracts/shared/media-facts";
+import type { ContentRights } from "@liberty/contracts/shared/rights";
 import { type CandidateScore, explainScore, scoreCandidate } from "./scoring";
 
 export interface RankedCandidate {

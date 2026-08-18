@@ -1,5 +1,5 @@
 import Link from "next/link";
-import type { TitleDetail, TitleDetailKind } from "@liberty/contracts";
+import type { TitleDetail, TitleDetailKind } from "@liberty/contracts/domains/title";
 import {
   NO_SYNOPSIS_LABEL,
   formatTitleMeta,

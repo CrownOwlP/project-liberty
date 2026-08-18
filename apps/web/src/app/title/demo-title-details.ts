@@ -1,10 +1,9 @@
+import type { CatalogItem, SeriesCatalogItem } from "@liberty/contracts/domains/catalog";
 import type {
-  CatalogItem,
-  SeriesCatalogItem,
   TitleDetail,
   TitleEpisodeSummary,
   TitleTechnicalMetadata
-} from "@liberty/contracts";
+} from "@liberty/contracts/domains/title";
 import { demoCatalog } from "../../lib/demo-catalog";
 
 /**

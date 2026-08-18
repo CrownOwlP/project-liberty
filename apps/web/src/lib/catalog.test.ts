@@ -3,7 +3,7 @@ import type {
   EpisodeCatalogItem,
   MovieCatalogItem,
   SeriesCatalogItem
-} from "@liberty/contracts";
+} from "@liberty/contracts/domains/catalog";
 import {
   appearsOnHome,
   buildHomeCatalog,

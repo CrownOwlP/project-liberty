@@ -2,6 +2,10 @@ import { z } from "zod";
 
 /* -------------------------------------------------------------------------
  * Playback failover (PL-0204)
+ *
+ * Self-contained: the failure vocabulary names no codec, no rights value and no
+ * candidate shape, so it imports nothing from this package. A failover contract
+ * change therefore cannot invalidate a catalog or title build.
  * ---------------------------------------------------------------------- */
 
 /**

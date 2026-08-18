@@ -1,4 +1,4 @@
-import type { CatalogItem } from "@liberty/contracts";
+import type { CatalogItem } from "@liberty/contracts/domains/catalog";
 
 /**
  * Fictional development fixtures. These are original titles created for this

@@ -1,4 +1,5 @@
-import { PLAYABLE_CONTENT_RIGHTS, type ContentRights, type StreamCandidate } from "@liberty/contracts";
+import type { StreamCandidate } from "@liberty/contracts/domains/playback";
+import { PLAYABLE_CONTENT_RIGHTS, type ContentRights } from "@liberty/contracts/shared/rights";
 import type { AuthorizedMediaProvider, CatalogItemRef, ProviderContext } from "../provider";
 import { fetchJson, type FetchLike, type HttpFailureReason, type HttpOptions } from "./http";
 import {

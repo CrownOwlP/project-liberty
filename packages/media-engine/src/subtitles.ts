@@ -3,7 +3,7 @@ import type {
   SubtitleKind,
   SubtitlePolicy,
   SubtitleTrack
-} from "@liberty/contracts";
+} from "@liberty/contracts/domains/subtitles";
 import { languageMatch } from "./audio";
 
 /**

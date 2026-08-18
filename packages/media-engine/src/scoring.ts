@@ -1,10 +1,10 @@
-import type {
-  MediaFact,
-  PlaybackCapabilities,
-  StreamCandidate,
-  VideoCodec
-} from "@liberty/contracts";
-import { unknownMediaFacts } from "@liberty/contracts";
+import {
+  unknownMediaFacts,
+  type PlaybackCapabilities,
+  type StreamCandidate
+} from "@liberty/contracts/domains/playback";
+import type { VideoCodec } from "@liberty/contracts/shared/codecs";
+import type { MediaFact } from "@liberty/contracts/shared/media-facts";
 
 /**
  * Candidate score model (PL-0201, extended for unknown metadata by PL-0205).

@@ -1,11 +1,10 @@
 import { describe, expect, it } from "vitest";
-import {
-  SEARCH_QUERY_MAX_LENGTH,
-  normalizeSearchQuery,
-  type EpisodeCatalogItem,
-  type MovieCatalogItem,
-  type SeriesCatalogItem
-} from "@liberty/contracts";
+import type {
+  EpisodeCatalogItem,
+  MovieCatalogItem,
+  SeriesCatalogItem
+} from "@liberty/contracts/domains/catalog";
+import { SEARCH_QUERY_MAX_LENGTH, normalizeSearchQuery } from "@liberty/contracts/domains/search";
 import {
   describeSearchState,
   getSearchResults,

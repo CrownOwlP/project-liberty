@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { SEARCH_QUERY_MAX_LENGTH, normalizeSearchQuery } from "@liberty/contracts";
+import { SEARCH_QUERY_MAX_LENGTH, normalizeSearchQuery } from "@liberty/contracts/domains/search";
 import styles from "./search.module.css";
 
 /**

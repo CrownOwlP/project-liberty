@@ -3,12 +3,11 @@ import { z } from "zod";
 /* -------------------------------------------------------------------------
  * Subtitles (PL-0203)
  *
- * A module of its own rather than more of `index.ts`, and deliberately one that
- * imports nothing from it. `title.ts` and `search.ts` both have to reach shared
- * vocabularies through `z.lazy` because `index.ts` re-exports them and reading a
- * sibling's `const` at module scope would touch it inside its temporal dead
- * zone. Nothing here needs the rights or codec vocabularies, so the cycle never
- * forms and no deferral is required.
+ * A self-contained domain: it needs neither the rights nor the codec
+ * vocabulary, so it imports nothing from this package at all. It was already a
+ * module of its own before the split and already free of the barrel cycle that
+ * forced `title.ts` and `search.ts` into `z.lazy`; the split just moves it
+ * beside its siblings.
  * ---------------------------------------------------------------------- */
 
 /**
@@ -120,7 +119,7 @@ export const subtitlePolicySchema = z.object({
    * the viewer can already understand while leaving the foreign lines untouched.
    * Without this field, forced selection would have to guess, and `.optional()`
    * would make "nobody told me" indistinguishable from "we could not determine
-   * it" -- the same argument the media-fact nullability in `index.ts` makes.
+   * it" -- the same argument the media-fact nullability in `./playback` makes.
    */
   audioLanguage: z.string().min(2).transform((value) => value.toLowerCase()).nullable(),
   /**

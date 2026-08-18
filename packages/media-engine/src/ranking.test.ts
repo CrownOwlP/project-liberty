@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { PlaybackCapabilities, StreamCandidate } from "@liberty/contracts";
+import type { PlaybackCapabilities, StreamCandidate } from "@liberty/contracts/domains/playback";
 import { PLAYABLE_RIGHTS, PROVIDER_HEALTH_FLOOR, rankStreamCandidates } from "./ranking";
 import { SCORE_PRECISION, SCORE_WEIGHTS, explainScore, scoreCandidate } from "./scoring";
 

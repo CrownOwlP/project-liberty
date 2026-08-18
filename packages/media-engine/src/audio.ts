@@ -1,4 +1,5 @@
-import type { AudioRole, AudioTrack, PlaybackCapabilities } from "@liberty/contracts";
+import type { AudioRole, AudioTrack } from "@liberty/contracts/domains/audio";
+import type { PlaybackCapabilities } from "@liberty/contracts/domains/playback";
 
 /**
  * Audio track selection.

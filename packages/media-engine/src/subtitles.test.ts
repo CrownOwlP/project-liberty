@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { SubtitlePolicy, SubtitleTrack } from "@liberty/contracts";
+import type { SubtitlePolicy, SubtitleTrack } from "@liberty/contracts/domains/subtitles";
 import { selectSubtitleTrack } from "./subtitles";
 
 const track = (over: Partial<SubtitleTrack> & { id: string }): SubtitleTrack => ({

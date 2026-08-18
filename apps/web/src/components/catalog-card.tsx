@@ -1,4 +1,4 @@
-import type { CatalogItem } from "@liberty/contracts";
+import type { CatalogItem } from "@liberty/contracts/domains/catalog";
 import { formatCatalogMeta } from "../lib/catalog";
 
 export interface CatalogCardProps {

@@ -1,11 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
-  PLAYABLE_CONTENT_RIGHTS,
   catalogHomeResponseSchema,
   catalogItemSchema,
-  catalogRailSchema,
-  contentRightsSchema
-} from "./index";
+  catalogRailSchema
+} from "./domains/catalog";
+import { PLAYABLE_CONTENT_RIGHTS, contentRightsSchema } from "./shared/rights";
 
 const validItem = {
   id: "aurora-fall",

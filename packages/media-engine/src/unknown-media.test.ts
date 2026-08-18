@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { unknownMediaFacts, type PlaybackCapabilities, type StreamCandidate } from "@liberty/contracts";
+import {
+  unknownMediaFacts,
+  type PlaybackCapabilities,
+  type StreamCandidate
+} from "@liberty/contracts/domains/playback";
 import { rankStreamCandidates } from "./ranking";
 import {
   SCORE_PRECISION,

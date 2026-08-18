@@ -1,4 +1,5 @@
-import { PLAYABLE_CONTENT_RIGHTS, type ContentRights, type StreamCandidate } from "@liberty/contracts";
+import type { StreamCandidate } from "@liberty/contracts/domains/playback";
+import { PLAYABLE_CONTENT_RIGHTS, type ContentRights } from "@liberty/contracts/shared/rights";
 
 /**
  * The provider boundary.

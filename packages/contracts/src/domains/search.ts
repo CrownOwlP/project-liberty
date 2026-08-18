@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { catalogItemSchema } from "./index";
+import { catalogItemSchema } from "./catalog";
 
 /* -------------------------------------------------------------------------
  * Search (PL-0102)
@@ -9,6 +9,13 @@ import { catalogItemSchema } from "./index";
  * returns exactly this shape. Publishing the contract before the transport is
  * the point: when the route lands, the UI keeps parsing the same payload and
  * the two sides cannot quietly disagree about what a search is.
+ *
+ * This is the one domain-to-domain edge in the package, and it is a real
+ * dependency rather than a convenience: a search result IS a catalog item plus
+ * the reason it matched. Lifting `CatalogItem` into `shared/` to avoid the edge
+ * would move a whole domain contract into the leaf layer and make every
+ * catalog change a shared-vocabulary change, which is the opposite of what the
+ * split is for.
  * ---------------------------------------------------------------------- */
 
 /**
@@ -88,16 +95,15 @@ export const SEARCH_MATCH_RANK: Readonly<Record<SearchMatchKind, number>> = {
  * same reason a playback decision carries a reason: an unexplained ranking is
  * unfixable from a bug report.
  *
- * `catalogItemSchema` is referenced through `z.lazy` because `index.ts`
- * re-exports this module, so this file's body evaluates BEFORE `index.ts`
- * initialises its own bindings — an eager reference here throws at import time.
- * `z.lazy` defers it to parse time, when the binding is live. The structural
- * fix is to move the catalog schemas into their own module and have both files
- * import it; that is a change to shared contract layout and is left for a
- * deliberate follow-up rather than folded into this task.
+ * `catalogItemSchema` is referenced EAGERLY. It used to be wrapped in `z.lazy`
+ * because this module was reached through `index.ts`, which re-exported it and
+ * therefore had not yet initialised `catalogItemSchema` when this file's body
+ * ran. Importing `./catalog` directly removes the cycle, so the deferral has
+ * nothing left to defer: `z.lazy` here would only hide the day a genuine cycle
+ * comes back.
  */
 export const searchResultSchema = z.object({
-  item: z.lazy(() => catalogItemSchema),
+  item: catalogItemSchema,
   matchedOn: searchMatchKindSchema
 });
 export type SearchResult = z.infer<typeof searchResultSchema>;

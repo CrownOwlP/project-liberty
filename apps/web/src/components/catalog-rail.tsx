@@ -1,4 +1,4 @@
-import type { CatalogRail as CatalogRailModel } from "@liberty/contracts";
+import type { CatalogRail as CatalogRailModel } from "@liberty/contracts/domains/catalog";
 import { CatalogCard } from "./catalog-card";
 
 export interface CatalogRailProps {

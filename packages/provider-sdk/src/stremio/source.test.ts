@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { PLAYABLE_CONTENT_RIGHTS } from "@liberty/contracts";
+import { PLAYABLE_CONTENT_RIGHTS } from "@liberty/contracts/shared/rights";
 import {
   defineStremioSource,
   defineStremioSources,

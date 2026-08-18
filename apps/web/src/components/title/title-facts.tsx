@@ -1,4 +1,4 @@
-import type { TitleTechnicalMetadata } from "@liberty/contracts";
+import type { TitleTechnicalMetadata } from "@liberty/contracts/domains/title";
 import { formatLanguageList, formatMaxHeight } from "../../app/title/title-detail";
 
 export interface TitleFactsProps {

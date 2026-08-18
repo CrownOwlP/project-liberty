@@ -7,7 +7,7 @@ import {
   type TitleDetailResponse,
   type TitleEpisodeSummary,
   type TitleTechnicalMetadata
-} from "@liberty/contracts";
+} from "@liberty/contracts/domains/title";
 import {
   NONE_LABEL,
   NOT_REPORTED_LABEL,

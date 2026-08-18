@@ -3,10 +3,9 @@ import {
   PLAYBACK_FAILURE_KINDS,
   type FailoverPolicy,
   type PlaybackAttemptFailure,
-  type PlaybackCapabilities,
-  type PlaybackFailureKind,
-  type StreamCandidate
-} from "@liberty/contracts";
+  type PlaybackFailureKind
+} from "@liberty/contracts/domains/failover";
+import type { PlaybackCapabilities, StreamCandidate } from "@liberty/contracts/domains/playback";
 import {
   DEFAULT_FAILOVER_POLICY,
   PLAYBACK_FAILURE_KINDS_BY_PRECEDENCE,

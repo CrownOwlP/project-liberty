@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { AudioTrack, PlaybackCapabilities } from "@liberty/contracts";
+import type { AudioTrack } from "@liberty/contracts/domains/audio";
+import type { PlaybackCapabilities } from "@liberty/contracts/domains/playback";
 import { languageMatch, primarySubtag, selectAudioTrack } from "./audio";
 
 const track = (over: Partial<AudioTrack> & { id: string }): AudioTrack => ({

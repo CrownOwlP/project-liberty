@@ -1,10 +1,10 @@
 import {
-  PLAYABLE_CONTENT_RIGHTS,
   catalogHomeResponseSchema,
   type CatalogHomeResponse,
   type CatalogItem,
   type CatalogRail
-} from "@liberty/contracts";
+} from "@liberty/contracts/domains/catalog";
+import { PLAYABLE_CONTENT_RIGHTS } from "@liberty/contracts/shared/rights";
 import { demoCatalog } from "./demo-catalog";
 
 /**

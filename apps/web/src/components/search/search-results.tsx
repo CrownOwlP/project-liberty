@@ -1,4 +1,4 @@
-import type { SearchMatchKind, SearchResponse } from "@liberty/contracts";
+import type { SearchMatchKind, SearchResponse } from "@liberty/contracts/domains/search";
 import { CatalogCard } from "../catalog-card";
 import styles from "./search.module.css";
 

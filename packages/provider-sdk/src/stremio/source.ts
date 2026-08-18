@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { PLAYABLE_CONTENT_RIGHTS, type ContentRights } from "@liberty/contracts";
+import { PLAYABLE_CONTENT_RIGHTS, type ContentRights } from "@liberty/contracts/shared/rights";
 import { compareCodePoint } from "./order";
 import { formatIssues } from "./protocol";
 import { checkUrl, truncate, type UrlRejectionReason } from "./url-policy";

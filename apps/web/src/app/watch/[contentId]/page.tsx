@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { rankStreamCandidates } from "@liberty/media-engine";
-import type { PlaybackCapabilities, StreamCandidate } from "@liberty/contracts";
+import type { PlaybackCapabilities, StreamCandidate } from "@liberty/contracts/domains/playback";
 
 const capabilities: PlaybackCapabilities = {
   maxHeight: 2160,

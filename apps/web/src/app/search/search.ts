@@ -1,12 +1,12 @@
+import type { CatalogItem } from "@liberty/contracts/domains/catalog";
 import {
   SEARCH_MATCH_RANK,
   normalizeSearchQuery,
   searchResponseSchema,
-  type CatalogItem,
   type SearchMatchKind,
   type SearchResponse,
   type SearchResult
-} from "@liberty/contracts";
+} from "@liberty/contracts/domains/search";
 import { isSurfaceable } from "../../lib/catalog";
 import { demoCatalog } from "../../lib/demo-catalog";
 
