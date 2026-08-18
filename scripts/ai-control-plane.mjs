@@ -456,6 +456,16 @@ function deferredReasons(d, classification, wave) {
  * Binds a review approval to the exact implementation content it reviewed.
  * Generated control-plane bookkeeping is excluded, otherwise recording the
  * approval itself would immediately invalidate the approval.
+ *
+ * Two surfaces, deliberately not one:
+ *
+ *   write / collision / staging   allowedPaths
+ *   reviewed                      allowedPaths + reviewDependencies
+ *
+ * Collapsing them is what forced every contract-touching task to reserve
+ * `packages/contracts/**` in full: narrowing allowedPaths to unblock those lanes
+ * would also have narrowed what their approvals bind to, so a later edit to a
+ * shared schema would silently stop invalidating the reviews that relied on it.
  * ------------------------------------------------------------------------- */
 const fingerprintExclusions = [
   "control/tasks.json",
@@ -498,9 +508,52 @@ function filesForPattern(pattern) {
   }
   return out;
 }
+/**
+ * The WRITE surface, and only that.
+ *
+ * Never widened by reviewDependencies. A declared dependency is read-only by
+ * construction: no collision check reserved it, so another active task may be
+ * editing it at the same moment, and treating it as writable here would hand out
+ * an ownership claim the scheduler never granted.
+ */
 function taskPathspecs(task) {
   return [
     ...new Set((task.allowedPaths ?? []).map(normalizePrefix).filter(Boolean)),
+  ];
+}
+
+/**
+ * The REVIEWED surface: everything an approval binds to.
+ *
+ * allowedPaths is in the union by construction rather than by convention. If a
+ * task could write a file that its own fingerprint did not cover, it could
+ * change its approved content without invalidating the approval -- which is the
+ * exact failure the fingerprint exists to prevent.
+ *
+ * Absent or empty reviewDependencies therefore reduces to allowedPaths, so the
+ * tasks that predate this field fingerprint precisely what they always did.
+ */
+function reviewSurfacePatterns(task) {
+  const declared = task.reviewDependencies ?? [];
+  if (
+    !Array.isArray(declared) ||
+    declared.some((p) => typeof p !== "string" || !p.trim())
+  ) {
+    // Fail closed rather than skipping the unusable entries. `validate` reports
+    // this properly, so anything reaching here bypassed it -- and silently
+    // fingerprinting a NARROWER surface than the task declares would record an
+    // approval that claims to cover a shared vocabulary it never hashed, which
+    // is the precise failure this field exists to prevent.
+    throw new Error(
+      `${task.id}: reviewDependencies must be an array of non-empty path globs; ` +
+        "refusing to fingerprint a review surface that cannot be determined",
+    );
+  }
+  return [...(task.allowedPaths ?? []), ...declared];
+}
+function reviewPathspecs(task) {
+  return [
+    ...new Set(reviewSurfacePatterns(task).map(normalizePrefix).filter(Boolean)),
   ];
 }
 
@@ -516,7 +569,7 @@ function taskPathspecs(task) {
  * Returns null when git or the commit is unavailable, so callers can decide.
  */
 function gitFingerprint(task, commitish = "HEAD") {
-  const pathspecs = taskPathspecs(task);
+  const pathspecs = reviewPathspecs(task);
   if (!pathspecs.length) return null;
   try {
     const out = execFileSync(
@@ -563,7 +616,10 @@ function gitFingerprint(task, commitish = "HEAD") {
 /** Working-tree fallback for environments without git (the test fixtures). */
 function worktreeFingerprint(task) {
   const set = new Set();
-  for (const pattern of task.allowedPaths ?? [])
+  // The Set is what makes a redundantly-declared dependency a no-op: a pattern
+  // already covered by allowedPaths contributes the same relative paths, so the
+  // union is idempotent and the hash does not move.
+  for (const pattern of reviewSurfacePatterns(task))
     for (const rel of filesForPattern(pattern)) set.add(rel);
   const sorted = [...set].sort();
   const hash = crypto.createHash("sha256");
@@ -588,6 +644,12 @@ function implementationFingerprint(task, commitish = "HEAD") {
  * Uncommitted changes to files this task owns. Scoped to allowedPaths so an
  * unrelated edit elsewhere in the repo cannot block a review decision, while a
  * dirty implementation tree still does.
+ *
+ * Stays on allowedPaths and is NOT widened to the reviewed surface. A shared
+ * dependency is co-owned by whichever task actually holds it, and that task's
+ * in-flight edits are none of this task's business: widening here would let one
+ * lane's uncommitted work block every other lane that merely reads the same
+ * vocabulary -- reintroducing the package-wide mutex through the back door.
  */
 function taskWorktreeIsDirty(task) {
   if (process.env.LIBERTY_COMMIT_SHA) return false; // test harness has no git
@@ -710,8 +772,14 @@ function reviewProblems(task, policies) {
 
   const current = implementationFingerprint(task);
   if (r.reviewedTreeHash !== current.treeHash) {
+    // Naming the surface matters once dependencies exist: an owner who has
+    // touched nothing in their own allowedPaths would otherwise read this as a
+    // control-plane fault rather than as the shared-vocabulary change it is.
+    const surface = (task.reviewDependencies ?? []).length
+      ? "allowedPaths + reviewDependencies"
+      : "allowedPaths";
     problems.push(
-      `stale review: implementation under allowedPaths changed after approval (approved ${String(r.reviewedTreeHash).slice(0, 12)}, current ${current.treeHash.slice(0, 12)})`,
+      `stale review: implementation under ${surface} changed after approval (approved ${String(r.reviewedTreeHash).slice(0, 12)}, current ${current.treeHash.slice(0, 12)})`,
     );
   }
   // Canonical fingerprints are git content and by design cannot see uncommitted
@@ -930,6 +998,13 @@ function recordReview(
     // Records the hashing scheme so a historical check knows whether the value
     // is reproducible from a commit at all.
     reviewedFingerprintSource: fingerprint.source,
+    // The widened surface, stated rather than implied. A hash cannot be read
+    // backwards, so without this a reader cannot tell whether an approval bound
+    // to a shared vocabulary or only to the task's own files -- and that is
+    // precisely the question when deciding whether a later schema edit should
+    // have invalidated this record. Empty for a task that declares none, which
+    // is every task authored before the field existed.
+    reviewedDependencies: [...(task.reviewDependencies ?? [])],
     outcome,
     reviewedAt: now(),
     evidence,
@@ -1005,8 +1080,15 @@ function isAncestorCommit(ancestor, descendant) {
 }
 
 /**
- * Files under the task's allowedPaths that changed between the reviewed commit
- * and HEAD. Returns null if the comparison cannot be made at all.
+ * Files under the task's REVIEWED surface that changed between the reviewed
+ * commit and HEAD. Returns null if the comparison cannot be made at all.
+ *
+ * The reviewed surface, not the write surface: this is the question "is what the
+ * reviewer looked at still what is here", and the reviewer looked at the shared
+ * vocabulary too. Scoping it to allowedPaths would accept an approval whose
+ * dependency has moved underneath it -- the stale-fingerprint check would still
+ * refuse the task at DONE, but only after the decision had been recorded as
+ * valid, which is a far more confusing failure than refusing to bind it now.
  */
 function reviewedPathsDrifted(sha, task) {
   try {
@@ -1022,7 +1104,7 @@ function reviewedPathsDrifted(sha, task) {
       .filter(
         (rel) =>
           !excludedFromFingerprint(rel) &&
-          pathsOverlap([rel], task.allowedPaths ?? []),
+          pathsOverlap([rel], reviewSurfacePatterns(task)),
       );
   } catch {
     return null;
@@ -1420,6 +1502,53 @@ function validateState(d) {
         warnings.push(
           `${task.id}: allowedPath "${p}" normalizes to the repository root and will conflict with every other task`,
         );
+    }
+    /*
+     * reviewDependencies widens ONLY the reviewed surface; it grants no write
+     * permission and reserves nothing.
+     *
+     * A malformed entry is an error, not a warning. The fingerprint refuses to
+     * guess at a surface it cannot determine, so the alternative to reporting it
+     * here is every review and completion command for that task dying on a
+     * runtime error with no indication of which field caused it.
+     */
+    if (task.reviewDependencies !== undefined) {
+      if (!Array.isArray(task.reviewDependencies)) {
+        errors.push(
+          `${task.id}: reviewDependencies must be an array of path globs`,
+        );
+      } else {
+        const writable = taskPathspecs(task);
+        for (const p of task.reviewDependencies) {
+          if (typeof p !== "string" || !p.trim()) {
+            errors.push(
+              `${task.id}: reviewDependencies entries must be non-empty strings, got ${JSON.stringify(p)}`,
+            );
+            continue;
+          }
+          const dep = normalizePrefix(p);
+          if (!dep) {
+            warnings.push(
+              `${task.id}: reviewDependency "${p}" normalizes to the repository root, which would put the entire repository in the reviewed surface; it is dropped instead, so it protects nothing`,
+            );
+            continue;
+          }
+          // Redundant, never wrong. allowedPaths is already inside the reviewed
+          // surface and the union is idempotent, so this changes no hash, no
+          // collision decision and no gate. Making it an error would mean a
+          // later, unrelated widening of allowedPaths retroactively invalidates
+          // the whole control plane -- a far worse failure than a duplicated
+          // glob, and one a task editing its own paths could not foresee.
+          const covering = writable.find(
+            (w) => dep === w || dep.startsWith(w + "/"),
+          );
+          if (covering) {
+            warnings.push(
+              `${task.id}: reviewDependency "${p}" is already inside allowedPath "${covering}"; allowedPaths is always part of the reviewed surface, so this entry is redundant`,
+            );
+          }
+        }
+      }
     }
     if (
       task.preferredAgent &&
@@ -1938,6 +2067,10 @@ try {
           requiredReviewer: task.reviewAgent ?? null,
           implementationAgent: task.implementationAgent ?? task.owner ?? null,
           review: task.review ?? null,
+          // Printed next to the hash on purpose: the hash is the answer, and
+          // this is the question it answered.
+          allowedPaths: task.allowedPaths ?? [],
+          reviewDependencies: task.reviewDependencies ?? [],
           currentTreeHash: implementationFingerprint(task).treeHash,
           gatesPassed: allGatesPassed(task),
           blockingProblems: problems,

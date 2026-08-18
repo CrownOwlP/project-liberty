@@ -1,3 +1,51 @@
+/**
+ * AI control-plane regression suite.
+ *
+ * ---------------------------------------------------------------------------
+ * THE RULE THIS FILE KEEPS RE-LEARNING
+ * ---------------------------------------------------------------------------
+ * Scenarios that assert planner or command BEHAVIOUR plan over FIXTURES --
+ * `fixtureTask`, `addFixtureTasks`, `useFixtureTaskSet`, `waveFixtureTasks` --
+ * and never over whatever `control/tasks.json` happens to contain today. Only
+ * the designated live-state guards read the real task list: scenario 0, which
+ * proves the runtime reset actually neutralises live progress, and scenario 11,
+ * which proves the run never wrote to the live repository. Those two exist in
+ * order to observe live state. Everything else merely borrowed it because it
+ * was lying around.
+ *
+ * That lesson has now arrived three times, each as a real red build:
+ *
+ *   - scenario 7 asserted the exact dispatch wave the live backlog produced,
+ *     and authoring one more READY P0 task moved the tie-break;
+ *   - scenario 1 asserted `M0 ... 1/4 (25%)`, which adding a fifth task to M0
+ *     would have broken while the rollup arithmetic stayed correct;
+ *   - scenario 9n assumed PL-0003 had never been started, so `--base auto`
+ *     could resolve nothing -- true right up until PL-0003 was implemented,
+ *     reviewed, and completed, at which point it carried a real
+ *     implementationBaseSha and the command the scenario expected to fail
+ *     succeeded.
+ *
+ * Each was a statement about that day's data wearing the costume of an
+ * invariant. A previous audit even wrote the assumption down -- "relies on
+ * PL-0003 existing and never having been started (in a reset repo, always
+ * true)". "Always true in a reset repo" is not an invariant; it is a
+ * screenshot, and the project is supposed to move.
+ *
+ * SO: when a scenario fails because the project made progress, move it onto a
+ * fixture. Do NOT update the expectation to match the new live data. Updating
+ * an expected value to match reality is byte-for-byte indistinguishable from
+ * updating it to match a regression: the diff looks identical, the commit
+ * message reads identically, and the reviewer has no signal to tell the two
+ * apart. That is how a genuine defect eventually lands disguised as routine
+ * churn -- the suite goes red, someone "refreshes" the expectation, and the
+ * assertion that existed to catch the bug is now asserting the bug.
+ *
+ * Where live coupling is deliberate, it is stated in the scenario's own comment
+ * along with the reason it cannot be a fixture (the bus/orchestrator scenarios
+ * pin PL-AI-0001 and PL-AI-0002 because scripts/cloud/orchestrator-gate.mjs
+ * hard-codes that pair as its activation contract; a fixture there would test a
+ * different contract than the one production reads).
+ */
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
@@ -111,6 +159,18 @@ function resetRuntimeState(repo) {
     delete task.completedAt;
     delete task.review;
     delete task.reviewHistory;
+
+    // The commit implementation began from. This is the field that leaked, and
+    // it is worth naming precisely: `start` writes it, so it is runtime state,
+    // but it was not being cleared here. Once a real task carried one, a
+    // "fresh" repo was no longer baseless -- `--base auto` resolved happily and
+    // scenario 9n's fail-closed assertion started passing the wrong way.
+    //
+    // The second, quieter hazard: `start` deliberately never overwrites an
+    // existing base, so an inherited value would also have defeated scenario
+    // 9m's `implementationBaseSha === START` assertion the moment PL-AI-0001
+    // was re-implemented through the CLI.
+    delete task.implementationBaseSha;
 
     // Externally BLOCKED tasks are a definition, not runtime drift: a blocked
     // task carries an explicit blocker reason and must stay blocked.
@@ -255,25 +315,313 @@ function tasksOf(repo) {
 function taskOf(repo, id) {
   return tasksOf(repo).find((t) => t.id === id);
 }
-/** Drive PL-AI-0001 from READY through its implementation gates. */
+
+/**
+ * Append tasks to the COPIED control/tasks.json.
+ *
+ * `reviewDependencies` is a schema addition and no authored task carries one
+ * yet. The fixtures live here rather than in control/tasks.json on purpose: the
+ * data change is a separate task, so a review of the CODE must not be able to
+ * pass or fail because of task data a later commit is expected to rewrite.
+ *
+ * The second use is subtler and just as important. Several scenarios need "a
+ * task that exists", "a task that is not in REVIEW", or "a task with no review
+ * base" -- properties any task can supply. Borrowing a real one silently turns
+ * the scenario into a bet that that particular task will stay in that
+ * particular state, which is a bet the project is actively trying to lose.
+ * Appending a fixture states the requirement instead of assuming it.
+ */
+function addFixtureTasks(repo, ...fixtures) {
+  const file = path.join(repo, "control", "tasks.json");
+  const doc = JSON.parse(fs.readFileSync(file, "utf8"));
+  doc.tasks.push(...fixtures);
+  fs.writeFileSync(file, JSON.stringify(doc, null, 2) + "\n");
+}
+
+/**
+ * REPLACE the copied task set with a frozen fixture, rather than appending to it.
+ *
+ * `addFixtureTasks` is right for scenarios that only need two extra lanes beside
+ * the real ones. It is wrong for anything asserting an EXACT dispatch wave,
+ * because the planner solves over every candidate at once: adding a single READY
+ * P0 task to control/tasks.json can move the optimum and break a planner
+ * assertion even though the planner's behaviour has not changed at all.
+ *
+ * That is exactly what happened. PL-AI-0004 was authored (P0, Coordination,
+ * READY, allowedPaths scripts/ai-control-plane.mjs + scripts/test-ai-control-plane.mjs).
+ * It does not collide with PL-0002's `control/**`, so PL-0002 became schedulable
+ * alongside it -- and PL-0002 owns `docs/**`, which swallows PL-0201's
+ * `docs/ARCHITECTURE.md`. The wave stayed size 4 and stayed conflict-free; only
+ * WHICH maximum set won the lexicographic tie-break moved. Rewriting the
+ * expectation to name the new set would leave the same trap armed for the next
+ * P0 task, so the scenarios plan over frozen data instead.
+ *
+ * Milestones go with the task set: `validate` errors on a milestone naming a
+ * task id that no longer exists, and the milestone index is project data rather
+ * than planner behaviour.
+ */
+function useFixtureTaskSet(repo, ...fixtures) {
+  const file = path.join(repo, "control", "tasks.json");
+  const doc = JSON.parse(fs.readFileSync(file, "utf8"));
+  doc.tasks = [...fixtures];
+  fs.writeFileSync(file, JSON.stringify(doc, null, 2) + "\n");
+
+  const milestoneFile = path.join(repo, "control", "milestones.json");
+  if (fs.existsSync(milestoneFile)) {
+    const milestoneDoc = JSON.parse(fs.readFileSync(milestoneFile, "utf8"));
+    milestoneDoc.milestones = [];
+    fs.writeFileSync(
+      milestoneFile,
+      JSON.stringify(milestoneDoc, null, 2) + "\n",
+    );
+  }
+}
+
+/**
+ * A minimal task the control plane accepts.
+ *
+ * Everything lives under `fixtures/**`, which no authored task owns, so these
+ * scenarios cannot collide with real work and do not have to be revisited every
+ * time the project's own allowedPaths move. No quality gates, so what is being
+ * measured is the surface under test and nothing else.
+ *
+ * Shared by the reviewDependencies scenarios, the dispatch-planning ones, the
+ * handoff-bus ones and the review-base ones; the defaults below are what each of
+ * them overrides from.
+ */
+function fixtureTask(id, overrides = {}) {
+  return {
+    id,
+    priority: "P2",
+    lane: "Frontend",
+    status: "READY",
+    title: `${id} review-dependency fixture`,
+    dependencies: [],
+    allowedPaths: [],
+    preferredAgent: "claude-frontend",
+    reviewAgent: "gpt-architect",
+    qualityGates: [],
+    acceptance: "fixture task used by the reviewDependencies regressions",
+    owner: null,
+    gateResults: {},
+    ...overrides,
+  };
+}
+
+/**
+ * The frozen candidate set the dispatch-planning scenarios (7 and 8) plan over.
+ *
+ * Built so that every property those scenarios exist to prove has a task whose
+ * only job is to break that property if the planner regresses:
+ *
+ *   PL-WV-0001  the GREEDY TRAP. Sorts first (P0, lowest id) and its
+ *               allowedPaths cover every other fixture path, so a
+ *               priority-ordered first-fit scan takes it and dispatches a wave
+ *               of ONE. A maximum-feasible search must leave it behind.
+ *   PL-WV-0002  Media, and only claude-media advertises Media.
+ *   PL-WV-0003  Infra, and only claude-infra advertises Infra.
+ *   PL-WV-0004  dependency-gated. Nothing about paths, capability or capacity
+ *               stops it; only its unfinished dependency does.
+ *   PL-WV-0005  three mutually disjoint Coordination tasks. claude-lead is the
+ *   PL-WV-0006  only locally executable agent advertising Coordination and its
+ *   PL-WV-0007  maxParallel is 2, so exactly two may go out.
+ *   PL-WV-0008  reserved for gpt-architect, and deliberately given the SAME
+ *               broad paths as the trap: an external reservation must consume
+ *               neither path ownership nor capacity from the local wave.
+ *   PL-WV-0009  BLOCKED, so blocked lanes are reported rather than dropped.
+ *   PL-WV-0010  no preferredAgent, in a lane no locally executable agent
+ *               advertises -- the other route into READY_BUT_EXTERNAL.
+ *
+ * Three conflict-free waves of size 4 exist -- {PL-WV-0002, PL-WV-0003} plus any
+ * two of the three Coordination tasks -- and all three carry the same priority
+ * sum, so betterWave()'s lexicographic tie-break decides between them and picks
+ * PL-WV-0005 and PL-WV-0006. That is deterministic here BECAUSE the candidate
+ * set is frozen; it is exactly the tie-break that moved when the live backlog
+ * grew. The comparison that matters is against greedy first-fit, which would
+ * emit a single task.
+ */
+function waveFixtureTasks() {
+  const wave = (id, overrides = {}) =>
+    fixtureTask(id, {
+      priority: "P0",
+      title: `${id} dispatch fixture`,
+      acceptance: "fixture task used by the dispatch-planning scenarios",
+      ...overrides,
+    });
+  return [
+    wave("PL-WV-0001", {
+      lane: "Frontend",
+      preferredAgent: "claude-frontend",
+      allowedPaths: ["fixtures/wave/**"],
+      title: "PL-WV-0001 broad-scope greedy trap",
+    }),
+    wave("PL-WV-0002", {
+      lane: "Media",
+      preferredAgent: "claude-media",
+      allowedPaths: ["fixtures/wave/media/**"],
+    }),
+    wave("PL-WV-0003", {
+      lane: "Infra",
+      preferredAgent: "claude-infra",
+      allowedPaths: ["fixtures/wave/infra/**"],
+    }),
+    wave("PL-WV-0004", {
+      status: "BACKLOG",
+      lane: "Backend",
+      preferredAgent: "claude-backend",
+      dependencies: ["PL-WV-0009"],
+      allowedPaths: ["fixtures/wave/backend/**"],
+    }),
+    wave("PL-WV-0005", {
+      lane: "Coordination",
+      preferredAgent: "claude-lead",
+      allowedPaths: ["fixtures/wave/coord/a/**"],
+    }),
+    wave("PL-WV-0006", {
+      lane: "Coordination",
+      preferredAgent: "claude-lead",
+      allowedPaths: ["fixtures/wave/coord/b/**"],
+    }),
+    wave("PL-WV-0007", {
+      lane: "Coordination",
+      preferredAgent: "claude-lead",
+      allowedPaths: ["fixtures/wave/coord/c/**"],
+    }),
+    wave("PL-WV-0008", {
+      lane: "Architecture",
+      preferredAgent: "gpt-architect",
+      reviewAgent: "claude-lead",
+      allowedPaths: ["fixtures/wave/**"],
+    }),
+    wave("PL-WV-0009", {
+      status: "BLOCKED",
+      lane: "Provider",
+      preferredAgent: "claude-backend",
+      allowedPaths: ["fixtures/wave/blocked/**"],
+      blocker: "awaiting an external licensing decision",
+    }),
+    wave("PL-WV-0010", {
+      priority: "P1",
+      lane: "Recommendations",
+      preferredAgent: null,
+      allowedPaths: ["fixtures/wave/recs/**"],
+    }),
+  ];
+}
+
+/**
+ * Pairwise write-path disjointness, recomputed from the fixture data.
+ *
+ * A deliberate SECOND implementation of the overlap rule, so a wave is not
+ * declared conflict-free merely because the planner's own predicate said so --
+ * which is precisely what a broken predicate would also say.
+ */
+function assertWaveIsConflictFree(ids, fixtures) {
+  const pathsOf = (id) => fixtures.find((t) => t.id === id)?.allowedPaths ?? [];
+  const prefix = (p) => p.replace(/\/?\*+.*$/, "");
+  for (const a of ids) {
+    for (const b of ids) {
+      if (a >= b) continue;
+      for (const pa of pathsOf(a)) {
+        for (const pb of pathsOf(b)) {
+          const na = prefix(pa);
+          const nb = prefix(pb);
+          assert.ok(
+            na !== nb && !na.startsWith(nb + "/") && !nb.startsWith(na + "/"),
+            `dispatched ${a} and ${b} both claim a write path (${pa} vs ${pb})`,
+          );
+        }
+      }
+    }
+  }
+}
+
+function writeFixtureFile(repo, rel, body) {
+  const abs = path.join(repo, rel);
+  fs.mkdirSync(path.dirname(abs), { recursive: true });
+  fs.writeFileSync(abs, body);
+  return abs;
+}
+
+/**
+ * Recompute a worktree fingerprint independently of the implementation.
+ *
+ * This is a deliberate SECOND implementation of the byte format -- sorted
+ * relative path, NUL, file bytes, NUL -- so that changing how a fingerprint is
+ * constructed fails loudly here instead of silently moving every approval ever
+ * recorded. It is only ever pointed at fixture directories, which contain none
+ * of the generated control-plane bookkeeping the real hash excludes, so the
+ * exclusion rules deliberately are not mirrored.
+ */
+function expectedWorktreeHash(repo, prefixes) {
+  const files = [];
+  const walk = (rel) => {
+    const abs = path.join(repo, rel);
+    if (!fs.existsSync(abs)) return;
+    if (fs.statSync(abs).isFile()) {
+      files.push(rel);
+      return;
+    }
+    for (const entry of fs.readdirSync(abs)) walk(`${rel}/${entry}`);
+  };
+  for (const prefix of prefixes) walk(prefix);
+
+  const hash = createHash("sha256");
+  for (const rel of [...new Set(files)].sort()) {
+    hash.update(rel);
+    hash.update("\0");
+    hash.update(fs.readFileSync(path.join(repo, rel)));
+    hash.update("\0");
+  }
+  return hash.digest("hex");
+}
+
+/** The fingerprint the control plane currently computes for a task. */
+function currentTreeHash(repo, id) {
+  return JSON.parse(run(repo, CLI, ["review-status", id])).currentTreeHash;
+}
+
+/** Two disjoint modules that share one vocabulary -- the case the split exists for. */
+function seedSharedVocabulary(repo) {
+  writeFixtureFile(
+    repo,
+    "fixtures/rd/shared/rights.ts",
+    "export type RightsBasis = 'licensed' | 'owned' | 'public-domain';\n",
+  );
+  writeFixtureFile(repo, "fixtures/rd/a/search.ts", "export const searchContract = 1;\n");
+  writeFixtureFile(repo, "fixtures/rd/b/title.ts", "export const titleContract = 1;\n");
+  addFixtureTasks(
+    repo,
+    fixtureTask("PL-RD-A", {
+      allowedPaths: ["fixtures/rd/a/**"],
+      reviewDependencies: ["fixtures/rd/shared/**"],
+    }),
+    fixtureTask("PL-RD-B", {
+      lane: "Backend",
+      preferredAgent: "claude-backend",
+      allowedPaths: ["fixtures/rd/b/**"],
+      reviewDependencies: ["fixtures/rd/shared/**"],
+    }),
+  );
+}
+
+/**
+ * Drive PL-AI-0001 from READY through its implementation gates.
+ *
+ * The gate names are READ from the task definition rather than written here.
+ * Naming "repo-validate" and "architecture-review" made every scenario built on
+ * this helper depend on PL-AI-0001's authored gate list, so adding one gate to
+ * that task would have reddened a dozen scenarios that are not about gates at
+ * all -- and the tempting fix would have been to type the new gate name in,
+ * which is how expectations drift towards whatever the data currently says.
+ */
 function implementToInProgress(repo) {
   const implementer = "claude-lead";
   run(repo, CLI, ["claim", "PL-AI-0001", implementer]);
   run(repo, CLI, ["start", "PL-AI-0001", implementer]);
-  run(repo, CLI, [
-    "gate",
-    "PL-AI-0001",
-    "repo-validate",
-    "pass",
-    "automated smoke",
-  ]);
-  run(repo, CLI, [
-    "gate",
-    "PL-AI-0001",
-    "architecture-review",
-    "pass",
-    "automated smoke",
-  ]);
+  for (const gate of taskOf(repo, "PL-AI-0001").qualityGates ?? []) {
+    run(repo, CLI, ["gate", "PL-AI-0001", gate, "pass", "automated smoke"]);
+  }
 }
 /** Drive PL-AI-0001 from READY up to (but not including) DONE. */
 function implementToReview(repo) {
@@ -364,6 +712,15 @@ try {
         undefined,
         `${task.id} should have no completedAt timestamp`,
       );
+      // The leak that broke 9n. A base inherited from real completed work makes
+      // a "fresh" repo silently non-fresh for every range-contract scenario, and
+      // the symptom surfaces far away from the cause -- so it is asserted here,
+      // where the reset itself is under test.
+      assert.equal(
+        task.implementationBaseSha,
+        undefined,
+        `${task.id} should have no implementation base sha`,
+      );
 
       // Definitions and routing survive the reset untouched.
       const source_ = liveById.get(task.id);
@@ -406,9 +763,38 @@ try {
       }
     }
 
-    // Isolation holds even though the live project has tasks IN_PROGRESS.
-    assert.equal(taskOf(repo, "PL-AI-0001").status, "READY");
-    assert.equal(taskOf(repo, "PL-0302").status, "BLOCKED");
+    /*
+     * Isolation holds even though the live project has genuinely progressed.
+     *
+     * Derived from the live file rather than naming ids. Earlier this spot-check
+     * read "PL-AI-0001 is READY, PL-0302 is BLOCKED", which is the same species
+     * of assumption that broke 9n: PL-0302 will not stay blocked forever, and a
+     * scenario about the RESET should not fail because a blocker was cleared.
+     * Deriving the ids also makes the check total rather than illustrative --
+     * every advanced task must be neutralised, not just the one that was
+     * advanced on the day this was written.
+     */
+    const liveAdvanced = live.filter(
+      (t) => !["READY", "BACKLOG", "BLOCKED", "CANCELED"].includes(t.status),
+    );
+    assert.ok(
+      liveAdvanced.length > 0,
+      "the live control plane should have progressed past a pristine backlog; " +
+        "if it truly has not, this guard is no longer proving anything",
+    );
+    for (const advanced of liveAdvanced) {
+      assert.ok(
+        ["READY", "BACKLOG"].includes(taskOf(repo, advanced.id).status),
+        `${advanced.id} is ${advanced.status} live and must reset to READY or BACKLOG`,
+      );
+    }
+    for (const blocked of live.filter((t) => t.status === "BLOCKED")) {
+      assert.equal(
+        taskOf(repo, blocked.id).status,
+        "BLOCKED",
+        `${blocked.id} is blocked by an external reason and must stay BLOCKED`,
+      );
+    }
     run(repo, CLI, ["validate"]);
   }
 
@@ -454,8 +840,25 @@ try {
       "dependent task should unlock after DONE",
     );
 
+    // Milestone rollup: exactly one of M0's tasks is now DONE.
+    //
+    // The denominator is READ from the milestone index rather than written into
+    // the pattern. Hard-coding "1/4 (25%)" made this assertion break the moment
+    // a task was added to M0 -- project data moving, not the rollup arithmetic
+    // regressing -- which is the same trap scenario 7 had.
+    const m0 = JSON.parse(
+      fs.readFileSync(path.join(repo, "control", "milestones.json"), "utf8"),
+    ).milestones.find((m) => m.id === "M0");
+    assert.ok(m0?.tasks?.includes("PL-AI-0001"), "M0 must contain PL-AI-0001");
+    const expectedPct = Math.round((1 / m0.tasks.length) * 100);
     const status = run(repo, CLI, ["status"]);
-    assert.match(status, /M0 .*IN_PROGRESS, 1\/4 \(25%\)/);
+    assert.match(
+      status,
+      new RegExp(
+        `M0 .*IN_PROGRESS, 1/${m0.tasks.length} \\(${expectedPct}%\\)`,
+      ),
+      `M0 should report exactly one completed task:\n${status}`,
+    );
   }
 
   /* ---------------------------------------------------------------------
@@ -581,105 +984,197 @@ try {
     const repo = freshRepo();
     run(repo, CLI, ["claim", "PL-AI-0001", "claude-lead"]);
     run(repo, CLI, ["start", "PL-AI-0001", "claude-lead"]);
+
+    // Gate names come from the task definition, not from this file. What is
+    // under test is "an unrecorded gate blocks completion", which is true of
+    // whichever gates the task declares; the previous version named
+    // architecture-review and would have failed if that gate were ever renamed
+    // or reordered, for reasons having nothing to do with gate enforcement.
+    const gates = taskOf(repo, "PL-AI-0001").qualityGates ?? [];
+    assert.ok(
+      gates.length >= 2,
+      "this scenario needs a task declaring at least two gates, so one can be left unrecorded",
+    );
+    const withheld = gates[gates.length - 1];
+
     runFail(
       repo,
-      ["gate", "PL-AI-0001", "repo-validate", "pass"],
+      ["gate", "PL-AI-0001", gates[0], "pass"],
       /Gate evidence is required/,
     );
-    run(repo, CLI, [
-      "gate",
-      "PL-AI-0001",
-      "repo-validate",
-      "pass",
-      "npm run repo:validate exit 0",
-    ]);
+    for (const gate of gates.slice(0, -1)) {
+      run(repo, CLI, [
+        "gate",
+        "PL-AI-0001",
+        gate,
+        "pass",
+        `npm run ${gate} exit 0`,
+      ]);
+    }
     run(repo, CLI, ["review", "PL-AI-0001"]);
     runFail(
       repo,
       ["done", "PL-AI-0001"],
-      /gates not passed: architecture-review/,
+      new RegExp(`gates not passed: ${withheld}`),
     );
   }
 
   /* ---------------------------------------------------------------------
-   * 7. Dispatch planning: an external lane must not shrink the local wave.
+   * 7. Dispatch planning: a maximum conflict-free wave, and an external lane
+   *    that does not shrink it.
+   *
+   *    Planned over a FROZEN fixture set (see waveFixtureTasks) rather than the
+   *    live backlog. This scenario used to assert the wave the real
+   *    control/tasks.json happened to produce, and authoring one new READY P0
+   *    task -- PL-AI-0004 -- moved the tie-break and broke it while the planner
+   *    behaved identically. A scenario about the planner must not be a hostage
+   *    to the project's task list.
    * ------------------------------------------------------------------- */
   {
     const repo = freshRepo();
+    const fixtures = waveFixtureTasks();
+    useFixtureTaskSet(repo, ...fixtures);
+
     const out = run(repo, CLI, ["dispatch"]);
-
-    // NOTE: {PL-0001, PL-0101, PL-0201, PL-AI-0001} and {PL-0001, PL-0201,
-    // PL-0301, PL-AI-0001} are BOTH maximum 4-task waves with identical
-    // priority sums. PL-0101 wins purely on betterWave()'s lexicographic
-    // waveKey tie-break. If a task id or an allowedPaths entry changes, this
-    // may flip to PL-0301 -- that is a tie-break change, not a dispatcher
-    // regression. The invariants that actually matter are asserted below:
-    // the wave is size 4, and PL-0002 is never assigned locally.
     const executableBlock = out.split("--- deferred")[0];
-    const externalBlock = out.split("=== READY_BUT_EXTERNAL")[1] ?? "";
+    const deferredBlock = (out.split("--- deferred")[1] ?? "").split(
+      "=== READY_BUT_EXTERNAL",
+    )[0];
+    // Split off BLOCKED too: without it the "external" slice would also carry
+    // the blocked section, and an assertion about external reservation could be
+    // satisfied by a line printed under a different heading entirely.
+    const externalBlock = (out.split("=== READY_BUT_EXTERNAL")[1] ?? "").split(
+      "=== BLOCKED",
+    )[0];
 
+    // Capability routing: each of these lanes is advertised by exactly one
+    // locally executable agent, so the assignment is not a tie-break.
     for (const [taskId, agentId] of [
-      ["PL-0001", "claude-infra"],
-      ["PL-0101", "claude-frontend"],
-      ["PL-0201", "claude-media"],
-      ["PL-AI-0001", "claude-lead"],
+      ["PL-WV-0002", "claude-media"],
+      ["PL-WV-0003", "claude-infra"],
+      ["PL-WV-0005", "claude-lead"],
+      ["PL-WV-0006", "claude-lead"],
     ]) {
       assert.match(
         executableBlock,
         new RegExp(`${taskId} -> ${agentId}`),
-        `${taskId} should dispatch to ${agentId}`,
+        `${taskId} should dispatch to ${agentId}:\n${out}`,
       );
     }
 
-    const assignedCount = (executableBlock.match(/ -> /g) ?? []).length;
-    assert.equal(
-      assignedCount,
-      4,
-      `expected a 4-task executable wave, got ${assignedCount}:\n${out}`,
+    const dispatched = [...executableBlock.matchAll(/^(PL-WV-\d+) -> /gm)].map(
+      (m) => m[1],
     );
+    assert.equal(
+      dispatched.length,
+      4,
+      `expected a 4-task executable wave, got ${dispatched.length}:\n${out}`,
+    );
+    assertWaveIsConflictFree(dispatched, fixtures);
 
-    // PL-0002 stays reserved for gpt-architect and is never reassigned locally.
+    // MAXIMUM, not greedy first-fit. PL-WV-0001 sorts first and overlaps every
+    // other fixture path, so a priority-ordered scan that took it would emit a
+    // wave of one. Taking it is the regression; deferring it is the behaviour.
     assert.doesNotMatch(
       executableBlock,
-      /PL-0002 ->/,
-      "PL-0002 must not be dispatched to a local agent",
+      /PL-WV-0001 ->/,
+      `a broad-scope task must not be allowed to starve three lanes:\n${out}`,
     );
-    assert.match(externalBlock, /PL-0002 \[gpt-architect\]/);
-    assert.match(externalBlock, /PL-0401 \[gpt-architect\]/);
-    assert.match(externalBlock, /PL-0601 \[gpt-architect\]/);
+    assert.match(
+      deferredBlock,
+      /PL-WV-0001 .*allowedPaths overlap dispatched PL-WV-000\d/,
+      `the trap must be deferred with a path reason:\n${out}`,
+    );
 
-    // Blocked lanes are reported separately, not silently dropped.
+    // maxParallel: claude-lead advertises Coordination and caps at 2, so the
+    // third disjoint Coordination task waits for capacity rather than paths.
+    assert.equal(
+      (executableBlock.match(/-> claude-lead/g) ?? []).length,
+      2,
+      `claude-lead's maxParallel is 2:\n${out}`,
+    );
+    assert.match(
+      deferredBlock,
+      /PL-WV-0007 .*no locally executable agent has capacity/,
+      `the third Coordination task must be deferred for capacity, not paths:\n${out}`,
+    );
+
+    // Dependencies: PL-WV-0004 is otherwise perfectly dispatchable.
+    assert.doesNotMatch(
+      out,
+      /PL-WV-0004 ->/,
+      "a task whose dependency is unfinished must not be dispatched",
+    );
+
+    // An external reservation consumes neither capacity nor path ownership:
+    // PL-WV-0008 claims the same broad paths as the trap and still takes
+    // nothing from the local wave.
+    assert.doesNotMatch(
+      executableBlock,
+      /PL-WV-0008 ->/,
+      "a task reserved for gpt-architect must not be dispatched to a local agent",
+    );
+    assert.match(externalBlock, /PL-WV-0008 \[gpt-architect\]/);
+    assert.match(
+      externalBlock,
+      /PL-WV-0010 \[unassigned\].*no locally executable agent advertises lane Recommendations/,
+      `a lane with no local agent must be reported as external:\n${out}`,
+    );
+
+    // Blocked lanes are reported separately, with their reason, not dropped.
     assert.match(out, /=== BLOCKED ===/);
-    assert.match(out, /PL-0302/);
+    assert.match(out, /PL-WV-0009 .*awaiting an external licensing decision/);
 
     const ready = run(repo, CLI, ["ready"]);
-    assert.match(ready, /READY_AND_EXECUTABLE\tPL-0001/);
-    assert.match(ready, /READY_BUT_EXTERNAL\tPL-0002/);
+    assert.match(ready, /READY_AND_EXECUTABLE\tPL-WV-0002/);
+    assert.match(ready, /READY_BUT_EXTERNAL\tPL-WV-0008/);
+    assert.match(ready, /BLOCKED\tPL-WV-0009/);
+    assert.doesNotMatch(
+      ready,
+      /READY_AND_EXECUTABLE\tPL-WV-0004/,
+      "a task waiting on an unfinished dependency is not ready for anyone",
+    );
   }
 
   /* ---------------------------------------------------------------------
-   * 8. --apply claims exactly the planned executable wave.
+   * 8. --apply claims exactly the planned executable wave, and nothing else.
+   *
+   *    Same frozen fixture set as scenario 7, so the claim side and the plan
+   *    side cannot disagree about what "the wave" was.
    * ------------------------------------------------------------------- */
   {
     const repo = freshRepo();
+    useFixtureTaskSet(repo, ...waveFixtureTasks());
+
     run(repo, CLI, ["dispatch", "--apply"]);
-    const tasks = tasksOf(repo);
-    const claimed = tasks
+    const claimed = tasksOf(repo)
       .filter((t) => t.status === "CLAIMED")
       .map((t) => `${t.id}:${t.owner}`)
       .sort();
     assert.deepEqual(claimed, [
-      "PL-0001:claude-infra",
-      "PL-0101:claude-frontend",
-      "PL-0201:claude-media",
-      "PL-AI-0001:claude-lead",
+      "PL-WV-0002:claude-media",
+      "PL-WV-0003:claude-infra",
+      "PL-WV-0005:claude-lead",
+      "PL-WV-0006:claude-lead",
     ]);
+
     assert.equal(
-      taskOf(repo, "PL-0002").status,
+      taskOf(repo, "PL-WV-0008").status,
       "READY",
       "external task must remain queued, not claimed",
     );
-    assert.equal(taskOf(repo, "PL-0002").owner, null);
+    assert.equal(taskOf(repo, "PL-WV-0008").owner, null);
+    assert.equal(
+      taskOf(repo, "PL-WV-0004").status,
+      "BACKLOG",
+      "a dependency-gated task must not be claimed by --apply",
+    );
+    assert.equal(taskOf(repo, "PL-WV-0009").status, "BLOCKED");
+    assert.equal(
+      taskOf(repo, "PL-WV-0001").status,
+      "READY",
+      "the deferred trap must stay available for a later wave",
+    );
     run(repo, CLI, ["validate"]);
   }
 
@@ -689,6 +1184,18 @@ try {
   {
     const SHA = "a".repeat(40);
     const repo = freshRepo();
+
+    // A second addressable task, so the "some OTHER task" half of this scenario
+    // does not borrow a real one. It needs to exist and to not be PL-AI-0001;
+    // nothing else about it matters, which is exactly why a fixture is right.
+    addFixtureTasks(
+      repo,
+      fixtureTask("PL-BUS-0001", {
+        title: "PL-BUS-0001 second addressable task",
+        allowedPaths: ["fixtures/bus/a/**"],
+        acceptance: "fixture task addressed by the handoff-bus scenarios",
+      }),
+    );
     implementToInProgress(repo);
 
     // --- Real Claude -> GPT review submission ---
@@ -818,11 +1325,11 @@ try {
         "--type",
         "review_request",
         "--task",
-        "PL-0101",
+        "PL-BUS-0001",
         "--sha",
         SHA,
         "--summary",
-        "PL-0101 catalog contract ready for review",
+        "PL-BUS-0001 ready for review",
         "--evidence",
         "npm run check green",
       ],
@@ -857,7 +1364,7 @@ try {
         "--type",
         "review_request",
         "--task",
-        "PL-0101",
+        "PL-BUS-0001",
         "--summary",
         "no sha",
       ],
@@ -994,6 +1501,19 @@ try {
   {
     const SHA = "d".repeat(40);
     const repo = freshRepo();
+
+    // The "never submitted" half of this scenario needs a task that is NOT in
+    // REVIEW. Any READY task satisfies that, so it is a fixture: borrowing a
+    // real one would make the scenario quietly depend on that task never being
+    // submitted for review, which is a promise the project cannot keep.
+    addFixtureTasks(
+      repo,
+      fixtureTask("PL-BUS-0002", {
+        title: "PL-BUS-0002 never-submitted task",
+        allowedPaths: ["fixtures/bus/b/**"],
+        acceptance: "fixture task addressed by the handoff-bus scenarios",
+      }),
+    );
     implementToReview(repo);
 
     publish(
@@ -1043,7 +1563,7 @@ try {
         "--type",
         "review_approved",
         "--task",
-        "PL-0101",
+        "PL-BUS-0002",
         "--sha",
         SHA,
         "--summary",
@@ -1061,7 +1581,7 @@ try {
         "--type",
         "review_approved",
         "--task",
-        "PL-0101",
+        "PL-BUS-0002",
         "--sha",
         SHA,
         "--summary",
@@ -1096,6 +1616,18 @@ try {
    * ------------------------------------------------------------------- */
   {
     const repo = freshRepo();
+
+    // The decision below has to name a task that exists, and nothing else about
+    // that task is load-bearing. A fixture says so; a real id would imply the
+    // scenario cared which task it was.
+    addFixtureTasks(
+      repo,
+      fixtureTask("PL-BUS-0003", {
+        title: "PL-BUS-0003 informational-traffic subject",
+        allowedPaths: ["fixtures/bus/c/**"],
+        acceptance: "fixture task addressed by the handoff-bus scenarios",
+      }),
+    );
     const before = JSON.stringify(tasksOf(repo));
 
     publish(repo, [
@@ -1116,7 +1648,7 @@ try {
       "--type",
       "architecture_decision",
       "--task",
-      "PL-0401",
+      "PL-BUS-0003",
       "--summary",
       "better-auth pulls zod 4; contracts stay on zod 3 behind a nominal boundary",
     ]);
@@ -2133,13 +2665,53 @@ try {
 
   /* ---------------------------------------------------------------------
    * 9n. --base auto fails closed when no base can be established.
+   *
+   *     Planned over a FIXTURE, not a real task. This scenario used to point at
+   *     PL-0003 on the grounds that it "was never started, so in a reset repo it
+   *     has no base" -- an observation about that week's data, not a property of
+   *     the control plane. PL-0003 was then implemented, reviewed and completed;
+   *     the live record gained an implementationBaseSha (and a reviewHistory),
+   *     resetRuntimeState was not clearing the former, `--base auto` resolved
+   *     it, and a scenario asserting that a command FAILS started failing
+   *     because the command succeeded.
+   *
+   *     `--base auto` consults exactly two fields, in this order:
+   *       1. reviewHistory[].reviewedCommitSha  (latest 40-hex sha != --sha)
+   *       2. implementationBaseSha
+   *     The fixture below has neither, and asserts that it has neither before
+   *     using it -- so the refusal is caused by an unresolvable base rather than
+   *     by anything incidental. The positive control at the end closes the other
+   *     half: once a base exists, the same command publishes.
    * ------------------------------------------------------------------- */
   {
+    const START = "a0".repeat(20);
     const SHA = "a1".repeat(20);
     const repo = freshRepo();
 
-    // PL-0003 was never started, so it has no implementationBaseSha and no
-    // review history. There must be NO parent-commit fallback.
+    addFixtureTasks(
+      repo,
+      fixtureTask("PL-NB-0001", {
+        title: "PL-NB-0001 task with no resolvable review base",
+        allowedPaths: ["fixtures/nb/**"],
+        acceptance: "fixture task used by the review-base resolution scenarios",
+      }),
+    );
+
+    // The fixture is baseless for the RIGHT reason: both inputs to the
+    // resolution are absent, so neither branch can produce a value.
+    const baseless = taskOf(repo, "PL-NB-0001");
+    assert.equal(
+      baseless.implementationBaseSha,
+      undefined,
+      "the fixture must carry no implementation base",
+    );
+    assert.equal(
+      baseless.reviewHistory,
+      undefined,
+      "the fixture must carry no prior review to resolve a base from",
+    );
+
+    // There must be NO parent-commit fallback.
     const out = runFail(
       repo,
       [
@@ -2147,7 +2719,7 @@ try {
         "--from", "claude-lead",
         "--to", "gpt-architect",
         "--type", "review_request",
-        "--task", "PL-0003",
+        "--task", "PL-NB-0001",
         "--sha", SHA,
         "--base", "auto",
         "--summary", "no base can be resolved",
@@ -2163,10 +2735,53 @@ try {
 
     // Nothing was published.
     const lane = busFile(repo, "claude-to-gpt");
-    const published = fs
-      .readdirSync(lane)
-      .filter((n) => n.endsWith(".json"));
-    assert.equal(published.length, 0, "a failed base resolution must publish nothing");
+    const published = () =>
+      fs.readdirSync(lane).filter((n) => n.endsWith(".json"));
+    assert.equal(published().length, 0, "a failed base resolution must publish nothing");
+
+    /*
+     * POSITIVE CONTROL.
+     *
+     * Starting the same fixture captures a base, and the identical command then
+     * succeeds. Without this, the scenario would still pass if `handoff` began
+     * refusing this fixture for some entirely different reason -- an unknown
+     * task, a rejected lane, a schema check -- and would quietly stop testing
+     * base resolution at all.
+     */
+    run(repo, CLI, ["claim", "PL-NB-0001", "claude-frontend"], {
+      LIBERTY_COMMIT_SHA: START,
+    });
+    run(repo, CLI, ["start", "PL-NB-0001", "claude-frontend"], {
+      LIBERTY_COMMIT_SHA: START,
+    });
+    assert.equal(
+      taskOf(repo, "PL-NB-0001").implementationBaseSha,
+      START,
+      "start must capture the base this scenario was previously missing",
+    );
+
+    const resolvedId = publish(
+      repo,
+      [
+        "--from", "claude-lead",
+        "--to", "gpt-architect",
+        "--type", "review_request",
+        "--task", "PL-NB-0001",
+        "--sha", SHA,
+        "--base", "auto",
+        "--summary", "the same request, now that a base exists",
+      ],
+      { LIBERTY_COMMIT_SHA: SHA },
+    );
+    const resolved = JSON.parse(
+      fs.readFileSync(path.join(lane, `${resolvedId}.json`), "utf8"),
+    );
+    assert.equal(
+      resolved.baseSha,
+      START,
+      "the refusal above must have been about the missing base and nothing else",
+    );
+    assert.equal(published().length, 1);
   }
 
   /* ---------------------------------------------------------------------
@@ -2917,6 +3532,26 @@ try {
     run(repo, CLI, ["claim", "PL-0101", "claude-frontend"]);
     run(repo, CLI, ["start", "PL-0101", "claude-frontend"]);
 
+    /*
+     * DECLARED LIVE COUPLING, and the reason it is not a fixture: the staging
+     * scripts classify real repository paths, so this scenario needs a task that
+     * genuinely owns an apps/web file and genuinely declares a gate. A fixture
+     * under fixtures/** would run, and would exercise none of the classification
+     * the scenario exists to test.
+     *
+     * The borrowed properties are therefore ASSERTED rather than assumed. If
+     * PL-0101's definition moves, this fails here saying exactly which
+     * assumption expired, instead of surfacing later as an unexplained staging
+     * diff that invites someone to "correct" the expected file list.
+     */
+    const catalogTask = taskOf(repo, "PL-0101");
+    assert.ok(
+      (catalogTask.allowedPaths ?? []).some((p) => p.startsWith("apps/web/src/lib")),
+      "PL-0101 is expected to own apps/web/src/lib for this scenario",
+    );
+    const catalogGate = (catalogTask.qualityGates ?? [])[0];
+    assert.ok(catalogGate, "PL-0101 is expected to declare at least one gate");
+
     // 2. Snapshot AFTER the deterministic mutation, as the workflow does.
     const runnerTemp = path.join(temp, `runner-e2e-${++repoSeq}`);
     fs.mkdirSync(runnerTemp, { recursive: true });
@@ -2934,8 +3569,16 @@ try {
     assert.equal(taskOf(repo, "PL-0101").status, "IN_PROGRESS", "restore must undo the tamper");
     assert.equal(taskOf(repo, "PL-0101").owner, "claude-frontend", "restore must keep the deterministic claim");
 
-    // 5. Deterministic gate mutation dirties control state again.
-    run(repo, CLI, ["gate", "PL-0101", "lint", "pass", "npm run lint exit 0"]);
+    // 5. Deterministic gate mutation dirties control state again. The gate name
+    //    comes from the task definition: what matters is that recording a gate
+    //    dirties control state, not which gate it was.
+    run(repo, CLI, [
+      "gate",
+      "PL-0101",
+      catalogGate,
+      "pass",
+      `npm run ${catalogGate} exit 0`,
+    ]);
 
     // 6. IMPLEMENTATION pass: commits task files, tolerates control dirt.
     const implOut = stage("implementation");
@@ -3991,6 +4634,17 @@ try {
     run(repo, CLI, ["claim", "PL-0101", "claude-frontend"]);
     run(repo, CLI, ["start", "PL-0101", "claude-frontend"]);
 
+    // DECLARED LIVE COUPLING: the patch scope is derived from allowedPaths, so
+    // the in-scope file below must really be in scope. Asserted, because if it
+    // silently stopped being in scope the export would carry nothing and the
+    // "out-of-scope edit was excluded" assertion would pass vacuously.
+    assert.ok(
+      (taskOf(repo, "PL-0101").allowedPaths ?? []).some((p) =>
+        p.startsWith("apps/web/src/lib"),
+      ),
+      "PL-0101 is expected to own apps/web/src/lib for this scenario",
+    );
+
     // One in-scope edit, one out-of-scope edit, exactly as a real run could
     // produce: the model has unrestricted Write inside the working directory.
     const libDir = path.join(repo, "apps", "web", "src", "lib");
@@ -4147,6 +4801,501 @@ try {
   }
 
   /* ---------------------------------------------------------------------
+   * 9aj. A shared review dependency does not serialise two lanes.
+   *
+   *      This is the bottleneck the split exists to remove: every
+   *      contract-touching task reserved packages/contracts/** in full, so five
+   *      finished lanes queued behind whichever one held it. Two tasks with
+   *      DISJOINT allowedPaths that declare the SAME reviewDependencies must be
+   *      claimable and active at the same time.
+   * ------------------------------------------------------------------- */
+  {
+    const repo = freshRepo();
+    seedSharedVocabulary(repo);
+    run(repo, CLI, ["validate"]);
+
+    // Before either is claimed: neither may be deferred because of the other.
+    const planned = run(repo, CLI, ["dispatch"]);
+    assert.doesNotMatch(
+      planned,
+      /PL-RD-A[^\n]*overlap[^\n]*PL-RD-B/,
+      `a shared reviewDependency must not defer a wave:\n${planned}`,
+    );
+    assert.doesNotMatch(
+      planned,
+      /PL-RD-B[^\n]*overlap[^\n]*PL-RD-A/,
+      `a shared reviewDependency must not defer a wave:\n${planned}`,
+    );
+
+    run(repo, CLI, ["claim", "PL-RD-A", "claude-frontend"]);
+
+    // With A active, B must not be reported as blocked by it.
+    const afterFirst = run(repo, CLI, ["dispatch"]);
+    assert.doesNotMatch(
+      afterFirst,
+      /PL-RD-B[^\n]*overlap active PL-RD-A/,
+      `an active task's reviewDependencies must not reserve anything:\n${afterFirst}`,
+    );
+
+    // THE REGRESSION: the second claim must succeed.
+    run(repo, CLI, ["claim", "PL-RD-B", "claude-backend"]);
+    assert.equal(taskOf(repo, "PL-RD-A").status, "CLAIMED");
+    assert.equal(taskOf(repo, "PL-RD-B").status, "CLAIMED");
+
+    const validated = runCombined(repo, CLI, ["validate"]);
+    assert.match(validated, /AI control plane valid/, validated);
+    assert.doesNotMatch(
+      validated,
+      /active write-path conflict/,
+      `two active tasks sharing a reviewDependency are not a write conflict:\n${validated}`,
+    );
+  }
+
+  /* ---------------------------------------------------------------------
+   * 9ak. Changing the shared dependency invalidates BOTH approvals.
+   *
+   *      This is what the split had to preserve. Narrowing allowedPaths alone
+   *      would have bought the concurrency above by giving up exactly this: an
+   *      edit to a shared schema no longer invalidating the reviews that relied
+   *      on it. Neither task may write the file that breaks them.
+   * ------------------------------------------------------------------- */
+  {
+    const repo = freshRepo();
+    seedSharedVocabulary(repo);
+
+    for (const [id, agent] of [
+      ["PL-RD-A", "claude-frontend"],
+      ["PL-RD-B", "claude-backend"],
+    ]) {
+      run(repo, CLI, ["claim", id, agent]);
+      run(repo, CLI, ["start", id, agent]);
+      run(repo, CLI, ["review", id]);
+      run(repo, CLI, [
+        "approve",
+        id,
+        "gpt-architect",
+        "reviewed the module and the shared vocabulary it rests on",
+      ]);
+    }
+
+    // Both are completable at this moment, so the failure below is caused by the
+    // edit and not by some precondition that was never satisfied.
+    for (const id of ["PL-RD-A", "PL-RD-B"]) {
+      assert.deepEqual(
+        JSON.parse(run(repo, CLI, ["review-status", id])).blockingProblems,
+        [],
+        `${id} should be completable before the shared vocabulary changes`,
+      );
+    }
+
+    // The record states what it bound to rather than leaving it to be inferred
+    // from a hash, which cannot be read backwards.
+    assert.deepEqual(taskOf(repo, "PL-RD-A").review.reviewedDependencies, [
+      "fixtures/rd/shared/**",
+    ]);
+    assert.deepEqual(taskOf(repo, "PL-RD-B").review.reviewedDependencies, [
+      "fixtures/rd/shared/**",
+    ]);
+
+    // ONE edit, to a file NEITHER task is allowed to write.
+    fs.appendFileSync(
+      path.join(repo, "fixtures", "rd", "shared", "rights.ts"),
+      "\nexport type Custody = 'user-owned-copy';\n",
+    );
+
+    for (const id of ["PL-RD-A", "PL-RD-B"]) {
+      runFail(
+        repo,
+        ["done", id],
+        /stale review: implementation under allowedPaths \+ reviewDependencies changed after approval/,
+      );
+      assert.equal(
+        taskOf(repo, id).status,
+        "REVIEW",
+        `${id} must not complete against a shared vocabulary it no longer reviewed`,
+      );
+    }
+
+    // A fresh approval over the new content restores completability for both,
+    // so this invalidates reviews rather than wedging the tasks.
+    for (const id of ["PL-RD-A", "PL-RD-B"]) {
+      run(repo, CLI, ["approve", id, "gpt-architect", "re-reviewed after the shared change"]);
+      run(repo, CLI, ["done", id]);
+      assert.equal(taskOf(repo, id).status, "DONE");
+    }
+  }
+
+  /* ---------------------------------------------------------------------
+   * 9al. Reviewing a file grants no right to touch it.
+   *
+   *      reviewDependencies widens the reviewed surface and nothing else. No
+   *      collision check reserved those paths, so another lane may be editing
+   *      them right now; if declaring one also granted write or staging rights,
+   *      two tasks could edit the same file with neither owning it.
+   * ------------------------------------------------------------------- */
+  {
+    const repo = freshRepo();
+    const gitEnv = {
+      GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t",
+      GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t",
+    };
+    const git = (...a) =>
+      execFileSync("git", a, {
+        cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"],
+        env: { ...process.env, ...gitEnv },
+      });
+
+    writeFixtureFile(
+      repo,
+      "fixtures/rd/shared/rights.ts",
+      "export type RightsBasis = 'licensed';\n",
+    );
+    writeFixtureFile(repo, "fixtures/rd/c/own.ts", "export const owned = 1;\n");
+    addFixtureTasks(
+      repo,
+      fixtureTask("PL-RD-C", {
+        allowedPaths: ["fixtures/rd/c/**"],
+        reviewDependencies: ["fixtures/rd/shared/**"],
+      }),
+    );
+
+    git("init", "-q", "-b", "main");
+    git("add", "-A");
+    git("commit", "-q", "-m", "baseline");
+
+    run(repo, CLI, ["claim", "PL-RD-C", "claude-frontend"]);
+    run(repo, CLI, ["start", "PL-RD-C", "claude-frontend"]);
+    run(repo, CLI, ["review", "PL-RD-C"]);
+    run(repo, CLI, ["approve", "PL-RD-C", "gpt-architect", "reviewed"]);
+
+    // Someone else's uncommitted edit to the shared file. The dirty check is
+    // scoped to allowedPaths and must stay there: a dependency is co-owned by
+    // whichever task actually holds it, and its in-flight work is not this
+    // task's to be blocked by. Once committed, the fingerprint moves and 9ak
+    // applies -- that is where invalidation belongs.
+    fs.appendFileSync(
+      path.join(repo, "fixtures", "rd", "shared", "rights.ts"),
+      "\n// edited by the lane that actually owns this file\n",
+    );
+    const beforeOwnEdit = JSON.parse(
+      run(repo, CLI, ["review-status", "PL-RD-C"]),
+    ).blockingProblems;
+    assert.ok(
+      !beforeOwnEdit.some((p) => /uncommitted changes/.test(p)),
+      `the dirty check must not follow reviewDependencies, got: ${JSON.stringify(beforeOwnEdit)}`,
+    );
+
+    // ...whereas dirt in the task's OWN paths still blocks it.
+    fs.appendFileSync(
+      path.join(repo, "fixtures", "rd", "c", "own.ts"),
+      "\nexport const alsoOwned = 2;\n",
+    );
+    const afterOwnEdit = JSON.parse(
+      run(repo, CLI, ["review-status", "PL-RD-C"]),
+    ).blockingProblems;
+    assert.ok(
+      afterOwnEdit.some((p) => /uncommitted changes under this task's allowedPaths/.test(p)),
+      `an uncommitted change to an owned file must still block: ${JSON.stringify(afterOwnEdit)}`,
+    );
+
+    // The patch is the only artifact that crosses a job boundary, and it is
+    // pathspec-limited to allowedPaths, so the dependency edit cannot ride along.
+    const patchFile = path.join(temp, `rd-${++repoSeq}.patch`);
+    run(repo, "scripts/cloud/task-patch.mjs", [
+      "--export", "--task", "PL-RD-C", "--agent", "claude-frontend", "--out", patchFile,
+    ]);
+    const patch = fs.readFileSync(patchFile, "utf8");
+    assert.match(patch, /fixtures\/rd\/c\/own\.ts/, "the task's own file must be carried");
+    assert.ok(
+      !/fixtures\/rd\/shared/.test(patch),
+      "a reviewDependency must never enter the task patch",
+    );
+
+    // The pre-gate check refuses the checkout rather than reporting it later.
+    const check = runCombined(repo, "scripts/cloud/stage-task-changes.mjs", [
+      "--agent", "claude-frontend", "--task", "PL-RD-C", "--check-only",
+    ]);
+    assert.match(check, /OUT-OF-SCOPE EDITS/, check);
+    assert.match(check, /fixtures\/rd\/shared\/rights\.ts/, check);
+
+    // And staging refuses it while still committing the task's own work.
+    const staged = runCombined(repo, "scripts/cloud/stage-task-changes.mjs", [
+      "--agent", "claude-frontend", "--task", "PL-RD-C", "--mode", "implementation",
+    ]);
+    assert.match(staged, /REFUSING TO COMMIT/, staged);
+    assert.match(staged, /fixtures\/rd\/shared\/rights\.ts/, staged);
+
+    const index = git("diff", "--cached", "--name-only").split("\n").map((s) => s.trim());
+    assert.ok(
+      index.includes("fixtures/rd/c/own.ts"),
+      `the task's own file must still stage: ${index.join(", ")}`,
+    );
+    assert.ok(
+      !index.includes("fixtures/rd/shared/rights.ts"),
+      "a reviewDependency must never reach the index",
+    );
+  }
+
+  /* ---------------------------------------------------------------------
+   * 9am. Overlapping reviewDependencies are never a claim conflict --
+   *      including the asymmetric case, where one task's dependency IS
+   *      another task's writable path.
+   *
+   *      Get this wrong and the change makes concurrency worse than the
+   *      package-wide mutex it replaced, because every declared dependency
+   *      would reserve a path nobody is writing.
+   * ------------------------------------------------------------------- */
+  {
+    const seed = (repo) => {
+      writeFixtureFile(repo, "fixtures/rd/shared/rights.ts", "export type R = 1;\n");
+      writeFixtureFile(repo, "fixtures/rd/d1/one.ts", "export const one = 1;\n");
+      writeFixtureFile(repo, "fixtures/rd/d2/two.ts", "export const two = 2;\n");
+      addFixtureTasks(
+        repo,
+        fixtureTask("PL-RD-D1", {
+          allowedPaths: ["fixtures/rd/d1/**"],
+          // The asymmetric case: D1 reviews what D2 writes.
+          reviewDependencies: ["fixtures/rd/shared/**", "fixtures/rd/d2/**"],
+        }),
+        fixtureTask("PL-RD-D2", {
+          lane: "Backend",
+          preferredAgent: "claude-backend",
+          allowedPaths: ["fixtures/rd/d2/**"],
+          reviewDependencies: ["fixtures/rd/shared/**"],
+        }),
+      );
+    };
+
+    // Claim order must not matter, so both orders are exercised.
+    for (const order of [
+      [["PL-RD-D1", "claude-frontend"], ["PL-RD-D2", "claude-backend"]],
+      [["PL-RD-D2", "claude-backend"], ["PL-RD-D1", "claude-frontend"]],
+    ]) {
+      const repo = freshRepo();
+      seed(repo);
+      run(repo, CLI, ["validate"]);
+      for (const [id, agent] of order) run(repo, CLI, ["claim", id, agent]);
+      assert.equal(taskOf(repo, "PL-RD-D1").status, "CLAIMED");
+      assert.equal(taskOf(repo, "PL-RD-D2").status, "CLAIMED");
+      assert.match(runCombined(repo, CLI, ["validate"]), /AI control plane valid/);
+    }
+
+    // The other half of the same property: a genuine allowedPaths overlap is
+    // STILL refused. Without this, "no conflict" could simply mean the collision
+    // detector stopped working.
+    {
+      const repo = freshRepo();
+      seed(repo);
+      addFixtureTasks(
+        repo,
+        fixtureTask("PL-RD-D3", {
+          lane: "Media",
+          preferredAgent: "claude-media",
+          allowedPaths: ["fixtures/rd/d2/**"],
+        }),
+      );
+      run(repo, CLI, ["claim", "PL-RD-D2", "claude-backend"]);
+      runFail(
+        repo,
+        ["claim", "PL-RD-D3", "claude-media"],
+        /PL-RD-D3 paths overlap active task PL-RD-D2/,
+      );
+      assert.equal(taskOf(repo, "PL-RD-D3").status, "READY");
+    }
+  }
+
+  /* ---------------------------------------------------------------------
+   * 9an. allowedPaths is always inside the reviewed surface.
+   *
+   *      Declaring a dependency WIDENS the surface; it never replaces it. A task
+   *      able to write a file its own fingerprint did not cover could change its
+   *      approved content without invalidating the approval.
+   * ------------------------------------------------------------------- */
+  {
+    const repo = freshRepo();
+    writeFixtureFile(repo, "fixtures/rd/shared/rights.ts", "export type R = 1;\n");
+    writeFixtureFile(repo, "fixtures/rd/e/own.ts", "export const own = 1;\n");
+    writeFixtureFile(repo, "fixtures/rd/unrelated/other.ts", "export const other = 1;\n");
+    addFixtureTasks(
+      repo,
+      fixtureTask("PL-RD-E", {
+        allowedPaths: ["fixtures/rd/e/**"],
+        reviewDependencies: ["fixtures/rd/shared/**"],
+      }),
+      // Same writable paths, no declared dependency: the control against which
+      // every widening below is measured.
+      fixtureTask("PL-RD-E-BARE", {
+        lane: "Backend",
+        preferredAgent: "claude-backend",
+        allowedPaths: ["fixtures/rd/e/**"],
+      }),
+    );
+
+    /*
+     * These repositories have no git history, so the fingerprint falls back to
+     * worktree bytes -- the same assumption scenario 4 already relies on. If the
+     * temp directory ever ended up inside a repository, these equalities would
+     * fail loudly rather than the suite quietly measuring committed content.
+     */
+    assert.equal(
+      currentTreeHash(repo, "PL-RD-E-BARE"),
+      expectedWorktreeHash(repo, ["fixtures/rd/e"]),
+      "with no reviewDependencies the surface must be exactly allowedPaths",
+    );
+    assert.equal(
+      currentTreeHash(repo, "PL-RD-E"),
+      expectedWorktreeHash(repo, ["fixtures/rd/e", "fixtures/rd/shared"]),
+      "with reviewDependencies the surface must be exactly the union",
+    );
+    assert.notEqual(
+      currentTreeHash(repo, "PL-RD-E"),
+      currentTreeHash(repo, "PL-RD-E-BARE"),
+      "the union must be wider than allowedPaths alone",
+    );
+
+    // An owned file still moves the fingerprint of the task that declared
+    // dependencies: widening did not displace anything.
+    const beforeOwn = currentTreeHash(repo, "PL-RD-E");
+    fs.appendFileSync(
+      path.join(repo, "fixtures", "rd", "e", "own.ts"),
+      "\nexport const alsoOwn = 2;\n",
+    );
+    assert.notEqual(
+      currentTreeHash(repo, "PL-RD-E"),
+      beforeOwn,
+      "allowedPaths must remain inside the reviewed surface",
+    );
+
+    // The dependency moves only the task that declared it.
+    const afterOwn = {
+      widened: currentTreeHash(repo, "PL-RD-E"),
+      bare: currentTreeHash(repo, "PL-RD-E-BARE"),
+    };
+    fs.appendFileSync(
+      path.join(repo, "fixtures", "rd", "shared", "rights.ts"),
+      "\nexport type R2 = 2;\n",
+    );
+    assert.notEqual(currentTreeHash(repo, "PL-RD-E"), afterOwn.widened);
+    assert.equal(
+      currentTreeHash(repo, "PL-RD-E-BARE"),
+      afterOwn.bare,
+      "a task that declares no dependency must not be moved by someone else's",
+    );
+
+    // A file in neither surface moves neither task.
+    const afterShared = {
+      widened: currentTreeHash(repo, "PL-RD-E"),
+      bare: currentTreeHash(repo, "PL-RD-E-BARE"),
+    };
+    fs.appendFileSync(
+      path.join(repo, "fixtures", "rd", "unrelated", "other.ts"),
+      "\nexport const changed = true;\n",
+    );
+    assert.equal(currentTreeHash(repo, "PL-RD-E"), afterShared.widened);
+    assert.equal(currentTreeHash(repo, "PL-RD-E-BARE"), afterShared.bare);
+  }
+
+  /* ---------------------------------------------------------------------
+   * 9ao. Legacy tasks fingerprint exactly what they always did.
+   *
+   *      Around thirty authored tasks carry no reviewDependencies. Absent,
+   *      empty, and redundantly re-declaring an owned path must all produce the
+   *      identical hash, in the identical byte format, with the identical
+   *      wording on failure -- otherwise this change silently invalidates every
+   *      approval already recorded.
+   * ------------------------------------------------------------------- */
+  {
+    const repo = freshRepo();
+    writeFixtureFile(repo, "fixtures/rd/legacy/a.ts", "export const a = 1;\n");
+    writeFixtureFile(repo, "fixtures/rd/legacy/nested/b.ts", "export const b = 2;\n");
+    addFixtureTasks(
+      repo,
+      fixtureTask("PL-RD-L0", { allowedPaths: ["fixtures/rd/legacy/**"] }),
+      fixtureTask("PL-RD-L1", {
+        lane: "Backend",
+        preferredAgent: "claude-backend",
+        allowedPaths: ["fixtures/rd/legacy/**"],
+        reviewDependencies: [],
+      }),
+      fixtureTask("PL-RD-L2", {
+        lane: "Media",
+        preferredAgent: "claude-media",
+        allowedPaths: ["fixtures/rd/legacy/**"],
+        reviewDependencies: ["fixtures/rd/legacy/**"],
+      }),
+    );
+
+    const expected = expectedWorktreeHash(repo, ["fixtures/rd/legacy"]);
+    assert.equal(
+      currentTreeHash(repo, "PL-RD-L0"),
+      expected,
+      "the fingerprint byte format must not move for a task with no reviewDependencies",
+    );
+    assert.equal(
+      currentTreeHash(repo, "PL-RD-L1"),
+      expected,
+      "an empty reviewDependencies must be indistinguishable from an absent one",
+    );
+    assert.equal(
+      currentTreeHash(repo, "PL-RD-L2"),
+      expected,
+      "re-declaring an owned path as a dependency must be a no-op; the union is idempotent",
+    );
+
+    // Redundancy is reported, but only as a warning. It changes no hash and no
+    // claim decision, and erroring would mean a later, unrelated widening of
+    // allowedPaths retroactively breaks validation for the whole control plane.
+    const validated = runCombined(repo, CLI, ["validate"]);
+    assert.match(validated, /AI control plane valid/, validated);
+    assert.match(
+      validated,
+      /PL-RD-L2: reviewDependency "fixtures\/rd\/legacy\/\*\*" is already inside allowedPath/,
+      validated,
+    );
+
+    // A declaration the fingerprint cannot use is an ERROR, not a warning. The
+    // fingerprint refuses to guess at a surface it cannot determine, so without
+    // this check the first symptom would be an unexplained crash in approve or
+    // done rather than a message naming the field.
+    const setDeps = (id, value) => {
+      const file = path.join(repo, "control", "tasks.json");
+      const doc = JSON.parse(fs.readFileSync(file, "utf8"));
+      doc.tasks.find((t) => t.id === id).reviewDependencies = value;
+      fs.writeFileSync(file, JSON.stringify(doc, null, 2) + "\n");
+    };
+    setDeps("PL-RD-L1", "fixtures/rd/legacy/**");
+    runFail(repo, ["validate"], /reviewDependencies must be an array of path globs/);
+    setDeps("PL-RD-L1", ["   "]);
+    runFail(repo, ["validate"], /reviewDependencies entries must be non-empty strings/);
+    setDeps("PL-RD-L1", [null]);
+    runFail(repo, ["validate"], /reviewDependencies entries must be non-empty strings/);
+    setDeps("PL-RD-L1", []);
+    assert.match(runCombined(repo, CLI, ["validate"]), /AI control plane valid/);
+
+    // The failure wording for a task with no dependencies is unchanged, so an
+    // existing runbook, log grep or reviewer expectation still matches.
+    run(repo, CLI, ["claim", "PL-RD-L0", "claude-frontend"]);
+    run(repo, CLI, ["start", "PL-RD-L0", "claude-frontend"]);
+    run(repo, CLI, ["review", "PL-RD-L0"]);
+    run(repo, CLI, ["approve", "PL-RD-L0", "gpt-architect", "reviewed"]);
+    assert.deepEqual(
+      taskOf(repo, "PL-RD-L0").review.reviewedDependencies,
+      [],
+      "a task declaring no dependency must record that it bound to none",
+    );
+
+    fs.appendFileSync(
+      path.join(repo, "fixtures", "rd", "legacy", "a.ts"),
+      "\nexport const a2 = 2;\n",
+    );
+    runFail(
+      repo,
+      ["done", "PL-RD-L0"],
+      /stale review: implementation under allowedPaths changed after approval/,
+    );
+  }
+
+  /* ---------------------------------------------------------------------
    * 10. Bootstrap into a new project still works.
    * ------------------------------------------------------------------- */
   {
@@ -4213,7 +5362,7 @@ try {
     "running the test suite must not mutate any live control/ or coordination/ file",
   );
 
-  console.log("AI control plane tests passed (47 scenarios).");
+  console.log("AI control plane tests passed (53 scenarios).");
 } finally {
   fs.rmSync(temp, { recursive: true, force: true });
 }
