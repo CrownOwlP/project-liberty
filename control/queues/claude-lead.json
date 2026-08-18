@@ -1,8 +1,44 @@
 {
-  "generatedAt": "2026-08-18T03:50:28.236Z",
+  "generatedAt": "2026-08-18T04:52:29.717Z",
   "agent": "claude-lead",
   "executionAvailable": true,
-  "assigned": [],
+  "assigned": [
+    {
+      "id": "PL-AI-0004",
+      "priority": "P0",
+      "lane": "Coordination",
+      "status": "REVIEW",
+      "title": "Review dependency scope",
+      "dependencies": [],
+      "allowedPaths": [
+        "scripts/ai-control-plane.mjs",
+        "scripts/test-ai-control-plane.mjs"
+      ],
+      "preferredAgent": "claude-lead",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "repo-validate",
+        "unit"
+      ],
+      "acceptance": "allowedPaths remains the sole write, collision and staging surface while review fingerprints, stale-review checks, approvals and the DONE gate bind to allowedPaths union reviewDependencies; two tasks with disjoint allowedPaths and a shared reviewDependency can be active simultaneously, and editing that shared dependency invalidates both reviews; tasks without reviewDependencies behave identically to before",
+      "owner": "claude-lead",
+      "gateResults": {
+        "repo-validate": {
+          "status": "pass",
+          "at": "2026-08-18T04:52:29.379Z",
+          "evidence": "npm run check exit 0 under pinned Node 22 resolved via npx node@22, including ai:validate, repo:validate, env:validate across all three modes, test:scripts, lint, typecheck, test and build."
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-08-18T04:52:29.484Z",
+          "evidence": "npm run ai:test exit 0 under pinned Node 22: scripts/test-ai-control-plane.mjs, including six new regressions proving disjoint allowedPaths with a shared reviewDependency stay concurrently claimable, that editing the shared dependency invalidates both approvals, that a dependency cannot be written or staged, that overlapping reviewDependencies never create a claim conflict including the asymmetric case, that allowedPaths is implicitly inside the review surface, and that a task without reviewDependencies fingerprints byte-identically to before."
+        }
+      },
+      "implementationAgent": "claude-lead",
+      "updatedAt": "2026-08-18T04:52:29.592Z",
+      "implementationBaseSha": "79ed3b35fb42f8a89198bdb7cfdd6a5d439f8c34"
+    }
+  ],
   "review": [],
   "reservedExternal": [],
   "recommended": [
