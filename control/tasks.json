@@ -1178,6 +1178,31 @@
       "acceptance": "The diff and briefing presented to a reviewer cover the same surface the approval will bind to; a reviewer is never asked to approve a fingerprint over files it was not shown",
       "owner": null,
       "gateResults": {}
+    },
+    {
+      "id": "PL-AI-0006",
+      "priority": "P0",
+      "lane": "Architecture",
+      "status": "BACKLOG",
+      "title": "Contract module boundaries",
+      "dependencies": [
+        "PL-AI-0004"
+      ],
+      "allowedPaths": [
+        "packages/contracts/**",
+        "packages/media-engine/**",
+        "packages/provider-sdk/**",
+        "apps/web/**"
+      ],
+      "preferredAgent": "claude-lead",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "repo-validate",
+        "unit"
+      ],
+      "acceptance": "Shared vocabularies live in their own leaf modules, domain contracts live in one module each, index.ts is a re-export-only compatibility barrel rather than the authoritative public surface, and a wildcard exports map lets a new domain contract be added without touching package metadata or the barrel; no cycle-driven z.lazy remains and structural regressions prove the boundary rather than merely reflecting it; no schema behaviour changes",
+      "owner": null,
+      "gateResults": {}
     }
   ]
 }
