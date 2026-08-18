@@ -183,13 +183,13 @@
       "gateResults": {
         "repo-validate": {
           "status": "pass",
-          "at": "2026-08-17T04:03:46.322Z",
-          "evidence": "npm run check exit 0 under the pinned Node 22 runtime, including repo:validate, env:validate and test:scripts"
+          "at": "2026-08-18T03:47:17.911Z",
+          "evidence": "npm run check exit 0 under pinned Node 22 resolved via npx node@22, including repo:validate, env:validate across development, test and production, and test:scripts. Supersedes the 2026-08-17T04:03 record, which was produced by the 27-scenario implementation and whose evidence text claimed Node 22 while the process was Node 24."
         },
         "unit": {
           "status": "pass",
-          "at": "2026-08-17T04:03:47.776Z",
-          "evidence": "scripts/test-validate-env.mjs 27 scenarios under pinned Node 22, wired into check via test:scripts"
+          "at": "2026-08-18T03:47:18.022Z",
+          "evidence": "npm run test:scripts exit 0 under pinned Node 22 resolved via npx node@22: scripts/test-validate-env.mjs, 37 scenarios covering the mode-aware Next.js precedence, the test-mode exclusion of .env.local, process.env priority, multi-mode CLI behaviour, and the deduplication defect. Supersedes the 27-scenario record recorded under Node 24."
         }
       },
       "implementationAgent": "claude-infra",
