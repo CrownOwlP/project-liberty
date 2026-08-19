@@ -5296,6 +5296,150 @@ try {
   }
 
   /* ---------------------------------------------------------------------
+   * 9ap. The reviewer is shown exactly what its approval binds to.
+   *
+   *      Widening the fingerprint to allowedPaths + reviewDependencies while the
+   *      reviewer's diff builder still filtered to allowedPaths would bind an
+   *      approval, cryptographically, to code the independent reviewer never
+   *      saw. The evidence would read as stronger while its basis got weaker.
+   *
+   *      Neither side of the equality below is written down here, because a list
+   *      typed into this file agrees with whatever it was copied from and proves
+   *      nothing. The shown set is derived from the module the review worker
+   *      calls; the bound set is MEASURED, by perturbing each file and asking the
+   *      real CLI whether the fingerprint moved. Narrowing either side alone
+   *      breaks the equality.
+   * ------------------------------------------------------------------- */
+  {
+    const { classifyReviewPath, reviewSurfaceLabel, withinReviewSurface } =
+      await import("../scripts/review-surface.mjs");
+
+    const repo = freshRepo();
+    writeFixtureFile(repo, "fixtures/rd/f/own.ts", "export const own = 1;\n");
+    writeFixtureFile(repo, "fixtures/rd/f/nested/deep.ts", "export const deep = 1;\n");
+    writeFixtureFile(repo, "fixtures/rd/shared/rights.ts", "export type R = 1;\n");
+    writeFixtureFile(repo, "fixtures/rd/unrelated/other.ts", "export const other = 1;\n");
+    addFixtureTasks(
+      repo,
+      fixtureTask("PL-RD-F", {
+        allowedPaths: ["fixtures/rd/f/**"],
+        reviewDependencies: ["fixtures/rd/shared/**"],
+      }),
+      // Identical writable paths, no declared dependency. The invariant has to
+      // hold for the ~thirty authored tasks shaped like this one too, and this
+      // is what proves the equality is not just "both sides widened".
+      fixtureTask("PL-RD-F-BARE", {
+        lane: "Backend",
+        preferredAgent: "claude-backend",
+        allowedPaths: ["fixtures/rd/f/**"],
+      }),
+    );
+
+    const candidates = [
+      "fixtures/rd/f/own.ts",
+      "fixtures/rd/f/nested/deep.ts",
+      "fixtures/rd/shared/rights.ts",
+      "fixtures/rd/unrelated/other.ts",
+    ];
+
+    /**
+     * Files this task's approval demonstrably binds to.
+     *
+     * Measured through the fingerprint itself rather than by re-deriving the
+     * surface: perturb one file, ask the CLI for the hash, restore it. The
+     * restore is asserted, so a probe that corrupted the fixture would fail here
+     * instead of silently changing what every later candidate is compared to.
+     */
+    const boundTo = (id) =>
+      candidates.filter((rel) => {
+        const abs = path.join(repo, rel);
+        const original = fs.readFileSync(abs);
+        const before = currentTreeHash(repo, id);
+        fs.appendFileSync(abs, "\n// fingerprint probe\n");
+        const moved = currentTreeHash(repo, id) !== before;
+        fs.writeFileSync(abs, original);
+        assert.equal(
+          currentTreeHash(repo, id),
+          before,
+          `the probe of ${rel} must leave the fixture exactly as it found it`,
+        );
+        return moved;
+      });
+
+    /** Files the review worker would put in front of the reviewer. */
+    const shownTo = (id) =>
+      candidates.filter((rel) => withinReviewSurface(rel, taskOf(repo, id)));
+
+    for (const id of ["PL-RD-F", "PL-RD-F-BARE"]) {
+      assert.deepEqual(
+        shownTo(id),
+        boundTo(id),
+        `${id}: the reviewer must see exactly the files its approval binds to`,
+      );
+    }
+
+    // The two tasks must genuinely differ, or both equalities above could hold
+    // because the dependency was being ignored on both sides at once.
+    assert.ok(
+      shownTo("PL-RD-F").includes("fixtures/rd/shared/rights.ts"),
+      "a declared dependency must reach the reviewer",
+    );
+    assert.ok(
+      !shownTo("PL-RD-F-BARE").includes("fixtures/rd/shared/rights.ts"),
+      "an undeclared dependency must not be shown, and is not bound to either",
+    );
+
+    // Shown is not the same as writable, and the reviewer has to be able to tell
+    // which is which. Collapsing the two would let a dependency's change be read
+    // as this task's work -- and approved as such.
+    const withDeps = taskOf(repo, "PL-RD-F");
+    assert.equal(classifyReviewPath("fixtures/rd/f/own.ts", withDeps), "implementation");
+    assert.equal(classifyReviewPath("fixtures/rd/shared/rights.ts", withDeps), "dependency");
+    assert.equal(classifyReviewPath("fixtures/rd/unrelated/other.ts", withDeps), "outside");
+    assert.equal(
+      classifyReviewPath("fixtures/rd/shared/rights.ts", taskOf(repo, "PL-RD-F-BARE")),
+      "outside",
+      "a task that declared nothing must not be handed context it never bound to",
+    );
+
+    // The surface is NAMED from one place too. Scenarios 9ak and 9ao assert the
+    // exact stale-review wording for both cases, so a change here reddens them.
+    assert.equal(reviewSurfaceLabel(withDeps), "allowedPaths + reviewDependencies");
+    assert.equal(reviewSurfaceLabel(taskOf(repo, "PL-RD-F-BARE")), "allowedPaths");
+
+    // No consumer may re-derive the surface. Two implementations of one rule is
+    // precisely the drift this scenario exists to prevent, and the copy that
+    // agrees today is the one that stops agreeing quietly.
+    for (const rel of ["scripts/ai-control-plane.mjs", "scripts/cloud/gpt-review-worker.mjs"]) {
+      const body = fs.readFileSync(path.join(source, rel), "utf8");
+      assert.match(
+        body,
+        /from "\.\.?\/review-surface\.mjs"/,
+        `${rel} must derive the reviewed surface from the shared module`,
+      );
+      assert.ok(
+        !/function reviewSurfacePatterns\b/.test(body),
+        `${rel} must not carry a private copy of the review surface`,
+      );
+    }
+
+    // The write surface must NOT follow it. Widening any of these would hand a
+    // dependency write, staging or ownership rights that no collision check ever
+    // reserved -- the failure mode in the opposite direction.
+    for (const rel of [
+      "scripts/cloud/stage-task-changes.mjs",
+      "scripts/cloud/task-patch.mjs",
+      "scripts/cloud/select-task.mjs",
+    ]) {
+      const body = fs.readFileSync(path.join(source, rel), "utf8");
+      assert.ok(
+        !/\.reviewDependencies|withinReviewSurface|reviewPathspecs|reviewSurfacePatterns/.test(body),
+        `${rel} decides what may be WRITTEN and must stay on allowedPaths`,
+      );
+    }
+  }
+
+  /* ---------------------------------------------------------------------
    * 10. Bootstrap into a new project still works.
    * ------------------------------------------------------------------- */
   {

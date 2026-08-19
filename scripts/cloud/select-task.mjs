@@ -50,6 +50,15 @@ const ORCHESTRATION_PREFIXES = [".github", "scripts", "control", "coordination/a
 function normalizePrefix(pattern) {
   return pattern.replace(/\\/g, "/").replace(/\*\*.*$/, "").replace(/\*.*$/, "").replace(/\/$/, "");
 }
+/*
+ * Deliberately allowedPaths, never the reviewed surface.
+ *
+ * This asks what the task may WRITE. A reviewDependency is read-only, so merely
+ * reading the orchestration machinery closes no loop and must not push a task
+ * into the privileged lane -- doing so would make declaring a dependency more
+ * expensive than reserving the whole package, which is the bottleneck the field
+ * was added to remove.
+ */
 function touchesOrchestration(task) {
   return (task.allowedPaths ?? [])
     .map(normalizePrefix)

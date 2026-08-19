@@ -121,6 +121,10 @@ if (TASK_ID && owned[0].owner !== AGENT) {
  * Treating the other category as "unexpected" is what made the first ordinary
  * autonomous task impossible to finalize.
  */
+// allowedPaths, never the reviewed surface: staging is a write. A declared
+// reviewDependency was reserved by no collision check, so another lane may be
+// editing it right now, and committing it here would put that lane's work in
+// this task's commit with neither of them owning it.
 const allTaskPrefixes = owned
   .flatMap((t) => (t.allowedPaths ?? []).map(normalizePrefix))
   .filter(Boolean);

@@ -27,6 +27,12 @@ import {
   gitAdapter,
   validateReviewRange,
 } from "./review-range.mjs";
+import {
+  normalizePrefix,
+  reviewPathspecs,
+  reviewSurfaceLabel,
+  reviewSurfacePatterns,
+} from "./review-surface.mjs";
 
 const root = process.cwd();
 const controlDir = path.join(root, "control");
@@ -140,13 +146,6 @@ function isDone(id, map) {
 }
 function depsDone(task, map) {
   return (task.dependencies ?? []).every((id) => isDone(id, map));
-}
-function normalizePrefix(pattern) {
-  return pattern
-    .replace(/\\/g, "/")
-    .replace(/\*\*.*$/, "")
-    .replace(/\*.*$/, "")
-    .replace(/\/$/, "");
 }
 function pathsOverlap(aPaths = [], bPaths = []) {
   for (const aRaw of aPaths) {
@@ -522,40 +521,15 @@ function taskPathspecs(task) {
   ];
 }
 
-/**
- * The REVIEWED surface: everything an approval binds to.
+/*
+ * The REVIEWED surface lives in ./review-surface.mjs, not here.
  *
- * allowedPaths is in the union by construction rather than by convention. If a
- * task could write a file that its own fingerprint did not cover, it could
- * change its approved content without invalidating the approval -- which is the
- * exact failure the fingerprint exists to prevent.
- *
- * Absent or empty reviewDependencies therefore reduces to allowedPaths, so the
- * tasks that predate this field fingerprint precisely what they always did.
+ * It moved out the moment it acquired a second consumer. The reviewer's diff
+ * builder must be derived from the same function as the fingerprint below, or an
+ * approval ends up cryptographically bound to files the reviewer was never
+ * shown -- stronger evidence resting on a weaker basis. A copy that agrees today
+ * is not a guarantee; a shared function is.
  */
-function reviewSurfacePatterns(task) {
-  const declared = task.reviewDependencies ?? [];
-  if (
-    !Array.isArray(declared) ||
-    declared.some((p) => typeof p !== "string" || !p.trim())
-  ) {
-    // Fail closed rather than skipping the unusable entries. `validate` reports
-    // this properly, so anything reaching here bypassed it -- and silently
-    // fingerprinting a NARROWER surface than the task declares would record an
-    // approval that claims to cover a shared vocabulary it never hashed, which
-    // is the precise failure this field exists to prevent.
-    throw new Error(
-      `${task.id}: reviewDependencies must be an array of non-empty path globs; ` +
-        "refusing to fingerprint a review surface that cannot be determined",
-    );
-  }
-  return [...(task.allowedPaths ?? []), ...declared];
-}
-function reviewPathspecs(task) {
-  return [
-    ...new Set(reviewSurfacePatterns(task).map(normalizePrefix).filter(Boolean)),
-  ];
-}
 
 /**
  * Canonical fingerprint from git object ids.
@@ -775,9 +749,7 @@ function reviewProblems(task, policies) {
     // Naming the surface matters once dependencies exist: an owner who has
     // touched nothing in their own allowedPaths would otherwise read this as a
     // control-plane fault rather than as the shared-vocabulary change it is.
-    const surface = (task.reviewDependencies ?? []).length
-      ? "allowedPaths + reviewDependencies"
-      : "allowedPaths";
+    const surface = reviewSurfaceLabel(task);
     problems.push(
       `stale review: implementation under ${surface} changed after approval (approved ${String(r.reviewedTreeHash).slice(0, 12)}, current ${current.treeHash.slice(0, 12)})`,
     );

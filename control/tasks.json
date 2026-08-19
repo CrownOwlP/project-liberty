@@ -1166,7 +1166,10 @@
         "PL-AI-0004"
       ],
       "allowedPaths": [
-        "scripts/cloud/**"
+        "scripts/cloud/**",
+        "scripts/review-surface.mjs",
+        "scripts/ai-control-plane.mjs",
+        "scripts/test-ai-control-plane.mjs"
       ],
       "preferredAgent": "claude-lead",
       "reviewAgent": "gpt-architect",
@@ -1175,7 +1178,7 @@
         "security-review",
         "unit"
       ],
-      "acceptance": "The diff and briefing presented to a reviewer cover the same surface the approval will bind to; a reviewer is never asked to approve a fingerprint over files it was not shown",
+      "acceptance": "The diff and briefing presented to a reviewer cover the same surface the approval will bind to; a reviewer is never asked to approve a fingerprint over files it was not shown; one canonical reviewSurface helper is consumed by fingerprinting, stale-review checking, the review diff builder and the briefing, and a regression asserts the file set shown equals the file set fingerprinted",
       "owner": null,
       "gateResults": {}
     },

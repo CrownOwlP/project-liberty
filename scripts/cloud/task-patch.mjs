@@ -67,6 +67,10 @@ if (!task) {
   process.exit(1);
 }
 
+// allowedPaths only. A reviewDependency widens what an approval BINDS to, never
+// what a patch may carry: the dependency is co-owned by whichever task actually
+// holds it, and letting it ride along here would move another lane's in-flight
+// edits across a job boundary under this task's name.
 const prefixes = (task.allowedPaths ?? []).map(normalizePrefix).filter(Boolean);
 if (!prefixes.length) {
   console.error(`${TASK_ID} declares no allowedPaths; refusing to move a patch with unbounded scope.`);

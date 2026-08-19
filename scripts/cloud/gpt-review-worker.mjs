@@ -10,7 +10,9 @@
  *   - the decision is read from a STRUCTURED enum field, never parsed from prose
  *   - the review targets message.commitSha, not HEAD and not main
  *   - a RE-review covers the CUMULATIVE corrective delta (see resolveReviewBase)
- *   - files outside the task's allowedPaths are shown as CONTEXT ONLY and are
+ *   - the diff covers the whole surface the approval will bind to, so no
+ *     fingerprinted byte is ever approved unseen (scripts/review-surface.mjs)
+ *   - files outside that surface are shown as CONTEXT ONLY and are
  *     explicitly excluded from the verdict; commits do sweep in unrelated work
  *   - test evidence is never invented
  *   - the worker refuses to review a task it implemented
@@ -38,6 +40,11 @@ import {
   buildReviewChunks,
   unreviewableDecision
 } from "./review-chunking.mjs";
+import {
+  classifyReviewPath,
+  reviewSurfaceLabel,
+  withinReviewSurface
+} from "../review-surface.mjs";
 
 const root = process.cwd();
 const AGENT = "gpt-architect";
@@ -65,15 +72,6 @@ function git(...args) {
 }
 function readJson(rel) {
   return JSON.parse(fs.readFileSync(path.join(root, rel), "utf8"));
-}
-function normalizePrefix(pattern) {
-  return pattern.replace(/\\/g, "/").replace(/\*\*.*$/, "").replace(/\*.*$/, "").replace(/\/$/, "");
-}
-function withinAllowedPaths(rel, allowedPaths = []) {
-  return allowedPaths.some((raw) => {
-    const prefix = normalizePrefix(raw);
-    return prefix && (rel === prefix || rel.startsWith(prefix + "/"));
-  });
 }
 
 /** Decision shape the model MUST return. No free-form approval is accepted. */
@@ -198,24 +196,49 @@ function resolveReviewBase(task, message) {
 
 function buildReviewContext(task, message) {
   const commitSha = message.commitSha;
-  const allowed = task.allowedPaths ?? [];
   const { base, source } = resolveReviewBase(task, message);
 
   const changed = git("diff", "--name-only", base, commitSha)
     .split("\n").map((s) => s.trim()).filter(Boolean);
 
-  const inScope = changed.filter((rel) => withinAllowedPaths(rel, allowed));
-  const outOfScope = changed.filter((rel) => !withinAllowedPaths(rel, allowed));
+  /*
+   * The shown surface is the FINGERPRINTED surface, not the writable one.
+   *
+   * The approval this review produces is bound to a hash over
+   * allowedPaths + reviewDependencies. Filtering the diff to allowedPaths would
+   * bind that approval to declared dependencies the reviewer never saw -- the
+   * evidence would look stronger while resting on less. Both sides are derived
+   * from review-surface.mjs so neither can be narrowed alone.
+   */
+  const implementation = changed.filter((rel) => classifyReviewPath(rel, task) === "implementation");
+  const dependencyContext = changed.filter((rel) => classifyReviewPath(rel, task) === "dependency");
+  const outOfScope = changed.filter((rel) => !withinReviewSurface(rel, task));
+
+  // Implementation first so the reviewer reads the work before the vocabulary it
+  // rests on, and so a task with no dependencies produces byte-identical parts.
+  const inScope = [...implementation, ...dependencyContext];
 
   // Chunking, binary detection and aggregation live in review-chunking.mjs so
-  // they can be executed in tests without an API key.
+  // they can be executed in tests without an API key. Dependency diffs go
+  // through the same budget: an oversized or binary dependency is content the
+  // approval would still bind to, so it is just as unreviewable.
   const { chunks, oversizedFiles, binaryFiles } = buildReviewChunks({
     inScope,
     maxBytes: MAX_PATCH_BYTES,
     diffFor: (rel) => git("diff", base, commitSha, "--", rel)
   });
 
-  return { base, source, inScope, outOfScope, chunks, oversizedFiles, binaryFiles };
+  return {
+    base,
+    source,
+    inScope,
+    implementation,
+    dependencyContext,
+    outOfScope,
+    chunks,
+    oversizedFiles,
+    binaryFiles
+  };
 }
 
 function contextDoc(rel) {
@@ -243,7 +266,11 @@ async function reviewMessage(message) {
 
   const ctx = buildReviewContext(task, message);
   console.log(`  review range: ${ctx.base.slice(0, 12)}..${message.commitSha.slice(0, 12)} (${ctx.source})`);
-  console.log(`  in scope: ${ctx.inScope.length} file(s); out of scope: ${ctx.outOfScope.length}`);
+  console.log(
+    `  in scope: ${ctx.inScope.length} file(s); out of scope: ${ctx.outOfScope.length}` +
+    // Counts only, never paths: this log is retained in workflow output.
+    (ctx.dependencyContext.length ? `; review dependencies: ${ctx.dependencyContext.length}` : "")
+  );
 
   const instructions = [
     "You are gpt-architect, the independent architecture and security reviewer for Project Liberty.",
@@ -260,6 +287,21 @@ async function reviewMessage(message) {
     "Review rules:",
     "- Judge ONLY files inside the task's allowedPaths. Files listed as out-of-scope were swept",
     "  into the same commit range by another task and MUST NOT influence your verdict.",
+    // Only emitted when the task actually declares dependencies. A task without
+    // them must see the identical instruction block it saw before this existed;
+    // rules about a concept the task does not use are noise a reviewer has to
+    // reason past.
+    ...(ctx.dependencyContext.length
+      ? [
+          "- Files marked REVIEW DEPENDENCY are NOT this task's to change. They are the shared",
+          "  vocabulary it was written against, shown because your approval is cryptographically",
+          "  bound to their exact bytes as well. Read them as the standard the implementation must",
+          "  satisfy, not as work under review: do not raise findings asking for them to change,",
+          "  and do not treat their contents as evidence of what this task did.",
+          "- If a REVIEW DEPENDENCY change breaks, contradicts or outdates the implementation, that",
+          "  IS a blocking finding -- against the implementation.",
+        ]
+      : []),
     "- Never fabricate test evidence. If you need a result you do not have, that is a blocking",
     "  finding, not an assumption.",
     "- Enforce the product invariants: only licensed/owned/public-domain content may enter playback",
@@ -268,7 +310,13 @@ async function reviewMessage(message) {
     "- changes_requested requires at least one blocking finding.",
     "- review_approved requires zero blocking findings.",
     "- Set reviewedScopeConfirmed true ONLY if you actually saw and judged every in-scope file",
-    "  listed for this part. If any content is missing, set it false; an approval will be refused."
+    "  listed for this part. If any content is missing, set it false; an approval will be refused.",
+    ...(ctx.dependencyContext.length
+      ? [
+          "  A REVIEW DEPENDENCY counts as seen, not as judged: you must have read it, because the",
+          "  approval binds to it, but the verdict itself still rests only on allowedPaths.",
+        ]
+      : [])
   ].join("\n");
 
   const header = (chunk, index, total) => [
@@ -276,6 +324,13 @@ async function reviewMessage(message) {
     `Lane: ${task.lane} | Priority: ${task.priority}`,
     `Acceptance: ${task.acceptance}`,
     `allowedPaths: ${JSON.stringify(task.allowedPaths)}`,
+    // The two lists are printed separately, never merged: one is what the task
+    // may write, the other is what the approval additionally binds to. A single
+    // combined "reviewed paths" line would tell the reviewer that this task is
+    // allowed to have changed a shared file it must not touch.
+    (task.reviewDependencies ?? []).length
+      ? `reviewDependencies (read-only; the approval binds to these too): ${JSON.stringify(task.reviewDependencies)}`
+      : "",
     `Required gates: ${JSON.stringify(task.qualityGates)}`,
     "",
     `## Review range: ${ctx.base}..${message.commitSha}`,
@@ -290,7 +345,20 @@ async function reviewMessage(message) {
     `Evidence claimed: ${JSON.stringify(message.evidence ?? [])}`,
     "",
     `## Files in this part (${chunk.files.length})`,
-    chunk.files.join("\n") || "(none)",
+    // Marked per path rather than listed in a separate block: the diff below is
+    // one stream, and a reviewer matching a hunk back to a list at the top of the
+    // prompt is exactly where "whose code is this" gets guessed.
+    (ctx.dependencyContext.length
+      ? chunk.files.map((rel) =>
+          classifyReviewPath(rel, task) === "dependency" ? `${rel}  [REVIEW DEPENDENCY]` : rel
+        )
+      : chunk.files
+    ).join("\n") || "(none)",
+    ctx.dependencyContext.length
+      ? "[REVIEW DEPENDENCY] marks a declared reviewDependency: shared code this task was written " +
+        "against and may NOT change. Your approval binds to its bytes, so you must read it, but it " +
+        "is not this task's work and findings must not ask for it to be changed."
+      : "",
     "",
     `## OUT OF SCOPE - context only, must not affect the verdict (${ctx.outOfScope.length})`,
     ctx.outOfScope.join("\n") || "(none)",
@@ -324,8 +392,16 @@ async function reviewMessage(message) {
 
   const total = ctx.chunks.length;
   if (total === 0) {
+    /*
+     * Judged over the REVIEWED surface, which is what makes a dependency-only
+     * re-review possible at all. A shared file moving invalidates this task's
+     * approval, so the control plane demands a fresh one -- and if "nothing to
+     * review" still meant "nothing changed under allowedPaths", that fresh
+     * review would be refused as empty and the task would be wedged in REVIEW
+     * with no legal way out.
+     */
     throw new PermanentReviewError(
-      `${message.id} has no in-scope changes under ${task.id}'s allowedPaths; there is nothing to review`
+      `${message.id} has no in-scope changes under ${task.id}'s ${reviewSurfaceLabel(task)}; there is nothing to review`
     );
   }
 
@@ -357,6 +433,10 @@ function publishDecision(message, task, decision, ctx) {
     `reviewedRange=${ctx.base}..${message.commitSha}`,
     `rangeBasis=${ctx.source}`,
     `inScopeFiles=${ctx.inScope.length}`,
+    // Recorded so the approval states how much of what it binds to was shared
+    // vocabulary rather than this task's own work. Omitted entirely when there
+    // is none, so an existing evidence trail keeps its exact shape.
+    ...(ctx.dependencyContext.length ? [`reviewDependencyFiles=${ctx.dependencyContext.length}`] : []),
     `reviewParts=${ctx.chunks.length}`,
     `scopeConfirmed=${decision.reviewedScopeConfirmed === true}`,
     `outOfScopeIgnored=${ctx.outOfScope.length}`,
