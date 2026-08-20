@@ -662,7 +662,18 @@
       ],
       "acceptance": "A provider with zero observations reports unknown with a null observed success rate and a zero sample count, never a mid-range score and never a pass; any prior used to rank an unobserved provider is labelled as a prior rather than presented as measured availability; degraded-but-usable is a state distinct from up and down; health output is pure over the observations plus an explicit policy version, with no hidden wall-clock decay; and health never affects entitlement, so a provider at perfect health still cannot make an unauthorized candidate eligible",
       "owner": null,
-      "gateResults": {}
+      "gateResults": {
+        "typecheck": {
+          "status": "pass",
+          "at": "2026-08-20T16:02:03.512Z",
+          "evidence": "turbo run typecheck --filter @liberty/provider-sdk exit 0 under pinned Node 22 resolved via npx node@22."
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-08-20T16:02:03.607Z",
+          "evidence": "turbo run test --filter @liberty/provider-sdk exit 0 under pinned Node 22: zero observations yielding unknown with a null observed rate and a zero sample count, a prior labelled rather than presented as measurement at the same ranking number as a measured value, the degraded band held distinct from up and down, purity over observations plus an explicit policy version with Date.now replaced by a thrower to prove no wall clock is read, whole-report permutation invariance under generated policies, monotonicity in each count, and a compile-time guard that no health type can carry entitlement."
+        }
+      }
     },
     {
       "id": "PL-0304",

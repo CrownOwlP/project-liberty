@@ -1,10 +1,16 @@
 import type { StreamCandidate } from "@liberty/contracts/domains/playback";
 import { PLAYABLE_CONTENT_RIGHTS, type ContentRights } from "@liberty/contracts/shared/rights";
+import {
+  DEFAULT_PROVIDER_HEALTH_POLICY,
+  evaluateProviderHealth,
+  healthRankingScore,
+  type ProviderHealthPolicy,
+  type ProviderHealthReport
+} from "../health";
 import type { AuthorizedMediaProvider, CatalogItemRef, ProviderContext } from "../provider";
 import { fetchJson, type FetchLike, type HttpFailureReason, type HttpOptions } from "./http";
 import {
   mapStremioStreams,
-  observedHealthScore,
   type MappedStream,
   type RejectedStream,
   type StreamMappingContext
@@ -39,11 +45,20 @@ import { truncate } from "./url-policy";
  * escape hatch, and no "unsafe" constructor: if you are holding a provider, its
  * source's rights were declared and validated.
  *
- * The two numbers on every candidate that are real -- `estimatedLatencyMs` and
- * `healthScore` -- are measured here, from the requests actually made. Nothing
- * else on a candidate is invented either: a stream whose codec, resolution or
- * bitrate the protocol does not state carries `null` for that field, which is
- * the contract's word for UNKNOWN, rather than a plausible-looking value. Every
+ * `estimatedLatencyMs` is measured here, from the request actually made.
+ * `healthScore` is measured here TOO -- but only once there is something to
+ * measure. Before the first completed request it is the policy prior, which
+ * PL-0303 makes visible: `providerHealthReport()` reports `status: "unknown"`
+ * with a null observed rate and a zero sample count, and the number the
+ * candidate ranks on arrives as `priorScore` rather than as availability. The
+ * previous header sentence here claimed both numbers were measured, which was
+ * true of one of them and was exactly the confusion the health contract exists
+ * to remove.
+ *
+ * Nothing else on a candidate is invented either: a stream whose codec,
+ * resolution or bitrate the protocol does not state carries `null` for that
+ * field, which is the contract's word for UNKNOWN, rather than a
+ * plausible-looking value. Every
  * candidate this adapter produces today is therefore unverified on all four
  * media facts, `detail` says so, and media-engine ranks it accordingly without
  * ever treating the absence as either compatibility or incompatibility.
@@ -76,6 +91,15 @@ export interface StremioProviderOptions {
   /** Injected clock, so latency and cache expiry are testable without waiting. */
   readonly now?: (() => number) | undefined;
   readonly userAgent?: string | undefined;
+  /**
+   * How this provider's observed outcomes become a health verdict (PL-0303).
+   *
+   * Injectable so a deployment can adopt a newer policy version deliberately,
+   * and so tests can exercise a band without arranging dozens of requests. The
+   * default reproduces the arithmetic this adapter has always used, digit for
+   * digit, so leaving it alone changes no candidate's `healthScore`.
+   */
+  readonly healthPolicy?: ProviderHealthPolicy | undefined;
 }
 
 export type ResolutionReason =
@@ -114,6 +138,23 @@ export interface StremioProvider extends AuthorizedMediaProvider {
    * everything a support engineer needs to explain an empty result is here.
    */
   resolve(item: CatalogItemRef, context: ProviderContext): Promise<StremioResolution>;
+  /**
+   * What this provider object has observed, as a labelled verdict (PL-0303).
+   *
+   * SYNCHRONOUS AND MAKES NO REQUEST, which is the distinction from `health()`
+   * beside it. `health()` probes -- it goes and asks the addon whether it is
+   * answering right now, and it is what an uptime check wants. This reports the
+   * accumulated record of the requests already made, and it is what a ranking
+   * signal and a dashboard want. Collapsing the two would mean either a probe on
+   * every candidate mapping or a dashboard that reports one request's outcome as
+   * a provider's health.
+   *
+   * A provider that has made no requests yet reports `status: "unknown"` with a
+   * null observed rate and a zero sample count. It does not report a pass, and
+   * it does not report fifty percent availability -- the 0.5 it ranks on is
+   * `priorScore`, named so nobody can read it as a measurement.
+   */
+  providerHealthReport(): ProviderHealthReport;
 }
 
 /**
@@ -289,11 +330,25 @@ export function createStremioProvider(
     now
   });
 
+  const healthPolicy = options.healthPolicy ?? DEFAULT_PROVIDER_HEALTH_POLICY;
+
   /*
    * Observed reliability, not a constant. Every completed request -- manifest,
-   * stream, health probe -- moves these, and `observedHealthScore` turns them
-   * into the candidate's `healthScore`. A source that has just failed twice
-   * therefore ranks below one that has not, without anyone configuring anything.
+   * stream, health probe -- moves these, and `evaluateProviderHealth` turns them
+   * into a labelled verdict. A source that has just failed twice therefore ranks
+   * below one that has not, without anyone configuring anything.
+   *
+   * COUNTS, not a list of timestamped observations, and that is a deliberate
+   * limit rather than an oversight. A list would let the shipped policy's window
+   * do something, but it would also mean an unbounded array growing for the life
+   * of a long-lived provider object, and it would change every candidate's
+   * `healthScore` the moment old observations started dropping out. PL-0303 is
+   * explicitly not a re-ranking. `summariseHealthObservations` is the pure entry
+   * point a persisted, shared observation store will use when there is one; this
+   * process keeps two integers.
+   *
+   * `excludedByWindow: 0` is therefore a FACT here and not a placeholder:
+   * nothing was excluded because nothing was ever eligible for exclusion.
    */
   let successes = 0;
   let failures = 0;
@@ -301,6 +356,8 @@ export function createStremioProvider(
     if (ok) successes++;
     else failures++;
   };
+  const healthReport = (): ProviderHealthReport =>
+    evaluateProviderHealth(source.id, { successes, failures, excludedByWindow: 0 }, healthPolicy);
 
   let cachedManifest: { manifest: StremioManifest; fetchedAt: number } | null = null;
 
@@ -486,7 +543,16 @@ export function createStremioProvider(
       localDeployment: source.localDeployment,
       acceptNotWebReady: source.acceptNotWebReady,
       observedLatencyMs: response.elapsedMs,
-      healthScore: observedHealthScore(successes, failures)
+      /*
+       * The ranking signal off the health verdict, which is the same number the
+       * old `observedHealthScore(successes, failures)` produced -- the default
+       * policy is that arithmetic. Routed through the report rather than the
+       * bare function so the value a candidate ranks on and the value a health
+       * dashboard shows cannot drift apart, and so the one place that flattens a
+       * prior and a measurement into a single number is a named function a
+       * reviewer can find.
+       */
+      healthScore: healthRankingScore(healthReport())
     };
 
     const batch = mapStremioStreams(parsed.value.streams, mappingContext);
@@ -548,6 +614,7 @@ export function createStremioProvider(
       return (await resolve(item, context)).candidates;
     },
 
+    providerHealthReport: healthReport,
     resolve,
     source
   };

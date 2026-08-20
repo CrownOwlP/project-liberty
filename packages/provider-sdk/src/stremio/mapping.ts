@@ -6,6 +6,7 @@ import {
 import type { AudioCodec, VideoCodec } from "@liberty/contracts/shared/codecs";
 import { MEDIA_FACTS, type MediaFact } from "@liberty/contracts/shared/media-facts";
 import { PLAYABLE_CONTENT_RIGHTS, type ContentRights } from "@liberty/contracts/shared/rights";
+import { DEFAULT_PROVIDER_HEALTH_POLICY, smoothedSuccessRate } from "../health";
 import { compareCodePoint } from "./order";
 import { formatIssues, type StremioStream } from "./protocol";
 import { checkUrl, truncate, type UrlRejectionReason } from "./url-policy";
@@ -72,7 +73,16 @@ export interface StreamMappingContext {
   readonly acceptNotWebReady: boolean;
   /** Measured round trip of the request that produced this stream, in ms. */
   readonly observedLatencyMs: number;
-  /** Observed health of the source; see `observedHealthScore`. */
+  /**
+   * Observed health of the source; see `observedHealthScore` and `../health.ts`.
+   *
+   * A RANKING input and nothing else. Note where it is consulted in
+   * `mapStremioStream`: nowhere. The rights check at the top of that function
+   * does not read it, cannot read it, and refuses a non-playable source
+   * identically at 1 and at 0 -- health is an availability signal, and letting an
+   * operational metric reach an entitlement decision is the conflation PL-0303
+   * exists to prevent.
+   */
   readonly healthScore: number;
 }
 
@@ -231,30 +241,31 @@ export function resolveStreamMedia(observed: ObservedMedia): StreamMedia {
   };
 }
 
-/** Decimal places health is stored at, matching media-engine's score precision. */
-const HEALTH_PRECISION = 4;
-
 /**
  * Health from observed request outcomes, never from a hopeful constant.
  *
- * PROVISIONAL. This is an initial policy, not a validated one: it was chosen
- * because it has the right shape and the right failure behaviour, and it has not
- * been calibrated against how Stremio addons actually behave over time.
+ * THE NUMBER IS UNCHANGED BY PL-0303 and the arithmetic is no longer here.
+ * `(successes + 1) / (successes + failures + 2)` at four decimal places -- the
+ * Laplace smoothing this adapter has always used -- is now
+ * `smoothedSuccessRate` under `DEFAULT_PROVIDER_HEALTH_POLICY`, and this
+ * function delegates to it. Every candidate keeps the `healthScore` it had
+ * before, to the digit, so adopting the health contract moves nothing in
+ * media-engine's ranking. Read `../health.ts` for why that number is the right
+ * thing to RANK on and the wrong thing to report as availability.
  *
- * `(successes + 1) / (successes + failures + 2)` is Laplace's rule of
- * succession. Three properties matter here:
+ * WHAT DELEGATING BUYS, since the value did not change: there is one
+ * implementation of "the health number". Two would agree today and diverge the
+ * first time either was tuned, and the divergence would show up as the adapter
+ * ranking candidates by one number while a health verdict reported another --
+ * the same class of defect as the two rights allowlists this package already
+ * collapsed into one.
  *
- *   - with no observations it is exactly 0.5, which is media-engine's
- *     `PROVIDER_HEALTH_FLOOR`: a source we know nothing about sits precisely on
- *     the boundary rather than being credited with reliability it has not shown;
- *   - one success gives 0.667, not 1.0, so a single lucky response cannot make a
- *     brand-new source outrank a provider with a long clean record;
- *   - it never reaches 0 or 1, so a source is never permanently condemned by one
- *     failure nor permanently trusted.
- *
- * The alternative -- a fixed `healthScore: 0.9` on every candidate -- is the
- * flattering default this adapter is not allowed to invent, and it would make
- * media-engine's health dimension a constant, i.e. dead weight in the ranking.
+ * WHAT THIS FUNCTION STILL CANNOT TELL YOU, and why it is not the whole
+ * contract: with no observations at all it returns exactly 0.5, and 0.5 is
+ * indistinguishable from a source measured at fifty percent. It is a bare
+ * number, so it has no room to say which of those it is. `providerHealthReport`
+ * on the provider does say, and that is the surface to read when the question is
+ * "is this source healthy" rather than "how should this candidate rank".
  *
  * SAMPLE SCOPE, which the number does not carry and a reader should not assume:
  * the counters are held in one `createStremioProvider` instance, in memory. They
@@ -263,16 +274,12 @@ const HEALTH_PRECISION = 4;
  * alike and weighted alike. So the score is per-process and unshared across a
  * multi-instance deployment, it resets to 0.5 on restart or reconfiguration, and
  * it has no decay: an outage from six hours ago counts exactly as much as the
- * request that just failed. A source that has been broken all week and recovered
- * an hour ago still scores as damaged. Fixing that means a windowed or
- * time-decayed estimator over shared, persisted observations, which is a
- * different piece of work with its own storage; until then this ranks sources
- * within one process's own experience and nothing more.
+ * request that just failed. `ProviderHealthPolicy.windowMs` is where that gets
+ * fixed, and it is `null` in the shipped policy precisely so that turning it on
+ * is a deliberate, versioned change rather than a silent re-ranking.
  */
 export function observedHealthScore(successes: number, failures: number): number {
-  const s = Math.max(0, Math.floor(successes));
-  const f = Math.max(0, Math.floor(failures));
-  return Number(((s + 1) / (s + f + 2)).toFixed(HEALTH_PRECISION));
+  return smoothedSuccessRate(successes, failures, DEFAULT_PROVIDER_HEALTH_POLICY);
 }
 
 /**
