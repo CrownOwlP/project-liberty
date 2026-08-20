@@ -15,9 +15,11 @@
     "@liberty/media-engine": "0.1.0",
     "@liberty/observability": "0.1.0",
     "@liberty/provider-sdk": "0.1.0",
+    "custom-media-element": "^1.4.6",
     "next": "^16.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "shaka-player": "~5.2.6",
     "zod": "^3.0.0"
   },
   "devDependencies": {
