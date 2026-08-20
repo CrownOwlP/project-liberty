@@ -239,7 +239,13 @@ describe("teardown", () => {
     // is constructed, and nothing owns it — so it keeps its networking engine,
     // its buffers and its CDM session alive, and keeps making requests.
     const player = new FakePlayer();
-    let controller!: PlaybackController;
+
+    // `engine` is declared AFTER `controller` even though `controller` is built
+    // from it, because `loadEngine` is lazy: it is not invoked until attach(),
+    // by which point both bindings exist. The alternative is a
+    // definite-assignment `let controller!`, which reads as a cycle a reviewer
+    // then has to prove is safe.
+    const controller = new PlaybackController({ loadEngine: () => Promise.resolve(engine) });
     const engine: ShakaEngine = {
       isBrowserSupported: () => true,
       createPlayer: () => {
@@ -248,7 +254,6 @@ describe("teardown", () => {
       }
     };
 
-    controller = new PlaybackController({ loadEngine: () => Promise.resolve(engine) });
     await controller.attach(MEDIA);
     await flush();
 
@@ -306,8 +311,15 @@ describe("error surfacing", () => {
   it("does not report the LOAD_INTERRUPTED a second source causes", async () => {
     const player = new FakePlayer();
     const errors: PlaybackError[] = [];
-    let controller!: PlaybackController;
 
+    const controller = new PlaybackController({
+      loadEngine: loaderFor(player),
+      onEvent: collectErrors(errors)
+    });
+
+    // Installed after the controller exists because the stub calls back into
+    // it. Safe to do here rather than at construction: loadImpl is only reached
+    // through attach() and setSource() below.
     player.loadImpl = (uri) => {
       if (uri !== FIRST) return Promise.resolve();
       // A second candidate is chosen while the first is still loading. Shaka
@@ -315,11 +327,6 @@ describe("error surfacing", () => {
       void controller.setSource({ uri: SECOND });
       return Promise.reject(shakaError({ severity: 2, category: 7, code: 7000 }));
     };
-
-    controller = new PlaybackController({
-      loadEngine: loaderFor(player),
-      onEvent: collectErrors(errors)
-    });
 
     await controller.attach(MEDIA);
     await controller.setSource({ uri: FIRST });
