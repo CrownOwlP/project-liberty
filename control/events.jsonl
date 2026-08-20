@@ -117,3 +117,4 @@
 {"ts":"2026-08-18T04:52:29.484Z","type":"task.gate","taskId":"PL-AI-0004","gate":"unit","status":"pass","evidence":"npm run ai:test exit 0 under pinned Node 22: scripts/test-ai-control-plane.mjs, including six new regressions proving disjoint allowedPaths with a shared reviewDependency stay concurrently claimable, that editing the shared dependency invalidates both approvals, that a dependency cannot be written or staged, that overlapping reviewDependencies never create a claim conflict including the asymmetric case, that allowedPaths is implicitly inside the review surface, and that a task without reviewDependencies fingerprints byte-identically to before."}
 {"ts":"2026-08-18T04:52:29.593Z","type":"task.review_requested","taskId":"PL-AI-0004","owner":"claude-lead","reviewAgent":"gpt-architect"}
 {"ts":"2026-08-18T04:52:29.723Z","type":"control.sync","tasks":32}
+{"ts":"2026-08-20T03:44:49.470Z","type":"control.sync","tasks":34}

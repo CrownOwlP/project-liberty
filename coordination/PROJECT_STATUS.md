@@ -1,13 +1,13 @@
 # Project Liberty - Project Status
 
-> Generated 2026-08-18T04:52:29.716Z from the AI control plane.
+> Generated 2026-08-20T03:44:49.459Z from the AI control plane.
 
-**Overall completion:** 7/32 executable tasks (22%)
+**Overall completion:** 7/34 executable tasks (21%)
 
 ## Status summary
 
-- **BACKLOG:** 14
-- **READY:** 8
+- **BACKLOG:** 15
+- **READY:** 9
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 0
 - **REVIEW:** 1
@@ -32,14 +32,15 @@
 
 ## Dispatch classification
 
-- **READY_AND_EXECUTABLE:** 6
+- **READY_AND_EXECUTABLE:** 7
 - **READY_BUT_EXTERNAL:** 2
 - **BLOCKED:** 2
-- **BACKLOG (dependency-gated):** 14
+- **BACKLOG (dependency-gated):** 15
 
 ## Recommended executable wave
 
 - **PL-0102** -> claude-frontend (P0/Frontend) Search experience
+- **PL-0304** -> claude-backend (P1/Provider) Media inspection service
 
 ## Queued for external agents
 
