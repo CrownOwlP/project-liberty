@@ -16,6 +16,10 @@
       "types": "./src/shared/*.ts",
       "default": "./src/shared/*.ts"
     },
+    "./testing/*": {
+      "types": "./src/testing/*.ts",
+      "default": "./src/testing/*.ts"
+    },
     "./package.json": "./package.json"
   },
   "types": "./src/index.ts",
@@ -29,6 +33,7 @@
     "zod": "^3.0.0"
   },
   "devDependencies": {
+    "fast-check": "^4.9.0",
     "typescript": "^5.9.0",
     "vitest": "^3.0.0"
   }

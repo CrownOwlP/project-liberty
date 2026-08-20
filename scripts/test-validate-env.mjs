@@ -1160,10 +1160,27 @@ try {
       [],
       `a fresh clone must pass:\n${render(fresh)}`,
     );
+    /*
+     * Derived from the contract rather than naming a variable. The property is
+     * that a defaulted variable's absence SURVIVES as a warning instead of being
+     * discarded -- not that one particular variable carries it.
+     *
+     * This assertion previously named CONTENT_RIGHTS_ENFORCEMENT, so declaring a
+     * second defaulted variable broke it. The tempting repair is to append the
+     * new name, and that is precisely the move to avoid: appending a name to
+     * make a red suite green is byte-for-byte indistinguishable from appending
+     * one to silence a warning that should never have appeared, and the diff
+     * gives a reviewer no way to tell which happened.
+     */
+    const defaulted = variables.filter((variable) => variable.defaultValue !== null);
+    assert.ok(
+      defaulted.some((variable) => variable.cacheKey),
+      "at least one defaulted variable must be @cache-key, or this scenario no longer covers the cache concern",
+    );
     assert.deepEqual(
-      fresh.map((f) => `${f.level}:${f.check}:${f.expected.split(" ")[0]}`),
-      ["warn:env.default:CONTENT_RIGHTS_ENFORCEMENT"],
-      "the cache-key concern survives as a warning rather than being discarded",
+      fresh.map((f) => `${f.level}:${f.check}:${f.expected.split(" ")[0]}`).sort(),
+      defaulted.map((variable) => `warn:env.default:${variable.name}`).sort(),
+      "on a fresh clone the findings are exactly one warning per defaulted variable, and nothing else",
     );
 
     /*

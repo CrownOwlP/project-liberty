@@ -205,6 +205,7 @@ Application runtime (`@scope app`):
 | `NEXT_PUBLIC_APP_URL`        | no       | `http(s)://` URL                    | Absolute origin this deployment is reachable at, for share URLs, OAuth callbacks, and sitemaps. Inferring it from the request host is attacker-controlled behind a proxy. |
 | `CONTENT_RIGHTS_ENFORCEMENT` | no, defaults to `strict` | `strict`            | Rights-enforcement mode. `strict` is the only accepted value; relaxing it is a `docs/CONTENT_RIGHTS.md` change first. `@default strict @cache-key`: turbo hashes it into the build cache key, so leaving it unset warns and names that consequence, and `--scope ci` fails on it. Setting it to anything but `strict` fails everywhere. |
 | `LOG_LEVEL`                  | no       | `debug` \| `info` \| `warn` \| `error` | Minimum log level. Mirrors `LogLevel` in `@liberty/observability`, which ignores unknown values silently. |
+| `LIBERTY_FC_SEED`            | no, defaults to `20250819` | integer            | Seed for the fast-check property suite. Pinned rather than random because an unpinned suite fails roughly one run in forty with a counterexample nobody can reproduce, and an irreproducible test gets retried until green — turning a real defect into noise. Override it in a nightly job to widen the search, then pin anything it finds by copying the seed fast-check prints. `@cache-key`: the seed changes what the test task computes, so runs under different seeds must not share a cache entry. |
 
 Local infrastructure (`@scope app`, both optional):
 
