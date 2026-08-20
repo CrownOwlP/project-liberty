@@ -1,16 +1,16 @@
 # Project Liberty - Project Status
 
-> Generated 2026-08-20T03:44:49.459Z from the AI control plane.
+> Generated 2026-08-20T16:01:40.311Z from the AI control plane.
 
 **Overall completion:** 7/34 executable tasks (21%)
 
 ## Status summary
 
 - **BACKLOG:** 15
-- **READY:** 9
+- **READY:** 8
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 0
-- **REVIEW:** 1
+- **REVIEW:** 2
 - **BLOCKED:** 2
 - **DONE:** 7
 - **CANCELED:** 0
@@ -28,11 +28,12 @@
 
 ## Active work
 
+- **PL-0304** [REVIEW] Media inspection service — owner: claude-backend
 - **PL-AI-0004** [REVIEW] Review dependency scope — owner: claude-lead
 
 ## Dispatch classification
 
-- **READY_AND_EXECUTABLE:** 7
+- **READY_AND_EXECUTABLE:** 6
 - **READY_BUT_EXTERNAL:** 2
 - **BLOCKED:** 2
 - **BACKLOG (dependency-gated):** 15
@@ -40,7 +41,6 @@
 ## Recommended executable wave
 
 - **PL-0102** -> claude-frontend (P0/Frontend) Search experience
-- **PL-0304** -> claude-backend (P1/Provider) Media inspection service
 
 ## Queued for external agents
 
@@ -57,7 +57,7 @@
 - **gpt-architect:** 0/6 active (external lane; not locally executable)
 - **claude-lead:** 1/2 active
 - **claude-frontend:** 0/1 active
-- **claude-backend:** 0/1 active
+- **claude-backend:** 1/1 active
 - **claude-media:** 0/1 active
 - **claude-test:** 0/1 active
 - **claude-security:** 0/1 active

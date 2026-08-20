@@ -1,8 +1,45 @@
 {
-  "generatedAt": "2026-08-20T03:44:49.466Z",
+  "generatedAt": "2026-08-20T16:01:40.314Z",
   "agent": "claude-backend",
   "executionAvailable": true,
-  "assigned": [],
+  "assigned": [
+    {
+      "id": "PL-0304",
+      "priority": "P1",
+      "lane": "Provider",
+      "status": "REVIEW",
+      "title": "Media inspection service",
+      "dependencies": [],
+      "allowedPaths": [
+        "packages/media-inspection/**",
+        "package-lock.json"
+      ],
+      "preferredAgent": "claude-backend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "security-review"
+      ],
+      "acceptance": "Media inspection sits behind its own package boundary rather than inside the provider SDK, because probing is cross-provider I/O plus an external binary with a different security profile; the manifest-parsing path carries no FFmpeg dependency and ships first, reading the declared ladder out of an HLS or DASH manifest without opening a media segment; a fact obtained by probing carries provenance that distinguishes it from a fact merely stated by a provider, and a divergence between the two is preserved rather than collapsed into a fact of unknowable origin; and the service never becomes a general-purpose fetcher, so protocols are allowlisted, egress is confined to an allowlist, hostnames are resolved and private ranges rejected before inspection is invoked, and redirects are revalidated rather than trusted because the first host was allowed",
+      "owner": "claude-backend",
+      "gateResults": {
+        "typecheck": {
+          "status": "pass",
+          "at": "2026-08-20T16:01:40.026Z",
+          "evidence": "turbo run typecheck --filter @liberty/media-inspection exit 0 under pinned Node 22 resolved via npx node@22."
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-08-20T16:01:40.116Z",
+          "evidence": "turbo run test --filter @liberty/media-inspection exit 0 under pinned Node 22: both manifest formats, whole-ladder extraction, omitted fields becoming null rather than inferred, provenance separating manifest_declared from provider_declared and probe, protocol and egress allowlisting driven by the allowlist constant itself, resolve-and-reject of private ranges before invocation with every resolved address checked, redirect revalidation, bounded bodies and deadlines, a pre-count rendition cap refusing before any ladder is built, and a fast-check property asserting the whole returned object is stable under input permutation."
+        }
+      },
+      "implementationAgent": "claude-backend",
+      "updatedAt": "2026-08-20T16:01:40.209Z",
+      "implementationBaseSha": "55736f29864d04319600e107c366622cb09988b9"
+    }
+  ],
   "review": [],
   "reservedExternal": [],
   "recommended": [
@@ -25,28 +62,6 @@
         "security-review"
       ],
       "acceptance": "A recorded decision selects the auth approach and states the boundary it implies: a packages/auth seam that the rest of the application depends on instead of the vendor library, database-backed sessions, a deliberately small enabled surface with the advanced plugin stacks left off, and an exact-pinned dependency whose upgrades are treated as security-sensitive work rather than floated on a caret range",
-      "owner": null,
-      "gateResults": {}
-    },
-    {
-      "id": "PL-0304",
-      "priority": "P1",
-      "lane": "Provider",
-      "status": "READY",
-      "title": "Media inspection service",
-      "dependencies": [],
-      "allowedPaths": [
-        "packages/media-inspection/**",
-        "package-lock.json"
-      ],
-      "preferredAgent": "claude-backend",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "typecheck",
-        "unit",
-        "security-review"
-      ],
-      "acceptance": "Media inspection sits behind its own package boundary rather than inside the provider SDK, because probing is cross-provider I/O plus an external binary with a different security profile; the manifest-parsing path carries no FFmpeg dependency and ships first, reading the declared ladder out of an HLS or DASH manifest without opening a media segment; a fact obtained by probing carries provenance that distinguishes it from a fact merely stated by a provider, and a divergence between the two is preserved rather than collapsed into a fact of unknowable origin; and the service never becomes a general-purpose fetcher, so protocols are allowlisted, egress is confined to an allowlist, hostnames are resolved and private ranges rejected before inspection is invoked, and redirects are revalidated rather than trusted because the first host was allowed",
       "owner": null,
       "gateResults": {}
     }

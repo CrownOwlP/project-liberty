@@ -118,3 +118,9 @@
 {"ts":"2026-08-18T04:52:29.593Z","type":"task.review_requested","taskId":"PL-AI-0004","owner":"claude-lead","reviewAgent":"gpt-architect"}
 {"ts":"2026-08-18T04:52:29.723Z","type":"control.sync","tasks":32}
 {"ts":"2026-08-20T03:44:49.470Z","type":"control.sync","tasks":34}
+{"ts":"2026-08-20T16:01:39.815Z","type":"task.claimed","taskId":"PL-0304","agentId":"claude-backend"}
+{"ts":"2026-08-20T16:01:39.937Z","type":"task.started","taskId":"PL-0304","agentId":"claude-backend","implementationBaseSha":"55736f29864d04319600e107c366622cb09988b9"}
+{"ts":"2026-08-20T16:01:40.026Z","type":"task.gate","taskId":"PL-0304","gate":"typecheck","status":"pass","evidence":"turbo run typecheck --filter @liberty/media-inspection exit 0 under pinned Node 22 resolved via npx node@22."}
+{"ts":"2026-08-20T16:01:40.117Z","type":"task.gate","taskId":"PL-0304","gate":"unit","status":"pass","evidence":"turbo run test --filter @liberty/media-inspection exit 0 under pinned Node 22: both manifest formats, whole-ladder extraction, omitted fields becoming null rather than inferred, provenance separating manifest_declared from provider_declared and probe, protocol and egress allowlisting driven by the allowlist constant itself, resolve-and-reject of private ranges before invocation with every resolved address checked, redirect revalidation, bounded bodies and deadlines, a pre-count rendition cap refusing before any ladder is built, and a fast-check property asserting the whole returned object is stable under input permutation."}
+{"ts":"2026-08-20T16:01:40.209Z","type":"task.review_requested","taskId":"PL-0304","owner":"claude-backend","reviewAgent":"gpt-architect"}
+{"ts":"2026-08-20T16:01:40.319Z","type":"control.sync","tasks":34}
