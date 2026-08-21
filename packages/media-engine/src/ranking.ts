@@ -5,7 +5,7 @@ import {
   type StreamCandidate
 } from "@liberty/contracts/domains/playback";
 import type { MediaFact } from "@liberty/contracts/shared/media-facts";
-import type { ContentRights } from "@liberty/contracts/shared/rights";
+import { PLAYABLE_CONTENT_RIGHTS, type ContentRights } from "@liberty/contracts/shared/rights";
 import { type CandidateScore, explainScore, scoreCandidate } from "./scoring";
 
 export interface RankedCandidate {
@@ -59,8 +59,25 @@ export interface PlaybackDecision {
  * Rights boundary. Only content the platform is actually entitled to serve may
  * enter playback resolution. This is an explicit allowlist rather than a
  * denylist so that any new rights value is non-playable until it is reviewed.
+ *
+ * AN ALIAS, NOT A SECOND ALLOWLIST. The members live in
+ * `@liberty/contracts/shared/rights`, which is where every other surface that
+ * gates on rights reads them: the provider SDK, the catalog and the playback
+ * session route all consult `PLAYABLE_CONTENT_RIGHTS`. This module used to
+ * declare its own copy with the same three values, which meant the adapter that
+ * ESTABLISHED authorization and the code that RE-CHECKS it agreed by
+ * coincidence rather than by construction -- a fourth rights value added to one
+ * list and not the other would either admit a stream the SDK refused or refuse
+ * one it admitted, and nothing would fail until a viewer saw the wrong answer.
+ * The contracts module's own comment names this exact failure ("a
+ * surface-specific home for a cross-surface allowlist is how a second one gets
+ * written").
+ *
+ * Bound as a value under the engine's historical name rather than written as
+ * `export ... from`, because `firstRejectionReason` below reads it and a
+ * re-export creates no local binding.
  */
-export const PLAYABLE_RIGHTS: readonly ContentRights[] = ["licensed", "owned", "public-domain"];
+export const PLAYABLE_RIGHTS: readonly ContentRights[] = PLAYABLE_CONTENT_RIGHTS;
 
 /** Providers below this health floor are excluded regardless of quality. */
 export const PROVIDER_HEALTH_FLOOR = 0.5;

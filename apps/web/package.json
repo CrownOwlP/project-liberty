@@ -20,6 +20,7 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "shaka-player": "~5.2.6",
+    "xstate": "^5.32.5",
     "zod": "^3.0.0"
   },
   "devDependencies": {
@@ -28,6 +29,7 @@
     "@types/react-dom": "^19.0.0",
     "eslint": "^9.0.0",
     "eslint-config-next": "^16.0.0",
+    "fast-check": "^4.9.0",
     "typescript": "^5.9.0",
     "vitest": "^3.0.0"
   }

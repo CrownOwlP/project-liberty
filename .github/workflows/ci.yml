@@ -26,8 +26,17 @@ jobs:
     # different enforcement modes. `validate-env.mjs --scope ci` fails on an unset
     # cache-key variable for that reason; setting it here is the fix it asks for,
     # not a way around it.
+    # Every @cache-key variable must be set here, not just this one. The rule is
+    # mechanical: `@cache-key` means turbo.json hashes it into a cache key shared
+    # between runs, which is exactly why `--scope ci` refuses to let it be unset.
+    # So adding a variable to globalEnv is three edits in the repo and a fourth
+    # here, and forgetting the fourth turns CI red on a run that has nothing to do
+    # with the change. LIBERTY_FC_SEED was added without it and CI has been failing
+    # here since, unnoticed, because every gate we actually watch runs locally.
     env:
       CONTENT_RIGHTS_ENFORCEMENT: strict
+      LIBERTY_FC_SEED: "20250819"
+      LIBERTY_FIXTURE_MEDIA_ORIGIN: https://fixtures.invalid
     steps:
       - uses: actions/checkout@v4
         with:

@@ -10,7 +10,12 @@
     ".env.test",
     ".env.test.local"
   ],
-  "globalEnv": ["NODE_ENV", "CONTENT_RIGHTS_ENFORCEMENT", "LIBERTY_FC_SEED"],
+  "globalEnv": [
+    "NODE_ENV",
+    "CONTENT_RIGHTS_ENFORCEMENT",
+    "LIBERTY_FC_SEED",
+    "LIBERTY_FIXTURE_MEDIA_ORIGIN"
+  ],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],

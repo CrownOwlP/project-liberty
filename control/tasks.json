@@ -899,7 +899,7 @@
       "priority": "P1",
       "lane": "Player",
       "status": "BACKLOG",
-      "title": "A/V sync telemetry and recovery experiment",
+      "title": "A/V continuity diagnostics",
       "dependencies": [
         "PL-0502",
         "PL-0503"
@@ -907,7 +907,8 @@
       "allowedPaths": [
         "apps/web/src/**",
         "packages/media-engine/**",
-        "packages/observability/**"
+        "packages/observability/**",
+        "docs/AV_SYNC_MEASUREMENT.md"
       ],
       "preferredAgent": "claude-media",
       "reviewAgent": "gpt-architect",
@@ -916,7 +917,7 @@
         "unit",
         "performance"
       ],
-      "acceptance": "Drift measurement contract, thresholds, and bounded recovery experiment are implemented",
+      "acceptance": "Browser playback diagnostics detect and report deterministic A/V continuity proxies with their evidence source and reason trail, never label a proxy as measured A/V skew, never expose a millisecond sync-offset claim without an external measurement source, and document the external flash-and-blip procedure for true A/V offset measurement",
       "owner": null,
       "gateResults": {}
     },

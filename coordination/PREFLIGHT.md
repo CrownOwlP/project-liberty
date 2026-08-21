@@ -58,6 +58,20 @@ Stashing only the reviewed task's own paths left a different lane in the tree im
 that had just been stashed. Park `packages` and `apps` together, and make the pop reachable from
 every path out of the script.
 
+**8. A phase that reports success on the strength of half its work.**
+A multi-phase runner gated each phase on its `git commit` and printed `landed`. In one phase the
+commit succeeded while the `claim` before it had been *refused* — the task was dependency-gated and
+the control plane was right to say no — so the code shipped, the task state did not move, and the
+summary said `landed`. Gate a phase on **every** step whose failure would make the summary a lie, not
+just the last one. If a phase does control-plane work and repository work, it has two success
+conditions and needs to report both.
+
+**9. Filtering a phase to a package filters the checks too.**
+Gating a phase on `turbo run typecheck` and `test` filtered to its own package missed a lint error,
+because most packages define `lint` as `tsc --noEmit` — so typecheck appears to cover it — while
+`apps/web` runs real eslint. A per-package gate must run every task the full check would run for that
+package, or it is not a gate, it is a subset that happens to agree most of the time.
+
 ## The question to ask last
 
 *What in this change assumes something I have not verified in this session?* Version numbers,

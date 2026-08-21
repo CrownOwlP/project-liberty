@@ -58,6 +58,20 @@ export interface ShakaPlayerHandle {
   load(uri: string, startTime?: number | null, mimeType?: string): Promise<void>;
   unload(): Promise<void>;
   destroy(): Promise<void>;
+  /**
+   * Resume a stalled stream without touching the manifest, the buffer or the
+   * CDM session. The cheapest recovery Shaka offers, and the reason PL-0502
+   * treats a RECOVERABLE error as a `recovering` state rather than as a
+   * candidate failover.
+   *
+   * OPTIONAL, and that is the honest declaration rather than a convenience: it
+   * is the one method on this port with no equivalent in the hls.js contingency
+   * `docs/RESEARCH_PLAYBACK.md` leaves open, so a caller has to have an answer
+   * for its absence. The state machine's answer is that the error is promoted to
+   * a failover, which is a worse outcome than a stream retry and a much better
+   * one than a crash.
+   */
+  retryStreaming?(retryDelaySeconds?: number): boolean;
   getStats(): RawEngineStats;
   addEventListener(type: string, listener: (event: unknown) => void): void;
   removeEventListener(type: string, listener: (event: unknown) => void): void;
