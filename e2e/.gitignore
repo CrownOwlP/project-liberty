@@ -1,0 +1,8 @@
+# Playwright run artifacts. Traces and videos can contain screenshots of a
+# running deployment, so they are ignored by pattern here rather than relying on
+# whoever adds the next reporter to remember.
+node_modules/
+playwright-report/
+blob-report/
+test-results/
+.playwright/

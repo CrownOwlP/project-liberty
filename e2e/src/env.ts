@@ -1,0 +1,114 @@
+/* -------------------------------------------------------------------------
+ * What this harness is pointed at, and what it is allowed to assume
+ *
+ * Every knob is read exactly once, here, so the config and the specs cannot
+ * disagree about what "the target" is. A spec that read `process.env` itself
+ * could assert against a rig the server was never started with.
+ *
+ * All names are prefixed `LIBERTY_E2E_` and NONE of them is added to
+ * `.env.example` or `turbo.json`. That is deliberate: these configure the test
+ * runner, not the product, and `docs/DEVELOPMENT.md` treats `.env.example` as
+ * the contract for variables the APPLICATION reads. The one application
+ * variable this harness touches -- `LIBERTY_FIXTURE_MEDIA_ORIGIN` -- is already
+ * declared there, and is set on the server process rather than read here.
+ * ---------------------------------------------------------------------- */
+
+function read(name: string): string | null {
+  const value = process.env[name];
+  return value === undefined || value.trim() === "" ? null : value.trim();
+}
+
+/**
+ * The origin `apps/web` uses when nobody configures one.
+ *
+ * Restated rather than imported. `.invalid` is reserved by RFC 2606 and
+ * resolves nowhere, which is the whole point of the default: with no rig
+ * configured the fixtures cannot reach a real host, so nothing this harness runs
+ * can quietly fetch media of unknown provenance. Copying the literal means a
+ * change to that default fails an assertion here instead of being adopted
+ * silently by a test whose job is to notice.
+ */
+export const DEFAULT_FIXTURE_MEDIA_ORIGIN = "https://fixtures.invalid";
+
+/**
+ * An already-running deployment to test instead of starting one.
+ *
+ * When set, the harness starts no server at all. Nothing here writes to the
+ * target, but it does POST to the playback session endpoint, so this must not
+ * be aimed at production.
+ */
+export const EXTERNAL_BASE_URL = read("LIBERTY_E2E_BASE_URL");
+
+/**
+ * Port for the harness-managed server. 3100 rather than 3000 on purpose: 3000
+ * is where a developer's `next dev` already is, and `reuseExistingServer` would
+ * happily adopt it -- so the run would silently test whatever that process
+ * happened to be built from, with whatever `.env.local` it inherited.
+ */
+export const PORT = Number(read("LIBERTY_E2E_PORT") ?? "3100");
+
+export const BASE_URL = EXTERNAL_BASE_URL ?? `http://127.0.0.1:${PORT}`;
+
+/** True when this harness owns the server's lifetime and therefore its env. */
+export const MANAGES_SERVER = EXTERNAL_BASE_URL === null;
+
+export type WebMode = "production" | "development";
+
+/**
+ * Which build the managed server runs.
+ *
+ * `production` is the default because it is what CI ships and because a dev
+ * server recompiles on first hit, which turns a correctness gate into a race
+ * against a bundler.
+ *
+ * It is not the only useful mode. `apps/.../authorized-candidates.ts` makes
+ * `resolveAuthorizedCandidates` return `not-configured` when `NODE_ENV` is
+ * `production`, because serving fixtures from a hosted deployment would publish
+ * fabricated `owned` rights for files that do not exist. So a production build
+ * answers the session API with `unavailable` / `provider_not_configured`, and
+ * exercising the granted branch end to end requires `development`. Both are
+ * asserted; see `tests/playback-session.spec.ts`.
+ */
+export const WEB_MODE: WebMode = read("LIBERTY_E2E_WEB_MODE") === "development" ? "development" : "production";
+
+/**
+ * A media rig to point the app's fixtures at.
+ *
+ * NOT a URL this harness fetches, and not a URL that appears in any fixture in
+ * this directory. It is handed to the server as `LIBERTY_FIXTURE_MEDIA_ORIGIN`
+ * and the server decides what to do with it. Nothing in `e2e/**` may name a
+ * media file: product invariant 1 says only licensed, user-owned or
+ * public-domain content reaches playback resolution, and a URL checked into a
+ * test fixture is a rights claim nobody reviewed. Whoever sets this variable is
+ * the person who can make that claim about their own rig.
+ */
+export const MEDIA_RIG_ORIGIN = read("LIBERTY_E2E_MEDIA_ORIGIN");
+
+/**
+ * The origin every published candidate URL must be on, or `null` when this
+ * harness cannot know.
+ *
+ * Against an external deployment with no declared rig we genuinely do not know
+ * what the operator configured, and guessing would produce a test that fails on
+ * a correct deployment -- which is worse than not asserting, because it teaches
+ * people to ignore the result.
+ */
+export const EXPECTED_MEDIA_ORIGIN: string | null = MANAGES_SERVER
+  ? (MEDIA_RIG_ORIGIN ?? DEFAULT_FIXTURE_MEDIA_ORIGIN)
+  : MEDIA_RIG_ORIGIN;
+
+/**
+ * Why the media-rig suite is skipped, or `null` when it may run.
+ *
+ * A string rather than a boolean because the string is the whole value of the
+ * skip: a suite that quietly does not run is indistinguishable from one that
+ * passed, and this is the sentence that makes the difference visible in the
+ * report.
+ */
+export const MEDIA_RIG_SKIP_REASON: string | null =
+  MEDIA_RIG_ORIGIN === null
+    ? "No media rig configured. Set LIBERTY_E2E_MEDIA_ORIGIN to a DASH/HLS origin you " +
+      "hold rights to serve from (see docs/E2E.md). The default fixture origin is " +
+      `${DEFAULT_FIXTURE_MEDIA_ORIGIN}, reserved by RFC 2606, which resolves nowhere - so ` +
+      "there is no stream to play and a passing playback test here would have proved nothing."
+    : null;

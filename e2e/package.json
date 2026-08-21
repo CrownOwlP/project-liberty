@@ -1,0 +1,21 @@
+{
+  "name": "@liberty/e2e",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Critical end-to-end harness (PL-0701). Deliberately outside the npm workspaces - see docs/E2E.md.",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "playwright test",
+    "browsers": "playwright install --with-deps",
+    "browsers:chromium": "playwright install --with-deps chromium",
+    "report": "playwright show-report",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.62.1",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.0"
+  }
+}
