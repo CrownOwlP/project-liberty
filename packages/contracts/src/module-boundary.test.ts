@@ -295,10 +295,19 @@ describe("the exports map resolves", () => {
   });
 
   it("does not resolve a subpath that has no module", () => {
-    // `live.ts` is deliberately NOT pre-created: a contract module exists only
-    // when an actual contract exists. The wildcard means adding it later is a
-    // source change and nothing else.
-    expect(existsSync(join(PACKAGE_ROOT, "src/domains/live.ts"))).toBe(false);
+    // A contract module exists only when an actual contract does. The wildcard
+    // export is what makes adding one a source change and nothing else -- no
+    // package metadata edit, no barrel edit, so the barrel cannot become the new
+    // package-wide mutex.
+    //
+    // `live.ts` used to be asserted here alongside `auth.ts` and was removed
+    // when PL-0601 gave live TV a real contract. That is this assertion working,
+    // not failing: it existed to catch a module created speculatively, and it
+    // fires exactly once -- on the commit that creates one. Retiring a member on
+    // the commit that legitimately creates it is the correct move; adding the
+    // new file to some allowed-list would have hollowed the rule out instead.
+    // `auth.ts` stays because PL-0401 defines its boundary in packages/auth and
+    // has published no contract module.
     expect(existsSync(join(PACKAGE_ROOT, "src/domains/auth.ts"))).toBe(false);
   });
 });
