@@ -57,7 +57,19 @@
  * resolve-and-pin has to land BEFORE that ships to production, not as a later
  * hardening pass. It is recorded here rather than left as an unstated
  * assumption, because the check below looks complete enough to be mistaken for
- * one. Tracked as PL-0701.
+ * one.
+ *
+ * WHAT CHANGED SINCE THAT NOTE WAS WRITTEN, and what did not: resolve-and-pin
+ * now EXISTS in this repository. `@liberty/media-inspection`'s
+ * `authoriseFetchTarget` resolves the name, classifies every answer with the
+ * function below, and refuses on any private result. This file does not use it,
+ * so the limitation above is unchanged for the Stremio adapter -- but the
+ * remedy is no longer hypothetical, which changes the deferral from "nobody has
+ * built this" to "this adapter has not adopted it". The old note tracked the
+ * work as PL-0701; PL-0701 is the end-to-end harness and never covered it, so
+ * the reference is dropped rather than corrected to a task that does not exist.
+ * Recorded under residual risks in docs/SECURITY.md by the PL-0702 review,
+ * which is the surface where an unowned risk is visible.
  */
 
 export type HostClass = "public" | "loopback" | "private" | "unparseable";
@@ -246,6 +258,12 @@ function classifyIPv6(groups: readonly number[]): HostClass {
 /**
  * Classifies a hostname WITHOUT resolving it. See the residual-risk note in the
  * file header: a public name pointing at a private address is not caught here.
+ *
+ * PRECONDITION: the argument is a URL HOSTNAME, spelled the way `new URL()`
+ * spells one -- which means every IPv6 literal arrives inside brackets. The
+ * precondition is ENFORCED below rather than assumed, because a caller that
+ * breaks it does not get a wrong-looking answer, it gets `"public"`, which is
+ * the one answer that opens a socket.
  */
 export function classifyHost(hostname: string): HostClass {
   const host = hostname.toLowerCase();
@@ -257,6 +275,29 @@ export function classifyHost(hostname: string): HostClass {
     const groups = expandIPv6(host.slice(1, -1));
     return groups ? classifyIPv6(groups) : "unparseable";
   }
+
+  /*
+   * A colon outside brackets is the precondition being broken, and it is
+   * REFUSED rather than repaired.
+   *
+   * A bare `fd00::1`, `fe80::1` or `::1` reaches none of the branches below: it
+   * is not a dotted quad, it is not all digits, it does not end in `.<digits>`,
+   * it is not a loopback name and it matches no private suffix -- so it used to
+   * fall out of the bottom as `"public"`. Nothing inside this package could
+   * produce that string, since every caller passes a `URL.hostname`; the shape
+   * that can is a RESOLVER ANSWER, which is bare, and a resolve-then-classify
+   * egress gate is exactly the caller this classifier is being reused by
+   * (`@liberty/media-inspection`'s `authoriseFetchTarget`). Link-local and
+   * unique-local answers would have been classified public and connected to.
+   *
+   * Auto-bracketing here would also "work", and it is the wrong fix. It widens
+   * what this function ACCEPTS, silently, for a consumer whose `HostClassifier`
+   * port is typed against the four values below and whose own bracketing step
+   * would then be dead code that nobody notices has stopped mattering. A
+   * precondition that is enforced fails at the one call site that broke it; a
+   * precondition that is quietly absorbed relocates the bug.
+   */
+  if (host.includes(":")) return "unparseable";
 
   const octets = parseIPv4(host);
   if (octets) return classifyIPv4(octets);
@@ -343,11 +384,28 @@ export function checkUrl(raw: string, options: UrlPolicyOptions, base?: string):
 
   const hostClass = classifyHost(url.hostname);
 
+  /*
+   * The host is CAPPED everywhere it is named below.
+   *
+   * `detail` is copied verbatim into a candidate's reason trail by `mapping.ts`,
+   * and on a stream URL the host is chosen by the addon. The WHATWG URL parser
+   * enforces no length limit on a hostname -- the 253-byte DNS bound is a
+   * resolver rule, not a parsing one -- so `https://<128KiB>.local/` parses,
+   * fails the private-suffix check, and used to write all 128 KiB of it into
+   * every log line and response that carries the trail. A host cannot hold a
+   * signed query string, so this is a flooding problem rather than a secret
+   * one, but 64 characters is enough to identify a host to a human and the
+   * remainder was never diagnostic. Matches what `@liberty/media-inspection`
+   * already does with the same five messages, so the two SSRF gates cannot
+   * disagree about how much of a hostile host they repeat.
+   */
+  const host = truncate(url.hostname, 64);
+
   if (hostClass === "unparseable") {
     return {
       ok: false,
       reason: "url_host_unparseable",
-      detail: `host ${url.hostname} is neither a valid name nor a valid address`
+      detail: `host ${host} is neither a valid name nor a valid address`
     };
   }
 
@@ -355,7 +413,7 @@ export function checkUrl(raw: string, options: UrlPolicyOptions, base?: string):
     return {
       ok: false,
       reason: "url_private_address",
-      detail: `host ${url.hostname} is in a private, link-local or reserved range`
+      detail: `host ${host} is in a private, link-local or reserved range`
     };
   }
 
@@ -387,7 +445,7 @@ export function checkUrl(raw: string, options: UrlPolicyOptions, base?: string):
       return {
         ok: false,
         reason: "url_loopback_not_permitted",
-        detail: `host ${url.hostname} is loopback and this source is not configured as local`
+        detail: `host ${host} is loopback and this source is not configured as local`
       };
     }
     if (!options.localDeployment) {
@@ -395,7 +453,7 @@ export function checkUrl(raw: string, options: UrlPolicyOptions, base?: string):
         ok: false,
         reason: "url_loopback_not_local_deployment",
         detail:
-          `host ${url.hostname} is loopback and this instance is not a local deployment; ` +
+          `host ${host} is loopback and this instance is not a local deployment; ` +
           "a source opt-in alone never makes this machine reachable"
       };
     }
@@ -406,7 +464,7 @@ export function checkUrl(raw: string, options: UrlPolicyOptions, base?: string):
     return {
       ok: false,
       reason: "url_plaintext_http_not_loopback",
-      detail: `plaintext http is only permitted for loopback, not ${url.hostname}`
+      detail: `plaintext http is only permitted for loopback, not ${host}`
     };
   }
 

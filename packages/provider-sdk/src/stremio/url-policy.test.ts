@@ -79,6 +79,36 @@ describe("classifyHost", () => {
     expect(classifyHost("[fe80::1%eth0]")).toBe("unparseable");
     expect(classifyHost("[::zz]")).toBe("unparseable");
   });
+
+  it("refuses an UNBRACKETED IPv6 literal instead of calling it public", () => {
+    /*
+     * The precondition, asserted as behaviour. Every caller inside this package
+     * passes a `URL.hostname`, which `new URL()` always brackets -- so this was
+     * not reachable from here. The caller that CAN reach it is a
+     * resolve-then-classify egress gate, which classifies bare resolver
+     * answers, and one of those now exists in `@liberty/media-inspection`.
+     *
+     * Before this check the three addresses below matched no IPv4 branch, no
+     * numeric branch, no loopback name and no private suffix, and fell out of
+     * `classifyHost` as "public" -- the single answer that opens a socket. A
+     * link-local metadata address and a unique-local internal service would
+     * both have been connected to.
+     *
+     * The expected value is "unparseable" and NOT "private": auto-bracketing
+     * would widen what this function accepts on behalf of a consumer that does
+     * its own bracketing, turning that consumer's step into dead code nobody
+     * notices has stopped mattering. Enforcing the precondition fails at the
+     * call site that broke it.
+     */
+    expect(classifyHost("fd00::1")).toBe("unparseable");
+    expect(classifyHost("fe80::1")).toBe("unparseable");
+    expect(classifyHost("::1")).toBe("unparseable");
+    // And the bracketed spellings of the same three still classify, so the
+    // guard refuses a violated precondition rather than refusing IPv6.
+    expect(classifyHost("[fd00::1]")).toBe("private");
+    expect(classifyHost("[fe80::1]")).toBe("private");
+    expect(classifyHost("[::1]")).toBe("loopback");
+  });
 });
 
 describe("checkUrl scheme policy", () => {
@@ -200,6 +230,24 @@ describe("checkUrl SSRF policy", () => {
     expect(outcome("http://127.0.0.1:8096/manifest.json", local)).toBe("ok");
     expect(outcome("http://localhost:11470/manifest.json", local)).toBe("ok");
     expect(outcome("https://127.0.0.1:8096/manifest.json", local)).toBe("ok");
+  });
+
+  it("caps the host it names, because a hostname has no length limit", () => {
+    /*
+     * `detail` reaches a candidate's reason trail verbatim through `mapping.ts`,
+     * and on a stream URL the host is the addon's choice. The WHATWG parser
+     * enforces no bound on a hostname -- 253 bytes is a resolver rule, not a
+     * parsing one -- so the whole thing used to be reproduced in every log line
+     * and every response carrying that trail. A host cannot hold a signed query
+     * string, so this is flooding rather than leakage, and 64 characters
+     * identify a host to a human.
+     */
+    const flood = `${"a".repeat(4096)}.local`;
+    const result = checkUrl(`https://${flood}/manifest.json`, remote);
+
+    expect(!result.ok && result.reason).toBe("url_private_address");
+    expect(!result.ok && result.detail.length).toBeLessThan(200);
+    expect(!result.ok && result.detail).toContain("...");
   });
 
   it("is not fooled by alternative spellings of a loopback address", () => {

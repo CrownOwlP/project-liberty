@@ -1,21 +1,16 @@
-import { playbackResolveRequestSchema } from "@liberty/contracts/domains/playback";
-import { rankStreamCandidates } from "@liberty/media-engine";
+import { handlePlaybackResolveRequest } from "./handler";
 
-export async function POST(request: Request) {
-  const parsed = playbackResolveRequestSchema.safeParse(await request.json());
-
-  if (!parsed.success) {
-    return Response.json(
-      { error: "invalid_request", issues: parsed.error.issues },
-      { status: 400 }
-    );
-  }
-
-  const decision = rankStreamCandidates(parsed.data.candidates, parsed.data.capabilities);
-
-  if (!decision.selected) {
-    return Response.json({ error: "no_playable_candidate", detail: decision.reason }, { status: 422 });
-  }
-
-  return Response.json(decision);
+/**
+ * POST /api/v1/playback/resolve
+ *
+ * A ranking scaffold that accepts client-supplied candidates, and the only
+ * route that does. It is NOT reachable in a hosted deployment: see
+ * `handler.ts` for the guard, for why the guard is in code rather than in
+ * docs/API_CONTRACTS.md, and for why the route is gated rather than removed.
+ *
+ * Nothing else may be exported from a route module, which is the whole reason
+ * this one is three lines.
+ */
+export async function POST(request: Request): Promise<Response> {
+  return handlePlaybackResolveRequest(request);
 }

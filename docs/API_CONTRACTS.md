@@ -18,6 +18,25 @@ Response:
 
 Purpose: rank already-authorized candidates for the requesting device.
 
+**Not part of a hosted deployment.** This route accepts a client-supplied
+candidate list, including each candidate's `rights`, and answers with a full
+playability verdict — unauthenticated. When `NODE_ENV` is `production` it
+therefore returns **404 `route_not_available`** before reading the body, with no
+`selected` and no `ranked` anywhere in the response. Callers use
+`POST /api/v1/playback/session`, where the server resolves candidates and the
+client only names content.
+
+404 rather than 403 because in a hosted deployment this is not a resource the
+caller lacks permission for — it is a resource that is not there, and a 403
+would confirm to an unauthenticated caller that it exists somewhere. The guard
+lives in `apps/web/src/app/api/v1/playback/resolve/handler.ts`, not in this
+document: the sentence below about the scaffold being for testability was always
+here, and the security review's finding was precisely that a sentence in a
+document is not a control.
+
+Everything that follows describes the route as it behaves in a development
+build.
+
 Request:
 
 ```json
@@ -50,9 +69,18 @@ Request:
 
 `capabilities.maxAudioChannels` is optional and has no default. Absent means the device has not reported its layout, which is not the same as claiming stereo — a device that stayed silent must not be silently downmixed.
 
-Current scaffold accepts candidates directly for testability. Production application code must resolve candidates server-side through authorized provider adapters instead of trusting client-supplied URLs.
+Current scaffold accepts candidates directly for testability, which is why it is gated out of production rather than shipped. Production application code must resolve candidates server-side through authorized provider adapters instead of trusting client-supplied URLs.
+
+A body that is not JSON is a malformed request, not a server fault: it fails validation with **400 `invalid_request`**, the same as any other body the schema rejects. It previously threw out of the route as a 500 with no reason trail.
+
+Two size bounds answer **413** before any ranking happens, because the alternative is a small body buying a large amount of server work:
+
+- `request_too_large` when a declared `content-length` exceeds 1 MiB, matching `@liberty/provider-sdk`'s `DEFAULT_MAX_RESPONSE_BYTES`. This reads a claim rather than measuring the stream, so it is a developer guardrail and not an attacker control; the metered read lands if this route ever ships hosted.
+- `too_many_candidates` when `candidates` holds more than 100 entries. Checked *before* schema validation, since validating a hundred thousand candidates in order to report that there are too many of them is the same defect wearing a schema. `candidates` is bounded below by the schema (`.min(1)`) and above only here.
 
 Success returns `selected`, `ranked`, `rejected` and a top-level `reason`. `rejected` carries the first disqualifying reason per candidate, so a candidate that never reached scoring is still explainable. If no candidate is playable, return HTTP 422 with `no_playable_candidate`.
+
+All responses on this route are served `cache-control: no-store`, including the 404: a ranking verdict is per-device and per-request, and nothing between the route and the caller has business holding one for the next caller.
 
 ## `GET /api/v1/catalog/home`
 
