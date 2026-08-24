@@ -67,7 +67,13 @@ export type WebMode = "production" | "development";
  * fabricated `owned` rights for files that do not exist. So a production build
  * answers the session API with `unavailable` / `provider_not_configured`, and
  * exercising the granted branch end to end requires `development`. Both are
- * asserted; see `tests/playback-session.spec.ts`.
+ * asserted; see `tests/playback-session.api.spec.ts`.
+ *
+ * The same switch decides whether `POST /api/v1/playback/resolve` exists at
+ * all: that scaffold lets a caller assert its own `rights`, so it answers 404
+ * under a production build. `tests/rights-boundary.api.spec.ts` asserts the 404
+ * in this mode and the engine's rights refusal in the other, because under the
+ * default mode the gate is the only thing there is to assert.
  */
 export const WEB_MODE: WebMode = read("LIBERTY_E2E_WEB_MODE") === "development" ? "development" : "production";
 

@@ -6,6 +6,7 @@ import {
   reasonCodes,
   type PlaybackSessionResponseShape
 } from "../src/contract";
+import { MANAGES_SERVER, WEB_MODE } from "../src/env";
 import { CAPABLE_DEVICE, DEMO, SMUGGLED_URI, resolveCandidate } from "../src/fixtures";
 
 /* -------------------------------------------------------------------------
@@ -102,12 +103,87 @@ test("no session route echoes a client-supplied address back", async ({ request 
   }
 });
 
-test("an unrightsed candidate never yields a selection", async ({ request }) => {
+/* -------------------------------------------------------------------------
+ * The resolve scaffold, which a production build does not have
+ *
+ * `/api/v1/playback/resolve` is the only route that accepts candidates at all,
+ * so it is the one place a client can put a rights basis in front of the engine
+ * -- and it did so unauthenticated. A security review closed that by making it
+ * answer 404 / `route_not_available` when `NODE_ENV` is `production`, which is
+ * the build this harness runs by DEFAULT.
+ *
+ * So the tests below split on the mode rather than skipping wholesale. The gate
+ * is now itself a rights control: an ungated scaffold reachable from a hosted
+ * deployment is the finding, and a suite that only skipped under the default
+ * mode would report nothing at all about the build that actually ships.
+ *
+ * Against an external deployment there is no split to make -- this harness was
+ * not told which build is behind that URL, and both answers are correct there.
+ * ---------------------------------------------------------------------- */
+
+const UNKNOWN_BUILD_SKIP_REASON =
+  "Testing an external deployment whose build mode this harness was not told, so neither " +
+  "the 404 gate nor the ranking behaviour is the right expectation. Point the harness at a " +
+  "server it starts to assert either.";
+
+const SCAFFOLD_GATED_SKIP_REASON =
+  "This server runs a production build, where /api/v1/playback/resolve is not part of the " +
+  "deployment and answers 404 by design; the gate test asserts that instead. Set " +
+  "LIBERTY_E2E_WEB_MODE=development to exercise the engine's rights refusal end to end.";
+
+/**
+ * Guards a test that needs the scaffold to be answering, and says why when it
+ * is not. A vacuous pass against a 404 body would be worse than a skip: every
+ * assertion below is a "nothing bad came back" assertion, and an absent route
+ * satisfies all of them while proving none of them.
+ */
+function requiresResolveScaffold(): void {
+  test.skip(!MANAGES_SERVER, UNKNOWN_BUILD_SKIP_REASON);
+  test.skip(WEB_MODE === "production", SCAFFOLD_GATED_SKIP_REASON);
+}
+
+test("a production build does not carry the resolve scaffold at all", async ({ request }) => {
+  test.skip(!MANAGES_SERVER, UNKNOWN_BUILD_SKIP_REASON);
+  test.skip(
+    WEB_MODE !== "production",
+    "This server runs a development build, where the scaffold is reachable on purpose."
+  );
+
+  const response = await request.post(RESOLVE, {
+    data: {
+      contentId: DEMO.movie.id,
+      capabilities: CAPABLE_DEVICE,
+      candidates: [resolveCandidate({ rights: "public-domain" })]
+    }
+  });
+
   /*
-   * `/api/v1/playback/resolve` is the only route that accepts candidates at
-   * all, and its own contract documents it as a testing-only scaffold. That
-   * makes it the one place a client can put a rights basis in front of the
-   * engine, so it is the one place worth checking that the engine refuses one.
+   * The request that WOULD have succeeded -- a well-formed body with a rightsed
+   * candidate. Sending a malformed one would leave the gate indistinguishable
+   * from validation, and it is the gate that has to hold.
+   *
+   * 404 rather than 403 because in a hosted deployment this is not a resource
+   * the caller lacks permission for, it is a resource that is not there; a 403
+   * would confirm to an unauthenticated caller that it exists somewhere.
+   */
+  expect(response.status()).toBe(404);
+  const body: unknown = await response.json();
+  expect(isRecord(body) && body["error"]).toBe("route_not_available");
+
+  /* The load-bearing half. A gate that changed the status line while still
+   * ranking would have removed nothing: the verdict is what the review took
+   * away, because a verdict is what a caller asserting its own rights was
+   * after. */
+  expect(isRecord(body) && "selected" in body).toBe(false);
+  expect(isRecord(body) && "ranked" in body).toBe(false);
+});
+
+test("an unrightsed candidate never yields a selection", async ({ request }) => {
+  requiresResolveScaffold();
+
+  /*
+   * With the scaffold reachable, this is still the one place worth checking
+   * that the engine refuses a rights basis a client chose for itself.
    *
    * `unlicensed` is not a member of the rights vocabulary -- the allowlist is
    * an allowlist, so anything not on it is refused by shape before any scoring
@@ -137,10 +213,15 @@ test("an unrightsed candidate never yields a selection", async ({ request }) => 
 });
 
 test("a rightsed candidate resolves, so the refusal above is about rights", async ({ request }) => {
+  requiresResolveScaffold();
+
   /*
    * The control. Without it, every assertion in the test above would still
    * pass if the endpoint had simply stopped working, and a rights gate that is
-   * indistinguishable from an outage is not evidence of anything.
+   * indistinguishable from an outage is not evidence of anything. That is also
+   * why it is guarded rather than left to fail: under a production build the
+   * endpoint HAS stopped working, deliberately, and this test failing would
+   * report a rights regression that did not happen.
    */
   const response = await request.post(RESOLVE, {
     data: {
@@ -156,6 +237,8 @@ test("a rightsed candidate resolves, so the refusal above is about rights", asyn
 });
 
 test("the resolve route never accepts, acts on or returns a candidate URL", async ({ request }) => {
+  requiresResolveScaffold();
+
   const response = await request.post(RESOLVE, {
     data: {
       contentId: DEMO.movie.id,

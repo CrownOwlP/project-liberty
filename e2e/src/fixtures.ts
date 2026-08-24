@@ -67,8 +67,9 @@ export function sessionRequest(contentId: string, capabilities: unknown = CAPABL
 
 /**
  * A candidate for `/api/v1/playback/resolve`, which is the ONLY route that
- * accepts client-supplied candidates and is documented as a testing-only
- * scaffold. `rights` is a parameter so a spec can hand it a basis that is not
+ * accepts client-supplied candidates and is a testing-only scaffold: it answers
+ * 404 under a production build, so a spec sending one of these has to guard on
+ * the mode. `rights` is a parameter so a spec can hand it a basis that is not
  * on the playable allowlist.
  */
 export function resolveCandidate(overrides: Record<string, unknown> = {}) {

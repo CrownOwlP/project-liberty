@@ -86,7 +86,7 @@ by it.
 | ------------------------ | ---------------- | ------ |
 | `LIBERTY_E2E_BASE_URL`   | unset            | Test an already-running deployment. When set, the harness starts no server. It POSTs to the playback session endpoint, so never aim it at production. |
 | `LIBERTY_E2E_PORT`       | `3100`           | Port for the harness-managed server. Not 3000, because that is where a developer's `next dev` already is and `reuseExistingServer` would silently adopt it. |
-| `LIBERTY_E2E_WEB_MODE`   | `production`     | `production` runs `npm run build` + `next start`. `development` runs `next dev`. See the note below — the two answer the session API differently, on purpose. |
+| `LIBERTY_E2E_WEB_MODE`   | `production`     | `production` runs `npm run build` + `next start`. `development` runs `next dev`. See the note below — the two answer the session API differently and disagree about whether `/api/v1/playback/resolve` exists, both on purpose. |
 | `LIBERTY_E2E_MEDIA_ORIGIN` | unset          | A DASH/HLS origin you hold rights to serve from. Passed to the server as `LIBERTY_FIXTURE_MEDIA_ORIGIN`. Unset means the media-rig suite skips. |
 
 ### The two web modes are not the same deployment
@@ -103,6 +103,20 @@ Both are asserted rather than one being treated as the real one. If a production
 build ever starts answering `granted`, a fixture has escaped into a shipped
 artifact, and that is a rights incident rather than a test failure.
 
+The same switch decides whether `POST /api/v1/playback/resolve` exists at all.
+That route is a ranking scaffold: the **client** supplies the candidate list
+including each candidate's `rights`, and it did so unauthenticated, so a
+security review made it answer `404` / `route_not_available` when `NODE_ENV` is
+`production`. Under the default mode the harness therefore asserts the **gate** —
+that a well-formed, rightsed request gets a 404 carrying no `selected` and no
+`ranked` — and skips the two rights-refusal tests with a reason naming
+`LIBERTY_E2E_WEB_MODE=development`. Under `development` the split reverses.
+
+Asserting the gate rather than only skipping is deliberate. The gate is now a
+rights control, and a scaffold reachable from a hosted deployment is the finding;
+a suite that went quiet under the mode CI actually builds would say nothing about
+the only build that ships.
+
 The watch page does not share that switch — `watch/watch-session.ts` is PL-0501's
 stand-in and serves fixtures in either mode — so the browser journey runs in
 both.
@@ -117,7 +131,8 @@ both.
 | Session API grants | Candidate ids are distinct; `startAtSeconds` is `null` (engine default), not `0`; `expiresAt` parses; a failover policy is published; **every candidate URI is on the configured media origin and no other** |
 | Session API determinism | The same request twice produces a byte-identical response once the session id and expiry are removed |
 | Rights boundary | A request carrying `uri` is **refused**, not stripped, with `request_field_not_permitted` as the **primary** reason and no session attached; the same for a URL smuggled into the nested `capabilities` object; a non-normalized `contentId` is refused before any resolver runs; no response echoes the submitted address anywhere in its body |
-| Rights boundary | An unrightsed candidate posted to `/api/v1/playback/resolve` never yields `selected` or `ranked` — with a rightsed control candidate beside it, so the refusal is about rights and not about an outage |
+| Resolve gate | Under the default `production` mode, `/api/v1/playback/resolve` answers **404 `route_not_available` with no verdict attached** to the request that would otherwise have succeeded |
+| Rights boundary | Under `development`, an unrightsed candidate posted to `/api/v1/playback/resolve` never yields `selected` or `ranked` — with a rightsed control candidate beside it, so the refusal is about rights and not about an outage |
 | Robustness | `"not json"`, `7`, `null`, `[]` all produce a well-formed `denied` and never a 500 |
 | Journey | Catalog rail → title route → Play link → watch route → back; unknown ids are real 404s |
 | Player | `<liberty-video>` mounts and **never carries a `src`**; the reason trail renders |
@@ -137,11 +152,13 @@ both.
   journey crosses that step by address and asserts that the id the catalog
   published is the id the title route serves. Faking the click would have made
   the test pass and the gap invisible.
-- **`/api/v1/playback/resolve` with a non-JSON body.** That route calls
-  `request.json()` with no guard, so a malformed body is a 500 rather than a
-  reasoned refusal — unlike the session route, which handles it. Writing a test
-  that asserts the 500 would enshrine it. It is recorded here instead, as
-  follow-up work for whoever owns that scaffold.
+- **`/api/v1/playback/resolve` under a production build, beyond the 404.** Its
+  body limits — `413 request_too_large` from `content-length`, `413
+  too_many_candidates` above 100, and the `400 invalid_request` that a non-JSON
+  body now produces instead of the 500 it used to — are unit-tested in
+  `apps/web/src/app/api/v1/playback/resolve/handler.test.ts`, where the guard can
+  be injected. Asserting them from here would mean running the whole harness in
+  `development` to exercise a route that is not part of a deployment.
 - **Authentication.** There is none to exercise yet.
 - **Visual regression, axe/a11y scans, CMCD telemetry assertions.** All worth
   having; none of them is the critical gate PL-0701 asks for, and each brings a
