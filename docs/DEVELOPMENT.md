@@ -532,6 +532,118 @@ survives `down`. To discard it:
 docker compose -f infra/docker-compose.yml down -v
 ```
 
+## Continuous integration
+
+`.github/workflows/ci.yml` is the only automated verification of a commit that
+is not somebody's laptop. Until recently it did not verify this project's
+commits at all: it fired on pushes to `main` and on pull requests, all
+development happens on a long-lived working branch, `main` is deliberately
+untouched, and no pull request is open. The working branch therefore carried
+zero workflow runs and zero commit statuses, every green result came from one
+Windows machine, and nothing had ever been built on a clean Linux checkout
+installed from the lockfile.
+
+That is worth naming as a pattern rather than an incident, because it is the
+third time this repository has produced a confident pass over nothing: the
+environment validator that read files the application never read, the
+`vitest` path filter that would have matched no test files and exited zero, and
+this. **Absence of signal reads as success.** Nothing in a dashboard
+distinguishes "the gate ran and passed" from "the gate never ran".
+
+### When it runs
+
+| Event | Fires on |
+| --- | --- |
+| `push` | every branch **except** `dependabot/**`, `wip/**`, `scratch/**`, `experiment/**` |
+| `pull_request` | every pull request, whatever the base |
+| `workflow_dispatch` | manually, and from the agent workers after they push |
+
+The push filter is a deny list rather than an allow list on purpose. An allow
+list leaves a branch nobody thought to name with no CI and no way to notice,
+which is the failure above with a new spelling. Push under a name that is not
+excluded and you get a run; opting out is a deliberate act with a name on it.
+
+Two consequences to read correctly:
+
+- **`cancel-in-progress` is on.** A burst of pushes to one branch leaves one
+  surviving run, so cost scales with distinct branches per night rather than
+  with pushes. Superseded commits are left **cancelled**, which is neither a
+  pass nor a failure — read it as *no verdict for that commit*. The head commit
+  is the one that gets a verdict.
+- **A push and a pull request on the same branch both run, on the same commit.**
+  This is not a duplicate. The push run tests the branch tip; the pull-request
+  run tests that tip merged into its base, and `main` moves underneath the
+  working branch whenever an agent worker publishes control state. Deduplicating
+  them would mean cancelling one, and which one died would be a race.
+
+Bot pushes do not trigger anything. GitHub does not fire push-triggered
+workflows for commits made with the default `GITHUB_TOKEN`, which is why
+`agent-claude-worker.yml` dispatches `ci.yml` explicitly after it pushes.
+
+### What it runs, against what `npm run check` runs
+
+CI enumerates the constituents of the local round as separate steps rather than
+calling `npm run check`, because eleven named steps give eleven readable
+red/green marks instead of one. The cost is a drift surface: a step added to
+`check` has to be added to the workflow too.
+
+| Local round | CI |
+| --- | --- |
+| `npm install` | `npm ci --no-audit --no-fund` — strictly from the lockfile, and it fails if the lockfile disagrees with `package.json` |
+| `npm run ai:validate` | same, before install (Node builtins only, so a dependency problem cannot mask it) |
+| `npm run test:scripts` | both halves, as separate steps: `test-validate-env.mjs` and `test-ai-control-plane.mjs` |
+| `npm run repo:validate` | same, before install |
+| `npm run env:validate` | **stricter**: `--scope ci`, which turns an unset `@cache-key` variable and a runtime newer than `.nvmrc` from warnings into failures |
+| `npm run lint` / `typecheck` / `test` / `build` | same |
+| `e2e` typecheck | its own job: `npm ci --ignore-scripts` in `e2e/`, then `npm run typecheck` |
+| — | `test:transport` in `packages/media-inspection`, which the local round does not run |
+
+Where CI still differs, deliberately:
+
+- **The e2e suite does not run.** Only its typecheck does. `npm test` in `e2e/`
+  downloads browser builds, does a cold `turbo run build` and starts a server;
+  that belongs in a job of its own (see `docs/E2E.md`). The typecheck closes the
+  compile gap — `e2e/` is outside the npm workspaces, so the root `npm ci` and
+  `turbo run typecheck` never touch it — without pretending the harness ran.
+- **`npm run format:check` runs in neither.** It is not part of `check` either,
+  so this is not a CI gap; it is a gate nobody has chosen to have.
+- **`e2e/package-lock.json` is not covered by Dependabot.** `.github/dependabot.yml`
+  watches `/` only. Now that CI installs from that lockfile, a stale entry there
+  is a CI input nothing updates.
+
+### The transport suite, and reading a result instead of an exit code
+
+`packages/media-inspection` has a `test:transport` script that is deliberately
+outside `test`. Its tests open real loopback sockets, because the claim they
+exist to prove — that Node consults the pinned `lookup` when it opens a
+connection — is a claim about the runtime that a double cannot make. Every
+assertion passes. The **exit** does not: a socket abandoned by design emits
+`ECONNRESET` at vitest worker teardown, after the module context is gone, and
+vitest reports it as an unhandled error and exits non-zero.
+
+That makes it exactly the kind of check people silence. CI does not silence it,
+and specifically does not use any of these:
+
+- `|| true`, which discards the exit code and a genuine assertion failure with
+  equal enthusiasm and leaves no record that anything was discarded;
+- `continue-on-error: true`, which is more visible but still tolerates *every*
+  failure, so a real regression in address pinning would go green as the
+  known-benign teardown artifact;
+- `dangerouslyIgnoreUnhandledErrors`, already rejected in
+  `packages/media-inspection/vitest.config.ts` for blinding the package to
+  future unhandled errors.
+
+Instead the step reads the test results — which is the instruction that config
+file's own header gives a human — and fails the job on a failing assertion, and
+on a run that executed no tests. Only the one known state is tolerated: all
+assertions passed, non-zero exit. It is announced with a `::notice::` and a job
+summary rather than hidden, and every parse failure falls on the failing side,
+so a change in vitest's output format turns the step red rather than quiet.
+
+If the run ever passes *and* exits zero, the step says so — that is the open
+question `vitest.config.ts` records, and the condition under which the
+`src/node/**` exclusion could be removed.
+
 ## Branches
 
 - `main` stays releasable.

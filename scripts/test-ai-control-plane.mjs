@@ -172,6 +172,13 @@ function resetRuntimeState(repo) {
     // was re-implemented through the CLI.
     delete task.implementationBaseSha;
 
+    // Written alongside the base by `start --reconcile-existing`, and cleared
+    // alongside it for the same reason. `validate` refuses a provenance record
+    // whose baseSha does not match implementationBaseSha, so leaving this behind
+    // after clearing the base would make every copied repo fail validation --
+    // the same leak as above, arriving as a red build instead of a silent one.
+    delete task.implementationBaseProvenance;
+
     // Externally BLOCKED tasks are a definition, not runtime drift: a blocked
     // task carries an explicit blocker reason and must stay blocked.
     if (task.status === "BLOCKED" || task.status === "CANCELED") continue;
@@ -720,6 +727,13 @@ try {
         task.implementationBaseSha,
         undefined,
         `${task.id} should have no implementation base sha`,
+      );
+      // Its explanation goes with it. The two are validated as a pair, so a
+      // surviving record would turn every scenario red at `validate`.
+      assert.equal(
+        task.implementationBaseProvenance,
+        undefined,
+        `${task.id} should have no implementation base provenance`,
       );
 
       // Definitions and routing survive the reset untouched.
@@ -5780,6 +5794,455 @@ try {
   }
 
   /* ---------------------------------------------------------------------
+   * 9at. Provenance reconciliation cannot be reached by accident, and its
+   *      base is verified rather than believed.
+   *
+   *      `implementationBaseSha` is not descriptive metadata: expectedReviewBase
+   *      uses it as the EXACT lower bound of the first review range, and
+   *      validateReviewRange refuses a base that is either wider or narrower. So
+   *      for an implementation that was pushed before its task was claimed, an
+   *      ordinary start writes a FALSE structural field, and no amount of gate
+   *      evidence repairs it -- prose beside a wrong machine field just makes two
+   *      truths with the authoritative one broken.
+   *
+   *      The escape hatch is therefore held to a higher standard than the thing
+   *      it replaces. This scenario pins both halves of that: an ordinary start
+   *      is untouched and refuses every reconciliation flag, and a reconciliation
+   *      is refused for each way its base can be wrong. A mechanism that accepted
+   *      any forty hex characters would only have moved the lie into the
+   *      argument.
+   * ------------------------------------------------------------------- */
+  {
+    const repo = freshRepo();
+    addFixtureTasks(
+      repo,
+      fixtureTask("PL-RC-0001", {
+        title: "PL-RC-0001 implementation pushed before the claim existed",
+        allowedPaths: ["fixtures/rec/**"],
+        acceptance: "fixture task used by the provenance-reconciliation scenarios",
+      }),
+      // A different lane and agent, deliberately: claude-frontend has
+      // maxParallel 1, so the control task cannot be claimed by the same agent
+      // that is holding PL-RC-0001 through the refusals above.
+      fixtureTask("PL-RC-0002", {
+        title: "PL-RC-0002 ordinary lifecycle control",
+        lane: "Backend",
+        preferredAgent: "claude-backend",
+        allowedPaths: ["fixtures/rec-b/**"],
+        acceptance: "fixture task used by the provenance-reconciliation scenarios",
+      }),
+    );
+
+    /* --- the flag contract, checked WITHOUT git ------------------------
+     * These refusals are argument-shape decisions and must fire before any
+     * history is consulted, so they are exercised in a repository that has none.
+     * Checking them here also proves they cannot be satisfied by a repository
+     * that happens to look right.
+     */
+    const SHA_A = "a".repeat(40);
+    run(repo, CLI, ["claim", "PL-RC-0001", "claude-frontend"]);
+
+    // --base on an ordinary start is REFUSED, never silently ignored. Ignoring
+    // it is the worst outcome available: the operator believes they recorded
+    // their base and HEAD was recorded instead -- the exact false field this
+    // mechanism exists to prevent, produced by the mechanism itself.
+    runFail(
+      repo,
+      ["start", "PL-RC-0001", "claude-frontend", "--base", SHA_A],
+      /--base is only meaningful with --reconcile-existing/,
+    );
+    runFail(
+      repo,
+      ["start", "PL-RC-0001", "claude-frontend", "--implementation-agent", "claude-lead"],
+      /--implementation-agent is only meaningful with --reconcile-existing/,
+    );
+    runFail(
+      repo,
+      ["start", "PL-RC-0001", "claude-frontend", "--reason", "because"],
+      /--reason is only meaningful with --reconcile-existing/,
+    );
+
+    // ...and the reverse: "reconcile" with no base would mean "capture HEAD but
+    // call it a reconciliation", which is the same falsehood wearing a label.
+    runFail(
+      repo,
+      ["start", "PL-RC-0001", "claude-frontend", "--reconcile-existing"],
+      /--reconcile-existing requires --base/,
+    );
+    runFail(
+      repo,
+      ["start", "PL-RC-0001", "claude-frontend", "--reconcile-existing", "--base", SHA_A],
+      /--reconcile-existing requires --reason/,
+    );
+
+    // A mistyped flag must not slide into a positional slot and be read as an
+    // agent id, which would report an ownership problem that does not exist.
+    runFail(
+      repo,
+      ["start", "PL-RC-0001", "claude-frontend", "--reconcil-existing", "--base", SHA_A],
+      /Unknown option --reconcil-existing/,
+    );
+
+    // Without a repository, nothing about the claimed base is decidable, so the
+    // command fails CLOSED. "Cannot check" must never read as "checked".
+    runFail(
+      repo,
+      [
+        "start", "PL-RC-0001", "claude-frontend",
+        "--reconcile-existing", "--base", SHA_A, "--reason", "no git here",
+      ],
+      /no git repository is available/,
+    );
+
+    // Nothing above moved the task.
+    assert.equal(taskOf(repo, "PL-RC-0001").status, "CLAIMED");
+    assert.equal(taskOf(repo, "PL-RC-0001").implementationBaseSha, undefined);
+
+    /* --- an ordinary start is BYTE-FOR-BYTE the operation it always was --- */
+    const ORDINARY = "c".repeat(40);
+    run(repo, CLI, ["claim", "PL-RC-0002", "claude-backend"], {
+      LIBERTY_COMMIT_SHA: ORDINARY,
+    });
+    run(repo, CLI, ["start", "PL-RC-0002", "claude-backend"], {
+      LIBERTY_COMMIT_SHA: ORDINARY,
+    });
+    const ordinary = taskOf(repo, "PL-RC-0002");
+    assert.equal(ordinary.status, "IN_PROGRESS");
+    assert.equal(
+      ordinary.implementationBaseSha,
+      ORDINARY,
+      "an ordinary start must still capture the commit it starts from",
+    );
+    assert.equal(
+      ordinary.implementationBaseProvenance,
+      undefined,
+      "absence of provenance is what marks a base as captured rather than asserted",
+    );
+    assert.equal(ordinary.implementationAgent, "claude-backend");
+    const ordinaryEvents = eventsOf(repo).filter(
+      (e) => e.taskId === "PL-RC-0002" && e.type.startsWith("task.started"),
+    );
+    assert.deepEqual(
+      ordinaryEvents.map((e) => e.type),
+      ["task.started"],
+      "an ordinary start must emit exactly the event it always emitted",
+    );
+
+    /* --- base validation, against real history ------------------------- */
+    const gitRepo = freshRepo();
+    addFixtureTasks(
+      gitRepo,
+      fixtureTask("PL-RC-0001", {
+        title: "PL-RC-0001 implementation pushed before the claim existed",
+        allowedPaths: ["fixtures/rec/**"],
+        acceptance: "fixture task used by the provenance-reconciliation scenarios",
+      }),
+    );
+    const gitEnv = {
+      GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t",
+      GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t",
+    };
+    const git = (...a) =>
+      execFileSync("git", a, {
+        cwd: gitRepo, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"],
+        env: { ...process.env, ...gitEnv },
+      });
+    const head = () => git("rev-parse", "HEAD").trim();
+    const commit = (message) => {
+      git("add", "-A");
+      git("commit", "-q", "-m", message);
+      return head();
+    };
+
+    git("init", "-q", "-b", "main");
+    // The TRUE pre-implementation commit: the task exists, none of its files do.
+    const BASE = commit("baseline: the task is authored, nothing is implemented");
+
+    writeFixtureFile(gitRepo, "fixtures/rec/impl.ts", "export const impl = 1;\n");
+    const IMPL1 = commit("preflight implementation, part one");
+
+    fs.appendFileSync(
+      path.join(gitRepo, "fixtures", "rec", "impl.ts"),
+      "export const implTwo = 2;\n",
+    );
+    writeFixtureFile(gitRepo, "fixtures/rec/more.ts", "export const more = 1;\n");
+    const IMPL2 = commit("preflight implementation, part two");
+
+    // An unrelated commit on top, so HEAD is not itself part of the window.
+    writeFixtureFile(gitRepo, "docs/SCRATCH-REC.md", "unrelated\n");
+    const HEAD = commit("unrelated work by another lane");
+
+    // A commit that is real but on a divergent line of history.
+    git("checkout", "-q", "-b", "side", BASE);
+    writeFixtureFile(gitRepo, "fixtures/side/x.ts", "export const side = 1;\n");
+    const SIDE = commit("divergent history");
+    git("checkout", "-q", "main");
+
+    run(gitRepo, CLI, ["claim", "PL-RC-0001", "claude-frontend"]);
+    const reconcileArgs = (base, ...extra) => [
+      "start", "PL-RC-0001", "claude-frontend",
+      "--reconcile-existing", "--base", base,
+      "--reason", "determined from git history",
+      ...extra,
+    ];
+
+    // A ref expression is not a durable record of anything.
+    runFail(gitRepo, reconcileArgs("HEAD~2"), /full 40-character lowercase hex sha/);
+    // Forty hex characters are not, by themselves, a commit.
+    runFail(gitRepo, reconcileArgs("d".repeat(40)), /does not resolve to a commit/);
+    // An empty range reviews nothing, and a task starting at HEAD is an
+    // ordinary start rather than a reconciliation.
+    runFail(gitRepo, reconcileArgs(HEAD), /is HEAD, so the range/);
+    // A real commit on an unrelated line of history is not a base.
+    runFail(gitRepo, reconcileArgs(SIDE), /is not an ancestor of HEAD/);
+
+    /*
+     * THE CENTRAL REFUSAL. IMPL2 is after the implementation: nothing under the
+     * task's surface changes between it and HEAD. That is the shape of the exact
+     * falsehood the command exists to prevent -- a base chosen so the first
+     * review range contains none of the work -- and it must be refused even
+     * though the sha is real, resolvable and a genuine ancestor.
+     */
+    runFail(gitRepo, reconcileArgs(IMPL2), /nothing under allowedPaths changed between/);
+
+    /*
+     * THE NARROWING REFUSAL. IMPL1 is INSIDE the implementation: it edits
+     * fixtures/rec/impl.ts, and so does the window that follows it. Accepting it
+     * would hide part one from the first review while still looking like a valid
+     * range. The remedy named in the error always widens, never narrows.
+     */
+    const narrowed = runFail(gitRepo, reconcileArgs(IMPL1), /itself modifies 1 file\(s\)/);
+    assert.match(narrowed, /fixtures\/rec\/impl\.ts/, narrowed);
+    assert.match(narrowed, /Name an earlier commit/, narrowed);
+
+    // An unknown implementation agent is not a name the control plane can hold
+    // anyone to.
+    runFail(
+      gitRepo,
+      reconcileArgs(BASE, "--implementation-agent", "nobody-at-all"),
+      /Unknown agent nobody-at-all/,
+    );
+    // Naming the designated reviewer as the implementer would make the task
+    // permanently unapprovable; saying so now costs one command, saying it at
+    // approval time costs the round.
+    runFail(
+      gitRepo,
+      reconcileArgs(BASE, "--implementation-agent", "gpt-architect"),
+      /designated reviewer/,
+    );
+
+    // None of the refusals moved the task or wrote a base.
+    assert.equal(taskOf(gitRepo, "PL-RC-0001").status, "CLAIMED");
+    assert.equal(taskOf(gitRepo, "PL-RC-0001").implementationBaseSha, undefined);
+
+    // The true base is accepted, and the implementation agent it asserts is the
+    // subagent that actually wrote the code -- not whoever is claiming now.
+    const accepted = run(
+      gitRepo,
+      CLI,
+      reconcileArgs(BASE, "--implementation-agent", "claude-lead"),
+    );
+    assert.match(accepted, /RECONCILED pre-existing implementation/, accepted);
+    assert.match(accepted, /asserted, not captured/, accepted);
+
+    const reconciled = taskOf(gitRepo, "PL-RC-0001");
+    assert.equal(reconciled.status, "IN_PROGRESS");
+    assert.equal(
+      reconciled.implementationBaseSha,
+      BASE,
+      "the machine-readable field itself must carry the true base",
+    );
+    assert.equal(reconciled.implementationAgent, "claude-lead");
+    assert.equal(
+      reconciled.implementationBaseProvenance.kind,
+      "reconciled-existing-implementation",
+    );
+    assert.equal(reconciled.implementationBaseProvenance.baseSha, BASE);
+    assert.equal(reconciled.implementationBaseProvenance.headAtReconciliation, HEAD);
+    assert.deepEqual(
+      [...reconciled.implementationBaseProvenance.surfaceCommits].sort(),
+      [IMPL1, IMPL2].sort(),
+      "the published window must name exactly the commits that touched the surface",
+    );
+    assert.equal(reconciled.implementationBaseProvenance.oldestSurfaceCommit, IMPL1);
+
+    // Reconciliation establishes a base; it does not revise one. A second
+    // attempt is the silent hand-edit in command form.
+    runFail(
+      gitRepo,
+      ["start", "PL-RC-0001", "claude-frontend", "--reconcile-existing",
+       "--base", BASE, "--reason", "again"],
+      /is IN_PROGRESS; reconciliation records where an implementation round BEGAN/,
+    );
+
+    /*
+     * And it is refused from REVIEW too. policies.json permits
+     * REVIEW -> IN_PROGRESS, so a plain `start` can legitimately pull a task back
+     * out of review; without an explicit CLAIMED requirement the reconcile path
+     * would inherit that route and let a base be asserted onto a task whose
+     * reviewer is already reading it.
+     */
+    run(gitRepo, CLI, ["review", "PL-RC-0001", "claude-frontend"]);
+    assert.equal(taskOf(gitRepo, "PL-RC-0001").status, "REVIEW");
+    runFail(
+      gitRepo,
+      ["start", "PL-RC-0001", "claude-frontend", "--reconcile-existing",
+       "--base", BASE, "--reason", "from review"],
+      /is REVIEW; reconciliation records where an implementation round BEGAN/,
+    );
+  }
+
+  /* ---------------------------------------------------------------------
+   * 9au. A reconciled base is what the first review range actually uses, and
+   *      the audit trail cannot be misread as an ordinary start.
+   *
+   *      The point of writing the true base into the structural field -- rather
+   *      than into evidence prose beside a false one -- is that the field is what
+   *      every automated consumer reads. So the test is not that the value was
+   *      stored; it is that expectedReviewBase, `--base auto` and the range
+   *      validator all produce the reconciled range, and that a narrowed range
+   *      over the same task is still refused afterwards.
+   * ------------------------------------------------------------------- */
+  {
+    const repo = freshRepo();
+    addFixtureTasks(
+      repo,
+      fixtureTask("PL-RC-0003", {
+        title: "PL-RC-0003 reconciled implementation entering its first review",
+        allowedPaths: ["fixtures/recu/**"],
+        acceptance: "fixture task used by the provenance-reconciliation scenarios",
+      }),
+    );
+    const gitEnv = {
+      GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t",
+      GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t",
+    };
+    const git = (...a) =>
+      execFileSync("git", a, {
+        cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"],
+        env: { ...process.env, ...gitEnv },
+      });
+    const commit = (message) => {
+      git("add", "-A");
+      git("commit", "-q", "-m", message);
+      return git("rev-parse", "HEAD").trim();
+    };
+
+    git("init", "-q", "-b", "main");
+    const BASE = commit("baseline");
+    writeFixtureFile(repo, "fixtures/recu/one.ts", "export const one = 1;\n");
+    const IMPL1 = commit("preflight implementation, part one");
+    writeFixtureFile(repo, "fixtures/recu/two.ts", "export const two = 1;\n");
+    const IMPL2 = commit("preflight implementation, part two");
+
+    run(repo, CLI, ["claim", "PL-RC-0003", "claude-frontend"]);
+    run(repo, CLI, [
+      "start", "PL-RC-0003", "claude-frontend",
+      "--reconcile-existing", "--base", BASE,
+      "--reason", "base read from git log of fixtures/recu",
+    ]);
+
+    /* --- the audit trail names the operation, not merely its fields ---- */
+    const started = eventsOf(repo).filter(
+      (e) => e.taskId === "PL-RC-0003" && e.type.startsWith("task.started"),
+    );
+    assert.deepEqual(
+      started.map((e) => e.type),
+      ["task.started_reconciled"],
+      "a reconciliation must not be recorded under the ordinary start type; a reader " +
+        "scanning for task.started must not be able to overlook one field and miss it",
+    );
+    assert.equal(started[0].implementationBaseSha, BASE);
+    assert.match(
+      started[0].note,
+      /pre-existing pushed implementation/,
+      "the audit record must say what this was in words, not only in a type name",
+    );
+    assert.match(started[0].note, /not a new implementation start/);
+    assert.equal(started[0].reason, "base read from git log of fixtures/recu");
+
+    /* --- what a reviewer reads ----------------------------------------- */
+    const status = JSON.parse(run(repo, CLI, ["review-status", "PL-RC-0003"]));
+    assert.equal(status.implementationBaseSha, BASE);
+    assert.equal(
+      status.implementationBaseProvenance.kind,
+      "reconciled-existing-implementation",
+      "the reviewer-facing report must distinguish an asserted base from a captured one",
+    );
+
+    /* --- the range the control plane actually derives ------------------- */
+    const { expectedReviewBase, validateReviewRange, gitAdapter, RANGE_PERMANENT } =
+      await import("../scripts/review-range.mjs");
+    const task = taskOf(repo, "PL-RC-0003");
+    assert.equal(
+      expectedReviewBase(task, IMPL2),
+      BASE,
+      "the first review must open at the reconciled base, not at HEAD",
+    );
+
+    const adapter = gitAdapter(execFileSync, repo);
+    assert.equal(
+      validateReviewRange({
+        baseSha: BASE, commitSha: IMPL2, task, label: "reconciled", git: adapter,
+      }).status,
+      "ok",
+    );
+    // The exact narrowing the reconciliation exists to make impossible: a range
+    // that starts after part one. Rejected for the same reason a widened one is.
+    const narrowed = validateReviewRange({
+      baseSha: IMPL1, commitSha: IMPL2, task, label: "narrowed", git: adapter,
+    });
+    assert.equal(narrowed.status, RANGE_PERMANENT);
+    assert.match(narrowed.reason, /expects a review starting at exactly/);
+
+    /* --- and end to end, through the command an implementer actually runs */
+    const published = run(repo, CLI, [
+      "handoff",
+      "--from", "claude-frontend",
+      "--to", "gpt-architect",
+      "--type", "review_request",
+      "--task", "PL-RC-0003",
+      "--sha", IMPL2,
+      "--base", "auto",
+      "--summary", "first review of a reconciled implementation",
+    ]);
+    assert.match(
+      published,
+      /base predates the claim/,
+      `the request must tell the reviewer why its range opens before the claim:\n${published}`,
+    );
+    const messageId = published.match(/Published (MSG-\S+)/)[1];
+    const message = JSON.parse(
+      fs.readFileSync(busFile(repo, "claude-to-gpt", `${messageId}.json`), "utf8"),
+    );
+    assert.equal(
+      message.baseSha,
+      BASE,
+      "--base auto must resolve to the reconciled base, so the reviewer is shown the whole implementation",
+    );
+
+    /* --- the provenance record cannot be attached to a base it does not
+     *     describe. Otherwise a hand-edit could stamp "reconciled" onto a
+     *     HEAD-captured sha and launder the very field this prevents. --- */
+    const file = path.join(repo, "control", "tasks.json");
+    const doc = JSON.parse(fs.readFileSync(file, "utf8"));
+    const edited = doc.tasks.find((t) => t.id === "PL-RC-0003");
+    edited.implementationBaseProvenance.baseSha = IMPL1;
+    fs.writeFileSync(file, JSON.stringify(doc, null, 2) + "\n");
+    runFail(repo, ["validate"], /does not explain the field it is attached to/);
+
+    edited.implementationBaseProvenance.baseSha = BASE;
+    edited.implementationBaseProvenance.reason = "";
+    fs.writeFileSync(file, JSON.stringify(doc, null, 2) + "\n");
+    runFail(repo, ["validate"], /carries no reason/);
+
+    edited.implementationBaseProvenance.reason = "restored";
+    edited.implementationBaseProvenance.kind = "captured-at-start";
+    fs.writeFileSync(file, JSON.stringify(doc, null, 2) + "\n");
+    runFail(repo, ["validate"], /unknown implementationBaseProvenance kind/);
+  }
+
+  /* ---------------------------------------------------------------------
    * 10. Bootstrap into a new project still works.
    * ------------------------------------------------------------------- */
   {
@@ -5846,7 +6309,7 @@ try {
     "running the test suite must not mutate any live control/ or coordination/ file",
   );
 
-  console.log("AI control plane tests passed (56 scenarios).");
+  console.log("AI control plane tests passed (58 scenarios).");
 } finally {
   fs.rmSync(temp, { recursive: true, force: true });
 }

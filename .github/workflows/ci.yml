@@ -1,9 +1,84 @@
 name: CI
 
+# ============================================================================
+# WHEN THIS RUNS, AND WHY IT IS NO LONGER JUST `main`
+# ============================================================================
+#
+# The trigger used to be `pull_request` plus `push: branches: [main]`. All
+# development happens on a long-lived working branch, `main` is deliberately
+# untouched, and no pull request is open. So the trigger set matched nothing
+# anybody actually did: the working branch carried zero workflow runs and zero
+# commit statuses, and every green result this month came from one Windows
+# laptop. Nothing had ever been verified on a clean Linux checkout installed
+# from the lockfile.
+#
+# A gate that never fires is indistinguishable, from the outside, from a gate
+# that passes. This repository has already been bitten twice by that exact
+# shape: an environment validator that confidently passed while reading files
+# the application never read, and CI failing unnoticed for rounds because the
+# only gates anyone watched ran locally. Absence of signal reads as success, and
+# nothing in the tooling contradicts it.
+#
+# So the push filter is now a DENY list rather than an allow list, and the
+# direction is the whole argument. Under an allow list, a branch whose name
+# nobody anticipated silently gets no CI, and the symptom is absence -- the one
+# symptom nobody notices. Under a deny list, a new branch is covered by default
+# and opting out is a deliberate act with a name attached to it.
+#
+# Rejected:
+#
+#   - `branches: [main, 'codex/**', 'agent/**']`. Correct today and silently
+#     wrong the first time a branch is called something else. It re-creates the
+#     failure this change exists to remove, one rename later.
+#
+#   - Every branch, no exclusions. `dependabot/**` pushes are always accompanied
+#     by a pull request, which `pull_request` below already covers, so a push
+#     trigger there doubles the cost of every dependency bump and buys nothing.
+#
+#   - `paths-ignore` for docs-only pushes. It does not make the run cheap, it
+#     makes the run NOT EXIST -- the commit ends with no status at all, which is
+#     the failure mode above wearing a cost-saving hat. Cost is handled by
+#     `concurrency` below instead, which is a mechanism that still leaves the
+#     head commit with a real verdict.
+#
+# Cost, concretely. `cancel-in-progress` collapses a burst of pushes on one
+# branch into a single surviving run, so the bill scales with distinct branches
+# pushed per night rather than with pushes per night. State the consequence here
+# rather than leaving it to be discovered: superseded commits are left
+# CANCELLED, which is neither a pass nor a failure. Read a cancelled run as "no
+# verdict for that commit". The head commit is the one that gets a verdict.
+#
+# Bot pushes do not multiply this. GitHub does not fire push-triggered workflows
+# for commits made with the default GITHUB_TOKEN, so the agent workers'
+# scheduled control-plane pushes to `main` cost nothing here -- which is also
+# why `workflow_dispatch` exists below and why
+# `.github/workflows/agent-claude-worker.yml` calls it explicitly.
+#
+# One bootstrap fact worth knowing before wondering why nothing happened: a push
+# trigger is evaluated against the workflow file as of the pushed commit. This
+# widening therefore takes effect on the first push that CONTAINS it, and not on
+# the push before that.
+#
+# Secrets: this workflow references none, and holds `contents: read`. Widening a
+# trigger is a secret-exposure question whenever a job can read one, so it was
+# checked rather than assumed. `pull_request` (not `pull_request_target`) runs a
+# fork PR with a read-only token and no access to repository secrets, and the
+# push trigger only fires for someone who can already push to this repository.
+# The two workflows that DO hold secrets -- `agent-claude-worker.yml`
+# (ANTHROPIC_API_KEY) and `agent-gpt-review.yml` (OPENAI_API_KEY) -- are
+# `workflow_dispatch` and `schedule` only and are untouched by this change.
+
 on:
   pull_request:
   push:
-    branches: [main]
+    branches-ignore:
+      # Dependabot always opens a PR; `pull_request` already covers those commits.
+      - "dependabot/**"
+      # Explicit opt-out namespaces for throwaway spikes nobody will read a
+      # verdict from. Push under any other name and you get CI.
+      - "wip/**"
+      - "scratch/**"
+      - "experiment/**"
   # Required for the autonomous loop: GitHub does not fire push-triggered
   # workflows for commits made with the default GITHUB_TOKEN, so a cloud
   # worker's push would otherwise never be verified by CI. The workers
@@ -14,10 +89,34 @@ permissions:
   contents: read
 
 concurrency:
+  # Keyed on the ref, which means a push run and a pull_request run for the same
+  # branch land in DIFFERENT groups -- `refs/heads/<branch>` against
+  # `refs/pull/<n>/merge` -- and both survive. That is deliberate rather than an
+  # oversight in the widened trigger, because the two do not test the same tree:
+  # the push run tests the branch tip, the PR run tests the tip merged into the
+  # base, and `main` moves underneath the working branch every time an agent
+  # worker publishes control state. Those can genuinely disagree.
+  #
+  # Rejected: normalising the two onto one key with
+  # `${{ github.event.pull_request.head.ref || github.ref_name }}`. It does
+  # remove the duplicate, but it removes it by CANCELLING one of them, and which
+  # one dies is a race between two near-simultaneous events. Trading the
+  # merge-result verdict for a runner-minute is trading signal for change, and a
+  # required check that ends up cancelled is a pull request that can never go
+  # green.
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  # ==========================================================================
+  # The gate. Mirrors the local round step for step; see the drift note below.
+  # ==========================================================================
+  #
+  # The job name is `validate` and stays `validate`. If branch protection has a
+  # required status check configured, it names this job, and renaming it would
+  # turn a required check into a check that never reports -- silently, and in
+  # the direction this file exists to prevent. Adding a job is safe; renaming
+  # one is not.
   validate:
     runs-on: ubuntu-latest
     # Pinned rather than left to the documented default. turbo.json lists this in
@@ -33,6 +132,25 @@ jobs:
     # here, and forgetting the fourth turns CI red on a run that has nothing to do
     # with the change. LIBERTY_FC_SEED was added without it and CI has been failing
     # here since, unnoticed, because every gate we actually watch runs locally.
+    #
+    # Re-checked against `.env.example` and `turbo.json` as of this edit. The
+    # `@cache-key` set is exactly these three. `NODE_ENV` is the fourth name in
+    # `globalEnv` and is deliberately NOT here: it is `@optional` rather than
+    # `@cache-key` because that annotation is about what an UNSET variable
+    # hashes as, and NODE_ENV is set by whatever is running the build. Pinning it
+    # here would be worse than useless -- it would decide, from a workflow file,
+    # which branches of `authorized-candidates.ts` and the resolve handler the
+    # built artifact takes.
+    #
+    # These are exported into the job environment, which is the only spelling
+    # that works. `apps/web`'s `dev` and `start` now load the repository root's
+    # dotenv files through `scripts/with-root-env.mjs`, and `build` deliberately
+    # does not -- because that loader sets variables INSIDE the task, while turbo
+    # hashes `globalEnv` from the environment it sees BEFORE launching it. CI
+    # must not, and does not, depend on that wrapper: nothing here runs `dev` or
+    # `start`, and `npm run build` gets these values from the job `env:` above
+    # turbo, where they are hashed correctly. See docs/DEVELOPMENT.md,
+    # "Why `build` is not wrapped".
     env:
       CONTENT_RIGHTS_ENFORCEMENT: strict
       LIBERTY_FC_SEED: "20250819"
@@ -47,9 +165,25 @@ jobs:
           # development from drifting apart.
           node-version-file: .nvmrc
           cache: npm
+          # Stated explicitly rather than left to setup-node's search. There are
+          # now two lockfiles in this repository -- the root one and `e2e/`'s,
+          # which is outside the npm workspaces on purpose (docs/E2E.md) -- and
+          # two jobs that cache different trees. An implicitly-derived key that
+          # happened to pick up the wrong lockfile would restore a node_modules
+          # that does not match the install about to run, and `npm ci` would
+          # paper over it.
+          cache-dependency-path: package-lock.json
       # These four run before install: they depend only on Node builtins, so
       # a dependency problem cannot mask a control-plane, structure, or
       # env-validator failure.
+      #
+      # Together they are `npm run test:scripts` plus the two validators, split
+      # into named steps rather than invoked through the npm script. That is on
+      # purpose -- four steps give four independently readable red/green marks
+      # instead of one -- but it is also a drift surface, so: `test:scripts` is
+      # currently `test-validate-env.mjs && test-ai-control-plane.mjs`, both are
+      # below, and a third script added to it must be added here too. Same rule
+      # as the @cache-key variables above, same failure if forgotten.
       - name: Validate AI control plane
         run: node scripts/ai-control-plane.mjs validate
       - name: Test AI control plane
@@ -81,3 +215,157 @@ jobs:
         run: npm run test
       - name: Build
         run: npm run build
+      # ----------------------------------------------------------------------
+      # The transport suite, which is NOT in `npm run test` and is not meant to
+      # be. `packages/media-inspection/vitest.config.ts` excludes `src/node/**`
+      # because those tests open real loopback sockets to prove that Node
+      # actually consults the pinned `lookup` when it connects -- a claim about
+      # the runtime that a double cannot make. Every assertion in that file
+      # passes. What does not is the EXIT: a socket abandoned by design emits
+      # `ECONNRESET` at vitest worker teardown, after the module context is gone,
+      # where neither the transport nor the test can still hold a listener for
+      # it, and vitest reports it as an unhandled error and exits non-zero.
+      #
+      # So the assertions are worth observing on Linux -- this is a claim about
+      # runtime socket behaviour, and Linux is the runtime that ships -- while
+      # the exit code is not worth blocking on. Expressing "run it and report it
+      # but do not fail the job" honestly is the whole difficulty, because the
+      # obvious spellings are all forms of not looking:
+      #
+      #   - `|| true`. Swallows the exit code with no record that anything was
+      #     swallowed, and swallows a genuine assertion failure identically.
+      #     This is precisely the shape of false evidence the config file it
+      #     comes from warns about.
+      #   - `continue-on-error: true`. More visible than `|| true` -- the step
+      #     shows a warning -- but it still tolerates EVERY failure, so a real
+      #     regression in address pinning would be reported as the known-benign
+      #     teardown artifact and the job would go green over it.
+      #   - `dangerouslyIgnoreUnhandledErrors` in the config, which was already
+      #     rejected once, in that file, for blinding the whole package to
+      #     future unhandled errors.
+      #
+      # What this step does instead: it reads the TEST RESULTS rather than the
+      # exit code, which is exactly the instruction the config file's own header
+      # gives to a human reading this run. It fails the job on a failing
+      # assertion, and it fails the job on a run that executed no tests at all --
+      # a green run that asserted nothing being the worse of the two frauds, and
+      # the reason that config exists as a second file rather than a path filter
+      # in the first place. Only the specific known state -- all assertions
+      # passed, non-zero exit -- is tolerated, and it is announced rather than
+      # hidden.
+      #
+      # Every parse failure falls on the failing side. No summary line found,
+      # a summary that says `failed`, a summary with no `passed` in it: all exit
+      # 1. If this step's output format ever changes under it, it goes red and
+      # someone reads it, rather than going green and meaning nothing.
+      #
+      # LAST, after Build, and that placement is deliberate. This step has never
+      # executed on Linux -- nothing in this repository had, until this file
+      # gained a working-branch trigger -- so it is the step most likely to be
+      # the first thing that goes red for a reason nobody has seen yet. Running
+      # it last means every other gate has already reported its own green or red
+      # in the step list before this one gets a say. A blocking check is still
+      # blocking; it just does not also hide the ten results underneath it.
+      #
+      # Invoked from the package directory rather than with `npm run ... -w`, and
+      # logged to $RUNNER_TEMP rather than into the tree, so that an untracked
+      # `transport.log` never becomes an input turbo hashes for this package.
+      - name: Transport suite (real sockets; assertions blocking, exit code not)
+        working-directory: packages/media-inspection
+        run: |
+          log="$RUNNER_TEMP/transport.log"
+
+          set +e
+          npm run test:transport > "$log" 2>&1
+          exit_code=$?
+          set -e
+          cat "$log"
+
+          summary="$(grep -E '^[[:space:]]*Tests[[:space:]]' "$log" | tail -n 1)"
+
+          if [ -z "$summary" ]; then
+            echo "::error::The transport suite printed no test summary, so it executed nothing. A run that asserts nothing is not evidence -- see packages/media-inspection/vitest.transport.config.ts."
+            exit 1
+          fi
+
+          case "$summary" in
+            *failed*)
+              echo "::error::A transport assertion FAILED (${summary}). That is a real regression in address pinning, not the known teardown ECONNRESET."
+              exit 1
+              ;;
+          esac
+
+          case "$summary" in
+            *passed*) ;;
+            *)
+              echo "::error::The transport suite reported no passing tests (${summary})."
+              exit 1
+              ;;
+          esac
+
+          if [ "$exit_code" -ne 0 ]; then
+            echo "::notice::Transport suite: every assertion passed (${summary}); vitest exited ${exit_code}, the documented ECONNRESET at worker teardown. Exit code deliberately not propagated."
+            {
+              echo "### Transport suite -- assertions passed, exit code ignored"
+              echo ""
+              echo "\`${summary}\`"
+              echo ""
+              echo "vitest exited **${exit_code}**. Every assertion passed; the non-zero exit is the \`ECONNRESET\` emitted at worker teardown by a socket abandoned by design, documented in \`packages/media-inspection/vitest.config.ts\`. This step does **not** fail on that. It **does** fail on a failing assertion, and on a run that executed no tests."
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::notice::Transport suite passed AND exited 0 (${summary}). The teardown ECONNRESET did not reproduce on this runner. If that holds, the src/node/** exclusion in packages/media-inspection/vitest.config.ts can be revisited -- that file names this as the open question."
+          fi
+
+  # ==========================================================================
+  # The e2e harness's TYPECHECK. Not the suite.
+  # ==========================================================================
+  #
+  # `e2e/` is deliberately outside the npm workspaces and carries its own
+  # lockfile (docs/E2E.md, "Why `e2e/` is not an npm workspace"), which means
+  # the root `npm ci` above installs none of it and `turbo run typecheck` visits
+  # none of it. Until now nothing in CI compiled that directory at all, while
+  # the local round did -- so the harness could stop typechecking and the only
+  # thing that would notice was one Windows laptop.
+  #
+  # A separate job rather than more steps on `validate`, for three reasons:
+  # it shares nothing with the root install, so it can run in parallel; its
+  # verdict stays readable when the root job goes red early, which is when you
+  # most want to know whether this is also broken; and `e2e/`'s tsconfig sets
+  # `forceConsistentCasingInFileNames`, which is one of the checks most likely
+  # to disagree between a case-insensitive Windows filesystem and this runner.
+  #
+  # The SUITE is still not run here, and that is a scope decision, not an
+  # oversight. `npm test` in `e2e/` downloads browser builds, does a cold
+  # `turbo run build`, and starts a server -- minutes and a flake surface that
+  # belong in a job of their own, as docs/E2E.md says. The typecheck is the
+  # cheap half: three devDependencies and a `tsc --noEmit`. Adding it closes the
+  # compile gap without pretending the harness is being executed. It is not.
+  e2e-typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: e2e/package-lock.json
+      # `working-directory` rather than `npm --prefix e2e ci`. `--prefix` is the
+      # spelling docs/E2E.md uses for `npm run`, but it has a history of being
+      # ignored by `npm ci` specifically, and an install that silently ran
+      # against the repository root would be a confusing failure at best and a
+      # wrong one at worst.
+      #
+      # `--ignore-scripts` matches the agent workflows: placing files on disk
+      # does not require running arbitrary dependency lifecycle code. It matters
+      # more than usual here. `@playwright/test` 1.62.1 declares no install
+      # script in the committed lockfile -- checked, not assumed -- but the
+      # package family exists to download several hundred megabytes of browser,
+      # and a lockfile refresh that reintroduced a postinstall would otherwise
+      # quietly attach that download to a typecheck job. `npm run browsers` is
+      # how this repository asks for browsers, explicitly, and nothing here does.
+      - name: Install the e2e harness
+        working-directory: e2e
+        run: npm ci --no-audit --no-fund --ignore-scripts
+      - name: Typecheck the e2e harness
+        working-directory: e2e
+        run: npm run typecheck
