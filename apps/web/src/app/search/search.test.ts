@@ -94,6 +94,32 @@ describe("readSearchQueryParam", () => {
     expect(readSearchQueryParam([])).toBe("");
     expect(readSearchQueryParam("   ")).toBe("");
   });
+
+  it("resolves q=the+fall and q=the%20fall to the same search", () => {
+    /*
+     * The assumption the client's encoder choice rests on, written down.
+     *
+     * `buildSearchHref` percent-encodes with `encodeURIComponent`, so the
+     * client path produces `q=the%20fall`. The no-JavaScript fallback lets the
+     * browser submit the form itself, and a browser form GET is
+     * `application/x-www-form-urlencoded`, so that path produces `q=the+fall`.
+     * Two spellings of one search: if they ever stopped resolving to the same
+     * query, a user without JavaScript would be running a different search from
+     * the one the link they share resolves to, and nobody would think to look at
+     * the encoding.
+     *
+     * Decoded here with `URLSearchParams`, which is the decoding a browser
+     * applies to its own form submission and the one the framework applies
+     * before `searchParams` reaches the page.
+     */
+    const fromFormSubmit = new URLSearchParams("q=the+fall").get("q") ?? "";
+    const fromSharedLink = new URLSearchParams("q=the%20fall").get("q") ?? "";
+
+    expect(fromFormSubmit).toBe("the fall");
+    expect(fromSharedLink).toBe("the fall");
+    expect(readSearchQueryParam(fromFormSubmit)).toBe(readSearchQueryParam(fromSharedLink));
+    expect(readSearchQueryParam(fromFormSubmit)).toBe("the fall");
+  });
 });
 
 describe("searchCatalog matching", () => {

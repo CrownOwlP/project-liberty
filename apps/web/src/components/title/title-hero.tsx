@@ -7,6 +7,7 @@ import {
   titleHref
 } from "../../app/title/title-detail";
 import { PlayCta } from "./play-cta";
+import styles from "./title.module.css";
 
 const KIND_LABEL: Readonly<Record<TitleDetailKind, string>> = {
   movie: "Film",
@@ -37,7 +38,7 @@ export function TitleHero({ detail }: TitleHeroProps) {
     <section className="hero">
       <div className="hero-copy">
         <div className="eyebrow">{KIND_LABEL[detail.kind]}</div>
-        <h1>{detail.title}</h1>
+        <h1 className={styles.heroTitle}>{detail.title}</h1>
         <p>{formatTitleMeta(detail)}</p>
         <p>{detail.synopsis ?? NO_SYNOPSIS_LABEL}</p>
 

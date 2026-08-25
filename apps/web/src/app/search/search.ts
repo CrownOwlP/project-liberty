@@ -53,9 +53,11 @@ function fold(value: string): string {
  * compiled from the query, because a user-authored pattern is a ReDoS surface
  * and a metacharacter would silently change what the search means. There is no
  * database, no provider call, and no URL built from the query here; the only
- * places it travels are the `q` search param (encoded by `URLSearchParams`) and
- * React text nodes (escaped on render). Nothing on this path reaches
- * `dangerouslySetInnerHTML`.
+ * places it travels are the `q` search param (percent-encoded by
+ * `buildSearchHref` with `encodeURIComponent`, after `normalizeSearchQuery` has
+ * made it well-formed UTF-16 — see the note there on why the encoder was
+ * changed from `URLSearchParams` and what that cost) and React text nodes
+ * (escaped on render). Nothing on this path reaches `dangerouslySetInnerHTML`.
  */
 function classifyMatch(item: CatalogItem, foldedQuery: string): SearchMatchKind | null {
   const title = fold(item.title);

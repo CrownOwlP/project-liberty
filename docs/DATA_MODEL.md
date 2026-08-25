@@ -246,7 +246,16 @@ behind it.
    snapshot, which cannot be produced without running the tool. Diff the generated SQL against the
    hand-written file before trusting either.
 4. **`npm run db:migrate -w @liberty/persistence`** with `DATABASE_URL` set. There is no development
-   default for that variable, deliberately.
+   default for that variable, deliberately — `drizzle.config.ts` falls back to `""` and drizzle-kit
+   fails on an empty connection URL rather than guessing at a database.
+
+   "Set" means either exported, or written into the **repository root** `.env.local`. The root file
+   is reachable because all three `db:*` scripts run through
+   `node ../../scripts/with-root-env.mjs --mode development`; without that wrapper they would not
+   be, because these scripts run with cwd `packages/persistence` and drizzle-kit's bundled dotenv
+   only ever opens `<cwd>/.env`. See
+   [DEVELOPMENT.md](DEVELOPMENT.md#the-persistence-db-scripts) for why the mode is `development` and
+   not `production`. An exported value still wins over every file.
 
 ---
 

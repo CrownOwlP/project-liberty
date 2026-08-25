@@ -142,6 +142,18 @@
  * cache-correctness risk with no visible symptom, that is the cheaper side.
  * Settle the experiment in DEVELOPMENT.md and `build` can be wrapped again.
  *
+ * `packages/persistence`'s `db:generate`, `db:migrate` and `db:check` go through
+ * here too, with an explicit `--mode development`. Same defect, second location:
+ * those scripts also run with cwd set to their own package directory, and
+ * drizzle-kit's bundled dotenv only ever opens `<cwd>/.env` -- not `.env.local`,
+ * not the repository root -- so `drizzle.config.ts` read an empty
+ * `DATABASE_URL` while the value sat in the root file the setup instructions
+ * name. It failed loudly rather than silently, which made it cheaper than the
+ * `apps/web` case and no less wrong. None of the three is a turbo task or
+ * appears in `globalEnv`, so the cache-hashing argument that keeps `build`
+ * unwrapped has nothing to bite on; the mode choice is argued where it is made,
+ * in `packages/persistence/drizzle.config.ts`.
+ *
  * NODE_ENV IS DELIBERATELY NEVER APPLIED. See `NEVER_APPLIED` below; the reason
  * is specific and it is not squeamishness -- a copied `.env.local` plus a naive
  * loader turns a production `next start` into a development one.

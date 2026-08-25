@@ -1,9 +1,12 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { cache } from "react";
 import { EpisodeList } from "../../../components/title/episode-list";
+import styles from "../../../components/title/title.module.css";
 import { TitleFacts } from "../../../components/title/title-facts";
 import { TitleHero } from "../../../components/title/title-hero";
-import { loadTitleDetail } from "../title-detail";
+import { describeTitleMetadata, loadTitleDetail } from "../title-detail";
 
 /**
  * Rendered per request rather than prerendered. The title surface is
@@ -12,11 +15,50 @@ import { loadTitleDetail } from "../title-detail";
  */
 export const revalidate = 0;
 
+interface TitlePageProps {
+  params: Promise<{ titleId: string }>;
+}
+
+/**
+ * One load per request, shared by the metadata and the body.
+ *
+ * Next runs `generateMetadata` and the component for the same request. Without
+ * `cache` the source — fixtures today, a provider adapter after PL-0301 — would
+ * be asked twice for every title view, and the two answers are not required to
+ * agree: a source that failed between them would title the tab after a title the
+ * page below says it could not load. `cache` keys on the arguments, so both call
+ * sites pass exactly one.
+ *
+ * Wrapped here rather than inside `title-detail.ts` so the loader stays a plain
+ * function with no React request scope, which is what lets its unit tests call
+ * it directly.
+ */
+const loadTitleOnce = cache((titleId: string) => loadTitleDetail(titleId));
+
+/**
+ * Without this every title in the catalog shared the root layout's "Project
+ * Liberty" — the same tab, the same bookmark name and the same link preview for
+ * a movie, a series and a 404. The head is derived from the load RESULT rather
+ * than from the URL, so a title we do not have cannot be named after its id.
+ */
+export async function generateMetadata({ params }: TitlePageProps): Promise<Metadata> {
+  const { titleId } = await params;
+  return describeTitleMetadata(await loadTitleOnce(titleId));
+}
+
+/**
+ * The heading is an `h1`, not the `h2` the catalog's equivalent panel uses.
+ *
+ * On the home route that panel sits below a hero that already carries the page's
+ * `h1`. Here it REPLACES the hero, so it is the only heading in the document —
+ * as an `h2` the page had no top-level heading at all and its outline began at
+ * level 2.
+ */
 function TitleUnavailable({ reason }: { reason: string }) {
   return (
     <section className="section">
       <div className="state-panel" role="alert">
-        <h2>We couldn&apos;t load this title</h2>
+        <h1 className={styles.stateHeading}>We couldn&apos;t load this title</h1>
         <p>
           The title service didn&apos;t return a usable response. This title may still exist — try
           again in a moment.
@@ -27,9 +69,9 @@ function TitleUnavailable({ reason }: { reason: string }) {
   );
 }
 
-export default async function TitlePage({ params }: { params: Promise<{ titleId: string }> }) {
+export default async function TitlePage({ params }: TitlePageProps) {
   const { titleId } = await params;
-  const result = await loadTitleDetail(titleId);
+  const result = await loadTitleOnce(titleId);
 
   /*
    * Not-found is answered with a real 404 rather than a panel rendered at 200.

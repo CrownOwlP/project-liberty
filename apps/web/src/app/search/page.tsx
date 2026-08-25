@@ -40,10 +40,27 @@ function SearchEmpty({ query }: { query: string }) {
   );
 }
 
+/**
+ * The failure state, and deliberately NOT a live region.
+ *
+ * This panel used to carry `role="alert"`, which is implicitly assertive. The
+ * form below renders the one polite region for this surface, so in the failure
+ * state both fired: assertive interrupts polite, and an alert announces its
+ * whole subtree — so what the user actually heard was the heading, the apology
+ * and the raw `search_source_unavailable` reason code, on top of the one
+ * sentence written to explain the state. One region announcing
+ * "Search is currently unavailable." is the coherent version of that, and it is
+ * the sentence `describeSearchState` already derives on the server.
+ *
+ * Nothing is lost by dropping the role. This panel only ever appears as part of
+ * a server render, and an alert whose content is present when the region is
+ * first inserted is frequently not announced by assistive technology anyway; it
+ * remains a heading and body text that a reader reaches normally.
+ */
 function SearchUnavailable({ reason }: { reason: string }) {
   return (
     <section className="section">
-      <div className="state-panel" role="alert">
+      <div className="state-panel">
         <h2>We couldn&apos;t run that search</h2>
         <p>
           The search service didn&apos;t return a usable response. Nothing is wrong with your
@@ -87,19 +104,22 @@ export default async function SearchPage({
             Search
           </h1>
         </div>
-        <SearchForm initialQuery={query} />
-      </section>
+        {/*
+          The live region that announces what happened to the results is
+          rendered by the form, not here. It has to describe the in-flight state
+          as well as the settled one, and only the client component knows a
+          navigation is running; a second region here would compete with it for
+          the same announcement. The sentence itself is still derived on the
+          server, so every state — including `idle` and `error` — has one and it
+          stays unit-tested.
 
-      {/*
-        One live region, rendered in every state and never conditionally, so the
-        browser has it before the text inside it changes — a region that appears
-        together with its message is frequently not announced at all. This is
-        the only way a screen-reader user learns that results changed under a
-        search field they are still focused on.
-      */}
-      <p aria-live="polite" className="visually-hidden" role="status">
-        {describeSearchState(result)}
-      </p>
+          "One region" is a rule about this whole page, not about this file:
+          `role="alert"` counts, which is why `SearchUnavailable` above no longer
+          has one. Anything added below that announces state changes has to go
+          through `describeSearchState` and this region instead.
+        */}
+        <SearchForm initialQuery={query} statusMessage={describeSearchState(result)} />
+      </section>
 
       {result.status === "idle" && <SearchIdle />}
       {result.status === "error" && <SearchUnavailable reason={result.reason} />}

@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import {
   titleDetailResponseSchema,
   type TitleDetail,
@@ -192,6 +193,24 @@ export function resolveSeriesPlayTarget(
  * that claim on the strength of one episode's paperwork. The episode stays
  * reachable from its own row, where the claim being made is only about it.
  */
+/*
+ * WHAT THIS AFFORDANCE ASSERTS, AND WHAT IT DOES NOT.
+ *
+ * It asserts one thing: a rights basis has been recorded and it is on the
+ * allowlist, so this title MAY be sent to playback resolution. It does not
+ * assert that playback will succeed. The authorization decision is
+ * `POST /api/v1/playback/session`, which answers `granted | denied |
+ * unavailable` against the candidates a provider actually resolved, their own
+ * rights, and the device's capabilities — none of which this surface has.
+ *
+ * The alternative was requesting a session per title (and per episode row) just
+ * to label a link. That was rejected: it would issue playback sessions nobody
+ * asked to start, put a provider round-trip per row in the render path, and
+ * still be stale by the time the link was clicked. The honest arrangement is the
+ * one here — withhold the control when the metadata already disqualifies it, and
+ * let `/watch/:id` state the reason trail when the real decision refuses. That
+ * refusal is rendered, with its reasons, rather than dead-ending.
+ */
 export function resolveTitlePlayAvailability(detail: TitleDetail): PlayAvailability {
   if (detail.kind !== "series") return resolvePlayAvailability(detail);
 
@@ -299,6 +318,22 @@ export function formatEpisodeCount(count: number): string {
   return `${count} ${count === 1 ? "episode" : "episodes"}`;
 }
 
+/**
+ * A series whose episode list is empty, described without counting to zero.
+ *
+ * `seriesTitleDetailSchema` says outright that `[]` is "a series whose episodes
+ * are not listed yet". "0 episodes" is therefore the same defect as rendering an
+ * unreported runtime as `0`: it reads as a stated fact — someone checked, there
+ * are none — when what actually happened is that nothing was stated. It also
+ * contradicted the panel `EpisodeList` renders three lines further down, which
+ * says the episodes appear as soon as they are published.
+ *
+ * Deliberately not "None". `NONE_LABEL` is reserved for a source that reported
+ * an empty list on purpose, which is a claim nothing in the title contract is
+ * currently able to make about episodes.
+ */
+export const EPISODES_NOT_LISTED_LABEL = "Episodes not listed";
+
 export function formatEpisodeLabel(episode: {
   seasonNumber: number;
   episodeNumber: number;
@@ -316,11 +351,87 @@ export function formatTitleMeta(detail: TitleDetail): string {
   const parts: string[] = [detail.genre, String(detail.releaseYear)];
 
   if (detail.kind === "series") {
-    parts.push(formatEpisodeCount(detail.episodes.length));
+    parts.push(
+      detail.episodes.length === 0
+        ? EPISODES_NOT_LISTED_LABEL
+        : formatEpisodeCount(detail.episodes.length)
+    );
   } else {
     if (detail.kind === "episode") parts.push(formatEpisodeLabel(detail));
     parts.push(formatRuntime(detail.runtimeMinutes));
   }
 
   return parts.join(" · ");
+}
+
+/* -------------------------------------------------------------------------
+ * Page metadata
+ * ---------------------------------------------------------------------- */
+
+/**
+ * The site name, written out here rather than inherited.
+ *
+ * `app/layout.tsx` declares a plain `title` string and no `title.template`, so a
+ * page-level title REPLACES it instead of extending it — a title route that set
+ * only `"Northstar"` would produce a tab and a shared link that never say where
+ * the reader is. Declaring a template in the root layout is the tidier fix and
+ * belongs to whoever owns `app/layout.tsx`; that file is outside this task's
+ * allowed paths, and duplicating one string is a smaller cost than an
+ * out-of-scope edit to a file two other surfaces render inside.
+ */
+const SITE_NAME = "Project Liberty";
+
+/**
+ * Metadata for a route whose title could not be identified.
+ *
+ * Exported so the tests can assert the exact strings, and so nothing can quietly
+ * start deriving a name for a title we do not have. The rule the whole surface
+ * runs on applies to the `<head>` as much as to the body: the id from the URL is
+ * NOT a title, and echoing it here would put an invented name in a browser tab,
+ * a bookmark, and every link preview of a page that says the title is unknown.
+ */
+export const TITLE_NOT_FOUND_METADATA: Metadata = {
+  title: `Title not found · ${SITE_NAME}`,
+  description: "Nothing in the catalog matches this address."
+};
+
+/**
+ * Metadata for a title the source could not return.
+ *
+ * `robots: index false` because this branch renders at HTTP 200 — a real title
+ * that was temporarily unreachable is still a real title, so answering 404 would
+ * be a lie in the other direction. That leaves a 200 page reading "We couldn't
+ * load this title", which without this is indexable and would be cached by
+ * crawlers as the content of a title that is fine. `follow` stays on: the links
+ * out of the page (the catalog) are still worth following.
+ */
+export const TITLE_UNAVAILABLE_METADATA: Metadata = {
+  title: `Title unavailable · ${SITE_NAME}`,
+  description: "This title could not be loaded.",
+  robots: { index: false, follow: true }
+};
+
+/**
+ * Page metadata derived from the load result, not from the URL.
+ *
+ * Takes the already-resolved `TitleLoadResult` rather than an id so it cannot
+ * disagree with the body: the same load answers both, and the three outcomes get
+ * the three different heads they need instead of every title in the catalog
+ * sharing the root layout's "Project Liberty".
+ *
+ * The description falls back to the structured meta line rather than to an empty
+ * string or to invented prose. `formatTitleMeta` is built only from fields the
+ * source actually stated, so a title with no synopsis gets a description that is
+ * short and true instead of a `<meta>` tag asserting the title has no story.
+ */
+export function describeTitleMetadata(result: TitleLoadResult): Metadata {
+  if (result.status === "not-found") return TITLE_NOT_FOUND_METADATA;
+  if (result.status === "error") return TITLE_UNAVAILABLE_METADATA;
+
+  const { detail } = result.response;
+
+  return {
+    title: `${detail.title} · ${SITE_NAME}`,
+    description: detail.synopsis ?? formatTitleMeta(detail)
+  };
 }

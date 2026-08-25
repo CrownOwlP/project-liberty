@@ -20,9 +20,9 @@
     "lint": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate",
-    "db:check": "drizzle-kit check"
+    "db:generate": "node ../../scripts/with-root-env.mjs --mode development drizzle-kit generate",
+    "db:migrate": "node ../../scripts/with-root-env.mjs --mode development drizzle-kit migrate",
+    "db:check": "node ../../scripts/with-root-env.mjs --mode development drizzle-kit check"
   },
   "dependencies": {
     "@liberty/auth": "0.1.0",

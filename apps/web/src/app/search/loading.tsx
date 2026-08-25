@@ -4,10 +4,10 @@ import styles from "../../components/search/search.module.css";
  * Route-segment loading state for the first load of /search.
  *
  * Typing does NOT land here: the form drives the URL inside a transition, so
- * React keeps the previous results on screen and reports progress through the
- * form's `aria-busy` instead of tearing the page down to a skeleton on every
- * keystroke. This is the cold-start case — arriving on the URL directly, or
- * from a shared link — where there is nothing to keep.
+ * React keeps the previous results on screen and reports progress through its
+ * own busy indicator and live region instead of tearing the page down to a
+ * skeleton on every keystroke. This is the cold-start case — arriving on the
+ * URL directly, or from a shared link — where there is nothing to keep.
  *
  * The skeleton mirrors the real field and result-grid geometry so the layout
  * does not jump when the content arrives.

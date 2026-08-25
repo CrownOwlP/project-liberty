@@ -9,6 +9,7 @@ import {
 } from "../../app/title/title-detail";
 import { formatRuntime } from "../../lib/catalog";
 import { PLAY_BLOCKED_COPY } from "./play-cta";
+import styles from "./title.module.css";
 
 /**
  * One episode row.
@@ -17,27 +18,52 @@ import { PLAY_BLOCKED_COPY } from "./play-cta";
  * series': a licensed series can contain an episode nobody has cleared yet, and
  * offering play on that row would be the series' paperwork vouching for a work
  * it does not cover.
+ *
+ * An `li` rather than an `article` inside a `div`: this is a list item and only
+ * ever renders inside the list below. Carrying `.card` on the `li` itself, in
+ * place of a wrapper, also keeps the global `.card:nth-child(2n) .poster` rules
+ * matching — an inner wrapper is always its parent's first child, so the poster
+ * variation would have silently collapsed to one gradient.
+ *
+ * The poster is a decorative gradient block, not an image: there is no `img` on
+ * this surface and therefore no alt text to get wrong. `aria-hidden` is correct
+ * for it precisely because it carries no information — an empty `alt` on a
+ * MEANINGFUL image would be the defect, and this is the other case.
  */
 function EpisodeCard({ episode }: { episode: TitleEpisodeSummary }) {
   const availability = resolvePlayAvailability(episode);
 
+  /*
+   * `episode.title` is `z.string().min(1)`, so an untitled episode cannot reach
+   * here: it fails `titleDetailResponseSchema` and the route renders the error
+   * state instead of a row whose link text is the season label alone.
+   */
+  const name = `${formatEpisodeLabel(episode)} ${episode.title}`;
+
   return (
-    <article className="card">
+    <li className="card">
       <div className="poster" aria-hidden="true" />
       <h3>
-        <Link href={titleHref(episode.id)}>
-          {formatEpisodeLabel(episode)} {episode.title}
-        </Link>
+        <Link href={titleHref(episode.id)}>{name}</Link>
       </h3>
       <p>{formatRuntime(episode.runtimeMinutes)}</p>
       {availability.status === "playable" ? (
         <p>
-          <Link href={availability.href}>Play</Link>
+          {/*
+           * Named, not just labelled "Play". Every row's control says the same
+           * visible word, so a reader pulling up the page's links — or moving
+           * between form controls — otherwise gets N identical "Play" entries
+           * pointing at N different episodes. The accessible name still begins
+           * with the visible text, which is what speech control depends on.
+           */}
+          <Link aria-label={`Play ${name}`} href={availability.href}>
+            Play
+          </Link>
         </p>
       ) : (
         <p className="code">{PLAY_BLOCKED_COPY[availability.reason].short}</p>
       )}
-    </article>
+    </li>
   );
 }
 
@@ -81,11 +107,15 @@ export function EpisodeList({ episodes }: EpisodeListProps) {
             <h2 id={`season-${season.seasonNumber}`}>Season {season.seasonNumber}</h2>
             <small>{formatEpisodeCount(season.episodes.length)}</small>
           </div>
-          <div className="rail">
+          {/*
+            A list, not a grid of divs — see `title.module.css` for why the
+            `role` is stated rather than left implicit.
+          */}
+          <ul className={`rail ${styles.episodeGrid}`} role="list">
             {season.episodes.map((episode) => (
               <EpisodeCard episode={episode} key={episode.id} />
             ))}
-          </div>
+          </ul>
         </section>
       ))}
     </>

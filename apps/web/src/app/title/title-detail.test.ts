@@ -9,8 +9,12 @@ import {
   type TitleTechnicalMetadata
 } from "@liberty/contracts/domains/title";
 import {
+  EPISODES_NOT_LISTED_LABEL,
   NONE_LABEL,
   NOT_REPORTED_LABEL,
+  TITLE_NOT_FOUND_METADATA,
+  TITLE_UNAVAILABLE_METADATA,
+  describeTitleMetadata,
   formatLanguageList,
   formatMaxHeight,
   formatTitleMeta,
@@ -316,8 +320,31 @@ describe("formatTitleMeta", () => {
     expect(formatTitleMeta(detail)).toBe("Drama · 2024 · 1 episode");
   });
 
-  it("describes a series with no episodes without claiming otherwise", () => {
-    expect(formatTitleMeta(series({ id: "s", genre: "Drama" }))).toBe("Drama · 2024 · 0 episodes");
+  /*
+   * The contract says outright that `[]` is "a series whose episodes are not
+   * listed yet", so "0 episodes" would be the meta line asserting a count nobody
+   * supplied -- the same defect as printing an unreported runtime as `0`.
+   */
+  it("does not count an unlisted episode list down to zero", () => {
+    expect(formatTitleMeta(series({ id: "s", genre: "Drama" }))).toBe(
+      `Drama · 2024 · ${EPISODES_NOT_LISTED_LABEL}`
+    );
+    expect(formatTitleMeta(series({ id: "s", genre: "Drama" }))).not.toContain("0 episode");
+  });
+
+  /* And the same absence must not read as the "None" a source can state. */
+  it("keeps an unlisted episode list distinct from a reported empty list", () => {
+    expect(EPISODES_NOT_LISTED_LABEL).not.toBe(NONE_LABEL);
+    expect(EPISODES_NOT_LISTED_LABEL).not.toBe(NOT_REPORTED_LABEL);
+  });
+
+  it("still counts a series that does list episodes", () => {
+    const detail = series({
+      id: "s",
+      genre: "Drama",
+      episodes: [episode({ id: "s-s1e1" }), episode({ id: "s-s1e2", episodeNumber: 2 })]
+    });
+    expect(formatTitleMeta(detail)).toBe("Drama · 2024 · 2 episodes");
   });
 
   it("places an episode in its season before its runtime", () => {
@@ -357,7 +384,26 @@ describe("loadTitleDetail", () => {
    * business reaching a provider boundary.
    */
   it("rejects a non-normalized id without consulting the source", async () => {
-    const malformed = ["Aurora Fall", "AURORA-FALL", "aurora_fall", "../secret", "aurora--fall", ""];
+    const malformed = [
+      "Aurora Fall",
+      "AURORA-FALL",
+      "aurora_fall",
+      "../secret",
+      "aurora--fall",
+      "",
+      // Unusual characters, each of which would otherwise be interpolated into
+      // a route or handed to a provider: an accent, a percent-escaped slash, a
+      // path separator, leading and trailing hyphens, and a non-ASCII hyphen
+      // that LOOKS like the separator the id format uses.
+      "aurora-fáll",
+      "aurora%2ffall",
+      "aurora-fall/",
+      "-aurora-fall",
+      "aurora-fall-",
+      "aurora‑fall",
+      "aurora fall ",
+      `${"a".repeat(300)}-${"b".repeat(300)}!`
+    ];
     let calls = 0;
 
     for (const contentId of malformed) {
@@ -427,6 +473,174 @@ describe("loadTitleDetail", () => {
     expect(emptySeries.response.detail.kind).toBe("series");
     if (emptySeries.response.detail.kind !== "series") return;
     expect(emptySeries.response.detail.episodes).toEqual([]);
+  });
+
+  /*
+   * A long id is not a malformed one. It passes the format check, reaches the
+   * source and comes back as not-found -- which is the honest answer, and a
+   * different one from the rejection above.
+   */
+  it("treats a very long but well-formed id as not-found, not as malformed", async () => {
+    const id = Array.from({ length: 60 }, () => "segment").join("-");
+    let consulted = 0;
+
+    const result = await loadTitleDetail(id, () => {
+      consulted += 1;
+      return null;
+    });
+
+    expect(result.status).toBe("not-found");
+    expect(consulted).toBe(1);
+  });
+
+  /*
+   * An episode with no title cannot render as a row with the season label alone,
+   * because it never gets that far: `min(1)` rejects it at the boundary and the
+   * page shows the error state. The point of asserting it here is that the
+   * failure is the CONTRACT's, not a guard the components have to remember.
+   */
+  it("refuses a series carrying an untitled episode", async () => {
+    const result = await loadTitleDetail("northstar", () =>
+      respond(
+        series({
+          id: "northstar",
+          episodes: [{ ...episode({ id: "northstar-s1e1" }), title: "" }]
+        })
+      )
+    );
+
+    expect(result.status).toBe("error");
+    if (result.status !== "error") return;
+    expect(result.reason).toBe("title_response_failed_validation");
+  });
+
+  /* Likewise an episode whose id could not be turned into a route. */
+  it("refuses a series carrying an episode with an unroutable id", async () => {
+    const result = await loadTitleDetail("northstar", () =>
+      respond(series({ id: "northstar", episodes: [episode({ id: "Northstar S1 E1" })] }))
+    );
+
+    expect(result.status).toBe("error");
+  });
+
+  /*
+   * Nothing truncates a synopsis on the way through. A source that supplied one
+   * is quoted in full; deciding where to cut is a presentation problem, and a
+   * loader that silently shortened it would make the page and the contract
+   * disagree about what the source actually said.
+   */
+  it("passes a very long synopsis through intact", async () => {
+    const synopsis = "s".repeat(20_000);
+    const result = await loadTitleDetail("aurora-fall", () =>
+      respond(movie({ id: "aurora-fall", synopsis }))
+    );
+
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") return;
+    expect(result.response.detail.synopsis).toBe(synopsis);
+  });
+});
+
+describe("describeTitleMetadata", () => {
+  /*
+   * Without this every title on the platform shared the root layout's title, so
+   * a bookmark, a tab and a link preview said "Project Liberty" and nothing
+   * else.
+   */
+  it("titles the page after the title, and says where the reader is", () => {
+    const metadata = describeTitleMetadata({
+      status: "ok",
+      response: respond(movie({ id: "aurora-fall", title: "Aurora Fall" }))
+    });
+
+    expect(metadata.title).toBe("Aurora Fall · Project Liberty");
+  });
+
+  /*
+   * The unknown-is-not-a-value rule applies to the `<head>` too, and this is
+   * where it is easiest to break: the id is right there and looks enough like a
+   * name to use. It is a URL segment. Naming the page after it would put an
+   * invented title into a browser tab and every link preview of a page whose
+   * body says we do not have that title.
+   */
+  it("never names a title it does not have after the requested id", () => {
+    const metadata = describeTitleMetadata({ status: "not-found", contentId: "aurora-fall" });
+
+    expect(metadata).toEqual(TITLE_NOT_FOUND_METADATA);
+    expect(JSON.stringify(metadata)).not.toContain("aurora-fall");
+  });
+
+  it("distinguishes a title we do not have from one we could not load", () => {
+    const missing = describeTitleMetadata({ status: "not-found", contentId: "x" });
+    const failed = describeTitleMetadata({ status: "error", reason: "title_source_unavailable" });
+
+    expect(missing.title).not.toBe(failed.title);
+  });
+
+  /*
+   * The error branch renders at HTTP 200 on purpose -- a title that was briefly
+   * unreachable is still a real title, so 404 would be a lie in the other
+   * direction. That makes the failure page indexable unless it says otherwise,
+   * and a crawler that caches "We couldn't load this title" as the content of a
+   * title that is fine is a defect nobody sees for weeks.
+   */
+  it("keeps the failure page out of indexes without making it a 404", () => {
+    const metadata = describeTitleMetadata({
+      status: "error",
+      reason: "title_source_unavailable"
+    });
+
+    expect(metadata).toEqual(TITLE_UNAVAILABLE_METADATA);
+    expect(metadata.robots).toEqual({ index: false, follow: true });
+  });
+
+  /*
+   * A missing synopsis becomes the structured meta line, which is built only
+   * from fields the source stated. Not an empty string -- a `<meta name=
+   * "description" content="">` is a blank claim rather than no claim -- and not
+   * invented prose.
+   */
+  it("describes a title with no synopsis from its stated facts, not from nothing", () => {
+    const metadata = describeTitleMetadata({
+      status: "ok",
+      response: respond(
+        movie({ id: "deep-current", title: "Deep Current", genre: "Documentary", synopsis: null })
+      )
+    });
+
+    expect(metadata.description).toBe("Documentary · 2024 · 1h 40m");
+    expect(metadata.description).not.toBe("");
+  });
+
+  it("prefers the supplied synopsis when there is one", () => {
+    const metadata = describeTitleMetadata({
+      status: "ok",
+      response: respond(movie({ id: "aurora-fall", synopsis: "A survey pilot loses contact." }))
+    });
+
+    expect(metadata.description).toBe("A survey pilot loses contact.");
+  });
+
+  /* And an unlisted episode list does not become "0 episodes" in the head. */
+  it("does not count an unlisted episode list down to zero in the description", () => {
+    const metadata = describeTitleMetadata({
+      status: "ok",
+      response: respond(series({ id: "northstar", title: "Northstar", synopsis: null }))
+    });
+
+    expect(metadata.description).toContain(EPISODES_NOT_LISTED_LABEL);
+    expect(metadata.description).not.toContain("0 episode");
+  });
+
+  /* A long title is quoted, not truncated: cutting it invents a shorter name. */
+  it("does not truncate an unusually long title", () => {
+    const title = "a".repeat(400);
+    const metadata = describeTitleMetadata({
+      status: "ok",
+      response: respond(movie({ id: "m", title }))
+    });
+
+    expect(metadata.title).toBe(`${title} · Project Liberty`);
   });
 });
 

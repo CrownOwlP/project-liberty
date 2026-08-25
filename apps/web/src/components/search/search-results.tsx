@@ -42,12 +42,18 @@ export function SearchResultList({ response }: SearchResultListProps) {
         A list, not a grid of divs: the count and the boundaries between results
         are then announced without the layout having to be described.
 
+        `role="list"` is redundant markup that is not redundant in practice.
+        WebKit drops the list role from a `ul` styled with `list-style: none`,
+        which `.results` sets — so on Safari/VoiceOver this list would announce
+        as a run of unrelated articles and the sentence above would be a claim
+        the page does not actually keep. Stating the role restores it.
+
         Cards reuse `CatalogCard`, which renders title and metadata only. There
         is deliberately no play affordance here — search is discovery, and a
         stream is resolved through authorized provider adapters at playback
         time, never implied by a result being visible.
       */}
-      <ul className={styles.results}>
+      <ul className={styles.results} role="list">
         {response.results.map((result) => (
           <li className={styles.result} key={result.item.id}>
             <CatalogCard item={result.item} />

@@ -1,16 +1,13 @@
 {
-  "generatedAt": "2026-08-21T05:22:40.206Z",
+  "generatedAt": "2026-08-25T05:30:19.232Z",
   "agent": "claude-frontend",
   "executionAvailable": true,
-  "assigned": [],
-  "review": [],
-  "reservedExternal": [],
-  "recommended": [
+  "assigned": [
     {
       "id": "PL-0102",
       "priority": "P0",
       "lane": "Frontend",
-      "status": "READY",
+      "status": "REVIEW",
       "title": "Search experience",
       "dependencies": [
         "PL-0101"
@@ -29,9 +26,37 @@
         "build"
       ],
       "acceptance": "Debounced accessible search with typed results and URL-addressable query",
-      "owner": null,
-      "gateResults": {}
-    },
+      "owner": "claude-frontend",
+      "gateResults": {
+        "lint": {
+          "status": "pass",
+          "at": "2026-08-25T05:30:14.169Z",
+          "evidence": "npm run check round 25, lint task green across all workspaces"
+        },
+        "typecheck": {
+          "status": "pass",
+          "at": "2026-08-25T05:30:14.589Z",
+          "evidence": "turbo run typecheck round 25 exit 0, plus npm run check typecheck task"
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-08-25T05:30:15.012Z",
+          "evidence": "vitest via npm run check round 25, includes new search-sync and search-sync.property suites"
+        },
+        "build": {
+          "status": "pass",
+          "at": "2026-08-25T05:30:15.438Z",
+          "evidence": "next build via npm run check round 25 exit 0"
+        }
+      },
+      "implementationAgent": "claude-frontend",
+      "updatedAt": "2026-08-25T05:30:15.862Z",
+      "implementationBaseSha": "34c16c97c9ae0a1dec5b708f4f81ed62ecb94afb"
+    }
+  ],
+  "review": [],
+  "reservedExternal": [],
+  "recommended": [
     {
       "id": "PL-0103",
       "priority": "P0",
@@ -56,7 +81,28 @@
       ],
       "acceptance": "Movie, series, and episode details with play CTA using normalized IDs",
       "owner": null,
-      "gateResults": {}
+      "gateResults": {
+        "lint": {
+          "status": "pass",
+          "at": "2026-08-25T05:30:17.091Z",
+          "evidence": "npm run check round 25, lint task green across all workspaces"
+        },
+        "typecheck": {
+          "status": "pass",
+          "at": "2026-08-25T05:30:17.526Z",
+          "evidence": "turbo run typecheck round 25 exit 0, plus npm run check typecheck task"
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-08-25T05:30:17.945Z",
+          "evidence": "vitest via npm run check round 25, includes expanded title-detail suite"
+        },
+        "build": {
+          "status": "pass",
+          "at": "2026-08-25T05:30:18.366Z",
+          "evidence": "next build via npm run check round 25 exit 0"
+        }
+      }
     }
   ]
 }

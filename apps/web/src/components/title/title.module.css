@@ -1,0 +1,84 @@
+/*
+ * Scoped to the title surface (PL-0103).
+ *
+ * A CSS module rather than additions to `globals.css` for two reasons. The
+ * narrow one: `app/globals.css` is outside this task's allowed paths. The
+ * durable one, which is the same one the search surface recorded: three
+ * narrowly-scoped rules do not need to become global class names every future
+ * surface has to avoid colliding with. Everything that already exists globally —
+ * .shell, .section, .card, .rail, .state-panel, .button, .visually-hidden — is
+ * reused as-is so the surfaces cannot drift apart visually.
+ */
+
+/*
+ * The heading of a state panel that has REPLACED the hero.
+ *
+ * Two branches of this route render no hero at all: the title nothing knows
+ * about, and the title the source could not return. Their panel heading is then
+ * the document's only heading, so it has to be an `h1` — a page whose first
+ * heading is a level 2 has nothing for "jump to heading 1" to find and an
+ * outline that starts part-way down. Both panels were `h2`.
+ *
+ * The class exists because `globals.css` sizes `.state-panel h2` at 20px and
+ * sizes a bare `h1` for a hero, up to 84px. Without it, fixing the level would
+ * arrive as a display-size heading inside a small panel — a correct outline
+ * paid for with an obviously broken page, which is how outline fixes get
+ * reverted.
+ */
+.stateHeading {
+  margin: 0;
+  font-size: 20px;
+  letter-spacing: -0.02em;
+}
+
+/*
+ * `title` is `z.string().min(1)` with no upper bound and no guarantee that it
+ * contains a space. `.hero` sets `overflow: hidden`, so a long unbroken title at
+ * the hero's clamped size is silently CLIPPED — the one thing on the page the
+ * reader came for, cut off with no indication that anything is missing.
+ * Breaking inside the word keeps it readable and changes nothing for a title
+ * that has somewhere ordinary to break.
+ */
+.heroTitle {
+  overflow-wrap: anywhere;
+}
+
+/*
+ * The episode grid, as an actual list.
+ *
+ * It was a `div` of `article`s, so the count announced in the season head ("8
+ * episodes") described a structure the page did not expose: nothing said where
+ * one episode ended and the next began, and there was no list to navigate by.
+ *
+ * `list-style: none` is what the grid layout needs and is also exactly what
+ * makes the `role="list"` in the markup non-redundant: WebKit drops the list
+ * role from a list styled this way, so on Safari/VoiceOver the episodes would
+ * announce as a run of unrelated items and the count above them would be a claim
+ * the page does not keep. That same defect was just found and fixed on the
+ * search surface; it is not being reintroduced here.
+ *
+ * Geometry stays in the global `.rail`, which is applied alongside this class.
+ * Only the list resets live here, so the episode grid and the catalog rails
+ * cannot drift apart.
+ */
+.episodeGrid {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/*
+ * Focus is not restored here, it is stated: nothing in `globals.css` removes the
+ * user agent's ring, but nothing defines one either, so the indicator is
+ * whatever the browser picks against `--bg` (#06080d) — which on several is a
+ * dark outline on a near-black background.
+ *
+ * The episode grid is the primary keyboard path through a series, and each card
+ * carries two links. A keyboard user who loses the caret in a 24-episode grid
+ * loses the surface.
+ */
+.episodeGrid a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 4px;
+}

@@ -177,7 +177,9 @@ doing.
 
 **`scripts/with-root-env.mjs` is what bridges them now.** `apps/web`'s `dev` and
 `start` scripts run through it — `build` deliberately does not; see
-[Why `build` is not wrapped](#why-build-is-not-wrapped) below:
+[Why `build` is not wrapped](#why-build-is-not-wrapped) below. So do
+`packages/persistence`'s `db:*` scripts, which had the same defect for the same
+reason; see [The `db:*` scripts had the same defect](#the-persistence-db-scripts):
 
 ```json
 "dev": "node ../../scripts/with-root-env.mjs next dev"
@@ -239,6 +241,52 @@ because only `next` has a subcommand the loader can read a phase from:
 ```bash
 node ../../scripts/with-root-env.mjs --mode development drizzle-kit migrate
 ```
+
+<a id="the-persistence-db-scripts"></a>
+
+### The `db:*` scripts had the same defect
+
+That example is not hypothetical. `packages/persistence`'s `db:generate`,
+`db:migrate` and `db:check` run exactly that line, and until they did, this
+guide was wrong about them.
+
+They run with cwd `packages/persistence`, for the same reason `next dev` runs
+with cwd `apps/web`: that is the workspace whose `package.json` holds the
+script. drizzle-kit's bundled CLI *does* call dotenv — but dotenv's default path
+is `path.resolve(process.cwd(), ".env")` and nothing else: not `.env.local`, not
+a mode-specific file, and not the repository root. So
+`packages/persistence/drizzle.config.ts` read `process.env["DATABASE_URL"]`, got
+nothing, fell back to `""`, and `drizzle-kit migrate` failed on an empty
+connection URL while the developer was looking at a root `.env.local` that
+plainly contained one.
+
+This half of the defect failed **loudly**, which is the only reason it cost
+minutes rather than the three debugging rounds the `apps/web` half cost. It was
+the same defect, and it made the setup instructions on this page untrue.
+
+The mode is stated rather than derived, and which one it is matters:
+
+| Mode          | Why not                                                                 |
+| ------------- | ------------------------------------------------------------------------ |
+| `test`        | omits `.env.local` — the one file this guide tells you to put `DATABASE_URL` in. It would reintroduce the defect under a new name. |
+| `production`  | reads `.env.production.local` first. Defaulting a *migration* command to the production overlay is how a migration reaches the wrong database. A real deployment supplies `DATABASE_URL` from the environment, which outranks every file anyway. |
+| `development` | reads `.env.development.local`, `.env.local`, `.env.development`, `.env` — the developer's own database, and not the production overlay. |
+
+Two consequences to know before you run a migration:
+
+- **An exported `DATABASE_URL` still wins**, and so does a value already in the
+  environment. The loader sets only names that are absent, and dotenv's default
+  is likewise not to override, so a `packages/persistence/.env` would lose to
+  the root rather than shadow it.
+- **The loader names the file it took `DATABASE_URL` from**, on stderr, before
+  drizzle-kit starts — and `drizzle.config.ts` sets `verbose: true`. If you keep
+  a real deployment credential in the root `.env.local`, that line is the one
+  that tells you `db:migrate` is about to use it. Read it.
+
+There is no cache-correctness objection here, which is why all three are wrapped
+and `apps/web`'s `build` is not: none of the `db:*` scripts is a `turbo.json`
+task, none appears in `globalEnv`, and none produces a cached artifact whose
+contents depend on the environment.
 
 `apps/web` currently has no dotenv files of its own, and adding one is not
 recommended: the root loader runs first, so a root value would land in
@@ -374,12 +422,39 @@ Local infrastructure (`@scope app`, both optional):
 
 | Variable       | Format                  | Purpose                                                                                       |
 | -------------- | ----------------------- | --------------------------------------------------------------------------------------------- |
-| `DATABASE_URL` | `postgresql://…/db`     | PostgreSQL connection string. Optional today because `docs/DATABASE.md` pins no ORM yet, so no code reads it; format-checked whenever present. |
+| `DATABASE_URL` | `postgresql://…/db`     | PostgreSQL connection string. Read by `packages/persistence/drizzle.config.ts`, which supplies no fallback: `drizzle-kit migrate` fails on an empty connection URL rather than inventing a database. Still `@optional` — see below — and format-checked whenever present. |
 | `REDIS_URL`    | `redis://` \| `rediss://` | Redis connection string for ephemeral cache, rate limits, and provider health snapshots. Documented as optional in `docs/DATABASE.md`. |
 
 The credentials committed in `.env.example` for these two are the throwaway ones
 hard-coded in `infra/docker-compose.yml`. A real deployment's connection string
 is a credential and belongs in `.env.local` or a secret store.
+
+**Why `DATABASE_URL` stays `@optional` even though code now reads it.** The
+annotation answers one question — *what happens when this is unset* — and the
+honest answer is still "nothing breaks, unless you asked for a migration".
+
+- `@required` is a claim about the whole checkout, and it would be false here.
+  Nothing the gates run touches `DATABASE_URL`: the application does not read it,
+  `npm run check` does not, and CI does not set it. Only three opt-in
+  maintenance scripts in one package need it. Marking it `@required` would make
+  `npm run env:validate` — and therefore `npm run check` — fail on a correct
+  clone that simply has no database, and fail CI for the same reason. That is the
+  outcome rule 4 in `validate-env.mjs`'s header exists to prevent: a check that
+  fails a correct checkout gets run with eyes closed, and then stops catching
+  anything.
+- `@default` is unavailable and would be worse than unavailable. It means "this
+  is the value the project behaves as if it had", and
+  `packages/persistence/drizzle.config.ts` deliberately has no fallback —
+  a default connection string is exactly how a migration reaches the wrong
+  database.
+- The loudness that matters already exists, and it is closer to the mistake than
+  a validator could be. `drizzle-kit migrate` with an empty URL fails at the
+  moment you asked for the migration, naming the command you just typed, rather
+  than warning three commands earlier about a database you may not want.
+
+So the prose changed and the annotation did not. `@optional` still buys the
+format check, which is the part that catches a URL pointing at the wrong port —
+a failure that surfaces much later and much less obviously than absence.
 
 Automation only (`@scope ci`, supplied by GitHub Actions, all optional locally):
 
@@ -401,9 +476,13 @@ exactly like a variable that is doing nothing.
 
 ## Local PostgreSQL and Redis
 
-Both services are optional. Nothing in the current tree reads `DATABASE_URL` or
+Both services are optional. Nothing the gates run reads `DATABASE_URL` or
 `REDIS_URL`, and the full gate (`npm run check`) passes with neither running.
-Start them when you are working on persistence or caching:
+The one thing that does read `DATABASE_URL` is
+`packages/persistence/drizzle.config.ts`, and only when you invoke `db:generate`,
+`db:migrate` or `db:check` yourself — none of which any gate runs. Nothing reads
+`REDIS_URL` yet. Start the services when you are working on persistence or
+caching:
 
 ```bash
 docker compose -f infra/docker-compose.yml up -d

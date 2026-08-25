@@ -1206,9 +1206,19 @@ try {
       );
     }
 
-    // Both services are optional by design; docs/DATABASE.md pins no ORM yet
-    // and Redis is an optional cache. If that changes, this assertion is the
-    // reminder to change the contract deliberately rather than by accident.
+    /*
+     * Both services stay optional by design, and the reason is narrower than it
+     * used to be. This comment said "docs/DATABASE.md pins no ORM yet", which
+     * stopped being true when packages/persistence pinned drizzle and
+     * drizzle.config.ts began reading DATABASE_URL -- a stale reason outliving
+     * the fact it was a reason for, which is the same drift .env.example and
+     * docs/DEVELOPMENT.md had. The ASSERTIONS did not change, because the
+     * conclusion did not: no gate runs a migration, so an unset DATABASE_URL
+     * breaks nothing until someone invokes db:migrate, and requiring it would
+     * fail a correct clone that simply has no database -- header rule 4. If a
+     * gate ever does need a database, this is the reminder to change the
+     * contract deliberately rather than by accident.
+     */
     assert.equal(byName.get("DATABASE_URL").required, false);
     assert.equal(byName.get("DATABASE_URL").format, "postgres-url");
     assert.equal(byName.get("REDIS_URL").required, false);
@@ -1945,6 +1955,48 @@ try {
         "starts, so the loader would set cache-key variables the cache key cannot see",
     );
     assert.equal(/with-root-env/.test(webScripts.test), false);
+
+    /*
+     * The same defect had a second location, and it is pinned here rather than
+     * in a scenario of its own because it is the same fact: a package script
+     * runs with cwd set to its own directory, so it does not see the root
+     * `.env.local` the setup instructions tell people to write.
+     *
+     * `packages/persistence`'s `db:*` scripts run drizzle-kit, whose bundled
+     * dotenv opens `<cwd>/.env` and nothing else -- so `drizzle.config.ts` read
+     * an empty `DATABASE_URL`. That failed loudly, unlike the `apps/web` case,
+     * which is the only reason it survived being noticed.
+     *
+     * The `--mode` is asserted, not just the wrapper. Without it the wrapper
+     * refuses to run at all (only `next` has a subcommand it can derive a phase
+     * from), and WHICH mode is the load-bearing part: `test` omits `.env.local`
+     * and would reintroduce the defect, `production` reads
+     * `.env.production.local` first and would point a migration at the wrong
+     * database by default. The reasoning is in `drizzle.config.ts`; this stops
+     * it being edited away by accident.
+     *
+     * `test` stays out for the same reason `apps/web`'s does: vitest reads no
+     * dotenv file, and wrapping it would newly make the unit gate depend on one.
+     */
+    const persistenceScripts = JSON.parse(
+      fs.readFileSync(path.resolve("packages/persistence/package.json"), "utf8"),
+    ).scripts;
+    for (const name of ["db:generate", "db:migrate", "db:check"]) {
+      assert.match(
+        persistenceScripts[name],
+        /with-root-env\.mjs/,
+        `@liberty/persistence "${name}" runs with cwd packages/persistence and must load the ` +
+          `root env first: drizzle-kit's dotenv only opens <cwd>/.env`,
+      );
+      assert.match(
+        persistenceScripts[name],
+        /--mode development\b/,
+        `@liberty/persistence "${name}" must state --mode development: drizzle-kit has no ` +
+          `subcommand the wrapper can derive a phase from, test omits .env.local, and ` +
+          `production reads .env.production.local first`,
+      );
+    }
+    assert.equal(/with-root-env/.test(persistenceScripts.test), false);
   }
 
   console.log("Environment validation tests passed (38 scenarios).");

@@ -329,7 +329,7 @@
       "id": "PL-0102",
       "priority": "P0",
       "lane": "Frontend",
-      "status": "READY",
+      "status": "REVIEW",
       "title": "Search experience",
       "dependencies": [
         "PL-0101"
@@ -348,8 +348,32 @@
         "build"
       ],
       "acceptance": "Debounced accessible search with typed results and URL-addressable query",
-      "owner": null,
-      "gateResults": {}
+      "owner": "claude-frontend",
+      "gateResults": {
+        "lint": {
+          "status": "pass",
+          "at": "2026-08-25T05:30:14.169Z",
+          "evidence": "npm run check round 25, lint task green across all workspaces"
+        },
+        "typecheck": {
+          "status": "pass",
+          "at": "2026-08-25T05:30:14.589Z",
+          "evidence": "turbo run typecheck round 25 exit 0, plus npm run check typecheck task"
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-08-25T05:30:15.012Z",
+          "evidence": "vitest via npm run check round 25, includes new search-sync and search-sync.property suites"
+        },
+        "build": {
+          "status": "pass",
+          "at": "2026-08-25T05:30:15.438Z",
+          "evidence": "next build via npm run check round 25 exit 0"
+        }
+      },
+      "implementationAgent": "claude-frontend",
+      "updatedAt": "2026-08-25T05:30:15.862Z",
+      "implementationBaseSha": "34c16c97c9ae0a1dec5b708f4f81ed62ecb94afb"
     },
     {
       "id": "PL-0103",
@@ -374,6 +398,53 @@
         "build"
       ],
       "acceptance": "Movie, series, and episode details with play CTA using normalized IDs",
+      "owner": null,
+      "gateResults": {
+        "lint": {
+          "status": "pass",
+          "at": "2026-08-25T05:30:17.091Z",
+          "evidence": "npm run check round 25, lint task green across all workspaces"
+        },
+        "typecheck": {
+          "status": "pass",
+          "at": "2026-08-25T05:30:17.526Z",
+          "evidence": "turbo run typecheck round 25 exit 0, plus npm run check typecheck task"
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-08-25T05:30:17.945Z",
+          "evidence": "vitest via npm run check round 25, includes expanded title-detail suite"
+        },
+        "build": {
+          "status": "pass",
+          "at": "2026-08-25T05:30:18.366Z",
+          "evidence": "next build via npm run check round 25 exit 0"
+        }
+      }
+    },
+    {
+      "id": "PL-0104",
+      "priority": "P0",
+      "lane": "Frontend",
+      "status": "BACKLOG",
+      "title": "Make catalog and search results navigable",
+      "dependencies": [
+        "PL-0102",
+        "PL-0103"
+      ],
+      "allowedPaths": [
+        "apps/web/src/components/catalog-card.tsx",
+        "apps/web/src/lib/routes.ts"
+      ],
+      "preferredAgent": "claude-frontend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "lint",
+        "typecheck",
+        "unit",
+        "build"
+      ],
+      "acceptance": "Every catalog and search result opens its title details page, with an accessible link name",
       "owner": null,
       "gateResults": {}
     },

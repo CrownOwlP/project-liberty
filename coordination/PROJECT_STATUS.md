@@ -1,16 +1,16 @@
 # Project Liberty - Project Status
 
-> Generated 2026-08-21T05:22:40.203Z from the AI control plane.
+> Generated 2026-08-25T05:30:19.228Z from the AI control plane.
 
-**Overall completion:** 7/34 executable tasks (21%)
+**Overall completion:** 7/35 executable tasks (20%)
 
 ## Status summary
 
-- **BACKLOG:** 15
-- **READY:** 8
+- **BACKLOG:** 16
+- **READY:** 7
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 0
-- **REVIEW:** 2
+- **REVIEW:** 3
 - **BLOCKED:** 2
 - **DONE:** 7
 - **CANCELED:** 0
@@ -28,19 +28,20 @@
 
 ## Active work
 
+- **PL-0102** [REVIEW] Search experience — owner: claude-frontend
 - **PL-0304** [REVIEW] Media inspection service — owner: claude-backend
 - **PL-AI-0004** [REVIEW] Review dependency scope — owner: claude-lead
 
 ## Dispatch classification
 
-- **READY_AND_EXECUTABLE:** 6
+- **READY_AND_EXECUTABLE:** 5
 - **READY_BUT_EXTERNAL:** 2
 - **BLOCKED:** 2
-- **BACKLOG (dependency-gated):** 15
+- **BACKLOG (dependency-gated):** 16
 
 ## Recommended executable wave
 
-- **PL-0102** -> claude-frontend (P0/Frontend) Search experience
+No conflict-free executable tasks can be assigned with current agent capacity.
 
 ## Queued for external agents
 
@@ -56,7 +57,7 @@
 
 - **gpt-architect:** 0/6 active (external lane; not locally executable)
 - **claude-lead:** 1/2 active
-- **claude-frontend:** 0/1 active
+- **claude-frontend:** 1/1 active
 - **claude-backend:** 1/1 active
 - **claude-media:** 0/1 active
 - **claude-test:** 0/1 active

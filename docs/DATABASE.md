@@ -51,4 +51,6 @@ PostgreSQL is the source of truth. Redis is optional for ephemeral cache, rate l
 - Make watch-progress writes idempotent and ordered by client event time plus server receipt time.
 - Retain playback decision metadata long enough to debug failures without storing sensitive URLs unnecessarily.
 
-An ORM/migration library is intentionally not pinned in this scaffold until the first persistence task chooses it and creates a real lockfile.
+The ORM/migration library was left unpinned in the original scaffold until the first persistence task chose one. That has happened: `packages/persistence` pins `drizzle-orm` and `drizzle-kit` (versions and their provenance are recorded in `docs/DATA_MODEL.md`), and `packages/persistence/drizzle.config.ts` reads `DATABASE_URL`.
+
+This sentence is kept rather than deleted because two other files were still quoting the old state of it as a reason — `.env.example` and `docs/DEVELOPMENT.md` both said "no code reads `DATABASE_URL`" long after code did. `DATABASE_URL` nevertheless stays `@optional`: no gate runs a migration, so an unset value breaks nothing until you ask for one. The argument is in [DEVELOPMENT.md](DEVELOPMENT.md#declared-variables).
