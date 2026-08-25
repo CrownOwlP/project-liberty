@@ -2,7 +2,8 @@ import { parseDashLadder } from "./dash";
 import { detectManifestFormat } from "./detect";
 import type { EgressPolicy, HostClassifier, HostResolver } from "./egress";
 import { parseHlsLadder } from "./hls";
-import { fetchManifestText, type FetchLike, type ManifestFetchFailure } from "./http";
+import { fetchManifestText, type ManifestFetchFailure } from "./http";
+import type { PinnedFetch } from "./pin";
 import type {
   InspectionReason,
   InspectionReasonCode,
@@ -76,7 +77,11 @@ export interface InspectionOptions {
 }
 
 export interface InspectionDependencies {
-  readonly fetchImpl: FetchLike;
+  /**
+   * See `pin.ts` on why this is not `typeof fetch`. A Node composition root
+   * supplies `nodePinnedFetch` from `@liberty/media-inspection/node/pinned-fetch`.
+   */
+  readonly fetchImpl: PinnedFetch;
   /** See `egress.ts` on why this is a required port with no default. */
   readonly classifyHost: HostClassifier;
   readonly resolveHost: HostResolver;

@@ -59,15 +59,38 @@ function normalizePrefix(pattern) {
  * expensive than reserving the whole package, which is the bottleneck the field
  * was added to remove.
  */
+/*
+ * A prefix that IS the repository root, in either spelling that reaches it.
+ *
+ * This case is checked before the prefix comparison below, because the obvious
+ * way to write that comparison was `.filter(Boolean)` first -- and that is a
+ * hole, not a tidy-up. `normalizePrefix("**")` is "" and `normalizePrefix(".")`
+ * is ".", so a task declaring either OWNS THE WHOLE REPOSITORY: .github,
+ * scripts, control and coordination/agent-bus included. Dropping "" as falsy,
+ * and letting "." fail a comparison no relative path can satisfy, made the
+ * single broadest allowedPath expressible the one thing this guard could not
+ * see -- and this guard is what stops an agent rewriting the reviewer that
+ * judges its own work.
+ *
+ * `ai-control-plane.mjs validate` now rejects such a path outright, so this
+ * should be unreachable. It is checked anyway: this script reads
+ * control/tasks.json directly and never runs the validator, so validation is not
+ * on the path between a bad declaration and an autonomous claim.
+ */
+function isRepositoryRoot(prefix) {
+  return prefix === "" || prefix === ".";
+}
 function touchesOrchestration(task) {
   return (task.allowedPaths ?? [])
     .map(normalizePrefix)
-    .filter(Boolean)
-    .filter((p) =>
-      ORCHESTRATION_PREFIXES.some(
-        (o) => p === o || p.startsWith(o + "/") || o.startsWith(p + "/"),
-      ),
-    );
+    .filter(
+      (p) =>
+        isRepositoryRoot(p) ||
+        ORCHESTRATION_PREFIXES.some(
+          (o) => p === o || p.startsWith(o + "/") || o.startsWith(p + "/"),
+        ),
+    )
+    .map((p) => (isRepositoryRoot(p) ? "<repository root>" : p));
 }
 
 // 1. Rework first: a task sent back by changes_requested is already IN_PROGRESS.

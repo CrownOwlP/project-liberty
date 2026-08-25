@@ -1,4 +1,5 @@
 import type { EgressPolicy, HostClass, HostClassifier, HostResolver } from "../egress";
+import type { PinnedFetch } from "../pin";
 
 /* -------------------------------------------------------------------------
  * Test support. NOTHING IN THIS FILE IS PRODUCTION CODE.
@@ -152,12 +153,18 @@ export function renderDashMpd(variants: readonly VariantSpec[]): string {
 }
 
 /**
- * A `fetch` double.
+ * A transport double.
  *
- * Returns a real `Response`, so the size cap, the header reads and the
- * `redirect: "manual"` handling all run against the same objects production
- * uses. `steps` is consumed in order, which is what lets a redirect chain be
- * written as a list.
+ * Returns a real `Response`, so the size cap, the header reads and the manual
+ * redirect handling all run against the same objects production uses. `steps` is
+ * consumed in order, which is what lets a redirect chain be written as a list.
+ *
+ * IT RECORDS THE PIN AS WELL AS THE URL. `pinned[n]` is the address set the
+ * transport was given for hop n, which is the only place a test can observe
+ * whether the addresses `authoriseFetchTarget` classified are the ones a socket
+ * would have been opened to. A double that recorded only the URL could not tell
+ * a pinned request from an unpinned one -- the distinction this package's SSRF
+ * boundary now rests on.
  */
 export interface FetchStep {
   readonly status: number;
@@ -166,19 +173,22 @@ export interface FetchStep {
 }
 
 export function scriptedFetch(steps: readonly FetchStep[]): {
-  readonly fetchImpl: typeof globalThis.fetch;
+  readonly fetchImpl: PinnedFetch;
   readonly requested: string[];
+  readonly pinned: string[][];
 } {
   const requested: string[] = [];
+  const pinned: string[][] = [];
   let index = 0;
 
-  const fetchImpl = (async (input: unknown): Promise<Response> => {
-    requested.push(String(input));
+  const fetchImpl: PinnedFetch = async (target) => {
+    requested.push(target.url);
+    pinned.push([...target.addresses]);
     const step = steps[Math.min(index, steps.length - 1)];
     index += 1;
     if (step === undefined) throw new Error("scriptedFetch ran out of steps");
     return new Response(step.body, { status: step.status, headers: { ...step.headers } });
-  }) as unknown as typeof globalThis.fetch;
+  };
 
-  return { fetchImpl, requested };
+  return { fetchImpl, requested, pinned };
 }

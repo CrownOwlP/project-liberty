@@ -18,7 +18,7 @@
  * addition rather than a redefinition, and no consumer's handling of the two
  * existing sources changes meaning underneath it.
  *
- * THE THREE THINGS A CONSUMER MUST NOT GET WRONG:
+ * THE FOUR THINGS A CONSUMER MUST NOT GET WRONG:
  *
  *   1. A `null` fact is UNKNOWN. Not zero, not a default, not "probably h264".
  *      Every parser here refuses to infer, so a `null` reaching a consumer is
@@ -27,6 +27,11 @@
  *      what a provider said and it does not outrank bytes.
  *   3. An `allowed: true` verdict on a variant URI is not a clearance to fetch
  *      it. See `UriVerdict`.
+ *   4. `fetchImpl` IS NOT `fetch`. It takes the `PinnedTarget` an authorisation
+ *      produced, and the addresses in it are the only ones a socket may be
+ *      opened to. Supplying an adapter that ignores them and calls `fetch` on
+ *      `target.url` reinstates the DNS rebinding window this package was built
+ *      to close -- silently, because every other check still passes.
  */
 
 export { readDeclaredCodecs, NO_DECLARED_CODECS, type DeclaredCodecs } from "./codecs";
@@ -49,12 +54,29 @@ export {
 export { parseHlsLadder } from "./hls";
 export {
   fetchManifestText,
-  type FetchLike,
   type ManifestFetchDependencies,
   type ManifestFetchFailure,
   type ManifestFetchOptions,
   type ManifestFetchResult
 } from "./http";
+/*
+ * The pinning TYPES are here; the Node implementation is not, and importing this
+ * barrel must not load `node:https`. It is reached at
+ * `@liberty/media-inspection/node/pinned-fetch` instead, so the runtime-agnostic
+ * surface stays runtime agnostic and a composition root states which runtime it
+ * is composing for.
+ */
+export {
+  bareAddress,
+  createPinnedLookup,
+  type PinnedFetch,
+  type PinnedLookup,
+  type PinnedLookupAddress,
+  type PinnedLookupCallback,
+  type PinnedLookupOptions,
+  type PinnedRequestInit,
+  type PinnedTarget
+} from "./pin";
 export {
   DEFAULT_INSPECTION_LIMITS,
   inspectManifest,

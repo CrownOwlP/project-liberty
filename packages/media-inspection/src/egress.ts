@@ -22,14 +22,28 @@
  *
  *   3. HOSTNAMES ARE RESOLVED AND PRIVATE RANGES REJECTED BEFORE THE FETCH.
  *      This is the control that `@liberty/provider-sdk`'s url-policy explicitly
- *      does NOT implement and records as residual risk PL-0701: it validates the
- *      host LITERAL, so `cdn.example.test` with an A record of 10.0.0.5 passes
- *      there. Here it must not, so resolution is a required dependency and every
+ *      does NOT implement and records as an accepted residual risk: it validates
+ *      the host LITERAL, so `cdn.example.test` with an A record of 10.0.0.5
+ *      passes there. That acceptance is recorded under "Residual risks, open" in
+ *      `docs/SECURITY.md` by the PL-0702 review and is NOT tracked by a task
+ *      number; an earlier version of this file cited PL-0701 for it, which is
+ *      the critical end-to-end harness and has never covered any of this. Here
+ *      the control must exist, so resolution is a required dependency and every
  *      returned address is classified before a socket is opened.
  *
- *   4. REDIRECTS ARE REVALIDATED. Handled in `http.ts`, which calls back into
- *      `authoriseFetchTarget` for every hop. An allowlisted CDN that 302s to a
- *      cloud metadata endpoint bypasses a first-hop-only check completely.
+ *   4. THE CONNECTION IS PINNED TO AN ADDRESS THAT WAS CLASSIFIED. Resolving and
+ *      then connecting by NAME would let the runtime resolve a second time, so
+ *      the checked address and the connected address would be two independent
+ *      answers a hostile resolver chooses separately -- DNS rebinding, against
+ *      which control 3 alone is decorative. The `ok` verdict therefore carries a
+ *      `PinnedTarget` rather than a bare address list, and `pin.ts` explains
+ *      what that binds and what it deliberately does not change.
+ *
+ *   5. REDIRECTS ARE REVALIDATED. Handled in `http.ts`, which calls back into
+ *      `authoriseFetchTarget` for every hop -- and therefore re-pins for every
+ *      hop, since each hop's pin comes out of its own authorisation. An
+ *      allowlisted CDN that 302s to a cloud metadata endpoint bypasses a
+ *      first-hop-only check completely.
  *
  * WHAT THIS FILE DELIBERATELY DOES NOT CONTAIN, and why that is not an
  * oversight: the address-range classifier itself. `@liberty/provider-sdk`
@@ -50,6 +64,8 @@
  * strings and log lines is unconditional rather than incidental. Details name
  * an origin or a hostname and nothing after it.
  */
+
+import { bareAddress, type PinnedTarget } from "./pin";
 
 export type HostClass = "public" | "loopback" | "private" | "unparseable";
 
@@ -72,11 +88,15 @@ export type HostClassifier = (hostname: string) => HostClass;
  * `dns.promises.lookup(hostname, { all: true, verbatim: true })` mapped to
  * `address` strings.
  *
- * KNOWN RESIDUAL RISK, stated rather than disguised: resolving and then fetching
- * by hostname leaves a rebinding window, because `fetch` re-resolves and nothing
- * pins the connection to the address we checked. Closing it needs a custom
- * dispatcher, which is why `fetchImpl` is also a port -- a pinning dispatcher is
- * injected at the same seam without this file changing. Tracked with PL-0701.
+ * THIS IS THE ONLY RESOLUTION THAT HAPPENS. It used to be the first of two: the
+ * answers were classified here and then thrown away, and the runtime resolved
+ * the name again when it opened the socket. A publisher who controls the
+ * authoritative resolver chooses both answers independently, so every check
+ * could pass on 93.184.216.34 and the connection still land on
+ * 169.254.169.254 -- classic DNS rebinding, and it made the private-range
+ * rejection below decorative rather than a control. The answers now leave here
+ * inside a `PinnedTarget` and the transport is required to connect to one of
+ * them; see `pin.ts` for the mechanism and for what was rejected.
  */
 export type HostResolver = (hostname: string) => Promise<readonly string[]>;
 
@@ -160,8 +180,19 @@ export type StaticUrlVerdict =
   | { readonly ok: true; readonly url: URL; readonly hostClass: HostClass }
   | { readonly ok: false; readonly reason: EgressRejectionReason; readonly detail: string };
 
+/**
+ * The `ok` branch carries a `PinnedTarget` rather than a plain address list, and
+ * that is the whole point of the type.
+ *
+ * A caller that received `{ url, addresses }` would have to assemble the two
+ * into something a transport could use, and "assembled them wrongly" -- passed
+ * the URL without the addresses, passed the previous hop's addresses, passed
+ * none -- would be expressible and would compile. Here it is not: the pin is the
+ * product, this function is the only thing that builds one, and a transport
+ * cannot be called without it.
+ */
 export type FetchTargetVerdict =
-  | { readonly ok: true; readonly url: URL; readonly hostClass: HostClass; readonly addresses: readonly string[] }
+  | { readonly ok: true; readonly url: URL; readonly hostClass: HostClass; readonly pin: PinnedTarget }
   | { readonly ok: false; readonly reason: EgressRejectionReason; readonly detail: string };
 
 /** Keeps a hostile URL from turning an error message into a wall. */
@@ -365,6 +396,11 @@ export function checkUrlStatically(
  * round-robin into the private network, and checking `addresses[0]` would let it
  * through on roughly half of all attempts, which is the worst possible failure
  * mode because it looks like flakiness rather than a hole.
+ *
+ * The addresses that survive leave here as a `PinnedTarget`, and that is what a
+ * transport is given. Nothing downstream resolves the name again, so the set
+ * judged here is the set a socket can reach -- which is what makes the judgement
+ * above a control rather than a description of one moment in DNS.
  */
 export async function authoriseFetchTarget(
   raw: string,
@@ -380,8 +416,15 @@ export async function authoriseFetchTarget(
   // An IP literal has nothing to resolve; the classifier has already judged the
   // address itself. Sending it to a resolver would either echo it back or fail,
   // and a failure there would refuse a target that is provably fine.
+  //
+  // The literal is UNBRACKETED into the pin -- by `pinFor`, which does that for
+  // every address it is given. `url.hostname` for an IPv6 literal is `[::1]`,
+  // and a socket layer handed that does not recognise it as an address: it tries
+  // to RESOLVE the bracketed string, which is both a failure and a name lookup
+  // this branch exists to avoid. The URL keeps its brackets; only the address
+  // list drops them.
   if (isIpLiteral(url.hostname)) {
-    return { ok: true, url, hostClass, addresses: [url.hostname] };
+    return { ok: true, url, hostClass, pin: pinFor(url, [url.hostname]) };
   }
 
   let addresses: readonly string[];
@@ -422,5 +465,28 @@ export async function authoriseFetchTarget(
     };
   }
 
-  return { ok: true, url, hostClass, addresses: [...addresses] };
+  return { ok: true, url, hostClass, pin: pinFor(url, addresses) };
+}
+
+/**
+ * Builds the pin, and is the ONLY thing in this package that does.
+ *
+ * Private on purpose: an exported constructor would let a caller mint a
+ * `PinnedTarget` around addresses that nothing classified, which is exactly the
+ * guarantee the type is supposed to carry. Reached only from the two `ok`
+ * returns above, both of which are downstream of every check in this file.
+ *
+ * `bareAddress` is applied to resolver answers too, not only to literals. The
+ * `HostResolver` contract says bare addresses and the composition root supplies
+ * them, but a resolver is an injected port and a bracketed answer from one would
+ * otherwise become a hostname the socket layer tries to look up -- turning a pin
+ * into a second resolution, which is the failure this whole mechanism exists to
+ * prevent. Normalising costs nothing and removes the possibility.
+ */
+function pinFor(url: URL, addresses: readonly string[]): PinnedTarget {
+  return {
+    url: url.toString(),
+    hostname: url.hostname,
+    addresses: addresses.map(bareAddress)
+  };
 }

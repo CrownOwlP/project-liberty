@@ -21,7 +21,7 @@
     "repo:validate": "node scripts/validate-repo.mjs",
     "repo:validate:quick": "node scripts/validate-repo.mjs --quick",
     "env:validate": "node scripts/validate-env.mjs --mode development --mode test --mode production",
-    "test:scripts": "node scripts/test-validate-env.mjs",
+    "test:scripts": "node scripts/test-validate-env.mjs && node scripts/test-ai-control-plane.mjs",
     "check": "npm run ai:validate && npm run repo:validate && npm run env:validate && npm run test:scripts && npm run lint && npm run typecheck && npm run test && npm run build",
     "ai:validate": "node scripts/ai-control-plane.mjs validate",
     "ai:status": "node scripts/ai-control-plane.mjs status",

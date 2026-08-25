@@ -191,10 +191,12 @@ describe("hostnames are resolved and private ranges rejected before the fetch", 
   });
 
   it("refuses a public name whose A record points into the private network", async () => {
-    // The residual risk url-policy documents as PL-0701 and explicitly does not
-    // close. This package must close it, because a manifest host is chosen by a
-    // publisher rather than fixed by an operator, so checking the NAME proves
-    // nothing about the address.
+    // The residual risk url-policy documents and explicitly does not close --
+    // recorded as R1 under "Residual risks, open" in docs/SECURITY.md, and NOT
+    // as PL-0701, which an earlier version of this comment cited and which is
+    // the critical end-to-end harness. This package must close it, because a
+    // manifest host is chosen by a publisher rather than fixed by an operator,
+    // so checking the NAME proves nothing about the address.
     const verdict = await authoriseFetchTarget(
       "https://cdn.example.test/master.m3u8",
       permissiveEgress,

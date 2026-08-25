@@ -104,6 +104,18 @@ const registry = JSON.parse(
 
 let failed = 0;
 let blocked = 0;
+/*
+ * Set once this run has moved the task to BLOCKED.
+ *
+ * The control plane only accepts a gate result while a task is IN_PROGRESS or
+ * REVIEW, so once the block below lands, every later `gate` call in this loop
+ * would be refused -- and `node()` throws on a non-zero exit, which would kill
+ * the runner before the summary at the bottom ever printed. The remaining gates
+ * are still EXECUTED and reported, because knowing that three more gates would
+ * also have failed is the useful part of a blocked run; only the recording is
+ * skipped, since a blocked task has nowhere legitimate to put it.
+ */
+let taskBlockedByThisRun = false;
 for (const gate of task.qualityGates ?? []) {
   const classification = classifyGate(gate, registry);
 
@@ -128,6 +140,7 @@ for (const gate of task.qualityGates ?? []) {
       TASK_ID,
       `gate "${gate}" (${classification.definition.command}) has no automated executor in the cloud worker`,
     );
+    taskBlockedByThisRun = true;
     blocked++;
     continue;
   }
@@ -135,6 +148,10 @@ for (const gate of task.qualityGates ?? []) {
   if (RECORD_ONLY) {
     // Runs nothing. The gate job already did, in isolation, and this job only
     // reaches this line when GitHub concluded that job succeeded.
+    if (taskBlockedByThisRun) {
+      console.error(`${gate}: not recorded; ${TASK_ID} was blocked earlier in this run`);
+      continue;
+    }
     node(CLI, "gate", TASK_ID, gate, "pass", `${classification.executor && ""}${RECORD_EVIDENCE}`.slice(0, 500));
     console.log(`${gate}: recorded pass (${RECORD_EVIDENCE})`);
     continue;
@@ -145,7 +162,7 @@ for (const gate of task.qualityGates ?? []) {
     source: "isolated gate job",
   });
 
-  if (!EXECUTE_ONLY) {
+  if (!EXECUTE_ONLY && !taskBlockedByThisRun) {
     node(CLI, "gate", TASK_ID, gate, result.passed ? "pass" : "fail", result.evidence);
   }
 

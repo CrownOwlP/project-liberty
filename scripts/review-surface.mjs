@@ -46,6 +46,35 @@ export function normalizePrefix(pattern) {
     .replace(/\/$/, "");
 }
 
+/**
+ * Does this glob name the repository ROOT rather than a place inside it?
+ *
+ * Two spellings get there, and they fail in OPPOSITE directions, which is why a
+ * single predicate has to answer for both:
+ *
+ *   "**", "*", "/", "/**"  normalizePrefix -> ""  and every downstream
+ *       `.filter(Boolean)` drops it. The declaration vanishes, the fingerprint
+ *       covers LESS than the task declared, and the approval is silently
+ *       narrower than it claims to be.
+ *   ".", "./"  normalizePrefix -> "."  which survives the filter and hashes the
+ *       entire tree -- while `withinPatterns` below answers "outside" for every
+ *       real path, since no repository-relative path starts with "./". The
+ *       approval would bind, cryptographically, to bytes the reviewer was never
+ *       shown: the exact inversion this module exists to prevent.
+ *
+ * So one spelling under-covers and the other over-covers, and neither is a
+ * declaration anyone can act on. Both are refused rather than assigned a
+ * meaning; whole-repository review semantics, if they are ever wanted, have to
+ * be designed rather than fall out of a regex that happened to return "".
+ *
+ * This asks about the root, NOT about breadth. "packages/**" normalizes to
+ * "packages" and is an ordinary, wide, entirely legal dependency.
+ */
+export function normalizesToRepositoryRoot(pattern) {
+  const prefix = normalizePrefix(pattern);
+  return prefix === "" || prefix === ".";
+}
+
 function withinPatterns(rel, patterns) {
   return patterns.some((raw) => {
     const prefix = normalizePrefix(raw);
@@ -75,6 +104,33 @@ export function reviewSurfacePatterns(task) {
     throw new Error(
       `${task.id}: reviewDependencies must be an array of non-empty path globs; ` +
         "refusing to fingerprint a review surface that cannot be determined",
+    );
+  }
+  const rooted = declared.filter(normalizesToRepositoryRoot);
+  if (rooted.length) {
+    /*
+     * The same fail-closed rule, one step further out, and the one this function
+     * previously got wrong.
+     *
+     * A well-formed non-empty string was accepted here and then discarded by
+     * `reviewPathspecs`'s `.filter(Boolean)` a few lines below, so a task could
+     * declare `reviewDependencies: ["**"]` and be fingerprinted as though it had
+     * declared nothing at all. `validate` said only that the entry "protects
+     * nothing" -- a warning, on the one field whose entire purpose is to make an
+     * approval WIDER than the task's own files.
+     *
+     * The invariant is not negotiable and is stated as narrowly as it can be: a
+     * declared review dependency may never make the approved surface narrower
+     * than what was declared. Dropping a declaration breaks it, so a declaration
+     * that cannot be turned into a usable prefix is refused instead. See
+     * `normalizesToRepositoryRoot` for why "." is refused alongside "**" even
+     * though it does not vanish.
+     */
+    throw new Error(
+      `${task.id}: reviewDependencies ${rooted.map((p) => JSON.stringify(p)).join(", ")} ` +
+        "normalize to the repository root, which is not a reviewable surface; " +
+        "declare the directories the review actually depends on. Refusing to " +
+        "fingerprint an approval narrower than the task declares",
     );
   }
   return [...(task.allowedPaths ?? []), ...declared];

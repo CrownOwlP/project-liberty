@@ -6,6 +6,7 @@ import {
   type InspectionDependencies,
   type InspectionOptions
 } from "./inspect";
+import type { PinnedFetch } from "./pin";
 import {
   permissiveEgress,
   renderDashMpd,
@@ -230,12 +231,16 @@ describe("the body is bounded before it is parsed", () => {
 
 describe("wall-clock time is bounded", () => {
   it("abandons a publisher that never answers", async () => {
-    const hangingFetch = ((_input: unknown, init?: { signal?: AbortSignal }) =>
+    // Typed as the transport port rather than as `fetch`, which is the only
+    // change this suite needed when the port started carrying the pin. The
+    // double's behaviour -- answer nothing, reject on abort -- is unchanged, and
+    // the double cast it used to need is gone with the `unknown` in it.
+    const hangingFetch: PinnedFetch = (_target, init) =>
       new Promise<Response>((_resolve, reject) => {
-        init?.signal?.addEventListener("abort", () => {
+        init.signal.addEventListener("abort", () => {
           reject(new Error("aborted"));
         });
-      })) as unknown as typeof globalThis.fetch;
+      });
 
     const result = await inspectManifest(
       authorization,

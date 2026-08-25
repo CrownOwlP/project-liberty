@@ -1,4 +1,5 @@
 import { authoriseFetchTarget, truncate, type EgressDependencies, type EgressPolicy, type EgressRejectionReason } from "./egress";
+import type { PinnedFetch } from "./pin";
 
 /**
  * The only place this package touches the network (PL-0304).
@@ -30,13 +31,20 @@ import { authoriseFetchTarget, truncate, type EgressDependencies, type EgressPol
  *     hop goes back through `authoriseFetchTarget` -- allowlist, host class and
  *     a fresh resolution included.
  *
+ *   - A NAME THAT ANSWERS DIFFERENTLY THE SECOND TIME. This file used to hand a
+ *     HOSTNAME to a `fetch`-shaped port, which meant the runtime resolved the
+ *     name again at connect time and the address that had been classified was
+ *     never the address that was reached. The transport port now takes the
+ *     `PinnedTarget` the authorisation produced, so the addresses travel with
+ *     the URL and a transport that ignores them does not type-check. Per hop:
+ *     each pass through the loop re-authorises and therefore re-pins, so hop
+ *     N+1 is never connected on hop N's addresses. See `pin.ts`.
+ *
  * NOTHING HERE THROWS, and nothing here reproduces a URL. A manifest URL is
  * signed; the research records that credential leakage through error strings is
  * unconditional rather than incidental, and this file is the boundary at which a
  * URL stops being ours. Details name an origin at most.
  */
-
-export type FetchLike = typeof globalThis.fetch;
 
 export type ManifestFetchFailure =
   | "timeout"
@@ -57,7 +65,14 @@ export interface ManifestFetchOptions {
 }
 
 export interface ManifestFetchDependencies extends EgressDependencies {
-  readonly fetchImpl: FetchLike;
+  /**
+   * The transport. NOT `typeof fetch`: it takes the pinned target rather than a
+   * URL, because a transport handed only a URL has no way to learn which
+   * addresses were authorised and must resolve the name itself -- which is the
+   * second resolution this whole design exists to remove. `node/pinned-fetch.ts`
+   * is the implementation for a Node deployment.
+   */
+  readonly fetchImpl: PinnedFetch;
   readonly now: () => number;
 }
 
@@ -212,22 +227,24 @@ export async function fetchManifestText(
           hop === 0 ? authorised.detail : `redirect hop ${hop}: ${authorised.detail}`
         );
       }
-      const current = authorised.url.toString();
+      // The pin, not the URL string, is what the transport is given. `current`
+      // is the same URL and is kept for the reason trail, the redirect base and
+      // `finalUrl` -- all of which are text, none of which opens a socket.
+      const current = authorised.pin.url;
 
       let response: Response;
       try {
-        response = await deps.fetchImpl(current, {
+        /*
+         * `redirect`, `credentials` and `body` are absent because
+         * `PinnedRequestInit` has no such fields: a transport that never follows
+         * a redirect, never attaches an ambient credential and never sends a
+         * body cannot be asked to do any of those by forgetting an option. The
+         * reasoning that used to sit on `credentials: "omit"` is on the type,
+         * where it constrains every implementation rather than this one call.
+         */
+        response = await deps.fetchImpl(authorised.pin, {
           method: "GET",
-          redirect: "manual",
           signal: controller.signal,
-          /*
-           * No cookies, no client certificates, no ambient credentials of any
-           * kind. A publisher is an unrelated third party; if a request to one
-           * carried our credentials, its URL would be a CSRF-shaped hole into
-           * whatever origin those credentials belong to. Whatever authorises
-           * THIS fetch is already inside the URL the rights decision named.
-           */
-          credentials: "omit",
           headers: {
             accept: "application/vnd.apple.mpegurl, application/dash+xml;q=0.9, */*;q=0.1",
             "user-agent": options.userAgent

@@ -29,6 +29,7 @@ import {
 } from "./review-range.mjs";
 import {
   normalizePrefix,
+  normalizesToRepositoryRoot,
   reviewPathspecs,
   reviewSurfaceLabel,
   reviewSurfacePatterns,
@@ -514,6 +515,13 @@ function filesForPattern(pattern) {
  * construction: no collision check reserved it, so another active task may be
  * editing it at the same moment, and treating it as writable here would hand out
  * an ownership claim the scheduler never granted.
+ *
+ * The `.filter(Boolean)` is only safe because `validate` now REFUSES a
+ * root-normalizing allowedPath rather than warning about one. Read on its own it
+ * is the exact fail-open this control plane was caught in once already: a path
+ * declared, accepted, and then silently dropped, taking the fingerprint and the
+ * dirty-tree check with it. Do not relax that check on the assumption that
+ * something downstream copes.
  */
 function taskPathspecs(task) {
   return [
@@ -1433,6 +1441,26 @@ function allGatesPassed(task) {
     (gate) => task.gateResults?.[gate]?.status === "pass",
   );
 }
+/**
+ * Discard gate evidence when a task stops having an owner and returns to a
+ * queue. Returns the names dropped, so the audit trail says what was discarded
+ * rather than leaving a silent gap.
+ *
+ * This is the SAME defect as the gate hole, reached entirely through legitimate
+ * commands: `release` and `unblock` both null the owner and put the task back in
+ * READY/BACKLOG while leaving gateResults behind. The next claimant -- possibly a
+ * different agent, certainly a different implementation round -- inherits passing
+ * evidence for work that no longer exists, and `done` accepts it. Re-recording a
+ * gate costs one command; noticing an inherited one costs an audit.
+ *
+ * Deliberately NOT called from `done`, which also nulls the owner. There the
+ * gate results are the completion evidence and must persist as history.
+ */
+function dropGateResults(task) {
+  const dropped = Object.keys(task.gateResults ?? {});
+  task.gateResults = {};
+  return dropped;
+}
 function validateState(d) {
   const {
     taskDoc,
@@ -1450,6 +1478,19 @@ function validateState(d) {
   const amap = agentMap(agents);
   const ids = new Set();
   for (const task of tasks) {
+    /*
+     * Can this task's reviewed surface be computed at all?
+     *
+     * The two fingerprint-derived checks at the end of this loop call into
+     * `review-surface.mjs`, which fails CLOSED rather than guessing at a surface
+     * it cannot determine -- so running them against a task whose
+     * reviewDependencies were just reported as invalid would abort the entire
+     * validation with a stack trace, reporting nothing about the other thirty
+     * tasks and never printing the message that names the offending field. The
+     * task is already invalid and already blocking; a second finding derived
+     * from a surface we just refused to compute would add nothing to it.
+     */
+    let reviewSurfaceUsable = true;
     if (ids.has(task.id)) errors.push(`duplicate task id: ${task.id}`);
     ids.add(task.id);
     if (!policies.statuses.includes(task.status))
@@ -1469,10 +1510,31 @@ function validateState(d) {
       warnings.push(
         `${task.id}: no allowedPaths; parallel write protection is weaker`,
       );
+    /*
+     * A root-normalizing allowedPath is an ERROR, not a warning, and the reason
+     * is not the collision surface -- `pathsOverlap` already treats an empty
+     * prefix as overlapping everything, so the old warning's claim that it "will
+     * conflict with every other task" was true. It is everything else.
+     *
+     * `taskPathspecs` drops the entry, and from there THREE protections quietly
+     * switch off at once: the fingerprint hashes zero files, so the stale-review
+     * check can never fail and the approval binds to nothing; `taskWorktreeIsDirty`
+     * sees no pathspecs and reports clean, so uncommitted work stops blocking
+     * completion; and `select-task.mjs` stops seeing any orchestration prefix, so
+     * a task owning the entire repository -- scripts/, control/, .github/ included
+     * -- reads as autonomously workable. A declaration that broad cannot be
+     * allowed to arrive as advice.
+     *
+     * `scripts/cloud/task-patch.mjs` already refuses "unbounded scope" outright
+     * rather than warning about it; this brings the validator into line with the
+     * strictest existing consumer instead of leaving them to disagree.
+     */
     for (const p of task.allowedPaths ?? []) {
-      if (!normalizePrefix(p))
-        warnings.push(
-          `${task.id}: allowedPath "${p}" normalizes to the repository root and will conflict with every other task`,
+      if (normalizesToRepositoryRoot(p))
+        errors.push(
+          `${task.id}: allowedPath "${p}" normalizes to the repository root; it is dropped from the fingerprint, ` +
+            "the dirty-tree check and the autonomy guard, and conflicts with every other task. " +
+            "List the directories this task actually writes",
         );
     }
     /*
@@ -1489,6 +1551,7 @@ function validateState(d) {
         errors.push(
           `${task.id}: reviewDependencies must be an array of path globs`,
         );
+        reviewSurfaceUsable = false;
       } else {
         const writable = taskPathspecs(task);
         for (const p of task.reviewDependencies) {
@@ -1496,15 +1559,38 @@ function validateState(d) {
             errors.push(
               `${task.id}: reviewDependencies entries must be non-empty strings, got ${JSON.stringify(p)}`,
             );
+            reviewSurfaceUsable = false;
+            continue;
+          }
+          if (normalizesToRepositoryRoot(p)) {
+            /*
+             * THE OBSERVED DEFECT. This was a warning saying the entry "protects
+             * nothing", and that was an accurate description of a control plane
+             * doing the wrong thing: `reviewSurfacePatterns` accepted any
+             * non-empty string, `reviewPathspecs` then dropped it, and a task
+             * declaring `reviewDependencies: ["**"]` was fingerprinted exactly
+             * like a task declaring none. The approval came out NARROWER than
+             * the task declared, which is the single failure this field exists
+             * to prevent, and the operator was told about it in the same breath
+             * as thirty other advisory lines.
+             *
+             * Warning-and-drop is never a safe answer for a protection: the
+             * declaration is the operator's stated intent, so the only honest
+             * responses are to honour it or to refuse it. Honouring "**" would
+             * mean whole-repository review semantics, which nothing here
+             * implements -- `classifyReviewPath` would still call every path
+             * "outside" -- so it is refused, and `reviewSurfacePatterns` throws
+             * for anything that bypasses this check.
+             */
+            errors.push(
+              `${task.id}: reviewDependency "${p}" normalizes to the repository root, which is not a reviewable ` +
+                "surface: it would be dropped from the fingerprint, making the approval narrower than declared. " +
+                "Declare the directories the review actually depends on",
+            );
+            reviewSurfaceUsable = false;
             continue;
           }
           const dep = normalizePrefix(p);
-          if (!dep) {
-            warnings.push(
-              `${task.id}: reviewDependency "${p}" normalizes to the repository root, which would put the entire repository in the reviewed surface; it is dropped instead, so it protects nothing`,
-            );
-            continue;
-          }
           // Redundant, never wrong. allowedPaths is already inside the reviewed
           // surface and the union is idempotent, so this changes no hash, no
           // collision decision and no gate. Making it an error would mean a
@@ -1553,7 +1639,11 @@ function validateState(d) {
         errors.push(
           `${task.id}: invalid review outcome ${task.review.outcome}`,
         );
-      if (task.status !== "DONE" && task.review.outcome === "APPROVED") {
+      if (
+        task.status !== "DONE" &&
+        task.review.outcome === "APPROVED" &&
+        reviewSurfaceUsable
+      ) {
         const current = implementationFingerprint(task);
         if (current.treeHash !== task.review.reviewedTreeHash)
           warnings.push(
@@ -1561,7 +1651,7 @@ function validateState(d) {
           );
       }
     }
-    if (task.status === "DONE") {
+    if (task.status === "DONE" && reviewSurfaceUsable) {
       // Historical integrity only: a completed task proves what it reviewed at
       // its own reviewed commit. It does not get to write-lock those paths
       // against every future task.
@@ -1938,6 +2028,16 @@ try {
     const task = requireTask(d.taskDoc, taskId);
     if (agentId && task.owner !== agentId)
       throw new Error(`${taskId} is owned by ${task.owner}, not ${agentId}`);
+    // Without the agent id the line above checks nothing, so an unowned task
+    // could be started and would become IN_PROGRESS with implementationAgent
+    // undefined. Nothing downstream can recover from that: assertReviewAllowed
+    // refuses the eventual review with "no recorded implementation agent" long
+    // after the cause, and `gate` would have no owner to attribute to. Refuse
+    // here, where the reason is still visible.
+    if (!task.owner)
+      throw new Error(
+        `${taskId} has no owner; claim it through the control plane first`,
+      );
     task.implementationAgent = task.owner ?? task.implementationAgent;
     // Capture the commit implementation started from, so the FIRST review has a
     // real lower bound instead of guessing at the parent commit. Never
@@ -1959,8 +2059,14 @@ try {
       `${taskId} started${task.implementationBaseSha ? ` from ${task.implementationBaseSha.slice(0, 12)}` : ""}.`,
     );
   } else if (command === "review") {
-    const [taskId] = args;
+    const [taskId, agentId] = args;
     const task = requireTask(d.taskDoc, taskId);
+    // Same optional assertion as `start` and `release`. Submitting somebody
+    // else's in-flight work for review is not a harmless nudge: it freezes the
+    // implementation at whatever state it happens to be in and puts the reviewer
+    // in front of a diff its author never offered.
+    if (agentId && task.owner !== agentId)
+      throw new Error(`${taskId} is owned by ${task.owner}, not ${agentId}`);
     transition(task, "REVIEW", d.policies);
     event("task.review_requested", {
       taskId,
@@ -2052,9 +2158,37 @@ try {
       ),
     );
   } else if (command === "gate") {
-    const [taskId, gate, status, ...noteParts] = args;
+    /*
+     * `--agent` is an ASSERTION, not authentication.
+     *
+     * Nothing in this process can prove who is calling it, so a mandatory agent
+     * id would buy no check that the ownership rule below does not already make
+     * -- while breaking every existing caller: CLAUDE.md documents the
+     * four-positional form, and the two unattended recorders
+     * (scripts/cloud/run-gates.mjs and scripts/cloud/advance-completable.mjs)
+     * are jobs with no agent identity of their own. So it mirrors `start`'s
+     * optional agent id instead: state who you believe you are and be refused
+     * loudly if the control plane disagrees, rather than writing evidence under
+     * somebody else's name.
+     */
+    const actingAgent = flagValue(args, "--agent");
+    const positional = [];
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === "--agent") {
+        i++;
+        continue;
+      }
+      positional.push(args[i]);
+    }
+    const [taskId, gate, status, ...noteParts] = positional;
+    if (!taskId || !gate || !status)
+      throw new Error(
+        "Usage: gate <taskId> <gate> <pass|fail> [--agent <agentId>] <evidence>",
+      );
     const task = requireTask(d.taskDoc, taskId);
-    if (!task.qualityGates.includes(gate))
+    // Already enforced before this change, and kept: a gate name outside the
+    // task's own qualityGates is evidence about a contract nobody asked for.
+    if (!(task.qualityGates ?? []).includes(gate))
       throw new Error(`${gate} is not required by ${taskId}`);
     if (!d.gateDoc.gates[gate]) throw new Error(`Unknown gate ${gate}`);
     if (!["pass", "fail"].includes(status))
@@ -2064,12 +2198,107 @@ try {
       throw new Error(
         "Gate evidence is required; it must identify the command, review, benchmark, or test performed",
       );
+
+    /*
+     * A gate result is evidence ABOUT WORK BEING PERFORMED against this task, so
+     * it may only be recorded while the control plane says work is legitimately
+     * happening against it, and only under the owner the control plane granted.
+     *
+     * The defect this closes: round 25 recorded four passing gates on PL-0103
+     * while it sat at READY with owner null. The claim had been refused (wrong
+     * lane) and the REVIEW transition had been refused -- yet all four gate
+     * writes succeeded, because this command checked argument shape and nothing
+     * else. Every other lifecycle command enforced ownership and the status
+     * machine; the one piece of state CLAUDE.md calls load-bearing completion
+     * evidence was the only one anybody could write unattributed, into any
+     * status, including BACKLOG and BLOCKED.
+     *
+     * PERMITTED, and why:
+     *   IN_PROGRESS  work is executing. The normal case, and the one the
+     *                round-25-style batch (claim, start, then gates) uses.
+     *   REVIEW       not a concession -- a requirement. A reviewer legitimately
+     *                re-runs checks, and the deterministic completion path in
+     *                scripts/cloud/advance-completable.mjs records EVERY gate
+     *                for an APPROVED task that is still in REVIEW. Refusing
+     *                REVIEW would break completion outright, not merely
+     *                inconvenience a reviewer.
+     *
+     * REFUSED, each considered rather than assumed:
+     *   CLAIMED      reserved, not started. `dispatch --apply` claims a whole
+     *                wave at once, so allowing it would let one command
+     *                accumulate gate passes for tasks nobody ever opened -- the
+     *                same unattributed evidence in a different costume. `start`
+     *                is one command away and captures implementationBaseSha,
+     *                which is what later binds the work to a range at all.
+     *   BLOCKED      the control plane has said this cannot proceed. Worse,
+     *                `unblock` returns the task to an unowned queue, so evidence
+     *                recorded here would outlive the round that produced it and
+     *                be inherited by the next claimant.
+     *   READY        no owner exists. This is the reported defect itself.
+     *   BACKLOG      dependencies are not even met; nothing can have been run.
+     *   DONE         gate results ARE the completion evidence. Editing them
+     *                afterwards would let a recorded `fail` be papered over with
+     *                no transition anywhere in the audit trail.
+     *   CANCELED     there is no work to evidence.
+     */
+    const GATE_RECORDABLE_STATUSES = ["IN_PROGRESS", "REVIEW"];
+    if (!GATE_RECORDABLE_STATUSES.includes(task.status)) {
+      throw new Error(
+        `${taskId} is ${task.status}; a gate result may only be recorded while a task is ` +
+          `${GATE_RECORDABLE_STATUSES.join(" or ")}. Claim and start it through the control plane first.`,
+      );
+    }
+    // Reachable only through a hand-edited tasks.json, which is exactly why it
+    // is checked: an ownerless active task would record evidence attributable to
+    // nobody, which is the state this whole rule exists to make unrepresentable.
+    if (!task.owner) {
+      throw new Error(
+        `${taskId} is ${task.status} but has no owner, so a gate result could not be attributed to anyone; ` +
+          "claim it through the control plane first",
+      );
+    }
+    if (actingAgent) {
+      requireAgent(d, actingAgent);
+      /*
+       * In REVIEW the designated reviewer may name itself: re-running the suite
+       * is part of reviewing. During IN_PROGRESS it may not. A reviewer
+       * recording gates on somebody else's in-flight work is not review, it is
+       * undeclared co-implementation, and it would later read as ordinary owner
+       * evidence that assertReviewAllowed's self-approval check cannot see.
+       */
+      const permitted =
+        task.status === "REVIEW"
+          ? [task.owner, task.reviewAgent].filter(Boolean)
+          : [task.owner];
+      if (!permitted.includes(actingAgent))
+        throw new Error(
+          `${taskId} is ${task.status} and owned by ${task.owner}; ${actingAgent} may not record its gates ` +
+            `(permitted: ${permitted.join(", ")})`,
+        );
+    }
+
+    const recordedBy = actingAgent ?? task.owner;
     task.gateResults ??= {};
-    task.gateResults[gate] = { status, at: now(), evidence };
-    event("task.gate", { taskId, gate, status, evidence });
+    task.gateResults[gate] = {
+      status,
+      at: now(),
+      // WHO the control plane holds accountable -- not who typed the command.
+      // The owner was established by `claim`, which checked lane capability,
+      // capacity and path conflicts; a free-text argument proves none of that.
+      by: recordedBy,
+      // WHAT the result is about. Round 25's four passes were defensible as
+      // commands that genuinely ran, and still worthless as evidence, because
+      // nothing tied them to a tree. Recorded, and deliberately NOT yet enforced
+      // at `done`: deciding when a gate goes stale is a separate policy question
+      // (a docs-only commit should not invalidate a build gate), and inventing
+      // an answer here would silently change what completion means.
+      commitSha: currentCommitSha(),
+      evidence,
+    };
+    event("task.gate", { taskId, gate, status, by: recordedBy, evidence });
     saveTasks(d.taskDoc);
     syncAll(d, false);
-    console.log(`${taskId} gate ${gate}: ${status}.`);
+    console.log(`${taskId} gate ${gate}: ${status} (recorded by ${recordedBy}).`);
   } else if (command === "done") {
     const [taskId] = args;
     const task = requireTask(d.taskDoc, taskId);
@@ -2118,22 +2347,35 @@ try {
     if (task.status !== "BLOCKED") throw new Error(`${taskId} is not BLOCKED`);
     task.owner = null;
     delete task.blocker;
+    const dropped = dropGateResults(task);
     const next = depsDone(task, taskMap(d.taskDoc.tasks)) ? "READY" : "BACKLOG";
     transition(task, next, d.policies);
-    event("task.unblocked", { taskId, status: next });
+    event("task.unblocked", { taskId, status: next, clearedGates: dropped });
     syncAll(d, false);
-    console.log(`${taskId} -> ${next}.`);
+    console.log(
+      `${taskId} -> ${next}${dropped.length ? ` (cleared gate results: ${dropped.join(", ")})` : ""}.`,
+    );
   } else if (command === "release") {
-    const [taskId] = args;
+    const [taskId, agentId] = args;
     const task = requireTask(d.taskDoc, taskId);
     if (!["CLAIMED", "IN_PROGRESS"].includes(task.status))
       throw new Error(`${taskId} is not releasable from ${task.status}`);
+    // Optional assertion, same shape as `start`. Releasing another agent's
+    // active claim is how two lanes end up believing they own the same
+    // allowedPaths: the scheduler's collision check only looks at ACTIVE tasks,
+    // so a silently released task is immediately re-dispatchable underneath the
+    // agent still writing to it.
+    if (agentId && task.owner !== agentId)
+      throw new Error(`${taskId} is owned by ${task.owner}, not ${agentId}`);
     transition(task, "READY", d.policies);
     const owner = task.owner;
     task.owner = null;
-    event("task.released", { taskId, owner });
+    const dropped = dropGateResults(task);
+    event("task.released", { taskId, owner, clearedGates: dropped });
     syncAll(d, false);
-    console.log(`${taskId} released.`);
+    console.log(
+      `${taskId} released${dropped.length ? ` (cleared gate results: ${dropped.join(", ")})` : ""}.`,
+    );
   } else if (command === "handoff") {
     const from = flagValue(args, "--from");
     const to = flagValue(args, "--to");
@@ -2557,16 +2799,21 @@ try {
   queue <agentId>
   claim <taskId> <agentId>
   start <taskId> [agentId]
-  review <taskId>
+  review <taskId> [agentId]
   approve <taskId> <reviewerAgent> <evidence>
   request-changes <taskId> <reviewerAgent> <evidence>
   review-status <taskId>
-  gate <taskId> <gate> <pass|fail> <evidence>
+  gate <taskId> <gate> <pass|fail> [--agent <agentId>] <evidence>
   done <taskId>
   block <taskId> <reason>
-  unblock <taskId>
-  release <taskId>
+  unblock <taskId>              clears gate results; the task returns to a queue unowned
+  release <taskId> [agentId]    clears gate results; the task returns to READY unowned
   event <type> [message]
+
+A gate result may only be recorded while a task is IN_PROGRESS or REVIEW, and it
+is attributed to the task's owner. The optional [agentId] / --agent arguments are
+assertions, not authentication: they exist so a caller that is wrong about who
+owns a task fails loudly instead of writing evidence under another agent's name.
 
 Handoff bus (GitHub is the transport; no human relay):
   handoff --from <agent> --to <agent> --type <type> --summary "..." [--task ID] [--sha SHA|auto] [--evidence REF]...

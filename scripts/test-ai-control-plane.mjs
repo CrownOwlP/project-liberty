@@ -5440,6 +5440,346 @@ try {
   }
 
   /* ---------------------------------------------------------------------
+   * 9aq. A gate result is only recordable where work is actually happening.
+   *
+   *      THE OBSERVED DEFECT. In round 25 the control plane correctly refused
+   *      to claim PL-0103 ("claude-lead does not advertise capability for lane
+   *      Frontend") and correctly refused the READY -> REVIEW transition -- and
+   *      then accepted all four gate recordings anyway. The task was left at
+   *      READY, owner null, carrying four `pass` results from a run that never
+   *      owned it. Gate results are what CLAUDE.md calls the completion
+   *      evidence, so this was the single most load-bearing piece of state and
+   *      the only one with no ownership or status check on the way in.
+   *
+   *      Planned over a FIXTURE rather than PL-0103, per this file's rule: what
+   *      is under test is "an unowned task refuses gates", which is a property
+   *      of the command, not of whatever status PL-0103 holds today.
+   * ------------------------------------------------------------------- */
+  {
+    const repo = freshRepo();
+    addFixtureTasks(
+      repo,
+      fixtureTask("PL-GT-0001", {
+        title: "gate lifecycle fixture",
+        allowedPaths: ["fixtures/gate/a/**"],
+        qualityGates: ["lint"],
+      }),
+    );
+    run(repo, CLI, ["validate"]);
+
+    // READY, owner null -- exactly PL-0103's state. This is the refusal that
+    // did not exist.
+    runFail(
+      repo,
+      ["gate", "PL-GT-0001", "lint", "pass", "npm run check round 25"],
+      /is READY; a gate result may only be recorded while a task is IN_PROGRESS or REVIEW/,
+    );
+    assert.deepEqual(
+      taskOf(repo, "PL-GT-0001").gateResults,
+      {},
+      "a refused gate must leave no trace",
+    );
+
+    // CLAIMED is reserved, not opened. `dispatch --apply` claims whole waves, so
+    // allowing this would let one command stamp passes across tasks nobody
+    // started.
+    run(repo, CLI, ["claim", "PL-GT-0001", "claude-frontend"]);
+    runFail(
+      repo,
+      ["gate", "PL-GT-0001", "lint", "pass", "npm run lint exit 0"],
+      /is CLAIMED; a gate result may only be recorded/,
+    );
+
+    // IN_PROGRESS: the normal case, and the round-25-style batch shape --
+    // gates recorded immediately after start must keep working.
+    run(repo, CLI, ["start", "PL-GT-0001", "claude-frontend"]);
+    run(repo, CLI, ["gate", "PL-GT-0001", "lint", "pass", "npm run lint exit 0"]);
+    assert.equal(
+      taskOf(repo, "PL-GT-0001").gateResults.lint.by,
+      "claude-frontend",
+      "a recorded gate must name the owner the control plane granted",
+    );
+
+    // REVIEW must stay open: a reviewer re-runs checks, and
+    // scripts/cloud/advance-completable.mjs records EVERY gate for an approved
+    // task that is still in REVIEW. Refusing REVIEW would break completion.
+    run(repo, CLI, ["review", "PL-GT-0001"]);
+    run(repo, CLI, ["gate", "PL-GT-0001", "lint", "pass", "reviewer re-ran npm run lint"]);
+    run(repo, CLI, [
+      "gate", "PL-GT-0001", "lint", "pass", "--agent", "gpt-architect", "reviewer re-ran npm run lint",
+    ]);
+    assert.equal(
+      taskOf(repo, "PL-GT-0001").gateResults.lint.by,
+      "gpt-architect",
+      "the designated reviewer may record its own re-run during REVIEW",
+    );
+
+    // Sent back from REVIEW to IN_PROGRESS: rework must be able to re-record.
+    run(repo, CLI, ["request-changes", "PL-GT-0001", "gpt-architect", "fix the lint config"]);
+    assert.equal(taskOf(repo, "PL-GT-0001").status, "IN_PROGRESS");
+    run(repo, CLI, ["gate", "PL-GT-0001", "lint", "pass", "npm run lint exit 0 after rework"]);
+
+    // But the reviewer may NOT record during implementation: that is undeclared
+    // co-implementation wearing review's clothes, and assertReviewAllowed's
+    // self-approval check cannot see it.
+    runFail(
+      repo,
+      ["gate", "PL-GT-0001", "lint", "pass", "--agent", "gpt-architect", "ev"],
+      /is IN_PROGRESS and owned by claude-frontend; gpt-architect may not record its gates/,
+    );
+
+    // BLOCKED: `unblock` returns the task to an unowned queue, so evidence
+    // recorded here would outlive the round that produced it.
+    run(repo, CLI, ["block", "PL-GT-0001", "awaiting licensed credentials"]);
+    runFail(
+      repo,
+      ["gate", "PL-GT-0001", "lint", "pass", "ev"],
+      /is BLOCKED; a gate result may only be recorded/,
+    );
+
+    // A gate name the task does not declare stays refused (it always was), and
+    // the check tolerates a task with no qualityGates at all rather than
+    // throwing on a missing field.
+    addFixtureTasks(
+      repo,
+      fixtureTask("PL-GT-0002", {
+        title: "gate lifecycle fixture with no gates",
+        allowedPaths: ["fixtures/gate/b/**"],
+      }),
+    );
+    runFail(
+      repo,
+      ["gate", "PL-GT-0002", "lint", "pass", "ev"],
+      /lint is not required by PL-GT-0002/,
+    );
+  }
+
+  /* ---------------------------------------------------------------------
+   * 9ar. Returning a task to a queue discards its gate evidence, and the
+   *      ownership assertions on start/review/release are enforced.
+   *
+   *      The same defect as 9aq reached entirely through legitimate commands:
+   *      `release` and `unblock` both null the owner and put the task back in
+   *      READY/BACKLOG. Left alone, gateResults survive, and the next claimant
+   *      -- possibly a different agent, certainly a different implementation
+   *      round -- inherits passing evidence for work that no longer exists.
+   * ------------------------------------------------------------------- */
+  {
+    const repo = freshRepo();
+    addFixtureTasks(
+      repo,
+      fixtureTask("PL-GT-0003", {
+        title: "queue-return fixture",
+        allowedPaths: ["fixtures/gate/c/**"],
+        qualityGates: ["lint"],
+      }),
+    );
+
+    run(repo, CLI, ["claim", "PL-GT-0003", "claude-frontend"]);
+    run(repo, CLI, ["start", "PL-GT-0003", "claude-frontend"]);
+    run(repo, CLI, ["gate", "PL-GT-0003", "lint", "pass", "npm run lint exit 0"]);
+
+    // A release by an agent that does not own the task is refused: the
+    // collision check only looks at ACTIVE tasks, so a silently released task
+    // becomes re-dispatchable underneath the agent still writing to it.
+    runFail(
+      repo,
+      ["release", "PL-GT-0003", "claude-media"],
+      /is owned by claude-frontend, not claude-media/,
+    );
+    // Likewise for submitting somebody else's work to review.
+    runFail(
+      repo,
+      ["review", "PL-GT-0003", "claude-media"],
+      /is owned by claude-frontend, not claude-media/,
+    );
+
+    run(repo, CLI, ["release", "PL-GT-0003", "claude-frontend"]);
+    const released = taskOf(repo, "PL-GT-0003");
+    assert.equal(released.status, "READY");
+    assert.equal(released.owner, null);
+    assert.deepEqual(
+      released.gateResults,
+      {},
+      "a released task must not carry gate evidence into its next claim",
+    );
+
+    // Same through the block/unblock route.
+    run(repo, CLI, ["claim", "PL-GT-0003", "claude-frontend"]);
+    run(repo, CLI, ["start", "PL-GT-0003", "claude-frontend"]);
+    run(repo, CLI, ["gate", "PL-GT-0003", "lint", "pass", "npm run lint exit 0"]);
+    run(repo, CLI, ["block", "PL-GT-0003", "awaiting a decision"]);
+    run(repo, CLI, ["unblock", "PL-GT-0003"]);
+    const unblocked = taskOf(repo, "PL-GT-0003");
+    assert.equal(unblocked.owner, null);
+    assert.deepEqual(
+      unblocked.gateResults,
+      {},
+      "an unblocked task must not carry gate evidence into its next claim",
+    );
+
+    // Starting an unclaimed task would produce an IN_PROGRESS task with no
+    // implementation agent, which only surfaces much later as "no recorded
+    // implementation agent" at review time.
+    runFail(
+      repo,
+      ["start", "PL-GT-0003"],
+      /has no owner; claim it through the control plane first/,
+    );
+  }
+
+  /* ---------------------------------------------------------------------
+   * 9as. A declared protection may never be accepted and then discarded.
+   *
+   *      THE OBSERVED DEFECT, raised in review of 9aj-9ap.
+   *      `reviewSurfacePatterns` accepted any non-empty string;
+   *      `reviewPathspecs` then reduced each entry to its literal prefix and
+   *      dropped the falsy ones. `reviewDependencies: ["**"]` reduced to "",
+   *      disappeared, and the task was fingerprinted EXACTLY like a task that
+   *      declared nothing -- on the one field whose entire purpose is to make an
+   *      approval WIDER than the task's own files. `validate` reported it as a
+   *      warning saying the entry "protects nothing".
+   *
+   *      A protection a validator accepts and a normalizer silently discards is
+   *      worse than no protection, because the operator has been told it is in
+   *      place. The invariant is now stated and enforced: a declared review
+   *      dependency can never make the approved surface narrower than what was
+   *      declared. Root spellings are refused rather than dropped.
+   *
+   *      The "." family is refused alongside "**" even though it does NOT
+   *      vanish, and that asymmetry is the reason one predicate answers for
+   *      both: "." survives normalization and hashes the entire tree, while
+   *      `classifyReviewPath` still answers "outside" for every real path -- so
+   *      the approval would bind to bytes the reviewer was never shown, which is
+   *      the same defect pointing the other way.
+   * ------------------------------------------------------------------- */
+  {
+    const repo = freshRepo();
+    writeFixtureFile(repo, "fixtures/rd/g/own.ts", "export const own = 1;\n");
+    writeFixtureFile(repo, "fixtures/rd/shared/rights.ts", "export type R = 1;\n");
+    addFixtureTasks(
+      repo,
+      fixtureTask("PL-RD-G", { allowedPaths: ["fixtures/rd/g/**"] }),
+    );
+
+    const setField = (id, field, value) => {
+      const file = path.join(repo, "control", "tasks.json");
+      const doc = JSON.parse(fs.readFileSync(file, "utf8"));
+      const task = doc.tasks.find((t) => t.id === id);
+      if (value === undefined) delete task[field];
+      else task[field] = value;
+      fs.writeFileSync(file, JSON.stringify(doc, null, 2) + "\n");
+    };
+
+    /*
+     * Every spelling that reaches the root, not only the one the review named.
+     * Fixing "**" alone would leave the next declaration free to pick "*" or
+     * "." and land in exactly the same hole.
+     */
+    for (const spelling of ["**", "*", "/", "/**", "*/**", ".", "./"]) {
+      setField("PL-RD-G", "reviewDependencies", [spelling]);
+      const out = runFail(repo, ["validate"], /ERROR: PL-RD-G: reviewDependency/);
+      assert.match(
+        out,
+        /normalizes to the repository root/,
+        `"${spelling}" must be refused by name:\n${out}`,
+      );
+      assert.doesNotMatch(
+        out,
+        /protects nothing/,
+        `"${spelling}" must no longer be accepted-and-dropped with a warning:\n${out}`,
+      );
+
+      /*
+       * And the point of use fails closed on its own. Nothing forces a caller
+       * through `validate` first -- the cloud scripts read control/tasks.json
+       * directly -- so a check that lives only in the validator is a check with
+       * a bypass. This is the same backstop the malformed-entry case has.
+       */
+      runFail(
+        repo,
+        ["review-status", "PL-RD-G"],
+        /AI control plane error: PL-RD-G: reviewDependencies .*normalize to the repository root/,
+      );
+    }
+
+    /*
+     * The refusal must survive an APPROVED review record rather than turning
+     * into a crash. `validate` fingerprints approved tasks a few lines after it
+     * checks this field, and `reviewSurfacePatterns` throws for a surface it
+     * cannot determine -- so without the guard the whole run would die on a
+     * stack trace, reporting nothing about the other thirty tasks and never
+     * printing the message that names the offending field.
+     */
+    setField("PL-RD-G", "status", "REVIEW");
+    setField("PL-RD-G", "review", {
+      taskId: "PL-RD-G",
+      implementationAgent: "claude-frontend",
+      reviewerAgent: "gpt-architect",
+      outcome: "APPROVED",
+      reviewedCommitSha: "unavailable-no-git",
+      reviewedTreeHash: "0".repeat(64),
+      reviewedAt: "2026-01-01T00:00:00.000Z",
+      evidence: "fixture",
+    });
+    const withReview = runFail(repo, ["validate"], /ERROR: PL-RD-G: reviewDependency/);
+    assert.doesNotMatch(
+      withReview,
+      /AI control plane error:/,
+      `validation must report the bad field, not abort on it:\n${withReview}`,
+    );
+    setField("PL-RD-G", "review", undefined);
+    setField("PL-RD-G", "status", "READY");
+
+    /*
+     * Breadth is not the offence; the ROOT is. A dependency as wide as
+     * `packages/**` has to stay legal, or the fix quietly reinstates the
+     * package-wide bottleneck that reviewDependencies was added to remove.
+     */
+    setField("PL-RD-G", "reviewDependencies", ["fixtures/**"]);
+    assert.match(runCombined(repo, CLI, ["validate"]), /AI control plane valid/);
+    assert.equal(
+      currentTreeHash(repo, "PL-RD-G"),
+      expectedWorktreeHash(repo, ["fixtures"]),
+      "a wide dependency must widen the surface, not be swept up with the root ones",
+    );
+
+    /*
+     * The same defect one field over: a root allowedPath was also only a
+     * warning. Dropping it switches off three protections at once -- the
+     * fingerprint hashes zero files so the stale-review check can never fail,
+     * the dirty-tree check sees no pathspecs and reports clean, and the autonomy
+     * guard below stops seeing any orchestration prefix.
+     */
+    setField("PL-RD-G", "reviewDependencies", undefined);
+    setField("PL-RD-G", "allowedPaths", ["**"]);
+    runFail(
+      repo,
+      ["validate"],
+      /ERROR: PL-RD-G: allowedPath "\*\*" normalizes to the repository root/,
+    );
+
+    /*
+     * The autonomy guard reads control/tasks.json directly and never runs the
+     * validator, so it has to refuse the root case itself. Before this it
+     * dropped "**" as falsy and reported the broadest allowedPath expressible --
+     * .github, scripts and control included -- as touching no orchestration path
+     * at all, which is precisely the loop scenario 9w exists to keep open.
+     */
+    setField("PL-RD-G", "status", "IN_PROGRESS");
+    setField("PL-RD-G", "owner", "claude-frontend");
+    const selected = runCombined(repo, "scripts/cloud/select-task.mjs", [
+      "--agent",
+      "claude-frontend",
+    ]);
+    assert.match(
+      selected,
+      /PL-RD-G owns orchestration paths \(<repository root>\)/,
+      `a task owning the whole repository must not be autonomously workable:\n${selected}`,
+    );
+  }
+
+  /* ---------------------------------------------------------------------
    * 10. Bootstrap into a new project still works.
    * ------------------------------------------------------------------- */
   {
@@ -5506,7 +5846,7 @@ try {
     "running the test suite must not mutate any live control/ or coordination/ file",
   );
 
-  console.log("AI control plane tests passed (53 scenarios).");
+  console.log("AI control plane tests passed (56 scenarios).");
 } finally {
   fs.rmSync(temp, { recursive: true, force: true });
 }
