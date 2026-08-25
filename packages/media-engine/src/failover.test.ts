@@ -10,7 +10,8 @@ import {
   DEFAULT_FAILOVER_POLICY,
   PLAYBACK_FAILURE_KINDS_BY_PRECEDENCE,
   PLAYBACK_FAILURE_POLICY,
-  planFailover
+  planFailover,
+  scheduleAttempts
 } from "./failover";
 
 /**
@@ -381,9 +382,23 @@ describe("decode failures settle compatibility", () => {
 });
 
 describe("transient failures are the retryable case", () => {
-  it("retries the same candidate before demoting it", () => {
-    // The top-ranked stream is the best stream. One blip should not hand playback
-    // to a worse one.
+  it("tries an untried candidate before retrying a better-ranked one", () => {
+    /*
+     * This assertion used to be the opposite -- "one blip should not hand
+     * playback to a worse stream" -- and the reasoning behind it was wrong in a
+     * way that only shows up against a budget. A retry is a bet that an
+     * identical request to an identical URL behaves differently; `alpha` is a
+     * different source. `network_transient` is the one retryable kind precisely
+     * because it is the AMBIGUOUS one -- a player reports it when it cannot tell
+     * a CORS rejection from a refused connection from real packet loss -- so
+     * repeating `zulu` learns strictly less than trying `alpha`, even though
+     * `alpha` ranks lower.
+     *
+     * `zulu` is not demoted and nothing is ruled out: it stays attemptable, it
+     * stays at the head of the published pool, and it still gets its retry --
+     * out of the budget left after the pool has been covered, which is the test
+     * below.
+     */
     const plan = planFailover(
       [zulu, alpha],
       capabilities,
@@ -391,8 +406,86 @@ describe("transient failures are the retryable case", () => {
       generous
     );
 
+    expect(plan.next?.candidate.id).toBe("alpha");
+    // Not `retry_after_transient_failure`: the candidate handed back has never
+    // been attempted, so calling this a retry would describe the wrong event.
+    expect(plan.reason).toBe("failover_to_next_candidate");
+    expect(plan.excluded).toEqual([]);
+    // The pool is published in RANK order whatever was scheduled out of it, so
+    // `next` is deliberately not its head here.
+    expect(plan.attemptable).toEqual(["zulu", "alpha"]);
+  });
+
+  it("retries the best-ranked transient failure once every candidate has been tried", () => {
+    // Breadth first, then depth. With nothing left untried, the remaining budget
+    // goes back to the top of the ranking rather than nowhere -- the retry is
+    // deferred, not cancelled.
+    const plan = planFailover(
+      [zulu, alpha],
+      capabilities,
+      [failed("zulu", "network_transient"), failed("alpha", "network_transient")],
+      generous
+    );
+
     expect(plan.next?.candidate.id).toBe("zulu");
     expect(plan.reason).toBe("retry_after_transient_failure");
+    expect(plan.excluded).toEqual([]);
+  });
+
+  it("attempts a third candidate rather than spending the budget on two retries", () => {
+    /*
+     * THE REGRESSION, at the budget where it bites. Three authorized candidates,
+     * four attempts, one retry each. The old scheduler picked by rank alone and
+     * produced dash, dash, hls, hls -- then stopped with `attempt_limit_reached`
+     * while `progressive` sat in `attemptable`, never tried once, despite being
+     * a different source that might simply have worked.
+     *
+     * Driven through the real loop rather than asserted on a single plan,
+     * because the defect is a property of the SEQUENCE: every individual plan
+     * the old code produced was locally defensible.
+     */
+    const dash = candidate({ id: "aurora-fall-dash", healthScore: 0.99 });
+    const hls = candidate({ id: "aurora-fall-hls", healthScore: 0.9 });
+    const progressive = candidate({ id: "aurora-fall-progressive", healthScore: 0.8 });
+
+    const { plan, attempted } = runToCompletion(
+      [dash, hls, progressive],
+      "network_transient",
+      DEFAULT_FAILOVER_POLICY
+    );
+
+    expect(attempted).toEqual([
+      "aurora-fall-dash",
+      "aurora-fall-hls",
+      "aurora-fall-progressive",
+      // Only now, with the budget that is left over, does anything get repeated.
+      "aurora-fall-dash"
+    ]);
+    // Stated separately from the sequence above, because THIS is the defect: the
+    // third candidate was never attempted even once.
+    expect(new Set(attempted).size).toBe(3);
+    expect(attempted).toContain("aurora-fall-progressive");
+    expect(plan.attemptsUsed).toBe(DEFAULT_FAILOVER_POLICY.maxAttempts);
+    expect(plan.reason).toBe("attempt_limit_reached");
+  });
+
+  it("does not let two candidates consume a budget a third one needs", () => {
+    /*
+     * The same defect stated as a single plan rather than a sequence, so a
+     * failure names the moment rather than the trace. Two candidates one
+     * transient failure each, two attempts left: the next attempt must go to the
+     * candidate that has never been tried.
+     */
+    const plan = planFailover(
+      [zulu, alpha, mike],
+      capabilities,
+      [failed("zulu", "network_transient"), failed("alpha", "network_transient")],
+      DEFAULT_FAILOVER_POLICY
+    );
+
+    expect(plan.next?.candidate.id).toBe("mike");
+    expect(plan.reason).toBe("failover_to_next_candidate");
+    expect(plan.attemptsRemaining).toBe(2);
     expect(plan.excluded).toEqual([]);
   });
 
@@ -458,15 +551,26 @@ describe("the bound is stated, not emergent", () => {
   });
 
   it("spends the budget across candidates rather than on one of them", () => {
-    // Two attempts each, not four on the first. A per-candidate bound is the only
-    // thing that prevents the top-ranked stream eating the whole budget while
-    // working alternatives are never tried.
+    /*
+     * One attempt each on four distinct streams, not two attempts each on two of
+     * them, and certainly not four on the first. The per-candidate retry ceiling
+     * alone was never enough to guarantee this -- it caps how deep any single
+     * candidate can go but says nothing about the ORDER, so with a ceiling of
+     * one, two candidates could still take two attempts apiece and close out the
+     * budget. Breadth-first selection is what actually spends it across the pool.
+     *
+     * Every candidate here is identical apart from its id, so the ranking's
+     * id-ascending tiebreak fixes the sequence exactly and a regression cannot
+     * hide behind an unordered set comparison.
+     */
     const many = Array.from({ length: 20 }, (_, index) =>
       candidate({ id: `cand-${String(index).padStart(2, "0")}`, healthScore: 0.9 })
     );
 
     const { attempted } = runToCompletion(many, "network_transient");
-    expect(new Set(attempted).size).toBe(2);
+
+    expect(attempted).toEqual(["cand-00", "cand-01", "cand-02", "cand-03"]);
+    expect(new Set(attempted).size).toBe(DEFAULT_FAILOVER_POLICY.maxAttempts);
   });
 
   it("terminates within the same bound on a large candidate set", () => {
@@ -480,7 +584,16 @@ describe("the bound is stated, not emergent", () => {
     const { plan, attempted } = runToCompletion(many, "network_transient");
 
     expect(attempted.length).toBeLessThanOrEqual(DEFAULT_FAILOVER_POLICY.maxAttempts);
-    expect(plan.attemptable).toHaveLength(248);
+    /*
+     * All 250, not 248. Four distinct candidates were attempted once each and a
+     * single transient failure is within the per-candidate ceiling, so nothing
+     * was ruled out -- the budget stopped this, and the pool is untouched. Under
+     * the old rank-only scheduler two candidates took two attempts each and were
+     * therefore excluded, which is what made this number 248.
+     */
+    expect(plan.attemptable).toHaveLength(250);
+    expect(plan.excluded).toEqual([]);
+    expect(plan.reason).toBe("attempt_limit_reached");
   });
 
   it("stops immediately on a budget that permits nothing", () => {
@@ -698,6 +811,182 @@ describe("failures that cannot be attributed", () => {
     ]);
     expect(reverse.unattributedDetail).toEqual(forward.unattributedDetail);
     expect(forward.attemptsUsed).toBe(4);
+  });
+});
+
+describe("an attempt that produced no failure kind", () => {
+  /*
+   * THE OTHER HALF OF "`null` IS A LEGITIMATE ANSWER".
+   *
+   * A reporter that cannot place an error must report nothing rather than guess
+   * a kind (`apps/web/.../playback-failure.ts` rule 1), so an unclassified
+   * failure never reaches `failures` and `exclusionFor` — which reads kinds and
+   * only kinds — can never see it. Counting the attempt in
+   * `attemptsByCandidate` made the candidate merely TRIED, which breadth-first
+   * scheduling de-prioritises and then hands straight back once nothing is
+   * untried: one fatally-broken stream re-loaded until the budget ran out, and a
+   * plan that still called it a candidate which "remained".
+   *
+   * These drive `scheduleAttempts` directly rather than `planFailover`, because
+   * the state under test is one only a caller that counts its own attempts can
+   * be in — which is exactly why `planFailover`'s behaviour is unchanged and
+   * every test above it still passes untouched.
+   */
+  const charged = (attemptsByCandidate: Record<string, number>) => ({
+    attemptsUsed: Object.values(attemptsByCandidate).reduce((total, n) => total + n, 0),
+    attemptsByCandidate
+  });
+
+  it("rules the candidate out after ONE attempt, without inventing a failure kind", () => {
+    const schedule = scheduleAttempts(["zulu", "alpha"], [], generous, charged({ zulu: 1 }));
+
+    expect(schedule.excluded).toEqual([
+      { candidateId: "zulu", reason: "attempt_failed_unclassified", attempts: 1 }
+    ]);
+    // Not a retry, not a demotion: it is out, and `alpha` gets the next attempt.
+    expect(schedule.attemptable).toEqual(["alpha"]);
+    expect(schedule.next).toBe("alpha");
+    expect(schedule.reason).toBe("failover_to_next_candidate");
+  });
+
+  it("stops instead of re-loading the only candidate it has, with budget to spare", () => {
+    /*
+     * The defect at its sharpest. One candidate, four attempts, an error nobody
+     * can classify: the pool empties on the FIRST attempt and the three
+     * remaining attempts buy nothing, because there is nothing left to spend
+     * them on. Exhaustion outranks the budget, so the reason is about the pool.
+     */
+    const schedule = scheduleAttempts(["zulu"], [], DEFAULT_FAILOVER_POLICY, charged({ zulu: 1 }));
+
+    expect(schedule.next).toBeNull();
+    expect(schedule.reason).toBe("candidates_exhausted");
+    expect(schedule.attemptable).toEqual([]);
+    expect(schedule.attemptsRemaining).toBe(3);
+  });
+
+  it("lets the classified finding speak when a candidate carries both", () => {
+    /*
+     * PRECEDENCE, and it is the informative one that wins. "This device did not
+     * decode this stream" is knowledge about the stream; "an attempt ended and
+     * we cannot say why" is knowledge about the report. Collapsing the first
+     * into the second would send a support engineer to the reporter instead of
+     * to the capability model.
+     */
+    const schedule = scheduleAttempts(
+      ["zulu"],
+      [failed("zulu", "decode_failed")],
+      generous,
+      charged({ zulu: 2 })
+    );
+
+    expect(schedule.excluded).toEqual([
+      { candidateId: "zulu", reason: "compatibility_disproven", attempts: 2 }
+    ]);
+  });
+
+  it("charges the exclusion with the attempts it really cost", () => {
+    // Two loads, one nameable failure. Reporting `attempts: 1` would understate
+    // what the candidate cost the viewer by exactly the attempt nobody could
+    // classify -- the one this whole exclusion exists to account for.
+    const schedule = scheduleAttempts(
+      ["zulu", "alpha"],
+      [failed("zulu", "network_transient")],
+      generous,
+      charged({ zulu: 2 })
+    );
+
+    expect(schedule.excluded).toEqual([
+      { candidateId: "zulu", reason: "attempt_failed_unclassified", attempts: 2 }
+    ]);
+  });
+
+  it("never fires for a candidate nobody attempted", () => {
+    const schedule = scheduleAttempts(["zulu", "alpha"], [], generous, charged({ zulu: 1 }));
+
+    expect(schedule.excluded.map((entry) => entry.candidateId)).not.toContain("alpha");
+    expect(schedule.attemptable).toContain("alpha");
+  });
+
+  it("is unreachable for planFailover, whose attempt count IS its failure count", () => {
+    /*
+     * The identity every published plan, property test and bug-report replay
+     * depends on. `planFailover` supplies no `ChargedAttempts`, so "attempted"
+     * and "reported a failure" are the same predicate and the fifth exclusion
+     * reason cannot be produced by any failure list at all.
+     */
+    const plan = planFailover(
+      [zulu, alpha, mike],
+      capabilities,
+      [
+        failed("zulu", "network_transient"),
+        failed("zulu", "network_transient"),
+        failed("alpha", "decode_failed"),
+        failed("mike", "rights_unverifiable")
+      ],
+      generous
+    );
+
+    // Id-sorted, and every one of them named by a KIND somebody reported.
+    expect(plan.excluded.map((entry) => [entry.candidateId, entry.reason])).toEqual([
+      ["alpha", "compatibility_disproven"],
+      ["mike", "rights_not_established"],
+      ["zulu", "transient_retries_exhausted"]
+    ]);
+  });
+
+  it("reads the charged map by OWN key, so an id off Object.prototype cannot poison it", () => {
+    /*
+     * `attemptsByCandidate` is a plain object keyed by provider-supplied ids, so
+     * `record["toString"]` used to return a FUNCTION rather than `undefined`,
+     * `?? 0` never fired, and the value then decided both the tried/untried
+     * partition and the exclusion arithmetic. One candidate named `toString`
+     * would have made `toString` look retried (`fn > 0`) and reported a repeat
+     * of it as `retry_after_transient_failure`.
+     */
+    const schedule = scheduleAttempts(
+      ["constructor", "toString"],
+      [],
+      generous,
+      charged({ constructor: 1 })
+    );
+
+    expect(schedule.excluded).toEqual([
+      { candidateId: "constructor", reason: "attempt_failed_unclassified", attempts: 1 }
+    ]);
+    expect(schedule.next).toBe("toString");
+    // The tell: `toString` is UNTRIED, so this is a failover and not a retry.
+    expect(schedule.reason).toBe("failover_to_next_candidate");
+  });
+
+  it("does not call a failover the first attempt just because the budget is untouched", () => {
+    /*
+     * `attemptsUsed === 0` used to be the whole test for `first_attempt`, and it
+     * stopped meaning "nothing has happened" as soon as a caller started
+     * counting attempts for itself: a player whose engine reports a fatal error
+     * BEFORE the attempt is charged arrives here with an empty budget and a
+     * candidate already ruled out, and the plan announced `first_attempt` for a
+     * candidate being failed over TO.
+     */
+    const schedule = scheduleAttempts(
+      ["zulu", "alpha"],
+      [failed("zulu", "decode_failed")],
+      generous,
+      { attemptsUsed: 0, attemptsByCandidate: {} }
+    );
+
+    expect(schedule.attemptsUsed).toBe(0);
+    expect(schedule.next).toBe("alpha");
+    expect(schedule.reason).toBe("failover_to_next_candidate");
+  });
+
+  it("still says first_attempt when genuinely nothing has happened", () => {
+    const schedule = scheduleAttempts(["zulu", "alpha"], [], generous, {
+      attemptsUsed: 0,
+      attemptsByCandidate: {}
+    });
+
+    expect(schedule.reason).toBe("first_attempt");
+    expect(schedule.next).toBe("zulu");
   });
 });
 

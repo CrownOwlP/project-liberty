@@ -190,7 +190,14 @@ describe("failover terminates and keeps its trail", () => {
     );
   });
 
-  it("never restarts a candidate earlier than the one it replaced", () => {
+  /* The name is about the RESUME POSITION, not about candidate order. Since
+   * scheduling became breadth-before-depth the machine deliberately revisits
+   * earlier candidates — `candidateIndex` may move backwards — so a name
+   * implying candidate monotonicity would describe a property this suite does
+   * not hold and would send the next reader looking for a bug in the scheduler.
+   * What is asserted below is that each `load()` starts at or after the previous
+   * one. */
+  it("never hands a load a start position earlier than the previous load's", () => {
     fc.assert(
       fc.property(candidatesArb, failoverPolicyArb, (candidates, policy) => {
         const effects = recordPlaybackEffects();

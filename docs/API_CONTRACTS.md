@@ -14,6 +14,184 @@ Response:
 }
 ```
 
+## `POST /api/v1/playback/session`
+
+Purpose: issue a playback session for an already-identified title, or explain why not.
+
+Implemented in `apps/web/src/app/api/v1/playback/session/` — `contract.ts` (schemas
+and constructors), `issue-session.ts` (the decision), `handler.ts` (the HTTP half)
+and `route.ts` (the Next entry point). The wire schemas live in that directory
+rather than in `@liberty/contracts`; `contract.ts` records why and lists the move
+as follow-up, so the paragraph at the end of this document about defining schemas
+in `@liberty/contracts` first is not yet satisfied for this route.
+
+Request:
+
+```json
+{
+  "contentId": "aurora-fall",
+  "capabilities": {
+    "maxHeight": 2160,
+    "supportedVideoCodecs": ["h264", "hevc"],
+    "supportedAudioCodecs": ["aac", "eac3"],
+    "preferredAudioLanguages": ["en"]
+  }
+}
+```
+
+Those are the only two fields, and the schema is `.strict()` at both levels.
+**There is no field through which a client can name a media URL**, and an
+unrecognised key is refused rather than stripped — zod's default is to drop
+unknown keys, which would hand a client a perfectly successful session while
+silently discarding the field it believed in. `contentId` is
+`normalizedContentIdSchema`, so a path traversal, an absolute URL or a
+provider-native id fails the schema before any resolver, adapter or URL parser
+sees it. `capabilities` is `playbackCapabilitiesSchema` — the same shape
+`/playback/resolve` takes, including the optional-with-no-default
+`maxAudioChannels`, but `.strict()` here where that route leaves it open.
+
+The server resolves candidates itself, through an injectable
+`AuthorizedCandidateResolver` (`authorized-candidates.ts`). The default resolver
+answers `not-configured` when `NODE_ENV` is `production`, because no provider
+registry is wired into this app yet and serving development fixtures from a
+hosted deployment would publish fabricated `owned` rights for files that do not
+exist.
+
+### The response is a discriminated union on `outcome`
+
+```json
+{
+  "outcome": "granted",
+  "reasons": [
+    { "code": "session_issued", "candidateId": null, "detail": "1 candidate(s) authorized and ranked for aurora-fall" },
+    { "code": "unsupported_video_codec", "candidateId": "aurora-fall-av1", "detail": "the device did not list the video codec this candidate states" },
+    { "code": "candidate_ranked", "candidateId": "aurora-fall-dash", "detail": "…the ranking's own explanation…" }
+  ],
+  "session": {
+    "sessionId": "f0f1e0a4-6d1c-4f0b-9a3e-2a1d4c5b6e7f",
+    "contentId": "aurora-fall",
+    "candidates": [
+      {
+        "id": "aurora-fall-dash",
+        "providerId": "fixture",
+        "uri": "https://fixtures.invalid/aurora-fall/manifest.mpd",
+        "mimeType": "application/dash+xml",
+        "compatibility": "verified"
+      }
+    ],
+    "startAtSeconds": null,
+    "expiresAt": "2026-03-04T09:20:00.000Z",
+    "failoverPolicy": { "maxAttempts": 4, "maxTransientRetriesPerCandidate": 1 }
+  }
+}
+```
+
+- **`granted`** — a session exists and these are its candidates. HTTP 200.
+- **`denied`** — we refuse. Either the request is not one we accept, or no
+  candidate carries a rights basis we may play from. Retrying changes nothing.
+  HTTP **400** when the primary reason is `request_malformed` or
+  `request_field_not_permitted`, **403** otherwise.
+- **`unavailable`** — we would have, and could not: nothing registered under that
+  id, no provider configured, the provider could not answer, or nothing survived
+  eligibility and transport. HTTP **404** when the primary reason is
+  `content_not_found`, **503** otherwise.
+
+The last two are a *remedy* distinction, not a severity one. A viewer told "try
+again in a moment" about something we will never be entitled to play will keep
+trying, and a viewer told "you may not watch this" about a CDN blip will stop.
+The status is derived from the response by `playbackSessionHttpStatus`, so the
+wire status and the outcome cannot disagree.
+
+`denied` and `unavailable` carry `reasons` and nothing else — there is no
+`session` field on them, empty or otherwise.
+
+### `reasons` is non-empty on every branch
+
+Not an optional field on a shared envelope: a non-empty tuple
+(`z.array(...).nonempty()`) on each of the three branches, so a branch with no
+reasons is not constructible, `reasons[0]` reads as a reason rather than as
+possibly-undefined, and the three constructors each take the primary reason as a
+required positional argument. This is product invariant 4 enforced by the type: a
+denial with no trail breaks it exactly as badly as a grant with none.
+
+`reasons[0]` is the **primary** reason, the one that decided the outcome. The
+rest are the trail behind it — candidates dropped, and why — emitted in gate
+order (rights, identity, eligibility, transport, ranked). Consumers may show the
+primary and log the rest; they must not assume the trail is short.
+
+Each reason is `{ code, candidateId, detail }`. `candidateId` is required and
+nullable: `null` means the reason is about the request as a whole, and an absent
+key would say only that nobody thought about it. `detail` is for humans and is
+never parsed — the code is what anything decides on. The vocabulary is closed
+(`playbackSessionReasonCodeSchema`) and deliberately spells the media-engine
+`RejectionReason` and provider-SDK `UrlRejectionReason` values verbatim;
+`engineReasonCode` and `urlReasonCode` are identity functions that exist so that
+adding a reason to either package fails the build here rather than producing an
+unlisted code at runtime.
+
+### The granted session
+
+`candidates` is non-empty and in preference order. Each entry carries `id` (the
+attribution key every reported failure is keyed by, not a URL and not an index),
+`providerId`, `uri`, `mimeType` (required-and-nullable; `null` means the resolver
+could not state one) and `compatibility`, which is `verified` or `unverified` per
+candidate — `unverified` says the stream survived eligibility by not being
+disqualified rather than by being qualified, so a decode error on it is a
+foreseeable outcome rather than evidence the provider has gone bad.
+
+`startAtSeconds` is `null` rather than `0`: `null` means engine default, which is
+the beginning for VOD and the live edge for live. Nothing sets it today.
+
+`failoverPolicy` is published rather than left for the client to hardcode, so the
+attempt budget is changeable without shipping a new bundle. It is
+`DEFAULT_FAILOVER_POLICY` from `@liberty/media-engine`.
+
+The primary reason on a grant is `session_issued` or
+`session_issued_unverified_compatibility`, read off the compatibility of the head
+of the *published* list rather than off the ranking's own pick. The two can
+differ — the engine's pick may have failed the transport check and been dropped —
+and reporting the session as verified because of a candidate we are not sending
+would describe a choice nobody made.
+
+`expiresAt` bounds the session at `PLAYBACK_SESSION_TTL_MS` (five minutes) after
+issuance — a start-up budget, not a viewing budget. **No playback credential is
+minted yet**: `uri` is whatever the resolver stated. The bound is stated in the
+contract from the start so that clients do not learn to cache a session forever
+before there is something worth expiring.
+
+### Gate order
+
+The decision runs shape → resolution → rights → identity → eligibility and
+scoring → transport, and the order is load-bearing. Rights precedes identity, so
+two copies of an unrightsed candidate are reported as a rights refusal rather
+than as a duplicate-id drop. Transport (`@liberty/provider-sdk`'s `checkUrl`) runs
+immediately before a URL is published, so a resolver that was compromised,
+misconfigured or simply new gets no opportunity to publish a link-local address, a
+`file:` URI or an origin carrying embedded credentials.
+
+Duplicate candidate ids cause **all** entries sharing that id to be dropped, not
+deduplicated: the id is the failover attribution key, and keeping "the first one"
+would make the survivor depend on the resolver's ordering.
+
+The response is a function of the *set* of resolved candidates, not of the order
+the resolver returned them in — `issue-session.property.test.ts` permutes the
+input and requires an identical whole response.
+
+### Everything else about the wire
+
+A body that is not JSON is a malformed request, not a server fault: it reaches
+the schema as `null` and produces the same well-formed `denied` any other
+malformed body produces. Nothing inspects `content-type`.
+
+The response is validated against `playbackSessionResponseSchema` before it
+leaves the server. A regression that drops the reason trail therefore surfaces as
+HTTP 500 `playback_session_failed_validation` — the one response that is not a
+member of the union, deliberately, because it is not a playback decision at all.
+
+Served `cache-control: no-store` on every path including the 500: a playback
+session is per-viewer, per-device and time-bounded, and a shared cache holding one
+would serve one viewer's session to another.
+
 ## `POST /api/v1/playback/resolve`
 
 Purpose: rank already-authorized candidates for the requesting device.
@@ -142,7 +320,6 @@ The response is validated against `catalogHomeResponseSchema` before it leaves t
 
 - `GET /api/v1/search?q=`
 - `GET /api/v1/titles/:id`
-- `POST /api/v1/playback/session`
 - `PUT /api/v1/progress/:contentId`
 - `GET /api/v1/watchlist`
 - `PUT /api/v1/watchlist/:contentId`

@@ -3,9 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "node ../../scripts/with-root-env.mjs next dev",
     "build": "next build",
-    "start": "next start",
+    "start": "node ../../scripts/with-root-env.mjs next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests"

@@ -28,6 +28,15 @@ import {
   probePort,
   resolveVariable,
 } from "./validate-env.mjs";
+/*
+ * The runtime loader is exercised from THIS suite rather than from one of its
+ * own, deliberately. It shares `envFilesForMode` and `parseEnvFile` with the
+ * validator, and the property worth pinning is not "the loader works" but "the
+ * loader and the validator cannot disagree" -- which is only assertable where
+ * both are in scope, against one set of bytes. A separate file would be free to
+ * build its own fixture, and two fixtures is the same failure as two parsers.
+ */
+import { findRepoRoot, nextEnvMode, resolveRootEnv } from "./with-root-env.mjs";
 
 /**
  * Plain node + node:assert, matching scripts/test-ai-control-plane.mjs.
@@ -1733,7 +1742,212 @@ try {
     );
   }
 
-  console.log("Environment validation tests passed (37 scenarios).");
+  /* ---------------------------------------------------------------------
+   * 36. The runtime loader resolves from the same implementation the validator
+   *     does, so a value cannot validate clean and behave differently.
+   *
+   *     This is the regression for the second half of the wrong-bytes defect.
+   *     Scenario 27 pins that the VALIDATOR reads the files Next reads. It could
+   *     not catch the other half: `next dev` runs with cwd `apps/web`, so it
+   *     resolved dotenv files from there while the validator resolved them from
+   *     the repository root, and a value written at the root was invisible to
+   *     the application while passing validation. `scripts/with-root-env.mjs`
+   *     closes that by loading the root files into `process.env` before Next
+   *     starts -- and the only thing that keeps the two in step afterwards is
+   *     that they share `envFilesForMode` and `parseEnvFile`. That sharing is
+   *     what is asserted here: same bytes in, same winner out, in every mode.
+   * ------------------------------------------------------------------- */
+  {
+    /*
+     * (a) Which mode a `next` command runs in.
+     *
+     * Derived from the SUBCOMMAND, because that is what @next/env derives it
+     * from -- `isTest ? "test" : dev ? "development" : "production"`, where
+     * `dev` is the phase. `defaultModes` above documents this gap and cannot
+     * close it: a validator has no command to inspect. A wrapper does.
+     */
+    assert.equal(nextEnvMode(["next", "dev"], {}), "development");
+    assert.equal(nextEnvMode(["next", "build"], {}), "production");
+    assert.equal(nextEnvMode(["next", "start"], {}), "production");
+    assert.equal(nextEnvMode(["next", "dev", "--port", "3100"], {}), "development");
+    assert.equal(nextEnvMode(["next", "build"], { NODE_ENV: "test" }), "test");
+    assert.equal(nextEnvMode(["next", "dev"], { NODE_ENV: "test" }), "test");
+    // The two cases that prove it is not merely reading NODE_ENV. `next dev`
+    // under NODE_ENV=production still loads the development file set, and
+    // `next build` under NODE_ENV=development still loads the production one.
+    assert.equal(nextEnvMode(["next", "dev"], { NODE_ENV: "production" }), "development");
+    assert.equal(nextEnvMode(["next", "build"], { NODE_ENV: "development" }), "production");
+    // No phase to read, so no guess: the caller is made to say --mode. Including
+    // under NODE_ENV=test, where a confident "test" would be an answer about a
+    // command this function cannot see the phase of.
+    assert.equal(nextEnvMode(["vitest", "run"], {}), null);
+    assert.equal(nextEnvMode(["vitest", "run"], { NODE_ENV: "test" }), null);
+    assert.equal(nextEnvMode([], {}), null);
+    // The spelling of the command must not matter.
+    assert.equal(nextEnvMode(["./node_modules/.bin/next", "build"], {}), "production");
+    assert.equal(nextEnvMode(["next.cmd", "dev"], {}), "development");
+    // Flags before the subcommand are skipped, not mistaken for it.
+    assert.equal(nextEnvMode(["next", "--turbopack", "dev"], {}), "development");
+
+    /*
+     * (b) One set of bytes, read by both, resolving identically.
+     *
+     * The loader's fixture IS the validator's snapshot, so there is no room for
+     * the two to be given different files by accident -- which is exactly how a
+     * test like this passes while proving nothing.
+     */
+    const layered = snapshotFor({
+      envFiles: {
+        ".env.production.local": "PICK=production-local\nONLY_PROD_LOCAL=x\n",
+        ".env.local": "PICK=local\nONLY_LOCAL=y\n",
+        ".env.production": "PICK=production\n",
+        ".env.test": "PICK=test\n",
+        ".env": "PICK=env\nONLY_SHARED=z\n",
+      },
+    });
+    const readEnvFile = (file) => layered.files[file]?.text ?? null;
+
+    for (const mode of ["development", "test", "production"]) {
+      const { applied, bySource } = resolveRootEnv({ mode, processEnv: {}, readEnvFile });
+      const validatorSources = buildSources(layered, {}, mode);
+
+      for (const [name, value] of applied) {
+        const resolved = resolveVariable(name, validatorSources);
+        assert.equal(value, resolved.value, `${name} resolves differently in ${mode}`);
+        const from = [...bySource].find(([, names]) => names.includes(name))[0];
+        assert.equal(from, resolved.source, `${name} came from a different file in ${mode}`);
+      }
+
+      /*
+       * And nothing is silently dropped in either direction. Under `test` this
+       * is the assertion that carries the weight: `.env.local` is omitted from
+       * that mode's list, so ONLY_LOCAL must be absent from BOTH sides. A loader
+       * that read it would hand the application a value the validator never
+       * checked -- the same defect, pointed the other way.
+       */
+      const validatorNames = new Set(
+        validatorSources
+          .filter((source) => source.label !== "process.env")
+          .flatMap((source) => [...source.values.keys()]),
+      );
+      assert.deepEqual(
+        [...applied.keys()].sort(),
+        [...validatorNames].sort(),
+        `the loader and the validator see different names in ${mode}`,
+      );
+      assert.equal(
+        mode === "test",
+        !validatorNames.has("ONLY_LOCAL"),
+        `.env.local must be read in ${mode} exactly when the validator reads it`,
+      );
+    }
+
+    /*
+     * (c) process.env outranks every file, and PRESENT is the test -- not
+     * truthy. @next/env's merge is `typeof initialEnv[name] === "undefined"`, so
+     * an exported empty string wins over a file. `.github/workflows/ci.yml` and
+     * `e2e/playwright.config.ts` both depend on an exported value winning.
+     */
+    const exported = resolveRootEnv({
+      mode: "production",
+      processEnv: { PICK: "exported", ONLY_LOCAL: "" },
+      readEnvFile,
+    });
+    assert.equal(exported.applied.has("PICK"), false);
+    assert.equal(exported.applied.has("ONLY_LOCAL"), false);
+    assert.equal(exported.applied.get("ONLY_PROD_LOCAL"), "x");
+
+    /*
+     * (d) NODE_ENV is never applied from a file.
+     *
+     * `.env.example` ships `NODE_ENV=development` and README says to copy it to
+     * `.env.local`, while `next/dist/bin/next` does
+     * `process.env.NODE_ENV = process.env.NODE_ENV || defaultEnv` -- it respects
+     * a pre-set value. A loader that injected it would quietly turn every
+     * `npm run build` into a development build. The conflict is reported as the
+     * FILE, never the value.
+     */
+    const declaresNodeEnv = (file) =>
+      file === ".env.local" ? "NODE_ENV=development\nKEEP=yes\n" : null;
+    const skipped = resolveRootEnv({
+      mode: "production",
+      processEnv: {},
+      readEnvFile: declaresNodeEnv,
+    });
+    assert.equal(skipped.applied.has("NODE_ENV"), false);
+    assert.equal(skipped.applied.get("KEEP"), "yes");
+    assert.equal(skipped.nodeEnvConflict, ".env.local");
+    // Agreeing with the mode in force is not a conflict, and a note printed on
+    // every `next dev` is a note nobody reads by the time it matters.
+    assert.equal(
+      resolveRootEnv({ mode: "development", processEnv: {}, readEnvFile: declaresNodeEnv })
+        .nodeEnvConflict,
+      null,
+    );
+
+    /*
+     * (e) The root is found, not assumed. `apps/web` has a package.json too, and
+     * accepting it would reproduce the original defect inside the fix.
+     */
+    const fixtureRoot = path.resolve(path.sep, "liberty-root-fixture");
+    const fixtureWeb = path.join(fixtureRoot, "apps", "web");
+    const tree = new Map([
+      [path.join(fixtureRoot, "package.json"), JSON.stringify({ workspaces: ["apps/*"] })],
+      [path.join(fixtureWeb, "package.json"), JSON.stringify({ name: "@liberty/web" })],
+    ]);
+    assert.equal(findRepoRoot(fixtureWeb, { readFile: (file) => tree.get(file) ?? null }), fixtureRoot);
+    // No root, no guess. Refusing loudly is the whole point.
+    assert.throws(
+      () => findRepoRoot(fixtureWeb, { readFile: () => null }),
+      /could not find the repository root/,
+    );
+
+    /*
+     * (f) The wiring itself, because a correct loader nobody calls is the defect
+     * with extra steps -- and, just as load-bearing, the two scripts that must
+     * stay OUT of it. Each exclusion has its own reason and neither is an
+     * oversight, so both are pinned rather than left to be re-derived:
+     *
+     *   - `test`: vitest reads no dotenv file at all today, so routing it
+     *     through the loader would newly make the unit gate depend on `.env` and
+     *     on a git-ignored `.env.test.local`;
+     *   - `build`: `turbo.json` hashes `globalEnv` from the environment it sees
+     *     BEFORE launching the task, and the loader sets those variables INSIDE
+     *     it, so wrapping `build` means turbo hashing the absence of exactly the
+     *     variables the build used. `LIBERTY_FIXTURE_MEDIA_ORIGIN` is read at
+     *     module scope by `authorized-candidates.ts` and `watch-session.ts`, so
+     *     it is baked into the output; whether `globalDependencies` still covers
+     *     it when `.gitignore` ignores `.env*` is an open question recorded in
+     *     `docs/DEVELOPMENT.md`, along with the experiment that settles it. CI
+     *     pins those variables in the job `env:`, where turbo hashes them
+     *     correctly, so the build that ships was never relying on the loader.
+     *
+     * This assertion changed when `build` was unwrapped: it previously required
+     * all three of dev/build/start to match. It was pinning the behaviour that
+     * turned out to be the risk, so it now pins the split instead -- and it is
+     * the reason re-wrapping `build` after the experiment is a deliberate edit
+     * in two files rather than a silent one in one.
+     */
+    const webScripts = JSON.parse(
+      fs.readFileSync(path.resolve("apps/web/package.json"), "utf8"),
+    ).scripts;
+    for (const name of ["dev", "start"]) {
+      assert.match(
+        webScripts[name],
+        /with-root-env\.mjs/,
+        `apps/web "${name}" runs with cwd apps/web and must load the root env first`,
+      );
+    }
+    assert.equal(
+      /with-root-env/.test(webScripts.build),
+      false,
+      'apps/web "build" must not load the root env: turbo hashes globalEnv before the task ' +
+        "starts, so the loader would set cache-key variables the cache key cannot see",
+    );
+    assert.equal(/with-root-env/.test(webScripts.test), false);
+  }
+
+  console.log("Environment validation tests passed (38 scenarios).");
 } finally {
   fs.rmSync(temp, { recursive: true, force: true });
 }

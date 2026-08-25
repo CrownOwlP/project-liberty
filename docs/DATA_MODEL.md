@@ -158,9 +158,19 @@ television — still open, still on a heartbeat — keeps writing. Both obvious 
 statement* — so two devices asking at the same instant are serialised by PostgreSQL and get distinct
 epochs — and returns `{ epoch, writerId }`. Every subsequent write echoes that pair.
 
-- **Beats timestamps:** no clock is read anywhere in `resolveProgressWrite`. Ordering comes from a
-  counter the *server* allocated, so skew and reordering cannot change the outcome. A late packet
-  from a superseded writer is rejected because of *who* sent it, not *when*.
+- **Beats timestamps:** `resolveProgressWrite` is *clock-independent*. It reads no clock — there is
+  no `Date.now()` in it — and the `instant` it stamps the row with is supplied by the caller and
+  compared against nothing. Ordering comes from a counter the *server* allocated, so skew and
+  reordering cannot change the outcome. A late packet from a superseded writer is rejected because of
+  *who* sent it, not *when*. The instant has exactly one influence on any outcome: if it names no
+  moment — an Invalid Date, or a string that is not the canonical `toISOString()` spelling — the
+  write is refused as `instant_not_representable` rather than stamped. That check sits *ahead* of
+  authority, which looks like a violation of the authority-before-validity rule and is not: the rule
+  orders checks on values the **client** asserted, and the instant is the server's own stamp, so an
+  unreadable one is a defect in our process and reporting it as `superseded_by_newer_writer` would
+  hide our bug behind a description of a handoff that is working perfectly. There is still no field
+  anywhere in `ProgressWrite` through which a client can assert a time, and a test asserts that
+  absence.
 - **Beats monotonic position:** `positionSeconds` is not a term in the authority decision at all.
   The current writer may move the position backwards to zero. The only thing that loses is a stale
   writer, at any position.
@@ -171,12 +181,13 @@ epochs — and returns `{ epoch, writerId }`. Every subsequent write echoes that
   the *same* device that reordered. It is not a position rule: a rewind carries a higher sequence
   number and is still accepted, and it is only ever compared against writes from the same writer.
 
-Reason codes: `no_writer_lease`, `epoch_not_issued`, `superseded_by_newer_writer`,
-`writer_id_mismatch`, `stale_write_within_writer`, `position_not_representable`,
-`position_beyond_runtime`, and the acceptance `current_writer`. Precedence is authority before
-validity, and is exported as `PROGRESS_WRITE_CHECK_ORDER` and asserted by test — reporting
-"position beyond runtime" for a superseded television would send an engineer to the media pipeline
-instead of to the handoff.
+Reason codes: `instant_not_representable`, `no_writer_lease`, `epoch_not_issued`,
+`superseded_by_newer_writer`, `writer_id_mismatch`, `stale_write_within_writer`,
+`position_not_representable`, `position_beyond_runtime`, and the acceptance `current_writer`.
+Precedence is authority before validity — with `instant_not_representable` ahead of both, for the
+reason above — and the whole order is exported as `PROGRESS_WRITE_CHECK_ORDER` and asserted by test:
+reporting "position beyond runtime" for a superseded television would send an engineer to the media
+pipeline instead of to the handoff.
 
 **Enforcement vs explanation.** The guard lives in SQL as a conditional
 `UPDATE … WHERE writer_epoch = $ AND writer_id = $ AND write_seq < $`, so there is no

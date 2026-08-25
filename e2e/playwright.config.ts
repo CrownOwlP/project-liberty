@@ -1,6 +1,6 @@
 import path from "node:path";
 import { defineConfig, devices } from "@playwright/test";
-import { BASE_URL, MANAGES_SERVER, MEDIA_RIG_ORIGIN, PORT, WEB_MODE } from "./src/env";
+import { BASE_URL, MANAGES_SERVER, PORT, SERVER_MEDIA_ORIGIN, WEB_MODE } from "./src/env";
 
 /* -------------------------------------------------------------------------
  * PL-0701 - the critical end-to-end harness
@@ -134,21 +134,56 @@ export default defineConfig({
         reuseExistingServer: !process.env.CI,
         stdout: "pipe",
         stderr: "pipe",
+        /*
+         * EVERY APPLICATION VARIABLE THIS HARNESS CARES ABOUT IS PINNED HERE,
+         * INCLUDING THE ONES WHOSE PINNED VALUE IS THE DEFAULT.
+         *
+         * Omitting a variable is not a way to say "use the app's default". It
+         * says "take whatever the environment has", and the environment
+         * underneath a harness-started server is no longer empty: `apps/web`'s
+         * `dev` and `start` scripts run through `scripts/with-root-env.mjs`,
+         * which loads the repository root's dotenv files into `process.env` for
+         * every name not already set. A hole in this block is therefore a hole a
+         * developer's `.env.local` falls through, into the server whose answers
+         * are about to be recorded as a gate result -- and the symptom is an
+         * assertion failure that blames the application.
+         *
+         * The rule this block follows: if a spec asserts against it, or the app
+         * reads it, it is written here with a value this file can name. See
+         * `src/env.ts` for where those values come from.
+         */
         env: {
           ...INHERITED_ENV,
           /*
-           * Pinned, not inherited. `turbo.json` hashes this into the build
-           * cache key and `validate-env.mjs --scope ci` fails when it is unset,
-           * so leaving it to whatever the shell has would make a recorded gate
-           * result mean different things on different machines.
+           * `turbo.json` hashes this into the build cache key and
+           * `validate-env.mjs --scope ci` fails when it is unset, so leaving it
+           * to whatever the shell has would make a recorded gate result mean
+           * different things on different machines.
            */
           CONTENT_RIGHTS_ENFORCEMENT: "strict",
           /*
-           * The rig, or nothing. When nothing is configured the variable is
-           * left alone so the app falls back to its own RFC 2606 default --
-           * this harness does not get to invent a media origin.
+           * The rig when one is configured, and the app's own RFC 2606 default
+           * when not -- never the ambient value. `SERVER_MEDIA_ORIGIN` is the
+           * same expression `EXPECTED_MEDIA_ORIGIN` is built from, so what the
+           * server is given and what the specs demand cannot drift apart, and
+           * `MEDIA_RIG_SKIP_REASON` stays a true statement about the server
+           * rather than about this process's variables.
            */
-          ...(MEDIA_RIG_ORIGIN === null ? {} : { LIBERTY_FIXTURE_MEDIA_ORIGIN: MEDIA_RIG_ORIGIN })
+          LIBERTY_FIXTURE_MEDIA_ORIGIN: SERVER_MEDIA_ORIGIN
+
+          /*
+           * NODE_ENV is the one application variable deliberately NOT pinned,
+           * and it is the exception that proves the rule rather than a hole.
+           * `WEB_MODE` already decides it, by choosing the subcommand: `next
+           * dev` is a development build and `next build`/`next start` are
+           * production ones, whatever the environment says. Writing it here
+           * would let this block and `WEB_SERVER_COMMAND` disagree about which
+           * deployment is under test -- and the two modes answer the session API
+           * differently on purpose, so that disagreement would read as a product
+           * failure. It is also not inheritable from a root dotenv file:
+           * `with-root-env.mjs` refuses to apply NODE_ENV from any file, for a
+           * closely related reason documented in its `NEVER_APPLIED`.
+           */
         }
       }
     : undefined

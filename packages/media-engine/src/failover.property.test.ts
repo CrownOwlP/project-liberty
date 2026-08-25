@@ -11,6 +11,7 @@ import {
   permutationKeysArb,
   permute,
   playbackCapabilitiesArb,
+  playbackFailureKindArb,
   streamCandidatesArb,
   unvettedRightsCandidatesArb
 } from "@liberty/contracts/testing/arbitraries";
@@ -271,7 +272,7 @@ describe("the plan accounts for everything it was given", () => {
     );
   });
 
-  it("hands back the head of the attemptable list, and only under budget", () => {
+  it("hands back the breadth-first pick from the attemptable list, and only under budget", () => {
     fc.assert(
       fc.property(scenarioArb, (scenario) => {
         const result = plan(scenario);
@@ -294,7 +295,18 @@ describe("the plan accounts for everything it was given", () => {
           return;
         }
 
-        expect(result.attemptable[0]).toBe(result.next.candidate.id);
+        /*
+         * `next` is drawn from the pool but is NOT its head in general: an
+         * untried candidate is taken ahead of a better-ranked one carrying a
+         * transient failure. Restated as the exact selection rule rather than
+         * relaxed to "is somewhere in the pool", so it still pins one answer.
+         */
+        const attemptsOn = (candidateId: string): number =>
+          scenario.failures.filter((failure) => failure.candidateId === candidateId).length;
+
+        expect(result.next.candidate.id).toBe(
+          result.attemptable.find((id) => attemptsOn(id) === 0) ?? result.attemptable[0]
+        );
         // Exhaustion outranks the budget, so a non-null `next` implies both that
         // something was attemptable AND that the budget had room.
         expect(result.attemptsUsed).toBeLessThan(scenario.policy.maxAttempts);
@@ -350,6 +362,90 @@ describe("the plan accounts for everything it was given", () => {
           expect(previous.candidateId < current.candidateId).toBe(true);
         }
       })
+    );
+  });
+});
+
+/**
+ * Breadth before depth.
+ *
+ * The sixth hand-found defect, and the first one in this module that no
+ * permutation, determinism or precedence property could have caught: every plan
+ * the old scheduler produced was individually correct, order-invariant and
+ * reproducible. What was wrong was the SEQUENCE of plans. Picking `attemptable[0]`
+ * unconditionally meant a candidate carrying a transient failure outranked a
+ * candidate nobody had tried, so with `maxAttempts: 4` and one retry each, two
+ * candidates took two attempts apiece and a third authorized source was reported
+ * as still attemptable at the moment the budget ran out.
+ *
+ * The invariant below is stated over the pool rather than over the ranking,
+ * because that is what makes it survive exclusions: a candidate that leaves the
+ * pool (decode failure, spent retry budget) is no longer owed a first attempt,
+ * and a rule phrased over `decision.ranked` would demand one forever.
+ */
+describe("a retry never spends the budget another candidate's first attempt needs", () => {
+  it("never returns a candidate for a second attempt while an attemptable one is untried", () => {
+    fc.assert(
+      fc.property(scenarioArb, (scenario) => {
+        const result = plan(scenario);
+        if (result.next === null) return;
+
+        const attemptsOn = (candidateId: string): number =>
+          scenario.failures.filter((failure) => failure.candidateId === candidateId).length;
+
+        // Nothing to prove about a first attempt; the rule constrains repeats.
+        if (attemptsOn(result.next.candidate.id) === 0) return;
+
+        for (const candidateId of result.attemptable) {
+          expect(attemptsOn(candidateId)).toBeGreaterThan(0);
+        }
+      })
+    );
+  });
+
+  it("holds at every step of a real failover loop, which still terminates on the budget", () => {
+    /*
+     * The single-plan property above is checked against failures fast-check
+     * invented, which need not be a history any caller could actually have
+     * produced. This drives the loop the way the caller does -- plan, attempt,
+     * report, repeat -- so the states under test are exactly the reachable ones,
+     * and the guard doubles as the termination assertion: every iteration
+     * records one failure, so `attemptsUsed` strictly increases and the policy's
+     * own ceiling has to stop it. A scheduler that alternated between two
+     * candidates without charging the budget would fall out of the loop here
+     * rather than hang the suite.
+     */
+    fc.assert(
+      fc.property(
+        streamCandidatesArb,
+        playbackCapabilitiesArb,
+        failoverPolicyArb,
+        playbackFailureKindArb,
+        (candidates, capabilities, policy, kind) => {
+          const failures: PlaybackAttemptFailure[] = [];
+          const attempts = new Map<string, number>();
+
+          for (let guard = 0; guard <= policy.maxAttempts; guard++) {
+            const step = planFailover(candidates, capabilities, failures, policy);
+            if (step.next === null) return;
+
+            const candidateId = step.next.candidate.id;
+            const soFar = attempts.get(candidateId) ?? 0;
+
+            if (soFar > 0) {
+              // A repeat is legitimate only once the pool holds nothing untried.
+              for (const pooled of step.attemptable) {
+                expect(attempts.get(pooled) ?? 0).toBeGreaterThan(0);
+              }
+            }
+
+            attempts.set(candidateId, soFar + 1);
+            failures.push({ candidateId, kind });
+          }
+
+          throw new Error("failover did not terminate within its own attempt budget");
+        }
+      )
     );
   });
 });

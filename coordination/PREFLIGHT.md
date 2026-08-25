@@ -72,6 +72,42 @@ because most packages define `lint` as `tsc --noEmit` — so typecheck appears t
 `apps/web` runs real eslint. A per-package gate must run every task the full check would run for that
 package, or it is not a gate, it is a subset that happens to agree most of the time.
 
+**10. A per-layer check cannot see a composite failure.**
+Three rounds went to configurations in which every layer worked and reported truthfully while the
+composite was wrong. An unrelated app was holding the port and answering **200 to every path**, so
+"the server is up" and "the route exists" were both confirmed by a process that had never heard of
+this project. Next read dotenv from `apps/web` while the value was being written to the repo root,
+so "the variable is set" and "the app reads the variable" were each true of a different directory.
+Neither round had a failing check; each had a set of passing checks about the wrong things.
+
+A gate must assert the **end-to-end fact** — *does the running app resolve the origin* — not the
+per-layer fact — *does an origin exist somewhere*. If the checks decompose the question into parts,
+at least one of them has to put the parts back together, or the composite is the one thing nobody
+verified.
+
+**11. A returned HTTP 200 is not evidence of identity.**
+It says something answered. It does not say *what* answered, or that it answered the question you
+asked. Check the payload: a byte of the response that only the intended service could have produced.
+This is the specific form item 10 took twice, and it is cheap to defend against — `curl` the route
+and look at the body, not the status line.
+
+**12. A comment claiming two components are aligned is not alignment.**
+`playback-machine.ts` documented its `failures` list as "feedable straight into `planFailover`" while
+never calling it, and its own hand-rolled scheduling had drifted from the engine's — it tried a retry
+before a fresh candidate, so a four-attempt budget could be spent two-apiece on two candidates while
+a third authorized stream was never loaded once. The divergence survived review precisely *because*
+both sides were individually well-tested: each suite proved its own half correct, and no suite
+existed for the sentence connecting them. Either call the shared thing, or write the test that would
+fail when the two disagree. A prose assertion of agreement between two implementations is the
+strongest available signal that they will disagree.
+
+**13. Fixing a defect in a module nothing calls changes nothing.**
+The breadth-before-depth scheduling fix had already landed in `@liberty/media-engine` and was
+correct there. Real playback never read it, so the bug it fixed was still shipping. Before trusting a
+fix: grep for the symbol's importers, exclude the test files, and confirm at least one live code path
+reaches it. "The test passes" and "the fix is in the product" are different claims, and a fix in dead
+code produces the first without the second.
+
 ## The question to ask last
 
 *What in this change assumes something I have not verified in this session?* Version numbers,

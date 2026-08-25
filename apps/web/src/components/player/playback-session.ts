@@ -18,10 +18,12 @@
  *
  * `id` is the candidate id the ranking issued, NOT a URL and not an index.
  * Failures the machine records are `{ candidateId, kind }` — exactly
- * `PlaybackAttemptFailure` from `@liberty/contracts/domains/failover` — so the
- * trail this player produces can be fed straight back into
- * `planFailover()` in `@liberty/media-engine` without a translation step that
- * could lose or invent an attribution.
+ * `PlaybackAttemptFailure` from `@liberty/contracts/domains/failover` — and the
+ * machine hands that list to `scheduleAttempts()` in `@liberty/media-engine` on
+ * every failover, with no translation step that could lose or invent an
+ * attribution. The same list is what a server-side `planFailover()` takes, which
+ * is why an id has to be an id: the moment it were an index into THIS list, a
+ * failure would only mean something to whoever still held the list.
  * ---------------------------------------------------------------------- */
 
 import type { PlaybackSource } from "./playback-source";

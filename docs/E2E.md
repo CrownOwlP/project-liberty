@@ -87,7 +87,7 @@ by it.
 | `LIBERTY_E2E_BASE_URL`   | unset            | Test an already-running deployment. When set, the harness starts no server. It POSTs to the playback session endpoint, so never aim it at production. |
 | `LIBERTY_E2E_PORT`       | `3100`           | Port for the harness-managed server. Not 3000, because that is where a developer's `next dev` already is and `reuseExistingServer` would silently adopt it. |
 | `LIBERTY_E2E_WEB_MODE`   | `production`     | `production` runs `npm run build` + `next start`. `development` runs `next dev`. See the note below — the two answer the session API differently and disagree about whether `/api/v1/playback/resolve` exists, both on purpose. |
-| `LIBERTY_E2E_MEDIA_ORIGIN` | unset          | A DASH/HLS origin you hold rights to serve from. Passed to the server as `LIBERTY_FIXTURE_MEDIA_ORIGIN`. Unset means the media-rig suite skips. |
+| `LIBERTY_E2E_MEDIA_ORIGIN` | unset          | A DASH/HLS origin you hold rights to serve from. Passed to the server as `LIBERTY_FIXTURE_MEDIA_ORIGIN`. Unset means the harness pins the server to `https://fixtures.invalid` — never to an inherited value — and the media-rig suite skips. |
 
 ### The two web modes are not the same deployment
 
@@ -208,13 +208,38 @@ So **no media URL appears anywhere in `e2e/`**. The addresses the harness does
 send — `smuggled.test`, `fixtures.invalid` — are on domains reserved by RFC 2606
 and exist to be refused.
 
-`LIBERTY_FIXTURE_MEDIA_ORIGIN` defaults to `https://fixtures.invalid`, which
-resolves nowhere. That is the honest default: with no rig configured there is
-nothing to play, the fixtures fail, failover walks all three candidates, and the
-reason trail shows the whole sequence. A playback test reporting green against
-that origin would be reporting that it successfully failed to fetch a stream.
-The media-rig suite therefore skips, and the skip names the variable that would
-have to be set.
+On a server the harness starts, `LIBERTY_FIXTURE_MEDIA_ORIGIN` is **always
+pinned** in `webServer.env` — to `LIBERTY_E2E_MEDIA_ORIGIN` when you set one,
+and to `https://fixtures.invalid` when you do not. That second value is the
+app's own default, restated in `e2e/src/env.ts` rather than imported, so a
+change to it fails an assertion here instead of being adopted silently.
+
+It resolves nowhere, and that is the honest default: with no rig configured
+there is nothing to play, the fixtures fail, failover walks all three
+candidates, and the reason trail shows the whole sequence. A playback test
+reporting green against that origin would be reporting that it successfully
+failed to fetch a stream. The media-rig suite therefore skips, and the skip
+names the variable that would have to be set.
+
+**Pinned, rather than omitted so the app falls back on its own.** Omitting it
+used to be the deliberate choice — the harness does not get to invent a media
+origin — and that reasoning inverted the moment `apps/web`'s `dev` and `start`
+scripts started running through `scripts/with-root-env.mjs`, which loads the
+repository root's dotenv files into `process.env` for every name not already
+set. From then on, leaving the variable out of `webServer.env` did not mean "the
+app's default"; it meant "whatever is in the developer's root `.env.local`",
+injected into a server this harness started and is about to measure. The
+observable failure was a `LIBERTY_E2E_WEB_MODE=development` run asserting
+candidates against `https://fixtures.invalid` while the server served a rig, and
+reporting the mismatch as *a stream of unknown provenance being published to a
+player* — a rights-incident diagnosis for a configuration accident — while
+`MEDIA_RIG_SKIP_REASON` said in the same report that no rig was configured.
+
+The rule the block follows now: every application variable a spec asserts
+against is written there with a value the harness can name. `NODE_ENV` is the
+one exception, because `LIBERTY_E2E_WEB_MODE` already decides it by choosing the
+subcommand, and pinning it would let the two disagree about which deployment is
+under test.
 
 To stand a rig up, the route `docs/RESEARCH_PLAYBACK.md` records:
 

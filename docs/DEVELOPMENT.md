@@ -150,6 +150,168 @@ in `.env.production`" when there is no such file sends you to write one, which i
 rarely the fix. The source that did supply a value is part of every finding, and
 is usually the whole answer to "but I set that".
 
+### Which directory those files are read from
+
+The table above says *which* files. It says nothing about *where*, and for three
+debugging rounds that omission was the whole problem.
+
+`next dev` and `next build` run with cwd `apps/web`, because that is the
+workspace whose `package.json` holds the script — and `turbo run dev`,
+`npm run dev --workspace @liberty/web`, and the e2e harness's `webServer` all
+inherit that. Next resolves dotenv files from its project directory, so left to
+itself it reads `apps/web/.env*` and nothing else. Everything else in this
+repository points at the **repository root**: this guide says to put real values
+in `.env.local` there, `README.md` says `cp .env.example .env.local` from there,
+`turbo.json` hashes the root `.env*` files into every task's cache key, and
+`scripts/validate-env.mjs` validates the root files.
+
+Nothing bridged the two. A value written at the root was invisible to the
+running application and the variable silently fell back to its documented
+default — which is why `LIBERTY_FIXTURE_MEDIA_ORIGIN` stayed
+`https://fixtures.invalid`, a TLD reserved by RFC 2606 that can never resolve,
+and every playback attempt burned its retry budget on DNS for a hostname that
+cannot exist. The validator, meanwhile, passed: it was reading files the
+application never read. Its own header warns that *a confident pass over the
+wrong bytes is worse than no check at all*, and that is precisely what it was
+doing.
+
+**`scripts/with-root-env.mjs` is what bridges them now.** `apps/web`'s `dev` and
+`start` scripts run through it — `build` deliberately does not; see
+[Why `build` is not wrapped](#why-build-is-not-wrapped) below:
+
+```json
+"dev": "node ../../scripts/with-root-env.mjs next dev"
+```
+
+It finds the repository root (by walking up for the `package.json` that declares
+`workspaces` — it does not assume `../..`, because being silently wrong about
+which directory holds the environment is the defect it exists to prevent), reads
+the root files for the mode the command is about to run in, sets any variable
+**not already present** into `process.env`, and then runs the real command,
+passing through its arguments, its exit code, and Ctrl-C.
+
+Three consequences worth knowing:
+
+- **`process.env` still wins.** The loader never overwrites a name that is
+  already set, which is Next's own precedence rule. So the values pinned in
+  `.github/workflows/ci.yml`'s job `env:` and in `e2e/playwright.config.ts`'s
+  `webServer.env` still beat every file, exactly as before. An exported *empty*
+  string counts as set, matching `@next/env`, which tests presence rather than
+  truthiness.
+- **`NODE_ENV` is never loaded from a file.** `.env.example` ships
+  `NODE_ENV=development` and this guide tells you to copy it, while
+  `next/dist/bin/next` does `process.env.NODE_ENV = process.env.NODE_ENV ||
+  defaultEnv` — it *respects* a pre-set value. `.env.local` is in the
+  *production* file list as well as the development one, so applying it would
+  silently turn `npm run start` into a development server and flip the
+  production branches in `authorized-candidates.ts`, `issue-session.ts` and the
+  resolve handler — a deployment that resolves fixtures and exposes the resolve
+  scaffold a security review made a production build refuse. Export it in your
+  shell if you really mean it. The loader prints a note when a root file
+  declares a `NODE_ENV` that disagrees with the mode the command is running in.
+- **The mode comes from the command, not from `NODE_ENV`.** `next dev` loads
+  the `development` list even under `NODE_ENV=production`, and `next start`
+  loads the `production` list even under `NODE_ENV=development`. That is
+  `@next/env`'s rule (`NODE_ENV=test` is the one value it does read), and the
+  loader reproduces it exactly because, unlike the validator, it can see the
+  subcommand. (`next build` derives the same way, and the loader still answers
+  for it, even though `apps/web` no longer routes `build` through it.)
+
+The loader and the validator import `envFilesForMode` and `parseEnvFile` from
+the *same* module. That is not tidiness. Two file lists or two parsers is
+exactly how this class of defect returns: each side would be internally
+consistent, they would disagree about which bytes win, and the symptom would be
+a variable that validates clean and behaves wrong.
+`scripts/test-validate-env.mjs` scenario 36 pins the agreement against a single
+fixture.
+
+Because the parser is shared, it is also the parser your root env files are
+*read* with. It is deliberately minimal — no `${VAR}` interpolation, no
+multi-line values, no inline `#` comments after a value — so
+`FOO=bar # note` sets `FOO` to `bar # note`. Write plain `NAME=value` lines.
+
+The loader prints one line to stderr saying which mode it used, which root it
+found, and which variables came from which file — never a value, for the same
+reason the validator never prints one. `--quiet` suppresses that line; errors
+still print. To wrap something that is not `next`, pass the mode explicitly,
+because only `next` has a subcommand the loader can read a phase from:
+
+```bash
+node ../../scripts/with-root-env.mjs --mode development drizzle-kit migrate
+```
+
+`apps/web` currently has no dotenv files of its own, and adding one is not
+recommended: the root loader runs first, so a root value would land in
+`process.env` and shadow an `apps/web/.env.local` entry rather than the other
+way round.
+
+`npm run test` is deliberately **not** routed through the loader. vitest reads
+no dotenv file at all today, so wrapping it would newly make the unit gate
+depend on `.env` and on a git-ignored `.env.test.local` — the determinism
+`envFilesForMode` protects by omitting `.env.local` from the `test` list, given
+away one level up. (The `.env.local` guarantee itself survives either way, since
+both sides get their list from that one function.)
+
+<a id="why-build-is-not-wrapped"></a>
+
+### Why `build` is not wrapped, and the open question behind it
+
+`npm run build` does **not** read the root `.env` files. A value you want a
+production build to see must be exported:
+
+```bash
+LIBERTY_FIXTURE_MEDIA_ORIGIN=http://localhost:8080 npm run build
+```
+
+This is not a regression — it is what every build did before the loader existed,
+and exporting is also the spelling turbo hashes correctly. It is a deliberate
+retreat from a risk that could not be measured.
+
+**The mechanism.** `turbo.json` lists `LIBERTY_FIXTURE_MEDIA_ORIGIN`,
+`CONTENT_RIGHTS_ENFORCEMENT`, `LIBERTY_FC_SEED` and `NODE_ENV` in `globalEnv`.
+That is what stops one `.next/**` cache entry serving builds that meant
+different values. But turbo hashes `globalEnv` from the environment it sees
+**before** it launches the task, and the loader sets those variables **inside**
+the task. So for `build`, `globalEnv` would be hashing the *absence* of exactly
+the variables the build then used. And this is a build input rather than only a
+runtime one: `authorized-candidates.ts` and `watch/watch-session.ts` both read
+`LIBERTY_FIXTURE_MEDIA_ORIGIN` at module scope.
+
+**The unsettled part.** The remaining guard would be `globalDependencies`, which
+does list all eight root `.env*` files. Whether it holds is not currently known:
+`.gitignore` ignores `.env*`, and turbo is documented to skip gitignored files
+when hashing task `inputs`. If it does the same for `globalDependencies`, then
+the cache key ignores the file *and* the variable, and the failure mode is
+silent — a cache hit that serves a build made for a different media origin, with
+no error and nothing in the log.
+
+**The experiment that settles it.** Five minutes, and worth doing:
+
+```bash
+echo 'LIBERTY_FIXTURE_MEDIA_ORIGIN=https://one.invalid'  > .env.local
+npx turbo run build --force          # seed the cache
+echo 'LIBERTY_FIXTURE_MEDIA_ORIGIN=https://two.invalid' > .env.local
+npx turbo run build                  # look at this line
+```
+
+Temporarily restore the wrapper on `apps/web`'s `build` script first, or the
+loader never runs and the experiment measures nothing. If the second run reports
+**`cache hit`**, turbo is not hashing the gitignored file, the risk is real, and
+`build` must stay unwrapped. If it reports a **`cache miss`**, `globalDependencies`
+covers gitignored files, and `build` can be wrapped again — one line in
+`apps/web/package.json`, plus scenario 36(f) in `scripts/test-validate-env.mjs`,
+which pins which scripts are wrapped.
+
+**Why the split is where it is.** `dev` is the case the loader exists for and
+turbo declares it `"cache": false`, so nothing it reads outlives the process.
+`start` reads the environment at request time and produces no cached artifact.
+`build` is the only one whose *output* depends on these values — and it is also
+the one that already has a correct answer elsewhere: `.github/workflows/ci.yml`
+pins all three in the job `env:`, where turbo hashes them properly, and that is
+the build that ships.
+
+### Choosing a mode
+
 `--mode` chooses which of those lists to resolve against, and it is repeatable.
 `--mode development --mode test --mode production` validates all three from a
 single pass over the filesystem, which is what `npm run env:validate`, and
@@ -206,7 +368,7 @@ Application runtime (`@scope app`):
 | `CONTENT_RIGHTS_ENFORCEMENT` | no, defaults to `strict` | `strict`            | Rights-enforcement mode. `strict` is the only accepted value; relaxing it is a `docs/CONTENT_RIGHTS.md` change first. `@default strict @cache-key`: turbo hashes it into the build cache key, so leaving it unset warns and names that consequence, and `--scope ci` fails on it. Setting it to anything but `strict` fails everywhere. |
 | `LOG_LEVEL`                  | no       | `debug` \| `info` \| `warn` \| `error` | Minimum log level. Mirrors `LogLevel` in `@liberty/observability`, which ignores unknown values silently. |
 | `LIBERTY_FC_SEED`            | no, defaults to `20250819` | integer            | Seed for the fast-check property suite. Pinned rather than random because an unpinned suite fails roughly one run in forty with a counterexample nobody can reproduce, and an irreproducible test gets retried until green — turning a real defect into noise. Override it in a nightly job to widen the search, then pin anything it finds by copying the seed fast-check prints. `@cache-key`: the seed changes what the test task computes, so runs under different seeds must not share a cache entry. |
-| `LIBERTY_FIXTURE_MEDIA_ORIGIN` | no, defaults to `https://fixtures.invalid` | `http(s)://` URL | Origin the watch route's development fixtures are served from, read by `apps/web/src/app/watch/watch-session.ts`. The default host is reserved by RFC 2606 and resolves nowhere, so a fresh checkout fails over through every fixture and renders the whole reason trail rather than silently doing nothing — and it can never reach a real host by accident. Point it at a local DASH/HLS rig to actually watch something; a loopback origin is carved out by the transport check in `playback-source.ts`. `@cache-key`: the value is baked into the candidate URIs a build produces, so builds made against different origins must not share a cache entry. |
+| `LIBERTY_FIXTURE_MEDIA_ORIGIN` | no, defaults to `https://fixtures.invalid` | `http(s)://` URL | Origin the watch route's development fixtures are served from, read by `apps/web/src/app/watch/watch-session.ts`. The default host is reserved by RFC 2606 and resolves nowhere, so a fresh checkout fails over through every fixture and renders the whole reason trail rather than silently doing nothing — and it can never reach a real host by accident. Point it at a local DASH/HLS rig to actually watch something; a loopback origin is carved out by the transport check in `playback-source.ts`. `@cache-key`: the value is baked into the candidate URIs a build produces, so builds made against different origins must not share a cache entry. Because it is a build input, `npm run build` does **not** pick it up from a root `.env` file — export it, which is also the spelling turbo hashes correctly. See [Why `build` is not wrapped](#why-build-is-not-wrapped). |
 
 Local infrastructure (`@scope app`, both optional):
 

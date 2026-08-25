@@ -11,10 +11,16 @@ import {
 import { describePlaybackError } from "./shaka-error";
 
 /*
- * `@liberty/media-engine` is imported HERE and nowhere in the player's runtime
- * modules. A test file costs no bundle, so the retryability rule can be
- * cross-checked against its authority without the ranking, scoring, audio and
- * subtitle modules riding into the browser for one boolean.
+ * `PLAYBACK_FAILURE_POLICY` is imported HERE and not by `playback-failure.ts`. A
+ * test file costs no bundle, so the retryability rule can be cross-checked
+ * against its authority without the table riding into the browser for one
+ * boolean, and `RETRYABLE_FAILURE_KINDS` stays a two-word constant whose drift
+ * from the authority is a failing test rather than a divergence nobody notices.
+ *
+ * That is a statement about THIS module, not about the player as a whole:
+ * `playback-machine.ts` calls `scheduleAttempts` from the same package at
+ * runtime, deliberately, because the alternative was a second copy of the
+ * failover scheduling policy that disagreed with the first.
  */
 
 function classify(init: { severity: number; category: number; code: number; data?: readonly unknown[] }) {

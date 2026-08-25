@@ -91,6 +91,38 @@ export const WEB_MODE: WebMode = read("LIBERTY_E2E_WEB_MODE") === "development" 
 export const MEDIA_RIG_ORIGIN = read("LIBERTY_E2E_MEDIA_ORIGIN");
 
 /**
+ * The value the harness PINS as `LIBERTY_FIXTURE_MEDIA_ORIGIN` on a server it
+ * starts. Meaningless when `MANAGES_SERVER` is false -- nothing is started.
+ *
+ * It exists as its own export so that `playwright.config.ts` and
+ * `EXPECTED_MEDIA_ORIGIN` below are the same expression rather than two
+ * expressions someone once checked were equal. The whole reason this file reads
+ * every knob exactly once is that a spec must not be able to assert against a
+ * configuration the server was never given, and "the origin the server got" and
+ * "the origin the specs expect" are the pair where that would hurt most.
+ *
+ * PINNED, NOT LEFT ABSENT. This used to be omitted from `webServer.env` when no
+ * rig was configured, on the reasoning that the harness "does not get to invent
+ * a media origin" and should let the app fall back to its own default. That
+ * reasoning depended on absence meaning absence, and it stopped being true:
+ * `apps/web`'s `dev` and `start` scripts now run through
+ * `scripts/with-root-env.mjs`, which loads the repository root's dotenv files
+ * into `process.env` for any name NOT already set. So an omitted variable is no
+ * longer "the app's default" -- it is "whatever is in the developer's
+ * `.env.local`", injected into a server this harness started and then measured.
+ * Deferring produced a run that asserted against `https://fixtures.invalid`
+ * while the server served a rig, and reported the mismatch as a stream of
+ * unknown provenance reaching a player: a rights-incident diagnosis for a
+ * configuration accident.
+ *
+ * Restating the app's default here is therefore not inventing an origin, it is
+ * refusing to inherit one. `DEFAULT_FIXTURE_MEDIA_ORIGIN` is the app's own
+ * documented value, copied on purpose (see its comment) so that a change to it
+ * fails an assertion rather than being adopted silently.
+ */
+export const SERVER_MEDIA_ORIGIN: string = MEDIA_RIG_ORIGIN ?? DEFAULT_FIXTURE_MEDIA_ORIGIN;
+
+/**
  * The origin every published candidate URL must be on, or `null` when this
  * harness cannot know.
  *
@@ -100,7 +132,7 @@ export const MEDIA_RIG_ORIGIN = read("LIBERTY_E2E_MEDIA_ORIGIN");
  * people to ignore the result.
  */
 export const EXPECTED_MEDIA_ORIGIN: string | null = MANAGES_SERVER
-  ? (MEDIA_RIG_ORIGIN ?? DEFAULT_FIXTURE_MEDIA_ORIGIN)
+  ? SERVER_MEDIA_ORIGIN
   : MEDIA_RIG_ORIGIN;
 
 /**
@@ -110,6 +142,15 @@ export const EXPECTED_MEDIA_ORIGIN: string | null = MANAGES_SERVER
  * skip: a suite that quietly does not run is indistinguishable from one that
  * passed, and this is the sentence that makes the difference visible in the
  * report.
+ *
+ * Keyed on `MEDIA_RIG_ORIGIN`, and that is only sound because
+ * `SERVER_MEDIA_ORIGIN` above pins rather than defers. "No rig configured" and
+ * "the server is pointed at the unresolvable default" have to be the same
+ * statement, or this skip is a claim about the harness's own variables that
+ * happens to be printed as a claim about the server. While the origin was left
+ * absent they could differ: an inherited root `.env.local` pointed the server at
+ * a real rig and this still said there wasn't one, which is the failure mode a
+ * sentence-shaped skip exists to prevent and would itself have hidden.
  */
 export const MEDIA_RIG_SKIP_REASON: string | null =
   MEDIA_RIG_ORIGIN === null

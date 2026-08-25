@@ -69,6 +69,22 @@
  * ---------------------------------------------------------------------- */
 
 import type { FailoverPolicy, PlaybackAttemptFailure, PlaybackFailureKind } from "@liberty/contracts/domains/failover";
+/*
+ * THE SUBPATH, NOT THE BARREL, AND IT IS NOT A STYLE PREFERENCE.
+ *
+ * This file is reached from `player-surface.tsx`, which is `"use client"`, so
+ * every module on this import's transitive graph is downloaded by a viewer.
+ * `@liberty/media-engine`'s barrel re-exports `ranking`, `scoring`, `audio` and
+ * `subtitles`; `@liberty/media-engine/scheduling` is the one module
+ * `scheduleAttempts` actually lives in, and it is the half of failover that has
+ * no path to `./ranking` at all. `./failover` would NOT do -- it value-imports
+ * `rankStreamCandidates` for `planFailover`, which this file never calls.
+ *
+ * Widening this back to the barrel would not break a test or a type; it would
+ * quietly put the ranking and scoring engine back in the player bundle. That is
+ * why the narrow path is stated here rather than left to a bundler to discover.
+ */
+import { scheduleAttempts, type AttemptSchedule } from "@liberty/media-engine/scheduling";
 import { assign, createActor, setup } from "xstate";
 import {
   NO_OP_PLAYBACK_EFFECTS,
@@ -78,8 +94,7 @@ import {
 import {
   classifyMediaElementError,
   classifyPlaybackFailure,
-  isAbortedMediaElementError,
-  isRetryableFailure
+  isAbortedMediaElementError
 } from "./playback-failure";
 import type { PlaybackCandidate, PlaybackSession } from "./playback-session";
 import type { EngineState } from "./playback-controller";
@@ -130,10 +145,18 @@ const PLAYBACK_PHASES: readonly string[] = [
  *
  * The four that overlap with `FailoverStopReason` in `@liberty/media-engine`
  * carry the SAME names on purpose, so a support engineer reading a client trail
- * and a server plan is reading one vocabulary. They are restated rather than
- * imported for the reason given in `playback-failure.ts`: importing them pulls
- * the whole ranking and scoring engine into the player bundle. The remaining
- * two describe things only a client can observe.
+ * and a server plan is reading one vocabulary — and since this file now calls
+ * `scheduleAttempts` they are not merely spelled alike, they are the values that
+ * scheduler returned, mapped through `stopReasonFor`.
+ *
+ * Still restated as a TYPE rather than aliased to `FailoverStopReason`, because
+ * this list is neither a subset nor a superset of that one: `session_unavailable`
+ * and `engine_unavailable` describe things only a client can observe, and the
+ * three homogeneous engine reasons that need pre-attempt refusals
+ * (`no_eligible_candidates`, `all_eligible_candidates_incompatible`) are
+ * unreachable here because the session did the eligibility work before this
+ * machine was handed anything. A type alias would offer a player two reasons it
+ * can never report and hide the two it always could.
  */
 export type PlaybackStopReason =
   | "no_candidates"
@@ -268,22 +291,73 @@ export type PlaybackEventType = PlaybackEvent["type"];
 
 export interface PlaybackMachineContext {
   readonly contentId: string | null;
-  /** In preference order, exactly as the session supplied them. Never re-sorted. */
+  /**
+   * In preference order, exactly as the session supplied them. Never re-sorted.
+   *
+   * This is why the machine calls `scheduleAttempts` and not `planFailover`. The
+   * server already ranked; re-ranking here would need a `PlaybackCapabilities`
+   * this machine does not have, and would produce a second opinion about
+   * preference that could disagree with the session's — after which the reason
+   * trail would explain a choice nobody made. The list goes into the scheduler
+   * in the order it arrived and comes back out untouched.
+   */
   readonly candidates: readonly PlaybackCandidate[];
-  /** `-1` until a session is adopted. Indexes `candidates`. */
+  /**
+   * Which candidate is current. `-1` until a session is adopted.
+   *
+   * NOT MONOTONIC, and it was the assumption that it were which made the old
+   * hand-rolled failover unable to express the engine's policy at all: an index
+   * that only ever moves forward cannot say "retry candidate 0 now that 1 and 2
+   * have both been tried". It is now DERIVED — `applyScheduledAttempt` looks up
+   * whatever id `scheduleAttempts` returned — so it may move backwards, stay
+   * put, or skip. Nothing may read it as a high-water mark; in particular
+   * `candidates.length - candidateIndex - 1` is no longer "how many are left"
+   * and the scheduler's own `attemptable.length` is.
+   *
+   * Kept as an index rather than replaced by the id because `currentCandidate`,
+   * `loadRequestFor` and every trail entry want the candidate OBJECT, and one
+   * lookup at the point of decision is cheaper and easier to audit than a lookup
+   * at each of those reads. With duplicate ids in one session the first match
+   * wins, which is the same candidate the scheduler was talking about.
+   */
   readonly candidateIndex: number;
   readonly policy: FailoverPolicy;
   /** Charged against `policy.maxAttempts`. Incremented per genuine attempt. */
   readonly attemptsUsed: number;
-  /** Per-candidate transient retries, against `maxTransientRetriesPerCandidate`. */
-  readonly transientRetries: Readonly<Record<string, number>>;
+  /**
+   * The same charge, split by candidate.
+   *
+   * NOT DERIVABLE FROM `failures`, which is the whole reason it exists. An
+   * attempt whose error the classifier could not place is absent from `failures`
+   * by contract (see `playback-failure.ts` rule 1) but it still happened and it
+   * still cost a load. Without this the scheduler would see that candidate as
+   * never attempted, hand it back for ever, and never advance the budget — the
+   * old guards avoided that only by advancing an index instead of consulting a
+   * policy. Handed to `scheduleAttempts` as `ChargedAttempts`.
+   *
+   * IT IS ALSO THE OTHER HALF OF RULE 1. Counting an unclassified attempt only
+   * de-prioritised the candidate: breadth-first put it last, and then handed it
+   * straight back once nothing was untried, so one fatally-broken stream with an
+   * unclassifiable error was loaded until the budget ran out and the trail
+   * reported it as a candidate that "remained". The engine reads this count
+   * against `failures` — more attempts than named failures means an attempt
+   * taught us nothing — and excludes the candidate as
+   * `attempt_failed_unclassified`. The claim stays exactly as strong as the
+   * evidence: the attempt ended and earned no retry, and no failure kind is
+   * invented to say so.
+   *
+   * Read through `attemptsCharged`, never by bare indexing. See its note.
+   */
+  readonly attemptsByCandidate: Readonly<Record<string, number>>;
   /** `retryStreaming()` calls spent on the current candidate. */
   readonly recoveriesOnCandidate: number;
   /**
-   * Exactly `PlaybackAttemptFailure[]`, so this list can be handed to
-   * `planFailover()` in `@liberty/media-engine` unchanged. Unclassified failures
-   * are NOT here — an entry with a guessed kind would be a claim the contract
-   * says we must not make — but they are always in the trail.
+   * Exactly `PlaybackAttemptFailure[]`, and it is handed to
+   * `@liberty/media-engine` unchanged on every failover rather than merely being
+   * shaped so that it COULD be. Unclassified failures are NOT here — an entry
+   * with a guessed kind would be a claim the contract says we must not make —
+   * but they are always in the trail, and they are always in
+   * `attemptsByCandidate`.
    */
   readonly failures: readonly PlaybackAttemptFailure[];
   readonly lastFailureKind: PlaybackFailureKind | null;
@@ -386,6 +460,37 @@ export function currentCandidateId(context: PlaybackMachineContext): string | nu
   return currentCandidate(context)?.id ?? null;
 }
 
+/**
+ * How many attempts have been charged to one candidate.
+ *
+ * `Object.hasOwn` rather than a bare `counts[id] ?? 0`, and the guard is not
+ * defensive programming — it is the difference between arithmetic and a string.
+ * `attemptsByCandidate` is a plain object keyed by PROVIDER-SUPPLIED ids, so
+ * `counts["constructor"]` and `counts["toString"]` return functions off
+ * `Object.prototype`, `?? 0` never fires, `fn + 1` concatenates rather than
+ * adds, and the poisoned value then travels into `scheduleAttempts` where it
+ * decides both the tried/untried partition and, now, whether the candidate is
+ * excluded at all. One candidate named `toString` would silently break failover
+ * for the whole session.
+ *
+ * The engine's `kindsById` has this immunity for free by being a `Map`, and
+ * `scheduleAttempts` copies this record into one for the same reason. The
+ * record shape is kept here rather than swapped for a `Map` because
+ * `PlaybackMachineContext` is a snapshot other code reads and PL-0503 will
+ * serialise, and a `Map` does not survive `JSON.stringify`.
+ *
+ * WRITES ARE SAFE ALREADY and stay in the object-literal form on purpose: a
+ * computed key in a literal DEFINES an own property, so `{ ...counts,
+ * ["__proto__"]: 1 }` records an attempt, while the equivalent `next[id] = 1`
+ * assignment would invoke the prototype setter and record nothing.
+ */
+function attemptsCharged(
+  counts: Readonly<Record<string, number>>,
+  candidateId: string
+): number {
+  return Object.hasOwn(counts, candidateId) ? (counts[candidateId] ?? 0) : 0;
+}
+
 function finiteSeconds(value: number | null | undefined): number | null {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
 }
@@ -441,7 +546,7 @@ export function initialPlaybackContext(input: PlaybackMachineInput): PlaybackMac
     candidateIndex: -1,
     policy: input.policy,
     attemptsUsed: 0,
-    transientRetries: {},
+    attemptsByCandidate: {},
     recoveriesOnCandidate: 0,
     failures: [],
     lastFailureKind: null,
@@ -480,17 +585,83 @@ function loadRequestFor(context: PlaybackMachineContext): LoadCandidateRequest {
 }
 
 /**
- * The stop reason for an exhausted candidate pool.
+ * WHAT TO ATTEMPT NEXT — asked of `@liberty/media-engine`, never decided here.
  *
- * `all_candidates_rights_blocked` is claimed only when it is true of EVERY
- * recorded failure, matching the scope rule `@liberty/media-engine` states for
- * the same value: a homogeneous reason asserts something about a set, and when
- * the set is mixed the honest answer is `candidates_exhausted` plus the
- * itemised trail rather than the nearest plausible headline.
+ * The one call that replaced the machine's own failover scheduling. The previous
+ * version had guards named `canRetrySameCandidate` and `canAdvanceCandidate`
+ * that reimplemented the engine's policy and got it wrong in a way no local
+ * assertion could see: a retry was tried BEFORE a fresh candidate, so a
+ * four-attempt budget could be spent two-apiece on two candidates while a third
+ * authorized stream was never loaded once. The engine's own scheduler had
+ * already been fixed for exactly that; nothing in real playback called it. Now
+ * there is one policy, and this is the seam.
+ *
+ * `context.candidates` goes in UNSORTED-BY-US, in the session's preference
+ * order. `scheduleAttempts` is the half of failover that does not rank, which is
+ * why the client can call it (see `PlaybackMachineContext.candidates`).
+ *
+ * The `ChargedAttempts` argument is what makes the client's accounting honest
+ * rather than a subset of it: `context.failures` omits attempts whose error the
+ * classifier could not place, and those still spent the budget and still tried
+ * the candidate. See `attemptsByCandidate`.
+ *
+ * PURE, so calling it from several guards and actions within one eventless step
+ * is safe and gives one answer. It is recomputed rather than cached in context
+ * on purpose: a cached schedule is stale the instant the step ends, and a stale
+ * plan that still looks authoritative is the failure mode this whole task was
+ * about. The cost is a linear pass over the candidate list a handful of times
+ * per failover, against a budget of single-digit attempts.
  */
-function exhaustionReason(context: PlaybackMachineContext): PlaybackStopReason {
-  if (context.failures.length === 0) return "candidates_exhausted";
-  const allRights = context.failures.every((failure) => failure.kind === "rights_unverifiable");
+function scheduleFor(context: PlaybackMachineContext): AttemptSchedule {
+  return scheduleAttempts(
+    context.candidates.map((candidate) => candidate.id),
+    context.failures,
+    context.policy,
+    { attemptsUsed: context.attemptsUsed, attemptsByCandidate: context.attemptsByCandidate }
+  );
+}
+
+/**
+ * The engine's terminal reason, in the client's vocabulary.
+ *
+ * A TRANSLATION, not a second decision. `scheduleAttempts` decides THAT the
+ * session is over and why, out of the shared `FailoverStopReason` vocabulary;
+ * this maps that answer onto `PlaybackStopReason`, which differs only where the
+ * two vantage points genuinely differ.
+ *
+ * The one place it adds anything is `all_candidates_rights_blocked`. The engine
+ * refuses to claim it without `decision.rejected` — the pre-attempt refusals it
+ * cannot see from an id list — and a client has no `PlaybackDecision` at all.
+ * A client's pool is exactly the session's candidate list, so what the engine
+ * decides over `decision.ranked` this decides over the same set with no
+ * refusals in it.
+ *
+ * READ OFF `schedule.excluded`, NOT OFF `context.failures`, and the difference
+ * is a claim that used to be false. The old test was "every recorded failure was
+ * a rights failure", justified by the premise that an exhausted pool means every
+ * candidate contributed at least one failure. `attempt_failed_unclassified`
+ * broke that premise: a candidate can now leave the pool having recorded NO
+ * failure at all, so one rights failure plus one unclassifiable error would have
+ * printed "every candidate was rights-blocked" about a candidate whose rights
+ * were never in question. The exclusions are the per-candidate findings, one per
+ * candidate, so asking them is the same scope rule the engine states — a
+ * homogeneous reason asserts something about a SET, and when the set is mixed
+ * the honest answer is `candidates_exhausted` plus the itemised trail rather
+ * than the nearest plausible headline.
+ */
+function stopReasonFor(schedule: AttemptSchedule): PlaybackStopReason {
+  if (schedule.reason === "attempt_limit_reached") return "attempt_limit_reached";
+  /* Unreachable while `failingOver` is only entered from inside `active`, which
+   * a session with no candidates never reaches — carried anyway so the mapping
+   * is total over the vocabulary rather than over today's reachable subset. */
+  if (schedule.reason === "no_candidates") return "no_candidates";
+  /* Vacuously true on an empty list, and "every candidate was rights-blocked"
+   * about nothing at all is the same fabricated finding the engine separates
+   * `no_candidates` out to avoid. Unreachable — an exhausted pool has an
+   * exclusion for every candidate — and cheap to state. */
+  const allRights =
+    schedule.excluded.length > 0 &&
+    schedule.excluded.every((entry) => entry.reason === "rights_not_established");
   return allRights ? "all_candidates_rights_blocked" : "candidates_exhausted";
 }
 
@@ -507,6 +678,12 @@ function recordFailure(
    * the list complete is precisely what the contract forbids. The trail entry
    * below carries the same event with `failureKind: null`, so nothing is lost —
    * only the unfounded claim is.
+   *
+   * IT STILL ENDS THE ATTEMPT. Whichever branch this took, the caller is on its
+   * way to `failingOver`, the attempt has already been charged to the candidate,
+   * and the engine reads that charge against this list: more attempts than
+   * failures means the candidate is out as `attempt_failed_unclassified`. So the
+   * candidate is not retried, and no kind was guessed to achieve it.
    */
   const failures: readonly PlaybackAttemptFailure[] =
     kind !== null && candidateId !== null ? [...context.failures, { candidateId, kind }] : context.failures;
@@ -572,18 +749,26 @@ export const playbackMachine = setup({
     mediaErrorIsIgnorable: ({ event }) =>
       event.type === "MEDIA_ERROR" && isAbortedMediaElementError(event.mediaErrorCode),
 
-    canRetrySameCandidate: ({ context }) => {
-      if (!isRetryableFailure(context.lastFailureKind)) return false;
-      if (context.attemptsUsed >= context.policy.maxAttempts) return false;
-      const id = currentCandidateId(context);
-      if (id === null) return false;
-      const spent = context.transientRetries[id] ?? 0;
-      return spent < context.policy.maxTransientRetriesPerCandidate;
-    },
-    hasNextCandidate: ({ context }) => context.candidateIndex + 1 < context.candidates.length,
-    canAdvanceCandidate: ({ context }) =>
-      context.candidateIndex + 1 < context.candidates.length &&
-      context.attemptsUsed < context.policy.maxAttempts,
+    /**
+     * The two failover guards, and both of them are questions rather than
+     * policies.
+     *
+     * They replaced `canRetrySameCandidate`, `canAdvanceCandidate` and
+     * `hasNextCandidate`, which between them re-decided retryability, the
+     * per-candidate transient budget, the whole-session budget and candidate
+     * ordering — every one of which `@liberty/media-engine` already decides, and
+     * one of which it decided differently. Nothing below re-derives any of it:
+     * the schedule is asked, and the answer is routed.
+     *
+     * Note what is NOT here. There is no `hasNextCandidate`: "were streams still
+     * available when the budget ran out" is `schedule.attemptable`, and asking it
+     * separately is how the two lists drifted apart in the first place. There is
+     * no retryability test either — a candidate the engine still lists as
+     * attemptable is by definition one nothing has ruled out, and
+     * `rights_unverifiable` can never be among them at any budget.
+     */
+    scheduleProceeds: ({ context }) => scheduleFor(context).next !== null,
+    scheduleSpentTheBudget: ({ context }) => scheduleFor(context).reason === "attempt_limit_reached",
 
     /**
      * The element's clock moved forward.
@@ -737,22 +922,70 @@ export const playbackMachine = setup({
       )
     })),
 
-    stopWithAttemptLimit: assign(({ context }) => ({
-      stopReason: "attempt_limit_reached" as const,
-      ...appendTrail(
-        context,
-        trailEntry(
+    stopWithAttemptLimit: assign(({ context }) => {
+      /*
+       * The count comes from the SCHEDULE, not from the index. It used to be
+       * `candidates.length - candidateIndex - 1`, which was only ever "how many
+       * are left" while the index marched forward one candidate at a time and
+       * every candidate ahead of it was assumed untried — an arithmetic identity
+       * that the engine's policy breaks on both sides. `attemptable` is the
+       * answer to the question the sentence actually asks: which streams were
+       * still worth loading at the moment the budget ran out.
+       *
+       * AND "REMAINED" IS SPLIT IN TWO, because `attemptable` answers a question
+       * one word narrower than the sentence used to ask. It is "not ruled out",
+       * which includes candidates that have already been loaded and failed
+       * without being disqualified — a transient failure with retry budget left.
+       * "N candidates remained" reads as "there were N streams we never got to",
+       * and pointing an operator at a raised attempt limit to reach streams that
+       * had all already been tried is the wrong remedy from a true sentence.
+       * Under breadth-before-depth the untried ones are also the load-bearing
+       * half: reaching the limit with any of them left is the case where a
+       * larger budget would genuinely have played something new, and they are
+       * NAMED because "which stream did we never reach" is the first question
+       * anybody reading this line asks (invariant 4).
+       *
+       * `attemptable` is never empty here — the branch is guarded on
+       * `attempt_limit_reached`, which the engine only reports when it had a
+       * candidate to hand back — so neither sentence can be vacuous.
+       */
+      const schedule = scheduleFor(context);
+      const untried = schedule.attemptable.filter(
+        (candidateId) => attemptsCharged(context.attemptsByCandidate, candidateId) === 0
+      );
+      return {
+        stopReason: "attempt_limit_reached" as const,
+        ...appendTrail(
           context,
-          "stopped",
-          `attempt budget of ${context.policy.maxAttempts} spent while ${
-            context.candidates.length - context.candidateIndex - 1
-          } candidate(s) remained`
+          trailEntry(
+            context,
+            "stopped",
+            untried.length > 0
+              ? `attempt budget of ${context.policy.maxAttempts} spent while ${untried.length} candidate(s) had never been tried: ${untried.join(", ")}`
+              : `attempt budget of ${context.policy.maxAttempts} spent; the ${schedule.attemptable.length} candidate(s) still attemptable had all been tried at least once`
+          )
         )
-      )
-    })),
+      };
+    }),
 
     stopWithExhausted: assign(({ context }) => {
-      const reason = exhaustionReason(context);
+      const schedule = scheduleFor(context);
+      const reason = stopReasonFor(schedule);
+      /*
+       * ITEMISED, in the engine's own exclusion vocabulary and in the same
+       * `id=reason` shape `planFailover`'s explanation uses.
+       *
+       * "Every attemptable candidate has been ruled out" names no candidate and
+       * no finding, and for one of the exclusions there is now NOTHING ELSE in
+       * the trail that carries the finding: an attempt the classifier could not
+       * place leaves `failures` empty by contract, so `attempt_failed_unclassified`
+       * is the only place the session says why that stream is gone. Invariant 4
+       * asks for a reason trail sufficient to debug candidate selection, and a
+       * headline with no itemisation is not one.
+       */
+      const itemised = schedule.excluded
+        .map((entry) => `${entry.candidateId}=${entry.reason}`)
+        .join(", ");
       return {
         stopReason: reason,
         ...appendTrail(
@@ -761,8 +994,10 @@ export const playbackMachine = setup({
             context,
             "stopped",
             reason === "all_candidates_rights_blocked"
-              ? "every attempted candidate failed on rights; none of them may be retried"
-              : "every attemptable candidate has been ruled out"
+              ? `every attempted candidate failed on rights; none of them may be retried: ${itemised}`
+              : `every attemptable candidate has been ruled out: ${
+                  itemised.length > 0 ? itemised : "nothing was ever attemptable"
+                }`
           )
         )
       };
@@ -771,7 +1006,7 @@ export const playbackMachine = setup({
     resetForRetry: assign(({ context }) => ({
       candidateIndex: -1,
       attemptsUsed: 0,
-      transientRetries: {},
+      attemptsByCandidate: {},
       recoveriesOnCandidate: 0,
       failures: [],
       lastFailureKind: null,
@@ -790,7 +1025,27 @@ export const playbackMachine = setup({
 
     /* --- attempts, recovery and failover --- */
 
-    countAttempt: assign(({ context }) => ({ attemptsUsed: context.attemptsUsed + 1 })),
+    /**
+     * One attempt, charged twice over: to the session budget and to the
+     * candidate it is about to be spent on.
+     *
+     * Runs AFTER `applyScheduledAttempt` on the failover path, so
+     * `currentCandidateId` is already the candidate being started rather than the
+     * one being left. On the `engineLoading -> loading` path the candidate is the
+     * one `adoptSession` selected. Rebuilding a destroyed engine deliberately
+     * does not run this at all: that reload is not the candidate's fault and must
+     * not make the candidate look tried a second time either.
+     */
+    countAttempt: assign(({ context }) => {
+      const id = currentCandidateId(context);
+      return {
+        attemptsUsed: context.attemptsUsed + 1,
+        attemptsByCandidate:
+          id === null
+            ? context.attemptsByCandidate
+            : { ...context.attemptsByCandidate, [id]: attemptsCharged(context.attemptsByCandidate, id) + 1 }
+      };
+    }),
 
     /**
      * The engine went away, so the element's clock stopped being ours.
@@ -888,12 +1143,13 @@ export const playbackMachine = setup({
        * failover vocabulary. But "the budget ran out" describes how we got here,
        * not what went wrong, and asserting `network_transient` from it asserts
        * the ONE kind `RETRYABLE_FAILURE_KINDS` admits. A RECOVERABLE DRM or
-       * MANIFEST error would be recorded as transient, `canRetrySameCandidate`
-       * would say yes, and `failingOver` would re-load the same candidate: a
-       * second attempt to play something we may not be entitled to play, which
-       * invariants 1 and 2 forbid outright. The invented kind would also enter
-       * `context.failures`, which is documented as feedable straight into
-       * `planFailover()`, so the guess would leave this file as a claim.
+       * MANIFEST error recorded as transient would reach `scheduleAttempts` as a
+       * kind `PLAYBACK_FAILURE_POLICY` marks retryable, `exclusionFor` would
+       * leave the candidate in the attemptable pool, and `failingOver` would
+       * re-load it: a second attempt to play something we may not be entitled to
+       * play, which invariants 1 and 2 forbid outright. That is not a guard this
+       * file could tighten to compensate — `failures` IS the evidence the engine
+       * decides on, so the guess would become policy the moment it is written.
        *
        * The transient fallback therefore applies only where the classifier
        * genuinely cannot tell AND the error was not fatal — a stall Shaka
@@ -929,53 +1185,74 @@ export const playbackMachine = setup({
      * Freeze the position the restart will resume from.
      *
      * Runs on entry to `failingOver`, BEFORE the eventless transitions decide
-     * where to go, so both the retry path and the advance path read a settled
-     * resume point. A zero position falls back to what the session asked for
-     * rather than overwriting it — failing over before the first frame must not
-     * silently convert "start at 20 minutes" into "start at the beginning".
+     * where to go, so every branch reads a settled resume point. A zero position
+     * falls back to what the session asked for rather than overwriting it —
+     * failing over before the first frame must not silently convert "start at 20
+     * minutes" into "start at the beginning".
+     *
+     * DELIBERATELY INDEPENDENT OF WHICH CANDIDATE COMES BACK, which is what
+     * makes it survive breadth-before-depth. The resume point is a fact about the
+     * VIEWER — where they are in the film — not about the stream that was
+     * carrying it, so it is preserved before the scheduler is asked and applies
+     * unchanged whether the next candidate is a fresh one, the one we just left,
+     * or one attempted several failovers ago.
      */
     preserveResumePosition: assign(({ context }) => ({
       resumeAtSeconds: context.positionSeconds > 0 ? context.positionSeconds : context.resumeAtSeconds
     })),
 
-    countTransientRetry: assign(({ context }) => {
-      const id = currentCandidateId(context);
-      const spent = id === null ? 0 : context.transientRetries[id] ?? 0;
-      return {
-        transientRetries: id === null ? context.transientRetries : { ...context.transientRetries, [id]: spent + 1 },
-        recoveriesOnCandidate: 0,
-        lastFailureKind: null,
-        ...appendTrail(
-          context,
-          trailEntry(context, "candidate_retry", `transient failure; retrying the same candidate from ${
-            context.resumeAtSeconds ?? 0
-          }s`, { resumeAtSeconds: context.resumeAtSeconds })
-        )
-      };
-    }),
-
     /**
-     * The failover itself.
+     * The failover itself: adopt whatever `scheduleAttempts` chose, and say so.
      *
-     * The trail entry names BOTH candidates and the resume point, because that
-     * is the whole question a support engineer asks about a failover — what did
-     * we leave, what did we go to, and did the viewer lose their place. Product
-     * invariant 4: a failover with no recorded reason is the same defect as a
-     * rights denial with no reason.
+     * ONE ACTION WHERE THERE WERE TWO. `countTransientRetry` and
+     * `advanceCandidate` used to be separate because the machine's own policy
+     * treated "retry this one" and "move to the next one" as different KINDS of
+     * decision reached through different guards. Under the engine's policy they
+     * are one decision — pick the best candidate the budget can still buy — and
+     * the difference between them is an observation about the candidate that came
+     * back, not a branch that had to be taken to get here. Keeping them apart is
+     * what let the machine's wording and the engine's disagree.
+     *
+     * THE TRAIL SPEAKS THE ENGINE'S VOCABULARY. `schedule.reason` is a
+     * `FailoverReason` and it is printed verbatim in the detail, so a client
+     * trail and a server plan describing the same decision now use the same word
+     * and cannot drift into two accounts of one event. The KIND is still the
+     * client's own — `candidate_retry` when the engine handed back a candidate
+     * that has already been attempted, `failover` otherwise — because that is
+     * the distinction the debug panel groups by.
+     *
+     * Both candidates are named whichever kind it is. Under breadth-before-depth
+     * a repeat need not be the candidate we just left (a -> b -> a is an ordinary
+     * sequence now), so "which did we leave" and "which are we starting" are two
+     * facts and the line carries both. Product invariant 4: a failover with no
+     * recorded reason is the same defect as a rights denial with no reason.
      */
-    advanceCandidate: assign(({ context }) => {
+    applyScheduledAttempt: assign(({ context }) => {
+      const schedule = scheduleFor(context);
+      const nextId = schedule.next;
+      /* Unreachable: `scheduleProceeds` guarded this branch on the same pure
+       * function over the same context. Returning an empty patch rather than
+       * asserting keeps the mirror rule — nothing here throws — and the state we
+       * would be left in is the one we were already in. */
+      if (nextId === null) return {};
+
       const from = currentCandidateId(context);
-      const next = context.candidates[context.candidateIndex + 1] ?? null;
+      /* Total for the same reason: `next` is drawn from `attemptable`, which is
+       * drawn from the very id list this searches. A `-1` would degrade to "no
+       * candidate", which `loadRequestFor` and `recordAttempt` already handle. */
+      const index = context.candidates.findIndex((candidate) => candidate.id === nextId);
+      const repeat = schedule.reason === "retry_after_transient_failure";
+
       return {
-        candidateIndex: context.candidateIndex + 1,
+        candidateIndex: index,
         recoveriesOnCandidate: 0,
         lastFailureKind: null,
         ...appendTrail(
           context,
           trailEntry(
             context,
-            "failover",
-            `${from ?? "no candidate"} -> ${next?.id ?? "no candidate"}; restarting at ${
+            repeat ? "candidate_retry" : "failover",
+            `${from ?? "no candidate"} -> ${nextId}: ${schedule.reason}; restarting at ${
               context.resumeAtSeconds ?? 0
             }s because Shaka cannot swap the source of a live session`,
             { candidateId: from, failureKind: context.lastFailureKind, resumeAtSeconds: context.resumeAtSeconds }
@@ -1229,32 +1506,47 @@ export const playbackMachine = setup({
             },
 
             /**
-             * The candidate is out. Decide what replaces it, or stop.
+             * The candidate is out. ASK THE ENGINE what replaces it, or stop.
              *
-             * Eventless, so the decision is a pure function of the context that
-             * the failure actions just wrote — no event can arrive between the
-             * failure and the decision and change the answer. The order of the
-             * branches is the policy:
+             * THE ORDER OF THESE BRANCHES IS NOT THE POLICY, AND THAT IS THE
+             * CHANGE. It used to be: retry the same candidate if it had budget,
+             * else advance one, else stop. That list WAS the scheduling policy,
+             * written here, in a statechart, one layer away from the module that
+             * owns it — and it disagreed with that module. Trying a retry first
+             * meant a four-attempt budget could be spent two-apiece on two
+             * candidates while a third authorized stream sat untried;
+             * `@liberty/media-engine` had already been fixed to prefer untried
+             * candidates and nothing in real playback ever called it.
              *
-             *   1. a transient failure with per-candidate budget left retries
-             *      the SAME candidate, because a second consecutive timeout on
-             *      the same host is evidence about the host and a first one is
-             *      not;
-             *   2. otherwise the next-ranked candidate, if the whole-session
-             *      budget allows;
-             *   3. budget spent while candidates REMAINED is
-             *      `attempt_limit_reached`, which sends a reader to the policy;
-             *   4. nothing left is exhaustion, which sends them to the provider.
+             * These three branches now ROUTE a decision that has already been
+             * made. `scheduleAttempts` says proceed, budget-spent or exhausted;
+             * each guard asks which, and each action records it. Reordering them
+             * cannot change what the player does, only which of three mutually
+             * exclusive answers is checked first — and the last is unguarded so
+             * the routing is total.
              *
-             * Steps 3 and 4 are separated for the reason `@liberty/media-engine`
-             * separates them: a single "failover failed" sends a reader nowhere.
+             * Still eventless, so the decision is a pure function of the context
+             * the failure actions just wrote and no event can arrive between the
+             * failure and the decision and change the answer. That also makes it
+             * safe for the guards and the actions to recompute the schedule
+             * independently: same pure function, same frozen context, same
+             * answer.
+             *
+             * The budget-spent and exhausted branches stay separate for the
+             * reason `@liberty/media-engine` separates them: "we ran out of
+             * budget while streams remained" sends a reader to the policy and "we
+             * tried everything" sends them to the provider, and a single
+             * "failover failed" sends them nowhere.
              */
             failingOver: {
               entry: "preserveResumePosition",
               always: [
-                { guard: "canRetrySameCandidate", target: "loading", actions: ["countTransientRetry", "countAttempt"] },
-                { guard: "canAdvanceCandidate", target: "loading", actions: ["advanceCandidate", "countAttempt"] },
-                { guard: "hasNextCandidate", target: "#fatal", actions: "stopWithAttemptLimit" },
+                {
+                  guard: "scheduleProceeds",
+                  target: "loading",
+                  actions: ["applyScheduledAttempt", "countAttempt"]
+                },
+                { guard: "scheduleSpentTheBudget", target: "#fatal", actions: "stopWithAttemptLimit" },
                 { target: "#fatal", actions: "stopWithExhausted" }
               ]
             }

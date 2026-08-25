@@ -44,6 +44,13 @@ const required = [
   ".env.example",
   "scripts/validate-env.mjs",
   "scripts/test-validate-env.mjs",
+  // The runtime half of the same contract. `apps/web`'s dev and start scripts
+  // invoke it by path, so losing it does not degrade anything -- it breaks
+  // `npm run dev` and `npm run start` outright, with a module-resolution error
+  // that names a file rather than the reason it mattered. Required here so the
+  // structural check says the reason. (`build` is deliberately NOT wrapped; the
+  // reason is turbo's cache key, and it is recorded in docs/DEVELOPMENT.md.)
+  "scripts/with-root-env.mjs",
   "infra/docker-compose.yml",
   "scripts/start-ai-engineering.ps1",
   "scripts/start-ai-engineering.cmd"

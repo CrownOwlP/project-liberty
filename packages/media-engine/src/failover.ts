@@ -1,8 +1,7 @@
-import {
-  PLAYBACK_FAILURE_KINDS,
-  type FailoverPolicy,
-  type PlaybackAttemptFailure,
-  type PlaybackFailureKind
+import type {
+  FailoverPolicy,
+  PlaybackAttemptFailure,
+  PlaybackFailureKind
 } from "@liberty/contracts/domains/failover";
 import type {
   CompatibilityConfidence,
@@ -10,6 +9,14 @@ import type {
   StreamCandidate
 } from "@liberty/contracts/domains/playback";
 import { type PlaybackDecision, type RankedCandidate, rankStreamCandidates } from "./ranking";
+import {
+  DEFAULT_FAILOVER_POLICY,
+  byCodePoint,
+  scheduleAttempts,
+  type FailoverReason,
+  type FailoverStopReason,
+  type ScheduledExclusion
+} from "./scheduling";
 
 /**
  * Candidate failover (PL-0204).
@@ -33,43 +40,63 @@ import { type PlaybackDecision, type RankedCandidate, rankStreamCandidates } fro
  * loop is what keeps the policy testable -- a version that took a "try this"
  * callback would be untestable without stubbing the network, and
  * `@liberty/media-engine` is forbidden from fetching anything itself.
+ *
+ * TWO LAYERS, BECAUSE TWO CALLERS NEED DIFFERENT AMOUNTS OF IT, AND NOW TWO
+ * FILES BECAUSE ONE OF THOSE CALLERS IS A BROWSER.
+ * `scheduleAttempts` is the scheduling policy over an ALREADY-ORDERED list of
+ * ids: what to attempt next, what is ruled out, what the budget has left.
+ * `planFailover` is that plus ranking -- it decides the order, and it adds back
+ * the two things only a `PlaybackDecision` knows, namely what the ranking
+ * believed about a candidate before an attempt disproved it and why a candidate
+ * was refused before any attempt happened.
+ *
+ * The split exists because `apps/web`'s playback machine has to schedule and
+ * must NOT rank: the session already ranked, the client has no
+ * `PlaybackCapabilities`, and a client-side re-rank would be a second opinion
+ * about preference. Before the split it reimplemented scheduling instead, with
+ * comments on both sides claiming the two agreed while the machine spent its
+ * budget retrying candidates ahead of candidates nobody had tried yet.
+ *
+ * THE SCHEDULING LAYER NOW LIVES IN `./scheduling`, and this file re-exports all
+ * of it. Wiring the machine to `scheduleAttempts` made this module a browser
+ * bundle edge for the first time, and the `rankStreamCandidates` import below --
+ * needed by `planFailover` and by nothing else -- dragged `./ranking` and
+ * `./scoring` into the client along with it. Moving the scheduler into a file
+ * with no path to `./ranking` is the only fix that actually breaks that edge; a
+ * deep import into this file would not, because the edge is stated in the source
+ * here rather than created by the barrel. See the header of `./scheduling` for
+ * the alternatives that were rejected.
+ *
+ * NOTHING WAS RENAMED AND NOTHING MOVED OUT OF REACH. The re-exports below
+ * restate exactly the surface this module published before the split, in the
+ * same names, so `./failover`, `@liberty/media-engine` and every test that
+ * imports from either resolve to the same bindings they always did. `byCodePoint`
+ * is imported but deliberately NOT re-exported: it was module-private before and
+ * stays out of the barrel.
  */
 
-/**
- * Why a candidate may no longer be attempted.
- *
- * Every value is a claim about the CANDIDATE, established by an attempt, and
- * distinct from `RejectionReason` in ranking.ts, which is a claim established
- * before any attempt was made. Keeping the two vocabularies separate is
- * deliberate: `unsupported_video_codec` means we knew in advance, and
- * `compatibility_disproven` means we found out, and a support engineer reading
- * "this candidate was incompatible" needs to know which of those happened before
- * deciding whether the bug is in the provider's metadata or in our capability
- * model.
- */
-export type FailoverExclusionReason =
-  /**
-   * Rights could not be established at attempt time. Terminal, always. Not a
-   * transient failure, not a retry budget that happened to reach zero -- a
-   * candidate we are not entitled to play is not a candidate.
-   */
-  | "rights_not_established"
-  /**
-   * The device did not decode this stream. Compatibility is now settled
-   * NEGATIVELY, so a retry would re-run a decode already shown to fail.
-   */
-  | "compatibility_disproven"
-  /** The stream is not there. Nothing about our rights or the device is implied. */
-  | "source_unavailable"
-  /** Transient failures used up this candidate's per-candidate retry budget. */
-  | "transient_retries_exhausted";
+export {
+  DEFAULT_FAILOVER_POLICY,
+  PLAYBACK_FAILURE_KINDS_BY_PRECEDENCE,
+  PLAYBACK_FAILURE_POLICY,
+  scheduleAttempts
+} from "./scheduling";
+export type {
+  AttemptSchedule,
+  ChargedAttempts,
+  FailoverExclusionReason,
+  FailoverProceedReason,
+  FailoverReason,
+  FailoverStopReason,
+  ScheduledExclusion
+} from "./scheduling";
 
 /**
- * A candidate ruled out of the pool, and what it cost to find out.
+ * A `ScheduledExclusion` with what the RANKING claimed before the attempt.
  *
- * `priorCompatibility` is what the RANKING claimed before the attempt, carried
- * here because paired with `compatibility_disproven` it separates two findings
- * that look identical in a log otherwise:
+ * `compatibilityBeforeAttempt` is carried because paired with
+ * `compatibility_disproven` it separates two findings that look identical in a
+ * log otherwise:
  *
  *   - `unverified` + disproven: the expected way an unverified candidate
  *     resolves. The provider stated no codec, we attempted anyway, it did not
@@ -79,63 +106,15 @@ export type FailoverExclusionReason =
  *     did not. That is a defect in the model, the device profile, or the
  *     provider's stated codec, and it is worth an alert. Collapsed into a single
  *     "decode failed" line, this signal is invisible.
+ *
+ * THIS is the reason the two layers are two types and not one. Everything a
+ * `ScheduledExclusion` carries is derivable from ids and failure kinds; this one
+ * extra field needs a `RankedCandidate`, so it can only be added by a caller
+ * holding a ranking -- which is exactly the caller that lives in this file.
  */
-export interface ExcludedCandidate {
-  candidateId: string;
-  reason: FailoverExclusionReason;
-  /** Attempts this candidate consumed before being ruled out. */
-  attempts: number;
+export interface ExcludedCandidate extends ScheduledExclusion {
   compatibilityBeforeAttempt: CompatibilityConfidence;
 }
-
-/** Why the plan is handing back a candidate to try. */
-export type FailoverProceedReason =
-  | "first_attempt"
-  | "retry_after_transient_failure"
-  | "failover_to_next_candidate";
-
-/**
- * Why the plan is handing back nothing.
- *
- * Six values, and the separation between them is the requirement rather than a
- * nicety (product invariant 4). "We ran out of candidates", "we ran out of
- * budget", "everything was rights-blocked" and "everything we tried failed to
- * decode" send whoever reads them to four different systems -- the provider, the
- * policy, the licensing pipeline, and the device capability model -- and a
- * single `failover_failed` sends them nowhere.
- *
- * SCOPE differs between the two homogeneous reasons, and the difference is
- * principled rather than sloppy:
- *
- *   - rights blocking is judged over EVERY supplied candidate, because it can be
- *     established at two separate stages (ranking refuses an unplayable rights
- *     value; an attempt fails to establish authorization) and any narrower scope
- *     would report "all rights-blocked" while some candidate had been discarded
- *     for a different reason entirely.
- *   - incompatibility is judged over the ELIGIBLE pool only, because a decode
- *     failure can only be observed on something that was actually attempted.
- *     Candidates ranking never admitted were never in the decode question.
- *
- * Either claim is refused unless it is true of its whole scope. A homogeneous
- * reason asserts something about a SET; when the set is mixed the honest answer
- * is `candidates_exhausted` plus the itemised `excluded` trail, not the nearest
- * plausible headline.
- */
-export type FailoverStopReason =
-  /** Nothing was supplied. There was never anything to fail over between. */
-  | "no_candidates"
-  /** Candidates existed; none passed eligibility, so none was ever attemptable. */
-  | "no_eligible_candidates"
-  /** Every supplied candidate was refused or failed on RIGHTS. None may be retried. */
-  | "all_candidates_rights_blocked"
-  /** Every candidate that was ever attemptable has now failed to decode. */
-  | "all_eligible_candidates_incompatible"
-  /** The pool is empty for mixed reasons; `excluded` itemises them. */
-  | "candidates_exhausted"
-  /** The budget ran out while attemptable candidates REMAINED. Not exhaustion. */
-  | "attempt_limit_reached";
-
-export type FailoverReason = FailoverProceedReason | FailoverStopReason;
 
 export interface FailoverPlan {
   /** The candidate to attempt next, or null when the plan is terminal. */
@@ -154,6 +133,16 @@ export interface FailoverPlan {
    * and it is the ranking's own already-deterministic order rather than a second
    * one derived here. Re-sorting would create a second opinion about preference
    * that could disagree with `PlaybackDecision.ranked`.
+   *
+   * PREFERENCE, not schedule. `next` is drawn from this pool but is not
+   * necessarily `attemptable[0]`: a candidate that has never been attempted is
+   * taken ahead of a better-ranked one that is carrying a transient failure (see
+   * the selection in `scheduleAttempts`). Publishing the pool in rank order and
+   * choosing within it are deliberately two facts rather than one -- collapsing
+   * them would mean either re-sorting this list, which is the second opinion the
+   * paragraph above refuses, or scheduling by rank alone, which is the defect
+   * that let two candidates eat a four-attempt budget while a third was never
+   * tried at all.
    */
   attemptable: readonly string[];
   /** Ruled-out candidates, id-sorted by code point. */
@@ -194,98 +183,12 @@ export interface FailoverPlan {
   explanation: string;
 }
 
-/**
- * The whole per-kind policy, as an exhaustive table rather than a condition:
- * what a kind means for retrying, what it becomes when it is terminal, and how
- * loudly it speaks when a candidate collected several kinds.
- *
- * Named `PLAYBACK_FAILURE_POLICY` rather than the bare `FAILURE_POLICY` only to
- * keep it distinguishable from `FailoverPolicy` and `DEFAULT_FAILOVER_POLICY` in
- * this same module, which are the attempt BUDGET and answer a different question
- * entirely.
- *
- * `satisfies Record<PlaybackFailureKind, ...>` rather than a type annotation.
- * Either form makes adding a kind to the contract without deciding its policy a
- * TYPE ERROR, rather than a value that quietly falls into whichever branch an
- * `if` happened to leave last -- that is the property actually wanted here, and
- * it is why the shape is stated as a total record at all. What `satisfies` adds
- * is that the object also keeps its OWN types: `exclusion` stays the specific
- * literal each kind was given instead of widening to all four, so a lookup
- * cannot silently return an exclusion reason this table never assigned.
- *
- * `precedence` is the field that used to be missing, and its absence was a
- * defect rather than a simplification. A candidate can accumulate more than one
- * kind across its attempts -- a timeout, then a decode error -- and exactly one
- * of them has to speak for it in the trail. That used to be decided by scanning
- * `PLAYBACK_FAILURE_KINDS` and taking the first hit, which made the ZOD ENUM'S
- * DECLARATION ORDER the rule: a contributor alphabetising that enum would have
- * moved `decode_failed` ahead of `rights_unverifiable` and let a decode failure
- * report for a candidate whose rights could not be established, with no test
- * naming the change. Precedence is a product decision, so it is stated as one.
- * LOWER IS MORE FUNDAMENTAL, and `rights_unverifiable` is 0 under every budget,
- * ordering and combination because invariants 1 and 2 depend on it. Values are
- * spaced by 1 and asserted UNIQUE in a test: two kinds sharing a number would
- * put the tie back in the hands of iteration order, which is the entire defect.
- *
- * `exclusion` for a retryable kind is what that kind becomes once its budget is
- * spent, so the same table answers both questions and they cannot drift apart.
- *
- * Exactly one kind is retryable, and that is a product decision, not an
- * oversight: rights failures must never be retried (invariants 1 and 2), a
- * decode failure has already answered its own question, and a removed asset does
- * not come back within a playback session. A test asserts the count, so widening
- * it is a deliberate edit to an assertion rather than a one-word change here.
- */
-export const PLAYBACK_FAILURE_POLICY = {
-  rights_unverifiable: { retryable: false, precedence: 0, exclusion: "rights_not_established" },
-  decode_failed: { retryable: false, precedence: 1, exclusion: "compatibility_disproven" },
-  source_unavailable: { retryable: false, precedence: 2, exclusion: "source_unavailable" },
-  network_transient: { retryable: true, precedence: 3, exclusion: "transient_retries_exhausted" }
-} satisfies Record<
-  PlaybackFailureKind,
-  { retryable: boolean; precedence: number; exclusion: FailoverExclusionReason }
->;
-
-/**
- * The one canonical order for failure kinds, and the only one anything reads.
- *
- * MEMBERSHIP from the contract, ORDER from the policy above -- the two facts
- * that used to be conflated into a single array literal. Every kind the schema
- * can report appears exactly once (a kind absent here is never tested by
- * `exclusionFor`, so a candidate carrying only that kind would stay attemptable
- * and be retried, which for a rights kind is what invariants 1 and 2 forbid),
- * and its position is the `precedence` somebody wrote down rather than where it
- * happened to land in a Zod enum.
- *
- * Computed once instead of sorted per call, and the comparator is total because
- * precedences are unique, so `Array.prototype.sort`'s stability is not being
- * relied on to make the result deterministic.
- */
-export const PLAYBACK_FAILURE_KINDS_BY_PRECEDENCE: readonly PlaybackFailureKind[] = [
-  ...PLAYBACK_FAILURE_KINDS
-].sort((a, b) => PLAYBACK_FAILURE_POLICY[a].precedence - PLAYBACK_FAILURE_POLICY[b].precedence);
-
-/**
- * The default bound, stated rather than emergent.
- *
- * Four attempts covers the top candidate, one retry of it, and two fallbacks --
- * or four distinct streams when nothing is worth retrying. Beyond that the
- * ranking's own model says the remaining candidates are materially worse, and
- * the viewer has been staring at a spinner for four round trips. One retry per
- * candidate because a second consecutive timeout on the same host is evidence
- * about the host, not about the network.
- */
-export const DEFAULT_FAILOVER_POLICY: FailoverPolicy = {
-  maxAttempts: 4,
-  maxTransientRetriesPerCandidate: 1
-};
-
 const REASON_TEXT: Record<FailoverReason, string> = {
   first_attempt: "nothing has been attempted yet; starting at the top of the ranking",
   retry_after_transient_failure:
-    "the previous failure was transient, so the same candidate is retried before it is demoted",
+    "every attemptable candidate has now been tried at least once, so the best-ranked transient failure is retried before it is demoted",
   failover_to_next_candidate:
-    "the previous candidate was ruled out; falling back to the next-ranked one",
+    "spending this attempt on the best-ranked candidate that has not been tried yet, rather than repeating one that just failed",
   no_candidates: "no candidates were supplied, so there was never anything to fail over between",
   no_eligible_candidates:
     "candidates were supplied but none passed eligibility, so none was ever attemptable",
@@ -297,51 +200,6 @@ const REASON_TEXT: Record<FailoverReason, string> = {
   attempt_limit_reached:
     "the attempt budget was spent while attemptable candidates still remained"
 };
-
-/** Code-point comparison. Never `localeCompare`: see the note in ranking.ts. */
-function byCodePoint(a: string, b: string): number {
-  return a < b ? -1 : a > b ? 1 : 0;
-}
-
-function countOf(kinds: readonly PlaybackFailureKind[], kind: PlaybackFailureKind): number {
-  return kinds.reduce((total, recorded) => (recorded === kind ? total + 1 : total), 0);
-}
-
-/**
- * The reason this candidate is out, or null while it is still worth attempting.
- *
- * Walks the kinds in PRECEDENCE order rather than in the reported order, so a
- * candidate that failed on rights AND on decode reports rights -- whichever
- * order the caller listed them in. Reading the caller's order here would make
- * the published reason depend on reporting sequence, which is the
- * order-dependence class of defect this package has already had to remove three
- * times.
- *
- * That order is `PLAYBACK_FAILURE_KINDS_BY_PRECEDENCE`, whose positions come
- * from the `precedence` numbers in `PLAYBACK_FAILURE_POLICY` and NOT from the
- * order of the contract's enum. The distinction matters: the enum is a
- * vocabulary somebody may reasonably resort, and it must not be able to change
- * which failure speaks for a candidate. What the contract still supplies is
- * membership -- a kind it can report but the scan omits would never be tested
- * here, so a candidate carrying only that kind would stay attemptable and be
- * retried, which invariants 1 and 2 forbid for a rights kind.
- *
- * A retryable kind under budget does not return: it falls through to the next
- * kind, so a candidate with one timeout and one decode failure is excluded by
- * the decode failure rather than kept alive by the unspent timeout budget.
- */
-function exclusionFor(
-  kinds: readonly PlaybackFailureKind[],
-  policy: FailoverPolicy
-): FailoverExclusionReason | null {
-  for (const kind of PLAYBACK_FAILURE_KINDS_BY_PRECEDENCE) {
-    if (!kinds.includes(kind)) continue;
-    const disposition = PLAYBACK_FAILURE_POLICY[kind];
-    if (!disposition.retryable) return disposition.exclusion;
-    if (countOf(kinds, kind) > policy.maxTransientRetriesPerCandidate) return disposition.exclusion;
-  }
-  return null;
-}
 
 /**
  * Which flavour of "nothing left" this is.
@@ -372,6 +230,15 @@ function exhaustionReason(
 
   // `every` is vacuously true on an empty list, and "all of them failed to
   // decode" about nothing at all is a fabricated finding.
+  //
+  // Stated as an equality over the WHOLE exclusion list rather than as "no
+  // exclusion contradicts it", which is what keeps it honest as
+  // `FailoverExclusionReason` grows: a fifth value that this function has never
+  // heard of makes the claim false rather than letting it through. It is also
+  // why `attempt_failed_unclassified` needed nothing here -- it is unreachable
+  // for `planFailover`, and if it ever became reachable the answer below would
+  // already be `candidates_exhausted` plus the itemised trail, which is the
+  // correct answer for a mixed pool.
   if (excluded.length > 0 && excluded.every((entry) => entry.reason === "compatibility_disproven")) {
     return "all_eligible_candidates_incompatible";
   }
@@ -380,13 +247,27 @@ function exhaustionReason(
 }
 
 /**
- * The next attempt, or a terminal reason.
+ * The next attempt, or a terminal reason, RANKED.
+ *
+ * Two jobs, and since PL-0204's scheduler was extracted only one of them is done
+ * here: this ranks, and `scheduleAttempts` schedules. What is left is the part
+ * that genuinely needs candidates and capabilities -- the ranking itself, the
+ * compatibility the ranking believed before an attempt disproved it, and the
+ * pre-attempt refusals that turn "the pool is empty" into a finding somebody can
+ * act on.
  *
  * Takes raw candidates and ranks them internally rather than accepting a
  * `PlaybackDecision`, so there is exactly one ranking in play and a failover
  * plan can never be built on a decision that came from different capabilities
  * than the one it reports. It also makes the whole result order-invariant in
- * both inputs, which is the property the regression test pins.
+ * both inputs, which is the property the regression test pins -- the scheduler
+ * itself is deliberately NOT order-invariant in its ids, and this is where that
+ * guarantee is supplied.
+ *
+ * That refusal is also why `rankStreamCandidates` is imported as a VALUE here
+ * and why the scheduler had to move rather than the import: accepting a
+ * pre-built decision would have deleted the import at the cost of the guarantee
+ * the paragraph above describes.
  *
  * Nothing here reads or re-derives technical metadata. A decode failure does not
  * write back a codec, an attempt does not infer a height, and an excluded
@@ -406,92 +287,59 @@ export function planFailover(
   const decision = rankStreamCandidates([...candidates], capabilities);
 
   /*
-   * Grouped, then only ever COUNTED or membership-tested. The per-candidate
-   * array's own order is never read, which is what makes the plan a function of
-   * the multiset of failures rather than of the sequence the caller recorded
-   * them in.
+   * The ranking's own order, handed over as ids. No `ChargedAttempts`: for this
+   * caller `failures.length` IS the attempt count and a candidate with no
+   * reported failure genuinely has never been attempted, which is the identity
+   * the published plan and its property tests are written against.
    */
-  const kindsById = new Map<string, PlaybackFailureKind[]>();
-  for (const failure of failures) {
-    const recorded = kindsById.get(failure.candidateId);
-    if (recorded) recorded.push(failure.kind);
-    else kindsById.set(failure.candidateId, [failure.kind]);
-  }
+  const schedule = scheduleAttempts(
+    decision.ranked.map((entry) => entry.candidate.id),
+    failures,
+    policy
+  );
 
-  const attemptable: RankedCandidate[] = [];
+  /*
+   * ENRICHMENT, walked over `decision.ranked` rather than looked up per
+   * exclusion, so the join is total by construction and needs no assertion for a
+   * miss that cannot happen: every scheduled exclusion came from the very list
+   * being walked. Re-sorted afterwards because this pass produces rank order and
+   * `excluded` is published id-sorted -- see the note in `scheduleAttempts`.
+   */
+  const ruledOutById = new Map<string, ScheduledExclusion>(
+    schedule.excluded.map((entry) => [entry.candidateId, entry])
+  );
   const excluded: ExcludedCandidate[] = [];
-
   for (const entry of decision.ranked) {
-    const kinds = kindsById.get(entry.candidate.id) ?? [];
-    const exclusion = exclusionFor(kinds, policy);
-    if (exclusion === null) {
-      attemptable.push(entry);
-      continue;
-    }
-    excluded.push({
-      candidateId: entry.candidate.id,
-      reason: exclusion,
-      attempts: kinds.length,
-      compatibilityBeforeAttempt: entry.compatibility
-    });
+    const ruledOut = ruledOutById.get(entry.candidate.id);
+    if (ruledOut === undefined) continue;
+    excluded.push({ ...ruledOut, compatibilityBeforeAttempt: entry.compatibility });
   }
-
-  // Id-sorted, like `PlaybackDecision.rejected`. `excluded` is a set of findings,
-  // not a preference order, so publishing it in rank order would tie a list with
-  // no ordering semantics to one that has them.
   excluded.sort((a, b) => byCodePoint(a.candidateId, b.candidateId));
 
-  const pooled = new Set(decision.ranked.map((entry) => entry.candidate.id));
-  const unattributedFailures = [
-    ...new Set(
-      failures
-        .filter((failure) => !pooled.has(failure.candidateId))
-        .map((failure) => failure.candidateId)
-    )
-  ].sort(byCodePoint);
+  const next =
+    schedule.next === null
+      ? null
+      : (decision.ranked.find((entry) => entry.candidate.id === schedule.next) ?? null);
 
-  // Built from the already-sorted id list and by filtering the canonical
-  // precedence order, so neither coordinate of this list can inherit the
-  // caller's ordering -- nor the enum's.
-  const unattributedDetail = unattributedFailures.map((candidateId) => ({
-    candidateId,
-    kinds: PLAYBACK_FAILURE_KINDS_BY_PRECEDENCE.filter((kind) =>
-      failures.some((failure) => failure.candidateId === candidateId && failure.kind === kind)
-    )
-  }));
+  /*
+   * The refinement `AttemptSchedule.reason` describes, and the only place the
+   * schedule's answer is ever second-guessed. It is not a second opinion: it
+   * applies to exhaustion ONLY, it uses the same vocabulary, and it fires
+   * exactly where the scheduler said it lacked the evidence -- pre-attempt
+   * refusals, which live in `decision.rejected` and reach no id list.
+   *
+   * `attempt_limit_reached` is deliberately excluded from the refinement even
+   * though it is also terminal: it is a fact about the budget, the scheduler had
+   * every input needed to decide it, and exhaustion has already been ruled out
+   * by the time it is reported.
+   */
+  const reason: FailoverReason =
+    schedule.next === null && schedule.reason !== "attempt_limit_reached"
+      ? exhaustionReason(new Set(candidates.map((c) => c.id)), decision, excluded)
+      : schedule.reason;
 
-  const attemptsUsed = failures.length;
-  const attemptsRemaining = Math.max(policy.maxAttempts - attemptsUsed, 0);
-
-  const head = attemptable[0] ?? null;
-  let next: RankedCandidate | null = null;
-  let reason: FailoverReason;
-
-  if (head === null) {
-    /*
-     * Exhaustion outranks the budget. When nothing is attemptable the budget is
-     * irrelevant, and reporting `attempt_limit_reached` there would tell an
-     * operator to raise a limit that would change nothing -- the two states are
-     * mutually exclusive by construction, and this is which way round they go.
-     */
-    reason = exhaustionReason(new Set(candidates.map((c) => c.id)), decision, excluded);
-  } else if (attemptsUsed >= policy.maxAttempts) {
-    reason = "attempt_limit_reached";
-  } else {
-    next = head;
-    /*
-     * Derived from what actually happened to THIS candidate. Any failure it
-     * carries while still attemptable can only be a transient one -- every other
-     * kind is terminal on the first occurrence -- so a non-empty history here is
-     * exactly a retry.
-     */
-    const priorKinds = kindsById.get(head.candidate.id) ?? [];
-    reason = priorKinds.length > 0
-      ? "retry_after_transient_failure"
-      : attemptsUsed === 0
-        ? "first_attempt"
-        : "failover_to_next_candidate";
-  }
+  const attemptsUsed = schedule.attemptsUsed;
+  const unattributedDetail = schedule.unattributedDetail;
 
   const trail = [
     next === null ? REASON_TEXT[reason] : `${next.candidate.id}: ${REASON_TEXT[reason]}`,
@@ -514,10 +362,10 @@ export function planFailover(
     next,
     reason,
     attemptsUsed,
-    attemptsRemaining,
-    attemptable: attemptable.map((entry) => entry.candidate.id),
+    attemptsRemaining: schedule.attemptsRemaining,
+    attemptable: schedule.attemptable,
     excluded,
-    unattributedFailures,
+    unattributedFailures: schedule.unattributedFailures,
     unattributedDetail,
     decision,
     explanation: trail.filter((part): part is string => part !== null).join(" | ")

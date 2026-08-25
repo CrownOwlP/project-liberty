@@ -56,11 +56,36 @@ const MEDIA_ERR_SRC_NOT_SUPPORTED = 4;
 /**
  * The kinds for which attempting the SAME candidate again is worth an attempt.
  *
- * Restated here rather than imported so the player bundle does not pull in
- * `@liberty/media-engine`'s ranking, scoring, audio and subtitle modules for one
- * boolean. `PLAYBACK_FAILURE_POLICY` in that package remains the authority, and
- * `playback-failure.test.ts` asserts this list equals the retryable half of it —
- * so drift is a failing test rather than a divergence nobody notices.
+ * NOTHING IN PRODUCTION CALLS EITHER OF THESE. The only importer is
+ * `playback-failure.test.ts`. They are kept, on purpose, as a CONTRACT-DRIFT
+ * ASSERTION rather than as a utility, and the honest reading of the export is
+ * "this is a claim about `@liberty/media-engine`, pinned so that changing the
+ * engine's answer fails a test here".
+ *
+ * The claim is load-bearing even with no caller, because a literal elsewhere in
+ * the player depends on it. `recordCandidateFailure` in `playback-machine.ts`
+ * falls back to `"network_transient"` for a non-fatal error the classifier
+ * cannot place, and that fallback is only safe while `network_transient` is
+ * exactly the retryable set — a kind recorded as transient goes into `failures`,
+ * reaches `scheduleAttempts`, and buys the candidate another `load()`. Widening
+ * `PLAYBACK_FAILURE_POLICY`'s retryable half without revisiting that fallback is
+ * the mistake this list exists to catch, and with the list gone the mistake
+ * would land silently.
+ *
+ * The earlier justification for restating the constant — that this module is
+ * reached only from `shaka-error.ts` and the classifier, "none of which
+ * otherwise depend on `@liberty/media-engine`" — no longer holds: the machine
+ * imports `scheduleAttempts` from that package and runs it in the browser. What
+ * survives of it is the narrower and still-true point that
+ * `PLAYBACK_FAILURE_POLICY` is a whole table and a test file costs no bundle, so
+ * the cross-check lives in the test and the constant stays two words.
+ *
+ * A COPY OF A CONSTANT, NEVER A COPY OF A POLICY, and the difference is the
+ * whole lesson of the failover-scheduling defect. Two lists that a test proves
+ * equal are one fact written twice; two SCHEDULERS that comments claim agree are
+ * two facts, and they diverged. Anything with a decision in it goes back to the
+ * engine — `playback-machine.ts` calls `scheduleAttempts` for exactly that
+ * reason.
  */
 export const RETRYABLE_FAILURE_KINDS: readonly PlaybackFailureKind[] = ["network_transient"];
 

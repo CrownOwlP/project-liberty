@@ -63,6 +63,17 @@ const recoverableFailure = () => shakaError({ severity: 1, category: 1, code: 10
 const recoverableDrmFailure = () => shakaError({ severity: 1, category: 6, code: 6007 });
 /** LOAD_INTERRUPTED. Critical, but it describes OUR control flow. */
 const interruptedFailure = () => shakaError({ severity: 2, category: 7, code: 7000 });
+/**
+ * STREAMING (category 5), critical, and DELIBERATELY UNCLASSIFIABLE.
+ *
+ * `classifyPlaybackFailure` returns `null` for it by design rather than by
+ * omission: category 5 mixes decode failures, transmux failures and control-flow
+ * errors, so a category-level answer would be a guess, and the contract says a
+ * reporter that cannot tell must report nothing. Reachable in the field for
+ * Shaka categories 2/5/7/8/9/10, for NETWORK codes outside {1001,1002,1003}, and
+ * for a `BAD_HTTP_STATUS` carrying an unmapped status such as 400 or 451.
+ */
+const unclassifiedFailure = () => shakaError({ severity: 2, category: 5, code: 3016 });
 
 const ENGINE_READY: EngineState = { status: "ready" };
 const ENGINE_LOADING: EngineState = { status: "loading" };
@@ -231,15 +242,81 @@ describe("failover is a restart, and the restart keeps the viewer's place", () =
     expect(Object.keys(failed?.error ?? {})).not.toContain("raw");
   });
 
-  it("retries the same candidate once for a transient failure, then moves on", () => {
+  it("tries the untried candidate first, and defers the retry rather than cancelling it", () => {
+    /*
+     * THIS ASSERTION USED TO BE THE OPPOSITE — `["a","a"]` then `["a","a","b"]`
+     * — and it was pinning a policy this machine had invented for itself. The
+     * machine's `failingOver` branches tried a retry before a fresh candidate;
+     * `@liberty/media-engine` had already been fixed to do the reverse and
+     * nothing in real playback called it, so the two disagreed while comments in
+     * both files said they agreed. The machine now calls `scheduleAttempts` and
+     * this records the engine's answer.
+     *
+     * A retry is a bet that an identical request to an identical URL behaves
+     * differently; `b` is a different SOURCE. `network_transient` is the only
+     * retryable kind precisely because it is the AMBIGUOUS one — a player reports
+     * it when it cannot tell a CORS rejection from a refused connection from real
+     * packet loss — so repeating `a` learns strictly less than trying `b`.
+     *
+     * `a` is not demoted and nothing is ruled out: it gets its retry out of the
+     * budget left once every candidate has been tried once, which is the third
+     * load below.
+     */
     const h = playing(["a", "b"], { maxAttempts: 4, maxTransientRetriesPerCandidate: 1 });
     h.send({ type: "ENGINE_ERROR", error: timeoutFailure() });
-    expect(h.effects.loads.map((load) => load.candidate?.id)).toEqual(["a", "a"]);
+    expect(h.effects.loads.map((load) => load.candidate?.id)).toEqual(["a", "b"]);
 
     h.send({ type: "MEDIA_PLAYING" });
     h.send({ type: "ENGINE_ERROR", error: timeoutFailure() });
-    expect(h.effects.loads.map((load) => load.candidate?.id)).toEqual(["a", "a", "b"]);
+    expect(h.effects.loads.map((load) => load.candidate?.id)).toEqual(["a", "b", "a"]);
     expect(kinds(h.trail())).toContain("candidate_retry");
+  });
+
+  it("attempts a third candidate rather than spending the budget on two retries", () => {
+    /*
+     * THE REGRESSION, at the budget where it bites, and the reason the scheduling
+     * policy had to stop being written twice. Three authorized candidates, four
+     * attempts, one retry each. The machine's own scheduler produced a, a, b, b
+     * and then stopped with `attempt_limit_reached` while `c` — a different
+     * source that might simply have worked — had never been loaded once.
+     *
+     * `packages/media-engine/src/failover.test.ts` pins the identical sequence
+     * against `planFailover`. Two tests rather than one because the defect was
+     * never that the engine's policy was wrong; it was that the player did not
+     * use it, and only a test driven through the real actor can catch that.
+     */
+    const h = playing(["a", "b", "c"], { maxAttempts: 4, maxTransientRetriesPerCandidate: 1 });
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      h.send({ type: "MEDIA_PLAYING" });
+      h.send({ type: "ENGINE_ERROR", error: timeoutFailure() });
+    }
+
+    const attempted = h.effects.loads.map((load) => load.candidate?.id);
+    expect(attempted).toEqual([
+      "a",
+      "b",
+      "c",
+      // Only now, with the budget left over, does anything get repeated.
+      "a"
+    ]);
+    /* Stated separately from the sequence, because THIS is the defect: the third
+     * candidate was never attempted even once. */
+    expect(new Set(attempted).size).toBe(3);
+    expect(attempted).toContain("c");
+
+    expect(h.phase()).toBe("fatal");
+    expect(h.actor.getSnapshot().context.attemptsUsed).toBe(4);
+    expect(h.actor.getSnapshot().context.stopReason).toBe("attempt_limit_reached");
+
+    /*
+     * And the trail speaks the ENGINE's vocabulary rather than a parallel set of
+     * words this file chose, so a client trail and a server plan describing one
+     * decision can no longer disagree about what it was.
+     */
+    const failover = h.trail().find((entry) => entry.kind === "failover");
+    expect(failover?.detail).toContain("failover_to_next_candidate");
+    const retry = h.trail().find((entry) => entry.kind === "candidate_retry");
+    expect(retry?.detail).toContain("retry_after_transient_failure");
   });
 
   it("never retries a candidate whose rights could not be established", () => {
@@ -296,6 +373,123 @@ describe("failover is a restart, and the restart keeps the viewer's place", () =
       { candidateId: "a", kind: "source_unavailable" },
       { candidateId: "b", kind: "rights_unverifiable" }
     ]);
+  });
+});
+
+describe("an error the classifier could not place ends the attempt without earning a retry", () => {
+  /*
+   * BOTH HALVES OF `playback-failure.ts` RULE 1, and only one of them used to
+   * hold. An unclassified failure does not enter `failures` — a guessed kind is
+   * a claim the contract forbids — and it also DOES NOT EARN A RETRY. Because it
+   * is absent from `failures`, `exclusionFor` cannot see it; counting it in
+   * `attemptsByCandidate` made the candidate merely tried, and breadth-first
+   * scheduling hands a tried-but-not-excluded candidate straight back the moment
+   * nothing is untried. The engine now excludes it as
+   * `attempt_failed_unclassified`, on the arithmetic alone, so no failure kind is
+   * invented anywhere on this path.
+   */
+
+  it("loads a single fatally-broken candidate ONCE, then stops", () => {
+    /*
+     * The regression at its sharpest, and the case no other test drives. One
+     * candidate, a budget of four, an error nobody can classify: the machine used
+     * to `load()` the same dead stream four times, tell the viewer nothing new
+     * three times over, and then print "attempt budget of 4 spent while 1
+     * candidate(s) remained" — where the candidate that "remained" was the stream
+     * that had just died four times. A false line in the reason trail is an
+     * invariant-4 defect on top of three wasted loads.
+     */
+    const h = playing(["a"], { maxAttempts: 4, maxTransientRetriesPerCandidate: 1 });
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      h.send({ type: "MEDIA_PLAYING" });
+      h.send({ type: "ENGINE_ERROR", error: unclassifiedFailure() });
+    }
+
+    expect(h.effects.loads.map((load) => load.candidate?.id)).toEqual(["a"]);
+    expect(h.phase()).toBe("fatal");
+    expect(h.actor.getSnapshot().context.attemptsUsed).toBe(1);
+
+    /* Exhaustion, not the budget: three attempts were still unspent and there
+     * was simply nothing left to spend them on. */
+    expect(h.actor.getSnapshot().context.stopReason).toBe("candidates_exhausted");
+
+    /* And nothing was invented to achieve it. The failure list stays empty, the
+     * trail carries the event with no kind, and the finding is stated in the
+     * engine's exclusion vocabulary where it belongs. */
+    expect(h.actor.getSnapshot().context.failures).toEqual([]);
+    const failed = h.trail().find((entry) => entry.kind === "candidate_failed");
+    expect(failed?.failureKind).toBeNull();
+    expect(failed?.candidateId).toBe("a");
+    const stopped = h.trail().find((entry) => entry.kind === "stopped");
+    expect(stopped?.detail).toContain("a=attempt_failed_unclassified");
+  });
+
+  it("gives two unclassifiable candidates one attempt each, not the whole budget", () => {
+    /*
+     * The second shape of the same defect. With nothing untried left, `head`
+     * falls back to the pool's own head, so `a` sat permanently at the front: it
+     * used to collect three loads to `b`'s one out of a four-attempt budget. A
+     * candidate that taught us nothing is not a better bet than one we have
+     * never tried, and after one attempt each there is nothing to prefer between
+     * them because both are out.
+     */
+    const h = playing(["a", "b"], { maxAttempts: 4, maxTransientRetriesPerCandidate: 1 });
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      h.send({ type: "MEDIA_PLAYING" });
+      h.send({ type: "ENGINE_ERROR", error: unclassifiedFailure() });
+    }
+
+    expect(h.effects.loads.map((load) => load.candidate?.id)).toEqual(["a", "b"]);
+    expect(h.actor.getSnapshot().context.stopReason).toBe("candidates_exhausted");
+    expect(h.actor.getSnapshot().context.failures).toEqual([]);
+    /* The failover between them is a failover and says so — it is not the first
+     * attempt of the session and it is not a retry of anything. */
+    const failover = h.trail().find((entry) => entry.kind === "failover");
+    expect(failover?.detail).toContain("a -> b: failover_to_next_candidate");
+    expect(h.trail().find((entry) => entry.kind === "candidate_retry")).toBeUndefined();
+    const stopped = h.trail().find((entry) => entry.kind === "stopped");
+    expect(stopped?.detail).toContain("a=attempt_failed_unclassified");
+    expect(stopped?.detail).toContain("b=attempt_failed_unclassified");
+  });
+
+  it("treats a media element error with no code the same way", () => {
+    /*
+     * The other reachable route, and `player-surface.tsx` documents it as a real
+     * degradation path rather than a hypothetical: a `<video>` error whose
+     * `MediaError` is missing tells us the element gave up and nothing else.
+     */
+    const h = playing(["a", "b"], { maxAttempts: 4, maxTransientRetriesPerCandidate: 1 });
+    h.send({ type: "MEDIA_ERROR", mediaErrorCode: null });
+    h.send({ type: "MEDIA_PLAYING" });
+    h.send({ type: "MEDIA_ERROR", mediaErrorCode: null });
+
+    expect(h.effects.loads.map((load) => load.candidate?.id)).toEqual(["a", "b"]);
+    expect(h.phase()).toBe("fatal");
+    expect(h.actor.getSnapshot().context.failures).toEqual([]);
+  });
+
+  it("does not call a failover the first attempt when the error arrived before the load", () => {
+    /*
+     * `ENGINE_ERROR` in `engineLoading`, before the engine ever reached `ready`,
+     * so no attempt has been charged. The scheduler used to read the untouched
+     * budget as "nothing has happened yet" and hand back `first_attempt` for a
+     * candidate being failed over TO — printing `a -> b: first_attempt`, which
+     * describes neither the candidate nor the event. `a` is already ruled out at
+     * that point, and an exclusion is history whatever the budget says.
+     */
+    const h = harness({ policy: { maxAttempts: 4, maxTransientRetriesPerCandidate: 1 } });
+    h.send({ type: "START" });
+    h.send({ type: "ENGINE_STATE", state: ENGINE_LOADING });
+    h.send({ type: "SESSION_RESOLVED", session: sessionOf(["a", "b"]) });
+    expect(h.phase()).toBe("engineLoading");
+    expect(h.actor.getSnapshot().context.attemptsUsed).toBe(0);
+
+    h.send({ type: "ENGINE_ERROR", error: manifestFailure() });
+
+    const failover = h.trail().find((entry) => entry.kind === "failover");
+    expect(failover?.detail).toContain("a -> b: failover_to_next_candidate");
+    expect(failover?.detail).not.toContain("first_attempt");
+    expect(h.effects.loads.map((load) => load.candidate?.id)).toEqual(["b"]);
   });
 });
 

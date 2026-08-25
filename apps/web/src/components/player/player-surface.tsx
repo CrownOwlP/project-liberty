@@ -42,6 +42,7 @@ import {
 import type { PlaybackEffects } from "./playback-effects";
 import {
   createPlaybackActor,
+  currentCandidateId,
   engineStatus,
   isRestarting,
   playbackPhase,
@@ -142,7 +143,11 @@ function toView(snapshot: PlaybackSnapshot): PlayerView {
   const context = snapshot.context;
   return {
     phase: playbackPhase(snapshot),
-    candidateId: context.candidates[context.candidateIndex]?.id ?? null,
+    /* Through the exported helper rather than by indexing `candidates` directly.
+     * `candidateIndex` is no longer monotonic — the failover scheduler may hand
+     * back a candidate that was already attempted — so the one place that knows
+     * how to read it should be the machine, not every consumer. */
+    candidateId: currentCandidateId(context),
     attemptsUsed: context.attemptsUsed,
     maxAttempts: context.policy.maxAttempts,
     stopReason: context.stopReason,
