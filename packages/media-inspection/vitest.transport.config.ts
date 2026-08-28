@@ -1,21 +1,18 @@
 import { configDefaults, defineConfig } from "vitest/config";
 
 /*
- * The real-socket transport suite, run on demand: `npm run test:transport`.
+ * The real-socket transport suite. Do NOT run this config directly in a gate --
+ * run `npm run test:transport`, which wraps it.
  *
  * A second config rather than a path argument, because the default config
- * EXCLUDES `src/node/**` -- and vitest applies `exclude` to a path filter too,
- * so `vitest run src/node` against the default config would match nothing and
- * exit zero. A green run that executed no tests is worse than a red one, and it
- * is exactly the shape of false evidence a quality gate must never produce.
+ * EXCLUDES `src/node/**`, and vitest applies `exclude` to a path filter too: so
+ * `vitest run src/node` against the default config would match nothing and exit
+ * zero. A green run that executed no tests is worse than a red one, and it is
+ * exactly the false evidence a quality gate must never produce.
  *
- * See `vitest.config.ts` for why these tests are not in the blocking gate. The
- * short version: they all pass, and a socket abandoned by design emits
- * `ECONNRESET` at worker teardown where nothing can hold a listener for it.
- *
- * This run is expected to report that unhandled error and exit non-zero. Read
- * the test results, not the exit code: the assertions are the evidence, and any
- * FAILING test here is a real regression in address pinning.
+ * This config is expected to exit NON-ZERO on a known teardown artefact while
+ * every assertion passes. `scripts/gate-transport.mjs` is what distinguishes
+ * that from a real failure; it is the thing to trust, and it explains why.
  */
 export default defineConfig({
   test: {

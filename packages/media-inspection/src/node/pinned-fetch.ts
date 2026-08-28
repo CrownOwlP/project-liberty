@@ -1,6 +1,6 @@
 import { Agent as HttpAgent, request as httpRequest, type IncomingMessage } from "node:http";
 import { Agent as HttpsAgent, request as httpsRequest } from "node:https";
-import { isIP, type LookupFunction } from "node:net";
+import { isIP, type LookupFunction, type Socket } from "node:net";
 import { bareAddress, createPinnedLookup, type PinnedFetch, type PinnedTarget } from "../pin";
 
 /**
@@ -217,6 +217,7 @@ export const nodePinnedFetch: PinnedFetch = (target, init) =>
       : httpRequest(common);
 
     let settled = false;
+    let socket: Socket | null = null;
 
     const abort = (): void => {
       request.destroy(transportError("AbortError", "ABORT_ERR", "the deadline elapsed"));
@@ -227,6 +228,30 @@ export const nodePinnedFetch: PinnedFetch = (target, init) =>
       // Safe while a response is streaming: with `keepAlive: false` the in-flight
       // socket is not in the agent's free pool, so this closes idle sockets only.
       agent.destroy();
+
+      /*
+       * Which is exactly why the socket is closed here, by hand.
+       *
+       * The line above is true, and read the other way round it is a leak: the
+       * one socket `agent.destroy()` cannot close is the IN-FLIGHT one, and that
+       * is precisely the socket an abandoned request leaves behind. A request
+       * aborted at its deadline, or failed mid-handshake, returned to its caller
+       * while its connection stayed open, and the connection then died on the
+       * runtime's schedule instead of ours.
+       *
+       * A leak in production, and the reason this package's runtime suite could
+       * not gate a commit: the delayed close emitted `ECONNRESET` after the test
+       * runner had torn its module context down, where nothing could hold a
+       * listener for it. The reviewer refused to accept "all assertions passed,
+       * process exited non-zero" as a security gate and was right to -- the
+       * runtime-integration proof is the whole difference between this fix and
+       * the design it replaces, so it has to be a proof that runs green.
+       *
+       * `destroy()` is idempotent and harmless on an already-closed socket. On
+       * the response path `release` runs on `close`, by which time the body is
+       * finished, so this never truncates a body anyone is still reading.
+       */
+      socket?.destroy();
     };
 
     if (init.signal.aborted) {
@@ -264,8 +289,11 @@ export const nodePinnedFetch: PinnedFetch = (target, init) =>
      * `response` handler, and `settled` guards both; a second rejection would be
      * ignored anyway. The only job here is to make the emit harmless.
      */
-    request.on("socket", (socket) => {
-      socket.on("error", () => undefined);
+    request.on("socket", (assigned: Socket) => {
+      // Captured so `release()` can close it: see the note there for why
+      // `agent.destroy()` is not enough.
+      socket = assigned;
+      assigned.on("error", () => undefined);
     });
 
     request.on("response", (response: IncomingMessage) => {

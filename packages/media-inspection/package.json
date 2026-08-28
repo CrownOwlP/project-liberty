@@ -20,7 +20,7 @@
     "lint": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:transport": "vitest run --config vitest.transport.config.ts"
+    "test:transport": "node scripts/gate-transport.mjs"
   },
   "dependencies": {
     "@liberty/contracts": "0.1.0",

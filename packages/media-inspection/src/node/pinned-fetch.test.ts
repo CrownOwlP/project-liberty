@@ -209,6 +209,29 @@ describe("TLS is offered the hostname, never the pinned address", () => {
       socket.on("error", () => undefined);
       socket.once("data", (chunk: Buffer) => {
         hellos.push(chunk);
+        /*
+         * Answer like a server that refuses the handshake, rather than going
+         * silent.
+         *
+         * Seven bytes of TLS record: content type 21 (alert), version 3.3,
+         * length 2, level 2 (fatal), description 40 (handshake_failure). Then a
+         * FIN. The client gets a DEFINITE handshake failure and settles through
+         * the transport's ordinary error path.
+         *
+         * The two things this replaces both left the connection ABANDONED --
+         * either the server destroyed it mid-handshake, or it stayed silent
+         * until our own deadline aborted it. In both cases the close arrived
+         * after the promise had settled and Node emitted a stray "socket hang
+         * up" at a point where no listener could exist, which failed the run
+         * even though all eight assertions passed. Chasing that found a genuine
+         * leak in the transport (`release()` now closes the in-flight socket
+         * that `agent.destroy()` cannot), but the emit outlived that fix too.
+         *
+         * The property under test never needed an abandoned connection: the
+         * ClientHello is the client's FIRST write and is already captured above.
+         * Everything after it was incidental, so this stops producing it.
+         */
+        socket.end(Buffer.from([0x15, 0x03, 0x03, 0x00, 0x02, 0x02, 0x28]));
       });
     });
     await new Promise<void>((resolve) => {
