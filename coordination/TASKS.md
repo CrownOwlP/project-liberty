@@ -11,7 +11,7 @@ Statuses: `BACKLOG`, `READY`, `CLAIMED`, `IN_PROGRESS`, `REVIEW`, `BLOCKED`, `DO
 | PL-0003 | P0 | Infra | DONE | - | APPROVED by gpt-architect | Environment validation | Missing required environment is reported clearly; local PostgreSQL and Redis health are documented |
 | PL-0101 | P0 | Frontend | DONE | - | APPROVED by gpt-architect | Catalog home data contract | Home route consumes typed catalog response and handles loading, error, and empty states |
 | PL-0102 | P0 | Frontend | REVIEW | claude-frontend | - | Search experience | Debounced accessible search with typed results and URL-addressable query |
-| PL-0103 | P0 | Frontend | READY | - | - | Title details | Movie, series, and episode details with play CTA using normalized IDs |
+| PL-0103 | P0 | Frontend | REVIEW | claude-frontend | - | Title details | Movie, series, and episode details with play CTA using normalized IDs |
 | PL-0104 | P0 | Frontend | BACKLOG | - | - | Make catalog and search results navigable | Every catalog and search result opens its title details page, with an accessible link name |
 | PL-0201 | P0 | Media | DONE | - | APPROVED by gpt-architect | Expand candidate score model | Score dimensions are documented, deterministic, explainable, and regression-tested |
 | PL-0202 | P0 | Media | DONE | - | APPROVED by gpt-architect | Audio selection policy | Preferred language, codec, channels, and fallback reasons are deterministic and tested |

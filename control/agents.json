@@ -24,9 +24,10 @@
       "provider": "anthropic",
       "kind": "local-subagent",
       "capabilities": ["Frontend", "Player"],
-      "maxParallel": 1,
+      "maxParallel": 2,
       "writeMode": "worktree",
-      "definition": ".claude/agents/frontend-builder.md"
+      "definition": ".claude/agents/frontend-builder.md",
+      "notes": "Raised from 1 to 2. It is the only agent advertising Frontend, so with a limit of 1 a single task sitting in REVIEW behind an external reviewer stopped every other frontend lane -- dispatch reported 'no conflict-free executable tasks' while two P0 tasks were finished and waiting. The limit exists to prevent overlapping writes, and overlap is already prevented structurally by allowedPaths, which the control plane enforces per claim. Two is deliberate rather than unlimited: it lets one task wait on review while another proceeds, without pretending one agent can hold an open-ended number of surfaces at once."
     },
     {
       "id": "claude-backend",

@@ -379,14 +379,16 @@
       "id": "PL-0103",
       "priority": "P0",
       "lane": "Frontend",
-      "status": "READY",
+      "status": "REVIEW",
       "title": "Title details",
       "dependencies": [
         "PL-0101"
       ],
       "allowedPaths": [
         "apps/web/src/app/title/**",
-        "apps/web/src/components/title/**",
+        "apps/web/src/components/title/**"
+      ],
+      "reviewDependencies": [
         "packages/contracts/**"
       ],
       "preferredAgent": "claude-frontend",
@@ -398,29 +400,40 @@
         "build"
       ],
       "acceptance": "Movie, series, and episode details with play CTA using normalized IDs",
-      "owner": null,
+      "owner": "claude-frontend",
       "gateResults": {
         "lint": {
           "status": "pass",
-          "at": "2026-08-25T05:30:17.091Z",
-          "evidence": "npm run check round 25, lint task green across all workspaces"
+          "at": "2026-08-29T22:33:23.658Z",
+          "by": "claude-frontend",
+          "commitSha": "65975495795c71193079b82825b55d7dbb1d2763",
+          "evidence": "npm run check round 28, lint green across all workspaces"
         },
         "typecheck": {
           "status": "pass",
-          "at": "2026-08-25T05:30:17.526Z",
-          "evidence": "turbo run typecheck round 25 exit 0, plus npm run check typecheck task"
+          "at": "2026-08-29T22:33:24.136Z",
+          "by": "claude-frontend",
+          "commitSha": "65975495795c71193079b82825b55d7dbb1d2763",
+          "evidence": "turbo run typecheck round 28 exit 0, plus npm run check typecheck task"
         },
         "unit": {
           "status": "pass",
-          "at": "2026-08-25T05:30:17.945Z",
-          "evidence": "vitest via npm run check round 25, includes expanded title-detail suite"
+          "at": "2026-08-29T22:33:24.602Z",
+          "by": "claude-frontend",
+          "commitSha": "65975495795c71193079b82825b55d7dbb1d2763",
+          "evidence": "vitest via npm run check round 28, includes the expanded title-detail suite"
         },
         "build": {
           "status": "pass",
-          "at": "2026-08-25T05:30:18.366Z",
-          "evidence": "next build via npm run check round 25 exit 0"
+          "at": "2026-08-29T22:33:25.074Z",
+          "by": "claude-frontend",
+          "commitSha": "65975495795c71193079b82825b55d7dbb1d2763",
+          "evidence": "next build via npm run check round 28 exit 0"
         }
-      }
+      },
+      "updatedAt": "2026-08-29T22:33:25.569Z",
+      "implementationAgent": "claude-frontend",
+      "implementationBaseSha": "65975495795c71193079b82825b55d7dbb1d2763"
     },
     {
       "id": "PL-0104",
