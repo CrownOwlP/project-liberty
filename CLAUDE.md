@@ -80,17 +80,28 @@ npm run ai:start -- <TASK_ID> <AGENT_ID> \
   --reason "how you determined it" [--implementation-agent <AGENT_ID>]
 ```
 
-All three flags are required together and each is refused on an ordinary start.
-The base is validated against real history — it must exist, be an ancestor of
-HEAD, not be HEAD, leave something under the reviewed surface changed in
-`base..HEAD`, and not itself edit files that window goes on to change. The task
-must be `CLAIMED` with no base, no review record and no gate results. The audit
-event is `task.started_reconciled`, never `task.started`.
+All three flags are required together, each is refused on an ordinary start, and
+a flag present without a value is refused rather than read as absent. The base is
+validated against real history — it must exist, be an ancestor of HEAD, not be
+HEAD, leave something under the reviewed surface changed in `base..HEAD`, and not
+itself edit files **under `allowedPaths`** that window goes on to change. Those
+last two are deliberately different surfaces: the first asks what the review
+binds to, the second asks whether the base sits inside this task's own
+implementation stream, and a `reviewDependency` is by definition not this task's
+work. The working tree must be clean under `allowedPaths`, because the operation
+asserts the implementation is already in pushed commits. The task must be
+`CLAIMED` with no base, no review record and no gate results. The audit event is
+`task.started_reconciled`, never `task.started`, and it is written after task
+state is persisted, never before.
 
 Use it only for an implementation that genuinely already exists in pushed commits.
 Never to shrink a review range, never for uncommitted work, and never as a routine
 alternative to `start`. Determine the base from git history; do not guess one.
-See `control/README.md` for what is and is not provable here.
+`--implementation-agent` only ever adds an implementation-side identity: the
+self-approval rule compares a reviewer against both the asserted implementer and
+the owner, so it can never make a task self-approvable. See `control/README.md`
+for what is and is not provable here, including what a forged provenance record
+can still get past `validate`.
 
 ### Path declarations are enforced, not advisory
 

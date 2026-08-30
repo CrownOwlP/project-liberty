@@ -551,6 +551,39 @@ function writeFixtureFile(repo, rel, body) {
 }
 
 /**
+ * Turn a fixture repo into a git repository and hand back the three operations
+ * every history-shaped scenario needs.
+ *
+ * The provenance-reconciliation scenarios all have to build REAL history --
+ * their entire subject is what git can and cannot settle about a claimed base --
+ * and the alternative to a helper is the same fifteen lines of identity
+ * plumbing repeated in each one. The two scenarios written before this helper
+ * existed (9at, 9au) keep their inline copies: they pass, and rewriting a
+ * passing test to use a new helper is a change with no failure it could catch.
+ */
+function gitFixture(repo) {
+  const env = {
+    GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t",
+    GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t",
+  };
+  const git = (...a) =>
+    execFileSync("git", a, {
+      cwd: repo,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+      env: { ...process.env, ...env },
+    });
+  const head = () => git("rev-parse", "HEAD").trim();
+  const commit = (message) => {
+    git("add", "-A");
+    git("commit", "-q", "-m", message);
+    return head();
+  };
+  git("init", "-q", "-b", "main");
+  return { git, head, commit };
+}
+
+/**
  * Recompute a worktree fingerprint independently of the implementation.
  *
  * This is a deliberate SECOND implementation of the byte format -- sorted
@@ -6243,6 +6276,772 @@ try {
   }
 
   /* ---------------------------------------------------------------------
+   * 9av. The overlap check asks a WRITE-surface question, and asks it about
+   *      the write surface.
+   *
+   *      "Does the base commit sit inside this task's implementation stream?"
+   *      is only answerable about files this task may write. A reviewDependency
+   *      is by definition somebody else's code -- unreserved, read-only, and
+   *      possibly being edited by another active lane right now -- so a base
+   *      commit touching one says nothing about where this implementation began.
+   *
+   *      Asking it on the reviewed surface disabled the mechanism for precisely
+   *      the task shape it exists for. A task declaring
+   *      `reviewDependencies: ["packages/contracts/**"]` sits beside a directory
+   *      that churns constantly, so any commit that happened to touch a contract
+   *      was refused as a base -- and the error advised `<sha>^`, sending the
+   *      operator walking backwards through history with no reachable answer.
+   *
+   *      Both halves are pinned here, because the fix must not become a hole:
+   *      the dependency-churn base is ACCEPTED, and a base inside the task's own
+   *      files is still REFUSED.
+   * ------------------------------------------------------------------- */
+  {
+    const repo = freshRepo();
+    addFixtureTasks(
+      repo,
+      fixtureTask("PL-RC-0004", {
+        title: "PL-RC-0004 preflight work beside a churning shared vocabulary",
+        allowedPaths: ["fixtures/rcov/a/**"],
+        reviewDependencies: ["fixtures/rcov/shared/**"],
+        acceptance: "fixture task used by the provenance-reconciliation scenarios",
+      }),
+      fixtureTask("PL-RC-0005", {
+        title: "PL-RC-0005 the same history, judged from inside the implementation",
+        lane: "Backend",
+        preferredAgent: "claude-backend",
+        allowedPaths: ["fixtures/rcov/b/**"],
+        reviewDependencies: ["fixtures/rcov/shared/**"],
+        acceptance: "fixture task used by the provenance-reconciliation scenarios",
+      }),
+    );
+    const { commit } = gitFixture(repo);
+
+    writeFixtureFile(repo, "fixtures/rcov/shared/vocab.ts", "export type V = 'a';\n");
+    commit("baseline: the shared vocabulary exists, nothing is implemented");
+
+    // THE CANDIDATE BASE: another lane, churning the shared dependency. It
+    // touches neither task's allowedPaths, so for both tasks it is genuinely the
+    // commit before their implementation.
+    writeFixtureFile(repo, "fixtures/rcov/shared/vocab.ts", "export type V = 'a' | 'b';\n");
+    const BASE = commit("contracts lane widens the shared vocabulary");
+
+    writeFixtureFile(repo, "fixtures/rcov/a/one.ts", "export const a1 = 1;\n");
+    writeFixtureFile(repo, "fixtures/rcov/b/one.ts", "export const b1 = 1;\n");
+    const IMPL1 = commit("preflight implementation, part one");
+
+    // Part two edits BOTH tasks' files and the shared vocabulary again, so the
+    // window legitimately contains dependency churn as well as implementation.
+    fs.appendFileSync(path.join(repo, "fixtures", "rcov", "a", "one.ts"), "export const a2 = 2;\n");
+    fs.appendFileSync(path.join(repo, "fixtures", "rcov", "b", "one.ts"), "export const b2 = 2;\n");
+    writeFixtureFile(repo, "fixtures/rcov/shared/vocab.ts", "export type V = 'a' | 'b' | 'c';\n");
+    const IMPL2 = commit("preflight implementation, part two");
+
+    writeFixtureFile(repo, "docs/SCRATCH-RCOV.md", "unrelated\n");
+    commit("unrelated work by another lane");
+
+    run(repo, CLI, ["claim", "PL-RC-0004", "claude-frontend"]);
+    run(repo, CLI, ["claim", "PL-RC-0005", "claude-backend"]);
+
+    /*
+     * STILL REFUSED. IMPL1 edits fixtures/rcov/b/one.ts, and so does the window
+     * that follows it, so for PL-RC-0005 it is a commit from inside the
+     * implementation. Scoping the check to allowedPaths must not weaken this --
+     * it is the narrowing this whole command exists to prevent.
+     */
+    const inside = runFail(
+      repo,
+      [
+        "start", "PL-RC-0005", "claude-backend", "--reconcile-existing",
+        "--base", IMPL1, "--reason", "wrongly chosen from inside the implementation",
+      ],
+      /itself modifies 1 file\(s\) under PL-RC-0005's allowedPaths/,
+    );
+    assert.match(inside, /fixtures\/rcov\/b\/one\.ts/, inside);
+
+    /*
+     * ACCEPTED. BASE edits fixtures/rcov/shared/vocab.ts, which the window
+     * changes again -- and under the previous rule that intersection alone
+     * refused the correct answer. It is a dependency, not this task's work.
+     */
+    const accepted = run(repo, CLI, [
+      "start", "PL-RC-0004", "claude-frontend", "--reconcile-existing",
+      "--base", BASE,
+      "--reason", "git log fixtures/rcov/a shows the implementation begins at part one",
+    ]);
+    assert.match(accepted, /RECONCILED pre-existing implementation/, accepted);
+
+    const reconciled = taskOf(repo, "PL-RC-0004");
+    assert.equal(reconciled.implementationBaseSha, BASE);
+    assert.equal(
+      reconciled.implementationBaseProvenance.reviewSurface,
+      "allowedPaths + reviewDependencies",
+    );
+    // The published window stays on the REVIEWED surface: a dependency change is
+    // legitimately part of what the first review will bind to.
+    assert.deepEqual(
+      [...reconciled.implementationBaseProvenance.surfaceCommits].sort(),
+      [IMPL1, IMPL2].sort(),
+      "the window must still be measured on allowedPaths + reviewDependencies",
+    );
+  }
+
+  /* ---------------------------------------------------------------------
+   * 9aw. A remedy that cannot exist must not be advised.
+   *
+   *      The overlap refusal tells the operator to name an earlier commit and
+   *      offers `<sha>^` as the usual answer. A root commit has no parent, so
+   *      for the one base where the advice is most confidently wrong it sends
+   *      the operator looking for a commit git will refuse to resolve. The
+   *      honest answer there is that no reconcilable base exists at all.
+   * ------------------------------------------------------------------- */
+  {
+    const repo = freshRepo();
+    addFixtureTasks(
+      repo,
+      fixtureTask("PL-RC-0006", {
+        title: "PL-RC-0006 implementation reaching back to the root commit",
+        allowedPaths: ["fixtures/rroot/**"],
+        acceptance: "fixture task used by the provenance-reconciliation scenarios",
+      }),
+    );
+    const { commit } = gitFixture(repo);
+
+    // The repository's FIRST commit already contains the implementation.
+    writeFixtureFile(repo, "fixtures/rroot/impl.ts", "export const impl = 1;\n");
+    const ROOT = commit("root commit, implementation included");
+    fs.appendFileSync(path.join(repo, "fixtures", "rroot", "impl.ts"), "export const more = 2;\n");
+    commit("implementation continues");
+
+    run(repo, CLI, ["claim", "PL-RC-0006", "claude-frontend"]);
+    const refused = runFail(
+      repo,
+      [
+        "start", "PL-RC-0006", "claude-frontend", "--reconcile-existing",
+        "--base", ROOT, "--reason", "the only commit before the rest of the work",
+      ],
+      /itself modifies 1 file\(s\)/,
+    );
+    assert.match(
+      refused,
+      /ROOT commit, so there is no earlier commit to name/,
+      `the error must not advise a parent the base does not have:\n${refused}`,
+    );
+    assert.doesNotMatch(
+      refused,
+      /\^ is the usual answer/,
+      `"<sha>^" is not a reachable remedy for a root commit:\n${refused}`,
+    );
+  }
+
+  /* ---------------------------------------------------------------------
+   * 9ax. Two ways a diff can lie about what a commit touched.
+   *
+   *      MERGES. `diff-tree` reports an empty diff for a merge unless told which
+   *      parent to compare against, and first-parent was the previous answer.
+   *      A merge that resolved the reviewed files TOWARDS the mainline is
+   *      TREESAME to its first parent while differing from its second, so a
+   *      conflict resolution sitting INSIDE an implementation stream passed the
+   *      overlap check while looking perfectly healthy.
+   *
+   *      RENAMES. The two sides of the overlap intersection were built under
+   *      different rules: porcelain `git diff` honours `diff.renames` and reports
+   *      a rename as its destination alone, while plumbing `diff-tree` does not
+   *      and reports a delete plus an add. A base that edited a file the window
+   *      then RENAMED therefore fell out of the intersection -- the two sides
+   *      were spelling the same file differently -- and the base was accepted.
+   *      Pinned with `--no-renames` on both rather than left to configuration.
+   * ------------------------------------------------------------------- */
+  {
+    /* --- the merge half ------------------------------------------------ */
+    const repo = freshRepo();
+    addFixtureTasks(
+      repo,
+      fixtureTask("PL-RC-0007", {
+        title: "PL-RC-0007 implementation stream containing a merge",
+        allowedPaths: ["fixtures/rmg/**"],
+        acceptance: "fixture task used by the provenance-reconciliation scenarios",
+      }),
+    );
+    const { git, head, commit } = gitFixture(repo);
+
+    writeFixtureFile(repo, "fixtures/rmg/impl.ts", "v0\n");
+    const B = commit("baseline");
+
+    git("checkout", "-q", "-b", "side", B);
+    writeFixtureFile(repo, "fixtures/rmg/impl.ts", "side\n");
+    commit("the side branch edits the implementation file");
+
+    git("checkout", "-q", "main");
+    writeFixtureFile(repo, "fixtures/rmg/impl.ts", "main\n");
+    const M1 = commit("the mainline edits the same file");
+
+    // Resolved toward the mainline, so the merge's tree equals its FIRST
+    // parent's while differing from its second.
+    git("merge", "-q", "--no-ff", "-X", "ours", "-m", "merge side, resolved toward the mainline", "side");
+    const MERGE = head();
+    assert.equal(
+      git("diff", "--name-only", M1, MERGE, "--", "fixtures/rmg").trim(),
+      "",
+      "the fixture merge must be TREESAME to its first parent, or this scenario proves nothing",
+    );
+
+    writeFixtureFile(repo, "fixtures/rmg/impl.ts", "v2\n");
+    commit("implementation continues after the merge");
+    writeFixtureFile(repo, "docs/SCRATCH-RMG.md", "unrelated\n");
+    commit("unrelated work by another lane");
+
+    run(repo, CLI, ["claim", "PL-RC-0007", "claude-frontend"]);
+    const mergeRefusal = runFail(
+      repo,
+      [
+        "start", "PL-RC-0007", "claude-frontend", "--reconcile-existing",
+        "--base", MERGE, "--reason", "chosen because the merge looks like a boundary",
+      ],
+      /itself modifies 1 file\(s\)/,
+    );
+    assert.match(mergeRefusal, /fixtures\/rmg\/impl\.ts/, mergeRefusal);
+
+    /* --- the rename half ----------------------------------------------- */
+    const renameRepo = freshRepo();
+    addFixtureTasks(
+      renameRepo,
+      fixtureTask("PL-RC-0008", {
+        title: "PL-RC-0008 implementation that renames the file its base edited",
+        allowedPaths: ["fixtures/rren/**"],
+        acceptance: "fixture task used by the provenance-reconciliation scenarios",
+      }),
+    );
+    const rename = gitFixture(renameRepo);
+    // Pinned ON deliberately: this is the configuration under which the two
+    // helpers disagreed, and the fix must hold regardless of it.
+    rename.git("config", "diff.renames", "true");
+
+    writeFixtureFile(renameRepo, "fixtures/rren/old.ts", "export const x = 1;\n");
+    rename.commit("baseline");
+    writeFixtureFile(renameRepo, "fixtures/rren/old.ts", "export const x = 2;\n");
+    const RENAME_BASE = rename.commit("edit the file, under its old name");
+    rename.git("mv", "fixtures/rren/old.ts", "fixtures/rren/new.ts");
+    rename.commit("the implementation renames it");
+    writeFixtureFile(renameRepo, "docs/SCRATCH-RREN.md", "unrelated\n");
+    rename.commit("unrelated work by another lane");
+
+    run(renameRepo, CLI, ["claim", "PL-RC-0008", "claude-frontend"]);
+    const renameRefusal = runFail(
+      renameRepo,
+      [
+        "start", "PL-RC-0008", "claude-frontend", "--reconcile-existing",
+        "--base", RENAME_BASE, "--reason", "looks clean once the rename hides the edit",
+      ],
+      /itself modifies 1 file\(s\)/,
+    );
+    assert.match(
+      renameRefusal,
+      /fixtures\/rren\/old\.ts/,
+      `the refusal must name the file under the spelling the base used:\n${renameRefusal}`,
+    );
+  }
+
+  /* ---------------------------------------------------------------------
+   * 9ay. "Never for uncommitted work" is enforced, not merely documented.
+   *
+   *      Reconciliation ASSERTS that the implementation already exists in pushed
+   *      commits. Nothing checked it. The central "something changed under the
+   *      surface" check catches an uncommitted implementation only when NOTHING
+   *      changed in base..HEAD, which on any wide surface is satisfied trivially
+   *      by other lanes' commits -- so an implementation living entirely in the
+   *      working tree could reconcile to a base that predates nothing and
+   *      publish a window built from other people's work.
+   *
+   *      Scoped to allowedPaths, like every other dirty-tree check here, so
+   *      unrelated dirt cannot block a legitimate reconciliation.
+   * ------------------------------------------------------------------- */
+  {
+    const repo = freshRepo();
+    addFixtureTasks(
+      repo,
+      fixtureTask("PL-RC-0009", {
+        title: "PL-RC-0009 reconciliation attempted over a dirty tree",
+        allowedPaths: ["fixtures/rdirty/**"],
+        acceptance: "fixture task used by the provenance-reconciliation scenarios",
+      }),
+    );
+    const { commit } = gitFixture(repo);
+
+    writeFixtureFile(repo, "fixtures/rdirty/keep.ts", "export const keep = 0;\n");
+    const BASE = commit("baseline");
+    writeFixtureFile(repo, "fixtures/rdirty/impl.ts", "export const impl = 1;\n");
+    commit("preflight implementation, committed");
+    writeFixtureFile(repo, "docs/SCRATCH-RDIRTY.md", "unrelated\n");
+    commit("unrelated work by another lane");
+
+    run(repo, CLI, ["claim", "PL-RC-0009", "claude-frontend"]);
+
+    // Dirt in two places at once: one inside the task's write surface, one
+    // outside it. Only the first is this task's business.
+    writeFixtureFile(repo, "fixtures/rdirty/uncommitted.ts", "export const later = 2;\n");
+    writeFixtureFile(repo, "docs/SCRATCH-RDIRTY-2.md", "an unrelated scratch file\n");
+
+    const args = [
+      "start", "PL-RC-0009", "claude-frontend", "--reconcile-existing",
+      "--base", BASE, "--reason", "the committed part really does predate the claim",
+    ];
+    const dirty = runFail(repo, args, /uncommitted change\(s\) under its allowedPaths/);
+    assert.match(dirty, /fixtures\/rdirty\/uncommitted\.ts/, dirty);
+    assert.doesNotMatch(
+      dirty,
+      /SCRATCH-RDIRTY-2/,
+      `dirt outside allowedPaths is another lane's business:\n${dirty}`,
+    );
+    assert.equal(taskOf(repo, "PL-RC-0009").status, "CLAIMED");
+    assert.equal(taskOf(repo, "PL-RC-0009").implementationBaseSha, undefined);
+
+    // The same command, with only the in-scope dirt removed. The unrelated
+    // scratch file is still there, and still must not block anything -- a
+    // dirty-tree check that fired on the whole repository would make every
+    // reconciliation impossible, because `claim` itself rewrites control/.
+    fs.rmSync(path.join(repo, "fixtures", "rdirty", "uncommitted.ts"));
+    assert.match(run(repo, CLI, args), /RECONCILED pre-existing implementation/);
+    assert.equal(taskOf(repo, "PL-RC-0009").implementationBaseSha, BASE);
+  }
+
+  /* ---------------------------------------------------------------------
+   * 9az. A value flag that arrives empty is refused, not read as absent.
+   *
+   *      `--base` whose sha was eaten by shell quoting or an empty variable came
+   *      back as null, indistinguishable from "no --base was passed": the
+   *      ordinary-start refusal only rejected non-null values, so
+   *      `start PL-X agent --base` captured HEAD and printed success. That is
+   *      exactly the accepted-and-ignored `--base` the command's own comment
+   *      calls the worst outcome available -- produced by the mechanism built to
+   *      prevent it.
+   *
+   *      No git here on purpose: these are argument-shape decisions and must fire
+   *      before any history is consulted.
+   * ------------------------------------------------------------------- */
+  {
+    const repo = freshRepo();
+    addFixtureTasks(
+      repo,
+      fixtureTask("PL-RC-0010", {
+        title: "PL-RC-0010 flag-shape contract",
+        allowedPaths: ["fixtures/rflag/**"],
+        acceptance: "fixture task used by the provenance-reconciliation scenarios",
+      }),
+    );
+    const SHA = "e".repeat(40);
+    run(repo, CLI, ["claim", "PL-RC-0010", "claude-frontend"]);
+
+    // A bare --base on an ordinary start is refused exactly like one carrying a
+    // value: PRESENCE is what makes it meaningless without --reconcile-existing.
+    runFail(
+      repo,
+      ["start", "PL-RC-0010", "claude-frontend", "--base"],
+      /--base is only meaningful with --reconcile-existing/,
+    );
+    runFail(
+      repo,
+      ["start", "PL-RC-0010", "claude-frontend", "--reason"],
+      /--reason is only meaningful with --reconcile-existing/,
+    );
+    // ...including when the "value" is the next flag rather than a missing one.
+    runFail(
+      repo,
+      ["start", "PL-RC-0010", "claude-frontend", "--base", "--reason", "x"],
+      /--base is only meaningful with --reconcile-existing/,
+    );
+
+    // And on the reconcile path the same emptiness is refused from the other
+    // side, naming the flag rather than complaining about a sha it never got.
+    runFail(
+      repo,
+      ["start", "PL-RC-0010", "claude-frontend", "--reconcile-existing", "--base", "--reason", "x"],
+      /--base was passed without a value/,
+    );
+    runFail(
+      repo,
+      [
+        "start", "PL-RC-0010", "claude-frontend", "--reconcile-existing",
+        "--base", SHA, "--reason",
+      ],
+      /--reason was passed without a value/,
+    );
+    runFail(
+      repo,
+      [
+        "start", "PL-RC-0010", "claude-frontend", "--reconcile-existing",
+        "--base", SHA, "--reason", "because", "--implementation-agent",
+      ],
+      /--implementation-agent was passed without a value/,
+    );
+
+    // Nothing above may have started the task or written a base.
+    assert.equal(taskOf(repo, "PL-RC-0010").status, "CLAIMED");
+    assert.equal(taskOf(repo, "PL-RC-0010").implementationBaseSha, undefined);
+  }
+
+  /* ---------------------------------------------------------------------
+   * 9ba. The provenance record is verified, not read back.
+   *
+   *      Validation used to check three things: the kind string, a baseSha
+   *      matching the field it explains, and a non-empty reason. Everything else
+   *      the record published -- the head it was reconciled against, the window,
+   *      its endpoints, the changed-file count, who reconciled it, who
+   *      implemented it, the surface -- was accepted verbatim, while
+   *      control/README.md told reviewers to lean on exactly those fields. A
+   *      five-line marker pasted onto an ordinarily started task passed
+   *      `validate`, and `review-status` then reported an asserted base with the
+   *      full authority of the control plane.
+   *
+   *      Nothing can stop a hand-edit. The goal is that a forged record is
+   *      DETECTABLE, so this pins both directions: an honest record validates
+   *      cleanly, and each way of forging one is named.
+   * ------------------------------------------------------------------- */
+  {
+    const repo = freshRepo();
+    addFixtureTasks(
+      repo,
+      fixtureTask("PL-RC-0011", {
+        title: "PL-RC-0011 honestly reconciled implementation",
+        allowedPaths: ["fixtures/rprov/**"],
+        acceptance: "fixture task used by the provenance-reconciliation scenarios",
+      }),
+      fixtureTask("PL-RC-0012", {
+        title: "PL-RC-0012 ordinary start, later stamped as a reconciliation",
+        lane: "Backend",
+        preferredAgent: "claude-backend",
+        allowedPaths: ["fixtures/rprov-b/**"],
+        acceptance: "fixture task used by the provenance-reconciliation scenarios",
+      }),
+    );
+    const { commit } = gitFixture(repo);
+    writeFixtureFile(repo, "fixtures/rprov/keep.ts", "export const keep = 0;\n");
+    writeFixtureFile(repo, "fixtures/rprov-b/keep.ts", "export const keep = 0;\n");
+    const BASE = commit("baseline");
+    writeFixtureFile(repo, "fixtures/rprov/impl.ts", "export const impl = 1;\n");
+    const IMPL = commit("preflight implementation");
+    writeFixtureFile(repo, "docs/SCRATCH-RPROV.md", "unrelated\n");
+    commit("unrelated work by another lane");
+
+    run(repo, CLI, ["claim", "PL-RC-0011", "claude-frontend"]);
+    run(repo, CLI, [
+      "start", "PL-RC-0011", "claude-frontend", "--reconcile-existing",
+      "--base", BASE, "--reason", "git log fixtures/rprov begins at the implementation commit",
+    ]);
+
+    // An honest record validates cleanly. Without this half, a validator that
+    // rejected every record -- forged or not -- would look just as green.
+    assert.match(
+      runCombined(repo, CLI, ["validate"]),
+      /AI control plane valid/,
+      "an honestly reconciled task must still validate",
+    );
+
+    const file = path.join(repo, "control", "tasks.json");
+    const readDoc = () => JSON.parse(fs.readFileSync(file, "utf8"));
+    const writeDoc = (doc) =>
+      fs.writeFileSync(file, JSON.stringify(doc, null, 2) + "\n");
+    /*
+     * One hand-edit at a time, each undone before the next.
+     *
+     * The WHOLE task is snapshotted and restored, not just the provenance
+     * record: one of the edits below moves `implementationBaseSha` too, and a
+     * partial restore would leave every later assertion measuring the residue of
+     * an earlier one rather than the edit it names.
+     */
+    const honest = JSON.stringify(taskOf(repo, "PL-RC-0011"));
+    const edit = (mutate, matcher) => {
+      const doc = readDoc();
+      mutate(doc.tasks.find((t) => t.id === "PL-RC-0011"));
+      writeDoc(doc);
+      const out = runFail(repo, ["validate"], matcher);
+      const restored = readDoc();
+      restored.tasks[restored.tasks.findIndex((t) => t.id === "PL-RC-0011")] =
+        JSON.parse(honest);
+      writeDoc(restored);
+      assert.match(
+        runCombined(repo, CLI, ["validate"]),
+        /AI control plane valid/,
+        "each hand-edit must be fully undone, or the next assertion measures the wrong thing",
+      );
+      return out;
+    };
+
+    /* --- shape: every field, not just three ---------------------------- */
+    edit(
+      (t) => delete t.implementationBaseProvenance.headAtReconciliation,
+      /headAtReconciliation must be a full 40-character hex sha/,
+    );
+    edit(
+      (t) => (t.implementationBaseProvenance.reconciledBy = "nobody-at-all"),
+      /reconciledBy names unknown agent nobody-at-all/,
+    );
+    edit(
+      (t) => (t.implementationBaseProvenance.implementationAgent = "nobody-at-all"),
+      /implementationAgent names unknown agent nobody-at-all/,
+    );
+    edit(
+      (t) => (t.implementationBaseProvenance.reconciledAt = "last tuesday"),
+      /reconciledAt must be an ISO timestamp/,
+    );
+    edit(
+      (t) => (t.implementationBaseProvenance.reviewSurface = "everything"),
+      /reviewSurface must be one of/,
+    );
+    edit(
+      (t) => (t.implementationBaseProvenance.changedFileCount = 0),
+      /reports 0 changed files/,
+    );
+    // The endpoints are pinned TO the published list, because they are what a
+    // reviewer is sent to interrogate.
+    edit(
+      (t) => (t.implementationBaseProvenance.oldestSurfaceCommit = "f".repeat(40)),
+      /oldestSurfaceCommit .* is not the oldest commit it publishes/,
+    );
+    edit(
+      (t) => (t.implementationBaseProvenance.surfaceCommitCount = 7),
+      /surfaceCommitsTruncated=false while publishing 1 of 7 commit\(s\)/,
+    );
+
+    /* --- history: facts no later edit changes -------------------------- */
+    edit((t) => {
+      // A window whose head is not a descendant of its base is not a range.
+      t.implementationBaseProvenance.headAtReconciliation = BASE;
+      t.implementationBaseProvenance.baseSha = IMPL;
+      t.implementationBaseSha = IMPL;
+      t.implementationBaseProvenance.oldestSurfaceCommit = null;
+      t.implementationBaseProvenance.newestSurfaceCommit = null;
+      t.implementationBaseProvenance.surfaceCommits = [];
+      t.implementationBaseProvenance.surfaceCommitCount = 0;
+    }, /is not an ancestor of that head/);
+
+    /* --- corroboration: the audit trail must agree --------------------- */
+    /*
+     * THE FORGERY THE OLD VALIDATION ACCEPTED. PL-RC-0012 was started
+     * ordinarily; a consistent-looking provenance record is pasted onto its
+     * captured base by hand. Every field agrees with every other field, so shape
+     * alone cannot catch it -- but events.jsonl carries `task.started`, not
+     * `task.started_reconciled`, and the CLI writes the record and the event
+     * together.
+     */
+    run(repo, CLI, ["claim", "PL-RC-0012", "claude-backend"]);
+    run(repo, CLI, ["start", "PL-RC-0012", "claude-backend"]);
+    const captured = taskOf(repo, "PL-RC-0012").implementationBaseSha;
+    assert.ok(captured, "an ordinary start must have captured a base to forge over");
+    const forgedDoc = readDoc();
+    forgedDoc.tasks.find((t) => t.id === "PL-RC-0012").implementationBaseProvenance = {
+      kind: "reconciled-existing-implementation",
+      baseSha: captured,
+      reconciledAt: new Date().toISOString(),
+      reconciledBy: "claude-backend",
+      implementationAgent: "claude-backend",
+      headAtReconciliation: IMPL,
+      reviewSurface: "allowedPaths",
+      surfaceCommitCount: 0,
+      oldestSurfaceCommit: null,
+      newestSurfaceCommit: null,
+      surfaceCommits: [],
+      surfaceCommitsTruncated: false,
+      changedFileCount: 3,
+      reason: "hand-written to look exactly like the real thing",
+    };
+    writeDoc(forgedDoc);
+    runFail(
+      repo,
+      ["validate"],
+      /PL-RC-0012: implementationBaseProvenance claims a reconciliation at .*records no matching task\.started_reconciled/s,
+    );
+  }
+
+  /* ---------------------------------------------------------------------
+   * 9bb. The published window keeps the end the reviewer is sent to, and the
+   *      audit event is written only after task state is durable.
+   *
+   *      The record exists to let a reviewer ask the one question no check can
+   *      answer: is there an EARLIER commit that also belongs to this
+   *      implementation? It answered by publishing the twenty NEWEST commits of
+   *      the window and silently dropping the oldest end -- the only end that
+   *      question is about -- and a truncated list looked exactly like a complete
+   *      one.
+   *
+   *      The second half is the ordering discipline `recordReview` states and
+   *      `approve` follows. Emitting the audit record before `syncAll` meant a
+   *      failure in between left events.jsonl asserting a reconciliation the task
+   *      file never received, and a retry appended a second one. These events
+   *      carry no deterministic id, so nothing would deduplicate them.
+   * ------------------------------------------------------------------- */
+  {
+    const repo = freshRepo();
+    addFixtureTasks(
+      repo,
+      fixtureTask("PL-RC-0013", {
+        title: "PL-RC-0013 a long pre-existing implementation",
+        allowedPaths: ["fixtures/rwin/**"],
+        acceptance: "fixture task used by the provenance-reconciliation scenarios",
+      }),
+    );
+    const { commit } = gitFixture(repo);
+    writeFixtureFile(repo, "fixtures/rwin/keep.ts", "export const keep = 0;\n");
+    const BASE = commit("baseline");
+
+    const windowCommits = [];
+    for (let i = 0; i < 22; i++) {
+      writeFixtureFile(repo, `fixtures/rwin/part-${i}.ts`, `export const p${i} = ${i};\n`);
+      windowCommits.push(commit(`preflight implementation, part ${i}`));
+    }
+    writeFixtureFile(repo, "docs/SCRATCH-RWIN.md", "unrelated\n");
+    commit("unrelated work by another lane");
+
+    run(repo, CLI, ["claim", "PL-RC-0013", "claude-frontend"]);
+    run(repo, CLI, [
+      "start", "PL-RC-0013", "claude-frontend", "--reconcile-existing",
+      "--base", BASE, "--reason", "git log fixtures/rwin begins at part 0",
+    ]);
+
+    const p = taskOf(repo, "PL-RC-0013").implementationBaseProvenance;
+    assert.equal(p.surfaceCommitCount, 22);
+    assert.equal(p.surfaceCommitsTruncated, true, "22 commits must be reported as truncated");
+    assert.equal(p.surfaceCommits.length, 20);
+    assert.equal(
+      p.oldestSurfaceCommit,
+      windowCommits[0],
+      "the oldest commit in the window is the field the reviewer interrogates",
+    );
+    assert.equal(
+      p.surfaceCommits[p.surfaceCommits.length - 1],
+      windowCommits[0],
+      "the published list must be kept from the OLDEST end, not the newest",
+    );
+    assert.equal(p.newestSurfaceCommit, windowCommits[21]);
+    assert.ok(
+      !p.surfaceCommits.includes(windowCommits[21]),
+      "a truncated list drops the newest end, which is why both endpoints are named",
+    );
+    assert.match(runCombined(repo, CLI, ["validate"]), /AI control plane valid/);
+
+    /* --- the audit record follows the durable write -------------------- */
+    const failRepo = freshRepo();
+    addFixtureTasks(
+      failRepo,
+      fixtureTask("PL-RC-0014", {
+        title: "PL-RC-0014 reconciliation interrupted while regenerating views",
+        allowedPaths: ["fixtures/rord/**"],
+        acceptance: "fixture task used by the provenance-reconciliation scenarios",
+      }),
+    );
+    const ord = gitFixture(failRepo);
+    writeFixtureFile(failRepo, "fixtures/rord/keep.ts", "export const keep = 0;\n");
+    const ORD_BASE = ord.commit("baseline");
+    writeFixtureFile(failRepo, "fixtures/rord/impl.ts", "export const impl = 1;\n");
+    ord.commit("preflight implementation");
+    writeFixtureFile(failRepo, "docs/SCRATCH-RORD.md", "unrelated\n");
+    ord.commit("unrelated work by another lane");
+
+    run(failRepo, CLI, ["claim", "PL-RC-0014", "claude-frontend"]);
+    // Break the generated view so `syncAll` throws AFTER it has persisted task
+    // state. This is the window the old ordering got wrong.
+    const tasksMd = path.join(failRepo, "coordination", "TASKS.md");
+    fs.rmSync(tasksMd);
+    fs.mkdirSync(tasksMd);
+
+    runFail(failRepo, [
+      "start", "PL-RC-0014", "claude-frontend", "--reconcile-existing",
+      "--base", ORD_BASE, "--reason", "interrupted while regenerating views",
+    ]);
+    assert.equal(
+      taskOf(failRepo, "PL-RC-0014").implementationBaseSha,
+      ORD_BASE,
+      "task state is the durable commit point and must have been written",
+    );
+    assert.deepEqual(
+      eventsOf(failRepo)
+        .filter((e) => e.taskId === "PL-RC-0014" && e.type.startsWith("task.started"))
+        .map((e) => e.type),
+      [],
+      "events.jsonl must never assert a reconciliation the run did not complete",
+    );
+  }
+
+  /* ---------------------------------------------------------------------
+   * 9bc. --implementation-agent adds an implementer; it can never remove one.
+   *
+   *      `assertReviewAllowed` compared the reviewer against
+   *      `implementationAgent ?? owner`, and `start --reconcile-existing
+   *      --implementation-agent X` is the one operation that makes those two
+   *      different agents. Asserting a third party therefore DISPLACED the owner
+   *      from the self-approval comparison, and on a task with no designated
+   *      reviewAgent the owner could then approve their own work -- while the
+   *      comment above the line claimed the flag granted no new capability.
+   *
+   *      The incentive that created was backwards: declaring the real implementer
+   *      honestly is what unlocked self-approval, and saying nothing left the
+   *      owner correctly blocked.
+   * ------------------------------------------------------------------- */
+  {
+    const repo = freshRepo();
+    addFixtureTasks(
+      repo,
+      fixtureTask("PL-RC-0015", {
+        title: "PL-RC-0015 reconciled work with an asserted third-party implementer",
+        allowedPaths: ["fixtures/rself/**"],
+        // No designated reviewer: the case where the self-approval rule is the
+        // only thing standing between an owner and their own approval.
+        reviewAgent: undefined,
+        acceptance: "fixture task used by the provenance-reconciliation scenarios",
+      }),
+    );
+    const { commit } = gitFixture(repo);
+    writeFixtureFile(repo, "fixtures/rself/keep.ts", "export const keep = 0;\n");
+    const BASE = commit("baseline");
+    writeFixtureFile(repo, "fixtures/rself/impl.ts", "export const impl = 1;\n");
+    commit("preflight implementation");
+    writeFixtureFile(repo, "docs/SCRATCH-RSELF.md", "unrelated\n");
+    commit("unrelated work by another lane");
+
+    run(repo, CLI, ["claim", "PL-RC-0015", "claude-frontend"]);
+    run(repo, CLI, [
+      "start", "PL-RC-0015", "claude-frontend", "--reconcile-existing",
+      "--base", BASE, "--reason", "claude-lead wrote this before the task existed",
+      "--implementation-agent", "claude-lead",
+    ]);
+    assert.equal(taskOf(repo, "PL-RC-0015").implementationAgent, "claude-lead");
+    run(repo, CLI, ["review", "PL-RC-0015", "claude-frontend"]);
+
+    // THE ESCALATION. The owner is not the recorded implementationAgent any
+    // more, and used to be invisible to the self-approval comparison.
+    runFail(
+      repo,
+      ["approve", "PL-RC-0015", "claude-frontend", "looks good to me"],
+      /self-approval is prohibited/,
+    );
+    assert.equal(
+      taskOf(repo, "PL-RC-0015").review,
+      undefined,
+      "a refused self-approval must not be recorded",
+    );
+
+    // A genuinely independent reviewer is unaffected.
+    run(repo, CLI, ["approve", "PL-RC-0015", "gpt-architect", "independent review"]);
+    const record = taskOf(repo, "PL-RC-0015").review;
+    assert.equal(record.implementationAgent, "claude-lead");
+    assert.equal(
+      record.implementationOwner,
+      "claude-frontend",
+      "the record must carry BOTH implementation-side identities, or a later " +
+        "historical check re-derives a weaker rule than the one applied here",
+    );
+
+    // And the same widening applies when the record is read back rather than
+    // written: a hand-edit naming the owner as reviewer is a self-approval.
+    const file = path.join(repo, "control", "tasks.json");
+    const doc = JSON.parse(fs.readFileSync(file, "utf8"));
+    doc.tasks.find((t) => t.id === "PL-RC-0015").review.reviewerAgent =
+      "claude-frontend";
+    fs.writeFileSync(file, JSON.stringify(doc, null, 2) + "\n");
+    runFail(repo, ["validate"], /PL-RC-0015: review record is a self-approval/);
+  }
+
+  /* ---------------------------------------------------------------------
    * 10. Bootstrap into a new project still works.
    * ------------------------------------------------------------------- */
   {
@@ -6309,7 +7108,7 @@ try {
     "running the test suite must not mutate any live control/ or coordination/ file",
   );
 
-  console.log("AI control plane tests passed (58 scenarios).");
+  console.log("AI control plane tests passed (66 scenarios).");
 } finally {
   fs.rmSync(temp, { recursive: true, force: true });
 }

@@ -110,6 +110,29 @@ function event(type, details = {}, eventId = null) {
   fs.appendFileSync(files.events, JSON.stringify(record) + "\n");
   return true;
 }
+/**
+ * The audit log, parsed, for checks that corroborate task state against it.
+ *
+ * A snapshot taken on first use: the only consumer is `validate`, which reads
+ * before anything in the same process appends. Torn trailing lines are skipped
+ * for the same reason emission tolerates them -- a half-written last line is a
+ * crash artefact, not evidence of anything.
+ */
+let eventRecords = null;
+function readEventRecords() {
+  if (eventRecords) return eventRecords;
+  eventRecords = [];
+  if (!fs.existsSync(files.events)) return eventRecords;
+  for (const line of fs.readFileSync(files.events, "utf8").split("\n")) {
+    if (!line.trim()) continue;
+    try {
+      eventRecords.push(JSON.parse(line));
+    } catch {
+      /* a torn trailing line must not break validation */
+    }
+  }
+  return eventRecords;
+}
 /** Stable across runs and machines: same message + slot + type => same id. */
 function deterministicEventId(messageId, slot, type) {
   return crypto
@@ -633,10 +656,13 @@ function implementationFingerprint(task, commitish = "HEAD") {
  * lane's uncommitted work block every other lane that merely reads the same
  * vocabulary -- reintroducing the package-wide mutex through the back door.
  */
-function taskWorktreeIsDirty(task) {
-  if (process.env.LIBERTY_COMMIT_SHA) return false; // test harness has no git
+function taskWorktreeDirtyPaths(task) {
   const pathspecs = taskPathspecs(task);
-  if (!pathspecs.length) return false;
+  // No write surface means no question to ask. Passing zero pathspecs to
+  // `git status` would ask about the WHOLE repository instead, and every
+  // control-plane command dirties control/tasks.json, so the answer would be
+  // "dirty" for reasons that have nothing to do with this task.
+  if (!pathspecs.length) return [];
   try {
     const status = execFileSync(
       "git",
@@ -647,18 +673,29 @@ function taskWorktreeIsDirty(task) {
         stdio: ["ignore", "pipe", "ignore"],
       },
     );
-    return (
-      status
-        .split("\n")
-        .map((line) => line.trim())
-        .filter(Boolean)
-        .map((line) => line.replace(/^\S+\s+/, ""))
-        .filter((rel) => !excludedFromFingerprint(rel) && !rel.endsWith(".tmp"))
-        .length > 0
-    );
+    return status
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => line.replace(/^\S+\s+/, ""))
+      .filter((rel) => !excludedFromFingerprint(rel) && !rel.endsWith(".tmp"));
   } catch {
-    return false;
+    return [];
   }
+}
+/**
+ * The same question as a boolean, for the review/completion paths.
+ *
+ * `LIBERTY_COMMIT_SHA` short-circuits it because the bus fixtures simulate a
+ * moving HEAD in repositories that have no git at all, where `git status` says
+ * nothing. Callers that have ALREADY established that git is present -- the
+ * reconciliation path does, and refuses to run without it -- must call
+ * `taskWorktreeDirtyPaths` directly instead, or an environment variable would
+ * switch off a check whose whole point is that it reads real history.
+ */
+function taskWorktreeIsDirty(task) {
+  if (process.env.LIBERTY_COMMIT_SHA) return false; // test harness has no git
+  return taskWorktreeDirtyPaths(task).length > 0;
 }
 function currentCommitSha() {
   // Explicit override exists so the handoff-bus commit-binding rules can be
@@ -731,6 +768,15 @@ function reviewRecordProblems(task, policies) {
   if (r.reviewerAgent && r.reviewerAgent === r.implementationAgent) {
     problems.push(
       `self-approval is prohibited: ${r.reviewerAgent} implemented and approved ${task.id}`,
+    );
+  }
+  // The owner of the implementation round counts too. Only recorded since
+  // `implementationOwner` was added, and only checked when present, so historical
+  // records -- whose owner WAS their implementationAgent -- are unaffected.
+  else if (r.implementationOwner && r.reviewerAgent === r.implementationOwner) {
+    problems.push(
+      `self-approval is prohibited: ${r.reviewerAgent} owned the implementation round for ${task.id} ` +
+        `(recorded implementer ${r.implementationAgent})`,
     );
   }
   if (task.reviewAgent && r.reviewerAgent !== task.reviewAgent) {
@@ -907,42 +953,81 @@ function surfaceFilesTouchedBy(sha, pathspecs) {
   const parents = commitParents(sha);
   if (parents === null) return null;
   try {
-    const args =
-      parents.length > 1
-        ? // A merge reports an empty diff under diff-tree unless it is told which
-          // parent to compare against, and "touched nothing" would silently
-          // switch the overlap check off for exactly the commit shape most likely
-          // to sit at a lane boundary. First-parent is the mainline view, and it
-          // is the one a reviewer means by "what this commit brought in".
-          ["diff", "--name-only", parents[0], sha, "--", ...pathspecs]
-        : // --root so a repository's first commit reports its files rather than
-          // an empty diff against nothing.
-          [
-            "diff-tree", "--no-commit-id", "--name-only", "-r", "--root", sha,
-            "--", ...pathspecs,
-          ];
-    const out = execFileSync("git", args, {
-      cwd: root,
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-      maxBuffer: 64 * 1024 * 1024,
-    });
-    return out
-      .split("\n")
-      .map((line) => line.trim())
-      .filter(Boolean)
-      .filter((rel) => !excludedFromFingerprint(rel));
+    const diff = (args) =>
+      execFileSync("git", args, {
+        cwd: root,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+        maxBuffer: 64 * 1024 * 1024,
+      });
+    let out = "";
+    if (parents.length > 1) {
+      /*
+       * EVERY parent, unioned -- not just the first.
+       *
+       * A merge reports an empty diff under diff-tree unless it is told which
+       * parent to compare against, and "touched nothing" would silently switch
+       * the overlap check off for exactly the commit shape most likely to sit at
+       * a lane boundary. First-parent alone was the previous answer and it has a
+       * hole with the same shape: a merge that resolved the reviewed files
+       * TOWARDS the mainline is TREESAME to its first parent while differing from
+       * its second, so a conflict resolution sitting INSIDE an implementation
+       * stream passed the overlap check unnoticed.
+       *
+       * The union is deliberately the conservative direction. It can refuse a
+       * merge base that only inherited a file from the branch it merged, and the
+       * remedy for a refusal always widens the review range, so the cost of a
+       * false refusal is noise while the cost of a false pass is a hidden commit.
+       */
+      for (const parent of parents) {
+        out += diff([
+          "diff", "--no-renames", "--name-only", parent, sha,
+          "--", ...pathspecs,
+        ]);
+      }
+    } else {
+      // --root so a repository's first commit reports its files rather than an
+      // empty diff against nothing.
+      out = diff([
+        "diff-tree", "--no-commit-id", "--no-renames", "--name-only", "-r",
+        "--root", sha, "--", ...pathspecs,
+      ]);
+    }
+    return [
+      ...new Set(
+        out
+          .split("\n")
+          .map((line) => line.trim())
+          .filter(Boolean)
+          .filter((rel) => !excludedFromFingerprint(rel)),
+      ),
+    ];
   } catch {
     return null;
   }
 }
 
-/** Non-generated files under `pathspecs` that differ between two commits. */
+/**
+ * Non-generated files under `pathspecs` that differ between two commits.
+ *
+ * `--no-renames` is pinned here and in `surfaceFilesTouchedBy` for one reason:
+ * the two results are INTERSECTED. This one is porcelain `git diff`, which
+ * honours `diff.renames` (on by default) and collapses a rename to its
+ * destination path alone; the other is plumbing, where rename detection is off
+ * and a rename appears as its two endpoints. So the two sets were built under
+ * different rules, and a file could be in both while being SPELLED differently
+ * in each -- dropping out of the intersection entirely. The concrete escape: a
+ * base commit edits `old.ts`, the window then renames it to `new.ts`, this side
+ * reports only `new.ts`, the other side reports only `old.ts`, the intersection
+ * is empty, and a base from inside the implementation is accepted. Pinning both
+ * is not a preference about rename detection -- it is the only way the
+ * comparison means anything.
+ */
 function surfaceFilesChangedBetween(base, head, pathspecs) {
   try {
     const out = execFileSync(
       "git",
-      ["diff", "--name-only", base, head, "--", ...pathspecs],
+      ["diff", "--no-renames", "--name-only", base, head, "--", ...pathspecs],
       {
         cwd: root,
         encoding: "utf8",
@@ -960,12 +1045,27 @@ function surfaceFilesChangedBetween(base, head, pathspecs) {
   }
 }
 
-/** Commits in `base..head` that touched `pathspecs`, newest first. */
+/**
+ * Commits in `base..head` that touched `pathspecs`, newest first.
+ *
+ * `--full-history` is not optional here. With a pathspec, `git log` applies
+ * history simplification by default and PRUNES commits it considers TREESAME --
+ * most visibly the side of a merge whose changes were also reached another way.
+ * The one field a reviewer is told to interrogate is `oldestSurfaceCommit` ("is
+ * there an earlier commit that also belongs to this implementation?"), and
+ * simplification answers that question by quietly deleting candidates: the
+ * published window would understate itself and read as reassurance.
+ * `--full-history` reports every commit in the range that touched the surface,
+ * which is what the record claims to be.
+ */
 function surfaceCommitsBetween(base, head, pathspecs) {
   try {
     const out = execFileSync(
       "git",
-      ["log", "--format=%H", `${base}..${head}`, "--", ...pathspecs],
+      [
+        "log", "--full-history", "--format=%H", `${base}..${head}`,
+        "--", ...pathspecs,
+      ],
       {
         cwd: root,
         encoding: "utf8",
@@ -1042,6 +1142,56 @@ function assertReconcilableBase(task, baseSha) {
     );
   }
   const surface = reviewSurfaceLabel(task);
+  /*
+   * The WRITE surface, kept separate from the reviewed one. See the overlap
+   * check below for why the difference is load-bearing rather than tidy.
+   *
+   * Its absence is refused rather than skipped. A task with no allowedPaths but
+   * a declared reviewDependency would otherwise slip past the overlap check
+   * entirely -- and running that check on zero pathspecs would ask git about the
+   * whole repository instead, which is worse. `validate` only warns about an
+   * empty allowedPaths, so this is the point where the missing declaration
+   * actually costs something, and the task is unreviewable and unreservable
+   * without it anyway.
+   */
+  const writePathspecs = taskPathspecs(task);
+  if (!writePathspecs.length) {
+    throw new Error(
+      `${task.id} declares no allowedPaths, so there is no way to ask whether ${short(baseSha)} sits inside ` +
+        "its implementation stream -- the one question that separates a base before an implementation from " +
+        "one inside it. Declare the paths this task writes before reconciling",
+    );
+  }
+
+  /*
+   * A DIRTY WORKING TREE CONTRADICTS THE ASSERTION ON ITS FACE.
+   *
+   * Reconciliation asserts "the implementation already exists in pushed
+   * commits". Uncommitted work under this task's own paths says the opposite,
+   * and the documentation has always said so -- but nothing enforced it. The
+   * central check below only catches an uncommitted implementation when NOTHING
+   * under the surface changed in base..HEAD, which is a coincidence rather than
+   * a rule: on a wide surface (`scripts/**`, `packages/**`) another lane's
+   * commits satisfy it trivially, so an implementation that exists only in the
+   * working tree could reconcile to a base that predates nothing at all and
+   * publish a window built entirely from other people's commits.
+   *
+   * Scoped to allowedPaths, like every other dirty-tree check here: a shared
+   * dependency is co-owned, and another lane's in-flight edits to it are not
+   * this task's business. `taskWorktreeDirtyPaths` rather than
+   * `taskWorktreeIsDirty` because git is already known to be present -- an
+   * environment variable must not be able to switch this off.
+   */
+  const dirty = taskWorktreeDirtyPaths(task);
+  if (dirty.length) {
+    throw new Error(
+      `cannot reconcile ${task.id}: ${dirty.length} uncommitted change(s) under its allowedPaths ` +
+        `(${dirty.slice(0, 5).join(", ")}${dirty.length > 5 ? ", ..." : ""}). Reconciliation asserts that the ` +
+        "implementation ALREADY EXISTS in pushed commits, so a dirty tree contradicts it: whatever is " +
+        "uncommitted cannot be inside the range being asserted. Commit or stash it -- and if the " +
+        "implementation itself is the uncommitted work, this is an ordinary start",
+    );
+  }
 
   const changed = surfaceFilesChangedBetween(baseSha, head, pathspecs);
   if (changed === null) {
@@ -1070,39 +1220,415 @@ function assertReconcilableBase(task, baseSha) {
    * of the same files the window goes on to change?
    *
    * The intersection is what removes the false positives. Naively refusing any
-   * base that touches the reviewed surface would refuse the CORRECT answer
-   * constantly here, because these surfaces are wide (`scripts/**`) and the
-   * commit immediately preceding a preflight implementation is usually another
-   * lane's work in the same directory. That would push operators toward bases
-   * many commits earlier -- safe, but noisy enough that the mechanism stops being
+   * base that touches the surface would refuse the CORRECT answer constantly
+   * here, because these surfaces are wide (`scripts/**`) and the commit
+   * immediately preceding a preflight implementation is usually another lane's
+   * work in the same directory. That would push operators toward bases many
+   * commits earlier -- safe, but noisy enough that the mechanism stops being
    * used. Overlap on a specific FILE is a much narrower signal: the base is
    * editing something this task then edits, which is what a commit from the same
    * implementation stream looks like.
+   *
+   * THE WRITE SURFACE, not the reviewed one, and the difference is the whole
+   * question this check asks. "Is the base inside THIS TASK's implementation
+   * stream?" can only be asked about files this task may write. A
+   * reviewDependency is by definition somebody else's code -- read-only,
+   * unreserved, and possibly being edited by another active lane at this very
+   * moment -- so a base commit touching one says nothing whatsoever about where
+   * this implementation began. Asking the write-surface question against the
+   * reviewed surface disabled the mechanism for precisely the task shape it was
+   * built for: PL-0103 declares `reviewDependencies: ["packages/contracts/**"]`,
+   * contracts churn constantly, so every candidate base that happened to touch a
+   * contract was refused and the error sent the operator walking back through
+   * history one `^` at a time with no reachable answer.
+   *
+   * The central check above deliberately stays on the REVIEWED surface: "did
+   * anything the review will bind to change in this window" is a question about
+   * the review, and a dependency change is legitimately part of that.
    *
    * Refusing is the conservative direction, and the remedy always widens: an
    * earlier base can only show a reviewer MORE than they were promised, never
    * less.
    */
-  const touchedByBase = surfaceFilesTouchedBy(baseSha, pathspecs);
-  if (touchedByBase === null) {
+  {
+    const touchedByBase = surfaceFilesTouchedBy(baseSha, writePathspecs);
+    if (touchedByBase === null) {
+      throw new Error(
+        `cannot inspect the contents of ${short(baseSha)}; refusing to record an unverified base`,
+      );
+    }
+    const changedSet = new Set(changed);
+    const overlap = touchedByBase.filter((rel) => changedSet.has(rel));
+    if (overlap.length) {
+      /*
+       * The remedy has to exist before it can be advised. A root commit has no
+       * parent, so "try <sha>^" names a commit git will refuse to resolve and
+       * sends the operator looking for something that cannot be there. The
+       * honest answer in that case is that no reconcilable base exists at all:
+       * the implementation reaches back to the first commit in the repository,
+       * and there is nothing before it for a review range to open at.
+       */
+      const parents = commitParents(baseSha) ?? [];
+      const remedy = parents.length
+        ? `Name an earlier commit -- ${short(baseSha)}^ is the usual answer.`
+        : `${short(baseSha)} is the repository's ROOT commit, so there is no earlier commit to name and no ` +
+          "base can precede this implementation. This task's work cannot be expressed as a reconciled " +
+          "range; open it with an ordinary start and state the true range to the reviewer directly.";
+      throw new Error(
+        `--base ${short(baseSha)} itself modifies ${overlap.length} file(s) under ${task.id}'s allowedPaths ` +
+          `that also change between it and HEAD (${overlap.slice(0, 5).join(", ")}` +
+          `${overlap.length > 5 ? ", ..." : ""}). A commit editing the same files as the window that follows ` +
+          `it is part of an implementation, not the commit before one. ${remedy} A wider base only ever ` +
+          "shows the reviewer more; a narrower one hides work from the first review",
+      );
+    }
+  }
+
+  /*
+   * FAIL CLOSED, like both of its siblings above.
+   *
+   * This used to be `?? []`, which turned a git failure into a published window
+   * of zero commits sitting beside a non-zero changed-file count -- a record
+   * that contradicts itself, and reads to a reviewer as "no commits to
+   * interrogate" rather than "the window could not be computed". The window is
+   * not decoration: it is the only material the reviewer has for the one
+   * question no check here can answer.
+   */
+  const commits = surfaceCommitsBetween(baseSha, head, pathspecs);
+  if (commits === null) {
     throw new Error(
-      `cannot inspect the contents of ${short(baseSha)}; refusing to record an unverified base`,
+      `cannot list the commits between ${short(baseSha)} and HEAD ${short(head)} under ${surface}; the ` +
+        "published window is what a reviewer interrogates, so refusing to record a base whose window is " +
+        "unknown is the only honest outcome",
     );
   }
-  const changedSet = new Set(changed);
-  const overlap = touchedByBase.filter((rel) => changedSet.has(rel));
-  if (overlap.length) {
-    throw new Error(
-      `--base ${short(baseSha)} itself modifies ${overlap.length} file(s) that also change between it and ` +
-        `HEAD (${overlap.slice(0, 5).join(", ")}${overlap.length > 5 ? ", ..." : ""}). A commit editing the ` +
-        "same files as the window that follows it is part of an implementation, not the commit before one. " +
-        `Name an earlier commit -- ${short(baseSha)}^ is the usual answer. A wider base only ever shows the ` +
-        "reviewer more; a narrower one hides work from the first review",
+  return { head, changedFiles: changed, surfaceCommits: commits, surface };
+}
+
+/**
+ * How many of the window's commits the record publishes in full.
+ *
+ * Kept from the OLDEST end. The reviewer is pointed at exactly one question --
+ * "is there an EARLIER commit that also belongs to this implementation?" -- and
+ * the record used to answer it by publishing the twenty NEWEST commits and
+ * dropping the oldest end, which is the only end that question is about. A
+ * truncated list is flagged as truncated and both endpoints are always named
+ * exactly, so a reader can tell "there are no more" from "there are more and
+ * they are not listed here".
+ */
+const SURFACE_COMMIT_PUBLISH_LIMIT = 20;
+
+const PROVENANCE_KIND = "reconciled-existing-implementation";
+
+/**
+ * Whether an `implementationBaseProvenance` record can be believed.
+ *
+ * WHAT THIS CAN AND CANNOT DO, because overstating it would be worse than not
+ * doing it. Nothing in a local CLI can stop a hand-edit of control/tasks.json.
+ * The goal is therefore not that a forged record is impossible but that it is
+ * DETECTABLE: the previous validation checked three fields (kind, a matching
+ * baseSha, a non-empty reason), so a five-line stub pasted onto an ordinarily
+ * started task passed `ai:validate` cleanly -- and `review-status` and
+ * `handoff --base auto` then told the reviewer, with the full authority of the
+ * control plane, that the range predates the claim. Everything else the record
+ * published (the window, its endpoints, the changed-file count, who reconciled
+ * it, who implemented it, the surface) was accepted verbatim while
+ * control/README.md instructed reviewers to lean on precisely those fields.
+ *
+ * So the record is now checked three ways:
+ *
+ *   SHAPE          every field the CLI writes, typed and cross-consistent. A
+ *                  forger must now produce a whole coherent record rather than
+ *                  a marker.
+ *   HISTORY        the parts git can settle cheaply and durably: the base is an
+ *                  ancestor of the head it claims, and the published endpoints
+ *                  really lie inside that window. Errors, because these are
+ *                  facts about history that no later legitimate edit changes.
+ *   CORROBORATION  `events.jsonl` must carry the `task.started_reconciled` event
+ *                  that this record's existence implies. Append-only and
+ *                  separately written, so a forgery now needs two consistent
+ *                  edits in two files instead of one, and an inconsistency names
+ *                  itself.
+ *
+ * Counts are re-derived but reported as WARNINGS, not errors: `allowedPaths` and
+ * `reviewDependencies` may legitimately be redeclared after a reconciliation, and
+ * a recomputation over the new surface then disagrees with a record that was
+ * honest when written. Turning that into an error would strand a correct task.
+ *
+ * What remains open is stated in control/README.md rather than papered over: a
+ * forger who supplies a genuine base, a genuine head and a matching audit line
+ * still passes, because git does not attribute commits to tasks.
+ */
+function reconciliationProvenanceProblems(task, amap, surfaceUsable) {
+  const errors = [];
+  const warnings = [];
+  const p = task.implementationBaseProvenance;
+  const id = task.id;
+  const short = (sha) => String(sha).slice(0, 12);
+
+  if (typeof p !== "object" || p === null || Array.isArray(p)) {
+    errors.push(
+      `${id}: implementationBaseProvenance must be an object written by ` +
+        "`start --reconcile-existing`",
+    );
+    return { errors, warnings };
+  }
+  if (p.kind !== PROVENANCE_KIND) {
+    errors.push(
+      `${id}: unknown implementationBaseProvenance kind ${JSON.stringify(p.kind)}; ` +
+        "refusing to guess how this base was established",
     );
   }
 
-  const commits = surfaceCommitsBetween(baseSha, head, pathspecs) ?? [];
-  return { head, changedFiles: changed, surfaceCommits: commits, surface };
+  /* --- the field it exists to explain -------------------------------- */
+  if (!task.implementationBaseSha) {
+    errors.push(
+      `${id}: implementationBaseProvenance records a reconciliation but the task has no ` +
+        "implementationBaseSha to explain",
+    );
+  } else if (p.baseSha !== task.implementationBaseSha) {
+    errors.push(
+      `${id}: implementationBaseProvenance describes ${short(p.baseSha)} but ` +
+        `implementationBaseSha is ${short(task.implementationBaseSha)}; the record does not ` +
+        "explain the field it is attached to",
+    );
+  }
+
+  /* --- shape ---------------------------------------------------------- */
+  const isSha = (v) => typeof v === "string" && FULL_SHA.test(v);
+  const isCount = (v) => Number.isInteger(v) && v >= 0;
+  if (!isSha(p.baseSha))
+    errors.push(
+      `${id}: implementationBaseProvenance.baseSha must be a full 40-character hex sha`,
+    );
+  if (!isSha(p.headAtReconciliation))
+    errors.push(
+      `${id}: implementationBaseProvenance.headAtReconciliation must be a full 40-character hex sha; ` +
+        "without the head it was reconciled against, the published window names no range",
+    );
+  else if (p.headAtReconciliation === p.baseSha)
+    errors.push(
+      `${id}: implementationBaseProvenance reconciles ${short(p.baseSha)} against itself; an empty ` +
+        "window cannot contain a pre-existing implementation",
+    );
+  if (typeof p.reason !== "string" || !p.reason.trim())
+    errors.push(
+      `${id}: implementationBaseProvenance carries no reason; a reconciled base is an assertion ` +
+        "and must say how it was determined",
+    );
+  if (typeof p.reconciledAt !== "string" || Number.isNaN(Date.parse(p.reconciledAt)))
+    errors.push(
+      `${id}: implementationBaseProvenance.reconciledAt must be an ISO timestamp`,
+    );
+  for (const field of ["reconciledBy", "implementationAgent"]) {
+    const value = p[field];
+    if (typeof value !== "string" || !value)
+      errors.push(
+        `${id}: implementationBaseProvenance.${field} must name an agent`,
+      );
+    else if (amap && !amap.has(value))
+      errors.push(
+        `${id}: implementationBaseProvenance.${field} names unknown agent ${value}`,
+      );
+  }
+  // Deliberately NOT required to equal task.implementationAgent: `release` keeps
+  // the base and its provenance, so a later claimant legitimately becomes the
+  // task's implementationAgent while this record still names who wrote the
+  // pre-existing code. The record describes one moment, not the current state.
+  const LABELS = ["allowedPaths", "allowedPaths + reviewDependencies"];
+  if (!LABELS.includes(p.reviewSurface))
+    errors.push(
+      `${id}: implementationBaseProvenance.reviewSurface must be one of ${LABELS.join(" | ")}`,
+    );
+  else if (surfaceUsable && p.reviewSurface !== reviewSurfaceLabel(task))
+    warnings.push(
+      `${id}: implementationBaseProvenance was recorded against ${p.reviewSurface} but the task now ` +
+        `declares ${reviewSurfaceLabel(task)}; the published window describes the older surface`,
+    );
+
+  if (!isCount(p.surfaceCommitCount))
+    errors.push(
+      `${id}: implementationBaseProvenance.surfaceCommitCount must be a non-negative integer`,
+    );
+  if (!isCount(p.changedFileCount))
+    errors.push(
+      `${id}: implementationBaseProvenance.changedFileCount must be a non-negative integer`,
+    );
+  else if (p.changedFileCount === 0)
+    errors.push(
+      `${id}: implementationBaseProvenance reports 0 changed files, but a reconciled base is only ` +
+        "accepted when something under the reviewed surface changed between it and HEAD",
+    );
+
+  const published = p.surfaceCommits;
+  if (!Array.isArray(published) || !published.every(isSha)) {
+    errors.push(
+      `${id}: implementationBaseProvenance.surfaceCommits must be an array of full hex shas`,
+    );
+  } else {
+    if (isCount(p.surfaceCommitCount) && published.length > p.surfaceCommitCount)
+      errors.push(
+        `${id}: implementationBaseProvenance publishes ${published.length} commit(s) but claims a window of ` +
+          `${p.surfaceCommitCount}`,
+      );
+    // The endpoints are the record's whole reviewer-facing value, so they are
+    // pinned to the list rather than trusted alongside it.
+    const oldest = published[published.length - 1] ?? null;
+    const newest = published[0] ?? null;
+    if ((p.oldestSurfaceCommit ?? null) !== oldest)
+      errors.push(
+        `${id}: implementationBaseProvenance.oldestSurfaceCommit ${short(p.oldestSurfaceCommit)} is not the ` +
+          "oldest commit it publishes; the window is kept from the oldest end precisely so this holds",
+      );
+    if (p.surfaceCommitsTruncated === undefined) {
+      warnings.push(
+        `${id}: implementationBaseProvenance predates surfaceCommitsTruncated/newestSurfaceCommit; its ` +
+          "published window cannot be checked for completeness",
+      );
+    } else {
+      if (typeof p.surfaceCommitsTruncated !== "boolean")
+        errors.push(
+          `${id}: implementationBaseProvenance.surfaceCommitsTruncated must be a boolean`,
+        );
+      else if (
+        isCount(p.surfaceCommitCount) &&
+        p.surfaceCommitsTruncated !== (published.length < p.surfaceCommitCount)
+      )
+        errors.push(
+          `${id}: implementationBaseProvenance says surfaceCommitsTruncated=${p.surfaceCommitsTruncated} ` +
+            `while publishing ${published.length} of ${p.surfaceCommitCount} commit(s)`,
+        );
+      if (!p.surfaceCommitsTruncated && (p.newestSurfaceCommit ?? null) !== newest)
+        errors.push(
+          `${id}: implementationBaseProvenance.newestSurfaceCommit ${short(p.newestSurfaceCommit)} is not the ` +
+            "newest commit it publishes",
+        );
+      if (p.surfaceCommitsTruncated && !isSha(p.newestSurfaceCommit))
+        errors.push(
+          `${id}: implementationBaseProvenance truncates its window, so newestSurfaceCommit must name the ` +
+            "end the list no longer reaches",
+        );
+    }
+    if (isCount(p.changedFileCount) && p.changedFileCount > 0 && p.surfaceCommitCount === 0)
+      warnings.push(
+        `${id}: implementationBaseProvenance publishes an empty commit window beside ${p.changedFileCount} ` +
+          "changed file(s); the record contradicts itself",
+      );
+  }
+
+  /*
+   * --- corroboration against the append-only audit trail ---------------
+   *
+   * This assumes events.jsonl is the complete log this repository has kept from
+   * the start: it is append-only, committed, and nothing here rotates or
+   * truncates it. If a project ever starts trimming it, a task whose
+   * reconciliation event was trimmed away while a LATER ordinary `task.started`
+   * survived would be reported as a forgery. The absence of any start event at
+   * all is therefore only a warning -- that shape is indistinguishable from a
+   * fresh or rebuilt log -- while a log that remembers this task starting but
+   * not being reconciled is a contradiction, because the CLI writes the record
+   * and the event in the same operation.
+   */
+  const starts = readEventRecords().filter(
+    (e) =>
+      e?.taskId === id &&
+      (e.type === "task.started" || e.type === "task.started_reconciled"),
+  );
+  if (!starts.length) {
+    warnings.push(
+      `${id}: no start event in control/events.jsonl, so this reconciliation cannot be corroborated ` +
+        "against the audit trail (a truncated or rotated log looks the same as a fabricated record)",
+    );
+  } else if (
+    !starts.some(
+      (e) =>
+        e.type === "task.started_reconciled" &&
+        e.implementationBaseSha === p.baseSha,
+    )
+  ) {
+    errors.push(
+      `${id}: implementationBaseProvenance claims a reconciliation at ${short(p.baseSha)}, but ` +
+        "control/events.jsonl records no matching task.started_reconciled event for this task. The CLI " +
+        "writes both together, so the record was not written by the operation it names",
+    );
+  }
+
+  /* --- what git can still settle --------------------------------------- */
+  if (!isSha(p.baseSha) || !isSha(p.headAtReconciliation))
+    return { errors, warnings };
+  if (!gitAvailable()) {
+    warnings.push(
+      `${id}: no git repository here, so the reconciled window could not be re-derived`,
+    );
+    return { errors, warnings };
+  }
+  if (!commitResolves(p.baseSha) || !commitResolves(p.headAtReconciliation)) {
+    // Transient by nature (shallow clone, missing fetch), and a validator that
+    // errors here would fail on every CI checkout that does not fetch depth.
+    warnings.push(
+      `${id}: ${short(p.baseSha)}..${short(p.headAtReconciliation)} is not fully present in this checkout, ` +
+        "so the reconciled window could not be re-derived",
+    );
+    return { errors, warnings };
+  }
+  if (!isAncestorCommit(p.baseSha, p.headAtReconciliation)) {
+    errors.push(
+      `${id}: implementationBaseProvenance claims a window ${short(p.baseSha)}..` +
+        `${short(p.headAtReconciliation)}, but the base is not an ancestor of that head; the range it ` +
+        "publishes is not a real line of history",
+    );
+    return { errors, warnings };
+  }
+  for (const [field, sha] of [
+    ["oldestSurfaceCommit", p.oldestSurfaceCommit],
+    ["newestSurfaceCommit", p.newestSurfaceCommit],
+  ]) {
+    if (!isSha(sha)) continue;
+    if (!commitResolves(sha)) {
+      warnings.push(
+        `${id}: implementationBaseProvenance.${field} ${short(sha)} is not present in this checkout`,
+      );
+      continue;
+    }
+    if (
+      sha === p.baseSha ||
+      !isAncestorCommit(p.baseSha, sha) ||
+      !isAncestorCommit(sha, p.headAtReconciliation)
+    ) {
+      errors.push(
+        `${id}: implementationBaseProvenance.${field} ${short(sha)} is not inside the window ` +
+          `${short(p.baseSha)}..${short(p.headAtReconciliation)} it is published as part of`,
+      );
+    }
+  }
+  if (!surfaceUsable) return { errors, warnings };
+
+  const pathspecs = reviewPathspecs(task);
+  if (!pathspecs.length) return { errors, warnings };
+  const commits = surfaceCommitsBetween(
+    p.baseSha,
+    p.headAtReconciliation,
+    pathspecs,
+  );
+  if (commits && commits.length !== p.surfaceCommitCount) {
+    warnings.push(
+      `${id}: implementationBaseProvenance claims ${p.surfaceCommitCount} commit(s) under ${p.reviewSurface} ` +
+        `in its window; recomputing over the current surface finds ${commits.length}. Either the declared ` +
+        "surface moved after the reconciliation, or the published window is not the window",
+    );
+  }
+  const changed = surfaceFilesChangedBetween(
+    p.baseSha,
+    p.headAtReconciliation,
+    pathspecs,
+  );
+  if (changed && changed.length !== p.changedFileCount) {
+    warnings.push(
+      `${id}: implementationBaseProvenance claims ${p.changedFileCount} changed file(s) in its window; ` +
+        `recomputing over the current surface finds ${changed.length}`,
+    );
+  }
+  return { errors, warnings };
 }
 
 /**
@@ -1215,9 +1741,38 @@ function assertReviewAllowed(task, reviewer, outcome, evidence) {
     throw new Error(
       `${task.id} has no recorded implementation agent; claim and start it through the control plane first`,
     );
-  if (reviewer.id === implementationAgent)
+  /*
+   * EVERY identity on the implementation side, not just the headline one.
+   *
+   * `implementationAgent` and `owner` are normally the same agent, because
+   * `claim` sets both. They diverge in exactly one place --
+   * `start --reconcile-existing --implementation-agent <id>` -- and comparing the
+   * reviewer against `implementationAgent ?? owner` there produced a real
+   * escalation rather than the "no new capability" the flag claimed: asserting
+   * some third party as the implementer REMOVED the owner from the comparison,
+   * so on a task with no designated reviewAgent the owner could then approve
+   * their own work. The flag was supposed to add an attribution, not launder one
+   * away.
+   *
+   * A set closes it and also removes a perverse incentive that was pointing the
+   * wrong way: naming a third-party implementer honestly used to be the thing
+   * that unlocked self-approval, while saying nothing left the owner blocked.
+   * Now the declaration can only ever ADD an implementer, so honesty costs
+   * nothing and silence gains nothing.
+   *
+   * `scripts/cloud/gpt-review-worker.mjs` already declined work on
+   * `task.implementationAgent === AGENT || task.owner === AGENT`; this brings the
+   * control plane in line with the stricter of the two rather than leaving the
+   * enforcement point weaker than the worker that defers to it.
+   */
+  const implementers = [
+    ...new Set([task.implementationAgent, task.owner].filter(Boolean)),
+  ];
+  if (implementers.includes(reviewer.id))
     throw new Error(
-      `self-approval is prohibited: ${reviewer.id} implemented ${task.id}`,
+      `self-approval is prohibited: ${reviewer.id} ` +
+        `${reviewer.id === implementationAgent ? "implemented" : "owns the implementation round for"} ` +
+        `${task.id}${implementers.length > 1 ? ` (implementation side: ${implementers.join(", ")})` : ""}`,
     );
   if (task.reviewAgent && reviewer.id !== task.reviewAgent) {
     throw new Error(
@@ -1257,6 +1812,15 @@ function recordReview(
   const record = {
     taskId: task.id,
     implementationAgent,
+    // The OTHER identity on the implementation side. These are the same agent
+    // unless a reconciliation asserted a third-party implementer, and in that
+    // case a record naming only `implementationAgent` would let a later
+    // historical check re-derive a self-approval rule weaker than the one
+    // `assertReviewAllowed` actually applied. Deliberately NOT added to
+    // REVIEW_REQUIRED_FIELDS: every record written before this field existed
+    // would otherwise be reported as structurally incomplete, and their owner
+    // was their implementer anyway.
+    implementationOwner: task.owner ?? null,
     reviewerAgent: reviewer.id,
     reviewerClass: reviewer.kind,
     reviewerProvider: reviewer.provider,
@@ -1919,46 +2483,20 @@ function validateState(d) {
     }
 
     /*
-     * A reconciliation record must agree with the field it explains.
-     *
-     * `implementationBaseProvenance` exists so a reviewer can tell an ASSERTED
-     * base from a CAPTURED one. That distinction is only worth something if the
-     * record cannot be attached to a base it does not describe -- a stub claiming
-     * reconciliation over a HEAD-captured sha would launder precisely the false
-     * structural field the mechanism was built to prevent, and it is one hand-edit
-     * away. The CLI writes both fields together; validate refuses any other
-     * pairing rather than trusting that it always did.
+     * A reconciliation record must agree with the field it explains, with the
+     * history it publishes, and with the audit trail that should have produced
+     * it. The checks live in `reconciliationProvenanceProblems`, next to the
+     * command that writes the record, so the writer and the validator cannot
+     * drift into disagreeing about what a well-formed record is.
      */
     if (task.implementationBaseProvenance !== undefined) {
-      const p = task.implementationBaseProvenance;
-      if (typeof p !== "object" || p === null || Array.isArray(p)) {
-        errors.push(
-          `${task.id}: implementationBaseProvenance must be an object written by ` +
-            "`start --reconcile-existing`",
-        );
-      } else {
-        if (p.kind !== "reconciled-existing-implementation")
-          errors.push(
-            `${task.id}: unknown implementationBaseProvenance kind ${JSON.stringify(p.kind)}; ` +
-              "refusing to guess how this base was established",
-          );
-        if (!task.implementationBaseSha)
-          errors.push(
-            `${task.id}: implementationBaseProvenance records a reconciliation but the task has no ` +
-              "implementationBaseSha to explain",
-          );
-        else if (p.baseSha !== task.implementationBaseSha)
-          errors.push(
-            `${task.id}: implementationBaseProvenance describes ${String(p.baseSha).slice(0, 12)} but ` +
-              `implementationBaseSha is ${task.implementationBaseSha.slice(0, 12)}; the record does not ` +
-              "explain the field it is attached to",
-          );
-        if (typeof p.reason !== "string" || !p.reason.trim())
-          errors.push(
-            `${task.id}: implementationBaseProvenance carries no reason; a reconciled base is an assertion ` +
-              "and must say how it was determined",
-          );
-      }
+      const provenance = reconciliationProvenanceProblems(
+        task,
+        amap,
+        reviewSurfaceUsable,
+      );
+      errors.push(...provenance.errors);
+      warnings.push(...provenance.warnings);
     }
 
     if (task.review) {
@@ -1966,7 +2504,15 @@ function validateState(d) {
         errors.push(
           `${task.id}: review record names unknown reviewer ${task.review.reviewerAgent}`,
         );
-      if (task.review.reviewerAgent === task.review.implementationAgent)
+      if (
+        task.review.reviewerAgent === task.review.implementationAgent ||
+        // Same widening as reviewRecordProblems: the round's owner is on the
+        // implementation side even when a reconciliation named someone else as
+        // the implementer. Checked only when the field is present, so records
+        // written before it existed keep validating exactly as they did.
+        (task.review.implementationOwner &&
+          task.review.reviewerAgent === task.review.implementationOwner)
+      )
         errors.push(
           `${task.id}: review record is a self-approval by ${task.review.reviewerAgent}`,
         );
@@ -2387,10 +2933,39 @@ try {
      */
     const RECONCILE_FLAG = "--reconcile-existing";
     const VALUE_FLAGS = ["--base", "--implementation-agent", "--reason"];
+    const KNOWN_FLAGS = new Set([RECONCILE_FLAG, ...VALUE_FLAGS]);
+    /*
+     * PRESENT and PRESENT-WITH-A-VALUE are different facts, and this command is
+     * the one place where conflating them is unsafe.
+     *
+     * `flagValue` returns its fallback when the next argument is missing, so a
+     * `--base` whose sha was lost to shell quoting or an empty variable came back
+     * as null -- indistinguishable from "the operator never passed --base". The
+     * refusal loop below only rejected non-null values, so
+     * `ai:start -- PL-X claude-lead --base` recorded HEAD and printed success:
+     * the accepted-and-ignored `--base` this whole mechanism calls the worst
+     * available outcome, reachable through the mechanism itself.
+     *
+     * A following token that is itself one of this command's flags is also
+     * treated as "no value", so `--base --reason "..."` cannot silently consume
+     * `--reason` as a sha. Only this command's own flags qualify: an arbitrary
+     * `--`-prefixed string could legitimately be the start of a --reason.
+     */
+    const valueFlag = (name) => {
+      const index = args.indexOf(name);
+      if (index < 0) return { present: false, value: null };
+      const next = args[index + 1];
+      return {
+        present: true,
+        value: next === undefined || KNOWN_FLAGS.has(next) ? null : next,
+      };
+    };
     const positional = [];
     for (let i = 0; i < args.length; i++) {
       if (VALUE_FLAGS.includes(args[i])) {
-        i++;
+        // Skip the value, but never skip another flag: the refusals below have
+        // to see it.
+        if (args[i + 1] !== undefined && !KNOWN_FLAGS.has(args[i + 1])) i++;
         continue;
       }
       if (args[i] === RECONCILE_FLAG) continue;
@@ -2406,9 +2981,15 @@ try {
     }
     const [taskId, agentId] = positional;
     const reconcile = args.includes(RECONCILE_FLAG);
-    const baseArg = flagValue(args, "--base");
-    const assertedImplementer = flagValue(args, "--implementation-agent");
-    const reconcileReason = flagValue(args, "--reason");
+    // Named `*Flag` because the reconcile block below binds `implementer` to the
+    // resolved AGENT; two different things called the same name in nested scopes
+    // is how a later edit reads the wrong one.
+    const baseFlag = valueFlag("--base");
+    const implementerFlag = valueFlag("--implementation-agent");
+    const reasonFlag = valueFlag("--reason");
+    const baseArg = baseFlag.value;
+    const assertedImplementer = implementerFlag.value;
+    const reconcileReason = reasonFlag.value;
 
     /*
      * The flags are refused on an ordinary start rather than ignored.
@@ -2420,17 +3001,40 @@ try {
      * mechanism itself. Honouring `--base` without the reconcile flag would be
      * almost as bad, because then the deliberate operation is one forgettable
      * word away from the routine one.
+     *
+     * Keyed on PRESENCE, not on value: a bare `--base` is exactly the case where
+     * the operator most believes they passed one.
      */
     if (!reconcile) {
-      for (const [flag, value] of [
-        ["--base", baseArg],
-        ["--implementation-agent", assertedImplementer],
-        ["--reason", reconcileReason],
+      for (const [flag, arg] of [
+        ["--base", baseFlag],
+        ["--implementation-agent", implementerFlag],
+        ["--reason", reasonFlag],
       ]) {
-        if (value !== null && value !== undefined)
+        if (arg.present)
           throw new Error(
             `${flag} is only meaningful with ${RECONCILE_FLAG}. An ordinary start records the commit it ` +
               "actually starts from; if this implementation predates the claim, say so explicitly",
+          );
+      }
+    }
+    // Present but empty, WITH the reconcile flag. Same reasoning from the other
+    // side: the operator asked for the deliberate operation and supplied nothing
+    // for it to act on, and the refusals below key on the value.
+    if (reconcile) {
+      for (const [flag, arg] of [
+        ["--base", baseFlag],
+        ["--implementation-agent", implementerFlag],
+        ["--reason", reasonFlag],
+      ]) {
+        // An empty STRING counts as empty too. `--implementation-agent ""` would
+        // otherwise be dropped as falsy and silently replaced by the owner --
+        // the same accepted-and-ignored shape, one argument over.
+        if (arg.present && (arg.value === null || arg.value === ""))
+          throw new Error(
+            `${flag} was passed without a value. It is the substance of the operation, not a switch; a ` +
+              "flag whose argument was lost to quoting or an empty variable must fail rather than be " +
+              "silently treated as absent",
           );
       }
     }
@@ -2513,16 +3117,22 @@ try {
         const implementer = requireAgent(d, assertedImplementer);
         /*
          * Naming the reviewer as the implementer would make the task
-         * unreviewable: assertReviewAllowed refuses a review whose reviewer
-         * implemented the work. Failing here says so once, now, instead of at
+         * unreviewable: assertReviewAllowed refuses a review whose reviewer is on
+         * the implementation side. Failing here says so once, now, instead of at
          * approval time with the round already spent.
          *
          * Note what this argument is and is not. It is an ASSERTION, like
-         * `gate --agent`; nothing in a local CLI authenticates it. It grants no
-         * capability that claiming under a different owner did not already grant
-         * -- `start` sets implementationAgent to the owner regardless -- but it
-         * makes the assertion explicit, audited, and attributable instead of a
-         * silent side effect of who happened to claim.
+         * `gate --agent`; nothing in a local CLI authenticates it. It ADDS an
+         * implementation-side identity and can never remove one, so it grants no
+         * capability -- but that is now true because `assertReviewAllowed`
+         * compares the reviewer against the SET {implementationAgent, owner},
+         * and this comment used to claim it while the line it annotates
+         * contradicted it. Setting implementationAgent to an asserted third party
+         * used to displace the owner from the self-approval comparison, so on a
+         * task with no designated reviewAgent an honest declaration was what
+         * unlocked approving your own work -- while saying nothing left the
+         * owner correctly blocked. That is an incentive pointing exactly the
+         * wrong way, and it is closed at the comparison rather than here.
          */
         if (task.reviewAgent && implementer.id === task.reviewAgent)
           throw new Error(
@@ -2548,21 +3158,32 @@ try {
        * how much to trust it. Absence means an ordinary start, so no existing
        * task changes shape.
        */
+      const windowCommits = reconciliation.surfaceCommits;
       task.implementationBaseProvenance = {
-        kind: "reconciled-existing-implementation",
+        kind: PROVENANCE_KIND,
         baseSha: baseArg,
         reconciledAt: now(),
         reconciledBy: task.owner,
         implementationAgent: task.implementationAgent,
         headAtReconciliation: reconciliation.head,
         reviewSurface: reconciliation.surface,
-        // The window, published rather than summarised, so the reviewer can ask
-        // the one question no check here can answer: is there an EARLIER commit
-        // that also belongs to this implementation?
-        surfaceCommitCount: reconciliation.surfaceCommits.length,
-        oldestSurfaceCommit:
-          reconciliation.surfaceCommits[reconciliation.surfaceCommits.length - 1] ?? null,
-        surfaceCommits: reconciliation.surfaceCommits.slice(0, 20),
+        /*
+         * The window, published rather than summarised, so the reviewer can ask
+         * the one question no check here can answer: is there an EARLIER commit
+         * that also belongs to this implementation?
+         *
+         * Both endpoints are always named exactly, and the truncated list is
+         * kept from the OLDEST end. It used to be `slice(0, 20)` -- the twenty
+         * NEWEST -- which dropped precisely the end the reviewer is sent to
+         * interrogate, and did so silently, so a truncated window read as a
+         * complete one that simply ended where it ended.
+         */
+        surfaceCommitCount: windowCommits.length,
+        oldestSurfaceCommit: windowCommits[windowCommits.length - 1] ?? null,
+        newestSurfaceCommit: windowCommits[0] ?? null,
+        surfaceCommits: windowCommits.slice(-SURFACE_COMMIT_PUBLISH_LIMIT),
+        surfaceCommitsTruncated:
+          windowCommits.length > SURFACE_COMMIT_PUBLISH_LIMIT,
         changedFileCount: reconciliation.changedFiles.length,
         reason: reconcileReason,
       };
@@ -2577,13 +3198,24 @@ try {
     }
 
     transition(task, "IN_PROGRESS", d.policies);
+    syncAll(d, false);
     /*
-     * A DIFFERENT event type, not a flag on the same one.
+     * AFTER the task state is durably persisted, never before.
      *
-     * Anything scanning events.jsonl for `task.started` -- a human reading the
-     * trail included -- must not be able to read a reconciliation as an ordinary
-     * start by overlooking one field. Exactly one record is written either way,
-     * so the trail still has one opening event per round.
+     * The discipline `recordReview` states and `approve` follows: events.jsonl
+     * must never assert something task state does not show. Emitting first meant
+     * a failure in `syncAll` -- a full disk, a locked file, a crash between the
+     * two -- left the audit trail claiming a reconciliation the task never
+     * received, and the natural response (run it again) then appended a SECOND
+     * one. These events carry no deterministic id, so nothing would have
+     * deduplicated them, and `validate` now corroborates provenance records
+     * against exactly this log.
+     *
+     * A DIFFERENT event type, not a flag on the same one. Anything scanning
+     * events.jsonl for `task.started` -- a human reading the trail included --
+     * must not be able to read a reconciliation as an ordinary start by
+     * overlooking one field. Exactly one record is written either way, so the
+     * trail still has one opening event per round.
      */
     if (reconcile) {
       event("task.started_reconciled", {
@@ -2594,6 +3226,9 @@ try {
         headAtReconciliation: reconciliation.head,
         surfaceCommitCount: reconciliation.surfaceCommits.length,
         oldestSurfaceCommit: task.implementationBaseProvenance.oldestSurfaceCommit,
+        newestSurfaceCommit: task.implementationBaseProvenance.newestSurfaceCommit,
+        surfaceCommitsTruncated:
+          task.implementationBaseProvenance.surfaceCommitsTruncated,
         changedFileCount: reconciliation.changedFiles.length,
         reason: reconcileReason,
         note:
@@ -2607,7 +3242,6 @@ try {
         implementationBaseSha: task.implementationBaseSha ?? null
       });
     }
-    syncAll(d, false);
     if (reconcile) {
       console.log(
         `${taskId} started as a RECONCILED pre-existing implementation.\n` +
