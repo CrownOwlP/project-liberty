@@ -174,6 +174,56 @@ describe("zero observations is not fifty-percent health, and it is not a pass", 
   });
 });
 
+describe("where the prior sits is a decision, not an inheritance", () => {
+  /*
+   * "What does a provider nobody has ever observed score?" has two wrong
+   * answers, and the shipped policy is not accidentally avoiding them. Below the
+   * fail threshold buries every new provider -- and buries it invisibly, since a
+   * source that is never eligible is never observed and so never earns its way
+   * out. At or above the pass threshold is the invented fact this contract
+   * exists to refuse. See `healthPriorScore` for the argument; these are the
+   * assertions that stop it drifting.
+   */
+
+  it("does not bury an unobserved provider below the floor the media engine excludes at", () => {
+    /*
+     * Asserted as media-engine's own predicate -- `score < PROVIDER_HEALTH_FLOOR`
+     * -- rather than as `toBeGreaterThanOrEqual`, because the strictness of that
+     * comparison is exactly what an unobserved provider survives on: the prior is
+     * 0.5 and the floor is 0.5, so it sits ON the floor with no margin at all.
+     * Writing the assertion in the shape of the check being relied on is what
+     * makes it fail if either constant moves.
+     */
+    expect(healthPriorScore(POLICY) < POLICY.failBelow).toBe(false);
+    expect(healthPriorScore(POLICY)).toBe(POLICY.failBelow);
+  });
+
+  it("does not let an unobserved provider reach the band that would call it healthy", () => {
+    expect(healthPriorScore(POLICY)).toBeLessThan(POLICY.passAtOrAbove);
+  });
+
+  it("is a live constraint: a plausible alternative prior violates it", () => {
+    /*
+     * The guard is not vacuous -- same discipline as `GuardIsNotVacuous` above.
+     * A pessimistic prior is a perfectly reasonable-sounding thing to reach for
+     * ("assume nothing works until it proves otherwise"), and under this policy's
+     * own thresholds it puts every unobserved provider below the floor, where
+     * media-engine drops its candidates outright. Naming the failure here is what
+     * makes the two assertions above mean something.
+     */
+    const pessimistic: ProviderHealthPolicy = { ...POLICY, priorSuccesses: 1, priorFailures: 9 };
+    expect(healthPriorScore(pessimistic)).toBe(0.1);
+    expect(healthPriorScore(pessimistic) < pessimistic.failBelow).toBe(true);
+  });
+
+  it("calls the provider unknown even though its number is in the degraded band", () => {
+    // The band is where the RANKING NUMBER sits. It is not what the report calls
+    // the provider, and an unobserved one is never `warn`.
+    expect(report(0, 0).status).toBe("unknown");
+    expect(report(1, 1).status).toBe("warn");
+  });
+});
+
 describe("a prior is labelled as a prior, never as measured availability", () => {
   it("gives the same ranking number two completely different meanings", () => {
     /*

@@ -1,4 +1,9 @@
 import { describe, expect, it } from "vitest";
+import {
+  DEFAULT_PROVIDER_HEALTH_POLICY,
+  healthRankingScore,
+  type ProviderHealthPolicy
+} from "../health";
 import type { CatalogItemRef, ProviderContext } from "../provider";
 import { createStremioProvider, declaredStreamTypes, parseStremioItemId } from "./client";
 import type { FetchLike } from "./http";
@@ -647,5 +652,221 @@ describe("resolveAuthorizedCandidates", () => {
     expect(candidates).toHaveLength(1);
     expect(candidates[0]?.rights).toBe("public-domain");
     expect(resolution.rejected.map((entry) => entry.reason)).toEqual(["torrent_source_unsupported"]);
+  });
+});
+
+describe("what this provider object has observed (PL-0303)", () => {
+  /*
+   * `health.test.ts` holds the contract as pure arithmetic. This holds the wiring
+   * it arrives through, which is the half that can be honest in isolation and
+   * wrong in place: the counters are here, the policy is threaded from here, and
+   * "the number a candidate ranked on" and "the number a dashboard would show"
+   * are only the same value because this file makes them one call.
+   */
+
+  it("reports unknown before it has asked the source anything, and asks nothing to say so", () => {
+    /*
+     * The acceptance clause at the adapter boundary. A brand-new provider has
+     * measured nothing, so it reports that it has measured nothing -- not a pass,
+     * and not fifty percent availability. The 0.5 it would rank on is the policy
+     * prior and arrives named as one.
+     *
+     * `stub.calls` is asserted empty because this is the distinction from
+     * `health()` beside it: a report of the accumulated record must not become a
+     * probe. If it ever did, every dashboard render would put load on every
+     * configured addon.
+     */
+    const stub = stubFetch({ [MANIFEST_URL]: () => json(manifestBody) });
+    const provider = createStremioProvider(makeSource(), { fetch: stub.fetch, now: frozenClock() });
+
+    const verdict = provider.providerHealthReport();
+
+    expect(verdict.status).toBe("unknown");
+    expect(verdict.scoreBasis).toBe("prior");
+    expect(verdict.observedSuccessRate).toBeNull();
+    expect(verdict.sampleCount).toBe(0);
+    expect(verdict.excludedByWindow).toBe(0);
+    expect(healthRankingScore(verdict)).toBe(0.5);
+    expect(verdict.reasons.map((reason) => reason.code)).toEqual([
+      "no_observations",
+      "prior_not_measurement"
+    ]);
+    expect(stub.calls).toEqual([]);
+
+    // And it is idempotent, because it is a read. Two renders of the same
+    // dashboard must not disagree, and must not have moved anything.
+    expect(provider.providerHealthReport()).toEqual(verdict);
+    expect(stub.calls).toEqual([]);
+  });
+
+  it("counts a single failed request as a measurement, and it is enough to fail", async () => {
+    /*
+     * One failure and nothing else gives 0.3333 -- below `failBelow`, which is
+     * media-engine's `PROVIDER_HEALTH_FLOOR`, so this source's candidates would be
+     * excluded outright until it earns a success back. That is the intended
+     * severity and it is worth seeing written down: the model is memoryless and
+     * unweighted, so a single early failure is not a small event in a short
+     * record.
+     *
+     * Note the transition it also pins. The provider went from `unknown` to
+     * `measured` on one observation; the report is now entitled to the word
+     * "observed" and says `fail` rather than saying nothing.
+     */
+    const stub = stubFetch({});
+    const provider = createStremioProvider(makeSource(), { fetch: stub.fetch, now: frozenClock() });
+
+    expect((await provider.resolve(item, requestContext)).reason).toBe("manifest_unavailable");
+
+    const verdict = provider.providerHealthReport();
+    expect(verdict.scoreBasis).toBe("measured");
+    expect(verdict.status).toBe("fail");
+    expect(verdict.sampleCount).toBe(1);
+    expect(verdict.successes).toBe(0);
+    expect(verdict.failures).toBe(1);
+    expect(verdict.observedSuccessRate).toBe(0);
+    expect(healthRankingScore(verdict)).toBeCloseTo(0.3333, 4);
+    expect(healthRankingScore(verdict)).toBeLessThan(DEFAULT_PROVIDER_HEALTH_POLICY.failBelow);
+  });
+
+  it("reports the same number the candidates of that resolution ranked on", async () => {
+    /*
+     * The reason `healthScore` is routed through the report rather than through a
+     * bare arithmetic call: the value a candidate ranks on and the value a health
+     * surface shows are one call to one function, so they cannot drift into
+     * disagreeing about the same provider at the same instant.
+     */
+    const stub = stubFetch({
+      [MANIFEST_URL]: () => json(manifestBody),
+      [STREAM_URL]: () => json({ streams: [{ url: "https://cdn.example.com/film.mp4" }] })
+    });
+    const provider = createStremioProvider(makeSource(), { fetch: stub.fetch, now: frozenClock() });
+
+    const resolution = await provider.resolve(item, requestContext);
+    const verdict = provider.providerHealthReport();
+
+    // Manifest and stream, both counted: the prior never reaches a candidate on
+    // this path, because mapping happens after the request that produced it was
+    // recorded. `providerHealthReport()` is the only surface the prior is
+    // observable through at all.
+    expect(verdict.sampleCount).toBe(2);
+    expect(verdict.scoreBasis).toBe("measured");
+    expect(resolution.candidates[0]?.healthScore).toBe(healthRankingScore(verdict));
+    expect(healthRankingScore(verdict)).toBeCloseTo(0.75, 4);
+  });
+
+  it("cannot be inflated by an addon answering more loudly", async () => {
+    /*
+     * ADVERSARIAL: the party being measured also authors the payload. So the
+     * question is whether anything it controls -- how many streams it lists, what
+     * it calls them, what extra fields it invents -- can move its own score.
+     *
+     * It cannot, and the mechanism is that health counts REQUESTS, not results: a
+     * response is one outcome whether it carries one stream or fifty. Twelve
+     * streams and one stream produce the identical report. The scoring inputs an
+     * addon can influence at all are exactly two, and both are its own conduct:
+     * answer, or fail to.
+     */
+    const loud = stubFetch({
+      [MANIFEST_URL]: () => json(manifestBody),
+      [STREAM_URL]: () =>
+        json({
+          streams: Array.from({ length: 12 }, (_unused, index) => ({
+            url: `https://cdn.example.com/film-${String(index)}.mp4`,
+            name: "PERFECT HEALTH 100% UPTIME",
+            // Invented health fields. `stremioStreamSchema` is not strict, so
+            // these are STRIPPED at the protocol boundary and the mapper never
+            // sees them -- an addon cannot assert a health value because there is
+            // no field for one to survive in. Included anyway, because the day
+            // somebody adds a passthrough or reads the raw body, this is the test
+            // that has to be edited to let a self-reported score through.
+            healthScore: 1,
+            health: "pass"
+          }))
+        })
+    });
+    const quiet = stubFetch({
+      [MANIFEST_URL]: () => json(manifestBody),
+      [STREAM_URL]: () => json({ streams: [{ url: "https://cdn.example.com/film.mp4" }] })
+    });
+
+    const loudProvider = createStremioProvider(makeSource(), { fetch: loud.fetch, now: frozenClock() });
+    const quietProvider = createStremioProvider(makeSource(), { fetch: quiet.fetch, now: frozenClock() });
+
+    const loudResolution = await loudProvider.resolve(item, requestContext);
+    await quietProvider.resolve(item, requestContext);
+
+    expect(loudResolution.candidates).toHaveLength(12);
+    expect(loudProvider.providerHealthReport()).toEqual(quietProvider.providerHealthReport());
+    // Twelve candidates, one score, and it is the one the source earned.
+    for (const candidate of loudResolution.candidates) {
+      expect(candidate.healthScore).toBe(healthRankingScore(quietProvider.providerHealthReport()));
+    }
+  });
+
+  it("threads the policy's bands without moving the number they classify", async () => {
+    /*
+     * The policy is genuinely injected rather than decorative: at the same 0.75,
+     * a stricter pass threshold calls the provider healthy where the shipped one
+     * calls it degraded. The SCORE is identical in both -- thresholds classify a
+     * measurement, they do not change it -- which is what makes a policy version
+     * comparable across deployments rather than a second scoring model.
+     */
+    const routes = {
+      [MANIFEST_URL]: () => json(manifestBody),
+      [STREAM_URL]: () => json({ streams: [{ url: "https://cdn.example.com/film.mp4" }] })
+    };
+    const lenient: ProviderHealthPolicy = { ...DEFAULT_PROVIDER_HEALTH_POLICY, passAtOrAbove: 0.7 };
+
+    const shippedStub = stubFetch(routes);
+    const lenientStub = stubFetch(routes);
+    const shipped = createStremioProvider(makeSource(), {
+      fetch: shippedStub.fetch,
+      now: frozenClock()
+    });
+    const relaxed = createStremioProvider(makeSource(), {
+      fetch: lenientStub.fetch,
+      now: frozenClock(),
+      healthPolicy: lenient
+    });
+
+    await shipped.resolve(item, requestContext);
+    await relaxed.resolve(item, requestContext);
+
+    expect(shipped.providerHealthReport().status).toBe("warn");
+    expect(relaxed.providerHealthReport().status).toBe("pass");
+    expect(healthRankingScore(relaxed.providerHealthReport())).toBe(
+      healthRankingScore(shipped.providerHealthReport())
+    );
+  });
+
+  it("refuses a health policy it would have to ignore, before making a request", () => {
+    /*
+     * A windowed policy asks this adapter to discard observations older than the
+     * window. It holds two integers, so it has nothing to discard and nothing to
+     * measure an age against -- it would count everything, report
+     * `excludedByWindow: 0` because nothing was ever eligible for exclusion, and
+     * stamp the report with a policy version that claims a windowed measurement.
+     * A lifetime tally wearing a window's label is undetectable downstream,
+     * because the field that exists to make two reports comparable would be the
+     * field that agreed.
+     *
+     * So it is refused at construction, like a source whose rights evidence does
+     * not hold up, and for the same reason: there is no honest provider object to
+     * return for a measurement this adapter cannot take. Nothing is fetched.
+     */
+    const windowed: ProviderHealthPolicy = {
+      ...DEFAULT_PROVIDER_HEALTH_POLICY,
+      windowMs: 60_000
+    };
+    const stub = stubFetch({ [MANIFEST_URL]: () => json(manifestBody) });
+
+    expect(() =>
+      createStremioProvider(makeSource(), {
+        fetch: stub.fetch,
+        now: frozenClock(),
+        healthPolicy: windowed
+      })
+    ).toThrow(/observation window/);
+    expect(stub.calls).toEqual([]);
   });
 });

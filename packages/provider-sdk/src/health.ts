@@ -380,7 +380,42 @@ export function smoothedSuccessRate(
   return roundTo((s + priorSuccesses) / denominator, policy.precision);
 }
 
-/** The score an unobserved provider ranks on. Not availability. See the header. */
+/**
+ * The score an unobserved provider ranks on. Not availability. See the header.
+ *
+ * WHERE THIS NUMBER HAS TO SIT, stated because "what does an unmeasured provider
+ * score?" has two wrong answers and the shipped policy avoids both on purpose
+ * rather than by luck:
+ *
+ *   - BELOW `failBelow` BURIES EVERY NEW PROVIDER, and does it silently.
+ *     `failBelow` is media-engine's `PROVIDER_HEALTH_FLOOR`, which excludes a
+ *     candidate outright -- so a prior under it means a source nobody has ever
+ *     observed produces no eligible candidates, is therefore never asked
+ *     anything, and therefore never accumulates the observations that would let
+ *     it out. Absence of evidence would be read as evidence of failure, and the
+ *     failure would be self-fulfilling. It is also the hardest kind of defect to
+ *     see from outside: the provider is simply never selected, and no reason
+ *     trail anyone is reading mentions it.
+ *   - AT OR ABOVE `passAtOrAbove` IS AN INVENTED FACT, which is the same error
+ *     from the other side and the one this whole file is about: an unmeasured
+ *     provider ranking level with a measured clean record, one branch away from
+ *     being reported healthy.
+ *
+ * So the honest placement is inside the degraded band, and under the shipped 1/1
+ * prior it is exactly `failBelow` -- 0.5 against a floor media-engine compares
+ * with a STRICT `<`, so an unobserved provider sits ON the floor and survives it
+ * rather than clearing it by any margin. The thinness is deliberate: it is the
+ * weakest position that is still not an exclusion, which is what "we have no
+ * idea" deserves. It also means the strictness of media-engine's comparison is
+ * load-bearing rather than incidental, and that the prior and the floor are one
+ * decision expressed as two constants. `health.test.ts` pins both relationships,
+ * including the fact that a plausible alternative prior violates the first --
+ * a coupling like this survives right up until somebody tunes one constant alone.
+ *
+ * `status` for such a provider is `unknown`, never `warn`. The band is where the
+ * RANKING NUMBER sits; it is not what the report calls the provider. Those are
+ * different questions and this contract answers them separately.
+ */
 export function healthPriorScore(policy: ProviderHealthPolicy): number {
   return smoothedSuccessRate(0, 0, policy);
 }

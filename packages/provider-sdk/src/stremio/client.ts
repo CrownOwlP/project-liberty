@@ -98,6 +98,10 @@ export interface StremioProviderOptions {
    * and so tests can exercise a band without arranging dozens of requests. The
    * default reproduces the arithmetic this adapter has always used, digit for
    * digit, so leaving it alone changes no candidate's `healthScore`.
+   *
+   * A policy declaring an observation window is REFUSED at construction. This
+   * adapter holds counts, not timestamped observations, so it cannot apply one;
+   * see `assertHealthPolicyIsApplicable`.
    */
   readonly healthPolicy?: ProviderHealthPolicy | undefined;
 }
@@ -301,6 +305,61 @@ function assertRightsRemainEvidenced(source: AuthorizedStremioSource): void {
   }
 }
 
+/**
+ * A health policy this adapter can actually APPLY, or no adapter at all.
+ *
+ * `ProviderHealthPolicy.windowMs` says observations older than the window are not
+ * counted. This provider holds no observations to age: it holds two integers
+ * (see the counters in `createStremioProvider`), and an integer has no
+ * timestamp. So a windowed policy arriving here would be silently ignored --
+ * every outcome ever recorded would keep counting, `excludedByWindow` would be
+ * reported as `0` because nothing was ever eligible for exclusion, and the
+ * report would still carry that policy's version.
+ *
+ * That is the failure PL-0303 exists to prevent, one field over from the one it
+ * was written about: not a prior masquerading as a measurement, but a LIFETIME
+ * TALLY MASQUERADING AS A WINDOWED ONE. It is the worse of the two to detect,
+ * because the report gives a reader nothing to notice it with -- the version
+ * string, which is the field that exists so two deployments' reports can be
+ * compared, would agree while the numbers underneath meant different things.
+ *
+ * Two alternatives were rejected:
+ *
+ *   - IGNORE THE WINDOW AND WARN. A warning is not carried on the report, and
+ *     the report is the artefact that gets logged, stored and compared. The
+ *     stale claim would outlive the warning by the length of the retention
+ *     period.
+ *   - HONOUR IT by keeping timestamped observations here. That is an unbounded
+ *     array on a long-lived provider object, and it re-ranks every candidate the
+ *     moment old observations start dropping out -- which PL-0303 explicitly is
+ *     not. `summariseHealthObservations` is the pure entry point the persisted,
+ *     shared observation store will use when there is one, and turning the
+ *     window on belongs with that store rather than with this adapter.
+ *
+ * So the configuration is REFUSED, at construction, before a request can be
+ * made, and it throws for the reason `assertRightsRemainEvidenced` throws: an
+ * operator asked for a measurement this adapter cannot take, and there is no
+ * honest provider object to hand back for one. Note what this is NOT: it is a
+ * construction-time refusal of a configuration, not an evaluator that throws.
+ * `providerHealthReport()` stays total, and `evaluateProviderHealth` still
+ * refuses no input -- a health check that throws while being asked whether
+ * something is healthy remains the least useful failure available.
+ */
+function assertHealthPolicyIsApplicable(
+  source: AuthorizedStremioSource,
+  policy: ProviderHealthPolicy
+): void {
+  if (policy.windowMs !== null) {
+    throw new Error(
+      `refusing to build a Stremio provider for source ${JSON.stringify(truncate(String(source.id), 40))}: ` +
+        `health policy ${JSON.stringify(policy.version)} declares a ${String(policy.windowMs)}ms ` +
+        "observation window, and this adapter keeps lifetime success/failure counts rather than " +
+        "timestamped observations, so it cannot apply one; a report produced under it would claim " +
+        "a windowed measurement that was never taken"
+    );
+  }
+}
+
 export function createStremioProvider(
   source: AuthorizedStremioSource,
   options: StremioProviderOptions = {}
@@ -308,6 +367,11 @@ export function createStremioProvider(
   // Before the clock, the fetch wrapper or anything that could make a request:
   // an unauthorized source must not reach a state where it has an adapter.
   assertRightsRemainEvidenced(source);
+
+  // Same placement, same reason: a provider that cannot honour its own health
+  // policy must not reach a state where it can report under one.
+  const healthPolicy = options.healthPolicy ?? DEFAULT_PROVIDER_HEALTH_POLICY;
+  assertHealthPolicyIsApplicable(source, healthPolicy);
 
   const now = options.now ?? (() => Date.now());
   const fetchImpl: FetchLike =
@@ -330,8 +394,6 @@ export function createStremioProvider(
     now
   });
 
-  const healthPolicy = options.healthPolicy ?? DEFAULT_PROVIDER_HEALTH_POLICY;
-
   /*
    * Observed reliability, not a constant. Every completed request -- manifest,
    * stream, health probe -- moves these, and `evaluateProviderHealth` turns them
@@ -339,8 +401,8 @@ export function createStremioProvider(
    * below one that has not, without anyone configuring anything.
    *
    * COUNTS, not a list of timestamped observations, and that is a deliberate
-   * limit rather than an oversight. A list would let the shipped policy's window
-   * do something, but it would also mean an unbounded array growing for the life
+   * limit rather than an oversight. A list is what a policy's window would need
+   * to do anything, but it would also mean an unbounded array growing for the life
    * of a long-lived provider object, and it would change every candidate's
    * `healthScore` the moment old observations started dropping out. PL-0303 is
    * explicitly not a re-ranking. `summariseHealthObservations` is the pure entry
@@ -348,7 +410,11 @@ export function createStremioProvider(
    * process keeps two integers.
    *
    * `excludedByWindow: 0` is therefore a FACT here and not a placeholder:
-   * nothing was excluded because nothing was ever eligible for exclusion.
+   * nothing was excluded because nothing was ever eligible for exclusion. That
+   * reading depends on the policy declaring no window, which is why a windowed
+   * one is refused at construction rather than left to be quietly ignored here
+   * -- see `assertHealthPolicyIsApplicable`. Without that refusal the same
+   * literal `0` would mean "nothing aged out", which would be false.
    */
   let successes = 0;
   let failures = 0;
