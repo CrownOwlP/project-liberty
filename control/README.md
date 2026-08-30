@@ -92,9 +92,15 @@ a task open for it.
 
 ### When it is not
 
-- To make a review range smaller because the diff is inconvenient. Widening is
-  always safe; narrowing hides work, and that is the failure this exists to
+- To make a review range smaller because the diff is inconvenient. Narrowing
+  hides work from the first review, and that is the failure this exists to
   prevent, not to enable.
+- To make it *wider* than the truth either. The two are not symmetric in harm — a
+  wider range only ever shows a reviewer more — but they are symmetric in
+  honesty, and this field is not "a range that is safe to review". It is where
+  implementation began. A padded base is a false structural fact that reads as a
+  true one, and the control plane once actively advised producing them; see the
+  removed heuristic below.
 - On work that is not committed yet. That is an ordinary `start`, and it is now
   enforced rather than merely asked for: uncommitted changes under the task's
   `allowedPaths` refuse the operation.
@@ -122,35 +128,70 @@ operator most believes they supplied one.
 | commit exists, ≠ HEAD, ancestor of HEAD | a range that is real and non-empty |
 | **no uncommitted changes under `allowedPaths`** | reconciliation asserts the implementation is already in pushed commits; a dirty tree contradicts that on its face, and on a wide surface the check below is satisfied by other lanes' commits |
 | something under the reviewed surface changed in `base..HEAD` | a base at or after the implementation is the central falsehood |
-| the base commit does not itself modify files **under `allowedPaths`** that the window also changes | a commit editing the same files as the window that follows it is *inside* an implementation, not before one |
 | the window (`git log`) is computable | fail closed; a window that could not be listed must not be published as an empty one |
+| what the base commit itself changed under the reviewed surface is computable | same reason. This one is **published, not judged** — see below |
 | task is `CLAIMED`, with no base, no review record and no gate results | reconciliation establishes a base once, at the moment a task opens |
 
-Two of those rows are deliberately on **different surfaces**, and the split is
-not cosmetic. "Did anything the review binds to change here?" is a question about
-the review, so it runs on `allowedPaths + reviewDependencies`. "Is this base
-inside *this task's* implementation stream?" can only be asked about files this
-task may write, so it runs on `allowedPaths` alone. Asking the second question on
-the reviewed surface disabled the mechanism for exactly the task shape it exists
-for: a task declaring `reviewDependencies: ["packages/contracts/**"]` had every
-candidate base that happened to touch a contract refused, with the error advising
-`<sha>^` — an unbounded walk backwards with no reachable answer.
+Every row is a **mechanical fact**. None of them is an inference about which
+commits were this task's work.
 
-Two mechanical details that a reviewer should know are pinned rather than left to
-configuration:
+### The heuristic that was removed, and why it must not return
+
+There used to be one more row: the base was refused if it *itself* modified files
+that the window goes on to change, on the theory that "a commit editing the same
+files as the window that follows it is inside an implementation, not before one".
+The error advised naming an earlier commit, with `<sha>^` as the usual answer. It
+was scoped first to the reviewed surface, then narrowed to `allowedPaths` after it
+refused every candidate base for tasks with churning `reviewDependencies`. It was
+then removed entirely on review, and the removal is the point rather than the
+scoping.
+
+Two reasons, and the first is the one that generalises:
+
+- **Its remedy corrupted the field it writes.** The refusal could only ever be
+  satisfied by walking backwards until the overlap stopped, so what it produced
+  was not "the commit this implementation began from" but *an earlier commit that
+  passed a file test*. `implementationBaseSha` is the exact lower bound of the
+  first review range and means exactly one thing; a deliberately widened base
+  validates, publishes, and reads to every later consumer as a structural fact it
+  is not. A tool whose advice makes its own field false is worse than no tool.
+- **The inference was never sound.** Git does not attribute commits to tasks. The
+  same overlap is equally the signature of two lanes co-tenanted in a directory, a
+  revert, a formatting pass, a dependency bump, or a rebase. Narrowing the paths
+  it consulted made it wrong less often; it did not turn a guess about intent into
+  a fact.
+
+The computation stays; its verdict is gone. The base commit's own surface touches
+are published as `baseCommitSurfaceTouches`, and the reviewer — who can read a
+commit message, ask the implementer, and knows what the task was — judges what
+they mean. Nothing on this path now advises a wider base, and a refusal that
+reintroduced that advice would reintroduce the defect.
+
+The evidence is measured on the **reviewed surface**, like every other published
+field, so the record does not describe two surfaces at once. It is deliberately
+*not* published pre-intersected with the changed files: an "overlapping files"
+field would be the removed verdict wearing a data costume, and the next reader
+would restore the refusal from it.
+
+Three mechanical details that a reviewer should know are pinned rather than left
+to configuration:
 
 - a **merge** commit as base is compared against *every* parent, not just the
   first. A merge that resolved the reviewed files toward the mainline is TREESAME
   to its first parent while differing from its second, so first-parent inspection
-  passed a conflict resolution sitting inside an implementation stream.
+  reported a conflict resolution inside an implementation stream as having touched
+  nothing. Under-reporting here is not a missing answer, it is the *reassuring*
+  answer.
+- a base with **no parent** (the repository's root commit) is an ordinary,
+  acceptable base. It is also the case the removed heuristic could never accept:
+  its only remedy was "go back further", and there was no further to go.
 - the published window uses `git log --full-history`, because history
   simplification prunes commits that really touched the surface and would
   understate `oldestSurfaceCommit` — the one field the reviewer is sent to
-  interrogate. Both diff helpers pin `--no-renames`, because their results are
-  intersected and porcelain/plumbing disagree about renames by default.
-- a base with **no parent** (the repository's root commit) gets a different
-  error: `<sha>^` does not exist, so the remedy named is that no reconcilable
-  base exists at all rather than one the operator cannot find.
+  interrogate. Both diff helpers pin `--no-renames`: their counts are published
+  and re-derived by `validate`, and porcelain/plumbing disagree about renames by
+  default, so an honest record written on one machine would otherwise draw a
+  mismatch warning on another.
 
 `LIBERTY_COMMIT_SHA` is deliberately **not** consulted anywhere on this path —
 including by the dirty-tree check, which calls the raw helper rather than the
@@ -161,12 +202,34 @@ against real history.
 tasks. No check here can prove a supplied base is *the* commit immediately before
 this task's implementation, because nothing records which commits were this
 task's. So the operation also *publishes* what it verified — the commit window,
-both of its endpoints, the changed-file count and the operator's `--reason` —
-into `events.jsonl` and onto the task, so a reviewer can interrogate the
-remaining question ("is there an earlier commit that also belongs to this
-implementation?") instead of taking it on trust. The published list is capped at
-20 commits and is kept from the **oldest** end, with `surfaceCommitsTruncated`
-saying so, because the newest end is not what that question is about.
+both of its endpoints, the changed-file count, the files the base commit itself
+changed under the reviewed surface, and the operator's `--reason` — into
+`events.jsonl` and onto the task, so a reviewer can interrogate the remaining
+question ("is there an earlier commit that also belongs to this implementation?")
+instead of taking it on trust. The published window is capped at 20 commits and is
+kept from the **oldest** end, with `surfaceCommitsTruncated` saying so, because
+the newest end is not what that question is about; the touch list is capped the
+same way, with its own truncation flag, since file order carries no end worth
+preferring.
+
+### A stronger machine-checkable contract, not implemented
+
+The reviewer who removed the overlap heuristic named the shape a defensible
+successor would have: an optional explicit `--first-implementation <sha>` — the
+operator states which commit *is* the first commit of this implementation — plus a
+check that the asserted base is its appropriate predecessor. That moves the
+unprovable fact from an inference to a declaration, which is the right direction:
+the operator asserts it, the audit trail records it, and the control plane checks
+only the relationship between two stated commits.
+
+It is deliberately **not implemented**, and the caveat the reviewer attached is
+the reason to be careful rather than quick: *merge semantics*. "Predecessor" is
+not single-valued once merges are involved — a first-implementation commit may
+have two parents, only one of which is on the line the review should open at, and
+picking the first parent by default reintroduces exactly the class of silent
+first-parent error this file already documents twice. Anyone implementing it
+should settle what "appropriate predecessor" means across a merge *before* writing
+the check, not after.
 
 ### What a reader sees
 
@@ -178,8 +241,17 @@ saying so, because the newest end is not what that question is about.
 - The task gains `implementationBaseProvenance` beside `implementationBaseSha`.
   Absence of that record is what marks a base as *captured*; presence marks it as
   *asserted*.
-- `review-status` reports both, and `handoff --base auto` tells the reviewer that
-  the range opens before the claim and why.
+- `review-status` reports both, emitting the provenance record whole rather than
+  summarised, so `baseCommitSurfaceTouches` reaches the reviewer with everything
+  else.
+- `handoff --base auto` tells the reviewer that the range opens before the claim,
+  why, and what the base commit itself changed under the reviewed surface —
+  stated where the range is announced rather than left in a field the reviewer
+  would have to know to go and read. It is labelled as evidence for their
+  judgement, not as a control-plane finding.
+- `start` prints the same evidence at the moment the operator can still act on
+  it, as a report rather than a warning: a base that touches the surface is
+  entirely ordinary when the previous commit belonged to another lane.
 
 ### How far the provenance record can be trusted
 
@@ -191,16 +263,24 @@ where the line falls is:
 
 | | |
 | --- | --- |
-| shape | every field the CLI writes, typed and cross-consistent: `kind`, a `baseSha` matching the field it explains, `headAtReconciliation` (a different commit), a non-empty `reason`, an ISO `reconciledAt`, known agent ids in `reconciledBy` and `implementationAgent`, a legal `reviewSurface` label, integer counts, and a published window whose endpoints really are its endpoints and whose truncation flag matches its length |
+| shape | every field the CLI writes, typed and cross-consistent: `kind`, a `baseSha` matching the field it explains, `headAtReconciliation` (a different commit), a non-empty `reason`, an ISO `reconciledAt`, known agent ids in `reconciledBy` and `implementationAgent`, a legal `reviewSurface` label, integer counts, a published window whose endpoints really are its endpoints and whose truncation flag matches its length, and a `baseCommitSurfaceTouches` list whose count and truncation flag agree with it |
 | history | the base is an ancestor of the head it names, and both published endpoints lie inside that window. Errors, because these are facts no later legitimate edit changes |
 | corroboration | `events.jsonl` must carry the `task.started_reconciled` event this record implies. Append-only and separately written, so a forgery needs two consistent edits in two files |
 
-Re-derived **counts** (`surfaceCommitCount`, `changedFileCount`) are reported as
-warnings, not errors: `allowedPaths` and `reviewDependencies` may legitimately be
-redeclared afterwards, and a recomputation over the new surface then disagrees
-with a record that was honest when written. Making that an error would strand a
-correct task. Likewise a shallow clone that cannot resolve the window warns
-rather than fails — a checkout depth is not evidence of anything.
+Re-derived **counts** (`surfaceCommitCount`, `changedFileCount`,
+`baseCommitSurfaceTouchCount`) are reported as warnings, not errors:
+`allowedPaths` and `reviewDependencies` may legitimately be redeclared
+afterwards, and a recomputation over the new surface then disagrees with a record
+that was honest when written. Making that an error would strand a correct task.
+Likewise a shallow clone that cannot resolve the window warns rather than fails —
+a checkout depth is not evidence of anything.
+
+The evidence field is worth forging in one specific direction — **emptying it**,
+so a base reads as untouched by the surface it precedes — and that is exactly what
+the re-derivation contradicts whenever the declared surface has not moved. A
+warning is the strongest verdict that is honestly available. An *absent*
+`baseCommitSurfaceTouches` also warns rather than errors: a record written before
+the field existed is old, not fabricated.
 
 **What is still open.** A forger who supplies a real base, a real head that the
 base is an ancestor of, a coherent window, and a matching line in `events.jsonl`

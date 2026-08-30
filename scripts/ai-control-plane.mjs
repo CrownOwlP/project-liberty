@@ -945,9 +945,14 @@ function commitParents(sha) {
  * Deliberately not `git log -1 <sha> -- <paths>`, which is the obvious spelling
  * and the wrong one: with a pathspec, log applies history simplification and
  * walks BACKWARDS to the first commit that touched those paths, so it happily
- * reports an ancestor's files as though they were this commit's. Every check
- * built on it would then be asking about the wrong commit, and would look
- * perfectly healthy while doing it.
+ * reports an ancestor's files as though they were this commit's. Anything built
+ * on it would then be reporting about the wrong commit, and would look perfectly
+ * healthy while doing it.
+ *
+ * This once fed a refusal (a base whose touches overlapped the window was
+ * rejected). That verdict was removed -- see `assertReconcilableBase` -- but the
+ * computation is unchanged and is now PUBLISHED as evidence, so its accuracy
+ * still matters exactly as much: a reviewer is told to weigh this list.
  */
 function surfaceFilesTouchedBy(sha, pathspecs) {
   const parents = commitParents(sha);
@@ -966,18 +971,22 @@ function surfaceFilesTouchedBy(sha, pathspecs) {
        * EVERY parent, unioned -- not just the first.
        *
        * A merge reports an empty diff under diff-tree unless it is told which
-       * parent to compare against, and "touched nothing" would silently switch
-       * the overlap check off for exactly the commit shape most likely to sit at
-       * a lane boundary. First-parent alone was the previous answer and it has a
-       * hole with the same shape: a merge that resolved the reviewed files
-       * TOWARDS the mainline is TREESAME to its first parent while differing from
-       * its second, so a conflict resolution sitting INSIDE an implementation
-       * stream passed the overlap check unnoticed.
+       * parent to compare against, and an empty result here is not "no answer",
+       * it is the REASSURING answer: "this commit changed nothing under the
+       * surface it precedes". Publishing that about exactly the commit shape most
+       * likely to sit at a lane boundary is the worst available outcome.
+       * First-parent alone was the previous spelling and has a hole of the same
+       * shape: a merge that resolved the reviewed files TOWARDS the mainline is
+       * TREESAME to its first parent while differing from its second, so a
+       * conflict resolution sitting inside an implementation stream reported
+       * itself as touching nothing.
        *
-       * The union is deliberately the conservative direction. It can refuse a
-       * merge base that only inherited a file from the branch it merged, and the
-       * remedy for a refusal always widens the review range, so the cost of a
-       * false refusal is noise while the cost of a false pass is a hidden commit.
+       * The union is deliberately the OVER-reporting direction. It can attribute
+       * to a merge a file it only inherited from the branch it merged, which
+       * makes the published evidence say slightly more happened here than did.
+       * Since the reviewer's failure mode is being reassured, evidence that
+       * prompts an unnecessary question is cheap and evidence that suppresses a
+       * necessary one is not.
        */
       for (const parent of parents) {
         out += diff([
@@ -1010,18 +1019,18 @@ function surfaceFilesTouchedBy(sha, pathspecs) {
 /**
  * Non-generated files under `pathspecs` that differ between two commits.
  *
- * `--no-renames` is pinned here and in `surfaceFilesTouchedBy` for one reason:
- * the two results are INTERSECTED. This one is porcelain `git diff`, which
- * honours `diff.renames` (on by default) and collapses a rename to its
- * destination path alone; the other is plumbing, where rename detection is off
- * and a rename appears as its two endpoints. So the two sets were built under
- * different rules, and a file could be in both while being SPELLED differently
- * in each -- dropping out of the intersection entirely. The concrete escape: a
- * base commit edits `old.ts`, the window then renames it to `new.ts`, this side
- * reports only `new.ts`, the other side reports only `old.ts`, the intersection
- * is empty, and a base from inside the implementation is accepted. Pinning both
- * is not a preference about rename detection -- it is the only way the
- * comparison means anything.
+ * `--no-renames` is pinned here and in `surfaceFilesTouchedBy`. It was
+ * originally pinned because the two results were INTERSECTED and porcelain
+ * `git diff` (which honours `diff.renames`, on by default, and collapses a
+ * rename to its destination alone) disagreed with plumbing `diff-tree` (rename
+ * detection off, a rename reported as its two endpoints) about how to spell the
+ * same file. That intersection is gone with the overlap refusal, and the flag
+ * stays for a reason that outlives it: both counts are PUBLISHED into the
+ * provenance record and RE-DERIVED by `validate`. Left to configuration, a
+ * record written on a machine with `diff.renames` off would be re-checked on one
+ * with it on, and an honest record would draw a mismatch warning from nothing
+ * but a git config difference. A published number has to mean the same thing
+ * everywhere it is read.
  */
 function surfaceFilesChangedBetween(base, head, pathspecs) {
   try {
@@ -1080,10 +1089,16 @@ function surfaceCommitsBetween(base, head, pathspecs) {
 }
 
 /**
- * Everything decidable about a claimed pre-implementation base. Throws on the
- * first failure; returns the window it verified so the caller can record it.
+ * Everything MECHANICALLY decidable about a claimed pre-implementation base.
+ * Throws on the first failure; returns what it verified so the caller can record
+ * it.
  *
- * Each check exists because a specific falsehood would otherwise pass:
+ * Each refusal exists because a specific falsehood would otherwise pass, or
+ * because an answer could not be computed and must not be published as though it
+ * had been. Nothing here refuses a base on an inference about task intent: git
+ * does not attribute commits to tasks, one attempt to do so anyway was removed
+ * on review, and the reasoning is recorded at the evidence step below so it is
+ * not re-invented.
  */
 function assertReconcilableBase(task, baseSha) {
   const short = (sha) => String(sha).slice(0, 12);
@@ -1143,23 +1158,27 @@ function assertReconcilableBase(task, baseSha) {
   }
   const surface = reviewSurfaceLabel(task);
   /*
-   * The WRITE surface, kept separate from the reviewed one. See the overlap
-   * check below for why the difference is load-bearing rather than tidy.
+   * The WRITE surface. Nothing below measures over it any more -- both the
+   * window and the base-commit evidence are computed on the REVIEWED surface --
+   * but its absence is still refused, and the reason has moved rather than
+   * disappeared.
    *
-   * Its absence is refused rather than skipped. A task with no allowedPaths but
-   * a declared reviewDependency would otherwise slip past the overlap check
-   * entirely -- and running that check on zero pathspecs would ask git about the
-   * whole repository instead, which is worse. `validate` only warns about an
-   * empty allowedPaths, so this is the point where the missing declaration
-   * actually costs something, and the task is unreviewable and unreservable
-   * without it anyway.
+   * The dirty-tree refusal immediately below is scoped to `allowedPaths`, and
+   * `taskWorktreeDirtyPaths` reports a task that declares none as CLEAN: zero
+   * pathspecs would otherwise ask `git status` about the whole repository, where
+   * every control-plane command dirties control/tasks.json. So a task with no
+   * allowedPaths would sail past the one check that enforces "the implementation
+   * is already committed", which is the assertion this entire operation makes.
+   * `validate` only warns about an empty allowedPaths, so this is where the
+   * missing declaration finally costs something -- and such a task is
+   * unreviewable and unreservable regardless.
    */
   const writePathspecs = taskPathspecs(task);
   if (!writePathspecs.length) {
     throw new Error(
-      `${task.id} declares no allowedPaths, so there is no way to ask whether ${short(baseSha)} sits inside ` +
-        "its implementation stream -- the one question that separates a base before an implementation from " +
-        "one inside it. Declare the paths this task writes before reconciling",
+      `${task.id} declares no allowedPaths, so the "already committed" check below has no surface to run on ` +
+        "and would pass vacuously on a working tree full of the very implementation being asserted as " +
+        "pushed. Declare the paths this task writes before reconciling",
     );
   }
 
@@ -1215,73 +1234,70 @@ function assertReconcilableBase(task, baseSha) {
   }
 
   /*
-   * Is the claimed base plausibly BEFORE the implementation, rather than inside
-   * it? The decidable form of that question: does the base commit itself edit any
-   * of the same files the window goes on to change?
+   * EVIDENCE, NOT A VETO: what the base commit ITSELF changed under the reviewed
+   * surface.
    *
-   * The intersection is what removes the false positives. Naively refusing any
-   * base that touches the surface would refuse the CORRECT answer constantly
-   * here, because these surfaces are wide (`scripts/**`) and the commit
-   * immediately preceding a preflight implementation is usually another lane's
-   * work in the same directory. That would push operators toward bases many
-   * commits earlier -- safe, but noisy enough that the mechanism stops being
-   * used. Overlap on a specific FILE is a much narrower signal: the base is
-   * editing something this task then edits, which is what a commit from the same
-   * implementation stream looks like.
+   * This computation used to be a REFUSAL. If the base commit touched a file the
+   * window goes on to change, the base was rejected as "inside the
+   * implementation" and the operator was told to name an earlier commit, with
+   * `<sha>^` offered as the usual answer. It was removed on review, and the
+   * reason is worth recording in full, because a same-file heuristic is exactly
+   * the kind of thing that gets re-invented by the next person who wants this
+   * field to defend itself.
    *
-   * THE WRITE SURFACE, not the reviewed one, and the difference is the whole
-   * question this check asks. "Is the base inside THIS TASK's implementation
-   * stream?" can only be asked about files this task may write. A
-   * reviewDependency is by definition somebody else's code -- read-only,
-   * unreserved, and possibly being edited by another active lane at this very
-   * moment -- so a base commit touching one says nothing whatsoever about where
-   * this implementation began. Asking the write-surface question against the
-   * reviewed surface disabled the mechanism for precisely the task shape it was
-   * built for: PL-0103 declares `reviewDependencies: ["packages/contracts/**"]`,
-   * contracts churn constantly, so every candidate base that happened to touch a
-   * contract was refused and the error sent the operator walking back through
-   * history one `^` at a time with no reachable answer.
+   * WHY IT WAS WRONG. `implementationBaseSha` means one thing: the commit this
+   * implementation actually began from. The refusal could only ever be satisfied
+   * by walking backwards until the overlap stopped, so its remedy did not
+   * produce that commit -- it produced a DELIBERATELY WIDENED one that happened
+   * to pass a file test. The mechanism's own advice therefore corrupted the
+   * meaning of the field the mechanism exists to make true, and a widened base
+   * validates, publishes, and reads to every later consumer as the structural
+   * lower bound it is not. "An earlier commit that is probably safe enough" is a
+   * different field from "where this implementation began", and only one of them
+   * is the one being written.
    *
-   * The central check above deliberately stays on the REVIEWED surface: "did
-   * anything the review will bind to change in this window" is a question about
-   * the review, and a dependency change is legitimately part of that.
+   * AND THE INFERENCE WAS NEVER SOUND. Git does not attribute commits to tasks.
+   * "The base edits a file the window also edits" is equally the signature of
+   * two lanes co-tenanted in one directory, a revert, a formatting pass, a
+   * dependency bump, or a rebase. An earlier round narrowed which paths the
+   * check consulted (from the reviewed surface to the write surface) after it
+   * refused every candidate base for a task with churning `reviewDependencies`.
+   * That made the heuristic wrong less often; it did not make it a fact, and a
+   * less-often-wrong veto is still a veto exercised on a guess about intent.
    *
-   * Refusing is the conservative direction, and the remedy always widens: an
-   * earlier base can only show a reviewer MORE than they were promised, never
-   * less.
+   * SO THE COMPUTATION STAYS AND ITS VERDICT GOES. The touches are published,
+   * and the reviewer -- who can read a commit message, ask the implementer, and
+   * knows what the task was -- judges what they mean. That is the correct
+   * division: the tool reports facts it can establish, the human answers the
+   * question no tool can.
+   *
+   * On the REVIEWED surface, not the write surface. Every other published field
+   * (`reviewSurface`, the window, `changedFileCount`) is measured there, and a
+   * record whose fields silently describe two different surfaces is one a
+   * reviewer must disambiguate before they can use it. The old split existed to
+   * serve the veto's question ("is this base in THIS task's stream?"); with no
+   * veto there is no second question, only one report.
+   *
+   * Deliberately NOT published pre-intersected with `changed`. An "overlapping
+   * files" field would be the removed verdict wearing a data costume, and it
+   * would invite the next reader to restore the refusal from it. The window and
+   * the changed files are both published beside this; anyone who wants the
+   * intersection can compute it and defend it themselves.
    */
-  {
-    const touchedByBase = surfaceFilesTouchedBy(baseSha, writePathspecs);
-    if (touchedByBase === null) {
-      throw new Error(
-        `cannot inspect the contents of ${short(baseSha)}; refusing to record an unverified base`,
-      );
-    }
-    const changedSet = new Set(changed);
-    const overlap = touchedByBase.filter((rel) => changedSet.has(rel));
-    if (overlap.length) {
-      /*
-       * The remedy has to exist before it can be advised. A root commit has no
-       * parent, so "try <sha>^" names a commit git will refuse to resolve and
-       * sends the operator looking for something that cannot be there. The
-       * honest answer in that case is that no reconcilable base exists at all:
-       * the implementation reaches back to the first commit in the repository,
-       * and there is nothing before it for a review range to open at.
-       */
-      const parents = commitParents(baseSha) ?? [];
-      const remedy = parents.length
-        ? `Name an earlier commit -- ${short(baseSha)}^ is the usual answer.`
-        : `${short(baseSha)} is the repository's ROOT commit, so there is no earlier commit to name and no ` +
-          "base can precede this implementation. This task's work cannot be expressed as a reconciled " +
-          "range; open it with an ordinary start and state the true range to the reviewer directly.";
-      throw new Error(
-        `--base ${short(baseSha)} itself modifies ${overlap.length} file(s) under ${task.id}'s allowedPaths ` +
-          `that also change between it and HEAD (${overlap.slice(0, 5).join(", ")}` +
-          `${overlap.length > 5 ? ", ..." : ""}). A commit editing the same files as the window that follows ` +
-          `it is part of an implementation, not the commit before one. ${remedy} A wider base only ever ` +
-          "shows the reviewer more; a narrower one hides work from the first review",
-      );
-    }
+  const baseTouches = surfaceFilesTouchedBy(baseSha, pathspecs);
+  if (baseTouches === null) {
+    /*
+     * FAIL CLOSED, for the same reason the window below does. An unknown
+     * published as an empty list would read as "the base commit itself changed
+     * nothing under the reviewed surface" -- a positive claim about this commit,
+     * and the most reassuring one available -- rather than as "the question could
+     * not be answered". Note what this refusal is and is not: it is about
+     * COMPUTABILITY, not about what the answer turned out to be.
+     */
+    throw new Error(
+      `cannot inspect what ${short(baseSha)} itself changed under ${surface}; that is published evidence a ` +
+        "reviewer is told to weigh, and an uncomputed answer must not be recorded as an empty one",
+    );
   }
 
   /*
@@ -1302,7 +1318,13 @@ function assertReconcilableBase(task, baseSha) {
         "unknown is the only honest outcome",
     );
   }
-  return { head, changedFiles: changed, surfaceCommits: commits, surface };
+  return {
+    head,
+    changedFiles: changed,
+    surfaceCommits: commits,
+    surface,
+    baseTouches,
+  };
 }
 
 /**
@@ -1317,6 +1339,18 @@ function assertReconcilableBase(task, baseSha) {
  * they are not listed here".
  */
 const SURFACE_COMMIT_PUBLISH_LIMIT = 20;
+
+/**
+ * How many of the base commit's own surface touches the record publishes.
+ *
+ * A separate constant from the one above rather than a shared "publish limit":
+ * they cap different things for different reasons, and a single number would
+ * make one of the two look like a consequence of the other. Kept from the FRONT
+ * here, unlike the commit window -- git's file order carries no "oldest end" for
+ * the reviewer's question to be about, so there is no end worth preferring, and
+ * the truncation flag is what stops a capped list reading as a complete one.
+ */
+const BASE_TOUCH_PUBLISH_LIMIT = 20;
 
 const PROVENANCE_KIND = "reconciled-existing-implementation";
 
@@ -1517,6 +1551,57 @@ function reconciliationProvenanceProblems(task, amap, surfaceUsable) {
   }
 
   /*
+   * The base commit's own surface touches: shape-checked like everything else,
+   * because a published EVIDENCE field a reviewer is told to weigh is exactly as
+   * worth forging as the window. An emptied list is the cheap forgery here -- it
+   * makes a base read as untouched by the surface it precedes -- so the git
+   * section below re-derives the count.
+   *
+   * ABSENCE IS A WARNING, not an error, on the same reasoning as
+   * `surfaceCommitsTruncated`: a record written before this field existed is old,
+   * not fabricated, and erroring would strand a task whose reconciliation was
+   * honest under the rules of its day.
+   */
+  if (p.baseCommitSurfaceTouches === undefined) {
+    warnings.push(
+      `${id}: implementationBaseProvenance predates baseCommitSurfaceTouches, so what the base commit ` +
+        "itself changed under the reviewed surface was never published and cannot be recovered from the " +
+        "record",
+    );
+  } else if (
+    !Array.isArray(p.baseCommitSurfaceTouches) ||
+    !p.baseCommitSurfaceTouches.every((f) => typeof f === "string" && f)
+  ) {
+    errors.push(
+      `${id}: implementationBaseProvenance.baseCommitSurfaceTouches must be an array of file paths`,
+    );
+  } else {
+    if (!isCount(p.baseCommitSurfaceTouchCount))
+      errors.push(
+        `${id}: implementationBaseProvenance.baseCommitSurfaceTouchCount must be a non-negative integer`,
+      );
+    else if (p.baseCommitSurfaceTouches.length > p.baseCommitSurfaceTouchCount)
+      errors.push(
+        `${id}: implementationBaseProvenance publishes ${p.baseCommitSurfaceTouches.length} base-commit ` +
+          `touch(es) but claims ${p.baseCommitSurfaceTouchCount}`,
+      );
+    if (typeof p.baseCommitSurfaceTouchesTruncated !== "boolean")
+      errors.push(
+        `${id}: implementationBaseProvenance.baseCommitSurfaceTouchesTruncated must be a boolean`,
+      );
+    else if (
+      isCount(p.baseCommitSurfaceTouchCount) &&
+      p.baseCommitSurfaceTouchesTruncated !==
+        (p.baseCommitSurfaceTouches.length < p.baseCommitSurfaceTouchCount)
+    )
+      errors.push(
+        `${id}: implementationBaseProvenance says baseCommitSurfaceTouchesTruncated=` +
+          `${p.baseCommitSurfaceTouchesTruncated} while publishing ` +
+          `${p.baseCommitSurfaceTouches.length} of ${p.baseCommitSurfaceTouchCount} touch(es)`,
+      );
+  }
+
+  /*
    * --- corroboration against the append-only audit trail ---------------
    *
    * This assumes events.jsonl is the complete log this repository has kept from
@@ -1627,6 +1712,30 @@ function reconciliationProvenanceProblems(task, amap, surfaceUsable) {
       `${id}: implementationBaseProvenance claims ${p.changedFileCount} changed file(s) in its window; ` +
         `recomputing over the current surface finds ${changed.length}`,
     );
+  }
+  /*
+   * The evidence field is re-derived too, and lands in the same bucket as the
+   * counts for the same reason: `allowedPaths` and `reviewDependencies` may be
+   * legitimately redeclared after a reconciliation, and a recomputation over the
+   * new surface then disagrees with a record that was honest when written.
+   *
+   * A WARNING is therefore the strongest honest verdict, and it is worth having
+   * even so: the cheap forgery on this field is an emptied list, which makes a
+   * base read as untouched by the surface it precedes, and that shows up here
+   * whenever the surface has not moved. Only the count is compared, not the set:
+   * a set comparison is no more conclusive under redeclaration and reads as a
+   * much stronger claim than it is.
+   */
+  if (isCount(p.baseCommitSurfaceTouchCount)) {
+    const baseTouches = surfaceFilesTouchedBy(p.baseSha, pathspecs);
+    if (baseTouches && baseTouches.length !== p.baseCommitSurfaceTouchCount) {
+      warnings.push(
+        `${id}: implementationBaseProvenance claims the base commit itself changed ` +
+          `${p.baseCommitSurfaceTouchCount} file(s) under ${p.reviewSurface}; recomputing over the current ` +
+          `surface finds ${baseTouches.length}. Either the declared surface moved after the reconciliation, ` +
+          "or the published evidence is not what the commit contains",
+      );
+    }
   }
   return { errors, warnings };
 }
@@ -3185,6 +3294,26 @@ try {
         surfaceCommitsTruncated:
           windowCommits.length > SURFACE_COMMIT_PUBLISH_LIMIT,
         changedFileCount: reconciliation.changedFiles.length,
+        /*
+         * The base commit's OWN touches under the reviewed surface. Published as
+         * EVIDENCE for the reviewer's judgement, never as a verdict: a refusal
+         * built on exactly this list was removed because its remedy ("name an
+         * earlier commit") widened the base away from the truth the field is
+         * supposed to hold. See `assertReconcilableBase` for the full account.
+         *
+         * Named for what it reports, not for what it might imply. It says which
+         * files this commit changed -- not "overlap", not "suspicious", not
+         * "inside the implementation" -- because a reader who sees a non-empty
+         * list here is being handed a question to ask the implementer, not an
+         * answer the control plane has already reached.
+         */
+        baseCommitSurfaceTouchCount: reconciliation.baseTouches.length,
+        baseCommitSurfaceTouches: reconciliation.baseTouches.slice(
+          0,
+          BASE_TOUCH_PUBLISH_LIMIT,
+        ),
+        baseCommitSurfaceTouchesTruncated:
+          reconciliation.baseTouches.length > BASE_TOUCH_PUBLISH_LIMIT,
         reason: reconcileReason,
       };
     } else if (!task.implementationBaseSha) {
@@ -3230,10 +3359,22 @@ try {
         surfaceCommitsTruncated:
           task.implementationBaseProvenance.surfaceCommitsTruncated,
         changedFileCount: reconciliation.changedFiles.length,
+        // Carried into the audit trail as well as onto the task, because the two
+        // are read by different people at different times and a reviewer working
+        // from events.jsonl alone should not have to open tasks.json to see the
+        // evidence the record is asking them to weigh.
+        baseCommitSurfaceTouchCount:
+          task.implementationBaseProvenance.baseCommitSurfaceTouchCount,
+        baseCommitSurfaceTouches:
+          task.implementationBaseProvenance.baseCommitSurfaceTouches,
+        baseCommitSurfaceTouchesTruncated:
+          task.implementationBaseProvenance.baseCommitSurfaceTouchesTruncated,
         reason: reconcileReason,
         note:
           "reconciliation of a pre-existing pushed implementation; the base predates this claim and was " +
-          "NOT captured at start. This is not a new implementation start.",
+          "NOT captured at start. This is not a new implementation start. baseCommitSurfaceTouches is " +
+          "reported evidence, not a verdict: whether an earlier commit also belongs to this implementation " +
+          "is a question for the reviewer, because git does not attribute commits to tasks.",
       });
     } else {
       event("task.started", {
@@ -3243,11 +3384,28 @@ try {
       });
     }
     if (reconcile) {
+      /*
+       * The evidence is printed at the moment the operator can still act on it,
+       * phrased as a report. It is deliberately NOT phrased as a warning: the
+       * operator may well know that this commit is the correct base and that its
+       * touches are another lane's, and a tool that editorialises here is one
+       * step from the refusal that was removed.
+       */
+      const touches = reconciliation.baseTouches;
+      const shown = touches.slice(0, 5).join(", ");
+      const evidence =
+        `  the base commit itself changed ${touches.length} file(s) under ${reconciliation.surface}` +
+        (touches.length
+          ? `: ${shown}${touches.length > 5 ? ", ..." : ""}\n` +
+            "    (reported evidence, not a verdict -- git cannot say which commits were this task's work;\n" +
+            "     confirm with the implementer that no earlier commit belongs to this implementation)"
+          : "");
       console.log(
         `${taskId} started as a RECONCILED pre-existing implementation.\n` +
           `  base ${baseArg.slice(0, 12)} (asserted, not captured) .. HEAD ${reconciliation.head.slice(0, 12)}\n` +
           `  ${reconciliation.surfaceCommits.length} commit(s) touch ${reconciliation.surface}; ` +
           `${reconciliation.changedFiles.length} file(s) differ\n` +
+          `${evidence}\n` +
           `  implementation agent: ${task.implementationAgent}\n` +
           `  reason: ${reconcileReason}`,
       );
@@ -3347,6 +3505,13 @@ try {
           // handed a range starting before the task was claimed would otherwise
           // have to guess whether that is a defect or a declared reconciliation;
           // absent provenance means the base was captured by an ordinary start.
+          //
+          // The provenance record is emitted WHOLE rather than summarised, so
+          // every published field reaches the reviewer -- including
+          // `baseCommitSurfaceTouches`, the files the base commit itself changed
+          // under the reviewed surface. That one is reported evidence, not a
+          // control-plane finding: nothing here can prove which commits were this
+          // task's work, so the reviewer weighs it.
           implementationBaseSha: task.implementationBaseSha ?? null,
           implementationBaseProvenance: task.implementationBaseProvenance ?? null,
           review: task.review ?? null,
@@ -3654,6 +3819,40 @@ try {
               : "implementation start"
         })`,
       );
+      /*
+       * The evidence travels with the range, not just with the task file.
+       *
+       * A reviewer handed a reconciled range is being asked to judge one thing
+       * the control plane cannot: whether an EARLIER commit also belongs to this
+       * implementation. The most useful single fact for that judgement is what
+       * the base commit itself changed under the reviewed surface -- so it is
+       * stated here, where the range is announced, rather than left in a field
+       * the reviewer would have to know to go and read. It is a report, not a
+       * flag: a base that touches the surface is entirely normal when the
+       * previous commit belonged to another lane.
+       */
+      if (reconciled) {
+        const p = prior.implementationBaseProvenance;
+        const touches = Array.isArray(p.baseCommitSurfaceTouches)
+          ? p.baseCommitSurfaceTouches
+          : null;
+        const count = Number.isInteger(p.baseCommitSurfaceTouchCount)
+          ? p.baseCommitSurfaceTouchCount
+          : touches?.length;
+        if (touches && count !== undefined) {
+          console.log(
+            `  the base commit itself changed ${count} file(s) under ${p.reviewSurface}` +
+              (touches.length
+                ? `: ${touches.slice(0, 5).join(", ")}` +
+                  `${count > 5 ? ", ..." : ""}`
+                : ""),
+          );
+          console.log(
+            "  (evidence for your judgement, not a control-plane verdict: git does not attribute commits " +
+              "to tasks, so whether an earlier commit belongs to this implementation is yours to settle)",
+          );
+        }
+      }
     }
     if (baseSha && baseSha === commitSha) {
       throw new Error("--base equals --sha; an empty range reviews nothing");
@@ -4042,6 +4241,15 @@ make the machine-readable field false and hand the reviewer a range beginning af
 the code. All three flags are required together, each is refused on an ordinary
 start, the base is verified against real history, and the operation is audited as
 task.started_reconciled -- never as task.started.
+
+The base is checked only against MECHANICAL facts (full sha, resolvable, ancestor
+of HEAD, not HEAD, a non-empty reviewed surface with something changed in
+base..HEAD, and a clean tree under allowedPaths). Whether it is really the commit
+immediately before this task's work is not decidable from git, which does not
+attribute commits to tasks, so it is PUBLISHED for a reviewer instead of guessed
+at: the window, its endpoints, the files the base commit itself changed under the
+reviewed surface, and your --reason. Name the true base; nothing here will ask you
+to widen it.
 
 Handoff bus (GitHub is the transport; no human relay):
   handoff --from <agent> --to <agent> --type <type> --summary "..." [--task ID] [--sha SHA|auto] [--evidence REF]...

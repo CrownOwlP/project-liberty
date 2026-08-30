@@ -1050,3 +1050,220 @@ describe("determinism", () => {
     expect(plan.attemptable).toEqual(plan.decision.ranked.map((entry) => entry.candidate.id));
   });
 });
+
+describe("a policy that cannot state a bound", () => {
+  /*
+   * `FailoverPolicy` is a pair of `number`s and `number` includes `NaN`.
+   * `failoverPolicySchema` rejects one at the WIRE boundary, but the browser
+   * calls `scheduleAttempts` with a policy that arrived as a typed object and was
+   * never parsed. Every comparison against the budget is `>` or `>=` and every
+   * comparison against `NaN` is false, so before `boundedPolicy` a single
+   * `Number(...)` that produced `NaN` did not loosen the bound -- it REMOVED it,
+   * silently, in the one direction this module exists to prevent.
+   */
+  it("reads a NaN attempt budget as no budget rather than as no bound", () => {
+    const schedule = scheduleAttempts(["zulu", "alpha"], [], {
+      maxAttempts: Number.NaN,
+      maxTransientRetriesPerCandidate: 1
+    });
+
+    expect(schedule.next).toBeNull();
+    expect(schedule.reason).toBe("attempt_limit_reached");
+    // Not `candidates_exhausted`: both candidates are still attemptable and the
+    // remedy is the policy, not the provider.
+    expect(schedule.attemptable).toEqual(["zulu", "alpha"]);
+    expect(schedule.attemptsRemaining).toBe(0);
+  });
+
+  it("reads a NaN per-candidate retry budget as no retries", () => {
+    // The conservative direction, matching `ChargedAttempts`: an unstatable bound
+    // may rule a candidate out, never in.
+    const schedule = scheduleAttempts(["zulu", "alpha"], [failed("zulu", "network_transient")], {
+      maxAttempts: 8,
+      maxTransientRetriesPerCandidate: Number.NaN
+    });
+
+    expect(schedule.excluded).toEqual([
+      { candidateId: "zulu", reason: "transient_retries_exhausted", attempts: 1 }
+    ]);
+    expect(schedule.next).toBe("alpha");
+  });
+
+  it("quotes the ENFORCED budget in the trail, never the stated one", () => {
+    // A trail reading `0/NaN attempts used` sends its reader looking for a bound
+    // the scheduler never applied -- the published-versus-enforced divergence
+    // this module exists to prevent, in miniature.
+    const plan = planFailover([zulu], capabilities, [], {
+      maxAttempts: Number.NaN,
+      maxTransientRetriesPerCandidate: 1
+    });
+
+    expect(plan.reason).toBe("attempt_limit_reached");
+    expect(plan.explanation).toContain("0/0 attempts used");
+    expect(plan.explanation).not.toContain("NaN");
+  });
+
+  it("leaves an infinite budget alone, because that one was meant", () => {
+    // `Infinity` is a caller STATING a bound and the comparisons express it
+    // exactly. Only `NaN` is never anything a caller meant.
+    const schedule = scheduleAttempts(["zulu"], [], {
+      maxAttempts: Number.POSITIVE_INFINITY,
+      maxTransientRetriesPerCandidate: 1
+    });
+
+    expect(schedule.next).toBe("zulu");
+    expect(schedule.reason).toBe("first_attempt");
+    expect(schedule.attemptsRemaining).toBe(Number.POSITIVE_INFINITY);
+  });
+});
+
+describe("the shapes a client hits, asked of the scheduler directly", () => {
+  /*
+   * `planFailover` covers these through a ranking. These ask the SCHEDULER,
+   * because that is the half `apps/web`'s playback machine runs and the half a
+   * charge can reach -- and because two of the answers below are deliberately
+   * different from the ranked ones. A homogeneous reason is a claim about a SET,
+   * and an ordered list of ids cannot see the pre-attempt refusals three of those
+   * claims rest on.
+   */
+  const charged = (attemptsByCandidate: Record<string, number>) => ({
+    attemptsUsed: Object.values(attemptsByCandidate).reduce((total, n) => total + n, 0),
+    attemptsByCandidate
+  });
+
+  it("says nothing was supplied, rather than a vacuous claim about everything", () => {
+    const schedule = scheduleAttempts([], [], generous);
+
+    expect(schedule.next).toBeNull();
+    expect(schedule.reason).toBe("no_candidates");
+    expect(schedule.attemptable).toEqual([]);
+    expect(schedule.excluded).toEqual([]);
+    expect(schedule.attemptsRemaining).toBe(generous.maxAttempts);
+  });
+
+  it("starts a single candidate at its first attempt", () => {
+    const schedule = scheduleAttempts(["zulu"], [], generous);
+
+    expect(schedule.next).toBe("zulu");
+    expect(schedule.reason).toBe("first_attempt");
+  });
+
+  it("declines the wholesale rights verdict the ranked plan is entitled to make", () => {
+    /*
+     * THE REFINEMENT, from both ends, in one test. The same facts produce
+     * `candidates_exhausted` from an id list and `all_candidates_rights_blocked`
+     * from a caller holding a `PlaybackDecision` -- not because the two disagree,
+     * but because the second has evidence the first was never shown: rights can
+     * be refused BEFORE any attempt, and a claim about every candidate is false
+     * unless it covers the ones ranking already threw out. Guessing it here would
+     * be exactly the vacuous confidence the vocabulary refuses.
+     */
+    const failures = [failed("zulu", "rights_unverifiable"), failed("alpha", "rights_unverifiable")];
+
+    const schedule = scheduleAttempts(["zulu", "alpha"], failures, generous);
+    const plan = planFailover([zulu, alpha], capabilities, failures, generous);
+
+    expect(schedule.reason).toBe("candidates_exhausted");
+    expect(schedule.excluded.map((entry) => entry.reason)).toEqual([
+      "rights_not_established",
+      "rights_not_established"
+    ]);
+    expect(plan.reason).toBe("all_candidates_rights_blocked");
+  });
+
+  it("refuses a homogeneous reason for a pool that is rights-blocked AND unclassified", () => {
+    /*
+     * The mixed case the fifth exclusion reason made reachable, and the one a
+     * homogeneous `every()` silently falsifies. One candidate we may not play and
+     * one whose failure nobody could name are two findings with two remedies --
+     * the licensing pipeline and the reporter -- so the answer is the generic
+     * reason plus the itemised trail, never the nearest plausible headline.
+     */
+    const schedule = scheduleAttempts(
+      ["zulu", "alpha"],
+      [failed("zulu", "rights_unverifiable")],
+      generous,
+      charged({ zulu: 1, alpha: 1 })
+    );
+
+    expect(schedule.reason).toBe("candidates_exhausted");
+    expect(schedule.excluded).toEqual([
+      { candidateId: "alpha", reason: "attempt_failed_unclassified", attempts: 1 },
+      { candidateId: "zulu", reason: "rights_not_established", attempts: 1 }
+    ]);
+    expect(schedule.attemptable).toEqual([]);
+  });
+
+  it("names the untried survivor when the budget is smaller than the pool", () => {
+    // "We ran out of budget while a stream nobody tried remained" and "we tried
+    // everything" send a reader to two different places.
+    const schedule = scheduleAttempts(
+      ["zulu", "alpha", "mike"],
+      [failed("zulu", "decode_failed"), failed("alpha", "decode_failed")],
+      { maxAttempts: 2, maxTransientRetriesPerCandidate: 1 }
+    );
+
+    expect(schedule.next).toBeNull();
+    expect(schedule.reason).toBe("attempt_limit_reached");
+    expect(schedule.attemptable).toEqual(["mike"]);
+    expect(schedule.attemptsRemaining).toBe(0);
+  });
+
+  it("reports exhaustion, not the limit, when the budget is larger than the pool", () => {
+    // Exhaustion outranks the budget: reporting the limit with six attempts left
+    // would tell an operator to raise a ceiling that would change nothing.
+    const schedule = scheduleAttempts(
+      ["zulu", "alpha"],
+      [failed("zulu", "decode_failed"), failed("alpha", "decode_failed")],
+      generous
+    );
+
+    expect(schedule.next).toBeNull();
+    expect(schedule.reason).toBe("candidates_exhausted");
+    expect(schedule.attemptsRemaining).toBe(6);
+  });
+
+  it("lets the more informative kind speak when one candidate collected two", () => {
+    // Precedence comes from the policy table, so the answer does not depend on
+    // which of the two the caller happened to list first -- and a charge cannot
+    // demote a classified finding to "an attempt ended and we cannot say why".
+    const failures = [failed("zulu", "network_transient"), failed("zulu", "decode_failed")];
+
+    const forward = scheduleAttempts(["zulu", "alpha"], failures, generous, charged({ zulu: 2 }));
+    const reverse = scheduleAttempts(
+      ["zulu", "alpha"],
+      [...failures].reverse(),
+      generous,
+      charged({ zulu: 2 })
+    );
+
+    expect(forward.excluded).toEqual([
+      { candidateId: "zulu", reason: "compatibility_disproven", attempts: 2 }
+    ]);
+    expect(reverse).toEqual(forward);
+    expect(forward.next).toBe("alpha");
+  });
+
+  it("takes the session total from the map when that is the only count supplied", () => {
+    /*
+     * The half-supplied argument. A caller that supplies `attemptsByCandidate` is
+     * asserting a count more complete than its own failure list -- the map exists
+     * because an unclassifiable failure is absent from `failures` by contract --
+     * so deriving the TOTAL from `failures.length` while the tried/untried
+     * partition read the map ran the budget on the books that omit exactly those
+     * attempts. Here that mistake reads as two attempts unspent that were spent.
+     */
+    const schedule = scheduleAttempts(
+      ["zulu", "alpha"],
+      [],
+      { maxAttempts: 2, maxTransientRetriesPerCandidate: 1 },
+      { attemptsByCandidate: { zulu: 2 } }
+    );
+
+    expect(schedule.attemptsUsed).toBe(2);
+    expect(schedule.attemptsRemaining).toBe(0);
+    expect(schedule.next).toBeNull();
+    expect(schedule.reason).toBe("attempt_limit_reached");
+    expect(schedule.attemptable).toEqual(["alpha"]);
+  });
+});

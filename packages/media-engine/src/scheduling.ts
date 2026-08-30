@@ -219,6 +219,19 @@ export type FailoverReason = FailoverProceedReason | FailoverStopReason;
  * missing key means zero attempts and not "fall back to counting failures". A
  * merge of the two would double-count every classified failure.
  *
+ * SUPPLYING THE MAP ALONE IS COHERENT, and it is treated as such: the session
+ * total then comes from the map too, by summing it, rather than from
+ * `failures.length`. Both fields are optional because the common caller supplies
+ * neither, but reading the budget off one set of books while the tried/untried
+ * partition reads the other would have reintroduced the very defect the map
+ * closes — the budget would be the count that omits the unclassifiable attempts.
+ * The reverse half-supply needs no such repair: `attemptsUsed` alone leaves the
+ * partition derived from failures, which can only make a candidate look UNTRIED,
+ * and the stated total still advances the budget that stops the loop.
+ * `attemptsUsed` wins outright when both are given, because it is the one number
+ * nobody else can derive: an attempt charged against an id outside the pool
+ * appears in neither list.
+ *
  * WHAT IT CAN AND CANNOT DO, and the asymmetry is the safety property. Neither
  * field can make a candidate ATTEMPTABLE that `exclusionFor` ruled out: the
  * rights and compatibility invariants are decided from the failure kinds alone
@@ -413,6 +426,51 @@ export function byCodePoint(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
 }
 
+/**
+ * The policy as it will actually be ENFORCED, which is the only one anything may
+ * quote.
+ *
+ * `FailoverPolicy` is a pair of `number`s, and `number` includes `NaN`.
+ * `failoverPolicySchema` rejects one at the WIRE boundary, but `scheduleAttempts`
+ * is also called from the browser with a policy that arrived as a typed object
+ * and was never parsed -- `PlaybackMachineInput.policy` is a `FailoverPolicy`,
+ * not a parse of one -- so upstream arithmetic is the only thing that has to go
+ * wrong. Every comparison against the budget is `>` or `>=`, and every comparison
+ * against `NaN` is false: `attemptsUsed >= NaN` never ends the session and
+ * `count > NaN` never spends a candidate's retries, so one `Number(...)` that
+ * produced `NaN` silently turns the single thing this module promises -- a
+ * BOUNDED failover -- into an unbounded reload loop pointed at a CDN. A value
+ * that cannot express a bound therefore reads as the most conservative bound,
+ * which is the same asymmetry `ChargedAttempts` states: it may rule a candidate
+ * out, never in.
+ *
+ * `NaN` ONLY, AND `Infinity` DELIBERATELY UNTOUCHED. An infinite budget is a
+ * caller STATING a bound and the comparisons already express it exactly; a
+ * negative or zero one is a caller stating a bound of nothing, and terminating
+ * immediately is what that means. `NaN` is the one value that is never anything
+ * a caller meant.
+ *
+ * Substituting `DEFAULT_FAILOVER_POLICY` was rejected: fabricating a budget
+ * nobody asked for is the same class of invention as fabricating a failure kind,
+ * and it would hide the caller's bug behind four attempts that looked
+ * deliberate. Terminating with `attempt_limit_reached` says the true thing --
+ * there is no budget to spend -- in the vocabulary the trail already publishes.
+ *
+ * EXPORTED FOR ONE READER, exactly as `byCodePoint` is. `planFailover` renders
+ * `maxAttempts` into a human trail, and a trail quoting a bound nobody applied is
+ * the published-versus-enforced divergence this whole module exists to prevent,
+ * in miniature. It is not re-exported from `failover.ts` and so does not reach
+ * the barrel: an internal shared by two files, not public API.
+ */
+export function boundedPolicy(policy: FailoverPolicy): FailoverPolicy {
+  return {
+    maxAttempts: Number.isNaN(policy.maxAttempts) ? 0 : policy.maxAttempts,
+    maxTransientRetriesPerCandidate: Number.isNaN(policy.maxTransientRetriesPerCandidate)
+      ? 0
+      : policy.maxTransientRetriesPerCandidate
+  };
+}
+
 function countOf(kinds: readonly PlaybackFailureKind[], kind: PlaybackFailureKind): number {
   return kinds.reduce((total, recorded) => (recorded === kind ? total + 1 : total), 0);
 }
@@ -503,8 +561,11 @@ function exclusionFor(
  * caller's guarantee to make, and `planFailover` makes it by ranking.
  *
  * Total for every input: an empty list, a zero or negative `maxAttempts`
- * (terminal immediately), and failures naming ids that were never supplied
- * (counted, surfaced, attributed to nothing).
+ * (terminal immediately), a `NaN` in either half of the policy (read as the
+ * conservative bound -- see the note at the top of the body, because `NaN` is
+ * the one value that would otherwise silently mean NO bound), and failures
+ * naming ids that were never supplied (counted, surfaced, attributed to
+ * nothing).
  */
 export function scheduleAttempts(
   orderedCandidateIds: readonly string[],
@@ -512,6 +573,10 @@ export function scheduleAttempts(
   policy: FailoverPolicy = DEFAULT_FAILOVER_POLICY,
   charged: ChargedAttempts = {}
 ): AttemptSchedule {
+  /* The budget as it will actually be enforced. See `boundedPolicy`. */
+  const bounded = boundedPolicy(policy);
+  const maxAttempts = bounded.maxAttempts;
+
   /*
    * Grouped, then only ever COUNTED or membership-tested. The per-candidate
    * array's own order is never read, which is what makes the schedule a function
@@ -575,7 +640,7 @@ export function scheduleAttempts(
      * number by construction.
      */
     const exclusion: FailoverExclusionReason | null =
-      exclusionFor(kinds, policy) ?? (charges > kinds.length ? "attempt_failed_unclassified" : null);
+      exclusionFor(kinds, bounded) ?? (charges > kinds.length ? "attempt_failed_unclassified" : null);
 
     if (exclusion === null) {
       attemptable.push(candidateId);
@@ -612,8 +677,33 @@ export function scheduleAttempts(
     )
   }));
 
-  const attemptsUsed = charged.attemptsUsed ?? failures.length;
-  const attemptsRemaining = Math.max(policy.maxAttempts - attemptsUsed, 0);
+  /*
+   * THE TOTAL, TAKEN FROM WHICHEVER SET OF BOOKS THE CALLER IS ACTUALLY KEEPING.
+   *
+   * `failures.length` is the default and is exactly right for `planFailover`,
+   * where an attempt and a reported failure are the same event. A caller that
+   * supplies `attemptsByCandidate` is asserting a DIFFERENT and more complete
+   * count -- that map exists precisely because an unclassifiable failure is
+   * absent from `failures` by contract -- so reading the total off the failure
+   * list while the tried/untried partition reads the map would run the session
+   * budget on one set of books and the scheduling decision on the other, with the
+   * budget being the one that UNDER-counts. That is the exact shape of the defect
+   * `ChargedAttempts` was added to close, left reachable through a half-supplied
+   * argument.
+   *
+   * NOT A MERGE. Summing the map is what the map itself says the total is; adding
+   * `failures.length` to it would double-charge every classified failure, which
+   * is the same reason the per-candidate count REPLACES rather than adds. A
+   * caller that supplies `attemptsUsed` still wins outright: it is the one fact
+   * here nobody else can derive, since an attempt charged against an id outside
+   * the pool appears in neither list.
+   */
+  const attemptsUsed =
+    charged.attemptsUsed ??
+    (chargedPerCandidate === null
+      ? failures.length
+      : [...chargedPerCandidate.values()].reduce((total, charges) => total + charges, 0));
+  const attemptsRemaining = Math.max(maxAttempts - attemptsUsed, 0);
 
   /*
    * BREADTH BEFORE DEPTH.
@@ -667,7 +757,7 @@ export function scheduleAttempts(
      * separated first rather than folded into exhaustion.
      */
     reason = orderedCandidateIds.length === 0 ? "no_candidates" : "candidates_exhausted";
-  } else if (attemptsUsed >= policy.maxAttempts) {
+  } else if (attemptsUsed >= maxAttempts) {
     reason = "attempt_limit_reached";
   } else {
     next = head;

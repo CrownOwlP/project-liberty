@@ -6027,7 +6027,7 @@ try {
     // ordinary start rather than a reconciliation.
     runFail(gitRepo, reconcileArgs(HEAD), /is HEAD, so the range/);
     // A real commit on an unrelated line of history is not a base.
-    runFail(gitRepo, reconcileArgs(SIDE), /is not an ancestor of HEAD/);
+    const divergent = runFail(gitRepo, reconcileArgs(SIDE), /is not an ancestor of HEAD/);
 
     /*
      * THE CENTRAL REFUSAL. IMPL2 is after the implementation: nothing under the
@@ -6036,17 +6036,42 @@ try {
      * review range contains none of the work -- and it must be refused even
      * though the sha is real, resolvable and a genuine ancestor.
      */
-    runFail(gitRepo, reconcileArgs(IMPL2), /nothing under allowedPaths changed between/);
+    const after = runFail(
+      gitRepo,
+      reconcileArgs(IMPL2),
+      /nothing under allowedPaths changed between/,
+    );
 
     /*
-     * THE NARROWING REFUSAL. IMPL1 is INSIDE the implementation: it edits
-     * fixtures/rec/impl.ts, and so does the window that follows it. Accepting it
-     * would hide part one from the first review while still looking like a valid
-     * range. The remedy named in the error always widens, never narrows.
+     * WHAT IS NO LONGER REFUSED, and why the assertion that used to sit here was
+     * INVERTED rather than deleted.
+     *
+     * IMPL1 edits fixtures/rec/impl.ts and so does the window that follows it, so
+     * the old same-file heuristic refused it as "inside the implementation" and
+     * advised naming an earlier commit. That refusal was removed on review: its
+     * only reachable remedy was a DELIBERATELY WIDENED base, which is a different
+     * fact from "where this implementation began" -- the one thing
+     * implementationBaseSha is allowed to mean -- and git cannot tell an
+     * implementation stream from two lanes sharing a directory anyway.
+     *
+     * The acceptance half is asserted in 9av, on PL-RC-0005, whose fixture has the
+     * same shape and whose task is not otherwise spent. It cannot be asserted here
+     * because reconciliation is once-per-task: accepting IMPL1 would consume
+     * PL-RC-0001 and the true-base case below would then fail as IN_PROGRESS for
+     * reasons having nothing to do with what it tests.
+     *
+     * What IS pinned here is that no refusal on this path ever tells an operator
+     * to widen. That advice is the specific defect being removed, and a later
+     * refusal that reintroduced the phrasing would reintroduce the corruption.
      */
-    const narrowed = runFail(gitRepo, reconcileArgs(IMPL1), /itself modifies 1 file\(s\)/);
-    assert.match(narrowed, /fixtures\/rec\/impl\.ts/, narrowed);
-    assert.match(narrowed, /Name an earlier commit/, narrowed);
+    for (const refusal of [after, divergent]) {
+      assert.doesNotMatch(
+        refusal,
+        /Name an earlier commit|\^ is the usual answer/,
+        `nothing may push the operator toward a wider base; that advice is what made the field ` +
+          `mean "probably safe enough" instead of "where this implementation began":\n${refusal}`,
+      );
+    }
 
     // An unknown implementation agent is not a name the control plane can hold
     // anyone to.
@@ -6098,6 +6123,21 @@ try {
       "the published window must name exactly the commits that touched the surface",
     );
     assert.equal(reconciled.implementationBaseProvenance.oldestSurfaceCommit, IMPL1);
+
+    /*
+     * THE EVIDENCE FIELD, on the honest base. BASE is the baseline commit: the
+     * task is authored, none of its files exist yet, so the base commit itself
+     * changed nothing under the reviewed surface. Zero is published as zero --
+     * and it is a real answer here, not a stand-in for "could not be computed",
+     * which is why an uninspectable base is refused outright rather than recorded
+     * as an empty list.
+     */
+    assert.equal(reconciled.implementationBaseProvenance.baseCommitSurfaceTouchCount, 0);
+    assert.deepEqual(reconciled.implementationBaseProvenance.baseCommitSurfaceTouches, []);
+    assert.equal(
+      reconciled.implementationBaseProvenance.baseCommitSurfaceTouchesTruncated,
+      false,
+    );
 
     // Reconciliation establishes a base; it does not revise one. A second
     // attempt is the silent hand-edit in command form.
@@ -6202,6 +6242,10 @@ try {
       "reconciled-existing-implementation",
       "the reviewer-facing report must distinguish an asserted base from a captured one",
     );
+    // The record is emitted whole, so every published field -- including the
+    // base commit's own surface touches -- reaches the reviewer here too.
+    assert.deepEqual(status.implementationBaseProvenance.baseCommitSurfaceTouches, []);
+    assert.equal(status.implementationBaseProvenance.baseCommitSurfaceTouchCount, 0);
 
     /* --- the range the control plane actually derives ------------------- */
     const { expectedReviewBase, validateReviewRange, gitAdapter, RANGE_PERMANENT } =
@@ -6244,6 +6288,24 @@ try {
       /base predates the claim/,
       `the request must tell the reviewer why its range opens before the claim:\n${published}`,
     );
+    /*
+     * The evidence travels with the range. The reviewer is being asked to settle
+     * the one question no check can -- "does an earlier commit also belong to this
+     * implementation?" -- so the most useful fact for it is stated where the range
+     * is announced, not left in a field they would have to know to go and read.
+     * Here it is zero: BASE is the baseline commit and touches none of
+     * fixtures/recu.
+     */
+    assert.match(
+      published,
+      /the base commit itself changed 0 file\(s\) under allowedPaths/,
+      `the review request must publish what the base commit itself changed:\n${published}`,
+    );
+    assert.match(
+      published,
+      /not a control-plane verdict/,
+      `the reviewer must be told this is theirs to judge, not a finding already made:\n${published}`,
+    );
     const messageId = published.match(/Published (MSG-\S+)/)[1];
     const message = JSON.parse(
       fs.readFileSync(busFile(repo, "claude-to-gpt", `${messageId}.json`), "utf8"),
@@ -6276,25 +6338,28 @@ try {
   }
 
   /* ---------------------------------------------------------------------
-   * 9av. The overlap check asks a WRITE-surface question, and asks it about
-   *      the write surface.
+   * 9av. What the base commit itself touched is REPORTED, never adjudicated.
    *
-   *      "Does the base commit sit inside this task's implementation stream?"
-   *      is only answerable about files this task may write. A reviewDependency
-   *      is by definition somebody else's code -- unreserved, read-only, and
-   *      possibly being edited by another active lane right now -- so a base
-   *      commit touching one says nothing about where this implementation began.
+   *      This scenario used to pin a same-file refusal: a base commit that
+   *      edited a file the window goes on to change was rejected as "inside the
+   *      implementation". Two rounds were spent on which path surface it should
+   *      consult -- the reviewed one refused every base for a task with churning
+   *      `reviewDependencies`, so it was narrowed to the write surface -- before
+   *      the answer turned out to be that it should not be a refusal at all.
    *
-   *      Asking it on the reviewed surface disabled the mechanism for precisely
-   *      the task shape it exists for. A task declaring
-   *      `reviewDependencies: ["packages/contracts/**"]` sits beside a directory
-   *      that churns constantly, so any commit that happened to touch a contract
-   *      was refused as a base -- and the error advised `<sha>^`, sending the
-   *      operator walking backwards through history with no reachable answer.
+   *      The remedy it advised (`<sha>^`, repeatedly, until the overlap stopped)
+   *      does not produce the commit this implementation began from; it produces
+   *      a deliberately widened one. `implementationBaseSha` is the exact lower
+   *      bound of the first review range, so widening it on a tool's advice makes
+   *      the field mean "an earlier commit that is probably safe enough" -- and
+   *      nothing downstream reads it that way. Git does not attribute commits to
+   *      tasks, so the same overlap is equally the signature of two lanes sharing
+   *      a directory, a revert, or a formatting pass.
    *
-   *      Both halves are pinned here, because the fix must not become a hole:
-   *      the dependency-churn base is ACCEPTED, and a base inside the task's own
-   *      files is still REFUSED.
+   *      So BOTH bases here are now accepted, and the difference between them is
+   *      published rather than enforced: the reviewer is told exactly what each
+   *      base commit changed under the reviewed surface and decides what it
+   *      means. That is the assertion this scenario now makes.
    * ------------------------------------------------------------------- */
   {
     const repo = freshRepo();
@@ -6344,25 +6409,60 @@ try {
     run(repo, CLI, ["claim", "PL-RC-0005", "claude-backend"]);
 
     /*
-     * STILL REFUSED. IMPL1 edits fixtures/rcov/b/one.ts, and so does the window
-     * that follows it, so for PL-RC-0005 it is a commit from inside the
-     * implementation. Scoping the check to allowedPaths must not weaken this --
-     * it is the narrowing this whole command exists to prevent.
+     * INVERTED, DELIBERATELY. IMPL1 edits fixtures/rcov/b/one.ts and so does the
+     * window that follows it, which is exactly the shape the removed heuristic
+     * refused for PL-RC-0005. It is now ACCEPTED, and the fact that used to be a
+     * verdict is published instead: the record names fixtures/rcov/b/one.ts as a
+     * file the base commit itself changed, and a human reviewer -- who can read
+     * the commit and ask the implementer -- settles whether that means the base
+     * sits inside this task's work or merely beside it.
+     *
+     * This is not a relaxation of the range contract. The base still has to be a
+     * real ancestor, still cannot be HEAD, and something under the reviewed
+     * surface still has to change in base..HEAD; and whatever base is recorded is
+     * still the exact lower bound `validateReviewRange` holds the first review to
+     * (pinned in 9au). What is gone is the tool inferring task intent from a
+     * filename collision, and then advising a wider base as the cure.
      */
-    const inside = runFail(
-      repo,
-      [
-        "start", "PL-RC-0005", "claude-backend", "--reconcile-existing",
-        "--base", IMPL1, "--reason", "wrongly chosen from inside the implementation",
-      ],
-      /itself modifies 1 file\(s\) under PL-RC-0005's allowedPaths/,
+    const insideShaped = run(repo, CLI, [
+      "start", "PL-RC-0005", "claude-backend", "--reconcile-existing",
+      "--base", IMPL1, "--reason", "part one is the last commit before this lane's work began",
+    ]);
+    assert.match(insideShaped, /RECONCILED pre-existing implementation/, insideShaped);
+    assert.match(
+      insideShaped,
+      /the base commit itself changed 1 file\(s\)/,
+      `the operator must be shown the evidence at the moment they can still act on it:\n${insideShaped}`,
     );
-    assert.match(inside, /fixtures\/rcov\/b\/one\.ts/, inside);
+    assert.match(insideShaped, /fixtures\/rcov\/b\/one\.ts/, insideShaped);
+    assert.match(
+      insideShaped,
+      /not a verdict/,
+      `the report must not read as a finding the control plane has already made:\n${insideShaped}`,
+    );
+    assert.doesNotMatch(
+      insideShaped,
+      /Name an earlier commit|\^ is the usual answer/,
+      `nothing may advise widening the base:\n${insideShaped}`,
+    );
+    const insideRecord = taskOf(repo, "PL-RC-0005").implementationBaseProvenance;
+    assert.equal(insideRecord.baseCommitSurfaceTouchCount, 1);
+    assert.deepEqual(insideRecord.baseCommitSurfaceTouches, ["fixtures/rcov/b/one.ts"]);
+    assert.equal(insideRecord.baseCommitSurfaceTouchesTruncated, false);
+    // The audit trail carries it too: a reviewer working from events.jsonl must
+    // not have to open tasks.json to see what they are being asked to weigh.
+    const insideEvent = eventsOf(repo)
+      .filter((e) => e.taskId === "PL-RC-0005" && e.type === "task.started_reconciled")
+      .at(-1);
+    assert.deepEqual(insideEvent.baseCommitSurfaceTouches, ["fixtures/rcov/b/one.ts"]);
+    assert.match(insideEvent.note, /evidence, not a verdict/);
 
     /*
-     * ACCEPTED. BASE edits fixtures/rcov/shared/vocab.ts, which the window
-     * changes again -- and under the previous rule that intersection alone
-     * refused the correct answer. It is a dependency, not this task's work.
+     * ACCEPTED, and accepted for a second reason now. BASE edits
+     * fixtures/rcov/shared/vocab.ts, which the window changes again -- an
+     * intersection that once refused this correct answer outright. Its evidence
+     * is a dependency file, which is precisely the reading a human does easily
+     * and a file test does not.
      */
     const accepted = run(repo, CLI, [
       "start", "PL-RC-0004", "claude-frontend", "--reconcile-existing",
@@ -6384,16 +6484,40 @@ try {
       [IMPL1, IMPL2].sort(),
       "the window must still be measured on allowedPaths + reviewDependencies",
     );
+    /*
+     * And the evidence is measured on the REVIEWED surface too, which is the
+     * whole reason the old write-surface/reviewed-surface split is gone. Every
+     * other published field describes allowedPaths + reviewDependencies; a record
+     * that quietly measured one field on a narrower surface would be one a
+     * reviewer has to disambiguate before they can use any of it.
+     */
+    assert.deepEqual(
+      reconciled.implementationBaseProvenance.baseCommitSurfaceTouches,
+      ["fixtures/rcov/shared/vocab.ts"],
+      "a base whose only surface touch is a shared dependency must say so, not be refused for it",
+    );
+    assert.equal(reconciled.implementationBaseProvenance.baseCommitSurfaceTouchCount, 1);
   }
 
   /* ---------------------------------------------------------------------
-   * 9aw. A remedy that cannot exist must not be advised.
+   * 9aw. The root commit: the base the removed heuristic could never accept.
    *
-   *      The overlap refusal tells the operator to name an earlier commit and
-   *      offers `<sha>^` as the usual answer. A root commit has no parent, so
-   *      for the one base where the advice is most confidently wrong it sends
-   *      the operator looking for a commit git will refuse to resolve. The
-   *      honest answer there is that no reconcilable base exists at all.
+   *      This scenario used to assert a refusal and the special-cased error it
+   *      needed. The overlap check told operators to name an earlier commit and
+   *      offered `<sha>^`; a root commit has no parent, so the advice named a
+   *      commit git will not resolve and the code carried a second message
+   *      saying no reconcilable base existed at all.
+   *
+   *      That special case is the heuristic's own reductio. A repository whose
+   *      first commit already contains preflight work has exactly one honest
+   *      answer for where the review range opens -- that commit -- and the check
+   *      declared the honest answer unreachable, because its only remedy was
+   *      "go back further" and there was no further to go.
+   *
+   *      INVERTED: the root commit is now an ordinary, acceptable base, and what
+   *      it changed under the reviewed surface is published so the reviewer can
+   *      see that this range opens at a commit which already contains part of the
+   *      work. The refusal is gone; the fact it was reacting to is not.
    * ------------------------------------------------------------------- */
   {
     const repo = freshRepo();
@@ -6414,43 +6538,56 @@ try {
     commit("implementation continues");
 
     run(repo, CLI, ["claim", "PL-RC-0006", "claude-frontend"]);
-    const refused = runFail(
-      repo,
-      [
-        "start", "PL-RC-0006", "claude-frontend", "--reconcile-existing",
-        "--base", ROOT, "--reason", "the only commit before the rest of the work",
-      ],
-      /itself modifies 1 file\(s\)/,
-    );
-    assert.match(
-      refused,
-      /ROOT commit, so there is no earlier commit to name/,
-      `the error must not advise a parent the base does not have:\n${refused}`,
-    );
+    const accepted = run(repo, CLI, [
+      "start", "PL-RC-0006", "claude-frontend", "--reconcile-existing",
+      "--base", ROOT, "--reason", "the only commit before the rest of the work",
+    ]);
+    assert.match(accepted, /RECONCILED pre-existing implementation/, accepted);
     assert.doesNotMatch(
-      refused,
-      /\^ is the usual answer/,
-      `"<sha>^" is not a reachable remedy for a root commit:\n${refused}`,
+      accepted,
+      /ROOT commit, so there is no earlier commit to name|\^ is the usual answer/,
+      `there is no longer a refusal here, so neither of its remedies may survive:\n${accepted}`,
     );
+    const rootRecord = taskOf(repo, "PL-RC-0006").implementationBaseProvenance;
+    assert.equal(taskOf(repo, "PL-RC-0006").implementationBaseSha, ROOT);
+    assert.deepEqual(
+      rootRecord.baseCommitSurfaceTouches,
+      ["fixtures/rroot/impl.ts"],
+      "the reviewer must be told that the range opens at a commit already containing part of the work",
+    );
+    // `surfaceFilesTouchedBy` passes --root for a parentless commit; without it a
+    // root commit diffs against nothing and the evidence would read as an empty
+    // list -- the most reassuring possible answer about the one base that most
+    // needs looking at.
+    assert.equal(rootRecord.baseCommitSurfaceTouchCount, 1);
   }
 
   /* ---------------------------------------------------------------------
    * 9ax. Two ways a diff can lie about what a commit touched.
    *
+   *      Both halves were written against the removed overlap refusal and both
+   *      are INVERTED here: the bases are accepted, and what is asserted is that
+   *      the published evidence still names the file. The defects are unchanged
+   *      and matter just as much, because an under-reported diff now produces a
+   *      record that tells the reviewer this commit touched NOTHING under the
+   *      surface -- the most reassuring answer available, and a false one. A
+   *      wrong refusal is loud; a wrong reassurance is silent.
+   *
    *      MERGES. `diff-tree` reports an empty diff for a merge unless told which
    *      parent to compare against, and first-parent was the previous answer.
    *      A merge that resolved the reviewed files TOWARDS the mainline is
    *      TREESAME to its first parent while differing from its second, so a
-   *      conflict resolution sitting INSIDE an implementation stream passed the
-   *      overlap check while looking perfectly healthy.
+   *      conflict resolution sitting inside an implementation stream reported
+   *      itself as touching nothing while looking perfectly healthy.
    *
-   *      RENAMES. The two sides of the overlap intersection were built under
-   *      different rules: porcelain `git diff` honours `diff.renames` and reports
-   *      a rename as its destination alone, while plumbing `diff-tree` does not
-   *      and reports a delete plus an add. A base that edited a file the window
-   *      then RENAMED therefore fell out of the intersection -- the two sides
-   *      were spelling the same file differently -- and the base was accepted.
-   *      Pinned with `--no-renames` on both rather than left to configuration.
+   *      RENAMES. The two diff helpers were built under different rules:
+   *      porcelain `git diff` honours `diff.renames` and reports a rename as its
+   *      destination alone, while plumbing `diff-tree` does not and reports a
+   *      delete plus an add. A base that edited a file the window then RENAMED
+   *      was therefore described in two spellings at once. `--no-renames` is
+   *      pinned on both rather than left to configuration, so the evidence names
+   *      the file under the spelling the base itself used and the published
+   *      counts mean the same thing on every machine that re-derives them.
    * ------------------------------------------------------------------- */
   {
     /* --- the merge half ------------------------------------------------ */
@@ -6492,15 +6629,17 @@ try {
     commit("unrelated work by another lane");
 
     run(repo, CLI, ["claim", "PL-RC-0007", "claude-frontend"]);
-    const mergeRefusal = runFail(
-      repo,
-      [
-        "start", "PL-RC-0007", "claude-frontend", "--reconcile-existing",
-        "--base", MERGE, "--reason", "chosen because the merge looks like a boundary",
-      ],
-      /itself modifies 1 file\(s\)/,
+    run(repo, CLI, [
+      "start", "PL-RC-0007", "claude-frontend", "--reconcile-existing",
+      "--base", MERGE, "--reason", "chosen because the merge looks like a boundary",
+    ]);
+    const mergeRecord = taskOf(repo, "PL-RC-0007").implementationBaseProvenance;
+    assert.deepEqual(
+      mergeRecord.baseCommitSurfaceTouches,
+      ["fixtures/rmg/impl.ts"],
+      "a merge is compared against EVERY parent; first-parent alone reports this one as touching nothing",
     );
-    assert.match(mergeRefusal, /fixtures\/rmg\/impl\.ts/, mergeRefusal);
+    assert.equal(mergeRecord.baseCommitSurfaceTouchCount, 1);
 
     /* --- the rename half ----------------------------------------------- */
     const renameRepo = freshRepo();
@@ -6527,18 +6666,27 @@ try {
     rename.commit("unrelated work by another lane");
 
     run(renameRepo, CLI, ["claim", "PL-RC-0008", "claude-frontend"]);
-    const renameRefusal = runFail(
-      renameRepo,
-      [
-        "start", "PL-RC-0008", "claude-frontend", "--reconcile-existing",
-        "--base", RENAME_BASE, "--reason", "looks clean once the rename hides the edit",
-      ],
-      /itself modifies 1 file\(s\)/,
-    );
+    const renameOutput = run(renameRepo, CLI, [
+      "start", "PL-RC-0008", "claude-frontend", "--reconcile-existing",
+      "--base", RENAME_BASE, "--reason", "the last commit before the implementation renamed the file",
+    ]);
     assert.match(
-      renameRefusal,
+      renameOutput,
       /fixtures\/rren\/old\.ts/,
-      `the refusal must name the file under the spelling the base used:\n${renameRefusal}`,
+      `the evidence must name the file under the spelling the base used:\n${renameOutput}`,
+    );
+    assert.deepEqual(
+      taskOf(renameRepo, "PL-RC-0008").implementationBaseProvenance
+        .baseCommitSurfaceTouches,
+      ["fixtures/rren/old.ts"],
+      "with rename detection left to configuration this file is reported under two different names",
+    );
+    // And `validate` re-derives the count over the same pinned rules, so an
+    // honest record does not draw a mismatch warning from a git config setting.
+    assert.match(
+      runCombined(renameRepo, CLI, ["validate"]),
+      /AI control plane valid/,
+      "a reconciled task in a repository with diff.renames on must still validate cleanly",
     );
   }
 
@@ -6802,6 +6950,61 @@ try {
       (t) => (t.implementationBaseProvenance.surfaceCommitCount = 7),
       /surfaceCommitsTruncated=false while publishing 1 of 7 commit\(s\)/,
     );
+    // The evidence field is shape-checked like everything else. A published fact
+    // a reviewer is told to weigh is exactly as worth forging as the window.
+    edit(
+      (t) => (t.implementationBaseProvenance.baseCommitSurfaceTouches = "none"),
+      /baseCommitSurfaceTouches must be an array of file paths/,
+    );
+    edit(
+      (t) => (t.implementationBaseProvenance.baseCommitSurfaceTouchesTruncated = "no"),
+      /baseCommitSurfaceTouchesTruncated must be a boolean/,
+    );
+    edit(
+      (t) => (t.implementationBaseProvenance.baseCommitSurfaceTouchCount = 9),
+      /baseCommitSurfaceTouchesTruncated=false while publishing 1 of 9 touch\(es\)/,
+    );
+
+    /*
+     * THE CHEAP FORGERY ON THE EVIDENCE FIELD, and the honest limit of catching
+     * it.
+     *
+     * BASE here is the repository's first commit and legitimately touches
+     * fixtures/rprov/keep.ts, so the honest record publishes one touch -- an
+     * ordinary, correct base that the removed heuristic would have had an opinion
+     * about. Emptying that list is the forgery with a motive: it makes a base read
+     * as untouched by the surface it precedes, which is the reassuring answer.
+     *
+     * It is caught by RE-DERIVATION, and reported as a WARNING rather than an
+     * error, for the same reason the other counts are: `allowedPaths` and
+     * `reviewDependencies` may be legitimately redeclared after a reconciliation,
+     * and a recomputation over the new surface then disagrees with a record that
+     * was honest when written. Erroring would strand correct tasks. A warning that
+     * names the contradiction is the strongest verdict that is actually true.
+     */
+    {
+      const doc = readDoc();
+      const t = doc.tasks.find((x) => x.id === "PL-RC-0011");
+      assert.deepEqual(
+        t.implementationBaseProvenance.baseCommitSurfaceTouches,
+        ["fixtures/rprov/keep.ts"],
+        "the honest record must publish what the base commit really changed",
+      );
+      t.implementationBaseProvenance.baseCommitSurfaceTouches = [];
+      t.implementationBaseProvenance.baseCommitSurfaceTouchCount = 0;
+      writeDoc(doc);
+      const out = runCombined(repo, CLI, ["validate"]);
+      assert.match(
+        out,
+        /claims the base commit itself changed 0 file\(s\).*finds 1/s,
+        `an emptied evidence list must be contradicted by the repository itself:\n${out}`,
+      );
+      const restored = readDoc();
+      restored.tasks[restored.tasks.findIndex((x) => x.id === "PL-RC-0011")] =
+        JSON.parse(honest);
+      writeDoc(restored);
+      assert.match(runCombined(repo, CLI, ["validate"]), /AI control plane valid/);
+    }
 
     /* --- history: facts no later edit changes -------------------------- */
     edit((t) => {

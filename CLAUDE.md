@@ -82,21 +82,33 @@ npm run ai:start -- <TASK_ID> <AGENT_ID> \
 
 All three flags are required together, each is refused on an ordinary start, and
 a flag present without a value is refused rather than read as absent. The base is
-validated against real history — it must exist, be an ancestor of HEAD, not be
-HEAD, leave something under the reviewed surface changed in `base..HEAD`, and not
-itself edit files **under `allowedPaths`** that window goes on to change. Those
-last two are deliberately different surfaces: the first asks what the review
-binds to, the second asks whether the base sits inside this task's own
-implementation stream, and a `reviewDependency` is by definition not this task's
-work. The working tree must be clean under `allowedPaths`, because the operation
-asserts the implementation is already in pushed commits. The task must be
-`CLAIMED` with no base, no review record and no gate results. The audit event is
-`task.started_reconciled`, never `task.started`, and it is written after task
-state is persisted, never before.
+validated against real history, and only against **mechanical facts**: it must be
+a full 40-hex sha, exist, be an ancestor of HEAD, not be HEAD, and leave something
+under the reviewed surface changed in `base..HEAD`. The working tree must be clean
+under `allowedPaths`, because the operation asserts the implementation is already
+in pushed commits. The task must be `CLAIMED` with no base, no review record and
+no gate results. The audit event is `task.started_reconciled`, never
+`task.started`, and it is written after task state is persisted, never before.
+
+Nothing checks whether the base is *really* the commit immediately before this
+task's work, because git does not attribute commits to tasks. That question is
+**published for the reviewer** instead: the record and the audit event carry the
+commit window, both endpoints, the changed-file count, the files the base commit
+itself changed under the reviewed surface (`baseCommitSurfaceTouches`), and your
+`--reason`.
+
+A refusal built on that last field used to exist — a base whose touches overlapped
+the window was rejected as "inside the implementation", advising `<sha>^`. It was
+removed on review and must not come back. Its only reachable remedy was a
+*deliberately widened* base, so the mechanism's own advice corrupted the meaning
+of the field it writes: `implementationBaseSha` is where implementation began, not
+an earlier commit that is probably safe enough. Name the true base. Nothing will
+ask you to widen it, and no refusal on this path may advise widening.
 
 Use it only for an implementation that genuinely already exists in pushed commits.
-Never to shrink a review range, never for uncommitted work, and never as a routine
-alternative to `start`. Determine the base from git history; do not guess one.
+Never to shrink a review range, never to pad one, never for uncommitted work, and
+never as a routine alternative to `start`. Determine the base from git history; do
+not guess one.
 `--implementation-agent` only ever adds an implementation-side identity: the
 self-approval rule compares a reviewer against both the asserted implementer and
 the owner, so it can never make a task self-approvable. See `control/README.md`

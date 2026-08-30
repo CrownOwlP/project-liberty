@@ -11,6 +11,7 @@ import type {
 import { type PlaybackDecision, type RankedCandidate, rankStreamCandidates } from "./ranking";
 import {
   DEFAULT_FAILOVER_POLICY,
+  boundedPolicy,
   byCodePoint,
   scheduleAttempts,
   type FailoverReason,
@@ -70,9 +71,9 @@ import {
  * NOTHING WAS RENAMED AND NOTHING MOVED OUT OF REACH. The re-exports below
  * restate exactly the surface this module published before the split, in the
  * same names, so `./failover`, `@liberty/media-engine` and every test that
- * imports from either resolve to the same bindings they always did. `byCodePoint`
- * is imported but deliberately NOT re-exported: it was module-private before and
- * stays out of the barrel.
+ * imports from either resolve to the same bindings they always did.
+ * `byCodePoint` and `boundedPolicy` are imported but deliberately NOT
+ * re-exported: both were module-private before and stay out of the barrel.
  */
 
 export {
@@ -274,9 +275,24 @@ function exhaustionReason(
  * candidate keeps whatever the provider stated -- including nothing. Unknown
  * stays unknown; the attempt establishes decodability, and decodability only.
  *
+ * NO PRODUCTION CALLER TODAY, AND THAT IS RECORDED HERE RATHER THAN LEFT TO BE
+ * INFERRED. Every caller in the repository is a test. The session route
+ * (`apps/web/.../playback/session/issue-session.ts`) ranks and PUBLISHES
+ * `failoverPolicy`; the failover decisions that real playback takes are taken in
+ * the browser, by `playback-machine.ts`, through `scheduleAttempts` directly.
+ * That is the point of the split and it is not a defect -- the client must
+ * schedule and must not rank -- but a policy function with no caller enforces
+ * nothing, and this repository has already paid for a comment that implied an
+ * alignment nobody had wired up. What this function IS, precisely: the
+ * server-side plan a future endpoint publishes alongside a session, and the
+ * ranking-aware reference the scheduler is tested against -- `next` here and
+ * `next` in the client come from one implementation, so a divergence is a test
+ * failure rather than a field report. If it acquires a caller, the fact above is
+ * the line to delete.
+ *
  * Total for every input, including a zero or negative `maxAttempts` (terminal
- * immediately) and failures naming candidates that do not exist (counted,
- * surfaced, attributed to nothing).
+ * immediately), a `NaN` policy (see `scheduleAttempts`) and failures naming
+ * candidates that do not exist (counted, surfaced, attributed to nothing).
  */
 export function planFailover(
   candidates: readonly StreamCandidate[],
@@ -343,7 +359,11 @@ export function planFailover(
 
   const trail = [
     next === null ? REASON_TEXT[reason] : `${next.candidate.id}: ${REASON_TEXT[reason]}`,
-    `${attemptsUsed}/${policy.maxAttempts} attempts used`,
+    /* The ENFORCED budget, not the stated one. They differ only for a `NaN`
+     * nobody meant to pass (see `boundedPolicy`), and that is exactly the case
+     * where a trail reading `0/NaN attempts used` would send its reader looking
+     * for a bound the scheduler never applied. */
+    `${attemptsUsed}/${boundedPolicy(policy).maxAttempts} attempts used`,
     excluded.length > 0
       ? `ruled out: ${excluded.map((entry) => `${entry.candidateId}=${entry.reason}`).join(", ")}`
       : "nothing ruled out",
