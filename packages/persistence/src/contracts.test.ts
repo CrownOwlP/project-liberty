@@ -2,6 +2,7 @@ import { getTableConfig } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
 import {
   parseContentId,
+  parseListLimit,
   playbackProgressRowSchema,
   profileRowSchema,
   watchlistEntryRowSchema
@@ -91,5 +92,38 @@ describe("parseContentId defers to @liberty/contracts", () => {
 
   it("is deterministic", () => {
     expect(parseContentId("the-northstar-affair")).toEqual(parseContentId("the-northstar-affair"));
+  });
+});
+
+describe("parseListLimit", () => {
+  it.each([0, 1, 20, 1000])("accepts the page size %s", (value) => {
+    const parsed = parseListLimit(value);
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.limit).toBe(value);
+  });
+
+  it.each([
+    ["NaN, which is what `Number(\"abc\")` gives a query string", Number.NaN],
+    ["a negative limit, which PostgreSQL refuses outright", -1],
+    ["a fractional limit", 2.5],
+    ["Infinity", Number.POSITIVE_INFINITY],
+    ["an integer too large to survive the driver", Number.MAX_SAFE_INTEGER + 2]
+  ])("refuses %s", (_name, value) => {
+    const parsed = parseListLimit(value);
+    expect(parsed.ok).toBe(false);
+    if (parsed.ok) return;
+    expect(parsed.reason).toBe("limit_not_representable");
+    // Named and explained, because the alternative is a driver exception that
+    // mentions neither the caller nor the parameter -- `LIMIT NaN` reaches
+    // PostgreSQL as a syntax error and arrives as a 500 with no reason trail.
+    expect(parsed.detail).toContain("limit");
+  });
+
+  it("accepts zero rather than inventing a minimum page size", () => {
+    // `LIMIT 0` is legal SQL that returns nothing, and it is the natural result
+    // of a paginator that has run out of page. Refusing it would be this module
+    // inventing a product rule nobody asked it for.
+    expect(parseListLimit(0).ok).toBe(true);
   });
 });

@@ -36,8 +36,10 @@
  *      the checked address and the connected address would be two independent
  *      answers a hostile resolver chooses separately -- DNS rebinding, against
  *      which control 3 alone is decorative. The `ok` verdict therefore carries a
- *      `PinnedTarget` rather than a bare address list, and `pin.ts` explains
- *      what that binds and what it deliberately does not change.
+ *      `PinnedTarget` rather than a bare address list -- an UNFORGEABLE one,
+ *      declared and minted in this file and nowhere else, for the reasons set
+ *      out under "the authorisation token" below. `pin.ts` explains what the
+ *      pin binds at connect time and what it deliberately does not change.
  *
  *   5. REDIRECTS ARE REVALIDATED. Handled in `http.ts`, which calls back into
  *      `authoriseFetchTarget` for every hop -- and therefore re-pins for every
@@ -64,8 +66,6 @@
  * strings and log lines is unconditional rather than incidental. Details name
  * an origin or a hostname and nothing after it.
  */
-
-import { bareAddress, type PinnedTarget } from "./pin";
 
 export type HostClass = "public" | "loopback" | "private" | "unparseable";
 
@@ -179,6 +179,165 @@ export interface EgressDependencies {
 export type StaticUrlVerdict =
   | { readonly ok: true; readonly url: URL; readonly hostClass: HostClass }
   | { readonly ok: false; readonly reason: EgressRejectionReason; readonly detail: string };
+
+/* -------------------------------------------------------------------------
+ * THE AUTHORISATION TOKEN.
+ *
+ * `PinnedTarget` and the brand that makes it unforgeable live HERE, beside
+ * `authoriseFetchTarget`, and that placement IS the control rather than a
+ * filing decision.
+ *
+ * WHAT WAS WRONG BEFORE. This interface used to be declared in `pin.ts` as a
+ * plain structural record of three public fields, under a comment asserting
+ * that only `authoriseFetchTarget` could build one. The assertion was false and
+ * the review of PL-0304 rejected it on exactly that ground. Any TypeScript
+ * caller -- including one outside this package, since the barrel re-exports the
+ * type and the `./node/*` subpath exports the transport -- could write
+ *
+ *     { url: "https://allowed-name.example/x", hostname: "allowed-name.example",
+ *       addresses: ["169.254.169.254"] }
+ *
+ * hand it to `nodePinnedFetch`, and open a socket to an address that no
+ * classifier had ever seen. The transport's whole reason to exist is that the
+ * address it connects to was checked; a target it will accept from anybody
+ * makes the type a label rather than a guarantee. The package's own real-socket
+ * tests were doing precisely this, which is how a security claim came to be
+ * contradicted by the suite that was supposed to prove it.
+ *
+ * TWO MECHANISMS, because they close different holes:
+ *
+ *   1. A BRAND THAT CANNOT BE WRITTEN DOWN. `authorisedByEgress` is a
+ *      module-private `unique symbol`. It is not exported, so no other
+ *      module -- in this package or outside it -- can name the key, and an
+ *      object literal that omits it is not a `PinnedTarget`. Fabrication stops
+ *      being something a reviewer has to notice and becomes something the
+ *      compiler refuses. There is no exported constructor to reach for either:
+ *      `pinFor` is private to this file and its only two callers are the `ok`
+ *      returns of `authoriseFetchTarget`, so "the authorisation path is the only
+ *      thing that mints a pin" is now the literal shape of the program instead
+ *      of a promise made in prose.
+ *
+ *   2. A REGISTRY OF THE PINS THIS FILE ACTUALLY ISSUED. A brand alone is a
+ *      COMPILE-TIME control, and two things get past a compile-time control at
+ *      runtime: an explicit `as unknown as PinnedTarget`, and a spread --
+ *      `{ ...realPin, addresses: ["169.254.169.254"] }` copies the brand along
+ *      with everything else and type-checks. Both yield a pin the classifier
+ *      never approved, which is the original defect wearing a cast. So every
+ *      minted pin is recorded in a `WeakSet` that only this module can add to,
+ *      and `createPinnedLookup` -- the one function every transport must go
+ *      through to turn a pin into a socket decision -- refuses a target that is
+ *      not in it. A `WeakSet` rather than a `Set` because a registry of targets
+ *      must not keep them alive; and the key is object IDENTITY, which is
+ *      exactly the thing a copy does not have.
+ *
+ * Each minted pin is also FROZEN, addresses included. `readonly` is erased at
+ * runtime, so without this a caller holding a genuine pin could simply push an
+ * address onto it, or reassign `url`, between authorisation and connect --
+ * a rebinding window opened from inside the process rather than from DNS.
+ *
+ * WHAT THIS DOES NOT CLAIM. Code inside this file could still mint something
+ * wrong, and a composition root can still supply a `resolveHost` that lies.
+ * Neither is fabrication: the first is this module being wrong about its own
+ * job, and the second is the injected port working as designed -- the resolver
+ * is a declared dependency and its answers are classified before they become a
+ * pin. What is now impossible is reaching a transport with an address set that
+ * never went through the checks in this file.
+ *
+ * ONE COMPILER CAVEAT, recorded so it is not rediscovered as a bug: an
+ * unexported symbol in an exported interface is an error under `--declaration`
+ * (TS4033), because the emitted `.d.ts` could not name the key. This package
+ * emits nothing -- `build`, `lint` and `typecheck` are all `tsc --noEmit`, and
+ * `package.json` points `types` at the sources -- so the situation does not
+ * arise. Turning declaration emit on would mean exporting the symbol as a type
+ * only (`export type AuthorisedByEgress = typeof authorisedByEgress`), which
+ * keeps it unwritable, rather than exporting the value.
+ * ---------------------------------------------------------------------- */
+
+/**
+ * Strips the brackets a URL parser puts around an IPv6 literal.
+ *
+ * The brackets belong to the URL grammar, not to the address. A socket layer
+ * given `[::1]` does not recognise it as an IP literal and tries to RESOLVE it,
+ * which is both a failure and -- worse -- a name lookup we did not intend to
+ * perform.
+ *
+ * It lives in this file rather than in `pin.ts`, where it used to, so that the
+ * dependency between the two modules points ONE WAY. `pin.ts` has to ask this
+ * module whether a target was authorised; if this module also had to ask
+ * `pin.ts` for a string helper, the two would import each other at runtime. A
+ * cycle would work today and is a trap tomorrow, and the helper is the cheaper
+ * thing to move.
+ */
+export function bareAddress(address: string): string {
+  return address.startsWith("[") && address.endsWith("]") ? address.slice(1, -1) : address;
+}
+
+/**
+ * The brand. Deliberately not exported -- see "the authorisation token" above.
+ *
+ * A real symbol rather than a `declare const` phantom, so that minting needs no
+ * `as` cast anywhere: the property genuinely exists on the object, which means
+ * the one place a `PinnedTarget` comes into being is an ordinary object literal
+ * that the compiler checks like any other.
+ */
+const authorisedByEgress = Symbol("liberty.media-inspection.authorised-target");
+
+/**
+ * A URL, and the only addresses a socket for it may be opened to.
+ *
+ * ISSUED ONLY BY `authoriseFetchTarget`. A value of this type in hand is
+ * evidence that the addresses inside it went through the protocol allowlist,
+ * the egress allowlist, the loopback keys and the private-range rejection --
+ * not because a comment says so, but because the brand below cannot be named
+ * outside this file and the registry rejects anything this file did not issue.
+ */
+export interface PinnedTarget {
+  /**
+   * The URL to request, HOSTNAME INTACT. Not an address. The `Host` header, SNI
+   * and certificate identity all derive from this, so substituting an IP here is
+   * exactly the defect `pin.ts` rejects.
+   */
+  readonly url: string;
+  /**
+   * The hostname as the URL parser produced it, so an IPv6 literal is still
+   * bracketed (`[::1]`). Kept in the parser's spelling because that is what a
+   * transport building request options from the same URL will see, and the
+   * lookup compares the two.
+   */
+  readonly hostname: string;
+  /**
+   * Every address that was authorised, in resolver order, WITHOUT brackets --
+   * the spelling a socket layer expects. Never empty, and not by convention:
+   * `pinFor` takes a non-empty tuple, so a pin with no addresses is not a state
+   * this package can construct.
+   */
+  readonly addresses: readonly string[];
+  /** The brand. Unwritable outside this module; see the section above. */
+  readonly [authorisedByEgress]: true;
+}
+
+/**
+ * The pins this module has issued, by identity.
+ *
+ * Weak so that holding the registry never holds a target alive. Nothing removes
+ * an entry: a pin stays valid for as long as somebody still has it, which is
+ * correct -- expiry is the deadline's job in `http.ts`, and a pin that stopped
+ * working halfway through a redirect chain would be a new failure mode for no
+ * gain.
+ */
+const issuedPins = new WeakSet<PinnedTarget>();
+
+/**
+ * Whether this exact object came out of `authoriseFetchTarget`.
+ *
+ * The parameter is typed `PinnedTarget` rather than `unknown` on purpose: a
+ * caller that has not at least satisfied the brand cannot get this far, so the
+ * only inputs worth asking about are the ones that got past the compiler --
+ * a cast, or a copy of a real pin. Both answer `false`.
+ */
+export function isAuthorisedTarget(target: PinnedTarget): boolean {
+  return issuedPins.has(target);
+}
 
 /**
  * The `ok` branch carries a `PinnedTarget` rather than a plain address list, and
@@ -441,7 +600,14 @@ export async function authoriseFetchTarget(
     };
   }
 
-  if (addresses.length === 0) {
+  // Destructured rather than length-checked, because the two are the same test
+  // and only this spelling PROVES it to the compiler: `first` being defined is
+  // what makes `[first, ...rest]` a `[string, ...string[]]`, which is the only
+  // thing `pinFor` accepts. A pin over an empty address set therefore stops
+  // being a state that has to be guarded against downstream and becomes one that
+  // cannot be built. `noUncheckedIndexedAccess` is what makes the check honest.
+  const [first, ...rest] = addresses;
+  if (first === undefined) {
     return {
       ok: false,
       reason: "dns_resolved_no_addresses",
@@ -465,16 +631,27 @@ export async function authoriseFetchTarget(
     };
   }
 
-  return { ok: true, url, hostClass, pin: pinFor(url, addresses) };
+  return { ok: true, url, hostClass, pin: pinFor(url, [first, ...rest]) };
 }
 
 /**
- * Builds the pin, and is the ONLY thing in this package that does.
+ * Builds the pin, and is the ONLY thing in this program that does.
  *
- * Private on purpose: an exported constructor would let a caller mint a
- * `PinnedTarget` around addresses that nothing classified, which is exactly the
- * guarantee the type is supposed to carry. Reached only from the two `ok`
- * returns above, both of which are downstream of every check in this file.
+ * Private on purpose, and now enforceably so: the brand it writes cannot be
+ * named outside this file, so there is no second implementation of this
+ * function to be written anywhere -- not in a sibling module, not in a test, not
+ * in a consuming package. Reached only from the two `ok` returns above, both of
+ * which are downstream of every check in this file.
+ *
+ * THE PARAMETER IS A NON-EMPTY TUPLE, and that is load bearing. An empty address
+ * set used to be caught at the far end, in `createPinnedLookup`, because a pin
+ * that authorises nothing is indistinguishable from a pin that authorises
+ * EVERYTHING to whoever "fixes" the resulting always-failing lookup. Catching it
+ * there meant carrying a guard for a state the type permitted; requiring
+ * `[string, ...string[]]` here means the state does not exist. The caller's own
+ * `dns_resolved_no_addresses` refusal is what proves it -- written as a
+ * destructure precisely so that the proof is the same expression as the check --
+ * and the guard at the far end had nothing left to catch and is gone.
  *
  * `bareAddress` is applied to resolver answers too, not only to literals. The
  * `HostResolver` contract says bare addresses and the composition root supplies
@@ -482,11 +659,22 @@ export async function authoriseFetchTarget(
  * otherwise become a hostname the socket layer tries to look up -- turning a pin
  * into a second resolution, which is the failure this whole mechanism exists to
  * prevent. Normalising costs nothing and removes the possibility.
+ *
+ * FROZEN, and the address array with it. `readonly` is a compile-time claim that
+ * survives into no JavaScript at all, so without this a holder of a genuine pin
+ * could push `169.254.169.254` onto `addresses`, or reassign `url`, in the
+ * window between authorisation and connect -- and `nodePinnedFetch` reads both
+ * of them after it has been handed the target. That is the rebinding window
+ * reopened from inside the process, which would be an odd thing to leave open in
+ * the module that exists to close it from outside.
  */
-function pinFor(url: URL, addresses: readonly string[]): PinnedTarget {
-  return {
+function pinFor(url: URL, addresses: readonly [string, ...string[]]): PinnedTarget {
+  const pin: PinnedTarget = Object.freeze({
+    [authorisedByEgress]: true as const,
     url: url.toString(),
     hostname: url.hostname,
-    addresses: addresses.map(bareAddress)
-  };
+    addresses: Object.freeze(addresses.map(bareAddress))
+  });
+  issuedPins.add(pin);
+  return pin;
 }

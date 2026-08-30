@@ -85,3 +85,72 @@ export function parseContentId(value: unknown): ContentIdParse {
     detail: parsed.error.issues.map((issue) => issue.message).join("; ")
   };
 }
+
+export type ListLimitRejection = {
+  readonly ok: false;
+  readonly reason: "limit_not_representable";
+  readonly detail: string;
+};
+
+/**
+ * Renders a rejected instant for a reason trail, so the detail is never empty.
+ *
+ * `String(value)` alone is wrong for the input most likely to arrive from a real
+ * caller: an absent or blank header renders as the empty string, so the refusal
+ * carried a zero-length detail and explained nothing. A detail that is empty is
+ * indistinguishable from one that was never populated, which this project
+ * treats as equal to a refusal with no reason at all.
+ *
+ * Strings go through `JSON.stringify` so that an empty value, a whitespace-only
+ * value and one carrying a stray newline are all visibly different in a log;
+ * everything else through `String`, because an Invalid Date renders as
+ * "Invalid Date" and a number renders as itself.
+ *
+ * Exported and shared rather than written at each call site. There are two
+ * places that refuse an unrepresentable instant -- the watchlist mutation
+ * resolver and the writer-lease path -- and this repository has been bitten
+ * more than once by one rule with two implementations that agreed only by
+ * coincidence.
+ */
+export function describeUnrepresentableInstant(field: string, value: unknown): string {
+  const rendered = typeof value === "string" ? JSON.stringify(value) : String(value);
+  return `${field} is not a representable instant: ${rendered}`;
+}
+
+export type ListLimitParse = { readonly ok: true; readonly limit: number } | ListLimitRejection;
+
+/**
+ * The other gate a caller-supplied value passes through before it reaches SQL.
+ *
+ * `limit` is required on every list query in this package, deliberately, so the
+ * page size is a decision at the call site. Required is not the same as
+ * VALIDATED: `?limit=abc` becomes `NaN`, `?limit=-1` becomes `-1`, and Drizzle
+ * will happily render both into the statement. PostgreSQL answers `LIMIT NaN`
+ * with a syntax error and `LIMIT -1` with "LIMIT must not be negative", and both
+ * arrive at a request handler as a driver exception naming neither the caller
+ * nor the parameter. This turns them into a reason code, the same way
+ * `parseContentId` does for an id.
+ *
+ * `Number.isSafeInteger` rather than `Number.isInteger`: 2^53 is an integer by
+ * that test and does not survive the round trip through the driver's numeric
+ * encoding, so it would be silently changed rather than refused.
+ *
+ * ZERO IS ACCEPTED. `LIMIT 0` is legal SQL that returns nothing, and it is the
+ * natural result of a paginator that has run out of page. Refusing it would be
+ * this module inventing a product rule it was not asked for.
+ *
+ * NO UPPER BOUND IS IMPOSED, on purpose. Any ceiling written here would be a
+ * number nobody chose -- the same defect `heartbeat.ts` refuses to commit with
+ * its null interval. The call site owns the page size and `limit` is required so
+ * that ownership is visible; a cap belongs there, with a reason, not here.
+ */
+export function parseListLimit(value: number): ListLimitParse {
+  if (!Number.isSafeInteger(value) || value < 0) {
+    return {
+      ok: false,
+      reason: "limit_not_representable",
+      detail: `limit must be a non-negative safe integer, received ${String(value)}`
+    };
+  }
+  return { ok: true, limit: value };
+}

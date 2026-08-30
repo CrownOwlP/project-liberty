@@ -68,7 +68,16 @@ export interface WriterLease {
 
 /** The stored row, as the resolver needs to see it. */
 export interface StoredProgress {
-  readonly positionSeconds: number;
+  /**
+   * The last position reported, or `null` when the title has been leased and no
+   * position has ever been reported for it.
+   *
+   * NULL IS NOT ZERO. A lease creates the row; it does not report a position.
+   * Defaulting the missing value to 0 here would make the resolver claim
+   * `position_moved_backwards` on the very first real write of every title,
+   * because every position is "behind" a zero that nobody ever watched.
+   */
+  readonly positionSeconds: number | null;
   readonly runtimeSeconds: number | null;
   readonly writerEpoch: number;
   readonly writerId: string;
@@ -141,7 +150,18 @@ export type ProgressWriteNote =
   /** The write restated the runtime differently; the write's value won. */
   | "runtime_restated"
   /** The accepted position is BEHIND the stored one. Legitimate, and worth saying so. */
-  | "position_moved_backwards";
+  | "position_moved_backwards"
+  /**
+   * The stored row had no position at all -- it was created by a lease and this
+   * is the first write to report one.
+   *
+   * Stated rather than left silent because it is the note that distinguishes
+   * "unknown became known" from "0 became 40", and those look identical the
+   * moment anybody starts reading a null as a zero. It is also mutually
+   * exclusive with `position_moved_backwards`, which is the assertion that keeps
+   * the two apart.
+   */
+  | "position_first_reported";
 
 export interface ProgressWriteCheck {
   readonly check: ProgressWriteRejection;
@@ -319,7 +339,15 @@ export function resolveProgressWrite(input: {
   }
   pass("position_beyond_runtime");
 
-  if (write.positionSeconds < stored.positionSeconds) notes.push("position_moved_backwards");
+  // Guarded on the stored position being KNOWN. The first write after a lease
+  // has nothing to have moved backwards from, and comparing against a null
+  // coerced to 0 would report every one of them as a rewind -- a note that fires
+  // on every title's first write is a note nobody reads by the second week.
+  if (stored.positionSeconds === null) {
+    notes.push("position_first_reported");
+  } else if (write.positionSeconds < stored.positionSeconds) {
+    notes.push("position_moved_backwards");
+  }
 
   return {
     accepted: true,

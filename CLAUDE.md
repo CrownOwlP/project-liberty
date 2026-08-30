@@ -41,15 +41,68 @@ Use `.claude/agents/orchestration-lead.md` to coordinate multi-agent waves.
 ```bash
 npm run ai:claim -- <TASK_ID> <AGENT_ID>
 npm run ai:start -- <TASK_ID> <AGENT_ID>
-npm run ai:gate -- <TASK_ID> <GATE> <pass|fail> "evidence"
-npm run ai:review -- <TASK_ID>
+npm run ai:start -- <TASK_ID> <AGENT_ID> --reconcile-existing --base <SHA> --reason "..."
+npm run ai:gate -- <TASK_ID> <GATE> <pass|fail> [--agent <AGENT_ID>] "evidence"
+npm run ai:review -- <TASK_ID> [AGENT_ID]
 npm run ai:done -- <TASK_ID>
 npm run ai:block -- <TASK_ID> "reason"
-npm run ai:release -- <TASK_ID>
+npm run ai:release -- <TASK_ID> [AGENT_ID]
 npm run ai:sync
 ```
 
 Never claim work by merely writing your name into Markdown. `coordination/TASKS.md`, `coordination/PROJECT_STATUS.md`, and `control/queues/*.json` are generated views.
+
+### Gate results are lifecycle-bound
+
+`ai:gate` is refused unless the task is `IN_PROGRESS` or `REVIEW` and has an
+owner. Claim and start a task before recording anything against it. The result is
+attributed to `task.owner`; the optional `--agent` argument asserts who you
+believe you are and is refused when the control plane disagrees. During `REVIEW`
+the task's `reviewAgent` may also record, because a reviewer legitimately re-runs
+checks.
+
+`ai:release` and `ai:unblock` return a task to an unowned queue and therefore
+discard its gate results. Evidence belongs to one implementation round under one
+owner; the next claimant re-records it.
+
+### An implementation that predates its own claim
+
+`ai:start` records `implementationBaseSha`, and that field is the exact lower
+bound of the first review range — the range validator refuses a base that is
+either wider or narrower. So for work that was written and pushed **before** the
+task was claimed, letting `start` capture HEAD writes a machine-readable field
+that is false, and stating the real range in gate evidence only creates a second,
+competing truth. Reconcile the provenance instead:
+
+```bash
+npm run ai:start -- <TASK_ID> <AGENT_ID> \
+  --reconcile-existing --base <true-pre-implementation-sha> \
+  --reason "how you determined it" [--implementation-agent <AGENT_ID>]
+```
+
+All three flags are required together and each is refused on an ordinary start.
+The base is validated against real history — it must exist, be an ancestor of
+HEAD, not be HEAD, leave something under the reviewed surface changed in
+`base..HEAD`, and not itself edit files that window goes on to change. The task
+must be `CLAIMED` with no base, no review record and no gate results. The audit
+event is `task.started_reconciled`, never `task.started`.
+
+Use it only for an implementation that genuinely already exists in pushed commits.
+Never to shrink a review range, never for uncommitted work, and never as a routine
+alternative to `start`. Determine the base from git history; do not guess one.
+See `control/README.md` for what is and is not provable here.
+
+### Path declarations are enforced, not advisory
+
+`allowedPaths` is the write, collision and staging surface. `reviewDependencies`
+is read-only and widens only what an approval fingerprints, so a shared
+vocabulary can be reviewed without being reserved.
+
+An entry in either field that reduces to the repository root — `**`, `*`, `/`,
+`.`, `./` — is rejected by `ai:validate`. A declaration that cannot be turned
+into a path prefix used to be dropped with a warning, which made the enforced
+surface narrower than the declared one. Name the directories instead;
+`packages/**` and other wide-but-not-root globs remain legal.
 
 ## Maximum useful parallelism
 

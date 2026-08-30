@@ -1,6 +1,8 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
+import type { EligibleContentId } from "./eligibility";
 import { sealEligibility } from "./eligibility";
+import type { CandidateGenerator, GeneratorReason } from "./generator";
 import {
   CONTINUE_WATCHING_GENERATOR_ID,
   PLACEHOLDER_GENERATORS,
@@ -8,7 +10,7 @@ import {
 } from "./generators";
 import { rankCandidates } from "./ranking";
 import { recommend } from "./recommend";
-import { buildView } from "./view";
+import { VIEW_EXCLUSION_REASONS, buildView } from "./view";
 import {
   eligibleVerdict,
   facts,
@@ -137,7 +139,13 @@ describe("no item can reach the slate without a trail", () => {
       fc.property(requestArb, (generated: GeneratedRequest) => {
         const slate = recommend(request(generated));
         for (const entry of slate.excluded) {
-          expect(["upstream_not_eligible", "no_catalog_metadata"]).toContain(entry.reason);
+          /*
+           * Read from the module's own list rather than a copy. The copy that
+           * used to be written here went stale the moment a third reason was
+           * added, and a stale allowlist in an assertion passes by accepting
+           * less than it should.
+           */
+          expect(VIEW_EXCLUSION_REASONS).toContain(entry.reason);
           expect(entry.detail.length).toBeGreaterThan(0);
         }
       })
@@ -158,5 +166,108 @@ describe("no item can reach the slate without a trail", () => {
         }
       })
     );
+  });
+});
+
+/* -------------------------------------------------------------------------
+ * The reason trail is PARSED at the seam, not trusted.
+ *
+ * `generators` is a parameter, so it is the way foreign code enters this
+ * package — and `generatorReasonSchema` is strict with a closed enum precisely
+ * so that what comes back out is a shape the presentation layer can render. A
+ * schema that is never executed describes the seam without policing it, which
+ * is the hole the eligibility backstop in `recommend.ts` exists to close on the
+ * other field.
+ *
+ * Every generator below requires a cast to write, exactly like the rogue
+ * generator in `eligibility.test.ts`. That is the point: these are the shapes
+ * that reach the pipeline as untyped JavaScript or through a deliberate cast,
+ * and no compiling caller can produce them.
+ * ---------------------------------------------------------------------- */
+
+const ELIGIBLE_ALPHA = { eligibility: [eligibleVerdict("alpha")], catalog: [facts("alpha")] };
+
+function generatorEmitting(reasons: unknown): CandidateGenerator {
+  return {
+    id: "hand-written",
+    generate: () => [
+      {
+        contentId: "alpha" as unknown as EligibleContentId,
+        reasons: reasons as readonly [GeneratorReason, ...GeneratorReason[]]
+      }
+    ]
+  };
+}
+
+describe("a reason that cannot be published stops the response", () => {
+  it("refuses a code outside the published vocabulary", () => {
+    /*
+     * An unknown code is not a harmless extra label. The surface cannot render
+     * or localise it, so it drops it — and the item then sits on a shelf with no
+     * explanation, which is the failure PL-0801 exists to prevent, arriving by
+     * the one route the closed enum was supposed to block.
+     */
+    expect(() =>
+      recommend(request(ELIGIBLE_ALPHA), [
+        generatorEmitting([{ generatorId: "hand-written", code: "because_we_said_so", detail: "trust us" }])
+      ])
+    ).toThrow(/unusable reason for alpha/);
+  });
+
+  it("refuses a reason carrying an extra field", () => {
+    /*
+     * The direction that matters. Strictness on the REQUEST stops a profile id
+     * being smuggled IN; nothing ran on the way OUT, and only the outbound path
+     * ends in something a client renders, a log line and a cache entry.
+     */
+    expect(() =>
+      recommend(request(ELIGIBLE_ALPHA), [
+        generatorEmitting([
+          {
+            generatorId: "hand-written",
+            code: "on_your_watchlist",
+            detail: "this profile added it to its watchlist",
+            profileId: "p-1"
+          }
+        ])
+      ])
+    ).toThrow(/unusable reason for alpha/);
+  });
+
+  it("refuses an unattributed reason and an empty gloss", () => {
+    /* A blank generatorId makes a bad rail untraceable to whatever produced it. */
+    for (const bad of [
+      { generatorId: "", code: "on_your_watchlist", detail: "fine" },
+      { generatorId: "hand-written", code: "on_your_watchlist", detail: "" }
+    ]) {
+      expect(() => recommend(request(ELIGIBLE_ALPHA), [generatorEmitting([bad])])).toThrow(
+        /unusable reason for alpha/
+      );
+    }
+  });
+
+  it("refuses a candidate that arrives with no reasons at all", () => {
+    /*
+     * The non-empty tuple is a compile-time guarantee and this is the runtime
+     * shape that defeats it. An id with no trail is precisely a
+     * `GeneratedCandidate[]` that was collapsed to a `string[]` somewhere
+     * upstream of this package.
+     */
+    expect(() => recommend(request(ELIGIBLE_ALPHA), [generatorEmitting([])])).toThrow();
+  });
+
+  it("still admits a well-formed reason from a generator written by hand", () => {
+    /*
+     * The complement, so the four refusals above are not passing because the
+     * backstop refuses everything from a foreign generator.
+     */
+    const slate = recommend(request(ELIGIBLE_ALPHA), [
+      generatorEmitting([{ generatorId: "hand-written", code: "on_your_watchlist", detail: "picked by hand" }])
+    ]);
+
+    expect(slate.items.map((item) => item.contentId)).toEqual(["alpha"]);
+    expect(slate.items[0]?.reasons).toEqual([
+      { generatorId: "hand-written", code: "on_your_watchlist", detail: "picked by hand" }
+    ]);
   });
 });

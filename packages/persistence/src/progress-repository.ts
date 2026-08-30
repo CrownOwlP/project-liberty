@@ -1,7 +1,13 @@
 import type { ProfileScope } from "@liberty/auth";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, isNotNull, sql } from "drizzle-orm";
 import type { LibertyDatabase } from "./client";
-import { type PlaybackProgressRow, parseContentId } from "./contracts";
+import {
+  type ListLimitRejection,
+  type PlaybackProgressRow,
+  describeUnrepresentableInstant,
+  parseContentId,
+  parseListLimit
+} from "./contracts";
 import { playbackProgress } from "./schema";
 import {
   FIRST_WRITER_EPOCH,
@@ -89,7 +95,14 @@ export async function issueWriterLease(
   // naming a column, at a stack depth that says nothing about the caller who
   // built the date. Refused here, with the reason the resolver would have given.
   if (representableInstant(input.instant) === null) {
-    return { ok: false, reason: "instant_not_representable", detail: String(input.instant) };
+    // `String(...)` here produced an EMPTY detail for an empty-string instant,
+    // which is the same defect the watchlist path had: a refusal that explains
+    // nothing, and one indistinguishable from a detail nobody populated.
+    return {
+      ok: false,
+      reason: "instant_not_representable",
+      detail: describeUnrepresentableInstant("instant", input.instant)
+    };
   }
 
   const rows = await db
@@ -97,7 +110,13 @@ export async function issueWriterLease(
     .values({
       profileId: input.scope.profileId,
       contentId: contentId.contentId,
-      positionSeconds: 0,
+      // NULL, NOT ZERO, and this is the whole reason `position_seconds` is
+      // nullable. A lease is a claim on the right to write; it is not a write.
+      // A 0 here recorded a position the viewer never reached, and because
+      // `updated_at` is stamped at the same moment, the title went straight to
+      // the top of "continue watching" at 0:00 with nothing to continue.
+      // Unknown stays unknown until a write states otherwise.
+      positionSeconds: null,
       runtimeSeconds: null,
       writerEpoch: FIRST_WRITER_EPOCH,
       writerId: input.writerId,
@@ -244,14 +263,29 @@ export async function readProgress(
 export async function listContinueWatching(
   db: LibertyDatabase,
   input: { readonly scope: ProfileScope; readonly limit: number }
-): Promise<readonly PlaybackProgressRow[]> {
+): Promise<readonly PlaybackProgressRow[] | ListLimitRejection> {
+  // Required is not validated: `?limit=abc` arrives as NaN and `LIMIT NaN` is a
+  // PostgreSQL syntax error that reaches the handler as a driver exception
+  // naming neither the caller nor the parameter.
+  const limit = parseListLimit(input.limit);
+  if (!limit.ok) return limit;
+
   return db
     .select()
     .from(playbackProgress)
-    .where(eq(playbackProgress.profileId, input.scope.profileId))
+    .where(
+      and(
+        eq(playbackProgress.profileId, input.scope.profileId),
+        // A row with no reported position is a LEASE, not progress. Including it
+        // would put a title at the top of this list purely because somebody
+        // opened it, and there would be nothing to resume from -- the defect
+        // that the old `positionSeconds: 0` at lease time actually produced.
+        isNotNull(playbackProgress.positionSeconds)
+      )
+    )
     // `contentId` breaks ties so the page is a total order. Two rows updated in
     // the same millisecond otherwise come back in whatever order the plan
     // chose, which makes a paginated list skip and repeat entries.
     .orderBy(desc(playbackProgress.updatedAt), desc(playbackProgress.contentId))
-    .limit(input.limit);
+    .limit(limit.limit);
 }

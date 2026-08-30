@@ -182,14 +182,60 @@ describe("the pinned lookup answers from the authorised set and from nothing els
     });
   });
 
-  it("cannot be built with no addresses at all", () => {
-    // An empty pin is indistinguishable from "unrestricted" to a later reader,
-    // and an always-failing lookup looks like an outage rather than a bug.
-    // `authoriseFetchTarget` refuses a name that resolves to nothing, so this is
-    // a backstop for a target built some other way.
-    expect(() =>
-      createPinnedLookup({ url: "https://cdn.example.test/m", hostname: "cdn.example.test", addresses: [] })
-    ).toThrow(TypeError);
+  /*
+   * REPLACES "cannot be built with no addresses at all".
+   *
+   * That test constructed a `PinnedTarget` literal, which is the very thing the
+   * review of PL-0304 identified as the hole: if a test can write one, so can
+   * any caller, and the security claim that "pinning to an address nobody
+   * checked is not expressible" was false. It is now a compile error, so the
+   * test could not have been kept as written in any case.
+   *
+   * What replaces it is stronger rather than weaker. The empty-address case it
+   * covered is no longer a state that exists -- `pinFor` takes a non-empty tuple
+   * and `authoriseFetchTarget` refuses `dns_resolved_no_addresses` before
+   * reaching it, which `egress.test.ts` asserts -- so the interesting question
+   * became the one the reviewer actually asked: can a target the authorisation
+   * path never issued reach the lookup? The two ways past the brand at runtime
+   * are a cast and a copy, and both are checked here.
+   */
+  it("refuses a target that `authoriseFetchTarget` never issued", async () => {
+    // A cast is the only way to write this at all, which is itself the finding:
+    // without `as unknown as`, this object is not a `PinnedTarget` and the file
+    // does not compile. The cast stands in for a caller determined to bypass the
+    // type, and the registry is what stops them.
+    const fabricated = {
+      url: "https://cdn.example.test/m",
+      hostname: "cdn.example.test",
+      addresses: ["169.254.169.254"]
+    } as unknown as PinnedTarget;
+    expect(() => createPinnedLookup(fabricated)).toThrow(TypeError);
+
+    // The subtler one, and the reason a brand alone would not have been enough:
+    // a SPREAD of a genuine pin carries the brand with it and type-checks with
+    // no cast at all. Identity is what distinguishes it, which is why the
+    // registry is a `WeakSet` keyed on the object rather than a flag on it.
+    const genuine = await pinFor("https://cdn.example.test/m", async () => [PUBLIC_ADDRESS]);
+    const copied: PinnedTarget = { ...genuine, addresses: ["169.254.169.254"] };
+    expect(() => createPinnedLookup(copied)).toThrow(TypeError);
+
+    // And the genuine article still works, so the check above is refusing
+    // provenance rather than refusing everything.
+    expect(() => createPinnedLookup(genuine)).not.toThrow();
+  });
+
+  it("cannot have its authorised addresses edited after the fact", async () => {
+    // `readonly` is erased at runtime, so the pin is frozen. Without that, a
+    // holder of a genuine pin could append an address between authorisation and
+    // connect -- the rebinding window reopened from inside the process, and
+    // invisible to every test that only reads the pin.
+    const genuine = await pinFor("https://cdn.example.test/m", async () => [PUBLIC_ADDRESS]);
+    expect(Object.isFrozen(genuine)).toBe(true);
+    expect(Object.isFrozen(genuine.addresses)).toBe(true);
+    expect(() => {
+      (genuine.addresses as string[]).push(REBOUND_ADDRESS);
+    }).toThrow(TypeError);
+    expect(genuine.addresses).toEqual([PUBLIC_ADDRESS]);
   });
 });
 
@@ -360,11 +406,19 @@ describe("the pin holds for any address set and any way of asking (fast-check)",
         fc.uniqueArray(addressArb, { minLength: 1, maxLength: 4 }),
         optionsArb,
         async (addresses, options) => {
-          const lookup = createPinnedLookup({
-            url: "https://cdn.example.test/master.m3u8",
-            hostname: "cdn.example.test",
-            addresses
-          });
+          // The generated set is delivered through a DELIBERATELY INJECTED
+          // resolver rather than written into a target literal. The literal no
+          // longer compiles -- which was the reviewer's point -- but the
+          // substitution is an improvement rather than a workaround: every
+          // generated case now runs the full authorisation path (scheme,
+          // allowlist, loopback keys, per-address classification) before it
+          // reaches the lookup, so the property is asserted about pins the
+          // production path can actually produce. `resolveHost` is an injected
+          // port; choosing its answers is the supported way to steer it, not a
+          // way around it.
+          const lookup = createPinnedLookup(
+            await pinFor("https://cdn.example.test/master.m3u8", async () => addresses)
+          );
           const answer = await askLookup(lookup, "cdn.example.test", options);
           for (const address of answer.addresses) expect(addresses).toContain(address);
         }
@@ -379,11 +433,9 @@ describe("the pin holds for any address set and any way of asking (fast-check)",
         optionsArb,
         fc.constantFrom("other.example.test", "evil.test", "", "cdn.example.test.", "cdn.example.tes"),
         async (addresses, options, hostname) => {
-          const lookup = createPinnedLookup({
-            url: "https://cdn.example.test/master.m3u8",
-            hostname: "cdn.example.test",
-            addresses
-          });
+          const lookup = createPinnedLookup(
+            await pinFor("https://cdn.example.test/master.m3u8", async () => addresses)
+          );
           const answer = await askLookup(lookup, hostname, options);
           expect(answer.addresses).toEqual([]);
           expect(answer.code).toBe("ENOTFOUND");

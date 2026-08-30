@@ -5,11 +5,36 @@ import {
   type Socket
 } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type { PinnedRequestInit, PinnedTarget } from "../pin";
+import { authoriseFetchTarget, type EgressPolicy, type PinnedTarget } from "../egress";
+import type { PinnedRequestInit } from "../pin";
+import { testClassifyHost } from "../testing/fixtures";
 import { nodePinnedFetch } from "./pinned-fetch";
 
 /**
  * The Node transport, exercised over LOOPBACK ONLY.
+ *
+ * EVERY PIN IN THIS FILE COMES OUT OF `authoriseFetchTarget`. It used to write
+ * `PinnedTarget` literals, and the review of PL-0304 was right that this was not
+ * merely inconvenient but self-defeating: a suite that fabricates its own pin is
+ * not exercising the path production uses, and its existence disproved the
+ * security claim it was written to support. Pins are now obtained the way
+ * `http.ts` obtains them, which makes the tests stronger in two ways -- the
+ * transport is fed objects the authorisation path really produces, and the
+ * classification of every pinned address is part of the setup rather than
+ * something the test asserts around.
+ *
+ * WHERE A TEST NEEDS AN ADDRESS THE REAL WORLD WOULD NOT HAVE GIVEN IT, it says
+ * so through `resolveHost`, which is an injected port with no default. Answering
+ * `localhost` with 127.0.0.2 is a resolver the composition root could legally
+ * supply; the URL, the policy, the allowlist, the loopback keys and the
+ * per-address classification are all still the production ones. That is a
+ * different thing from bypassing the gate, and it is the only steering these
+ * tests do.
+ *
+ * WHERE A TEST NEEDS SOMETHING AUTHORISATION WOULD REFUSE OUTRIGHT -- an `ftp:`
+ * target, a target nothing ever issued -- there is no honest way to obtain it,
+ * so those two tests cast, say that they are casting, and assert that the
+ * transport refuses anyway. The cast IS the adversary being modelled.
  *
  * WHY THESE ARE HERE AND NOT MOCKED. `pin.test.ts` proves that the authorised
  * addresses reach the transport and that the pinned lookup answers from them and
@@ -42,6 +67,16 @@ interface Received {
 }
 
 const received: Received[] = [];
+/**
+ * TCP connections accepted, as distinct from requests served.
+ *
+ * The two diverge in exactly one interesting case: a client that connects and
+ * then never sends a request line. That is what the transport used to do when
+ * handed an already-aborted signal, and counting only requests is why nobody
+ * noticed -- the abandoned connection was invisible to `received` while being
+ * the thing that later emitted an unowned `ECONNRESET` and failed the run.
+ */
+let connections = 0;
 let server: Server;
 let port = 0;
 
@@ -64,6 +99,10 @@ beforeAll(async () => {
     }
     response.writeHead(200, { "content-type": "application/vnd.apple.mpegurl" });
     response.end(BODY);
+  });
+
+  server.on("connection", () => {
+    connections += 1;
   });
 
   await new Promise<void>((resolve) => {
@@ -91,14 +130,49 @@ function init(timeoutMs = 4_000): PinnedRequestInit {
   };
 }
 
+/**
+ * The policy these tests authorise under.
+ *
+ * Both loopback keys are turned on because everything here binds to 127.0.0.1,
+ * and `egress.ts` requires BOTH -- the source opting in and the instance being a
+ * local deployment. Stated here rather than borrowed from `permissiveEgress`,
+ * which deliberately has them off: that fixture's job is to prove the keys are
+ * load bearing, and quietly flipping them for this suite's convenience would
+ * make it stop doing that job for `pin.test.ts` too.
+ */
+const LOOPBACK_POLICY: EgressPolicy = {
+  allowedHosts: ["localhost"],
+  allowLoopback: true,
+  localDeployment: true
+};
+
+/**
+ * A pin, obtained the way `http.ts` obtains one.
+ *
+ * `resolveHost` answers with the addresses the caller names. That is the only
+ * steering: the URL, the policy, the protocol allowlist, the credential check,
+ * the host classification, the allowlist match, the loopback keys and the
+ * classification of each resolved address all run exactly as they do in
+ * production, and a set this refuses is a set that never becomes a pin -- which
+ * a couple of these tests rely on.
+ */
+async function authorise(raw: string, addresses: readonly string[]): Promise<PinnedTarget> {
+  const verdict = await authoriseFetchTarget(raw, LOOPBACK_POLICY, {
+    classifyHost: testClassifyHost,
+    resolveHost: async () => addresses
+  });
+  if (!verdict.ok) throw new Error(`expected an authorisation, got ${verdict.reason}`);
+  return verdict.pin;
+}
+
 /** Always requests the NAME `localhost`; only the pinned address varies. */
-function target(addresses: readonly string[], path = "/manifest"): PinnedTarget {
-  return { url: `http://localhost:${port}${path}`, hostname: "localhost", addresses };
+function target(addresses: readonly string[], path = "/manifest"): Promise<PinnedTarget> {
+  return authorise(`http://localhost:${port}${path}`, addresses);
 }
 
 describe("the socket opens to the authorised address", () => {
   it("fetches through the pin and preserves the hostname in the Host header", async () => {
-    const response = await nodePinnedFetch(target(["127.0.0.1"]), init());
+    const response = await nodePinnedFetch(await target(["127.0.0.1"]), init());
 
     expect(response.status).toBe(200);
     await expect(response.text()).resolves.toBe(BODY);
@@ -118,7 +192,7 @@ describe("the socket opens to the authorised address", () => {
     // never resumed would hang here; a stream that never paused would still
     // pass, which is why the cancellation behaviour is asserted through
     // `http.ts`'s size cap rather than here.
-    const response = await nodePinnedFetch(target(["127.0.0.1"], "/large"), init());
+    const response = await nodePinnedFetch(await target(["127.0.0.1"], "/large"), init());
     await expect(response.text()).resolves.toHaveLength(LARGE_BODY.length);
   });
 
@@ -126,7 +200,7 @@ describe("the socket opens to the authorised address", () => {
     // `new Response(body, { status: 204 })` throws if a body is attached, so a
     // publisher answering 204 would otherwise surface as a spurious network
     // fault instead of as the 204 it is.
-    const response = await nodePinnedFetch(target(["127.0.0.1"], "/empty"), init());
+    const response = await nodePinnedFetch(await target(["127.0.0.1"], "/empty"), init());
     expect(response.status).toBe(204);
     expect(response.body).toBeNull();
   });
@@ -136,40 +210,120 @@ describe("the socket cannot open to an address that was not authorised", () => {
   it("does not reach a server that real DNS would have found", async () => {
     const before = received.length;
 
-    // `localhost` resolves to 127.0.0.1 everywhere, and that is where the server
-    // is listening. The pin says 127.0.0.2, where nothing is. If this request
-    // arrives, the lookup was not honoured and the DNS rebinding window is open
-    // again -- which is the entire finding this work closes.
-    await expect(nodePinnedFetch(target(["127.0.0.2"]), init(2_000))).rejects.toThrow();
+    /*
+     * `localhost` resolves to 127.0.0.1 everywhere, and that is where the server
+     * is listening. The pin says 127.0.0.2, where nothing is. If this request
+     * arrives, the lookup was not honoured and the DNS rebinding window is open
+     * again -- which is the entire finding this work closes.
+     *
+     * The pin comes from `authoriseFetchTarget` like every other one here, via a
+     * resolver that answers 127.0.0.2 for `localhost`. That is not a way around
+     * the gate: 127/8 classifies as loopback, the name classifies as loopback,
+     * both loopback keys are set, so the address is one the policy genuinely
+     * authorises. The test then asks the only remaining question -- whether Node
+     * connects to the address that was authorised or to the one DNS would have
+     * given it.
+     */
+    await expect(nodePinnedFetch(await target(["127.0.0.2"]), init(2_000))).rejects.toThrow();
 
     expect(received.length).toBe(before);
   });
 
-  it("refuses a target with no authorised address instead of falling back to DNS", async () => {
+  /*
+   * REPLACES "refuses a target with no authorised address instead of falling
+   * back to DNS".
+   *
+   * That test passed `target([])`, which is now unobtainable twice over: the
+   * literal it was built from no longer type-checks, and `authoriseFetchTarget`
+   * refuses an empty resolution with `dns_resolved_no_addresses` before a pin
+   * exists. The empty-address case therefore cannot reach the transport at all,
+   * and the question that replaces it is the one the reviewer asked -- whether
+   * the PRODUCTION transport will accept a structurally fabricated target
+   * carrying an address nothing classified. It is the same test with the
+   * interesting input restored.
+   */
+  it("refuses a fabricated target carrying an address nothing classified", async () => {
     const before = received.length;
-    await expect(nodePinnedFetch(target([]), init())).rejects.toThrow(TypeError);
+
+    /*
+     * The cast is the point, and it is the only way to write this line: without
+     * `as unknown as`, an object literal is not a `PinnedTarget` and this file
+     * does not compile. That is the compile-time half of the fix. The runtime
+     * half is that `createPinnedLookup` checks the target against the registry
+     * of pins `authoriseFetchTarget` actually issued, so even a caller willing
+     * to cast gets nothing -- which is what makes this a control rather than a
+     * convention. The address is the cloud metadata endpoint on purpose: it is
+     * the exact payload the review named.
+     */
+    const fabricated = {
+      url: `http://localhost:${port}/manifest`,
+      hostname: "localhost",
+      addresses: ["169.254.169.254"]
+    } as unknown as PinnedTarget;
+
+    await expect(nodePinnedFetch(fabricated, init())).rejects.toThrow(TypeError);
+    expect(received.length).toBe(before);
+  });
+
+  it("refuses a spread of a real pin with the addresses swapped", async () => {
+    const before = received.length;
+    // No cast at all here: a spread copies the brand, so this type-checks. It is
+    // the case a brand alone would have let through, and the reason the registry
+    // is keyed on object identity.
+    const genuine = await target(["127.0.0.1"]);
+    const copied: PinnedTarget = { ...genuine, addresses: ["169.254.169.254"] };
+
+    await expect(nodePinnedFetch(copied, init())).rejects.toThrow(TypeError);
     expect(received.length).toBe(before);
   });
 
   it("refuses a scheme outside http and https", async () => {
+    // Cast for the same reason as above, and additionally because
+    // `authoriseFetchTarget` refuses `ftp:` at the protocol allowlist, so no
+    // authorisation could ever produce this target. The transport's own scheme
+    // guard is documented as unreachable through the gate and kept for a caller
+    // who arrives some other way; this is that caller.
     await expect(
       nodePinnedFetch(
-        { url: "ftp://localhost/master.m3u8", hostname: "localhost", addresses: ["127.0.0.1"] },
+        {
+          url: "ftp://localhost/master.m3u8",
+          hostname: "localhost",
+          addresses: ["127.0.0.1"]
+        } as unknown as PinnedTarget,
         init()
       )
     ).rejects.toThrow();
   });
 
   it("opens nothing at all when the deadline has already passed", async () => {
-    const before = received.length;
+    const beforeRequests = received.length;
+    // The connection count, not just the request count, and that distinction is
+    // the regression this assertion exists for. The transport used to construct
+    // the `ClientRequest` before checking the signal, which opened a socket and
+    // then walked away from it without sending a request line -- invisible to
+    // `received`, fatal to the run when the abandoned connection later closed
+    // with no error listener attached. `received` alone called that behaviour
+    // correct for four rounds.
+    const beforeConnections = connections;
+
     await expect(
-      nodePinnedFetch(target(["127.0.0.1"]), {
+      nodePinnedFetch(await target(["127.0.0.1"]), {
         method: "GET",
         headers: {},
         signal: AbortSignal.abort()
       })
     ).rejects.toThrow();
-    expect(received.length).toBe(before);
+
+    // Settled for a moment before asserting, because `connection` is emitted by
+    // the SERVER and would arrive after this promise rejected. Asserting
+    // immediately would pass whether or not a socket had been opened, which is a
+    // test that reports the bug as fixed while it is still there. A loopback
+    // connect completes in single-digit milliseconds; this is two orders of
+    // magnitude of headroom, spent only on the passing path.
+    await new Promise((settle) => setTimeout(settle, 100));
+
+    expect(received.length).toBe(beforeRequests);
+    expect(connections).toBe(beforeConnections);
   });
 });
 
@@ -220,12 +374,18 @@ describe("TLS is offered the hostname, never the pinned address", () => {
          *
          * The two things this replaces both left the connection ABANDONED --
          * either the server destroyed it mid-handshake, or it stayed silent
-         * until our own deadline aborted it. In both cases the close arrived
-         * after the promise had settled and Node emitted a stray "socket hang
-         * up" at a point where no listener could exist, which failed the run
-         * even though all eight assertions passed. Chasing that found a genuine
-         * leak in the transport (`release()` now closes the in-flight socket
-         * that `agent.destroy()` cannot), but the emit outlived that fix too.
+         * until our own deadline aborted it. Both were changed while hunting a
+         * stray "socket hang up" that failed the run with every assertion green,
+         * and NEITHER WAS THE CAUSE: the emit came from the already-aborted test
+         * above, whose request opened a connection and walked away from it before
+         * any listener existed. Chasing it through this file did find one real
+         * transport leak on the way (`release()` now closes the in-flight socket
+         * that `agent.destroy()` cannot), which is why that fix stayed.
+         *
+         * This shape is kept anyway, on its own merits rather than on a repair it
+         * turned out not to be: a definite fatal alert settles the client through
+         * the transport's ordinary error path in milliseconds, where going silent
+         * left the test waiting out a deadline for a connection nobody wanted.
          *
          * The property under test never needed an abandoned connection: the
          * ClientHello is the client's FIRST write and is already captured above.
@@ -255,20 +415,16 @@ describe("TLS is offered the hostname, never the pinned address", () => {
 
   it("names the publisher's host in the ClientHello, so the certificate is checked against it", async () => {
     /*
-     * The handshake cannot complete against a socket that answers with nothing,
-     * and it does not need to: the ClientHello is the client's first write and
-     * has already been sent by the time the deadline expires. A short deadline
-     * on purpose -- it is the whole mechanism by which the CLIENT ends this
-     * connection rather than the server, which is what keeps a late socket error
-     * from escaping after the assertion has run.
+     * The handshake cannot complete against a server with no certificate, and it
+     * does not need to: the ClientHello is the client's FIRST write and is
+     * already captured by the time the server answers. The server answers with a
+     * fatal `handshake_failure` alert, so this settles through the transport's
+     * ordinary error path in milliseconds; the 400ms deadline is the fallback for
+     * a server that says nothing at all, not the mechanism.
      */
     await expect(
       nodePinnedFetch(
-        {
-          url: `https://localhost:${tlsPort}/master.m3u8`,
-          hostname: "localhost",
-          addresses: ["127.0.0.1"]
-        },
+        await authorise(`https://localhost:${tlsPort}/master.m3u8`, ["127.0.0.1"]),
         init(400)
       )
     ).rejects.toThrow();
@@ -285,20 +441,22 @@ describe("TLS is offered the hostname, never the pinned address", () => {
     expect(hello).not.toContain("127.0.0.1");
 
     /*
-     * Wait for the connection to finish dying BEFORE the test returns.
+     * Let this connection finish dying inside the test's own lifetime.
      *
-     * The transport holds an `error` listener for every socket it opens, so the
-     * teardown emit is handled during normal operation. What it cannot cover is
-     * an emit that arrives after the runner has torn this module's context down
-     * -- at that point vitest's own uncaught handler is the only one left, and it
-     * reports a "socket hang up" that nothing in the product could have caught.
-     * Two rounds were spent treating that as a defect in the transport and then
-     * in the server; it is neither. It is an emit with no owner because the test
-     * returned first.
+     * AN HONEST CORRECTION. An earlier version of this comment claimed the wait
+     * was what fixed the suite's non-zero exit -- that the stray "socket hang up"
+     * was "an emit with no owner because the test returned first". That was
+     * wrong, and it was the third of four wrong diagnoses that all landed on this
+     * test. The emit came from a different test entirely: the already-aborted
+     * one, where the transport used to build a `ClientRequest` before checking
+     * the signal, opening a connection it then abandoned with no error listener
+     * on it. See the deadline check in `pinned-fetch.ts`.
      *
-     * So the test does not return first. A macrotask is enough: the abort has
-     * already run by the time the assertion above passes, and the close it
-     * causes is queued behind it.
+     * The wait stays, for the smaller reason it was always good for: the
+     * transport ends this connection through its own abort path, and keeping the
+     * close inside the test means the transport's listeners are demonstrably the
+     * ones handling it rather than something later in the run. It is not load
+     * bearing for the exit code, and this comment no longer claims it is.
      */
     await new Promise((settle) => setTimeout(settle, 250));
   });

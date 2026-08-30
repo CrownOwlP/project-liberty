@@ -46,14 +46,27 @@ export const playbackProgress = pgTable(
     contentId: text("content_id").notNull(),
 
     /**
-     * Whole seconds, not a float and not milliseconds.
+     * Whole seconds, not a float and not milliseconds -- or NULL for "this title
+     * has been leased but no position has ever been reported".
      *
      * Seconds because a resume point finer than a second is not perceptible and
      * a float would make "is this the same position" a tolerance question in
      * every test. An integer column also means the CHECK constraints below are
      * exact.
+     *
+     * NULLABLE, AND THAT IS THE POINT. A row is created by `issueWriterLease`,
+     * which is a claim on the right to write and not a write. Under the previous
+     * `NOT NULL` this column had to be given a value at that moment, and the
+     * value chosen was 0 -- which made "never watched a frame" and "stopped one
+     * second in" the same row. The visible defect: pressing play and immediately
+     * backing out put the title at the top of "continue watching" at 0:00, with
+     * nothing to continue. NULL means UNKNOWN here for the same reason it does on
+     * `runtime_seconds` below, and `listContinueWatching` excludes it.
+     *
+     * A progress WRITE still always states a position -- `ProgressWrite` has no
+     * nullable position -- so this null is only ever the pre-write state.
      */
-    positionSeconds: integer("position_seconds").notNull(),
+    positionSeconds: integer("position_seconds"),
     /**
      * Total runtime as known when this row was written, or null when the
      * playback source never stated one.
@@ -102,6 +115,12 @@ export const playbackProgress = pgTable(
      * FIRST so the index is unusable for a scan that forgot to scope.
      */
     index("playback_progress_profile_updated_idx").on(table.profileId, table.updatedAt),
+    /**
+     * A stated position must be non-negative. A NULL position satisfies this by
+     * SQL's three-valued logic (`NULL >= 0` is NULL, and a CHECK only fails on
+     * FALSE), which is the behaviour wanted: "no position reported" is not a
+     * negative position, it is the absence of one.
+     */
     check("playback_progress_position_non_negative", sql`${table.positionSeconds} >= 0`),
     /**
      * A stated runtime must be positive, and a position may not exceed it. The

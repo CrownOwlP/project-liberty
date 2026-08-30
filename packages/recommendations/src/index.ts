@@ -30,7 +30,12 @@ export type {
   ViewExclusion,
   ViewExclusionReason
 } from "./view";
-export { PERMITTED_VIEW_MEMBERS, buildView, recommendationInputSchema } from "./view";
+export {
+  PERMITTED_VIEW_MEMBERS,
+  VIEW_EXCLUSION_REASONS,
+  buildView,
+  recommendationInputSchema
+} from "./view";
 
 export type {
   CandidateGenerator,

@@ -136,6 +136,53 @@ describe("resolveProgressWrite -- the current writer", () => {
     expect(resolution.reason).toBe("position_beyond_runtime");
   });
 
+  it("accepts the FIRST write after a lease, where no position is stored yet", () => {
+    // The row a lease creates has `positionSeconds: null` -- "leased, nothing
+    // reported". Nothing about that is a refusal: the lease holder is writing
+    // the first real position.
+    const resolution = resolveProgressWrite({
+      stored: stored({ positionSeconds: null }),
+      write: write({ positionSeconds: 42 }),
+      instant: INSTANT
+    });
+
+    expect(resolution.accepted).toBe(true);
+    if (!resolution.accepted) return;
+    expect(resolution.next.positionSeconds).toBe(42);
+    expect(resolution.notes).toContain("position_first_reported");
+  });
+
+  it("does NOT call the first reported position a rewind", () => {
+    // The defect this pins: a null stored position read as 0 makes every first
+    // write "backwards" for position 0 and "forwards" otherwise, and a note that
+    // fires on every title's first write is a note nobody reads by the second
+    // week. The two notes are mutually exclusive.
+    const resolution = resolveProgressWrite({
+      stored: stored({ positionSeconds: null }),
+      write: write({ positionSeconds: 0 }),
+      instant: INSTANT
+    });
+
+    expect(resolution.accepted).toBe(true);
+    if (!resolution.accepted) return;
+    expect(resolution.notes).toContain("position_first_reported");
+    expect(resolution.notes).not.toContain("position_moved_backwards");
+  });
+
+  it("still range-checks the first reported position against the runtime", () => {
+    // An unknown stored position does not weaken the value checks: the write
+    // states its own position and the retained runtime still bounds it.
+    const resolution = resolveProgressWrite({
+      stored: stored({ positionSeconds: null, runtimeSeconds: 5400 }),
+      write: write({ positionSeconds: 6000, runtimeSeconds: null }),
+      instant: INSTANT
+    });
+
+    expect(resolution.accepted).toBe(false);
+    if (resolution.accepted) return;
+    expect(resolution.reason).toBe("position_beyond_runtime");
+  });
+
   it("takes a restated runtime and says it did", () => {
     const resolution = resolveProgressWrite({
       stored: stored({ runtimeSeconds: 5400 }),

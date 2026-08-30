@@ -85,6 +85,30 @@ describe("the two viewer-state tables specifically", () => {
     expect(names).toEqual(expect.arrayContaining(["writer_epoch", "writer_id", "write_seq"]));
   });
 
+  it("let a progress row say it does not know the position or the runtime", () => {
+    const columns = getTableConfig(playbackProgress).columns;
+    const position = columns.find((column) => column.name === "position_seconds");
+    const runtime = columns.find((column) => column.name === "runtime_seconds");
+
+    // NOT NULL on either of these forces a value at lease time, and the value
+    // that gets chosen is always 0. A zero runtime makes every title read as
+    // fully watched; a zero position puts a title nobody watched at the top of
+    // "continue watching" at 0:00. Unknown has to be representable for the
+    // repositories to be able to keep it unknown.
+    expect(position?.notNull).toBe(false);
+    expect(runtime?.notNull).toBe(false);
+  });
+
+  it("require a progress row to know who wrote it and when", () => {
+    const columns = getTableConfig(playbackProgress).columns;
+    // The counterpart: the columns that are NOT optional. Nullability is a
+    // statement about what can be unknown, and the authority fields never can
+    // be -- a row with no epoch is a row no write can ever be checked against.
+    for (const name of ["profile_id", "content_id", "writer_epoch", "writer_id", "write_seq", "updated_at"]) {
+      expect(columns.find((column) => column.name === name)?.notNull).toBe(true);
+    }
+  });
+
   it("offer the progress row nowhere to store a client-supplied timestamp", () => {
     const names = getTableConfig(playbackProgress).columns.map((column) => column.name);
     // `updated_at` is written by the server from an explicit instant. There is

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { resolvedEligibilitySchema, sealEligibility } from "./eligibility";
 import type { CandidateGenerator } from "./generator";
+import { generatorReasonSchema } from "./generator";
 import { PLACEHOLDER_GENERATORS } from "./generators";
 import { rankCandidates } from "./ranking";
 import { presentSlate, type RecommendationSlate } from "./presentation";
@@ -94,6 +95,50 @@ export function recommend(
     if (!admitted.has(entry.contentId)) {
       throw new Error(
         `generator produced ${entry.contentId}, which is not in the eligible view; eligibility is resolved upstream and cannot be widened here`
+      );
+    }
+
+    /*
+     * THE SAME ARGUMENT, APPLIED TO THE REASON TRAIL.
+     *
+     * `generatorReasonSchema` is `.strict()` and its code is a closed enum, and
+     * until now nothing ever ran it: reasons were type-checked and never parsed,
+     * so the schema described the seam without policing it. That is the identical
+     * hole the eligibility backstop above exists to close, and `generators` is
+     * the parameter through which foreign code arrives — the request is parsed
+     * because it crosses a trust boundary, and so does a generator.
+     *
+     * Three things this catches that the compiler cannot, each of which reaches
+     * a payload that is rendered, logged and cached:
+     *
+     *   - a `code` outside the vocabulary, which a presentation surface cannot
+     *     render or localise and will silently drop, leaving an item on a shelf
+     *     with no explanation — the exact failure PL-0801 exists to prevent;
+     *   - an extra key, which is how a profile id, a position or an age bracket
+     *     rides out of this package inside an object nobody inspects. Strictness
+     *     on the REQUEST stops data being smuggled in; this stops it being
+     *     smuggled out, and only the second one is on the path to a client;
+     *   - an empty `generatorId` or `detail`, which makes a bad rail
+     *     untraceable to its source.
+     *
+     * It cannot make `detail` free of personal data — no schema can decide that
+     * about arbitrary prose. Keeping a measurement of one profile out of the
+     * gloss stays a review obligation on each generator, pinned by the property
+     * in `reasons.test.ts`. What this establishes is narrower and worth stating
+     * honestly: the SHAPE of a published reason is enforced, not assumed.
+     *
+     * THROWS, for the reason the eligibility backstop throws: a filtered trail is
+     * a trail that silently shrank, and a slate whose reasons quietly went
+     * missing is indistinguishable from one that never had any.
+     */
+    for (const held of entry.reasons) {
+      const checked = generatorReasonSchema.safeParse(held);
+      if (checked.success) continue;
+      const issues = checked.error.issues
+        .map((issue) => `${issue.path.join(".") || "(root)"}: ${issue.message}`)
+        .join("; ");
+      throw new Error(
+        `a generator produced an unusable reason for ${entry.contentId} (${issues}); the reason trail is published, so it is parsed at this seam rather than trusted`
       );
     }
   }

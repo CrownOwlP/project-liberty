@@ -129,7 +129,45 @@ export interface RecommendationView {
   readonly eligibleIds: readonly EligibleContentId[];
 }
 
-export type ViewExclusionReason = "upstream_not_eligible" | "no_catalog_metadata";
+/**
+ * Why an id the profile referenced did not reach the slate.
+ *
+ * `no_eligibility_verdict` IS NOT A SYNONYM FOR `upstream_not_eligible`, and
+ * collapsing the two is the defect this list was split to remove. Both exclude
+ * the work — absence of a verdict is a refusal and that behaviour is unchanged —
+ * but they are different operational facts and they page different people. A
+ * refusal means the rights pipeline ran and said no, which is a licensing state
+ * and usually correct. An absent verdict means the rights pipeline did not answer
+ * for this id at all, which is a broken or incomplete upstream call and is never
+ * correct. Reporting the second as the first tells an operator that a work is
+ * unlicensed when what actually happened is that nobody asked.
+ *
+ * This is the same rule `PlaybackDecisionReason` follows in `media-engine` — a
+ * separate value rather than a flag, so a caller pattern-matching on the reason
+ * cannot handle the ordinary case without noticing the other one — and the same
+ * rule the provider-health contract follows in adding an honest `unknown` beside
+ * `pass`/`warn`/`fail`. The distinction was already computed here (the detail
+ * string differed); it just was not machine-readable, so the only consumer that
+ * could act on it was a human reading prose.
+ *
+ * An `eligible` verdict whose rights basis is off the playable allowlist stays
+ * under `upstream_not_eligible` deliberately. Upstream answered and the seal
+ * declined to carry the answer, with a stated reason in `detail`; that is a
+ * refusal with an explanation, not a missing one, and a third code for it would
+ * split the list on a distinction no consumer acts on differently.
+ *
+ * Exported as a value, for the reason `PERMITTED_VIEW_MEMBERS` is: the test that
+ * asserts every published exclusion carries a known reason reads THIS list
+ * rather than a copy, so adding a member without updating the test is impossible
+ * rather than merely discouraged.
+ */
+export const VIEW_EXCLUSION_REASONS = [
+  "no_catalog_metadata",
+  "no_eligibility_verdict",
+  "upstream_not_eligible"
+] as const;
+
+export type ViewExclusionReason = (typeof VIEW_EXCLUSION_REASONS)[number];
 
 export interface ViewExclusion {
   readonly contentId: string;
@@ -189,11 +227,25 @@ export function buildView(input: RecommendationInput, seal: EligibilitySeal): Bu
 
   for (const contentId of universe) {
     if (seal.admit(contentId) === null) {
-      excluded.push({
-        contentId,
-        reason: "upstream_not_eligible",
-        detail: refusalDetail.get(contentId) ?? "upstream supplied no eligible verdict for this id"
-      });
+      /*
+       * `refusalDetail` holding nothing for a non-admitted id means exactly one
+       * thing, and the seal is what makes that safe to rely on: an id that
+       * carried any verdict is either in `eligibleIds` or in `excluded`, because
+       * every refusal path in `sealEligibility` records a detail and refusal
+       * deletes from the admitted set. So "not admitted and not refused" is
+       * "never adjudicated", and it is reported as that rather than as a refusal
+       * nobody made.
+       */
+      const refusal = refusalDetail.get(contentId);
+      excluded.push(
+        refusal === undefined
+          ? {
+              contentId,
+              reason: "no_eligibility_verdict",
+              detail: "upstream supplied no verdict for this id; absence is treated as a refusal"
+            }
+          : { contentId, reason: "upstream_not_eligible", detail: refusal }
+      );
       continue;
     }
     if (!catalogById.has(contentId)) {

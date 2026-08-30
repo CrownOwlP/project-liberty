@@ -5,6 +5,7 @@ import { sealEligibility } from "./eligibility";
 import type { CandidateGenerator } from "./generator";
 import { reason } from "./generator";
 import { recommend } from "./recommend";
+import { buildView } from "./view";
 import {
   eligibleVerdict,
   facts,
@@ -53,6 +54,11 @@ describe("an ineligible work cannot reach the slate", () => {
      * Absence is a refusal, not a default-allow. An upstream that forgot to
      * resolve an id is indistinguishable from one that could not, and the safe
      * reading of both is "not eligible".
+     *
+     * The BEHAVIOUR is that refusal; the reason code says which kind it was.
+     * `no_eligibility_verdict` rather than `upstream_not_eligible`, because
+     * nobody adjudicated this id and reporting it as a refusal would attribute a
+     * decision to an upstream that never made one. See `VIEW_EXCLUSION_REASONS`.
      */
     const slate = recommend(request({ watchlist: ["alpha"], catalog: [facts("alpha")] }));
 
@@ -60,8 +66,61 @@ describe("an ineligible work cannot reach the slate", () => {
     expect(slate.excluded).toEqual([
       {
         contentId: "alpha",
+        reason: "no_eligibility_verdict",
+        detail: "upstream supplied no verdict for this id; absence is treated as a refusal"
+      }
+    ]);
+  });
+
+  it("distinguishes a refusal from an unanswered id in the machine-readable reason", () => {
+    /*
+     * Both are excluded and that is not what this pins — the assertion is that
+     * the two report DIFFERENT codes. Reported identically, a rights pipeline
+     * that stopped answering for half the catalog would look exactly like a
+     * catalogue that had gone unlicensed, and the only place the difference
+     * survived would be a prose field no consumer branches on.
+     */
+    const slate = recommend(
+      request({
+        eligibility: [ineligibleVerdict("gamma", "rights lapsed")],
+        watchlist: ["alpha", "gamma"],
+        catalog: [facts("alpha"), facts("gamma")]
+      })
+    );
+
+    expect(slate.items).toEqual([]);
+    expect(slate.excluded.map((entry) => [entry.contentId, entry.reason])).toEqual([
+      ["alpha", "no_eligibility_verdict"],
+      ["gamma", "upstream_not_eligible"]
+    ]);
+  });
+
+  it("reports an off-allowlist rights basis as a refusal, not as an unanswered id", () => {
+    /*
+     * Upstream DID answer here; the seal declined to carry the answer, and the
+     * detail says which basis it declined. Filing that under
+     * `no_eligibility_verdict` would claim nobody asked, which would send an
+     * operator looking for a broken call instead of a rights value that was
+     * added to the vocabulary and not to the allowlist.
+     *
+     * Driven through `buildView` rather than `recommend`, because the request
+     * schema rejects an off-vocabulary basis before the seal ever sees it — the
+     * same reason the cast sits inline in the sibling test below rather than in
+     * a fixture.
+     */
+    const seal = sealEligibility([
+      { contentId: "alpha", verdict: "eligible", rightsBasis: "scraped" as never }
+    ]);
+    const { excluded } = buildView(
+      { watchlist: ["alpha"], progress: [], catalog: [facts("alpha")] },
+      seal
+    );
+
+    expect(excluded).toEqual([
+      {
+        contentId: "alpha",
         reason: "upstream_not_eligible",
-        detail: "upstream supplied no eligible verdict for this id"
+        detail: expect.stringContaining("not on the playable allowlist")
       }
     ]);
   });

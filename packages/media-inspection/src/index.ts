@@ -31,15 +31,29 @@
  *      produced, and the addresses in it are the only ones a socket may be
  *      opened to. Supplying an adapter that ignores them and calls `fetch` on
  *      `target.url` reinstates the DNS rebinding window this package was built
- *      to close -- silently, because every other check still passes.
+ *      to close -- silently, because every other check still passes. A
+ *      `PinnedTarget` cannot be written by hand: `authoriseFetchTarget` is the
+ *      only thing that mints one, and the transports here refuse anything else.
  */
 
 export { readDeclaredCodecs, NO_DECLARED_CODECS, type DeclaredCodecs } from "./codecs";
 export { parseDashLadder } from "./dash";
 export { detectManifestFormat } from "./detect";
+/*
+ * `PinnedTarget` and `bareAddress` come from here rather than from `./pin`
+ * because the pinned target is now a BRANDED type minted only by
+ * `authoriseFetchTarget`, and the brand has to be declared in the same module as
+ * the function that writes it. Exporting the type is safe and necessary -- a
+ * composition root must be able to name what its transport receives -- and there
+ * is no constructor to export alongside it, which is the whole change: a caller
+ * of this barrel can hold a pin, read it and pass it on, and cannot invent one.
+ * `isAuthorisedTarget` is deliberately NOT exported; it is the internal check
+ * `createPinnedLookup` performs, not a vocabulary consumers need.
+ */
 export {
   ALLOWED_PROTOCOLS,
   authoriseFetchTarget,
+  bareAddress,
   checkUrlStatically,
   hostOnAllowlist,
   type EgressDependencies,
@@ -49,6 +63,7 @@ export {
   type HostClass,
   type HostClassifier,
   type HostResolver,
+  type PinnedTarget,
   type StaticUrlVerdict
 } from "./egress";
 export { parseHlsLadder } from "./hls";
@@ -67,15 +82,13 @@ export {
  * is composing for.
  */
 export {
-  bareAddress,
   createPinnedLookup,
   type PinnedFetch,
   type PinnedLookup,
   type PinnedLookupAddress,
   type PinnedLookupCallback,
   type PinnedLookupOptions,
-  type PinnedRequestInit,
-  type PinnedTarget
+  type PinnedRequestInit
 } from "./pin";
 export {
   DEFAULT_INSPECTION_LIMITS,

@@ -57,42 +57,27 @@
  * private-range judgement here would put a second copy of an SSRF control in the
  * repository, and the copy nobody updates is the hole -- the same reasoning that
  * keeps `classifyHost` an injected port rather than a local reimplementation.
+ *
+ * WHERE `PinnedTarget` WENT, and why it is not declared here any more. It used
+ * to be, as a plain structural record of three public fields under a comment
+ * claiming that only `authoriseFetchTarget` could produce one. That claim was
+ * not enforced by anything: an object literal with those three fields WAS a
+ * `PinnedTarget`, and `nodePinnedFetch` would consume it and connect to an
+ * address no classifier had seen. The type now carries a brand that only
+ * `egress.ts` can write, so it has to be declared where the brand is; this
+ * module imports it, along with the predicate that says whether a given target
+ * was really issued. That import is also why `bareAddress` moved the other way:
+ * one module has to depend on the other and it must not be both.
  */
 
+import { bareAddress, isAuthorisedTarget, type PinnedTarget } from "./egress";
+
 /**
- * A URL, and the only addresses a socket for it may be opened to.
- *
- * CONSTRUCTED ONLY BY `authoriseFetchTarget`, which returns one on its `ok`
- * branch. There is deliberately no exported constructor and no way to assemble
- * one from a bare URL: a `PinnedTarget` in hand is evidence that the addresses
- * inside it went through the protocol allowlist, the egress allowlist, the
- * loopback keys and the private-range rejection. If a caller could build one,
- * "pinned to an address nobody checked" would be expressible, and the type would
- * be a label rather than a guarantee.
+ * Re-exported so a transport can name the type it is handed without reaching
+ * past this module into the policy layer for it. Only the TYPE travels; there is
+ * no constructor to re-export, which is the point.
  */
-export interface PinnedTarget {
-  /**
-   * The URL to request, HOSTNAME INTACT. Not an address. The `Host` header, SNI
-   * and certificate identity all derive from this, so substituting an IP here is
-   * exactly the defect the file header rejects.
-   */
-  readonly url: string;
-  /**
-   * The hostname as the URL parser produced it, so an IPv6 literal is still
-   * bracketed (`[::1]`). Kept in the parser's spelling because that is what a
-   * transport building request options from the same URL will see, and the
-   * lookup compares the two.
-   */
-  readonly hostname: string;
-  /**
-   * Every address that was authorised, in resolver order, WITHOUT brackets --
-   * the spelling a socket layer expects. Never empty: `authoriseFetchTarget`
-   * refuses a name that resolves to nothing, so an empty list here would mean a
-   * bug had produced a target with no pin at all rather than a target pinned to
-   * nothing.
-   */
-  readonly addresses: readonly string[];
-}
+export type { PinnedTarget };
 
 /**
  * Everything this package asks a transport to do, and nothing else.
@@ -171,19 +156,6 @@ export type PinnedLookup = (
   callback: PinnedLookupCallback
 ) => void;
 
-/**
- * Strips the brackets a URL parser puts around an IPv6 literal.
- *
- * The brackets belong to the URL grammar, not to the address. A socket layer
- * given `[::1]` does not recognise it as an IP literal and tries to RESOLVE it,
- * which is both a failure and -- worse -- a name lookup we did not intend to
- * perform. Exported because `egress.ts` builds the pin for a literal URL and
- * needs the same normalisation.
- */
-export function bareAddress(address: string): string {
-  return address.startsWith("[") && address.endsWith("]") ? address.slice(1, -1) : address;
-}
-
 /** Case folding plus bracket stripping, so the two spellings of a host compare equal. */
 function normaliseHost(hostname: string): string {
   return bareAddress(hostname.trim()).toLowerCase();
@@ -223,16 +195,31 @@ function lookupError(code: string, message: string): Error & { code: string } {
  * connecting is served by this instead of by DNS. Every other part of the
  * connection -- host, Host header, SNI, certificate identity -- is untouched.
  *
+ * THIS IS THE CHOKE POINT, and the refusal below is why it is worth naming as
+ * one. Any transport, on any runtime, has to come through here to turn a pin
+ * into a socket decision -- that is the only way the addresses become a
+ * `lookup`. So the check that the target was genuinely ISSUED belongs here
+ * rather than in one runtime's transport, where a second transport would simply
+ * not have it.
+ *
  * THREE REFUSALS, each closing a specific way a pin stops being one:
  *
- *   1. AN EMPTY ADDRESS SET THROWS AT CONSTRUCTION rather than being answered as
- *      "no addresses". A lookup that always fails is indistinguishable from an
- *      outage, so a target that reached here with no pin would look like a flaky
- *      publisher rather than a bug; and a future reader could reasonably "fix"
- *      an always-failing pin by treating the empty list as "unrestricted", which
- *      is the hole. `authoriseFetchTarget` already refuses a name that resolves
- *      to nothing, so this is unreachable by design and is a backstop for the
- *      day some other caller builds a target.
+ *   1. A TARGET `authoriseFetchTarget` NEVER ISSUED IS REFUSED OUTRIGHT. The
+ *      brand on `PinnedTarget` already stops a caller from WRITING one, but a
+ *      brand is a compile-time control and two things survive into runtime: an
+ *      `as unknown as PinnedTarget` cast, and a spread of a real pin with the
+ *      addresses swapped, which copies the brand and type-checks. Both produce
+ *      exactly the object the review of PL-0304 refused to let the transport
+ *      accept -- an allowlisted hostname pinned to `169.254.169.254` -- so
+ *      identity is checked against the registry `egress.ts` keeps, and a copy
+ *      fails because a copy is not the same object.
+ *
+ *      This replaces an earlier refusal of an EMPTY address set. That guard is
+ *      not weakened, it is relocated to where the state can no longer be
+ *      constructed: `pinFor` takes a non-empty tuple, so an issued pin always
+ *      carries at least one address, and an unissued one never gets past the
+ *      line below whatever it carries. A guard no input can reach is a claim no
+ *      test can check, and the check that replaced it is strictly stronger.
  *
  *   2. A HOSTNAME THAT IS NOT THE PINNED ONE IS REFUSED, not answered. A socket
  *      layer asks for the host it was told to connect to, so a different name
@@ -253,12 +240,17 @@ function lookupError(code: string, message: string): Error & { code: string } {
  * substitutes.
  */
 export function createPinnedLookup(target: PinnedTarget): PinnedLookup {
+  // Refusal 1, and it is first because everything after it reads fields off an
+  // object whose provenance would otherwise be unknown. Thrown rather than
+  // returned as a failing lookup: an always-failing lookup looks like an outage,
+  // and this is not an outage, it is a caller handing us a target that no
+  // authorisation produced.
+  if (!isAuthorisedTarget(target)) {
+    throw new TypeError("a pinned lookup requires a target issued by authoriseFetchTarget");
+  }
+
   const pinnedHost = normaliseHost(target.hostname);
   const pinned = target.addresses.map((address) => bareAddress(address.trim()));
-
-  if (pinned.length === 0) {
-    throw new TypeError("a pinned target must carry at least one authorised address");
-  }
 
   return (hostname, options, callback) => {
     const answer = (): void => {

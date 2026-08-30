@@ -150,3 +150,13 @@
 {"ts":"2026-08-29T22:33:25.108Z","type":"task.gate","taskId":"PL-0103","gate":"build","status":"pass","by":"claude-frontend","evidence":"next build via npm run check round 28 exit 0"}
 {"ts":"2026-08-29T22:33:25.569Z","type":"task.review_requested","taskId":"PL-0103","owner":"claude-frontend","reviewAgent":"gpt-architect"}
 {"ts":"2026-08-29T22:33:26.068Z","type":"control.sync","tasks":35}
+{"ts":"2026-08-29T23:44:15.647Z","type":"task.blocked","taskId":"PL-0103","reason":"gate results recorded outside the lifecycle in round 25 while READY with owner null; clearing before an authentic claim"}
+{"ts":"2026-08-29T23:44:16.031Z","type":"task.unblocked","taskId":"PL-0103","status":"READY","clearedGates":["lint","typecheck","unit","build"]}
+{"ts":"2026-08-29T23:44:16.409Z","type":"task.claimed","taskId":"PL-0103","agentId":"claude-frontend"}
+{"ts":"2026-08-29T23:44:16.789Z","type":"task.started","taskId":"PL-0103","agentId":"claude-frontend","implementationBaseSha":"65975495795c71193079b82825b55d7dbb1d2763"}
+{"ts":"2026-08-29T23:44:17.204Z","type":"task.gate","taskId":"PL-0103","gate":"lint","status":"pass","by":"claude-frontend","evidence":"npm run check round 28, lint green across all workspaces"}
+{"ts":"2026-08-29T23:44:17.619Z","type":"task.gate","taskId":"PL-0103","gate":"typecheck","status":"pass","by":"claude-frontend","evidence":"turbo run typecheck round 28 exit 0, plus npm run check typecheck task"}
+{"ts":"2026-08-29T23:44:18.038Z","type":"task.gate","taskId":"PL-0103","gate":"unit","status":"pass","by":"claude-frontend","evidence":"vitest via npm run check round 28, includes the expanded title-detail suite"}
+{"ts":"2026-08-29T23:44:18.455Z","type":"task.gate","taskId":"PL-0103","gate":"build","status":"pass","by":"claude-frontend","evidence":"next build via npm run check round 28 exit 0"}
+{"ts":"2026-08-29T23:44:18.851Z","type":"task.review_requested","taskId":"PL-0103","owner":"claude-frontend","reviewAgent":"gpt-architect"}
+{"ts":"2026-08-29T23:44:19.263Z","type":"control.sync","tasks":35}

@@ -216,79 +216,31 @@ jobs:
       - name: Build
         run: npm run build
       # ----------------------------------------------------------------------
-      # The transport suite, which is NOT in `npm run test` and is not meant to
-      # be. `packages/media-inspection/vitest.config.ts` excludes `src/node/**`
-      # because those tests open real loopback sockets to prove that Node
-      # actually consults the pinned `lookup` when it connects -- a claim about
-      # the runtime that a double cannot make. Every assertion in that file
-      # passes. What does not is the EXIT: a socket abandoned by design emits
-      # `ECONNRESET` at vitest worker teardown, after the module context is gone,
-      # where neither the transport nor the test can still hold a listener for
-      # it, and vitest reports it as an unhandled error and exits non-zero.
+      # NO SEPARATE TRANSPORT STEP, deliberately.
       #
-      # So the assertions are worth observing on Linux -- this is a claim about
-      # runtime socket behaviour, and Linux is the runtime that ships -- while
-      # the exit code is not worth blocking on. Expressing "run it and report it
-      # but do not fail the job" honestly is the whole difficulty, because the
-      # obvious spellings are all forms of not looking:
+      # `packages/media-inspection`'s real-socket suite -- the one that proves
+      # Node consults the pinned `lookup` when it opens a connection, which is a
+      # claim about the runtime that a double cannot make -- used to be excluded
+      # from `npm run test` and run here on its own, behind a wrapper that gated
+      # on the parsed summary line rather than on the exit code, because the run
+      # exited non-zero while every assertion passed.
       #
-      #   - `|| true`. Swallows the exit code with no record that anything was
-      #     swallowed, and swallows a genuine assertion failure identically.
-      #     This is precisely the shape of false evidence the config file it
-      #     comes from warns about.
-      #   - `continue-on-error: true`. More visible than `|| true` -- the step
-      #     shows a warning -- but it still tolerates EVERY failure, so a real
-      #     regression in address pinning would be reported as the known-benign
-      #     teardown artifact and the job would go green over it.
-      #   - `dangerouslyIgnoreUnhandledErrors` in the config, which was already
-      #     rejected once, in that file, for blinding the whole package to
-      #     future unhandled errors.
+      # That exit was a defect in the transport, not a cost of real sockets: an
+      # already-aborted request built a `ClientRequest` before checking the
+      # signal, which opened a socket that was then abandoned with no `error`
+      # listener. It is fixed, the exclusion is gone, and the suite runs in the
+      # `Test` step above like every other one. The full account lives at the
+      # line that was wrong, in
+      # `packages/media-inspection/src/node/pinned-fetch.ts`.
       #
-      # What this step does instead: it reads the TEST RESULTS rather than the
-      # exit code, which is exactly the instruction the config file's own header
-      # gives to a human reading this run. It fails the job on a failing
-      # assertion, and it fails the job on a run that executed no tests at all --
-      # a green run that asserted nothing being the worse of the two frauds, and
-      # the reason that config exists as a second file rather than a path filter
-      # in the first place. Only the specific known state -- all assertions
-      # passed, non-zero exit -- is tolerated, and it is announced rather than
-      # hidden.
-      #
-      # Every parse failure falls on the failing side. No summary line found,
-      # a summary that says `failed`, a summary with no `passed` in it: all exit
-      # 1. If this step's output format ever changes under it, it goes red and
-      # someone reads it, rather than going green and meaning nothing.
-      #
-      # LAST, after Build, and that placement is deliberate. This step has never
-      # executed on Linux -- nothing in this repository had, until this file
-      # gained a working-branch trigger -- so it is the step most likely to be
-      # the first thing that goes red for a reason nobody has seen yet. Running
-      # it last means every other gate has already reported its own green or red
-      # in the step list before this one gets a say. A blocking check is still
-      # blocking; it just does not also hide the ten results underneath it.
-      #
-      # Invoked from the package directory rather than with `npm run ... -w`, and
-      # logged to $RUNNER_TEMP rather than into the tree, so that an untracked
-      # `transport.log` never becomes an input turbo hashes for this package.
-      # The rule this step used to spell out in shell now lives in
-      # `packages/media-inspection/scripts/gate-transport.mjs`, and this step
-      # just runs it and believes the exit code.
-      #
-      # That move is the point, not tidiness. The rule -- assertions block, the
-      # known teardown exit does not, and every parse failure falls on the
-      # failing side -- was implemented twice: once here in bash for Linux, once
-      # nowhere at all for the local Windows round, which simply reported the raw
-      # exit code and stopped the round. Two implementations of one rule is how
-      # this repository has been bitten before (two rights allowlists agreeing
-      # only by coincidence; a validator reading files the app never read), and a
-      # gate that means different things in CI and on a developer's machine is
-      # the worst version of it: the disagreement shows up as a round that lands
-      # locally and goes red here, or the reverse.
-      #
-      # One executable rule, in Node so it runs the same on both, invoked
-      # identically from both.
-      - name: Transport suite (real sockets)
-        run: npm run test:transport --workspace @liberty/media-inspection
+      # Keeping a focused step anyway, for the clearer red mark, was weighed and
+      # rejected. It would re-run the same files on the same runner in the same
+      # job for no additional coverage, and it would state a second time -- as a
+      # path filter -- where those tests live. One rule written twice is how this
+      # repository has been bitten before, and here the copy that quietly stopped
+      # matching would be the one wearing the green tick. Vitest names the
+      # failing file, so the signal that step bought is already in `Test`.
+      # ----------------------------------------------------------------------
 
   # ==========================================================================
   # The e2e harness's TYPECHECK. Not the suite.

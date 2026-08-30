@@ -30,7 +30,15 @@ import type { PinnedFetch } from "../pin";
 export const testClassifyHost: HostClassifier = (hostname: string): HostClass => {
   const host = hostname.toLowerCase();
   if (host === "") return "unparseable";
-  if (host === "localhost" || host.endsWith(".localhost") || host === "127.0.0.1" || host === "[::1]") {
+  // The WHOLE of 127/8, not just 127.0.0.1. The real classifier treats the
+  // range that way and so does every operating system, and the transport suite
+  // needs it: its negative test pins `localhost` to 127.0.0.2 -- a loopback
+  // address where nothing is listening -- and has to obtain that pin from
+  // `authoriseFetchTarget` like production does. A classifier that called
+  // 127.0.0.2 "public" would still have authorised it, but for the wrong reason,
+  // and a test whose setup passes by accident is a test that will pass after the
+  // control it depends on is removed.
+  if (host === "localhost" || host.endsWith(".localhost") || host.startsWith("127.") || host === "[::1]") {
     return "loopback";
   }
   if (host === "not a host" || host === "0") return "unparseable";

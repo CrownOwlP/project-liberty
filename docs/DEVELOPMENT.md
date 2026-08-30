@@ -583,9 +583,9 @@ workflows for commits made with the default `GITHUB_TOKEN`, which is why
 ### What it runs, against what `npm run check` runs
 
 CI enumerates the constituents of the local round as separate steps rather than
-calling `npm run check`, because eleven named steps give eleven readable
-red/green marks instead of one. The cost is a drift surface: a step added to
-`check` has to be added to the workflow too.
+calling `npm run check`, because ten named steps give ten readable red/green
+marks instead of one. The cost is a drift surface: a step added to `check` has
+to be added to the workflow too.
 
 | Local round | CI |
 | --- | --- |
@@ -596,7 +596,6 @@ red/green marks instead of one. The cost is a drift surface: a step added to
 | `npm run env:validate` | **stricter**: `--scope ci`, which turns an unset `@cache-key` variable and a runtime newer than `.nvmrc` from warnings into failures |
 | `npm run lint` / `typecheck` / `test` / `build` | same |
 | `e2e` typecheck | its own job: `npm ci --ignore-scripts` in `e2e/`, then `npm run typecheck` |
-| — | `test:transport` in `packages/media-inspection`, which the local round does not run |
 
 Where CI still differs, deliberately:
 
@@ -611,38 +610,43 @@ Where CI still differs, deliberately:
   watches `/` only. Now that CI installs from that lockfile, a stale entry there
   is a CI input nothing updates.
 
-### The transport suite, and reading a result instead of an exit code
+### The transport suite
 
-`packages/media-inspection` has a `test:transport` script that is deliberately
-outside `test`. Its tests open real loopback sockets, because the claim they
-exist to prove — that Node consults the pinned `lookup` when it opens a
-connection — is a claim about the runtime that a double cannot make. Every
-assertion passes. The **exit** does not: a socket abandoned by design emits
-`ECONNRESET` at vitest worker teardown, after the module context is gone, and
-vitest reports it as an unhandled error and exits non-zero.
+`packages/media-inspection/src/node/pinned-fetch.test.ts` opens real loopback
+sockets, because the claim it exists to prove — that Node consults the pinned
+`lookup` when it opens a connection — is a claim about the runtime that a double
+cannot make. It runs inside `npm run test`, locally and in CI, like every other
+suite, and it blocks a commit the ordinary way. CI has no separate step for it;
+`.github/workflows/ci.yml` records why not.
 
-That makes it exactly the kind of check people silence. CI does not silence it,
-and specifically does not use any of these:
+It was not always arranged that way, and the wrong version is worth remembering
+because it was seductive. The suite was excluded from `npm run test` and run in
+CI on its own, behind a wrapper that gated on vitest's parsed summary line
+rather than on its exit code, because every assertion passed while the run
+exited non-zero on an `ECONNRESET` believed to arrive at worker teardown. Three
+ways of silencing that were considered and rejected — `|| true`,
+`continue-on-error: true`, and `dangerouslyIgnoreUnhandledErrors` — and rejecting
+them was right, but the wrapper that replaced them was a fourth way of not
+blocking on the exit code, dressed as rigour.
 
-- `|| true`, which discards the exit code and a genuine assertion failure with
-  equal enthusiasm and leaves no record that anything was discarded;
-- `continue-on-error: true`, which is more visible but still tolerates *every*
-  failure, so a real regression in address pinning would go green as the
-  known-benign teardown artifact;
-- `dangerouslyIgnoreUnhandledErrors`, already rejected in
-  `packages/media-inspection/vitest.config.ts` for blinding the package to
-  future unhandled errors.
+The exit code was telling the truth. Four rounds went at the test, the server's
+closing behaviour and the transport's socket handling; the defect was in none of
+them. `nodePinnedFetch` checked `init.signal.aborted` *after* constructing the
+request, so an already-aborted call built a `ClientRequest` — which opens a
+socket immediately — and then returned without sending a request line and
+without ever attaching an `error` listener. An established connection owned by a
+request nobody was listening to, invisible to the suite's request counter, and
+the source of the eventual unowned reset. The deadline is now checked before
+anything is constructed, and the suite counts accepted TCP connections as well
+as served requests so the same defect cannot return unnoticed.
 
-Instead the step reads the test results — which is the instruction that config
-file's own header gives a human — and fails the job on a failing assertion, and
-on a run that executed no tests. Only the one known state is tolerated: all
-assertions passed, non-zero exit. It is announced with a `::notice::` and a job
-summary rather than hidden, and every parse failure falls on the failing side,
-so a change in vitest's output format turns the step red rather than quiet.
+That account is written once, at the line that was wrong, in
+`packages/media-inspection/src/node/pinned-fetch.ts`. Read it there rather than
+trusting this summary.
 
-If the run ever passes *and* exits zero, the step says so — that is the open
-question `vitest.config.ts` records, and the condition under which the
-`src/node/**` exclusion could be removed.
+What survives is `test:transport`, a plain `vitest run src/node` for iterating
+on that one suite. It is a convenience, not a gate: nothing in CI calls it, and
+every test it runs is a test `npm run test` already ran.
 
 ## Branches
 

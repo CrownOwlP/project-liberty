@@ -404,34 +404,34 @@
       "gateResults": {
         "lint": {
           "status": "pass",
-          "at": "2026-08-29T22:33:23.658Z",
+          "at": "2026-08-29T23:44:17.174Z",
           "by": "claude-frontend",
-          "commitSha": "65975495795c71193079b82825b55d7dbb1d2763",
+          "commitSha": "c3bb856f3d8c122acd46d5331067fac3a0266f2b",
           "evidence": "npm run check round 28, lint green across all workspaces"
         },
         "typecheck": {
           "status": "pass",
-          "at": "2026-08-29T22:33:24.136Z",
+          "at": "2026-08-29T23:44:17.587Z",
           "by": "claude-frontend",
-          "commitSha": "65975495795c71193079b82825b55d7dbb1d2763",
+          "commitSha": "c3bb856f3d8c122acd46d5331067fac3a0266f2b",
           "evidence": "turbo run typecheck round 28 exit 0, plus npm run check typecheck task"
         },
         "unit": {
           "status": "pass",
-          "at": "2026-08-29T22:33:24.602Z",
+          "at": "2026-08-29T23:44:18.007Z",
           "by": "claude-frontend",
-          "commitSha": "65975495795c71193079b82825b55d7dbb1d2763",
+          "commitSha": "c3bb856f3d8c122acd46d5331067fac3a0266f2b",
           "evidence": "vitest via npm run check round 28, includes the expanded title-detail suite"
         },
         "build": {
           "status": "pass",
-          "at": "2026-08-29T22:33:25.074Z",
+          "at": "2026-08-29T23:44:18.424Z",
           "by": "claude-frontend",
-          "commitSha": "65975495795c71193079b82825b55d7dbb1d2763",
+          "commitSha": "c3bb856f3d8c122acd46d5331067fac3a0266f2b",
           "evidence": "next build via npm run check round 28 exit 0"
         }
       },
-      "updatedAt": "2026-08-29T22:33:25.569Z",
+      "updatedAt": "2026-08-29T23:44:18.851Z",
       "implementationAgent": "claude-frontend",
       "implementationBaseSha": "65975495795c71193079b82825b55d7dbb1d2763"
     },
@@ -447,7 +447,8 @@
       ],
       "allowedPaths": [
         "apps/web/src/components/catalog-card.tsx",
-        "apps/web/src/lib/routes.ts"
+        "apps/web/src/lib/routes.ts",
+        "apps/web/src/lib/routes.test.ts"
       ],
       "preferredAgent": "claude-frontend",
       "reviewAgent": "gpt-architect",

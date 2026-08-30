@@ -1,3 +1,4 @@
+import { FAST_CHECK_SEED } from "@liberty/contracts/testing/arbitraries";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { type ProgressWrite, type StoredProgress, resolveProgressWrite } from "./writer-epoch";
@@ -12,7 +13,23 @@ import { type ProgressWrite, type StoredProgress, resolveProgressWrite } from ".
  *
  * Six order-dependence defects in this codebase so far. The `instant` and
  * `updatedAt` generators below are the guard against the seventh.
+ *
+ * THE SEED IS PINNED by importing `@liberty/contracts/testing/arbitraries`,
+ * whose import side effect is `fc.configureGlobal`. This file previously ran
+ * UNPINNED -- the one property suite in the repository that did -- which meant
+ * its counterexamples were not reproducible, and a property suite whose failures
+ * cannot be reproduced gets retried until it passes. `LIBERTY_FC_SEED` widens
+ * the search without an edit.
  */
+
+describe("the property suite is reproducible", () => {
+  it("runs under the repository's pinned seed", () => {
+    // Asserted rather than assumed. The pin is an import SIDE EFFECT, so a
+    // tidy-up that removes the "unused" import silently unpins the whole file,
+    // and nothing else here would notice.
+    expect(fc.readConfigureGlobal().seed).toBe(FAST_CHECK_SEED);
+  });
+});
 
 const writerId = fc.constantFrom("writer_tv", "writer_phone", "writer_tablet");
 /**
@@ -40,7 +57,13 @@ const isReadable = (value: Date): boolean => !Number.isNaN(value.getTime());
 const stamp = (value: Date): string => (isReadable(value) ? value.toISOString() : "not-a-timestamp");
 
 const storedArb: fc.Arbitrary<StoredProgress> = fc.record({
-  positionSeconds: fc.integer({ min: 0, max: 20000 }),
+  /**
+   * NULL IS IN RANGE. A row created by `issueWriterLease` has no position yet,
+   * so "leased, nothing reported" is a real stored state and not an edge case
+   * invented for the generator. Excluding it would let a future edit read the
+   * null as a zero and still pass this file.
+   */
+  positionSeconds: fc.option(fc.integer({ min: 0, max: 20000 }), { nil: null }),
   runtimeSeconds: fc.option(fc.integer({ min: 1, max: 20000 }), { nil: null }),
   writerEpoch: fc.integer({ min: 1, max: 50 }),
   writerId,
@@ -149,6 +172,56 @@ describe("the current writer may always move the position, in either direction",
           expect(resolution.accepted).toBe(true);
         }
       )
+    );
+  });
+});
+
+describe("an unknown stored position is never read as a zero", () => {
+  it("reports the first write as first-reported and never as a rewind", () => {
+    fc.assert(
+      fc.property(
+        storedArb,
+        fc.integer({ min: 0, max: 20000 }),
+        fc.integer({ min: 1, max: 100 }),
+        (anyStored, positionSeconds, seqAdvance) => {
+          const stored = { ...anyStored, positionSeconds: null, runtimeSeconds: null };
+          const resolution = resolveProgressWrite({
+            stored,
+            write: {
+              lease: { epoch: stored.writerEpoch, writerId: stored.writerId },
+              writeSeq: stored.writeSeq + seqAdvance,
+              positionSeconds,
+              runtimeSeconds: null
+            },
+            instant: "2026-01-01T00:00:00.000Z"
+          });
+
+          expect(resolution.accepted).toBe(true);
+          if (!resolution.accepted) return;
+          // The defect stated as a property: a null read as 0 makes exactly the
+          // writes with `positionSeconds === 0` look like rewinds and the rest
+          // look ordinary, so a single example could miss it either way.
+          expect(resolution.notes).toContain("position_first_reported");
+          expect(resolution.notes).not.toContain("position_moved_backwards");
+        }
+      )
+    );
+  });
+
+  it("never claims both first-reported and moved-backwards at once", () => {
+    fc.assert(
+      fc.property(storedArb, writeArb, (stored, write) => {
+        const resolution = resolveProgressWrite({
+          stored,
+          write,
+          instant: "2026-01-01T00:00:00.000Z"
+        });
+        if (!resolution.accepted) return;
+        const both =
+          resolution.notes.includes("position_first_reported") &&
+          resolution.notes.includes("position_moved_backwards");
+        expect(both).toBe(false);
+      })
     );
   });
 });

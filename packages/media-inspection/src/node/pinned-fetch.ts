@@ -1,7 +1,8 @@
 import { Agent as HttpAgent, request as httpRequest, type IncomingMessage } from "node:http";
 import { Agent as HttpsAgent, request as httpsRequest } from "node:https";
 import { isIP, type LookupFunction, type Socket } from "node:net";
-import { bareAddress, createPinnedLookup, type PinnedFetch, type PinnedTarget } from "../pin";
+import { bareAddress, type PinnedTarget } from "../egress";
+import { createPinnedLookup, type PinnedFetch } from "../pin";
 
 /**
  * `PinnedFetch` for a Node deployment (PL-0304).
@@ -146,11 +147,57 @@ export const nodePinnedFetch: PinnedFetch = (target, init) =>
       return;
     }
 
-    // Throws on an empty address set. Inside the executor on purpose, so it
-    // becomes a rejected promise that `http.ts` reports as a network error
-    // rather than an exception thrown at a caller that documents that it never
-    // throws.
+    /*
+     * Throws on a target `authoriseFetchTarget` did not issue -- a fabricated
+     * one, a cast, or a spread of a real pin with the addresses swapped. Inside
+     * the executor on purpose, so it becomes a rejected promise that `http.ts`
+     * reports as a network error rather than an exception thrown at a caller
+     * that documents that it never throws.
+     *
+     * Before ANY of the connection machinery below, because the point of the
+     * check is that an unauthorised target never becomes a socket. The scheme
+     * refusal above is the only thing ahead of it, and stays ahead of it because
+     * "that scheme is not fetchable" is the more specific answer for the one
+     * case where both apply.
+     */
     const lookup: LookupFunction = createPinnedLookup(target);
+
+    /*
+     * THE DEADLINE IS CHECKED BEFORE THE REQUEST IS BUILT, not after.
+     *
+     * This is the fix for a real leak, and for the teardown artefact that leak
+     * produced. The check used to sit BELOW the `httpRequest`/`httpsRequest`
+     * call, so an already-aborted signal meant: construct a `ClientRequest`,
+     * which hands itself to the agent, which immediately opens a socket; then
+     * return without calling `end()` and -- because the listeners are registered
+     * further down -- without ever attaching an `error` handler to either the
+     * request or the socket. `release()` could not undo it: `agent.destroy()`
+     * only closes sockets in the FREE pool, and this one is assigned to a
+     * request, while `socket` was still `null` because the `socket` event had
+     * not been subscribed to yet.
+     *
+     * What was left behind was an established TCP connection owned by a request
+     * nobody was listening to. Whenever it eventually closed -- `server.close()`
+     * closes idle connections as of Node 19, and process teardown closes
+     * everything -- `socketCloseListener` in `node:_http_client` saw a request
+     * with no response and did `req.emit('error', connResetException('socket
+     * hang up'))`. An `error` emit with no listener is an uncaught exception, and
+     * it arrived after the test module's context was gone, where nothing could
+     * hold a listener for it.
+     *
+     * That is the `ECONNRESET` that failed `npm run test:transport` for four
+     * rounds while every assertion passed. All four went at the TLS test, the
+     * server's closing behaviour and the transport's socket handling; none of
+     * them was where it came from. It came from the one code path that opens a
+     * connection and then abandons it, which is this one -- and the honest fix
+     * is not to catch the emit but to stop opening the connection, which is also
+     * exactly what the test named "opens nothing at all when the deadline has
+     * already passed" always claimed was happening.
+     */
+    if (init.signal.aborted) {
+      reject(transportError("AbortError", "ABORT_ERR", "already past the deadline"));
+      return;
+    }
 
     /*
      * A FRESH AGENT PER REQUEST, keep-alive off.
@@ -239,13 +286,14 @@ export const nodePinnedFetch: PinnedFetch = (target, init) =>
        * while its connection stayed open, and the connection then died on the
        * runtime's schedule instead of ours.
        *
-       * A leak in production, and the reason this package's runtime suite could
-       * not gate a commit: the delayed close emitted `ECONNRESET` after the test
-       * runner had torn its module context down, where nothing could hold a
-       * listener for it. The reviewer refused to accept "all assertions passed,
-       * process exited non-zero" as a security gate and was right to -- the
-       * runtime-integration proof is the whole difference between this fix and
-       * the design it replaces, so it has to be a proof that runs green.
+       * A leak in production, and kept fixed on those merits. It was found while
+       * chasing the suite's non-zero exit and was WRONGLY BLAMED for it: closing
+       * this socket did not make the run green, because the connection that
+       * outlived the runner was never one of these. It was the one opened by an
+       * already-aborted request that returned before any of this existed -- see
+       * the deadline check above. Recorded plainly because the earlier version of
+       * this comment asserted the causation, and a confident wrong diagnosis in a
+       * comment costs the next reader more than no comment at all.
        *
        * `destroy()` is idempotent and harmless on an already-closed socket. On
        * the response path `release` runs on `close`, by which time the body is
@@ -254,11 +302,19 @@ export const nodePinnedFetch: PinnedFetch = (target, init) =>
       socket?.destroy();
     };
 
-    if (init.signal.aborted) {
-      release();
-      reject(transportError("AbortError", "ABORT_ERR", "already past the deadline"));
-      return;
-    }
+    /*
+     * No second `signal.aborted` check here, and no early return that could
+     * leave `request` un-listened-to: from the line above to `request.end()`
+     * below there is nothing that can return, so every request this function
+     * constructs is one it also finishes and holds handlers for.
+     *
+     * There is no window between the `aborted` check above and this listener,
+     * and it is worth saying why rather than assuming it: everything in between
+     * is synchronous, and an abort can only be delivered from a task or a
+     * microtask. That matters because an `AbortSignal` does NOT replay -- adding
+     * a listener to a signal that has already fired never calls it -- so a gap
+     * here would be an abort silently dropped rather than a late one.
+     */
     init.signal.addEventListener("abort", abort, { once: true });
 
     request.on("error", (error: Error) => {
@@ -346,9 +402,26 @@ export const nodePinnedFetch: PinnedFetch = (target, init) =>
       // it would add a failure mode in exchange for nothing.
       const body = nullBody ? null : bodyStream(response);
 
-      // Cleanup hangs off the message rather than firing here: the agent must
-      // outlive the body, and `close` fires whether the body was read to the end,
-      // cancelled over the cap, or destroyed by the deadline.
+      /*
+       * Cleanup hangs off the message rather than firing here: the agent must
+       * outlive the body, and `close` fires whether the body was read to the end,
+       * cancelled over the cap, or destroyed by the deadline.
+       *
+       * WHAT ABOUT A CALLER THAT NEVER TOUCHES THE BODY? It neither reads nor
+       * cancels, so `close` does not fire, so `release` does not run and the
+       * socket stays open. That is covered, and by design rather than by luck:
+       * `PinnedRequestInit.signal` is documented as the WHOLE-operation deadline
+       * including the body read, so when it fires, `abort()` destroys the
+       * request, the message closes, and `release` runs. `http.ts` always passes
+       * such a signal.
+       *
+       * The residual is therefore narrow and worth stating rather than
+       * papering over: a caller that supplies a signal which never aborts AND
+       * abandons the body holds the connection until garbage collection. The
+       * transport cannot fix that without inventing a second deadline, and a
+       * second deadline is a second number to keep in agreement with the one in
+       * `http.ts` -- the duplication this file refuses everywhere else.
+       */
       response.on("close", release);
 
       resolve(new Response(body, { status, headers }));

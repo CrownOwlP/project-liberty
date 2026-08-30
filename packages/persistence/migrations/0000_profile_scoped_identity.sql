@@ -148,7 +148,12 @@ CREATE INDEX "active_profile_selection_profile_id_idx"
 CREATE TABLE "playback_progress" (
   "profile_id" text NOT NULL,
   "content_id" text NOT NULL,
-  "position_seconds" integer NOT NULL,
+  -- NULL means "leased, but no position has ever been reported". It never means
+  -- zero. A lease is a claim on the right to write, not a write, and a 0 written
+  -- at lease time would make "never watched" indistinguishable from "stopped one
+  -- second in" -- which puts a title nobody watched at the top of "continue
+  -- watching". listContinueWatching excludes NULL positions for that reason.
+  "position_seconds" integer,
   -- NULL means the source never stated a runtime. It never means zero: a zero
   -- here would make every title read as fully watched.
   "runtime_seconds" integer,
@@ -166,6 +171,9 @@ CREATE TABLE "playback_progress" (
   CONSTRAINT "playback_progress_pkey" PRIMARY KEY ("profile_id", "content_id"),
   CONSTRAINT "playback_progress_profile_id_profile_id_fk" FOREIGN KEY ("profile_id")
     REFERENCES "profile" ("id") ON DELETE cascade,
+  -- A NULL position satisfies this: `NULL >= 0` is NULL, and a CHECK only fails
+  -- on FALSE. "No position reported" is the absence of a position, not a
+  -- negative one.
   CONSTRAINT "playback_progress_position_non_negative" CHECK ("position_seconds" >= 0),
   CONSTRAINT "playback_progress_runtime_positive"
     CHECK ("runtime_seconds" IS NULL OR "runtime_seconds" > 0),

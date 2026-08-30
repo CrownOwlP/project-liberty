@@ -2,7 +2,15 @@ import { defined, permutationKeysArb, permute } from "@liberty/contracts/testing
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { recommend } from "./recommend";
-import { request, requestArb, type GeneratedRequest } from "./testing/fixtures";
+import {
+  AT,
+  eligibleVerdict,
+  facts,
+  ineligibleVerdict,
+  request,
+  requestArb,
+  type GeneratedRequest
+} from "./testing/fixtures";
 
 /* -------------------------------------------------------------------------
  * Determinism properties for the whole boundary (PL-0801).
@@ -157,6 +165,31 @@ describe("the published order is total", () => {
     );
   });
 
+  it("pins the order of a tie the comparator cannot break on precedence", () => {
+    /*
+     * Two works on the watchlist and nothing else: one generator, so
+     * `generatorIndex` ties for both and the order falls entirely to
+     * `emissionIndex`. That index is a function of VIEW order, which `buildView`
+     * has already made code-point canonical — which is why this holds under
+     * reversal, and why the fix for a tie lives at the input rather than in a
+     * final sort of the output.
+     *
+     * Stated as an example beside the general permutation property because this
+     * is the configuration a reviewer asks about by name ("what happens when two
+     * candidates are equally good"), and a property that merely says "the two
+     * calls agree" does not say WHICH order they agree on.
+     */
+    const parts = {
+      eligibility: [eligibleVerdict("alpha"), eligibleVerdict("gamma")],
+      catalog: [facts("alpha"), facts("gamma")]
+    };
+    const forward = recommend(request({ ...parts, watchlist: ["alpha", "gamma"] }));
+    const backward = recommend(request({ ...parts, watchlist: ["gamma", "alpha"] }));
+
+    expect(forward.items.map((item) => item.contentId)).toEqual(["alpha", "gamma"]);
+    expect(backward).toEqual(forward);
+  });
+
   it("never reads a clock", () => {
     /*
      * The instant is an explicit input, so the only correct value of
@@ -168,5 +201,106 @@ describe("the published order is total", () => {
         expect(recommend(request({ ...generated, at })).generatedAt).toBe(at);
       })
     );
+  });
+});
+
+describe("the degenerate shapes, named", () => {
+  /*
+   * WHY EXAMPLES SIT IN A PROPERTY FILE. Two reasons, and neither is that
+   * properties are insufficient in general.
+   *
+   * First, reachability. Every shape below needs all four of `requestArb`'s
+   * arrays to land in one specific configuration at once — empty, or a single id
+   * present in three of them — and whether any given run produces that is a fact
+   * about fast-check's size bias, not something the suite guarantees. A shape the
+   * generator reaches by luck is not covered.
+   *
+   * Second, and more importantly, a property fixes a RELATION and these fix a
+   * VALUE. "Two calls agree" is true of a function that throws both times, and
+   * true of one that returns an empty slate for a profile that should have had
+   * one. What an empty profile actually gets back has to be written down.
+   */
+
+  it("returns an empty, well-formed slate for a profile with nothing at all", () => {
+    const slate = recommend(request());
+
+    expect(slate).toEqual({ generatedAt: AT, items: [], excluded: [] });
+    // Not merely empty: still stable, and still echoing the caller's instant.
+    expect(recommend(request())).toEqual(slate);
+  });
+
+  it("returns an empty slate, with a trail, for a profile whose every work is refused", () => {
+    /*
+     * The distinction that matters operationally: an empty slate because there
+     * was nothing to say, versus an empty slate because everything was refused.
+     * Those must not look alike, which is what `excluded` is published for.
+     */
+    const slate = recommend(
+      request({
+        eligibility: [ineligibleVerdict("alpha", "rights lapsed")],
+        watchlist: ["alpha"],
+        catalog: [facts("alpha")]
+      })
+    );
+
+    expect(slate.items).toEqual([]);
+    expect(slate.excluded).toHaveLength(1);
+  });
+
+  it("ranks a single candidate at 1, with its trail intact", () => {
+    const slate = recommend(
+      request({
+        eligibility: [eligibleVerdict("alpha")],
+        watchlist: ["alpha"],
+        catalog: [facts("alpha")]
+      })
+    );
+
+    expect(slate.items).toHaveLength(1);
+    expect(slate.items[0]?.rank).toBe(1);
+    expect(slate.items[0]?.reasons).toHaveLength(1);
+  });
+
+  it("serves a profile with no viewing history from the watchlist alone", () => {
+    /*
+     * No progress records at all. `continueWatchingGenerator` contributes
+     * nothing, and the absence of a progress record must read as "not watched"
+     * rather than as "completed" — the latter would empty the watchlist rail for
+     * every new profile, which is the cold-start failure that looks like the
+     * feature being broken.
+     */
+    const slate = recommend(
+      request({
+        eligibility: [eligibleVerdict("alpha"), eligibleVerdict("gamma")],
+        watchlist: ["gamma", "alpha"],
+        progress: [],
+        catalog: [facts("alpha"), facts("gamma")]
+      })
+    );
+
+    expect(slate.items.map((item) => item.contentId)).toEqual(["alpha", "gamma"]);
+    for (const item of slate.items) {
+      expect(item.reasons.map((entry) => entry.code)).toEqual(["on_your_watchlist"]);
+    }
+  });
+
+  it("accounts for an eligible work it cannot describe, rather than dropping it", () => {
+    /*
+     * Eligible, referenced, and with no catalog metadata: the one case where the
+     * seal says yes and the view still says no. It must appear in the trail —
+     * silently vanishing is how a metadata gap gets reported as a rights bug.
+     */
+    const slate = recommend(
+      request({ eligibility: [eligibleVerdict("alpha")], watchlist: ["alpha"], catalog: [] })
+    );
+
+    expect(slate.items).toEqual([]);
+    expect(slate.excluded).toEqual([
+      {
+        contentId: "alpha",
+        reason: "no_catalog_metadata",
+        detail: "eligible, but no catalog metadata was supplied to describe it"
+      }
+    ]);
   });
 });

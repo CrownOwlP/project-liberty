@@ -4,10 +4,17 @@ import { profile } from "./profiles";
 /* -------------------------------------------------------------------------
  * Watchlist (PL-0404)
  *
- * Plain, profile-scoped PostgreSQL. There is no interesting distributed problem
- * here and the schema should not invent one: "on my list" is a set, and a set
- * membership is idempotent by nature, so the primary key does all the work that
- * `writer_epoch` has to do for progress.
+ * Plain, profile-scoped PostgreSQL, and the schema deliberately carries no
+ * epoch, no sequence and no tombstone.
+ *
+ * That is a narrower claim than the one this comment used to make. "Set
+ * membership is idempotent, so the primary key does all the work `writer_epoch`
+ * does for progress" is true of two concurrent ADDS and of two concurrent
+ * REMOVES, and silent about an add racing a remove -- which a primary key cannot
+ * resolve. The rule for that case is server arrival order; why that is the right
+ * rule, why a writer epoch would be cargo cult here, and the one case arrival
+ * order knowingly gets wrong are all argued in `watchlist-mutation.ts`. The
+ * point for the SCHEMA is that the rule needs no column, so none is added.
  *
  * The one thing this table shares with progress is the thing that matters: it is
  * keyed by `profileId`. A household watchlist is the wrong product -- the whole
