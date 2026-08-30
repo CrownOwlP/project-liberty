@@ -456,8 +456,28 @@ function describe(track: SubtitleTrack): string {
   return `${track.id} (${track.language.toLowerCase()}, ${track.kind}, ${track.format})`;
 }
 
+/**
+ * The REQUESTED side of the same rendering problem `describe` solves for the
+ * track side, and it was left raw when that one was fixed.
+ *
+ * `languageMatch` compares `want.trim().toLowerCase()`, so a policy carrying
+ * `"PT-BR"` or `" fr"` -- both reachable, because `selectSubtitleTrack` takes
+ * the TYPE and the schema's `.transform()` only runs on `.parse()` -- was matched as
+ * `pt-br` and `fr` and then printed here verbatim. This string exists precisely
+ * for the outcomes where nothing matched, so the one line telling a reader what
+ * we looked for was the one line disagreeing with what we actually looked for:
+ * someone debugging `no_preferred_language_available` would compare a track
+ * rendered as `pt-br` against a request rendered as `PT-BR` and conclude the
+ * case fold was the bug.
+ *
+ * Normalised rather than the comparator loosened. The matcher is right to fold
+ * case and trim; only the trail was wrong, and it is fixed where a human reads
+ * it so the shared `languageMatch` keeps one definition of a language tag.
+ */
 function describeLanguages(effective: EffectiveLanguages): string {
-  const listed = effective.languages.filter((language) => language.trim() !== "");
+  const listed = effective.languages
+    .map((language) => language.trim().toLowerCase())
+    .filter((language) => language !== "");
   if (!listed.length) return "no language requested";
   const suffix = effective.source === "audio_language_for_hearing_impaired" ? " (from the audio)" : "";
   return `looked for: ${listed.join(", ")}${suffix}`;

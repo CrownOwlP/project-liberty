@@ -245,6 +245,82 @@ describe("selectSubtitleTrack preferred language", () => {
   });
 });
 
+describe("selectSubtitleTrack with a language nobody stated", () => {
+  /*
+   * `subtitleTrackSchema.language` is `.min(2)`, but this policy takes the TYPE
+   * and not parsed output, so an adapter constructing a track literal can hand
+   * over `""` -- and the shared `languageTagArb` never generates one, so the
+   * property suite cannot reach these cases either. They are the subtitle
+   * analogue of PL-0205's rule: an absent language is UNKNOWN, and unknown must
+   * not be treated as a value. In particular it must not become a wildcard that
+   * matches whatever was asked for, which is what a `startsWith`-style
+   * comparator would do with an empty needle.
+   */
+  it("never matches a track whose language is absent, and still offers it", () => {
+    const result = selectSubtitleTrack(
+      [track({ id: "blank", language: "" }), track({ id: "de", language: "de" })],
+      policy({ preferredLanguages: ["fr"] })
+    );
+    expect(result.selected).toBeNull();
+    expect(result.reason).toBe("no_preferred_language_available");
+    // Offered rather than dropped: a viewer can still pick it, and a track that
+    // vanished from every list would be invisible to whoever debugs the stream.
+    expect(result.ordered.map((t) => t.id).sort()).toEqual(["blank", "de"]);
+  });
+
+  it("does not let an absent language stand in for the one the viewer asked for", () => {
+    // Every criterion below language favours the blank track -- provider default
+    // and WebVTT against SRT -- so this fails if an empty tag ever starts
+    // matching rather than merely if the ordering changes.
+    const result = selectSubtitleTrack(
+      [
+        track({ id: "blank", language: "", isDefault: true, format: "webvtt" }),
+        track({ id: "fr", language: "fr", format: "srt" })
+      ],
+      policy({ preferredLanguages: ["fr"] })
+    );
+    expect(result.selected?.id).toBe("fr");
+    expect(result.reason).toBe("preferred_language_exact");
+  });
+
+  it("shows no forced track whose language is absent, whatever the audio is", () => {
+    // A forced track is keyed to the audio language. One that states no language
+    // cannot be shown to belong to this soundtrack, so it is offered and never
+    // taken -- the same reading `audioLanguage: null` already gets.
+    const result = selectSubtitleTrack(
+      [track({ id: "blank-forced", language: "", kind: "forced" })],
+      policy({ preferredLanguages: [], audioLanguage: "ja" })
+    );
+    expect(result.selected).toBeNull();
+    expect(result.reason).toBe("no_preference_expressed");
+    expect(result.forced.map((t) => t.id)).toEqual(["blank-forced"]);
+  });
+
+  it("ignores a blank preference without renumbering the ones around it", () => {
+    /*
+     * `effectiveLanguages` tests the list with `.some` rather than filtering it,
+     * so the indices `languageMatch` reports stay the ones the caller wrote.
+     * Filtering would renumber the list; the ORDER would survive, but this pins
+     * the property the comment claims rather than the weaker one that happens to
+     * follow from it.
+     */
+    const result = selectSubtitleTrack(
+      [track({ id: "de", language: "de" }), track({ id: "fr", language: "fr" })],
+      policy({ preferredLanguages: ["", "de", "fr"] })
+    );
+    expect(result.selected?.id).toBe("de");
+    expect(result.reason).toBe("preferred_language_exact");
+  });
+
+  it("does not claim to have looked for a blank preference", () => {
+    const result = selectSubtitleTrack(
+      [track({ id: "de", language: "de" })],
+      policy({ preferredLanguages: ["", "fr"] })
+    );
+    expect(result.explanation).toContain("looked for: fr");
+  });
+});
+
 describe("selectSubtitleTrack off policy", () => {
   it("selects nothing while still reporting what could be switched on", () => {
     const result = selectSubtitleTrack(
@@ -793,6 +869,35 @@ describe("selectSubtitleTrack reason trail", () => {
     );
     expect(result.explanation).toContain("pt (pt-br, subtitles, webvtt)");
     expect(result.explanation).not.toContain("PT-BR");
+  });
+
+  it("names the requested languages as the matcher saw them, not as the caller wrote them", () => {
+    /*
+     * The mirror of the track-side fix above. `languageMatch` compares
+     * `want.trim().toLowerCase()`, and this policy takes the TYPE, so a caller
+     * can hand over `"PT-BR"` or `" fr"` and have them matched as `pt-br` and
+     * `fr`. This line exists for the outcomes where nothing matched, so printing
+     * the raw tags made the one sentence telling a reader what we looked for the
+     * one sentence disagreeing with what we looked for -- and the obvious
+     * conclusion from `PT-BR` beside a `pt-br` track is that the case fold is
+     * the bug.
+     */
+    const result = selectSubtitleTrack(
+      [track({ id: "de", language: "de" })],
+      policy({ preferredLanguages: ["PT-BR", " fr"] })
+    );
+    expect(result.reason).toBe("no_preferred_language_available");
+    expect(result.explanation).toContain("looked for: pt-br, fr");
+    expect(result.explanation).not.toContain("PT-BR");
+  });
+
+  it("names the derived audio language the same way, and says it came from the audio", () => {
+    const result = selectSubtitleTrack(
+      [track({ id: "de", language: "de" })],
+      policy({ preferredLanguages: [], hearingImpaired: true, audioLanguage: "PT-BR" })
+    );
+    expect(result.reason).toBe("no_preferred_language_available");
+    expect(result.explanation).toContain("looked for: pt-br (from the audio)");
   });
 
   it("tells the three empty-screen outcomes apart", () => {

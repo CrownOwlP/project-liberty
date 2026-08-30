@@ -1,6 +1,7 @@
 import type { SubtitleKind, SubtitlePolicy, SubtitleTrack } from "@liberty/contracts/domains/subtitles";
 import { subtitleFormatSchema } from "@liberty/contracts/domains/subtitles";
 import {
+  FAST_CHECK_SEED,
   defined,
   languageTagArb,
   permutationKeysArb,
@@ -70,6 +71,76 @@ const autoPoolTripleArb = fc
   ]);
 
 const forcedTripleArb = tripleOfKind("forced");
+
+/**
+ * The same tracks with an arbitrary subset stating NO language.
+ *
+ * `languageTagArb` generates fifteen well-formed tags and no empty one, so the
+ * suite above has never once reached a track whose language is absent -- and
+ * `subtitleTrackSchema.language` is `.min(2)` only on `.parse()`, while
+ * `selectSubtitleTrack` takes the TYPE, so an adapter constructing a literal
+ * reaches it easily. Absent is UNKNOWN, on the same terms as PL-0205's media
+ * facts: it must not become a wildcard that matches whatever was requested,
+ * which is exactly what an empty needle does to a `startsWith` comparator.
+ *
+ * Blanked here rather than by widening the shared arbitrary, which lives in
+ * `packages/contracts` and is held by another lane.
+ */
+const someLanguagesUnstatedArb: Arbitrary<SubtitleTrack[]> = subtitleTracksArb.chain((tracks) =>
+  fc
+    .array(fc.boolean(), { minLength: tracks.length, maxLength: tracks.length })
+    .map((blank) =>
+      tracks.map((track, index) => (blank[index] === true ? { ...track, language: "" } : track))
+    )
+);
+
+describe("the property suite is reproducible", () => {
+  it("runs under the repository's pinned seed", () => {
+    /*
+     * Asserted rather than assumed. The pin is an import SIDE EFFECT of
+     * `@liberty/contracts/testing/arbitraries`; unlike the suite in
+     * `packages/persistence` this file also imports generators from it, so the
+     * import cannot be tidied away -- but the seed can still drift, by a local
+     * `fc.assert(..., { seed })` or by the module's own default moving, and
+     * neither would make any property here fail. A property suite whose
+     * counterexamples are not reproducible gets retried until it passes.
+     */
+    expect(fc.readConfigureGlobal().seed).toBe(FAST_CHECK_SEED);
+  });
+});
+
+describe("an absent language is unknown, not a wildcard", () => {
+  it("never selects a track that states no language", () => {
+    fc.assert(
+      fc.property(someLanguagesUnstatedArb, subtitlePolicyArb, (tracks, policy) => {
+        const selection = selectSubtitleTrack(tracks, policy);
+        // Neither through the automatic pool, where it would have to match a
+        // stated preference, nor through the forced pool, where it would have to
+        // be shown to belong to the soundtrack in play.
+        if (selection.selected !== null) expect(selection.selected.language).not.toBe("");
+      })
+    );
+  });
+
+  it("still produces an identical selection for any permutation of them", () => {
+    // Order-invariance is claimed for the WHOLE result and must not depend on
+    // every track happening to carry a well-formed tag: an unmatched track falls
+    // through to kind, provider default, format and the id tiebreak, and that
+    // path is only a total order if the id tiebreak is genuinely reached.
+    fc.assert(
+      fc.property(
+        someLanguagesUnstatedArb,
+        subtitlePolicyArb,
+        permutationKeysArb,
+        (tracks, policy, keys) => {
+          expect(selectSubtitleTrack(permute(tracks, keys), policy)).toEqual(
+            selectSubtitleTrack(tracks, policy)
+          );
+        }
+      )
+    );
+  });
+});
 
 describe("the WHOLE selection is invariant under input order", () => {
   it("produces an identical SubtitleSelection for any permutation of the tracks", () => {
