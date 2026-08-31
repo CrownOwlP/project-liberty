@@ -1,15 +1,51 @@
-import type { StreamCandidate } from "@liberty/contracts/domains/playback";
+import { unknownMediaFacts, type StreamCandidate } from "@liberty/contracts/domains/playback";
+import { MEDIA_FACTS } from "@liberty/contracts/shared/media-facts";
 import type { ContentRights } from "@liberty/contracts/shared/rights";
-import { describe, expect, it } from "vitest";
-import { loadPlaybackSession, type AuthorizedCandidate } from "./watch-session";
+import { afterEach, describe, expect, it } from "vitest";
+import { NON_DEPLOYMENT_ENVIRONMENTS } from "../api/deployment-environment";
+import {
+  fixtureAuthorizedCandidates,
+  FIXTURE_RIGHTS_BASIS
+} from "../api/v1/playback/session/authorized-candidates";
+import {
+  loadPlaybackSession,
+  type AuthorizedCandidate,
+  type AuthorizedCandidateResolver
+} from "./watch-session";
 
 /*
  * What this file is really testing is a boundary rather than a fixture: the
  * watch route takes a content id and nothing else, and every media URL it ends
- * up with came from a source the server chose. The fixtures below stand in for
- * PL-0501's resolver; the rights and eligibility decision they are run through
- * is the real one from `@liberty/media-engine`.
+ * up with came from a source the server chose.
+ *
+ * The candidates below stand in for a provider registry; the rights and
+ * eligibility decision they are run through is the real one from
+ * `@liberty/media-engine`, and the transport decision is the real outbound URL
+ * policy from `@liberty/provider-sdk`. The DEFAULT path is the session API's
+ * fixture provider, imported rather than restated — the second copy that used
+ * to live in `watch-session.ts` is what PL-0301 removed.
  */
+
+const CONTENT_ID = "aurora-fall";
+
+/**
+ * `process.env.NODE_ENV` is typed as a three-value union by Next's ambient
+ * declarations, and half of what is under test here is the values OUTSIDE that
+ * union — `staging`, the empty string, unset. Written through a widened view of
+ * the same object so the test can express the states a real deployment can
+ * actually be in. Mirrors `authorized-candidates.test.ts`.
+ */
+function setNodeEnv(value: string | undefined): void {
+  const env = process.env as unknown as Record<string, string | undefined>;
+  if (value === undefined) delete env["NODE_ENV"];
+  else env["NODE_ENV"] = value;
+}
+
+const ORIGINAL_NODE_ENV = process.env.NODE_ENV;
+
+afterEach(() => {
+  setNodeEnv(ORIGINAL_NODE_ENV);
+});
 
 function authorized(init: {
   id: string;
@@ -19,6 +55,7 @@ function authorized(init: {
   bitrateKbps?: number;
   estimatedLatencyMs?: number;
   healthScore?: number;
+  allowLoopback?: boolean;
 }): AuthorizedCandidate {
   const candidate: StreamCandidate = {
     id: init.id,
@@ -32,7 +69,22 @@ function authorized(init: {
     videoCodec: "h264",
     audioCodec: "aac"
   };
-  return { candidate, source: { uri: init.uri } };
+  /*
+   * `allowLoopback` and a nullable `mimeType` are part of the source now,
+   * because the route adopted the session API's `AuthorizedCandidate` instead
+   * of keeping a narrower private copy. The narrower copy is precisely why this
+   * route could not run the real URL policy: it had nowhere to carry the
+   * source's half of the loopback permission.
+   */
+  return {
+    candidate,
+    source: { uri: init.uri, mimeType: null, allowLoopback: init.allowLoopback ?? false }
+  };
+}
+
+/** A resolver that answers with a fixed candidate list. */
+function resolving(...candidates: AuthorizedCandidate[]): AuthorizedCandidateResolver {
+  return () => ({ status: "resolved", candidates });
 }
 
 const GOOD = authorized({ id: "good", uri: "https://cdn.example.com/good/manifest.mpd" });
@@ -54,14 +106,14 @@ const ALSO_GOOD = authorized({
 describe("what the route will not accept", () => {
   it("answers not-found for an id that could never name anything", () => {
     /*
-     * Checked before the source is consulted, so raw URL path input never
+     * Checked before the resolver is consulted, so raw URL path input never
      * reaches the provider boundary at all. Every id in the system is
      * lower-case and hyphen-separated.
      */
     const rejected = ["../secret", "Aurora Fall", "AURORA-FALL", "", "aurora_fall"];
     return Promise.all(
       rejected.map(async (id) => {
-        const result = await loadPlaybackSession(id, () => [GOOD]);
+        const result = await loadPlaybackSession(id, resolving(GOOD));
         expect(result.status, id).toBe("not-found");
       })
     );
@@ -77,18 +129,212 @@ describe("what the route will not accept", () => {
      */
     expect(loadPlaybackSession.length).toBe(1);
   });
+
+  it("never lets a traversal id escape the configured origin's path prefix", async () => {
+    /*
+     * Belt and braces across two layers. The route refuses the id above, and the
+     * fixture provider independently refuses to interpolate one — dots are
+     * unreserved, so percent-encoding is not a defence and `..` would otherwise
+     * walk out of the prefix. Reached through the seam because the route's own
+     * check makes it unreachable through the front door.
+     */
+    expect(fixtureAuthorizedCandidates("../../etc/passwd", "https://rig.test/media")).toEqual([]);
+
+    const result = await loadPlaybackSession(CONTENT_ID, () => ({
+      status: "resolved",
+      candidates: fixtureAuthorizedCandidates(CONTENT_ID, "https://rig.test/media")
+    }));
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") return;
+    for (const entry of result.session.candidates) {
+      const url = new URL(entry.source.uri);
+      expect(url.origin).toBe("https://rig.test");
+      expect(url.pathname.startsWith(`/media/${CONTENT_ID}/`)).toBe(true);
+    }
+  });
+});
+
+describe("where the fixture path may run", () => {
+  /*
+   * THE REGRESSION THIS FILE EXISTS FOR. This route had no environment guard of
+   * any kind: `[contentId]/page.tsx` calls `loadPlaybackSession(contentId)` with
+   * the default source, so `next start` rendered a player aimed at candidates
+   * declaring `owned` rights over files nothing had ever opened. The guard is
+   * not a second copy of the rule — it is the session API's resolver, reached
+   * through the same allowlist.
+   */
+  it.each([...NON_DEPLOYMENT_ENVIRONMENTS])("serves fixtures under NODE_ENV=%s", async (value) => {
+    /*
+     * `not-configured` is the negative this asserts against, rather than a
+     * positive `ok`. Whether the fixtures then SURVIVE depends on where an
+     * operator pointed `LIBERTY_FIXTURE_MEDIA_ORIGIN`, and a gate test that
+     * failed because somebody's `.env.local` names a private host would be
+     * testing the wrong thing. The happy path is pinned separately, with an
+     * origin this file chooses.
+     */
+    setNodeEnv(value);
+    const result = await loadPlaybackSession(CONTENT_ID);
+    expect(result.status).not.toBe("not-configured");
+  });
+
+  it.each(["production", "staging", "preview", "Production", "PRODUCTION", ""])(
+    "serves nothing under NODE_ENV=%j",
+    async (value) => {
+      /* Every one of these used to render a player. A denylist of the single
+       * string `production` admitted all of them. */
+      setNodeEnv(value);
+      const result = await loadPlaybackSession(CONTENT_ID);
+      expect(result).toEqual({ status: "not-configured", contentId: CONTENT_ID });
+    }
+  );
+
+  it("serves nothing when NODE_ENV is unset", async () => {
+    setNodeEnv(undefined);
+    const result = await loadPlaybackSession(CONTENT_ID);
+    expect(result).toEqual({ status: "not-configured", contentId: CONTENT_ID });
+  });
+
+  it("reports not-configured as itself rather than as a denial or a retryable error", async () => {
+    /*
+     * The three have three different remedies and only one of them is the
+     * operator's. `denied` would blame this title's rights for an unconfigured
+     * deployment, and `error` invites a retry that no amount of waiting
+     * resolves.
+     */
+    setNodeEnv("production");
+    const result = await loadPlaybackSession(CONTENT_ID);
+    expect(result.status).not.toBe("denied");
+    expect(result.status).not.toBe("error");
+    expect(result.status).not.toBe("ok");
+  });
+});
+
+describe("the fixtures the route actually serves", () => {
+  it("is the session API's set, not a second one declared here", () => {
+    /*
+     * The duplicate this task removed stated `rights: "owned"` as a bare
+     * literal, invented h264/aac and heights, and had its own origin read. What
+     * is left is one provider: the ids, the rights and the (absent) media facts
+     * all come from `fixtureAuthorizedCandidates`.
+     */
+    for (const entry of fixtureAuthorizedCandidates(CONTENT_ID)) {
+      expect(entry.candidate.rights).toBe(FIXTURE_RIGHTS_BASIS.rights);
+      /* Every media fact unknown. A fixture claiming the most widely supported
+       * codec pair in existence passed eligibility BECAUSE the values were ones
+       * every device accepts, and the session then reported `verified` for a
+       * file nobody had opened. */
+      expect(unknownMediaFacts(entry.candidate)).toEqual([...MEDIA_FACTS]);
+    }
+  });
+
+  it("publishes an unverified trail, because no codec was ever established", async () => {
+    /* Origin pinned so the assertion is about the fixtures rather than about
+     * the machine the suite runs on. */
+    const result = await loadPlaybackSession(CONTENT_ID, () => ({
+      status: "resolved",
+      candidates: fixtureAuthorizedCandidates(CONTENT_ID, "https://rig.test")
+    }));
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") return;
+    /* The engine appends the missing facts to each ranked candidate's reason.
+     * If a fabricated codec ever reappears, this line goes quiet. */
+    for (const entry of result.session.candidates) {
+      expect(result.session.reasons.some((reason) => reason.startsWith(`${entry.id}:`))).toBe(true);
+    }
+    expect(result.session.reasons.join(" ")).toContain("unverified");
+  });
+});
+
+describe("the transport gate", () => {
+  /*
+   * `checkPlaybackSource` accepts ANY `https:` URL. It is in
+   * `components/player/**`, which PL-0301 may not write, so the asymmetry is
+   * closed from this side instead: the route runs the provider SDK's `checkUrl`
+   * first and only ever hands the weaker checker a URL the policy already
+   * parsed and accepted.
+   */
+  function withOrigin(origin: string) {
+    /* The origin is PINNED rather than read from the environment. A test whose
+     * expectations depend on an operator's `.env.local` fails on one machine and
+     * passes on another. */
+    return loadPlaybackSession(CONTENT_ID, () => ({
+      status: "resolved",
+      candidates: fixtureAuthorizedCandidates(CONTENT_ID, origin)
+    }));
+  }
+
+  it.each([
+    ["https://user:pass@rig.test", "url_credentials_present"],
+    ["https://169.254.169.254", "url_private_address"],
+    ["http://169.254.169.254", "url_private_address"],
+    ["https://10.0.0.5", "url_private_address"],
+    ["https://[fd00::1]", "url_private_address"],
+    ["https://rig.internal", "url_private_address"],
+    ["http://cdn.example.test", "url_plaintext_http_not_loopback"]
+  ])("refuses an origin at %s as %s, and plays nothing", async (origin, reason) => {
+    const result = await withOrigin(origin);
+    /* Denied rather than a granted session with an empty candidate list: a
+     * grant with nothing in it sends the player to `fatal` with `no_candidates`,
+     * which is a true statement made in the wrong place. */
+    expect(result.status).toBe("denied");
+    if (result.status !== "denied") return;
+    expect(result.reasons.join(" ")).toContain(reason);
+  });
+
+  it("does not echo an embedded credential into the reason trail", async () => {
+    /* The trail is rendered on the page and goes into a bug report screenshot.
+     * `url-policy.ts` names the failure without repeating the URL, and nothing
+     * here re-adds it. */
+    const result = await withOrigin("https://user:secret-token@rig.test");
+    expect(result.status).toBe("denied");
+    if (result.status !== "denied") return;
+    expect(result.reasons.join(" ")).not.toContain("secret-token");
+  });
+
+  it("still admits a public https origin", async () => {
+    const result = await withOrigin("https://rig.test/media");
+    expect(result.status).toBe("ok");
+  });
+
+  it("needs both halves of the loopback permission, not just the source's", async () => {
+    /*
+     * `url-policy.ts` requires two independently-owned facts and this route now
+     * supplies both honestly: the source half is derived from the origin, and
+     * the deployment half is `NODE_ENV`. Under a hosted environment a local rig
+     * is refused — which is the case that matters, because on a hosted instance
+     * 127.0.0.1 is Liberty's own admin surface.
+     *
+     * Asserted through the environment rather than by injecting a flag, because
+     * the flag is exactly what this route must not let a source supply.
+     */
+    setNodeEnv("development");
+    const local = await loadPlaybackSession(CONTENT_ID, () => ({
+      status: "resolved",
+      candidates: fixtureAuthorizedCandidates(CONTENT_ID, "http://127.0.0.1:8096")
+    }));
+    expect(local.status).toBe("ok");
+
+    setNodeEnv("production");
+    const hosted = await loadPlaybackSession(CONTENT_ID, () => ({
+      status: "resolved",
+      candidates: fixtureAuthorizedCandidates(CONTENT_ID, "http://127.0.0.1:8096")
+    }));
+    expect(hosted.status).toBe("denied");
+    if (hosted.status !== "denied") return;
+    expect(hosted.reasons.join(" ")).toContain("url_loopback_not_local_deployment");
+  });
 });
 
 describe("outcomes", () => {
   it("hands the player candidates in the ranking's order, with its reasons", () => {
-    return loadPlaybackSession("aurora-fall", () => [ALSO_GOOD, GOOD]).then((result) => {
+    return loadPlaybackSession(CONTENT_ID, resolving(ALSO_GOOD, GOOD)).then((result) => {
       expect(result.status).toBe("ok");
       if (result.status !== "ok") return;
 
       /* The 1080p/0.95-health candidate outranks the 480p/0.55 one, and the
        * order the source listed them in is not preserved — the ranking's is. */
       expect(result.session.candidates.map((entry) => entry.id)).toEqual(["good", "also-good"]);
-      expect(result.session.contentId).toBe("aurora-fall");
+      expect(result.session.contentId).toBe(CONTENT_ID);
       /* `null`, not `0`. For VOD that is the beginning and for live it is the
        * live edge, and PL-0403 is what will set it to a resume point. */
       expect(result.session.startAtSeconds).toBeNull();
@@ -99,17 +345,30 @@ describe("outcomes", () => {
   });
 
   it("distinguishes a title that does not exist from a provider that could not answer", () => {
-    /* Two different remedies. A reader told to "try again in a moment" about a
+    /* Different remedies. A reader told to "try again in a moment" about a
      * title that will never exist will keep trying. */
     return Promise.all([
-      loadPlaybackSession("aurora-fall", () => null).then((result) => {
+      loadPlaybackSession(CONTENT_ID, () => ({ status: "not-found" })).then((result) => {
         expect(result.status).toBe("not-found");
       }),
-      loadPlaybackSession("aurora-fall", () => {
+      loadPlaybackSession(CONTENT_ID, () => {
         throw new Error("provider timed out");
       }).then((result) => {
         expect(result.status).toBe("error");
         if (result.status === "error") expect(result.reason).toBe("provider timed out");
+      }),
+      loadPlaybackSession(CONTENT_ID, () => ({
+        status: "provider-unavailable",
+        detail: "addon timed out"
+      })).then((result) => {
+        expect(result.status).toBe("error");
+        if (result.status === "error") expect(result.reason).toBe("addon timed out");
+      }),
+      /* Resolved-but-empty is an outage, not a decision: nothing was refused,
+       * so calling it `denied` would report a provider problem as a rights or
+       * capability one. */
+      loadPlaybackSession(CONTENT_ID, resolving()).then((result) => {
+        expect(result.status).toBe("error");
       })
     ]);
   });
@@ -125,9 +384,10 @@ describe("outcomes", () => {
      * being consulted on this path, this fails and nothing else would notice.
      */
     const unvetted = "rights-unknown" as unknown as ContentRights;
-    return loadPlaybackSession("aurora-fall", () => [
-      authorized({ id: "unlicensed", uri: "https://cdn.example.com/x.mpd", rights: unvetted })
-    ]).then((result) => {
+    return loadPlaybackSession(
+      CONTENT_ID,
+      resolving(authorized({ id: "unlicensed", uri: "https://cdn.example.com/x.mpd", rights: unvetted }))
+    ).then((result) => {
       expect(result.status).toBe("denied");
       if (result.status !== "denied") return;
       expect(result.reasons.join(" ")).toContain("rights_not_playable");
@@ -135,17 +395,23 @@ describe("outcomes", () => {
   });
 
   it("drops a candidate whose source is not served over https, and says which", () => {
-    /* The transport backstop from `playback-source.ts`, run here so that a
-     * misconfigured origin is a reason on the page rather than a generic
-     * network error three layers down that looks exactly like a dead CDN. */
-    return loadPlaybackSession("aurora-fall", () => [
-      authorized({ id: "insecure", uri: "http://cdn.example.com/insecure.mpd" }),
-      GOOD
-    ]).then((result) => {
+    /* The transport gate, run here so that a misconfigured origin is a reason on
+     * the page rather than a generic network error three layers down that looks
+     * exactly like a dead CDN.
+     *
+     * The expected text changed with the fix and the change is the improvement:
+     * this used to assert the word "https" from `describeSourceRejection`, which
+     * is the coarse three-value vocabulary of the checker that also accepted
+     * `https://169.254.169.254/`. The named policy code is both more specific
+     * and the one a reader can grep for in `url-policy.ts`. */
+    return loadPlaybackSession(
+      CONTENT_ID,
+      resolving(authorized({ id: "insecure", uri: "http://cdn.example.com/insecure.mpd" }), GOOD)
+    ).then((result) => {
       expect(result.status).toBe("ok");
       if (result.status !== "ok") return;
       expect(result.session.candidates.map((entry) => entry.id)).toEqual(["good"]);
-      expect(result.session.reasons.join(" ")).toContain("https");
+      expect(result.session.reasons.join(" ")).toContain("url_plaintext_http_not_loopback");
     });
   });
 
@@ -153,18 +419,20 @@ describe("outcomes", () => {
     /* A granted session with no candidates would send the player to `fatal`
      * with `no_candidates`, which is a true statement made in the wrong place:
      * the decision belongs to the layer that knows why. */
-    return loadPlaybackSession("aurora-fall", () => [
-      authorized({ id: "insecure", uri: "http://cdn.example.com/insecure.mpd" })
-    ]).then((result) => {
+    return loadPlaybackSession(
+      CONTENT_ID,
+      resolving(authorized({ id: "insecure", uri: "http://cdn.example.com/insecure.mpd" }))
+    ).then((result) => {
       expect(result.status).toBe("denied");
     });
   });
 
   it("uses the fixture source when none is injected", () => {
-    /* The default path the route actually takes today. It must produce a
-     * failover-capable list rather than a single candidate, or the machine's
-     * whole reason for existing is untested in the app. */
-    return loadPlaybackSession("aurora-fall").then((result) => {
+    /* The default path the route actually takes today, under a development or
+     * test environment. It must produce a failover-capable list rather than a
+     * single candidate, or the machine's whole reason for existing is untested
+     * in the app. */
+    return loadPlaybackSession(CONTENT_ID).then((result) => {
       expect(result.status).toBe("ok");
       if (result.status !== "ok") return;
       expect(result.session.candidates.length).toBeGreaterThan(1);

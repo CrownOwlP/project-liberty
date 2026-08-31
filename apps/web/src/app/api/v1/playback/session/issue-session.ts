@@ -6,6 +6,7 @@ import {
 } from "@liberty/media-engine";
 import { checkUrl, compareCodePoint } from "@liberty/provider-sdk";
 import { z } from "zod";
+import { isLocalDeployment } from "../../../deployment-environment";
 import {
   resolveAuthorizedCandidates,
   type AuthorizedCandidate,
@@ -92,9 +93,10 @@ type NonEmptyCandidates = [PlaybackSessionCandidate, ...PlaybackSessionCandidate
  * same requirement stated from two ends.
  *
  * `localDeployment` is threaded from the process boundary and defaults to
- * "hosted" in production, matching `url-policy.ts`: an instance that never says
- * it is local is not local, and no source configuration can say it on its
- * behalf.
+ * "hosted" for every environment that is not on
+ * `NON_DEPLOYMENT_ENVIRONMENTS` -- not merely for `production` -- matching
+ * `url-policy.ts`: an instance that never says it is local is not local, and no
+ * source configuration can say it on its behalf.
  */
 export interface IssueSessionOptions {
   readonly resolve?: AuthorizedCandidateResolver;
@@ -179,7 +181,18 @@ export async function issuePlaybackSession(
   const resolve = options.resolve ?? resolveAuthorizedCandidates;
   const now = options.now ?? (() => new Date());
   const newId = options.newId ?? (() => crypto.randomUUID());
-  const localDeployment = options.localDeployment ?? process.env.NODE_ENV !== "production";
+  /*
+   * An ALLOWLIST, via the one place that classifies the environment. This used
+   * to read `process.env.NODE_ENV !== "production"` inline, which told the SSRF
+   * gate that `staging`, `preview`, `Production` and an unset variable were all
+   * laptops -- the same denylist defect `FIXTURE_ENVIRONMENTS` was corrected
+   * for, surviving in the one place that hands a value to `checkUrl`. It is
+   * unreachable through the fixture provider, which resolves nothing outside
+   * those environments anyway, and that is exactly why it was easy to miss: the
+   * first real provider registry to land behind this seam would have inherited
+   * it silently.
+   */
+  const localDeployment = options.localDeployment ?? isLocalDeployment();
   const sessionTtlMs = options.sessionTtlMs ?? PLAYBACK_SESSION_TTL_MS;
 
   /* ---- 1. Shape ------------------------------------------------------- */

@@ -84,6 +84,29 @@ export default async function WatchPage({ params }: { params: Promise<{ contentI
           body="The playback service didn't return a usable response. Nothing is known to be wrong with this title — try again in a moment."
           reasons={[result.reason]}
         />
+      ) : result.status === "not-configured" ? (
+        /*
+         * THE BRANCH A HOSTED DEPLOYMENT RENDERS, and the reason it needs its
+         * own panel rather than reusing either neighbour. Until PL-0301, this
+         * route served development fixtures in every environment, so a
+         * production build showed a player aimed at candidates that declared
+         * `owned` rights over files nobody had opened. It now says what is
+         * actually true.
+         *
+         * The copy names an OPERATOR remedy, deliberately. "Try again in a
+         * moment" would send a viewer into a retry loop that no amount of
+         * waiting resolves, and the denial copy beside it would blame this
+         * title's rights for a deployment that simply has no provider wired in
+         * yet. `issue-session.ts` splits `not-configured` from
+         * `provider-unavailable` for exactly this reason.
+         */
+        <PlaybackUnavailable
+          heading="Playback isn’t available on this deployment"
+          body="No authorized media provider is configured here, so there is no stream to play. This is a configuration gap rather than a problem with this title or with your device."
+          reasons={[
+            `${result.contentId}: no authorized media provider is configured for this deployment`
+          ]}
+        />
       ) : result.status === "denied" ? (
         <PlaybackUnavailable
           heading="This title can’t be played here"

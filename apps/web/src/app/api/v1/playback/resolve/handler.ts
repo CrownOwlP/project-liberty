@@ -1,5 +1,6 @@
 import { playbackResolveRequestSchema } from "@liberty/contracts/domains/playback";
 import { rankStreamCandidates } from "@liberty/media-engine";
+import { FIXTURE_ENVIRONMENTS } from "../session/authorized-candidates";
 
 /* -------------------------------------------------------------------------
  * The HTTP half of POST /api/v1/playback/resolve (PL-0702)
@@ -86,12 +87,20 @@ export interface ResolveScaffoldOptions {
    * same switch `../session/authorized-candidates.ts` uses to keep fixtures out
    * of a hosted deployment, and it is not a request field: a caller must never
    * be able to name the environment it would like to be treated as.
+   *
+   * "The same switch" is now literally the same list rather than a second copy
+   * of the same expression. It was `NODE_ENV !== "production"` here and there,
+   * which agreed by coincidence and admitted every value that is not that one
+   * string -- so `staging` or an unset variable exposed a route that RANKS
+   * CALLER-SUPPLIED CANDIDATES on a deployment nobody meant to be a development
+   * one. Importing `FIXTURE_ENVIRONMENTS` means the two guards cannot drift, and
+   * the comment above cannot quietly stop being true.
    */
   readonly available?: boolean | undefined;
 }
 
 function scaffoldIsAvailable(options: ResolveScaffoldOptions): boolean {
-  return options.available ?? process.env.NODE_ENV !== "production";
+  return options.available ?? FIXTURE_ENVIRONMENTS.includes(process.env.NODE_ENV ?? "");
 }
 
 /**

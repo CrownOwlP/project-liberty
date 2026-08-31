@@ -42,24 +42,32 @@ import type {
  * hostile bytes and our types, and no third party deciding what counts as
  * unreadable.
  *
- * WHY THE PIN IS `0.9.10` EVEN THOUGH npm CALLS IT DEPRECATED. Installing this
- * package prints `deprecated @xmldom/xmldom@0.9.10: this version has critical
- * issues, please update to the latest version`, and the instinct that warning
- * produces -- move off it -- is exactly wrong here, so the reasoning is recorded
- * rather than rediscovered:
+ * THE PIN IS `0.9.12`, AND THE POLICY MATTERS MORE THAN THE NUMBER. This block
+ * previously argued for `0.9.10` on the grounds that it was both the `latest`
+ * tag and the release fixing the advisories, so npm's deprecation warning
+ * resolved to "stay put". That was true when written and stopped being true
+ * quietly: later releases shipped further security fixes, including parser-time
+ * denial-of-service fixes on `DOMParser.parseFromString`, which is the exact
+ * call this file makes on attacker-influenced input on every MPD. A rationale
+ * that has silently expired is worse than none, because it argues against the
+ * upgrade it was never meant to forbid.
  *
- *   - 0.9.10 IS the `latest` tag. The deprecation and the newest release are the
- *     same version, so "update to the latest version" resolves to staying put.
- *     There is nowhere newer to go.
- *   - 0.9.10 is the release that FIXES the advisories, including the unbounded
- *     recursion in `getElementsByTagName`. This file calls exactly that method,
- *     on attacker-influenced input, on every MPD -- see `elementsNamed`. Moving
- *     to 0.9.9 to silence the install warning would reintroduce the bug the pin
- *     exists to avoid, on the one code path that reaches it.
+ * So the standing rule, rather than a version-specific argument:
  *
- * So the warning is noise on this version and the pin is deliberate. If a 0.9.11
- * or later ships, the move is forward and through a review of what changed in
- * the parser -- never backward.
+ *   - EXACT pin, no caret. This parser reads hostile bytes; a transitive bump
+ *     into it should be a decision, not an install.
+ *   - Move FORWARD on a security release, after reading what changed in the
+ *     parser. Never backward, and never to silence an install warning -- the
+ *     0.9.9 case is the illustration: it would have reintroduced the unbounded
+ *     recursion in `getElementsByTagName`, which `elementsNamed` calls, in
+ *     exchange for a quieter log.
+ *   - The deprecation warning npm prints for older versions is not evidence
+ *     about the pinned one. Check the advisories, not the console.
+ *
+ * The body is size-limited before it reaches this file (see `http.ts`) and the
+ * five attributes are read here rather than by a wrapper, so there is one fewer
+ * layer between hostile bytes and our types and no third party deciding what
+ * counts as unreadable.
  *
  * `onError` is a no-op so that the parser is LENIENT: a recoverable XML error in
  * one element must not discard a ladder we could otherwise read. The default

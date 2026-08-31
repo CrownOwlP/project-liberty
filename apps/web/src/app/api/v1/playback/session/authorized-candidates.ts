@@ -1,4 +1,13 @@
 import type { StreamCandidate } from "@liberty/contracts/domains/playback";
+import { normalizedContentIdSchema } from "@liberty/contracts/shared/ids";
+import { LATENCY_CEILING_MS } from "@liberty/media-engine";
+import {
+  classifyHost,
+  DEFAULT_PROVIDER_HEALTH_POLICY,
+  healthPriorScore,
+  type RightsBasis
+} from "@liberty/provider-sdk";
+import { NON_DEPLOYMENT_ENVIRONMENTS } from "../../../deployment-environment";
 
 /* -------------------------------------------------------------------------
  * Where a session's candidates come from (PL-0501)
@@ -97,16 +106,184 @@ export type AuthorizedCandidateResolver = (
 /**
  * Where fixture streams are served from.
  *
- * The same variable `apps/web/src/app/watch/watch-session.ts` reads, on purpose:
- * two fixture origins would mean the watch page and the session API disagreed
- * about what "the dev rig" is. `.invalid` is reserved by RFC 2606 and resolves
+ * READ HERE AND NOWHERE ELSE. `apps/web/src/app/watch/watch-session.ts` used to
+ * read the same variable to build its own copy of these fixtures, and the note
+ * that once stood here asked the next reader to keep the two in step -- two
+ * fixture origins would have meant the watch page and the session API disagreed
+ * about what "the dev rig" is. The watch route now imports
+ * `resolveAuthorizedCandidates` instead of restating it, so there is one reader
+ * and the agreement is structural rather than remembered.
+ *
+ * `.invalid` is reserved by RFC 2606 and resolves
  * nowhere, so the default can never accidentally reach a real host -- the
  * fixtures fail, failover walks all three, and the reason trail shows the whole
  * sequence, which is more useful than a player that silently does nothing.
+ *
+ * OPERATOR-SUPPLIED AND THEREFORE UNTRUSTED AS A URL, even though the operator
+ * is not an attacker: a typo is as capable of aiming this at 169.254.169.254 as
+ * malice is. Nothing here sanitises it. It is composed into a URL below in a way
+ * that cannot be subverted by a query string or a fragment, and it is then
+ * REFUSED, with a named reason, by `issue-session.ts`'s `checkUrl` gate -- the
+ * same outbound URL policy the provider SDK runs. Stripping embedded credentials
+ * or rewriting a private host here would be worse than leaving them: it would
+ * make a misconfigured origin silently WORK, and the gate that exists to report
+ * it would never fire.
  */
 const FIXTURE_MEDIA_ORIGIN = process.env.LIBERTY_FIXTURE_MEDIA_ORIGIN ?? "https://fixtures.invalid";
 
 const FIXTURE_PROVIDER = "fixture";
+
+/**
+ * The rights declaration these candidates carry, said out loud.
+ *
+ * docs/CONTENT_RIGHTS.md requires a documented rights basis for any provider
+ * integration, and the fixture provider is one. It used to be a bare
+ * `rights: "owned"` literal whose only defence was a comment admitting it was a
+ * fiction, which is precisely the shape this task exists to find: an adapter
+ * asserting an entitlement over content it has never seen.
+ *
+ * WHAT IS AND IS NOT TRUE ABOUT IT. The basis is typed as the provider SDK's own
+ * `RightsBasis`, so `operator-owned-master` is checked against
+ * `RIGHTS_BASES_FOR_RIGHTS` rather than being a word chosen here, and the
+ * reference names the one act that could make the claim true: an operator
+ * pointing `LIBERTY_FIXTURE_MEDIA_ORIGIN` at media they packaged themselves,
+ * which `docs/E2E.md` already states is the only legitimate way to stand a rig
+ * up. Under the shipped default the origin resolves nowhere, so the claim is
+ * about nothing and nothing is served.
+ *
+ * NOTHING VERIFIES IT, and nothing can. There is no probe here, no manifest is
+ * read, and `issue-session.ts` treats the value exactly as it treats any
+ * adapter's: membership of `PLAYABLE_RIGHTS` and no further question. That is
+ * the platform's model -- adapters establish authorization, the engine ranks
+ * among what they established -- so the only real control on an unverifiable
+ * declaration is that this path cannot reach a deployment. See
+ * `FIXTURE_ENVIRONMENTS`.
+ *
+ * Exported so a test can assert the pair is coherent rather than merely present.
+ */
+export const FIXTURE_RIGHTS_BASIS: RightsBasis = {
+  rights: "owned",
+  basis: "operator-owned-master",
+  reference:
+    "media the operator packaged and serves from their own rig at LIBERTY_FIXTURE_MEDIA_ORIGIN; " +
+    "see docs/E2E.md, 'Legal test content is a task, not a footnote'"
+};
+
+/**
+ * The `NODE_ENV` values under which fixtures may be resolved.
+ *
+ * AN ALLOWLIST, and the change from `!== "production"` is the point rather than
+ * a restatement of it. The old test admitted every value that is not the single
+ * string `production`: `staging`, `preview`, `Production`, the empty string, and
+ * an unset variable all resolved fabricated `owned` candidates. A denylist of one
+ * value is the wrong shape for a switch whose failure mode is publishing rights
+ * nobody holds, and it is the wrong shape for THIS repository, where
+ * `PLAYABLE_CONTENT_RIGHTS`, `RIGHTS_BASIS_KINDS` and the engine's eligibility
+ * gate are all explicit allowlists for the same reason: anything unrecognised
+ * must be refused, not permitted.
+ *
+ * These two values are the whole set that means "not a deployment": `next dev`
+ * runs as `development`, vitest sets `test`. Every current caller keeps the
+ * behaviour it had -- what changes is the ones nobody had thought of.
+ *
+ * WHY `NODE_ENV` AND NOT A DEDICATED FLAG. It is the one fact about the running
+ * process that no configuration file can forge: `scripts/with-root-env.mjs`
+ * refuses to apply it from a dotenv file (`NEVER_APPLIED`) precisely so a copied
+ * `.env.local` cannot turn `next start` into a fixture-serving deployment, and
+ * Next computes its own file set before merging, so `apps/web/.env.local` cannot
+ * either. A new `LIBERTY_ALLOW_FIXTURES` variable would have no such protection
+ * and would be a second switch that could disagree with `localDeployment`.
+ *
+ * A REMAINING GAP, recorded rather than papered over: a hosted deployment that
+ * exports `NODE_ENV=development` and runs `next dev` still resolves fixtures.
+ * Nothing here can distinguish that from a laptop, because it IS a development
+ * build; the control for it is not shipping one.
+ *
+ * NOW AN ALIAS RATHER THAN A LIST. The two values were never specific to
+ * fixtures -- they are the answer to "is this process a deployment", which
+ * `issue-session.ts` also needs for `localDeployment` and which the watch route
+ * needs for the same reason. Three copies of one environment test is how two of
+ * them end up disagreeing, so the classification moved to
+ * `app/api/deployment-environment.ts` and this name stays as the FIXTURE
+ * PERMISSION built on it.
+ *
+ * The name is kept because the permission is a distinct thing from the fact:
+ * `FIXTURE_ENVIRONMENTS.includes(...)` is a statement about whether fabricated
+ * `owned` candidates may be published, and a reader following that question
+ * should land on the paragraphs above rather than on a general environment
+ * helper. The trade-off is real and worth stating: widening
+ * `NON_DEPLOYMENT_ENVIRONMENTS` now widens this gate too. That is the intended
+ * coupling -- if a value genuinely stopped being a deployment, both answers
+ * would have to change together -- but it means that array is a rights-relevant
+ * edit and must be reviewed as one.
+ */
+export const FIXTURE_ENVIRONMENTS: readonly string[] = NON_DEPLOYMENT_ENVIRONMENTS;
+
+/**
+ * Whether the configured origin names the machine this process runs on.
+ *
+ * DERIVED, never asserted, and that is a correction. Every fixture candidate
+ * used to carry `allowLoopback: true` unconditionally, with a comment observing
+ * that loopback also needs the deployment to say it is local. True, and it
+ * defeated the design it cited: `url-policy.ts` requires TWO permissions
+ * expressly because they have DIFFERENT OWNERS -- a source config and the
+ * process environment -- so that "neither owner can grant loopback by
+ * themselves". Hardcoding the source half left one owner, and that owner is
+ * `NODE_ENV`, which is also what decides whether fixtures resolve at all. The
+ * two independent conditions had collapsed into one variable.
+ *
+ * Reading it off the origin restores the separation and is the more honest
+ * claim anyway: the source is local exactly when the operator pointed it at a
+ * loopback host, and it is not local when they did not. `classifyHost` is the
+ * provider SDK's classifier rather than a string test, so `127.0.0.1`,
+ * `localhost`, `[::1]` and `[::ffff:7f00:1]` are one answer and a name that
+ * merely looks local is not.
+ */
+function originIsLoopback(origin: string): boolean {
+  try {
+    return classifyHost(new URL(origin).hostname) === "loopback";
+  } catch {
+    /* Not a URL at all. Not loopback, and reported as `url_unparseable` by the
+     * transport gate once it is composed into a candidate. */
+    return false;
+  }
+}
+
+/**
+ * Joins the operator's origin to a fixture path.
+ *
+ * Built through `URL` rather than by string concatenation, which is what the
+ * previous `${origin}/${contentId}/${file}` did. Three real configurations broke
+ * it, none of them exotic: a trailing slash produced a doubled one, an origin
+ * carrying a query (`https://rig.test/?v=2`) swallowed the whole path into the
+ * query string, and a fragment discarded it entirely. In each case the resulting
+ * URL passed the transport gate -- it is the operator's own public https host --
+ * and pointed somewhere else, so the failure arrived as a 404 from the rig with
+ * nothing in the reason trail to explain it.
+ *
+ * Search and hash are dropped for the same reason `defineStremioSource` drops
+ * them: they are not part of the origin's identity, and keeping them would make
+ * the derived paths inconsistent with the base they came from.
+ *
+ * USERINFO IS DELIBERATELY PRESERVED. `https://user:pass@rig.test` survives into
+ * the composed URL and is refused downstream as `url_credentials_present`.
+ * Stripping it here would turn a credential-bearing misconfiguration into a
+ * working stream and silence the one check that names it.
+ */
+function fixtureUri(origin: string, contentId: string, file: string): string {
+  try {
+    const url = new URL(origin);
+    url.search = "";
+    url.hash = "";
+    url.pathname = `${url.pathname.replace(/\/+$/, "")}/${contentId}/${file}`;
+    return url.toString();
+  } catch {
+    /* Unparseable. Joined verbatim so the candidate still exists and the
+     * transport gate reports `url_unparseable` against it, rather than this
+     * module silently producing a shorter list nobody can account for. */
+    return `${origin}/${contentId}/${file}`;
+  }
+}
 
 /**
  * Three candidates so failover has somewhere to go, listed WORST-FIRST.
@@ -115,11 +292,51 @@ const FIXTURE_PROVIDER = "fixture";
  * this route's mapping would be invisible, because the wrong answer and the
  * right one would look identical.
  *
- * `rights: "owned"` mirrors the watch route's fixtures rather than inventing a
- * second fiction. These files do not exist, so any rights basis stated here is
- * a fiction either way; matching the one already reviewed keeps a rights review
- * looking at one fixture story instead of two. They are unreachable in
- * production -- see `resolveAuthorizedCandidates`.
+ * EVERY MEDIA FACT IS `null`, AND THAT IS THE WHOLE CORRECTION HERE. These
+ * candidates used to state `height: 720`/`1080`, `bitrateKbps: 2800`/`5200`/
+ * `6000` and `videoCodec: "h264"`/`audioCodec: "aac"`. Nothing had inspected the
+ * files -- they may not exist, and when they do exist they are whatever an
+ * operator packaged -- so all four were invented, which is exactly what PL-0205
+ * exists to prevent and what `mapping.ts` had already removed from the Stremio
+ * adapter.
+ *
+ * The codecs were the harmful pair, and harmful in the specific way that file
+ * records: h264/aac is the most widely supported combination in existence, so
+ * claiming it made every fixture pass capability eligibility PRECISELY BECAUSE
+ * the values were ones every device accepts, and `compatibilityOf` then labelled
+ * the session `verified` -- the response told a player we had ESTABLISHED that
+ * this decodes here, about a file nobody has opened. `null` produces
+ * `unverified`, which is the true statement.
+ *
+ * The heights were not much better. 720 was read off a filename this module
+ * chose, which is circular, and 1080 on `master.m3u8` and `manifest.mpd` is not
+ * even the right SHAPE of claim: an adaptive manifest has a ladder of
+ * renditions, not a height.
+ *
+ * It also makes the dev rig representative for the first time. Every real
+ * adapter in this repository emits four `null`s, because no protocol here states
+ * these facts; a fixture that stated all four was exercising a path no provider
+ * can produce, and hiding the unverified path a developer most needs to see.
+ *
+ * The two remaining numbers cannot be `null` -- the contract requires them -- so
+ * each states the value that cannot flatter the candidate:
+ *
+ *   - `healthScore` is the health policy's PRIOR, which is what a source with
+ *     zero observations scores. `health.ts` argues that placement at length: it
+ *     is exactly `PROVIDER_HEALTH_FLOOR`, which media-engine compares with a
+ *     strict `<`, so an unobserved source sits ON the floor and survives by no
+ *     margin at all. The old 0.82/0.94/0.97 were invented, and at weight 30 they
+ *     were the largest single fabricated contribution to the ranking.
+ *   - `estimatedLatencyMs` is the latency ceiling, so the penalty dimension is
+ *     charged in FULL. `scoring.ts` states the rule and the reason: an unknown
+ *     positive dimension earns nothing, but an unknown PENALTY that contributed
+ *     zero would reward a candidate for withholding information. Nothing timed
+ *     these, so nothing gets the benefit.
+ *
+ * What still differs between the three is `protocol`, which is a genuine fact
+ * read off the path exactly as `deriveProtocol` reads it. So the ranking still
+ * reorders the list (dash, hls, progressive) and the worst-first property still
+ * has something to prove, while the hls/dash tie exercises the id tiebreak.
  *
  * `origin` is a parameter rather than only an environment read so tests can pin
  * it. A test whose expectations depend on an operator's `.env.local` is a test
@@ -129,11 +346,37 @@ export function fixtureAuthorizedCandidates(
   contentId: string,
   origin: string = FIXTURE_MEDIA_ORIGIN
 ): readonly AuthorizedCandidate[] {
-  const rights = "owned" as const;
-  /* Declared local so a rig on `http://localhost:8080` is usable. Loopback
-   * still needs the DEPLOYMENT to say it is local as well, so this alone opens
-   * nothing in a hosted process. */
-  const allowLoopback = true;
+  /*
+   * Re-checked here even though `playbackSessionRequestSchema` already refuses a
+   * non-normalized id before any resolver runs. This function is EXPORTED and
+   * pure, so it will eventually be called by something that did not come through
+   * the route -- the same reasoning `mapping.ts` gives for its redundant rights
+   * check. An id is interpolated into a URL path, and `..` is not stopped by
+   * percent-encoding (dots are unreserved), so an unvalidated id could walk out
+   * of the origin's path prefix. An empty list rather than a throw: it lands as
+   * `no_candidates_resolved`, which is the reversible direction.
+   */
+  if (!normalizedContentIdSchema.safeParse(contentId).success) return [];
+
+  const rights = FIXTURE_RIGHTS_BASIS.rights;
+  const allowLoopback = originIsLoopback(origin);
+  const healthScore = healthPriorScore(DEFAULT_PROVIDER_HEALTH_POLICY);
+
+  /**
+   * Everything the same for all three, because nothing distinguishes them:
+   * four `null`s -- the contract's word for unknown, never a placeholder -- plus
+   * the two fields the contract will not let be unknown, each stating the value
+   * that cannot flatter the candidate. Shared rather than repeated so a future
+   * edit cannot make one fixture quietly more optimistic than its siblings.
+   */
+  const unmeasured = {
+    height: null,
+    bitrateKbps: null,
+    videoCodec: null,
+    audioCodec: null,
+    estimatedLatencyMs: LATENCY_CEILING_MS,
+    healthScore
+  } as const;
 
   return [
     {
@@ -142,14 +385,13 @@ export function fixtureAuthorizedCandidates(
         providerId: FIXTURE_PROVIDER,
         rights,
         protocol: "https",
-        height: 720,
-        bitrateKbps: 2800,
-        estimatedLatencyMs: 120,
-        healthScore: 0.82,
-        videoCodec: "h264",
-        audioCodec: "aac"
+        ...unmeasured
       },
-      source: { uri: `${origin}/${contentId}/720p.mp4`, mimeType: "video/mp4", allowLoopback }
+      source: {
+        uri: fixtureUri(origin, contentId, "720p.mp4"),
+        mimeType: "video/mp4",
+        allowLoopback
+      }
     },
     {
       candidate: {
@@ -157,15 +399,10 @@ export function fixtureAuthorizedCandidates(
         providerId: FIXTURE_PROVIDER,
         rights,
         protocol: "hls",
-        height: 1080,
-        bitrateKbps: 5200,
-        estimatedLatencyMs: 90,
-        healthScore: 0.94,
-        videoCodec: "h264",
-        audioCodec: "aac"
+        ...unmeasured
       },
       source: {
-        uri: `${origin}/${contentId}/master.m3u8`,
+        uri: fixtureUri(origin, contentId, "master.m3u8"),
         mimeType: "application/vnd.apple.mpegurl",
         allowLoopback
       }
@@ -176,15 +413,10 @@ export function fixtureAuthorizedCandidates(
         providerId: FIXTURE_PROVIDER,
         rights,
         protocol: "dash",
-        height: 1080,
-        bitrateKbps: 6000,
-        estimatedLatencyMs: 70,
-        healthScore: 0.97,
-        videoCodec: "h264",
-        audioCodec: "aac"
+        ...unmeasured
       },
       source: {
-        uri: `${origin}/${contentId}/manifest.mpd`,
+        uri: fixtureUri(origin, contentId, "manifest.mpd"),
         mimeType: "application/dash+xml",
         allowLoopback
       }
@@ -195,19 +427,20 @@ export function fixtureAuthorizedCandidates(
 /**
  * The resolver the route uses when nothing is injected.
  *
- * IN PRODUCTION IT RESOLVES NOTHING, and that is the honest answer rather than
+ * IN A DEPLOYMENT IT RESOLVES NOTHING, and that is the honest answer rather than
  * a gap: no provider registry is wired into this app yet, and serving fixtures
- * from a hosted deployment would publish fabricated `owned` rights for files
- * that do not exist. `not-configured` is a distinct outcome precisely so the
- * operator's remedy ("configure a provider") is legible instead of arriving as
- * a generic empty result.
+ * from a hosted deployment would publish an unverifiable `owned` declaration for
+ * files that do not exist. `not-configured` is a distinct outcome precisely so
+ * the operator's remedy ("configure a provider") is legible instead of arriving
+ * as a generic empty result.
  *
- * The switch is `NODE_ENV`, read from the process boundary. It is not a source
- * config value and must not become one: a fixture source that could declare
- * itself production-worthy is the same mistake `url-policy.ts` refuses to make
- * with `localDeployment`.
+ * The switch is `NODE_ENV`, read from the process boundary at CALL time, and
+ * matched against an allowlist -- see `FIXTURE_ENVIRONMENTS` for why the shape
+ * changed and what it still cannot see. It is not a source config value and must
+ * not become one: a fixture source that could declare itself production-worthy
+ * is the same mistake `url-policy.ts` refuses to make with `localDeployment`.
  */
 export const resolveAuthorizedCandidates: AuthorizedCandidateResolver = (contentId) =>
-  process.env.NODE_ENV === "production"
-    ? { status: "not-configured" }
-    : { status: "resolved", candidates: fixtureAuthorizedCandidates(contentId) };
+  FIXTURE_ENVIRONMENTS.includes(process.env.NODE_ENV ?? "")
+    ? { status: "resolved", candidates: fixtureAuthorizedCandidates(contentId) }
+    : { status: "not-configured" };

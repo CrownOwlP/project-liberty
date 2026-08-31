@@ -2,12 +2,20 @@ import { normalizedContentIdSchema } from "@liberty/contracts/shared/ids";
 import type { PlaybackCapabilities, StreamCandidate } from "@liberty/contracts/domains/playback";
 import type { FailoverPolicy } from "@liberty/contracts/domains/failover";
 import { DEFAULT_FAILOVER_POLICY, rankStreamCandidates } from "@liberty/media-engine";
+import { checkUrl } from "@liberty/provider-sdk";
 import {
   checkPlaybackSource,
   describeSourceRejection,
   type PlaybackSource
 } from "../../components/player/playback-source";
 import type { PlaybackCandidate, PlaybackSession } from "../../components/player/playback-session";
+import { isLocalDeployment } from "../api/deployment-environment";
+import {
+  resolveAuthorizedCandidates,
+  type AuthorizedCandidate,
+  type AuthorizedCandidateResolution,
+  type AuthorizedCandidateResolver
+} from "../api/v1/playback/session/authorized-candidates";
 
 /* -------------------------------------------------------------------------
  * Where the watch route gets a session — and what it will never accept
@@ -19,15 +27,52 @@ import type { PlaybackCandidate, PlaybackSession } from "../../components/player
  * 1 into whatever code sets the attribute. `playback-source.ts` states the same
  * boundary one layer down.
  *
- * THIS IS A STAND-IN FOR PL-0501, AND IT IS SHAPED LIKE THE REAL THING ON
- * PURPOSE. What it fakes is narrow and named: the CANDIDATE SOURCE, injected
- * below, which today returns fixtures and tomorrow returns what a provider
- * adapter resolved. What it does NOT fake is the decision — rights and
- * eligibility go through `rankStreamCandidates` from `@liberty/media-engine`,
- * the same already-reviewed allowlist the resolve route uses, so the gate this
- * page renders is the real gate rather than a comment promising one. When
- * PL-0501 lands, the `source` argument is replaced and the rest of this file
- * stops existing.
+ * THIS FILE USED TO CARRY ITS OWN FIXTURES, AND THAT IS THE DEFECT PL-0301
+ * FOUND. A `fixtureCandidates()` lived here declaring `rights: "owned"` over
+ * files nothing had ever opened, stating invented `h264`/`aac`/`720`/`1080` and
+ * fabricated bitrates and health scores, composing URLs by string
+ * concatenation, and — the part that made it a rights incident rather than an
+ * untidy stub — running under NO ENVIRONMENT GUARD AT ALL. `[contentId]/page.tsx`
+ * calls `loadPlaybackSession(contentId)` with the default source, so a
+ * production `next start` rendered `/watch/<id>` with a player aimed at
+ * fabricated `owned` candidates. `docs/E2E.md` recorded this as intended
+ * ("the watch page does not share that switch"), which is how a second copy of
+ * a rights-asserting fixture set survives a review of the first one.
+ *
+ * THE FIXTURES ARE NOW THE SESSION API'S, IMPORTED RATHER THAN RESTATED.
+ * `v1/playback/session/authorized-candidates.ts` is the one fixture provider:
+ * one environment allowlist, one structured `RightsBasis`, one set of `null`
+ * media facts, one `URL`-composed origin. A guarded-and-corrected copy here
+ * would have satisfied every bullet of the fix and left the ARRANGEMENT that
+ * produced the bug intact — two adapters asserting rights over the same
+ * imaginary media, correct today by coincidence.
+ *
+ * WHY THE IMPORT IS SOUND ACROSS `app/api/**`. Next treats a file under `app/`
+ * as a route only when it is named `page`, `route`, `layout`, `template`,
+ * `default`, `loading`, `error`, `not-found` or `global-error`; everything else
+ * is an ordinary colocated module. `authorized-candidates.ts` is one of those,
+ * no `route.ts` is imported and no HTTP request is made, so this is a server
+ * component depending on a server capability in the only direction that makes
+ * sense. The alternative — the page fetching its own API over HTTP — would need
+ * an absolute base URL, a second network hop and a request context it does not
+ * have, to arrive at the same in-process answer.
+ *
+ * The coupling it creates is deliberate and is an IMPROVEMENT on the coupling
+ * it replaces: the two files were already required to agree, and did so via a
+ * shared `LIBERTY_FIXTURE_MEDIA_ORIGIN` and a comment asking the next reader to
+ * keep them in step. A drift in that arrangement reaches a viewer; a drift in
+ * this one fails to compile.
+ *
+ * WHAT IS DELIBERATELY *NOT* DONE HERE. This route still runs its own
+ * `rankStreamCandidates` and builds its own `PlaybackSession` rather than
+ * calling `issuePlaybackSession`, so the DECISION is still implemented twice.
+ * That is a real remaining duplication and it is left on purpose:
+ * `issuePlaybackSession` publishes PL-0501's WIRE contract, PL-0501 is still
+ * unreviewed, and binding a second consumer to an unapproved contract is the
+ * same "two answers" mistake in a new direction. Collapsing the two is
+ * PL-0502's declared surface (`apps/web/src/app/watch/**` plus
+ * `components/player/**`, dependency PL-0501); PL-0301's job was the fixture
+ * adapter, and what a fixture adapter must not do is assert rights twice.
  *
  * No API route is added here. `apps/web/src/app/api/v1/playback/**` belongs to
  * PL-0501 and inventing a second endpoint for the session would give the
@@ -35,48 +80,65 @@ import type { PlaybackCandidate, PlaybackSession } from "../../components/player
  * ---------------------------------------------------------------------- */
 
 /**
- * A stream we hold rights information for, paired with the URL an authorized
- * session would have signed.
+ * Where candidates come from, what one looks like, and what a resolver may say.
  *
- * Two fields rather than one flattened record, because they come from different
- * places and have different lifetimes: the `StreamCandidate` is metadata a
- * provider stated and the ranking reads, and the `PlaybackSource` is a
- * short-lived credential-bearing URL that no ranking should ever see.
+ * RE-EXPORTED, NOT REDECLARED. This route used to define its own
+ * `AuthorizedCandidate` whose source was a bare `PlaybackSource` — no
+ * `allowLoopback`, no nullable `mimeType` — which meant the page and the
+ * session API had two vocabularies for the same thing and the page's was
+ * missing the field the SSRF gate needs. Naming them here keeps the import site
+ * readable without creating a second definition that can drift.
+ *
+ * THE FOUR-OUTCOME RESOLUTION IS THE POINT, and it is the session API's own
+ * type rather than a page-shaped approximation of it. The seam used to be
+ * `candidates | null`, with a throw for everything else, which could express
+ * "unknown title" and "the provider exploded" and nothing in between — so
+ * `not-configured`, the answer a HOSTED DEPLOYMENT MUST GIVE, had nowhere to
+ * come from. Putting it in the type means the compiler, not a comment, is what
+ * requires this route to have an answer for a deployment that may not serve
+ * fixtures; any future resolver inherits the same obligation.
+ *
+ * It stays INJECTABLE so this loader's failure paths are testable, and so a real
+ * provider registry replaces the fixtures without this route changing.
  */
-export interface AuthorizedCandidate {
-  readonly candidate: StreamCandidate;
-  readonly source: PlaybackSource;
-}
+export type {
+  AuthorizedCandidate,
+  AuthorizedCandidateResolution,
+  AuthorizedCandidateResolver
+};
 
 /**
- * Where candidates come from. Injectable so this loader's failure paths are
- * testable, and so PL-0501's resolver can replace the fixtures without the route
- * changing.
+ * Every outcome the route can render, as a branch rather than as an error.
  *
- * `null` means not-found. A source that cannot answer THROWS instead, so
- * "this title does not exist" and "the provider is down" stay distinguishable —
- * they send a reader to different systems and the route renders them
- * differently.
+ * `not-configured` is separate from both of its neighbours on purpose. It is
+ * what a hosted deployment answers, it is permanent until an OPERATOR acts, and
+ * folding it into `error` would tell a viewer to retry something no waiting can
+ * fix while folding it into `denied` would blame this title's rights for an
+ * empty provider registry.
  */
-export type AuthorizedCandidateSource = (
-  contentId: string
-) => readonly AuthorizedCandidate[] | null | Promise<readonly AuthorizedCandidate[] | null>;
-
 export type WatchSessionResult =
   | { readonly status: "ok"; readonly session: PlaybackSession; readonly policy: FailoverPolicy }
   | { readonly status: "not-found"; readonly contentId: string }
+  | { readonly status: "not-configured"; readonly contentId: string }
   | { readonly status: "denied"; readonly contentId: string; readonly reasons: readonly string[] }
   | { readonly status: "error"; readonly reason: string };
 
 /**
  * A conservative device profile.
  *
- * The server does not know what the browser can decode — that is genuinely
- * PL-0501's problem, because capability negotiation is part of the session
- * request and not of this stub. Stating a narrow profile means the fixtures
- * exercise the eligibility path rather than trivially passing it, and it fails
- * in the safe direction: a candidate wrongly excluded here costs a fallback,
- * while one wrongly included costs a decode failure the viewer watches happen.
+ * The server does not know what the browser can decode — capability negotiation
+ * is part of PL-0501's session REQUEST, and this page does not make one. Stating
+ * a narrow profile means candidates exercise the eligibility path rather than
+ * trivially passing it, and it fails in the safe direction: a candidate wrongly
+ * excluded here costs a fallback, while one wrongly included costs a decode
+ * failure the viewer watches happen.
+ *
+ * Note what this profile no longer does. While the fixtures claimed `h264`/`aac`
+ * they matched it exactly, so every fixture passed eligibility BECAUSE the
+ * invented values were ones every device accepts, and the session was labelled
+ * `verified` for a file nobody had opened. The fixtures now state `null` for all
+ * four media facts, so they pass as ATTEMPTABLE and rank as `unverified`, which
+ * is the true statement and the path a real adapter actually produces.
  */
 const CONSERVATIVE_CAPABILITIES: PlaybackCapabilities = {
   maxHeight: 1080,
@@ -86,82 +148,6 @@ const CONSERVATIVE_CAPABILITIES: PlaybackCapabilities = {
 };
 
 /**
- * Where development fixtures are served from.
- *
- * `.invalid` is reserved by RFC 2606 and resolves nowhere, so the default can
- * never accidentally reach a real host — the fixtures fail, the machine fails
- * over through all three of them, and the reason trail on the page shows the
- * whole sequence, which is a more useful default than a player that silently
- * does nothing. Point `LIBERTY_FIXTURE_MEDIA_ORIGIN` at a local DASH/HLS rig
- * (`http://localhost:…` is carved out by `checkPlaybackSource`) to watch
- * something.
- */
-const FIXTURE_MEDIA_ORIGIN = process.env.LIBERTY_FIXTURE_MEDIA_ORIGIN ?? "https://fixtures.invalid";
-
-const FIXTURE_PROVIDER = "fixture";
-
-/**
- * Three candidates so failover has somewhere to go.
- *
- * Ordered worst-first deliberately: if this list were already in preference
- * order, a defect in `rankStreamCandidates` or in the mapping below would be
- * invisible, because the wrong answer and the right one would look the same.
- */
-function fixtureCandidates(contentId: string): readonly AuthorizedCandidate[] {
-  const rights = "owned" as const;
-  return [
-    {
-      candidate: {
-        id: `${contentId}-progressive`,
-        providerId: FIXTURE_PROVIDER,
-        rights,
-        protocol: "https",
-        height: 720,
-        bitrateKbps: 2800,
-        estimatedLatencyMs: 120,
-        healthScore: 0.82,
-        videoCodec: "h264",
-        audioCodec: "aac"
-      },
-      source: { uri: `${FIXTURE_MEDIA_ORIGIN}/${contentId}/720p.mp4`, mimeType: "video/mp4" }
-    },
-    {
-      candidate: {
-        id: `${contentId}-hls`,
-        providerId: FIXTURE_PROVIDER,
-        rights,
-        protocol: "hls",
-        height: 1080,
-        bitrateKbps: 5200,
-        estimatedLatencyMs: 90,
-        healthScore: 0.94,
-        videoCodec: "h264",
-        audioCodec: "aac"
-      },
-      source: {
-        uri: `${FIXTURE_MEDIA_ORIGIN}/${contentId}/master.m3u8`,
-        mimeType: "application/vnd.apple.mpegurl"
-      }
-    },
-    {
-      candidate: {
-        id: `${contentId}-dash`,
-        providerId: FIXTURE_PROVIDER,
-        rights,
-        protocol: "dash",
-        height: 1080,
-        bitrateKbps: 6000,
-        estimatedLatencyMs: 70,
-        healthScore: 0.97,
-        videoCodec: "h264",
-        audioCodec: "aac"
-      },
-      source: { uri: `${FIXTURE_MEDIA_ORIGIN}/${contentId}/manifest.mpd`, mimeType: "application/dash+xml" }
-    }
-  ];
-}
-
-/**
  * Turn a ranking into the ordered candidate list the player walks.
  *
  * The ranking's order is preserved exactly. Re-sorting here would create a
@@ -169,14 +155,40 @@ function fixtureCandidates(contentId: string): readonly AuthorizedCandidate[] {
  * already published, and then the reason trail would explain a choice nobody
  * made.
  *
- * The transport check is a BACKSTOP rather than a rights check — see
- * `playback-source.ts`. It runs here so that a misconfigured fixture origin is
- * a reason on this page instead of a generic network error three layers down
- * that looks exactly like a dead CDN.
+ * TWO TRANSPORT GATES RUN, IN THIS ORDER, AND BOTH ARE LOAD-BEARING.
+ *
+ *   1. `checkUrl` from `@liberty/provider-sdk` — the same outbound URL policy
+ *      `issue-session.ts` runs immediately before it publishes a URI. This is
+ *      the gate this route did not have. `checkPlaybackSource` accepts ANY
+ *      `https:` URL, so `https://user:pass@evil.test/`, `https://169.254.169.254/…`,
+ *      `https://10.0.0.5/…` and `https://rig.internal/…` all passed it, and a
+ *      typo in `LIBERTY_FIXTURE_MEDIA_ORIGIN` was enough to publish any of them
+ *      to a browser. `checkUrl` refuses each with a named reason, and it needs
+ *      the source's `allowLoopback` and the deployment's own answer — which is
+ *      the second reason the page could not have done this with its old
+ *      candidate type.
+ *
+ *   2. `checkPlaybackSource` — kept, and deliberately not replaced. It is what
+ *      `playback-controller.ts` runs on the CLIENT before handing a source to
+ *      Shaka, unconditionally and out of this file's reach. Its loopback carve-
+ *      out is narrower than `checkUrl`'s (`localhost`, `127.0.0.1`, `[::1]`
+ *      only, so `http://127.0.0.2:8096` or `http://rig.localhost` pass the
+ *      policy and fail here), so a candidate that skipped it would be published
+ *      as playable and then die in the controller as `source-rejected` with
+ *      nothing in the server's reason trail to explain it. Running it here makes
+ *      this page's trail PREDICTIVE of what the client will do.
+ *
+ * The URL handed to gate 2 and to the player is `checkUrl`'s PARSED form, so
+ * what ships is byte-for-byte what the policy accepted — the same reason
+ * `issue-session.ts` publishes `check.url.toString()` rather than the raw
+ * string. Closing the asymmetry by never handing the weaker checker an
+ * unvalidated URL is available from inside this file; widening
+ * `checkPlaybackSource` itself is not, and is written up separately.
  */
 function toPlaybackCandidates(
   ranked: readonly { readonly candidate: StreamCandidate }[],
   authorized: readonly AuthorizedCandidate[],
+  localDeployment: boolean,
   reasons: string[]
 ): PlaybackCandidate[] {
   const sources = new Map(authorized.map((entry) => [entry.candidate.id, entry.source]));
@@ -193,13 +205,29 @@ function toPlaybackCandidates(
       continue;
     }
 
-    const check = checkPlaybackSource(source);
-    if (!check.ok) {
-      reasons.push(`${id}: ${describeSourceRejection(check.reason)}`);
+    const policy = checkUrl(source.uri, { allowLoopback: source.allowLoopback, localDeployment });
+    if (!policy.ok) {
+      /* The policy's own reason code, verbatim. `url-policy.ts` gives these the
+       * `url_` prefix expressly so they can be surfaced without translation, and
+       * a reason that gets rewritten on the way out is one that eventually stops
+       * matching what the code did. */
+      reasons.push(`${id}: ${policy.reason} — ${policy.detail}`);
       continue;
     }
 
-    playable.push({ id, providerId: entry.candidate.providerId, source });
+    /* An empty `Content-Type` has told us nothing, which is what `undefined`
+     * means to `PlaybackSource`. Passing `""` through would make Shaka issue a
+     * HEAD request to guess rather than reading a value it was given. */
+    const mimeType = source.mimeType === null || source.mimeType.trim() === "" ? undefined : source.mimeType;
+    const checked: PlaybackSource = { uri: policy.url.toString(), mimeType };
+
+    const backstop = checkPlaybackSource(checked);
+    if (!backstop.ok) {
+      reasons.push(`${id}: ${describeSourceRejection(backstop.reason)}`);
+      continue;
+    }
+
+    playable.push({ id, providerId: entry.candidate.providerId, source: checked });
   }
 
   return playable;
@@ -208,16 +236,21 @@ function toPlaybackCandidates(
 /**
  * The loader the watch route uses.
  *
- * Never throws. Every outcome is a branch the route can render, because the
- * three that are not "ok" have three different remedies and a reader told to
- * "try again in a moment" about a title that will never exist will keep trying.
+ * Never throws. Every outcome is a branch the route can render, because they
+ * have different remedies and a reader told to "try again in a moment" about a
+ * title that will never exist — or about a deployment with no provider
+ * configured — will keep trying.
+ *
+ * `requestId` is generated HERE and is not read from anything the client sent,
+ * for the reason `ResolverContext` states: a client-chosen correlation id
+ * forwarded to a third party is a client-chosen value in somebody else's logs.
  */
 export async function loadPlaybackSession(
   contentId: string,
-  source: AuthorizedCandidateSource = fixtureCandidates
+  resolve: AuthorizedCandidateResolver = resolveAuthorizedCandidates
 ): Promise<WatchSessionResult> {
   /*
-   * Checked before the source is consulted. An id that is not normalized cannot
+   * Checked before the resolver is consulted. An id that is not normalized cannot
    * name anything — every id in the system is lower-case and hyphen-separated —
    * so this is not-found rather than an error, and doing it first keeps raw URL
    * path input from reaching the provider boundary at all.
@@ -226,14 +259,44 @@ export async function loadPlaybackSession(
     return { status: "not-found", contentId };
   }
 
-  let authorized: readonly AuthorizedCandidate[] | null;
+  let resolution: AuthorizedCandidateResolution;
   try {
-    authorized = await source(contentId);
+    resolution = await resolve(contentId, { requestId: crypto.randomUUID() });
   } catch (cause) {
     return { status: "error", reason: cause instanceof Error ? cause.message : "candidate source failed" };
   }
 
-  if (authorized === null) return { status: "not-found", contentId };
+  if (resolution.status === "not-found") return { status: "not-found", contentId };
+
+  /*
+   * THE BRANCH A HOSTED DEPLOYMENT TAKES, and the whole user-visible point of
+   * this change. `resolveAuthorizedCandidates` answers `not-configured` outside
+   * `FIXTURE_ENVIRONMENTS`, so `next start` now renders an explanation instead
+   * of a player pointed at fabricated `owned` fixtures.
+   *
+   * Its own status rather than `error` or `denied`, matching the session API's
+   * argument for the same four-way split: `error` invites a retry that can never
+   * succeed, and `denied` would report an operator's unfinished configuration as
+   * a decision about this title's rights, which is a false statement about the
+   * title and hides the real remedy.
+   */
+  if (resolution.status === "not-configured") return { status: "not-configured", contentId };
+
+  if (resolution.status === "provider-unavailable") {
+    /* The detail the resolver CHOSE to publish, which is safe by construction —
+     * unlike a thrown value, whose text is whatever a library felt like saying. */
+    return { status: "error", reason: resolution.detail };
+  }
+
+  const authorized = resolution.candidates;
+  if (authorized.length === 0) {
+    /*
+     * `error`, not `denied`. A resolver that answered `resolved` with nothing in
+     * it made no decision about this title; calling that a denial would report
+     * an outage as a rights or capability refusal.
+     */
+    return { status: "error", reason: `no provider offered a stream for ${contentId}` };
+  }
 
   const decision = rankStreamCandidates(
     authorized.map((entry) => entry.candidate),
@@ -257,7 +320,7 @@ export async function loadPlaybackSession(
   }
 
   const reasons: string[] = [decision.reason, ...decision.ranked.map((entry) => `${entry.candidate.id}: ${entry.reason}`)];
-  const candidates = toPlaybackCandidates(decision.ranked, authorized, reasons);
+  const candidates = toPlaybackCandidates(decision.ranked, authorized, isLocalDeployment(), reasons);
 
   if (candidates.length === 0) {
     return { status: "denied", contentId, reasons };
