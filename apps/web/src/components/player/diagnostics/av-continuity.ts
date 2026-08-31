@@ -1,15 +1,19 @@
 /* -------------------------------------------------------------------------
  * A/V continuity proxies — the vocabulary (PL-0504)
  *
- * THE TASK THIS FILE IMPLEMENTS IS NOT THE TASK ITS TITLE DESCRIBES.
+ * THE TASK THIS FILE IMPLEMENTS IS NOT THE TASK IT WAS ORIGINALLY SCOPED AS.
  *
- * PL-0504 is recorded in `control/tasks.json` as "drift measurement contract,
- * thresholds, and bounded recovery experiment". That premise is wrong and
- * `docs/RESEARCH_PLAYBACK.md` finding 3 says why: a browser cannot detect that
+ * PL-0504 was scoped as "drift measurement contract, thresholds, and bounded
+ * recovery experiment". That premise is wrong and `docs/RESEARCH_PLAYBACK.md`
+ * finding 3 says why: a browser cannot detect that
  * lips are out of sync. There is no audio clock for a `<video>` element;
  * `video.currentTime` is the HTML specification's "official playback position",
  * which is a position and not a clock; final alignment happens in the
  * compositor and the OS audio stack, neither of which is reachable from script.
+ * `control/tasks.json` now records the revised premise as the task's title and
+ * acceptance, quoted verbatim below — the original wording survives only in this
+ * paragraph, which exists so a reader knows the narrowing was deliberate rather
+ * than a scope the implementation quietly declined.
  * The approved acceptance is therefore:
  *
  *   Browser playback diagnostics detect and report deterministic A/V
@@ -147,9 +151,11 @@ export type AvContinuityReasonCode =
   | "hole_exceeds_nudge_bound"
   /* Frame-callback evidence. */
   | "frame_callback_unavailable"
+  | "frame_callback_awaiting_second_reading"
   | "frame_metadata_unusable"
   | "media_time_zero_on_live"
   | "media_time_did_not_advance"
+  | "media_time_moved_backwards"
   | "media_time_advanced"
   | "presented_frames_skipped"
   | "presented_frames_contiguous"

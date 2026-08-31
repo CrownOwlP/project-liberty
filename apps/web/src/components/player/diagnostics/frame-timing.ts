@@ -31,6 +31,13 @@
  * millisecond sync claim PL-0504's approved acceptance forbids. It is not
  * computed here, and there is no field for it to be stored in.
  *
+ * A NON-POSITIVE DELTA IS TWO DIFFERENT FACTS. Zero is a repeated frame, which
+ * is the continuity risk this file is looking for. NEGATIVE is a seek, a loop or
+ * a live timeline reset — an ordinary user action whose only relationship to
+ * rendering is that both produce the same sign. They are separated in
+ * `advanceFinding`, and the separation is the difference between a proxy and a
+ * proxy that fires every time somebody drags the scrubber backwards.
+ *
  * `mediaTime` MAY BE 0 ON LIVE. When it is, the proxies are SKIPPED rather
  * than computed against zero — a media-time delta measured from a zero that
  * never advanced is a fabricated stall. The cost is one frame pair's worth of
@@ -43,6 +50,7 @@ import {
   avReason,
   AV_PROXY_METRICS,
   type AvContinuityFinding,
+  type AvContinuityReason,
   type AvProxyObservation,
   type AvUnobservableSignal
 } from "./av-continuity";
@@ -93,23 +101,60 @@ function unobservable(
 }
 
 /**
- * What to report on a platform without `requestVideoFrameCallback`.
+ * Why there is no frame pair to read — STATED BY THE CALLER, never inferred.
+ *
+ * THE TWO CASES ARE NOT THE SAME FACT AND MUST NOT SHARE A REASON. "This
+ * browser does not implement `requestVideoFrameCallback`" is a statement about
+ * a platform and it will be true for the whole session; "the callback has run
+ * once so far" is a statement about this instant and will stop being true in
+ * about sixteen milliseconds. A single `null` covering both made the composed
+ * report assert `frame_callback_unavailable` — "not present on this platform" —
+ * every time a diagnostics panel was opened before the second callback landed,
+ * which is a claim about browser support derived from a stopwatch. Only the
+ * caller holds the `typeof video.requestVideoFrameCallback === "function"` test
+ * that tells them apart, so the caller is made to say which.
+ */
+export type AvFrameEvidenceAbsence = "callback-unsupported" | "awaiting-second-callback";
+
+const FRAME_ABSENCE_REASONS: Readonly<Record<AvFrameEvidenceAbsence, AvContinuityReason>> = {
+  "callback-unsupported": avReason(
+    "frame_callback_unavailable",
+    "HTMLVideoElement.requestVideoFrameCallback is not present, so no frame presentation " +
+      "evidence exists on this platform."
+  ),
+  "awaiting-second-callback": avReason(
+    "frame_callback_awaiting_second_reading",
+    "HTMLVideoElement.requestVideoFrameCallback is available but has produced fewer than two " +
+      "readings so far. Both frame proxies are differences between consecutive callbacks, so " +
+      "there is nothing yet to difference. This is not a statement about browser support."
+  )
+};
+
+/**
+ * What to report when there is no frame pair.
  *
  * A finding rather than an omission, for the same reason as everywhere else
  * here: a report missing an entry looks like a clean run.
  */
-export function frameCallbackUnavailable(): readonly AvContinuityFinding[] {
-  const reasons = [
-    avReason(
-      "frame_callback_unavailable",
-      "HTMLVideoElement.requestVideoFrameCallback is not present, so no frame presentation " +
-        "evidence exists on this platform."
-    )
-  ];
+export function frameEvidenceAbsent(
+  absence: AvFrameEvidenceAbsence
+): readonly AvContinuityFinding[] {
+  const reasons = [FRAME_ABSENCE_REASONS[absence]];
   return [
     unobservable(AV_PROXY_METRICS.mediaTimeAdvance, reasons),
     unobservable(AV_PROXY_METRICS.presentedFrameGap, reasons)
   ];
+}
+
+/**
+ * The platform-support case, kept as a named constructor.
+ *
+ * A caller that has just failed the `typeof` test reads better calling this than
+ * passing a string, and it is the only one of the two absences that a support
+ * matrix cares about.
+ */
+export function frameCallbackUnavailable(): readonly AvContinuityFinding[] {
+  return frameEvidenceAbsent("callback-unsupported");
 }
 
 function mediaTimeAdvance(
@@ -198,6 +243,41 @@ function advanceFinding(
 
   const advanceSeconds = after - before;
 
+  /*
+   * A BACKWARDS MEDIA TIME IS A SEEK, NOT A FREEZE.
+   *
+   * This branch used to be absent, so `advanceSeconds < 0` fell into the
+   * "did not advance" arm below and fired `com.liberty-avs-media-time-advance`
+   * with a NEGATIVE magnitude. Every backwards scrub, every loop, every live
+   * timeline reset therefore reported the frozen-picture proxy — inferring a
+   * rendering fault from a symptom whose ordinary cause is the user dragging a
+   * slider, and poisoning any downstream aggregate of the magnitude with
+   * negative spans.
+   *
+   * The rule is the one `frameGapFinding` already applies to `presentedFrames`:
+   * a counter that moved the wrong way means the two readings are not from one
+   * uninterrupted forward sequence, and what happened between them is not
+   * derivable from them. Reported as unobservable, not as quiet — the picture
+   * may well have frozen, and saying "no problem" would be as much of an
+   * invention as saying "frozen".
+   */
+  if (advanceSeconds < 0) {
+    return unobservable(AV_PROXY_METRICS.mediaTimeAdvance, [
+      avReason(
+        "media_time_moved_backwards",
+        `Presented media time moved backwards between callbacks (${formatSeconds(before)} to ` +
+          `${formatSeconds(after)}). A seek, a loop or a live timeline reset happened between ` +
+          "the two readings, so they are not one uninterrupted sequence and no advance can be " +
+          "derived from them."
+      ),
+      avReason(
+        "proxy_not_measurement",
+        "Nothing is claimed about rendering here. A repeated frame and a backwards seek both " +
+          "produce a non-positive delta, and only the first of them is a continuity risk."
+      )
+    ]);
+  }
+
   if (advanceSeconds > 0) {
     return mediaTimeAdvance(false, advanceSeconds, [
       avReason(
@@ -213,12 +293,13 @@ function advanceFinding(
     ]);
   }
 
+  // Reached only for an exactly-zero delta now that the backwards case is
+  // handled above, so the claim is the narrow one it always should have been.
   return mediaTimeAdvance(true, advanceSeconds, [
     avReason(
       "media_time_did_not_advance",
-      `Presented media time did not advance between callbacks (${formatSeconds(before)} to ` +
-        `${formatSeconds(after)}, delta ${formatSeconds(advanceSeconds)}): the same frame was ` +
-        "presented again, or the timeline moved backwards."
+      `Presented media time was identical across two callbacks (${formatSeconds(before)} to ` +
+        `${formatSeconds(after)}): the same frame was presented again.`
     ),
     avReason(
       "proxy_not_measurement",

@@ -33,7 +33,8 @@ import {
   AV_PROXY_METRICS,
   type AvContinuityPolicy,
   type AvContinuityReason,
-  type AvProxyObservation
+  type AvProxyObservation,
+  type AvUnobservableSignal
 } from "./av-continuity";
 import {
   containsInstant,
@@ -109,6 +110,33 @@ function observation(
 }
 
 /**
+ * "The inputs cannot support a verdict", as a finding rather than as a quiet
+ * proxy.
+ *
+ * THIS DISTINCTION WAS MISSING AND THE MODULE CONTRADICTED ITSELF ABOUT IT. A
+ * caller with no per-track readings at all got an `AvUnobservableSignal` from
+ * `perTrackBufferedUnavailable`; a caller whose per-track readings turned out to
+ * be EMPTY — no SourceBuffer content yet, a track that has not been appended to,
+ * a `TimeRanges` every entry of which failed to read — got
+ * `proxyFired: false`, which `summariseAvContinuity` counts under
+ * `proxiesQuiet`. Same epistemic state, two verdicts, and the second one is the
+ * one this whole task exists to refuse: "the video hole proxy was evaluated and
+ * found nothing" is a claim, and nothing here was evaluated.
+ *
+ * The distinction is not stylistic. `proxiesQuiet` is what a dashboard turns
+ * into "healthy sessions", and a browser that never populated a SourceBuffer we
+ * could reach would have counted as one.
+ */
+function unobservable(reasons: readonly AvContinuityReason[]): AvUnobservableSignal {
+  return {
+    evidenceBasis: "unobservable",
+    metric: AV_PROXY_METRICS.videoHole,
+    evidenceSource: "no-evidence-available",
+    reasons
+  };
+}
+
+/**
  * The evidence line that goes on every finding, fired or not.
  *
  * It names the SOURCE as well as the content: a reader six months from now
@@ -131,8 +159,16 @@ function evidenceReason(
 /**
  * Deterministic: same inputs, same finding, regardless of the order the ranges
  * arrived in. No clock, no ambient state, no `Date.now()`.
+ *
+ * RETURNS A UNION, and the caller has to look. An `AvUnobservableSignal` means
+ * the inputs could not support any verdict; a `VideoHoleObservation` with
+ * `proxyFired: false` means the comparison was actually made and no hole was
+ * there. Collapsing those two into one boolean is how "we could not see" becomes
+ * "we saw nothing wrong" — see `unobservable` above.
  */
-export function detectVideoHole(input: VideoHoleInput): VideoHoleObservation {
+export function detectVideoHole(
+  input: VideoHoleInput
+): VideoHoleObservation | AvUnobservableSignal {
   const { policy } = input;
   const videoRanges = normaliseRanges(input.videoBuffered.ranges, policy.rangeCoalesceSeconds);
   const audioRanges = normaliseRanges(input.audioBuffered.ranges, policy.rangeCoalesceSeconds);
@@ -140,7 +176,7 @@ export function detectVideoHole(input: VideoHoleInput): VideoHoleObservation {
 
   const playheadSeconds = finiteOrNull(input.playheadSeconds);
   if (playheadSeconds === null) {
-    return observation(false, null, null, [
+    return unobservable([
       evidence,
       avReason(
         "buffered_ranges_unusable",
@@ -151,7 +187,7 @@ export function detectVideoHole(input: VideoHoleInput): VideoHoleObservation {
   }
 
   if (videoRanges.length === 0 || audioRanges.length === 0) {
-    return observation(false, null, null, [
+    return unobservable([
       evidence,
       avReason(
         "buffered_ranges_unusable",

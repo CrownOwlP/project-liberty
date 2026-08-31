@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_AV_CONTINUITY_POLICY, type AvContinuityReasonCode } from "./av-continuity";
+import {
+  DEFAULT_AV_CONTINUITY_POLICY,
+  type AvContinuityFinding,
+  type AvContinuityReasonCode
+} from "./av-continuity";
 import {
   readElementBufferedRanges,
   readSourceBufferRanges,
@@ -7,7 +11,30 @@ import {
   type BufferedRange,
   type TrackBufferedReading
 } from "./buffered-ranges";
-import { detectVideoHole, type VideoHoleObservation } from "./video-hole";
+import {
+  detectVideoHole as detectVideoHoleFinding,
+  type VideoHoleInput,
+  type VideoHoleObservation
+} from "./video-hole";
+
+/**
+ * `detectVideoHole`, narrowed to the case every test below but one expects.
+ *
+ * The detector returns `VideoHoleObservation | AvUnobservableSignal`, because
+ * "the inputs could not support a verdict" and "the comparison was made and
+ * found nothing" are different facts and only the second one is a quiet proxy.
+ * Almost every test here supplies usable evidence and wants the observation, so
+ * the narrowing lives in one place and THROWS rather than silently asserting
+ * against a finding of the wrong kind. The unobservable cases call
+ * `detectVideoHoleFinding` directly.
+ */
+function detectVideoHole(input: VideoHoleInput): VideoHoleObservation {
+  const finding = detectVideoHoleFinding(input);
+  if (finding.evidenceBasis !== "proxy") {
+    throw new Error("expected a proxy observation, not an unobservable signal");
+  }
+  return finding;
+}
 
 function reading<TTrack extends AvTrackKind>(
   track: TTrack,
@@ -20,8 +47,8 @@ function reading<TTrack extends AvTrackKind>(
   };
 }
 
-function codes(observation: VideoHoleObservation): readonly AvContinuityReasonCode[] {
-  return observation.reasons.map((reason) => reason.code);
+function codes(finding: AvContinuityFinding): readonly AvContinuityReasonCode[] {
+  return finding.reasons.map((reason) => reason.code);
 }
 
 /**
@@ -176,24 +203,53 @@ describe("not firing on a contiguous buffer", () => {
     expect(codes(observation)).toContain("gap_beyond_lookahead");
   });
 
-  it("reports an unusable playhead or an empty track as not observed", () => {
-    const noPlayhead = detectVideoHole({
+  it("reports an unusable playhead or an empty track as UNOBSERVABLE, not as quiet", () => {
+    /*
+     * NOT `proxyFired: false`. That is the verdict for a comparison that was
+     * actually made, and `summariseAvContinuity` counts it under `proxiesQuiet`
+     * — which a dashboard reads as a healthy session. An empty SourceBuffer, a
+     * track that has not been appended to yet and a `TimeRanges` whose every
+     * entry failed to read are all "we could not look", and the module already
+     * says exactly that when handed no readings at all.
+     */
+    const noPlayhead = detectVideoHoleFinding({
       playheadSeconds: Number.NaN,
       videoBuffered: VIDEO_WITH_HOLE,
       audioBuffered: AUDIO_CONTIGUOUS,
       policy: DEFAULT_AV_CONTINUITY_POLICY
     });
-    expect(noPlayhead.proxyFired).toBe(false);
+    expect(noPlayhead.evidenceBasis).toBe("unobservable");
     expect(codes(noPlayhead)).toContain("buffered_ranges_unusable");
+    expect(noPlayhead).not.toHaveProperty("proxyFired");
+    expect(noPlayhead).not.toHaveProperty("magnitude");
 
-    const noAudio = detectVideoHole({
-      playheadSeconds: 10.1,
-      videoBuffered: VIDEO_WITH_HOLE,
-      audioBuffered: reading("audio", []),
+    for (const [video, audio] of [
+      [VIDEO_WITH_HOLE, reading("audio", [])],
+      [reading("video", []), AUDIO_CONTIGUOUS],
+      [reading("video", []), reading("audio", [])]
+    ] as const) {
+      const finding = detectVideoHoleFinding({
+        playheadSeconds: 10.1,
+        videoBuffered: video,
+        audioBuffered: audio,
+        policy: DEFAULT_AV_CONTINUITY_POLICY
+      });
+      expect(finding.evidenceBasis).toBe("unobservable");
+      expect(codes(finding)).toContain("buffered_ranges_unusable");
+    }
+  });
+
+  it("still reports a quiet PROXY when the comparison genuinely was made", () => {
+    // The distinction only means something if the other branch still exists.
+    const contiguous = detectVideoHole({
+      playheadSeconds: 5,
+      videoBuffered: reading("video", [[0, 30]]),
+      audioBuffered: AUDIO_CONTIGUOUS,
       policy: DEFAULT_AV_CONTINUITY_POLICY
     });
-    expect(noAudio.proxyFired).toBe(false);
-    expect(codes(noAudio)).toContain("buffered_ranges_unusable");
+    expect(contiguous.evidenceBasis).toBe("proxy");
+    expect(contiguous.proxyFired).toBe(false);
+    expect(codes(contiguous)).toContain("video_buffer_contiguous");
   });
 });
 
@@ -230,11 +286,17 @@ describe("per-SourceBuffer reading, not the element intersection", () => {
     expect(fromSourceBuffers.proxyFired).toBe(true);
   });
 
+  /*
+   * These two call `detectVideoHoleFinding`, not the narrowing wrapper. They
+   * are compile-time assertions and their inputs carry no ranges at all, so the
+   * detector correctly answers "unobservable" and the wrapper would throw —
+   * failing a test that has nothing to do with what it is checking.
+   */
   it("rejects an element-buffered reading at compile time", () => {
     const elementReading = readElementBufferedRanges(null);
     expect(elementReading.source).toBe("media-element-intersection");
 
-    detectVideoHole({
+    detectVideoHoleFinding({
       playheadSeconds: 10.1,
       // @ts-expect-error `ElementBufferedReading` is not a per-track reading.
       videoBuffered: elementReading,
@@ -246,7 +308,7 @@ describe("per-SourceBuffer reading, not the element intersection", () => {
   it("rejects a swapped video/audio reading at compile time", () => {
     const audio = readSourceBufferRanges("audio", null);
 
-    detectVideoHole({
+    detectVideoHoleFinding({
       playheadSeconds: 10.1,
       // @ts-expect-error the video argument is typed `TrackBufferedReading<"video">`.
       videoBuffered: audio,

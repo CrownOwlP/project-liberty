@@ -16,7 +16,7 @@
  * Events API in favour of logs. CMCD converts to OTel at the server boundary,
  * in `@liberty/observability`, where the Node SDK is stable.
  *
- * THE TWO THINGS THIS FILE HAS TO GET RIGHT
+ * THE FOUR THINGS THIS FILE HAS TO GET RIGHT
  *
  *   - THE TARGET IS FIRST-PARTY OR THERE IS NO TARGET. Event Mode POSTs the
  *     whole CMCD dictionary to `url`, and CMCD carries the media URL under
@@ -28,6 +28,23 @@
  *     the same registry its collector redacts with. The URL-bearing keys are
  *     therefore never requested AND redacted if they arrive anyway — two
  *     independent controls that cannot drift, because they are one declaration.
+ *   - AN EMPTY ALLOWLIST IS NOT AN EMPTY REPORT, IT IS THE WHOLE VOCABULARY.
+ *     `CmcdManager.toReporterConfig_` in shaka-player 5.2.6 reads an empty
+ *     `includeKeys` as "unspecified" and substitutes `allKeysForVersion_(2)`,
+ *     which includes `url` and `nor`. A derived list that filtered down to
+ *     nothing would therefore fail OPEN, so emptiness disables CMCD here rather
+ *     than being passed through. This is not hypothetical tidiness: the whole
+ *     point of deriving the list is that a registry edit changes it.
+ *   - `cid` AND `sid` LEAVE THE FIRST PARTY. This is the half of the leak
+ *     argument the first-party collector path does not cover. With
+ *     `useHeaders: false` and request mode enabled, Shaka appends `CMCD=<sfv>`
+ *     as a QUERY PARAMETER to every manifest and segment request — which go to
+ *     the CDN, not to us — and `cid` and `sid` are in every one of those
+ *     dictionaries. So the two identifiers are cross-origin data by
+ *     construction, and `isTransmittableIdentifier` refuses anything that could
+ *     be a URL or a bearer credential rather than trusting the caller. The
+ *     playback session id is a `crypto.randomUUID()` and passes; a signed
+ *     manifest URL or an issued session token does not.
  *
  * NOTHING IN HERE READS A CLOCK OR A RANDOM SOURCE. `sessionId` is an input.
  * Shaka will mint one with `crypto.randomUUID()` if it is handed an empty
@@ -39,7 +56,12 @@
  * `lib/util/player_configuration.js`.
  * ---------------------------------------------------------------------- */
 
-import { CMCD_V2_CLIENT_SAFE_KEYS } from "@liberty/observability";
+import {
+  CMCD_REPORT_LIMITS,
+  CMCD_V2_CLIENT_SAFE_KEYS,
+  cmcdKeySpec,
+  looksLikeUrl
+} from "@liberty/observability";
 import type { EngineConfig } from "./engine";
 
 /**
@@ -78,10 +100,16 @@ export const PLAYBACK_TELEMETRY_DEFAULTS = {
 export interface PlaybackTelemetryOptions {
   /** False produces an explicitly disabled block rather than an absent one. */
   readonly enabled: boolean;
-  /** CMCD `cid`. The catalog's content id, never a URL. */
+  /**
+   * CMCD `cid`. The catalog's content id, never a URL — and the "never" is
+   * enforced by `isTransmittableIdentifier`, not requested in a comment,
+   * because this value reaches the CDN.
+   */
   readonly contentId: string;
   /**
-   * CMCD `sid`. Supplied rather than generated; see the file header.
+   * CMCD `sid`. Supplied rather than generated; see the file header. An opaque
+   * correlation id such as the playback session's `crypto.randomUUID()`, never
+   * an issued token: this value reaches the CDN too.
    */
   readonly sessionId: string;
   /**
@@ -118,6 +146,48 @@ export function isFirstPartyCollectorPath(path: string): boolean {
 }
 
 /**
+ * Whether a value is safe to put in `cid` or `sid`.
+ *
+ * These two travel to the CDN on every segment request; see the file header.
+ * Four refusals, and each names a value somebody could plausibly pass:
+ *
+ *   - EMPTY. Shaka treats an empty `sid` as "mint me one", so an empty string
+ *     is not a session id, it is a session id nobody can correlate against.
+ *   - URL-SHAPED. `looksLikeUrl` is the same test `@liberty/observability`'s
+ *     collector applies to custom-key values, reused rather than restated. A
+ *     signed manifest URL passed as a content id would reproduce, through a key
+ *     the registry classifies as safe, exactly the leak that classifying `url`
+ *     and `nor` closes.
+ *   - LOCATOR-SHAPED. `looksLikeUrl` tests for a SCHEME, so it does not see
+ *     `//cdn.example.com/x.m3u8?Signature=…` — a protocol-relative URL, which is
+ *     a perfectly ordinary way for a manifest reference to be written down. A
+ *     value carrying `/` or `?` is a locator rather than an identifier, and the
+ *     ids this platform actually issues are the lowercase-kebab slugs
+ *     `normalizedContentIdSchema` already enforces plus a UUID, neither of which
+ *     contains either character. Widening `looksLikeUrl` itself was rejected:
+ *     it is shared with the collector's redaction path, where "contains a slash"
+ *     would redact `cmsdd` header values that legitimately do.
+ *   - LONGER THAN CTA-5004-B ALLOWS, with the bound READ FROM THE REGISTRY
+ *     rather than written here, so it cannot drift from the one the collector
+ *     truncates against. It is a length check doing double duty: 64 characters
+ *     is a UUID with room to spare and is too short for a signed URL or a JWT,
+ *     so a credential pasted into `sid` is refused by the spec's own bound
+ *     rather than by a credential-detector we would have to keep current.
+ *
+ * Exported so a caller that would rather fail loudly than silently lose
+ * telemetry can check before calling, exactly like `isFirstPartyCollectorPath`.
+ */
+export function isTransmittableIdentifier(value: string, key: "cid" | "sid"): boolean {
+  if (value === "") return false;
+  if (looksLikeUrl(value)) return false;
+  if (value.includes("/") || value.includes("?")) return false;
+  // The same fallback the collector's `safeString` uses, so a registry entry
+  // that stops stating a length behaves identically at both ends.
+  const limit = cmcdKeySpec(key)?.maxLength ?? CMCD_REPORT_LIMITS.maxStringLength;
+  return value.length <= limit;
+}
+
+/**
  * The `cmcd` fragment for one session.
  *
  * Returns the DISABLED block rather than throwing when an input is unusable. A
@@ -128,13 +198,20 @@ export function isFirstPartyCollectorPath(path: string): boolean {
  */
 export function playbackTelemetryConfig(options: PlaybackTelemetryOptions): EngineConfig {
   if (!options.enabled) return CMCD_DISABLED;
-  if (options.contentId === "" || options.sessionId === "") return CMCD_DISABLED;
+  if (!isTransmittableIdentifier(options.contentId, "cid")) return CMCD_DISABLED;
+  if (!isTransmittableIdentifier(options.sessionId, "sid")) return CMCD_DISABLED;
   if (!isFirstPartyCollectorPath(options.collectorPath)) return CMCD_DISABLED;
 
   // Copied out of the readonly source so Shaka, which stores the array by
   // reference and mutates its own config tree, cannot reach the shared
   // declaration in `@liberty/observability`.
   const includeKeys = [...CMCD_V2_CLIENT_SAFE_KEYS];
+
+  // FAIL CLOSED ON AN EMPTY ALLOWLIST. See the file header: Shaka expands an
+  // empty `includeKeys` to every v2 key, `url` and `nor` among them, so the one
+  // thing this must not do is pass the empty array through as though it meant
+  // what it says.
+  if (includeKeys.length === 0) return CMCD_DISABLED;
 
   return {
     cmcd: {

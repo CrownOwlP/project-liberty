@@ -127,7 +127,28 @@ export function readElementBufferedRanges(
  * The honest answer is "not observed", and it is a finding rather than an
  * omission so that a report from a platform where Shaka fell back to native
  * `src=` HLS — where there are no SourceBuffers at all — says so out loud
- * instead of looking like a clean run.
+ * instead of looking like a clean run. The `detail` is the caller's, because
+ * only the caller knows which of those it was.
+ */
+export function perTrackBufferedUnavailable(detail: string): AvUnobservableSignal {
+  return {
+    evidenceBasis: "unobservable",
+    metric: AV_PROXY_METRICS.videoHole,
+    evidenceSource: "no-evidence-available",
+    reasons: [avReason("buffered_ranges_unusable", detail)]
+  };
+}
+
+/**
+ * The narrower statement: the caller HAD ranges, and they were the element's.
+ *
+ * Split from `perTrackBufferedUnavailable` above because
+ * `element_buffered_is_intersection` is a specific accusation — it says a
+ * reading was taken from `HTMLMediaElement.buffered` and is therefore incapable
+ * of showing a video-only gap. Emitting it for a caller who supplied no ranges
+ * at all attributes a mistake nobody made, and a reason trail that names the
+ * wrong cause is worse than one that says less: the first thing anybody reading
+ * it will do is go looking for the `video.buffered` call that is not there.
  */
 export function elementBufferedIsIntersection(detail: string): AvUnobservableSignal {
   return {

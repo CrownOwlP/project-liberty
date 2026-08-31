@@ -7,6 +7,7 @@ import {
   AV_PROXY_METRICS,
   DEFAULT_AV_CONTINUITY_POLICY,
   PROHIBITED_AV_INSTRUMENTATION,
+  elementBufferedIsIntersection,
   lipSyncOffsetUnobservable,
   observeAvContinuity,
   summariseAvContinuity,
@@ -74,7 +75,15 @@ function collectKeys(value: unknown, out: Set<string> = new Set()): Set<string> 
 /** A battery covering every branch the public API can take. */
 const REPORTS: readonly AvContinuityReport[] = [
   observeAvContinuity(input()),
-  observeAvContinuity(input({ buffered: null, frames: null, engineConfig: null })),
+  observeAvContinuity(
+    input({ buffered: null, frames: "callback-unsupported", engineConfig: null })
+  ),
+  observeAvContinuity(input({ frames: "awaiting-second-callback" })),
+  observeAvContinuity(
+    input({
+      frames: { previous: FRAME, current: { ...FRAME, mediaTimeSeconds: 4, presentedFrames: 301 } }
+    })
+  ),
   observeAvContinuity(
     input({
       buffered: {
@@ -247,9 +256,84 @@ describe("the composed report", () => {
     const report = observeAvContinuity(input({ buffered: null }));
     const hole = report.findings[1];
     expect(hole?.evidenceBasis).toBe("unobservable");
-    expect(hole?.reasons.map((reason) => reason.code)).toContain(
+    expect(hole?.reasons.map((reason) => reason.code)).toEqual(["buffered_ranges_unusable"]);
+  });
+
+  it("does not accuse a caller of reading video.buffered when it supplied nothing", () => {
+    /*
+     * `element_buffered_is_intersection` is a specific accusation: it says a
+     * reading came from the element's intersected view and is therefore
+     * incapable of showing a video-only gap. Emitting it for an observation
+     * that had no ranges at all sends the reader looking for a `video.buffered`
+     * call that does not exist. `elementBufferedIsIntersection` is still
+     * exported for the caller that genuinely has only the element.
+     */
+    const report = observeAvContinuity(input({ buffered: null }));
+    const codes = report.findings[1]?.reasons.map((reason) => reason.code) ?? [];
+    expect(codes).not.toContain("element_buffered_is_intersection");
+    expect(elementBufferedIsIntersection("a caller that really did").reasons[0]?.code).toBe(
       "element_buffered_is_intersection"
     );
+  });
+
+  it("distinguishes a browser without the frame callback from a session awaiting one", () => {
+    /*
+     * BOTH USED TO BE `frames: null`, and both therefore reported
+     * `frame_callback_unavailable` — "not present on this platform" — which is
+     * a claim about browser support inferred from how early somebody opened a
+     * diagnostics panel.
+     */
+    const unsupported = observeAvContinuity(input({ frames: "callback-unsupported" }));
+    const awaiting = observeAvContinuity(input({ frames: "awaiting-second-callback" }));
+
+    for (const index of [2, 3]) {
+      expect(unsupported.findings[index]?.reasons.map((r) => r.code)).toEqual([
+        "frame_callback_unavailable"
+      ]);
+      expect(awaiting.findings[index]?.reasons.map((r) => r.code)).toEqual([
+        "frame_callback_awaiting_second_reading"
+      ]);
+      expect(unsupported.findings[index]?.evidenceBasis).toBe("unobservable");
+      expect(awaiting.findings[index]?.evidenceBasis).toBe("unobservable");
+    }
+  });
+
+  it("counts a browser with none of the optional metrics as unobservable, not as quiet", () => {
+    /*
+     * THE ADVERSARIAL CASE. A browser with no `requestVideoFrameCallback` and a
+     * playback path with no reachable SourceBuffers must not produce a summary
+     * that a dashboard reads as the healthiest session of the day. `proxiesFired`
+     * is 0 here and it means nothing on its own.
+     */
+    const summary = summariseAvContinuity(
+      observeAvContinuity(
+        input({ buffered: null, frames: "callback-unsupported", engineConfig: null })
+      )
+    );
+    expect(summary.unobservable).toBe(4);
+    expect(summary.proxiesQuiet).toBe(0);
+    // The configuration arm still has evidence: an absent config is `unstated`.
+    expect(summary.proxiesFired).toBe(1);
+  });
+
+  it("does not count an empty SourceBuffer as a quiet video-hole proxy", () => {
+    // An empty buffer is not a contiguous one. Before this distinction existed
+    // the video-hole arm answered `proxyFired: false` here, which
+    // `summariseAvContinuity` counted under `proxiesQuiet`.
+    const summary = summariseAvContinuity(
+      observeAvContinuity(
+        input({
+          buffered: {
+            playheadSeconds: 10.1,
+            video: reading("video", []),
+            audio: reading("audio", [])
+          }
+        })
+      )
+    );
+    expect(summary.proxiesFired).toBe(0);
+    expect(summary.unobservable).toBe(2);
+    expect(summary.proxiesQuiet).toBe(3);
   });
 
   it("counts findings without collapsing the distinction between them", () => {

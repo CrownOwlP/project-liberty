@@ -30,7 +30,7 @@ documented here as proxies.
 | Metric | Evidence source | Fires when | What it is **not** |
 | --- | --- | --- | --- |
 | `com.liberty-avs-video-hole` | `sourceBuffer.buffered`, **per track** | the video SourceBuffer is discontinuous at or just ahead of the playhead while a single audio range covers the same interval | a skew. The magnitude is a span of the media timeline. |
-| `com.liberty-avs-media-time-advance` | `requestVideoFrameCallback` | presented media time did not advance between two frame callbacks | a skew. It says the picture repeated, not where the audio was. |
+| `com.liberty-avs-media-time-advance` | `requestVideoFrameCallback` | presented media time was **identical** across two frame callbacks | a skew. It says the picture repeated, not where the audio was. It is also **not** a backwards seek: a negative delta is reported `unobservable`, not fired. |
 | `com.liberty-avs-presented-frame-gap` | `requestVideoFrameCallback` | more than one frame was presented between callbacks | a dropped-frame count. It is a caveat on the signal above as much as a signal of its own. |
 | `com.liberty-avs-sequence-mode-assertion` | the effective Shaka configuration | `manifest.{dash,hls}.sequenceMode` is `true`, **or is unstated** | evidence about any particular session. It is a configuration risk. |
 | `com.liberty-avs-lip-sync-offset` | — | never; it is always reported as `unobservable` | available. This is the entry that says so out loud. |
@@ -58,6 +58,26 @@ configuration. It is already the shipped default in shaka-player 5.2.6 for both 
 but Shaka's own JSDoc for `manifest.hls.sequenceMode` still claims the HLS default is `true`, and
 there are current reports of drift appearing after an upgrade in players that never wrote it down.
 An unstated value therefore fires the proxy.
+
+**A quiet proxy and an unobservable signal are different answers, and the report keeps them
+apart.** `proxyFired: false` means the comparison was made and the condition was not there.
+`evidenceBasis: "unobservable"` means it could not be made at all, and that finding carries no
+magnitude and no boolean, because a number in that position would be an invention. The cases that
+answer "unobservable" rather than "quiet":
+
+| Situation | Why it is not a quiet proxy |
+| --- | --- |
+| no per-track `sourceBuffer.buffered` readings were supplied | nothing was read, from any source |
+| a supplied track reading has **no** ranges, or the playhead is not finite | the comparison could not be evaluated; an empty SourceBuffer is not a contiguous one |
+| `requestVideoFrameCallback` is not implemented | a statement about the platform, true for the session |
+| the callback has produced fewer than two readings | a statement about *this instant*; it is **not** a statement about browser support, and the two carry different reason codes for exactly that reason |
+| `mediaTime` is `0` on either reading | the specification permits `0` on live, and differencing against it manufactures a stall |
+| `mediaTime` moved backwards | a seek, a loop or a live timeline reset; the two readings are not one uninterrupted sequence |
+| `presentedFrames` did not increase | the counter is monotonic per specification, so likewise |
+
+The distinction matters because `summariseAvContinuity` counts quiet proxies separately from
+unobservable signals, and a dashboard that reads `proxiesQuiet` as "healthy" would otherwise
+count a browser we could not measure at all as a clean session.
 
 ---
 

@@ -20,6 +20,21 @@
  * output only by being classified first, and classification is what selects the
  * emitter. A key added here without a `sensitivity` is a compile error.
  *
+ * THAT LAST SENTENCE WAS FALSE UNTIL IT WAS AUDITED, and the way it was false is
+ * the reason `spec()` now takes `sensitivity` as a required second argument.
+ * `spec()` used to declare `sensitivity: CmcdSensitivity = "safe"`, so `url` and
+ * `nor` were classified only because somebody remembered to classify them, and
+ * the next CTA-5004-B key — v2 is a living draft and has already gained
+ * `ttfbb`, `smrt` and the buffer-starvation family — would have been written
+ * `spec("string")` by somebody who never thought about the question, and would
+ * have entered `CMCD_V2_CLIENT_SAFE_KEYS` on the strength of an omission.
+ * A default that picks the permissive answer turns
+ * "derived, so it cannot drift" into "derived from whatever the default was",
+ * which is the same leak wearing the vocabulary of a control. Defaults remain on
+ * `unit`, `maxLength` and `tokens` because for all three the omitted value is
+ * the CONSERVATIVE one: no unit claimed, the generic length bound, no closed
+ * vocabulary asserted.
+ *
  * WHAT IS NOT HERE. `nrr` was REMOVED in CMCD v2; its range information moved
  * onto `nor`. The vendored library still lists it because it also encodes v1,
  * so a client CAN emit it and mean nothing valid by it. It is enumerated
@@ -121,10 +136,16 @@ const STREAM_TYPES: readonly string[] = ["v", "l", "ll"];
 /** `cml.cmcd.CMCD_TOKEN_VALUES.sta` — the v2 player states. */
 const PLAYER_STATES: readonly string[] = ["s", "p", "k", "r", "a", "w", "e", "f", "q", "d"];
 
+/**
+ * `sensitivity` IS SECOND AND IT HAS NO DEFAULT. See the file header: it is the
+ * one argument whose omitted value would be the permissive one, so it is the one
+ * argument the compiler makes you write. Position rather than an options object
+ * because a table this size stays readable as a table.
+ */
 function spec(
   kind: CmcdValueKind,
+  sensitivity: CmcdSensitivity,
   unit: CmcdUnit = null,
-  sensitivity: CmcdSensitivity = "safe",
   maxLength: number | null = null,
   tokens: readonly string[] | null = null
 ): CmcdKeySpec {
@@ -153,56 +174,56 @@ function spec(
  * `pb`, `tab`, `tbl`, `tpb` — is left unlabelled on purpose; see `CmcdUnit`.
  */
 export const CMCD_V2_KEYS: Readonly<Record<string, CmcdKeySpec>> = {
-  ab: spec("number-list"),
-  bg: spec("boolean"),
-  bl: spec("number-list", "ms"),
-  br: spec("number-list", "kbps"),
-  bs: spec("boolean"),
-  bsa: spec("number-list"),
-  bsd: spec("number-list", "ms"),
-  bsda: spec("number-list", "ms"),
-  cdn: spec("string", null, "safe", 128),
-  cen: spec("string", null, "safe", 64),
-  cid: spec("string", null, "safe", 128),
-  cmsdd: spec("string", null, "safe", 256),
-  cmsds: spec("string", null, "safe", 256),
-  cs: spec("string", null, "safe", 256),
-  d: spec("integer", "ms"),
-  dfa: spec("integer"),
-  dl: spec("integer", "ms"),
-  e: spec("token", null, "safe", null, EVENT_TYPES),
-  ec: spec("string-list"),
-  h: spec("string", null, "url-bearing", 128),
-  lab: spec("number-list"),
-  lb: spec("number-list"),
-  ltc: spec("integer", "ms"),
-  msd: spec("integer", "ms"),
-  mtp: spec("number-list", "kbps"),
-  nor: spec("string-list", null, "url-bearing"),
-  nr: spec("boolean"),
-  ot: spec("token", null, "safe", null, CMCD_OBJECT_TYPES),
-  pb: spec("number-list"),
-  pr: spec("number"),
-  pt: spec("integer", "ms"),
-  rc: spec("integer"),
-  rtp: spec("integer", "kbps"),
-  sf: spec("token", null, "safe", null, STREAMING_FORMATS),
-  sid: spec("string", null, "safe", 64),
-  smrt: spec("string", null, "safe", 256),
-  sn: spec("integer"),
-  st: spec("token", null, "safe", null, STREAM_TYPES),
-  sta: spec("token", null, "safe", null, PLAYER_STATES),
-  su: spec("boolean"),
-  tab: spec("number-list"),
-  tb: spec("number-list", "kbps"),
-  tbl: spec("number-list"),
-  tpb: spec("number-list"),
-  ts: spec("integer", "epoch-ms"),
-  ttfb: spec("integer", "ms"),
-  ttfbb: spec("integer", "ms"),
-  ttlb: spec("integer", "ms"),
-  url: spec("string", null, "url-bearing", 1024),
-  v: spec("integer")
+  ab: spec("number-list", "safe"),
+  bg: spec("boolean", "safe"),
+  bl: spec("number-list", "safe", "ms"),
+  br: spec("number-list", "safe", "kbps"),
+  bs: spec("boolean", "safe"),
+  bsa: spec("number-list", "safe"),
+  bsd: spec("number-list", "safe", "ms"),
+  bsda: spec("number-list", "safe", "ms"),
+  cdn: spec("string", "safe", null, 128),
+  cen: spec("string", "safe", null, 64),
+  cid: spec("string", "safe", null, 128),
+  cmsdd: spec("string", "safe", null, 256),
+  cmsds: spec("string", "safe", null, 256),
+  cs: spec("string", "safe", null, 256),
+  d: spec("integer", "safe", "ms"),
+  dfa: spec("integer", "safe"),
+  dl: spec("integer", "safe", "ms"),
+  e: spec("token", "safe", null, null, EVENT_TYPES),
+  ec: spec("string-list", "safe"),
+  h: spec("string", "url-bearing", null, 128),
+  lab: spec("number-list", "safe"),
+  lb: spec("number-list", "safe"),
+  ltc: spec("integer", "safe", "ms"),
+  msd: spec("integer", "safe", "ms"),
+  mtp: spec("number-list", "safe", "kbps"),
+  nor: spec("string-list", "url-bearing"),
+  nr: spec("boolean", "safe"),
+  ot: spec("token", "safe", null, null, CMCD_OBJECT_TYPES),
+  pb: spec("number-list", "safe"),
+  pr: spec("number", "safe"),
+  pt: spec("integer", "safe", "ms"),
+  rc: spec("integer", "safe"),
+  rtp: spec("integer", "safe", "kbps"),
+  sf: spec("token", "safe", null, null, STREAMING_FORMATS),
+  sid: spec("string", "safe", null, 64),
+  smrt: spec("string", "safe", null, 256),
+  sn: spec("integer", "safe"),
+  st: spec("token", "safe", null, null, STREAM_TYPES),
+  sta: spec("token", "safe", null, null, PLAYER_STATES),
+  su: spec("boolean", "safe"),
+  tab: spec("number-list", "safe"),
+  tb: spec("number-list", "safe", "kbps"),
+  tbl: spec("number-list", "safe"),
+  tpb: spec("number-list", "safe"),
+  ts: spec("integer", "safe", "epoch-ms"),
+  ttfb: spec("integer", "safe", "ms"),
+  ttfbb: spec("integer", "safe", "ms"),
+  ttlb: spec("integer", "safe", "ms"),
+  url: spec("string", "url-bearing", null, 1024),
+  v: spec("integer", "safe")
 };
 
 /**
@@ -279,8 +300,31 @@ export function isLibertyCustomKey(key: string): boolean {
  *
  * Sorted so the emitted configuration is a function of the registry's CONTENT
  * rather than of its declaration order.
+ *
+ * IT MUST NEVER BE EMPTY, and that is a property of the CONSUMER rather than of
+ * this list. shaka-player 5.2.6's `CmcdManager.toReporterConfig_` reads an empty
+ * `includeKeys` as "the caller did not choose" and substitutes
+ * `allKeysForVersion_(2)`, which is every request, response and event key — `url`
+ * and `nor` included. So an allowlist that filtered down to nothing would not
+ * send nothing, it would send everything. `playbackTelemetryConfig` refuses to
+ * emit a CMCD block in that case; the emptiness check belongs there, at the
+ * boundary that knows about Shaka, but the reason is recorded here because this
+ * is the file an edit that could cause it would touch.
  */
 export const CMCD_V2_CLIENT_SAFE_KEYS: readonly string[] = Object.entries(CMCD_V2_KEYS)
   .filter(([, keySpec]) => keySpec.sensitivity === "safe")
+  .map(([key]) => key)
+  .sort();
+
+/**
+ * The other half of the same partition, derived the same way.
+ *
+ * Exported so a test can assert the two lists PARTITION the registry rather than
+ * asserting a remembered set of names — "url, nor and h are excluded" is a claim
+ * about today's registry, and the claim worth pinning is that every key is in
+ * exactly one of the two lists whatever the registry grows into.
+ */
+export const CMCD_V2_URL_BEARING_KEYS: readonly string[] = Object.entries(CMCD_V2_KEYS)
+  .filter(([, keySpec]) => keySpec.sensitivity === "url-bearing")
   .map(([key]) => key)
   .sort();

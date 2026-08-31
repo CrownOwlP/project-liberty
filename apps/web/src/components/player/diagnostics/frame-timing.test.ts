@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { AvContinuityFinding, AvContinuityReasonCode } from "./av-continuity";
 import {
   frameCallbackUnavailable,
+  frameEvidenceAbsent,
   observeFrameContinuity,
   readVideoFrameMetadata,
   type VideoFrameReading
@@ -131,6 +132,47 @@ describe("media time advance", () => {
     expect(codes(advance)).toContain("media_time_did_not_advance");
   });
 
+  it("refuses to call a backwards seek a frozen picture", () => {
+    /*
+     * THE DEFECT THIS TEST PINS. A negative delta used to fall into the
+     * "did not advance" arm, so every backwards scrub fired the frozen-picture
+     * proxy — a rendering fault inferred from a symptom whose ordinary cause is
+     * the user dragging a slider — and carried a NEGATIVE
+     * `seconds-of-media-timeline` magnitude into whatever aggregated it.
+     */
+    const findings = observeFrameContinuity(
+      frame({ mediaTimeSeconds: 12 }),
+      frame({ mediaTimeSeconds: 4, presentedFrames: 301 })
+    );
+
+    const advance = findings[0];
+    expect(advance?.evidenceBasis).toBe("unobservable");
+    expect(codes(advance)).toContain("media_time_moved_backwards");
+    expect(advance).not.toHaveProperty("magnitude");
+  });
+
+  it("does not report a backwards seek as quiet either", () => {
+    // The picture may genuinely have frozen across the seek. "No problem" would
+    // be as much of an invention as "frozen"; the readings simply cannot say.
+    const findings = observeFrameContinuity(
+      frame({ mediaTimeSeconds: 12 }),
+      frame({ mediaTimeSeconds: 11.99, presentedFrames: 301 })
+    );
+    expect(codes(findings[0])).not.toContain("media_time_advanced");
+    expect(codes(findings[0])).not.toContain("media_time_did_not_advance");
+  });
+
+  it("still reports the frame-gap proxy across a backwards seek", () => {
+    // The two arms read different counters and a seek does not reset
+    // `presentedFrames`, so the gap arm keeps its evidence.
+    const findings = observeFrameContinuity(
+      frame({ mediaTimeSeconds: 12 }),
+      frame({ mediaTimeSeconds: 4, presentedFrames: 306 })
+    );
+    expect(findings[1]?.evidenceBasis).toBe("proxy");
+    expect(codes(findings[1])).toContain("presented_frames_skipped");
+  });
+
   it("reports an unusable mediaTime as not observed rather than as no advance", () => {
     const findings = observeFrameContinuity(
       frame({ mediaTimeSeconds: null }),
@@ -188,6 +230,37 @@ describe("platforms without requestVideoFrameCallback", () => {
     for (const finding of findings) {
       expect(finding.evidenceBasis).toBe("unobservable");
       expect(codes(finding)).toContain("frame_callback_unavailable");
+    }
+  });
+
+  it("does not say the API is missing when it is merely awaiting a second reading", () => {
+    /*
+     * A statement about a platform and a statement about an instant. The first
+     * is true for the session; the second stops being true in about sixteen
+     * milliseconds. Reporting the platform claim for both is how a support
+     * matrix built from telemetry ends up wrong.
+     */
+    const findings = frameEvidenceAbsent("awaiting-second-callback");
+    expect(findings).toHaveLength(2);
+    for (const finding of findings) {
+      expect(finding.evidenceBasis).toBe("unobservable");
+      expect(codes(finding)).toEqual(["frame_callback_awaiting_second_reading"]);
+      expect(codes(finding)).not.toContain("frame_callback_unavailable");
+    }
+  });
+
+  it("keeps the named constructor and the string form in agreement", () => {
+    expect(JSON.stringify(frameCallbackUnavailable())).toBe(
+      JSON.stringify(frameEvidenceAbsent("callback-unsupported"))
+    );
+  });
+
+  it("carries no magnitude on either absence, because zero would be a claim", () => {
+    for (const absence of ["callback-unsupported", "awaiting-second-callback"] as const) {
+      for (const finding of frameEvidenceAbsent(absence)) {
+        expect(finding).not.toHaveProperty("magnitude");
+        expect(finding).not.toHaveProperty("proxyFired");
+      }
     }
   });
 });
