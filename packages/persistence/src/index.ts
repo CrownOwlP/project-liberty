@@ -4,7 +4,7 @@
  * Re-export only; nothing is defined here.
  *
  * The pure modules (`writer-epoch`, `watchlist-mutation`, `heartbeat`,
- * `contracts`) are exported
+ * `profile-creation`, `contracts`) are exported
  * alongside the repositories deliberately: a caller that only needs to reason
  * about a write conflict should not have to import a module that constructs a
  * connection pool, and keeping them in one package is what lets the SQL guard
@@ -14,6 +14,7 @@
 export * from "./client";
 export * from "./contracts";
 export * from "./heartbeat";
+export * from "./profile-creation";
 export * from "./profile-repository";
 export * from "./progress-repository";
 export * from "./watchlist-mutation";

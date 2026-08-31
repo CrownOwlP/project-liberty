@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   PROFILE_ACCESS_CHECK_ORDER,
   authorizeProfileAccess,
-  authorizeProfileSelection
+  authorizeProfileSelection,
+  externalProfileAccessReason
 } from "./authorization";
 import type { LibertySession, ProfileOwnership } from "./session";
 import { scopeBelongsToSession } from "./session";
@@ -202,5 +203,70 @@ describe("authorizeProfileSelection", () => {
     expect(decision.allowed).toBe(false);
     if (decision.allowed) return;
     expect(decision.reason).toBe("profile_archived");
+  });
+});
+
+describe("externalProfileAccessReason", () => {
+  /**
+   * The enumeration oracle, closed.
+   *
+   * The internal vocabulary stays sharp -- support and alerting both need
+   * `profile_not_owned_by_account` to be a different finding from
+   * `profile_not_found`, because only the first is somebody probing another
+   * household. What must not happen is that distinction reaching the caller,
+   * where it answers "does a profile with this id exist anywhere in the
+   * product" one request at a time.
+   */
+  it("cannot tell a profile that does not exist from one that is not yours", () => {
+    const invented = authorizeProfileAccess({
+      session: session("profile_ghost"),
+      requestedProfileId: "profile_ghost",
+      ownership: null
+    });
+    const somebodyElses = authorizeProfileAccess({
+      session: session("profile_adult"),
+      requestedProfileId: "profile_adult",
+      ownership: ownership({ ownerUserId: OTHER_HOUSEHOLD })
+    });
+
+    if (invented.allowed || somebodyElses.allowed) throw new Error("expected two denials");
+
+    // Different findings internally...
+    expect(invented.reason).not.toBe(somebodyElses.reason);
+    // ...and one indistinguishable answer on the way out. This is the assertion
+    // that fails if somebody "improves" the error message.
+    expect(externalProfileAccessReason(invented.reason)).toBe("profile_unavailable");
+    expect(externalProfileAccessReason(somebodyElses.reason)).toBe(
+      externalProfileAccessReason(invented.reason)
+    );
+  });
+
+  it.each([
+    // Reached only for a profile this account already owns, so it reveals
+    // nothing the caller did not already have.
+    { reason: "profile_archived", external: "profile_archived" },
+    { reason: "requested_profile_is_not_active", external: "requested_profile_is_not_active" },
+    // A fact about this session. The profile picker cannot be built without it.
+    { reason: "no_active_profile_selected", external: "no_active_profile_selected" }
+  ] as const)("passes $reason through unchanged", ({ reason, external }) => {
+    expect(externalProfileAccessReason(reason)).toBe(external);
+  });
+
+  it("has an answer for every denial the decision can reach", () => {
+    // Walks PROFILE_ACCESS_CHECK_ORDER rather than an enumerated list, so a
+    // reason added to the union without being classified here is caught by this
+    // test as well as by the compiler's exhaustiveness check.
+    for (const reason of PROFILE_ACCESS_CHECK_ORDER) {
+      expect(typeof externalProfileAccessReason(reason)).toBe("string");
+    }
+  });
+
+  it("never emits a reason that names ownership", () => {
+    // The property stated negatively, which is the version that catches the
+    // regression: any external vocabulary containing the word "owned" is one
+    // that has told the caller whose profile it is.
+    const external = PROFILE_ACCESS_CHECK_ORDER.map(externalProfileAccessReason);
+    expect(external.filter((reason) => reason.includes("owned"))).toEqual([]);
+    expect(external.filter((reason) => reason.includes("not_found"))).toEqual([]);
   });
 });

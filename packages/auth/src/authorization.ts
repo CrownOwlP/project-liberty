@@ -163,6 +163,68 @@ export function authorizeProfileAccess(request: ProfileAccessRequest): ProfileAc
 }
 
 /**
+ * The reason vocabulary that is allowed to LEAVE the server.
+ *
+ * `ProfileAccessReason` is the internal one and stays as sharp as it is: a
+ * support engineer and an alerting rule both need `profile_not_found` and
+ * `profile_not_owned_by_account` to be different findings, because only the
+ * second is somebody probing another household. Sending that distinction to the
+ * caller, however, hands an authenticated attacker an ORACLE -- ask about an id,
+ * and the answer tells you whether a profile with that id exists anywhere in the
+ * product. Iterate, and you have enumerated the profile table.
+ *
+ * BOTH LEAKS ARE REAL AND THIS PROJECT PREFERS THE FIRST. The two available
+ * failures are (a) the caller cannot tell "no such profile" from "not yours",
+ * which costs a user with a genuinely stale link a slightly vaguer message, and
+ * (b) the caller CAN tell, which costs every household a way to discover that
+ * other households' profiles exist. (a) degrades one error message; (b) is a
+ * confidentiality boundary, and it is the one that cannot be undone once a
+ * scraper has run. So the two collapse to `profile_unavailable` on the way out.
+ *
+ * The other three do NOT collapse, and the rule is what they reveal rather than
+ * how serious they sound: `profile_archived` and `requested_profile_is_not_active`
+ * are only ever reached for a profile this account already owns, and
+ * `no_active_profile_selected` is a fact about this session. None of them says
+ * anything about a profile the caller does not already have. Flattening those
+ * into `profile_unavailable` too would buy nothing and would make the profile
+ * picker -- which needs `no_active_profile_selected` specifically -- unbuildable.
+ *
+ * ENFORCEMENT IS AT THE EDGE, NOT HERE. `ProfileAccessDecision.trail` still
+ * carries every internal reason; it is a server-side artefact for logs. Any
+ * layer that serialises a denial into a response body must map it through this
+ * function, and `PL-0501`'s reason-carrying discriminated union is exactly the
+ * shape where forgetting to would be invisible.
+ */
+export type ExternalProfileAccessReason =
+  | "no_active_profile_selected"
+  | "profile_unavailable"
+  | "profile_archived"
+  | "requested_profile_is_not_active";
+
+/**
+ * Narrow an internal denial to what may be told to the caller.
+ *
+ * A total `switch` with no `default`, deliberately: adding a member to
+ * `ProfileAccessReason` then fails to compile here rather than falling through
+ * to a catch-all that would leak the new reason verbatim. A `default` branch is
+ * the version of this function that is wrong the first time somebody extends the
+ * union.
+ */
+export function externalProfileAccessReason(
+  reason: Exclude<ProfileAccessReason, "active_profile_of_session">
+): ExternalProfileAccessReason {
+  switch (reason) {
+    case "profile_not_found":
+    case "profile_not_owned_by_account":
+      return "profile_unavailable";
+    case "no_active_profile_selected":
+    case "profile_archived":
+    case "requested_profile_is_not_active":
+      return reason;
+  }
+}
+
+/**
  * Whether a profile may be SELECTED by this session -- the profile-picker
  * decision, which necessarily runs before any profile is active.
  *
