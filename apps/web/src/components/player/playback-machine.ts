@@ -84,7 +84,7 @@ import type { FailoverPolicy, PlaybackAttemptFailure, PlaybackFailureKind } from
  * quietly put the ranking and scoring engine back in the player bundle. That is
  * why the narrow path is stated here rather than left to a bundler to discover.
  */
-import { scheduleAttempts, type AttemptSchedule } from "@liberty/media-engine/scheduling";
+import { boundedPolicy, scheduleAttempts, type AttemptSchedule } from "@liberty/media-engine/scheduling";
 import { assign, createActor, setup } from "xstate";
 import {
   NO_OP_PLAYBACK_EFFECTS,
@@ -383,6 +383,11 @@ export interface PlaybackMachineContext {
    * remount or a DOM move, both of which destroy the Shaka session. Distinguished
    * from a failover because it is NOT the candidate's fault and must not be
    * charged against the attempt budget.
+   *
+   * READ THROUGH `isReattach`, NEVER BARE. The flag says the engine was
+   * destroyed; it does not say there was an attempt to resume, and a destruction
+   * that arrives before the first `load()` raises it just the same. See that
+   * function for what goes wrong when the two are treated as one question.
    */
   readonly reattaching: boolean;
   /** Mirrored, never commanded. The controls layer owns pausing. */
@@ -435,6 +440,36 @@ export interface PlaybackMachineInput {
  * that a dozen is a retry storm.
  *
  * A COUNT rather than a window, because a window needs a clock. See the header.
+ *
+ * IT IS A SECOND PER-CANDIDATE BOUND AND IT IS NOT ON THE WIRE, so the limit a
+ * viewer actually experiences is the product of two policies and the session
+ * response states one of them. That is a real cost and it is accepted rather than
+ * overlooked, for two reasons that are about what the two bounds MEASURE:
+ *
+ *   - They are not the same operation. `FailoverPolicy` bounds ATTEMPTS — a
+ *     `load()`, a teardown, a new candidate or the same one again — and
+ *     `maxTransientRetriesPerCandidate` bounds how many of those one candidate
+ *     may consume. This bounds `retryStreaming()`, which loads nothing, switches
+ *     nothing, re-establishes no DRM session and costs no attempt. Folding it
+ *     into `maxAttempts` would let a stream-level stall consume the budget that
+ *     exists to reach a DIFFERENT stream, which is the failure mode
+ *     breadth-before-depth was written to prevent.
+ *   - A server cannot state it. `retryStreaming()` is an OPTIONAL member of the
+ *     engine port (`engine.ts`), optional because the hls.js contingency
+ *     `docs/RESEARCH_PLAYBACK.md` leaves open has no equivalent, so a published
+ *     bound would be a bound on an operation the client's engine may not offer —
+ *     and a client whose engine lacks it enforces `0` whatever the wire said.
+ *     `player-surface.tsx` already treats its absence as a plan rather than a
+ *     crash.
+ *
+ * What the accepted cost does NOT excuse is the bound being invisible. It is
+ * stated in the reason trail at the moment it decides anything — see
+ * `describeCandidateFailure` — so a support engineer reading a trail is told what
+ * ended a run of `recoverable_error` lines rather than having to find this file.
+ *
+ * If `FailoverPolicy` ever gains a stream-recovery bound in `@liberty/contracts`,
+ * this constant becomes that field's default and the machine reads
+ * `context.policy`; nothing else here has to change.
  */
 export const MAX_STREAMING_RECOVERIES_PER_CANDIDATE = 3;
 
@@ -622,6 +657,64 @@ function scheduleFor(context: PlaybackMachineContext): AttemptSchedule {
 }
 
 /**
+ * The two questions asked of the schedule, as predicates rather than as guards.
+ *
+ * They exist because SIX guards ask them and two of those six ask them alongside
+ * a fact about the engine. Writing `scheduleFor(context).next !== null` into each
+ * of those guard bodies would put the budget derivation in six places, which is
+ * the shape of the defect `scheduleAttempts` was extracted to end — a policy that
+ * lives in more than one place is a policy that has already diverged and is
+ * waiting to be noticed. Composing the guards with XState's `and([...])` would
+ * have said the same thing more briefly and was not taken: the composed form has
+ * to infer the machine's context and event types from a builder the guards are
+ * being defined into, and a predicate this file can state in one line is not
+ * worth an inference this file cannot check locally.
+ */
+function scheduleProceedsFor(context: PlaybackMachineContext): boolean {
+  return scheduleFor(context).next !== null;
+}
+
+function scheduleSpentTheBudgetFor(context: PlaybackMachineContext): boolean {
+  return scheduleFor(context).reason === "attempt_limit_reached";
+}
+
+/**
+ * A rebuild that RESUMES a charged attempt — which is what makes it free.
+ *
+ * The reattach branch is the ONE place a `load()` is issued without being charged
+ * or budgeted, and it has to be: a React remount destroys the Shaka session
+ * through no fault of the candidate, and refusing to rebuild because the attempt
+ * budget is spent would strand a viewer forty minutes into a film. An exemption
+ * that broad has a precondition — that there is an attempt to resume — and this
+ * states it rather than leaving it to be inferred.
+ *
+ * `context.reattaching` alone does NOT state it. The flag is raised for every
+ * destruction, whether or not anything was under way, so `reattaching &&
+ * attemptsUsed === 0` would describe a rebuild that issues the session's FIRST
+ * `load()` through the uncharged door: outside the budget, and invisible to
+ * `scheduleAttempts`, so a candidate that had been loaded and had failed with an
+ * error nobody could classify would still look untried, `charges > kinds.length`
+ * would stay false, and `attempt_failed_unclassified` would never fire for it.
+ * That is the hole `ChargedAttempts` closed, reached through another door.
+ *
+ * IT IS NOT REACHABLE TODAY, and the reason is worth naming because it is not a
+ * property of this predicate. `markReattaching` runs only on `active`'s
+ * `ENGINE_STATE destroyed` branch, and while the machine sits in `engineLoading`
+ * that branch is SHADOWED — `engineLoading` handles `ENGINE_STATE` itself and its
+ * last entry is unguarded, so a destruction arriving before the first `load()` is
+ * mirrored and nothing else. Every state that can raise the flag was therefore
+ * entered through a `countAttempt`. So the guard is unreachable by way of a
+ * shadowing rule two hundred lines away, in a different node, written for an
+ * entirely different reason. That is exactly the kind of safety nobody should
+ * have to reconstruct to review a budget exemption — reorder `engineLoading`'s
+ * handlers, or give `active`'s destroyed branch a narrower descendant, and the
+ * exemption silently widens. Asserting the precondition costs one comparison.
+ */
+function isReattach(context: PlaybackMachineContext): boolean {
+  return context.reattaching && context.attemptsUsed > 0;
+}
+
+/**
  * The engine's terminal reason, in the client's vocabulary.
  *
  * A TRANSLATION, not a second decision. `scheduleAttempts` decides THAT the
@@ -663,6 +756,40 @@ function stopReasonFor(schedule: AttemptSchedule): PlaybackStopReason {
     schedule.excluded.length > 0 &&
     schedule.excluded.every((entry) => entry.reason === "rights_not_established");
   return allRights ? "all_candidates_rights_blocked" : "candidates_exhausted";
+}
+
+/**
+ * The failure line, with the SECOND per-candidate bound named where it binds.
+ *
+ * `MAX_STREAMING_RECOVERIES_PER_CANDIDATE` is not on the wire and — as things
+ * stand — cannot be. `FailoverPolicy` lives in `@liberty/contracts`, and
+ * `retryStreaming()` is an OPTIONAL member of the engine port (see `engine.ts`,
+ * where it is optional precisely because the hls.js contingency has no
+ * equivalent), so a server publishing a bound on it would be publishing a bound
+ * on an operation the client's engine may not offer at all. That is the argument
+ * for leaving it a client constant, and it does not dispose of the cost: how long
+ * a viewer waits on one candidate is governed by TWO bounds and only one of them
+ * is stated anywhere a reader will look. A support engineer reading a trail would
+ * see a candidate abandoned after a run of `recoverable_error` lines with nothing
+ * saying what ended the run.
+ *
+ * So the bound is stated in the trail at the one moment it decides anything, and
+ * the clause is never speculative. `errorIsRecoverableWithinBudget` refuses a
+ * non-fatal error on three conditions — fatal, aborted, or out of budget — and
+ * two of them are already gone by the time this runs: `fatal` is what this
+ * branches on, and an aborted error was taken by `errorIsAborted` one branch
+ * earlier. A non-fatal error is therefore here for exactly one reason. A fatal
+ * one was never subject to the bound and says nothing about it.
+ */
+function describeCandidateFailure(
+  context: PlaybackMachineContext,
+  summary: PlaybackErrorSummary
+): string {
+  if (summary.fatal) return summary.message;
+  return (
+    `${summary.message} (promoted to a failover after ${context.recoveriesOnCandidate} of ` +
+    `${MAX_STREAMING_RECOVERIES_PER_CANDIDATE} stream recoveries allowed on one candidate)`
+  );
 }
 
 function recordFailure(
@@ -723,13 +850,36 @@ export const playbackMachine = setup({
     engineEventIsDestroyed: ({ event }) =>
       event.type === "ENGINE_STATE" && event.state.status === "destroyed",
     engineEventIsReadyAfterReattach: ({ context, event }) =>
-      event.type === "ENGINE_STATE" && event.state.status === "ready" && context.reattaching,
+      event.type === "ENGINE_STATE" && event.state.status === "ready" && isReattach(context),
 
     /* Read from CONTEXT, for the case where the engine became ready before the
      * session did and no further event is coming. */
     engineIsReady: ({ context }) => context.engine.status === "ready",
-    engineIsReadyAfterReattach: ({ context }) => context.engine.status === "ready" && context.reattaching,
+    engineIsReadyAfterReattach: ({ context }) => context.engine.status === "ready" && isReattach(context),
     engineIsUnavailable: ({ context }) => context.engine.status === "unavailable",
+
+    /**
+     * A ready engine AND a schedule that admits the attempt — the pair, asked
+     * together, because `engineLoading` has to route on both at once.
+     *
+     * Four guards where a naive reading wants two, and the duplication is the
+     * event/context split this file already makes everywhere else: a decision
+     * taken while an `ENGINE_STATE` is being delivered reads the EVENT, so it
+     * cannot depend on whether the sibling region's assignment has landed yet,
+     * and the eventless variant reads CONTEXT because no further event is coming.
+     * Both halves defer to the same two predicates, so there is still exactly one
+     * derivation of the budget.
+     */
+    engineIsReadyWithinBudget: ({ context }) =>
+      context.engine.status === "ready" && scheduleProceedsFor(context),
+    engineIsReadyWithBudgetSpent: ({ context }) =>
+      context.engine.status === "ready" && scheduleSpentTheBudgetFor(context),
+    engineEventIsReadyWithinBudget: ({ context, event }) =>
+      event.type === "ENGINE_STATE" && event.state.status === "ready" && scheduleProceedsFor(context),
+    engineEventIsReadyWithBudgetSpent: ({ context, event }) =>
+      event.type === "ENGINE_STATE" &&
+      event.state.status === "ready" &&
+      scheduleSpentTheBudgetFor(context),
 
     errorIsAborted: ({ event }) => event.type === "ENGINE_ERROR" && event.error.aborted,
     /**
@@ -767,8 +917,8 @@ export const playbackMachine = setup({
      * attemptable is by definition one nothing has ruled out, and
      * `rights_unverifiable` can never be among them at any budget.
      */
-    scheduleProceeds: ({ context }) => scheduleFor(context).next !== null,
-    scheduleSpentTheBudget: ({ context }) => scheduleFor(context).reason === "attempt_limit_reached",
+    scheduleProceeds: ({ context }) => scheduleProceedsFor(context),
+    scheduleSpentTheBudget: ({ context }) => scheduleSpentTheBudgetFor(context),
 
     /**
      * The element's clock moved forward.
@@ -953,6 +1103,33 @@ export const playbackMachine = setup({
       const untried = schedule.attemptable.filter(
         (candidateId) => attemptsCharged(context.attemptsByCandidate, candidateId) === 0
       );
+      /*
+       * THE BUDGET THIS LINE QUOTES IS THE ONE THAT WAS ENFORCED, which is not
+       * always the one the caller stated. `boundedPolicy` reads a `NaN` bound as
+       * `0`, on purpose — every comparison against `NaN` is false, so an
+       * unrepaired `NaN` would mean NO bound and an unbounded reload loop — and
+       * a trail quoting `NaN` would then be reporting a limit that stopped
+       * nothing. That is the published-versus-enforced divergence this whole
+       * routing exists to close, in miniature, so `scheduling.ts` states that the
+       * bounded policy "is the only one anything may quote".
+       *
+       * The stated bound is not dropped, though: when the two differ, the caller
+       * handed this machine a budget that cannot express one, and hiding that
+       * behind a plausible `0` would turn a caller's bug into what looks like a
+       * deliberate policy. Both numbers appear, and only when they disagree.
+       */
+      const supplied = context.policy.maxAttempts;
+      const enforced = boundedPolicy(context.policy).maxAttempts;
+      /* "Did the repair change anything", asked generally rather than as
+       * `Number.isNaN(supplied)`, so the sentence stays true whatever
+       * `boundedPolicy` repairs next. The `NaN` test is first because `NaN !==
+       * NaN`: today's one repaired value would report a difference for the right
+       * reason by accident, and a future repair that PRODUCED `NaN` would report
+       * no difference by the same accident. */
+      const repaired = Number.isNaN(supplied) || enforced !== supplied;
+      const budget = repaired
+        ? `${enforced} (enforced; the policy supplied ${supplied}, which cannot express a bound)`
+        : `${enforced}`;
       return {
         stopReason: "attempt_limit_reached" as const,
         ...appendTrail(
@@ -961,8 +1138,8 @@ export const playbackMachine = setup({
             context,
             "stopped",
             untried.length > 0
-              ? `attempt budget of ${context.policy.maxAttempts} spent while ${untried.length} candidate(s) had never been tried: ${untried.join(", ")}`
-              : `attempt budget of ${context.policy.maxAttempts} spent; the ${schedule.attemptable.length} candidate(s) still attemptable had all been tried at least once`
+              ? `attempt budget of ${budget} spent while ${untried.length} candidate(s) had never been tried: ${untried.join(", ")}`
+              : `attempt budget of ${budget} spent; the ${schedule.attemptable.length} candidate(s) still attemptable had all been tried at least once`
           )
         )
       };
@@ -1135,33 +1312,45 @@ export const playbackMachine = setup({
       if (event.type !== "ENGINE_ERROR") return {};
       const summary = summarisePlaybackError(event.error);
       /*
-       * THE CLASSIFIER GETS FIRST SAY, WHATEVER THE SEVERITY.
+       * THE CLASSIFIER IS THE ONLY VOICE, AND THERE IS NO FALLBACK KIND. The
+       * absence of one is the fix, not an omission.
        *
-       * A non-fatal error only reaches this branch when the recovery budget for
-       * this candidate is already spent — `errorIsRecoverableWithinBudget` took
-       * every other case — and that is `transient_retries_exhausted` in the
-       * failover vocabulary. But "the budget ran out" describes how we got here,
-       * not what went wrong, and asserting `network_transient` from it asserts
-       * the ONE kind `RETRYABLE_FAILURE_KINDS` admits. A RECOVERABLE DRM or
-       * MANIFEST error recorded as transient would reach `scheduleAttempts` as a
-       * kind `PLAYBACK_FAILURE_POLICY` marks retryable, `exclusionFor` would
-       * leave the candidate in the attemptable pool, and `failingOver` would
-       * re-load it: a second attempt to play something we may not be entitled to
-       * play, which invariants 1 and 2 forbid outright. That is not a guard this
-       * file could tighten to compensate — `failures` IS the evidence the engine
-       * decides on, so the guess would become policy the moment it is written.
+       * There was one. A non-fatal error the classifier could not place was
+       * recorded as `network_transient`, justified like this: a non-fatal error
+       * only reaches this branch once `errorIsRecoverableWithinBudget` has
+       * refused it, which means the recovery budget for this candidate is spent,
+       * which is `transient_retries_exhausted` in the failover vocabulary. Every
+       * step of that is true and the conclusion is still wrong, because it
+       * describes HOW WE GOT HERE rather than what went wrong — and
+       * `network_transient` is the one kind `PLAYBACK_FAILURE_POLICY` marks
+       * retryable, so the guess did not merely mislabel a trail line. It bought
+       * the candidate another `load()`.
        *
-       * The transient fallback therefore applies only where the classifier
-       * genuinely cannot tell AND the error was not fatal — a stall Shaka
-       * reported under a category with no category-level answer, which is the
-       * case the budget bound was written for. A FATAL error the classifier
-       * cannot place stays `null`: unclassified, absent from `failures`, and not
-       * retried. That is rule 1 in `playback-failure.ts`, and `null` there is an
-       * answer rather than a failure to answer.
+       * IT WAS REACHABLE, AND IT WAS REACHABLE ON A RIGHTS ERROR. A RECOVERABLE
+       * `BAD_HTTP_STATUS` carrying 451 — or 400, or any status
+       * `classifyHttpStatus` deliberately refuses to rule on — classifies as
+       * `null`, and the fallback converted it into a retryable transient failure.
+       * `exclusionFor` then left the candidate in the attemptable pool and
+       * `failingOver` re-loaded it: a second attempt to play something whose
+       * entitlement we could not establish, which invariants 1 and 2 forbid
+       * outright. No guard in this file could have compensated, because
+       * `failures` IS the evidence `scheduleAttempts` decides on — the guess
+       * became policy the moment it was written down. The comment that stood here
+       * claimed the fallback applied only to "a stall Shaka reported under a
+       * category with no category-level answer"; nothing in the code narrowed it
+       * that way, and a 451 is neither a stall nor a category-level gap.
+       *
+       * NOTHING IS LOST BY REMOVING IT, because the honest replacement already
+       * exists and post-dates the fallback. `null` keeps the failure out of
+       * `failures` — rule 1 in `playback-failure.ts` — while `countAttempt` has
+       * already charged the attempt to this candidate, so `scheduleAttempts` sees
+       * more attempts than named failures and rules it out as
+       * `attempt_failed_unclassified`. The candidate is not retried, the finding
+       * is itemised in the stop line, and no kind was invented to achieve either.
+       * The fallback was the workaround for an exclusion that did not exist yet.
        */
-      const classified = classifyPlaybackFailure(event.error);
-      const kind = classified ?? (event.error.fatal ? null : "network_transient");
-      return recordFailure(context, summary, kind, summary.message);
+      const kind = classifyPlaybackFailure(event.error);
+      return recordFailure(context, summary, kind, describeCandidateFailure(context, summary));
     }),
 
     recordMediaFailure: assign(({ context, event }) => {
@@ -1392,12 +1581,72 @@ export const playbackMachine = setup({
              * `ENGINE_STATE` is coming and waiting for one would hang forever.
              * The event one covers the ordinary case without depending on when
              * the sibling region's assignment becomes visible.
+             *
+             * THE FIRST ATTEMPT IS GOVERNED BY THE PUBLISHED POLICY, LIKE EVERY
+             * LATER ONE, and that is a correction. This transition used to be
+             * `engineIsReady -> loading, countAttempt`, unguarded: it charged an
+             * attempt and issued a `load()` without ever asking the schedule
+             * whether the budget admitted one. `failingOver` asked; the first
+             * attempt did not, so the machine enforced `maxAttempts` for attempts
+             * 2..n and exempted attempt 1 — a policy nobody wrote down and the
+             * server could not express.
+             *
+             * IT IS REACHABLE BECAUSE THE POLICY IS NEVER PARSED ON THIS SIDE.
+             * `failoverPolicySchema` requires `maxAttempts` to be a positive
+             * integer, but `PlaybackMachineInput.policy` is a `FailoverPolicy`
+             * TYPE, not a parse of one, and `scheduling.ts`'s `boundedPolicy`
+             * says the same thing from the other end — it exists because a
+             * browser reaches `scheduleAttempts` with an unvalidated policy. A
+             * `0` budget, a negative one, or a `NaN` (which `boundedPolicy` reads
+             * as `0`, deliberately, so an unbounded reload loop is impossible)
+             * all stopped the session — after one unbudgeted `load()` at a URL
+             * the policy said we were not to attempt. The property suite could
+             * not see it: `failoverPolicyArb` in `@liberty/contracts/testing`
+             * generates `maxAttempts` from 1 upwards.
+             *
+             * THE THREE OUTCOMES ARE THE SAME THREE `failingOver` ROUTES, for the
+             * same reason and in the same order, so there is one policy with one
+             * set of consequences rather than a policy and an exemption. What is
+             * NOT asked is which candidate: with no failures and no charges the
+             * schedule's head is `candidates[0]`, which is what `adoptSession`
+             * already selected, and re-deriving the index here would put a second
+             * answer to "which candidate is current" in a state whose whole job is
+             * to wait for an engine.
+             *
+             * THE REATTACH BRANCH STAYS UNGUARDED, and the asymmetry is the
+             * point. Rebuilding an engine that a remount destroyed is not an
+             * attempt, is not charged, and must not be refusable by a budget —
+             * stranding a viewer forty minutes into a film because the attempt
+             * budget happens to be spent would be enforcing the policy against an
+             * event the policy is not about.
              */
             engineLoading: {
               always: [
                 { guard: "engineIsUnavailable", target: "#fatal", actions: "stopWithEngineUnavailable" },
                 { guard: "engineIsReadyAfterReattach", target: "loading", actions: "clearReattaching" },
-                { guard: "engineIsReady", target: "loading", actions: "countAttempt" }
+                /* `clearReattaching` here too. It is a no-op on every reachable
+                 * path — nothing raises the flag before the first attempt (see
+                 * `isReattach`) — and it is what keeps this branch and the one
+                 * above it from disagreeing about the flag's lifetime if that ever
+                 * changes: whichever door a load leaves by, the rebuild is over. */
+                {
+                  guard: "engineIsReadyWithinBudget",
+                  target: "loading",
+                  actions: ["clearReattaching", "countAttempt"]
+                },
+                {
+                  guard: "engineIsReadyWithBudgetSpent",
+                  target: "#fatal",
+                  actions: "stopWithAttemptLimit"
+                },
+                /* Unreachable today and carried anyway, exactly as the third
+                 * branch of `failingOver` is: with no failures and no charges
+                 * `exclusionFor` rules nothing out, so a session that reached
+                 * `active` at all has a non-empty `attemptable`. Leaving it off
+                 * would make the routing total only by accident of the schedule's
+                 * current answers, and a `ready` engine with nowhere to go would
+                 * sit in `engineLoading` for ever with no stop reason. */
+                { guard: "engineIsReady", target: "#fatal", actions: "stopWithExhausted" }
               ],
               on: {
                 ENGINE_STATE: [
@@ -1412,9 +1661,19 @@ export const playbackMachine = setup({
                     actions: ["mirrorEngineState", "clearReattaching"]
                   },
                   {
-                    guard: "engineEventIsReady",
+                    guard: "engineEventIsReadyWithinBudget",
                     target: "loading",
-                    actions: ["mirrorEngineState", "countAttempt"]
+                    actions: ["mirrorEngineState", "clearReattaching", "countAttempt"]
+                  },
+                  {
+                    guard: "engineEventIsReadyWithBudgetSpent",
+                    target: "#fatal",
+                    actions: ["mirrorEngineState", "stopWithAttemptLimit"]
+                  },
+                  {
+                    guard: "engineEventIsReady",
+                    target: "#fatal",
+                    actions: ["mirrorEngineState", "stopWithExhausted"]
                   },
                   { actions: "mirrorEngineState" }
                 ]

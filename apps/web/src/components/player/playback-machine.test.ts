@@ -74,6 +74,31 @@ const interruptedFailure = () => shakaError({ severity: 2, category: 7, code: 70
  * for a `BAD_HTTP_STATUS` carrying an unmapped status such as 400 or 451.
  */
 const unclassifiedFailure = () => shakaError({ severity: 2, category: 5, code: 3016 });
+/**
+ * BAD_HTTP_STATUS 451, RECOVERABLE, and the sharpest shape of the same thing.
+ *
+ * `classifyHttpStatus` refuses to rule on 451 — "Unavailable For Legal Reasons"
+ * is not a status this player has a remedy for, and the contract says a reporter
+ * that cannot tell must report nothing. Because the severity is RECOVERABLE it
+ * reaches `recordCandidateFailure` only after the per-candidate recovery budget
+ * is spent, which is exactly the branch that used to answer `network_transient`
+ * — the one kind `PLAYBACK_FAILURE_POLICY` marks retryable. So a legal refusal
+ * bought itself another `load()`.
+ *
+ * The URI carries a query string on purpose: the same fixture doubles as the
+ * assertion that nothing routes around `redactMediaUrl` on its way into the
+ * trail.
+ */
+const recoverableLegalRefusal = () =>
+  shakaError({
+    severity: 1,
+    category: 1,
+    code: 1001,
+    /* A host of its own, distinct from the one `candidate()` builds, so the
+     * "origin and path survive" assertion can only be satisfied by the redacted
+     * error detail and not by the session's own candidate list. */
+    data: ["https://edge-7.cdn.example.com/a.mpd?token=SIGNATURE-MUST-NOT-LEAK", 451]
+  });
 
 const ENGINE_READY: EngineState = { status: "ready" };
 const ENGINE_LOADING: EngineState = { status: "loading" };
@@ -490,6 +515,235 @@ describe("an error the classifier could not place ends the attempt without earni
     expect(failover?.detail).toContain("a -> b: failover_to_next_candidate");
     expect(failover?.detail).not.toContain("first_attempt");
     expect(h.effects.loads.map((load) => load.candidate?.id)).toEqual(["b"]);
+  });
+
+  it("does not answer a RECOVERABLE error it cannot place with a retryable kind", () => {
+    /*
+     * THE REGRESSION THIS FILE EXISTS TO PIN. `recordCandidateFailure` used to
+     * fall back to `network_transient` for any non-fatal error the classifier
+     * could not place, reasoning that a non-fatal error reaching that branch has
+     * spent its recovery budget and that "is" a transient exhaustion. Every step
+     * of that is true and the conclusion is a guessed kind — the ONE kind
+     * `PLAYBACK_FAILURE_POLICY` marks retryable.
+     *
+     * A RECOVERABLE 451 is where it bit. One candidate, four attempts of budget:
+     * the fallback recorded `network_transient`, `exclusionFor` left the
+     * candidate attemptable because one transient failure is inside a
+     * per-candidate budget of one, and `failingOver` re-loaded it — a second
+     * attempt to play something a legal refusal had just declined, which
+     * invariants 1 and 2 forbid at any budget. It loads ONCE now, and the
+     * candidate leaves the pool on the arithmetic alone.
+     */
+    const h = playing(["a"], { maxAttempts: 4, maxTransientRetriesPerCandidate: 1 });
+    for (let attempt = 0; attempt <= MAX_STREAMING_RECOVERIES_PER_CANDIDATE; attempt += 1) {
+      h.send({ type: "ENGINE_ERROR", error: recoverableLegalRefusal() });
+    }
+
+    expect(h.effects.streamingRetries).toHaveLength(MAX_STREAMING_RECOVERIES_PER_CANDIDATE);
+    expect(h.effects.loads.map((load) => load.candidate?.id)).toEqual(["a"]);
+    expect(h.phase()).toBe("fatal");
+
+    /* Nothing was claimed. The trail carries the event with no kind, and the
+     * finding is stated in the engine's exclusion vocabulary. */
+    expect(h.actor.getSnapshot().context.failures).toEqual([]);
+    const failed = h.trail().find((entry) => entry.kind === "candidate_failed");
+    expect(failed?.failureKind).toBeNull();
+    expect(h.actor.getSnapshot().context.stopReason).toBe("candidates_exhausted");
+    expect(h.trail().find((entry) => entry.kind === "stopped")?.detail).toContain(
+      "a=attempt_failed_unclassified"
+    );
+    expect(h.trail().find((entry) => entry.kind === "candidate_retry")).toBeUndefined();
+  });
+
+  it("names the recovery bound in the trail, since it is not on the wire", () => {
+    /*
+     * `MAX_STREAMING_RECOVERIES_PER_CANDIDATE` is a second per-candidate bound
+     * that no session response states, so the limit a viewer experiences is the
+     * product of two policies. It cannot go on the wire — `retryStreaming()` is
+     * an optional member of the engine port — so it is published where it decides
+     * something instead. Without this line a support engineer sees a run of
+     * recoverable errors end for no stated reason.
+     */
+    const h = playing(["a", "b"], { maxAttempts: 4, maxTransientRetriesPerCandidate: 0 });
+    for (let attempt = 0; attempt <= MAX_STREAMING_RECOVERIES_PER_CANDIDATE; attempt += 1) {
+      h.send({ type: "ENGINE_ERROR", error: recoverableFailure() });
+    }
+
+    const failed = h.trail().find((entry) => entry.kind === "candidate_failed");
+    expect(failed?.detail).toContain(
+      `${MAX_STREAMING_RECOVERIES_PER_CANDIDATE} stream recoveries allowed on one candidate`
+    );
+
+    /* A FATAL failure was never subject to that bound and does not mention it. */
+    const g = playing(["a", "b"]);
+    g.send({ type: "ENGINE_ERROR", error: manifestFailure() });
+    expect(g.trail().find((entry) => entry.kind === "candidate_failed")?.detail).not.toContain(
+      "stream recoveries"
+    );
+  });
+
+  it("keeps a signed query string out of the trail on every entry it writes", () => {
+    /*
+     * `redactMediaUrl` strips a media URL to origin and path because an error
+     * object is the one place a credential travels without anyone deciding to log
+     * it. The check that matters is not that the redactor works — `shaka-error`'s
+     * own suite covers that — but that nothing ROUTES AROUND it: the trail is the
+     * most likely thing to be serialised, into telemetry by PL-0503 or into a bug
+     * report by a human, and it is assembled from `detail`, from `message` and
+     * from prose this file writes.
+     */
+    const h = playing(["a"], { maxAttempts: 4, maxTransientRetriesPerCandidate: 1 });
+    for (let attempt = 0; attempt <= MAX_STREAMING_RECOVERIES_PER_CANDIDATE; attempt += 1) {
+      h.send({ type: "ENGINE_ERROR", error: recoverableLegalRefusal() });
+    }
+
+    const serialised = JSON.stringify(h.trail());
+    expect(serialised).not.toContain("SIGNATURE-MUST-NOT-LEAK");
+    expect(serialised).not.toContain("token=");
+    /* The half that IS wanted: origin and path survive, because they are what
+     * identify a failing CDN edge. */
+    expect(serialised).toContain("https://edge-7.cdn.example.com/a.mpd");
+
+    /* And `raw` — which holds the unredacted original for a debugger — never
+     * reaches the trail at all. `summarisePlaybackError` drops it by listing the
+     * fields it keeps rather than by spreading and deleting. */
+    for (const entry of h.trail()) {
+      expect(entry.error === null || !("raw" in entry.error)).toBe(true);
+    }
+  });
+});
+
+describe("the first attempt is governed by the same policy as every later one", () => {
+  /*
+   * `engineLoading -> loading` used to charge an attempt and issue a `load()`
+   * without asking the schedule whether the budget admitted one, so `maxAttempts`
+   * governed attempts 2..n and exempted attempt 1.
+   *
+   * `failoverPolicySchema` refuses a non-positive `maxAttempts` at the WIRE
+   * boundary, but `PlaybackMachineInput.policy` is a `FailoverPolicy` type and
+   * not a parse of one — which is the same reason `boundedPolicy` exists inside
+   * `scheduleAttempts`. `failoverPolicyArb` generates from 1 upwards, so the
+   * property suite cannot reach any of this; these are the cases it cannot see.
+   */
+
+  function readied(policy: FailoverPolicy): Harness {
+    const h = harness({ policy });
+    h.send({ type: "START" });
+    h.send({ type: "SESSION_RESOLVED", session: sessionOf(["a", "b"]) });
+    h.send({ type: "ENGINE_STATE", state: ENGINE_READY });
+    return h;
+  }
+
+  it("issues no load at all when the budget admits no attempt", () => {
+    const h = readied({ maxAttempts: 0, maxTransientRetriesPerCandidate: 1 });
+
+    expect(h.effects.loads).toEqual([]);
+    expect(h.actor.getSnapshot().context.attemptsUsed).toBe(0);
+    expect(h.phase()).toBe("fatal");
+    expect(h.actor.getSnapshot().context.stopReason).toBe("attempt_limit_reached");
+    /* And it says which streams a raised limit would have reached, which is the
+     * remedy an operator reading this needs. */
+    expect(h.trail().find((entry) => entry.kind === "stopped")?.detail).toContain(
+      "attempt budget of 0 spent while 2 candidate(s) had never been tried: a, b"
+    );
+  });
+
+  it("enforces a NaN budget as zero and says that is what it did", () => {
+    /*
+     * Every comparison against `NaN` is false, so an unrepaired `NaN` would mean
+     * NO bound — an unbounded reload loop pointed at a CDN. `boundedPolicy` reads
+     * it as the most conservative bound, and the trail quotes the bound that was
+     * ENFORCED. The bound that was SUPPLIED is named too: hiding a caller's bug
+     * behind a plausible `0` would make it look like a deliberate policy.
+     */
+    const h = readied({ maxAttempts: Number.NaN, maxTransientRetriesPerCandidate: 1 });
+
+    expect(h.effects.loads).toEqual([]);
+    expect(h.phase()).toBe("fatal");
+    const stopped = h.trail().find((entry) => entry.kind === "stopped");
+    expect(stopped?.detail).toContain("attempt budget of 0 (enforced;");
+    expect(stopped?.detail).toContain("the policy supplied NaN");
+  });
+
+  it("still spends a budget of one on the first candidate", () => {
+    /* The guard is a bound, not a new refusal: the smallest budget the wire
+     * contract can express buys exactly one attempt. */
+    const h = readied({ maxAttempts: 1, maxTransientRetriesPerCandidate: 0 });
+
+    expect(h.effects.loads.map((load) => load.candidate?.id)).toEqual(["a"]);
+    expect(h.actor.getSnapshot().context.attemptsUsed).toBe(1);
+    expect(h.phase()).toBe("loading");
+  });
+
+  it("rebuilds a destroyed engine even with the budget spent, because that is not an attempt", () => {
+    /*
+     * The asymmetry is the point. A React remount or a DOM move destroys the
+     * Shaka session through no fault of the candidate, so the rebuild is not
+     * charged — and it must not be REFUSABLE either. Stranding a viewer forty
+     * minutes into a film because the attempt budget happens to be spent would be
+     * enforcing the policy against an event the policy is not about.
+     */
+    const h = playing(["a"], { maxAttempts: 1, maxTransientRetriesPerCandidate: 0 });
+    h.send({ type: "MEDIA_TIME_UPDATE", positionSeconds: 2400 });
+    expect(h.actor.getSnapshot().context.attemptsUsed).toBe(1);
+
+    h.send({ type: "ENGINE_STATE", state: ENGINE_DESTROYED });
+    h.send({ type: "ENGINE_STATE", state: ENGINE_READY });
+
+    expect(h.actor.getSnapshot().context.attemptsUsed).toBe(1);
+    expect(h.effects.loads.map((load) => load.candidate?.id)).toEqual(["a", "a"]);
+    expect(h.effects.loads[1]?.startAtSeconds).toBe(2400);
+    expect(h.actor.getSnapshot().context.stopReason).toBeNull();
+  });
+
+  it("charges an engine rebuild that happens before any attempt, because it is one", () => {
+    /*
+     * A destruction arriving before the engine was ever ready — a React
+     * StrictMode double-mount does exactly this — must not buy a load through the
+     * reattach exemption, which is the one door that charges nothing and (since
+     * the budget guard landed) refuses nothing. An uncharged first load is also
+     * invisible to `scheduleAttempts`: the candidate would look untried, so
+     * `charges > kinds.length` would stay false and `attempt_failed_unclassified`
+     * could never fire for it.
+     *
+     * Two mechanisms keep it out and this pins the OUTCOME rather than either of
+     * them. `engineLoading` shadows `active`'s destroyed branch, so the flag is
+     * never raised here at all; and `isReattach` requires a charged attempt, so
+     * the exemption would refuse the load even if it were. The first is a
+     * shadowing rule in another node written for another reason — exactly the kind
+     * of accidental safety this assertion exists to notice the loss of.
+     */
+    const h = harness({ policy: { maxAttempts: 4, maxTransientRetriesPerCandidate: 1 } });
+    h.send({ type: "START" });
+    h.send({ type: "SESSION_RESOLVED", session: sessionOf(["a", "b"]) });
+    h.send({ type: "ENGINE_STATE", state: ENGINE_DESTROYED });
+    h.send({ type: "ENGINE_STATE", state: ENGINE_READY });
+
+    expect(h.effects.loads.map((load) => load.candidate?.id)).toEqual(["a"]);
+    expect(h.actor.getSnapshot().context.attemptsUsed).toBe(1);
+    expect(h.actor.getSnapshot().context.attemptsByCandidate).toEqual({ a: 1 });
+    expect(h.actor.getSnapshot().context.reattaching).toBe(false);
+
+    /* And because it was charged, an unclassifiable failure on it now rules the
+     * candidate out instead of leaving it looking untried for ever. */
+    h.send({ type: "ENGINE_ERROR", error: unclassifiedFailure() });
+    expect(h.effects.loads.map((load) => load.candidate?.id)).toEqual(["a", "b"]);
+  });
+
+  it("refuses no rebuild it would previously have allowed, once an attempt is charged", () => {
+    /* The guard narrows the reattach branch; it must not narrow it for the case
+     * it was written for. Two destructions in a row, mid-playback, still cost
+     * nothing. */
+    const h = playing(["a", "b"], { maxAttempts: 2, maxTransientRetriesPerCandidate: 0 });
+    for (let round = 0; round < 2; round += 1) {
+      h.send({ type: "ENGINE_STATE", state: ENGINE_DESTROYED });
+      h.send({ type: "ENGINE_STATE", state: ENGINE_READY });
+      h.send({ type: "MEDIA_PLAYING" });
+    }
+
+    expect(h.actor.getSnapshot().context.attemptsUsed).toBe(1);
+    expect(h.effects.loads.map((load) => load.candidate?.id)).toEqual(["a", "a", "a"]);
+    expect(h.actor.getSnapshot().context.stopReason).toBeNull();
   });
 });
 

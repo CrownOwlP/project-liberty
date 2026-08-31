@@ -62,15 +62,26 @@ const MEDIA_ERR_SRC_NOT_SUPPORTED = 4;
  * "this is a claim about `@liberty/media-engine`, pinned so that changing the
  * engine's answer fails a test here".
  *
- * The claim is load-bearing even with no caller, because a literal elsewhere in
- * the player depends on it. `recordCandidateFailure` in `playback-machine.ts`
- * falls back to `"network_transient"` for a non-fatal error the classifier
- * cannot place, and that fallback is only safe while `network_transient` is
- * exactly the retryable set — a kind recorded as transient goes into `failures`,
- * reaches `scheduleAttempts`, and buys the candidate another `load()`. Widening
- * `PLAYBACK_FAILURE_POLICY`'s retryable half without revisiting that fallback is
- * the mistake this list exists to catch, and with the list gone the mistake
- * would land silently.
+ * THE LITERAL IT USED TO GUARD IS GONE, and saying so is the honest version of
+ * this note. `recordCandidateFailure` in `playback-machine.ts` used to fall back
+ * to `"network_transient"` for a non-fatal error the classifier could not place;
+ * that fallback was safe only while `network_transient` was exactly the retryable
+ * set, and this list was the trip-wire for widening the engine's policy without
+ * revisiting it. The fallback was removed — it was reachable on a RECOVERABLE
+ * `BAD_HTTP_STATUS` carrying 451, where a guessed transient kind bought a rights
+ * failure a second `load()` — so nothing in the player now depends on the
+ * retryable set having exactly one member.
+ *
+ * The list is KEPT because what it asserts was never really about that literal:
+ * `classifyHttpStatus` hands back `network_transient` for 408, 429 and 5xx and
+ * NOTHING ELSE, and it does so because those are the statuses for which a second
+ * request is worth an attempt. That reasoning is a claim about
+ * `PLAYBACK_FAILURE_POLICY`'s retryable half, stated in this file, in a file that
+ * does not import it. If the engine ever made a second kind retryable — or made
+ * `network_transient` terminal — this classifier's status table would be deciding
+ * retryability against a policy it no longer matched, and nothing else in the
+ * player would notice. Deleting the list would delete the only place that
+ * disagreement fails.
  *
  * The earlier justification for restating the constant — that this module is
  * reached only from `shaka-error.ts` and the classifier, "none of which

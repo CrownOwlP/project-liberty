@@ -456,11 +456,21 @@ export function byCodePoint(a: string, b: string): number {
  * deliberate. Terminating with `attempt_limit_reached` says the true thing --
  * there is no budget to spend -- in the vocabulary the trail already publishes.
  *
- * EXPORTED FOR ONE READER, exactly as `byCodePoint` is. `planFailover` renders
- * `maxAttempts` into a human trail, and a trail quoting a bound nobody applied is
- * the published-versus-enforced divergence this whole module exists to prevent,
- * in miniature. It is not re-exported from `failover.ts` and so does not reach
- * the barrel: an internal shared by two files, not public API.
+ * EXPORTED FOR THE CALLERS THAT QUOTE THE BOUND, which is now two rather than
+ * one and for a single reason. `planFailover` renders `maxAttempts` into a human
+ * trail, and `apps/web`'s `stopWithAttemptLimit` renders it into the client's
+ * reason trail. A trail quoting a bound nobody applied is the
+ * published-versus-enforced divergence this whole module exists to prevent, in
+ * miniature, so anything that PRINTS the budget reads it through here. The player
+ * is the caller with the sharper exposure of the two: `planFailover` receives a
+ * policy the server built, while `PlaybackMachineInput.policy` is a
+ * `FailoverPolicy` type that was never parsed — which is why this function exists
+ * at all (see the paragraph above).
+ *
+ * Still not re-exported from `failover.ts` and so still absent from the barrel:
+ * shared by named importers of `./scheduling`, not public API, and `apps/web`
+ * reaches it on the same narrow subpath it already imports `scheduleAttempts`
+ * from.
  */
 export function boundedPolicy(policy: FailoverPolicy): FailoverPolicy {
   return {
