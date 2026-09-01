@@ -21,6 +21,25 @@ const PLAYABLE_RIGHTS = ["licensed", "owned", "public-domain"];
  */
 const ADDRESS_KEY = /^(uri|url|src|href|manifest|stream|playback)(url|uri|src)?$/i;
 
+/**
+ * Every item on every rail.
+ *
+ * A function rather than the loop it used to be inline, because BOTH assertions
+ * below are "this list is empty" assertions and an empty catalog satisfies each
+ * of them while proving nothing. One of them already guarded itself by counting
+ * items; the other did not, so a `/api/v1/catalog/home` that had stopped
+ * serving anything would have reported green on "the catalog publishes no media
+ * address". Naming the count once means the guard cannot be present in one test
+ * and forgotten in the next.
+ */
+function railItems(body: unknown): Record<string, unknown>[] {
+  const rails = isRecord(body) && Array.isArray(body["rails"]) ? body["rails"] : [];
+  return rails
+    .filter(isRecord)
+    .flatMap((rail) => (Array.isArray(rail["items"]) ? rail["items"] : []))
+    .filter(isRecord);
+}
+
 test("health responds before anything else is believed", async ({ request }) => {
   const response = await request.get("/api/health");
   expect(response.status()).toBe(200);
@@ -44,32 +63,30 @@ test("the home catalog is served, uncacheable, and non-empty", async ({ request 
 
 test("every surfaced item carries a rights basis on the playable allowlist", async ({ request }) => {
   const body: unknown = await (await request.get("/api/v1/catalog/home")).json();
-  const rails = isRecord(body) && Array.isArray(body["rails"]) ? body["rails"] : [];
+  const items = railItems(body);
 
-  const offenders: string[] = [];
-  let itemCount = 0;
-
-  for (const rail of rails) {
-    if (!isRecord(rail) || !Array.isArray(rail["items"])) continue;
-    for (const item of rail["items"]) {
-      if (!isRecord(item)) continue;
-      itemCount += 1;
-      const rights = item["rights"];
-      if (typeof rights !== "string" || !PLAYABLE_RIGHTS.includes(rights)) {
-        offenders.push(`${String(item["id"])} carries rights ${JSON.stringify(rights)}`);
-      }
-    }
-  }
-
-  /* Guards the assertion itself: an empty catalog would pass the loop above
-   * while proving nothing, and this suite would then report green for a
+  /* Guards the assertion itself: an empty catalog would satisfy the offender
+   * check while proving nothing, and this suite would then report green for a
    * catalog that had stopped being served. */
-  expect(itemCount).toBeGreaterThan(0);
+  expect(items.length).toBeGreaterThan(0);
+
+  const offenders = items
+    .filter((item) => {
+      const rights = item["rights"];
+      return typeof rights !== "string" || !PLAYABLE_RIGHTS.includes(rights);
+    })
+    .map((item) => `${String(item["id"])} carries rights ${JSON.stringify(item["rights"])}`);
+
   expect(offenders).toEqual([]);
 });
 
 test("the catalog publishes no media address, under any key name", async ({ request }) => {
   const body: unknown = await (await request.get("/api/v1/catalog/home")).json();
+
+  /* Both assertions below pass on an empty response. This is what makes them
+   * mean "no item published an address" rather than "there was nothing to
+   * look at". */
+  expect(railItems(body).length).toBeGreaterThan(0);
 
   const addressKeys = collectKeys(body).filter((key) => ADDRESS_KEY.test(key));
   expect(addressKeys, "the catalog is metadata; a stream is resolved at playback time").toEqual([]);

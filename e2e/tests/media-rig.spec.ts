@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { MEDIA_RIG_ORIGIN, MEDIA_RIG_SKIP_REASON } from "../src/env";
+import { MANAGES_SERVER, MEDIA_RIG_ORIGIN, MEDIA_RIG_SKIP_REASON, WEB_MODE } from "../src/env";
 import { DEMO } from "../src/fixtures";
 
 /* -------------------------------------------------------------------------
@@ -66,6 +66,57 @@ test.describe("playback against a configured media rig", () => {
 
   test("the player reaches a playing state and the trail says which candidate", async ({ page }) => {
     await page.goto(`/watch/${DEMO.movie.id}`);
+
+    /*
+     * THE WATCH ROUTE NO LONGER SERVES FIXTURES IN EVERY MODE, and this test
+     * silently assumed it did. Until PL-0301, `watch/watch-session.ts` carried
+     * its own unguarded copy of the fixture provider, so a rig plus the default
+     * production build produced a playing player; the route now consumes
+     * `resolveAuthorizedCandidates` and answers `not-configured` outside
+     * development and test. Left as it was, this test would have spent 45
+     * seconds waiting for a `State: playing` that the panel in front of it can
+     * never produce, and reported a rights-and-configuration fact as a playback
+     * failure.
+     *
+     * The branch is read off WHAT THE PAGE RENDERED, which is the idiom the test
+     * above already uses -- it skips on the SERVER's outcome rather than on a
+     * local variable -- and it is what keeps this usable against an external
+     * deployment whose build nobody told the harness. What the observation is
+     * ALLOWED to conclude is then narrowed by what this process knows, below.
+     *
+     * It hides nothing either way: `critical-journey.spec.ts` asserts which
+     * branch each mode is REQUIRED to take, including that a production build
+     * must not mount a player at all.
+     */
+    const player = page.locator("liberty-video");
+    const unavailable = page.getByRole("heading", { name: /available on this deployment/i });
+    /* One of the two, waited on as a condition: the panel is server-rendered
+     * while the player is appended in an effect, so counting immediately would
+     * read "no player" on a development server that is about to mount one. */
+    await expect(player.or(unavailable).first()).toBeAttached();
+    const rendered = await player.count();
+
+    /*
+     * A SKIP ONLY WHERE THE HARNESS GENUINELY CANNOT KNOW BETTER, which is the
+     * difference between a skip and a hole. Against an external deployment the
+     * build is unknown, and under a production build the missing player is the
+     * documented answer -- both are honest skips. But when THIS harness started
+     * a DEVELOPMENT build and a rig is configured, fixtures are required to
+     * resolve, so a page with no player is a regression and skipping on it would
+     * turn the one test that proves playback into a test that quietly excuses
+     * its own absence. That case falls through to the assertion below and fails.
+     */
+    test.skip(
+      rendered === 0 && (!MANAGES_SERVER || WEB_MODE === "production"),
+      "This deployment's watch route resolves no candidates -- it rendered the " +
+        "'not available on this deployment' panel rather than a player -- so there is nothing " +
+        "for a rig to play. Set LIBERTY_E2E_WEB_MODE=development, as docs/E2E.md's rig " +
+        "instructions already do."
+    );
+    expect(
+      rendered,
+      "a development build with a rig configured rendered no player on the watch route"
+    ).toBeGreaterThan(0);
 
     const meta = page.locator(".player-meta").first();
 

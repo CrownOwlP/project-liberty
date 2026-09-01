@@ -44,7 +44,20 @@ export const CAPABLE_DEVICE = {
   preferredAudioLanguages: ["en"]
 } as const;
 
-/** A profile nothing 720p-or-better can satisfy, for the eligibility path. */
+/**
+ * A ceiling no real stream would clear.
+ *
+ * It used to be described as "a profile nothing 720p-or-better can satisfy, for
+ * the eligibility path", and that stopped being what it does. The fixture
+ * candidates state `height: null` -- nothing has opened those files -- and
+ * `ranking.ts` will not compare a ceiling against a measurement that does not
+ * exist, so this profile no longer rejects anything the fixture provider emits.
+ *
+ * That is exactly why it is still here. A device this narrow is the sharpest
+ * available probe for a fixture that has started stating facts again: the
+ * session it produces must be granted and unverified, and the moment a height
+ * reappears it is refused instead. See `playback-session.api.spec.ts`.
+ */
 export const TINY_DEVICE = {
   maxHeight: 144,
   supportedVideoCodecs: ["h264"],

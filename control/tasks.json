@@ -1069,6 +1069,7 @@
         "PL-0403"
       ],
       "allowedPaths": [
+        "e2e/**",
         "tests/**",
         "apps/web/**",
         "scripts/**"

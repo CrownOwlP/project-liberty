@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { MANAGES_SERVER, WEB_MODE } from "../src/env";
 import { DEMO, UNKNOWN_CONTENT_ID } from "../src/fixtures";
 
 /* -------------------------------------------------------------------------
@@ -72,15 +73,49 @@ test("the play affordance leads to the player for that same id", async ({ page }
   await expect(page).toHaveURL(new RegExp(`/watch/${DEMO.movie.id}$`));
 });
 
-test("the player mounts, publishes a reason trail, and is never handed a src", async ({ page }) => {
-  await page.goto(`/watch/${DEMO.movie.id}`);
+/* -------------------------------------------------------------------------
+ * The watch route is TWO deployments now, and the harness has to say which
+ *
+ * WHAT THE TEST HERE USED TO ASSERT, AND WHY IT WAS ASSERTING A DEFECT. One
+ * test claimed that `<liberty-video>` attaches and a "Playback reason trail"
+ * renders on `/watch/<id>` in every mode. It passed because
+ * `watch/watch-session.ts` carried its OWN copy of the fixture provider under
+ * no environment guard at all, so a production `next start` rendered a player
+ * aimed at candidates declaring `owned` rights over files nobody had opened.
+ * That duplicate is gone: the route consumes `resolveAuthorizedCandidates`,
+ * which answers `not-configured` outside `development` and `test`, so under the
+ * DEFAULT `LIBERTY_E2E_WEB_MODE=production` this route renders an explanation
+ * and no player. The old assertion described the rights defect, not the
+ * product, and a spec that asserts the wrong thing is worse than a missing one.
+ *
+ * The split below is the one `playback-session.api.spec.ts` already uses for
+ * the session API rather than a second idiom invented here: assert BOTH
+ * branches, and treat a production build that produces a player as the rights
+ * incident it would be, not as a test that needs relaxing.
+ *
+ * `docs/E2E.md` still states that "the watch page does not share that switch --
+ * so the browser journey runs in both". That sentence is now false. `docs/**`
+ * is outside this task's allowedPaths, so the correction is reported rather
+ * than made here.
+ * ---------------------------------------------------------------------- */
 
-  /* Server-rendered, so this holds with or without hydration and in every
-   * engine. It is also the assertion that the id survived the whole journey. */
-  await expect(page.getByText(`Content: ${DEMO.movie.id}`)).toBeVisible();
+test("the watch route answers with the id it was asked about, and never with a src", async ({
+  page
+}) => {
+  const response = await page.goto(`/watch/${DEMO.movie.id}`);
 
-  const video = page.locator("liberty-video");
-  await expect(video).toBeAttached();
+  /* Deliberately NOT guarded on the mode, so it still means something when the
+   * harness is aimed at a deployment whose build it was not told about. */
+  expect(response?.status()).toBe(200);
+
+  /*
+   * The assertion that the id survived the whole journey, in the one form both
+   * branches share: the player prints `Content: <id>` and the unavailable panel
+   * prints `<id>: no authorized media provider ...`. Matching the id itself
+   * rather than either sentence is what keeps this mode-independent without
+   * making it a copy check on marketing text.
+   */
+  await expect(page.getByText(DEMO.movie.id).first()).toBeVisible();
 
   /*
    * THE INVARIANT THIS PAGE EXISTS TO PROTECT. `player-surface.tsx` sets
@@ -90,7 +125,67 @@ test("the player mounts, publishes a reason trail, and is never handed a src", a
    * a stray attribute forward, a query parameter someone wired up -- would make
    * the player an open proxy for arbitrary media and relocate product invariant
    * 1 out of the code that enforces it and into whoever set the attribute.
+   *
+   * Counted rather than read off a single element, because on a production
+   * build there is no element to read and `getAttribute` on a locator that
+   * matches nothing is a timeout, not a null. Stated plainly: on that build
+   * this line is satisfied by the absence of a player and proves nothing on its
+   * own -- it is the development branch below, which requires the element to
+   * EXIST before making the same check, that stops the pair being vacuous.
    */
+  expect(await page.locator("liberty-video[src]").count()).toBe(0);
+});
+
+test("which branch the watch route takes is decided by the build, and both are asserted", async ({
+  page
+}) => {
+  test.skip(!MANAGES_SERVER, "Only this harness knows how a server it started was built.");
+
+  await page.goto(`/watch/${DEMO.movie.id}`);
+
+  if (WEB_MODE === "production") {
+    /*
+     * NOT A DEGRADED PASS, and the same argument the session API's mode split
+     * makes: a production build resolves no candidates because no provider
+     * registry is wired in yet, and serving fixtures from a hosted deployment
+     * would publish fabricated `owned` rights for files that do not exist.
+     *
+     * Addressed by accessible name, and by a regex because the heading uses a
+     * typographic apostrophe -- pinning U+2019 in a test file is how a locator
+     * silently stops matching after somebody's editor normalises quotes.
+     */
+    await expect(
+      page.getByRole("heading", { name: /available on this deployment/i })
+    ).toBeVisible();
+
+    /* Product invariant 4 applies to a refusal exactly as much as to a grant:
+     * the panel publishes a machine-readable line naming the title, so a
+     * screenshot in a bug report is enough to find this state in the code. */
+    await expect(
+      page.getByText(`${DEMO.movie.id}: no authorized media provider is configured`)
+    ).toBeVisible();
+
+    /*
+     * THE RIGHTS ASSERTION, and the reason this branch is asserted rather than
+     * skipped. If a production build ever mounts a player here, a fixture has
+     * escaped into a shipped artifact -- that is a rights incident rather than
+     * a test failure, and it is exactly the defect that existed until PL-0301.
+     * Safe to count without waiting: this branch never renders `PlayerSurface`,
+     * so there is no effect that could append the element after the heading
+     * above has been observed.
+     */
+    expect(await page.locator("liberty-video").count()).toBe(0);
+    await expect(page.getByText("Playback reason trail")).toHaveCount(0);
+    return;
+  }
+
+  /* The development build, where fixtures may resolve and the player is the
+   * correct answer. This is the branch the old single-mode test was really
+   * describing, kept intact rather than deleted. */
+  await expect(page.getByText(`Content: ${DEMO.movie.id}`)).toBeVisible();
+
+  const video = page.locator("liberty-video");
+  await expect(video).toBeAttached();
   expect(await video.getAttribute("src")).toBeNull();
 
   /*
