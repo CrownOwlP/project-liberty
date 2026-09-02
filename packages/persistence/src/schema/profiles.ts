@@ -32,6 +32,28 @@ import { session, user } from "./auth";
  * answers considerably more than was asked.
  * ---------------------------------------------------------------------- */
 
+/**
+ * The NAME of the display-name uniqueness constraint, written down once.
+ *
+ * `createProfile` has to recognise a violation of THIS constraint specifically,
+ * because the same `INSERT` also touches `profile_id_user_id_key` and the
+ * primary key on `id` -- and a unique violation on either of those is a UUID
+ * collision, not a name a household has already used. Reporting either of those
+ * as "that name is taken" would send somebody to rename a profile in response to
+ * a bug in the id generator.
+ *
+ * Exported rather than repeated as a string literal in `profile-repository.ts`,
+ * because the repository's match is only correct while the two spellings agree
+ * and nothing would fail if they stopped: the catch would simply never fire
+ * again, and the refusal it produces would silently go back to being a driver
+ * exception. One definition means that cannot happen.
+ *
+ * THE VALUE IS IN APPLIED DDL. `migrations/0000_profile_scoped_identity.sql`
+ * names it, so changing the string is a migration rather than a rename -- the
+ * identifier of this constant is free to change, its value is not.
+ */
+export const PROFILE_DISPLAY_NAME_UNIQUE_CONSTRAINT = "profile_user_id_display_name_key";
+
 export const profile = pgTable(
   "profile",
   {
@@ -75,8 +97,12 @@ export const profile = pgTable(
      * picker, and the picker is the only place a profile is chosen. The
      * constraint spans the ARCHIVED ones too, deliberately: reusing an archived
      * profile's name would make the two impossible to tell apart in history.
+     *
+     * `createProfile` translates a violation of it into a reasoned refusal; see
+     * `PROFILE_DISPLAY_NAME_UNIQUE_CONSTRAINT` above for why the name is a
+     * constant rather than a literal in two files.
      */
-    unique("profile_user_id_display_name_key").on(table.userId, table.displayName),
+    unique(PROFILE_DISPLAY_NAME_UNIQUE_CONSTRAINT).on(table.userId, table.displayName),
     /**
      * Redundant against the primary key on `id` alone, and it exists anyway so
      * that other tables can carry a COMPOSITE foreign key to `(id, user_id)`.

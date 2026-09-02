@@ -35,7 +35,10 @@ import {
  * assertion about a stub of Better Auth's own behaviour, which proves nothing.
  * The parts worth testing -- configuration validation, the enabled surface, and
  * profile authorization -- were moved OUT of this file precisely so they could
- * be tested for real.
+ * be tested for real. `describeConfiguredSurface` was left behind by that move
+ * and has since followed it; the defect it was carrying is recorded at the
+ * re-export below, and the general lesson is that a testable function in an
+ * untestable file is a function nobody checks.
  * ---------------------------------------------------------------------- */
 
 /**
@@ -143,6 +146,14 @@ export function createLibertyAuth(input: CreateLibertyAuthInput) {
       }
     },
 
+    // UNCONDITIONAL, and `describeConfiguredSurface` now says so. The capability
+    // -- being able to send a verification link and have it verify an address --
+    // exists whatever `requireEmailVerification` is set to; that flag decides
+    // only whether an UNVERIFIED address may sign in. Wiring this conditionally
+    // instead would leave `requireEmailVerification: true` unsatisfiable, and
+    // reporting it conditionally (which the surface report used to do)
+    // understated the surface on exactly the configuration where verification is
+    // optional.
     emailVerification: {
       sendVerificationEmail: async ({ user, url }) => {
         await sendMail({ to: user.email, subject: "Verify your Liberty address", url });
@@ -179,20 +190,24 @@ export function createLibertyAuth(input: CreateLibertyAuthInput) {
 }
 
 /**
- * What `createLibertyAuth` actually turned on, in the vocabulary
- * `findSurfaceViolations` checks.
+ * The report of what the option object above turns on.
  *
- * Written by hand rather than reflected off the built instance: reflection here
- * would read whatever the library reports, and the question being asked is
- * whether OUR configuration matches OUR policy. A future edit to
- * `createLibertyAuth` that enables something has to be accompanied by an edit
- * here, and if it is not, the surface test fails on the mismatch.
+ * RE-EXPORTED, NOT DEFINED HERE, and it used to be defined here. It is a
+ * statement about our own data -- it loads no library and needs no database --
+ * so it was the one function in this file that could be unit-tested, sitting in
+ * the file this comment declares untestable. That is how it came to under-report
+ * the surface: it made `email_verification` conditional on
+ * `config.requireEmailVerification`, while the `emailVerification` option above
+ * is wired unconditionally. Moved to `enabled-surface.ts`, where the policy it
+ * is checked against already lives and where a test can reach it.
+ *
+ * The obligation the old placement was buying stays in force and is stated here
+ * instead: AN EDIT TO `createLibertyAuth` THAT ENABLES SOMETHING IS AN EDIT TO
+ * `describeConfiguredSurface`. The report is a hand-written second reading of
+ * the option object; if it is not updated, it is simply wrong, and only a reader
+ * of both can tell.
  */
-export function describeConfiguredSurface(config: LibertyAuthConfig): AuthSurfaceReport {
-  const capabilities: string[] = ["email_password", "password_reset", "database_sessions"];
-  if (config.requireEmailVerification) capabilities.push("email_verification");
-  return { capabilities: capabilities.sort(), pluginIds: [] };
-}
+export { describeConfiguredSurface } from "./enabled-surface";
 
 /**
  * Fail start-up if the configured surface is wider than the reviewed one.

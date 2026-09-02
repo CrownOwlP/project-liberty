@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   PROFILE_ACCESS_CHECK_ORDER,
+  PROFILE_ACCESS_GRANT_REASONS,
   authorizeProfileAccess,
   authorizeProfileSelection,
   externalProfileAccessReason
@@ -203,6 +204,76 @@ describe("authorizeProfileSelection", () => {
     expect(decision.allowed).toBe(false);
     if (decision.allowed) return;
     expect(decision.reason).toBe("profile_archived");
+  });
+
+  it("does not claim the profile was already active, because on this path none is", () => {
+    // The defect this asserts against was a lie a type could not catch:
+    // selection granted with `active_profile_of_session` on the ONE path where,
+    // by construction, no profile is active. It compiled because that was the
+    // only grant reason in the union, and the string is what a support engineer
+    // reads while asking why a session that had selected nothing was recorded as
+    // acting on its active profile.
+    const decision = authorizeProfileSelection({
+      session: session(null),
+      ownership: ownership({ profileId: "profile_kids" })
+    });
+
+    expect(decision.allowed).toBe(true);
+    if (!decision.allowed) return;
+    expect(decision.reason).toBe("selectable_profile_of_account");
+    expect(decision.reason).not.toBe("active_profile_of_session");
+    // The precondition that makes the old reason false, stated so the assertion
+    // above cannot be "fixed" by making the fixture select a profile first.
+    expect(session(null).activeProfileId).toBeNull();
+  });
+
+  it("still grants selection when a DIFFERENT profile is already active", () => {
+    // Switching profiles mid-session. The reason must not become
+    // `active_profile_of_session` here either: the profile being selected is not
+    // the active one -- it is the one about to be.
+    const decision = authorizeProfileSelection({
+      session: session("profile_adult"),
+      ownership: ownership({ profileId: "profile_kids" })
+    });
+
+    expect(decision.allowed).toBe(true);
+    if (!decision.allowed) return;
+    expect(decision.reason).toBe("selectable_profile_of_account");
+    expect(decision.scope.profileId).toBe("profile_kids");
+  });
+});
+
+describe("the grant vocabulary", () => {
+  it("has one reason per decision function, and they are different", () => {
+    const access = authorizeProfileAccess({
+      session: session("profile_adult"),
+      requestedProfileId: "profile_adult",
+      ownership: ownership()
+    });
+    const selection = authorizeProfileSelection({
+      session: session(null),
+      ownership: ownership()
+    });
+
+    if (!access.allowed || !selection.allowed) throw new Error("expected two grants");
+    // Two grants with two preconditions. Collapsing them into one string is
+    // what makes a count of `active_profile_of_session` unusable, because half
+    // of them would be sessions that had no active profile.
+    expect(access.reason).not.toBe(selection.reason);
+    expect([...PROFILE_ACCESS_GRANT_REASONS].sort()).toEqual(
+      [access.reason, selection.reason].sort()
+    );
+  });
+
+  it("shares no member with the denial order", () => {
+    // The two lists partition the vocabulary. An overlap would mean a reason
+    // that both grants and denies -- and `externalProfileAccessReason`, which is
+    // total over the denial half, would then be asked what a GRANT looks like on
+    // the way out to a caller.
+    const grants: readonly string[] = PROFILE_ACCESS_GRANT_REASONS;
+    for (const denial of PROFILE_ACCESS_CHECK_ORDER) {
+      expect(grants).not.toContain(denial);
+    }
   });
 });
 

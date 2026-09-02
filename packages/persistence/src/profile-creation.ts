@@ -9,8 +9,8 @@
  * PURE. No clock, no I/O, no ambient state. The caller supplies the current
  * profile count; this module does not go and look.
  *
- * Two defects are prevented here, and they are unrelated to each other except
- * that both are reachable by an ordinary authenticated user:
+ * Three defects are prevented here, unrelated to each other except that all
+ * three are reachable by an ordinary authenticated user:
  *
  *   1. AN UNBOUNDED CHILD-RECORD COUNT. One account, a loop, and the `profile`
  *      table grows without limit -- and every profile is a cascade root for
@@ -19,6 +19,11 @@
  *   2. A DISPLAY NAME THAT IS NOT A NAME. `display_name` is `text NOT NULL`, so
  *      PostgreSQL accepts `""`, `"   "` and a zero-width space just as readily
  *      as "Dad" -- and the picker renders all four as an unlabelled tile.
+ *   3. AN UNBOUNDED FIELD. The same growth as (1) measured along the other axis:
+ *      all three caller-supplied columns are `text`, which has no length limit
+ *      in PostgreSQL, so five profiles is a bound on rows and no bound at all on
+ *      bytes. All three are capped, and the reason they share one rule is in
+ *      `MAX_AVATAR_KEY_CODE_POINTS` -- for a while only the display name was.
  * ---------------------------------------------------------------------- */
 
 /**
@@ -59,8 +64,55 @@ export const MAX_PROFILES_PER_ACCOUNT = 5;
  * caller-supplied string on a row an authenticated user can create as many of as
  * the ceiling above allows is the same availability concern as the count, just
  * measured along the other axis.
+ *
+ * That argument is not about display names, which is why the two constants below
+ * exist. It applies to every `text` column a caller can fill.
  */
 export const MAX_DISPLAY_NAME_CODE_POINTS = 64;
+
+/**
+ * The longest an avatar key may be, in code points.
+ *
+ * THE ARGUMENT ABOVE APPLIES UNCHANGED, and for a while this field did not have
+ * it. `avatar_key` is also `text`, also caller-supplied, and also on a row an
+ * authenticated user may create up to `MAX_PROFILES_PER_ACCOUNT` of; trimming it
+ * bounds nothing. A cap on one of three unbounded columns is not a bound on the
+ * row, and the asymmetry was not a decision -- it was the display name being the
+ * field somebody happened to be thinking about.
+ *
+ * 256 because this is OUR key into avatar storage -- `avatars/fox.png` -- and
+ * not a user's prose. It is generous by two orders of magnitude against real
+ * values, which is the right side to err on: the cap exists to stop a megabyte,
+ * not to police a naming scheme.
+ *
+ * COUNTED IN CODE POINTS LIKE THE OTHER TWO, even though an opaque key has no
+ * fairness argument for it -- that argument is about not refusing a person's
+ * name at half the stated limit. One unit across all three fields is worth more
+ * here than per-field precision: a reader comparing the constants should not
+ * have to check which is measured in what. A code point is at most four UTF-8
+ * bytes, so the cap is still a bound on storage, just a looser one than a byte
+ * count would be.
+ */
+export const MAX_AVATAR_KEY_CODE_POINTS = 256;
+
+/**
+ * The longest a rating ceiling label may be, in code points.
+ *
+ * The same reasoning as the avatar key. 32 rather than 256 because the values
+ * this column is FOR are certificate labels -- "PG", "TV-MA", "12A", "R18+" --
+ * and nothing resembling a certificate label is longer than that in any
+ * jurisdiction Liberty could ship into. It is deliberately not an allowlist of
+ * known certificates: `max_rating` is documented as an OPAQUE label precisely so
+ * that a new territory's ratings do not require a code change, and a length cap
+ * keeps that property while an enumeration would not.
+ *
+ * BOTH OF THESE ARE AVAILABILITY BOUNDS, NOT USABILITY ONES, which is why they
+ * are reported after the display-name checks in `PROFILE_CREATION_CHECK_ORDER`:
+ * in the intended interface both fields come from a picker, so an over-long
+ * value is not a typo an account holder can see and correct -- it is a client
+ * that is not our client.
+ */
+export const MAX_RATING_LABEL_CODE_POINTS = 32;
 
 /**
  * The order the checks run in, which is also their PRECEDENCE.
@@ -74,14 +126,42 @@ export const MAX_DISPLAY_NAME_CODE_POINTS = 64;
  * because it is the only one the caller cannot fix by editing the form. Telling
  * somebody at the limit that their name is blank sends them to correct a field
  * on a request that was never going to be accepted.
+ *
+ * The display name comes before the two optional fields because it is the one
+ * field the account holder is actually looking at and the only one that is
+ * required; see `MAX_RATING_LABEL_CODE_POINTS` for why the other two are last.
+ *
+ * THIS IS THE RESOLVER'S ORDER, NOT THE WHOLE VOCABULARY.
+ * `PROFILE_CREATION_CONSTRAINT_REFUSALS` below is the other half, and it is
+ * separate because those refusals are not decidable from the stated facts this
+ * module is given -- putting them in this list would claim a precedence between
+ * checks that never run in the same place.
  */
 export const PROFILE_CREATION_CHECK_ORDER = [
   "profile_limit_reached",
   "display_name_is_blank",
-  "display_name_too_long"
+  "display_name_too_long",
+  "avatar_key_too_long",
+  "max_rating_too_long"
 ] as const;
 
-export type ProfileCreationRefusalReason = (typeof PROFILE_CREATION_CHECK_ORDER)[number];
+/**
+ * Refusals the DATABASE decides, which this pure module can name but not reach.
+ *
+ * `display_name_already_used` is a violation of `UNIQUE (user_id, display_name)`
+ * and there is no honest way for `resolveProfileCreation` to produce it: the
+ * question is "does another row exist", the answer changes between the read and
+ * the write, and this module is given no way to ask. `createProfile` produces it
+ * by translating the constraint violation, and the reason lives here so that the
+ * refusal vocabulary is enumerable in ONE place -- a caller writing an exhaustive
+ * `switch` over `ProfileCreationRefusalReason` needs every member, regardless of
+ * which layer emits it.
+ */
+export const PROFILE_CREATION_CONSTRAINT_REFUSALS = ["display_name_already_used"] as const;
+
+export type ProfileCreationRefusalReason =
+  | (typeof PROFILE_CREATION_CHECK_ORDER)[number]
+  | (typeof PROFILE_CREATION_CONSTRAINT_REFUSALS)[number];
 
 export interface ProfileCreationRefusal {
   readonly ok: false;
@@ -268,12 +348,40 @@ export function resolveProfileCreation(
     };
   }
 
-  return {
-    ok: true,
-    displayName,
-    avatarKey: normalizeOptionalField(request.avatarKey),
-    maxRating: normalizeOptionalField(request.maxRating)
-  };
+  // Normalised before measuring, for the same reason the display name is: the
+  // value judged has to be the value stored, or the resolver is measuring
+  // something the repository will not write.
+  const avatarKey = normalizeOptionalField(request.avatarKey);
+  if (avatarKey !== null) {
+    const avatarKeyLength = [...avatarKey].length;
+    if (avatarKeyLength > MAX_AVATAR_KEY_CODE_POINTS) {
+      return {
+        ok: false,
+        reason: "avatar_key_too_long",
+        // The LENGTH, never the value. Echoing the field into a refusal that is
+        // about the field being enormous moves the same unbounded string from
+        // the database into the log aggregator, which is the defect wearing a
+        // different hat. `display_name_too_long` above already follows this
+        // rule; `display_name_is_blank` is the one exception and can be,
+        // because the input it echoes is by definition nearly empty.
+        detail: `avatarKey is ${String(avatarKeyLength)} characters; the maximum is ${String(MAX_AVATAR_KEY_CODE_POINTS)}`
+      };
+    }
+  }
+
+  const maxRating = normalizeOptionalField(request.maxRating);
+  if (maxRating !== null) {
+    const maxRatingLength = [...maxRating].length;
+    if (maxRatingLength > MAX_RATING_LABEL_CODE_POINTS) {
+      return {
+        ok: false,
+        reason: "max_rating_too_long",
+        detail: `maxRating is ${String(maxRatingLength)} characters; the maximum is ${String(MAX_RATING_LABEL_CODE_POINTS)}`
+      };
+    }
+  }
+
+  return { ok: true, displayName, avatarKey, maxRating };
 }
 
 /**

@@ -37,7 +37,10 @@ declare const profileScopeBrand: unique symbol;
 /**
  * Proof that an authorization decision granted access to one specific profile.
  *
- * Minted only by `authorizeProfileAccess`. Carrying `grantedFor` -- the account
+ * Minted only by `authorizeProfileAccess` and `authorizeProfileSelection`, the
+ * two grants in `authorization.ts` -- and they are two because a session may act
+ * as its active profile and may CHOOSE one, which are different decisions with
+ * different preconditions. Carrying `grantedFor` -- the account
  * the grant was made for -- means a scope that leaked across a request boundary
  * can still be checked against the session it is being used under, rather than
  * being an unattributable bearer token inside the process.

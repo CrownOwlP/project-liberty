@@ -79,6 +79,69 @@ export interface AuthSurfaceReport {
   readonly pluginIds: readonly string[];
 }
 
+/**
+ * What `createLibertyAuth` actually turns on, in the vocabulary
+ * `findSurfaceViolations` checks.
+ *
+ * WRITTEN BY HAND, NOT DERIVED FROM `ENABLED_AUTH_CAPABILITIES`. That is the
+ * whole value of it: a report computed from the allowlist agrees with the
+ * allowlist by construction, so the check would pass forever and the suite would
+ * be decoration. This list is a second, independent reading -- of
+ * `createLibertyAuth`'s option object -- and the check is whether the two
+ * readings agree. It is also not reflected off the built instance, because that
+ * would report whatever the library believes, and the question being asked is
+ * whether OUR configuration matches OUR policy.
+ *
+ * IT LIVES HERE RATHER THAN NEXT TO THE VENDOR CALL, and it used to live there.
+ * `better-auth.ts` states that nothing in it is unit-tested, for a good reason:
+ * every assertion available without PostgreSQL would be an assertion about a
+ * stub of Better Auth's behaviour. This function was the one exception in that
+ * file -- it is a statement about our own data and needs no library at all --
+ * and being in the file nobody tests is how its defect survived: it reported
+ * `email_verification` only when `config.requireEmailVerification` was true.
+ *
+ * WHY THAT WAS WRONG. `createLibertyAuth` wires
+ * `emailVerification.sendVerificationEmail` UNCONDITIONALLY.
+ * `requireEmailVerification` governs whether an unverified address may sign IN
+ * -- enforcement -- not whether the verification capability exists. So with
+ * verification not required, the surface report omitted a capability that was
+ * switched on. That is an UNDERSTATEMENT, and understatements are the silent
+ * direction here: `findSurfaceViolations` only ever complains about capabilities
+ * that are present, so a capability missing from the report is never checked
+ * against the allowlist at all. The day `email_verification` is deliberately
+ * withdrawn from `ENABLED_AUTH_CAPABILITIES`, the code would still be sending
+ * verification mail and the assertion would still pass.
+ *
+ * NO PARAMETER, WHICH IS THE HONEST SIGNATURE. It took a `LibertyAuthConfig`,
+ * and after the fix no capability varies with configuration -- every option in
+ * `createLibertyAuth` that turns something on is unconditional. A parameter read
+ * on no path is the same defect one level up: a signature claiming the report
+ * depends on the configuration when it does not. If an option is ever added that
+ * genuinely gates a capability, the parameter comes back together with the
+ * branch that reads it.
+ *
+ * A FRESH OBJECT rather than a shared constant, so a caller cannot mutate the
+ * arrays out from under the next caller -- `.sort()` mutates in place, and a
+ * shared array is one caller's sort away from changing what the next one sees.
+ *
+ * `.sort()` rather than writing the list in order: the order then does not
+ * depend on where somebody adds the next entry, so the report is byte-stable
+ * across edits that do not change WHAT is enabled.
+ */
+export function describeConfiguredSurface(): AuthSurfaceReport {
+  return {
+    capabilities: [
+      "email_password",
+      "email_verification",
+      "password_reset",
+      "database_sessions"
+    ].sort(),
+    // No `plugins` key is passed to `betterAuth` at all -- not an empty array.
+    // This empty list is the assertion of that, in the form the check reads.
+    pluginIds: []
+  };
+}
+
 export type SurfaceViolation =
   | { readonly kind: "unlisted_capability"; readonly detail: string }
   | { readonly kind: "withheld_plugin_enabled"; readonly detail: string }
@@ -142,5 +205,15 @@ export function findSurfaceViolations(report: AuthSurfaceReport): readonly Surfa
  * would leave us on a version upstream no longer patches. Both failure modes are
  * real; the pin is the one that is VISIBLE. Bumping this constant and the pin
  * together is security-sensitive work and requires the security-review gate.
+ *
+ * "TOGETHER" IS NOW ASSERTED. Until this audit the sentence above was the only
+ * thing holding the two in agreement, and a comment cannot fail: a `npm update`
+ * or a hand-edited `package.json` would have moved the dependency while this
+ * constant went on claiming a version had been reviewed that was no longer
+ * installed -- the pin still LOOKING like the artefact that makes an upgrade a
+ * reviewed event while having quietly stopped being one.
+ * `enabled-surface.test.ts` reads `package.json` and asserts both
+ * `better-auth` and `@better-auth/drizzle-adapter` equal this string, so the
+ * bump is now mechanically all-or-nothing.
  */
 export const REVIEWED_BETTER_AUTH_VERSION = "1.7.1";

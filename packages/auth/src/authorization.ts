@@ -43,6 +43,26 @@ function mintProfileScope(profileId: string, grantedFor: string): ProfileScope {
 export type ProfileAccessReason =
   /** GRANT. The requested profile is the one selected for this session, and this account owns it. */
   | "active_profile_of_session"
+  /**
+   * GRANT. The profile is owned by this account and is live, so this session may
+   * SELECT it -- which is a different claim from the one above and used to be
+   * spelled the same way.
+   *
+   * THE DEFECT THIS FIXES. `authorizeProfileSelection` granted with
+   * `active_profile_of_session`, on the one path in the package where, by
+   * construction, no profile is active: selection is what a session does BEFORE
+   * it has one. It type-checked because that was the only grant reason the union
+   * offered, which is exactly how a vocabulary becomes wrong -- the compiler
+   * cannot object to a string that is merely false. The cost was not structural:
+   * it is the string a support engineer reads while asking why a session that
+   * had selected nothing was recorded as acting on its active profile, and every
+   * count and alert built on the reason code conflated two decisions with
+   * different preconditions.
+   *
+   * Fixed in the VOCABULARY rather than at the call site, because the call site
+   * was correct: it really does grant, and the grant really is not the same one.
+   */
+  | "selectable_profile_of_account"
   /** Signed in, but no profile chosen yet. Not an error -- this is the profile picker's state. */
   | "no_active_profile_selected"
   /** The ownership record was not supplied. Either the id is invented or the profile was deleted. */
@@ -63,24 +83,65 @@ export type ProfileAccessReason =
    */
   | "requested_profile_is_not_active";
 
+/**
+ * The reasons that GRANT. Everything else in `ProfileAccessReason` denies.
+ *
+ * A named list rather than the hand-maintained
+ * `Exclude<ProfileAccessReason, "active_profile_of_session">` that was written
+ * out at five separate use sites. That spelling encodes "there is exactly one
+ * grant reason" five times, so adding the second one reclassified it as a
+ * DENIAL everywhere at once -- and the loudest consequence was
+ * `externalProfileAccessReason` failing exhaustiveness and asking to be told
+ * what a GRANT reason should look like on the way out to a caller, which is a
+ * question with no correct answer. A compile error is the good outcome here;
+ * the point of the list is that the classification is stated once and cannot be
+ * updated in four places out of five.
+ */
+export const PROFILE_ACCESS_GRANT_REASONS = [
+  "active_profile_of_session",
+  "selectable_profile_of_account"
+] as const;
+
+export type ProfileAccessGrantReason = (typeof PROFILE_ACCESS_GRANT_REASONS)[number];
+
+/** Every reason that refuses. The complement of the list above, derived rather than restated. */
+export type ProfileAccessDenialReason = Exclude<ProfileAccessReason, ProfileAccessGrantReason>;
+
 /** One check that ran, and what it concluded. Ordered; see `PROFILE_ACCESS_CHECK_ORDER`. */
 export interface ProfileAccessCheck {
   readonly check: ProfileAccessReason;
   readonly passed: boolean;
 }
 
-export type ProfileAccessDecision =
-  | {
-      readonly allowed: true;
-      readonly reason: "active_profile_of_session";
-      readonly scope: ProfileScope;
-      readonly trail: readonly ProfileAccessCheck[];
-    }
-  | {
-      readonly allowed: false;
-      readonly reason: Exclude<ProfileAccessReason, "active_profile_of_session">;
-      readonly trail: readonly ProfileAccessCheck[];
-    };
+/**
+ * A grant, parameterised by WHICH grant it is.
+ *
+ * The parameter exists so that each decision function can keep saying exactly
+ * what it can conclude -- `authorizeProfileAccess` can only ever reach
+ * `active_profile_of_session`, and a caller should not have to handle a reason
+ * it cannot receive. Widening both functions to the full union would have been
+ * the cheaper edit and would have thrown away the precision the old, wrong,
+ * single-literal type accidentally had.
+ */
+export interface ProfileAccessGrant<
+  Reason extends ProfileAccessGrantReason = ProfileAccessGrantReason
+> {
+  readonly allowed: true;
+  readonly reason: Reason;
+  readonly scope: ProfileScope;
+  readonly trail: readonly ProfileAccessCheck[];
+}
+
+/** A denial. Not parameterised: both functions can reach several of these. */
+export interface ProfileAccessDenial {
+  readonly allowed: false;
+  readonly reason: ProfileAccessDenialReason;
+  readonly trail: readonly ProfileAccessCheck[];
+}
+
+export type ProfileAccessDecision<
+  Reason extends ProfileAccessGrantReason = ProfileAccessGrantReason
+> = ProfileAccessGrant<Reason> | ProfileAccessDenial;
 
 /**
  * The order the checks run in, which is also their PRECEDENCE.
@@ -97,7 +158,7 @@ export const PROFILE_ACCESS_CHECK_ORDER = [
   "profile_not_owned_by_account",
   "profile_archived",
   "requested_profile_is_not_active"
-] as const satisfies readonly Exclude<ProfileAccessReason, "active_profile_of_session">[];
+] as const satisfies readonly ProfileAccessDenialReason[];
 
 export interface ProfileAccessRequest {
   readonly session: LibertySession;
@@ -121,17 +182,17 @@ export interface ProfileAccessRequest {
  * Decide whether a session may act as a profile, and if so mint the scope that
  * unlocks the profile-scoped repositories.
  */
-export function authorizeProfileAccess(request: ProfileAccessRequest): ProfileAccessDecision {
+export function authorizeProfileAccess(
+  request: ProfileAccessRequest
+): ProfileAccessDecision<"active_profile_of_session"> {
   const { session, requestedProfileId, ownership } = request;
   const trail: ProfileAccessCheck[] = [];
 
-  const deny = (
-    reason: Exclude<ProfileAccessReason, "active_profile_of_session">
-  ): ProfileAccessDecision => {
+  const deny = (reason: ProfileAccessDenialReason): ProfileAccessDenial => {
     trail.push({ check: reason, passed: false });
     return { allowed: false, reason, trail };
   };
-  const pass = (check: Exclude<ProfileAccessReason, "active_profile_of_session">): void => {
+  const pass = (check: ProfileAccessDenialReason): void => {
     trail.push({ check, passed: true });
   };
 
@@ -211,7 +272,7 @@ export type ExternalProfileAccessReason =
  * union.
  */
 export function externalProfileAccessReason(
-  reason: Exclude<ProfileAccessReason, "active_profile_of_session">
+  reason: ProfileAccessDenialReason
 ): ExternalProfileAccessReason {
   switch (reason) {
     case "profile_not_found":
@@ -231,11 +292,16 @@ export function externalProfileAccessReason(
  * Separate from `authorizeProfileAccess` rather than a flag on it, because the
  * two differ on the one check that matters: selection cannot require the
  * profile to already be active without making selection impossible.
+ *
+ * Its grant is `selectable_profile_of_account`, and the return type says so.
+ * That reason exists because this function used to grant with
+ * `active_profile_of_session` on a path where nothing is active; see the union
+ * member's own comment for why the fix belonged there rather than here.
  */
 export function authorizeProfileSelection(input: {
   readonly session: LibertySession;
   readonly ownership: ProfileOwnership | null;
-}): ProfileAccessDecision {
+}): ProfileAccessDecision<"selectable_profile_of_account"> {
   const trail: ProfileAccessCheck[] = [];
 
   if (input.ownership === null) {
@@ -258,7 +324,7 @@ export function authorizeProfileSelection(input: {
 
   return {
     allowed: true,
-    reason: "active_profile_of_session",
+    reason: "selectable_profile_of_account",
     scope: mintProfileScope(input.ownership.profileId, input.session.account.userId),
     trail
   };

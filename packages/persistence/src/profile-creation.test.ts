@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  MAX_AVATAR_KEY_CODE_POINTS,
   MAX_DISPLAY_NAME_CODE_POINTS,
   MAX_PROFILES_PER_ACCOUNT,
+  MAX_RATING_LABEL_CODE_POINTS,
   PROFILE_CREATION_CHECK_ORDER,
+  PROFILE_CREATION_CONSTRAINT_REFUSALS,
   isMintedProfileId,
   normalizeDisplayName,
   normalizeOptionalField,
@@ -222,15 +225,52 @@ describe("resolveProfileCreation", () => {
   it("refuses in the published precedence order", () => {
     // Keeps PROFILE_CREATION_CHECK_ORDER honest as documentation rather than
     // letting it drift into decoration.
+    //
+    // EXTENDED WITH TWO CASES on the audit that bounded `avatarKey` and
+    // `maxRating`. The test walks the published order and needs one failing
+    // input per entry, so growing the order grows this list -- the assertion
+    // itself is unchanged and still fails if the order does not match.
     const reasons = [
       resolveProfileCreation(
         request({ existingProfileCount: MAX_PROFILES_PER_ACCOUNT, displayName: "   " })
       ),
       resolveProfileCreation(request({ displayName: "" })),
-      resolveProfileCreation(request({ displayName: "n".repeat(MAX_DISPLAY_NAME_CODE_POINTS + 1) }))
+      resolveProfileCreation(request({ displayName: "n".repeat(MAX_DISPLAY_NAME_CODE_POINTS + 1) })),
+      resolveProfileCreation(request({ avatarKey: "a".repeat(MAX_AVATAR_KEY_CODE_POINTS + 1) })),
+      resolveProfileCreation(request({ maxRating: "R".repeat(MAX_RATING_LABEL_CODE_POINTS + 1) }))
     ].map((resolution) => (resolution.ok ? "accepted" : resolution.reason));
 
     expect(reasons).toEqual([...PROFILE_CREATION_CHECK_ORDER]);
+  });
+
+  it("reports the display name before either optional field", () => {
+    // Precedence between the new checks and the old ones, asserted directly
+    // rather than only as a by-product of the walk above: the required field the
+    // account holder is looking at is the one worth naming first.
+    const resolution = resolveProfileCreation(
+      request({
+        displayName: "   ",
+        avatarKey: "a".repeat(MAX_AVATAR_KEY_CODE_POINTS + 1),
+        maxRating: "R".repeat(MAX_RATING_LABEL_CODE_POINTS + 1)
+      })
+    );
+
+    expect(resolution.ok).toBe(false);
+    if (resolution.ok) return;
+    expect(resolution.reason).toBe("display_name_is_blank");
+  });
+
+  it("reports the avatar key before the rating label", () => {
+    const resolution = resolveProfileCreation(
+      request({
+        avatarKey: "a".repeat(MAX_AVATAR_KEY_CODE_POINTS + 1),
+        maxRating: "R".repeat(MAX_RATING_LABEL_CODE_POINTS + 1)
+      })
+    );
+
+    expect(resolution.ok).toBe(false);
+    if (resolution.ok) return;
+    expect(resolution.reason).toBe("avatar_key_too_long");
   });
 
   it("produces an identical resolution when called repeatedly with identical input", () => {
@@ -238,6 +278,145 @@ describe("resolveProfileCreation", () => {
     // counter or a random source.
     const input = request({ displayName: "  Kids  ", avatarKey: "" });
     expect(resolveProfileCreation(input)).toEqual(resolveProfileCreation(input));
+  });
+});
+
+describe("the optional fields are bounded too", () => {
+  /**
+   * The asymmetry this closes.
+   *
+   * `MAX_DISPLAY_NAME_CODE_POINTS` existed because `text` is unbounded and the
+   * writer is authenticated. Both of those are equally true of `avatar_key` and
+   * `max_rating`, which were only trimmed -- so a cap on one column of three was
+   * not a bound on the row, and nothing in the module said why the other two
+   * differed. They do not differ.
+   *
+   * The two cases share one table below, with a builder each. It is annotated
+   * rather than inferred, and a builder rather than a computed key, because
+   * `{ [field]: value }` with a union-typed key infers a string index signature,
+   * which stops being assignable to the request shape the moment one of that
+   * shape's fields is not a string -- and `existingProfileCount` is a number.
+   */
+  const optionalFields: readonly {
+    readonly field: string;
+    readonly limit: number;
+    readonly reason: string;
+    readonly build: (value: string) => Partial<Parameters<typeof resolveProfileCreation>[0]>;
+  }[] = [
+    {
+      field: "avatarKey",
+      limit: MAX_AVATAR_KEY_CODE_POINTS,
+      reason: "avatar_key_too_long",
+      build: (value) => ({ avatarKey: value })
+    },
+    {
+      field: "maxRating",
+      limit: MAX_RATING_LABEL_CODE_POINTS,
+      reason: "max_rating_too_long",
+      build: (value) => ({ maxRating: value })
+    }
+  ];
+
+  it.each(optionalFields)(
+    "accepts $field at the limit and refuses it one past",
+    ({ limit, reason, build }) => {
+      // Both sides of the boundary, for the reason the ceiling test gives: a `>=`
+      // where a `>` belongs refuses a legitimate value at the stated limit, and
+      // no single-sided test notices.
+      const atLimit = resolveProfileCreation(request(build("x".repeat(limit))));
+      const pastLimit = resolveProfileCreation(request(build("x".repeat(limit + 1))));
+
+      expect(atLimit.ok).toBe(true);
+      expect(pastLimit.ok).toBe(false);
+      if (pastLimit.ok) return;
+      expect(pastLimit.reason).toBe(reason);
+    }
+  );
+
+  it.each(optionalFields)("never echoes an over-long $field into its own refusal", ({ limit, build }) => {
+    // The refusal is about a field being enormous; putting the field IN the
+    // refusal moves the same unbounded string from the database into the log
+    // aggregator. The detail carries the two numbers instead.
+    const enormous = "x".repeat(limit + 500);
+    const resolution = resolveProfileCreation(request(build(enormous)));
+
+    expect(resolution.ok).toBe(false);
+    if (resolution.ok) return;
+    expect(resolution.detail).not.toContain(enormous);
+    expect(resolution.detail).toContain(String(limit + 500));
+    expect(resolution.detail).toContain(String(limit));
+  });
+
+  it("counts the optional fields in code points as well, not UTF-16 units", () => {
+    // The same argument as the display name, one field over: an astral
+    // character is two UTF-16 units, so counting them halves the stated limit
+    // for anybody whose value contains one.
+    const astral = String.fromCodePoint(0x1f603).repeat(MAX_RATING_LABEL_CODE_POINTS);
+    expect(astral.length).toBeGreaterThan(MAX_RATING_LABEL_CODE_POINTS);
+    expect(resolveProfileCreation(request({ maxRating: astral })).ok).toBe(true);
+  });
+
+  it("measures after trimming, so surrounding whitespace cannot exceed the limit", () => {
+    // The value judged has to be the value stored, or the resolver is measuring
+    // something the repository will not write.
+    const padded = `${" ".repeat(MAX_RATING_LABEL_CODE_POINTS)}PG${" ".repeat(MAX_RATING_LABEL_CODE_POINTS)}`;
+    const resolution = resolveProfileCreation(request({ maxRating: padded }));
+
+    expect(resolution.ok).toBe(true);
+    if (!resolution.ok) return;
+    expect(resolution.maxRating).toBe("PG");
+  });
+
+  it("still turns a blank optional field into null rather than measuring it", () => {
+    // The bound must not have displaced the "unknown is not a value" rule that
+    // was already here.
+    const resolution = resolveProfileCreation(request({ avatarKey: "   ", maxRating: "" }));
+
+    expect(resolution.ok).toBe(true);
+    if (!resolution.ok) return;
+    expect(resolution.avatarKey).toBeNull();
+    expect(resolution.maxRating).toBeNull();
+  });
+});
+
+describe("the refusal vocabulary", () => {
+  it("is the resolver's order plus the refusals only the database can reach", () => {
+    // Two lists rather than one, because a collision is not decidable from the
+    // facts `resolveProfileCreation` is given. Folding
+    // `display_name_already_used` into PROFILE_CREATION_CHECK_ORDER would claim
+    // a precedence between checks that never run in the same place.
+    expect([...PROFILE_CREATION_CONSTRAINT_REFUSALS]).toEqual(["display_name_already_used"]);
+    for (const constraintReason of PROFILE_CREATION_CONSTRAINT_REFUSALS) {
+      expect([...PROFILE_CREATION_CHECK_ORDER]).not.toContain(constraintReason);
+    }
+  });
+
+  it("never lets the pure resolver emit a reason only the database can decide", () => {
+    // Stated negatively, which is the version that catches the regression: a
+    // read-then-write duplicate check added to this module would have to reach
+    // for `display_name_already_used`, and this is where that shows up. Every
+    // refusal `resolveProfileCreation` can produce must come from its own
+    // published order.
+    const resolutions = [
+      resolveProfileCreation(request({ existingProfileCount: MAX_PROFILES_PER_ACCOUNT })),
+      resolveProfileCreation(request({ displayName: "   " })),
+      resolveProfileCreation(request({ displayName: "n".repeat(MAX_DISPLAY_NAME_CODE_POINTS + 1) })),
+      resolveProfileCreation(request({ avatarKey: "a".repeat(MAX_AVATAR_KEY_CODE_POINTS + 1) })),
+      resolveProfileCreation(request({ maxRating: "R".repeat(MAX_RATING_LABEL_CODE_POINTS + 1) }))
+    ];
+
+    for (const resolution of resolutions) {
+      expect(resolution.ok).toBe(false);
+      if (resolution.ok) continue;
+      expect([...PROFILE_CREATION_CHECK_ORDER]).toContain(resolution.reason);
+    }
+  });
+
+  it("accepts a name that would collide, because collisions are not its question", () => {
+    // The resolver is given a count and three strings. Whether another row
+    // already holds this name is not among them, and inventing an answer here
+    // is the read-then-write race `createProfile` explains at `insertProfileRow`.
+    expect(resolveProfileCreation(request({ displayName: "Dad" })).ok).toBe(true);
   });
 });
 

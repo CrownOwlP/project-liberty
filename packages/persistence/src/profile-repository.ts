@@ -13,7 +13,11 @@ import {
   isMintedProfileId,
   resolveProfileCreation
 } from "./profile-creation";
-import { activeProfileSelection, profile } from "./schema";
+import {
+  PROFILE_DISPLAY_NAME_UNIQUE_CONSTRAINT,
+  activeProfileSelection,
+  profile
+} from "./schema";
 
 /* -------------------------------------------------------------------------
  * Profiles: create, list, select, archive (PL-0402)
@@ -167,6 +171,142 @@ export interface CreateProfileInput {
 export type ProfileCreation = { readonly ok: true; readonly profile: ProfileRow } | ProfileCreationRefusal;
 
 /**
+ * PostgreSQL's SQLSTATE for `unique_violation`.
+ *
+ * THE MATCH IS ON THIS AND ON THE CONSTRAINT NAME, NEVER ON A MESSAGE. A message
+ * string is the driver's presentation layer: it is localised by `lc_messages`,
+ * it is reworded between server versions, and it is the field a driver upgrade
+ * is most likely to change. A test written against it passes on the developer's
+ * machine and the catch silently stops firing in production, which is strictly
+ * worse than not having written the catch -- the refusal disappears and the raw
+ * exception comes back, with a test still green.
+ *
+ * SQLSTATE is a five-character code fixed by the SQL standard and by
+ * `errcodes.txt` in PostgreSQL's own source; it has not changed for
+ * `unique_violation` in the lifetime of the project and will not, because
+ * changing it would break every client at once.
+ */
+const UNIQUE_VIOLATION = "23505";
+
+/**
+ * How far the `cause` chain is walked.
+ *
+ * A bound rather than a `while (current)`, because `cause` is a caller-populated
+ * field and nothing prevents a cycle -- and an error handler that hangs is a
+ * worse failure than the one it was translating. Eight is far more nesting than
+ * any real driver stack produces (today it is exactly one).
+ */
+const MAX_CAUSE_DEPTH = 8;
+
+/**
+ * The constraint a failed statement violated, or `null` if it did not fail that
+ * way.
+ *
+ * WHY THE CHAIN IS WALKED AT ALL. `drizzle-orm@0.45.2` wraps every driver
+ * exception in a `DrizzleQueryError` whose `cause` is the original `pg`
+ * `DatabaseError` (`pg-core/session.js`, `queryWithCache`). So the SQLSTATE is
+ * NOT on the error that arrives here, and the obvious `error.code === "23505"`
+ * is a check that never fires. Walking `cause` also survives the reverse change:
+ * if a future Drizzle stops wrapping, the code is found at depth zero instead.
+ *
+ * STRUCTURAL, NOT `instanceof`. `pg` can legitimately be installed more than
+ * once in a workspace, and an `instanceof DatabaseError` against the copy THIS
+ * module imported is `false` for an error thrown by another copy -- a failure
+ * that appears only in some installs. It would also mean importing a driver
+ * class into a module that otherwise names no driver type.
+ *
+ * `constraint` must be a string. `pg` populates it from the server's
+ * `constraint_name` error field for integrity violations; if some pooler or
+ * older server strips it, this returns `null` and the caller rethrows -- the
+ * unchanged behaviour from before this translation existed, which is the right
+ * direction to fail in.
+ */
+function violatedUniqueConstraint(error: unknown): string | null {
+  let current: unknown = error;
+
+  for (let depth = 0; depth < MAX_CAUSE_DEPTH; depth += 1) {
+    if (current === null || typeof current !== "object") return null;
+
+    // An assertion rather than an annotation: every property of the shape is
+    // optional, which makes it a WEAK TYPE, and an assignment from `object` to a
+    // weak type is rejected for having no properties in common. The assertion
+    // states the same thing without inviting that rule, and it claims nothing --
+    // every field is read back as `unknown` and checked below.
+    const candidate = current as {
+      readonly code?: unknown;
+      readonly constraint?: unknown;
+      readonly cause?: unknown;
+    };
+    if (candidate.code === UNIQUE_VIOLATION && typeof candidate.constraint === "string") {
+      return candidate.constraint;
+    }
+
+    current = candidate.cause;
+  }
+
+  return null;
+}
+
+/**
+ * The `INSERT`, with the one constraint violation this package has an answer for
+ * translated into a refusal.
+ *
+ * WHY A CATCH AND NOT A PRE-CHECK, which was the other available design and is
+ * the one the ceiling check uses. A `SELECT ... WHERE display_name = $1` before
+ * the insert has exactly the race `createProfile` already documents for the
+ * count -- two creates of "Dad" can both read no match and both proceed -- but
+ * unlike the ceiling, this race is CLOSABLE, and it is already closed: PostgreSQL
+ * can express "one name per account" as a constraint, and
+ * `UNIQUE (user_id, display_name)` is that constraint, applied in the first
+ * migration. The database is therefore the only participant that can decide the
+ * question correctly, and the catch is how its answer is read.
+ *
+ * NOT BOTH, DELIBERATELY. A pre-check in front of the catch would add a query to
+ * every create, would still be racy, and would produce a SECOND emitter of the
+ * same refusal -- and the pre-check is the one a test would exercise, leaving
+ * the emitter that actually runs in production the one nothing covers. The two
+ * paths would then be free to disagree about the detail text, which is the part
+ * a support engineer reads.
+ *
+ * WHAT IS DELIBERATELY NOT CAUGHT. Any other SQLSTATE, and a `23505` on any
+ * other constraint, are rethrown untouched. The same statement can violate
+ * `profile_id_user_id_key` or the primary key on `id`, and both of those mean a
+ * UUID collision in `newProfileId` -- reporting that as "the name is taken"
+ * would send an account holder to rename a profile in response to a bug in the
+ * id generator, and would bury the only evidence of it.
+ */
+async function insertProfileRow(
+  db: LibertyDatabase,
+  values: typeof profile.$inferInsert
+): Promise<{ readonly ok: true; readonly rows: readonly ProfileRow[] } | ProfileCreationRefusal> {
+  try {
+    // The `try` holds exactly the awaited statement and nothing else, so the
+    // catch cannot accidentally swallow a defect in the code around it.
+    return { ok: true, rows: await db.insert(profile).values(values).returning() };
+  } catch (error) {
+    if (violatedUniqueConstraint(error) !== PROFILE_DISPLAY_NAME_UNIQUE_CONSTRAINT) throw error;
+
+    return {
+      ok: false,
+      reason: "display_name_already_used",
+      // The name IS echoed here, unlike the length refusals: the collision is
+      // necessarily within this one account -- the constraint is on
+      // `(user_id, display_name)` -- so the value cannot be another household's,
+      // and `MAX_DISPLAY_NAME_CODE_POINTS` already bounds how much of it there
+      // can be. `JSON.stringify` for the reason `resolveProfileCreation` gives:
+      // a name differing only in invisible characters must not print as the
+      // name it collided with.
+      //
+      // The archived case is named because it is the one the account holder
+      // cannot see: the constraint deliberately spans archived profiles, so
+      // "that name is in use" can be true while the picker shows nothing of the
+      // sort, and a refusal that did not say so is unanswerable.
+      detail: `this account already has a profile named ${JSON.stringify(values.displayName)}, live or archived; the uniqueness constraint spans archived profiles so that household history stays unambiguous`
+    };
+  }
+}
+
+/**
  * Create a profile owned by the session's account.
  *
  * `userId` comes from the SESSION, never from the request body. A caller-
@@ -190,6 +330,12 @@ export type ProfileCreation = { readonly ok: true; readonly profile: ProfileRow 
  * seen refuse anything. This paragraph is the record of that gap; it belongs in
  * `docs/DATA_MODEL.md` under "Unverified" too, and that file is outside this
  * task's `allowedPaths`.
+ *
+ * THE DUPLICATE-NAME CHECK IS THE OPPOSITE CASE, and the contrast is the point.
+ * `UNIQUE (user_id, display_name)` is a rule PostgreSQL CAN express, does
+ * express, and decides atomically, so a second "Dad" is refused correctly no
+ * matter how the two requests interleave. All this function does is read the
+ * database's answer and give it a reason; see `insertProfileRow`.
  */
 export async function createProfile(
   db: LibertyDatabase,
@@ -205,24 +351,25 @@ export async function createProfile(
   });
   if (!resolution.ok) return resolution;
 
-  const rows = await db
-    .insert(profile)
-    .values({
-      id: newProfileId(),
-      userId: input.session.account.userId,
-      // The NORMALISED values, not the submitted ones. Writing `input.displayName`
-      // here would make the resolver an opinion the statement ignores -- and the
-      // uniqueness constraint on (user_id, display_name) only means what its
-      // comment claims if the column holds the canonical spelling.
-      displayName: resolution.displayName,
-      avatarKey: resolution.avatarKey,
-      maxRating: resolution.maxRating,
-      createdAt: input.instant,
-      archivedAt: null
-    })
-    .returning();
+  const inserted = await insertProfileRow(db, {
+    id: newProfileId(),
+    userId: input.session.account.userId,
+    // The NORMALISED values, not the submitted ones. Writing `input.displayName`
+    // here would make the resolver an opinion the statement ignores -- and the
+    // uniqueness constraint on (user_id, display_name) only means what its
+    // comment claims if the column holds the canonical spelling. It is also what
+    // makes the collision refusal correct rather than merely present: without
+    // normalisation "Dad " would be accepted as a second row and no constraint
+    // would ever fire.
+    displayName: resolution.displayName,
+    avatarKey: resolution.avatarKey,
+    maxRating: resolution.maxRating,
+    createdAt: input.instant,
+    archivedAt: null
+  });
+  if (!inserted.ok) return inserted;
 
-  const row = rows[0];
+  const row = inserted.rows[0];
   // `.returning()` on a successful single-row insert always yields one row; the
   // throw exists so the impossible case is loud rather than becoming an
   // `undefined` that travels.
