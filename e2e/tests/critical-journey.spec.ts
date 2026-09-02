@@ -93,10 +93,14 @@ test("the play affordance leads to the player for that same id", async ({ page }
  * branches, and treat a production build that produces a player as the rights
  * incident it would be, not as a test that needs relaxing.
  *
- * `docs/E2E.md` still states that "the watch page does not share that switch --
- * so the browser journey runs in both". That sentence is now false. `docs/**`
- * is outside this task's allowedPaths, so the correction is reported rather
- * than made here.
+ * `docs/E2E.md` USED TO STATE that "the watch page does not share that switch --
+ * so the browser journey runs in both", which described the defect rather than
+ * the product. PL-0703 owns that file and has corrected it: the doc now says the
+ * watch page shares the switch, records that the divergence was blessed IN
+ * WRITING -- which is how one copy of a rights-asserting fixture set got gated
+ * while the other shipped -- and marks the player and granted-session coverage
+ * rows as reachable only under a `development` build. Keep the two in step: a
+ * doc that re-blesses a split is what let this defect survive a review.
  * ---------------------------------------------------------------------- */
 
 test("the watch route answers with the id it was asked about, and never with a src", async ({
@@ -169,7 +173,7 @@ test("which branch the watch route takes is decided by the build, and both are a
      * THE RIGHTS ASSERTION, and the reason this branch is asserted rather than
      * skipped. If a production build ever mounts a player here, a fixture has
      * escaped into a shipped artifact -- that is a rights incident rather than
-     * a test failure, and it is exactly the defect that existed until PL-0301.
+     * a test failure, and it is exactly the defect PL-0703 exists to correct.
      * Safe to count without waiting: this branch never renders `PlayerSurface`,
      * so there is no effect that could append the element after the heading
      * above has been observed.

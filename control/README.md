@@ -68,10 +68,10 @@ that is either wider or narrower than it — a narrower one hides corrective wor
 from the reviewer, a wider one is reviewed and then rejected by the control plane,
 stranding the task after the model has already run.
 
-That makes one situation genuinely dangerous: an implementation written and pushed
-**before** the task was claimed. Letting an ordinary `start` capture HEAD there
-writes a field that is *false* — it opens the first review after the code it was
-meant to cover. Putting the real range in gate evidence instead does not repair
+That makes one situation genuinely dangerous: an implementation written and
+committed **before** the task was claimed. Letting an ordinary `start` capture
+HEAD there writes a field that is *false* — it opens the first review after the
+code it was meant to cover. Putting the real range in gate evidence instead does not repair
 it; it creates two competing truths and leaves the machine-readable one broken,
 and every automated consumer reads the field, not the prose.
 
@@ -85,10 +85,36 @@ npm run ai:start -- PL-0201 claude-media \
 
 ### When it is legitimate
 
-Exactly one case: **the implementation already exists in pushed commits that
-predate the claim**, and the task is being moved through its lifecycle honestly
-afterwards. Typical shape: preflight work committed before the control plane had
-a task open for it.
+Exactly one case: **the implementation already exists in committed Git history
+that predates the claim**, and the task is being moved through its lifecycle
+honestly afterwards. Typical shape: preflight work committed before the control
+plane had a task open for it.
+
+#### "Committed", not "pushed", and why the wording matters
+
+This contract used to say *pushed* commits — in the error text, in the audit
+note, in the CLI help and here. It was false in the only way that counts: nothing
+on this path contacts a remote. Every check reads the local worktree and the local
+commit graph, so a clean branch of three commits that have never left the machine
+passes all of them. The mechanism asserted remote reachability and established
+local committedness, which is the same class of provenance overclaim this whole
+section exists to remove — a machine-readable record that reads as stronger than
+what produced it.
+
+The repair was to narrow the claim rather than to widen the check. Adding a
+remote-reachability test was considered and **rejected**: upstream configuration
+is not universal, a detached CI clone makes "pushed" ambiguous to define, and
+reconciliation legitimately happens locally in the moments *before* the resulting
+commits are pushed — so the check would refuse correct work while still not
+proving what the sentence claimed. The invariant that actually matters here is
+that the asserted review range contains committed history rather than
+working-tree material, and that is exactly what is enforced.
+
+Remote availability is a real requirement, but it belongs one step later: a review
+decision binds to a commit sha, and the reviewer has to be able to fetch that sha.
+That is the natural point at which "is this commit actually shared?" is both
+meaningful and answerable, and it is not this one. Do not restore the "pushed"
+wording here without a check that earns it.
 
 ### When it is not
 
@@ -126,7 +152,7 @@ operator most believes they supplied one.
 | full 40-hex sha | `HEAD~3` resolves differently later; the field is read months on |
 | git present, HEAD resolves | fail closed — "cannot check" must not read as "checked" |
 | commit exists, ≠ HEAD, ancestor of HEAD | a range that is real and non-empty |
-| **no uncommitted changes under `allowedPaths`** | reconciliation asserts the implementation is already in pushed commits; a dirty tree contradicts that on its face, and on a wide surface the check below is satisfied by other lanes' commits |
+| **no uncommitted changes under `allowedPaths`** | reconciliation asserts the implementation is already in committed Git history; a dirty tree contradicts that on its face, and on a wide surface the check below is satisfied by other lanes' commits. This proves committedness only — no remote is consulted |
 | something under the reviewed surface changed in `base..HEAD` | a base at or after the implementation is the central falsehood |
 | the window (`git log`) is computable | fail closed; a window that could not be listed must not be published as an empty one |
 | what the base commit itself changed under the reviewed surface is computable | same reason. This one is **published, not judged** — see below |
@@ -237,7 +263,9 @@ the check, not after.
   reader scanning for the ordinary type cannot mistake one for the other by
   overlooking a field. The record carries the base, the head it was reconciled
   against, the window, the reason, and a note saying this was reconciliation of a
-  pre-existing pushed implementation and not a new implementation start.
+  pre-existing implementation already in committed Git history, not a new
+  implementation start, and verified against local committed history only with no
+  remote consulted.
 - The task gains `implementationBaseProvenance` beside `implementationBaseSha`.
   Absence of that record is what marks a base as *captured*; presence marks it as
   *asserted*.

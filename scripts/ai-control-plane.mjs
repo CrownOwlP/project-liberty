@@ -864,13 +864,33 @@ function commitResolves(sha) {
  *
  * `start` captures HEAD as `implementationBaseSha` because, normally, HEAD IS the
  * commit implementation is about to begin from. That assumption breaks for work
- * written and pushed before any claim existed -- unclaimed preflight
+ * written and COMMITTED before any claim existed -- unclaimed preflight
  * implementation -- and the field is not descriptive metadata that can absorb the
  * error. `expectedReviewBase()` uses it as the EXACT lower bound of the first
  * review range, and `validateReviewRange()` refuses a base that is either wider
  * or narrower than that. A HEAD-captured base on such a task therefore hands the
  * reviewer a range that starts AFTER the code it was asked to judge, with the
  * full authority of a machine-readable field.
+ *
+ * COMMITTED, NOT PUSHED, and the two are not interchangeable. This whole path
+ * reads the local worktree and the local commit graph; nothing here contacts a
+ * remote, so a clean checkout whose commits have never left the machine satisfies
+ * every check below. The contract used to say "pushed commits" -- in the dirty-
+ * tree error, in the audit note, in the CLI help and in control/README.md -- which
+ * asserted remote reachability while establishing only local committedness. That
+ * is a provenance overclaim of exactly the class this mechanism exists to remove:
+ * a record that reads as stronger than what produced it.
+ *
+ * Adding a remote-reachability check instead was REJECTED, and the narrowing is
+ * the repair. Upstream configuration is not universal, a detached CI clone makes
+ * "pushed" ambiguous to even define, and reconciliation legitimately runs locally
+ * moments BEFORE the resulting commits are pushed -- so the check would refuse
+ * correct work and still not prove what the sentence claimed. Remote availability
+ * is real but belongs one step later: a review decision binds to a commit sha,
+ * and the reviewer has to be able to fetch that sha. That is where the question
+ * is both meaningful and answerable, and it is not here. The invariant here is
+ * only that the asserted range contains COMMITTED history rather than
+ * working-tree material.
  *
  * Three repairs were considered and two rejected:
  *
@@ -1178,15 +1198,15 @@ function assertReconcilableBase(task, baseSha) {
     throw new Error(
       `${task.id} declares no allowedPaths, so the "already committed" check below has no surface to run on ` +
         "and would pass vacuously on a working tree full of the very implementation being asserted as " +
-        "pushed. Declare the paths this task writes before reconciling",
+        "already committed. Declare the paths this task writes before reconciling",
     );
   }
 
   /*
    * A DIRTY WORKING TREE CONTRADICTS THE ASSERTION ON ITS FACE.
    *
-   * Reconciliation asserts "the implementation already exists in pushed
-   * commits". Uncommitted work under this task's own paths says the opposite,
+   * Reconciliation asserts "the implementation already exists in committed Git
+   * history". Uncommitted work under this task's own paths says the opposite,
    * and the documentation has always said so -- but nothing enforced it. The
    * central check below only catches an uncommitted implementation when NOTHING
    * under the surface changed in base..HEAD, which is a coincidence rather than
@@ -1200,13 +1220,20 @@ function assertReconcilableBase(task, baseSha) {
    * this task's business. `taskWorktreeDirtyPaths` rather than
    * `taskWorktreeIsDirty` because git is already known to be present -- an
    * environment variable must not be able to switch this off.
+   *
+   * WHAT THIS PROVES, EXACTLY: that nothing under allowedPaths is uncommitted.
+   * It says nothing about a remote, and the message below must not either. It
+   * once claimed the implementation "ALREADY EXISTS in pushed commits", which a
+   * clean branch of three never-pushed commits satisfies without contradiction --
+   * the error asserting more than the check establishes. See the section header
+   * for why a remote-reachability check was rejected rather than added.
    */
   const dirty = taskWorktreeDirtyPaths(task);
   if (dirty.length) {
     throw new Error(
       `cannot reconcile ${task.id}: ${dirty.length} uncommitted change(s) under its allowedPaths ` +
         `(${dirty.slice(0, 5).join(", ")}${dirty.length > 5 ? ", ..." : ""}). Reconciliation asserts that the ` +
-        "implementation ALREADY EXISTS in pushed commits, so a dirty tree contradicts it: whatever is " +
+        "implementation ALREADY EXISTS in committed Git history, so a dirty tree contradicts it: whatever is " +
         "uncommitted cannot be inside the range being asserted. Commit or stash it -- and if the " +
         "implementation itself is the uncommitted work, this is an ordinary start",
     );
@@ -3026,8 +3053,10 @@ try {
      *   start <taskId> [agentId] --reconcile-existing --base <sha> --reason "..."
      *                            [--implementation-agent <id>]
      *       Provenance reconciliation for an implementation that was written and
-     *       pushed BEFORE this task was claimed. Records the real
-     *       pre-implementation commit instead of HEAD.
+     *       COMMITTED BEFORE this task was claimed. Records the real
+     *       pre-implementation commit instead of HEAD. "Committed", not
+     *       "pushed": nothing on this path consults a remote, so the wider claim
+     *       would be one the checks do not make.
      *
      * It shares `start` rather than becoming its own subcommand so that the
      * status machine, the ownership rule and the single write to
@@ -3370,9 +3399,13 @@ try {
         baseCommitSurfaceTouchesTruncated:
           task.implementationBaseProvenance.baseCommitSurfaceTouchesTruncated,
         reason: reconcileReason,
+        // "committed", not "pushed": the checks behind this record read the local
+        // worktree and the local commit graph only. An audit note claiming the
+        // commits reached a remote would be asserting something nothing verified.
         note:
-          "reconciliation of a pre-existing pushed implementation; the base predates this claim and was " +
-          "NOT captured at start. This is not a new implementation start. baseCommitSurfaceTouches is " +
+          "reconciliation of a pre-existing implementation already in committed Git history; the base " +
+          "predates this claim and was NOT captured at start. This is not a new implementation start. " +
+          "Verified against local committed history only -- no remote was consulted. baseCommitSurfaceTouches is " +
           "reported evidence, not a verdict: whether an earlier commit also belongs to this implementation " +
           "is a question for the reviewer, because git does not attribute commits to tasks.",
       });
@@ -4235,12 +4268,17 @@ assertions, not authentication: they exist so a caller that is wrong about who
 owns a task fails loudly instead of writing evidence under another agent's name.
 
 start --reconcile-existing is for ONE case: an implementation that was written and
-pushed BEFORE the task was claimed. implementationBaseSha is the exact lower bound
+COMMITTED BEFORE the task was claimed. implementationBaseSha is the exact lower bound
 of the first review range, so letting an ordinary start capture HEAD there would
 make the machine-readable field false and hand the reviewer a range beginning after
 the code. All three flags are required together, each is refused on an ordinary
 start, the base is verified against real history, and the operation is audited as
 task.started_reconciled -- never as task.started.
+
+"Committed", not "pushed". Every check runs against the local worktree and the
+local commit graph; no remote is contacted, so never-pushed commits pass. Remote
+availability is a handoff/review concern -- the reviewer must be able to fetch the
+sha a decision binds to -- not something reconciliation establishes.
 
 The base is checked only against MECHANICAL facts (full sha, resolvable, ancestor
 of HEAD, not HEAD, a non-empty reviewed surface with something changed in

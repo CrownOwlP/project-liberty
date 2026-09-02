@@ -5833,7 +5833,7 @@ try {
    *      `implementationBaseSha` is not descriptive metadata: expectedReviewBase
    *      uses it as the EXACT lower bound of the first review range, and
    *      validateReviewRange refuses a base that is either wider or narrower. So
-   *      for an implementation that was pushed before its task was claimed, an
+   *      for an implementation that was committed before its task was claimed, an
    *      ordinary start writes a FALSE structural field, and no amount of gate
    *      evidence repairs it -- prose beside a wrong machine field just makes two
    *      truths with the authoritative one broken.
@@ -5850,7 +5850,7 @@ try {
     addFixtureTasks(
       repo,
       fixtureTask("PL-RC-0001", {
-        title: "PL-RC-0001 implementation pushed before the claim existed",
+        title: "PL-RC-0001 implementation committed before the claim existed",
         allowedPaths: ["fixtures/rec/**"],
         acceptance: "fixture task used by the provenance-reconciliation scenarios",
       }),
@@ -5966,7 +5966,7 @@ try {
     addFixtureTasks(
       gitRepo,
       fixtureTask("PL-RC-0001", {
-        title: "PL-RC-0001 implementation pushed before the claim existed",
+        title: "PL-RC-0001 implementation committed before the claim existed",
         allowedPaths: ["fixtures/rec/**"],
         acceptance: "fixture task used by the provenance-reconciliation scenarios",
       }),
@@ -6228,8 +6228,20 @@ try {
     assert.equal(started[0].implementationBaseSha, BASE);
     assert.match(
       started[0].note,
-      /pre-existing pushed implementation/,
+      /pre-existing implementation already in committed Git history/,
       "the audit record must say what this was in words, not only in a type name",
+    );
+    // The note used to say "pushed implementation". Nothing on this path contacts
+    // a remote -- every check reads the local worktree and the local commit graph,
+    // and a clean branch of never-pushed commits passes all of them -- so the
+    // audit trail was asserting more than the implementation established.
+    // Tightening the assertion to the narrower, true claim is a correction of the
+    // record, not a relaxation of what is checked.
+    assert.match(
+      started[0].note,
+      /no remote was consulted/,
+      "the audit record must state the limit of what was verified, so a later reader " +
+        "cannot mistake local committed history for remote reachability",
     );
     assert.match(started[0].note, /not a new implementation start/);
     assert.equal(started[0].reason, "base read from git log of fixtures/recu");
@@ -6693,13 +6705,13 @@ try {
   /* ---------------------------------------------------------------------
    * 9ay. "Never for uncommitted work" is enforced, not merely documented.
    *
-   *      Reconciliation ASSERTS that the implementation already exists in pushed
-   *      commits. Nothing checked it. The central "something changed under the
-   *      surface" check catches an uncommitted implementation only when NOTHING
-   *      changed in base..HEAD, which on any wide surface is satisfied trivially
-   *      by other lanes' commits -- so an implementation living entirely in the
-   *      working tree could reconcile to a base that predates nothing and
-   *      publish a window built from other people's work.
+   *      Reconciliation ASSERTS that the implementation already exists in
+   *      committed Git history. Nothing checked it. The central "something
+   *      changed under the surface" check catches an uncommitted implementation
+   *      only when NOTHING changed in base..HEAD, which on any wide surface is
+   *      satisfied trivially by other lanes' commits -- so an implementation
+   *      living entirely in the working tree could reconcile to a base that
+   *      predates nothing and publish a window built from other people's work.
    *
    *      Scoped to allowedPaths, like every other dirty-tree check here, so
    *      unrelated dirt cannot block a legitimate reconciliation.

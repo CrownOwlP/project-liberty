@@ -86,7 +86,7 @@ by it.
 | ------------------------ | ---------------- | ------ |
 | `LIBERTY_E2E_BASE_URL`   | unset            | Test an already-running deployment. When set, the harness starts no server. It POSTs to the playback session endpoint, so never aim it at production. |
 | `LIBERTY_E2E_PORT`       | `3100`           | Port for the harness-managed server. Not 3000, because that is where a developer's `next dev` already is and `reuseExistingServer` would silently adopt it. |
-| `LIBERTY_E2E_WEB_MODE`   | `production`     | `production` runs `npm run build` + `next start`. `development` runs `next dev`. See the note below — the two answer the session API differently and disagree about whether `/api/v1/playback/resolve` exists, both on purpose. |
+| `LIBERTY_E2E_WEB_MODE`   | `production`     | `production` runs `npm run build` + `next start`. `development` runs `next dev`. See the note below — the two answer the session API differently, disagree about whether `/api/v1/playback/resolve` exists, and disagree about whether the **watch route** mounts a player. All three on purpose, and all three the same switch. |
 | `LIBERTY_E2E_MEDIA_ORIGIN` | unset          | A DASH/HLS origin you hold rights to serve from. Passed to the server as `LIBERTY_FIXTURE_MEDIA_ORIGIN`. Unset means the harness pins the server to `https://fixtures.invalid` — never to an inherited value — and the media-rig suite skips. |
 
 ### The two web modes are not the same deployment
@@ -117,9 +117,48 @@ rights control, and a scaffold reachable from a hosted deployment is the finding
 a suite that went quiet under the mode CI actually builds would say nothing about
 the only build that ships.
 
-The watch page does not share that switch — `watch/watch-session.ts` is PL-0501's
-stand-in and serves fixtures in either mode — so the browser journey runs in
-both.
+### The watch page shares that switch, and the sentence that said otherwise was the defect
+
+The section above used to end with: *"The watch page does not share that switch —
+`watch/watch-session.ts` is PL-0501's stand-in and serves fixtures in either mode
+— so the browser journey runs in both."* That was an accurate description of the
+code and a written licence for a rights breach.
+
+`watch/watch-session.ts` carried its **own** copy of the fixture provider: a
+hardcoded `owned` rights basis, invented codecs, heights and bitrates, URLs built
+by string concatenation, and **no environment guard at all**.
+`[contentId]/page.tsx` calls that loader unconditionally, so a production
+`next start` rendered `/watch/<id>` with a player aimed at candidates declaring
+ownership of files nobody had ever opened. The session API's copy of the same
+fixtures was gated for precisely that reason. The watch route's copy was not, and
+this document recorded the difference as intended behaviour.
+
+That is the part worth keeping, because it is the part that generalises: the
+divergence did not survive because nobody noticed it. It survived because it was
+**written down as a design decision**. A review that gated one copy of a
+rights-asserting fixture set had documentary grounds for leaving the second copy
+alone, so one was fixed and the other shipped. A doc that merely said "these now
+match" would leave that mechanism intact and invite the next person to re-split
+them.
+
+The duplicate is deleted rather than guarded. `watch/watch-session.ts` imports
+`resolveAuthorizedCandidates` from the session API, so there is exactly one
+fixture provider, one environment allowlist (`development` and `test`) and one
+rights basis. Under the default `production` mode the watch route answers
+`not-configured` and renders an explanation naming an operator remedy; no player
+mounts. A guarded-and-corrected second copy would have satisfied every bullet of
+the repair and left the *arrangement* that produced the bug in place — two
+adapters asserting rights over the same imaginary media, agreeing only by
+coincidence. If a future change wants a fixture provider on a route because the
+shared one refuses to serve there, the refusal is the feature.
+
+So the browser journey does **not** run identically in both modes, and the specs
+say which is which: `critical-journey.spec.ts` asserts the production branch (the
+unavailable panel, no `liberty-video`, no reason trail) rather than skipping it,
+because a production build that mounts a player here is a rights incident and not
+a test that needs relaxing. The mode-independent half — `/watch/<id>` answers
+200, carries the requested id, offers "Back to catalog", and no
+`liberty-video[src]` exists anywhere — still runs in both.
 
 ## What it covers
 
@@ -128,14 +167,14 @@ both.
 | Catalog API | 200, `no-store`, non-empty rails; every surfaced item's `rights` is on the playable allowlist; **no key anywhere in the response is a media address, and no value is an absolute URL** |
 | Session API shape | Exactly one of `granted` / `denied` / `unavailable`; a **non-empty reason trail on every branch**; reasons are `snake_case` codes with a non-empty human `detail` and a required, nullable `candidateId`; `no-store` |
 | Session API status | The HTTP status is re-derived from the outcome by the harness and compared. A 200 carrying a denial is a client that plays nothing and reports nothing |
-| Session API grants | Candidate ids are distinct; `startAtSeconds` is `null` (engine default), not `0`; `expiresAt` parses; a failover policy is published; **every candidate URI is on the configured media origin and no other** |
+| Session API grants | **`development` build only.** Candidate ids are distinct; `startAtSeconds` is `null` (engine default), not `0`; `expiresAt` parses; a failover policy is published; **every candidate URI is on the configured media origin and no other**. Under `production` the session answers `unavailable`, so the granted-session checks never run, and the media-origin spec skips with the outcome it saw as its stated reason. What a production run asserts instead is the row above: that the outcome *is* `unavailable` with `provider_not_configured` |
 | Session API determinism | The same request twice produces a byte-identical response once the session id and expiry are removed |
 | Rights boundary | A request carrying `uri` is **refused**, not stripped, with `request_field_not_permitted` as the **primary** reason and no session attached; the same for a URL smuggled into the nested `capabilities` object; a non-normalized `contentId` is refused before any resolver runs; no response echoes the submitted address anywhere in its body |
 | Resolve gate | Under the default `production` mode, `/api/v1/playback/resolve` answers **404 `route_not_available` with no verdict attached** to the request that would otherwise have succeeded |
 | Rights boundary | Under `development`, an unrightsed candidate posted to `/api/v1/playback/resolve` never yields `selected` or `ranked` — with a rightsed control candidate beside it, so the refusal is about rights and not about an outage |
 | Robustness | `"not json"`, `7`, `null`, `[]` all produce a well-formed `denied` and never a 500 |
 | Journey | Catalog rail → title route → Play link → watch route → back; unknown ids are real 404s |
-| Player | `<liberty-video>` mounts and **never carries a `src`**; the reason trail renders |
+| Player | **`development` build only.** `<liberty-video>` mounts and **never carries a `src`**; the reason trail renders. Under `production` the same spec asserts the opposite and does not skip: the unavailable panel is shown, `liberty-video` has count **0**, and no reason trail exists — a player on that build would mean a fixture escaped into a shipped artifact. The `src` half is mode-independent: `liberty-video[src]` must match nothing in either mode, though on a production build it is the development branch that stops the pair being vacuous |
 | Search | Idle, results and empty stay three distinct states; the query is escaped rather than interpreted; typing becomes an addressable URL |
 
 ## What it deliberately does not cover
@@ -260,10 +299,27 @@ LIBERTY_E2E_WEB_MODE=development \
 npm test -- --project=chromium
 ```
 
-`development` is needed for the session-API half; the watch-page half runs in
-either mode. The harness verifies the origin against what the **server**
-published rather than against the variable this process read, so setting it on
-the wrong shell produces a skip rather than a false pass.
+`development` is needed for **both** halves, and the `LIBERTY_E2E_WEB_MODE` line
+above is not optional. A production build resolves no candidates in either place:
+the session API answers `unavailable` / `provider_not_configured`, and since the
+watch route stopped carrying its own unguarded fixture provider it renders the
+"not available on this deployment" panel rather than a player. There is nothing
+for a rig to feed on that build, so both media-rig tests skip — the first on the
+server's own outcome, the second on the panel it found instead of a player — and
+a `production` run against a correctly configured rig would report a green suite
+that never touched it.
+
+This is why those skips name the variable rather than reporting a boolean, and
+why the player test reads the branch off **what the page rendered** instead of off
+a local flag. A suite that quietly did not run is indistinguishable in a report
+from one that passed — and the outcome being avoided here is worse than
+indistinguishable: without that branch the test would spend 45 seconds waiting for
+a `State: playing` that the panel in front of it can never produce, and then
+report a configuration-and-rights fact as a playback failure.
+
+The harness verifies the origin against what the **server** published rather than
+against the variable this process read, so setting it on the wrong shell produces
+a skip rather than a false pass.
 
 ## Device matrix
 

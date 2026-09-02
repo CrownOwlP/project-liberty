@@ -51,9 +51,12 @@
  * can do closes that; the control for it is not shipping one.
  *
  * WHERE THIS SHOULD EVENTUALLY LIVE: `apps/web/src/lib/`, beside the other
- * app-wide helpers. It is under `app/api/` because that is the only directory
- * both consumers can reach inside PL-0301's declared `allowedPaths`, and it is
- * named for the fact rather than for either caller so the move is a rename.
+ * app-wide helpers. It is under `app/api/` because that was the only directory
+ * both consumers could reach inside PL-0301's `allowedPaths` when it was
+ * written; the corrective task PL-0703 declares both surfaces, so that
+ * constraint no longer applies and the location is now inertia rather than a
+ * reason. It is named for the FACT rather than for either caller, so the move
+ * is a rename and not a redesign.
  * ---------------------------------------------------------------------- */
 
 /**

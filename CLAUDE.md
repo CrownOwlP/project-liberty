@@ -69,8 +69,8 @@ owner; the next claimant re-records it.
 
 `ai:start` records `implementationBaseSha`, and that field is the exact lower
 bound of the first review range — the range validator refuses a base that is
-either wider or narrower. So for work that was written and pushed **before** the
-task was claimed, letting `start` capture HEAD writes a machine-readable field
+either wider or narrower. So for work that was written and committed **before**
+the task was claimed, letting `start` capture HEAD writes a machine-readable field
 that is false, and stating the real range in gate evidence only creates a second,
 competing truth. Reconcile the provenance instead:
 
@@ -86,8 +86,8 @@ validated against real history, and only against **mechanical facts**: it must b
 a full 40-hex sha, exist, be an ancestor of HEAD, not be HEAD, and leave something
 under the reviewed surface changed in `base..HEAD`. The working tree must be clean
 under `allowedPaths`, because the operation asserts the implementation is already
-in pushed commits. The task must be `CLAIMED` with no base, no review record and
-no gate results. The audit event is `task.started_reconciled`, never
+in **committed Git history**. The task must be `CLAIMED` with no base, no review
+record and no gate results. The audit event is `task.started_reconciled`, never
 `task.started`, and it is written after task state is persisted, never before.
 
 Nothing checks whether the base is *really* the commit immediately before this
@@ -105,10 +105,21 @@ of the field it writes: `implementationBaseSha` is where implementation began, n
 an earlier commit that is probably safe enough. Name the true base. Nothing will
 ask you to widen it, and no refusal on this path may advise widening.
 
-Use it only for an implementation that genuinely already exists in pushed commits.
-Never to shrink a review range, never to pad one, never for uncommitted work, and
-never as a routine alternative to `start`. Determine the base from git history; do
-not guess one.
+Use it only for an implementation that genuinely already exists in committed Git
+history. Never to shrink a review range, never to pad one, never for uncommitted
+work, and never as a routine alternative to `start`. Determine the base from git
+history; do not guess one.
+
+The contract says *committed*, not *pushed*, and that is deliberate. Nothing on
+this path contacts a remote — every check reads the local worktree and the local
+commit graph — so a clean branch of never-pushed commits passes. The old wording
+claimed remote reachability the implementation never established. A
+remote-reachability check was rejected rather than added: upstream configuration
+is not universal, a detached CI clone makes "pushed" ambiguous, and reconciliation
+legitimately runs locally just before its commits are pushed. Remote availability
+is a review/handoff concern — the reviewer must be able to fetch the sha a
+decision binds to — not something reconciliation proves.
+
 `--implementation-agent` only ever adds an implementation-side identity: the
 self-approval rule compares a reviewer against both the asserted implementer and
 the owner, so it can never make a task self-approvable. See `control/README.md`
