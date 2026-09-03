@@ -3,7 +3,7 @@
  *
  * A CSS module rather than additions to `globals.css` for two reasons. The
  * narrow one: `app/globals.css` is outside this task's allowed paths. The
- * durable one, which is the same one the search surface recorded: three
+ * durable one, which is the same one the search surface recorded: a handful of
  * narrowly-scoped rules do not need to become global class names every future
  * surface has to avoid colliding with. Everything that already exists globally —
  * .shell, .section, .card, .rail, .state-panel, .button, .visually-hidden — is
@@ -68,17 +68,92 @@
 }
 
 /*
+ * The one control in an episode card, made to look like one.
+ *
+ * `globals.css` sets `a { color: inherit; text-decoration: none }` and
+ * `.card p { color: var(--muted); font-size: 12px }`, so the Play link — a bare
+ * anchor inside a `<p>` in the card — came out the same colour, size, weight and
+ * decoration as the static runtime line directly above it, with no hover rule
+ * anywhere. It is the only actionable thing in the card and nothing said so. The
+ * inversion is what makes it a defect rather than a preference: the BLOCKED
+ * branch renders with `.code`, so the state that cannot be clicked was the more
+ * visually distinct of the two.
+ *
+ * This is not a contrast fix — the muted text already clears AA on `--bg` at
+ * 8.03:1 (relative luminance 0.3711 for #9aa5b5, 0.0024 for #06080d, so
+ * (0.3711 + 0.05) / (0.0024 + 0.05)). It is an affordance fix.
+ *
+ * THE CUE IS NOT THE COLOUR. Against the muted line beside it, `--accent`
+ * (#8cb4ff, luminance 0.4544) differs by only 1.20:1 — (0.4544 + 0.05) /
+ * (0.3711 + 0.05) — so a reader with any of the common colour deficiencies, or on
+ * a miscalibrated panel, would see two lines of near-identical lightness. The
+ * underline carries the distinction on its own and survives greyscale; the colour
+ * and the weight are reinforcement. Thickening it on hover, rather than adding or
+ * removing the underline, keeps the resting state legible as a link when no
+ * pointer is present at all — which is every touch device.
+ *
+ * A `.button` chip was rejected: five of these per rail, at card width, turns the
+ * episode grid into a wall of buttons and makes the row's own title link — the
+ * other control in the card — read as the secondary one, which it is not.
+ */
+.episodePlay {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1px;
+  font-weight: 600;
+}
+
+.episodePlay:hover {
+  text-decoration-thickness: 2px;
+}
+
+/*
  * Focus is not restored here, it is stated: nothing in `globals.css` removes the
  * user agent's ring, but nothing defines one either, so the indicator is
  * whatever the browser picks against `--bg` (#06080d) — which on several is a
  * dark outline on a near-black background.
  *
- * The episode grid is the primary keyboard path through a series, and each card
- * carries two links. A keyboard user who loses the caret in a 24-episode grid
- * loses the surface.
+ * That argument was originally written against the episode grid alone, and
+ * scoping the remedy there left every other control on the surface with the
+ * indicator the same comment had just called inadequate: the play CTA, the
+ * "All of {series}" link in the hero, the topbar Home link, and "Browse the
+ * catalog", which is the SOLE control on the not-found page — a keyboard user who
+ * cannot see focus there has no way to tell they are on the only thing that
+ * leaves. All four render from files this task owns, so the selector is promoted
+ * rather than the surface left half-covered.
+ *
+ * `.focusRing` is applied to the individual controls rather than to their
+ * containers. A container rule would silently adopt any anchor a later edit nests
+ * inside — including ones with their own focus treatment — and the point of this
+ * class is that each control it covers says so at the call site.
+ *
+ * The ring is `--accent` on `--bg` at 9.62:1 — (0.4544 + 0.05) / (0.0024 + 0.05),
+ * with luminances computed as above — which is well past the 3:1 that WCAG 1.4.11
+ * asks of a non-text indicator.
+ *
+ * The play CTA is the one control whose backdrop is not `--bg`: it sits in the
+ * hero's copy column, under a 96%-opaque #03060b wash over the #111827 end of the
+ * base gradient, which composites to roughly #040712 (luminance 0.0022). That is
+ * darker than `--bg`, so the ring there measures 9.66:1 — the offset places it
+ * outside the button, never against the button's own near-white fill.
  */
-.episodeGrid a:focus-visible {
+.episodeGrid a:focus-visible,
+.focusRing:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 3px;
+}
+
+/*
+ * Rounding, only where the element has no shape of its own. The grid's anchors
+ * are plain inline text, so an unrounded outline is a hard rectangle clipping the
+ * corners of a line.
+ *
+ * Deliberately NOT in the rule above: `.button` declares `border-radius: 10px`,
+ * and a shared 4px would resquare the play CTA at the instant focus lands on it —
+ * a control that changes shape when you tab to it reads as a rendering fault, and
+ * fixing a focus indicator is not licence to introduce one.
+ */
+.episodeGrid a:focus-visible {
   border-radius: 4px;
 }

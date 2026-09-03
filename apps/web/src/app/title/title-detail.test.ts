@@ -578,6 +578,29 @@ describe("describeTitleMetadata", () => {
   });
 
   /*
+   * The not-found branch is served at HTTP 200, not 404: React flushes the shell
+   * while the route's Suspense boundary is pending, so the status is on the wire
+   * before `notFound()` runs. That is PL-0704 and the fix is in the root
+   * `app/loading.tsx`. What follows from it here is that this branch is an
+   * INDEXABLE 200 page, and there is an unbounded supply of the addresses that
+   * reach it -- every string matching the normalized-id pattern.
+   */
+  it("keeps the not-found page out of indexes, because it is also served at 200", () => {
+    const metadata = describeTitleMetadata({ status: "not-found", contentId: "no-such-title" });
+
+    expect(metadata.robots).toEqual({ index: false, follow: true });
+  });
+
+  /*
+   * Stated as an equality rather than twice as a literal: the asymmetry between
+   * the two 200-served failure branches is the defect, so the assertion is that
+   * they agree, and it keeps agreeing if the directive is ever revised.
+   */
+  it("gives both 200-served failure branches the same crawl directive", () => {
+    expect(TITLE_NOT_FOUND_METADATA.robots).toEqual(TITLE_UNAVAILABLE_METADATA.robots);
+  });
+
+  /*
    * The error branch renders at HTTP 200 on purpose -- a title that was briefly
    * unreachable is still a real title, so 404 would be a lie in the other
    * direction. That makes the failure page indexable unless it says otherwise,
@@ -630,6 +653,102 @@ describe("describeTitleMetadata", () => {
 
     expect(metadata.description).toContain(EPISODES_NOT_LISTED_LABEL);
     expect(metadata.description).not.toContain("0 episode");
+  });
+
+  /*
+   * NOT ONE of the eight tests this block originally carried constructed an
+   * episode, which is why the head for every episode page in the catalog was
+   * allowed to say the same thing.
+   *
+   * `detail.title` for an episode is the slot's name -- "Episode 3" in the
+   * fixtures -- so the unbranched `${detail.title} · ${SITE_NAME}` produced
+   * "Episode 3 · Project Liberty" for the third episode of EVERY series. Two
+   * episodes from two different series is the assertion that catches it; a single
+   * episode would pass against a function that still ignored the series.
+   */
+  it("names an episode by its series and slot, not by its slot alone", () => {
+    const northstar = describeTitleMetadata({
+      status: "ok",
+      response: respond(
+        episodeDetail({
+          id: "northstar-s1e3",
+          title: "Episode 3",
+          seriesId: "northstar",
+          seriesTitle: "Northstar",
+          episodeNumber: 3
+        })
+      )
+    });
+
+    const harborLights = describeTitleMetadata({
+      status: "ok",
+      response: respond(
+        episodeDetail({
+          id: "harbor-lights-s1e3",
+          title: "Episode 3",
+          seriesId: "harbor-lights",
+          seriesTitle: "Harbor Lights",
+          episodeNumber: 3
+        })
+      )
+    });
+
+    expect(northstar.title).toBe("Northstar S1E3 · Episode 3 · Project Liberty");
+    expect(harborLights.title).toBe("Harbor Lights S1E3 · Episode 3 · Project Liberty");
+    expect(northstar.title).not.toBe(harborLights.title);
+  });
+
+  /*
+   * And the description, which was the other half of the defect: fixture episodes
+   * carry a `null` synopsis, so the head fell through to the meta line, which
+   * names the genre, the year and the season/episode label but never the series.
+   */
+  it("names the series in an episode's description when no synopsis was supplied", () => {
+    const metadata = describeTitleMetadata({
+      status: "ok",
+      response: respond(
+        episodeDetail({
+          id: "northstar-s1e3",
+          title: "Episode 3",
+          seriesId: "northstar",
+          seriesTitle: "Northstar",
+          episodeNumber: 3,
+          synopsis: null
+        })
+      )
+    });
+
+    expect(metadata.description).toBe("Northstar · Drama · 2024 · S1E3 · 47m");
+  });
+
+  /* An episode that has a synopsis is still described by it, not by the meta line. */
+  it("prefers an episode's own synopsis over the series-prefixed meta line", () => {
+    const metadata = describeTitleMetadata({
+      status: "ok",
+      response: respond(
+        episodeDetail({
+          id: "northstar-s1e3",
+          seriesTitle: "Northstar",
+          synopsis: "The audit reaches the harbourmaster."
+        })
+      )
+    });
+
+    expect(metadata.description).toBe("The audit reaches the harbourmaster.");
+  });
+
+  /*
+   * A movie is not given a series it does not have. The branch above must not
+   * generalise into a prefix every kind pays for.
+   */
+  it("leaves a movie's head unchanged by the episode branch", () => {
+    const metadata = describeTitleMetadata({
+      status: "ok",
+      response: respond(movie({ id: "aurora-fall", title: "Aurora Fall" }))
+    });
+
+    expect(metadata.title).toBe("Aurora Fall · Project Liberty");
+    expect(metadata.description).toBe("Drama · 2024 · 1h 40m");
   });
 
   /* A long title is quoted, not truncated: cutting it invents a shorter name. */

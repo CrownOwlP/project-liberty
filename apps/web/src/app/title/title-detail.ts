@@ -389,10 +389,36 @@ const SITE_NAME = "Project Liberty";
  * runs on applies to the `<head>` as much as to the body: the id from the URL is
  * NOT a title, and echoing it here would put an invented name in a browser tab,
  * a bookmark, and every link preview of a page that says the title is unknown.
+ *
+ * `robots: index false` for the same reason the unavailable branch below carries
+ * it. The asymmetry between the two was a bug, and the only thing that justified
+ * it was a belief this route does not keep: that not-found is answered with a
+ * real 404, which a crawler drops without indexing.
+ *
+ * It is not. `notFound()` never reaches the wire in this app, because a segment's
+ * `loading.tsx` puts the page inside Suspense and React flushes the shell as soon
+ * as it has one — at HTTP 200 — while the loader is still pending. An executed
+ * Playwright run captured exactly that: the "Loading title…" skeleton, status
+ * 200, for an id nothing knows about. That defect is filed as PL-0704 and its fix
+ * belongs to the ROOT boundary, `apps/web/src/app/loading.tsx`, which is outside
+ * this task's allowed paths.
+ *
+ * So today `/title/<any-well-formed-unknown-id>` is a 200 page, and there is an
+ * unbounded supply of those addresses: every string matching the normalized-id
+ * pattern passes the loader's format check and lands here. Without a directive
+ * each one is indexable and cacheable. `follow` stays on for the same reason the
+ * other branch keeps it — the one link out of the page, the catalog, is still
+ * worth following.
+ *
+ * Deleting `title/[titleId]/loading.tsx` to chase the status back was considered
+ * and rejected. The root boundary wraps every segment, so removing the nested one
+ * changes which skeleton is flushed and no status at all; it would also cost the
+ * title route the skeleton whose geometry matches what actually arrives.
  */
 export const TITLE_NOT_FOUND_METADATA: Metadata = {
   title: `Title not found · ${SITE_NAME}`,
-  description: "Nothing in the catalog matches this address."
+  description: "Nothing in the catalog matches this address.",
+  robots: { index: false, follow: true }
 };
 
 /**
@@ -404,6 +430,10 @@ export const TITLE_NOT_FOUND_METADATA: Metadata = {
  * load this title", which without this is indexable and would be cached by
  * crawlers as the content of a title that is fine. `follow` stays on: the links
  * out of the page (the catalog) are still worth following.
+ *
+ * This is no longer the only branch carrying the directive. Not-found carries the
+ * identical one, because it is also served at 200 — see above. Nothing here is an
+ * argument for restoring the asymmetry.
  */
 export const TITLE_UNAVAILABLE_METADATA: Metadata = {
   title: `Title unavailable · ${SITE_NAME}`,
@@ -423,6 +453,30 @@ export const TITLE_UNAVAILABLE_METADATA: Metadata = {
  * string or to invented prose. `formatTitleMeta` is built only from fields the
  * source actually stated, so a title with no synopsis gets a description that is
  * short and true instead of a `<meta>` tag asserting the title has no story.
+ *
+ * AN EPISODE IS NOT NAMED BY ITS OWN TITLE ALONE. `detail.title` for an episode is
+ * whatever the series called that slot — for the fixtures, literally "Episode 3" —
+ * so `${detail.title} · ${SITE_NAME}` produced "Episode 3 · Project Liberty" for
+ * the third episode of every series in the catalog. That is the exact defect this
+ * function exists to remove, only worse than the original: the root layout's
+ * "Project Liberty" was at least visibly a site name, whereas "Episode 3" looks
+ * like an answer. The description did not rescue it either, because fixture
+ * episodes carry a `null` synopsis and the meta line it falls through to names the
+ * genre, the year and `S1E3` but never the series.
+ *
+ * The series title and the season/episode label are already on
+ * `EpisodeTitleDetail`, parsed and validated — `components/title/title-hero.tsx`
+ * renders `seriesTitle` in the body of this very page — so the head needs no new
+ * data, only a branch.
+ *
+ * The series leads because a browser tab and a link preview both truncate from the
+ * RIGHT: "Northstar S1E3 · …" still identifies the work, "…3 · Project Liberty"
+ * does not. Putting the label immediately after the series and keeping
+ * `detail.title` last means a generic fixture name reads as mild redundancy
+ * ("Northstar S1E3 · Episode 3") while a real episode name is carried in full.
+ * Dropping `detail.title` when it looks generic was rejected: that is a guess about
+ * a string the source supplied, and the same heuristic would eat a real episode
+ * genuinely called "Episode 3".
  */
 export function describeTitleMetadata(result: TitleLoadResult): Metadata {
   if (result.status === "not-found") return TITLE_NOT_FOUND_METADATA;
@@ -430,8 +484,24 @@ export function describeTitleMetadata(result: TitleLoadResult): Metadata {
 
   const { detail } = result.response;
 
+  const name =
+    detail.kind === "episode"
+      ? `${detail.seriesTitle} ${formatEpisodeLabel(detail)} · ${detail.title}`
+      : detail.title;
+
+  /*
+   * The same absence, in the description. `formatTitleMeta` is series-less by
+   * design — it describes the item, and the item is an episode — so the series is
+   * prefixed here rather than pushed into the meta line, which the hero also
+   * renders directly beneath a heading that already says which series this is.
+   */
+  const fallbackDescription =
+    detail.kind === "episode"
+      ? `${detail.seriesTitle} · ${formatTitleMeta(detail)}`
+      : formatTitleMeta(detail);
+
   return {
-    title: `${detail.title} · ${SITE_NAME}`,
-    description: detail.synopsis ?? formatTitleMeta(detail)
+    title: `${name} · ${SITE_NAME}`,
+    description: detail.synopsis ?? fallbackDescription
   };
 }

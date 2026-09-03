@@ -6,6 +6,7 @@ import { SEARCH_QUERY_MAX_LENGTH, normalizeSearchQuery } from "@liberty/contract
 import {
   buildSearchHref,
   createSearchSyncState,
+  decideSearchSubmit,
   latestRequestedQuery,
   recordSearchCommit,
   reconcileSearchQuery,
@@ -163,6 +164,32 @@ export function SearchForm({ initialQuery, statusMessage }: SearchFormProps) {
     [router, syncRef]
   );
 
+  /**
+   * Ask for the query we already asked for, because the page came back showing
+   * a different one.
+   *
+   * Deliberately NOT routed through `commit`, which would return at its first
+   * guard — the query has not changed, and that guard is correct for every
+   * automatic caller. The reasoning for re-issuing at all, and for recording
+   * nothing while doing it, is in `decideSearchSubmit`; this is only the effect.
+   *
+   * Same `replace` and same `scroll: false` as `commit`, for the same two
+   * reasons: a refinement of the page the user is reading is not a history entry
+   * and must not move the results out from under them. Inside the same
+   * transition, so the busy hint and the live region describe this wait exactly
+   * as they describe a debounced one — a submit that produced no visible
+   * response would read as the no-op this exists to remove.
+   */
+  const reissue = useCallback(
+    (query: string) => {
+      const href = buildSearchHref(query);
+      startTransition(() => {
+        router.replace(href, { scroll: false });
+      });
+    },
+    [router]
+  );
+
   /*
    * Debounce.
    *
@@ -245,9 +272,19 @@ export function SearchForm({ initialQuery, statusMessage }: SearchFormProps) {
            * immediately submits has already told us they are done. Without this
            * the form would also do a full-page GET and throw away the client
            * navigation.
+           *
+           * It must also not be a no-op once the debounce has already fired.
+           * The rule — including the case where the field and the last request
+           * agree with each other but the page on screen agrees with neither —
+           * is `decideSearchSubmit`, so it is unit-tested rather than reviewed
+           * once inside a handler. `initialQuery` is what the server rendered;
+           * that is the third value the decision needs and it is only available
+           * here.
            */
           event.preventDefault();
-          commit(value);
+          const decision = decideSearchSubmit(syncRef.current, value, initialQuery);
+          if (decision.kind === "commit") commit(value);
+          else if (decision.kind === "reissue") reissue(decision.query);
         }}
         role="search"
       >

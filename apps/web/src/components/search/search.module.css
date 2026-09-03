@@ -24,11 +24,53 @@
   gap: 12px;
 }
 
+/*
+ * The RESTING boundary, which is the one thing on this surface that says "you
+ * may type here" once the placeholder is gone.
+ *
+ * `var(--border)` is rgba(255,255,255,0.09), which composited over this field's
+ * own `var(--surface)` fill (#10141d) renders as #262931: 1.27:1 against the
+ * fill it sits on and 1.38:1 against the page's --bg (#06080d) — and the fill
+ * itself is only 1.09:1 against that page. So the field had no
+ * perceivable edge and no distinguishable interior: the only thing marking it
+ * as an editable control was the placeholder, which disappears on the first
+ * keystroke. SC 1.4.11 (AA) asks for 3:1 on the visual information needed to
+ * identify a component, and a text field's boundary is the canonical example.
+ * The focus rules below already argue that this field is the whole surface for
+ * a keyboard user; the same argument applies before it is focused.
+ *
+ * Ratios computed with the WCAG 2.1 definition — sRGB channels linearised
+ * (c/12.92 below 0.04045, else ((c+0.055)/1.055)^2.4), relative luminance
+ * 0.2126R + 0.7152G + 0.0722B, then (L1+0.05)/(L2+0.05):
+ *
+ *   #6b7280 (L 0.16719) on #10141d (L 0.00699, the field's fill) -> 3.81:1
+ *   #6b7280 (L 0.16719) on #06080d (L 0.00241, the page behind)  -> 4.14:1
+ *
+ * A border is adjacent to both, so both had to clear 3:1; the fill is the
+ * tighter of the two and still leaves headroom for a future surface tweak.
+ *
+ * OPAQUE, and not a higher-alpha white. An rgba boundary's ratio is a function
+ * of whatever it happens to be composited over, so the numbers above would
+ * silently stop being true the day this field is moved onto a panel — and a
+ * measurement that quietly expires is how a boundary ends up at 1.27:1 with
+ * nobody noticing.
+ *
+ * Raising the GLOBAL `--border` token was rejected outright: it is another
+ * task's surface (`globals.css`), and it is worn by the hero, the posters, the
+ * state panels and the pill in the topbar, so moving it to satisfy this one
+ * control would restyle every one of them from inside a search fix. The literal
+ * is therefore local on purpose, and it is not a token candidate until somebody
+ * measures those surfaces too. The submit button beside this field is left
+ * alone for the same reason and one more: its boundary comes from the global
+ * `.button-secondary`, so overriding it from here would depend on the order two
+ * stylesheets happen to be emitted in — and a button carrying a visible text
+ * label is identifiable without one.
+ */
 .input {
   flex: 1 1 320px;
   min-width: 0;
   padding: 11px 14px;
-  border: 1px solid var(--border);
+  border: 1px solid #6b7280;
   border-radius: 10px;
   background: var(--surface);
   color: var(--text);

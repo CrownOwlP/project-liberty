@@ -306,6 +306,65 @@ describe("loadSearchResults", () => {
     expect(result.reason).toBe("search_response_failed_validation");
   });
 
+  it("rejects a response computed for a query other than the one requested", async () => {
+    /*
+     * The contract publishes `query` so a client can tell a response apart from
+     * one it no longer wants. Before this check the loader parsed it and then
+     * believed it: the empty-state heading and the live-region sentence both
+     * quote it, so a misrouted, coalesced or stale-cached response made the page
+     * assert that nothing matched a search nobody ran. The schema cannot catch
+     * this — the payload is perfectly well-formed, it is just somebody else's.
+     */
+    const result = await loadSearchResults("aurora", () => ({
+      query: "northstar",
+      results: [{ item: movie({ id: "northstar" }), matchedOn: "title-exact" }],
+      generatedAt: ISO
+    }));
+    expect(result.status).toBe("error");
+    if (result.status !== "error") return;
+    expect(result.reason).toBe("search_response_query_mismatch");
+  });
+
+  it("checks identity before emptiness, so a mismatched empty body is not empty", async () => {
+    // The order matters more than it looks: reversed, this response would render
+    // "No titles match “northstar”" on a page the user searched "aurora" from,
+    // which is the exact sentence the check exists to prevent.
+    const result = await loadSearchResults("aurora", () => ({
+      query: "northstar",
+      results: [],
+      generatedAt: ISO
+    }));
+    expect(result.status).toBe("error");
+    if (result.status !== "error") return;
+    expect(result.reason).toBe("search_response_query_mismatch");
+  });
+
+  it("does not mistake a differently spaced echo for a different query", async () => {
+    // Both sides run through `normalizeSearchQuery` — the request here, the
+    // echo via `searchQuerySchema` — so this compares meanings, not spellings.
+    // Without that, every response would have to match byte for byte and the
+    // check would fire on a whitespace difference that is not a difference.
+    const result = await loadSearchResults("  the   fall  ", () => ({
+      query: "the fall ",
+      results: [],
+      generatedAt: ISO
+    }));
+    expect(result.status).toBe("empty");
+    if (result.status !== "empty") return;
+    expect(result.query).toBe("the fall");
+  });
+
+  it("passes the in-process source, which cannot disagree with itself", async () => {
+    // Why the check is unreachable today, stated rather than assumed: the
+    // source computes the response from the query it was handed. It becomes
+    // reachable the day `GET /api/v1/search` serves this shape over a network,
+    // which is exactly when nobody would think to add it.
+    const result = await loadSearchResults("  AURORA  ", (query) => getSearchResults(query, NOW));
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") return;
+    expect(result.response.query).toBe("AURORA");
+  });
+
   it("converts a throwing source into an error state", async () => {
     const result = await loadSearchResults("aurora", () => {
       throw new Error("index unreachable");

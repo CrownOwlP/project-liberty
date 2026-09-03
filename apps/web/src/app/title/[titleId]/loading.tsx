@@ -6,6 +6,13 @@
  * segments too. The nearest boundary wins, so this keeps the home skeleton
  * scoped to the home route and shows a skeleton whose geometry matches what
  * actually arrives.
+ *
+ * DO NOT DELETE THIS TO RECOVER THE 404 ON `/title/<unknown>`. A Suspense
+ * boundary makes React flush the shell at HTTP 200 before `notFound()` runs, and
+ * that is real — but the boundary responsible is the ROOT `app/loading.tsx`,
+ * which wraps this route whether or not this file exists. Removing this one only
+ * swaps which skeleton is flushed at 200, and costs the title route the skeleton
+ * shaped like its own content. The status is PL-0704's to fix, in the root file.
  */
 export default function TitleLoading() {
   const placeholders = Array.from({ length: 5 }, (_, index) => index);

@@ -137,18 +137,25 @@ export interface SearchSyncState {
  *   list and the announced sentence describe a query the user has moved past,
  *   and nothing here re-fetches. In the common ordering the newer commit's
  *   render is still to come and repairs it; in the ordering where the newer
- *   render arrived FIRST, the results stay wrong until the next keystroke.
+ *   render arrived FIRST, the results stay wrong until the user asks again.
  *
- *   Both automatic repairs were tried on paper and rejected. Calling
+ *   Both AUTOMATIC repairs were tried on paper and rejected. Calling
  *   `router.refresh()` from the stale branch loops if the commit is left unspent
  *   (the refetched render matches the same commit and asks for another refresh)
  *   and ADOPTS a superseded query if it is spent (the refetched render matches
  *   nothing and looks external) — so the recovery would reintroduce the exact
  *   defect this module exists to prevent, in a retry loop. Re-issuing
  *   `router.replace` for `latestRequestedQuery` has the same shape. A wrong
- *   result list that one keystroke corrects is a better failure than a
+ *   result list that one further request corrects is a better failure than a
  *   self-sustaining navigation loop; `search-sync.test.ts` pins the limitation
  *   so it stays a decision rather than an oversight.
+ *
+ *   "Until the user asks again" is not only the next keystroke. Everything in
+ *   the paragraph above is an argument about a trigger this module pulls by
+ *   itself; a SUBMIT is pulled by the user and costs one gesture per attempt, so
+ *   it cannot sustain a loop no matter what the server sends back. That is what
+ *   `decideSearchSubmit` is for, and it is the reason the hint under the field
+ *   can honestly go on saying that Enter searches straight away.
  * - `adopt` — the query changed somewhere other than this input: a shared link,
  *   a bookmark, the back button. That is what makes the URL, rather than this
  *   component's state, the addressable thing, so the field follows it.
@@ -394,4 +401,78 @@ export function reconcileSearchQuery(
     },
     decision: { kind: "adopt", query: incoming }
   };
+}
+
+/**
+ * What an explicit submit should do.
+ *
+ * - `commit` — the field says something we have not asked for yet. The ordinary
+ *   path: skip the rest of the debounce and navigate now.
+ * - `reissue` — the field says exactly what we last asked for, but the page on
+ *   screen was rendered for something else. Ask for it AGAIN.
+ * - `settled` — the field, the last request and the rendered page all agree.
+ *   There is nothing a navigation could change, so none is started.
+ */
+export type SearchSubmitDecision =
+  | { readonly kind: "commit"; readonly query: string }
+  | { readonly kind: "reissue"; readonly query: string }
+  | { readonly kind: "settled" };
+
+/**
+ * Enter, as a rule rather than as an event handler.
+ *
+ * The hint under the field promises that Enter searches straight away. Comparing
+ * the typed value against `latestRequestedQuery` alone — which is the whole of
+ * what the debounce guard needs — kept that promise only while the debounce had
+ * not already fired. Once it had, submit was a total no-op, and the one state
+ * the promise most needed to hold in was precisely the state it could not
+ * repair: after a `stale` render the page shows a query the user has moved past
+ * while the field and the last request agree with each other, so "the query
+ * changed" is false and Enter did nothing at all. The user's only recovery was
+ * to type a character they did not want.
+ *
+ * THE THIRD INPUT IS WHAT MAKES THE DIFFERENCE, and it is why this takes a
+ * `serverQuery` rather than deriving everything from the state. The reconciler
+ * compares an arriving render against the requests this form made; it never asks
+ * whether the render currently on screen is the one that was asked for. That
+ * question has a different answer and it can only be asked from outside a
+ * reconcile pass, at a moment when both values are known to be current.
+ *
+ * `reissue` IS the `router.replace` the `stale` note rejects, and the difference
+ * is the trigger, not the mechanism. Rejected there because a reconciler-driven
+ * repair re-runs on the render it causes and therefore has no fixed point; here
+ * the loop needs a keypress per iteration, which is a user deciding to try
+ * again rather than a machine spinning. Nothing else about the rejection is
+ * weakened: this returns `reissue` only from a submit, and the debounce and the
+ * reconciler still never produce one.
+ *
+ * NO COMMIT IS RECORDED FOR A `reissue`, deliberately. The log exists to
+ * attribute an arriving render to a request, and this asks for a query that is
+ * already the latest request — so the render it produces is attributed by what
+ * is already there: it matches the outstanding commit if one is still in flight
+ * (`acknowledged`), and otherwise falls through to `incoming === appliedQuery`
+ * (`unchanged`), because a spent latest commit is only spent by something that
+ * made its query the applied one. It can never be `adopt`, so a re-issue can
+ * never write the field out from under the cursor. Appending a duplicate commit
+ * instead would leave an entry that only the re-issued render could answer, and
+ * a router that serves the same URL from its client cache would leave that entry
+ * unspent forever — which is the one condition under which a later external
+ * navigation to the same query is misclassified.
+ *
+ * `serverQuery` is normalised on the way in even though the caller's prop is
+ * documented as already normalised. `normalizeSearchQuery` is idempotent, so it
+ * costs nothing, and the comparison this function exists to make must not
+ * silently become "these two strings were spaced differently".
+ */
+export function decideSearchSubmit(
+  state: SearchSyncState,
+  rawValue: string,
+  serverQuery: string
+): SearchSubmitDecision {
+  const value = normalizeSearchQuery(rawValue);
+  const requested = latestRequestedQuery(state);
+
+  if (value !== requested) return { kind: "commit", query: value };
+  if (normalizeSearchQuery(serverQuery) !== requested) return { kind: "reissue", query: requested };
+  return { kind: "settled" };
 }

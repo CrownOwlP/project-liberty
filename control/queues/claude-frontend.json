@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-03T02:22:14.332Z",
+  "generatedAt": "2026-09-03T04:02:14.343Z",
   "agent": "claude-frontend",
   "executionAvailable": true,
   "assigned": [
@@ -9,6 +9,7 @@
       "lane": "Frontend",
       "status": "REVIEW",
       "title": "Search experience",
+      "reviewFallbackNote": "reviewAgent moved from gpt-architect to claude-test under the controlled-fallback ruling gpt-architect issued for exactly PL-0102, PL-0103, PL-0203 and PL-0204, and only while its transport is unavailable. The condition is met: its GitHub connector returns 403 Resource not accessible by integration on repository-content writes, so it cannot record a decision. Changed explicitly rather than silently, as that ruling required. THE ASSURANCE LEVEL IS LOWER: independent same-provider review, not cross-provider. claude-test did not implement this work and returned CHANGES_REQUESTED on first pass.",
       "dependencies": [
         "PL-0101"
       ],
@@ -18,7 +19,7 @@
         "packages/contracts/**"
       ],
       "preferredAgent": "claude-frontend",
-      "reviewAgent": "gpt-architect",
+      "reviewAgent": "claude-test",
       "qualityGates": [
         "lint",
         "typecheck",
@@ -30,28 +31,72 @@
       "gateResults": {
         "lint": {
           "status": "pass",
-          "at": "2026-08-25T05:30:14.169Z",
-          "evidence": "npm run check round 25, lint task green across all workspaces"
+          "at": "2026-09-03T04:02:08.573Z",
+          "by": "claude-frontend",
+          "commitSha": "8b1172b2190d3ddfecb5afd28ea73a293e17def1",
+          "evidence": "npm run check on the corrected tree, this round"
         },
         "typecheck": {
           "status": "pass",
-          "at": "2026-08-25T05:30:14.589Z",
-          "evidence": "turbo run typecheck round 25 exit 0, plus npm run check typecheck task"
+          "at": "2026-09-03T04:02:09.120Z",
+          "by": "claude-frontend",
+          "commitSha": "8b1172b2190d3ddfecb5afd28ea73a293e17def1",
+          "evidence": "turbo run typecheck plus npm run check, this round"
         },
         "unit": {
           "status": "pass",
-          "at": "2026-08-25T05:30:15.012Z",
-          "evidence": "vitest via npm run check round 25, includes new search-sync and search-sync.property suites"
+          "at": "2026-09-03T04:02:09.724Z",
+          "by": "claude-frontend",
+          "commitSha": "8b1172b2190d3ddfecb5afd28ea73a293e17def1",
+          "evidence": "vitest via npm run check, this round; includes the submit-decision suite added for the Enter blocker and the response-identity cases added for the echoed-query blocker"
         },
         "build": {
           "status": "pass",
-          "at": "2026-08-25T05:30:15.438Z",
-          "evidence": "next build via npm run check round 25 exit 0"
+          "at": "2026-09-03T04:02:10.329Z",
+          "by": "claude-frontend",
+          "commitSha": "8b1172b2190d3ddfecb5afd28ea73a293e17def1",
+          "evidence": "next build via npm run check, this round"
         }
       },
       "implementationAgent": "claude-frontend",
-      "updatedAt": "2026-08-25T05:30:15.862Z",
-      "implementationBaseSha": "34c16c97c9ae0a1dec5b708f4f81ed62ecb94afb"
+      "updatedAt": "2026-09-03T04:02:13.148Z",
+      "implementationBaseSha": "34c16c97c9ae0a1dec5b708f4f81ed62ecb94afb",
+      "review": {
+        "taskId": "PL-0102",
+        "implementationAgent": "claude-frontend",
+        "implementationOwner": "claude-frontend",
+        "reviewerAgent": "claude-test",
+        "reviewerClass": "local-subagent",
+        "reviewerProvider": "anthropic",
+        "reviewedCommitSha": "8b1172b2190d3ddfecb5afd28ea73a293e17def1",
+        "reviewedBaseSha": "34c16c97c9ae0a1dec5b708f4f81ed62ecb94afb",
+        "reviewedTreeHash": "1fabf90e240d5e4461981a4793e77f191404ae0a05035ded07e547ad690fe628",
+        "reviewedFileCount": 33,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [],
+        "outcome": "CHANGES_REQUESTED",
+        "reviewedAt": "2026-09-03T04:02:07.429Z",
+        "evidence": "CHANGES_REQUESTED by claude-test, substitute reviewer under gpt-architect's controlled-fallback ruling; independent same-provider review, weaker than cross-provider. Three blockers: the search input's border measured 1.27:1 against its own fill and 1.38:1 against the page, below the 3:1 of WCAG 2.1 SC 1.4.11, leaving the one interactive control on the surface with no perceivable boundary once the placeholder is gone; onSubmit early-returned whenever the typed value equalled the last requested query, so after a stale render Enter was a total no-op while the hint beneath the field advertises Press Enter to search straight away; and the loader validated the response shape but took the echoed query on faith, though the contract publishes that field expressly so a client can tell a response apart from a stale one, and rendered it as fact in the empty-state heading and the live region."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PL-0102",
+          "implementationAgent": "claude-frontend",
+          "implementationOwner": "claude-frontend",
+          "reviewerAgent": "claude-test",
+          "reviewerClass": "local-subagent",
+          "reviewerProvider": "anthropic",
+          "reviewedCommitSha": "8b1172b2190d3ddfecb5afd28ea73a293e17def1",
+          "reviewedBaseSha": "34c16c97c9ae0a1dec5b708f4f81ed62ecb94afb",
+          "reviewedTreeHash": "1fabf90e240d5e4461981a4793e77f191404ae0a05035ded07e547ad690fe628",
+          "reviewedFileCount": 33,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [],
+          "outcome": "CHANGES_REQUESTED",
+          "reviewedAt": "2026-09-03T04:02:07.429Z",
+          "evidence": "CHANGES_REQUESTED by claude-test, substitute reviewer under gpt-architect's controlled-fallback ruling; independent same-provider review, weaker than cross-provider. Three blockers: the search input's border measured 1.27:1 against its own fill and 1.38:1 against the page, below the 3:1 of WCAG 2.1 SC 1.4.11, leaving the one interactive control on the surface with no perceivable boundary once the placeholder is gone; onSubmit early-returned whenever the typed value equalled the last requested query, so after a stale render Enter was a total no-op while the hint beneath the field advertises Press Enter to search straight away; and the loader validated the response shape but took the echoed query on faith, though the contract publishes that field expressly so a client can tell a response apart from a stale one, and rendered it as fact in the empty-state heading and the live region."
+        }
+      ]
     },
     {
       "id": "PL-0103",
@@ -59,6 +104,7 @@
       "lane": "Frontend",
       "status": "REVIEW",
       "title": "Title details",
+      "reviewFallbackNote": "reviewAgent moved from gpt-architect to claude-test under the controlled-fallback ruling gpt-architect issued for exactly PL-0102, PL-0103, PL-0203 and PL-0204, and only while its transport is unavailable. The condition is met: its GitHub connector returns 403 Resource not accessible by integration on repository-content writes, so it cannot record a decision. Changed explicitly rather than silently, as that ruling required. THE ASSURANCE LEVEL IS LOWER: independent same-provider review, not cross-provider. claude-test did not implement this work and returned CHANGES_REQUESTED on first pass.",
       "dependencies": [
         "PL-0101"
       ],
@@ -70,7 +116,7 @@
         "packages/contracts/**"
       ],
       "preferredAgent": "claude-frontend",
-      "reviewAgent": "gpt-architect",
+      "reviewAgent": "claude-test",
       "qualityGates": [
         "lint",
         "typecheck",
@@ -82,36 +128,76 @@
       "gateResults": {
         "lint": {
           "status": "pass",
-          "at": "2026-08-29T23:44:17.174Z",
+          "at": "2026-09-03T04:02:10.845Z",
           "by": "claude-frontend",
-          "commitSha": "c3bb856f3d8c122acd46d5331067fac3a0266f2b",
-          "evidence": "npm run check round 28, lint green across all workspaces"
+          "commitSha": "8b1172b2190d3ddfecb5afd28ea73a293e17def1",
+          "evidence": "npm run check on the corrected tree, this round"
         },
         "typecheck": {
           "status": "pass",
-          "at": "2026-08-29T23:44:17.587Z",
+          "at": "2026-09-03T04:02:11.410Z",
           "by": "claude-frontend",
-          "commitSha": "c3bb856f3d8c122acd46d5331067fac3a0266f2b",
-          "evidence": "turbo run typecheck round 28 exit 0, plus npm run check typecheck task"
+          "commitSha": "8b1172b2190d3ddfecb5afd28ea73a293e17def1",
+          "evidence": "turbo run typecheck plus npm run check, this round"
         },
         "unit": {
           "status": "pass",
-          "at": "2026-08-29T23:44:18.007Z",
+          "at": "2026-09-03T04:02:11.966Z",
           "by": "claude-frontend",
-          "commitSha": "c3bb856f3d8c122acd46d5331067fac3a0266f2b",
-          "evidence": "vitest via npm run check round 28, includes the expanded title-detail suite"
+          "commitSha": "8b1172b2190d3ddfecb5afd28ea73a293e17def1",
+          "evidence": "vitest via npm run check, this round; includes the episode-metadata cases and the source-level style test asserting the classes reach their call sites"
         },
         "build": {
           "status": "pass",
-          "at": "2026-08-29T23:44:18.424Z",
+          "at": "2026-09-03T04:02:12.504Z",
           "by": "claude-frontend",
-          "commitSha": "c3bb856f3d8c122acd46d5331067fac3a0266f2b",
-          "evidence": "next build via npm run check round 28 exit 0"
+          "commitSha": "8b1172b2190d3ddfecb5afd28ea73a293e17def1",
+          "evidence": "next build via npm run check, this round"
         }
       },
-      "updatedAt": "2026-08-29T23:44:18.851Z",
+      "updatedAt": "2026-09-03T04:02:13.843Z",
       "implementationAgent": "claude-frontend",
-      "implementationBaseSha": "65975495795c71193079b82825b55d7dbb1d2763"
+      "implementationBaseSha": "65975495795c71193079b82825b55d7dbb1d2763",
+      "review": {
+        "taskId": "PL-0103",
+        "implementationAgent": "claude-frontend",
+        "implementationOwner": "claude-frontend",
+        "reviewerAgent": "claude-test",
+        "reviewerClass": "local-subagent",
+        "reviewerProvider": "anthropic",
+        "reviewedCommitSha": "8b1172b2190d3ddfecb5afd28ea73a293e17def1",
+        "reviewedBaseSha": "65975495795c71193079b82825b55d7dbb1d2763",
+        "reviewedTreeHash": "9737467f14ee344745f3159841c5bddc483977ff1ec65c40eaee3b934b865b17",
+        "reviewedFileCount": 34,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [
+          "packages/contracts/**"
+        ],
+        "outcome": "CHANGES_REQUESTED",
+        "reviewedAt": "2026-09-03T04:02:08.043Z",
+        "evidence": "CHANGES_REQUESTED by claude-test, substitute reviewer under gpt-architect's controlled-fallback ruling; independent same-provider review, weaker than cross-provider. Four blockers: TITLE_NOT_FOUND_METADATA carried no robots directive while its sibling did, justified only by the belief that not-found answers 404 -- an executed Playwright run proved it answers 200, so every well-formed unknown id was an indexable page and the supply is unbounded; describeTitleMetadata had no episode branch, so every third episode in the catalogue shared the head name Episode 3 and the fallback description was series-less, which is the same non-identifying name the function exists to remove wearing a real one; the episode row's Play link rendered identically to the static runtime line above it with no hover rule, while the BLOCKED branch used a monospace class, so the unclickable state was more distinctive than the clickable one; and the focus ring was scoped to the episode grid after an argument about the user agent default that applies equally to the play CTA, the series link, the topbar link and the sole control on the not-found page."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PL-0103",
+          "implementationAgent": "claude-frontend",
+          "implementationOwner": "claude-frontend",
+          "reviewerAgent": "claude-test",
+          "reviewerClass": "local-subagent",
+          "reviewerProvider": "anthropic",
+          "reviewedCommitSha": "8b1172b2190d3ddfecb5afd28ea73a293e17def1",
+          "reviewedBaseSha": "65975495795c71193079b82825b55d7dbb1d2763",
+          "reviewedTreeHash": "9737467f14ee344745f3159841c5bddc483977ff1ec65c40eaee3b934b865b17",
+          "reviewedFileCount": 34,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "packages/contracts/**"
+          ],
+          "outcome": "CHANGES_REQUESTED",
+          "reviewedAt": "2026-09-03T04:02:08.043Z",
+          "evidence": "CHANGES_REQUESTED by claude-test, substitute reviewer under gpt-architect's controlled-fallback ruling; independent same-provider review, weaker than cross-provider. Four blockers: TITLE_NOT_FOUND_METADATA carried no robots directive while its sibling did, justified only by the belief that not-found answers 404 -- an executed Playwright run proved it answers 200, so every well-formed unknown id was an indexable page and the supply is unbounded; describeTitleMetadata had no episode branch, so every third episode in the catalogue shared the head name Episode 3 and the fallback description was series-less, which is the same non-identifying name the function exists to remove wearing a real one; the episode row's Play link rendered identically to the static runtime line above it with no hover rule, while the BLOCKED branch used a monospace class, so the unclickable state was more distinctive than the clickable one; and the focus ring was scoped to the episode grid after an argument about the user agent default that applies equally to the play CTA, the series link, the topbar link and the sole control on the not-found page."
+        }
+      ]
     }
   ],
   "review": [],

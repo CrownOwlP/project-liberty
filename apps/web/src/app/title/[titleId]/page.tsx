@@ -74,11 +74,29 @@ export default async function TitlePage({ params }: TitlePageProps) {
   const result = await loadTitleOnce(titleId);
 
   /*
-   * Not-found is answered with a real 404 rather than a panel rendered at 200.
-   * The distinction is invisible to a reader and load-bearing for everything
-   * else that consumes the route — crawlers, link checkers, the eventual native
-   * clients — all of which would otherwise record a dead title as a live one.
-   * `notFound()` returns `never`, so the narrowing below is the compiler's.
+   * Not-found is routed to the boundary rather than rendered as a panel here,
+   * because the two states have different remedies and the boundary replaces the
+   * whole page. `notFound()` returns `never`, so the narrowing below is the
+   * compiler's.
+   *
+   * WHAT THIS DOES NOT CURRENTLY ACHIEVE: a 404 on the wire. This comment used to
+   * claim it did, and that was wrong. A segment's `loading.tsx` puts the page
+   * inside Suspense, and React flushes the shell at HTTP 200 the moment it has
+   * one — before the loader has decided anything — so the status is already sent
+   * by the time `notFound()` runs. An executed Playwright run captured the
+   * "Loading title…" skeleton at 200 for an id nothing knows about.
+   *
+   * The fix belongs to the ROOT `apps/web/src/app/loading.tsx`, which wraps every
+   * segment and is outside this task's allowed paths; it is filed as PL-0704.
+   * Deleting this segment's own `loading.tsx` would not recover the status —
+   * the root boundary still wraps this route, so it only changes which skeleton
+   * is flushed.
+   *
+   * Until PL-0704 lands, every consumer that reads status — crawlers, link
+   * checkers, the eventual native clients — sees a live page at a dead address,
+   * and the supply of such addresses is unbounded. `TITLE_NOT_FOUND_METADATA`
+   * therefore carries `robots: index false`, which is the part of the damage this
+   * task's own surface can contain.
    */
   if (result.status === "not-found") notFound();
 
@@ -89,7 +107,10 @@ export default async function TitlePage({ params }: TitlePageProps) {
           PROJECT <span>LIBERTY</span>
         </div>
         <nav className="nav" aria-label="Primary navigation">
-          <Link href="/">Home</Link>
+          {/* Stated focus indicator; `globals.css` defines none. */}
+          <Link className={styles.focusRing} href="/">
+            Home
+          </Link>
         </nav>
         <div className="status">Title detail</div>
       </header>

@@ -42,9 +42,15 @@ export function TitleHero({ detail }: TitleHeroProps) {
         <p>{formatTitleMeta(detail)}</p>
         <p>{detail.synopsis ?? NO_SYNOPSIS_LABEL}</p>
 
+        {/*
+         * The only navigation an episode page exists for, so it gets a stated
+         * focus indicator rather than the user agent's — see `title.module.css`.
+         */}
         {detail.kind === "episode" ? (
           <p>
-            <Link href={titleHref(detail.seriesId)}>All of {detail.seriesTitle}</Link>
+            <Link className={styles.focusRing} href={titleHref(detail.seriesId)}>
+              All of {detail.seriesTitle}
+            </Link>
           </p>
         ) : null}
 

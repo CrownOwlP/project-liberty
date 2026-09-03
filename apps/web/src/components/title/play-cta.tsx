@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { PlayAvailability, PlayBlockedReason } from "../../app/title/title-detail";
+import styles from "./title.module.css";
 
 /**
  * Why a title cannot be played, in the reader's words and in the log's.
@@ -49,7 +50,13 @@ export function PlayCta({ availability, label }: PlayCtaProps) {
   if (availability.status === "playable") {
     return (
       <div className="actions">
-        <Link className="button button-primary" href={availability.href}>
+        {/*
+         * `.focusRing` because this is the control the acceptance names, and
+         * `globals.css` defines no focus indicator for it. The class is stated
+         * here rather than inherited from a container in the hero so that moving
+         * this component does not silently drop it.
+         */}
+        <Link className={`button button-primary ${styles.focusRing}`} href={availability.href}>
           {label}
         </Link>
       </div>

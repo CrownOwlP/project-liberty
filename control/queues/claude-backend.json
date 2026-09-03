@@ -1,81 +1,8 @@
 {
-  "generatedAt": "2026-09-03T02:22:14.333Z",
+  "generatedAt": "2026-09-03T04:02:14.344Z",
   "agent": "claude-backend",
   "executionAvailable": true,
-  "assigned": [
-    {
-      "id": "PL-0304",
-      "priority": "P1",
-      "lane": "Provider",
-      "status": "REVIEW",
-      "title": "Media inspection service",
-      "dependencies": [],
-      "allowedPaths": [
-        "packages/media-inspection/**",
-        "package-lock.json"
-      ],
-      "preferredAgent": "claude-backend",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "typecheck",
-        "unit",
-        "security-review"
-      ],
-      "acceptance": "Media inspection sits behind its own package boundary rather than inside the provider SDK, because probing is cross-provider I/O plus an external binary with a different security profile; the manifest-parsing path carries no FFmpeg dependency and ships first, reading the declared ladder out of an HLS or DASH manifest without opening a media segment; a fact obtained by probing carries provenance that distinguishes it from a fact merely stated by a provider, and a divergence between the two is preserved rather than collapsed into a fact of unknowable origin; and the service never becomes a general-purpose fetcher, so protocols are allowlisted, egress is confined to an allowlist, hostnames are resolved and private ranges rejected before inspection is invoked, and redirects are revalidated rather than trusted because the first host was allowed",
-      "owner": "claude-backend",
-      "gateResults": {
-        "typecheck": {
-          "status": "pass",
-          "at": "2026-08-20T16:01:40.026Z",
-          "evidence": "turbo run typecheck --filter @liberty/media-inspection exit 0 under pinned Node 22 resolved via npx node@22."
-        },
-        "unit": {
-          "status": "pass",
-          "at": "2026-08-20T16:01:40.116Z",
-          "evidence": "turbo run test --filter @liberty/media-inspection exit 0 under pinned Node 22: both manifest formats, whole-ladder extraction, omitted fields becoming null rather than inferred, provenance separating manifest_declared from provider_declared and probe, protocol and egress allowlisting driven by the allowlist constant itself, resolve-and-reject of private ranges before invocation with every resolved address checked, redirect revalidation, bounded bodies and deadlines, a pre-count rendition cap refusing before any ladder is built, and a fast-check property asserting the whole returned object is stable under input permutation."
-        }
-      },
-      "implementationAgent": "claude-backend",
-      "updatedAt": "2026-08-20T16:01:40.209Z",
-      "implementationBaseSha": "55736f29864d04319600e107c366622cb09988b9",
-      "review": {
-        "taskId": "PL-0304",
-        "implementationAgent": "claude-backend",
-        "implementationOwner": "claude-backend",
-        "reviewerAgent": "gpt-architect",
-        "reviewerClass": "external-reasoning",
-        "reviewerProvider": "openai",
-        "reviewedCommitSha": "3c92942bc7eee0a7aab4440e254d8e11d3a849a9",
-        "reviewedBaseSha": "55736f29864d04319600e107c366622cb09988b9",
-        "reviewedTreeHash": "acad9dd80d7d23381e8167add996c8260ad7af9e17c25c197e2715086ab3a638",
-        "reviewedFileCount": 28,
-        "reviewedFingerprintSource": "git-object",
-        "reviewedDependencies": [],
-        "outcome": "APPROVED",
-        "reviewedAt": "2026-09-03T02:22:13.464Z",
-        "evidence": "APPROVED by gpt-architect at 9933a55dd177ccc08b20b1fe3e49f479c8a7de1f. TRANSCRIBED BY CLAUDE from the ChatGPT review session, not authored by the GPT GitHub connector, which returns 403 Resource not accessible by integration on repository writes so no durable bus message exists. Verdict: DNS rebinding closed by a pinned lookup that leaves Host, SNI and certificate identity on the publisher hostname; PinnedTarget unforgeable via a module-private symbol plus a registry, defeating both a cast and a spread; real-socket suite inside the ordinary blocking test run and exiting zero; parser pin moved to 0.9.12 with the stale rationale replaced by a forward-only exact-pin policy; exact-head CI green on Linux."
-      },
-      "reviewHistory": [
-        {
-          "taskId": "PL-0304",
-          "implementationAgent": "claude-backend",
-          "implementationOwner": "claude-backend",
-          "reviewerAgent": "gpt-architect",
-          "reviewerClass": "external-reasoning",
-          "reviewerProvider": "openai",
-          "reviewedCommitSha": "3c92942bc7eee0a7aab4440e254d8e11d3a849a9",
-          "reviewedBaseSha": "55736f29864d04319600e107c366622cb09988b9",
-          "reviewedTreeHash": "acad9dd80d7d23381e8167add996c8260ad7af9e17c25c197e2715086ab3a638",
-          "reviewedFileCount": 28,
-          "reviewedFingerprintSource": "git-object",
-          "reviewedDependencies": [],
-          "outcome": "APPROVED",
-          "reviewedAt": "2026-09-03T02:22:13.464Z",
-          "evidence": "APPROVED by gpt-architect at 9933a55dd177ccc08b20b1fe3e49f479c8a7de1f. TRANSCRIBED BY CLAUDE from the ChatGPT review session, not authored by the GPT GitHub connector, which returns 403 Resource not accessible by integration on repository writes so no durable bus message exists. Verdict: DNS rebinding closed by a pinned lookup that leaves Host, SNI and certificate identity on the publisher hostname; PinnedTarget unforgeable via a module-private symbol plus a registry, defeating both a cast and a spread; real-socket suite inside the ordinary blocking test run and exiting zero; parser pin moved to 0.9.12 with the stale rationale replaced by a forward-only exact-pin policy; exact-head CI green on Linux."
-        }
-      ]
-    }
-  ],
+  "assigned": [],
   "review": [],
   "reservedExternal": [],
   "recommended": [

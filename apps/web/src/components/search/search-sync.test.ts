@@ -5,6 +5,7 @@ import {
   SEARCH_SYNC_HISTORY_LIMIT,
   buildSearchHref,
   createSearchSyncState,
+  decideSearchSubmit,
   latestRequestedQuery,
   recordSearchCommit,
   reconcileSearchQuery,
@@ -40,6 +41,17 @@ function driver(initialQuery: string) {
       const outcome = reconcileSearchQuery(state, query);
       state = outcome.state;
       return outcome.decision;
+    },
+    /**
+     * The user presses Enter. `serverQuery` is the query the page currently on
+     * screen was rendered for — the form's `initialQuery` prop — which is not
+     * always the last query this form asked for, and that gap is the whole
+     * reason this decision exists. Returns the decision without applying it,
+     * because a submit is not itself a state transition: the caller navigates,
+     * and the render that follows arrives through `render` like any other.
+     */
+    submit(value: string, serverQuery: string) {
+      return decideSearchSubmit(state, value, serverQuery);
     },
     requested() {
       return latestRequestedQuery(state);
@@ -350,11 +362,132 @@ describe("search sync leaves the results behind when it drops a render", () => {
     expect(form.requested()).toBe("aurora");
     expect(form.render("aurora")).toEqual({ kind: "unchanged" });
 
-    // The recovery that does exist: one further keystroke, and every surface
-    // agrees again.
+    // The recovery that does exist: one further request, and every surface
+    // agrees again. A keystroke is one way to make it — see the submit suite
+    // below for the other, which is the one the hint under the field promises.
     form.commit("aurora borealis");
     expect(form.render("aurora borealis")).toEqual({ kind: "acknowledged", epoch: 3 });
     expect(form.requested()).toBe("aurora borealis");
+  });
+});
+
+describe("what an explicit submit does", () => {
+  it("commits a query the form has not asked for yet", () => {
+    const form = driver("aurora");
+    expect(form.submit("aurora borealis", "aurora")).toEqual({
+      kind: "commit",
+      query: "aurora borealis"
+    });
+  });
+
+  it("commits the normalized query, so Enter and the debounce ask for one thing", () => {
+    const form = driver("");
+    expect(form.submit("  the   fall  ", "")).toEqual({ kind: "commit", query: "the fall" });
+  });
+
+  it("treats emptying the field as an ordinary commit back to the idle state", () => {
+    const form = driver("aurora");
+    expect(form.submit("   ", "aurora")).toEqual({ kind: "commit", query: "" });
+  });
+
+  it("does nothing when the field, the last request and the page all agree", () => {
+    // The happy path after the debounce has landed. There is no navigation that
+    // could change anything, so submitting must not start one.
+    const form = driver("aurora");
+    expect(form.submit("aurora", "aurora")).toEqual({ kind: "settled" });
+    // And spacing is not a disagreement: both sides are normalized before they
+    // are compared, or this would re-issue forever on a padded query.
+    expect(form.submit(" aurora ", "  aurora ")).toEqual({ kind: "settled" });
+  });
+
+  it("re-issues the request a stale render left showing the wrong results", () => {
+    /*
+     * THE COUNTERPART TO THE STATED LIMITATION ABOVE.
+     *
+     * That test pins what the reconciler will NOT do by itself. This one pins
+     * the recovery the hint under the field advertises: the results and the
+     * announced sentence describe "au", while the field and the last request
+     * both say "aurora". "The query changed" is false, so the debounce guard is
+     * right to stay silent and Enter used to be a total no-op — the one gesture
+     * the copy names was the one gesture that could not help.
+     *
+     * A submit can re-issue where a reconciler cannot, because it costs a
+     * keypress per attempt and therefore has no loop to sustain.
+     */
+    const form = driver("");
+    form.commit("au");
+    form.commit("aurora");
+    expect(form.render("aurora")).toEqual({ kind: "acknowledged", epoch: 2 });
+    expect(form.render("au")).toEqual({ kind: "stale", epoch: 1 });
+
+    expect(form.requested()).toBe("aurora");
+    expect(form.submit("aurora", "au")).toEqual({ kind: "reissue", query: "aurora" });
+  });
+
+  it("records nothing for a re-issue, so its own render is inert", () => {
+    /*
+     * A re-issue asks for the query that is ALREADY the latest request, so it
+     * needs no new entry to be attributed by — and must not create one. A
+     * duplicate commit could only be answered by the re-issued render, and a
+     * router that serves the same address from its client cache would leave it
+     * unspent forever, which is the one condition under which a later external
+     * navigation to that query is misclassified.
+     */
+    const form = driver("");
+    form.commit("au");
+    form.commit("aurora");
+    form.render("aurora");
+    form.render("au");
+
+    const before = form.commitCount();
+    expect(form.submit("aurora", "au")).toEqual({ kind: "reissue", query: "aurora" });
+    expect(form.commitCount()).toBe(before);
+
+    // The render the caller's `router.replace` produces. Not `adopt`: it is the
+    // query already applied, so nothing is written back into the field.
+    expect(form.render("aurora")).toEqual({ kind: "unchanged" });
+    expect(form.requested()).toBe("aurora");
+    // ...and the surface is settled, so pressing Enter again starts nothing.
+    expect(form.submit("aurora", "aurora")).toEqual({ kind: "settled" });
+  });
+
+  it("re-issues after an external navigation was overwritten by a stale render", () => {
+    // The same disagreement reached the other way: a link moved the page to
+    // "northstar" and the form adopted it, then our own in-flight render for
+    // "aurora" landed and put the wrong results back on screen.
+    const form = driver("");
+    form.commit("aurora");
+    expect(form.render("northstar")).toEqual({ kind: "adopt", query: "northstar" });
+    expect(form.render("aurora")).toEqual({ kind: "stale", epoch: 1 });
+
+    expect(form.submit("northstar", "aurora")).toEqual({ kind: "reissue", query: "northstar" });
+  });
+
+  it("commits the typed value rather than re-issuing when both have moved on", () => {
+    // The page is stale AND the user typed further characters. Committing what
+    // is in the field is strictly better than re-asking for the old request: it
+    // is what the user wants and it repairs the page on the way.
+    const form = driver("");
+    form.commit("au");
+    form.commit("aurora");
+    form.render("aurora");
+    form.render("au");
+
+    expect(form.submit("aurora b", "au")).toEqual({ kind: "commit", query: "aurora b" });
+  });
+
+  it("re-issues rather than settling while the first navigation is still in flight", () => {
+    /*
+     * Enter pressed after the debounce fired but before its render arrived. The
+     * page still shows the previous query, so this is a genuine disagreement and
+     * the answer is the same one: ask again. It costs one redundant request and
+     * no correctness — the outstanding commit still explains whichever render
+     * lands first, and a second one is classified against it.
+     */
+    const form = driver("au");
+    form.commit("aurora");
+    expect(form.submit("aurora", "au")).toEqual({ kind: "reissue", query: "aurora" });
+    expect(form.render("aurora")).toEqual({ kind: "acknowledged", epoch: 1 });
   });
 });
 

@@ -55,8 +55,18 @@ function EpisodeCard({ episode }: { episode: TitleEpisodeSummary }) {
            * between form controls — otherwise gets N identical "Play" entries
            * pointing at N different episodes. The accessible name still begins
            * with the visible text, which is what speech control depends on.
+           *
+           * And styled as a control. With no class it inherited `.card p`'s
+           * colour and size and `globals.css`'s `text-decoration: none`, which
+           * made the only actionable element in the card identical to the static
+           * runtime line above it. `title.module.css` records why the cue chosen
+           * for it does not rest on colour.
            */}
-          <Link aria-label={`Play ${name}`} href={availability.href}>
+          <Link
+            aria-label={`Play ${name}`}
+            className={styles.episodePlay}
+            href={availability.href}
+          >
             Play
           </Link>
         </p>

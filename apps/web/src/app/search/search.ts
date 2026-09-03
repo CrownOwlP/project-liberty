@@ -182,6 +182,51 @@ export async function loadSearchResults(
     if (!parsed.success) {
       return { status: "error", reason: "search_response_failed_validation" };
     }
+
+    /*
+     * THE RESPONSE HAS TO SAY WHICH QUERY IT IS FOR, and be believed only after
+     * it has been checked.
+     *
+     * `searchResponseSchema` proves the payload is shaped like a search
+     * response. It cannot prove it is THIS search's response — `query` is a
+     * well-formed string either way. The contract publishes that field for
+     * exactly this comparison ("echoed back so a client can tell a response
+     * apart from a stale one it no longer wants"), and until this line its only
+     * consumer took it on trust and then RENDERED it as fact: the empty-state
+     * heading and the live-region sentence both quote `parsed.data.query`, so a
+     * response computed for the wrong query produced a page that stated, in the
+     * one place a user looks and the one place a screen reader speaks, that
+     * nothing matched a search nobody ran.
+     *
+     * Nothing else on this surface can catch it. The client reconciler in
+     * `components/search/search-sync.ts` compares an arriving render against the
+     * URL and against its own requests; the response BODY never reaches it. So
+     * this is the only boundary where the two can be compared at all.
+     *
+     * Both sides are normalised — `query` by `normalizeSearchQuery` above,
+     * `parsed.data.query` by `searchQuerySchema`, which applies the same
+     * function — and that function is idempotent, so this compares meanings and
+     * not spellings: an echo of "  the   fall " is the same search as "the
+     * fall" and passes.
+     *
+     * UNREACHABLE TODAY, and written anyway. `getSearchResults` computes the
+     * response in this process from the query it was handed, so it cannot
+     * disagree with itself. The contract exists ahead of `GET /api/v1/search`
+     * on purpose; a check that only lands when the transport does is a check
+     * nobody remembers to add, and the failure it prevents — a cached, retried,
+     * coalesced or misrouted response — is one that only becomes possible on the
+     * day the transport arrives.
+     *
+     * It is an `error` and not a silent retry: this function has no idea whether
+     * asking again would produce anything different, and a surface that quietly
+     * re-requests on every mismatch is how a coalescing bug becomes a load
+     * problem. The reason code is distinct from the schema failure so the two
+     * are told apart in the panel that renders it.
+     */
+    if (parsed.data.query !== query) {
+      return { status: "error", reason: "search_response_query_mismatch" };
+    }
+
     if (parsed.data.results.length === 0) {
       return { status: "empty", query: parsed.data.query, generatedAt: parsed.data.generatedAt };
     }
