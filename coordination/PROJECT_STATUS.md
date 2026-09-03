@@ -1,13 +1,13 @@
 # Project Liberty - Project Status
 
-> Generated 2026-08-29T23:44:19.256Z from the AI control plane.
+> Generated 2026-09-03T02:22:14.330Z from the AI control plane.
 
-**Overall completion:** 7/35 executable tasks (20%)
+**Overall completion:** 7/38 executable tasks (18%)
 
 ## Status summary
 
-- **BACKLOG:** 16
-- **READY:** 6
+- **BACKLOG:** 18
+- **READY:** 7
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 0
 - **REVIEW:** 4
@@ -31,18 +31,18 @@
 - **PL-0102** [REVIEW] Search experience — owner: claude-frontend
 - **PL-0103** [REVIEW] Title details — owner: claude-frontend
 - **PL-0304** [REVIEW] Media inspection service — owner: claude-backend
-- **PL-AI-0004** [REVIEW] Review dependency scope — owner: claude-lead
+- **PL-AI-0004** [REVIEW] Review dependency scope and provenance reconciliation — owner: claude-lead
 
 ## Dispatch classification
 
-- **READY_AND_EXECUTABLE:** 4
+- **READY_AND_EXECUTABLE:** 5
 - **READY_BUT_EXTERNAL:** 2
 - **BLOCKED:** 2
-- **BACKLOG (dependency-gated):** 16
+- **BACKLOG (dependency-gated):** 18
 
 ## Recommended executable wave
 
-No conflict-free executable tasks can be assigned with current agent capacity.
+- **PL-0703** -> claude-security (P0/Security) Corrective: production rights-invariant breach in the watch route
 
 ## Queued for external agents
 

@@ -86,7 +86,7 @@ by it.
 | ------------------------ | ---------------- | ------ |
 | `LIBERTY_E2E_BASE_URL`   | unset            | Test an already-running deployment. When set, the harness starts no server. It POSTs to the playback session endpoint, so never aim it at production. |
 | `LIBERTY_E2E_PORT`       | `3100`           | Port for the harness-managed server. Not 3000, because that is where a developer's `next dev` already is and `reuseExistingServer` would silently adopt it. |
-| `LIBERTY_E2E_WEB_MODE`   | `production`     | `production` runs `npm run build` + `next start`. `development` runs `next dev`. See the note below — the two answer the session API differently, disagree about whether `/api/v1/playback/resolve` exists, and disagree about whether the **watch route** mounts a player. All three on purpose, and all three the same switch. |
+| `LIBERTY_E2E_WEB_MODE`   | `production`     | `production` runs `npm run build` + `next start`. `development` runs `next dev`. See the note below — the two answer the session API differently, disagree about whether `/api/v1/playback/resolve` exists, and disagree about whether the **watch route** mounts a player. All three on purpose, and all three the same switch. **`development` is currently blocked**: see "Known blockers" — the dev server refuses to serve its own client chunks to `127.0.0.1`, so nothing hydrates. |
 | `LIBERTY_E2E_MEDIA_ORIGIN` | unset          | A DASH/HLS origin you hold rights to serve from. Passed to the server as `LIBERTY_FIXTURE_MEDIA_ORIGIN`. Unset means the harness pins the server to `https://fixtures.invalid` — never to an inherited value — and the media-rig suite skips. |
 
 ### The two web modes are not the same deployment
@@ -160,6 +160,98 @@ a test that needs relaxing. The mode-independent half — `/watch/<id>` answers
 200, carries the requested id, offers "Back to catalog", and no
 `liberty-video[src]` exists anywhere — still runs in both.
 
+## Known blockers found by the first real run
+
+Until this section is empty, a run of this harness is not a clean gate. Both
+entries were found the first time the suite was actually executed rather than
+typechecked, both are reproducible, and neither is a defect in a spec. The
+assertions that catch them are left failing: a suite lowered to match a defect
+is the same mechanism the section above describes for the watch route's
+fixtures, and it is worse than a red result because it is silent.
+
+### `LIBERTY_E2E_WEB_MODE=development` served no client JavaScript — fixed, unverified
+
+Next 16's dev server refuses requests for `/_next/*` dev resources whose host is
+not listed in `allowedDevOrigins`. `e2e/src/env.ts` builds `BASE_URL` as
+`http://127.0.0.1:<port>`, and `127.0.0.1` is not on the default list, so every
+client chunk and the HMR endpoint are blocked. The server says so itself, in
+`apps/web/.next/dev/logs/next-development.log`:
+
+```
+⚠ Blocked cross-origin request to Next.js dev resource
+  /_next/static/chunks/node_modules_next_dist_20wefz_._.js from "127.0.0.1".
+```
+
+Nothing hydrates. The consequences are exactly the browser tests that need the
+client, and no others — which is why the failure reads as several unrelated
+product bugs:
+
+- `critical-journey.spec.ts`, the development branch of the watch route:
+  `PlayerSurface`'s effect never runs, so `<liberty-video>` — created with
+  `document.createElement` inside that effect rather than rendered as JSX — is
+  never in the DOM, and the reason trail never appears. The server half is fine
+  and the same run proves it: the page rendered the player shell, so candidates
+  resolved, the URL policy admitted the pinned origin, and the session was
+  granted;
+- `search.spec.ts`, "typing commits the query to the address bar": Playwright's
+  `fill` writes into the DOM, React never sees a change event, the debounce
+  never fires and the URL never gains `?q=`. This one fails on **every** project
+  in `development`, including Chromium.
+
+**`allowedDevOrigins: ["127.0.0.1"]` is now set in `apps/web/next.config.ts`.**
+It is a development-only setting — Next reaches that guard only when the server
+was started in dev mode, and it covers `/_next` resources rather than app routes
+— and `127.0.0.1` is loopback, so it grants nothing a local developer does not
+already have and nothing at all to a deployment.
+
+Rejected: changing `BASE_URL` to `localhost`. It makes the symptom disappear
+without the application ever declaring which dev origins it trusts, and it
+re-breaks for anyone who points `LIBERTY_E2E_BASE_URL` at a numeric host. The
+harness is not the thing that is misconfigured.
+
+The setting is applied and has never been exercised. Every row in the coverage
+table below marked **`development` build only** is therefore still unproven —
+not because the blocker stands, but because no run has happened since it was
+removed. The next `development` execution is what turns this entry from a
+diagnosis into a result, and it is the first thing that should be run.
+
+### `notFound()` does not produce a 404 on any route in this app
+
+`critical-journey.spec.ts` asserts a real 404 for an unknown title
+(`/title/<unknown>`) and for a malformed watch id (`/watch/Not%20A%20Valid%20Id`).
+Both receive **200**, in `production` and in `development`.
+
+Neither route is deciding wrongly. `loadTitleDetail` answers `not-found` for an
+id the catalog does not define; `loadPlaybackSession` answers `not-found` for an
+id that is not normalized, and it does so *before* the resolver is consulted —
+so the reading that blamed the rights repair's `not-configured` branch is
+refuted by the order of the code. Both then call `notFound()`.
+
+Next sets that status in one place only: the catch around `renderToStream` in
+`app-render.tsx`, which runs when the access-fallback error **escapes** the HTML
+render. A segment's `loading.tsx` wraps that segment's child slots in a
+`<Suspense>`, so `app/loading.tsx` wraps every route in the application, and
+these two routes each add one of their own. React completes the shell — the root
+layout, nothing more — and flushes it at 200 while the loader is still pending;
+the throw arrives afterwards and is handled by the boundary. The captured
+failures show precisely that: the title 404 fails with the "Loading title…"
+skeleton on screen, the watch one with "Loading player…".
+
+The fix is to keep the identity decision out of a Suspense boundary. The
+arrangement that keeps both the skeletons and the status is:
+
+1. scope `apps/web/src/app/loading.tsx` to the home route by moving it and
+   `app/page.tsx` into an `app/(home)/` route group, so it stops wrapping
+   `/title` and `/watch`;
+2. move each route's identity decision into that segment's `layout.tsx`, which
+   renders **outside** its own segment's loading boundary, deduplicating the
+   load with React `cache()` the way `title/[titleId]/page.tsx` already does.
+
+Deleting a segment's `loading.tsx` on its own only changes which skeleton is
+shown. Rejected: `generateStaticParams` with `dynamicParams: false`, which does
+answer 404 at the router before any render, but pins the addressable ids to a
+build-time list — the catalog's data answering a provider's question.
+
 ## What it covers
 
 | Area | Assertion |
@@ -173,9 +265,9 @@ a test that needs relaxing. The mode-independent half — `/watch/<id>` answers
 | Resolve gate | Under the default `production` mode, `/api/v1/playback/resolve` answers **404 `route_not_available` with no verdict attached** to the request that would otherwise have succeeded |
 | Rights boundary | Under `development`, an unrightsed candidate posted to `/api/v1/playback/resolve` never yields `selected` or `ranked` — with a rightsed control candidate beside it, so the refusal is about rights and not about an outage |
 | Robustness | `"not json"`, `7`, `null`, `[]` all produce a well-formed `denied` and never a 500 |
-| Journey | Catalog rail → title route → Play link → watch route → back; unknown ids are real 404s |
+| Journey | Catalog rail → title route → Play link → watch route → back; unknown ids are real 404s. **The 404 half is asserted and currently fails** — see "Known blockers" above; it is not relaxed |
 | Player | **`development` build only.** `<liberty-video>` mounts and **never carries a `src`**; the reason trail renders. Under `production` the same spec asserts the opposite and does not skip: the unavailable panel is shown, `liberty-video` has count **0**, and no reason trail exists — a player on that build would mean a fixture escaped into a shipped artifact. The `src` half is mode-independent: `liberty-video[src]` must match nothing in either mode, though on a production build it is the development branch that stops the pair being vacuous |
-| Search | Idle, results and empty stay three distinct states; the query is escaped rather than interpreted; typing becomes an addressable URL |
+| Search | Idle, results and empty stay three distinct states; the query is escaped rather than interpreted; typing becomes an addressable URL. **The typing test failed on the first real run**: on every project under `development`, for the `allowedDevOrigins` reason above — that cause is now removed and the development result is unknown until the next run — and under `production` on WebKit and mobile-safari because `fill` lands before the form has hydrated — React never sees the change, and nothing on the surface re-reads the input's value afterwards. It also trips Playwright strict mode on Chromium and Firefox, where `getByRole("heading", { name: "Northstar" })` matches both the results `<h2>` and the card `<h3>` (role-name matching is substring by default). Both belong to the search surface's own task |
 
 ## What it deliberately does not cover
 
@@ -184,13 +276,19 @@ a test that needs relaxing. The mode-independent half — `/watch/<id>` answers
   is always `null` today, and the harness asserts that it is `null` rather than
   pretending to test a resume point. When PL-0403 lands, that assertion is the
   thing that must be changed deliberately.
-- **The click from a catalog card to a title.** There isn't one. Cards and search
-  results are `<article>` elements with no play affordance, which
-  `search-results.tsx` states is intentional — search is discovery, and a stream
-  is resolved at playback time rather than implied by a result being visible. The
-  journey crosses that step by address and asserts that the id the catalog
-  published is the id the title route serves. Faking the click would have made
-  the test pass and the gap invisible.
+- **The click from a catalog card to a title.** This entry used to read "There
+  isn't one", and that stopped being true when PL-0104 landed `lib/routes.ts`:
+  `catalog-card.tsx` now renders the heading as a `<Link href="/title/:id">`
+  whenever the item resolves to one, on the home rails and in the search results
+  alike. The journey still crosses that step by address, so the link is
+  **untested coverage rather than a missing affordance**, and
+  `critical-journey.spec.ts` says so where it used to say the opposite. What has
+  not changed is that a card carries no *play* affordance —
+  `search-results.tsx` states that search is discovery and that a stream is
+  resolved at playback time rather than implied by a result being visible — so
+  the title-to-watch step is asserted through the Play link on the title page,
+  which is the only control making that claim. Faking either click with a
+  `data-testid` would have made a test pass and a gap invisible.
 - **`/api/v1/playback/resolve` under a production build, beyond the 404.** Its
   body limits — `413 request_too_large` from `content-length`, `413
   too_many_candidates` above 100, and the `400 invalid_request` that a non-JSON

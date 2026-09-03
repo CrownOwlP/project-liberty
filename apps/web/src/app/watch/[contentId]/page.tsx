@@ -60,8 +60,51 @@ export default async function WatchPage({ params }: { params: Promise<{ contentI
   const result = await loadPlaybackSession(contentId);
 
   /*
-   * A real 404 rather than a panel served at 200. The distinction is invisible
-   * to a reader and load-bearing for everything else that consumes the route.
+   * IDENTITY IS SETTLED BEFORE THE PROVIDER IS CONSULTED, and that part is
+   * right: `loadPlaybackSession` refuses an id that is not normalized before it
+   * calls the resolver, so a malformed id is `not-found` in every environment
+   * and never reaches the provider boundary to be misreported as a
+   * configuration gap.
+   *
+   * WHAT IS NOT RIGHT IS THE STATUS, AND THE COMMENT THAT STOOD HERE ASSERTED IT
+   * AS A FACT. It read "a real 404 rather than a panel served at 200". This
+   * route has never produced one, and the first real run of the harness is what
+   * found it: `critical-journey.spec.ts`, "an unplayable content id does not
+   * reach the player", requests `/watch/Not%20A%20Valid%20Id` and receives 200,
+   * with a page snapshot showing the watch skeleton — the `loading.tsx`
+   * fallback — rather than the not-found boundary. Named rather than cited by
+   * line: a line number in another package is a reference that rots on the next
+   * edit to that file.
+   *
+   * The mechanism is Next's, not this file's. `app-render.tsx` sets
+   * `res.statusCode` from an access-fallback error in exactly one place: the
+   * catch around `renderToStream`, which only runs when the error ESCAPES the
+   * HTML render. Every segment in this app renders inside a `<Suspense>` —
+   * `app/loading.tsx` wraps the root layout's child slots, which is every route,
+   * and `[contentId]/loading.tsx` wraps this page — so React completes the shell
+   * (the root layout, and nothing else) and flushes it at 200 while this loader
+   * is still pending. By the time `notFound()` throws, the status is on the
+   * wire; React hands the error to the boundary and the client renders
+   * `not-found.tsx` under a 200.
+   *
+   * THE FIX IS TO REMOVE THE SUSPENSE BOUNDARIES ABOVE THIS DECISION, and the
+   * one that decides the outcome is `apps/web/src/app/loading.tsx`, which is
+   * outside PL-0703's allowed paths. Deleting only `[contentId]/loading.tsx`
+   * changes which skeleton is shown and changes no status, so it is not done
+   * here: half of a fix that is indistinguishable from a regression is worse
+   * than a recorded finding. The arrangement that keeps a player skeleton AND
+   * the status is to scope the root loading file to the home route (a `(home)`
+   * route group) and move this identity decision into
+   * `watch/[contentId]/layout.tsx`, which renders OUTSIDE its own segment's
+   * loading boundary.
+   *
+   * REJECTED: relaxing the spec — the 404 is a real product property, and
+   * crawlers and link checkers are exactly the consumers that cannot see the
+   * panel. Also rejected: `generateStaticParams` with `dynamicParams: false`,
+   * which does 404 at the router before any render, but only by pinning the
+   * playable ids to a build-time list. That answers a provider's question with
+   * the catalog's data and would refuse ids a real registry knows.
+   *
    * `notFound()` returns `never`, so the narrowing below is the compiler's.
    */
   if (result.status === "not-found") notFound();

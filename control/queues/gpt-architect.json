@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-29T23:44:19.257Z",
+  "generatedAt": "2026-09-03T02:22:14.331Z",
   "agent": "gpt-architect",
   "executionAvailable": false,
   "assigned": [],
@@ -148,18 +148,56 @@
       },
       "implementationAgent": "claude-backend",
       "updatedAt": "2026-08-20T16:01:40.209Z",
-      "implementationBaseSha": "55736f29864d04319600e107c366622cb09988b9"
+      "implementationBaseSha": "55736f29864d04319600e107c366622cb09988b9",
+      "review": {
+        "taskId": "PL-0304",
+        "implementationAgent": "claude-backend",
+        "implementationOwner": "claude-backend",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "3c92942bc7eee0a7aab4440e254d8e11d3a849a9",
+        "reviewedBaseSha": "55736f29864d04319600e107c366622cb09988b9",
+        "reviewedTreeHash": "acad9dd80d7d23381e8167add996c8260ad7af9e17c25c197e2715086ab3a638",
+        "reviewedFileCount": 28,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [],
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-09-03T02:22:13.464Z",
+        "evidence": "APPROVED by gpt-architect at 9933a55dd177ccc08b20b1fe3e49f479c8a7de1f. TRANSCRIBED BY CLAUDE from the ChatGPT review session, not authored by the GPT GitHub connector, which returns 403 Resource not accessible by integration on repository writes so no durable bus message exists. Verdict: DNS rebinding closed by a pinned lookup that leaves Host, SNI and certificate identity on the publisher hostname; PinnedTarget unforgeable via a module-private symbol plus a registry, defeating both a cast and a spread; real-socket suite inside the ordinary blocking test run and exiting zero; parser pin moved to 0.9.12 with the stale rationale replaced by a forward-only exact-pin policy; exact-head CI green on Linux."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PL-0304",
+          "implementationAgent": "claude-backend",
+          "implementationOwner": "claude-backend",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "3c92942bc7eee0a7aab4440e254d8e11d3a849a9",
+          "reviewedBaseSha": "55736f29864d04319600e107c366622cb09988b9",
+          "reviewedTreeHash": "acad9dd80d7d23381e8167add996c8260ad7af9e17c25c197e2715086ab3a638",
+          "reviewedFileCount": 28,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [],
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-09-03T02:22:13.464Z",
+          "evidence": "APPROVED by gpt-architect at 9933a55dd177ccc08b20b1fe3e49f479c8a7de1f. TRANSCRIBED BY CLAUDE from the ChatGPT review session, not authored by the GPT GitHub connector, which returns 403 Resource not accessible by integration on repository writes so no durable bus message exists. Verdict: DNS rebinding closed by a pinned lookup that leaves Host, SNI and certificate identity on the publisher hostname; PinnedTarget unforgeable via a module-private symbol plus a registry, defeating both a cast and a spread; real-socket suite inside the ordinary blocking test run and exiting zero; parser pin moved to 0.9.12 with the stale rationale replaced by a forward-only exact-pin policy; exact-head CI green on Linux."
+        }
+      ]
     },
     {
       "id": "PL-AI-0004",
       "priority": "P0",
       "lane": "Coordination",
       "status": "REVIEW",
-      "title": "Review dependency scope",
+      "title": "Review dependency scope and provenance reconciliation",
       "dependencies": [],
       "allowedPaths": [
         "scripts/ai-control-plane.mjs",
-        "scripts/test-ai-control-plane.mjs"
+        "scripts/test-ai-control-plane.mjs",
+        "control/README.md",
+        "CLAUDE.md"
       ],
       "preferredAgent": "claude-lead",
       "reviewAgent": "gpt-architect",
@@ -167,7 +205,7 @@
         "repo-validate",
         "unit"
       ],
-      "acceptance": "allowedPaths remains the sole write, collision and staging surface while review fingerprints, stale-review checks, approvals and the DONE gate bind to allowedPaths union reviewDependencies; two tasks with disjoint allowedPaths and a shared reviewDependency can be active simultaneously, and editing that shared dependency invalidates both reviews; tasks without reviewDependencies behave identically to before",
+      "acceptance": "SCOPE EXPANDED, deliberately and on the reviewer's ruling: this task now covers two trust-boundary features in the same two files, because the review system binds an approval to a path range rather than to a semantic hunk, so a current-head review of these files cannot truthfully exclude the second. A nominal second task over the identical write surface was rejected as a fake logical split. (1) allowedPaths remains the sole write, collision and staging surface while review fingerprints, stale-review checks, approvals and the DONE gate bind to allowedPaths union reviewDependencies; two tasks with disjoint allowedPaths and a shared reviewDependency can be active simultaneously, and editing that shared dependency invalidates both reviews; tasks without reviewDependencies behave identically to before; a declaration that reduces to the repository root is refused rather than dropped, in validation and at point of use, and the autonomy guard treats root ownership as orchestration. (2) Provenance reconciliation: an implementation already present in COMMITTED GIT HISTORY can be started with a true implementationBaseSha via explicit flags that are refused on an ordinary start, the base is validated against mechanical facts only, the semantic question of whether it is really this implementation's predecessor is published as evidence for the reviewer rather than guessed at by a heuristic, and the audit event is distinguishable from an ordinary start. The contract says committed rather than pushed deliberately: the mechanism inspects the local worktree and the local graph and consults no remote, so a clean branch of never-pushed commits satisfies it, and claiming otherwise was the same class of provenance overclaim this task exists to remove. Remote availability is enforced where it actually matters, at review and handoff.",
       "owner": "claude-lead",
       "gateResults": {
         "repo-validate": {
@@ -292,6 +330,39 @@
         "unit"
       ],
       "acceptance": "StreamCandidate can represent genuinely unknown videoCodec, audioCodec, height and bitrateKbps, and the media engine treats unknown as unknown rather than as a value: eligibility must not pass on an unverified codec, and scoring must not award or penalise a fabricated number",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PL-0703",
+      "priority": "P0",
+      "lane": "Security",
+      "status": "READY",
+      "title": "Corrective: production rights-invariant breach in the watch route",
+      "dependencies": [],
+      "allowedPaths": [
+        "apps/web/src/app/watch/**",
+        "apps/web/next.config.ts",
+        "apps/web/src/app/api/deployment-environment.ts",
+        "apps/web/src/app/api/v1/playback/session/**",
+        "apps/web/src/app/api/v1/playback/resolve/**",
+        "e2e/tests/critical-journey.spec.ts",
+        "e2e/tests/playback-session.api.spec.ts",
+        "docs/E2E.md"
+      ],
+      "reviewDependencies": [
+        "e2e/tests/media-rig.spec.ts"
+      ],
+      "preferredAgent": "claude-security",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "security-review",
+        "rights-review",
+        "typecheck",
+        "unit",
+        "e2e"
+      ],
+      "acceptance": "The watch route serves no fabricated rights basis outside a non-deployment environment, and only one fixture provider exists; the environment classification is an allowlist expressed once and shared rather than restated; docs/E2E.md no longer blesses the divergence that produced the breach; the two affected Playwright specs assert the corrected behaviour and are EXECUTED in both production and development modes rather than only typechecked",
       "owner": null,
       "gateResults": {}
     },

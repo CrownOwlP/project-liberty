@@ -1,9 +1,43 @@
 {
-  "generatedAt": "2026-08-29T23:44:19.261Z",
+  "generatedAt": "2026-09-03T02:22:14.335Z",
   "agent": "claude-security",
   "executionAvailable": true,
   "assigned": [],
   "review": [],
   "reservedExternal": [],
-  "recommended": []
+  "recommended": [
+    {
+      "id": "PL-0703",
+      "priority": "P0",
+      "lane": "Security",
+      "status": "READY",
+      "title": "Corrective: production rights-invariant breach in the watch route",
+      "dependencies": [],
+      "allowedPaths": [
+        "apps/web/src/app/watch/**",
+        "apps/web/next.config.ts",
+        "apps/web/src/app/api/deployment-environment.ts",
+        "apps/web/src/app/api/v1/playback/session/**",
+        "apps/web/src/app/api/v1/playback/resolve/**",
+        "e2e/tests/critical-journey.spec.ts",
+        "e2e/tests/playback-session.api.spec.ts",
+        "docs/E2E.md"
+      ],
+      "reviewDependencies": [
+        "e2e/tests/media-rig.spec.ts"
+      ],
+      "preferredAgent": "claude-security",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "security-review",
+        "rights-review",
+        "typecheck",
+        "unit",
+        "e2e"
+      ],
+      "acceptance": "The watch route serves no fabricated rights basis outside a non-deployment environment, and only one fixture provider exists; the environment classification is an allowlist expressed once and shared rather than restated; docs/E2E.md no longer blesses the divergence that produced the breach; the two affected Playwright specs assert the corrected behaviour and are EXECUTED in both production and development modes rather than only typechecked",
+      "owner": null,
+      "gateResults": {}
+    }
+  ]
 }

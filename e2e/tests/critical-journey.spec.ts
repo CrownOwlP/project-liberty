@@ -5,15 +5,32 @@ import { DEMO, UNKNOWN_CONTENT_ID } from "../src/fixtures";
 /* -------------------------------------------------------------------------
  * PL-0701's acceptance journey: catalog -> title -> player
  *
- * ONE GAP IS DELIBERATE AND IS NOT PAPERED OVER. A catalog card is an
- * `<article>` with a heading and a metadata line; it is not a link, and neither
- * is a search result -- `search-results.tsx` states that search is discovery
- * and that a stream is resolved through authorized provider adapters at
- * playback time, never implied by a result being visible. So there is no
- * clickable path from a rail to a title today, and this journey crosses that
- * step by address while asserting that the id the catalog published is the id
- * the title route serves. Faking the click with a `data-testid` on a
- * non-existent link would have made the test pass and the gap invisible.
+ * THE GAP THIS BLOCK USED TO DESCRIBE HAS BEEN CLOSED, and the description is
+ * corrected rather than quietly deleted. It said a catalog card "is an
+ * `<article>` with a heading and a metadata line; it is not a link", so there
+ * was "no clickable path from a rail to a title today" and the journey had to
+ * cross that step by address. PL-0104 landed `lib/routes.ts`, and
+ * `catalog-card.tsx` now renders the heading as a `<Link href="/title/:id">`
+ * whenever the item resolves to one -- on the home rails and in the search
+ * results alike, and `routes.ts` records that no item from either surface
+ * reaches the unrouted branch today. A sentence that outlives the code it
+ * describes is how this repository keeps losing things: left in place, it would
+ * go on justifying not testing a link that exists.
+ *
+ * WHAT HAS NOT CHANGED is why there is still no click into PLAYBACK from a
+ * card. A card carries no play affordance, because `search-results.tsx` states
+ * that search is discovery and that a stream is resolved through authorized
+ * provider adapters at playback time, never implied by a result being visible.
+ * So the title-to-watch step is asserted through the Play link on the title
+ * page, which is the only control making that claim.
+ *
+ * The rail-to-title step is still crossed by address below. Asserting the new
+ * link is coverage this file should gain, and it is deliberately NOT added in
+ * the same round that diagnosed why the suite fails: it is a new assertion,
+ * this round could not run the suite, and an unverified assertion added beside
+ * a set of known failures is how a real regression gets attributed to the
+ * wrong change. Faking the click with a `data-testid` remains forbidden -- but
+ * there is nothing left to fake.
  *
  * Every wait here is on a condition. Nothing sleeps, and nothing asserts on a
  * value that a slower machine could legitimately still be computing.
@@ -45,6 +62,43 @@ test("the title route serves the id the catalog published", async ({ page }) => 
    * heading". */
   await expect(page.getByText(DEMO.movie.genre).first()).toBeVisible();
 });
+
+/* -------------------------------------------------------------------------
+ * THE TWO 404 ASSERTIONS FAIL TODAY, IN BOTH MODES, AND NEITHER IS RELAXED
+ *
+ * This one and "an unplayable content id does not reach the player" both
+ * receive 200. They are the same defect and it is not in either route's
+ * decision: `loadTitleDetail` returns `not-found` for an id the catalog does
+ * not define, `loadPlaybackSession` returns `not-found` for an id that is not
+ * normalized -- and it does so BEFORE the resolver is consulted, so the reading
+ * that blamed the rights repair's `not-configured` branch is refuted by the
+ * order of the code. Both routes then call `notFound()`, and the status never
+ * reaches the wire.
+ *
+ * Next sets the 404 in exactly one place: the catch around `renderToStream` in
+ * `app-render.tsx`, which runs only when the access-fallback error ESCAPES the
+ * HTML render. `app/loading.tsx` puts every route in this app inside a
+ * `<Suspense>` (a segment's loading file wraps that segment's child slots, so
+ * the root one wraps everything), and each of these two routes adds its own on
+ * top. React therefore completes the shell -- the root layout, and nothing else
+ * -- and flushes it at 200 while the loader is still pending; the throw lands
+ * in the boundary afterwards. The captured page snapshots say it outright: the
+ * failure for this test is the "Loading title..." skeleton at 200, and for the
+ * watch one it is "Loading player...".
+ *
+ * The fix lives in `apps/web/src/app/loading.tsx` (scope it to the home route
+ * with a `(home)` route group) plus the two segment loading files; only
+ * `watch/[contentId]/loading.tsx` is inside PL-0703's allowed paths, and
+ * removing it alone changes which skeleton appears and no status at all.
+ * `watch/[contentId]/page.tsx` carries the full argument and the rejected
+ * alternatives.
+ *
+ * Left failing on purpose. A 404 for a dead address is a product property that
+ * crawlers, link checkers and the eventual native clients read, and a spec
+ * lowered to 200 would be a written licence for the defect -- which is the
+ * exact mechanism the block further down records for the watch route's
+ * fixtures.
+ * ---------------------------------------------------------------------- */
 
 test("an unknown title is a real 404, not a panel served at 200", async ({ page }) => {
   const response = await page.goto(`/title/${UNKNOWN_CONTENT_ID}`);
@@ -183,9 +237,38 @@ test("which branch the watch route takes is decided by the build, and both are a
     return;
   }
 
-  /* The development build, where fixtures may resolve and the player is the
+  /*
+   * The development build, where fixtures may resolve and the player is the
    * correct answer. This is the branch the old single-mode test was really
-   * describing, kept intact rather than deleted. */
+   * describing, kept intact rather than deleted.
+   *
+   * IT FAILED ON THE FIRST REAL RUN BECAUSE THE DEV SERVER REFUSED TO SERVE ITS
+   * OWN JAVASCRIPT, which was a config defect rather than anything this branch
+   * asserts. Next 16's dev server refuses `/_next` requests whose host is not in
+   * `allowedDevOrigins`; `src/env.ts` points every browser at
+   * `http://127.0.0.1:3100`, which is not on the default list, so the server log
+   * (`apps/web/.next/dev/logs/next-development.log`) records every client chunk
+   * and the HMR endpoint being blocked. Nothing hydrated, so `PlayerSurface`'s
+   * effect never ran, `<liberty-video>` was never created -- it is built with
+   * `document.createElement` in that effect, not rendered as JSX -- and the
+   * server-rendered `State: idle / Candidate: none` line was all there was. The
+   * same blockage is why `search.spec.ts`'s debounce test failed on every
+   * browser project, which is the tell that it was one cause wearing the
+   * costume of several unrelated product defects.
+   *
+   * `allowedDevOrigins: ["127.0.0.1"]` is now set in `apps/web/next.config.ts`,
+   * so this branch is no longer blocked -- it is merely UNPROVEN, because no run
+   * has happened since. Rejected as the fix: pointing `BASE_URL` at `localhost`
+   * instead. That would have made the symptom go away without the app ever
+   * declaring which dev origins it trusts, and would silently re-break for
+   * anyone who sets `LIBERTY_E2E_BASE_URL` to a numeric host. `docs/E2E.md`
+   * records both.
+   *
+   * Everything up to hydration is already proven by the same failed run: the
+   * page reached `status: "ok"`, so under this build `resolveAuthorizedCandidates`
+   * resolved, `checkUrl` admitted the pinned `LIBERTY_FIXTURE_MEDIA_ORIGIN`, and
+   * `rankStreamCandidates` selected. Only the client half is missing.
+   */
   await expect(page.getByText(`Content: ${DEMO.movie.id}`)).toBeVisible();
 
   const video = page.locator("liberty-video");

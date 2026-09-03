@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-29T23:44:19.258Z",
+  "generatedAt": "2026-09-03T02:22:14.332Z",
   "agent": "claude-lead",
   "executionAvailable": true,
   "assigned": [
@@ -8,11 +8,13 @@
       "priority": "P0",
       "lane": "Coordination",
       "status": "REVIEW",
-      "title": "Review dependency scope",
+      "title": "Review dependency scope and provenance reconciliation",
       "dependencies": [],
       "allowedPaths": [
         "scripts/ai-control-plane.mjs",
-        "scripts/test-ai-control-plane.mjs"
+        "scripts/test-ai-control-plane.mjs",
+        "control/README.md",
+        "CLAUDE.md"
       ],
       "preferredAgent": "claude-lead",
       "reviewAgent": "gpt-architect",
@@ -20,7 +22,7 @@
         "repo-validate",
         "unit"
       ],
-      "acceptance": "allowedPaths remains the sole write, collision and staging surface while review fingerprints, stale-review checks, approvals and the DONE gate bind to allowedPaths union reviewDependencies; two tasks with disjoint allowedPaths and a shared reviewDependency can be active simultaneously, and editing that shared dependency invalidates both reviews; tasks without reviewDependencies behave identically to before",
+      "acceptance": "SCOPE EXPANDED, deliberately and on the reviewer's ruling: this task now covers two trust-boundary features in the same two files, because the review system binds an approval to a path range rather than to a semantic hunk, so a current-head review of these files cannot truthfully exclude the second. A nominal second task over the identical write surface was rejected as a fake logical split. (1) allowedPaths remains the sole write, collision and staging surface while review fingerprints, stale-review checks, approvals and the DONE gate bind to allowedPaths union reviewDependencies; two tasks with disjoint allowedPaths and a shared reviewDependency can be active simultaneously, and editing that shared dependency invalidates both reviews; tasks without reviewDependencies behave identically to before; a declaration that reduces to the repository root is refused rather than dropped, in validation and at point of use, and the autonomy guard treats root ownership as orchestration. (2) Provenance reconciliation: an implementation already present in COMMITTED GIT HISTORY can be started with a true implementationBaseSha via explicit flags that are refused on an ordinary start, the base is validated against mechanical facts only, the semantic question of whether it is really this implementation's predecessor is published as evidence for the reviewer rather than guessed at by a heuristic, and the audit event is distinguishable from an ordinary start. The contract says committed rather than pushed deliberately: the mechanism inspects the local worktree and the local graph and consults no remote, so a clean branch of never-pushed commits satisfies it, and claiming otherwise was the same class of provenance overclaim this task exists to remove. Remote availability is enforced where it actually matters, at review and handoff.",
       "owner": "claude-lead",
       "gateResults": {
         "repo-validate": {

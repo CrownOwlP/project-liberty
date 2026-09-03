@@ -279,6 +279,41 @@ export async function loadPlaybackSession(
    * succeed, and `denied` would report an operator's unfinished configuration as
    * a decision about this title's rights, which is a false statement about the
    * title and hides the real remedy.
+   *
+   * WHY THIS IS NOT MOVED BEHIND AN IDENTITY LOOKUP. The first reading of the
+   * E2E 404 failure was that this branch answers before anything asks whether
+   * the title exists, and that the ordering is therefore wrong. The ordering
+   * that is available to this process is already right, and the rest is not
+   * available at all:
+   *
+   *   - an id that is not NORMALIZED is refused at the top of this function,
+   *     before the resolver is consulted, so it is `not-found` in every
+   *     environment. That is the identity question this process can decide;
+   *   - a WELL-FORMED id that names nothing is the identity question it cannot.
+   *     Identity belongs to the catalog, and there is no catalog behind this
+   *     resolver. `AuthorizedCandidateResolution` carries a `not-found` outcome
+   *     precisely so a provider registry can answer it, and nothing produces one
+   *     yet. Answering `not-found` from a deployment with an empty registry
+   *     would assert that a title does not exist on the strength of having no
+   *     providers — the same shape of unfounded claim as the fabricated `owned`
+   *     fixtures this route was repaired to stop publishing, pointed the other
+   *     way.
+   *
+   * And the failing assertion is not about this ordering in the first place. It
+   * asks for an HTTP 404, and `notFound()` does not reach the wire as a status
+   * on this route under ANY branch — see `[contentId]/page.tsx` for the
+   * mechanism and the evidence. Reordering here would have produced the same
+   * 200 with a different panel behind it.
+   *
+   * THE REAL REMAINING GAP, recorded rather than closed. Under a `development`
+   * build `fixtureAuthorizedCandidates` manufactures three `owned` candidates
+   * for ANY normalized id, so `/watch/no-such-title` mounts a player for a work
+   * nothing in the catalog defines. Teaching the fixture provider to answer
+   * `not-found` for ids it does not define needs a catalog lookup inside the
+   * session API, which `authorized-candidates.ts` argues against by name
+   * ("inventing an answer here would put provider configuration inside an HTTP
+   * route"). It is a provider-registry task, not a repair made in passing to
+   * move an E2E status.
    */
   if (resolution.status === "not-configured") return { status: "not-configured", contentId };
 
