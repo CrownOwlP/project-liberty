@@ -1,121 +1,9 @@
 {
-  "generatedAt": "2026-09-03T04:47:10.902Z",
+  "generatedAt": "2026-09-04T03:42:30.591Z",
   "agent": "claude-test",
   "executionAvailable": true,
   "assigned": [],
   "review": [
-    {
-      "id": "PL-0102",
-      "priority": "P0",
-      "lane": "Frontend",
-      "status": "REVIEW",
-      "title": "Search experience",
-      "reviewFallbackNote": "reviewAgent moved from gpt-architect to claude-test under the controlled-fallback ruling gpt-architect issued for exactly PL-0102, PL-0103, PL-0203 and PL-0204, and only while its transport is unavailable. The condition is met: its GitHub connector returns 403 Resource not accessible by integration on repository-content writes, so it cannot record a decision. Changed explicitly rather than silently, as that ruling required. THE ASSURANCE LEVEL IS LOWER: independent same-provider review, not cross-provider. claude-test did not implement this work and returned CHANGES_REQUESTED on first pass.",
-      "dependencies": [
-        "PL-0101"
-      ],
-      "allowedPaths": [
-        "apps/web/src/app/search/**",
-        "apps/web/src/components/search/**",
-        "packages/contracts/**"
-      ],
-      "preferredAgent": "claude-frontend",
-      "reviewAgent": "claude-test",
-      "qualityGates": [
-        "lint",
-        "typecheck",
-        "unit",
-        "build"
-      ],
-      "acceptance": "Debounced accessible search with typed results and URL-addressable query",
-      "owner": "claude-frontend",
-      "gateResults": {
-        "lint": {
-          "status": "pass",
-          "at": "2026-09-03T04:47:06.275Z",
-          "by": "claude-frontend",
-          "commitSha": "c469e92d5612528885e8fac21a284136b82b0e1a",
-          "evidence": "npm run check on the corrected tree, this round"
-        },
-        "typecheck": {
-          "status": "pass",
-          "at": "2026-09-03T04:47:06.731Z",
-          "by": "claude-frontend",
-          "commitSha": "c469e92d5612528885e8fac21a284136b82b0e1a",
-          "evidence": "turbo run typecheck plus npm run check, this round"
-        },
-        "unit": {
-          "status": "pass",
-          "at": "2026-09-03T04:47:07.210Z",
-          "by": "claude-frontend",
-          "commitSha": "c469e92d5612528885e8fac21a284136b82b0e1a",
-          "evidence": "vitest via npm run check, this round; includes the submit-decision suite added for the Enter blocker and the response-identity cases added for the echoed-query blocker"
-        },
-        "build": {
-          "status": "pass",
-          "at": "2026-09-03T04:47:07.677Z",
-          "by": "claude-frontend",
-          "commitSha": "c469e92d5612528885e8fac21a284136b82b0e1a",
-          "evidence": "next build via npm run check, this round"
-        }
-      },
-      "implementationAgent": "claude-frontend",
-      "updatedAt": "2026-09-03T04:47:10.023Z",
-      "implementationBaseSha": "34c16c97c9ae0a1dec5b708f4f81ed62ecb94afb",
-      "review": {
-        "taskId": "PL-0102",
-        "implementationAgent": "claude-frontend",
-        "implementationOwner": "claude-frontend",
-        "reviewerAgent": "claude-test",
-        "reviewerClass": "local-subagent",
-        "reviewerProvider": "anthropic",
-        "reviewedCommitSha": "c469e92d5612528885e8fac21a284136b82b0e1a",
-        "reviewedBaseSha": "34c16c97c9ae0a1dec5b708f4f81ed62ecb94afb",
-        "reviewedTreeHash": "a2be42b24d02e03fae52c3d7f2063b797933d2d75e2725e8da11e6ab8cbfab4f",
-        "reviewedFileCount": 33,
-        "reviewedFingerprintSource": "git-object",
-        "reviewedDependencies": [],
-        "outcome": "CHANGES_REQUESTED",
-        "reviewedAt": "2026-09-03T04:47:05.305Z",
-        "evidence": "CHANGES_REQUESTED by claude-test, substitute reviewer under gpt-architect's controlled-fallback ruling; independent same-provider review, weaker than cross-provider. Three blockers: the search input's border measured 1.27:1 against its own fill and 1.38:1 against the page, below the 3:1 of WCAG 2.1 SC 1.4.11, leaving the one interactive control on the surface with no perceivable boundary once the placeholder is gone; onSubmit early-returned whenever the typed value equalled the last requested query, so after a stale render Enter was a total no-op while the hint beneath the field advertises Press Enter to search straight away; and the loader validated the response shape but took the echoed query on faith, though the contract publishes that field expressly so a client can tell a response apart from a stale one, and rendered it as fact in the empty-state heading and the live region."
-      },
-      "reviewHistory": [
-        {
-          "taskId": "PL-0102",
-          "implementationAgent": "claude-frontend",
-          "implementationOwner": "claude-frontend",
-          "reviewerAgent": "claude-test",
-          "reviewerClass": "local-subagent",
-          "reviewerProvider": "anthropic",
-          "reviewedCommitSha": "8b1172b2190d3ddfecb5afd28ea73a293e17def1",
-          "reviewedBaseSha": "34c16c97c9ae0a1dec5b708f4f81ed62ecb94afb",
-          "reviewedTreeHash": "1fabf90e240d5e4461981a4793e77f191404ae0a05035ded07e547ad690fe628",
-          "reviewedFileCount": 33,
-          "reviewedFingerprintSource": "git-object",
-          "reviewedDependencies": [],
-          "outcome": "CHANGES_REQUESTED",
-          "reviewedAt": "2026-09-03T04:02:07.429Z",
-          "evidence": "CHANGES_REQUESTED by claude-test, substitute reviewer under gpt-architect's controlled-fallback ruling; independent same-provider review, weaker than cross-provider. Three blockers: the search input's border measured 1.27:1 against its own fill and 1.38:1 against the page, below the 3:1 of WCAG 2.1 SC 1.4.11, leaving the one interactive control on the surface with no perceivable boundary once the placeholder is gone; onSubmit early-returned whenever the typed value equalled the last requested query, so after a stale render Enter was a total no-op while the hint beneath the field advertises Press Enter to search straight away; and the loader validated the response shape but took the echoed query on faith, though the contract publishes that field expressly so a client can tell a response apart from a stale one, and rendered it as fact in the empty-state heading and the live region."
-        },
-        {
-          "taskId": "PL-0102",
-          "implementationAgent": "claude-frontend",
-          "implementationOwner": "claude-frontend",
-          "reviewerAgent": "claude-test",
-          "reviewerClass": "local-subagent",
-          "reviewerProvider": "anthropic",
-          "reviewedCommitSha": "c469e92d5612528885e8fac21a284136b82b0e1a",
-          "reviewedBaseSha": "34c16c97c9ae0a1dec5b708f4f81ed62ecb94afb",
-          "reviewedTreeHash": "a2be42b24d02e03fae52c3d7f2063b797933d2d75e2725e8da11e6ab8cbfab4f",
-          "reviewedFileCount": 33,
-          "reviewedFingerprintSource": "git-object",
-          "reviewedDependencies": [],
-          "outcome": "CHANGES_REQUESTED",
-          "reviewedAt": "2026-09-03T04:47:05.305Z",
-          "evidence": "CHANGES_REQUESTED by claude-test, substitute reviewer under gpt-architect's controlled-fallback ruling; independent same-provider review, weaker than cross-provider. Three blockers: the search input's border measured 1.27:1 against its own fill and 1.38:1 against the page, below the 3:1 of WCAG 2.1 SC 1.4.11, leaving the one interactive control on the surface with no perceivable boundary once the placeholder is gone; onSubmit early-returned whenever the typed value equalled the last requested query, so after a stale render Enter was a total no-op while the hint beneath the field advertises Press Enter to search straight away; and the loader validated the response shape but took the echoed query on faith, though the contract publishes that field expressly so a client can tell a response apart from a stale one, and rendered it as fact in the empty-state heading and the live region."
-        }
-      ]
-    },
     {
       "id": "PL-0103",
       "priority": "P0",
@@ -146,34 +34,34 @@
       "gateResults": {
         "lint": {
           "status": "pass",
-          "at": "2026-09-03T04:47:08.149Z",
+          "at": "2026-09-04T03:42:27.839Z",
           "by": "claude-frontend",
-          "commitSha": "c469e92d5612528885e8fac21a284136b82b0e1a",
+          "commitSha": "23dd47d7d47ca3dba5f1e8f445d05be5ee0cd9c0",
           "evidence": "npm run check on the corrected tree, this round"
         },
         "typecheck": {
           "status": "pass",
-          "at": "2026-09-03T04:47:08.608Z",
+          "at": "2026-09-04T03:42:28.327Z",
           "by": "claude-frontend",
-          "commitSha": "c469e92d5612528885e8fac21a284136b82b0e1a",
+          "commitSha": "23dd47d7d47ca3dba5f1e8f445d05be5ee0cd9c0",
           "evidence": "turbo run typecheck plus npm run check, this round"
         },
         "unit": {
           "status": "pass",
-          "at": "2026-09-03T04:47:09.088Z",
+          "at": "2026-09-04T03:42:28.812Z",
           "by": "claude-frontend",
-          "commitSha": "c469e92d5612528885e8fac21a284136b82b0e1a",
+          "commitSha": "23dd47d7d47ca3dba5f1e8f445d05be5ee0cd9c0",
           "evidence": "vitest via npm run check, this round; includes the episode-metadata cases and the source-level style test asserting the classes reach their call sites"
         },
         "build": {
           "status": "pass",
-          "at": "2026-09-03T04:47:09.567Z",
+          "at": "2026-09-04T03:42:29.280Z",
           "by": "claude-frontend",
-          "commitSha": "c469e92d5612528885e8fac21a284136b82b0e1a",
+          "commitSha": "23dd47d7d47ca3dba5f1e8f445d05be5ee0cd9c0",
           "evidence": "next build via npm run check, this round"
         }
       },
-      "updatedAt": "2026-09-03T04:47:10.457Z",
+      "updatedAt": "2026-09-04T03:42:30.147Z",
       "implementationAgent": "claude-frontend",
       "implementationBaseSha": "65975495795c71193079b82825b55d7dbb1d2763",
       "review": {
@@ -183,7 +71,7 @@
         "reviewerAgent": "claude-test",
         "reviewerClass": "local-subagent",
         "reviewerProvider": "anthropic",
-        "reviewedCommitSha": "c469e92d5612528885e8fac21a284136b82b0e1a",
+        "reviewedCommitSha": "23dd47d7d47ca3dba5f1e8f445d05be5ee0cd9c0",
         "reviewedBaseSha": "65975495795c71193079b82825b55d7dbb1d2763",
         "reviewedTreeHash": "1ec332b58ee681c29c64dc1ce43ac1440056f85dcd4c54307abf899b83fff142",
         "reviewedFileCount": 35,
@@ -192,7 +80,7 @@
           "packages/contracts/**"
         ],
         "outcome": "CHANGES_REQUESTED",
-        "reviewedAt": "2026-09-03T04:47:05.844Z",
+        "reviewedAt": "2026-09-04T03:42:25.832Z",
         "evidence": "CHANGES_REQUESTED by claude-test, substitute reviewer under gpt-architect's controlled-fallback ruling; independent same-provider review, weaker than cross-provider. Four blockers: TITLE_NOT_FOUND_METADATA carried no robots directive while its sibling did, justified only by the belief that not-found answers 404 -- an executed Playwright run proved it answers 200, so every well-formed unknown id was an indexable page and the supply is unbounded; describeTitleMetadata had no episode branch, so every third episode in the catalogue shared the head name Episode 3 and the fallback description was series-less, which is the same non-identifying name the function exists to remove wearing a real one; the episode row's Play link rendered identically to the static runtime line above it with no hover rule, while the BLOCKED branch used a monospace class, so the unclickable state was more distinctive than the clickable one; and the focus ring was scoped to the episode grid after an argument about the user agent default that applies equally to the play CTA, the series link, the topbar link and the sole control on the not-found page."
       },
       "reviewHistory": [
@@ -232,6 +120,44 @@
           ],
           "outcome": "CHANGES_REQUESTED",
           "reviewedAt": "2026-09-03T04:47:05.844Z",
+          "evidence": "CHANGES_REQUESTED by claude-test, substitute reviewer under gpt-architect's controlled-fallback ruling; independent same-provider review, weaker than cross-provider. Four blockers: TITLE_NOT_FOUND_METADATA carried no robots directive while its sibling did, justified only by the belief that not-found answers 404 -- an executed Playwright run proved it answers 200, so every well-formed unknown id was an indexable page and the supply is unbounded; describeTitleMetadata had no episode branch, so every third episode in the catalogue shared the head name Episode 3 and the fallback description was series-less, which is the same non-identifying name the function exists to remove wearing a real one; the episode row's Play link rendered identically to the static runtime line above it with no hover rule, while the BLOCKED branch used a monospace class, so the unclickable state was more distinctive than the clickable one; and the focus ring was scoped to the episode grid after an argument about the user agent default that applies equally to the play CTA, the series link, the topbar link and the sole control on the not-found page."
+        },
+        {
+          "taskId": "PL-0103",
+          "implementationAgent": "claude-frontend",
+          "implementationOwner": "claude-frontend",
+          "reviewerAgent": "claude-test",
+          "reviewerClass": "local-subagent",
+          "reviewerProvider": "anthropic",
+          "reviewedCommitSha": "23dd47d7d47ca3dba5f1e8f445d05be5ee0cd9c0",
+          "reviewedBaseSha": "65975495795c71193079b82825b55d7dbb1d2763",
+          "reviewedTreeHash": "1ec332b58ee681c29c64dc1ce43ac1440056f85dcd4c54307abf899b83fff142",
+          "reviewedFileCount": 35,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "packages/contracts/**"
+          ],
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-09-04T03:42:23.457Z",
+          "evidence": "APPROVED by claude-test on second pass. Substitute reviewer under gpt-architect's controlled-fallback ruling; INDEPENDENT SAME-PROVIDER REVIEW, weaker assurance than cross-provider, and recorded as such. All four blockers closed: the noindex directive is present and shaped correctly and every comment on the surface now states the 200 truth rather than claiming a 404; the episode head strings were rebuilt character by character from the fixtures and match, with movie and series untouched; the accent-to-muted ratio was recomputed at 1.20:1, confirming the underline rather than the colour carries the cue; and the focus promotion reaches exactly four call sites with the grid's radius unchanged. One newly written comment overstated which controls sit on which backdrop and has been corrected. Coverage stated plainly: no recorded gate mounts a component, and nothing verifies the noindex meta survives the same Suspense flush that defeats the 404 status -- that is PL-0704's to prove."
+        },
+        {
+          "taskId": "PL-0103",
+          "implementationAgent": "claude-frontend",
+          "implementationOwner": "claude-frontend",
+          "reviewerAgent": "claude-test",
+          "reviewerClass": "local-subagent",
+          "reviewerProvider": "anthropic",
+          "reviewedCommitSha": "23dd47d7d47ca3dba5f1e8f445d05be5ee0cd9c0",
+          "reviewedBaseSha": "65975495795c71193079b82825b55d7dbb1d2763",
+          "reviewedTreeHash": "1ec332b58ee681c29c64dc1ce43ac1440056f85dcd4c54307abf899b83fff142",
+          "reviewedFileCount": 35,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "packages/contracts/**"
+          ],
+          "outcome": "CHANGES_REQUESTED",
+          "reviewedAt": "2026-09-04T03:42:25.832Z",
           "evidence": "CHANGES_REQUESTED by claude-test, substitute reviewer under gpt-architect's controlled-fallback ruling; independent same-provider review, weaker than cross-provider. Four blockers: TITLE_NOT_FOUND_METADATA carried no robots directive while its sibling did, justified only by the belief that not-found answers 404 -- an executed Playwright run proved it answers 200, so every well-formed unknown id was an indexable page and the supply is unbounded; describeTitleMetadata had no episode branch, so every third episode in the catalogue shared the head name Episode 3 and the fallback description was series-less, which is the same non-identifying name the function exists to remove wearing a real one; the episode row's Play link rendered identically to the static runtime line above it with no hover rule, while the BLOCKED branch used a monospace class, so the unclickable state was more distinctive than the clickable one; and the focus ring was scoped to the episode grid after an argument about the user agent default that applies equally to the play CTA, the series link, the topbar link and the sole control on the not-found page."
         }
       ]

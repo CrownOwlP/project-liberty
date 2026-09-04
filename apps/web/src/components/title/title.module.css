@@ -132,11 +132,24 @@
  * with luminances computed as above — which is well past the 3:1 that WCAG 1.4.11
  * asks of a non-text indicator.
  *
- * The play CTA is the one control whose backdrop is not `--bg`: it sits in the
- * hero's copy column, under a 96%-opaque #03060b wash over the #111827 end of the
- * base gradient, which composites to roughly #040712 (luminance 0.0022). That is
- * darker than `--bg`, so the ring there measures 9.66:1 — the offset places it
- * outside the button, never against the button's own near-white fill.
+ * THREE OF THE FOUR SIT ON SOMETHING OTHER THAN `--bg`, and an earlier draft of
+ * this comment claimed only one did. Corrected on review, because a comment
+ * asserting a measurement that is not true is the defect that produced the
+ * not-found metadata bug two files over -- a false statement is worse here than
+ * no statement, since the next reader checks the claim rather than the pixels.
+ *
+ *   - the play CTA and the hero's series link share the hero copy column: a
+ *     96%-opaque #03060b wash over the #111827 end of the base gradient,
+ *     compositing to roughly #040712 (luminance 0.0022), so the ring measures
+ *     about 9.66:1 there;
+ *   - "Browse the catalog" sits inside `.state-panel`, whose background is
+ *     `--surface` #10141d (luminance 0.00699), giving about 8.85:1;
+ *   - the topbar link is the only one actually on `--bg`, at 9.62:1.
+ *
+ * The conclusion the earlier draft drew still holds for all four -- every value
+ * is far past the 3:1 WCAG 1.4.11 asks of a non-text indicator -- but it held by
+ * luck rather than by the reasoning given. On the CTA specifically the offset
+ * places the ring outside the button, never against its own near-white fill.
  */
 .episodeGrid a:focus-visible,
 .focusRing:focus-visible {
