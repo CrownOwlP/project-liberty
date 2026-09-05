@@ -500,36 +500,109 @@ test("text typed before hydration survives it", async ({ page }) => {
   }
 
   /*
-   * The instrumentation comes off before anything is measured through it.
+   * THE INSTRUMENTATION COMES OFF, AND IT WAITS FOR ITS OWN HANDLERS FIRST.
    *
-   * Releasing the gate lets the held requests continue, but the handler is still
-   * installed, so every script the page fetches from here -- the rest of the
-   * chunks, and anything a client-side navigation asks for -- would still be
-   * routed through it. The assertions below are about the hydrated page, and they
-   * should see the same network the other tests in this file see.
+   * This line used to be `await page.unroute(CLIENT_SCRIPT)` and it was the only
+   * red in the run recorded in `docs/E2E.md` for 2026-09-05: `route.continue:
+   * Route is already handled!`, thrown at the `route.continue()` above, on all
+   * four browser projects, in both modes. The mechanism, read out of the pinned
+   * playwright-core 1.62.1:
+   *
+   * - `unroute` -- and `unrouteAll` on its default behaviour -- drops the
+   *   handler from the client's list and immediately republishes the
+   *   interception patterns. It does not wait for handlers that are still
+   *   running, and every handler this test installs was still running, parked on
+   *   `bundleGate` a microtask earlier.
+   * - Republishing an EMPTY pattern list removes the server-side request
+   *   interceptor, and removing an interceptor notifies every route currently in
+   *   flight, each of which is fallback-continued so the request is not stranded.
+   * - The parked handler then wakes and calls `route.continue()` on a route the
+   *   server has already continued, and the server says exactly that.
+   *
+   * So the second error that run reported -- the URL never gaining `?q=` -- was
+   * an artefact of the first rather than a second finding: a handler error ends
+   * the test, and it ended these before the debounce could be waited out. The
+   * one project that outran it, Firefox under `production`, passed every
+   * assertion below and failed on the handler error alone.
+   *
+   * `behavior: "wait"` removes the race rather than the message: it drains every
+   * in-flight invocation of the removed handlers BEFORE the interception
+   * patterns are cleared, so each held request is continued exactly once, by the
+   * handler that held it. Nothing can join the set it drains, because the
+   * handler list is emptied first and a request arriving after that is continued
+   * by Playwright's own fallback instead of being dispatched to a handler that is
+   * going away. It cannot hang here either: the gate is resolved above, in a
+   * `finally`, before this line is reached on any path.
+   *
+   * `unrouteAll` rather than the per-URL `unroute`, only because the per-URL form
+   * takes no behaviour option. This test installs exactly one route, so the two
+   * remove the same handler.
+   *
+   * Rejected: dropping the unroute entirely. It also cannot race, and it leaves
+   * every later script -- the remaining chunks, and anything a client navigation
+   * asks for -- being round-tripped through a test callback while the assertions
+   * below measure the page, which is instrumentation left switched on across the
+   * measurement. Rejected: a flag set before unrouting and checked in the
+   * handler, which is the same race one level up -- the flag would be read after
+   * an `await`, and the handler must still hand the route back to somebody.
+   * Rejected: `route.fallback()` in place of `continue()`, which does make the
+   * error disappear, but only because the fallback continue Playwright then
+   * performs itself is the one whose failure it swallows. Rejected: returning
+   * from the handler without calling anything, which does not abort the request
+   * in this version -- the invocation is awaited against a promise that only
+   * `continue`, `fulfill`, `abort` or `fallback` resolves, so the request and the
+   * drain above it would both hang.
    *
    * After the `finally` rather than inside it, deliberately: `release()` must run
-   * even when the block above throws, and an `unroute` that rejected in the same
+   * even when the block above throws, and an unroute that rejected in the same
    * `finally` would replace that failure with its own and hide which assertion
    * actually failed. On the failing path the handler is left installed and the
    * context is discarded at the end of the test, which costs nothing because the
    * gate is already open.
    */
-  await page.unroute(CLIENT_SCRIPT);
+  await page.unrouteAll({ behavior: "wait" });
 
   /*
-   * What the defect destroyed. React mounted with the query the server rendered
-   * -- the empty one -- and the first commit to touch the input wrote it over
-   * the top, so the characters vanished and no search was ever run for them.
+   * WHAT THE ADOPTION RULE BOUGHT -- URL FIRST, AND THE ORDER IS THE VALUE
+   * CHECK'S NON-VACUITY RATHER THAN A PREFERENCE.
    *
-   * Both facts are asserted because they fail separately and either one is the
-   * bug: the value proves the text survived, and the URL proves it was carried
-   * on as typing rather than left as decoration in a field the form no longer
-   * believes in. The URL is waited on rather than the debounce, as in the test
-   * above, so SEARCH_DEBOUNCE_MS stays out of this file.
+   * `toHaveValue` retries until it is satisfied and then stops, so it is
+   * satisfied at the first moment it is looked at -- including a moment when the
+   * released scripts have not run and nothing has hydrated. An unhydrated field
+   * still holds what was typed into it, so on its own this assertion cannot tell
+   * "React arrived and kept the text" from "React never arrived". That is not
+   * hypothetical: in the 2026-09-05 run it passed on all four projects in both
+   * modes, and on seven of those eight the URL assertion beneath it then failed,
+   * above a report showing the idle panel and an address bar that had not moved.
+   *
+   * The URL is the assertion that cannot pass without hydration, and it is the
+   * one that fails if the adoption rule is deleted. Nothing turns `/search` into
+   * `/search?q=Northstar` except the debounce calling `commit`, which reads
+   * React's `value` state; on this path no `onChange` ever fired, because every
+   * keystroke landed before the bundle did, so that state can only have come from
+   * the layout effect adopting the DOM node. Delete the adoption and React
+   * hydrates holding the empty query the server rendered, the debounce has
+   * nothing to commit, and this stays `/search`.
+   *
+   * The URL is waited on rather than the debounce, as in the test above, so
+   * SEARCH_DEBOUNCE_MS stays out of this file.
+   *
+   * ONE TEST AND NOT TWO, deliberately, and the paragraph above is the argument.
+   * The two facts are genuinely different -- the text survived, and the debounce
+   * then carried it into the address bar -- but the first is only OBSERVABLE
+   * through the second: this surface publishes no other signal that hydration
+   * has completed, so "the text survives" split into a test of its own would be
+   * precisely the assertion that already passes against a page that never
+   * hydrated. Splitting would produce one honest test and one that cannot fail.
    */
-  await expect(field).toHaveValue(DEMO.series.title);
   await expect(page).toHaveURL(/[?&]q=Northstar\b/i);
+  /* Still in the box on the other side of the navigation that adoption caused:
+   * `commit` replaces the URL, the server re-renders the form with
+   * `initialQuery` now equal to the typed text, and the reconciler has to leave
+   * the field alone. This is the half of the claim the test is named for, and it
+   * is asserted here -- after hydration is established -- rather than before it,
+   * where it means nothing. */
+  await expect(field).toHaveValue(DEMO.series.title);
   /* The settled state for the typed query, for the reason given at the same
    * assertion in the test above: which settled panel appears is a catalog fact
    * and this test is about a hydration one. What it does assert on every build
