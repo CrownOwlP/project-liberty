@@ -459,7 +459,7 @@
       "id": "PL-0103",
       "priority": "P0",
       "lane": "Frontend",
-      "status": "REVIEW",
+      "status": "DONE",
       "title": "Title details",
       "reviewFallbackNote": "reviewAgent moved from gpt-architect to claude-test under the controlled-fallback ruling gpt-architect issued for exactly PL-0102, PL-0103, PL-0203 and PL-0204, and only while its transport is unavailable. The condition is met: its GitHub connector returns 403 Resource not accessible by integration on repository-content writes, so it cannot record a decision. Changed explicitly rather than silently, as that ruling required. THE ASSURANCE LEVEL IS LOWER: independent same-provider review, not cross-provider. claude-test did not implement this work and returned CHANGES_REQUESTED on first pass.",
       "dependencies": [
@@ -481,38 +481,38 @@
         "build"
       ],
       "acceptance": "Movie, series, and episode details with play CTA using normalized IDs",
-      "owner": "claude-frontend",
+      "owner": null,
       "gateResults": {
         "lint": {
           "status": "pass",
-          "at": "2026-09-04T03:42:27.839Z",
+          "at": "2026-09-05T04:18:06.071Z",
           "by": "claude-frontend",
-          "commitSha": "23dd47d7d47ca3dba5f1e8f445d05be5ee0cd9c0",
-          "evidence": "npm run check on the corrected tree, this round"
+          "commitSha": "719d2d7c31465901f3dbee1e936a180e87c3d44f",
+          "evidence": "npm run check exit 0 under pinned Node 22, on the exact tree committed this round, which includes the deletion of apps/web/src/app/title/[titleId]/loading.tsx; supersedes the record bound to 23dd47d"
         },
         "typecheck": {
           "status": "pass",
-          "at": "2026-09-04T03:42:28.327Z",
+          "at": "2026-09-05T04:18:06.549Z",
           "by": "claude-frontend",
-          "commitSha": "23dd47d7d47ca3dba5f1e8f445d05be5ee0cd9c0",
-          "evidence": "turbo run typecheck plus npm run check, this round"
+          "commitSha": "719d2d7c31465901f3dbee1e936a180e87c3d44f",
+          "evidence": "turbo run typecheck across all packages plus npm run check, exit 0, on the exact tree committed this round"
         },
         "unit": {
           "status": "pass",
-          "at": "2026-09-04T03:42:28.812Z",
+          "at": "2026-09-05T04:18:07.029Z",
           "by": "claude-frontend",
-          "commitSha": "23dd47d7d47ca3dba5f1e8f445d05be5ee0cd9c0",
-          "evidence": "vitest via npm run check, this round; includes the episode-metadata cases and the source-level style test asserting the classes reach their call sites"
+          "commitSha": "719d2d7c31465901f3dbee1e936a180e87c3d44f",
+          "evidence": "vitest via npm run check, exit 0, on the exact tree committed this round, including the new apps/web/src/app/watch/route-loading-boundaries.test.ts guard, which is red while any loading boundary sits above a notFound()-capable page and passes only because phase 1 removed all three"
         },
         "build": {
           "status": "pass",
-          "at": "2026-09-04T03:42:29.280Z",
+          "at": "2026-09-05T04:18:07.517Z",
           "by": "claude-frontend",
-          "commitSha": "23dd47d7d47ca3dba5f1e8f445d05be5ee0cd9c0",
-          "evidence": "next build via npm run check, this round"
+          "commitSha": "719d2d7c31465901f3dbee1e936a180e87c3d44f",
+          "evidence": "next build via npm run check, exit 0, on the exact tree committed this round"
         }
       },
-      "updatedAt": "2026-09-04T03:42:30.147Z",
+      "updatedAt": "2026-09-05T04:18:08.644Z",
       "implementationAgent": "claude-frontend",
       "implementationBaseSha": "65975495795c71193079b82825b55d7dbb1d2763",
       "review": {
@@ -522,17 +522,17 @@
         "reviewerAgent": "claude-test",
         "reviewerClass": "local-subagent",
         "reviewerProvider": "anthropic",
-        "reviewedCommitSha": "23dd47d7d47ca3dba5f1e8f445d05be5ee0cd9c0",
+        "reviewedCommitSha": "719d2d7c31465901f3dbee1e936a180e87c3d44f",
         "reviewedBaseSha": "65975495795c71193079b82825b55d7dbb1d2763",
-        "reviewedTreeHash": "1ec332b58ee681c29c64dc1ce43ac1440056f85dcd4c54307abf899b83fff142",
+        "reviewedTreeHash": "061475085d9ec8a1de840ab6adde48fa50b2ddd7383056f474b3e4a7284d448b",
         "reviewedFileCount": 35,
         "reviewedFingerprintSource": "git-object",
         "reviewedDependencies": [
           "packages/contracts/**"
         ],
-        "outcome": "CHANGES_REQUESTED",
-        "reviewedAt": "2026-09-04T03:42:25.832Z",
-        "evidence": "CHANGES_REQUESTED by claude-test, substitute reviewer under gpt-architect's controlled-fallback ruling; independent same-provider review, weaker than cross-provider. Four blockers: TITLE_NOT_FOUND_METADATA carried no robots directive while its sibling did, justified only by the belief that not-found answers 404 -- an executed Playwright run proved it answers 200, so every well-formed unknown id was an indexable page and the supply is unbounded; describeTitleMetadata had no episode branch, so every third episode in the catalogue shared the head name Episode 3 and the fallback description was series-less, which is the same non-identifying name the function exists to remove wearing a real one; the episode row's Play link rendered identically to the static runtime line above it with no hover rule, while the BLOCKED branch used a monospace class, so the unclickable state was more distinctive than the clickable one; and the focus ring was scoped to the episode grid after an argument about the user agent default that applies equally to the play CTA, the series link, the topbar link and the sole control on the not-found page."
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-09-05T04:18:08.124Z",
+        "evidence": "APPROVED by claude-test on third pass. Substitute reviewer under gpt-architect's controlled-fallback ruling, INDEPENDENT SAME-PROVIDER review and therefore weaker assurance than cross-provider; claude-test did not write this code. A re-review was owed because the two previous passes returned CHANGES_REQUESTED and because other lanes edited inside the reviewed surface after the last decision -- demo-title-details.ts moved onto NonDeploymentEnvironment.classify and title-detail.ts gained an instanceof branch -- so the approval had to be re-earned on this tree rather than re-stamped. All five blockers are closed. The batch runner now has a phase 1 that deletes apps/web/src/app/loading.tsx, apps/web/src/app/title/[titleId]/loading.tsx and apps/web/src/app/watch/[contentId]/loading.tsx and nothing else, ahead of npm install and every check phase; apps/web/src/app/search/loading.tsx is correctly kept because search/page.tsx neither imports nor calls notFound(), the bracketed segments are literal to cmd inside a quoted del, and a failed delete cannot pass silently because route-loading-boundaries.test.ts then fails the unit run, npm run check returns non-zero and the runner branches to notlanding before any gate is recorded or any commit is made. The comments across the title surface that asserted an accomplished 404 -- the no-skeleton block, the notFound block and the metadata note in [titleId]/page.tsx, the boundary header in not-found.tsx, TITLE_NOT_FOUND_METADATA and its companion note in title-detail.ts, and the status-neutral test comment -- were read sentence by sentence against the post-deletion tree and each is now true. The comment about the error class was rewritten correctly and completely: the import in page.tsx is type-only, and title-detail.ts imports CatalogMetadataSourceNotConfiguredError as a value at line 13 for the instanceof at line 130, so the class is in this route's runtime module graph regardless. The raw NUL byte is gone from title-detail.test.ts, which ripgrep now reads as text rather than binary; the value is constructed as aurora fall plus String.fromCharCode(0), still fails the normalized-id format check on both the space and the NUL, still asserts not-found with zero source consultations, and the updated enumeration matches the array item for item across all eight cases. The conversion of that file from CRLF to LF is safe: there is no .gitattributes, no prettier config and no linebreak-style lint rule, .editorconfig already declares end_of_line lf, and the only source-reading tests split on newline and match by substring or regex, which tolerate a carriage return. On governance, stated plainly: the round does commit two files under no active task's write surface, apps/web/src/app/loading.tsx and apps/web/src/app/page.tsx, both belonging to PL-0704, a BACKLOG task blocked by a lifecycle dependency that only PL-0103 leaving REVIEW can clear; that is a real deadlock broken in the only available direction, it is not a collision because no other owner claims those paths, and it does not block PL-0103, but PL-0704 must later be started with reconcile-existing against the true pre-implementation base. PL-0704's acceptance is satisfied for two routes of three: the home skeleton is relocated into a Suspense inside app/page.tsx and the player skeleton into a Suspense inside watch/[contentId]/page.tsx, both below the existence decision, while the title skeleton is deleted outright rather than relocated on the stated argument that whether a title exists IS the load there -- a deliberate deviation PL-0704 must ratify or repair. Pass two's already-closed items were re-verified: the status-neutral test name keeps its robots assertion, TitleUnavailable branches its copy while p.code.state-detail still resolves to exactly one element of unchanged shape on the branch both specs read, both metadata constants still carry index false and follow true, and the acceptance holds for movie, series and episode with a play CTA built from watchHref on normalized ids. Coverage limits, plainly: nothing was executed, this is a reading review only; apps/web runs vitest with environment node and no DOM, so no recorded gate mounts a component; and whether the noindex meta survives the same Suspense flush that defeats the 404 status is still unproven and remains PL-0704's e2e work."
       },
       "reviewHistory": [
         {
@@ -610,14 +610,34 @@
           "outcome": "CHANGES_REQUESTED",
           "reviewedAt": "2026-09-04T03:42:25.832Z",
           "evidence": "CHANGES_REQUESTED by claude-test, substitute reviewer under gpt-architect's controlled-fallback ruling; independent same-provider review, weaker than cross-provider. Four blockers: TITLE_NOT_FOUND_METADATA carried no robots directive while its sibling did, justified only by the belief that not-found answers 404 -- an executed Playwright run proved it answers 200, so every well-formed unknown id was an indexable page and the supply is unbounded; describeTitleMetadata had no episode branch, so every third episode in the catalogue shared the head name Episode 3 and the fallback description was series-less, which is the same non-identifying name the function exists to remove wearing a real one; the episode row's Play link rendered identically to the static runtime line above it with no hover rule, while the BLOCKED branch used a monospace class, so the unclickable state was more distinctive than the clickable one; and the focus ring was scoped to the episode grid after an argument about the user agent default that applies equally to the play CTA, the series link, the topbar link and the sole control on the not-found page."
+        },
+        {
+          "taskId": "PL-0103",
+          "implementationAgent": "claude-frontend",
+          "implementationOwner": "claude-frontend",
+          "reviewerAgent": "claude-test",
+          "reviewerClass": "local-subagent",
+          "reviewerProvider": "anthropic",
+          "reviewedCommitSha": "719d2d7c31465901f3dbee1e936a180e87c3d44f",
+          "reviewedBaseSha": "65975495795c71193079b82825b55d7dbb1d2763",
+          "reviewedTreeHash": "061475085d9ec8a1de840ab6adde48fa50b2ddd7383056f474b3e4a7284d448b",
+          "reviewedFileCount": 35,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "packages/contracts/**"
+          ],
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-09-05T04:18:08.124Z",
+          "evidence": "APPROVED by claude-test on third pass. Substitute reviewer under gpt-architect's controlled-fallback ruling, INDEPENDENT SAME-PROVIDER review and therefore weaker assurance than cross-provider; claude-test did not write this code. A re-review was owed because the two previous passes returned CHANGES_REQUESTED and because other lanes edited inside the reviewed surface after the last decision -- demo-title-details.ts moved onto NonDeploymentEnvironment.classify and title-detail.ts gained an instanceof branch -- so the approval had to be re-earned on this tree rather than re-stamped. All five blockers are closed. The batch runner now has a phase 1 that deletes apps/web/src/app/loading.tsx, apps/web/src/app/title/[titleId]/loading.tsx and apps/web/src/app/watch/[contentId]/loading.tsx and nothing else, ahead of npm install and every check phase; apps/web/src/app/search/loading.tsx is correctly kept because search/page.tsx neither imports nor calls notFound(), the bracketed segments are literal to cmd inside a quoted del, and a failed delete cannot pass silently because route-loading-boundaries.test.ts then fails the unit run, npm run check returns non-zero and the runner branches to notlanding before any gate is recorded or any commit is made. The comments across the title surface that asserted an accomplished 404 -- the no-skeleton block, the notFound block and the metadata note in [titleId]/page.tsx, the boundary header in not-found.tsx, TITLE_NOT_FOUND_METADATA and its companion note in title-detail.ts, and the status-neutral test comment -- were read sentence by sentence against the post-deletion tree and each is now true. The comment about the error class was rewritten correctly and completely: the import in page.tsx is type-only, and title-detail.ts imports CatalogMetadataSourceNotConfiguredError as a value at line 13 for the instanceof at line 130, so the class is in this route's runtime module graph regardless. The raw NUL byte is gone from title-detail.test.ts, which ripgrep now reads as text rather than binary; the value is constructed as aurora fall plus String.fromCharCode(0), still fails the normalized-id format check on both the space and the NUL, still asserts not-found with zero source consultations, and the updated enumeration matches the array item for item across all eight cases. The conversion of that file from CRLF to LF is safe: there is no .gitattributes, no prettier config and no linebreak-style lint rule, .editorconfig already declares end_of_line lf, and the only source-reading tests split on newline and match by substring or regex, which tolerate a carriage return. On governance, stated plainly: the round does commit two files under no active task's write surface, apps/web/src/app/loading.tsx and apps/web/src/app/page.tsx, both belonging to PL-0704, a BACKLOG task blocked by a lifecycle dependency that only PL-0103 leaving REVIEW can clear; that is a real deadlock broken in the only available direction, it is not a collision because no other owner claims those paths, and it does not block PL-0103, but PL-0704 must later be started with reconcile-existing against the true pre-implementation base. PL-0704's acceptance is satisfied for two routes of three: the home skeleton is relocated into a Suspense inside app/page.tsx and the player skeleton into a Suspense inside watch/[contentId]/page.tsx, both below the existence decision, while the title skeleton is deleted outright rather than relocated on the stated argument that whether a title exists IS the load there -- a deliberate deviation PL-0704 must ratify or repair. Pass two's already-closed items were re-verified: the status-neutral test name keeps its robots assertion, TitleUnavailable branches its copy while p.code.state-detail still resolves to exactly one element of unchanged shape on the branch both specs read, both metadata constants still carry index false and follow true, and the acceptance holds for movie, series and episode with a play CTA built from watchHref on normalized ids. Coverage limits, plainly: nothing was executed, this is a reading review only; apps/web runs vitest with environment node and no DOM, so no recorded gate mounts a component; and whether the noindex meta survives the same Suspense flush that defeats the 404 status is still unproven and remains PL-0704's e2e work."
         }
-      ]
+      ],
+      "completedAt": "2026-09-05T04:18:08.644Z"
     },
     {
       "id": "PL-0104",
       "priority": "P0",
       "lane": "Frontend",
-      "status": "BACKLOG",
+      "status": "READY",
       "title": "Make catalog and search results navigable",
       "dependencies": [
         "PL-0102",
@@ -784,7 +804,7 @@
       "id": "PL-0203",
       "priority": "P0",
       "lane": "Media",
-      "status": "IN_PROGRESS",
+      "status": "REVIEW",
       "title": "Subtitle selection policy",
       "dependencies": [
         "PL-0201"
@@ -801,9 +821,24 @@
       ],
       "acceptance": "Preferred language, forced, default, and off policies are explicit and tested",
       "owner": "claude-media",
-      "gateResults": {},
+      "gateResults": {
+        "typecheck": {
+          "status": "pass",
+          "at": "2026-09-05T04:18:01.660Z",
+          "by": "claude-media",
+          "commitSha": "719d2d7c31465901f3dbee1e936a180e87c3d44f",
+          "evidence": "turbo run typecheck plus npm run check, exit 0 under pinned Node 22, on the tree committed this round; media-engine compiles with the new withSelectedAudio, SubtitleOutcome and SUBTITLE_OUTCOME_BY_REASON exports"
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-09-05T04:18:02.142Z",
+          "by": "claude-media",
+          "commitSha": "719d2d7c31465901f3dbee1e936a180e87c3d44f",
+          "evidence": "vitest via npm run check, exit 0, on the tree committed this round; adds subtitle cases and three properties covering bidirectional bare/regional BCP-47 matching, es-419, off-beats-isDefault, the 13-key outcome table, a one-character audio tag treated as unknown, and a composition running the real selectAudioTrack"
+        }
+      },
       "implementationAgent": "claude-media",
-      "updatedAt": "2026-09-05T04:17:55.813Z",
+      "updatedAt": "2026-09-05T04:18:02.709Z",
       "implementationBaseSha": "f6c4b942ebbd02fd3fa9ed8f74fde4fc603affc2"
     },
     {
@@ -1327,7 +1362,7 @@
       "id": "PL-0705",
       "priority": "P0",
       "lane": "Frontend",
-      "status": "IN_PROGRESS",
+      "status": "REVIEW",
       "title": "Search loses text typed before hydration",
       "dependencies": [
         "PL-0102"
@@ -1345,16 +1380,31 @@
       ],
       "acceptance": "Text typed into the search field before the form hydrates is not lost: on mount the form adopts the DOM value if it differs from its own state, and a query typed at any point becomes an addressable URL. Proven by an EXECUTED Playwright run on WebKit, where the race reproduces, rather than only on Chromium where it does not. Separately the spec addresses the result heading exactly rather than by substring, because role-name matching is substring by default and a query equal to a title matches both the results heading and the card heading -- a spec defect that only appeared once the suite was first executed.",
       "owner": "claude-frontend",
-      "gateResults": {},
+      "gateResults": {
+        "typecheck": {
+          "status": "pass",
+          "at": "2026-09-05T04:18:04.648Z",
+          "by": "claude-frontend",
+          "commitSha": "719d2d7c31465901f3dbee1e936a180e87c3d44f",
+          "evidence": "turbo run typecheck plus npm run check, plus the standalone e2e tsc pass, exit 0 on the tree committed this round"
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-09-05T04:18:05.118Z",
+          "by": "claude-frontend",
+          "commitSha": "719d2d7c31465901f3dbee1e936a180e87c3d44f",
+          "evidence": "vitest via npm run check, exit 0, on the tree committed this round; the hydration-adoption decision is pure and tested without a DOM across nine cases including divergence, cleared-to-empty and non-hydration renders"
+        }
+      },
       "implementationAgent": "claude-frontend",
-      "updatedAt": "2026-09-05T04:17:57.639Z",
+      "updatedAt": "2026-09-05T04:18:05.596Z",
       "implementationBaseSha": "f6c4b942ebbd02fd3fa9ed8f74fde4fc603affc2"
     },
     {
       "id": "PL-0704",
       "priority": "P0",
       "lane": "Frontend",
-      "status": "BACKLOG",
+      "status": "READY",
       "title": "notFound() never reaches the wire: dead addresses answer 200",
       "dependencies": [
         "PL-0103"
@@ -1382,7 +1432,7 @@
       "id": "PL-0703",
       "priority": "P0",
       "lane": "Security",
-      "status": "IN_PROGRESS",
+      "status": "REVIEW",
       "title": "Corrective: production rights-invariant breach in the watch route",
       "dependencies": [],
       "allowedPaths": [
@@ -1409,9 +1459,24 @@
       ],
       "acceptance": "The watch route serves no fabricated rights basis outside a non-deployment environment, and only one fixture provider exists; the environment classification is an allowlist expressed once and shared rather than restated; docs/E2E.md no longer blesses the divergence that produced the breach; the two affected Playwright specs assert the corrected behaviour and are EXECUTED in both production and development modes rather than only typechecked",
       "owner": "claude-security",
-      "gateResults": {},
+      "gateResults": {
+        "typecheck": {
+          "status": "pass",
+          "at": "2026-09-05T04:18:03.209Z",
+          "by": "claude-security",
+          "commitSha": "719d2d7c31465901f3dbee1e936a180e87c3d44f",
+          "evidence": "turbo run typecheck plus npm run check, plus the standalone e2e tsc pass, exit 0 on the tree committed this round; the NonDeploymentEnvironment witness compiles and every rewired call site narrows through classify()"
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-09-05T04:18:03.686Z",
+          "by": "claude-security",
+          "commitSha": "719d2d7c31465901f3dbee1e936a180e87c3d44f",
+          "evidence": "vitest via npm run check, exit 0, on the tree committed this round; adds the witness-gate suite and the opaque-reference suite, including the prose reference that previously shipped recorded as a refused case"
+        }
+      },
       "implementationAgent": "claude-security",
-      "updatedAt": "2026-09-05T04:17:56.722Z",
+      "updatedAt": "2026-09-05T04:18:04.194Z",
       "implementationBaseSha": "f6c4b942ebbd02fd3fa9ed8f74fde4fc603affc2"
     },
     {
@@ -1679,7 +1744,7 @@
       "id": "PL-0105",
       "priority": "P0",
       "lane": "Frontend",
-      "status": "BACKLOG",
+      "status": "READY",
       "title": "Catalog metadata source port, and the surfaces still importing the fixture array",
       "notes": "Closes a control-plane gap as well as a code one. The port landed with no task covering it: PL-0104 declares only catalog-card.tsx, routes.ts and routes.test.ts, so apps/web/src/lib/catalog-source.ts, catalog-source-registry.ts, their tests and docs/CATALOG_SOURCE.md sat outside every declared surface - unreserved against a parallel writer, and outside any approval fingerprint. This task declares that surface and carries the three import migrations docs/CATALOG_SOURCE.md lists as follow-ups. lib/catalog.ts and lib/demo-catalog.ts are reviewDependencies rather than allowedPaths: the port's wiring lives in them and an approval has to bind to it, but they are not this task's to rewrite. The e2e mode split that catalog.api.spec.ts needs once the fixtures stop reaching a production build is deliberately NOT here, because e2e/** belongs to PL-0701; until it lands, that spec fails in the harness's default production mode and .github/workflows/ci.yml says so at the job that runs it.",
       "dependencies": [

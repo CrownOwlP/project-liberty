@@ -1,9 +1,143 @@
 {
-  "generatedAt": "2026-09-05T04:17:58.091Z",
+  "generatedAt": "2026-09-05T04:18:09.117Z",
   "agent": "gpt-architect",
   "executionAvailable": false,
   "assigned": [],
   "review": [
+    {
+      "id": "PL-0203",
+      "priority": "P0",
+      "lane": "Media",
+      "status": "REVIEW",
+      "title": "Subtitle selection policy",
+      "dependencies": [
+        "PL-0201"
+      ],
+      "allowedPaths": [
+        "packages/media-engine/**",
+        "packages/contracts/**"
+      ],
+      "preferredAgent": "claude-media",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit"
+      ],
+      "acceptance": "Preferred language, forced, default, and off policies are explicit and tested",
+      "owner": "claude-media",
+      "gateResults": {
+        "typecheck": {
+          "status": "pass",
+          "at": "2026-09-05T04:18:01.660Z",
+          "by": "claude-media",
+          "commitSha": "719d2d7c31465901f3dbee1e936a180e87c3d44f",
+          "evidence": "turbo run typecheck plus npm run check, exit 0 under pinned Node 22, on the tree committed this round; media-engine compiles with the new withSelectedAudio, SubtitleOutcome and SUBTITLE_OUTCOME_BY_REASON exports"
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-09-05T04:18:02.142Z",
+          "by": "claude-media",
+          "commitSha": "719d2d7c31465901f3dbee1e936a180e87c3d44f",
+          "evidence": "vitest via npm run check, exit 0, on the tree committed this round; adds subtitle cases and three properties covering bidirectional bare/regional BCP-47 matching, es-419, off-beats-isDefault, the 13-key outcome table, a one-character audio tag treated as unknown, and a composition running the real selectAudioTrack"
+        }
+      },
+      "implementationAgent": "claude-media",
+      "updatedAt": "2026-09-05T04:18:02.709Z",
+      "implementationBaseSha": "f6c4b942ebbd02fd3fa9ed8f74fde4fc603affc2"
+    },
+    {
+      "id": "PL-0705",
+      "priority": "P0",
+      "lane": "Frontend",
+      "status": "REVIEW",
+      "title": "Search loses text typed before hydration",
+      "dependencies": [
+        "PL-0102"
+      ],
+      "allowedPaths": [
+        "apps/web/src/components/search/**",
+        "e2e/tests/search.spec.ts"
+      ],
+      "preferredAgent": "claude-frontend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "e2e"
+      ],
+      "acceptance": "Text typed into the search field before the form hydrates is not lost: on mount the form adopts the DOM value if it differs from its own state, and a query typed at any point becomes an addressable URL. Proven by an EXECUTED Playwright run on WebKit, where the race reproduces, rather than only on Chromium where it does not. Separately the spec addresses the result heading exactly rather than by substring, because role-name matching is substring by default and a query equal to a title matches both the results heading and the card heading -- a spec defect that only appeared once the suite was first executed.",
+      "owner": "claude-frontend",
+      "gateResults": {
+        "typecheck": {
+          "status": "pass",
+          "at": "2026-09-05T04:18:04.648Z",
+          "by": "claude-frontend",
+          "commitSha": "719d2d7c31465901f3dbee1e936a180e87c3d44f",
+          "evidence": "turbo run typecheck plus npm run check, plus the standalone e2e tsc pass, exit 0 on the tree committed this round"
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-09-05T04:18:05.118Z",
+          "by": "claude-frontend",
+          "commitSha": "719d2d7c31465901f3dbee1e936a180e87c3d44f",
+          "evidence": "vitest via npm run check, exit 0, on the tree committed this round; the hydration-adoption decision is pure and tested without a DOM across nine cases including divergence, cleared-to-empty and non-hydration renders"
+        }
+      },
+      "implementationAgent": "claude-frontend",
+      "updatedAt": "2026-09-05T04:18:05.596Z",
+      "implementationBaseSha": "f6c4b942ebbd02fd3fa9ed8f74fde4fc603affc2"
+    },
+    {
+      "id": "PL-0703",
+      "priority": "P0",
+      "lane": "Security",
+      "status": "REVIEW",
+      "title": "Corrective: production rights-invariant breach in the watch route",
+      "dependencies": [],
+      "allowedPaths": [
+        "apps/web/src/app/watch/**",
+        "apps/web/next.config.ts",
+        "apps/web/src/app/api/deployment-environment.ts",
+        "apps/web/src/app/api/v1/playback/session/**",
+        "apps/web/src/app/api/v1/playback/resolve/**",
+        "e2e/tests/critical-journey.spec.ts",
+        "e2e/tests/playback-session.api.spec.ts",
+        "docs/E2E.md"
+      ],
+      "reviewDependencies": [
+        "e2e/tests/media-rig.spec.ts"
+      ],
+      "preferredAgent": "claude-security",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "security-review",
+        "rights-review",
+        "typecheck",
+        "unit",
+        "e2e"
+      ],
+      "acceptance": "The watch route serves no fabricated rights basis outside a non-deployment environment, and only one fixture provider exists; the environment classification is an allowlist expressed once and shared rather than restated; docs/E2E.md no longer blesses the divergence that produced the breach; the two affected Playwright specs assert the corrected behaviour and are EXECUTED in both production and development modes rather than only typechecked",
+      "owner": "claude-security",
+      "gateResults": {
+        "typecheck": {
+          "status": "pass",
+          "at": "2026-09-05T04:18:03.209Z",
+          "by": "claude-security",
+          "commitSha": "719d2d7c31465901f3dbee1e936a180e87c3d44f",
+          "evidence": "turbo run typecheck plus npm run check, plus the standalone e2e tsc pass, exit 0 on the tree committed this round; the NonDeploymentEnvironment witness compiles and every rewired call site narrows through classify()"
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-09-05T04:18:03.686Z",
+          "by": "claude-security",
+          "commitSha": "719d2d7c31465901f3dbee1e936a180e87c3d44f",
+          "evidence": "vitest via npm run check, exit 0, on the tree committed this round; adds the witness-gate suite and the opaque-reference suite, including the prose reference that previously shipped recorded as a refused case"
+        }
+      },
+      "implementationAgent": "claude-security",
+      "updatedAt": "2026-09-05T04:18:04.194Z",
+      "implementationBaseSha": "f6c4b942ebbd02fd3fa9ed8f74fde4fc603affc2"
+    },
     {
       "id": "PL-AI-0004",
       "priority": "P0",

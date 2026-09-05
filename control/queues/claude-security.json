@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-05T04:17:58.095Z",
+  "generatedAt": "2026-09-05T04:18:09.122Z",
   "agent": "claude-security",
   "executionAvailable": true,
   "assigned": [
@@ -7,7 +7,7 @@
       "id": "PL-0703",
       "priority": "P0",
       "lane": "Security",
-      "status": "IN_PROGRESS",
+      "status": "REVIEW",
       "title": "Corrective: production rights-invariant breach in the watch route",
       "dependencies": [],
       "allowedPaths": [
@@ -34,9 +34,24 @@
       ],
       "acceptance": "The watch route serves no fabricated rights basis outside a non-deployment environment, and only one fixture provider exists; the environment classification is an allowlist expressed once and shared rather than restated; docs/E2E.md no longer blesses the divergence that produced the breach; the two affected Playwright specs assert the corrected behaviour and are EXECUTED in both production and development modes rather than only typechecked",
       "owner": "claude-security",
-      "gateResults": {},
+      "gateResults": {
+        "typecheck": {
+          "status": "pass",
+          "at": "2026-09-05T04:18:03.209Z",
+          "by": "claude-security",
+          "commitSha": "719d2d7c31465901f3dbee1e936a180e87c3d44f",
+          "evidence": "turbo run typecheck plus npm run check, plus the standalone e2e tsc pass, exit 0 on the tree committed this round; the NonDeploymentEnvironment witness compiles and every rewired call site narrows through classify()"
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-09-05T04:18:03.686Z",
+          "by": "claude-security",
+          "commitSha": "719d2d7c31465901f3dbee1e936a180e87c3d44f",
+          "evidence": "vitest via npm run check, exit 0, on the tree committed this round; adds the witness-gate suite and the opaque-reference suite, including the prose reference that previously shipped recorded as a refused case"
+        }
+      },
       "implementationAgent": "claude-security",
-      "updatedAt": "2026-09-05T04:17:56.722Z",
+      "updatedAt": "2026-09-05T04:18:04.194Z",
       "implementationBaseSha": "f6c4b942ebbd02fd3fa9ed8f74fde4fc603affc2"
     }
   ],
