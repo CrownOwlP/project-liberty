@@ -637,7 +637,7 @@
       "id": "PL-0104",
       "priority": "P0",
       "lane": "Frontend",
-      "status": "READY",
+      "status": "REVIEW",
       "title": "Make catalog and search results navigable",
       "dependencies": [
         "PL-0102",
@@ -657,8 +657,62 @@
         "build"
       ],
       "acceptance": "Every catalog and search result opens its title details page, with an accessible link name",
-      "owner": null,
-      "gateResults": {}
+      "owner": "claude-frontend",
+      "gateResults": {
+        "lint": {
+          "status": "pass",
+          "at": "2026-09-05T17:47:40.168Z",
+          "by": "claude-frontend",
+          "commitSha": "c47e1bba1890e8cdc911b8b1db19abfeff81d7be",
+          "evidence": "npm run check exit 0 under pinned Node 22, this round, on the committed tree"
+        },
+        "typecheck": {
+          "status": "pass",
+          "at": "2026-09-05T17:47:40.610Z",
+          "by": "claude-frontend",
+          "commitSha": "c47e1bba1890e8cdc911b8b1db19abfeff81d7be",
+          "evidence": "turbo run typecheck via npm run check, exit 0, this round"
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-09-05T17:47:41.050Z",
+          "by": "claude-frontend",
+          "commitSha": "c47e1bba1890e8cdc911b8b1db19abfeff81d7be",
+          "evidence": "vitest via npm run check, exit 0, this round, including apps/web/src/lib/routes.test.ts -- the file this task's allowedPaths named and that did not exist until 719d2d7; it covers the unrouted branch as carefully as the routable one, which is the point of the union"
+        },
+        "build": {
+          "status": "pass",
+          "at": "2026-09-05T17:47:41.489Z",
+          "by": "claude-frontend",
+          "commitSha": "c47e1bba1890e8cdc911b8b1db19abfeff81d7be",
+          "evidence": "next build via npm run check, exit 0, this round"
+        }
+      },
+      "implementationAgent": "claude-frontend",
+      "updatedAt": "2026-09-05T17:47:41.938Z",
+      "implementationBaseSha": "c3bb856f3d8c122acd46d5331067fac3a0266f2b",
+      "implementationBaseProvenance": {
+        "kind": "reconciled-existing-implementation",
+        "baseSha": "c3bb856f3d8c122acd46d5331067fac3a0266f2b",
+        "reconciledAt": "2026-09-05T17:47:39.745Z",
+        "reconciledBy": "claude-frontend",
+        "implementationAgent": "claude-frontend",
+        "headAtReconciliation": "c47e1bba1890e8cdc911b8b1db19abfeff81d7be",
+        "reviewSurface": "allowedPaths",
+        "surfaceCommitCount": 2,
+        "oldestSurfaceCommit": "b7bc31cb2799cf6838c5acdf5cefd906c5e699ca",
+        "newestSurfaceCommit": "719d2d7c31465901f3dbee1e936a180e87c3d44f",
+        "surfaceCommits": [
+          "719d2d7c31465901f3dbee1e936a180e87c3d44f",
+          "b7bc31cb2799cf6838c5acdf5cefd906c5e699ca"
+        ],
+        "surfaceCommitsTruncated": false,
+        "changedFileCount": 3,
+        "baseCommitSurfaceTouchCount": 0,
+        "baseCommitSurfaceTouches": [],
+        "baseCommitSurfaceTouchesTruncated": false,
+        "reason": "PL-0104's implementation predates its claim and is already in committed history, so an ordinary start would record a base that is false. The base was DERIVED, not chosen: git log --reverse over apps/web/src/lib/routes.ts gives the first commit that ever introduced the lane's own module, and this is that commit's parent. catalog-card.tsx was deliberately excluded from the derivation because the repository's root commit b484735 shipped a 14-line scaffold of it, which would have put the base before the repository existed and produced exactly the false field this path exists to prevent. The lane begins at b7bc31c, 'Four lanes: unforgeable pins, navigable results, persistence conflict rules, recommendation honesty' -- navigable results is this task -- and the missing apps/web/src/lib/routes.test.ts, named in this task's own allowedPaths, was added in 719d2d7. Both are inside base..HEAD. The commit window, both endpoints and the base commit's own surface touches are published for the reviewer to check that no earlier commit belongs to this implementation."
+      }
     },
     {
       "id": "PL-0201",
@@ -1394,6 +1448,13 @@
           "by": "claude-frontend",
           "commitSha": "4b56f7e29b7a0e9e50df88bc4c4e0f8b76bb27ed",
           "evidence": "vitest via npm run check, exit 0, on the tree committed this round; the hydration-adoption decision is pure and tested without a DOM across nine cases including divergence, cleared-to-empty and non-hydration renders"
+        },
+        "e2e": {
+          "status": "pass",
+          "at": "2026-09-05T17:47:38.408Z",
+          "by": "claude-frontend",
+          "commitSha": "c47e1bba1890e8cdc911b8b1db19abfeff81d7be",
+          "evidence": "Playwright executed in BOTH modes on 2026-09-05 at commit c47e1bba: production 78 passed / 0 failed / 18 skipped, development 87 passed / 0 failed / 9 skipped, across chromium, firefox, webkit and mobile-safari. The whole suite was green. This task's own proof, search.spec.ts 'text typed before hydration survives it', passed on all four browsers in both modes. In the previous run it was the only failure, and the cause was its own instrument rather than the product: page.unroute disposes routes without draining handlers still parked on the bundle gate, so each handler woke to find Playwright had already continued its route. It now uses unrouteAll with behavior wait. The assertions were also reordered so the address-bar check runs before the field-value check, because an UNHYDRATED field still holds what was typed into it and toHaveValue therefore passed even in the runs where React never arrived -- the URL is the only signal on this surface that cannot change without hydration, and it is the one that goes red if the adoption effect is deleted."
         }
       },
       "implementationAgent": "claude-frontend",

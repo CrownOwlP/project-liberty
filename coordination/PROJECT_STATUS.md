@@ -1,16 +1,16 @@
 # Project Liberty - Project Status
 
-> Generated 2026-09-05T17:12:53.088Z from the AI control plane.
+> Generated 2026-09-05T17:47:42.358Z from the AI control plane.
 
 **Overall completion:** 10/40 executable tasks (25%)
 
 ## Status summary
 
 - **BACKLOG:** 16
-- **READY:** 8
+- **READY:** 7
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 0
-- **REVIEW:** 4
+- **REVIEW:** 5
 - **BLOCKED:** 2
 - **DONE:** 10
 - **CANCELED:** 0
@@ -28,6 +28,7 @@
 
 ## Active work
 
+- **PL-0104** [REVIEW] Make catalog and search results navigable — owner: claude-frontend
 - **PL-0203** [REVIEW] Subtitle selection policy — owner: claude-media
 - **PL-0705** [REVIEW] Search loses text typed before hydration — owner: claude-frontend
 - **PL-0703** [REVIEW] Corrective: production rights-invariant breach in the watch route — owner: claude-security
@@ -35,14 +36,14 @@
 
 ## Dispatch classification
 
-- **READY_AND_EXECUTABLE:** 6
+- **READY_AND_EXECUTABLE:** 5
 - **READY_BUT_EXTERNAL:** 2
 - **BLOCKED:** 2
 - **BACKLOG (dependency-gated):** 16
 
 ## Recommended executable wave
 
-- **PL-0104** -> claude-frontend (P0/Frontend) Make catalog and search results navigable
+No conflict-free executable tasks can be assigned with current agent capacity.
 
 ## Queued for external agents
 
@@ -58,7 +59,7 @@
 
 - **gpt-architect:** 0/6 active (external lane; not locally executable)
 - **claude-lead:** 1/2 active
-- **claude-frontend:** 1/2 active
+- **claude-frontend:** 2/2 active
 - **claude-backend:** 0/1 active
 - **claude-media:** 1/1 active
 - **claude-test:** 0/1 active
