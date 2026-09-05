@@ -1,16 +1,13 @@
 {
-  "generatedAt": "2026-09-04T03:42:30.590Z",
+  "generatedAt": "2026-09-05T04:17:58.093Z",
   "agent": "claude-media",
   "executionAvailable": true,
-  "assigned": [],
-  "review": [],
-  "reservedExternal": [],
-  "recommended": [
+  "assigned": [
     {
       "id": "PL-0203",
       "priority": "P0",
       "lane": "Media",
-      "status": "READY",
+      "status": "IN_PROGRESS",
       "title": "Subtitle selection policy",
       "dependencies": [
         "PL-0201"
@@ -26,9 +23,16 @@
         "unit"
       ],
       "acceptance": "Preferred language, forced, default, and off policies are explicit and tested",
-      "owner": null,
-      "gateResults": {}
-    },
+      "owner": "claude-media",
+      "gateResults": {},
+      "implementationAgent": "claude-media",
+      "updatedAt": "2026-09-05T04:17:55.813Z",
+      "implementationBaseSha": "f6c4b942ebbd02fd3fa9ed8f74fde4fc603affc2"
+    }
+  ],
+  "review": [],
+  "reservedExternal": [],
+  "recommended": [
     {
       "id": "PL-0204",
       "priority": "P0",

@@ -10,14 +10,20 @@ import Link from "next/link";
  * error is worth another try and a denial never will be. A reader told to "try
  * again in a moment" about a title that does not exist will keep trying.
  *
- * WHAT THIS BOUNDARY DOES NOT CARRY IS THE 404 STATUS, and it used to claim it
- * did. Next sets that status only when the access-fallback error escapes the
- * HTML render, and this route renders inside the Suspense boundaries that
- * `app/loading.tsx` and `[contentId]/loading.tsx` create, so the shell has
- * already been flushed at 200 by the time `notFound()` throws. The panel below
- * is the right panel; the status beside it is wrong, and the status is the part
- * every non-human consumer of the route reads. `[contentId]/page.tsx` records
- * the mechanism, the evidence and where the fix lives.
+ * THIS BOUNDARY IS SERVED WITH A 404, and for a while it was not. Next sets
+ * that status only when the access-fallback error escapes the HTML render, and
+ * this route used to render inside the Suspense boundaries that
+ * `app/loading.tsx` and `[contentId]/loading.tsx` created, so the shell had
+ * already been flushed at 200 by the time `notFound()` threw. PL-0704 removes
+ * both and moves the call above the page's own boundary. The status is decided
+ * by WHERE that call sits, in `page.tsx`, which records the mechanism; nothing
+ * in this file affects it, and the arrangement is asserted by
+ * `watch/route-loading-boundaries.test.ts`.
+ *
+ * This boundary is reached for an id that could never name anything. The route
+ * has a second, currently unreachable not-found state, for a well-formed id a
+ * provider reports nothing for; `page.tsx` renders that one as a panel, and
+ * says why it is not sent here.
  */
 export default function WatchNotFound() {
   return (

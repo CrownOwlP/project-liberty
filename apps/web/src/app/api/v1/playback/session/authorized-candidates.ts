@@ -7,7 +7,7 @@ import {
   healthPriorScore,
   type RightsBasis
 } from "@liberty/provider-sdk";
-import { NON_DEPLOYMENT_ENVIRONMENTS } from "../../../deployment-environment";
+import { NonDeploymentEnvironment } from "../../../deployment-environment";
 
 /* -------------------------------------------------------------------------
  * Where a session's candidates come from (PL-0501)
@@ -134,90 +134,101 @@ const FIXTURE_MEDIA_ORIGIN = process.env.LIBERTY_FIXTURE_MEDIA_ORIGIN ?? "https:
 const FIXTURE_PROVIDER = "fixture";
 
 /**
- * The rights declaration these candidates carry, said out loud.
+ * The shape an internal rights reference is allowed to have.
  *
- * docs/CONTENT_RIGHTS.md requires a documented rights basis for any provider
- * integration, and the fixture provider is one. It used to be a bare
- * `rights: "owned"` literal whose only defence was a comment admitting it was a
- * fiction, which is precisely the shape this task exists to find: an adapter
- * asserting an entitlement over content it has never seen.
+ * A `RightsBasis` carries a CATEGORY -- `rights`, plus the `basis` KIND, both
+ * closed vocabularies `@liberty/provider-sdk` owns and checks -- and a
+ * REFERENCE. The reference is an OPAQUE INTERNAL IDENTIFIER: it names a record
+ * in the operator's own rights register and means nothing to anyone who does not
+ * hold that register.
  *
- * WHAT IS AND IS NOT TRUE ABOUT IT. The basis is typed as the provider SDK's own
- * `RightsBasis`, so `operator-owned-master` is checked against
- * `RIGHTS_BASES_FOR_RIGHTS` rather than being a word chosen here, and the
- * reference names the one act that could make the claim true: an operator
- * pointing `LIBERTY_FIXTURE_MEDIA_ORIGIN` at media they packaged themselves,
- * which `docs/E2E.md` already states is the only legitimate way to stand a rig
- * up. Under the shipped default the origin resolves nowhere, so the claim is
- * about nothing and nothing is served.
+ * IT IS OPAQUE BECAUSE THE AGREEMENTS THEMSELVES ARE NOT THIS REPOSITORY'S TO
+ * CARRY. No licence body, no counterparty, no scope, no term dates and no URL
+ * may be written into a rights basis. What is left is the category, which is the
+ * part the engine actually enforces, plus an identifier that lets the operator
+ * find the paperwork somewhere this repository cannot see. It matters downstream
+ * too: `describeRightsBasis` in `@liberty/provider-sdk` renders the reference
+ * into a human line for reason trails and logs, so whatever is written here is
+ * something a bug-report screenshot can carry out of the building.
  *
- * NOTHING VERIFIES IT, and nothing can. There is no probe here, no manifest is
- * read, and `issue-session.ts` treats the value exactly as it treats any
- * adapter's: membership of `PLAYABLE_RIGHTS` and no further question. That is
- * the platform's model -- adapters establish authorization, the engine ranks
- * among what they established -- so the only real control on an unverifiable
- * declaration is that this path cannot reach a deployment. See
- * `FIXTURE_ENVIRONMENTS`.
+ * WHAT THIS PATTERN DOES AND DOES NOT ESTABLISH, stated exactly, because a
+ * comment that overclaims a check is worse than having no check. It admits only
+ * lowercase alphanumeric groups joined by single hyphens, so it MECHANICALLY
+ * excludes whitespace and prose, any URL (there is no `:` and no `/` in it),
+ * userinfo or an address (`@`), and anything carrying capitals or punctuation.
+ * It CANNOT tell whether a conforming token is a counterparty name, a date or a
+ * contract title: `acme-tv-2026-emea` matches it. Those are refused by the
+ * rights review, and the rule is written here so that review has one place to
+ * point at.
  *
- * Exported so a test can assert the pair is coherent rather than merely present.
+ * NOTHING PARSES OR BRANCHES ON THE VALUE. It is checked for shape and carried;
+ * no code in this app splits it, reads a prefix out of it or decides anything
+ * from its content. An identifier that gets interpreted has stopped being an
+ * identifier, and the interpretation becomes a rights decision taken by a string
+ * parser.
  */
-export const FIXTURE_RIGHTS_BASIS: RightsBasis = {
-  rights: "owned",
-  basis: "operator-owned-master",
-  reference:
-    "media the operator packaged and serves from their own rig at LIBERTY_FIXTURE_MEDIA_ORIGIN; " +
-    "see docs/E2E.md, 'Legal test content is a task, not a footnote'"
-};
+export const OPAQUE_RIGHTS_REFERENCE_PATTERN = /^[a-z0-9]{2,16}(?:-[a-z0-9]{1,16}){1,7}$/;
 
 /**
- * The `NODE_ENV` values under which fixtures may be resolved.
+ * The longest an internal reference may be.
  *
- * AN ALLOWLIST, and the change from `!== "production"` is the point rather than
- * a restatement of it. The old test admitted every value that is not the single
- * string `production`: `staging`, `preview`, `Production`, the empty string, and
- * an unset variable all resolved fabricated `owned` candidates. A denylist of one
- * value is the wrong shape for a switch whose failure mode is publishing rights
- * nobody holds, and it is the wrong shape for THIS repository, where
- * `PLAYABLE_CONTENT_RIGHTS`, `RIGHTS_BASIS_KINDS` and the engine's eligibility
- * gate are all explicit allowlists for the same reason: anything unrecognised
- * must be refused, not permitted.
- *
- * These two values are the whole set that means "not a deployment": `next dev`
- * runs as `development`, vitest sets `test`. Every current caller keeps the
- * behaviour it had -- what changes is the ones nobody had thought of.
- *
- * WHY `NODE_ENV` AND NOT A DEDICATED FLAG. It is the one fact about the running
- * process that no configuration file can forge: `scripts/with-root-env.mjs`
- * refuses to apply it from a dotenv file (`NEVER_APPLIED`) precisely so a copied
- * `.env.local` cannot turn `next start` into a fixture-serving deployment, and
- * Next computes its own file set before merging, so `apps/web/.env.local` cannot
- * either. A new `LIBERTY_ALLOW_FIXTURES` variable would have no such protection
- * and would be a second switch that could disagree with `localDeployment`.
- *
- * A REMAINING GAP, recorded rather than papered over: a hosted deployment that
- * exports `NODE_ENV=development` and runs `next dev` still resolves fixtures.
- * Nothing here can distinguish that from a laptop, because it IS a development
- * build; the control for it is not shipping one.
- *
- * NOW AN ALIAS RATHER THAN A LIST. The two values were never specific to
- * fixtures -- they are the answer to "is this process a deployment", which
- * `issue-session.ts` also needs for `localDeployment` and which the watch route
- * needs for the same reason. Three copies of one environment test is how two of
- * them end up disagreeing, so the classification moved to
- * `app/api/deployment-environment.ts` and this name stays as the FIXTURE
- * PERMISSION built on it.
- *
- * The name is kept because the permission is a distinct thing from the fact:
- * `FIXTURE_ENVIRONMENTS.includes(...)` is a statement about whether fabricated
- * `owned` candidates may be published, and a reader following that question
- * should land on the paragraphs above rather than on a general environment
- * helper. The trade-off is real and worth stating: widening
- * `NON_DEPLOYMENT_ENVIRONMENTS` now widens this gate too. That is the intended
- * coupling -- if a value genuinely stopped being a deployment, both answers
- * would have to change together -- but it means that array is a rights-relevant
- * edit and must be reviewed as one.
+ * A register id is short and a sentence is not, so length is the one crude
+ * signal that separates them. The pattern above would otherwise admit 135
+ * characters, which is long enough to hold a description.
  */
-export const FIXTURE_ENVIRONMENTS: readonly string[] = NON_DEPLOYMENT_ENVIRONMENTS;
+export const MAX_RIGHTS_REFERENCE_LENGTH = 64;
+
+/**
+ * Shape only -- see `OPAQUE_RIGHTS_REFERENCE_PATTERN` for what that can and
+ * cannot establish, and for why nothing here reads what the token says.
+ */
+export function isOpaqueRightsReference(value: string): boolean {
+  return value.length <= MAX_RIGHTS_REFERENCE_LENGTH && OPAQUE_RIGHTS_REFERENCE_PATTERN.test(value);
+}
+
+/**
+ * The fixture provider's reference: a reserved all-zero token.
+ *
+ * IT NAMES NO RECORD ANYWHERE, AND THAT IS THE POINT. There is no agreement
+ * covering imaginary media on a host that resolves nowhere, so a reference that
+ * pointed at one would be the same fabrication in a smaller font. This token is
+ * the rights-register counterpart of the RFC 2606 `.invalid` default origin
+ * beside it: well formed, unmistakably reserved, and impossible to confuse with
+ * a real entry.
+ *
+ * IT REPLACES A SENTENCE, and the replacement is a correction rather than a
+ * tidy-up. The reference used to be prose: it described where the media came
+ * from, named an environment variable and cited a heading in `docs/E2E.md`. That
+ * is a scope description rather than an identifier, it is exactly the class of
+ * content a rights basis must not carry, and `describeRightsBasis` would have
+ * put the first sixty characters of it into any trail that printed the basis.
+ */
+const FIXTURE_RIGHTS_REFERENCE = "lty-ref-00000000-0000-0000";
+
+/* -------------------------------------------------------------------------
+ * WHERE THE ENVIRONMENT GATE WENT, AND WHY THERE IS NO `FIXTURE_ENVIRONMENTS`
+ * HERE ANY MORE.
+ *
+ * This module used to export `FIXTURE_ENVIRONMENTS`, an alias of
+ * `NON_DEPLOYMENT_ENVIRONMENTS`, and then test it with
+ * `FIXTURE_ENVIRONMENTS.includes(process.env.NODE_ENV ?? "")`. So did
+ * `../resolve/handler.ts`. One array, two spellings of the same `.includes`,
+ * and `issue-session.ts` reaching the same answer a third way through
+ * `isLocalDeployment` -- which is a restatement of the classification even
+ * though the values could not drift, and a restatement is what has to be kept
+ * in step by hand.
+ *
+ * The allowlist is now expressed exactly once, in
+ * `app/api/deployment-environment.ts`, and consumed rather than re-tested. That
+ * module also decides the shape of the consumption, and the two shapes are
+ * different on purpose:
+ *
+ *   - `isLocalDeployment()` for the callers that need a boolean to hand to
+ *     `checkUrl`, or to decide whether a development-only route exists;
+ *   - `NonDeploymentEnvironment.classify()` for THIS one, because what is gated
+ *     here is not an input to a later check -- it is the construction of a
+ *     rights claim. See `fixtureProvider`.
+ * ---------------------------------------------------------------------- */
 
 /**
  * Whether the configured origin names the machine this process runs on.
@@ -342,23 +353,34 @@ function fixtureUri(origin: string, contentId: string, file: string): string {
  * it. A test whose expectations depend on an operator's `.env.local` is a test
  * that fails on one machine and passes on another.
  */
-export function fixtureAuthorizedCandidates(
+function fixtureCandidates(
+  rightsBasis: RightsBasis,
   contentId: string,
-  origin: string = FIXTURE_MEDIA_ORIGIN
+  origin: string
 ): readonly AuthorizedCandidate[] {
   /*
    * Re-checked here even though `playbackSessionRequestSchema` already refuses a
-   * non-normalized id before any resolver runs. This function is EXPORTED and
-   * pure, so it will eventually be called by something that did not come through
-   * the route -- the same reasoning `mapping.ts` gives for its redundant rights
-   * check. An id is interpolated into a URL path, and `..` is not stopped by
-   * percent-encoding (dots are unreserved), so an unvalidated id could walk out
-   * of the origin's path prefix. An empty list rather than a throw: it lands as
-   * `no_candidates_resolved`, which is the reversible direction.
+   * non-normalized id before any resolver runs. An id is interpolated into a URL
+   * path, and `..` is not stopped by percent-encoding (dots are unreserved), so
+   * an unvalidated id could walk out of the origin's path prefix -- the same
+   * reasoning `mapping.ts` gives for its redundant rights check. An empty list
+   * rather than a throw: it lands as `no_candidates_resolved`, which is the
+   * reversible direction.
    */
   if (!normalizedContentIdSchema.safeParse(contentId).success) return [];
 
-  const rights = FIXTURE_RIGHTS_BASIS.rights;
+  /*
+   * FAIL CLOSED ON A REFERENCE OF UNREVIEWED SHAPE. Unreachable while
+   * `FIXTURE_RIGHTS_REFERENCE` is the literal above -- it conforms, and this
+   * module builds the only basis that reaches here -- and that is exactly what
+   * it is for: an edit that replaces the token with a sentence, a URL or a
+   * counterparty's name produces NO CANDIDATES instead of publishing the
+   * sentence into a reason trail. A rights declaration nobody may read is not a
+   * declaration worth serving.
+   */
+  if (!isOpaqueRightsReference(rightsBasis.reference)) return [];
+
+  const rights = rightsBasis.rights;
   const allowLoopback = originIsLoopback(origin);
   const healthScore = healthPriorScore(DEFAULT_PROVIDER_HEALTH_POLICY);
 
@@ -425,6 +447,91 @@ export function fixtureAuthorizedCandidates(
 }
 
 /**
+ * The fixture provider, which cannot be obtained without proof that this process
+ * is not a deployment.
+ *
+ * THIS ARGUMENT IS THE WHOLE RIGHTS CONTROL, so it is worth being precise about
+ * what it does. The fixture candidates declare `owned` over media nothing has
+ * ever opened. Nothing verifies that: there is no probe here, no manifest is
+ * read, and `issue-session.ts` treats the value exactly as it treats any
+ * adapter's -- membership of `PLAYABLE_RIGHTS` and no further question, because
+ * the platform's model is that adapters establish authorization and the engine
+ * ranks among what they established. An unverifiable declaration therefore has
+ * exactly one real control, and it is that this path cannot run on a build that
+ * ships.
+ *
+ * IT USED TO BE A CONDITION AND IS NOW A TYPE. The gate was
+ * `FIXTURE_ENVIRONMENTS.includes(process.env.NODE_ENV ?? "")` in the resolver
+ * below: correct, and deletable. Delete it and every fixture resolves in
+ * production, and everything still compiles. That is not a hypothetical failure
+ * mode here -- `watch/watch-session.ts` shipped a second copy of these fixtures
+ * under NO environment condition at all, and `docs/E2E.md` recorded the
+ * difference as intended behaviour.
+ *
+ * `NonDeploymentEnvironment` cannot be constructed outside
+ * `app/api/deployment-environment.ts` (private constructor, private field, so
+ * TypeScript compares it nominally), and the only way to obtain one is
+ * `classify`, which answers `null` for every environment outside the allowlist.
+ * A caller therefore cannot reach this function without handling that `null`.
+ * The fabricated basis is a value that CANNOT BE BUILT in a deployment, rather
+ * than a value that is built and then withheld.
+ *
+ * What it does not do is defend against an edit to these two modules. Nothing
+ * in TypeScript can. What it defends against is the way this defect actually
+ * recurs: a change somewhere else that quietly stops consulting the gate.
+ *
+ * A REMAINING GAP, recorded rather than papered over: a hosted deployment that
+ * exports `NODE_ENV=development` and runs `next dev` still gets a witness.
+ * Nothing here can distinguish that from a laptop, because it IS a development
+ * build; the control for it is not shipping one.
+ */
+export interface FixtureProvider {
+  /**
+   * The `NODE_ENV` that admitted this provider.
+   *
+   * Reported, never re-tested. Carried so a caller that logs or asserts WHICH
+   * environment authorised the fixtures reads the value the classification
+   * actually used, instead of re-reading `process.env` and possibly reporting a
+   * different one.
+   */
+  readonly environment: string;
+  /**
+   * The declaration every candidate below carries: a category the provider SDK's
+   * own vocabularies recognise, plus an opaque reference. See
+   * `OPAQUE_RIGHTS_REFERENCE_PATTERN` and `FIXTURE_RIGHTS_REFERENCE`.
+   */
+  readonly rightsBasis: RightsBasis;
+  candidates(contentId: string, origin?: string): readonly AuthorizedCandidate[];
+}
+
+export function fixtureProvider(environment: NonDeploymentEnvironment): FixtureProvider {
+  /*
+   * Built here rather than at module scope, so the `owned` declaration does not
+   * exist as a value in a process that never presented a witness. A module-level
+   * constant would be constructed on import, in every environment, and the
+   * argument above would be about who may READ it rather than about whether it
+   * exists.
+   *
+   * `RightsBasis` is the provider SDK's type, so `operator-owned-master` is
+   * checked against `RIGHTS_BASES_FOR_RIGHTS` rather than being a word chosen
+   * here -- `authorized-candidates.test.ts` applies that table, because the
+   * fixture provider does not go through `defineStremioSource`'s constructor.
+   */
+  const rightsBasis: RightsBasis = {
+    rights: "owned",
+    basis: "operator-owned-master",
+    reference: FIXTURE_RIGHTS_REFERENCE
+  };
+
+  return {
+    environment: environment.nodeEnv,
+    rightsBasis,
+    candidates: (contentId, origin = FIXTURE_MEDIA_ORIGIN) =>
+      fixtureCandidates(rightsBasis, contentId, origin)
+  };
+}
+
+/**
  * The resolver the route uses when nothing is injected.
  *
  * IN A DEPLOYMENT IT RESOLVES NOTHING, and that is the honest answer rather than
@@ -434,13 +541,20 @@ export function fixtureAuthorizedCandidates(
  * the operator's remedy ("configure a provider") is legible instead of arriving
  * as a generic empty result.
  *
- * The switch is `NODE_ENV`, read from the process boundary at CALL time, and
- * matched against an allowlist -- see `FIXTURE_ENVIRONMENTS` for why the shape
- * changed and what it still cannot see. It is not a source config value and must
- * not become one: a fixture source that could declare itself production-worthy
- * is the same mistake `url-policy.ts` refuses to make with `localDeployment`.
+ * The classification is read from the process boundary at CALL time, not at
+ * module scope: a module-scope read freezes the answer to whatever the process
+ * looked like when the route was first loaded, which in a serverless cold start
+ * is not necessarily the request's environment.
+ *
+ * THE `null` CHECK BELOW IS NOT OPTIONAL AND CANNOT BE DROPPED. `classify`
+ * returns `NonDeploymentEnvironment | null` and `fixtureProvider` takes the
+ * non-null type, so removing this branch does not widen the gate -- it fails to
+ * compile. It is also not a source config value and must not become one: a
+ * fixture source that could declare itself production-worthy is the same mistake
+ * `url-policy.ts` refuses to make with `localDeployment`.
  */
-export const resolveAuthorizedCandidates: AuthorizedCandidateResolver = (contentId) =>
-  FIXTURE_ENVIRONMENTS.includes(process.env.NODE_ENV ?? "")
-    ? { status: "resolved", candidates: fixtureAuthorizedCandidates(contentId) }
-    : { status: "not-configured" };
+export const resolveAuthorizedCandidates: AuthorizedCandidateResolver = (contentId) => {
+  const environment = NonDeploymentEnvironment.classify();
+  if (environment === null) return { status: "not-configured" };
+  return { status: "resolved", candidates: fixtureProvider(environment).candidates(contentId) };
+};

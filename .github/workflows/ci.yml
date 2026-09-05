@@ -83,6 +83,19 @@ on:
   # workflows for commits made with the default GITHUB_TOKEN, so a cloud
   # worker's push would otherwise never be verified by CI. The workers
   # dispatch this explicitly after pushing.
+  #
+  # WHAT THAT DISPATCH ACTUALLY VERIFIES TODAY, stated because the sentence above
+  # is easy to read as more than it is. `agent-claude-worker.yml` runs
+  # `gh workflow run ci.yml --ref main`, and it also checks out `ref: main` and
+  # pushes there -- so a dispatched run tests `main`'s tree, not the working
+  # branch this repository actually develops on. Both statements in this file's
+  # header cannot be operationally true at once, and
+  # docs/GITHUB_SETUP.md, "The branch problem, which will bite before anything
+  # else does", is where the decision belongs: fast-forward `main` to the working
+  # branch, or point the workers at the working branch. Either way the fix is in
+  # the agent workflows, not here -- this trigger is correct for both -- and it
+  # is recorded here so nobody reads the push-trigger widening below as having
+  # already covered it.
   workflow_dispatch:
 
 permissions:
@@ -173,17 +186,25 @@ jobs:
           # that does not match the install about to run, and `npm ci` would
           # paper over it.
           cache-dependency-path: package-lock.json
-      # These four run before install: they depend only on Node builtins, so
-      # a dependency problem cannot mask a control-plane, structure, or
-      # env-validator failure.
+      # These five run before install: they depend only on Node builtins, so
+      # a dependency problem cannot mask a control-plane, structure, env-validator
+      # or dispatcher failure.
       #
-      # Together they are `npm run test:scripts` plus the two validators, split
-      # into named steps rather than invoked through the npm script. That is on
-      # purpose -- four steps give four independently readable red/green marks
-      # instead of one -- but it is also a drift surface, so: `test:scripts` is
-      # currently `test-validate-env.mjs && test-ai-control-plane.mjs`, both are
-      # below, and a third script added to it must be added here too. Same rule
-      # as the @cache-key variables above, same failure if forgotten.
+      # The five are now a COMPLETE mirror of `npm run test:scripts` -- its three
+      # scripts -- plus the two validators, split into named steps rather than
+      # invoked through the npm alias. That split is on purpose: separate steps
+      # give independently readable red/green marks instead of one. It is also a
+      # drift surface, so, concretely: `test:scripts` is
+      # `test-validate-env.mjs && test-ai-control-plane.mjs &&
+      # cloud/test-dispatcher.mjs`, all three are below, and a FOURTH script added
+      # to it must be added here too. Same rule as the @cache-key variables above,
+      # same failure if forgotten.
+      #
+      # This block used to end by saying the dispatcher suite was deliberately
+      # NOT in the alias, so that the list did not read as a complete mirror when
+      # it was not. The alias has since been extended and it now is one. Stated
+      # rather than deleted, because the question a reader arrives with is whether
+      # these two lists still agree.
       - name: Validate AI control plane
         run: node scripts/ai-control-plane.mjs validate
       - name: Test AI control plane
@@ -192,6 +213,19 @@ jobs:
         run: node scripts/validate-repo.mjs
       - name: Test environment validator
         run: node scripts/test-validate-env.mjs
+      # Now part of `npm run test:scripts`. It was not, for a scope reason rather
+      # than a preference -- `package.json` was outside PL-AI-0003's allowedPaths,
+      # so the alias could not be extended in the same round the suite was
+      # written -- and this step was what stopped the suite being the thing the
+      # note above warns about: written, committed, and executed by no gate. The
+      # follow-up landed, and the step stays either way, exactly like the four
+      # above it.
+      #
+      # No network, no API key, no live control state: every scenario plans over
+      # fixtures it builds itself, and the two that read control/adapters.json
+      # assert only that the shipped configuration refuses.
+      - name: Test the optional dispatcher
+        run: node scripts/cloud/test-dispatcher.mjs
       # `npm ci` (not `npm install`): installs strictly from package-lock.json,
       # fails if the lockfile is missing or out of sync with package.json, and
       # never silently rewrites the lockfile in CI. This requires the lockfile
@@ -260,12 +294,12 @@ jobs:
   # `forceConsistentCasingInFileNames`, which is one of the checks most likely
   # to disagree between a case-insensitive Windows filesystem and this runner.
   #
-  # The SUITE is still not run here, and that is a scope decision, not an
-  # oversight. `npm test` in `e2e/` downloads browser builds, does a cold
-  # `turbo run build`, and starts a server -- minutes and a flake surface that
-  # belong in a job of their own, as docs/E2E.md says. The typecheck is the
-  # cheap half: three devDependencies and a `tsc --noEmit`. Adding it closes the
-  # compile gap without pretending the harness is being executed. It is not.
+  # The SUITE is no longer absent from CI: it runs in the `e2e` job below, which
+  # is the job of its own docs/E2E.md asks for. This one stays, and is not
+  # redundant, for the reason its own name gives -- it compiles the harness in
+  # about a minute without downloading a browser or building the application, so
+  # a harness that stops typechecking is still reported as such when the suite
+  # job is red for a product reason, or has not finished.
   e2e-typecheck:
     runs-on: ubuntu-latest
     steps:
@@ -295,3 +329,187 @@ jobs:
       - name: Typecheck the e2e harness
         working-directory: e2e
         run: npm run typecheck
+
+  # ==========================================================================
+  # The e2e SUITE, EXECUTED. Expected to be RED today, deliberately.
+  # ==========================================================================
+  #
+  # PL-0701's acceptance is "reproducible in CI", and a suite that is only
+  # compiled is not reproduced. Until this job existed, every e2e result this
+  # repository had came from a developer running it by hand -- which is the same
+  # absence-reads-as-success shape the header of this file is about.
+  #
+  # READ THIS BEFORE YOU TRY TO MAKE IT GREEN.
+  #
+  # The suite is currently PARTLY RED ON PURPOSE. docs/E2E.md, "Known blockers
+  # found by the first real run", is the authority: it lists the failures and
+  # says why the assertions are left failing rather than relaxed. What follows
+  # is a convenience copy, and it is therefore the copy that goes stale -- it
+  # has already had to be corrected once, and the stale entry was exactly the
+  # hazard the baseline argument further down describes. It listed
+  # `catalog.api.spec.ts` as asserting non-empty rails and therefore failing
+  # under `production`; that spec has since been mode-split and requires the
+  # 503 `catalog_source_not_configured` refusal under `production` and the demo
+  # catalog under `development`. It is no longer an expected failure, and if it
+  # is red now that is a real one. Read this list against docs/E2E.md, not
+  # instead of it. As of this revision:
+  #
+  #   - THE TWO 404 ASSERTIONS in `critical-journey.spec.ts` are UNKNOWN:
+  #     expected to pass, never observed passing. Both halves of PL-0704's
+  #     repair have landed. Each existence decision now sits above every
+  #     Suspense boundary its own page declares, AND the three loading files
+  #     that installed a boundary above a segment are deleted:
+  #     `apps/web/src/app/loading.tsx`,
+  #     `apps/web/src/app/title/[titleId]/loading.tsx` and
+  #     `apps/web/src/app/watch/[contentId]/loading.tsx`. The skeletons were
+  #     relocated rather than surrendered -- home into a `<Suspense>` inside
+  #     `app/page.tsx`, the player into one inside `watch/[contentId]/page.tsx`,
+  #     both BELOW the decision -- and the title route deliberately has none,
+  #     because whether a title exists IS the load there. Note the unknown-title
+  #     404 is asserted under `development` only: on a hosted build the metadata
+  #     source throws, `loadTitleDetail` reports `error` rather than
+  #     `not-found`, and the spec requires the 200 refusal there instead.
+  #     `apps/web/src/app/watch/route-loading-boundaries.test.ts` runs in the
+  #     `validate` job and is the authority on whether a boundary has crept back
+  #     above a `notFound()`-capable page -- it, not this comment and not
+  #     docs/E2E.md;
+  #   - `search.spec.ts`'s typing tests are UNKNOWN, which is not the same as
+  #     passing. The first real run failed for two separate causes, both
+  #     addressed since; the spec now also carries "text typed before hydration
+  #     survives it", added with that repair. None of it has been re-executed;
+  #   - EVERY `development`-ONLY ASSERTION IS UNKNOWN for the same reason, and
+  #     that includes the development half of every paired assertion in
+  #     `critical-journey.spec.ts` and `playback-session.api.spec.ts`. The
+  #     blocker that served no client JavaScript under
+  #     `LIBERTY_E2E_WEB_MODE=development` was fixed by `allowedDevOrigins` in
+  #     `apps/web/next.config.ts` and no `development` run has happened since.
+  #     Until one does, the production half of each pair is also unproven to be
+  #     non-vacuous -- which is why the development step below runs even after
+  #     the production step has failed.
+  #
+  # WHAT THIS JOB DOES NOT DO ABOUT THAT. No `continue-on-error`. No `|| true`.
+  # No `--pass-with-no-tests`, no retries (`retries: 0` is set in
+  # `playwright.config.ts` and is deliberate there). The job fails when the suite
+  # fails, which today means this job is RED, and that red mark is the accurate
+  # state of the harness. A green tick over a red suite is the audit fiction this
+  # repository keeps deleting; a job that reports "known failures only" while
+  # nobody maintains the list of known failures is the same fiction with an
+  # inventory attached.
+  #
+  # An expected-failure BASELINE was considered and rejected, and the reason is
+  # not effort. To separate expected from unexpected honestly, the list of
+  # expected failures has to be machine-readable, live beside the specs, and be
+  # deleted from as they are fixed -- and nothing in this repository produces or
+  # checks such a list today. Writing one into this workflow would put the
+  # authoritative statement of "which failures are acceptable" in the file
+  # furthest from the tests, where its first stale entry silently absorbs a real
+  # regression. If a baseline is wanted, it belongs in `e2e/` with a test that
+  # fails when an entry stops failing, and that is PL-0701's surface, not this
+  # file's.
+  #
+  # SO: this job is green only when the suite is green in both modes. Until then
+  # its failure is the signal, and the entries above are what to read it against.
+  #
+  # BOTH MODES, and the second is not optional. docs/E2E.md, "Both modes are the
+  # gate, not a choice": the strings the `production` half requires to be ABSENT
+  # are the strings the `development` half requires to be PRESENT, so a
+  # production-only run proves a refusal and never proves it is not vacuous. The
+  # development step therefore runs even when the production step has already
+  # failed -- otherwise one red mode would hide the other entirely, and the pair
+  # would degrade to whichever half ran first.
+  #
+  # `api` and `chromium` only, which is exactly the pair docs/E2E.md names as the
+  # gate commands. WebKit, mobile-safari and Firefox are NOT run here and this
+  # job claims nothing about them. Chromium is the engine this runner image
+  # already carries shared libraries for; WebKit's are a separate set that a
+  # plain `playwright install` does not place, and the usual remedy --
+  # `playwright install --with-deps` -- is a root `apt-get` on Linux and throws
+  # outright on Windows, so it is not the spelling this repository standardises
+  # on. Adding those engines is a deliberate second job, with whatever
+  # dependency installation it turns out to need stated in it; until then WebKit
+  # evidence (PL-0705's acceptance requires it) comes from a local run and is
+  # recorded as such. Only the browser this job launches is downloaded, so
+  # nothing waits on builds it will never start.
+  e2e:
+    runs-on: ubuntu-latest
+    # A ceiling for a hang, not a budget. One cold `turbo run build` for the
+    # production run, an on-demand dev compile for the other, and two suite runs
+    # finish well inside this; the default 360 minutes is what a stuck server
+    # would otherwise burn.
+    timeout-minutes: 45
+    # The same three @cache-key variables the `validate` job pins, for the same
+    # reason: `playwright.config.ts` runs `npm run build` through turbo inside its
+    # `webServer` command, so an unset one hashes as ABSENT into the shared build
+    # cache and this job could be served an artifact built under a different
+    # enforcement mode. The harness pins CONTENT_RIGHTS_ENFORCEMENT and
+    # LIBERTY_FIXTURE_MEDIA_ORIGIN on the server process itself as well, to the
+    # same values; setting them here is about what turbo hashes BEFORE that
+    # process starts.
+    env:
+      CONTENT_RIGHTS_ENFORCEMENT: strict
+      LIBERTY_FC_SEED: "20250819"
+      LIBERTY_FIXTURE_MEDIA_ORIGIN: https://fixtures.invalid
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          # BOTH lockfiles, because this job installs both trees. Stated rather
+          # than derived, for the reason the `validate` job gives: an implicitly
+          # chosen key that matched only one of them would restore a
+          # node_modules that does not match the install about to run.
+          cache-dependency-path: |
+            package-lock.json
+            e2e/package-lock.json
+      # The application first: `playwright.config.ts` starts the server with
+      # `npm run build && npm run start --workspace @liberty/web` (or `npm run
+      # dev` in development mode) from the REPOSITORY ROOT, so the root install
+      # is a prerequisite of the harness rather than a separate concern.
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Install the e2e harness
+        working-directory: e2e
+        run: npm ci --no-audit --no-fund --ignore-scripts
+      # `--ignore-scripts` above means no browser arrives with the install, which
+      # is the point: browsers are asked for explicitly, here, and only the one
+      # this job launches. NOT `--with-deps` -- see the note above the job.
+      - name: Install the browser this job launches
+        id: browsers
+        working-directory: e2e
+        run: npx playwright install chromium
+      - name: Run the suite in production mode
+        id: production
+        if: ${{ steps.browsers.outcome == 'success' }}
+        working-directory: e2e
+        env:
+          LIBERTY_E2E_WEB_MODE: production
+        run: npm test -- --project=api --project=chromium
+      # Uploaded between the two runs, not after both: the HTML reporter writes
+      # to one directory and the development run overwrites it.
+      - name: Upload the production report
+        if: ${{ !cancelled() && steps.browsers.outcome == 'success' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-production
+          path: e2e/playwright-report
+          retention-days: 14
+          if-no-files-found: warn
+      - name: Run the suite in development mode
+        id: development
+        # Runs even when the production run failed. That is not tolerance of the
+        # failure -- the job is already red and stays red -- it is the pairing
+        # above: one mode's result is not evidence about the other.
+        if: ${{ !cancelled() && steps.browsers.outcome == 'success' }}
+        working-directory: e2e
+        env:
+          LIBERTY_E2E_WEB_MODE: development
+        run: npm test -- --project=api --project=chromium
+      - name: Upload the development report
+        if: ${{ !cancelled() && steps.browsers.outcome == 'success' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-development
+          path: e2e/playwright-report
+          retention-days: 14
+          if-no-files-found: warn

@@ -22,102 +22,143 @@ For each handoff include:
 
 Do not use this file as the primary task tracker. `control/tasks.json` and `control/queues/gpt-architect.json` are authoritative.
 
-## Current handoff — 2026-08-17, PL-0003 rework
+## Current handoff — 2026-09-04
 
-Your PL-0202 approval and PL-0003 changes-requested verdict were read out of the ChatGPT
-conversation and transcribed into `coordination/GPT_TO_CLAUDE.md` with a provenance warning; there is
-still no authentic `gpt-to-claude` bus message, and the sandbox shell is unavailable again this
-session, so everything below was written but not executed. It runs when Diego triggers the runner.
+Branch `codex/pl-ai-0001-repair`. Your connector still returns 403 on repository
+writes, so it can read this but cannot answer here; verdicts continue to come back
+by transcription into `coordination/GPT_TO_CLAUDE.md` with a provenance warning.
+Bind each approval with `--sha` so a drifted surface is refused rather than
+silently inherited.
 
-**PL-0202** — gates rerun under genuinely pinned Node 22, then your approval recorded with
-`--sha 26fd6607…`, then DONE. The `--sha` binding is deliberate: local head has moved to
-`c2597c80`, so if the branch drifted under `packages/media-engine/**` or `packages/contracts/**`
-after your review, the control plane refuses and a fresh review is owed. It will not be retried
-without the binding.
+The round lands in **two commits**, and the split is itself part of what I want
+you to check. Gate results and review decisions record whatever sha is HEAD when
+they run, so the first commit carries the implementation and the second carries
+the gates — otherwise the evidence binds to the tree before the work. You and the
+fallback reviewer both caught that defect independently last round; this is the
+structural fix rather than a promise to remember.
 
-**PL-0003 — what changed, for your re-review.** The validator is now mode-aware.
-`envFilesForMode(mode)` returns the real Next.js order — `.env.$MODE.local`, `.env.local`,
-`.env.$MODE`, `.env`, with `.env.local` omitted under `test` — and `process.env` still wins.
-`gatherRepoState` reads the union of all eight files so the snapshot stays mode-independent;
-`evaluate` takes `modes` and returns `sourcesByMode`. Node, install and contract findings are
-computed once; environment findings are computed per mode and then deduplicated, so one problem
-reported in three modes prints once rather than three times.
+### PL-AI-0004 — re-review requested (still CHANGES_REQUESTED)
 
-Regressions cover the four cases you named plus the dedupe behaviour and the CLI. `env:validate` now
-runs all three modes explicitly rather than pretending one represents all. The redundant `@optional`
-on `CONTENT_RIGHTS_ENFORCEMENT` is gone.
+Your objection was that the reconciliation contract claimed `--reconcile-existing`
+required work reachable on a remote, which nothing on that path verifies. The
+wording in `CLAUDE.md` and `control/README.md` now says **committed**, not pushed,
+and states why a remote-reachability check was rejected rather than added:
+upstream configuration is not universal, a detached CI clone makes "pushed"
+ambiguous, and reconciliation legitimately runs locally just before its commits
+are pushed. Remote availability is framed as a review/handoff concern — you must
+be able to fetch the sha a decision binds to — not something reconciliation
+proves.
 
-One thing worth your attention because it was nearly a silent defect: the first cut of the dedupe
-keyed on the rendered `found` string, which embeds the list of sources searched — and that list
-differs between modes by construction. The collapse could therefore only ever fire on a machine with
-no `.env.local`, which was also the only case the suite covered. An adversarial pass caught it;
-findings now carry a mode-invariant `dedupeFound` and there is a regression that fails against the
-old code. Flagging it because it is the same failure shape as the `manualOnly` ordering you caught in
-PL-0202: a determinism claim that holds only in the configuration the tests happen to use.
+**Question:** does that framing satisfy the objection, or do you still want a
+check? This approval gates PL-AI-0005, PL-AI-0006 and five lanes queued behind the
+contracts lock, so it is the single highest-leverage verdict outstanding.
 
-**Three findings deliberately left out of scope, each outside PL-0003's `allowedPaths`.** Ruling
-requested on whether these become tasks:
+Worth knowing: this round used an **ordinary** `start`, not reconciliation, for all
+three new lanes. The implementations were uncommitted when the tasks were claimed,
+so HEAD genuinely was the last commit without the work. Reconciliation remains
+unused in anger.
 
-1. `turbo.json` `globalDependencies` is still `[".env", ".env.local"]`. `next build` runs in
-   production mode and reads `.env.production.local` and `.env.production`, which turbo does not hash
-   into the cache key — so editing `.env.production.local` can yield a cache hit built from the old
-   value. This is the same wrong-bytes failure one layer up, and it now contradicts the validator.
-2. `.github/workflows/ci.yml` runs neither `env:validate` nor `test:scripts`. It never invokes
-   `npm run check`, so the environment validator and its whole suite exist only on developer
-   machines, while `docs/DEVELOPMENT.md` implies CI covers them.
-3. `.gitignore` ignores `.env`, `.env.local` and `.env.*.local` but not `.env.development`,
-   `.env.test` or `.env.production`. That matches Next.js convention, but the asymmetry is now
-   load-bearing and undocumented.
+### PL-0203 Subtitle selection policy — review requested
 
-Also still open from your side and not yet actioned: the PL-0301 `rightsBasis` many-to-one provenance
-vocabulary, and the bare `localeCompare()` in catalog title ordering.
+`packages/media-engine/**`. Most of the four policies already existed; the report
+in the commit message is explicit about what was already there versus what is new,
+because "closed the gaps" would otherwise read as "wrote the module".
 
-## Earlier handoff
+The real defect: forced subtitles were keyed to `policy.audioLanguage`, which
+nothing populated from the audio decision. Every caller hand-copied it, and both
+natural mistakes — omit it, or fill it from the viewer's *preferred* audio
+languages — silently disabled or mis-keyed the entire forced branch.
+`withSelectedAudio(policy, audio: AudioSelection)` derives it from the selection
+itself.
 
-Control plane bootstrap is ready for GPT architecture review under `PL-0002` and future cross-agent automation work under `PL-AI-0002`/`PL-AI-0003`.
+Precedence is now stated in one place, and the BCP-47 rule is written down: both
+sides lower-cased, preference side also trimmed, primary-subtag equality,
+symmetric — so `pt` accepts `pt-BR` and `pt-BR` accepts `pt`, and `es-419` is an
+ordinary subtag. `isDefault` is sixth of eight in the automatic comparator and
+third of five in the forced one, so it decides *which* track and never *whether*
+text appears.
 
-### PL-AI-0001 — control-plane defects corrected (awaiting GPT architecture review)
+**Two things I want you to attack.** First, the symmetric primary-subtag rule is a
+choice, not a law; if you think `en-GB` accepting a bare `en` preference is wrong
+for subtitles specifically, say so, because audio and subtitles share
+`languageMatch` and would have to diverge. Second, `languageMatch` trims the
+preference side but not the track side, so a track tag padded *in its primary
+subtag* matches nothing while one padded after it merely loses its exact match.
+That asymmetry is documented rather than fixed, because the fix is in
+already-approved PL-0202 code. Ruling requested on whether it becomes a task.
 
-Two defects were found and fixed in `scripts/ai-control-plane.mjs`. Gates are **not** yet
-recorded: the local sandbox could not execute `node`, so nothing has been run.
+### PL-0703 Corrective: rights-invariant breach in the watch route — review requested
 
-**1. Dispatcher starved executable lanes.** The old `recommendWave()` scanned READY tasks in
-priority order and greedily claimed the first fit. `PL-0002` (`docs/**`, `control/**`,
-`coordination/**`) sorted early, so it consumed path ownership from five other tasks — and it
-routes to `gpt-architect`, which has no local adapter, so the wave shrank to 3 tasks of which
-only 2 were runnable.
+Carries `security-review` and `rights-review`, and **neither is recorded**. They
+are yours. I recorded only `typecheck` and `unit`; recording a security gate on the
+strength of my own implementation would collapse the distinction the gate exists
+for.
 
-Now tasks are classified `READY_AND_EXECUTABLE` / `READY_BUT_EXTERNAL` / `BLOCKED` / `BACKLOG`.
-Executability is derived from `control/adapters.json` (`canExecuteCommands && canEditLocalFiles`),
-not hardcoded. External lanes stay reserved for their agent and no longer participate in local
-wave planning. Wave selection is a branch-and-bound search for a maximum feasible set under
-dependencies, `allowedPaths` disjointness, capability and `maxParallel`, replacing the greedy
-scan. Result: 4 executable tasks instead of 3, with `PL-0002` still reserved for `gpt-architect`.
+The gate is now a type rather than a condition. `NonDeploymentEnvironment` has a
+private constructor and a private field, so it cannot be constructed or subclassed
+outside its module and TypeScript compares it nominally. `fixtureProvider` requires
+one; the only source is `classify()`, which returns `null` for every `NODE_ENV`
+outside the allowlist. Deleting the null check is a compile error, and the `owned`
+basis is built *inside* `fixtureProvider`, so in a hosted process it is never
+constructed at all rather than constructed and withheld.
 
-**2. `done` accepted unreviewed work.** It only checked status, dependencies and gate presence —
-never that a review happened. `ai:approve` / `ai:request-changes` now write a review record
-(`taskId`, `implementationAgent`, `reviewerAgent`, `reviewerClass`, `reviewerProvider`,
-`reviewedCommitSha`, `reviewedTreeHash`, `outcome`, `reviewedAt`, `evidence`) and `done` refuses
-unless it is `APPROVED`, from exactly the task's `reviewAgent`, by an agent other than the
-implementer, bound to the current implementation fingerprint. Automatic Claude-for-GPT
-substitution is rejected by design.
+**The rights basis carries a category and an opaque reference, and nothing more.**
+The project owner has settled licensing with the providers and is contractually
+barred from putting the agreements into this repository. So the repo carries the
+category plus an identifier that means nothing outside the owner's own records.
+Nothing parses, decodes or branches on the reference's content — the whole surface
+is a length check and one shape regex, and candidate construction fails closed to
+an empty list if the shape does not hold. **Please do not ask for the agreement
+terms, and do not propose a design that requires them in-repo.**
 
-The fingerprint is a SHA-256 over file contents under the task's `allowedPaths`, excluding
-generated control-plane bookkeeping. Editing implementation files after approval invalidates it,
-so stale approvals cannot complete a task.
+**What I want you to attack.** The shape rule cannot detect a *meaningful* token —
+`acme-tv-2026-emea` passes the regex. I think that is unavoidable for a syntactic
+check and belongs to the rights review rather than to code, but if you see a
+structural way to make a meaningful reference unrepresentable, that is worth more
+than the regex. Also: a hosted box running `next dev` with `NODE_ENV=development`
+still mints a witness. I could not close that with a type and I do not think it is
+closable by one; the control is not shipping such a box. Tell me if you disagree.
 
-**Review requested:** is deriving executability from `adapters.json` the right seam, or should
-agents carry an explicit `executionAvailable` flag (currently supported as an override)? And
-should `reviewedCommitSha` be authoritative over `reviewedTreeHash` once GitHub review exists?
+Follow-up I could not do from inside this task's paths: `RightsBasis` in
+`packages/provider-sdk/src/stremio/source.ts` has the right fields but no opacity
+rule, so an operator-configured Stremio source can still put prose into
+`reference`. The desired shape is in the lane report; it needs a new
+`defineStremioSource` failure code.
 
-### Reviewer deadlock in PL-AI-0002 — needs an architecture decision
+### PL-0705 Search loses text typed before hydration — review requested
 
-`PL-AI-0002` has `preferredAgent: gpt-architect` and `reviewAgent: claude-lead`. Establishing the
-git remote is inherently local execution that GPT cannot perform, and `claude-lead` is the only
-registered agent advertising the `Coordination` lane. So `claude-lead` must implement it — but
-`claude-lead` is also its reviewer, which the new self-approval rule correctly refuses.
+`apps/web/src/components/search/**`. Before React hydrates, the server-rendered
+input is live HTML and a user can type into it; React mounts and those characters
+are discarded. Adoption happens at the hydration boundary only, compares **raw**
+text rather than normalised text, and is treated as text rather than as a pending
+submit. Both of those are argued in the source; the second matters because
+recording it as a request would set `latestRequestedQuery` equal to the field and
+deadlock the debounce guard.
 
-`PL-AI-0002` therefore cannot reach DONE as currently specified. Recommended fix: swap the
-routing to `preferredAgent: claude-lead`, `reviewAgent: gpt-architect`. This is coherent — the
-bridge is local work, and once it exists GPT can finally see the repository to review it. This is
-a task-definition change, so it is being escalated rather than applied silently.
+`useLayoutEffect` rather than `useEffect`, established by reading the installed
+React 19 build: `initInput` skips assigning `element.value` while hydrating and
+`updateInput` assigns on every later commit, so the typed text survives the
+hydration commit and dies at the next one. A passive effect can be preceded by a
+commit that has already destroyed it.
+
+**What I want you to attack.** Adoption writes only the value and appends no
+commit, so I claim the epoch invariants — in particular "a re-issued navigation
+can never adopt" — are untouched. The fallback reviewer re-derived that from the
+invariants rather than accepting it, and agreed. A third derivation would be
+worth having, because that invariant is load-bearing for the whole search surface.
+
+### Standing constraints, unchanged
+
+- No recorded gate on any `apps/web` task mounts a component: vitest runs there
+  with no DOM. Wiring, navigation and real perceivability are unverified by any
+  unit gate on every frontend task to date. This is stated on every approval
+  rather than left implicit.
+- `e2e` gates on PL-0703 and PL-0705 are **not** recorded. The suite runs at the
+  end of this round and the gates are recorded next round from what it actually
+  says. It is expected to be partly red: the two `notFound()` assertions in
+  `critical-journey` fail deliberately until PL-0704 fixes the Suspense flush that
+  swallows the 404 status, and that fix is outside PL-0703's allowed paths.
+- No integration gate can be recorded anywhere: there is no PostgreSQL in this
+  environment.
+- PL-0302 and PL-0602 remain blocked on licensed provider access and are not
+  worked around.

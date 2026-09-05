@@ -47,6 +47,15 @@ import {
  * produced the bug intact — two adapters asserting rights over the same
  * imaginary media, correct today by coincidence.
  *
+ * AND THE FIXTURE BASIS IS NOW UNCONSTRUCTABLE ON A BUILD THAT SHIPS, which is
+ * what closes the version of this defect that a comment cannot. `fixtureProvider`
+ * takes a `NonDeploymentEnvironment` — a value only
+ * `app/api/deployment-environment.ts` can mint, and only for a `NODE_ENV` on its
+ * allowlist — so a future route that wanted its own fixtures could not build the
+ * `owned` declaration without first handling the `null` that a deployment gets.
+ * The previous gate was a condition inside the resolver, and a condition is
+ * exactly what the deleted duplicate did not have.
+ *
  * WHY THE IMPORT IS SOUND ACROSS `app/api/**`. Next treats a file under `app/`
  * as a route only when it is named `page`, `route`, `layout`, `template`,
  * `default`, `loading`, `error`, `not-found` or `global-error`; everything else
@@ -234,6 +243,32 @@ function toPlaybackCandidates(
 }
 
 /**
+ * The identity question this process can answer WITHOUT asking a provider, and
+ * the only one the route is allowed to answer with a 404.
+ *
+ * Every id in the system is lower-case and hyphen-separated, so a string that is
+ * not normalized cannot name anything and never needs a lookup to be refused.
+ * Exported because `[contentId]/page.tsx` has to ask it ABOVE the Suspense
+ * boundary that hides the provider round-trip: a status line is sent before the
+ * first byte of the body, so an existence decision taken inside the boundary is
+ * a decision taken after the 200 has already shipped. `loadPlaybackSession`
+ * still asks it too — a caller reaching the loader directly must get the same
+ * refusal, and the page's gate is a routing concern rather than this module's
+ * guarantee.
+ *
+ * WHAT IT DELIBERATELY DOES NOT ANSWER is whether a well-formed id names a real
+ * work. That is the catalog's question, and there is no catalog behind this
+ * resolver; `AuthorizedCandidateResolution` carries a `not-found` outcome so a
+ * provider registry can answer it one day. When something finally does, THIS
+ * function is where the lookup belongs — not the branch in the page that
+ * currently renders it — because only this side of the boundary can still set a
+ * status. `[contentId]/page.tsx` states the same obligation from its end.
+ */
+export function isWatchableContentId(contentId: string): boolean {
+  return normalizedContentIdSchema.safeParse(contentId).success;
+}
+
+/**
  * The loader the watch route uses.
  *
  * Never throws. Every outcome is a branch the route can render, because they
@@ -255,7 +290,7 @@ export async function loadPlaybackSession(
    * so this is not-found rather than an error, and doing it first keeps raw URL
    * path input from reaching the provider boundary at all.
    */
-  if (!normalizedContentIdSchema.safeParse(contentId).success) {
+  if (!isWatchableContentId(contentId)) {
     return { status: "not-found", contentId };
   }
 
@@ -270,9 +305,11 @@ export async function loadPlaybackSession(
 
   /*
    * THE BRANCH A HOSTED DEPLOYMENT TAKES, and the whole user-visible point of
-   * this change. `resolveAuthorizedCandidates` answers `not-configured` outside
-   * `FIXTURE_ENVIRONMENTS`, so `next start` now renders an explanation instead
-   * of a player pointed at fabricated `owned` fixtures.
+   * this change. `resolveAuthorizedCandidates` answers `not-configured` whenever
+   * `NonDeploymentEnvironment.classify()` returns `null` — which is every
+   * `NODE_ENV` outside `NON_DEPLOYMENT_ENVIRONMENTS` — so `next start` now
+   * renders an explanation instead of a player pointed at fabricated `owned`
+   * fixtures.
    *
    * Its own status rather than `error` or `denied`, matching the session API's
    * argument for the same four-way split: `error` invites a retry that can never
@@ -306,9 +343,9 @@ export async function loadPlaybackSession(
    * 200 with a different panel behind it.
    *
    * THE REAL REMAINING GAP, recorded rather than closed. Under a `development`
-   * build `fixtureAuthorizedCandidates` manufactures three `owned` candidates
-   * for ANY normalized id, so `/watch/no-such-title` mounts a player for a work
-   * nothing in the catalog defines. Teaching the fixture provider to answer
+   * build the fixture provider manufactures three `owned` candidates for ANY
+   * normalized id, so `/watch/no-such-title` mounts a player for a work nothing
+   * in the catalog defines. Teaching the fixture provider to answer
    * `not-found` for ids it does not define needs a catalog lookup inside the
    * session API, which `authorized-candidates.ts` argues against by name
    * ("inventing an answer here would put provider configuration inside an HTTP

@@ -393,15 +393,22 @@ describe("loadTitleDetail", () => {
       "",
       // Unusual characters, each of which would otherwise be interpolated into
       // a route or handed to a provider: an accent, a percent-escaped slash, a
-      // path separator, leading and trailing hyphens, and a non-ASCII hyphen
-      // that LOOKS like the separator the id format uses.
+      // path separator, leading and trailing hyphens, a non-ASCII hyphen that
+      // LOOKS like the separator the id format uses, a NUL, and an exclamation
+      // mark on the end of a very long id.
+      //
+      // The NUL is CONSTRUCTED rather than typed. A raw NUL byte used to sit in
+      // this file instead, and `lib/db/in-memory-repository.ts` records why that
+      // is not acceptable in source: it is invisible in every diff and every
+      // review, and it makes ripgrep classify the whole file as binary and drop
+      // it from every repository-wide search.
       "aurora-fáll",
       "aurora%2ffall",
       "aurora-fall/",
       "-aurora-fall",
       "aurora-fall-",
       "aurora‑fall",
-      "aurora fall ",
+      "aurora fall" + String.fromCharCode(0),
       `${"a".repeat(300)}-${"b".repeat(300)}!`
     ];
     let calls = 0;
@@ -578,14 +585,18 @@ describe("describeTitleMetadata", () => {
   });
 
   /*
-   * The not-found branch is served at HTTP 200, not 404: React flushes the shell
-   * while the route's Suspense boundary is pending, so the status is on the wire
-   * before `notFound()` runs. That is PL-0704 and the fix is in the root
-   * `app/loading.tsx`. What follows from it here is that this branch is an
-   * INDEXABLE 200 page, and there is an unbounded supply of the addresses that
-   * reach it -- every string matching the normalized-id pattern.
+   * THE DIRECTIVE IS NOT TIED TO THE STATUS, which is the point of asserting it
+   * here. This branch answers a real 404 and a 404 is not indexed anyway, so the
+   * argument that the directive is therefore redundant is available -- and it is
+   * the argument that produced the original asymmetry with the unavailable
+   * branch below. `title-detail.ts` makes the case in full; the two halves that
+   * matter are that this directive is the one that also says `follow`, which a
+   * status cannot say, and that it is what remains true if this route ever has
+   * to answer 200 again. The supply of addresses that reach this metadata is
+   * unbounded -- every string matching the normalized-id pattern passes the
+   * loader's format check -- so the 200 case is the expensive one to get wrong.
    */
-  it("keeps the not-found page out of indexes, because it is also served at 200", () => {
+  it("keeps the not-found page out of indexes whatever status it is served at", () => {
     const metadata = describeTitleMetadata({ status: "not-found", contentId: "no-such-title" });
 
     expect(metadata.robots).toEqual({ index: false, follow: true });
@@ -593,10 +604,10 @@ describe("describeTitleMetadata", () => {
 
   /*
    * Stated as an equality rather than twice as a literal: the asymmetry between
-   * the two 200-served failure branches is the defect, so the assertion is that
-   * they agree, and it keeps agreeing if the directive is ever revised.
+   * the two failure branches is the defect, so the assertion is that they agree,
+   * and it keeps agreeing if the directive is ever revised.
    */
-  it("gives both 200-served failure branches the same crawl directive", () => {
+  it("gives both failure branches the same crawl directive", () => {
     expect(TITLE_NOT_FOUND_METADATA.robots).toEqual(TITLE_UNAVAILABLE_METADATA.robots);
   });
 

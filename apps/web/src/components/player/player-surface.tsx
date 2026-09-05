@@ -31,6 +31,28 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { FailoverPolicy } from "@liberty/contracts/domains/failover";
+import {
+  AV_DIAGNOSTICS_INTERVAL_MS,
+  AV_FRAME_WINDOW,
+  avContinuityCmcdEvent,
+  avContinuityEmissionKey,
+  avFindingViews,
+  findVideoFrameCallbackTarget,
+  frameEvidenceFrom,
+  observeAvDiagnostics,
+  readAvBufferedEvidence,
+  readEngineConfiguration,
+  type AvBufferedProvenance,
+  type AvConfigProvenance,
+  type AvFindingView,
+  type VideoFrameCallbackTarget
+} from "./av-diagnostics";
+import { postCmcdEvent } from "./cmcd-beacon";
+import {
+  readVideoFrameMetadata,
+  type AvContinuitySummary,
+  type VideoFrameReading
+} from "./diagnostics";
 import type { EngineState } from "./playback-controller";
 import {
   LIBERTY_VIDEO_ENGINE_STATE_EVENT,
@@ -54,6 +76,13 @@ import {
 } from "./playback-machine";
 import type { PlaybackSession } from "./playback-session";
 import type { PlaybackError } from "./shaka-error";
+import {
+  CMCD_COLLECTOR_PATH,
+  PLAYBACK_TELEMETRY_DEFAULTS,
+  decidePlaybackTelemetry,
+  mintTelemetrySessionId,
+  type PlaybackTelemetryReason
+} from "./telemetry-decision";
 
 export interface PlayerSurfaceProps {
   /** Already authorized. This component never fetches or chooses a source. */
@@ -179,6 +208,31 @@ function sameView(a: PlayerView, b: PlayerView): boolean {
   );
 }
 
+/**
+ * The observability panel's state (PL-0503 and PL-0504).
+ *
+ * KEPT OUT OF `PlayerView` ON PURPOSE. `PlayerView` is recomputed on every
+ * machine transition -- `timeupdate` alone is about four a second -- and
+ * `sameView` exists to suppress the repaint that would otherwise cause. This
+ * changes on a ten-second diagnostics tick and has no relationship to a
+ * transition, so folding it into that view would mean either recomputing an A/V
+ * report four times a second or extending `sameView` with fields it cannot
+ * compare cheaply.
+ *
+ * `findings` is empty until the first tick, and that is not the same as a
+ * session with nothing to report: it means no observation has been composed yet.
+ * The panel renders the telemetry decision immediately regardless, because the
+ * commonest question about telemetry is why it is off.
+ */
+interface DiagnosticsView {
+  readonly telemetryEnabled: boolean;
+  readonly telemetryReasons: readonly PlaybackTelemetryReason[];
+  readonly findings: readonly AvFindingView[];
+  readonly summary: AvContinuitySummary | null;
+  readonly engineConfigSource: AvConfigProvenance | null;
+  readonly bufferedSource: AvBufferedProvenance | null;
+}
+
 const STOP_REASON_COPY: Readonly<Record<PlaybackStopReason, string>> = {
   no_candidates:
     "Playback was authorized, but no stream was offered for it. Nothing failed — there was nothing to try.",
@@ -194,6 +248,7 @@ const STOP_REASON_COPY: Readonly<Record<PlaybackStopReason, string>> = {
 export function PlayerSurface({ session, policy }: PlayerSurfaceProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const [view, setView] = useState<PlayerView | null>(null);
+  const [diagnostics, setDiagnostics] = useState<DiagnosticsView | null>(null);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -210,6 +265,42 @@ export function PlayerSurface({ session, policy }: PlayerSurfaceProps) {
     video.setAttribute("playsinline", "");
     video.style.width = "100%";
     video.style.height = "100%";
+
+    /*
+     * PL-0503. TELEMETRY IS CONFIGURATION, NOT A STEP IN STARTING PLAYBACK.
+     *
+     * `decidePlaybackTelemetry` is total -- every branch returns a decision and
+     * none of the guards it calls throws -- and `configureEngine` merges a
+     * fragment into a history that is replayed onto every player. So there is no
+     * ordering in which this can fail and leave the session unstarted: the
+     * refused branch applies `{ cmcd: { enabled: false } }`, which is a real
+     * instruction rather than an omission, because the controller replays its
+     * configuration history and an ABSENT block would leave a previous value in
+     * force.
+     *
+     * The session id is minted here rather than taken from the props because
+     * `PlaybackSession` carries no id -- PL-0501's issued session does, and when
+     * that arrives this is the one line that changes. `mintTelemetrySessionId`
+     * returns `null` rather than inventing one where `crypto.randomUUID` is
+     * absent, and the decision turns that into a stated refusal.
+     */
+    const telemetry = decidePlaybackTelemetry({
+      enabled: true,
+      contentId: session.contentId,
+      sessionId: mintTelemetrySessionId(globalThis.crypto),
+      collectorPath: CMCD_COLLECTOR_PATH,
+      ...PLAYBACK_TELEMETRY_DEFAULTS
+    });
+    video.configureEngine(telemetry.config);
+
+    setDiagnostics({
+      telemetryEnabled: telemetry.enabled,
+      telemetryReasons: telemetry.reasons,
+      findings: [],
+      summary: null,
+      engineConfigSource: null,
+      bufferedSource: null
+    });
 
     const effects: PlaybackEffects = {
       requestSession: () => {
@@ -299,11 +390,105 @@ export function PlayerSurface({ session, policy }: PlayerSurfaceProps) {
     for (const [type, listener] of listeners) video.addEventListener(type, listener);
     host.appendChild(video);
 
+    /*
+     * PL-0504. THE A/V CONTINUITY OBSERVER, AND WHY IT IS SHAPED LIKE THIS.
+     *
+     * Two loops, at two cadences, because `diagnostics/index.ts` says so: the
+     * cheap signal that belongs in the frame callback is `readVideoFrameMetadata`,
+     * which allocates one flat record, and `observeAvContinuity` is explicitly
+     * NOT a per-frame function -- one call is roughly a dozen allocations, which
+     * is nothing on a tick and about seven hundred a second at 60 Hz. So the
+     * callback only ever keeps the most recent two readings, and the report is
+     * composed on a timer around them.
+     *
+     * NOTHING HERE TOUCHES THE ELEMENT. It reads `currentTime`, the engine's
+     * per-track buffered info and the engine's effective configuration, and it
+     * writes nothing: no seek, no nudge, no configuration change. A recommended
+     * nudge is advice that belongs to PL-0502's machine, which is the only thing
+     * that knows how many recoveries this candidate has already had.
+     *
+     * PROXIES, NOT A SYNC MEASUREMENT. Every finding this produces is a named
+     * continuity proxy or an explicit statement that something was not
+     * observable, and the lip-sync entry is always present and always says
+     * `unobservable`. See `av-diagnostics.ts` for the three structural reasons
+     * no millisecond offset can come out of here.
+     */
+    const frameReadings: VideoFrameReading[] = [];
+    const frameTarget: VideoFrameCallbackTarget | null = findVideoFrameCallbackTarget(video);
+    let observing = true;
+    let lastEmission: string | null = null;
+
+    const pumpFrames = (): void => {
+      if (!observing || frameTarget === null) return;
+      frameTarget.requestVideoFrameCallback((_nowMs, metadata) => {
+        if (!observing) return;
+        frameReadings.push(readVideoFrameMetadata(metadata));
+        // A window of exactly two. Both frame proxies are differences between
+        // CONSECUTIVE callbacks, so a third reading is not evidence, it is a
+        // buffer that grows for the length of the session.
+        if (frameReadings.length > AV_FRAME_WINDOW) frameReadings.shift();
+        pumpFrames();
+      });
+    };
+    pumpFrames();
+
+    const observeContinuity = (): void => {
+      const observedAtMs = Date.now();
+      const player: unknown = video.getEnginePlayer();
+      const snapshot = observeAvDiagnostics({
+        observedAtMs,
+        buffered: readAvBufferedEvidence(player, readNumber(video, "currentTime")),
+        /* `frameTarget !== null` IS the `typeof` test's answer, and only this
+         * layer holds it. Passing it in is what lets `frame-timing.ts` tell "no
+         * such API on this platform" from "the callback has run once so far",
+         * which are different facts with different lifetimes. */
+        frames: frameEvidenceFrom(frameReadings, frameTarget !== null),
+        engineConfig: readEngineConfiguration(player)
+      });
+
+      /* The panel is updated BEFORE anything is emitted, so a telemetry problem
+       * cannot cost the diagnostic that was the point of the tick. */
+      setDiagnostics({
+        telemetryEnabled: telemetry.enabled,
+        telemetryReasons: telemetry.reasons,
+        findings: avFindingViews(snapshot.report),
+        summary: snapshot.summary,
+        engineConfigSource: snapshot.engineConfigSource,
+        bufferedSource: snapshot.bufferedSource
+      });
+
+      /* No validated identifiers means CMCD was refused for this session, and
+       * the same refusal covers this report: there is nothing to correlate it
+       * with, and `cid`/`sid` are the only identifiers it would carry. */
+      const identifiers = telemetry.identifiers;
+      if (identifiers === null) return;
+
+      const event = avContinuityCmcdEvent({ snapshot, identifiers, nowMs: observedAtMs });
+      const emissionKey = avContinuityEmissionKey(event);
+      /* Emit the first report and then only on change. An unchanged session
+       * posting an identical report every ten seconds is volume without
+       * information, and the deduplicated series is a series of transitions. */
+      if (emissionKey === lastEmission) return;
+      lastEmission = emissionKey;
+      postCmcdEvent({ path: CMCD_COLLECTOR_PATH, event });
+    };
+
+    const diagnosticsTimer: ReturnType<typeof setInterval> = setInterval(
+      observeContinuity,
+      AV_DIAGNOSTICS_INTERVAL_MS
+    );
+
     send({ type: "START" });
     send({ type: "SESSION_RESOLVED", session });
 
     return () => {
       for (const [type, listener] of listeners) video.removeEventListener(type, listener);
+      /* Both diagnostics loops stop before the element goes. The flag is what
+       * stops the frame callback re-arming itself; `requestVideoFrameCallback`
+       * has a cancel, but a callback already scheduled would still fire and a
+       * flag covers that too. */
+      observing = false;
+      clearInterval(diagnosticsTimer);
       subscription.unsubscribe();
       actor.stop();
       /* Removing the node is what destroys the Shaka session: a player that
@@ -364,6 +549,71 @@ export function PlayerSurface({ session, policy }: PlayerSurfaceProps) {
           </ol>
           {view.trailDropped > 0 ? (
             <p className="state-detail">{view.trailDropped} earlier entries were dropped by the trail cap.</p>
+          ) : null}
+        </details>
+      ) : null}
+
+      {/*
+       * PL-0503 and PL-0504, rendered.
+       *
+       * The telemetry decision appears as soon as the effect runs, because the
+       * commonest question about telemetry is why it is off and a disabled CMCD
+       * block on its own answers "somebody refused something".
+       *
+       * THE A/V SECTION SHOWS STATES AND REASON CODES, AND EXACTLY ONE KIND OF
+       * NUMBER: a proxy magnitude with its unit written out in words. There is
+       * no millisecond figure anywhere in it, and there is no field it could go
+       * in -- `AvFindingView` has none. See `av-diagnostics.ts`.
+       */}
+      {diagnostics !== null ? (
+        <details className="player-meta">
+          <summary>Observability</summary>
+          <p>
+            Telemetry:{" "}
+            <span className="code">{diagnostics.telemetryEnabled ? "cmcd-v2" : "off"}</span>
+          </p>
+          <ul>
+            {diagnostics.telemetryReasons.map((reason) => (
+              <li key={reason.code}>
+                <span className="code">{reason.code}</span> {reason.detail}
+              </li>
+            ))}
+          </ul>
+
+          {diagnostics.findings.length > 0 ? (
+            <>
+              <p className="state-detail">
+                A/V continuity PROXIES. None of these is a measurement of audio/video alignment: a
+                browser has no audio clock for a video element, so the lip-sync entry always reads
+                unobservable and a true offset is measured with hardware by the flash-and-blip
+                procedure in docs/AV_SYNC_MEASUREMENT.md.
+              </p>
+              <p className="state-detail">
+                A quiet proxy and an unobservable signal are different answers: quiet means the
+                comparison was made and the condition was not there, unobservable means it could
+                not be made at all.
+              </p>
+              <p className="state-detail">
+                Evidence: buffered ranges <span className="code">{diagnostics.bufferedSource}</span>
+                , engine configuration <span className="code">{diagnostics.engineConfigSource}</span>
+                {diagnostics.summary === null
+                  ? null
+                  : ` — fired ${String(diagnostics.summary.proxiesFired)}, quiet ${String(
+                      diagnostics.summary.proxiesQuiet
+                    )}, unobservable ${String(diagnostics.summary.unobservable)}`}
+              </p>
+              <ol>
+                {diagnostics.findings.map((finding) => (
+                  <li key={finding.metric}>
+                    <span className="code">{finding.metric}</span>{" "}
+                    <span className="code">{finding.state}</span> via{" "}
+                    <span className="code">{finding.evidenceSource}</span>
+                    {finding.magnitude === null ? null : ` — ${finding.magnitude}`}
+                    <div className="state-detail">{finding.reasonCodes.join(", ")}</div>
+                  </li>
+                ))}
+              </ol>
+            </>
           ) : null}
         </details>
       ) : null}

@@ -9,14 +9,19 @@ import {
   buildHomeCatalog,
   formatCatalogMeta,
   formatRuntime,
-  getHomeCatalog,
   isSurfaceable,
   loadHomeCatalog
 } from "./catalog";
+import { resolveCatalogMetadataSource } from "./catalog-source-registry";
 import { demoCatalog } from "./demo-catalog";
 
-const NOW = new Date("2026-08-14T00:00:00.000Z");
-const ISO = NOW.toISOString();
+/*
+ * A fixed clock, stated as the ISO string the contract carries rather than as a
+ * `Date`. Nothing in this file takes a `Date` any more: `buildHomeCatalog` is
+ * given a `generatedAt` directly, and the synchronous `getHomeCatalog` that used
+ * to convert one is gone.
+ */
+const ISO = "2026-08-14T00:00:00.000Z";
 
 /*
  * One builder per kind rather than one builder plus overrides.
@@ -167,17 +172,52 @@ describe("buildHomeCatalog", () => {
   });
 });
 
+/*
+ * THE INJECTED SOURCES BELOW CALL `buildHomeCatalog` DIRECTLY.
+ *
+ * They used to call `getHomeCatalog(NOW, items)`, a synchronous wrapper that did
+ * nothing but `buildHomeCatalog(items, now.toISOString())` and default `items` to
+ * a synchronous read of the fixture source. Its one production caller — the home
+ * API route — now awaits `loadHomeCatalog`, so it had only these callers left and
+ * was deleted rather than kept alive for them. `buildHomeCatalog` is the pure
+ * function it wrapped, and a literal `ISO` states the clock more directly than a
+ * `Date` that was only ever converted back into one.
+ */
 describe("loadHomeCatalog", () => {
   it("returns ok with validated rails for the demo fixtures", async () => {
-    const result = await loadHomeCatalog(() => getHomeCatalog(NOW));
+    const result = await loadHomeCatalog(() => buildHomeCatalog(demoCatalog, ISO));
     expect(result.status).toBe("ok");
     if (result.status !== "ok") return;
     expect(result.response.rails.length).toBeGreaterThan(0);
     expect(result.response.generatedAt).toBe(ISO);
   });
 
+  /*
+   * The wiring, with no source injected at all: `defaultHomeCatalogSource` reads
+   * the registry, and this is the only test that exercises that path end to end
+   * now that the synchronous fixture accessor is gone.
+   *
+   * Compared against the registry's own answer rather than against a hardcoded
+   * verdict, so it asserts the wiring without also asserting which environment
+   * the suite happens to run in — the same arrangement
+   * `catalog-source-registry.test.ts` uses for its default-argument test.
+   */
+  it("reads the configured metadata source when nothing is injected", async () => {
+    const resolution = resolveCatalogMetadataSource();
+    const result = await loadHomeCatalog();
+
+    if (resolution.status === "not-configured") {
+      expect(result).toEqual({ status: "error", reason: "catalog_source_not_configured" });
+      return;
+    }
+
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") return;
+    expect(result.response.rails.length).toBeGreaterThan(0);
+  });
+
   it("distinguishes empty from error", async () => {
-    const result = await loadHomeCatalog(() => getHomeCatalog(NOW, []));
+    const result = await loadHomeCatalog(() => buildHomeCatalog([], ISO));
     expect(result.status).toBe("empty");
     if (result.status !== "empty") return;
     expect(result.generatedAt).toBe(ISO);
@@ -186,11 +226,24 @@ describe("loadHomeCatalog", () => {
   it("reports a validation failure as an error state, not an empty one", async () => {
     // Empty title violates the published contract.
     const result = await loadHomeCatalog(() =>
-      getHomeCatalog(NOW, [movie({ id: "broken", title: "" })])
+      buildHomeCatalog([movie({ id: "broken", title: "" })], ISO)
     );
     expect(result.status).toBe("error");
     if (result.status !== "error") return;
     expect(result.reason).toBe("catalog_response_failed_validation");
+  });
+
+  /*
+   * `null` from a source is the "no metadata source is configured" state, and it
+   * is checked before validation because there is nothing to validate. It is not
+   * `empty`: a deployment with no provider has an operator remedy, and an empty
+   * catalog does not.
+   */
+  it("reports a source with no provider as a stated reason, not as empty", async () => {
+    const result = await loadHomeCatalog(() => null);
+    expect(result.status).toBe("error");
+    if (result.status !== "error") return;
+    expect(result.reason).toBe("catalog_source_not_configured");
   });
 
   it("converts a throwing source into an error state", async () => {
@@ -210,7 +263,7 @@ describe("loadHomeCatalog", () => {
   });
 
   it("surfaces exactly the fixtures eligible for a home rail", async () => {
-    const result = await loadHomeCatalog(() => getHomeCatalog(NOW));
+    const result = await loadHomeCatalog(() => buildHomeCatalog(demoCatalog, ISO));
     if (result.status !== "ok") throw new Error("expected fixtures to load");
 
     const surfaced = result.response.rails.flatMap((rail) => rail.items);
@@ -232,7 +285,7 @@ describe("loadHomeCatalog", () => {
     const standalone = episode({ id: "ep-1" });
     expect(appearsOnHome(standalone)).toBe(false);
 
-    const result = await loadHomeCatalog(() => getHomeCatalog(NOW, [standalone]));
+    const result = await loadHomeCatalog(() => buildHomeCatalog([standalone], ISO));
     expect(result.status).toBe("empty");
   });
 });

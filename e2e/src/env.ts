@@ -159,3 +159,128 @@ export const MEDIA_RIG_SKIP_REASON: string | null =
       `${DEFAULT_FIXTURE_MEDIA_ORIGIN}, reserved by RFC 2606, which resolves nowhere - so ` +
       "there is no stream to play and a passing playback test here would have proved nothing."
     : null;
+
+/**
+ * A PostgreSQL connection string for the profile and progress routes, or `null`
+ * for "this run has no database".
+ *
+ * PINNED ON THE SERVER FOR THE REASON THE MEDIA ORIGIN IS. `lib/db/index.ts`
+ * selects its adapter from `DATABASE_URL` and caches the result for the life of
+ * the process, and `apps/web`'s `dev` and `start` scripts run through
+ * `scripts/with-root-env.mjs`, which fills any name the environment has not
+ * already set from the repository root's dotenv files. So leaving this out of
+ * `webServer.env` does not mean "no database" -- it means "whatever is in the
+ * developer's `.env.local`", and the progress spec would then be asserting a
+ * storage refusal against a server that had quietly found a database, or the
+ * reverse. `playwright.config.ts` writes `SERVER_DATABASE_URL` unconditionally,
+ * so what the server was given and what the specs expect are one expression.
+ *
+ * `null` is the default and is a real configuration rather than an absence: with
+ * no `DATABASE_URL`, `selectRepository` answers `storage_not_configured` on a
+ * deployment and hands `next dev` the in-memory adapter. Both are the behaviours
+ * `tests/progress.api.spec.ts` asserts.
+ */
+export const DATABASE_URL = read("LIBERTY_E2E_DATABASE_URL");
+
+/** The value the harness PINS as `DATABASE_URL`. Empty string = not configured. */
+export const SERVER_DATABASE_URL: string = DATABASE_URL ?? "";
+
+/**
+ * The adapter line a request must carry on a build where the shared preamble
+ * succeeds, derived from the value above rather than guessed.
+ *
+ * `lib/db/index.ts` chooses PostgreSQL whenever `DATABASE_URL` is set and
+ * well-formed, and the in-memory store otherwise, so this harness knows the
+ * answer exactly for a server it started. `request-context.ts` puts that choice
+ * on every trail, which is what makes it assertable at all.
+ */
+export type StorageAdapterCode = "served_by_in_memory_adapter" | "served_by_postgres_adapter";
+
+export const EXPECTED_STORAGE_ADAPTER: StorageAdapterCode =
+  DATABASE_URL === null ? "served_by_in_memory_adapter" : "served_by_postgres_adapter";
+
+/**
+ * The reason a DEPLOYMENT refuses a profile/progress request before it reaches
+ * any decision of its own, for the configuration this harness pinned.
+ *
+ * `resolveRequestContext` resolves storage FIRST and identity second, so which
+ * of the two refusals a hosted build produces is decided by whether a database
+ * was configured:
+ *
+ *   - no `DATABASE_URL` -> `storage_not_configured`, from `selectRepository`;
+ *   - a `DATABASE_URL` -> storage resolves, and then
+ *     `resolveRequestAccount` answers `authentication_not_configured`, because
+ *     nothing in `apps/web` constructs `@liberty/auth/server` yet.
+ *
+ * Both are `unavailable` / 503 rather than 401 or 500: the remedy is an
+ * operator's, and neither is a fault in handling the request.
+ */
+export type DeploymentPreambleRefusal = "storage_not_configured" | "authentication_not_configured";
+
+export const DEPLOYMENT_PREAMBLE_REFUSAL: DeploymentPreambleRefusal =
+  DATABASE_URL === null ? "storage_not_configured" : "authentication_not_configured";
+
+/**
+ * Whether the catalog metadata source can be constructed on the build under
+ * test, which decides what every DISCOVERY surface is allowed to contain.
+ *
+ * `lib/catalog-source-registry.ts` resolves `demoCatalogSource` only for a
+ * `NonDeploymentEnvironment`, the same nominal witness the playback fixtures
+ * need, so a deployment has no metadata source at all. The title route does not
+ * go through that registry -- `demo-title-details.ts` needs a SYNCHRONOUS source
+ * and says why -- but it calls `NonDeploymentEnvironment.classify()` itself, so
+ * it is the same witness and the same gate rather than a second one. The demo
+ * titles are
+ * therefore present under `development` and absent under `production`, exactly
+ * as the playback fixtures are, and for the same stated reason -- serving
+ * invented titles from a hosted build presents them to a reader as the product's
+ * catalog.
+ *
+ * FOUR SURFACES ANSWER TO THIS ONE FLAG, AND THEY NOW ALL REFUSE IN ONE
+ * VOCABULARY. `loadHomeCatalog` answers `error` / `catalog_source_not_configured`,
+ * which the home PAGE renders as a panel and which
+ * `api/v1/catalog/home/handler.ts` maps onto HTTP 503. `loadSearchResults` answers
+ * the same reason, ahead of its emptiness test, so a non-empty query on a
+ * deployment is refused rather than reported as matching nothing.
+ * `demo-title-details.ts` throws `CatalogMetadataSourceNotConfiguredError`, whose
+ * `reason` field is that same literal, and `title-detail.ts`'s catch tests the
+ * class by `instanceof` and republishes the field -- so `/title/<id>` publishes
+ * `catalog_source_not_configured` too, at HTTP 200.
+ *
+ * THIS PARAGRAPH USED TO RECORD A SECOND CODE FOR THE FOURTH SURFACE. It said
+ * the title route
+ * reported `title_source_unavailable` and called that "the one gap this flag's
+ * consumers have to keep asserting until that catch learns to distinguish". The
+ * catch has learned, `critical-journey.spec.ts` asserts the shared code, and the
+ * gap is closed. `title_source_unavailable` still exists and is still correct: it
+ * is what the loader answers for a source that throws anything else, which is
+ * unreachable from a deployment's default source.
+ *
+ * IT ALSO USED TO CITE `readFixtureCatalogItems` as a synchronous accessor that
+ * "still answers `[]`". That function has been DELETED from
+ * `lib/catalog-source-registry.ts`, together with `getHomeCatalog` in
+ * `lib/catalog.ts` -- the one caller it existed to be the default argument of --
+ * now that the home route awaits `loadHomeCatalog`. Nothing in this harness ever
+ * depended on it; the citation was a description of the application that outlived
+ * the application.
+ *
+ * THREE VALUES, NOT TWO. Against an external deployment this harness was not
+ * told which build is behind the URL, and both answers are correct there; a spec
+ * that guessed would fail on a correct deployment, which is worse than not
+ * asserting because it teaches people to ignore the result. `unknown` is what
+ * the catalog, search and journey specs skip on, with that sentence as the
+ * reason.
+ */
+export type CatalogAvailability = "fixtures" | "refused" | "unknown";
+
+export const CATALOG_AVAILABILITY: CatalogAvailability = !MANAGES_SERVER
+  ? "unknown"
+  : WEB_MODE === "development"
+    ? "fixtures"
+    : "refused";
+
+/** Why a catalog-content assertion cannot be made against an unidentified build. */
+export const UNKNOWN_CATALOG_SKIP_REASON =
+  "Testing an external deployment whose build mode this harness was not told, so neither " +
+  "the demo catalog's presence nor its absence is the right expectation. Point the harness " +
+  "at a server it starts to assert either.";

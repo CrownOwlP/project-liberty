@@ -185,8 +185,9 @@ export async function issuePlaybackSession(
    * An ALLOWLIST, via the one place that classifies the environment. This used
    * to read `process.env.NODE_ENV !== "production"` inline, which told the SSRF
    * gate that `staging`, `preview`, `Production` and an unset variable were all
-   * laptops -- the same denylist defect `FIXTURE_ENVIRONMENTS` was corrected
-   * for, surviving in the one place that hands a value to `checkUrl`. It is
+   * laptops -- the same denylist defect the fixture provider's own gate was
+   * corrected for, surviving in the one place that hands a value to `checkUrl`.
+   * It is
    * unreachable through the fixture provider, which resolves nothing outside
    * those environments anyway, and that is exactly why it was easy to miss: the
    * first real provider registry to land behind this seam would have inherited

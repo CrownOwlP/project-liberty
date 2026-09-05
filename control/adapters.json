@@ -28,5 +28,76 @@
       "canEditLocalFiles": false,
       "automaticInvocation": "never"
     }
-  ]
+  ],
+
+  "dispatcher": {
+    "$comment": [
+      "PL-AI-0003, the OPTIONAL autonomous dispatcher. Read by scripts/cloud/agent-dispatcher.mjs;",
+      "validated by scripts/cloud/dispatch-policy.mjs -> resolveDispatcherConfig.",
+      "",
+      "IT IS OFF, AND TWO SWITCHES MUST BOTH BE ON. `enabled` below is committed state: the",
+      "repository has decided this mechanism may exist. `enableEnvVar` is runtime state: this",
+      "invocation, on this machine, was armed by whoever started it. Requiring both means a merged",
+      "configuration change cannot by itself make a scheduled job start spending money, and an armed",
+      "environment cannot dispatch in a checkout that never opted in.",
+      "",
+      "WITH THE VALUES AS SHIPPED, EVERY DISPATCH REFUSES. A candidate collects three refusal codes",
+      "at once -- dispatcher_disabled, runner_unavailable and cost_unknown -- and two further",
+      "grounds sit behind them, each of which would refuse on its own if the first three were",
+      "removed: the budget ceilings are zero, and no human approval record exists. That redundancy",
+      "is deliberate. A single switch is a single mistake.",
+      "",
+      "The escalation categories that require a human are NOT restated here. They are read from",
+      "control/policies.json -> escalation.humanOnly, because two copies of an escalation policy is",
+      "one copy that quietly stops matching."
+    ],
+    "enabled": false,
+    "enableEnvVar": "LIBERTY_DISPATCHER_ENABLED",
+    "budget": {
+      "$comment": [
+        "A ceiling of 0 means NO SPEND HAS BEEN AUTHORIZED, and is refused as such rather than",
+        "treated as unlimited. Raising either ceiling is a Budget escalation under",
+        "control/policies.json and additionally requires a committed human approval record; the",
+        "dispatcher cannot write one, by construction.",
+        "",
+        "The ledger is the durable record of what has already been charged. An ABSENT ledger means",
+        "nothing has been spent, which is correct on day one. An UNREADABLE ledger means spend is",
+        "unknown, and unknown spend refuses -- otherwise corrupting one file would be how the",
+        "budget gets reset."
+      ],
+      "currency": "USD",
+      "perRunCeiling": 0,
+      "perTaskCeiling": 0,
+      "ledger": "coordination/agent-bus/dispatch/ledger.json"
+    },
+    "retries": {
+      "$comment": [
+        "Attempts are counted from the audit log, so the ceiling survives a process restart. The",
+        "backoff is deterministic and unjittered: this is a cross-run attempt budget, not the",
+        "within-run smoothing gpt-review-worker.mjs applies to a single upstream."
+      ],
+      "maxAttempts": 3,
+      "backoffMs": 1000,
+      "backoffMultiplier": 2,
+      "maxBackoffMs": 30000
+    },
+    "auditLog": "coordination/agent-bus/dispatch/audit.jsonl",
+    "approvalsDir": "coordination/agent-bus/dispatch/approvals",
+    "providers": [
+      {
+        "id": "openai-responses",
+        "agentIds": ["gpt-architect"],
+        "runner": "openai-responses",
+        "cost": null,
+        "notes": "The intended API-driven path, and a SEAM: no runner with this id is registered in scripts/cloud/dispatch-runners.mjs, so every dispatch through it refuses with runner_unavailable. That is on purpose and is stated rather than hidden -- a model-calling runner cannot be written honestly without a key to exercise it, and this repository already has exactly one audited OpenAI caller (scripts/cloud/gpt-review-worker.mjs). `cost: null` means no cost model has been established, which refuses independently with cost_unknown; a rate table goes here when one is agreed."
+      },
+      {
+        "id": "agent-bus",
+        "agentIds": [],
+        "runner": "agent-bus-handoff",
+        "cost": null,
+        "notes": "The working, credential-free path: it publishes a task_instruction on the agent bus, which is how the shared-repository lane is reached today. Informational by design -- it changes no task state, and the receiving lane still claims and gates its own work. Routed to nothing as shipped; to use it, move \"gpt-architect\" out of the entry above and into this agentIds list. Its runner declares zeroCost, so it is priced at 0 with basis no_metered_call and needs no budget ceiling and no Budget approval; declaring a cost model here as well would be a contradiction and is refused."
+      }
+    ]
+  }
 }

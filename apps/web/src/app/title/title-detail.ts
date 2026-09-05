@@ -9,7 +9,10 @@ import {
 import { normalizedContentIdSchema } from "@liberty/contracts/shared/ids";
 import { PLAYABLE_CONTENT_RIGHTS } from "@liberty/contracts/shared/rights";
 import { formatRuntime } from "../../lib/catalog";
-import { findDemoTitleDetail } from "./demo-title-details";
+import {
+  CatalogMetadataSourceNotConfiguredError,
+  findDemoTitleDetail
+} from "./demo-title-details";
 
 /*
  * Colocated with the route that consumes it rather than placed beside
@@ -98,7 +101,36 @@ export async function loadTitleDetail(
     }
 
     return { status: "ok", response: parsed.data };
-  } catch {
+  } catch (error) {
+    /*
+     * TWO SOURCE FAILURES, AND THEY ARE NOT THE SAME FACT.
+     *
+     * `title_source_unavailable` says a source that exists did not answer:
+     * something transient, and "try again in a moment" is honest advice. A
+     * process with NO catalog metadata source configured is not that. Nothing is
+     * going to change on a retry, and the remedy belongs to an operator rather
+     * than to the reader — the same distinction `loadHomeCatalog` and
+     * `loadSearchResults` already draw, which is why both of them publish this
+     * exact string.
+     *
+     * The reason is taken from the error rather than restated, so this branch
+     * cannot drift from the class that raises it. `demo-title-details.ts` exports
+     * the class precisely so this is an `instanceof` and not a comparison against
+     * a message. In shipped code nothing but the default source raises it, and an
+     * injected source that throws anything else still lands below.
+     *
+     * BOTH BRANCHES STAY `error`, and that is deliberate. Not-found already means
+     * "no title has this id", which is false here — nothing was looked up.
+     * `describeTitleMetadata` therefore answers `TITLE_UNAVAILABLE_METADATA` for
+     * both, so the page keeps `robots: index false` at its 200 either way. What
+     * changes is only the reason code, and `[titleId]/page.tsx` renders that code
+     * verbatim in the panel, so the refusal now names itself instead of arriving
+     * disguised as a flaky provider.
+     */
+    if (error instanceof CatalogMetadataSourceNotConfiguredError) {
+      return { status: "error", reason: error.reason };
+    }
+
     return { status: "error", reason: "title_source_unavailable" };
   }
 }
@@ -390,30 +422,31 @@ const SITE_NAME = "Project Liberty";
  * NOT a title, and echoing it here would put an invented name in a browser tab,
  * a bookmark, and every link preview of a page that says the title is unknown.
  *
- * `robots: index false` for the same reason the unavailable branch below carries
- * it. The asymmetry between the two was a bug, and the only thing that justified
- * it was a belief this route does not keep: that not-found is answered with a
- * real 404, which a crawler drops without indexing.
+ * `robots: index false`, and it stays even though PL-0704 makes this route
+ * answer a real 404. When this was written it did not: a `loading.tsx` put the
+ * page inside Suspense, React flushed the shell at HTTP 200 while the loader was
+ * still pending, and an executed Playwright run captured the "Loading title…"
+ * skeleton at 200 for an id nothing knows about. The repair removes every
+ * Suspense boundary above the decision — see `[titleId]/page.tsx` — so
+ * `notFound()` escapes the render and Next sets the status.
  *
- * It is not. `notFound()` never reaches the wire in this app, because a segment's
- * `loading.tsx` puts the page inside Suspense and React flushes the shell as soon
- * as it has one — at HTTP 200 — while the loader is still pending. An executed
- * Playwright run captured exactly that: the "Loading title…" skeleton, status
- * 200, for an id nothing knows about. That defect is filed as PL-0704 and its fix
- * belongs to the ROOT boundary, `apps/web/src/app/loading.tsx`, which is outside
- * this task's allowed paths.
+ * THE DIRECTIVE IS NOT NOW REDUNDANT, and the argument that it would be is the
+ * one that produced the original asymmetry with the unavailable branch below:
+ * "a 404 is dropped without indexing, so nothing else is needed". Three things
+ * keep it earning its place. It says `follow`, which the status does not, and
+ * the one link out of the page — the catalog — is worth following. Next emits a
+ * bare `noindex` of its own for any status above 400, so agreeing with it costs
+ * nothing and disagreeing would be the surprise. And it is what remains true if
+ * this route is ever served through something that rewrites the status, or has
+ * to answer 200 again for a reason nobody has thought of yet; the supply of
+ * dead addresses here is unbounded, since every string matching the
+ * normalized-id pattern passes the loader's format check and lands on this
+ * metadata.
  *
- * So today `/title/<any-well-formed-unknown-id>` is a 200 page, and there is an
- * unbounded supply of those addresses: every string matching the normalized-id
- * pattern passes the loader's format check and lands here. Without a directive
- * each one is indexable and cacheable. `follow` stays on for the same reason the
- * other branch keeps it — the one link out of the page, the catalog, is still
- * worth following.
- *
- * Deleting `title/[titleId]/loading.tsx` to chase the status back was considered
- * and rejected. The root boundary wraps every segment, so removing the nested one
- * changes which skeleton is flushed and no status at all; it would also cost the
- * title route the skeleton whose geometry matches what actually arrives.
+ * What did NOT survive the repair is this route's loading skeleton, and it was
+ * not traded away for the status: whether a title exists IS the load here, so
+ * there was never anything to stream before the decision. `[titleId]/page.tsx`
+ * carries that argument in full.
  */
 export const TITLE_NOT_FOUND_METADATA: Metadata = {
   title: `Title not found · ${SITE_NAME}`,
@@ -432,8 +465,8 @@ export const TITLE_NOT_FOUND_METADATA: Metadata = {
  * out of the page (the catalog) are still worth following.
  *
  * This is no longer the only branch carrying the directive. Not-found carries the
- * identical one, because it is also served at 200 — see above. Nothing here is an
- * argument for restoring the asymmetry.
+ * identical one — for its own reasons now that it answers 404, set out above.
+ * Nothing here is an argument for restoring the asymmetry.
  */
 export const TITLE_UNAVAILABLE_METADATA: Metadata = {
   title: `Title unavailable · ${SITE_NAME}`,

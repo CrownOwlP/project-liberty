@@ -25,6 +25,20 @@ import { DEMO } from "../src/fixtures";
  * `docs/E2E.md` has the instructions for standing a rig up.
  * ---------------------------------------------------------------------- */
 
+/**
+ * Which build this run measured, recorded on every result in this file.
+ *
+ * This file does not assert two different things per mode -- it skips under
+ * `production`, because there is no player there for a rig to feed. But the skip
+ * is the result somebody reads, and a skip that does not name the build it was
+ * taken on is the thing the whole "a skip must say why" rule exists to prevent.
+ * The reason strings below name `LIBERTY_E2E_WEB_MODE` in prose; this puts the
+ * value the run actually used beside them.
+ */
+test.beforeEach(() => {
+  test.info().annotations.push({ type: "web-mode", description: WEB_MODE });
+});
+
 test.describe("playback against a configured media rig", () => {
   test.skip(MEDIA_RIG_SKIP_REASON !== null, MEDIA_RIG_SKIP_REASON ?? "");
 

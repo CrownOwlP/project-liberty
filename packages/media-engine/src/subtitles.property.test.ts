@@ -2,10 +2,12 @@ import type { SubtitleKind, SubtitlePolicy, SubtitleTrack } from "@liberty/contr
 import { subtitleFormatSchema } from "@liberty/contracts/domains/subtitles";
 import {
   FAST_CHECK_SEED,
+  audioTracksArb,
   defined,
   languageTagArb,
   permutationKeysArb,
   permute,
+  playbackCapabilitiesArb,
   subtitlePolicyArb,
   subtitleTrackArb,
   subtitleTracksArb
@@ -13,21 +15,29 @@ import {
 import fc from "fast-check";
 import type { Arbitrary } from "fast-check";
 import { describe, expect, it } from "vitest";
-import { selectSubtitleTrack } from "./subtitles";
+import { primarySubtag, selectAudioTrack } from "./audio";
+import { SUBTITLE_OUTCOME_BY_REASON, selectSubtitleTrack, withSelectedAudio } from "./subtitles";
 
 /**
  * Subtitle selection properties (fast-check).
  *
  * `selectSubtitleTrack` makes the strongest determinism claim in the package:
  * "every list in the result is sorted by a comparator that terminates in a
- * code-point tiebreak on the track id, so the WHOLE result is order-invariant,
- * not merely `selected`". This suite is that sentence, checked — over generated
- * tracks and generated policies rather than over the fixtures somebody wrote.
+ * UTF-16 code-unit tiebreak on the track id, so the WHOLE result is
+ * order-invariant, not merely `selected`". This suite is that sentence, checked
+ * — over generated tracks and generated policies rather than over the fixtures
+ * somebody wrote.
  *
  * It also pins the two structural claims a naive port of `audio.ts` would get
  * wrong, both of which are invisible to a test that only reads `selected`:
  * nothing is a valid answer and it is the DEFAULT answer, and `off` suppresses
  * a selection without suppressing the MENU.
+ *
+ * Two further claims are checked here because no fixture can reach them: that
+ * the published outcome table and the function cannot disagree about what a
+ * reason means, and that the forced policy is keyed to the audio DECISION --
+ * which needs `selectAudioTrack` inside the property, since only a real audio
+ * selection can be shown to be where the key came from.
  */
 const AUTO_SELECTABLE_KINDS: readonly SubtitleKind[] = ["subtitles", "sdh"];
 
@@ -358,6 +368,81 @@ describe("both comparators are total orders", () => {
           const current = defined(rejected[index], "current rejection");
           expect(previous.trackId < current.trackId).toBe(true);
         }
+      })
+    );
+  });
+});
+
+describe("every input yields exactly one classified outcome", () => {
+  it("agrees with the outcome its own reason publishes", () => {
+    /*
+     * `SUBTITLE_OUTCOME_BY_REASON` is a SECOND description of this function: per
+     * reason, whether there is text on screen and whether that text is the full
+     * subtitles a viewer asked to read. Its type makes it exhaustive over the
+     * reason union — a new reason without a classification will not compile —
+     * but only this checks it against what the function actually does, over
+     * generated tracks and generated policies rather than the thirteen fixtures
+     * somebody would otherwise have to remember to write.
+     *
+     * It is also the totality claim in one line: every input reaches exactly one
+     * reason, and that reason alone determines whether anything is displayed.
+     */
+    fc.assert(
+      fc.property(subtitleTracksArb, subtitlePolicyArb, (tracks, policy) => {
+        const selection = selectSubtitleTrack(tracks, policy);
+        const outcome = SUBTITLE_OUTCOME_BY_REASON[selection.reason];
+        const selected = selection.selected;
+
+        expect(outcome.showsText).toBe(selected !== null);
+        expect(outcome.showsFullSubtitles).toBe(selected !== null && selected.kind !== "forced");
+      })
+    );
+  });
+});
+
+describe("the forced policy is keyed to the audio that will play", () => {
+  it("never shows a forced track unless it belongs to the soundtrack in play", () => {
+    /*
+     * Two unit tests pin the two shapes of this separately: `audioLanguage`
+     * naming a different language, and `audioLanguage: null`. Neither says
+     * anything about the case where both pools are populated and which branch is
+     * reached depends on the mode, which is where a coupling gets dropped —
+     * `off` and `auto` select a forced track from different places in the
+     * function. Generalising over both is the point.
+     */
+    fc.assert(
+      fc.property(subtitleTracksArb, subtitlePolicyArb, (tracks, policy) => {
+        const selected = selectSubtitleTrack(tracks, policy).selected;
+        if (selected === null || selected.kind !== "forced") return;
+
+        const audioLanguage = policy.audioLanguage;
+        // An unknown audio language makes the whole forced pool unselectable, so
+        // arriving here with `null` is itself the defect.
+        expect(audioLanguage).not.toBeNull();
+        if (audioLanguage === null) return;
+        expect(primarySubtag(selected.language)).toBe(primarySubtag(audioLanguage));
+      })
+    );
+  });
+
+  it("keys the policy to a language that will be heard, never to one merely preferred", () => {
+    /*
+     * The composition a caller actually performs, and the one claim no test of
+     * either policy alone can make. `capabilities.preferredAudioLanguages` is the
+     * nearest language-shaped value to hand and is wrong whenever the preference
+     * could not be honoured; the key has to come from `AudioSelection.selected`,
+     * and when nothing was selected there is no key at all.
+     */
+    fc.assert(
+      fc.property(audioTracksArb, playbackCapabilitiesArb, subtitlePolicyArb, (tracks, capabilities, policy) => {
+        const audio = selectAudioTrack(tracks, capabilities);
+        const key = withSelectedAudio(policy, audio).audioLanguage;
+        if (key === null) return;
+
+        const heard = audio.selected;
+        expect(heard).not.toBeNull();
+        if (heard === null) return;
+        expect(key).toBe(heard.language.trim().toLowerCase());
       })
     );
   });

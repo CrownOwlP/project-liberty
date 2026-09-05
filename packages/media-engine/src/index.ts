@@ -20,5 +20,10 @@ export type { CandidateScore, ScoreComponent, ScoreDimension } from "./scoring";
 export { selectAudioTrack, languageMatch, primarySubtag } from "./audio";
 export type { AudioSelection, AudioSelectionReason, AudioRejectionReason } from "./audio";
 export * from "./failover";
-export { selectSubtitleTrack } from "./subtitles";
-export type { SubtitleSelection, SubtitleSelectionReason, SubtitleRejectionReason } from "./subtitles";
+export { selectSubtitleTrack, withSelectedAudio, SUBTITLE_OUTCOME_BY_REASON } from "./subtitles";
+export type {
+  SubtitleOutcome,
+  SubtitleSelection,
+  SubtitleSelectionReason,
+  SubtitleRejectionReason
+} from "./subtitles";

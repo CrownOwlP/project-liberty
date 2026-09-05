@@ -20,7 +20,8 @@
     "build": "tsc --noEmit",
     "lint": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "bench:failover": "vitest run failover.perf --mode bench"
   },
   "dependencies": {
     "@liberty/contracts": "0.1.0"

@@ -8,7 +8,8 @@ import {
   type SearchResult
 } from "@liberty/contracts/domains/search";
 import { isSurfaceable } from "../../lib/catalog";
-import { demoCatalog } from "../../lib/demo-catalog";
+import { selectDeclaredItems } from "../../lib/catalog-source";
+import { resolveCatalogMetadataSource } from "../../lib/catalog-source-registry";
 
 /**
  * Explicit result union, the same shape PL-0101 uses for the catalog.
@@ -18,6 +19,12 @@ import { demoCatalog } from "../../lib/demo-catalog";
  * Collapsing those two is the single most common way a search UI ships broken —
  * the user is told there are no results for a search they never ran. `error`
  * stays separate from both for the same reason it does on home.
+ *
+ * There is now a third absence behind `error`, and it is neither of the other
+ * two: a process with no catalog metadata source has nothing to search at all.
+ * It is reported as `catalog_source_not_configured` rather than as `empty`,
+ * because "no titles match" is a statement about the catalog and this is a
+ * statement about the deployment. See `getSearchResults`.
  */
 export type SearchLoadResult =
   | { status: "idle" }
@@ -140,24 +147,81 @@ export function readSearchQueryParam(value: string | string[] | undefined): stri
 }
 
 /**
- * Server-side search source. Mirrors `getHomeCatalog`: the page reads through
- * this rather than making an HTTP call back into itself, so there is nothing to
- * drift when `GET /api/v1/search` is added and starts serving the same shape.
+ * The reason a surface reports when this process has no catalog metadata source.
+ *
+ * The same string `loadHomeCatalog` returns in `lib/catalog.ts`, restated here
+ * because that module publishes no constant for it — `CatalogLoadResult.reason`
+ * is typed `string`, so there is nothing to import. A shared reason vocabulary
+ * belongs beside the port in `src/lib/`; that directory is outside this change's
+ * allowed paths, so this is the one spelling on the search surface and the
+ * duplication is recorded rather than hidden.
  */
-export function getSearchResults(
+export const CATALOG_SOURCE_NOT_CONFIGURED_REASON = "catalog_source_not_configured";
+
+/**
+ * Server-side search source: the configured catalog, filtered in this process.
+ *
+ * READS THE CATALOG METADATA PORT RATHER THAN THE FIXTURE ARRAY. It used to
+ * default `items` to `demoCatalog`, which meant a hosted deployment served six
+ * invented titles as search results while the home rails — already routed
+ * through the port — refused. `docs/CATALOG_SOURCE.md` names that pair as
+ * incoherent, and this is the edit it names.
+ *
+ * `null` MEANS NO METADATA SOURCE IS CONFIGURED, and it is the one thing a
+ * `SearchResponse` cannot say. Search already keeps "no query was asked" apart
+ * from "your query matched nothing"; this is a third absence and it is neither
+ * of them. A deployment with no metadata provider has an operator remedy, and
+ * telling the reader that nothing matched would be false — nothing was searched.
+ * It is the same `null` convention `CatalogSource` uses in `lib/catalog.ts`, and
+ * `loadSearchResults` maps it to the same reason code.
+ *
+ * ASYNCHRONOUS, because the port is: `listRecords` may answer with a promise and
+ * a real provider does I/O. The fixture source answers immediately; that is a
+ * fact about the fixtures, not a shape the port guarantees.
+ *
+ * `selectDeclaredItems` runs before `searchCatalog`, so a record whose rights
+ * basis the source did not declare is never searchable — the same order the home
+ * rails apply, and ahead of the `isSurfaceable` allowlist inside `searchCatalog`.
+ *
+ * PROVIDER-SIDE SEARCH DOES NOT EXIST. The port has no search capability, so the
+ * whole record list is fetched and filtered here. That is fine for six fixtures
+ * and is not a shape a catalog of real size can use; `docs/CATALOG_SOURCE.md`
+ * records it as an open design question rather than an oversight.
+ *
+ * `now` and `nodeEnv` are parameters so a test can state the time and the
+ * environment it means instead of mutating `process.env` and racing every other
+ * suite in the same worker. `nodeEnv` is NOT a request input — nothing on the
+ * search page passes one — and it defaults to a read of the process boundary at
+ * CALL time, never at module scope.
+ */
+export async function getSearchResults(
   query: string,
   now: Date = new Date(),
-  items: readonly CatalogItem[] = demoCatalog
-): SearchResponse {
-  return searchCatalog(items, query, now.toISOString());
+  nodeEnv: string | undefined = process.env.NODE_ENV
+): Promise<SearchResponse | null> {
+  const resolution = resolveCatalogMetadataSource(nodeEnv);
+  if (resolution.status === "not-configured") return null;
+
+  const records = await resolution.source.listRecords();
+  return searchCatalog(selectDeclaredItems(records).items, query, now.toISOString());
 }
 
 /**
  * Where search results come from. Injectable so the loader's failure paths are
  * testable, and so the provider-backed index can replace the fixtures without
  * the page changing.
+ *
+ * `null` carries the "no source is configured" state through to the loader. A
+ * source that cannot answer for any other reason — a network fault, a timeout,
+ * an adapter throwing — throws, and the loader converts that separately, so a
+ * missing configuration and a failing provider stay distinguishable.
  */
-export type SearchSource = (query: string) => SearchResponse | Promise<SearchResponse>;
+export type SearchSource = (
+  query: string
+) => SearchResponse | null | Promise<SearchResponse | null>;
+
+/** The source the search page uses when nothing is injected. */
+export const defaultSearchSource: SearchSource = (query) => getSearchResults(query);
 
 /**
  * Loader used by the search route. Validates against the published contract, so
@@ -167,17 +231,47 @@ export type SearchSource = (query: string) => SearchResponse | Promise<SearchRes
  */
 export async function loadSearchResults(
   rawQuery: string,
-  source: SearchSource = (query) => getSearchResults(query)
+  source: SearchSource = defaultSearchSource
 ): Promise<SearchLoadResult> {
-  // Normalised here as well as in the source: this decides whether we run a
-  // search at all, and "   " must reach that decision as an empty query.
+  /*
+   * Normalised here as well as in the source: this decides whether we run a
+   * search at all, and "   " must reach that decision as an empty query.
+   *
+   * `idle` IS DECIDED BEFORE THE SOURCE IS CONSULTED, on a deployment as much as
+   * anywhere else, and that is deliberate rather than an oversight. A search
+   * that was never run cannot have been refused, and this branch makes no claim
+   * about the catalog — it says only that no query was asked. So `/search` with
+   * no `q` renders the idle panel on a deployment too; the refusal appears as
+   * soon as there is a query to refuse.
+   */
   const query = normalizeSearchQuery(rawQuery);
   if (query === "") {
     return { status: "idle" };
   }
 
   try {
-    const parsed = searchResponseSchema.safeParse(await source(query));
+    const payload = await source(query);
+
+    /*
+     * Checked FIRST, ahead of both the schema and the emptiness test.
+     *
+     * Ahead of the schema because there is nothing to validate: a source with no
+     * provider to ask is a configuration state, and parsing `null` would report
+     * it as a malformed payload to whoever is reading the panel this renders
+     * into.
+     *
+     * Ahead of emptiness because a refused source and an empty result set are
+     * DIFFERENT FACTS. `empty` renders "No titles match “…”" as a heading and
+     * speaks it into the live region; on a deployment with no metadata source
+     * that sentence is false, because no catalog was consulted. This is the same
+     * distinction `idle` already draws at the top of this function, one step
+     * further along.
+     */
+    if (payload === null) {
+      return { status: "error", reason: CATALOG_SOURCE_NOT_CONFIGURED_REASON };
+    }
+
+    const parsed = searchResponseSchema.safeParse(payload);
 
     if (!parsed.success) {
       return { status: "error", reason: "search_response_failed_validation" };

@@ -1,0 +1,12 @@
+{
+  "messageId": "MSG-20260815T135652105Z-review_request-a2010e8f",
+  "originalFilename": null,
+  "rejectedBy": "claude-lead",
+  "rejectedAt": "2026-09-04T04:00:00.000Z",
+  "reason": "Retired by hand under PL-AI-0002. This is the record scripts/cloud/gpt-review-worker.mjs would itself write: reviewMessage() refuses a request whose task is already finished with 'stale review request: PL-AI-0001 is already DONE, so there is nothing left to review' (PL-AI-0001 completed 2026-08-15T14:40:21.043Z), and that reason is matched as permanent, so the message is quarantined and skipped forever. It is unreviewable for a second, independent reason: it carries no baseSha, which scripts/review-range.mjs classifies RANGE_PERMANENT ('a review must state the exact range it covers'). Messages are immutable, so neither defect can be repaired in place and there is nothing to fix -- only to retire. Written by claude-lead rather than emitted by the worker because the local shell is unavailable this round; rejectedBy names the agent that actually wrote this file, not the reviewer lane.",
+  "messageType": "review_request",
+  "fromAgent": "claude-lead",
+  "toAgent": "gpt-architect",
+  "taskId": "PL-AI-0001",
+  "commitSha": "709604b2cfd2d358b4b27f1032e50ef804af70e1"
+}

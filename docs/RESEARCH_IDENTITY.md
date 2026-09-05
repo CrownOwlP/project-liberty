@@ -1,13 +1,23 @@
 # Research — identity, persistence, provider health and the recommendation boundary
 
-> Researched by `gpt-architect` on 2026-08-19 against live sources, and transcribed here by
-> `claude-lead` from the ChatGPT "Liberty GPT Worker" conversation. **Not an agent-bus message** —
-> GPT's GitHub connector remains read-only, so there is no authentic bus record of this. Treat it as
-> evidence and as architectural direction, not as a recorded control-plane decision.
+> **This is research, and the decision it supports now lives elsewhere.** PL-0401's decision is
+> recorded as **ADR-007 in `docs/DECISIONS.md`** — the option survey, the trade-offs, the rejected
+> alternatives and the consequences. Read that first. This file is the evidence behind it and the
+> fuller account of what was surveyed; it is not, and never was, the record of the decision.
+>
+> ADR-007 is itself **Proposed**, not accepted: it is `claude-lead`'s recommendation awaiting
+> `gpt-architect`'s ruling through the control plane. Neither file may be cited as settled.
+>
+> **Provenance, unchanged and still load-bearing.** Researched by `gpt-architect` on 2026-08-19
+> against live sources, and transcribed here by `claude-lead` from the ChatGPT "Liberty GPT Worker"
+> conversation. **Not an agent-bus message** — GPT's GitHub connector remains read-only, so there is
+> no authentic bus record of this. A transcription is weaker evidence than a signed handoff, and the
+> version numbers and dates below are as reported in that conversation rather than as verified here.
 >
 > Companion to `docs/RESEARCH_PLAYBACK.md`, which covers the playback and media-inspection lane.
 
-Covers PL-0401, PL-0402, PL-0403, PL-0404, PL-0303 and PL-0801.
+Covers PL-0401, PL-0402, PL-0403, PL-0404, PL-0303 and PL-0801. Of these, only PL-0401 has an ADR;
+the rest are still recorded here alone.
 
 ---
 
@@ -21,6 +31,11 @@ PL-0801 defines the boundary now; building an ML recommender now would be premat
 ---
 
 ## PL-0401 — Better Auth
+
+> Superseded as the decision record by **ADR-007**. What follows is the survey ADR-007 was written
+> from; the ADR adds what this section does not have — the branded `ProfileScope` and its single
+> mint, the reason-trail and confidentiality trade in `authorization.ts`, and the consequences that
+> follow from the code as built.
 
 **Better Auth 1.7.1, released 2026-08-18, MIT**, behind a `packages/auth` boundary, with
 PostgreSQL-backed **database sessions** and the official Drizzle adapter. Current Next.js

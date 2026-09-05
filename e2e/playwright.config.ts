@@ -1,6 +1,13 @@
 import path from "node:path";
 import { defineConfig, devices } from "@playwright/test";
-import { BASE_URL, MANAGES_SERVER, PORT, SERVER_MEDIA_ORIGIN, WEB_MODE } from "./src/env";
+import {
+  BASE_URL,
+  MANAGES_SERVER,
+  PORT,
+  SERVER_DATABASE_URL,
+  SERVER_MEDIA_ORIGIN,
+  WEB_MODE
+} from "./src/env";
 
 /* -------------------------------------------------------------------------
  * PL-0701 - the critical end-to-end harness
@@ -169,7 +176,26 @@ export default defineConfig({
            * `MEDIA_RIG_SKIP_REASON` stays a true statement about the server
            * rather than about this process's variables.
            */
-          LIBERTY_FIXTURE_MEDIA_ORIGIN: SERVER_MEDIA_ORIGIN
+          LIBERTY_FIXTURE_MEDIA_ORIGIN: SERVER_MEDIA_ORIGIN,
+
+          /*
+           * WRITTEN EVEN WHEN IT IS EMPTY, which is the same rule the origin
+           * above follows and matters here for a sharper reason.
+           * `lib/db/index.ts` picks PostgreSQL whenever this is set and
+           * well-formed and the in-memory store otherwise, and it CACHES that
+           * choice for the life of the process. An inherited `DATABASE_URL` from
+           * a developer's root `.env.local` would therefore point a
+           * harness-started server at a real database, and
+           * `tests/progress.api.spec.ts` -- which asserts the adapter line every
+           * response publishes -- would report the configuration accident as a
+           * product failure. An empty string is not a hole, in either direction:
+           * `with-root-env.mjs` skips a name with `Object.hasOwn`, on presence
+           * rather than truthiness, so `""` is respected as a deliberate value
+           * and no dotenv file overrides it -- and `selectRepository` trims and
+           * treats it as unset, which is the "no database" branch the default
+           * asserts.
+           */
+          DATABASE_URL: SERVER_DATABASE_URL
 
           /*
            * NODE_ENV is the one application variable deliberately NOT pinned,

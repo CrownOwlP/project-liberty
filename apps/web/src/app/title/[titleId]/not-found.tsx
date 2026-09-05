@@ -10,14 +10,22 @@ import styles from "../../../components/title/title.module.css";
  * reader told to "try again in a moment" about a title that will never exist
  * will keep trying.
  *
- * This boundary is SUPPOSED to carry the 404 status, and today it does not. An
- * earlier version of this comment asserted that it did. React flushes the shell
- * at HTTP 200 while the route's Suspense boundary — installed by a `loading.tsx`
- * — is still pending, so the status is on the wire before this component is ever
- * reached; an executed Playwright run captured the loading skeleton at 200 for an
- * unknown id. The fix is in the root `apps/web/src/app/loading.tsx`, outside this
- * task's allowed paths, and is filed as PL-0704. What this surface can do
- * meanwhile is refuse to be indexed, which `TITLE_NOT_FOUND_METADATA` now does.
+ * This boundary is served with a 404, which was not always so. React flushes
+ * the shell at HTTP 200 while a Suspense boundary — installed by a
+ * `loading.tsx` — is still pending, so the status used to be on the wire before
+ * this component was ever reached; an executed Playwright run captured the
+ * loading skeleton at 200 for an unknown id. PL-0704 removes both boundaries
+ * that stood above the decision, so the `notFound()` in `page.tsx` escapes the
+ * render, which is the one condition under which Next sets the status.
+ *
+ * Note where the two halves live. The status is decided by the ABSENCE of a
+ * Suspense boundary above `page.tsx` and nothing in this file affects it, which
+ * is why the guard is a repository-wide assertion —
+ * `watch/route-loading-boundaries.test.ts` — rather than anything here.
+ * `page.tsx` carries the mechanism and the reason this route has no skeleton.
+ *
+ * `TITLE_NOT_FOUND_METADATA` keeps `robots: index false` alongside it, for the
+ * reason stated where it is declared.
  *
  * The panel heading is an `h1`: this boundary replaces the whole page, so
  * nothing else on it carries a top-level heading. It was an `h2`, which left the

@@ -12,7 +12,15 @@ coordination/agent-bus/
   acknowledgements/<messageId>.json   exactly one per SUCCESSFULLY processed message
   rejections/<messageId>.json         durable quarantine record; shared/committed
   journal/<messageId>.json            local crash-recovery state; gitignored
+  dispatch/                           state for the OPTIONAL dispatcher (PL-AI-0003)
 ```
+
+`dispatch/` is not part of the bus protocol and is not read by any command in this file. It holds
+the budget ledger, audit log and human-approval records for
+`scripts/cloud/agent-dispatcher.mjs`, which is off by default; see
+`coordination/agent-bus/dispatch/README.md`. It lives under the bus because it is coordination
+metadata, which also means it inherits the fingerprint exclusion for this whole directory: writing
+a dispatch audit record cannot invalidate a review.
 
 An acknowledgement and a rejection are mutually exclusive verdicts. `ack` refuses to run on a
 quarantined message, so the audit trail can never report a rejected message as processed.

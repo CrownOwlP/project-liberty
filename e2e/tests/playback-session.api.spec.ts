@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import type { APIResponse } from "@playwright/test";
 import {
+  collectStrings,
   expectedStatus,
   isRecord,
   playbackSessionViolations,
@@ -22,6 +23,92 @@ import { CAPABLE_DEVICE, DEMO, TINY_DEVICE, sessionRequest } from "../src/fixtur
  * ---------------------------------------------------------------------- */
 
 const ROUTE = "/api/v1/playback/session";
+
+/**
+ * Which build this run measured, recorded on every result in this file.
+ *
+ * THE MODE IS PART OF THE EVIDENCE, not a detail of how the suite was invoked.
+ * This file asserts one thing under `production` and a different thing under
+ * `development`, so "playback-session.api.spec.ts passed" is only half a
+ * statement -- and the half that gets recorded as a gate result is whichever
+ * mode somebody happened to run. Annotating it puts the answer in the HTML and
+ * GitHub reporters beside each test, so a result that covers one mode says so
+ * on its face. `docs/E2E.md` states that both runs are the gate.
+ */
+test.beforeEach(() => {
+  test.info().annotations.push({ type: "web-mode", description: WEB_MODE });
+});
+
+/**
+ * Strings that only the fixture provider can put into a response.
+ *
+ * The three file names and the three candidate ids are composed by
+ * `authorized-candidates.ts`; `fixtures.invalid` is the origin the harness pins
+ * when no rig is configured. None of them can appear in a response that resolved
+ * nothing.
+ *
+ * `operator-owned-master` USED TO BE IN THIS LIST AND HAS BEEN REMOVED, because
+ * it was an assertion that could not fail in either mode. It is the `basis` half
+ * of the `RightsBasis` the fixture candidates carry, and the session response
+ * does not publish a basis: `playbackSessionCandidateSchema` in the route's
+ * `contract.ts` declares exactly `id`, `providerId`, `uri`, `mimeType` and
+ * `compatibility`, and no reason in `issue-session.ts` renders one either -- the
+ * rights trail prints `candidate.rights` (the word `owned`), never the basis. So
+ * the string could never appear under `production`, which made the absence check
+ * free, and it could never appear under `development` either, which made it
+ * unpairable. A check that cannot fail reads like coverage and is not.
+ *
+ * If the response shape ever starts publishing a rights basis, add it back here;
+ * the development half below is derived from this list, so it is paired by
+ * construction.
+ *
+ * Checked as a SET OF STRINGS ANYWHERE IN THE BODY rather than by reading named
+ * fields, for the reason `collectStrings` exists: a leak in a field somebody
+ * already thought of is the one that was going to be found anyway.
+ */
+const FIXTURE_ARTEFACTS: readonly string[] = [
+  "720p.mp4",
+  "master.m3u8",
+  "manifest.mpd",
+  "fixtures.invalid",
+  `${DEMO.movie.id}-progressive`,
+  `${DEMO.movie.id}-hls`,
+  `${DEMO.movie.id}-dash`
+];
+
+/**
+ * THE ONE ARTEFACT ABOVE WITH NO DEVELOPMENT COUNTERPART, named here rather than
+ * left to be discovered by counting the two loops.
+ *
+ * `fixtures.invalid` is only the DEFAULT origin -- the RFC 2606 host this harness
+ * pins as `LIBERTY_FIXTURE_MEDIA_ORIGIN` on a server it starts when no rig is
+ * configured (`SERVER_MEDIA_ORIGIN` in `../src/env`), and the app's own fallback
+ * besides. A run with `LIBERTY_E2E_MEDIA_ORIGIN` set legitimately produces a
+ * different origin, so requiring it to be PRESENT under `development` would fail
+ * exactly when a rig is in play. Its production half is therefore an UNPAIRED
+ * absence: still worth asserting, because the default origin reaching a shipped
+ * build is a real leak, but not proven non-vacuous by the development branch.
+ */
+const UNPAIRED_ARTEFACT = "fixtures.invalid";
+
+/**
+ * The artefacts whose absence under `production` is matched by a presence
+ * assertion under `development`.
+ *
+ * DERIVED rather than written out a second time. A hand-maintained second list is
+ * how the two halves came to differ in the first place: the production loop
+ * required eight strings and the development loop offered three, while the file
+ * and `docs/E2E.md` both described them as the same list.
+ */
+const PAIRED_ARTEFACTS: readonly string[] = FIXTURE_ARTEFACTS.filter(
+  (artefact) => artefact !== UNPAIRED_ARTEFACT
+);
+
+/** Every artefact above that appears anywhere in the body's strings. */
+function fixtureArtefactsIn(shape: PlaybackSessionResponseShape): string[] {
+  const strings = collectStrings(shape).join("\n");
+  return FIXTURE_ARTEFACTS.filter((artefact) => strings.includes(artefact));
+}
 
 /** Reads a response and asserts the union holds before anything else reads it. */
 async function decision(response: APIResponse): Promise<PlaybackSessionResponseShape> {
@@ -71,6 +158,20 @@ test("the outcome matches what this deployment is configured to resolve", async 
      */
     expect(shape.outcome).toBe("unavailable");
     expect(reasonCodes(shape)).toContain("provider_not_configured");
+
+    /*
+     * REFUSED RATHER THAN FABRICATED, asserted as the absence of the fabrication
+     * and not only as the presence of the refusal. `decision()` has already
+     * required that a non-granted response carries no `session` key at all --
+     * `playbackSessionViolations` treats a refusal shipping a session as a
+     * violation -- so what is left to check is the leak that would not be a
+     * session: a fixture URI or a fixture candidate id surfacing in a reason's
+     * `detail`, in a build where the provider was never constructible.
+     */
+    expect(
+      fixtureArtefactsIn(shape),
+      "a production build published something only the fixture provider can produce"
+    ).toEqual([]);
   } else {
     expect(shape.outcome).toBe("granted");
     /*
@@ -85,6 +186,28 @@ test("the outcome matches what this deployment is configured to resolve", async 
      * would have reported that as a pass.
      */
     expect(reasonCodes(shape)[0]).toBe("session_issued_unverified_compatibility");
+
+    /*
+     * THE OTHER HALF OF THE PAIR, and what stops the production assertion above
+     * from being vacuous. Under a development build the fixture provider IS
+     * constructible, so its candidate ids and its composed URIs are both in the
+     * granted session; if they ever stopped appearing here, the production check
+     * would go on passing and would have stopped proving anything.
+     *
+     * THE FILE NAMES ARE PAIRED TOO, and that is not an accident of the default
+     * origin. `fixtureUri` composes `<origin>/<contentId>/<file>` through `URL`,
+     * so a configured rig changes the ORIGIN and never the three file names; and
+     * all three candidates are built from the SAME origin, so `checkUrl` admits
+     * all three or none of them. A `granted` outcome therefore carries all three
+     * URIs, with or without `LIBERTY_E2E_MEDIA_ORIGIN`.
+     *
+     * `fixtures.invalid` is the single deliberate exception -- see
+     * `UNPAIRED_ARTEFACT` for why a rig may legitimately replace it.
+     */
+    const strings = collectStrings(shape).join("\n");
+    for (const artefact of PAIRED_ARTEFACTS) {
+      expect(strings, "a development build resolved no fixture candidates").toContain(artefact);
+    }
   }
 });
 
@@ -122,10 +245,25 @@ test("a granted session publishes candidates only on the configured media origin
    * configured means something else produced one. */
   expect(offenders).toEqual([]);
 
-  /* Resume-from-progress is PL-0403's and it does not exist yet. `null` means
-   * "engine default" -- the beginning for VOD, the live edge for live -- and it
-   * is a different claim from `0`. When PL-0403 lands this assertion is the
-   * thing that has to be updated deliberately. */
+  /*
+   * `null` means "engine default" -- the beginning for VOD, the live edge for
+   * live -- and it is a different claim from `0`.
+   *
+   * THE SENTENCE THIS REPLACES SAID RESUME-FROM-PROGRESS "DOES NOT EXIST YET",
+   * AND HALF OF THAT HAS STOPPED BEING TRUE. PL-0403's HTTP surface has landed
+   * and `progress.api.spec.ts` asserts it end to end: a resume point can be
+   * leased, written and read back. What has NOT landed is the join. This route
+   * never asks for one -- `issue-session.ts` writes `startAtSeconds: null`
+   * unconditionally, with no repository, no profile scope and nothing to read a
+   * position from -- so `null` is still the honest answer here rather than a
+   * placeholder.
+   *
+   * That makes this assertion sharper than it was, not staler: it now says the
+   * session issuer states no resume point RATHER THAN a wrong one, on a build
+   * where a stored position genuinely exists a request away. The thing that must
+   * change it deliberately is the issuer starting to read progress, which is a
+   * different event from PL-0403 landing.
+   */
   expect(session["startAtSeconds"]).toBeNull();
 });
 

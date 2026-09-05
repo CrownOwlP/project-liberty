@@ -10,10 +10,14 @@ import {
 } from "@liberty/provider-sdk";
 import { afterEach, describe, expect, it } from "vitest";
 import {
-  fixtureAuthorizedCandidates,
+  NON_DEPLOYMENT_ENVIRONMENTS,
+  NonDeploymentEnvironment
+} from "../../../deployment-environment";
+import {
+  fixtureProvider,
+  isOpaqueRightsReference,
   resolveAuthorizedCandidates,
-  FIXTURE_ENVIRONMENTS,
-  FIXTURE_RIGHTS_BASIS,
+  MAX_RIGHTS_REFERENCE_LENGTH,
   type AuthorizedCandidateResolver
 } from "./authorized-candidates";
 import type { PlaybackSessionResponse } from "./contract";
@@ -31,6 +35,38 @@ const CONTENT_ID = "aurora-fall";
 
 /** A hosted deployment's answer: no source opt-in, no local instance. */
 const HOSTED = { allowLoopback: false, localDeployment: false } as const;
+
+/**
+ * A witness for a named non-deployment environment.
+ *
+ * The witness is the whole point of the gate under test, so a test cannot
+ * fabricate one: `NonDeploymentEnvironment` has a private constructor and a
+ * private field, so there is no cast-free way to build one here, and a cast
+ * would make every assertion below about a value the application can never see.
+ * The throw is for the mistake of asking for a witness for `production` in a
+ * test that meant `development` -- it names the value rather than returning
+ * something usable.
+ */
+function nonDeployment(nodeEnv: string): NonDeploymentEnvironment {
+  const environment = NonDeploymentEnvironment.classify(nodeEnv);
+  if (environment === null) {
+    throw new Error(`${JSON.stringify(nodeEnv)} is not on NON_DEPLOYMENT_ENVIRONMENTS`);
+  }
+  return environment;
+}
+
+/**
+ * The provider under test, built once from the environment vitest itself runs
+ * in.
+ *
+ * PINNED rather than derived from `process.env` at each call, because several
+ * tests below rewrite `NODE_ENV` to prove what a HOSTED process does. A provider
+ * that re-read the environment would stop existing halfway through those tests,
+ * and the distinction being asserted -- the provider cannot be OBTAINED in a
+ * deployment, as opposed to answering differently once it has been -- would be
+ * invisible.
+ */
+const FIXTURES = fixtureProvider(nonDeployment("test"));
 
 /**
  * `process.env.NODE_ENV` is typed as a three-value union by Next's ambient
@@ -68,7 +104,7 @@ const CAPABILITIES = {
 function issueFixtureSession(origin = "https://fixtures.invalid"): Promise<PlaybackSessionResponse> {
   const resolve: AuthorizedCandidateResolver = () => ({
     status: "resolved",
-    candidates: fixtureAuthorizedCandidates(CONTENT_ID, origin)
+    candidates: FIXTURES.candidates(CONTENT_ID, origin)
   });
 
   return issuePlaybackSession(
@@ -91,16 +127,97 @@ describe("the rights declaration", () => {
      * rights/basis pair for a configured source; the fixture provider does not
      * go through that constructor, so the same table is applied here.
      */
-    expect(PLAYABLE_CONTENT_RIGHTS).toContain(FIXTURE_RIGHTS_BASIS.rights);
-    expect(RIGHTS_BASES_FOR_RIGHTS[FIXTURE_RIGHTS_BASIS.rights]).toContain(FIXTURE_RIGHTS_BASIS.basis);
-    expect(FIXTURE_RIGHTS_BASIS.reference.trim()).not.toBe("");
+    expect(PLAYABLE_CONTENT_RIGHTS).toContain(FIXTURES.rightsBasis.rights);
+    expect(RIGHTS_BASES_FOR_RIGHTS[FIXTURES.rightsBasis.rights]).toContain(FIXTURES.rightsBasis.basis);
   });
 
   it("is the only rights value any fixture candidate carries", () => {
     /* Not "is on the allowlist" -- that would still pass if one candidate
      * quietly declared a different basis from the one documented above. */
-    const rights = fixtureAuthorizedCandidates(CONTENT_ID).map((entry) => entry.candidate.rights);
-    expect(new Set(rights)).toEqual(new Set([FIXTURE_RIGHTS_BASIS.rights]));
+    const rights = FIXTURES.candidates(CONTENT_ID).map((entry) => entry.candidate.rights);
+    expect(new Set(rights)).toEqual(new Set([FIXTURES.rightsBasis.rights]));
+  });
+
+  it("carries an opaque reference rather than a description of the arrangement", () => {
+    /*
+     * A rights basis in this repository is a CATEGORY plus an OPAQUE INTERNAL
+     * IDENTIFIER, and nothing else. Provider agreements and their terms are not
+     * this repository's to carry, so the reference must name a record the
+     * operator holds elsewhere -- and `describeRightsBasis` renders it into
+     * reason trails and logs, so whatever is here can leave in a screenshot.
+     *
+     * `not.toBe("")` is what this used to assert, and a sentence passes that.
+     */
+    expect(isOpaqueRightsReference(FIXTURES.rightsBasis.reference)).toBe(true);
+    expect(FIXTURES.rightsBasis.reference.length).toBeLessThanOrEqual(
+      MAX_RIGHTS_REFERENCE_LENGTH
+    );
+  });
+
+  it.each<[string, string]>([
+    ["an empty string", ""],
+    ["whitespace", "   "],
+    [
+      "the prose reference this provider carried before PL-0703",
+      "media the operator packaged and serves from their own rig at LIBERTY_FIXTURE_MEDIA_ORIGIN"
+    ],
+    ["a URL", "https://rights.example.com/contract/17"],
+    ["a document pointer", "see docs/E2E.md"],
+    ["an address", "rights@example.com"],
+    ["a capitalised label", "Contract-17"],
+    /* Conforming in every way except length, so this entry tests the bound and
+     * not the pattern -- 16 characters plus seven 16-character groups is 135. */
+    ["a conforming token that is too long", `${"a".repeat(16)}${`-${"b".repeat(16)}`.repeat(7)}`]
+  ])("refuses %s as a rights reference", (label, value) => {
+    /*
+     * The prose entry is the reference this provider actually carried before
+     * PL-0703. It is here so the regression has a name: a scope description sat
+     * in a rights basis and passed every check this file made.
+     *
+     * What the shape rule CANNOT catch is a conforming token that still says
+     * something -- `acme-tv-2026-emea` matches the pattern. That is a rights
+     * review's job, and `authorized-candidates.ts` says so where the pattern is
+     * defined rather than letting this list imply a completeness it does not
+     * have.
+     */
+    expect(isOpaqueRightsReference(value), label).toBe(false);
+  });
+});
+
+describe("the witness the fixture provider requires", () => {
+  /*
+   * THE STRUCTURAL HALF OF THE CORRECTIVE. The gate used to be a condition
+   * inside `resolveAuthorizedCandidates`; a condition can be deleted and the
+   * build stays green, which is how `watch/watch-session.ts` came to carry a
+   * second copy of these fixtures with no environment test at all. The gate is
+   * now a VALUE that only `deployment-environment.ts` can mint, so a caller
+   * cannot reach `fixtureProvider` in a deployment without first handling a
+   * `null` the compiler will not let it ignore.
+   */
+  it.each(["production", "staging", "preview", "Production", "PRODUCTION", "", "dev", "prod"])(
+    "cannot be obtained for NODE_ENV=%j",
+    (value) => {
+      expect(NonDeploymentEnvironment.classify(value)).toBeNull();
+    }
+  );
+
+  it("cannot be obtained when NODE_ENV is unset", () => {
+    /*
+     * Through the PROCESS rather than by passing `undefined`. An explicit
+     * `undefined` argument triggers the parameter default, which reads
+     * `process.env.NODE_ENV` -- so `classify(undefined)` is `classify()` and
+     * under vitest that answers `test`. `afterEach` puts it back.
+     */
+    setNodeEnv(undefined);
+    expect(NonDeploymentEnvironment.classify()).toBeNull();
+  });
+
+  it.each([...NON_DEPLOYMENT_ENVIRONMENTS])("is obtainable for NODE_ENV=%s", (value) => {
+    const environment = NonDeploymentEnvironment.classify(value);
+    expect(environment).not.toBeNull();
+    /* Reported rather than re-derived, so a caller that logs which environment
+     * admitted the fixtures reads the value the classification actually used. */
+    expect(fixtureProvider(nonDeployment(value)).environment).toBe(value);
   });
 });
 
@@ -113,7 +230,7 @@ describe("what the fixtures state about the media", () => {
      * accepts. Nothing had opened these files. `null` is the contract's word for
      * unknown and it is the only honest answer here.
      */
-    for (const entry of fixtureAuthorizedCandidates(CONTENT_ID)) {
+    for (const entry of FIXTURES.candidates(CONTENT_ID)) {
       expect(unknownMediaFacts(entry.candidate)).toEqual([...MEDIA_FACTS]);
     }
   });
@@ -125,7 +242,7 @@ describe("what the fixtures state about the media", () => {
      * media-engine compares with a strict `<`. */
     const prior = healthPriorScore(DEFAULT_PROVIDER_HEALTH_POLICY);
     expect(prior).toBe(PROVIDER_HEALTH_FLOOR);
-    for (const entry of fixtureAuthorizedCandidates(CONTENT_ID)) {
+    for (const entry of FIXTURES.candidates(CONTENT_ID)) {
       expect(entry.candidate.healthScore).toBe(prior);
       expect(entry.candidate.healthScore < PROVIDER_HEALTH_FLOOR).toBe(false);
     }
@@ -135,7 +252,7 @@ describe("what the fixtures state about the media", () => {
     /* An unknown POSITIVE dimension earns nothing; an unknown PENALTY that
      * contributed nothing would reward the candidate for withholding. Nothing
      * timed these. */
-    for (const entry of fixtureAuthorizedCandidates(CONTENT_ID)) {
+    for (const entry of FIXTURES.candidates(CONTENT_ID)) {
       expect(entry.candidate.estimatedLatencyMs).toBe(LATENCY_CEILING_MS);
     }
   });
@@ -173,7 +290,7 @@ describe("where the fixture path may run", () => {
   /* Awaited because the resolver TYPE admits a promise -- the fixture one is
    * synchronous, and a test that leaned on that would stop compiling the day a
    * real registry lands behind the same seam. */
-  it.each([...FIXTURE_ENVIRONMENTS])("resolves fixtures under NODE_ENV=%s", async (value) => {
+  it.each([...NON_DEPLOYMENT_ENVIRONMENTS])("resolves fixtures under NODE_ENV=%s", async (value) => {
     setNodeEnv(value);
     const resolution = await resolveAuthorizedCandidates(CONTENT_ID, { requestId: "r" });
     expect(resolution.status).toBe("resolved");
@@ -216,7 +333,7 @@ describe("where the fixture path may run", () => {
 
 describe("the operator-supplied origin", () => {
   function uris(origin: string): string[] {
-    return fixtureAuthorizedCandidates(CONTENT_ID, origin).map((entry) => entry.source.uri);
+    return FIXTURES.candidates(CONTENT_ID, origin).map((entry) => entry.source.uri);
   }
 
   it("joins a trailing slash without doubling it", () => {
@@ -282,7 +399,7 @@ describe("the loopback opt-in", () => {
      * independently-owned permissions into the one variable that also decides
      * whether fixtures resolve at all. */
     for (const origin of ["https://fixtures.invalid", "https://rig.test", "https://10.0.0.5"]) {
-      for (const entry of fixtureAuthorizedCandidates(CONTENT_ID, origin)) {
+      for (const entry of FIXTURES.candidates(CONTENT_ID, origin)) {
         expect(entry.source.allowLoopback).toBe(false);
       }
     }
@@ -291,7 +408,7 @@ describe("the loopback opt-in", () => {
   it.each(["http://localhost:8080", "http://127.0.0.1:8096", "http://[::1]:8080"])(
     "is true for %s, and still needs the deployment to be local",
     (origin) => {
-      const entries = fixtureAuthorizedCandidates(CONTENT_ID, origin);
+      const entries = FIXTURES.candidates(CONTENT_ID, origin);
       for (const entry of entries) {
         expect(entry.source.allowLoopback).toBe(true);
       }
@@ -317,12 +434,12 @@ describe("the content id", () => {
        * unreserved, so `..` survives it and would walk out of the origin's path
        * prefix.
        */
-      expect(fixtureAuthorizedCandidates(contentId, "https://rig.test/media")).toEqual([]);
+      expect(FIXTURES.candidates(contentId, "https://rig.test/media")).toEqual([]);
     }
   );
 
   it("keeps every published URL under the configured origin", () => {
-    for (const entry of fixtureAuthorizedCandidates(CONTENT_ID, "https://rig.test/media")) {
+    for (const entry of FIXTURES.candidates(CONTENT_ID, "https://rig.test/media")) {
       expect(new URL(entry.source.uri).origin).toBe("https://rig.test");
       expect(new URL(entry.source.uri).pathname.startsWith("/media/")).toBe(true);
     }
@@ -338,7 +455,7 @@ describe("the content id", () => {
      */
     const resolve: AuthorizedCandidateResolver = () => ({
       status: "resolved",
-      candidates: fixtureAuthorizedCandidates("../../etc/passwd")
+      candidates: FIXTURES.candidates("../../etc/passwd")
     });
 
     const response = await issuePlaybackSession(

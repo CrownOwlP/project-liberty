@@ -5,7 +5,8 @@ import {
   type CatalogRail
 } from "@liberty/contracts/domains/catalog";
 import { PLAYABLE_CONTENT_RIGHTS } from "@liberty/contracts/shared/rights";
-import { demoCatalog } from "./demo-catalog";
+import { selectDeclaredItems } from "./catalog-source";
+import { resolveCatalogMetadataSource } from "./catalog-source-registry";
 
 /**
  * Explicit result union. The home route has to distinguish "still loading",
@@ -90,36 +91,93 @@ export function buildHomeCatalog(
   return { rails, generatedAt };
 }
 
-/**
- * Server-side catalog source. The API route and the home page both read
- * through this, so neither can drift from the other and the page never has to
- * make an HTTP call back into itself.
+/*
+ * THERE IS NO SYNCHRONOUS `getHomeCatalog` ANY MORE.
+ *
+ * It used to sit here, returning a `CatalogHomeResponse` built from a
+ * synchronous read of the fixture source, and `app/api/v1/catalog/home/route.ts`
+ * was its only production caller. A `CatalogHomeResponse` has nowhere to say "no
+ * metadata source is configured", so on a deployment it produced no rails and
+ * the route served `{ rails: [] }` at 200 -- a statement about the catalog made
+ * by a process with no catalog to look at.
+ *
+ * That route now awaits `loadHomeCatalog` below, whose result union carries a
+ * reason, and `app/api/v1/catalog/home/handler.ts` maps
+ * `catalog_source_not_configured` onto 503. With the route moved, the
+ * synchronous variant had only test callers left; it was deleted rather than
+ * kept alive for them, and `readFixtureCatalogItems` in
+ * `lib/catalog-source-registry.ts` -- which existed only to be its default
+ * argument -- was deleted with it. `buildHomeCatalog` above is the pure function
+ * both of them wrapped, and it is what the tests state a catalog through now.
  */
-export function getHomeCatalog(
-  now: Date = new Date(),
-  items: readonly CatalogItem[] = demoCatalog
-): CatalogHomeResponse {
-  return buildHomeCatalog(items, now.toISOString());
-}
 
 /**
  * Where the home catalog comes from. Injectable so the loader's failure paths
- * are testable, and so PL-0301 can swap the fixtures for a provider adapter
- * without touching the route.
+ * are testable, and so a metadata provider can replace the fixtures without the
+ * route changing.
+ *
+ * `null` MEANS NO SOURCE IS CONFIGURED, and it is the one thing an empty
+ * response cannot say. A catalog has no "not found" state -- there is nothing to
+ * look up -- so the `null` convention `TitleDetailSource` uses for not-found is
+ * free here, and it is spent on the distinction that actually matters: a
+ * deployment with no metadata provider is not a deployment whose catalog is
+ * empty. The first has an operator remedy; the second is a fact about the
+ * catalog, and rendering the first as the second is how "no titles are available
+ * in your region" ends up on screen when nothing has ever been ingested.
  */
-export type CatalogSource = () => CatalogHomeResponse | Promise<CatalogHomeResponse>;
+export type CatalogSource = () =>
+  | CatalogHomeResponse
+  | null
+  | Promise<CatalogHomeResponse | null>;
 
 /**
- * Loader used by the home route. Validates against the published contract so a
- * malformed fixture or provider payload becomes a handled error state instead
- * of a runtime crash mid-render. A source that throws (network, timeout, an
- * adapter fault) is likewise converted rather than propagated.
+ * The source the home route uses when nothing is injected.
+ *
+ * Asynchronous, because the port is: a real metadata provider does I/O, and this
+ * is the entry point it lands behind. It reads the whole record list and takes
+ * only the items whose rights basis the source actually declared --
+ * `selectDeclaredItems` refuses the rest, before `isSurfaceable` applies the
+ * rights allowlist to what is left.
+ */
+export const defaultHomeCatalogSource: CatalogSource = async () => {
+  const resolution = resolveCatalogMetadataSource();
+  if (resolution.status === "not-configured") return null;
+
+  const records = await resolution.source.listRecords();
+  return buildHomeCatalog(selectDeclaredItems(records).items, new Date().toISOString());
+};
+
+/**
+ * The one entry point both home surfaces read through.
+ *
+ * `app/page.tsx` awaits it during its server render and
+ * `app/api/v1/catalog/home/route.ts` awaits it as well, so the route never has
+ * to make an HTTP call back into itself and the two cannot disagree about what
+ * the catalog holds or why it is missing. Nothing calls a synchronous variant,
+ * because there no longer is one.
+ *
+ * Validates against the published contract so a malformed fixture or provider
+ * payload becomes a handled error state instead of a runtime crash mid-render. A
+ * source that throws (network, timeout, an adapter fault) is likewise converted
+ * rather than propagated.
  */
 export async function loadHomeCatalog(
-  source: CatalogSource = () => getHomeCatalog()
+  source: CatalogSource = defaultHomeCatalogSource
 ): Promise<CatalogLoadResult> {
   try {
-    const parsed = catalogHomeResponseSchema.safeParse(await source());
+    const payload = await source();
+
+    /*
+     * Checked before validation, because there is nothing to validate. A source
+     * that has no provider to ask is a configuration state, and it gets its own
+     * reason code so it is not read as a malformed payload by whoever is looking
+     * at the panel this renders into.
+     */
+    if (payload === null) {
+      return { status: "error", reason: "catalog_source_not_configured" };
+    }
+
+    const parsed = catalogHomeResponseSchema.safeParse(payload);
 
     if (!parsed.success) {
       return { status: "error", reason: "catalog_response_failed_validation" };

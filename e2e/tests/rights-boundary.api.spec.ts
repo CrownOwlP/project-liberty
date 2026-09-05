@@ -27,6 +27,23 @@ import { CAPABLE_DEVICE, DEMO, SMUGGLED_URI, resolveCandidate } from "../src/fix
 const SESSION = "/api/v1/playback/session";
 const RESOLVE = "/api/v1/playback/resolve";
 
+/**
+ * Which build this run measured, recorded on every result in this file.
+ *
+ * ADDED LATE, AND THE OMISSION WAS THE DEFECT. The other mode-split files have
+ * carried this since they gained their splits, and `docs/E2E.md` named five of
+ * them. This file is the sixth: the resolve tests below assert a 404 gate under
+ * `production` and the engine's rights refusal under `development`, so a result
+ * from here is exactly as half-a-statement as one from those five, and until this
+ * hook existed the HTML and GitHub reports did not say which half. That matters
+ * more here than anywhere: the three scaffold tests SKIP under the default mode,
+ * and a skipped rights test in a report that does not name the build reads as
+ * coverage.
+ */
+test.beforeEach(() => {
+  test.info().annotations.push({ type: "web-mode", description: WEB_MODE });
+});
+
 test("the session endpoint refuses a request that names a media URL", async ({ request }) => {
   const response = await request.post(SESSION, {
     data: { contentId: DEMO.movie.id, capabilities: CAPABLE_DEVICE, uri: SMUGGLED_URI }

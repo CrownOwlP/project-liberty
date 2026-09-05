@@ -4,7 +4,7 @@ import type {
   SubtitlePolicy,
   SubtitleTrack
 } from "@liberty/contracts/domains/subtitles";
-import { languageMatch } from "./audio";
+import { languageMatch, type AudioSelection } from "./audio";
 
 /**
  * Subtitle track selection.
@@ -37,8 +37,68 @@ import { languageMatch } from "./audio";
  *      on".
  *   3. A `forced` track is not a high-ranking normal subtitle. It is keyed to
  *      the audio language rather than to the viewer's reading preference, and it
- *      is the one thing an "off" preference does not suppress.
+ *      is the one thing an "off" preference does not suppress. `withSelectedAudio`
+ *      below is how that key is established, so the coupling to the audio
+ *      DECISION is mechanical rather than something each caller has to remember.
  */
+
+/* -------------------------------------------------------------------------
+ * THE LANGUAGE MATCHING RULE, stated once for the whole policy.
+ *
+ * Every language comparison in this file -- viewer preference against track,
+ * audio language against forced track -- goes through `languageMatch` in
+ * `audio.ts`, and this is what that function means, written out here because a
+ * rule nobody states becomes an accident of whichever comparison happened to be
+ * written first.
+ *
+ * Both sides are lower-cased. The PREFERENCE side is `trim()`ed as well and the
+ * track side is not -- `languageMatch` trims `want`, not `trackLanguage` --
+ * because a viewer's stored settings can carry stray whitespace while a
+ * manifest tag that does is malformed. The asymmetry is safe in the only
+ * direction that matters -- a padded track tag can never match something it
+ * should not -- but WHAT it loses depends on where the padding falls. Whitespace
+ * in or before the primary subtag (`" en"`, `"e n-gb"`) makes the primary subtag
+ * itself unequal, so the tag matches nothing at all; whitespace after it
+ * (`"en-gb "`) leaves the primary subtag intact, so the track still VARIANT
+ * matches an `en` preference and loses only its exact match against `en-gb`.
+ * Then:
+ *
+ *   - they MATCH when their PRIMARY SUBTAGS are equal, where the primary subtag
+ *     is everything before the first "-" (`primarySubtag`);
+ *   - the match is EXACT when the whole tags are equal, and a VARIANT match
+ *     otherwise;
+ *   - a blank preference entry is skipped outright, and a track stating no
+ *     language has an empty primary subtag, which no well-formed tag shares. An
+ *     unstated language is therefore never a wildcard -- the failure mode a
+ *     `startsWith` comparator has with an empty needle.
+ *
+ * Four consequences worth naming, because each is a place a plausible
+ * implementation differs:
+ *
+ *   1. It is SYMMETRIC. A preference for `pt` accepts a `pt-BR` track and a
+ *      preference for `pt-BR` accepts a bare `pt` track; likewise `sv` and
+ *      `sv-FI`. Both are variant matches, and an exact tag always outranks a
+ *      variant one (`compareTracks` step 3), so a viewer who names the specific
+ *      tag still gets it when it exists. `startsWith` would give only one of the
+ *      two directions and would additionally match `sv` against `sventon`.
+ *   2. A UN M.49 region such as `es-419` is an ORDINARY subtag. It matches `es`
+ *      and `es-ES` as a variant and is exact only against `es-419`; there is no
+ *      numeric-region special case, and none is wanted -- Latin American and
+ *      European Spanish are a last-resort fallback for one another in exactly
+ *      the way two country codes would be.
+ *   3. Preference LIST ORDER is meaningful, which the contract states directly:
+ *      `preferredLanguages` is "ordered, most-preferred first ... not a set".
+ *      The order is honoured group first (`compareTracks` steps 2 to 4): the
+ *      earliest language group wins, an exact tag beats a variant within that
+ *      group, and between two exact tags the earlier preference wins.
+ *   4. There is exactly ONE degree of inexactness, so a SCRIPT difference
+ *      (`zh-hant` against `zh-hans`) is reported identically to a REGION
+ *      difference. That is a recorded defect rather than an oversight: the
+ *      analysis is at the reason selection in `selectSubtitleTrack`, a test in
+ *      `subtitles.test.ts` pins today's behaviour, and the fix belongs in the
+ *      shared `languageMatch` so audio and subtitles cannot come to disagree
+ *      about what "the same language" means.
+ * ---------------------------------------------------------------------- */
 
 export type SubtitleRejectionReason = "unsupported_subtitle_format";
 
@@ -74,6 +134,58 @@ export type SubtitleSelectionReason =
   /* Nothing was selected because there was nothing to select from. */
   | "no_subtitle_tracks"
   | "no_eligible_tracks";
+
+/**
+ * What a reason MEANS for the screen, as opposed to why it happened.
+ *
+ * Thirteen reasons is the right granularity for a debugger and the wrong one for
+ * a player: rendering a "no subtitles available" affordance should not require
+ * an exhaustive `switch`, and every consumer that writes its own is one release
+ * away from disagreeing with the next. So the classification is published here
+ * instead, once.
+ */
+export interface SubtitleOutcome {
+  /** Whether anything is put on screen. Equivalent to `selected !== null`. */
+  showsText: boolean;
+  /**
+   * Whether what is on screen is a FULL reading track rather than a forced
+   * narrative one.
+   *
+   * Separate from `showsText` because a forced track does not satisfy a viewer
+   * who asked to read: it carries only the lines the soundtrack leaves
+   * untranslated. A UI that treats "something is on screen" as "the request was
+   * honoured" tells a viewer their subtitles are working while most of the
+   * dialogue goes untitled, which is the conflation product invariant 4 exists
+   * to prevent.
+   */
+  showsFullSubtitles: boolean;
+}
+
+/**
+ * The outcome of every reason, exhaustively.
+ *
+ * A `Record` over the reason union rather than a lookup with a default, so
+ * adding a reason without deciding what it puts on screen is a COMPILE error
+ * rather than a value that silently reads as "nothing". `subtitles.property.test.ts`
+ * checks the table against the function over generated input, so the two cannot
+ * drift either.
+ */
+export const SUBTITLE_OUTCOME_BY_REASON: Record<SubtitleSelectionReason, SubtitleOutcome> = {
+  preferred_language_exact: { showsText: true, showsFullSubtitles: true },
+  preferred_language_primary_subtag: { showsText: true, showsFullSubtitles: true },
+  hearing_impaired_audio_language: { showsText: true, showsFullSubtitles: true },
+  hearing_impaired_audio_language_primary_subtag: { showsText: true, showsFullSubtitles: true },
+  /* Text, but not the subtitles anyone asked to read. */
+  forced_narrative_with_subtitles_off: { showsText: true, showsFullSubtitles: false },
+  forced_narrative_for_audio_language: { showsText: true, showsFullSubtitles: false },
+  off_by_viewer_preference: { showsText: false, showsFullSubtitles: false },
+  no_preference_expressed: { showsText: false, showsFullSubtitles: false },
+  preferred_language_forced_only: { showsText: false, showsFullSubtitles: false },
+  preferred_language_manual_only: { showsText: false, showsFullSubtitles: false },
+  no_preferred_language_available: { showsText: false, showsFullSubtitles: false },
+  no_subtitle_tracks: { showsText: false, showsFullSubtitles: false },
+  no_eligible_tracks: { showsText: false, showsFullSubtitles: false }
+};
 
 export interface SubtitleSelection {
   /**
@@ -381,12 +493,20 @@ function compareForcedTracks(a: SubtitleTrack, b: SubtitleTrack, policy: Subtitl
 }
 
 /**
- * Determinism -- by CODE POINT, not `localeCompare`.
+ * Determinism -- by UTF-16 CODE UNIT, not `localeCompare`.
  *
  * `localeCompare` without an explicit locale uses the host's collation, so the
  * same tracks on a device with Swedish collation can order differently from one
  * with en-US. "Same input, same output" would then be false across devices,
  * which is precisely the property this task exists to provide.
+ *
+ * Code UNIT rather than code POINT: `<` on strings compares UTF-16 code units,
+ * which is the same order as code point for everything in the BMP and differs
+ * above it -- an astral character (U+10000 and up) is a surrogate pair beginning
+ * at U+D800, so it sorts before U+E000..U+FFFF rather than after. Determinism is
+ * unaffected, since every host compares the same units; only the claim about
+ * WHICH order this is has to be accurate, because that is what a reader porting
+ * this comparator would reimplement.
  */
 function compareIds(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
@@ -484,10 +604,113 @@ function describeLanguages(effective: EffectiveLanguages): string {
 }
 
 /**
+ * Key a subtitle policy to the audio that will ACTUALLY play.
+ *
+ * `audioLanguage` is the only field coupling this policy to the audio decision,
+ * and the entire forced-narrative branch is dead without it. Leaving each caller
+ * to populate it by hand has two failure modes and neither of them raises
+ * anything:
+ *
+ *   - Forget it, and `null` disables forced selection completely. Nothing
+ *     reports an error; the viewer simply gets untranslated foreign dialogue.
+ *   - Fill it from `PlaybackCapabilities.preferredAudioLanguages`, which is the
+ *     nearest language-shaped value to hand, and it is wrong whenever the
+ *     preference could not be honoured -- which is routine. A viewer preferring
+ *     French, served Japanese because no French mix exists, would have forced
+ *     selection hunting a FRENCH forced track over JAPANESE audio: it captions
+ *     lines they could already follow and leaves the ones they cannot. That is
+ *     precisely the failure `subtitlePolicySchema.audioLanguage` documents.
+ *
+ * So this takes the `AudioSelection`, not a language and not a track: the input
+ * is the DECISION, which is the only thing that knows what will be heard.
+ *
+ * `null` in four cases, all of them genuinely unknown rather than defaulted:
+ * audio selection chose nothing (`no_audio_tracks`, `no_eligible_tracks`,
+ * `no_auto_selectable_tracks`), the chosen track states no language, it states
+ * only whitespace, or -- trimmed -- it states a single character.
+ *
+ * The test is the LENGTH the contract requires, not emptiness. `audioLanguage` is
+ * declared `z.string().min(2).transform(...).nullable()`, so `""` and `"e"` are
+ * equally values that field forbids, and a guard that only rejected `""` would
+ * write a one-character tag straight through and construct a `SubtitlePolicy` the
+ * schema would reject. `selectAudioTrack` takes the TYPE, so a provider adapter
+ * constructing a track literal reaches all four cases. What a sub-minimum tag
+ * would mean is "a language I cannot name" -- which is what `null` is already
+ * for.
+ *
+ * Lower-cased because this CONSTRUCTS a `SubtitlePolicy` and the schema
+ * lower-cases that field on `.parse()`. `languageMatch` folds case anyway, so
+ * this is about the value being what the contract says it is, not about making
+ * the comparison work.
+ *
+ * Every other field is passed through untouched: this establishes one fact and
+ * has no opinion about the viewer's settings.
+ */
+export function withSelectedAudio(policy: SubtitlePolicy, audio: AudioSelection): SubtitlePolicy {
+  const selected = audio.selected;
+  const language = selected === null ? "" : selected.language.trim().toLowerCase();
+  return { ...policy, audioLanguage: language.length < 2 ? null : language };
+}
+
+/**
  * Pure and deterministic: same tracks and policy in, same selection out,
  * regardless of input ordering. Every list in the result is sorted by a
- * comparator that terminates in a code-point tiebreak on the track id, so the
- * WHOLE result is order-invariant, not merely `selected`.
+ * comparator that terminates in a UTF-16 code-unit tiebreak on the track id, so
+ * the WHOLE result is order-invariant, not merely `selected`.
+ *
+ * THE PRECEDENCE, IN ONE PLACE. Steps 1, 2, 4, 5 and 6 are the TERMINAL ones:
+ * they are early returns in the order written and step 6 is exhaustive, so every
+ * input leaves by exactly one of them and "given any input, exactly one outcome"
+ * is structural rather than a claim. Step 3 ends nothing -- it is the language
+ * derivation that every input surviving step 2 passes through, and steps 4 to 6
+ * read its result. `SUBTITLE_OUTCOME_BY_REASON` says what each resulting reason
+ * puts on screen.
+ *
+ *   1. RENDERABILITY. A track whose format `supportedFormats` does not list is
+ *      rejected before anything else looks at it, because selecting one produces
+ *      a confident answer that shows nothing. If nothing survives:
+ *      `no_subtitle_tracks` when the stream offered none, `no_eligible_tracks`
+ *      when it offered some and the client can draw none. Checked BEFORE `mode`,
+ *      because whether this stream carries subtitles at all is knowledge only
+ *      these inputs hold, while the viewer's mode is already in the caller's hand.
+ *   2. OFF. `mode: "off"` ends the decision: nothing from the automatic pool can
+ *      be selected, whatever its language, kind or provider default. The single
+ *      exception is a forced track that fits the audio
+ *      (`forced_narrative_with_subtitles_off`), which the contract defines as
+ *      part of presenting the film rather than as subtitles the viewer declined.
+ *      Otherwise `off_by_viewer_preference`, with `ordered` still populated so
+ *      "you turned these off" stays distinguishable from "there is nothing to
+ *      turn on".
+ *   3. LANGUAGE. The viewer's `preferredLanguages` if it holds any non-blank
+ *      entry; otherwise, and only for a `hearingImpaired` viewer with a KNOWN
+ *      `audioLanguage`, that audio language; otherwise none at all. This is the
+ *      only place the policy supplies a language nobody stated, and the reason
+ *      values keep the derivation visible.
+ *   4. FULL SUBTITLES. The best automatic-pool track in one of those languages,
+ *      ranked by `compareTracks`: any language match over none, then language
+ *      group, then exact-over-variant, then preference index, then kind, then the
+ *      provider default, then format, then the track id. Nothing outside those
+ *      languages is ever selected, so there is no "first eligible" fallback --
+ *      audio must play something, subtitles must not appear uninvited.
+ *   5. FORCED. Failing that, the best forced track that belongs to the audio in
+ *      play (`forced_narrative_for_audio_language`), ranked by
+ *      `compareForcedTracks`, which asks about the AUDIO language and never about
+ *      what the viewer likes to read.
+ *   6. NOTHING, and which nothing: `no_preference_expressed`,
+ *      `preferred_language_forced_only`, `preferred_language_manual_only`, or
+ *      `no_preferred_language_available`.
+ *
+ * Where `isDefault` sits, because it is the input most often mistaken for an
+ * instruction: sixth of the eight criteria at step 4, below everything the viewer
+ * expressed and above only format and the id tiebreak, and third of the five in
+ * the forced comparator. It is therefore consulted only among tracks that have
+ * already qualified, and it can decide WHICH track is shown but never WHETHER one
+ * is. A `DEFAULT=YES` in a manifest is frequently just whichever rendition was
+ * written first; it must never speak over the viewer.
+ *
+ * Ties are broken by the track id compared by UTF-16 CODE UNIT, never by the
+ * order the provider listed its tracks in. The only input ordering this policy treats as
+ * meaningful is `preferredLanguages`, which the contract declares meaningful.
  */
 export function selectSubtitleTrack(
   tracks: readonly SubtitleTrack[],

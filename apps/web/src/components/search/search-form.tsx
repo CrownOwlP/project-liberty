@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { SEARCH_QUERY_MAX_LENGTH, normalizeSearchQuery } from "@liberty/contracts/domains/search";
+import { decideHydrationAdoption } from "./search-hydration";
 import {
   buildSearchHref,
   createSearchSyncState,
@@ -113,6 +114,82 @@ export function SearchForm({ initialQuery, statusMessage }: SearchFormProps) {
    * moments.
    */
   const syncRef = useLazyRef<SearchSyncState>(() => createSearchSyncState(initialQuery));
+
+  /**
+   * The field itself, so the effect below can read what it already holds.
+   *
+   * This is the only place in the component that touches the DOM node. Every
+   * other value on this surface travels through props, state or `search-sync`,
+   * and it stays that way: the node is read once, at one moment, for one fact
+   * that exists nowhere else.
+   */
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  /**
+   * Whether the hydration boundary has been passed.
+   *
+   * A ref rather than state because nothing renders from it and setting it must
+   * not schedule anything. It is set on the FIRST run of the effect below,
+   * whatever that run decided — including when the element could not be read.
+   * The boundary is a moment, not a retry: a later render is not a second
+   * chance to observe it, and treating it as one is how "adopt once" becomes
+   * "adopt whenever the DOM disagrees".
+   */
+  const hydratedRef = useRef(false);
+
+  /*
+   * ADOPT WHAT THE USER TYPED BEFORE REACT ARRIVED (PL-0705).
+   *
+   * The input is live HTML from the moment the server's markup lands, so it can
+   * be focused and typed into while the client bundle is still downloading.
+   * Those characters exist only in the DOM node; React's state was seeded from
+   * `initialQuery`. The rule for what that disagreement means — and why the
+   * adopted text is treated as typing rather than as a submitted query, and why
+   * it cannot disturb the epoch invariants in `search-sync.ts` — is
+   * `decideHydrationAdoption`, so it is unit-tested rather than reviewed once
+   * inside an effect body.
+   *
+   * `renderedValue` is `initialQuery` because that is what `useState` above was
+   * seeded with, and therefore what React rendered into `value` on the server.
+   * The two are coupled: changing the initial state means changing this too.
+   *
+   * `useLayoutEffect` AND NOT `useEffect`, decided on WHEN THE READ HAPPENS
+   * RELATIVE TO THE COMMIT THAT DESTROYS WHAT IS BEING READ. React 19 skips
+   * assigning `element.value` while hydrating — which is the only reason the
+   * typed text is still there to find — but every LATER commit that updates
+   * this input assigns it unconditionally when it differs from the prop. So the
+   * read has to happen inside the hydration commit itself, before anything else
+   * can commit and before the browser paints. A layout effect runs there, after
+   * the DOM mutations and after React has attached the ref, and the state update
+   * it makes is flushed before that same paint, so the field is never painted
+   * showing one thing and then corrected. A passive effect runs after the paint
+   * and can be preceded by an unrelated commit, and if one lands first the text
+   * is not merely late, it is gone: nothing else in the process holds a copy.
+   *
+   * The cost of blocking paint here is one property read and one string
+   * comparison. `value` is not a geometry property, so nothing is forced to lay
+   * out. React 19's server renderer maps `useLayoutEffect` to a silent no-op, so
+   * the usual `useIsomorphicLayoutEffect` shim would buy nothing but indirection.
+   *
+   * IF THAT HYDRATION BEHAVIOUR EVER CHANGES the failure is the one we already
+   * have, not a worse one: a React that overwrites the value during hydration
+   * leaves the DOM agreeing with `initialQuery`, this returns `settled`, and
+   * nothing is written. There is no version of this that invents text.
+   *
+   * `initialQuery` is a dependency because the effect reads it. That makes the
+   * effect re-run on an external navigation, where it observes
+   * `post-hydration` and returns without touching anything.
+   */
+  useLayoutEffect(() => {
+    const input = inputRef.current;
+    const decision = decideHydrationAdoption({
+      domValue: input === null ? null : input.value,
+      renderedValue: initialQuery,
+      phase: hydratedRef.current ? "post-hydration" : "hydration"
+    });
+    hydratedRef.current = true;
+    if (decision.kind === "adopt") setValue(decision.value);
+  }, [initialQuery]);
 
   const commit = useCallback(
     (next: string) => {
@@ -313,6 +390,10 @@ export function SearchForm({ initialQuery, statusMessage }: SearchFormProps) {
           name="q"
           onChange={(event) => setValue(event.target.value)}
           placeholder="Search titles and genres"
+          // Read exactly once, at the hydration boundary, to recover text typed
+          // into this element while it was still plain server-rendered HTML.
+          // See the layout effect above.
+          ref={inputRef}
           spellCheck={false}
           type="search"
           value={value}

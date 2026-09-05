@@ -310,19 +310,182 @@ Response:
 
 A rail with no surfaceable items is omitted entirely rather than returned empty, because an empty rail renders as a titled band of nothing. Clients must therefore treat rail presence as data, not layout: `rails` may itself be `[]` when nothing clears the rights gate, and that is a valid response meaning "genuinely nothing to show" — distinct from a failure, which is never an empty body.
 
+**`rails: []` at 200 is now reachable only from a *configured* source.** It used to be what a deployment served, because the route called a synchronous loader whose return type had nowhere to put a reason — so a process with no catalog at all made a statement about the catalog. The route awaits `loadHomeCatalog` instead, and "no source is configured" is a 503 with its own code (below). A client receiving `{ "rails": [] }` may therefore rely on it meaning that a real source was asked and answered with nothing surfaceable.
+
 Only rights on the `PLAYABLE_CONTENT_RIGHTS` allowlist are surfaced. Home rails cover top-level browsable kinds only; individual `episode` items are reachable through their series, never as a standalone rail entry.
 
 Items within a rail are ordered by release year descending, then title ascending, so the same catalog always produces the same page.
 
-The response is validated against `catalogHomeResponseSchema` before it leaves the server. A fixture or provider regression therefore surfaces as HTTP 500 with `catalog_response_failed_validation` rather than as malformed JSON the client has to defend against. Served `cache-control: no-store`.
+### Failure branches
+
+Every failure answers `{ "error": "<code>" }`. Never an empty body, never a 200, and never anything beyond the code: `CatalogLoadResult` carries a *reason*, not the Zod issue array an earlier version of this route attached to its 500 when it ran the parse itself. That array was never part of this contract, and the documented code has not changed.
+
+| Status | `error` | Meaning |
+| --- | --- | --- |
+| 500 | `catalog_response_failed_validation` | The source answered and this server could not publish what it said — a fixture or provider regression, surfaced as a stable code rather than as malformed JSON the client has to defend against. A fault on this side of the boundary. |
+| 503 | `catalog_source_not_configured` | No catalog metadata source is configured for this process, so nothing was consulted. Nothing is wrong with the request; the remedy is an operator's. See `docs/CATALOG_SOURCE.md`. |
+| 503 | `catalog_source_unavailable` | A source is configured and it did not answer — a network fault, a timeout, an adapter throwing. |
+
+The two 503s follow the precedent the profile, progress and watchlist routes set with `authentication_not_configured`: one status across this app for "this deployment is missing a dependency", so an operator reading across the surfaces sees a single signal. A reason this route does not recognise is answered **500** — the loader produced something the handler was not updated for, which is a server-side inconsistency and not the caller's problem. It is never silently downgraded to a 200.
+
+The response is validated against `catalogHomeResponseSchema` inside `loadHomeCatalog` before it leaves the server, and the HTTP half does not re-parse what the loader has already checked. Every branch, both refusals included, is served `cache-control: no-store`: a cached refusal outlives the configuration that caused it.
+
+## Profile, progress and watchlist routes
+
+Implemented in `apps/web/src/app/api/v1/{profiles,progress,watchlist}/` — a `contract.ts`
+(schemas, reason vocabulary, constructors, status), a `handler.ts` (the testable HTTP half)
+and thin `route.ts` entry points, matching the shape `/playback/session` established. The
+wire schemas live in those directories rather than in `@liberty/contracts`, for the reason
+`playback/session/contract.ts` records; the move is follow-up for all four groups together.
+
+Storage comes from a composition root at `apps/web/src/lib/db/`, which is a **consumer** of
+`apps/web/src/app/api/deployment-environment.ts` rather than a second reading of `NODE_ENV`.
+The selection is:
+
+1. `DATABASE_URL` set and a `postgres:`/`postgresql:` URL → the PostgreSQL adapter over
+   `@liberty/persistence`. Production; chosen by configuration, not by environment.
+2. `DATABASE_URL` set and malformed → **refused**, never a fallback. Falling back to memory on
+   an operator's typo would serve a volatile store from a process that believes it has a
+   database.
+3. `DATABASE_URL` unset, outside a deployment → an in-memory development adapter.
+4. `DATABASE_URL` unset, in a deployment → **refused**, with the operator's remedy named.
+
+The in-memory adapter cannot be selected in a deployment *by construction*, not by a runtime
+condition: `createInMemoryRepository` requires a `NonDeploymentEnvironment` witness, whose
+constructor is private and whose only producer answers `null` outside the
+`development`/`test` allowlist. Deleting the check is a compile error. Every response names
+which adapter answered, as `served_by_postgres_adapter` or `served_by_in_memory_adapter`.
+
+**No SQL in these routes has been executed against PostgreSQL.** There is no database in the
+development environment, so the PostgreSQL adapter is unexercised and the `integration` gate
+on PL-0402/0403/0404 is not satisfiable from this lane.
+
+### Identity, while there is no sign-in
+
+`@liberty/auth` ships the seam but nothing in `apps/web` constructs it — there is no
+`app/api/auth/[...all]` handler, no configured secret or mail transport, and no database for
+the sessions PL-0401 chose. So in a deployment every route below answers `unavailable` with
+`authentication_not_configured` (503). Outside a deployment they act as a **development
+account**, gated by the same witness, defaulting to `development-account` and overridable per
+request with `x-liberty-development-account` / `x-liberty-development-session` so that
+cross-household behaviour can be exercised. No route reads a profile id from a client: the
+active profile comes from `active_profile_selection`, written only by
+`POST /api/v1/profiles/selection`.
+
+### Shared response shape
+
+Every route answers a discriminated union on `outcome` with a **non-empty** `reasons` array on
+every branch — a tuple in the type, re-validated against the schema before the response
+leaves the server, so a dropped trail is a 500 with a stable code rather than a decision
+nobody can explain. `reasons[0]` is the primary reason; the adapter line is always present.
+Every request schema is `.strict()` at every level, so an unaccepted field is refused as
+`request_field_not_permitted` rather than silently stripped. All responses are `no-store`.
+
+Authorization denials are published through `externalProfileAccessReason`, so "no such
+profile" and "not your profile" both surface as `profile_unavailable` with **403** — never
+404, because a differing status would restore the enumeration oracle the collapsed vocabulary
+removes.
+
+### `GET /api/v1/profiles`
+
+`{ "outcome": "listed", "reasons": [...], "profiles": [ { "id", "displayName", "avatarKey", "maxRating", "createdAt" } ], "activeProfileId": string|null }` — 200.
+Live profiles only. `userId` is never published. `activeProfileId` is `null` for "signed in,
+nothing chosen", which is the profile picker's state.
+
+### `POST /api/v1/profiles`
+
+Request: `{ "displayName": string, "avatarKey": string|null, "maxRating": string|null }`,
+`.strict()`. All three keys required; the two optional facts are nullable rather than absent.
+`displayName` carries no schema-level length or blankness rule, deliberately —
+`resolveProfileCreation` owns those and reports `display_name_is_blank` /
+`display_name_too_long` with the limit named.
+
+Response `{ "outcome": "created", "reasons": [...], "profile": {...} }` — **201**.
+Refusals: `display_name_is_blank`, `display_name_too_long`, `avatar_key_too_long`,
+`max_rating_too_long` → **400**; `profile_limit_reached`, `display_name_already_used` →
+**409** (the request is well-formed and would have been accepted against a different account).
+
+### `POST /api/v1/profiles/selection`
+
+Request: `{ "profileId": string }`, `.strict()`. The one endpoint where a client names a
+profile, which is what a picker does. No UUID pattern in the schema: `isMintedProfileId` is the
+single authority and an unminted id is answered `profile_unavailable` like any other.
+
+Response `{ "outcome": "selected", "reasons": [...], "profileId": string }` — 200. The trail
+also carries the grant (`selectable_profile_of_account`).
+
+### `GET /api/v1/progress/{contentId}`
+
+`{ "outcome": "read", "reasons": [...], "progress": {...}|null }` — **200 including `null`**.
+A title nobody has started is the ordinary case; a 404 would make every client's fetch wrapper
+treat it as an error. The reason is `progress_absent`.
+
+`progress` is `{ contentId, positionSeconds: number|null, runtimeSeconds: number|null,
+writerEpoch, writerId, writeSeq, updatedAt }`. `positionSeconds: null` **is not 0**: it is a
+row created by a lease, with nothing watched.
+
+### `POST /api/v1/progress/{contentId}/lease`
+
+Request: `{ "writerId": string }`, `.strict()`. Response
+`{ "outcome": "leased", "reasons": [...], "lease": { "epoch": number, "writerId": string } }` — 200.
+
+POST rather than PUT because each call *allocates* a new epoch and supersedes the previous
+holder. A write cannot mint its own lease; that separation is the handoff mechanism.
+
+### `PUT /api/v1/progress/{contentId}`
+
+Request, `.strict()` at both levels:
+`{ "lease": { "epoch": int>=0, "writerId": string }, "writeSeq": int>=0, "positionSeconds": number, "runtimeSeconds": number|null }`.
+
+**There is no field through which a client can assert a time, and there must never be one.**
+`writer-epoch.ts` rejects "latest client timestamp wins" and asserts the absence by test.
+`positionSeconds` is unbounded in the schema on purpose — `resolveProgressWrite` owns it and
+reports `position_not_representable` / `position_beyond_runtime` distinctly.
+
+Response `{ "outcome": "written", "reasons": [...], "progress": {...} }` — 200. The trail
+carries `current_writer` plus the resolver's notes (`retained_known_runtime`,
+`runtime_restated`, `position_moved_backwards`, `position_first_reported`), because a grant
+that quietly discarded information is as hard to debug as an unexplained denial.
+
+Write refusals answer **409**, not 403: `no_writer_lease`, `epoch_not_issued`,
+`superseded_by_newer_writer`, `writer_id_mismatch`, `stale_write_within_writer`. The caller is
+authorized and well-formed; what it lacks is the lease, and the remedy is to take one. A
+**rewind by the current writer is accepted** — position is not a term in the authority
+decision.
+
+`instant_not_representable` answers `unavailable` (503), not `refused`: that instant is the
+server's own stamp and no client can influence it.
+
+### `GET /api/v1/watchlist?limit=`
+
+`{ "outcome": "listed", "reasons": [...], "entries": [ { "contentId", "addedAt" } ], "limit": int }` — 200.
+Most recently added first, with `contentId` descending as the tie-break so the page is a total
+order. `limit` defaults to 50 and is capped at 200; the applied value is echoed. A limit above
+the cap is `limit_exceeds_page_maximum` (400); anything that is not a non-negative safe integer
+— including a blank `?limit=`, which is *not* read as 0 — is `limit_not_representable` (400),
+emitted by `parseListLimit` alone.
+
+### `PUT` / `DELETE /api/v1/watchlist/{contentId}`
+
+No body; both parse one anyway against a `.strict()` empty object, so a client that believed
+it could send `addedAt` is told rather than having it dropped.
+
+Response `{ "outcome": "mutated", "reasons": [...], "changed": boolean, "entry": { "contentId", "addedAt": string|null }|null }` — **always 200**.
+The primary reason is one of `added`, `already_present`, `removed`, `not_present`. A double tap
+is not a 409 and a retried remove is not a 404: the client is a button on a remote control
+behind an unreliable network and a retry must converge. Re-adding does **not** move `addedAt`,
+so the list is not reordered.
+
+`entry.addedAt` is nullable, and the two adapters genuinely differ: PostgreSQL's
+`ON CONFLICT DO NOTHING ... RETURNING` proves a row existed without returning it, so
+`already_present` reports `null` there, while the in-memory adapter read the entry first and
+reports the real value. Substituting the conflicting write's instant would fabricate a
+first-added time, and that value is the list's sort key. Clients must handle `null`.
 
 ## Planned contracts
 
 - `GET /api/v1/search?q=`
 - `GET /api/v1/titles/:id`
-- `PUT /api/v1/progress/:contentId`
-- `GET /api/v1/watchlist`
-- `PUT /api/v1/watchlist/:contentId`
 - `GET /api/v1/live/channels`
 - `GET /api/v1/live/epg`
 

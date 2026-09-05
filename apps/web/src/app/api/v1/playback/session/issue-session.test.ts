@@ -1,8 +1,9 @@
 import type { StreamCandidate } from "@liberty/contracts/domains/playback";
 import type { ContentRights } from "@liberty/contracts/shared/rights";
 import { describe, expect, it } from "vitest";
+import { NonDeploymentEnvironment } from "../../../deployment-environment";
 import {
-  fixtureAuthorizedCandidates,
+  fixtureProvider,
   type AuthorizedCandidate,
   type AuthorizedCandidateResolution,
   type AuthorizedCandidateResolver
@@ -397,10 +398,24 @@ describe("outcomes", () => {
   });
 
   it("publishes the fixture candidates over https when the dev resolver is used", async () => {
-    /* The origin is pinned rather than read from the environment: a test whose
+    /*
+     * The origin is pinned rather than read from the environment: a test whose
      * expectations depend on somebody's `.env.local` passes on one machine and
-     * fails on another. */
-    const response = await issue(fixtureAuthorizedCandidates(CONTENT_ID, "https://fixtures.invalid"));
+     * fails on another.
+     *
+     * The provider is reached through a witness because there is no other way to
+     * reach it -- `fixtureProvider` takes a `NonDeploymentEnvironment`, which
+     * only `deployment-environment.ts` can mint and only for an environment on
+     * its allowlist. `test` is the one vitest sets, and the non-null assertion
+     * is written as a throw so a failure here reads as "the allowlist changed"
+     * rather than as a `TypeError` inside the fixture builder.
+     */
+    const environment = NonDeploymentEnvironment.classify("test");
+    if (environment === null) throw new Error("`test` is no longer a non-deployment environment");
+
+    const response = await issue(
+      fixtureProvider(environment).candidates(CONTENT_ID, "https://fixtures.invalid")
+    );
 
     expect(response.outcome).toBe("granted");
     if (response.outcome !== "granted") return;

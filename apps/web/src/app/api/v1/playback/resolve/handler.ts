@@ -1,6 +1,6 @@
 import { playbackResolveRequestSchema } from "@liberty/contracts/domains/playback";
 import { rankStreamCandidates } from "@liberty/media-engine";
-import { FIXTURE_ENVIRONMENTS } from "../session/authorized-candidates";
+import { isLocalDeployment } from "../../../deployment-environment";
 
 /* -------------------------------------------------------------------------
  * The HTTP half of POST /api/v1/playback/resolve (PL-0702)
@@ -83,24 +83,26 @@ export interface ResolveScaffoldOptions {
    * without mutating the process environment -- a test that writes `NODE_ENV`
    * is a test that changes how everything else in the same worker behaves.
    *
-   * Absent, it is derived from `NODE_ENV` at the PROCESS boundary, which is the
-   * same switch `../session/authorized-candidates.ts` uses to keep fixtures out
-   * of a hosted deployment, and it is not a request field: a caller must never
-   * be able to name the environment it would like to be treated as.
+   * Absent, it is derived from `NODE_ENV` at the PROCESS boundary, by the same
+   * classification that keeps the fixture provider out of a hosted deployment.
+   * It is not a request field: a caller must never be able to name the
+   * environment it would like to be treated as.
    *
-   * "The same switch" is now literally the same list rather than a second copy
-   * of the same expression. It was `NODE_ENV !== "production"` here and there,
-   * which agreed by coincidence and admitted every value that is not that one
-   * string -- so `staging` or an unset variable exposed a route that RANKS
-   * CALLER-SUPPLIED CANDIDATES on a deployment nobody meant to be a development
-   * one. Importing `FIXTURE_ENVIRONMENTS` means the two guards cannot drift, and
-   * the comment above cannot quietly stop being true.
+   * "The same switch" is now literally the same CALL rather than a second copy
+   * of the same expression. It was `NODE_ENV !== "production"` here and in the
+   * session API, which agreed by coincidence and admitted every value that is
+   * not that one string -- so `staging` or an unset variable exposed a route
+   * that RANKS CALLER-SUPPLIED CANDIDATES on a deployment nobody meant to be a
+   * development one. That was corrected once by sharing the ALLOWLIST and
+   * restating the `.includes` test here; it is corrected again by consuming
+   * `isLocalDeployment`, so `app/api/deployment-environment.ts` is the only
+   * place the allowlist is written and the only place it is tested.
    */
   readonly available?: boolean | undefined;
 }
 
 function scaffoldIsAvailable(options: ResolveScaffoldOptions): boolean {
-  return options.available ?? FIXTURE_ENVIRONMENTS.includes(process.env.NODE_ENV ?? "");
+  return options.available ?? isLocalDeployment();
 }
 
 /**

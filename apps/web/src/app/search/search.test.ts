@@ -5,7 +5,9 @@ import type {
   SeriesCatalogItem
 } from "@liberty/contracts/domains/catalog";
 import { SEARCH_QUERY_MAX_LENGTH, normalizeSearchQuery } from "@liberty/contracts/domains/search";
+import { NON_DEPLOYMENT_ENVIRONMENTS } from "../api/deployment-environment";
 import {
+  CATALOG_SOURCE_NOT_CONFIGURED_REASON,
   describeSearchState,
   getSearchResults,
   loadSearchResults,
@@ -15,6 +17,39 @@ import {
 
 const NOW = new Date("2026-08-17T00:00:00.000Z");
 const ISO = NOW.toISOString();
+
+/*
+ * Environments that are not on the allowlist, written out rather than derived,
+ * for the reason `lib/catalog-source-registry.test.ts` gives: the complement of
+ * a two-element allowlist over all strings is not computable, so these are the
+ * values a real deployment reports plus the near-misses an allowlist exists to
+ * catch.
+ *
+ * `""` IS HOW AN UNSET VARIABLE IS EXPRESSED HERE. Passing `undefined` would
+ * re-enter `getSearchResults`'s default parameter and read `process.env.NODE_ENV`,
+ * which under vitest is `test` -- so a test that passed `undefined` expecting a
+ * refusal would be asserting the opposite of what it appeared to.
+ */
+const DEPLOYMENT_ENVIRONMENTS = [
+  "production",
+  "Production",
+  "PRODUCTION",
+  "staging",
+  "preview",
+  "prod",
+  "ci",
+  ""
+] as const;
+
+/*
+ * The two sources every loader test below is written against, with the
+ * environment STATED rather than inherited from whatever the suite runs in.
+ * `getSearchResults` reads `process.env.NODE_ENV` when given no third argument,
+ * and a test that relied on that would silently assert "whatever this machine
+ * is" instead of the fact it means.
+ */
+const fixtureSource = (query: string) => getSearchResults(query, NOW, "development");
+const deploymentSource = (query: string) => getSearchResults(query, NOW, "production");
 
 /*
  * Per-kind builders, for the reason PL-0101's catalog tests use them:
@@ -257,18 +292,67 @@ describe("searchCatalog ordering determinism", () => {
   });
 });
 
-describe("getSearchResults against the demo fixtures", () => {
-  it("finds a title by prefix", () => {
-    const response = getSearchResults("aurora", NOW);
+describe("getSearchResults against the configured metadata source", () => {
+  it("finds a title by prefix where the fixtures are permitted", async () => {
+    const response = await getSearchResults("aurora", NOW, "development");
+
+    if (response === null) throw new Error("development must have a configured source");
     expect(idsOf(response)).toEqual(["aurora-fall"]);
     expect(response.results[0]?.matchedOn).toBe("title-prefix");
     expect(response.generatedAt).toBe(ISO);
   });
 
-  it("finds titles by genre", () => {
-    const response = getSearchResults("drama", NOW);
+  it("finds titles by genre where the fixtures are permitted", async () => {
+    const response = await getSearchResults("drama", NOW, "development");
+
+    if (response === null) throw new Error("development must have a configured source");
     expect(idsOf(response)).toEqual(["northstar"]);
     expect(response.results[0]?.matchedOn).toBe("genre-contains");
+  });
+
+  /*
+   * Tied to the allowlist rather than restating it. If a value is ever added to
+   * `NON_DEPLOYMENT_ENVIRONMENTS`, this starts covering it without being edited
+   * -- and if search ever stops consulting the registry, it fails.
+   */
+  it("answers for every environment the allowlist admits", async () => {
+    expect(NON_DEPLOYMENT_ENVIRONMENTS.length).toBeGreaterThan(0);
+
+    for (const nodeEnv of NON_DEPLOYMENT_ENVIRONMENTS) {
+      const response = await getSearchResults("aurora", NOW, nodeEnv);
+      expect(response, nodeEnv).not.toBeNull();
+      expect(response === null ? [] : idsOf(response), nodeEnv).toEqual(["aurora-fall"]);
+    }
+  });
+
+  /*
+   * THE ONE THAT MATTERS. A hosted build has no metadata source, so it cannot
+   * serve six invented titles as search results. `null` and NOT an empty
+   * `SearchResponse`: an empty response is a claim that the catalog was searched
+   * and matched nothing, and no catalog was searched.
+   */
+  it("answers null on a deployment rather than an empty result set", async () => {
+    for (const nodeEnv of DEPLOYMENT_ENVIRONMENTS) {
+      expect(await getSearchResults("aurora", NOW, nodeEnv), JSON.stringify(nodeEnv)).toBeNull();
+    }
+  });
+
+  /*
+   * Both directions from one function. Either assertion alone would pass against
+   * an implementation that had stopped consulting the environment entirely --
+   * one against a source that always answers, the other against one that never
+   * does.
+   */
+  it("gives a deployment and a development build different answers", async () => {
+    expect(await getSearchResults("aurora", NOW, "production")).not.toEqual(
+      await getSearchResults("aurora", NOW, "development")
+    );
+  });
+
+  it("reads the process environment when given no argument", async () => {
+    expect(await getSearchResults("aurora", NOW)).toEqual(
+      await getSearchResults("aurora", NOW, process.env.NODE_ENV)
+    );
   });
 });
 
@@ -279,15 +363,91 @@ describe("loadSearchResults", () => {
   });
 
   it("distinguishes a query that matched nothing from a query that was never run", async () => {
-    const result = await loadSearchResults("zzzz", (query) => getSearchResults(query, NOW));
+    const result = await loadSearchResults("zzzz", fixtureSource);
     expect(result.status).toBe("empty");
     if (result.status !== "empty") return;
     expect(result.query).toBe("zzzz");
     expect(result.generatedAt).toBe(ISO);
   });
 
+  /*
+   * THE REFUSAL, AND WHY IT IS NOT `empty`. On a deployment there is no metadata
+   * source, so nothing was searched. `empty` renders "No titles match “aurora”"
+   * as a heading and speaks that sentence into the live region -- a statement
+   * about the catalog, made by a process that has no catalog. The reason code is
+   * the one `loadHomeCatalog` already publishes, so the two discovery surfaces
+   * refuse in the same vocabulary instead of inventing one each.
+   */
+  it("refuses on a deployment with a stated reason rather than reporting empty", async () => {
+    for (const nodeEnv of DEPLOYMENT_ENVIRONMENTS) {
+      const result = await loadSearchResults("aurora", (query) =>
+        getSearchResults(query, NOW, nodeEnv)
+      );
+
+      expect(result, JSON.stringify(nodeEnv)).toEqual({
+        status: "error",
+        reason: CATALOG_SOURCE_NOT_CONFIGURED_REASON
+      });
+    }
+  });
+
+  /*
+   * The two absences, side by side, from the same loader. A query that genuinely
+   * matched nothing against a configured catalog is `empty`; the same query
+   * against a process with no catalog is `error`. If these ever collapse, one of
+   * them is telling the reader something untrue.
+   */
+  it("keeps a refused source and an empty result set apart", async () => {
+    const empty = await loadSearchResults("zzzz", fixtureSource);
+    const refused = await loadSearchResults("zzzz", deploymentSource);
+
+    expect(empty.status).toBe("empty");
+    expect(refused.status).toBe("error");
+  });
+
+  /*
+   * `null` reaches the configuration branch and never the schema. Parsing it
+   * would report a missing provider as a malformed payload, which sends whoever
+   * reads the reason code looking for a broken source instead of an unconfigured
+   * one.
+   */
+  it("reports a null payload as unconfigured, not as a validation failure", async () => {
+    const result = await loadSearchResults("aurora", () => null);
+
+    expect(result).toEqual({
+      status: "error",
+      reason: CATALOG_SOURCE_NOT_CONFIGURED_REASON
+    });
+  });
+
+  /*
+   * A source with nothing to ask and a source that could not be reached are
+   * different facts with different remedies -- configure a provider, or find out
+   * why the one configured is failing -- so they carry different reason codes.
+   */
+  it("distinguishes an unconfigured source from a failing one", async () => {
+    const unconfigured = await loadSearchResults("aurora", () => null);
+    const failing = await loadSearchResults("aurora", () => {
+      throw new Error("index unreachable");
+    });
+
+    expect(unconfigured).not.toEqual(failing);
+    expect(failing).toEqual({ status: "error", reason: "search_source_unavailable" });
+  });
+
+  /*
+   * `idle` is decided before the source is consulted, on a deployment too. A
+   * search that was never run cannot have been refused, and this branch makes no
+   * claim about the catalog. Asserted rather than left implicit because the
+   * whole point of this file is that each state says exactly one true thing.
+   */
+  it("still reports no query as idle on a deployment", async () => {
+    expect(await loadSearchResults("", deploymentSource)).toEqual({ status: "idle" });
+    expect(await loadSearchResults("   ", deploymentSource)).toEqual({ status: "idle" });
+  });
+
   it("returns validated results for a query that matched", async () => {
-    const result = await loadSearchResults("aurora", (query) => getSearchResults(query, NOW));
+    const result = await loadSearchResults("aurora", fixtureSource);
     expect(result.status).toBe("ok");
     if (result.status !== "ok") return;
     expect(idsOf(result.response)).toEqual(["aurora-fall"]);
@@ -359,7 +519,7 @@ describe("loadSearchResults", () => {
     // source computes the response from the query it was handed. It becomes
     // reachable the day `GET /api/v1/search` serves this shape over a network,
     // which is exactly when nobody would think to add it.
-    const result = await loadSearchResults("  AURORA  ", (query) => getSearchResults(query, NOW));
+    const result = await loadSearchResults("  AURORA  ", fixtureSource);
     expect(result.status).toBe("ok");
     if (result.status !== "ok") return;
     expect(result.response.query).toBe("AURORA");
@@ -392,8 +552,21 @@ describe("describeSearchState", () => {
       "No titles match “zzzz”."
     );
 
-    const one = await loadSearchResults("aurora", (query) => getSearchResults(query, NOW));
+    const one = await loadSearchResults("aurora", fixtureSource);
     expect(describeSearchState(one)).toBe("1 title matches “aurora”.");
+  });
+
+  /*
+   * The deployment refusal is announced too, and it is announced as a failure
+   * rather than as a result. A live region that said "No titles match “aurora”"
+   * here would speak, to the one reader who cannot see the panel explaining
+   * otherwise, a fact about a catalog that was never consulted.
+   */
+  it("announces the deployment refusal as unavailable, never as no results", async () => {
+    const refused = await loadSearchResults("aurora", deploymentSource);
+
+    expect(refused.status).toBe("error");
+    expect(describeSearchState(refused)).toBe("Search is currently unavailable.");
   });
 
   it("pluralizes a multi-result announcement", () => {

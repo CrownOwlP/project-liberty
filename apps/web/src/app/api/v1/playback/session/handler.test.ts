@@ -179,9 +179,10 @@ describe("the route module Next actually deploys", () => {
      *
      * It is also the only place the DEFAULT resolver runs, since a route module
      * has no parameter through which one could be supplied. That resolver is
-     * gated on `NODE_ENV` -- fixtures outside production, `not-configured`
-     * inside it -- so the assertion is written against BOTH of its states rather
-     * than against whichever one this machine happens to be in.
+     * gated on an ALLOWLIST of `NODE_ENV` values -- fixtures under `development`
+     * and `test`, `not-configured` under every other value including none at all
+     * -- so the assertion is written against BOTH of its states rather than
+     * against whichever one this machine happens to be in.
      */
     const response = await POST(
       postJson({ contentId: "aurora-fall", capabilities: CAPABILITIES })

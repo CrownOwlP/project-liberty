@@ -2,7 +2,12 @@ import Link from "next/link";
 import { SearchForm } from "../../components/search/search-form";
 import { SearchResultList } from "../../components/search/search-results";
 import styles from "../../components/search/search.module.css";
-import { describeSearchState, loadSearchResults, readSearchQueryParam } from "./search";
+import {
+  CATALOG_SOURCE_NOT_CONFIGURED_REASON,
+  describeSearchState,
+  loadSearchResults,
+  readSearchQueryParam
+} from "./search";
 
 /**
  * Rendered per request. The query lives in the URL, so a prerendered page would
@@ -56,16 +61,33 @@ function SearchEmpty({ query }: { query: string }) {
  * a server render, and an alert whose content is present when the region is
  * first inserted is frequently not announced by assistive technology anyway; it
  * remains a heading and body text that a reader reaches normally.
+ *
+ * TWO SENTENCES FOR TWO FAILURES, because "try again in a moment" is FALSE for
+ * one of them. `catalog_source_not_configured` means this process has no catalog
+ * metadata source at all — retrying will produce the identical refusal forever,
+ * and the remedy belongs to an operator rather than to the reader. Telling a
+ * user to retry something that cannot succeed is the same class of defect as
+ * telling them nothing matched a search that never ran. The heading and the
+ * reason line are shared, so the panel is one panel; only the explanation
+ * branches.
  */
 function SearchUnavailable({ reason }: { reason: string }) {
   return (
     <section className="section">
       <div className="state-panel">
         <h2>We couldn&apos;t run that search</h2>
-        <p>
-          The search service didn&apos;t return a usable response. Nothing is wrong with your
-          account — try again in a moment.
-        </p>
+        {reason === CATALOG_SOURCE_NOT_CONFIGURED_REASON ? (
+          <p>
+            This deployment has no catalog to search — no metadata source is configured for it.
+            Nothing is wrong with your account, and retrying will not change the answer until an
+            operator configures one.
+          </p>
+        ) : (
+          <p>
+            The search service didn&apos;t return a usable response. Nothing is wrong with your
+            account — try again in a moment.
+          </p>
+        )}
         <p className="code state-detail">{reason}</p>
       </div>
     </section>

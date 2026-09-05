@@ -9,13 +9,17 @@
 import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import { listMessages, listJournal, readRejection } from "../agent-bus.mjs";
+import { listMessages, listJournal } from "../agent-bus.mjs";
 
 const root = process.cwd();
 const args = process.argv.slice(2);
+// A `--`-prefixed token is the next FLAG, not this flag's value: without the
+// guard, `--worker --phase build` reads back as `worker.active === "--phase"`
+// and the snapshot names a worker that does not exist. Same rule, same shape,
+// as `agent-dispatcher.mjs`.
 const flag = (name, fallback = null) => {
   const i = args.indexOf(name);
-  return i >= 0 && args[i + 1] !== undefined ? args[i + 1] : fallback;
+  return i >= 0 && args[i + 1] !== undefined && !args[i + 1].startsWith("--") ? args[i + 1] : fallback;
 };
 
 function readJson(rel, fallback = null) {
@@ -27,7 +31,11 @@ function git(...a) {
   } catch { return null; }
 }
 
-const tasks = readJson("control/tasks.json", { tasks: [] }).tasks;
+// The `readJson` fallback only covers an unreadable or unparseable file. A file
+// that parses to something without a `tasks` array -- `{}`, `null`, a bare list
+// -- would still yield `undefined` here and throw on the first `.filter` below,
+// so the SHAPE is defaulted separately from the read.
+const tasks = readJson("control/tasks.json", {})?.tasks ?? [];
 const events = (() => {
   try {
     return fs.readFileSync(path.join(root, "control/events.jsonl"), "utf8")
@@ -137,6 +145,30 @@ function renderMarkdown(s) {
     "# Project Liberty — Mission Control",
     "",
     `> Generated ${s.generatedAt} · regenerated automatically by each cloud worker.`,
+    "",
+    // Provenance, in the page itself.
+    //
+    // This file has been read as a status report and believed while it was
+    // months out of date, because nothing on the page said what would make it
+    // move. The timestamp above is the last time the generator RAN -- not the
+    // last time any of these facts changed -- and the generator only runs when
+    // a cloud worker runs or somebody invokes it by hand. So a stale page is
+    // not a stale system; it is an absent worker, and the two need different
+    // responses.
+    //
+    // The regeneration command is printed rather than described because the
+    // outputs are committed: a reader who spots stale data can fix it, and the
+    // fix is one command they should not have to go looking for.
+    "> **Generated file — do not edit.** `scripts/cloud/mission-control-status.mjs` writes this",
+    "> and `control/mission-control.json` from committed state; any hand edit is overwritten on the",
+    "> next run. The timestamp above is when the generator last ran, not when the project last",
+    "> changed: if it predates the head commit, no worker has refreshed this since. Regenerate with",
+    "> `node scripts/cloud/mission-control-status.mjs --worker <agentId> --phase <phase>`.",
+    "",
+    // `Run: local` below is emitted whenever GITHUB_RUN_ID is unset, so it is
+    // also the tell for "this snapshot did not come from GitHub Actions".
+    "> **`Run: local`** means the snapshot was produced outside GitHub Actions. A hosted worker run",
+    "> records its run URL instead.",
     "",
     `## Progress — ${s.progress.done}/${s.progress.total} tasks (${s.progress.percent}%)`,
     "",

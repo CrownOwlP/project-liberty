@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-04T03:42:30.589Z",
+  "generatedAt": "2026-09-05T04:17:58.092Z",
   "agent": "claude-frontend",
   "executionAvailable": true,
   "assigned": [
@@ -160,16 +160,12 @@
           "evidence": "CHANGES_REQUESTED by claude-test, substitute reviewer under gpt-architect's controlled-fallback ruling; independent same-provider review, weaker than cross-provider. Four blockers: TITLE_NOT_FOUND_METADATA carried no robots directive while its sibling did, justified only by the belief that not-found answers 404 -- an executed Playwright run proved it answers 200, so every well-formed unknown id was an indexable page and the supply is unbounded; describeTitleMetadata had no episode branch, so every third episode in the catalogue shared the head name Episode 3 and the fallback description was series-less, which is the same non-identifying name the function exists to remove wearing a real one; the episode row's Play link rendered identically to the static runtime line above it with no hover rule, while the BLOCKED branch used a monospace class, so the unclickable state was more distinctive than the clickable one; and the focus ring was scoped to the episode grid after an argument about the user agent default that applies equally to the play CTA, the series link, the topbar link and the sole control on the not-found page."
         }
       ]
-    }
-  ],
-  "review": [],
-  "reservedExternal": [],
-  "recommended": [
+    },
     {
       "id": "PL-0705",
       "priority": "P0",
       "lane": "Frontend",
-      "status": "READY",
+      "status": "IN_PROGRESS",
       "title": "Search loses text typed before hydration",
       "dependencies": [
         "PL-0102"
@@ -186,8 +182,14 @@
         "e2e"
       ],
       "acceptance": "Text typed into the search field before the form hydrates is not lost: on mount the form adopts the DOM value if it differs from its own state, and a query typed at any point becomes an addressable URL. Proven by an EXECUTED Playwright run on WebKit, where the race reproduces, rather than only on Chromium where it does not. Separately the spec addresses the result heading exactly rather than by substring, because role-name matching is substring by default and a query equal to a title matches both the results heading and the card heading -- a spec defect that only appeared once the suite was first executed.",
-      "owner": null,
-      "gateResults": {}
+      "owner": "claude-frontend",
+      "gateResults": {},
+      "implementationAgent": "claude-frontend",
+      "updatedAt": "2026-09-05T04:17:57.639Z",
+      "implementationBaseSha": "f6c4b942ebbd02fd3fa9ed8f74fde4fc603affc2"
     }
-  ]
+  ],
+  "review": [],
+  "reservedExternal": [],
+  "recommended": []
 }

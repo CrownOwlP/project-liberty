@@ -677,15 +677,41 @@ export function scheduleAttempts(
     )
   ].sort(byCodePoint);
 
-  // Built from the already-sorted id list and by filtering the canonical
-  // precedence order, so neither coordinate of this list can inherit the
-  // caller's ordering -- nor the enum's.
-  const unattributedDetail = unattributedFailures.map((candidateId) => ({
-    candidateId,
-    kinds: PLAYBACK_FAILURE_KINDS_BY_PRECEDENCE.filter((kind) =>
-      failures.some((failure) => failure.candidateId === candidateId && failure.kind === kind)
-    )
-  }));
+  /*
+   * Built from the already-sorted id list and by filtering the canonical
+   * precedence order, so neither coordinate of this list can inherit the
+   * caller's ordering -- nor the enum's.
+   *
+   * MEMBERSHIP IS READ FROM `kindsById`, NOT BY RE-SCANNING `failures`, and that
+   * is a complexity fix rather than a tidy-up. The previous form asked
+   * `failures.some(f => f.candidateId === candidateId && f.kind === kind)` once
+   * per (unattributed id, kind) pair, so with U unattributed ids, K kinds and F
+   * failures it walked the failure list up to U*K times: QUADRATIC in F whenever
+   * the unattributed ids are the failures, which is the case a client hits when
+   * a session re-resolves and its reported ids stop matching the new pool.
+   * `failover.perf.test.ts` measures exactly that shape and fails on it.
+   *
+   * The two forms are EXACTLY equivalent, and the equivalence is not subtle: the
+   * grouping loop at the top of this function walks every failure and files its
+   * kind under its candidate id WITHOUT consulting the pool, so `kindsById` holds
+   * the unattributed ids too. `kindsById.get(id)` is by construction the list of
+   * kinds reported for that id, so `kinds.includes(kind)` and the old `some` over
+   * the whole failure list answer the same question about the same multiset. Both
+   * forms then filter the same canonical precedence order, so the published
+   * `kinds` is identical -- same members, same order, still deduped by being a
+   * filter of a list each kind appears in once.
+   *
+   * The `?? []` is unreachable and is present only because `Map.get` is total:
+   * every id in `unattributedFailures` was read off a `failure.candidateId`, and
+   * every such id was written into `kindsById` by the same loop.
+   */
+  const unattributedDetail = unattributedFailures.map((candidateId) => {
+    const reported = kindsById.get(candidateId) ?? [];
+    return {
+      candidateId,
+      kinds: PLAYBACK_FAILURE_KINDS_BY_PRECEDENCE.filter((kind) => reported.includes(kind))
+    };
+  });
 
   /*
    * THE TOTAL, TAKEN FROM WHICHEVER SET OF BOOKS THE CALLER IS ACTUALLY KEEPING.

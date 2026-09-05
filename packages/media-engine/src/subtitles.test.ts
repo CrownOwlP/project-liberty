@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
+import type { AudioTrack } from "@liberty/contracts/domains/audio";
+import type { PlaybackCapabilities } from "@liberty/contracts/domains/playback";
 import type { SubtitlePolicy, SubtitleTrack } from "@liberty/contracts/domains/subtitles";
-import { selectSubtitleTrack } from "./subtitles";
+import { selectAudioTrack } from "./audio";
+import { SUBTITLE_OUTCOME_BY_REASON, selectSubtitleTrack, withSelectedAudio } from "./subtitles";
 
 const track = (over: Partial<SubtitleTrack> & { id: string }): SubtitleTrack => ({
   language: "en",
@@ -16,6 +19,30 @@ const policy = (over: Partial<SubtitlePolicy> = {}): SubtitlePolicy => ({
   hearingImpaired: false,
   audioLanguage: null,
   supportedFormats: ["webvtt", "ttml", "srt", "ass"],
+  ...over
+});
+
+/*
+ * Audio fixtures, identical in shape to `audio.test.ts`'s.
+ *
+ * Present because `withSelectedAudio` couples the two policies, and a fixture
+ * `AudioSelection` written by hand would let this file assert a coupling to a
+ * decision `selectAudioTrack` never makes. The audio policy is run for real.
+ */
+const audioTrack = (over: Partial<AudioTrack> & { id: string }): AudioTrack => ({
+  language: "en",
+  codec: "aac",
+  channels: 2,
+  role: "main",
+  isDefault: false,
+  ...over
+});
+
+const audioCaps = (over: Partial<PlaybackCapabilities> = {}): PlaybackCapabilities => ({
+  maxHeight: 2160,
+  supportedVideoCodecs: ["h264", "hevc"],
+  supportedAudioCodecs: ["aac", "eac3", "opus"],
+  preferredAudioLanguages: [],
   ...over
 });
 
@@ -205,6 +232,59 @@ describe("selectSubtitleTrack preferred language", () => {
     );
     expect(result.selected?.id).toBe("en-us");
     expect(result.reason).toBe("preferred_language_primary_subtag");
+  });
+
+  it("matches a bare tag against a regional one in both directions", () => {
+    /*
+     * The matching rule is SYMMETRIC on the primary subtag, which `startsWith`
+     * is not: `startsWith` accepts `pt-BR` for a `pt` preference, rejects `pt`
+     * for a `pt-BR` one, and would additionally accept `sventon` for `sv`. Both
+     * directions here are VARIANT matches, so neither can beat an exact tag --
+     * the tests above pin that half -- but both must be reachable, or a viewer
+     * who wrote the broader tag is told their language does not exist.
+     */
+    const broadPreference = selectSubtitleTrack(
+      [track({ id: "pt-br", language: "pt-br" })],
+      policy({ preferredLanguages: ["pt"] })
+    );
+    const narrowPreference = selectSubtitleTrack(
+      [track({ id: "sv", language: "sv" })],
+      policy({ preferredLanguages: ["sv-fi"] })
+    );
+
+    expect(broadPreference.selected?.id).toBe("pt-br");
+    expect(broadPreference.reason).toBe("preferred_language_primary_subtag");
+    expect(narrowPreference.selected?.id).toBe("sv");
+    expect(narrowPreference.reason).toBe("preferred_language_primary_subtag");
+  });
+
+  it("treats a UN M.49 region as an ordinary subtag", () => {
+    /*
+     * `es-419` is Latin American Spanish and its region is three digits rather
+     * than two letters. Nothing special-cases that: it matches `es` and `es-ES`
+     * as a variant and is exact only against itself, exactly as `es-MX` would
+     * be. The trap is an implementation that reads `419` as a country code, or
+     * one that compares tag lengths to decide which is "more specific".
+     *
+     * `es-es` is the provider default here, so the exact case fails if the tag
+     * comparison is ever dropped rather than merely reordered.
+     */
+    const exact = selectSubtitleTrack(
+      [
+        track({ id: "es-es", language: "es-es", isDefault: true }),
+        track({ id: "es-419", language: "es-419" })
+      ],
+      policy({ preferredLanguages: ["es-419"] })
+    );
+    const fallback = selectSubtitleTrack(
+      [track({ id: "es-es", language: "es-es" })],
+      policy({ preferredLanguages: ["es-419"] })
+    );
+
+    expect(exact.selected?.id).toBe("es-419");
+    expect(exact.reason).toBe("preferred_language_exact");
+    expect(fallback.selected?.id).toBe("es-es");
+    expect(fallback.reason).toBe("preferred_language_primary_subtag");
   });
 
   it("normalises case on both sides", () => {
@@ -551,6 +631,19 @@ describe("selectSubtitleTrack provider default policy", () => {
     );
     expect(result.selected).toBeNull();
     expect(result.reason).toBe("no_preference_expressed");
+  });
+
+  it("cannot switch subtitles on for a viewer who turned them off", () => {
+    // The weakest input meeting the strongest one. `isDefault` is the
+    // publisher's hint and is consulted only among tracks that have already
+    // qualified; `off` is the viewer's own instruction and ends the decision
+    // before any pool is consulted at all.
+    const result = selectSubtitleTrack(
+      [track({ id: "en-default", isDefault: true })],
+      policy({ mode: "off", preferredLanguages: ["en"] })
+    );
+    expect(result.selected).toBeNull();
+    expect(result.reason).toBe("off_by_viewer_preference");
   });
 });
 
@@ -941,5 +1034,184 @@ describe("selectSubtitleTrack reason trail", () => {
     );
     expect(result.reason).toBe("forced_narrative_for_audio_language");
     expect(result.explanation).toContain("forced narrative track");
+  });
+});
+
+describe("selectSubtitleTrack outcome classification", () => {
+  it("never claims full subtitles without claiming text", () => {
+    // The table's two fields are ordered: full subtitles are a kind of text. An
+    // entry claiming the second without the first would be unreachable by
+    // construction and would still mislead any consumer reading only one field.
+    const outcomes = Object.values(SUBTITLE_OUTCOME_BY_REASON);
+
+    // The implication below is vacuously true of an empty table and of one where
+    // nothing claims full subtitles, so both are ruled out first. Without these
+    // the assertion would keep passing through a table that had lost a reason or
+    // had every entry set to false.
+    expect(Object.keys(SUBTITLE_OUTCOME_BY_REASON)).toHaveLength(13);
+    expect(outcomes.some((outcome) => outcome.showsFullSubtitles)).toBe(true);
+
+    for (const outcome of outcomes) {
+      if (outcome.showsFullSubtitles) expect(outcome.showsText).toBe(true);
+    }
+  });
+
+  it("separates a forced track from the subtitles a viewer asked to read", () => {
+    const full = selectSubtitleTrack(
+      [track({ id: "fr", language: "fr" })],
+      policy({ preferredLanguages: ["fr"] })
+    );
+    const forced = selectSubtitleTrack(
+      [track({ id: "en-forced", language: "en", kind: "forced" })],
+      policy({ preferredLanguages: ["fr"], audioLanguage: "en" })
+    );
+
+    expect(SUBTITLE_OUTCOME_BY_REASON[full.reason]).toEqual({
+      showsText: true,
+      showsFullSubtitles: true
+    });
+    // Text on screen, and not what was asked for. A player reading only
+    // `selected !== null` would tell this viewer their French subtitles are
+    // working while most of the dialogue goes untitled.
+    expect(forced.selected?.id).toBe("en-forced");
+    expect(SUBTITLE_OUTCOME_BY_REASON[forced.reason]).toEqual({
+      showsText: true,
+      showsFullSubtitles: false
+    });
+  });
+
+  it("is coarser than the reason without replacing it", () => {
+    // Both outcomes are "no text", which is the answer a player rendering the
+    // screen needs; the reason is still what tells a viewer to turn their
+    // setting back on rather than to look for a different title.
+    const off = selectSubtitleTrack(
+      [track({ id: "en" })],
+      policy({ mode: "off", preferredLanguages: ["en"] })
+    );
+    const none = selectSubtitleTrack([], policy({ preferredLanguages: ["en"] }));
+
+    expect(SUBTITLE_OUTCOME_BY_REASON[off.reason].showsText).toBe(false);
+    expect(SUBTITLE_OUTCOME_BY_REASON[none.reason].showsText).toBe(false);
+    expect(off.reason).not.toBe(none.reason);
+  });
+});
+
+describe("withSelectedAudio keys the policy to the audio decision", () => {
+  it("takes the language of the track that will play, not the one that was preferred", () => {
+    /*
+     * The defect this function exists to make unrepresentable. A viewer prefers
+     * French audio; no French mix exists, so audio selection serves the Japanese
+     * original. Keying forced subtitles to "fr" -- the nearest language-shaped
+     * value a caller has to hand -- would hunt a FRENCH forced track over
+     * JAPANESE audio: it captions lines the viewer could already follow and
+     * leaves untouched the ones they cannot.
+     *
+     * The French forced track is the provider default and sorts first by id, so
+     * it wins or ties every criterion below fitness for the audio. Only the key
+     * this function establishes keeps it off screen.
+     */
+    const audio = selectAudioTrack(
+      [audioTrack({ id: "ja-main", language: "ja", role: "original" })],
+      audioCaps({ preferredAudioLanguages: ["fr"] })
+    );
+    expect(audio.selected?.id).toBe("ja-main");
+
+    const coupled = withSelectedAudio(policy({ preferredLanguages: [] }), audio);
+    expect(coupled.audioLanguage).toBe("ja");
+
+    const result = selectSubtitleTrack(
+      [
+        track({ id: "fr-forced", language: "fr", kind: "forced", isDefault: true }),
+        track({ id: "ja-forced", language: "ja", kind: "forced" })
+      ],
+      coupled
+    );
+    expect(result.selected?.id).toBe("ja-forced");
+    expect(result.reason).toBe("forced_narrative_for_audio_language");
+  });
+
+  it("leaves the audio language unknown when the audio decision selected nothing", () => {
+    /*
+     * `no_auto_selectable_tracks`: commentary is playable and never chosen for
+     * anyone. Nothing will be heard that a forced track could be keyed to, and
+     * `null` is the only honest value -- not the preferred language, and not the
+     * language of a track the audio policy deliberately refused.
+     *
+     * The incoming policy already carries a stale `"en"`, so this pins that the
+     * function OVERWRITES rather than merely fills a gap.
+     */
+    const audio = selectAudioTrack(
+      [audioTrack({ id: "comm", language: "en", role: "commentary" })],
+      audioCaps({ preferredAudioLanguages: ["en"] })
+    );
+    expect(audio.selected).toBeNull();
+    expect(audio.reason).toBe("no_auto_selectable_tracks");
+
+    const coupled = withSelectedAudio(policy({ audioLanguage: "en" }), audio);
+    expect(coupled.audioLanguage).toBeNull();
+
+    const result = selectSubtitleTrack(
+      [track({ id: "en-forced", language: "en", kind: "forced" })],
+      coupled
+    );
+    expect(result.selected).toBeNull();
+    expect(result.reason).toBe("no_preference_expressed");
+  });
+
+  it("treats a chosen track that states no language as unknown, not as blank", () => {
+    /*
+     * `audioTrackSchema.language` is `.min(2)`, but `selectAudioTrack` takes the
+     * TYPE, so an adapter constructing a literal reaches this. An absent tag is
+     * UNKNOWN: `""` would be a value the schema forbids, and what it would mean
+     * is "a language I cannot name", which is what `null` is for.
+     */
+    const audio = selectAudioTrack([audioTrack({ id: "blank", language: "" })], audioCaps());
+    expect(audio.selected?.id).toBe("blank");
+    expect(withSelectedAudio(policy(), audio).audioLanguage).toBeNull();
+  });
+
+  it("treats a one-character tag as unknown, because the contract's minimum is two", () => {
+    /*
+     * The gap an emptiness-only guard leaves. `"e"` is not `""`, so it would be
+     * written straight through into a field declared `z.string().min(2)`, and the
+     * constructed policy would be one `subtitlePolicySchema` rejects. It is also
+     * not a usable language: nothing can be matched against it with any
+     * confidence, which is exactly what `null` means here.
+     */
+    const audio = selectAudioTrack([audioTrack({ id: "short", language: "e" })], audioCaps());
+    expect(audio.selected?.id).toBe("short");
+
+    const coupled = withSelectedAudio(policy(), audio);
+    expect(coupled.audioLanguage).toBeNull();
+
+    // And the forced branch is therefore off, rather than hunting an "e" track.
+    const result = selectSubtitleTrack(
+      [track({ id: "e-forced", language: "e", kind: "forced" })],
+      coupled
+    );
+    expect(result.selected).toBeNull();
+    expect(result.reason).toBe("no_preference_expressed");
+  });
+
+  it("normalises the tag it writes, because it is constructing a contract value", () => {
+    // `subtitlePolicySchema` lower-cases this field on `.parse()` and this
+    // function never runs the schema. `languageMatch` folds case anyway, so this
+    // is about the value being what the contract says it is, not about making
+    // the comparison work.
+    const audio = selectAudioTrack([audioTrack({ id: "gb", language: "EN-GB" })], audioCaps());
+    expect(withSelectedAudio(policy(), audio).audioLanguage).toBe("en-gb");
+  });
+
+  it("changes nothing else about the policy", () => {
+    // It establishes one fact and has no opinion about the viewer's settings.
+    const original = policy({
+      mode: "off",
+      preferredLanguages: ["fr", "de"],
+      hearingImpaired: true,
+      supportedFormats: ["webvtt"]
+    });
+    const audio = selectAudioTrack([audioTrack({ id: "ja", language: "ja" })], audioCaps());
+
+    expect(withSelectedAudio(original, audio)).toEqual({ ...original, audioLanguage: "ja" });
   });
 });

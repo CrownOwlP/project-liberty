@@ -784,7 +784,7 @@
       "id": "PL-0203",
       "priority": "P0",
       "lane": "Media",
-      "status": "READY",
+      "status": "IN_PROGRESS",
       "title": "Subtitle selection policy",
       "dependencies": [
         "PL-0201"
@@ -800,8 +800,11 @@
         "unit"
       ],
       "acceptance": "Preferred language, forced, default, and off policies are explicit and tested",
-      "owner": null,
-      "gateResults": {}
+      "owner": "claude-media",
+      "gateResults": {},
+      "implementationAgent": "claude-media",
+      "updatedAt": "2026-09-05T04:17:55.813Z",
+      "implementationBaseSha": "f6c4b942ebbd02fd3fa9ed8f74fde4fc603affc2"
     },
     {
       "id": "PL-0204",
@@ -1324,7 +1327,7 @@
       "id": "PL-0705",
       "priority": "P0",
       "lane": "Frontend",
-      "status": "READY",
+      "status": "IN_PROGRESS",
       "title": "Search loses text typed before hydration",
       "dependencies": [
         "PL-0102"
@@ -1341,8 +1344,11 @@
         "e2e"
       ],
       "acceptance": "Text typed into the search field before the form hydrates is not lost: on mount the form adopts the DOM value if it differs from its own state, and a query typed at any point becomes an addressable URL. Proven by an EXECUTED Playwright run on WebKit, where the race reproduces, rather than only on Chromium where it does not. Separately the spec addresses the result heading exactly rather than by substring, because role-name matching is substring by default and a query equal to a title matches both the results heading and the card heading -- a spec defect that only appeared once the suite was first executed.",
-      "owner": null,
-      "gateResults": {}
+      "owner": "claude-frontend",
+      "gateResults": {},
+      "implementationAgent": "claude-frontend",
+      "updatedAt": "2026-09-05T04:17:57.639Z",
+      "implementationBaseSha": "f6c4b942ebbd02fd3fa9ed8f74fde4fc603affc2"
     },
     {
       "id": "PL-0704",
@@ -1376,7 +1382,7 @@
       "id": "PL-0703",
       "priority": "P0",
       "lane": "Security",
-      "status": "READY",
+      "status": "IN_PROGRESS",
       "title": "Corrective: production rights-invariant breach in the watch route",
       "dependencies": [],
       "allowedPaths": [
@@ -1402,8 +1408,11 @@
         "e2e"
       ],
       "acceptance": "The watch route serves no fabricated rights basis outside a non-deployment environment, and only one fixture provider exists; the environment classification is an allowlist expressed once and shared rather than restated; docs/E2E.md no longer blesses the divergence that produced the breach; the two affected Playwright specs assert the corrected behaviour and are EXECUTED in both production and development modes rather than only typechecked",
-      "owner": null,
-      "gateResults": {}
+      "owner": "claude-security",
+      "gateResults": {},
+      "implementationAgent": "claude-security",
+      "updatedAt": "2026-09-05T04:17:56.722Z",
+      "implementationBaseSha": "f6c4b942ebbd02fd3fa9ed8f74fde4fc603affc2"
     },
     {
       "id": "PL-0702",
@@ -1663,6 +1672,74 @@
         "unit"
       ],
       "acceptance": "Shared vocabularies live in their own leaf modules, domain contracts live in one module each, index.ts is a re-export-only compatibility barrel rather than the authoritative public surface, and a wildcard exports map lets a new domain contract be added without touching package metadata or the barrel; no cycle-driven z.lazy remains and structural regressions prove the boundary rather than merely reflecting it; no schema behaviour changes",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PL-0105",
+      "priority": "P0",
+      "lane": "Frontend",
+      "status": "BACKLOG",
+      "title": "Catalog metadata source port, and the surfaces still importing the fixture array",
+      "notes": "Closes a control-plane gap as well as a code one. The port landed with no task covering it: PL-0104 declares only catalog-card.tsx, routes.ts and routes.test.ts, so apps/web/src/lib/catalog-source.ts, catalog-source-registry.ts, their tests and docs/CATALOG_SOURCE.md sat outside every declared surface - unreserved against a parallel writer, and outside any approval fingerprint. This task declares that surface and carries the three import migrations docs/CATALOG_SOURCE.md lists as follow-ups. lib/catalog.ts and lib/demo-catalog.ts are reviewDependencies rather than allowedPaths: the port's wiring lives in them and an approval has to bind to it, but they are not this task's to rewrite. The e2e mode split that catalog.api.spec.ts needs once the fixtures stop reaching a production build is deliberately NOT here, because e2e/** belongs to PL-0701; until it lands, that spec fails in the harness's default production mode and .github/workflows/ci.yml says so at the job that runs it.",
+      "dependencies": [
+        "PL-0102",
+        "PL-0103"
+      ],
+      "allowedPaths": [
+        "apps/web/src/lib/catalog-source.ts",
+        "apps/web/src/lib/catalog-source.test.ts",
+        "apps/web/src/lib/catalog-source-registry.ts",
+        "apps/web/src/lib/catalog-source-registry.test.ts",
+        "apps/web/src/app/search/**",
+        "apps/web/src/app/title/demo-title-details.ts",
+        "apps/web/src/app/api/v1/catalog/home/**",
+        "docs/CATALOG_SOURCE.md"
+      ],
+      "reviewDependencies": [
+        "apps/web/src/lib/catalog.ts",
+        "apps/web/src/lib/demo-catalog.ts"
+      ],
+      "preferredAgent": "claude-frontend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "lint",
+        "typecheck",
+        "unit",
+        "build",
+        "rights-review"
+      ],
+      "acceptance": "Discovery reads a metadata port instead of importing a fixture array. catalog-source.ts states the source contract in the published vocabulary - a CatalogItem plus a nullable rights basis - and refuses a record whose basis is undeclared or contradicts its item, by named reason, rather than defaulting either to something permissive; catalog-source-registry.ts is the only module that knows both the port and an implementation, and resolves to not-configured outside the NonDeploymentEnvironment allowlist so the fixtures are unconstructible in a deployment rather than withheld from one; and every remaining surface reads the registry rather than the demoCatalog array - app/search/search.ts, app/title/demo-title-details.ts, and app/api/v1/catalog/home/route.ts, which awaits loadHomeCatalog and maps catalog_source_not_configured onto its own status instead of serving empty rails at 200. When the last surface has moved, the raw demoCatalog export survives only for tests that must be able to name the fixture set, so search and the title page stop being fixture-backed on a build where the home rails are not. docs/CATALOG_SOURCE.md stays accurate about what the port still does not solve.",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PL-0305",
+      "priority": "P1",
+      "lane": "Provider",
+      "status": "BACKLOG",
+      "title": "A real catalog metadata source",
+      "notes": "The discovery layer has no metadata source. PL-0105 landed a seam, and docs/CATALOG_SOURCE.md says so in its first line; this task is the thing that belongs behind it, tracked so the gap stays visible instead of being hidden by a port that looks finished. docs/PRODUCT_SPEC.md step 2 of the initial user journey is browse/search normalized metadata, and nothing in this repository ingests any: every surface reads six fictional works. PL-0301 and PL-0302 do not close it - they supply stream candidates, which is what a title plays from, not what a catalog is made of. PARTLY BLOCKED, and the split is deliberate rather than a hedge. The design half - identity and dedupe, refresh and staleness, tombstones, paging, provider-side search, the locale-tagged contract, and the undeclared-rights state that catalogItemSchema cannot currently express - needs no external access and can begin now. Connecting an actual metadata provider, and carrying artwork, cannot: both need an agreement and credentials, which control/policies.json escalates to human-only under Licensing and Credentials - the same categories that block PL-0302. It is a DIFFERENT agreement from PL-0302's, covering catalog metadata and image rights rather than stream rights, so this is not merely waiting on that task; the honest status is BACKLOG with the ceiling named, not BLOCKED on someone else's licence.",
+      "dependencies": [
+        "PL-0105"
+      ],
+      "allowedPaths": [
+        "packages/catalog-ingestion/**",
+        "apps/web/src/lib/catalog-source.ts",
+        "apps/web/src/lib/catalog-source-registry.ts",
+        "docs/CATALOG_SOURCE.md",
+        "docs/ARCHITECTURE.md"
+      ],
+      "preferredAgent": "claude-backend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "architecture-review",
+        "security-review",
+        "rights-review",
+        "typecheck",
+        "unit"
+      ],
+      "acceptance": "A metadata source stands behind resolveCatalogMetadataSource and answers what the port deliberately does not. Ingestion: something fetches, schedules and backfills, rather than an array being maintained by hand. Refresh: an answer carries its age and a stated staleness policy, so nobody has to guess how old a rail is. Identity and dedupe: how a provider's native id becomes a normalizedContentId, and what happens when two sources describe the same work, is settled as a design decision before it is coded - this is the largest missing piece and it is not a coding question. Deletion: a work that disappears from a source produces a tombstone, so it stays distinguishable from a fetch that failed. Paging and provider-side search: listRecords returning everything is a shape only six fixtures can use, and who owns ranking and paging is part of the contract rather than an accident of in-memory filtering. Artwork: images arrive with their own licensing, tracked separately from the work's, or they do not arrive. Localization and availability: title, genre and synopsis are locale-tagged and a work can be offered in more than one language, and availability windows and territory exist, so the empty state's claim about a region is backed by something. Every record declares a rights basis whose category agrees with its item and whose reference is an opaque internal identifier or null, and the ingestion path is treated as untrusted third-party I/O - allowlisted egress, bounded bodies, redirects revalidated, and no media address anywhere in a catalog payload.",
       "owner": null,
       "gateResults": {}
     }

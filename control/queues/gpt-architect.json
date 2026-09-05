@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-04T03:42:30.588Z",
+  "generatedAt": "2026-09-05T04:17:58.091Z",
   "agent": "gpt-architect",
   "executionAvailable": false,
   "assigned": [],
@@ -82,29 +82,6 @@
       "gateResults": {}
     },
     {
-      "id": "PL-0203",
-      "priority": "P0",
-      "lane": "Media",
-      "status": "READY",
-      "title": "Subtitle selection policy",
-      "dependencies": [
-        "PL-0201"
-      ],
-      "allowedPaths": [
-        "packages/media-engine/**",
-        "packages/contracts/**"
-      ],
-      "preferredAgent": "claude-media",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "typecheck",
-        "unit"
-      ],
-      "acceptance": "Preferred language, forced, default, and off policies are explicit and tested",
-      "owner": null,
-      "gateResults": {}
-    },
-    {
       "id": "PL-0204",
       "priority": "P0",
       "lane": "Media",
@@ -148,39 +125,6 @@
         "unit"
       ],
       "acceptance": "StreamCandidate can represent genuinely unknown videoCodec, audioCodec, height and bitrateKbps, and the media engine treats unknown as unknown rather than as a value: eligibility must not pass on an unverified codec, and scoring must not award or penalise a fabricated number",
-      "owner": null,
-      "gateResults": {}
-    },
-    {
-      "id": "PL-0703",
-      "priority": "P0",
-      "lane": "Security",
-      "status": "READY",
-      "title": "Corrective: production rights-invariant breach in the watch route",
-      "dependencies": [],
-      "allowedPaths": [
-        "apps/web/src/app/watch/**",
-        "apps/web/next.config.ts",
-        "apps/web/src/app/api/deployment-environment.ts",
-        "apps/web/src/app/api/v1/playback/session/**",
-        "apps/web/src/app/api/v1/playback/resolve/**",
-        "e2e/tests/critical-journey.spec.ts",
-        "e2e/tests/playback-session.api.spec.ts",
-        "docs/E2E.md"
-      ],
-      "reviewDependencies": [
-        "e2e/tests/media-rig.spec.ts"
-      ],
-      "preferredAgent": "claude-security",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "security-review",
-        "rights-review",
-        "typecheck",
-        "unit",
-        "e2e"
-      ],
-      "acceptance": "The watch route serves no fabricated rights basis outside a non-deployment environment, and only one fixture provider exists; the environment classification is an allowlist expressed once and shared rather than restated; docs/E2E.md no longer blesses the divergence that produced the breach; the two affected Playwright specs assert the corrected behaviour and are EXECUTED in both production and development modes rather than only typechecked",
       "owner": null,
       "gateResults": {}
     },
