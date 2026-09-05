@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-05T16:15:14.125Z",
+  "generatedAt": "2026-09-05T16:15:23.675Z",
   "agent": "claude-media",
   "executionAvailable": true,
   "assigned": [
@@ -7,7 +7,7 @@
       "id": "PL-0203",
       "priority": "P0",
       "lane": "Media",
-      "status": "IN_PROGRESS",
+      "status": "REVIEW",
       "title": "Subtitle selection policy",
       "dependencies": [
         "PL-0201"
@@ -27,21 +27,21 @@
       "gateResults": {
         "typecheck": {
           "status": "pass",
-          "at": "2026-09-05T04:18:01.660Z",
+          "at": "2026-09-05T16:15:17.070Z",
           "by": "claude-media",
-          "commitSha": "719d2d7c31465901f3dbee1e936a180e87c3d44f",
+          "commitSha": "4b56f7e29b7a0e9e50df88bc4c4e0f8b76bb27ed",
           "evidence": "turbo run typecheck plus npm run check, exit 0 under pinned Node 22, on the tree committed this round; media-engine compiles with the new withSelectedAudio, SubtitleOutcome and SUBTITLE_OUTCOME_BY_REASON exports"
         },
         "unit": {
           "status": "pass",
-          "at": "2026-09-05T04:18:02.142Z",
+          "at": "2026-09-05T16:15:17.534Z",
           "by": "claude-media",
-          "commitSha": "719d2d7c31465901f3dbee1e936a180e87c3d44f",
+          "commitSha": "4b56f7e29b7a0e9e50df88bc4c4e0f8b76bb27ed",
           "evidence": "vitest via npm run check, exit 0, on the tree committed this round; adds subtitle cases and three properties covering bidirectional bare/regional BCP-47 matching, es-419, off-beats-isDefault, the 13-key outcome table, a one-character audio tag treated as unknown, and a composition running the real selectAudioTrack"
         }
       },
       "implementationAgent": "claude-media",
-      "updatedAt": "2026-09-05T16:15:12.015Z",
+      "updatedAt": "2026-09-05T16:15:17.994Z",
       "implementationBaseSha": "f6c4b942ebbd02fd3fa9ed8f74fde4fc603affc2"
     }
   ],
