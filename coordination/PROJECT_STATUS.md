@@ -1,6 +1,6 @@
 # Project Liberty - Project Status
 
-> Generated 2026-09-05T04:18:09.116Z from the AI control plane.
+> Generated 2026-09-05T16:15:14.122Z from the AI control plane.
 
 **Overall completion:** 10/40 executable tasks (25%)
 
@@ -9,8 +9,8 @@
 - **BACKLOG:** 16
 - **READY:** 8
 - **CLAIMED:** 0
-- **IN_PROGRESS:** 0
-- **REVIEW:** 4
+- **IN_PROGRESS:** 3
+- **REVIEW:** 1
 - **BLOCKED:** 2
 - **DONE:** 10
 - **CANCELED:** 0
@@ -28,9 +28,9 @@
 
 ## Active work
 
-- **PL-0203** [REVIEW] Subtitle selection policy — owner: claude-media
-- **PL-0705** [REVIEW] Search loses text typed before hydration — owner: claude-frontend
-- **PL-0703** [REVIEW] Corrective: production rights-invariant breach in the watch route — owner: claude-security
+- **PL-0203** [IN_PROGRESS] Subtitle selection policy — owner: claude-media
+- **PL-0705** [IN_PROGRESS] Search loses text typed before hydration — owner: claude-frontend
+- **PL-0703** [IN_PROGRESS] Corrective: production rights-invariant breach in the watch route — owner: claude-security
 - **PL-AI-0004** [REVIEW] Review dependency scope and provenance reconciliation — owner: claude-lead
 
 ## Dispatch classification

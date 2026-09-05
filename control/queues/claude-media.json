@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-05T04:18:09.121Z",
+  "generatedAt": "2026-09-05T16:15:14.125Z",
   "agent": "claude-media",
   "executionAvailable": true,
   "assigned": [
@@ -7,7 +7,7 @@
       "id": "PL-0203",
       "priority": "P0",
       "lane": "Media",
-      "status": "REVIEW",
+      "status": "IN_PROGRESS",
       "title": "Subtitle selection policy",
       "dependencies": [
         "PL-0201"
@@ -41,7 +41,7 @@
         }
       },
       "implementationAgent": "claude-media",
-      "updatedAt": "2026-09-05T04:18:02.709Z",
+      "updatedAt": "2026-09-05T16:15:12.015Z",
       "implementationBaseSha": "f6c4b942ebbd02fd3fa9ed8f74fde4fc603affc2"
     }
   ],

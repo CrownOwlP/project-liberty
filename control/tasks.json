@@ -804,7 +804,7 @@
       "id": "PL-0203",
       "priority": "P0",
       "lane": "Media",
-      "status": "REVIEW",
+      "status": "IN_PROGRESS",
       "title": "Subtitle selection policy",
       "dependencies": [
         "PL-0201"
@@ -838,7 +838,7 @@
         }
       },
       "implementationAgent": "claude-media",
-      "updatedAt": "2026-09-05T04:18:02.709Z",
+      "updatedAt": "2026-09-05T16:15:12.015Z",
       "implementationBaseSha": "f6c4b942ebbd02fd3fa9ed8f74fde4fc603affc2"
     },
     {
@@ -1362,7 +1362,7 @@
       "id": "PL-0705",
       "priority": "P0",
       "lane": "Frontend",
-      "status": "REVIEW",
+      "status": "IN_PROGRESS",
       "title": "Search loses text typed before hydration",
       "dependencies": [
         "PL-0102"
@@ -1397,7 +1397,7 @@
         }
       },
       "implementationAgent": "claude-frontend",
-      "updatedAt": "2026-09-05T04:18:05.596Z",
+      "updatedAt": "2026-09-05T16:15:13.686Z",
       "implementationBaseSha": "f6c4b942ebbd02fd3fa9ed8f74fde4fc603affc2"
     },
     {
@@ -1432,7 +1432,7 @@
       "id": "PL-0703",
       "priority": "P0",
       "lane": "Security",
-      "status": "REVIEW",
+      "status": "IN_PROGRESS",
       "title": "Corrective: production rights-invariant breach in the watch route",
       "dependencies": [],
       "allowedPaths": [
@@ -1476,7 +1476,7 @@
         }
       },
       "implementationAgent": "claude-security",
-      "updatedAt": "2026-09-05T04:18:04.194Z",
+      "updatedAt": "2026-09-05T16:15:12.861Z",
       "implementationBaseSha": "f6c4b942ebbd02fd3fa9ed8f74fde4fc603affc2"
     },
     {
