@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-08T04:32:46.658Z",
+  "generatedAt": "2026-09-08T15:52:11.391Z",
   "agent": "gpt-architect",
   "executionAvailable": false,
   "assigned": [],
@@ -212,6 +212,168 @@
       ]
     },
     {
+      "id": "PL-AI-0005",
+      "priority": "P0",
+      "lane": "Coordination",
+      "status": "REVIEW",
+      "title": "Show reviewers the full review surface",
+      "dependencies": [
+        "PL-AI-0004"
+      ],
+      "allowedPaths": [
+        "scripts/cloud/**",
+        "scripts/review-surface.mjs",
+        "scripts/ai-control-plane.mjs",
+        "scripts/test-ai-control-plane.mjs"
+      ],
+      "preferredAgent": "claude-lead",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "repo-validate",
+        "security-review",
+        "unit"
+      ],
+      "acceptance": "The diff and briefing presented to a reviewer cover the same surface the approval will bind to; a reviewer is never asked to approve a fingerprint over files it was not shown; one canonical reviewSurface helper is consumed by fingerprinting, stale-review checking, the review diff builder and the briefing, and a regression asserts the file set shown equals the file set fingerprinted",
+      "owner": "claude-lead",
+      "gateResults": {
+        "repo-validate": {
+          "status": "pass",
+          "at": "2026-09-08T15:52:09.887Z",
+          "by": "claude-lead",
+          "commitSha": "ed5d11d5e0d7b639dceed45a583c81160e4302c2",
+          "evidence": "npm run check exit 0 under pinned Node 22, this round, including ai:validate, repo:validate and env:validate across development, test and production"
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-09-08T15:52:10.401Z",
+          "by": "claude-lead",
+          "commitSha": "ed5d11d5e0d7b639dceed45a583c81160e4302c2",
+          "evidence": "node scripts/test-ai-control-plane.mjs exit 0 under pinned Node 22, this round; the suite includes the regression that perturbs files and asserts the set shown to a reviewer equals the set the approval fingerprints, which is this task's whole acceptance"
+        }
+      },
+      "implementationAgent": "claude-lead",
+      "updatedAt": "2026-09-08T15:52:10.903Z",
+      "implementationBaseSha": "6845e374f10b6f5ad057e816020d23c5f149c5bd",
+      "implementationBaseProvenance": {
+        "kind": "reconciled-existing-implementation",
+        "baseSha": "6845e374f10b6f5ad057e816020d23c5f149c5bd",
+        "reconciledAt": "2026-09-08T15:52:09.450Z",
+        "reconciledBy": "claude-lead",
+        "implementationAgent": "claude-lead",
+        "headAtReconciliation": "ed5d11d5e0d7b639dceed45a583c81160e4302c2",
+        "reviewSurface": "allowedPaths",
+        "surfaceCommitCount": 7,
+        "oldestSurfaceCommit": "02f8bce10b2a620f720bd67fd82e01fd82c30bf2",
+        "newestSurfaceCommit": "719d2d7c31465901f3dbee1e936a180e87c3d44f",
+        "surfaceCommits": [
+          "719d2d7c31465901f3dbee1e936a180e87c3d44f",
+          "3c92942bc7eee0a7aab4440e254d8e11d3a849a9",
+          "6358abc8a8c9b6183e561ca795a4d29ae7fd2881",
+          "4951bbe2e2aa9681ce01fa11bc823fbb10ae9f6d",
+          "e97f3b929c5f88a3a1663df4d7b4c9007ffa8a2c",
+          "c4011ebb7ca1817b684f390649731a1212c4c9e9",
+          "02f8bce10b2a620f720bd67fd82e01fd82c30bf2"
+        ],
+        "surfaceCommitsTruncated": false,
+        "changedFileCount": 14,
+        "baseCommitSurfaceTouchCount": 0,
+        "baseCommitSurfaceTouches": [],
+        "baseCommitSurfaceTouchesTruncated": false,
+        "reason": "PL-AI-0005's implementation predates its claim and is already in committed history. The base was DERIVED: git log --reverse over scripts/review-surface.mjs gives the first commit that introduced the canonical helper this task exists to create, and this is that commit's parent. review-surface.mjs is the correct probe rather than any other declared path, because scripts/cloud and scripts/ai-control-plane.mjs both long predate the lane and would place the base before the work began. The commit window and both endpoints are published for the reviewer."
+      }
+    },
+    {
+      "id": "PL-0105",
+      "priority": "P0",
+      "lane": "Frontend",
+      "status": "REVIEW",
+      "title": "Catalog metadata source port, and the surfaces still importing the fixture array",
+      "notes": "Closes a control-plane gap as well as a code one. The port landed with no task covering it: PL-0104 declares only catalog-card.tsx, routes.ts and routes.test.ts, so apps/web/src/lib/catalog-source.ts, catalog-source-registry.ts, their tests and docs/CATALOG_SOURCE.md sat outside every declared surface - unreserved against a parallel writer, and outside any approval fingerprint. This task declares that surface and carries the three import migrations docs/CATALOG_SOURCE.md lists as follow-ups. lib/catalog.ts and lib/demo-catalog.ts are reviewDependencies rather than allowedPaths: the port's wiring lives in them and an approval has to bind to it, but they are not this task's to rewrite. The e2e mode split that catalog.api.spec.ts needs once the fixtures stop reaching a production build is deliberately NOT here, because e2e/** belongs to PL-0701; until it lands, that spec fails in the harness's default production mode and .github/workflows/ci.yml says so at the job that runs it.",
+      "dependencies": [
+        "PL-0102",
+        "PL-0103"
+      ],
+      "allowedPaths": [
+        "apps/web/src/lib/catalog-source.ts",
+        "apps/web/src/lib/catalog-source.test.ts",
+        "apps/web/src/lib/catalog-source-registry.ts",
+        "apps/web/src/lib/catalog-source-registry.test.ts",
+        "apps/web/src/app/search/**",
+        "apps/web/src/app/title/demo-title-details.ts",
+        "apps/web/src/app/api/v1/catalog/home/**",
+        "docs/CATALOG_SOURCE.md"
+      ],
+      "reviewDependencies": [
+        "apps/web/src/lib/catalog.ts",
+        "apps/web/src/lib/demo-catalog.ts"
+      ],
+      "preferredAgent": "claude-frontend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "lint",
+        "typecheck",
+        "unit",
+        "build",
+        "rights-review"
+      ],
+      "acceptance": "Discovery reads a metadata port instead of importing a fixture array. catalog-source.ts states the source contract in the published vocabulary - a CatalogItem plus a nullable rights basis - and refuses a record whose basis is undeclared or contradicts its item, by named reason, rather than defaulting either to something permissive; catalog-source-registry.ts is the only module that knows both the port and an implementation, and resolves to not-configured outside the NonDeploymentEnvironment allowlist so the fixtures are unconstructible in a deployment rather than withheld from one; and every remaining surface reads the registry rather than the demoCatalog array - app/search/search.ts, app/title/demo-title-details.ts, and app/api/v1/catalog/home/route.ts, which awaits loadHomeCatalog and maps catalog_source_not_configured onto its own status instead of serving empty rails at 200. When the last surface has moved, the raw demoCatalog export survives only for tests that must be able to name the fixture set, so search and the title page stop being fixture-backed on a build where the home rails are not. docs/CATALOG_SOURCE.md stays accurate about what the port still does not solve.",
+      "owner": "claude-frontend",
+      "gateResults": {
+        "lint": {
+          "status": "pass",
+          "at": "2026-09-08T15:52:06.174Z",
+          "by": "claude-frontend",
+          "commitSha": "ed5d11d5e0d7b639dceed45a583c81160e4302c2",
+          "evidence": "npm run check exit 0 under pinned Node 22, this round, on the committed tree"
+        },
+        "typecheck": {
+          "status": "pass",
+          "at": "2026-09-08T15:52:06.657Z",
+          "by": "claude-frontend",
+          "commitSha": "ed5d11d5e0d7b639dceed45a583c81160e4302c2",
+          "evidence": "turbo run typecheck via npm run check, exit 0, this round"
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-09-08T15:52:07.131Z",
+          "by": "claude-frontend",
+          "commitSha": "ed5d11d5e0d7b639dceed45a583c81160e4302c2",
+          "evidence": "vitest via npm run check, exit 0, this round; covers the port's selection rules, the deployment gate on the demo source, and the refusal-versus-empty distinction on each migrated surface"
+        },
+        "build": {
+          "status": "pass",
+          "at": "2026-09-08T15:52:07.606Z",
+          "by": "claude-frontend",
+          "commitSha": "ed5d11d5e0d7b639dceed45a583c81160e4302c2",
+          "evidence": "next build via npm run check, exit 0, this round"
+        }
+      },
+      "implementationAgent": "claude-frontend",
+      "updatedAt": "2026-09-08T15:52:08.078Z",
+      "implementationBaseSha": "f6c4b942ebbd02fd3fa9ed8f74fde4fc603affc2",
+      "implementationBaseProvenance": {
+        "kind": "reconciled-existing-implementation",
+        "baseSha": "f6c4b942ebbd02fd3fa9ed8f74fde4fc603affc2",
+        "reconciledAt": "2026-09-08T15:52:05.736Z",
+        "reconciledBy": "claude-frontend",
+        "implementationAgent": "claude-frontend",
+        "headAtReconciliation": "ed5d11d5e0d7b639dceed45a583c81160e4302c2",
+        "reviewSurface": "allowedPaths + reviewDependencies",
+        "surfaceCommitCount": 1,
+        "oldestSurfaceCommit": "719d2d7c31465901f3dbee1e936a180e87c3d44f",
+        "newestSurfaceCommit": "719d2d7c31465901f3dbee1e936a180e87c3d44f",
+        "surfaceCommits": [
+          "719d2d7c31465901f3dbee1e936a180e87c3d44f"
+        ],
+        "surfaceCommitsTruncated": false,
+        "changedFileCount": 15,
+        "baseCommitSurfaceTouchCount": 0,
+        "baseCommitSurfaceTouches": [],
+        "baseCommitSurfaceTouchesTruncated": false,
+        "reason": "PL-0105's implementation predates its claim and is already in committed history, so an ordinary start would record a base that is false. The base was DERIVED, not chosen: git log --reverse over apps/web/src/lib/catalog-source.ts gives the first commit that introduced the port module itself, and this is that commit's parent. The port module is the correct probe because nothing older can have created it; probing a shared consumer would repeat the PL-0104 near-miss, where the oldest commit touching the declared surface was the repository's root commit carrying an unrelated fourteen-line scaffold. The commit window, both endpoints and the base commit's own surface touches are published for the reviewer to confirm that no earlier commit belongs to this implementation."
+      }
+    },
+    {
       "id": "PL-0706",
       "priority": "P0",
       "lane": "Security",
@@ -262,6 +424,13 @@
           "by": "claude-security",
           "commitSha": "ba9521b2c3998ae05210240827c0a773596819c9",
           "evidence": "vitest via npm run check, exit 0, on the tree committed this round. The allowlist test in the SDK is replaced by one asserting the SDK has no opinion about which runtime names mean production, which fails loudly if an allowlist ever returns there; the app-side suite asserts the published rights reference IS the SDK's exported constant and that the basis carries a field only the SDK's own constructor writes."
+        },
+        "e2e": {
+          "status": "pass",
+          "at": "2026-09-08T15:52:04.248Z",
+          "by": "claude-security",
+          "commitSha": "ed5d11d5e0d7b639dceed45a583c81160e4302c2",
+          "evidence": "Playwright executed in BOTH modes at the end of round 35, at commit ed5d11d5e0d7b639dceed45a583c81160e4302c2, after the fixture providers were collapsed onto the SDK's: production 78 passed / 0 failed / 18 skipped, development 87 passed / 0 failed / 9 skipped, across chromium, firefox, webkit and mobile-safari. gpt-architect required this re-run specifically because the rights-critical wiring changed, so the specs were asserting against a different construction path than when they last passed. The candidate ids and media URIs the two specs assert on are now composed by packages/provider-sdk/src/fixture/provider.ts rather than by the app, and both the production absence checks and the paired development presence checks hold."
         }
       },
       "implementationAgent": "claude-security",
@@ -404,32 +573,6 @@
         "unit"
       ],
       "acceptance": "StreamCandidate can represent genuinely unknown videoCodec, audioCodec, height and bitrateKbps, and the media engine treats unknown as unknown rather than as a value: eligibility must not pass on an unverified codec, and scoring must not award or penalise a fabricated number",
-      "owner": null,
-      "gateResults": {}
-    },
-    {
-      "id": "PL-AI-0005",
-      "priority": "P0",
-      "lane": "Coordination",
-      "status": "READY",
-      "title": "Show reviewers the full review surface",
-      "dependencies": [
-        "PL-AI-0004"
-      ],
-      "allowedPaths": [
-        "scripts/cloud/**",
-        "scripts/review-surface.mjs",
-        "scripts/ai-control-plane.mjs",
-        "scripts/test-ai-control-plane.mjs"
-      ],
-      "preferredAgent": "claude-lead",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "repo-validate",
-        "security-review",
-        "unit"
-      ],
-      "acceptance": "The diff and briefing presented to a reviewer cover the same surface the approval will bind to; a reviewer is never asked to approve a fingerprint over files it was not shown; one canonical reviewSurface helper is consumed by fingerprinting, stale-review checking, the review diff builder and the briefing, and a regression asserts the file set shown equals the file set fingerprinted",
       "owner": null,
       "gateResults": {}
     },

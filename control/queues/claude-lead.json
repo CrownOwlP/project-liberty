@@ -1,16 +1,13 @@
 {
-  "generatedAt": "2026-09-08T04:32:46.659Z",
+  "generatedAt": "2026-09-08T15:52:11.392Z",
   "agent": "claude-lead",
   "executionAvailable": true,
-  "assigned": [],
-  "review": [],
-  "reservedExternal": [],
-  "recommended": [
+  "assigned": [
     {
       "id": "PL-AI-0005",
       "priority": "P0",
       "lane": "Coordination",
-      "status": "READY",
+      "status": "REVIEW",
       "title": "Show reviewers the full review surface",
       "dependencies": [
         "PL-AI-0004"
@@ -29,9 +26,58 @@
         "unit"
       ],
       "acceptance": "The diff and briefing presented to a reviewer cover the same surface the approval will bind to; a reviewer is never asked to approve a fingerprint over files it was not shown; one canonical reviewSurface helper is consumed by fingerprinting, stale-review checking, the review diff builder and the briefing, and a regression asserts the file set shown equals the file set fingerprinted",
-      "owner": null,
-      "gateResults": {}
-    },
+      "owner": "claude-lead",
+      "gateResults": {
+        "repo-validate": {
+          "status": "pass",
+          "at": "2026-09-08T15:52:09.887Z",
+          "by": "claude-lead",
+          "commitSha": "ed5d11d5e0d7b639dceed45a583c81160e4302c2",
+          "evidence": "npm run check exit 0 under pinned Node 22, this round, including ai:validate, repo:validate and env:validate across development, test and production"
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-09-08T15:52:10.401Z",
+          "by": "claude-lead",
+          "commitSha": "ed5d11d5e0d7b639dceed45a583c81160e4302c2",
+          "evidence": "node scripts/test-ai-control-plane.mjs exit 0 under pinned Node 22, this round; the suite includes the regression that perturbs files and asserts the set shown to a reviewer equals the set the approval fingerprints, which is this task's whole acceptance"
+        }
+      },
+      "implementationAgent": "claude-lead",
+      "updatedAt": "2026-09-08T15:52:10.903Z",
+      "implementationBaseSha": "6845e374f10b6f5ad057e816020d23c5f149c5bd",
+      "implementationBaseProvenance": {
+        "kind": "reconciled-existing-implementation",
+        "baseSha": "6845e374f10b6f5ad057e816020d23c5f149c5bd",
+        "reconciledAt": "2026-09-08T15:52:09.450Z",
+        "reconciledBy": "claude-lead",
+        "implementationAgent": "claude-lead",
+        "headAtReconciliation": "ed5d11d5e0d7b639dceed45a583c81160e4302c2",
+        "reviewSurface": "allowedPaths",
+        "surfaceCommitCount": 7,
+        "oldestSurfaceCommit": "02f8bce10b2a620f720bd67fd82e01fd82c30bf2",
+        "newestSurfaceCommit": "719d2d7c31465901f3dbee1e936a180e87c3d44f",
+        "surfaceCommits": [
+          "719d2d7c31465901f3dbee1e936a180e87c3d44f",
+          "3c92942bc7eee0a7aab4440e254d8e11d3a849a9",
+          "6358abc8a8c9b6183e561ca795a4d29ae7fd2881",
+          "4951bbe2e2aa9681ce01fa11bc823fbb10ae9f6d",
+          "e97f3b929c5f88a3a1663df4d7b4c9007ffa8a2c",
+          "c4011ebb7ca1817b684f390649731a1212c4c9e9",
+          "02f8bce10b2a620f720bd67fd82e01fd82c30bf2"
+        ],
+        "surfaceCommitsTruncated": false,
+        "changedFileCount": 14,
+        "baseCommitSurfaceTouchCount": 0,
+        "baseCommitSurfaceTouches": [],
+        "baseCommitSurfaceTouchesTruncated": false,
+        "reason": "PL-AI-0005's implementation predates its claim and is already in committed history. The base was DERIVED: git log --reverse over scripts/review-surface.mjs gives the first commit that introduced the canonical helper this task exists to create, and this is that commit's parent. review-surface.mjs is the correct probe rather than any other declared path, because scripts/cloud and scripts/ai-control-plane.mjs both long predate the lane and would place the base before the work began. The commit window and both endpoints are published for the reviewer."
+      }
+    }
+  ],
+  "review": [],
+  "reservedExternal": [],
+  "recommended": [
     {
       "id": "PL-AI-0006",
       "priority": "P0",

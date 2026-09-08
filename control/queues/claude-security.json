@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-08T04:32:46.662Z",
+  "generatedAt": "2026-09-08T15:52:11.396Z",
   "agent": "claude-security",
   "executionAvailable": true,
   "assigned": [
@@ -54,6 +54,13 @@
           "by": "claude-security",
           "commitSha": "ba9521b2c3998ae05210240827c0a773596819c9",
           "evidence": "vitest via npm run check, exit 0, on the tree committed this round. The allowlist test in the SDK is replaced by one asserting the SDK has no opinion about which runtime names mean production, which fails loudly if an allowlist ever returns there; the app-side suite asserts the published rights reference IS the SDK's exported constant and that the basis carries a field only the SDK's own constructor writes."
+        },
+        "e2e": {
+          "status": "pass",
+          "at": "2026-09-08T15:52:04.248Z",
+          "by": "claude-security",
+          "commitSha": "ed5d11d5e0d7b639dceed45a583c81160e4302c2",
+          "evidence": "Playwright executed in BOTH modes at the end of round 35, at commit ed5d11d5e0d7b639dceed45a583c81160e4302c2, after the fixture providers were collapsed onto the SDK's: production 78 passed / 0 failed / 18 skipped, development 87 passed / 0 failed / 9 skipped, across chromium, firefox, webkit and mobile-safari. gpt-architect required this re-run specifically because the rights-critical wiring changed, so the specs were asserting against a different construction path than when they last passed. The candidate ids and media URIs the two specs assert on are now composed by packages/provider-sdk/src/fixture/provider.ts rather than by the app, and both the production absence checks and the paired development presence checks hold."
         }
       },
       "implementationAgent": "claude-security",
