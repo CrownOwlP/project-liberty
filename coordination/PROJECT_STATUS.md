@@ -1,16 +1,16 @@
 # Project Liberty - Project Status
 
-> Generated 2026-09-08T04:32:38.265Z from the AI control plane.
+> Generated 2026-09-08T04:32:46.657Z from the AI control plane.
 
 **Overall completion:** 12/41 executable tasks (29%)
 
 ## Status summary
 
 - **BACKLOG:** 14
-- **READY:** 10
+- **READY:** 9
 - **CLAIMED:** 0
-- **IN_PROGRESS:** 1
-- **REVIEW:** 1
+- **IN_PROGRESS:** 0
+- **REVIEW:** 3
 - **BLOCKED:** 3
 - **DONE:** 12
 - **CANCELED:** 0
@@ -28,12 +28,13 @@
 
 ## Active work
 
-- **PL-0104** [IN_PROGRESS] Make catalog and search results navigable — owner: claude-frontend
+- **PL-0104** [REVIEW] Make catalog and search results navigable — owner: claude-frontend
 - **PL-0203** [REVIEW] Subtitle selection policy — owner: claude-media
+- **PL-0706** [REVIEW] Corrective, re-run: production rights-invariant breach in the watch route — owner: claude-security
 
 ## Dispatch classification
 
-- **READY_AND_EXECUTABLE:** 8
+- **READY_AND_EXECUTABLE:** 7
 - **READY_BUT_EXTERNAL:** 2
 - **BLOCKED:** 3
 - **BACKLOG (dependency-gated):** 14
@@ -41,7 +42,6 @@
 ## Recommended executable wave
 
 - **PL-0105** -> claude-frontend (P0/Frontend) Catalog metadata source port, and the surfaces still importing the fixture array
-- **PL-0706** -> claude-security (P0/Security) Corrective, re-run: production rights-invariant breach in the watch route
 - **PL-AI-0005** -> claude-lead (P0/Coordination) Show reviewers the full review surface
 
 ## Queued for external agents
@@ -63,6 +63,6 @@
 - **claude-backend:** 0/1 active
 - **claude-media:** 1/1 active
 - **claude-test:** 0/1 active
-- **claude-security:** 0/1 active
+- **claude-security:** 1/1 active
 - **claude-infra:** 0/1 active
 - **human-commander:** 0/99 active (external lane; not locally executable)
