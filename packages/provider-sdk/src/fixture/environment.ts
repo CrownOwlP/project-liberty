@@ -17,45 +17,56 @@
  * everything still compiles -- which is not hypothetical, because a second copy
  * of those fixtures shipped in the watch route under no environment condition at
  * all. So the permission is carried by a VALUE. `fixtureRightsBasis` (see
- * `./rights`) takes one of these, and there is no other way to obtain one than
- * `attest`, which answers `null` off the allowlist. Under `strictNullChecks` a
- * caller cannot reach the fixture basis without handling that `null`: removing
- * the check is a COMPILE ERROR rather than a silent widening.
+ * `./rights`) takes one of these, and there is no other constructor of a fixture
+ * rights basis.
  *
- * TWO THINGS MAKE THE TYPE UNFORGEABLE FROM OUTSIDE THIS MODULE, and both are
- * needed:
+ * WHERE THE ALLOWLIST WENT, AND WHY THERE IS NO `NON_PRODUCTION_RUNTIMES` HERE
+ * ANY MORE. This module used to carry `["development", "test"]` and test a
+ * caller-supplied name against it. `apps/web/src/app/api/deployment-environment.ts`
+ * carries the same two values for the same decision, and its copy is the
+ * better-informed one: it reads `NODE_ENV` at the process boundary, and the
+ * fixture path's other consumers -- the session route's transport gate, the
+ * `v1/playback/resolve` scaffold, the watch page -- already consult it. Two
+ * allowlists for one question is the arrangement this corrective exists to
+ * remove, and a header that acknowledged the application's copy and then
+ * re-expressed it anyway was an admission rather than a justification. THE
+ * CLASSIFICATION IS THE DEPLOYMENT'S. This package requires evidence that one
+ * happened and no longer performs one.
  *
- *   - the CONSTRUCTOR is private, so no other module can `new` one;
- *   - a PRIVATE FIELD is present, so TypeScript compares this class NOMINALLY
- *     rather than structurally. Without it `{ name: "test" }` would be
- *     assignable to the type and the whole mechanism would be decoration.
+ * THAT IT CANNOT PERFORM ONE IS A FACT ABOUT THIS PACKAGE AND NOT A PROMISE:
+ * there is no `process.env` read anywhere under `src/`, so nothing here can
+ * obtain a runtime name from ambient state. A name arrives as an argument or it
+ * does not arrive.
  *
- * WHY THE SDK CANNOT SIMPLY IMPORT THE APP'S ANSWER, which is the obvious
- * objection. `apps/web/src/app/api/deployment-environment.ts` already owns a
- * witness of exactly this shape (`NonDeploymentEnvironment`), and it is the
- * better-informed one: it reads `NODE_ENV` from the running process. A package
- * cannot import from an application, so the guarantee has to be re-expressed in
- * this package's own terms, and this is that expression.
+ * WHAT THE WITNESS STILL ESTABLISHES, stated exactly, because a comment that
+ * overclaims a check is worse than having no check:
  *
- * WHAT THIS ONE CAN AND CANNOT ESTABLISH, stated exactly, because a comment that
- * overclaims a check is worse than having no check. `attest` is handed a runtime
- * NAME by its caller. It checks that name against an allowlist and refuses
- * everything else -- so `attest("production")`, `attest("staging")`,
- * `attest("")` and `attest(anythingNobodyThoughtOf)` all answer `null`. It
- * CANNOT verify that the name it was handed is the name of the process it is
- * running in; a caller that passes the literal `"test"` from a hosted process
- * gets a witness.
+ *   - it is UNFORGEABLE BY SHAPE. The CONSTRUCTOR is private, so no other module
+ *     can `new` one, and a PRIVATE FIELD is present, so TypeScript compares this
+ *     class NOMINALLY rather than structurally -- without it `{ name: "test" }`
+ *     would be assignable to the type and the whole mechanism would be
+ *     decoration. Both are load bearing and `provider.test.ts` asserts each as a
+ *     compile error;
+ *   - it is UNREACHABLE FROM OUTSIDE THIS PACKAGE. `NonProductionRuntime` is not
+ *     re-exported by `../index.ts`, and the package publishes exactly one entry
+ *     point (`"exports": "./src/index.ts"`), so no consumer can name the type or
+ *     call `from`. `createFixtureProvider` mints the witness inside the factory
+ *     from the classification it was handed, which makes that factory the only
+ *     door to a fabricated `owned` declaration -- and it is a door that cannot be
+ *     opened without an argument.
  *
- * THAT LIMIT IS WHY THE TWO GATES ARE CHAINED RATHER THAN DUPLICATED, and the
- * chaining is the same two-owner pattern `stremio/url-policy.ts` insists on for
- * loopback. The deployment's own classification supplies the fact this module
- * cannot check -- in `apps/web`, `NonDeploymentEnvironment.classify()` reads
- * `NODE_ENV` at the process boundary and publishes the value it used as
- * `nodeEnv`, which is precisely the value a caller passes here. Both conditions
- * are required, they are owned by different modules in different packages, and
- * DRIFT BETWEEN THEM FAILS CLOSED IN BOTH DIRECTIONS: a runtime name the app
- * admits and this allowlist does not produces no provider, and a name this
- * allowlist admits and the app's does not never reaches `attest`.
+ * WHAT IT DOES NOT ESTABLISH. It cannot tell whether the classification it was
+ * handed describes the process it is running in. A caller that passes
+ * `{ nodeEnv: "test" }` from a hosted process gets a provider, and nothing inside
+ * a package can close that: the fact lives in the deployment. In this repository
+ * the only caller outside this package's own tests is `apps/web`'s
+ * `v1/playback/session/authorized-candidates.ts`, and it cannot reach
+ * `createFixtureProvider` without a `NonDeploymentEnvironment` -- a value with
+ * its own private constructor and private field, minted only by
+ * `NonDeploymentEnvironment.classify`, which reads `NODE_ENV` at the process
+ * boundary and answers `null` for every value off the one allowlist. So the
+ * application classifies, this package requires the classification to have
+ * happened, and there is one place to review a widening.
  *
  * What none of this defends against is an edit to this module. Nothing in
  * TypeScript can. What it defends against is the way this defect actually
@@ -66,35 +77,34 @@
  * ---------------------------------------------------------------------- */
 
 /**
- * The runtime names this package is willing to treat as "not production".
+ * A deployment's own answer to "what runtime is this process".
  *
- * These are `NODE_ENV` values, and naming them that way is deliberate rather
- * than a leak of a Node concept into a runtime-agnostic package: every caller
- * this SDK has is a Node or Next process, `NODE_ENV` is the one fact about such
- * a process that no configuration file can forge (`scripts/with-root-env.mjs`
- * refuses to apply it from a dotenv file at all), and inventing a second
- * vocabulary here would mean the app translating between two spellings of one
- * fact.
+ * ONE FIELD, AND IT IS THE ONE THIS PACKAGE MUST NOT INVENT. `nodeEnv` is named
+ * for what it is rather than given a package-local vocabulary: every caller this
+ * SDK has is a Node or Next process, `NODE_ENV` is the one fact about such a
+ * process that no configuration file can forge (`scripts/with-root-env.mjs`
+ * refuses to apply it from a dotenv file at all, precisely so a copied
+ * `.env.local` cannot turn `next start` into a fixture-serving deployment), and
+ * a second spelling would mean the application translating between two names for
+ * one fact -- which is the shape of duplication this change removed.
  *
- * `development` and `test` are the whole set: `next dev` runs as the first and
- * vitest sets the second. Every other value -- including no value at all -- is
- * treated as production, which is the direction that fails safe.
- *
- * Exported so a test can enumerate the permitted values rather than restating
- * them, and so the one place to review a widening is this array. Widening it is
- * a RIGHTS-RELEVANT edit: it widens the construction gate on a fabricated rights
- * basis, which is the only control that basis has.
+ * `apps/web`'s `NonDeploymentEnvironment` satisfies this interface as it stands,
+ * so the application hands over the witness it already holds instead of building
+ * a literal at the call site. A literal satisfies it too; the header states
+ * exactly what that does and does not mean.
  */
-export const NON_PRODUCTION_RUNTIMES: readonly string[] = ["development", "test"];
+export interface RuntimeClassification {
+  readonly nodeEnv: string;
+}
 
 export class NonProductionRuntime {
   /**
-   * The name that satisfied the allowlist.
+   * The name the classification stated.
    *
    * Private for the nominal-typing reason in the header, and exposed read-only
    * through `name` because a caller that reports WHICH runtime admitted the
    * fixtures (a test, a log line, the provider's own `runtime` field) should
-   * read the value the attestation actually used rather than re-deriving a
+   * read the value the attestation actually used rather than reaching for a
    * possibly different one.
    */
   private readonly value: string;
@@ -109,25 +119,25 @@ export class NonProductionRuntime {
   }
 
   /**
-   * A witness, or `null` for every name outside the allowlist.
+   * A witness for a classification that states a runtime, or `null` for one that
+   * states nothing.
    *
-   * The name is a REQUIRED argument and is never read from `process.env` here.
-   * That follows the position `stremio/source.ts` already takes about
-   * `DeploymentContext`: "this gate is pure and testable, and the deployment's
-   * answer must come from the deployment". A `process.env` read inside this
-   * package would also be a second, independently-drifting classification of a
-   * fact the application has already classified -- see the header for why the
-   * two gates are chained instead.
+   * THE `null` IS NOT AN ALLOWLIST AND MUST NOT BECOME ONE. It refuses a blank
+   * `nodeEnv` -- a caller that classified nothing -- for the reason
+   * `isOpaqueRightsReference` refuses an empty reference: this value is carried
+   * into `FixtureRightsBasis.attestedRuntime` and into the provider's `runtime`,
+   * so a rights basis whose provenance field is empty records nothing while
+   * looking like it records something. WHICH NAMES MEAN PRODUCTION is a
+   * different question, it is one this package cannot answer, and it is answered
+   * by the deployment before it gets here.
    *
-   * An allowlist, for the reason every other gate in this repository is one:
-   * `PLAYABLE_CONTENT_RIGHTS`, `RIGHTS_BASIS_KINDS` and the engine's eligibility
-   * check all refuse what they do not recognise rather than permitting it. A
-   * denylist of the single string `production` fails open on every value nobody
-   * thought of.
+   * The name is reported exactly as the deployment stated it and is never
+   * trimmed into shape: this is provenance, and a value quietly edited on the
+   * way through is provenance about something else.
    */
-  static attest(runtimeName: string): NonProductionRuntime | null {
-    return NON_PRODUCTION_RUNTIMES.includes(runtimeName)
-      ? new NonProductionRuntime(runtimeName)
-      : null;
+  static from(classification: RuntimeClassification): NonProductionRuntime | null {
+    return classification.nodeEnv.trim() === ""
+      ? null
+      : new NonProductionRuntime(classification.nodeEnv);
   }
 }

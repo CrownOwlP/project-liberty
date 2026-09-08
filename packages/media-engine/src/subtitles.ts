@@ -4,7 +4,12 @@ import type {
   SubtitlePolicy,
   SubtitleTrack
 } from "@liberty/contracts/domains/subtitles";
-import { languageMatch, type AudioSelection } from "./audio";
+import {
+  languageMatch,
+  matchesOnlyAcrossScripts,
+  normaliseLanguageTag,
+  type AudioSelection
+} from "./audio";
 
 /**
  * Subtitle track selection.
@@ -51,20 +56,23 @@ import { languageMatch, type AudioSelection } from "./audio";
  * rule nobody states becomes an accident of whichever comparison happened to be
  * written first.
  *
- * Both sides are lower-cased. The PREFERENCE side is `trim()`ed as well and the
- * track side is not -- `languageMatch` trims `want`, not `trackLanguage` --
- * because a viewer's stored settings can carry stray whitespace while a
- * manifest tag that does is malformed. The asymmetry is safe in the only
- * direction that matters -- a padded track tag can never match something it
- * should not -- but WHAT it loses depends on where the padding falls. Whitespace
- * in or before the primary subtag (`" en"`, `"e n-gb"`) makes the primary subtag
- * itself unequal, so the tag matches nothing at all; whitespace after it
- * (`"en-gb "`) leaves the primary subtag intact, so the track still VARIANT
- * matches an `en` preference and loses only its exact match against `en-gb`.
- * Then:
+ * Both sides are normalised IDENTICALLY -- trimmed and lower-cased, by
+ * `normaliseLanguageTag` in `audio.ts`, which is also what `describe` and
+ * `describeLanguages` below print, so the trail cannot render a tag differently
+ * from the way the matcher compared it. That symmetry is new. The preference
+ * side used to be trimmed and the track side only case-folded, which was a
+ * defect and not a safe direction: `"en-gb "` from a manifest kept its language
+ * group and silently lost its EXACT match against an `en-gb` preference, while
+ * `" en"` put the padding inside the primary subtag and matched nothing at all
+ * -- two logically equivalent raw values receiving different answers depending
+ * on which side of the comparison they arrived on, with nothing in the result
+ * explaining either. Both policies take the TYPE rather than parsed output, so
+ * the schema's normalising `.transform()` never ran on those values. Then:
  *
  *   - they MATCH when their PRIMARY SUBTAGS are equal, where the primary subtag
- *     is everything before the first "-" (`primarySubtag`);
+ *     is everything before the first "-" (`primarySubtag`) -- EXCEPT when both
+ *     tags explicitly state a script and the scripts differ, which is not a
+ *     match at all here (consequence 4 below);
  *   - the match is EXACT when the whole tags are equal, and a VARIANT match
  *     otherwise;
  *   - a blank preference entry is skipped outright, and a track stating no
@@ -91,13 +99,28 @@ import { languageMatch, type AudioSelection } from "./audio";
  *      The order is honoured group first (`compareTracks` steps 2 to 4): the
  *      earliest language group wins, an exact tag beats a variant within that
  *      group, and between two exact tags the earlier preference wins.
- *   4. There is exactly ONE degree of inexactness, so a SCRIPT difference
- *      (`zh-hant` against `zh-hans`) is reported identically to a REGION
- *      difference. That is a recorded defect rather than an oversight: the
- *      analysis is at the reason selection in `selectSubtitleTrack`, a test in
- *      `subtitles.test.ts` pins today's behaviour, and the fix belongs in the
- *      shared `languageMatch` so audio and subtitles cannot come to disagree
- *      about what "the same language" means.
+ *   4. A SCRIPT conflict is not a fallback at all, where a REGION difference
+ *      still is. Every comparison in this file passes
+ *      `require_compatible_script` to the shared `languageMatch`, so a
+ *      `zh-Hant` preference does not match a `zh-Hans` track: it is never
+ *      selected automatically, it is still returned in whichever pool its kind
+ *      belongs to so a player can offer it, and the outcome carries a reason of
+ *      its own
+ *      (`preferred_language_other_script_only`) instead of the value a
+ *      `en-GB`-served-`en-US` fallback reports. A script subtag is RFC 5646's
+ *      way of stating a distinction in WRITTEN language, and automatically
+ *      showing a viewer text in a script they may not read while telling them
+ *      their language was matched is precisely what invariant 4 forbids;
+ *      `sr-Latn`/`sr-Cyrl`, `uz-Latn`/`uz-Cyrl` and `az-Latn`/`az-Arab` are the
+ *      same case. Only two STATED, DIFFERING scripts conflict -- a bare `zh`
+ *      preference still accepts both, because the viewer expressed no script
+ *      preference and inventing one for them would be the mirror of the defect
+ *      this fixes. The rule applies uniformly here, forced tracks included,
+ *      because everything this file selects is READ. Audio deliberately keeps
+ *      `ignore_script`, since a viewer who cannot read a script can still hear
+ *      the language; `ScriptPolicy` in `audio.ts` carries that argument in full
+ *      and is one parameter of one shared comparator rather than a second copy
+ *      of it.
  * ---------------------------------------------------------------------- */
 
 export type SubtitleRejectionReason = "unsupported_subtitle_format";
@@ -130,6 +153,12 @@ export type SubtitleSelectionReason =
   | "no_preference_expressed"
   | "preferred_language_forced_only"
   | "preferred_language_manual_only"
+  /* The language exists, in a script the viewer did not ask for. Carved out of
+   * `no_preferred_language_available`, which would otherwise tell a viewer no
+   * Chinese subtitle exists while a `zh-Hans` track sits in `ordered` waiting to
+   * be chosen deliberately. The remedy is a player affordance, not a different
+   * title. */
+  | "preferred_language_other_script_only"
   | "no_preferred_language_available"
   /* Nothing was selected because there was nothing to select from. */
   | "no_subtitle_tracks"
@@ -138,7 +167,7 @@ export type SubtitleSelectionReason =
 /**
  * What a reason MEANS for the screen, as opposed to why it happened.
  *
- * Thirteen reasons is the right granularity for a debugger and the wrong one for
+ * Fourteen reasons is the right granularity for a debugger and the wrong one for
  * a player: rendering a "no subtitles available" affordance should not require
  * an exhaustive `switch`, and every consumer that writes its own is one release
  * away from disagreeing with the next. So the classification is published here
@@ -182,6 +211,9 @@ export const SUBTITLE_OUTCOME_BY_REASON: Record<SubtitleSelectionReason, Subtitl
   no_preference_expressed: { showsText: false, showsFullSubtitles: false },
   preferred_language_forced_only: { showsText: false, showsFullSubtitles: false },
   preferred_language_manual_only: { showsText: false, showsFullSubtitles: false },
+  /* Nothing on screen ON PURPOSE: the track exists and is offered, and showing
+   * it uninvited is the harm the script rule exists to prevent. */
+  preferred_language_other_script_only: { showsText: false, showsFullSubtitles: false },
   no_preferred_language_available: { showsText: false, showsFullSubtitles: false },
   no_subtitle_tracks: { showsText: false, showsFullSubtitles: false },
   no_eligible_tracks: { showsText: false, showsFullSubtitles: false }
@@ -315,6 +347,17 @@ function formatRank(format: SubtitleFormat): number {
  * toggle but not a language gets no subtitles at all, which is a real harm and
  * not one they could diagnose. With `audioLanguage` unknown there is nothing to
  * derive from and the policy falls through to selecting nothing.
+ *
+ * The derived tag is carried WHOLE, script included, and is then matched under
+ * the same `require_compatible_script` rule as a stated one. So `zh-Hant` audio
+ * with only a `zh-Hans` subtitle track yields no automatic selection for a
+ * hearing-impaired viewer, reported as `preferred_language_other_script_only`.
+ * That is the uncomfortable end of the script rule and it is deliberate: the
+ * alternative is putting a script this viewer may not read in front of the one
+ * viewer who cannot check it against the soundtrack, under a reason value
+ * claiming their language was matched -- the defect the rule exists to remove,
+ * in its sharpest form. The track is still returned, so the remedy is a player
+ * offering it rather than the policy imposing it.
  */
 type LanguageSource = "viewer" | "audio_language_for_hearing_impaired" | "none";
 
@@ -351,20 +394,20 @@ function effectiveLanguages(policy: SubtitlePolicy): EffectiveLanguages {
  * `zh-Hant`), which is a reason to share the fixed comparator, not to write
  * another.
  *
- * A script subtag therefore matches as a VARIANT, not as an unrelated language:
- * `zh-Hant` requested against a `zh-Hans` track is a same-group, non-exact
- * match. That is right for a fallback of last resort and the ordered comparison
- * guarantees it can never beat the exact tag. If the product later decides a
- * script mismatch is no fallback at all, the fix belongs in `languageMatch`,
- * shared with audio -- a subtitle-local special case would leave the two
- * policies disagreeing about what "the same language" means.
+ * `require_compatible_script`, exactly as the automatic pool uses. A forced
+ * track is TEXT: `zh-Hant` audio served by a `zh-Hans` forced track puts a
+ * script on screen the viewer may not read, and it does so on the one path that
+ * survives an "off" preference -- so if anything the argument is stronger here
+ * than for the reading pool. It is the same argument, so it is the same rule,
+ * passed to the same comparator; that is what keeps the two pools from
+ * disagreeing about what "the same language" is.
  */
 function audioLanguageFit(
   track: SubtitleTrack,
   audioLanguage: string | null
 ): { exact: boolean } | null {
   if (audioLanguage === null || audioLanguage.trim() === "") return null;
-  const match = languageMatch(track.language, [audioLanguage]);
+  const match = languageMatch(track.language, [audioLanguage], "require_compatible_script");
   return match === null ? null : { exact: match.exactIndex !== null };
 }
 
@@ -402,8 +445,8 @@ function compareTracks(
   policy: SubtitlePolicy,
   languages: readonly string[]
 ): number {
-  const matchA = languageMatch(a.language, languages);
-  const matchB = languageMatch(b.language, languages);
+  const matchA = languageMatch(a.language, languages, "require_compatible_script");
+  const matchB = languageMatch(b.language, languages, "require_compatible_script");
 
   // 1. Any language match beats none.
   if ((matchA === null) !== (matchB === null)) return matchA === null ? 1 : -1;
@@ -414,7 +457,9 @@ function compareTracks(
 
     // 3. Within that language, an exact tag match beats a variant-only one.
     //    This is what stops an unrequested `pt-AO` from beating the `pt-PT` a
-    //    viewer explicitly listed, and a `zh-Hans` track from beating `zh-Hant`.
+    //    viewer explicitly listed. A `zh-Hans` track against a `zh-Hant`
+    //    preference never reaches this step at all: it is not a match, so step 1
+    //    has already put it behind every track that is.
     const exactA = matchA.exactIndex !== null;
     const exactB = matchB.exactIndex !== null;
     if (exactA !== exactB) return exactA ? -1 : 1;
@@ -471,18 +516,20 @@ function compareForcedTracks(a: SubtitleTrack, b: SubtitleTrack, policy: Subtitl
    *    the id decide -- although bare `pt` is plainly the better forced track
    *    for pt-BR audio and `pt-pt` is a third region nobody involved asked for.
    *
-   *    Not fixed here because it is the SAME missing capability as the script
-   *    defect recorded at the reason selection below: `languageMatch` reports a
-   *    binary (exact or not) where ranking non-exact variants against each other
-   *    needs a degree. Adding a closeness rule in this one comparator would make
-   *    the forced pool and the automatic pool order the identical three tags
-   *    differently, and leave audio selection -- which shares the comparator and
-   *    has the same gap -- untouched. That is the divergence `audioLanguageFit`
-   *    exists to avoid. It rides along with the PL-0202/PL-0203 change to
-   *    `languageMatch`, where one definition of closeness fixes all three call
-   *    sites at once. The consequence meanwhile is bounded: a forced track that
-   *    fits the audio at all still beats one that does not, and the outcome
-   *    stays deterministic.
+   *    NOT the same missing capability as the script rule, which is why that one
+   *    landed and this one did not. The script rule DISQUALIFIES a pair the
+   *    matcher would otherwise accept, and a disqualification is expressible in
+   *    the binary `languageMatch` already reports; ranking two ACCEPTED
+   *    non-exact variants against each other needs something the result does not
+   *    carry, a degree of closeness. Adding that degree in this one comparator
+   *    would make the forced pool and the automatic pool order the identical
+   *    three tags differently, and leave audio selection -- which shares the
+   *    comparator and has the same gap -- untouched. That is the divergence
+   *    `audioLanguageFit` exists to avoid, so the degree belongs in
+   *    `languageMatch` as one definition serving all three call sites, and it is
+   *    not part of this change. The consequence meanwhile is bounded: a forced
+   *    track that fits the audio at all still beats one that does not, and the
+   *    outcome stays deterministic.
    */
   if (a.isDefault !== b.isDefault) return a.isDefault ? -1 : 1;
 
@@ -518,24 +565,41 @@ function compareIds(a: string, b: string): number {
  * Split this finely because the remedies differ completely. "There is no French
  * track" is a content-availability answer. "There is a French track but it is
  * forced" means the viewer is seeing partial translation and wondering why they
- * cannot get full subtitles. "You expressed no preference" is a settings
- * problem, not a content one. One shared "no subtitles" reason would send every
- * one of those to the wrong place.
+ * cannot get full subtitles. "There is a Chinese track, in the other script" is
+ * an offer the player should make and the viewer should accept or decline --
+ * saying instead that nothing exists in their language would simply be false.
+ * "You expressed no preference" is a settings problem, not a content one. One
+ * shared "no subtitles" reason would send every one of those to the wrong place.
  */
 function unmatchedReason(
   effective: EffectiveLanguages,
   forced: readonly SubtitleTrack[],
-  manualOnly: readonly SubtitleTrack[]
+  manualOnly: readonly SubtitleTrack[],
+  eligible: readonly SubtitleTrack[]
 ): SubtitleSelectionReason {
   if (effective.source === "none") return "no_preference_expressed";
   const matches = (track: SubtitleTrack): boolean =>
-    languageMatch(track.language, effective.languages) !== null;
+    languageMatch(track.language, effective.languages, "require_compatible_script") !== null;
   // Forced is checked before commentary because it is the more surprising
   // outcome to a viewer: a forced track puts SOME text in their language on
   // screen, so "there are no subtitles in your language" would read as a
   // contradiction of what they can see.
   if (forced.some(matches)) return "preferred_language_forced_only";
   if (manualOnly.some(matches)) return "preferred_language_manual_only";
+  /*
+   * Last of the three, and over EVERY eligible track rather than one pool.
+   *
+   * Last because the two above it describe a track in the script the viewer
+   * actually asked for -- one they can read, and could be given by a player --
+   * which is the more actionable fact when both are true. Over every pool
+   * because the claim is about the stream: "your language is here only in
+   * another script" is equally true of a plain, a forced or a commentary track,
+   * and this reason carves that case out of `no_preferred_language_available`,
+   * which would otherwise report that the language is not present at all.
+   */
+  if (eligible.some((track) => matchesOnlyAcrossScripts(track.language, effective.languages))) {
+    return "preferred_language_other_script_only";
+  }
   return "no_preferred_language_available";
 }
 
@@ -558,29 +622,36 @@ const REASON_TEXT: Record<SubtitleSelectionReason, string> = {
     "a preferred language exists only as a forced narrative track, which is not full subtitles",
   preferred_language_manual_only:
     "a preferred language exists only as a commentary track; those require an explicit choice",
+  preferred_language_other_script_only:
+    "a preferred language exists only in a different script, which may be unreadable and is never shown automatically",
   no_preferred_language_available: "no subtitle track is available in a preferred language",
   no_subtitle_tracks: "the stream offered no subtitle tracks at all",
   no_eligible_tracks: "no subtitle track is in a format this client can render"
 };
 
 /**
- * Case-folded at the render point, for the reason the contract states about its
- * own `.transform()`: it only runs on `.parse()`, and this policy takes the
- * TYPE, so a provider adapter constructing a track literal never invokes it. A
- * `"PT-BR"` track therefore compares as `pt-br` everywhere in this file and
- * would print as `PT-BR` here alone -- the one place a human reads it. Someone
- * debugging why `pt-br` did not match would be looking at the only rendering of
- * that field that disagrees with what the matcher saw.
+ * Normalised at the render point THROUGH THE MATCHER'S OWN FUNCTION, for the
+ * reason the contract states about its `.transform()`: it only runs on
+ * `.parse()`, and this policy takes the TYPE, so a provider adapter
+ * constructing a track literal never invokes it. A `"PT-BR"` track therefore
+ * compares as `pt-br` everywhere in this file and would print as `PT-BR` here
+ * alone -- the one place a human reads it. Someone debugging why `pt-br` did
+ * not match would be looking at the only rendering of that field that disagrees
+ * with what the matcher saw.
+ *
+ * `normaliseLanguageTag` rather than a local `.toLowerCase()`, so the agreement
+ * is structural: when the matcher's normalisation gained a `trim()`, this line
+ * gained it in the same edit instead of quietly falling a step behind.
  */
 function describe(track: SubtitleTrack): string {
-  return `${track.id} (${track.language.toLowerCase()}, ${track.kind}, ${track.format})`;
+  return `${track.id} (${normaliseLanguageTag(track.language)}, ${track.kind}, ${track.format})`;
 }
 
 /**
  * The REQUESTED side of the same rendering problem `describe` solves for the
  * track side, and it was left raw when that one was fixed.
  *
- * `languageMatch` compares `want.trim().toLowerCase()`, so a policy carrying
+ * `languageMatch` compares `normaliseLanguageTag(want)`, so a policy carrying
  * `"PT-BR"` or `" fr"` -- both reachable, because `selectSubtitleTrack` takes
  * the TYPE and the schema's `.transform()` only runs on `.parse()` -- was matched as
  * `pt-br` and `fr` and then printed here verbatim. This string exists precisely
@@ -596,7 +667,7 @@ function describe(track: SubtitleTrack): string {
  */
 function describeLanguages(effective: EffectiveLanguages): string {
   const listed = effective.languages
-    .map((language) => language.trim().toLowerCase())
+    .map((language) => normaliseLanguageTag(language))
     .filter((language) => language !== "");
   if (!listed.length) return "no language requested";
   const suffix = effective.source === "audio_language_for_hearing_impaired" ? " (from the audio)" : "";
@@ -648,7 +719,7 @@ function describeLanguages(effective: EffectiveLanguages): string {
  */
 export function withSelectedAudio(policy: SubtitlePolicy, audio: AudioSelection): SubtitlePolicy {
   const selected = audio.selected;
-  const language = selected === null ? "" : selected.language.trim().toLowerCase();
+  const language = selected === null ? "" : normaliseLanguageTag(selected.language);
   return { ...policy, audioLanguage: language.length < 2 ? null : language };
 }
 
@@ -697,7 +768,8 @@ export function withSelectedAudio(policy: SubtitlePolicy, audio: AudioSelection)
  *      `compareForcedTracks`, which asks about the AUDIO language and never about
  *      what the viewer likes to read.
  *   6. NOTHING, and which nothing: `no_preference_expressed`,
- *      `preferred_language_forced_only`, `preferred_language_manual_only`, or
+ *      `preferred_language_forced_only`, `preferred_language_manual_only`,
+ *      `preferred_language_other_script_only`, or
  *      `no_preferred_language_available`.
  *
  * Where `isDefault` sits, because it is the input most often mistaken for an
@@ -828,7 +900,9 @@ export function selectSubtitleTrack(
    * something, subtitles must not appear uninvited.
    */
   const best = ordered[0];
-  const match = best ? languageMatch(best.language, effective.languages) : null;
+  const match = best
+    ? languageMatch(best.language, effective.languages, "require_compatible_script")
+    : null;
 
   if (best && match) {
     /*
@@ -849,31 +923,26 @@ export function selectSubtitleTrack(
      * the difference between a working accessibility path and one that silently
      * degraded, and nobody could tell which had happened from the trail.
      *
-     * KNOWN DEFECT, deliberately not fixed here: the subtag reason cannot tell a
-     * REGION fallback from a SCRIPT one. `primarySubtag` in audio.ts
-     * lowercases and takes the first subtag, so `zh-Hant` and
-     * `zh-Hans` both reduce to `zh` and "requested zh-Hant, served zh-Hans"
-     * reports the same value as "requested en-GB, served en-US". Those are not
-     * comparable degradations: en-GB to en-US costs a reader nothing, while
-     * zh-Hant to zh-Hans hands a traditional-script reader a script they may not
-     * read at all. The same collapse hits sr-Latn/sr-Cyrl, uz-Latn/uz-Cyrl and
-     * az-Latn/az-Arab. The comparator itself is correct -- an exact tag always
-     * wins and the tests pin that -- so what is wrong is only what gets
-     * REPORTED, and a viewer whose subtitles are unreadable is told they matched
-     * their language.
+     * The subtag reason now carries exactly one meaning: a same-language
+     * fallback that is NOT a script substitution. It used to carry two.
+     * `primarySubtag` reduces `zh-Hant` and `zh-Hans` alike to `zh`, so
+     * "requested zh-Hant, served zh-Hans" reported the same value as "requested
+     * en-GB, served en-US" -- and those are not comparable degradations. en-GB
+     * to en-US costs a reader nothing; zh-Hant to zh-Hans hands a
+     * traditional-script reader a script they may not read at all, while the
+     * trail tells them their language was matched. sr-Latn/sr-Cyrl,
+     * uz-Latn/uz-Cyrl and az-Latn/az-Arab collapsed the same way.
      *
-     * The fix belongs in the shared `languageMatch`, not here. That function is
-     * the single definition of "the same language" for audio and subtitles both,
-     * and its result carries one binary (exact or not) where a script mismatch
-     * needs a third degree. Inventing that degree locally would give subtitle
-     * selection a notion of language closeness that audio selection does not
-     * share, which is the exact divergence `audioLanguageFit` above refuses to
-     * create -- and it would still not fix the audio side, where the same
-     * substitution is just as wrong. So it is cross-lane work spanning PL-0202
-     * (audio) and PL-0203 (subtitles) and must be routed as ONE change: a
-     * degree-of-match on `languageMatch`, then new reason values on both
-     * policies. A test in `subtitles.test.ts` pins the current behaviour, so the
-     * day it changes is a visible edit rather than a surprise.
+     * A stated script conflict is no longer a language match, so that pair
+     * cannot reach this branch at all. It falls past it -- to the forced
+     * narrative track if one fits the audio, and otherwise out of step 6 as
+     * `preferred_language_other_script_only`, with nothing on screen and the
+     * track still returned so a player can present it deliberately.
+     * The rule lives in the shared `languageMatch` as a `ScriptPolicy`
+     * argument, which audio passes differently and for stated reasons, rather
+     * than as a special case here -- subtitle selection must not develop a
+     * private notion of "the same language", which is the divergence
+     * `audioLanguageFit` above refuses to create.
      */
     const exact = match.exactIndex !== null;
     const reason: SubtitleSelectionReason =
@@ -904,7 +973,7 @@ export function selectSubtitleTrack(
     };
   }
 
-  const reason = unmatchedReason(effective, forced, manualOnly);
+  const reason = unmatchedReason(effective, forced, manualOnly, eligible);
   return {
     selected: null,
     reason,

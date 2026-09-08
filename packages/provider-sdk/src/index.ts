@@ -3,17 +3,20 @@ export type { AuthorizedMediaProvider, CatalogItemRef, ProviderContext } from ".
 
 export type { CatalogItemRegistry } from "./registry";
 
+/*
+ * The fixture adapter. `NonProductionRuntime` and `fixtureRightsBasis` are
+ * absent on purpose and must stay absent -- see `./fixture/index.ts`.
+ * `createFixtureProvider` is the only way to reach a fixture rights basis, and
+ * it requires the deployment's own `RuntimeClassification` to get there.
+ */
 export {
   DEFAULT_FIXTURE_PROVIDER_ID,
   FIXTURE_RIGHTS_REFERENCE,
   FIXTURE_VARIANTS,
   MAX_RIGHTS_REFERENCE_LENGTH,
-  NON_PRODUCTION_RUNTIMES,
-  NonProductionRuntime,
   OPAQUE_RIGHTS_REFERENCE_PATTERN,
   createFixtureProvider,
   fixtureCatalogItemRegistry,
-  fixtureRightsBasis,
   isOpaqueRightsReference
 } from "./fixture";
 export type {
@@ -25,7 +28,8 @@ export type {
   FixtureResolution,
   FixtureResolutionReason,
   FixtureRightsBasis,
-  FixtureVariant
+  FixtureVariant,
+  RuntimeClassification
 } from "./fixture";
 
 export {

@@ -637,7 +637,7 @@
       "id": "PL-0104",
       "priority": "P0",
       "lane": "Frontend",
-      "status": "REVIEW",
+      "status": "IN_PROGRESS",
       "title": "Make catalog and search results navigable",
       "dependencies": [
         "PL-0102",
@@ -647,6 +647,11 @@
         "apps/web/src/components/catalog-card.tsx",
         "apps/web/src/lib/routes.ts",
         "apps/web/src/lib/routes.test.ts"
+      ],
+      "reviewDependencies": [
+        "apps/web/src/app/title/title-detail.ts",
+        "apps/web/src/components/catalog-rail.tsx",
+        "apps/web/src/components/search/search-results.tsx"
       ],
       "preferredAgent": "claude-frontend",
       "reviewAgent": "gpt-architect",
@@ -689,7 +694,7 @@
         }
       },
       "implementationAgent": "claude-frontend",
-      "updatedAt": "2026-09-05T17:47:41.938Z",
+      "updatedAt": "2026-09-08T04:32:37.772Z",
       "implementationBaseSha": "c3bb856f3d8c122acd46d5331067fac3a0266f2b",
       "implementationBaseProvenance": {
         "kind": "reconciled-existing-implementation",
@@ -712,7 +717,51 @@
         "baseCommitSurfaceTouches": [],
         "baseCommitSurfaceTouchesTruncated": false,
         "reason": "PL-0104's implementation predates its claim and is already in committed history, so an ordinary start would record a base that is false. The base was DERIVED, not chosen: git log --reverse over apps/web/src/lib/routes.ts gives the first commit that ever introduced the lane's own module, and this is that commit's parent. catalog-card.tsx was deliberately excluded from the derivation because the repository's root commit b484735 shipped a 14-line scaffold of it, which would have put the base before the repository existed and produced exactly the false field this path exists to prevent. The lane begins at b7bc31c, 'Four lanes: unforgeable pins, navigable results, persistence conflict rules, recommendation honesty' -- navigable results is this task -- and the missing apps/web/src/lib/routes.test.ts, named in this task's own allowedPaths, was added in 719d2d7. Both are inside base..HEAD. The commit window, both endpoints and the base commit's own surface touches are published for the reviewer to check that no earlier commit belongs to this implementation."
-      }
+      },
+      "review": {
+        "taskId": "PL-0104",
+        "implementationAgent": "claude-frontend",
+        "implementationOwner": "claude-frontend",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "5b59c6c2dc2bd45c6459a279ef3c38446a5db243",
+        "reviewedBaseSha": "c3bb856f3d8c122acd46d5331067fac3a0266f2b",
+        "reviewedTreeHash": "a5e091178e1123a4dc40df28b75fdd933f3095f3712d1d8bf6eeaedcc56f5cec",
+        "reviewedFileCount": 6,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [
+          "apps/web/src/app/title/title-detail.ts",
+          "apps/web/src/components/catalog-rail.tsx",
+          "apps/web/src/components/search/search-results.tsx"
+        ],
+        "outcome": "CHANGES_REQUESTED",
+        "reviewedAt": "2026-09-08T04:32:37.771Z",
+        "evidence": "CHANGES_REQUESTED for review-surface completeness, not for the link implementation. CatalogCard renders the visible title as the Next link name and the route resolver refuses known-broken ids, but the task fingerprint does not include the external titleHref definition or the two consumer modules whose wiring makes the acceptance true for home rails and search results. Add title-detail.ts, catalog-rail.tsx, and search-results.tsx as reviewDependencies rather than write paths. With those dependencies bound, the reconciled implementation range is credible and the code is otherwise approvable, with the stated coverage limitation that no PL-0104 gate mounts the component or clicks the link in a browser. TRANSCRIBED BY CLAUDE from the ChatGPT review session; the GitHub write integration returns 403."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PL-0104",
+          "implementationAgent": "claude-frontend",
+          "implementationOwner": "claude-frontend",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "5b59c6c2dc2bd45c6459a279ef3c38446a5db243",
+          "reviewedBaseSha": "c3bb856f3d8c122acd46d5331067fac3a0266f2b",
+          "reviewedTreeHash": "a5e091178e1123a4dc40df28b75fdd933f3095f3712d1d8bf6eeaedcc56f5cec",
+          "reviewedFileCount": 6,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "apps/web/src/app/title/title-detail.ts",
+            "apps/web/src/components/catalog-rail.tsx",
+            "apps/web/src/components/search/search-results.tsx"
+          ],
+          "outcome": "CHANGES_REQUESTED",
+          "reviewedAt": "2026-09-08T04:32:37.771Z",
+          "evidence": "CHANGES_REQUESTED for review-surface completeness, not for the link implementation. CatalogCard renders the visible title as the Next link name and the route resolver refuses known-broken ids, but the task fingerprint does not include the external titleHref definition or the two consumer modules whose wiring makes the acceptance true for home rails and search results. Add title-detail.ts, catalog-rail.tsx, and search-results.tsx as reviewDependencies rather than write paths. With those dependencies bound, the reconciled implementation range is credible and the code is otherwise approvable, with the stated coverage limitation that no PL-0104 gate mounts the component or clicks the link in a browser. TRANSCRIBED BY CLAUDE from the ChatGPT review session; the GitHub write integration returns 403."
+        }
+      ]
     },
     {
       "id": "PL-0201",
@@ -1416,7 +1465,7 @@
       "id": "PL-0705",
       "priority": "P0",
       "lane": "Frontend",
-      "status": "REVIEW",
+      "status": "DONE",
       "title": "Search loses text typed before hydration",
       "dependencies": [
         "PL-0102"
@@ -1433,7 +1482,7 @@
         "e2e"
       ],
       "acceptance": "Text typed into the search field before the form hydrates is not lost: on mount the form adopts the DOM value if it differs from its own state, and a query typed at any point becomes an addressable URL. Proven by an EXECUTED Playwright run on WebKit, where the race reproduces, rather than only on Chromium where it does not. Separately the spec addresses the result heading exactly rather than by substring, because role-name matching is substring by default and a query equal to a title matches both the results heading and the card heading -- a spec defect that only appeared once the suite was first executed.",
-      "owner": "claude-frontend",
+      "owner": null,
       "gateResults": {
         "typecheck": {
           "status": "pass",
@@ -1458,8 +1507,45 @@
         }
       },
       "implementationAgent": "claude-frontend",
-      "updatedAt": "2026-09-05T16:15:20.690Z",
-      "implementationBaseSha": "f6c4b942ebbd02fd3fa9ed8f74fde4fc603affc2"
+      "updatedAt": "2026-09-08T04:32:36.700Z",
+      "implementationBaseSha": "f6c4b942ebbd02fd3fa9ed8f74fde4fc603affc2",
+      "review": {
+        "taskId": "PL-0705",
+        "implementationAgent": "claude-frontend",
+        "implementationOwner": "claude-frontend",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "5b59c6c2dc2bd45c6459a279ef3c38446a5db243",
+        "reviewedBaseSha": "f6c4b942ebbd02fd3fa9ed8f74fde4fc603affc2",
+        "reviewedTreeHash": "0b0ddc3191c34322a61fc17d5a2c95b8363527632d8e5985de55d5fb3fbfc3d5",
+        "reviewedFileCount": 9,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [],
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-09-08T04:32:36.082Z",
+        "evidence": "APPROVED. The hydration repair changes only the controlled field value: the layout effect does not append a search commit, advance nextEpoch, alter appliedEpoch, or mutate the request log. The first operation that can advance the epoch after adoption is the ordinary debounced commit, which records one unspent request before navigation. Reissue remains epoch-neutral and therefore cannot become adoption: an unspent matching request is classified acknowledged or stale, while an already applied matching query is classified unchanged. The executed cross-browser proof is non-vacuous now because it requires the URL to change before checking the field value, and the route instrumentation drains held handlers before removal. TRANSCRIBED BY CLAUDE from the ChatGPT review session; the GitHub write integration returns 403, so no connector-authored message exists."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PL-0705",
+          "implementationAgent": "claude-frontend",
+          "implementationOwner": "claude-frontend",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "5b59c6c2dc2bd45c6459a279ef3c38446a5db243",
+          "reviewedBaseSha": "f6c4b942ebbd02fd3fa9ed8f74fde4fc603affc2",
+          "reviewedTreeHash": "0b0ddc3191c34322a61fc17d5a2c95b8363527632d8e5985de55d5fb3fbfc3d5",
+          "reviewedFileCount": 9,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [],
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-09-08T04:32:36.082Z",
+          "evidence": "APPROVED. The hydration repair changes only the controlled field value: the layout effect does not append a search commit, advance nextEpoch, alter appliedEpoch, or mutate the request log. The first operation that can advance the epoch after adoption is the ordinary debounced commit, which records one unspent request before navigation. Reissue remains epoch-neutral and therefore cannot become adoption: an unspent matching request is classified acknowledged or stale, while an already applied matching query is classified unchanged. The executed cross-browser proof is non-vacuous now because it requires the URL to change before checking the field value, and the route instrumentation drains held handlers before removal. TRANSCRIBED BY CLAUDE from the ChatGPT review session; the GitHub write integration returns 403, so no connector-authored message exists."
+        }
+      ],
+      "completedAt": "2026-09-08T04:32:36.700Z"
     },
     {
       "id": "PL-0704",
@@ -1493,7 +1579,7 @@
       "id": "PL-0703",
       "priority": "P0",
       "lane": "Security",
-      "status": "REVIEW",
+      "status": "BLOCKED",
       "title": "Corrective: production rights-invariant breach in the watch route",
       "dependencies": [],
       "allowedPaths": [
@@ -1544,8 +1630,9 @@
         }
       },
       "implementationAgent": "claude-security",
-      "updatedAt": "2026-09-05T16:15:19.344Z",
-      "implementationBaseSha": "f6c4b942ebbd02fd3fa9ed8f74fde4fc603affc2"
+      "updatedAt": "2026-09-08T04:32:37.213Z",
+      "implementationBaseSha": "f6c4b942ebbd02fd3fa9ed8f74fde4fc603affc2",
+      "blocker": "Provenance invalid, per gpt-architect at 5b59c6c2. implementationBaseSha is f6c4b942ebbd02fd3fa9ed8f74fde4fc603affc2, recorded by an ordinary start, which opens the review range AFTER part of the implementation already existed: the first incident repair at 9933a55 sits before it, so the recorded range excludes half the implementation it claims to cover. The reviewer verified this cannot be repaired in place -- release is unavailable from REVIEW and deliberately preserves an existing base, and reconciliation refuses any task that already records one, because reconciliation establishes a base rather than revising one. This record is preserved as audit history rather than rewritten. Superseded by PL-0706, which reconciles from cf98b977b3c7c0113928bb9cc4d7fb6d02e802bd. The reviewer also refused both security-review and rights-review on the merits at that head: two fixture providers and two runtime allowlists coexisted, recreating the two-copy arrangement this corrective exists to remove."
     },
     {
       "id": "PL-0702",
@@ -1724,7 +1811,7 @@
       "id": "PL-AI-0004",
       "priority": "P0",
       "lane": "Coordination",
-      "status": "REVIEW",
+      "status": "DONE",
       "title": "Review dependency scope and provenance reconciliation",
       "dependencies": [],
       "allowedPaths": [
@@ -1740,28 +1827,69 @@
         "unit"
       ],
       "acceptance": "SCOPE EXPANDED, deliberately and on the reviewer's ruling: this task now covers two trust-boundary features in the same two files, because the review system binds an approval to a path range rather than to a semantic hunk, so a current-head review of these files cannot truthfully exclude the second. A nominal second task over the identical write surface was rejected as a fake logical split. (1) allowedPaths remains the sole write, collision and staging surface while review fingerprints, stale-review checks, approvals and the DONE gate bind to allowedPaths union reviewDependencies; two tasks with disjoint allowedPaths and a shared reviewDependency can be active simultaneously, and editing that shared dependency invalidates both reviews; tasks without reviewDependencies behave identically to before; a declaration that reduces to the repository root is refused rather than dropped, in validation and at point of use, and the autonomy guard treats root ownership as orchestration. (2) Provenance reconciliation: an implementation already present in COMMITTED GIT HISTORY can be started with a true implementationBaseSha via explicit flags that are refused on an ordinary start, the base is validated against mechanical facts only, the semantic question of whether it is really this implementation's predecessor is published as evidence for the reviewer rather than guessed at by a heuristic, and the audit event is distinguishable from an ordinary start. The contract says committed rather than pushed deliberately: the mechanism inspects the local worktree and the local graph and consults no remote, so a clean branch of never-pushed commits satisfies it, and claiming otherwise was the same class of provenance overclaim this task exists to remove. Remote availability is enforced where it actually matters, at review and handoff.",
-      "owner": "claude-lead",
+      "owner": null,
       "gateResults": {
         "repo-validate": {
           "status": "pass",
-          "at": "2026-08-18T04:52:29.379Z",
-          "evidence": "npm run check exit 0 under pinned Node 22 resolved via npx node@22, including ai:validate, repo:validate, env:validate across all three modes, test:scripts, lint, typecheck, test and build."
+          "at": "2026-09-08T04:32:33.529Z",
+          "by": "claude-lead",
+          "commitSha": "5b59c6c2dc2bd45c6459a279ef3c38446a5db243",
+          "evidence": "npm run check exit 0 under pinned Node 22 this round, including ai:validate, repo:validate, env:validate across development, test and production, and test:scripts. Supersedes the 2026-08-18 record, which described only the original review-dependency work and predated the acceptance expanding to the provenance-reconciliation contract; gpt-architect made that refresh a completion prerequisite."
         },
         "unit": {
           "status": "pass",
-          "at": "2026-08-18T04:52:29.484Z",
-          "evidence": "npm run ai:test exit 0 under pinned Node 22: scripts/test-ai-control-plane.mjs, including six new regressions proving disjoint allowedPaths with a shared reviewDependency stay concurrently claimable, that editing the shared dependency invalidates both approvals, that a dependency cannot be written or staged, that overlapping reviewDependencies never create a claim conflict including the asymmetric case, that allowedPaths is implicitly inside the review surface, and that a task without reviewDependencies fingerprints byte-identically to before."
+          "at": "2026-09-08T04:32:34.042Z",
+          "by": "claude-lead",
+          "commitSha": "5b59c6c2dc2bd45c6459a279ef3c38446a5db243",
+          "evidence": "node scripts/test-ai-control-plane.mjs exit 0 under pinned Node 22 this round: the whole control-plane scenario suite, including the reconciliation and review-surface regressions this task added. Supersedes the 2026-08-18 record for the same reason."
         }
       },
       "implementationAgent": "claude-lead",
-      "updatedAt": "2026-08-18T04:52:29.592Z",
-      "implementationBaseSha": "79ed3b35fb42f8a89198bdb7cfdd6a5d439f8c34"
+      "updatedAt": "2026-09-08T04:32:35.410Z",
+      "implementationBaseSha": "79ed3b35fb42f8a89198bdb7cfdd6a5d439f8c34",
+      "review": {
+        "taskId": "PL-AI-0004",
+        "implementationAgent": "claude-lead",
+        "implementationOwner": "claude-lead",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "3c92942bc7eee0a7aab4440e254d8e11d3a849a9",
+        "reviewedBaseSha": "79ed3b35fb42f8a89198bdb7cfdd6a5d439f8c34",
+        "reviewedTreeHash": "3ead3f9daa88b35f81f7932bf06298921289c67a65ae501bd964376dcf8dbb6d",
+        "reviewedFileCount": 4,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [],
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-09-08T04:32:34.806Z",
+        "evidence": "APPROVED by gpt-architect at 3c92942bc7eee0a7aab4440e254d8e11d3a849a9; the approval remains fresh at current head because none of PL-AI-0004's four reviewed paths changed after that decision, and exact-head CI is green. The decision was made in the ChatGPT review session and may be transcribed by Claude because the GitHub write integration returned 403; it must not be represented as connector-authored. Before DONE, replace the August 18 repo-validate and unit gate evidence with current evidence covering the expanded reconciliation contract."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PL-AI-0004",
+          "implementationAgent": "claude-lead",
+          "implementationOwner": "claude-lead",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "3c92942bc7eee0a7aab4440e254d8e11d3a849a9",
+          "reviewedBaseSha": "79ed3b35fb42f8a89198bdb7cfdd6a5d439f8c34",
+          "reviewedTreeHash": "3ead3f9daa88b35f81f7932bf06298921289c67a65ae501bd964376dcf8dbb6d",
+          "reviewedFileCount": 4,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [],
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-09-08T04:32:34.806Z",
+          "evidence": "APPROVED by gpt-architect at 3c92942bc7eee0a7aab4440e254d8e11d3a849a9; the approval remains fresh at current head because none of PL-AI-0004's four reviewed paths changed after that decision, and exact-head CI is green. The decision was made in the ChatGPT review session and may be transcribed by Claude because the GitHub write integration returned 403; it must not be represented as connector-authored. Before DONE, replace the August 18 repo-validate and unit gate evidence with current evidence covering the expanded reconciliation contract."
+        }
+      ],
+      "completedAt": "2026-09-08T04:32:35.410Z"
     },
     {
       "id": "PL-AI-0005",
       "priority": "P0",
       "lane": "Coordination",
-      "status": "BACKLOG",
+      "status": "READY",
       "title": "Show reviewers the full review surface",
       "dependencies": [
         "PL-AI-0004"
@@ -1787,7 +1915,7 @@
       "id": "PL-AI-0006",
       "priority": "P0",
       "lane": "Architecture",
-      "status": "BACKLOG",
+      "status": "READY",
       "title": "Contract module boundaries",
       "dependencies": [
         "PL-AI-0004"
@@ -1873,6 +2001,45 @@
         "unit"
       ],
       "acceptance": "A metadata source stands behind resolveCatalogMetadataSource and answers what the port deliberately does not. Ingestion: something fetches, schedules and backfills, rather than an array being maintained by hand. Refresh: an answer carries its age and a stated staleness policy, so nobody has to guess how old a rail is. Identity and dedupe: how a provider's native id becomes a normalizedContentId, and what happens when two sources describe the same work, is settled as a design decision before it is coded - this is the largest missing piece and it is not a coding question. Deletion: a work that disappears from a source produces a tombstone, so it stays distinguishable from a fetch that failed. Paging and provider-side search: listRecords returning everything is a shape only six fixtures can use, and who owns ranking and paging is part of the contract rather than an accident of in-memory filtering. Artwork: images arrive with their own licensing, tracked separately from the work's, or they do not arrive. Localization and availability: title, genre and synopsis are locale-tagged and a work can be offered in more than one language, and availability windows and territory exist, so the empty state's claim about a region is backed by something. Every record declares a rights basis whose category agrees with its item and whose reference is an opaque internal identifier or null, and the ingestion path is treated as untrusted third-party I/O - allowlisted egress, bounded bodies, redirects revalidated, and no media address anywhere in a catalog payload.",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PL-0706",
+      "priority": "P0",
+      "lane": "Security",
+      "status": "READY",
+      "title": "Corrective, re-run: production rights-invariant breach in the watch route",
+      "description": "This task SUPERSEDES PL-0703 and carries the same corrective forward under an honest review range. PL-0703 recorded implementationBaseSha f6c4b942ebbd02fd3fa9ed8f74fde4fc603affc2, which opened its review range AFTER part of the implementation already existed: the first incident repair at 9933a55 falls before that base and was therefore excluded from the range the first review was bound to. That record cannot be repaired in place. release is reachable only from CLAIMED or IN_PROGRESS and PL-0703 is in REVIEW; release deliberately PRESERVES implementationBaseSha even when it is usable; and reconciliation refuses any task that already records a base, because reconciliation establishes a base rather than revising one. The prescribed remedy is therefore to BLOCK PL-0703, preserving the false narrowed base as audit history, and to run the work again here. THIS TASK'S OWN BASE MUST BE RECONCILED, not captured: claim it, then start it with --reconcile-existing --base cf98b977b3c7c0113928bb9cc4d7fb6d02e802bd. That sha is the true pre-implementation base, being the immediate parent of the first incident-repair commit. Do NOT use its own parent b0b1dcf5a4826b763aa72d6375dd93e95a3aff33, which would widen the asserted range by one unrelated commit and make implementationBaseSha false in the other direction. The allowedPaths below are PL-0703's declared set plus packages/provider-sdk/src/fixture/** and packages/provider-sdk/src/index.ts, because this round's corrective collapsed the two fixture providers onto the SDK's one and therefore writes there. The reviewDependencies carry over e2e/tests/media-rig.spec.ts and add e2e/src/env.ts and e2e/src/fixtures.ts: WEB_MODE and MANAGES_SERVER in the first decide the production-versus-development assertion, and TINY_DEVICE in the second is the probe that makes the unknown-height regression meaningful, so an approval that did not fingerprint them would stay artificially fresh after someone altered the mode classifier or the probe. packages/provider-sdk/src/fixture/** is deliberately NOT also listed as a reviewDependency: it is a write path here, allowedPaths is always part of the reviewed surface, and the validator warns on the redundancy.",
+      "notes": "NOT ONLY A PROVENANCE REWRITE. At the previous head the reviewer refused BOTH security-review and rights-review ON THE MERITS, and those refusals are the substantive work this task inherits: the corrective had not reduced the fixture providers to one with the application consuming the SDK's, the runtime allowlist was not expressed exactly once with the SDK holding a witness it can neither forge nor classify for itself, the opaque rights-reference rule still existed in more than one place, a fabricated rights basis remained reachable behind a deletable condition rather than being structurally unconstructible in a deployment environment, and the two Playwright modes were not both shown as EXECUTED. PL-0703's typecheck, unit and e2e passes belong to that abandoned round and do not carry over; every gate here is re-recorded under this task's owner.",
+      "dependencies": [],
+      "allowedPaths": [
+        "apps/web/src/app/watch/**",
+        "apps/web/next.config.ts",
+        "apps/web/src/app/api/deployment-environment.ts",
+        "apps/web/src/app/api/v1/playback/session/**",
+        "apps/web/src/app/api/v1/playback/resolve/**",
+        "e2e/tests/critical-journey.spec.ts",
+        "e2e/tests/playback-session.api.spec.ts",
+        "docs/E2E.md",
+        "packages/provider-sdk/src/fixture/**",
+        "packages/provider-sdk/src/index.ts"
+      ],
+      "reviewDependencies": [
+        "e2e/tests/media-rig.spec.ts",
+        "e2e/src/env.ts",
+        "e2e/src/fixtures.ts"
+      ],
+      "preferredAgent": "claude-security",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "security-review",
+        "rights-review",
+        "typecheck",
+        "unit",
+        "e2e"
+      ],
+      "acceptance": "Exactly ONE fixture provider exists in the repository, and the application CONSUMES the provider-sdk's rather than implementing its own: no route, no API handler and no watch-surface module declares a rights basis, composes a media URL, invents a candidate id or carries its own copy of the fixture variants. The runtime allowlist that decides which environments may construct fixtures is expressed ONCE by the application, and the SDK holds a witness it can neither forge nor classify for itself, so the SDK cannot admit itself into a deployment. The opaque rights-reference rule exists in exactly ONE place, with every other consumer importing it rather than restating it. A fabricated rights basis is structurally UNCONSTRUCTIBLE in a deployment environment -- unreachable because no constructor can be reached without the application-issued witness -- rather than guarded by a condition that deleting one line would remove. Both Playwright modes, production and development, are EXECUTED rather than only typechecked, and the gate evidence names the run, the commit and the per-mode results.",
       "owner": null,
       "gateResults": {}
     }

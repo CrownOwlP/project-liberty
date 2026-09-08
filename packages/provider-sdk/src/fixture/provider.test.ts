@@ -1,6 +1,6 @@
 import type { CatalogItemRef, ProviderContext } from "../provider";
 import { describe, expect, it } from "vitest";
-import { NON_PRODUCTION_RUNTIMES, NonProductionRuntime } from "./environment";
+import { NonProductionRuntime, type RuntimeClassification } from "./environment";
 import { FIXTURE_RIGHTS_REFERENCE, isOpaqueRightsReference } from "./rights";
 import {
   createFixtureProvider,
@@ -32,14 +32,20 @@ const BASE_OPTIONS: FixtureProviderOptions = {
   unmeasuredLatencyMs: 1000
 };
 
-function testRuntime(): NonProductionRuntime {
-  const runtime = NonProductionRuntime.attest("test");
-  if (runtime === null) throw new Error("attest refused the `test` runtime");
-  return runtime;
-}
+/**
+ * A deployment's classification, stated by the test the way a deployment states
+ * it.
+ *
+ * This package does not classify a process and has no allowlist of runtime
+ * names -- `environment.ts` says why, and `apps/web`'s
+ * `deployment-environment.ts` is what performs the classification in the one
+ * application that uses this adapter. So a test supplies the answer directly,
+ * which is also the only thing a caller can do.
+ */
+const TEST_RUNTIME: RuntimeClassification = { nodeEnv: "test" };
 
 function build(options: FixtureProviderOptions): FixtureProvider {
-  const created = createFixtureProvider(testRuntime(), options);
+  const created = createFixtureProvider(TEST_RUNTIME, options);
   if (!created.ok) throw new Error(`fixture provider refused: ${created.reason}: ${created.detail}`);
   return created.provider;
 }
@@ -52,8 +58,11 @@ function build(options: FixtureProviderOptions): FixtureProvider {
  * whole point of the loopback pair below, where the interesting fact is the
  * boundary rather than either side of it.
  */
-function refusalReason(options: FixtureProviderOptions): string {
-  const created = createFixtureProvider(testRuntime(), options);
+function refusalReason(
+  options: FixtureProviderOptions,
+  deployment: RuntimeClassification = TEST_RUNTIME
+): string {
+  const created = createFixtureProvider(deployment, options);
   return created.ok ? "accepted" : created.reason;
 }
 
@@ -62,17 +71,42 @@ function itemFor(overrides: Partial<CatalogItemRef> = {}): CatalogItemRef {
 }
 
 describe("the runtime witness", () => {
-  it("admits exactly the non-production runtimes and refuses everything else", () => {
-    for (const name of NON_PRODUCTION_RUNTIMES) {
-      expect(NonProductionRuntime.attest(name)).not.toBeNull();
-    }
-    for (const name of ["production", "staging", "preview", "Development", "TEST", ""]) {
-      expect(NonProductionRuntime.attest(name)).toBeNull();
-    }
+  /*
+   * THE ALLOWLIST IS NOT HERE ANY MORE, AND THIS ASSERTS THAT IT IS NOT. This
+   * module used to hold `["development", "test"]` and refuse everything else --
+   * a second copy of the array `apps/web/src/app/api/deployment-environment.ts`
+   * owns, for one question that cannot honestly have two answers. Which names
+   * mean production is the deployment's decision, taken where `NODE_ENV` is
+   * actually readable, and it is taken before anything gets here: the
+   * application's `NonDeploymentEnvironment.classify` answers `null` for
+   * `production`, so no witness for it is ever requested.
+   *
+   * The assertion is deliberately the uncomfortable one. If somebody
+   * re-introduces a runtime allowlist in this package, this line fails and says
+   * so, rather than the duplication quietly reappearing behind a green suite.
+   */
+  it("has no opinion about which runtime names mean production", () => {
+    expect(NonProductionRuntime.from({ nodeEnv: "production" })).not.toBeNull();
+    expect(NonProductionRuntime.from({ nodeEnv: "staging" })).not.toBeNull();
+  });
+
+  /*
+   * What it does still refuse, and the reason it is a shape check rather than a
+   * classification: the name is carried into `FixtureRightsBasis.attestedRuntime`
+   * and into the provider's `runtime`, so a blank one is a provenance field that
+   * records nothing while looking like it records something.
+   */
+  it("refuses a classification that states nothing", () => {
+    expect(NonProductionRuntime.from({ nodeEnv: "" })).toBeNull();
+    expect(NonProductionRuntime.from({ nodeEnv: "   " })).toBeNull();
   });
 
   it("reports the name it was attested from rather than re-deriving one", () => {
-    expect(NonProductionRuntime.attest("development")?.name).toBe("development");
+    expect(NonProductionRuntime.from({ nodeEnv: "development" })?.name).toBe("development");
+  });
+
+  it("is refused by the factory when the deployment classified nothing", () => {
+    expect(refusalReason(BASE_OPTIONS, { nodeEnv: "" })).toBe("fixture_runtime_not_classified");
   });
 
   /*
@@ -93,7 +127,7 @@ describe("the runtime witness", () => {
      */
     // @ts-expect-error -- a private field makes the class nominal: a structural stand-in is not assignable.
     const structural: NonProductionRuntime = { name: "test" };
-    // @ts-expect-error -- the constructor is private, so `attest` is the only door in.
+    // @ts-expect-error -- the constructor is private, so `from` is the only door in.
     const direct = new NonProductionRuntime("test");
     expect(structural).toBeDefined();
     expect(direct).toBeDefined();
@@ -185,14 +219,18 @@ describe("construction refuses configuration it cannot serve", () => {
     );
   });
 
-  it("refuses an id that could smuggle a delimiter into a candidate id", () => {
+  it("refuses a provider id that could not be read back out of a log line", () => {
+    /* The id reaches `providerId`, log lines and metric labels. It is not part
+     * of a candidate id -- see `FIXTURE_ID_PATTERN` -- so what this refuses is a
+     * label nothing downstream could parse, not a collision. */
+    expect(refusalReason({ ...BASE_OPTIONS, id: "fix ture" })).toBe("fixture_id_invalid");
     expect(refusalReason({ ...BASE_OPTIONS, id: "fix:ture" })).toBe("fixture_id_invalid");
     expect(refusalReason({ ...BASE_OPTIONS, id: "" })).toBe("fixture_id_invalid");
   });
 });
 
 describe("resolution", () => {
-  it("returns three candidates, worst-first, with provider-namespaced ids", () => {
+  it("returns three candidates, worst-first, under the ids this platform publishes", () => {
     const resolution = build(BASE_OPTIONS).resolve(itemFor(), CONTEXT);
 
     expect(resolution.reason).toBe("resolved");
@@ -202,11 +240,25 @@ describe("resolution", () => {
       "hls",
       "dash"
     ]);
+    /*
+     * Pinned as literals rather than derived from `FIXTURE_VARIANTS`, because
+     * these strings are a contract with something outside this package: the
+     * session response carries them to a browser, a player keys failover
+     * outcomes on them, and two suites under `e2e/` assert them by name in both
+     * directions. A test that recomputed them from the same array the code uses
+     * would agree with any rename, which is exactly the change that must not
+     * pass silently.
+     */
     expect(resolution.candidates.map((candidate) => candidate.id)).toEqual([
-      "fixture:big-buck-bunny:progressive",
-      "fixture:big-buck-bunny:hls",
-      "fixture:big-buck-bunny:dash"
+      "big-buck-bunny-progressive",
+      "big-buck-bunny-hls",
+      "big-buck-bunny-dash"
     ]);
+    /* The provider is named in its own field, which is where a consumer that
+     * needs to know reads it. */
+    for (const candidate of resolution.candidates) {
+      expect(candidate.providerId).toBe("fixture");
+    }
   });
 
   /*

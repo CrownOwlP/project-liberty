@@ -13,7 +13,7 @@ import type { AuthorizedMediaProvider, CatalogItemRef, ProviderContext } from ".
 import type { CatalogItemRegistry } from "../registry";
 import { describeRightsBasis } from "../stremio/source";
 import { checkUrl, truncate, type UrlRejectionReason } from "../stremio/url-policy";
-import type { NonProductionRuntime } from "./environment";
+import { NonProductionRuntime, type RuntimeClassification } from "./environment";
 import { fixtureRightsBasis, isOpaqueRightsReference, type FixtureRightsBasis } from "./rights";
 
 /**
@@ -33,8 +33,10 @@ import { fixtureRightsBasis, isOpaqueRightsReference, type FixtureRightsBasis } 
  * THE ONE FACT WORTH READING FIRST: this provider declares `owned` over media
  * nothing has ever opened, and the only real control on that declaration is that
  * it cannot be constructed in a production runtime. `./environment.ts` carries
- * the whole argument and `./rights.ts` carries its second half. `createFixture`
- * takes a `NonProductionRuntime` for that reason and for no other.
+ * the whole argument and `./rights.ts` carries its second half.
+ * `createFixtureProvider` takes the deployment's own runtime classification for
+ * that reason and for no other, and it is the only function in this package that
+ * can mint the witness `fixtureRightsBasis` demands.
  *
  * WHAT IT DELIBERATELY DOES NOT DO:
  *
@@ -64,10 +66,24 @@ import { fixtureRightsBasis, isOpaqueRightsReference, type FixtureRightsBasis } 
 export const DEFAULT_FIXTURE_PROVIDER_ID = "fixture";
 
 /**
- * Ids appear in candidate ids, log lines and metric labels. Constrained to a
- * boring charset so a provider id can never smuggle a delimiter into the
- * `${providerId}:${contentId}:${key}` candidate id and make two providers
- * produce colliding, or deliberately overlapping, candidate identities.
+ * The charset a provider id may use.
+ *
+ * A provider id reaches `StreamCandidate.providerId`, log lines and metric
+ * labels, so it is constrained to a boring charset rather than left to whatever
+ * an operator types: a label carrying whitespace, a quote or a field delimiter
+ * is a label that breaks whatever parses the line it lands in.
+ *
+ * IT IS NOT WHAT KEEPS CANDIDATE IDS APART, and an earlier version of this note
+ * claimed it was. A candidate id here is `${contentId}-${variant.key}` and
+ * carries no provider component at all -- see `resolve` for why that is the
+ * published shape -- so the provider a candidate came from is read off
+ * `providerId`, a field of its own that cannot collide with anything. Two
+ * providers serving one content id would produce colliding candidate IDS, and
+ * the place that has to make them distinct is whatever composes several
+ * providers into one list. Nothing composes any today: the one consumer this
+ * package has resolves through exactly one provider, and `issue-session.ts` in
+ * `apps/web` drops every entry that shares an id rather than choosing between
+ * them.
  *
  * `stremio/source.ts` enforces the identical rule on a source id for the
  * identical reason, and keeps its pattern module-private. Unifying the two means
@@ -249,6 +265,7 @@ export interface FixtureProviderOptions {
 }
 
 export type FixtureProviderRejectionReason =
+  | "fixture_runtime_not_classified"
   | "fixture_id_invalid"
   | "fixture_latency_not_stated"
   | UrlRejectionReason;
@@ -365,28 +382,49 @@ function fixtureUri(base: URL, contentId: string, file: string): string {
 }
 
 /**
- * The only constructor of a `FixtureProvider`.
+ * The only constructor of a `FixtureProvider`, and the only door to a fabricated
+ * `owned` declaration.
  *
- * `runtime` is first because it is the reason this function is allowed to exist
- * at all, and it is a `NonProductionRuntime` rather than a boolean or a string
- * because a condition can be deleted and still compile while a missing argument
- * cannot. See `./environment.ts`.
+ * `deployment` is first because it is the reason this function is allowed to
+ * exist at all. It is the deployment's OWN classification of the process rather
+ * than a boolean, because a boolean argument says nothing about who decided and
+ * a condition can be deleted and still compile while a missing argument cannot.
+ * This package does not classify anything and holds no allowlist of runtime
+ * names: see `./environment.ts` for what the resulting witness does and does not
+ * establish, and for why the allowlist lives in the application instead.
  *
  * Returns a result rather than throwing, on the same division the rest of this
  * package draws: configuration is expected to be wrong, so a bad origin, a bad
- * id or an unusable latency is DATA a caller can report. The one thing that does
- * throw is `fixtureRightsBasis`, and it throws because reaching its failure
- * means somebody edited a rights constant in this package.
+ * id, an unusable latency or a classification that states nothing is DATA a
+ * caller can report. The one thing that does throw is `fixtureRightsBasis`, and
+ * it throws because reaching its failure means somebody edited a rights constant
+ * in this package.
  *
- * The basis is built HERE, inside the factory, and never at module scope. A
- * module-level constant would be constructed on import in every runtime, and the
- * whole argument in `./environment.ts` would be about who may READ the
- * fabricated declaration rather than about whether it exists.
+ * The witness and the basis are both built HERE, inside the factory, and never
+ * at module scope. A module-level constant would be constructed on import in
+ * every runtime, and the whole argument in `./environment.ts` would be about who
+ * may READ the fabricated declaration rather than about whether it exists.
  */
 export function createFixtureProvider(
-  runtime: NonProductionRuntime,
+  deployment: RuntimeClassification,
   options: FixtureProviderOptions
 ): CreateFixtureProviderResult {
+  /*
+   * Minted before anything else is looked at, so a caller that classified
+   * nothing gets that answer rather than a refusal about its origin. The witness
+   * itself is never returned: it exists so `fixtureRightsBasis` cannot be
+   * reached from anywhere but this function.
+   */
+  const runtime = NonProductionRuntime.from(deployment);
+  if (runtime === null) {
+    return fail(
+      "fixture_runtime_not_classified",
+      "the deployment stated no runtime: its nodeEnv was blank. A fixture provider is admitted " +
+        "by a classification the deployment performed, not by this package's opinion of one, and " +
+        "a blank name would be carried into the rights basis as provenance that records nothing"
+    );
+  }
+
   const id = options.id ?? DEFAULT_FIXTURE_PROVIDER_ID;
   if (!FIXTURE_ID_PATTERN.test(id)) {
     return fail(
@@ -527,9 +565,26 @@ export function createFixtureProvider(
       healthScore
     } as const;
 
+    /*
+     * `${contentId}-${variant.key}` IS A WIRE-VISIBLE IDENTIFIER, and it is the
+     * one this platform already publishes for a fixture candidate. It reaches a
+     * viewer's browser inside the session response and the watch page's RSC
+     * payload, a player reports failover outcomes against it, and
+     * `e2e/tests/critical-journey.spec.ts` and
+     * `e2e/tests/playback-session.api.spec.ts` both assert these exact ids as
+     * PRESENT on a development build and ABSENT on a production one. So it is
+     * preserved as this adapter moves behind the provider boundary rather than
+     * renamed in passing: a corrective that removes a duplicated rights
+     * declaration is not the change that should also move an identifier two
+     * suites and a failover report are keyed on.
+     *
+     * It carries no provider component; see `FIXTURE_ID_PATTERN` for where the
+     * provider is named instead and whose job it is to keep two providers' ids
+     * apart.
+     */
     const mapped: FixtureCandidate[] = FIXTURE_VARIANTS.map((variant) => {
       const candidate: StreamCandidate = {
-        id: `${id}:${contentId}:${variant.key}`,
+        id: `${contentId}-${variant.key}`,
         providerId: id,
         rights,
         protocol: variant.protocol,

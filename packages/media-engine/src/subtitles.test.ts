@@ -162,10 +162,10 @@ describe("selectSubtitleTrack preferred language", () => {
     expect(result.selected?.id).toBe("pt-pt");
   });
 
-  it("does not let a different script beat the requested one", () => {
-    // zh-Hans and zh-Hant share a primary subtag but not a reader. They match as
-    // variants of one another, which is a fallback -- never a way to outrank the
-    // exact tag the viewer named.
+  it("serves the requested script when it exists, over a default in the other one", () => {
+    // zh-Hans and zh-Hant share a primary subtag but not a reader. The exact tag
+    // wins here for the ordinary reason -- it is exact -- and the test below
+    // pins what happens when it does not exist at all.
     const result = selectSubtitleTrack(
       [
         track({ id: "zh-hans", language: "zh-hans", isDefault: true }),
@@ -177,39 +177,45 @@ describe("selectSubtitleTrack preferred language", () => {
     expect(result.reason).toBe("preferred_language_exact");
   });
 
-  it("falls back to a different script as a variant, and says that is what happened", () => {
-    // A last-resort fallback, and the reason value is what lets a UI mark it as
-    // one. If the product later decides a script mismatch is no fallback at all,
-    // that belongs in the shared `languageMatch` rather than here, so audio and
-    // subtitles cannot disagree about what "the same language" means.
+  it("refuses a different script rather than substituting it, and still offers it", () => {
+    /*
+     * The corrective, and the assertion that fails hardest against the previous
+     * round: `zh-Hans` for a `zh-Hant` viewer used to be SELECTED and reported
+     * as `preferred_language_primary_subtag` -- automatically putting a script
+     * on screen the viewer may be unable to read, under a reason value telling
+     * them their language had been matched.
+     *
+     * Nothing is selected now. The track is still returned in `ordered`, so a
+     * player can offer it and the viewer can take it deliberately; what changed
+     * is only that nobody is given it by accident.
+     */
     const result = selectSubtitleTrack(
-      [track({ id: "zh-hans", language: "zh-hans" })],
+      [track({ id: "zh-hans", language: "zh-hans", isDefault: true })],
       policy({ preferredLanguages: ["zh-hant"] })
     );
-    expect(result.selected?.id).toBe("zh-hans");
-    expect(result.reason).toBe("preferred_language_primary_subtag");
+    expect(result.selected).toBeNull();
+    expect(result.reason).toBe("preferred_language_other_script_only");
+    expect(result.ordered.map((t) => t.id)).toEqual(["zh-hans"]);
+    expect(result.explanation).toContain("different script");
+    expect(result.explanation).toContain("looked for: zh-hant");
+    expect(SUBTITLE_OUTCOME_BY_REASON[result.reason]).toEqual({
+      showsText: false,
+      showsFullSubtitles: false
+    });
   });
 
-  it("cannot yet tell a script fallback from a regional one, and this pins that", () => {
+  it("tells a script difference from a regional one", () => {
     /*
-     * KNOWN DEFECT, asserted as it currently behaves rather than left
-     * undocumented. `primarySubtag` reduces both `zh-Hant` and `zh-Hans` to
-     * `zh`, so "requested zh-Hant, served zh-Hans" reports the SAME reason value
-     * as "requested en-GB, served en-US" -- and those are not comparable
-     * degradations. en-GB to en-US costs a reader nothing; zh-Hant to zh-Hans
-     * hands a traditional-script reader a script they may not read, while the
-     * trail tells them their language was matched.
+     * The pair the previous round PINNED as equal, now pinned as different.
+     * `primarySubtag` reduces `zh-Hant` and `zh-Hans` alike to `zh`, so
+     * "requested zh-Hant, served zh-Hans" reported the same value as "requested
+     * en-GB, served en-US" -- and those are not comparable degradations. en-GB
+     * to en-US costs a reader nothing; zh-Hant to zh-Hans hands a
+     * traditional-script reader a script they may not read.
      *
-     * The selection itself is right: an exact tag always wins, which the test
-     * above this one pins. Only the reported outcome is wrong, and the fix
-     * belongs in the shared `languageMatch` -- it carries one binary where this
-     * needs a degree of match -- as one cross-lane change spanning PL-0202 and
-     * PL-0203, so audio and subtitles cannot end up disagreeing about what "the
-     * same language" means.
-     *
-     * THIS ASSERTION IS EXPECTED TO CHANGE when that lands: the two reasons
-     * should stop being equal, and the script case should carry a value of its
-     * own. Until then, the equality is the honest record of what we report.
+     * The region case is still a fallback and is still SELECTED. The script case
+     * is neither, and it is the reason value -- not the absence of a selection
+     * alone -- that lets a player say which happened.
      */
     const script = selectSubtitleTrack(
       [track({ id: "zh-hans", language: "zh-hans" })],
@@ -220,9 +226,80 @@ describe("selectSubtitleTrack preferred language", () => {
       policy({ preferredLanguages: ["en-gb"] })
     );
 
-    expect(script.selected?.id).toBe("zh-hans");
-    expect(script.reason).toBe("preferred_language_primary_subtag");
-    expect(script.reason).toBe(region.reason);
+    expect(script.selected).toBeNull();
+    expect(script.reason).toBe("preferred_language_other_script_only");
+    expect(region.selected?.id).toBe("en-us");
+    expect(region.reason).toBe("preferred_language_primary_subtag");
+    expect(script.reason).not.toBe(region.reason);
+  });
+
+  it("keeps a bare preference broad, because the viewer stated no script", () => {
+    // Only two STATED, DIFFERING scripts conflict. A viewer who asked for `zh`
+    // expressed no script preference, and refusing both scripts on their behalf
+    // would be the mirror of the defect above: an empty screen for a viewer who
+    // can read perfectly well what is on offer.
+    const result = selectSubtitleTrack(
+      [track({ id: "zh-hans", language: "zh-hans" })],
+      policy({ preferredLanguages: ["zh"] })
+    );
+    expect(result.selected?.id).toBe("zh-hans");
+    expect(result.reason).toBe("preferred_language_primary_subtag");
+  });
+
+  it("falls through a script conflict to a later preference the track does satisfy", () => {
+    // The rule refuses a PAIR, not a track. `zh-hans` conflicts with `zh-hant`
+    // and not with the bare `zh` listed second, so it matches there -- ahead of
+    // the German track, whose group is later still.
+    const result = selectSubtitleTrack(
+      [track({ id: "zh-hans", language: "zh-hans" }), track({ id: "de", language: "de" })],
+      policy({ preferredLanguages: ["zh-hant", "zh", "de"] })
+    );
+    expect(result.selected?.id).toBe("zh-hans");
+    expect(result.reason).toBe("preferred_language_primary_subtag");
+  });
+
+  it("tells 'your language is not here' from 'it is here in another script'", () => {
+    // The two empty screens this split exists for. One is a content-availability
+    // answer; the other is an offer the player should make.
+    const otherScript = selectSubtitleTrack(
+      [track({ id: "zh-hans", language: "zh-hans" })],
+      policy({ preferredLanguages: ["zh-hant"] })
+    );
+    const absent = selectSubtitleTrack(
+      [track({ id: "de", language: "de" })],
+      policy({ preferredLanguages: ["zh-hant"] })
+    );
+
+    expect(otherScript.selected).toBeNull();
+    expect(absent.selected).toBeNull();
+    expect(otherScript.reason).toBe("preferred_language_other_script_only");
+    expect(absent.reason).toBe("no_preferred_language_available");
+    expect(otherScript.reason).not.toBe(absent.reason);
+  });
+
+  it("normalises whitespace on the TRACK side too, not only on the preference side", () => {
+    /*
+     * `selectSubtitleTrack` takes the TYPE, so the schema's normalising
+     * `.transform()` never ran on either of these values. The matcher used to
+     * trim the preference and only case-fold the track, so `"pt-br "` kept its
+     * language group and silently lost its EXACT match, while `" pt-br"` put the
+     * padding inside the primary subtag and matched nothing at all -- two
+     * logically equivalent raw tags, two different answers, neither explained.
+     */
+    const trailing = selectSubtitleTrack(
+      [track({ id: "trailing", language: "pt-br " })],
+      policy({ preferredLanguages: ["pt-br"] })
+    );
+    const leading = selectSubtitleTrack(
+      [track({ id: "leading", language: " pt-br" })],
+      policy({ preferredLanguages: [" pt-br "] })
+    );
+
+    expect(trailing.reason).toBe("preferred_language_exact");
+    expect(leading.selected?.id).toBe("leading");
+    expect(leading.reason).toBe("preferred_language_exact");
+    // And the trail prints the tag the matcher compared, padding removed.
+    expect(trailing.explanation).toContain("trailing (pt-br, subtitles, webvtt)");
   });
 
   it("still serves a regional variant when the exact tag is absent", () => {
@@ -485,6 +562,23 @@ describe("selectSubtitleTrack off policy", () => {
     // Still returned, so a player can offer it deliberately.
     expect(result.forced.map((t) => t.id)).toEqual(["en-forced"]);
   });
+
+  it("shows no forced track whose script the audio language contradicts", () => {
+    /*
+     * A forced track is TEXT, and it is the one thing an "off" preference does
+     * not suppress -- so the script rule matters more on this path, not less:
+     * this is where characters appear on screen for a viewer who asked for none.
+     * The previous round selected this track, having matched `zh-hans` to
+     * `zh-hant` on the primary subtag alone.
+     */
+    const result = selectSubtitleTrack(
+      [track({ id: "zh-hans-forced", language: "zh-hans", kind: "forced" })],
+      policy({ mode: "off", preferredLanguages: [], audioLanguage: "zh-hant" })
+    );
+    expect(result.selected).toBeNull();
+    expect(result.reason).toBe("off_by_viewer_preference");
+    expect(result.forced.map((t) => t.id)).toEqual(["zh-hans-forced"]);
+  });
 });
 
 describe("selectSubtitleTrack forced policy", () => {
@@ -553,6 +647,26 @@ describe("selectSubtitleTrack forced policy", () => {
       policy({ preferredLanguages: [], audioLanguage: "en-gb" })
     );
     expect(result.selected?.id).toBe("z-en-gb");
+  });
+
+  it("reports the readable forced track ahead of an unreadable full one", () => {
+    /*
+     * Both facts are true at once: the viewer's language exists only as a forced
+     * track, AND it exists in full in a script they did not ask for. The forced
+     * reason is reported because it is the more actionable one -- that track is
+     * in the script they named and a player can offer it as full-quality partial
+     * translation, whereas the other is a substitution they may not be able to
+     * read. This is why the script check sits last in `unmatchedReason`.
+     */
+    const result = selectSubtitleTrack(
+      [
+        track({ id: "zh-hans-full", language: "zh-hans" }),
+        track({ id: "zh-hant-forced", language: "zh-hant", kind: "forced" })
+      ],
+      policy({ preferredLanguages: ["zh-hant"], audioLanguage: null })
+    );
+    expect(result.selected).toBeNull();
+    expect(result.reason).toBe("preferred_language_forced_only");
   });
 
   it("shows no forced track when the audio language was never established", () => {
@@ -737,6 +851,28 @@ describe("selectSubtitleTrack SDH and commentary", () => {
     // the derivation its own explanation.
     expect(subtag.explanation).toContain("cannot hear");
     expect(subtag.explanation).toContain("primary subtag");
+  });
+
+  it("applies the script rule to the derived language too, and says so", () => {
+    /*
+     * The uncomfortable end of the rule, asserted rather than left to be
+     * discovered. The derived tag is the AUDIO's, script included, so `zh-Hant`
+     * audio with only a `zh-Hans` SDH track leaves a hearing-impaired viewer
+     * with nothing automatic -- and the alternative is worse: it puts a script
+     * they may not read in front of the one viewer who cannot check it against
+     * the soundtrack, reported as their language having been matched.
+     *
+     * The track is returned, so a player can still offer it, and the trail says
+     * both what was looked for and that it came from the audio.
+     */
+    const result = selectSubtitleTrack(
+      [track({ id: "zh-hans-sdh", language: "zh-hans", kind: "sdh" })],
+      policy({ preferredLanguages: [], hearingImpaired: true, audioLanguage: "zh-hant" })
+    );
+    expect(result.selected).toBeNull();
+    expect(result.reason).toBe("preferred_language_other_script_only");
+    expect(result.ordered.map((t) => t.id)).toEqual(["zh-hans-sdh"]);
+    expect(result.explanation).toContain("looked for: zh-hant (from the audio)");
   });
 
   it("does not derive a language for a hearing viewer", () => {
@@ -1048,7 +1184,7 @@ describe("selectSubtitleTrack outcome classification", () => {
     // nothing claims full subtitles, so both are ruled out first. Without these
     // the assertion would keep passing through a table that had lost a reason or
     // had every entry set to false.
-    expect(Object.keys(SUBTITLE_OUTCOME_BY_REASON)).toHaveLength(13);
+    expect(Object.keys(SUBTITLE_OUTCOME_BY_REASON)).toHaveLength(14);
     expect(outcomes.some((outcome) => outcome.showsFullSubtitles)).toBe(true);
 
     for (const outcome of outcomes) {

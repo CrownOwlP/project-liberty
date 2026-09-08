@@ -1,14 +1,19 @@
 {
-  "generatedAt": "2026-09-05T17:47:42.362Z",
+  "generatedAt": "2026-09-08T04:32:38.272Z",
   "agent": "claude-security",
   "executionAvailable": true,
-  "assigned": [
+  "assigned": [],
+  "review": [],
+  "reservedExternal": [],
+  "recommended": [
     {
-      "id": "PL-0703",
+      "id": "PL-0706",
       "priority": "P0",
       "lane": "Security",
-      "status": "REVIEW",
-      "title": "Corrective: production rights-invariant breach in the watch route",
+      "status": "READY",
+      "title": "Corrective, re-run: production rights-invariant breach in the watch route",
+      "description": "This task SUPERSEDES PL-0703 and carries the same corrective forward under an honest review range. PL-0703 recorded implementationBaseSha f6c4b942ebbd02fd3fa9ed8f74fde4fc603affc2, which opened its review range AFTER part of the implementation already existed: the first incident repair at 9933a55 falls before that base and was therefore excluded from the range the first review was bound to. That record cannot be repaired in place. release is reachable only from CLAIMED or IN_PROGRESS and PL-0703 is in REVIEW; release deliberately PRESERVES implementationBaseSha even when it is usable; and reconciliation refuses any task that already records a base, because reconciliation establishes a base rather than revising one. The prescribed remedy is therefore to BLOCK PL-0703, preserving the false narrowed base as audit history, and to run the work again here. THIS TASK'S OWN BASE MUST BE RECONCILED, not captured: claim it, then start it with --reconcile-existing --base cf98b977b3c7c0113928bb9cc4d7fb6d02e802bd. That sha is the true pre-implementation base, being the immediate parent of the first incident-repair commit. Do NOT use its own parent b0b1dcf5a4826b763aa72d6375dd93e95a3aff33, which would widen the asserted range by one unrelated commit and make implementationBaseSha false in the other direction. The allowedPaths below are PL-0703's declared set plus packages/provider-sdk/src/fixture/** and packages/provider-sdk/src/index.ts, because this round's corrective collapsed the two fixture providers onto the SDK's one and therefore writes there. The reviewDependencies carry over e2e/tests/media-rig.spec.ts and add e2e/src/env.ts and e2e/src/fixtures.ts: WEB_MODE and MANAGES_SERVER in the first decide the production-versus-development assertion, and TINY_DEVICE in the second is the probe that makes the unknown-height regression meaningful, so an approval that did not fingerprint them would stay artificially fresh after someone altered the mode classifier or the probe. packages/provider-sdk/src/fixture/** is deliberately NOT also listed as a reviewDependency: it is a write path here, allowedPaths is always part of the reviewed surface, and the validator warns on the redundancy.",
+      "notes": "NOT ONLY A PROVENANCE REWRITE. At the previous head the reviewer refused BOTH security-review and rights-review ON THE MERITS, and those refusals are the substantive work this task inherits: the corrective had not reduced the fixture providers to one with the application consuming the SDK's, the runtime allowlist was not expressed exactly once with the SDK holding a witness it can neither forge nor classify for itself, the opaque rights-reference rule still existed in more than one place, a fabricated rights basis remained reachable behind a deletable condition rather than being structurally unconstructible in a deployment environment, and the two Playwright modes were not both shown as EXECUTED. PL-0703's typecheck, unit and e2e passes belong to that abandoned round and do not carry over; every gate here is re-recorded under this task's owner.",
       "dependencies": [],
       "allowedPaths": [
         "apps/web/src/app/watch/**",
@@ -18,10 +23,14 @@
         "apps/web/src/app/api/v1/playback/resolve/**",
         "e2e/tests/critical-journey.spec.ts",
         "e2e/tests/playback-session.api.spec.ts",
-        "docs/E2E.md"
+        "docs/E2E.md",
+        "packages/provider-sdk/src/fixture/**",
+        "packages/provider-sdk/src/index.ts"
       ],
       "reviewDependencies": [
-        "e2e/tests/media-rig.spec.ts"
+        "e2e/tests/media-rig.spec.ts",
+        "e2e/src/env.ts",
+        "e2e/src/fixtures.ts"
       ],
       "preferredAgent": "claude-security",
       "reviewAgent": "gpt-architect",
@@ -32,37 +41,9 @@
         "unit",
         "e2e"
       ],
-      "acceptance": "The watch route serves no fabricated rights basis outside a non-deployment environment, and only one fixture provider exists; the environment classification is an allowlist expressed once and shared rather than restated; docs/E2E.md no longer blesses the divergence that produced the breach; the two affected Playwright specs assert the corrected behaviour and are EXECUTED in both production and development modes rather than only typechecked",
-      "owner": "claude-security",
-      "gateResults": {
-        "typecheck": {
-          "status": "pass",
-          "at": "2026-09-05T16:15:18.425Z",
-          "by": "claude-security",
-          "commitSha": "4b56f7e29b7a0e9e50df88bc4c4e0f8b76bb27ed",
-          "evidence": "turbo run typecheck plus npm run check, plus the standalone e2e tsc pass, exit 0 on the tree committed this round; the NonDeploymentEnvironment witness compiles and every rewired call site narrows through classify()"
-        },
-        "unit": {
-          "status": "pass",
-          "at": "2026-09-05T16:15:18.882Z",
-          "by": "claude-security",
-          "commitSha": "4b56f7e29b7a0e9e50df88bc4c4e0f8b76bb27ed",
-          "evidence": "vitest via npm run check, exit 0, on the tree committed this round; adds the witness-gate suite and the opaque-reference suite, including the prose reference that previously shipped recorded as a refused case"
-        },
-        "e2e": {
-          "status": "pass",
-          "at": "2026-09-05T17:12:52.636Z",
-          "by": "claude-security",
-          "commitSha": "9a2a4bb08515f458df813a4c7f756a02cccbc3df",
-          "evidence": "Playwright executed in BOTH modes on 2026-09-05 at commit 9a2a4bb: production 74 passed / 4 failed / 18 skipped, development 83 passed / 4 failed / 9 skipped, across chromium, firefox, webkit and mobile-safari. Every assertion in this task's two specs -- critical-journey.spec.ts and playback-session.api.spec.ts -- passed in both modes. That includes the production/development pairing on the fixture artefacts, which is the check that makes the production absence non-vacuous, and both notFound() 404 assertions, which is the first OBSERVED confirmation that a dead address now answers 404 rather than 200 with a skeleton. The four failures in each mode were the same single test on four browsers, search.spec.ts 'text typed before hydration survives it', which belongs to PL-0705 and is outside this task's surface; its cause was an unrouted Playwright route handler in the test's own instrument, not a product defect."
-        }
-      },
-      "implementationAgent": "claude-security",
-      "updatedAt": "2026-09-05T16:15:19.344Z",
-      "implementationBaseSha": "f6c4b942ebbd02fd3fa9ed8f74fde4fc603affc2"
+      "acceptance": "Exactly ONE fixture provider exists in the repository, and the application CONSUMES the provider-sdk's rather than implementing its own: no route, no API handler and no watch-surface module declares a rights basis, composes a media URL, invents a candidate id or carries its own copy of the fixture variants. The runtime allowlist that decides which environments may construct fixtures is expressed ONCE by the application, and the SDK holds a witness it can neither forge nor classify for itself, so the SDK cannot admit itself into a deployment. The opaque rights-reference rule exists in exactly ONE place, with every other consumer importing it rather than restating it. A fabricated rights basis is structurally UNCONSTRUCTIBLE in a deployment environment -- unreachable because no constructor can be reached without the application-issued witness -- rather than guarded by a condition that deleting one line would remove. Both Playwright modes, production and development, are EXECUTED rather than only typechecked, and the gate evidence names the run, the commit and the per-mode results.",
+      "owner": null,
+      "gateResults": {}
     }
-  ],
-  "review": [],
-  "reservedExternal": [],
-  "recommended": []
+  ]
 }

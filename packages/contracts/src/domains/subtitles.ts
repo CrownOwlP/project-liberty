@@ -56,8 +56,19 @@ export const subtitleTrackSchema = z.object({
   id: z.string().min(1),
   /**
    * BCP-47-ish, normalised to lower case so "pt-BR" and "pt-br" cannot become
-   * two different languages. Matching is on the primary subtag, so a viewer who
-   * asked for "pt-PT" is still offered a "pt-BR" track rather than nothing.
+   * two different languages.
+   *
+   * Matching is on the primary subtag, so a viewer who asked for "pt-PT" is
+   * still offered a "pt-BR" track rather than nothing -- with one exception,
+   * stated here because this sentence is where a reader learns what the tag
+   * means: when BOTH tags explicitly name a SCRIPT and the two differ
+   * ("zh-Hant" against "zh-Hans"), the subtitle policy does not treat them as
+   * the same language and will not select one for the other automatically. A
+   * script subtag exists to mark a distinction in WRITTEN language, and text a
+   * viewer may be unable to read is not a fallback. The rule itself lives with
+   * the policy, in `languageMatch` in `@liberty/media-engine`, and audio
+   * selection deliberately does not apply it -- a listener who cannot read a
+   * script can still hear the language.
    */
   language: z.string().min(2).transform((value) => value.toLowerCase()),
   kind: subtitleKindSchema,

@@ -46,15 +46,17 @@ import type { NonProductionRuntime } from "./environment";
  * being an identifier, and the interpretation becomes a rights decision taken by
  * a string parser.
  *
- * A SECOND COPY OF THIS RULE EXISTS TODAY, in
+ * THIS IS THE ONLY EXPRESSION OF THE RULE. A second copy of it did exist, in
  * `apps/web/src/app/api/v1/playback/session/authorized-candidates.ts`, which is
- * where the fixture provider lived before PL-0301 moved the adapter behind the
- * provider boundary. That file is outside this task's write surface, so the copy
- * is recorded rather than deleted: the follow-up is for that module to import
- * this one and drop its own, which is the entire point of the adapter being
- * here. Until it does, note the drift direction -- both are SHAPE checks that
- * refuse what they do not recognise, so a divergence makes one of them stricter
- * and neither of them permissive.
+ * where the fixture provider lived before the adapter moved behind the provider
+ * boundary; a note here recorded the copy and named its deletion as a follow-up.
+ * A follow-up is not a control, and the copy is gone: that module now consumes
+ * this package's fixture provider and states no pattern, no length bound and no
+ * reference of its own. The check runs here -- once where a fixture rights basis
+ * is built, and once more in `./provider.ts` before a basis is attached to
+ * anything a caller will publish -- which is the entire point of the adapter
+ * being here. `isOpaqueRightsReference` is exported so a consumer's own tests
+ * can apply the rule without restating it.
  */
 export const OPAQUE_RIGHTS_REFERENCE_PATTERN = /^[a-z0-9]{2,16}(?:-[a-z0-9]{1,16}){1,7}$/;
 

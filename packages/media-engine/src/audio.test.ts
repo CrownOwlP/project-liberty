@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { AudioTrack } from "@liberty/contracts/domains/audio";
 import type { PlaybackCapabilities } from "@liberty/contracts/domains/playback";
-import { languageMatch, primarySubtag, selectAudioTrack } from "./audio";
+import {
+  languageMatch,
+  matchesOnlyAcrossScripts,
+  normaliseLanguageTag,
+  primarySubtag,
+  selectAudioTrack
+} from "./audio";
 
 const track = (over: Partial<AudioTrack> & { id: string }): AudioTrack => ({
   language: "en",
@@ -29,28 +35,46 @@ describe("primarySubtag", () => {
   it("leaves a bare language alone", () => {
     expect(primarySubtag("ja")).toBe("ja");
   });
+
+  it("normalises before it splits, so padding never becomes part of the language", () => {
+    // `" en-gb"` used to reduce to `" en"`, which equals no internally derived
+    // tag, so a padded manifest tag matched nothing at all and nothing in the
+    // result said why.
+    expect(primarySubtag(" EN-GB ")).toBe("en");
+    expect(primarySubtag("\tja\n")).toBe("ja");
+  });
+});
+
+describe("normaliseLanguageTag", () => {
+  it("is the one normalisation both sides of every comparison run", () => {
+    expect(normaliseLanguageTag("  PT-BR  ")).toBe("pt-br");
+    expect(normaliseLanguageTag("pt-br")).toBe("pt-br");
+    // Idempotent, which is what lets the trail print through it and still agree
+    // with what the matcher compared.
+    expect(normaliseLanguageTag(normaliseLanguageTag(" EN-GB "))).toBe("en-gb");
+  });
 });
 
 describe("languageMatch", () => {
   it("reports an exact match with its position in the preference list", () => {
-    expect(languageMatch("fr", ["en", "fr"])).toEqual({ groupIndex: 1, exactIndex: 1 });
+    expect(languageMatch("fr", ["en", "fr"], "ignore_script")).toEqual({ groupIndex: 1, exactIndex: 1 });
   });
 
   it("matches on the primary subtag when the region differs", () => {
-    expect(languageMatch("en-us", ["en-gb"])).toEqual({ groupIndex: 0, exactIndex: null });
+    expect(languageMatch("en-us", ["en-gb"], "ignore_script")).toEqual({ groupIndex: 0, exactIndex: null });
   });
 
   it("returns null when the language was not asked for at all", () => {
-    expect(languageMatch("de", ["en", "fr"])).toBeNull();
+    expect(languageMatch("de", ["en", "fr"], "ignore_script")).toBeNull();
   });
 
   it("prefers an earlier exact match over a later one", () => {
     // Ordering is meaningful: the list is preferences, not a set.
-    expect(languageMatch("en", ["en", "en-us"])).toEqual({ groupIndex: 0, exactIndex: 0 });
+    expect(languageMatch("en", ["en", "en-us"], "ignore_script")).toEqual({ groupIndex: 0, exactIndex: 0 });
   });
 
   it("does not let a later exact match beat an earlier subtag match's position", () => {
-    expect(languageMatch("en-gb", ["en", "de"])).toEqual({ groupIndex: 0, exactIndex: null });
+    expect(languageMatch("en-gb", ["en", "de"], "ignore_script")).toEqual({ groupIndex: 0, exactIndex: null });
   });
 
   /*
@@ -61,22 +85,132 @@ describe("languageMatch", () => {
    * and win on channels, discarding the viewer's stated order.
    */
   it("keeps the language group and the exact position as separate coordinates", () => {
-    expect(languageMatch("en-us", ["en-us", "en-gb"])).toEqual({ groupIndex: 0, exactIndex: 0 });
-    expect(languageMatch("en-gb", ["en-us", "en-gb"])).toEqual({ groupIndex: 0, exactIndex: 1 });
-    expect(languageMatch("en-au", ["en-us", "en-gb"])).toEqual({ groupIndex: 0, exactIndex: null });
+    expect(languageMatch("en-us", ["en-us", "en-gb"], "ignore_script")).toEqual({ groupIndex: 0, exactIndex: 0 });
+    expect(languageMatch("en-gb", ["en-us", "en-gb"], "ignore_script")).toEqual({ groupIndex: 0, exactIndex: 1 });
+    expect(languageMatch("en-au", ["en-us", "en-gb"], "ignore_script")).toEqual({ groupIndex: 0, exactIndex: null });
   });
 
   it("takes the FIRST same-language preference as the group, not the last", () => {
-    expect(languageMatch("en-au", ["en-gb", "en-us"])).toEqual({ groupIndex: 0, exactIndex: null });
+    expect(languageMatch("en-au", ["en-gb", "en-us"], "ignore_script")).toEqual({ groupIndex: 0, exactIndex: null });
   });
 
   it("ignores blank and whitespace-only preference entries", () => {
-    expect(languageMatch("fr", ["", "  ", "fr"])).toEqual({ groupIndex: 2, exactIndex: 2 });
+    expect(languageMatch("fr", ["", "  ", "fr"], "ignore_script")).toEqual({ groupIndex: 2, exactIndex: 2 });
   });
 
   it("normalises case on both sides", () => {
-    expect(languageMatch("EN-GB", ["en-gb"])).toEqual({ groupIndex: 0, exactIndex: 0 });
+    expect(languageMatch("EN-GB", ["en-gb"], "ignore_script")).toEqual({ groupIndex: 0, exactIndex: 0 });
     expect(primarySubtag("EN-GB")).toBe("en");
+  });
+
+  it("normalises WHITESPACE on both sides too, not only on the preference side", () => {
+    /*
+     * The asymmetry this replaces: `want` was trimmed and `trackLanguage` was
+     * only lower-cased, so two logically equivalent raw values got different
+     * answers depending on which side they arrived on. `"en-gb "` kept its
+     * language group and silently lost its EXACT match; `" en"` put the padding
+     * inside the primary subtag and matched nothing at all. Both lines below
+     * fail against that code -- the first as `exactIndex: null`, the second as
+     * `null` -- and neither outcome was visible to a caller.
+     */
+    expect(languageMatch("en-gb ", ["en-gb"], "ignore_script")).toEqual({ groupIndex: 0, exactIndex: 0 });
+    expect(languageMatch(" en", ["en"], "ignore_script")).toEqual({ groupIndex: 0, exactIndex: 0 });
+    expect(languageMatch("  EN-GB\t", ["  en-gb  "], "ignore_script")).toEqual({
+      groupIndex: 0,
+      exactIndex: 0
+    });
+  });
+});
+
+describe("languageMatch and the script rule", () => {
+  it("accepts a stated script conflict loosely and refuses it strictly", () => {
+    expect(languageMatch("zh-hans", ["zh-hant"], "ignore_script")).toEqual({
+      groupIndex: 0,
+      exactIndex: null
+    });
+    expect(languageMatch("zh-hans", ["zh-hant"], "require_compatible_script")).toBeNull();
+  });
+
+  it("still matches the SAME script exactly under the strict rule", () => {
+    expect(languageMatch("zh-hant", ["zh-hant"], "require_compatible_script")).toEqual({
+      groupIndex: 0,
+      exactIndex: 0
+    });
+  });
+
+  it("treats a script stated on only one side as no conflict at all", () => {
+    // A bare `zh` preference expressed no script, so it stays broad; and a bare
+    // `zh` track never claimed to be the other script, so a viewer who named one
+    // is not refused it. Only two STATED, DIFFERING scripts conflict.
+    expect(languageMatch("zh-hans", ["zh"], "require_compatible_script")).toEqual({
+      groupIndex: 0,
+      exactIndex: null
+    });
+    expect(languageMatch("zh", ["zh-hant"], "require_compatible_script")).toEqual({
+      groupIndex: 0,
+      exactIndex: null
+    });
+  });
+
+  it("refuses a PAIR and not a track, so a later compatible preference still matches", () => {
+    expect(languageMatch("zh-hans", ["zh-hant", "zh"], "require_compatible_script")).toEqual({
+      groupIndex: 1,
+      exactIndex: null
+    });
+  });
+
+  it("does not mistake a REGION for a script, which a positional test would", () => {
+    /*
+     * `en-GB` and `en-US` differ in their second subtag exactly as `zh-Hant` and
+     * `zh-Hans` do; only SHAPE separates the two cases. A script subtag is four
+     * letters, a region is two letters or three digits, and a variant of four
+     * characters must begin with a digit. A rule reading "the second subtag
+     * differs" would break every regional fallback in the package.
+     */
+    expect(languageMatch("en-us", ["en-gb"], "require_compatible_script")).toEqual({
+      groupIndex: 0,
+      exactIndex: null
+    });
+    expect(languageMatch("es-419", ["es-es"], "require_compatible_script")).toEqual({
+      groupIndex: 0,
+      exactIndex: null
+    });
+    expect(languageMatch("de-1996", ["de-de"], "require_compatible_script")).toEqual({
+      groupIndex: 0,
+      exactIndex: null
+    });
+  });
+
+  it("finds a script behind an extlang, and reads none inside a private-use sequence", () => {
+    // BCP-47 allows one extlang before the script (`zh-cmn-Hans-CN`), so a rule
+    // reading only the second subtag would miss the conflict. A one-character
+    // subtag opens an extension or private-use sequence whose contents are
+    // free-form, so a four-letter subtag there states nothing about writing.
+    expect(languageMatch("zh-cmn-hans-cn", ["zh-hant"], "require_compatible_script")).toBeNull();
+    expect(languageMatch("zh-cmn-hans-cn", ["zh-hant"], "ignore_script")).toEqual({
+      groupIndex: 0,
+      exactIndex: null
+    });
+    expect(languageMatch("zh-x-hant", ["zh-hans"], "require_compatible_script")).toEqual({
+      groupIndex: 0,
+      exactIndex: null
+    });
+  });
+});
+
+describe("matchesOnlyAcrossScripts", () => {
+  it("is true exactly when the loose rule matches and the strict one does not", () => {
+    expect(matchesOnlyAcrossScripts("zh-hans", ["zh-hant"])).toBe(true);
+    // Compatible, so not "only across scripts".
+    expect(matchesOnlyAcrossScripts("zh-hant", ["zh-hant"])).toBe(false);
+    expect(matchesOnlyAcrossScripts("zh-hans", ["zh"])).toBe(false);
+    expect(matchesOnlyAcrossScripts("zh-hans", ["zh-hant", "zh"])).toBe(false);
+    // A region difference is not a script difference.
+    expect(matchesOnlyAcrossScripts("en-us", ["en-gb"])).toBe(false);
+    // No match at all is not a script problem either, and the two must not be
+    // reported the same way: one means "your language is here in another
+    // script", the other means "your language is not here".
+    expect(matchesOnlyAcrossScripts("de", ["zh-hant"])).toBe(false);
   });
 });
 
@@ -189,6 +323,57 @@ describe("selectAudioTrack ordering", () => {
     );
     expect(result.selected?.id).toBe("en-us");
     expect(result.reason).toBe("preferred_language_primary_subtag");
+  });
+
+  it("serves a different SCRIPT of the requested language, unlike subtitle selection", () => {
+    /*
+     * The deliberate half of the shared comparator, and the one place the two
+     * consumers disagree on purpose. `selectSubtitleTrack` refuses this pair
+     * because the viewer would have to READ it; audio passes `ignore_script`
+     * because a listener who cannot read a script can still hear the language,
+     * and because this policy must play something -- refusing here would not
+     * produce a careful refusal, it would hand the choice to the UNRELATED
+     * Japanese track below, which is strictly worse for the listener.
+     *
+     * This is what fails if someone later "unifies" the two consumers by making
+     * the strict rule universal.
+     */
+    const result = selectAudioTrack(
+      [
+        track({ id: "zh-hans", language: "zh-hans" }),
+        track({ id: "ja", language: "ja", role: "original" })
+      ],
+      caps({ preferredAudioLanguages: ["zh-hant"] })
+    );
+    expect(result.selected?.id).toBe("zh-hans");
+    expect(result.reason).toBe("preferred_language_primary_subtag");
+  });
+
+  it("still prefers the requested script when a track states it", () => {
+    // Channels and the provider default are stacked behind the wrong script, so
+    // the exact tag has to be what decides this.
+    const result = selectAudioTrack(
+      [
+        track({ id: "zh-hans", language: "zh-hans", channels: 8, isDefault: true }),
+        track({ id: "zh-hant", language: "zh-hant", channels: 2 })
+      ],
+      caps({ preferredAudioLanguages: ["zh-hant"] })
+    );
+    expect(result.selected?.id).toBe("zh-hant");
+    expect(result.reason).toBe("preferred_language_exact");
+  });
+
+  it("matches a padded manifest tag exactly, not merely by primary subtag", () => {
+    // `selectAudioTrack` takes the TYPE, so the schema's normalising transform
+    // never ran on `"en-gb "`. The track side used not to be trimmed, so this
+    // reported `preferred_language_primary_subtag` -- a fallback the viewer was
+    // never actually served.
+    const result = selectAudioTrack(
+      [track({ id: "padded", language: "en-gb " })],
+      caps({ preferredAudioLanguages: ["en-gb"] })
+    );
+    expect(result.selected?.id).toBe("padded");
+    expect(result.reason).toBe("preferred_language_exact");
   });
 
   it("never auto-selects commentary or audio description over a main mix", () => {

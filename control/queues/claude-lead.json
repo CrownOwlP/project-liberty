@@ -1,20 +1,51 @@
 {
-  "generatedAt": "2026-09-05T17:47:42.360Z",
+  "generatedAt": "2026-09-08T04:32:38.268Z",
   "agent": "claude-lead",
   "executionAvailable": true,
-  "assigned": [
+  "assigned": [],
+  "review": [],
+  "reservedExternal": [],
+  "recommended": [
     {
-      "id": "PL-AI-0004",
+      "id": "PL-AI-0005",
       "priority": "P0",
       "lane": "Coordination",
-      "status": "REVIEW",
-      "title": "Review dependency scope and provenance reconciliation",
-      "dependencies": [],
+      "status": "READY",
+      "title": "Show reviewers the full review surface",
+      "dependencies": [
+        "PL-AI-0004"
+      ],
       "allowedPaths": [
+        "scripts/cloud/**",
+        "scripts/review-surface.mjs",
         "scripts/ai-control-plane.mjs",
-        "scripts/test-ai-control-plane.mjs",
-        "control/README.md",
-        "CLAUDE.md"
+        "scripts/test-ai-control-plane.mjs"
+      ],
+      "preferredAgent": "claude-lead",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "repo-validate",
+        "security-review",
+        "unit"
+      ],
+      "acceptance": "The diff and briefing presented to a reviewer cover the same surface the approval will bind to; a reviewer is never asked to approve a fingerprint over files it was not shown; one canonical reviewSurface helper is consumed by fingerprinting, stale-review checking, the review diff builder and the briefing, and a regression asserts the file set shown equals the file set fingerprinted",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PL-AI-0006",
+      "priority": "P0",
+      "lane": "Architecture",
+      "status": "READY",
+      "title": "Contract module boundaries",
+      "dependencies": [
+        "PL-AI-0004"
+      ],
+      "allowedPaths": [
+        "packages/contracts/**",
+        "packages/media-engine/**",
+        "packages/provider-sdk/**",
+        "apps/web/**"
       ],
       "preferredAgent": "claude-lead",
       "reviewAgent": "gpt-architect",
@@ -22,28 +53,10 @@
         "repo-validate",
         "unit"
       ],
-      "acceptance": "SCOPE EXPANDED, deliberately and on the reviewer's ruling: this task now covers two trust-boundary features in the same two files, because the review system binds an approval to a path range rather than to a semantic hunk, so a current-head review of these files cannot truthfully exclude the second. A nominal second task over the identical write surface was rejected as a fake logical split. (1) allowedPaths remains the sole write, collision and staging surface while review fingerprints, stale-review checks, approvals and the DONE gate bind to allowedPaths union reviewDependencies; two tasks with disjoint allowedPaths and a shared reviewDependency can be active simultaneously, and editing that shared dependency invalidates both reviews; tasks without reviewDependencies behave identically to before; a declaration that reduces to the repository root is refused rather than dropped, in validation and at point of use, and the autonomy guard treats root ownership as orchestration. (2) Provenance reconciliation: an implementation already present in COMMITTED GIT HISTORY can be started with a true implementationBaseSha via explicit flags that are refused on an ordinary start, the base is validated against mechanical facts only, the semantic question of whether it is really this implementation's predecessor is published as evidence for the reviewer rather than guessed at by a heuristic, and the audit event is distinguishable from an ordinary start. The contract says committed rather than pushed deliberately: the mechanism inspects the local worktree and the local graph and consults no remote, so a clean branch of never-pushed commits satisfies it, and claiming otherwise was the same class of provenance overclaim this task exists to remove. Remote availability is enforced where it actually matters, at review and handoff.",
-      "owner": "claude-lead",
-      "gateResults": {
-        "repo-validate": {
-          "status": "pass",
-          "at": "2026-08-18T04:52:29.379Z",
-          "evidence": "npm run check exit 0 under pinned Node 22 resolved via npx node@22, including ai:validate, repo:validate, env:validate across all three modes, test:scripts, lint, typecheck, test and build."
-        },
-        "unit": {
-          "status": "pass",
-          "at": "2026-08-18T04:52:29.484Z",
-          "evidence": "npm run ai:test exit 0 under pinned Node 22: scripts/test-ai-control-plane.mjs, including six new regressions proving disjoint allowedPaths with a shared reviewDependency stay concurrently claimable, that editing the shared dependency invalidates both approvals, that a dependency cannot be written or staged, that overlapping reviewDependencies never create a claim conflict including the asymmetric case, that allowedPaths is implicitly inside the review surface, and that a task without reviewDependencies fingerprints byte-identically to before."
-        }
-      },
-      "implementationAgent": "claude-lead",
-      "updatedAt": "2026-08-18T04:52:29.592Z",
-      "implementationBaseSha": "79ed3b35fb42f8a89198bdb7cfdd6a5d439f8c34"
-    }
-  ],
-  "review": [],
-  "reservedExternal": [],
-  "recommended": [
+      "acceptance": "Shared vocabularies live in their own leaf modules, domain contracts live in one module each, index.ts is a re-export-only compatibility barrel rather than the authoritative public surface, and a wildcard exports map lets a new domain contract be added without touching package metadata or the barrel; no cycle-driven z.lazy remains and structural regressions prove the boundary rather than merely reflecting it; no schema behaviour changes",
+      "owner": null,
+      "gateResults": {}
+    },
     {
       "id": "PL-AI-0002",
       "priority": "P1",

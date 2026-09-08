@@ -41,6 +41,18 @@
  * other consumer either calls `classify` or calls `isLocalDeployment`, which is
  * itself one line over `classify`.
  *
+ * A FIFTH CONSUMER IS IN ANOTHER PACKAGE, and it is the reason this file is the
+ * only place the values are written. `@liberty/provider-sdk`'s fixture adapter
+ * held its own `["development", "test"]` and tested a caller-supplied name
+ * against it -- a second allowlist for one question, in a package that cannot
+ * read `NODE_ENV` and never could. It no longer classifies anything: it takes a
+ * `RuntimeClassification`, which is the shape `NonDeploymentEnvironment` already
+ * has, so `authorized-candidates.ts` hands over the witness minted here rather
+ * than a value derived from a second copy of the array. A package cannot import
+ * from an application, so the direction of the dependency is the only one
+ * available -- and it is also the right one, because the fact belongs to the
+ * process and the process is here.
+ *
  * SHARING THE CLASSIFICATION IS NOT SHARING THE PERMISSION, and the distinction
  * is the one `url-policy.ts` insists on. Loopback still requires TWO
  * independently-owned facts: a source that opted in, AND a deployment that says
@@ -88,8 +100,10 @@
  * a deployment, which is the direction that fails safe.
  *
  * Exported so a test can enumerate the permitted values rather than restating
- * them, and so the one place to review a widening is this array. Widening it is
- * a RIGHTS-RELEVANT edit: it widens the fixture provider's construction gate and
+ * them, and so the one place to review a widening is this array -- in this
+ * repository, not merely in this app: `@liberty/provider-sdk` keeps no runtime
+ * allowlist of its own and is handed the answer computed here. Widening it is a
+ * RIGHTS-RELEVANT edit: it widens the fixture provider's construction gate and
  * the resolve scaffold's availability at the same time, on purpose, because a
  * value that genuinely stopped being a deployment would have to change all three
  * answers together.

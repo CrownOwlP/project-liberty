@@ -113,19 +113,120 @@ function codecRank(codec: AudioTrack["codec"]): number {
 }
 
 /**
- * "en-GB" -> "en".
+ * The normalisation every language comparison in this package runs first.
  *
- * Lowercases here rather than trusting the contract to have done it. The
- * schema's `.transform()` only runs on `.parse()`, and `selectAudioTrack` takes
- * the TYPE, not parsed output -- so a provider adapter constructing an
- * AudioTrack literally never invokes the transform, and `z.infer` cannot tell
- * normalised from raw. This is exported, so an external caller passing "EN-GB"
- * would otherwise get "EN", which never equals an internally derived "en".
+ * Trims AND lower-cases, and does so on BOTH sides of every comparison. Neither
+ * is trusting the contract to have done it: the schema's `.transform()` only
+ * runs on `.parse()`, and `selectAudioTrack` takes the TYPE, not parsed output,
+ * so a provider adapter constructing an AudioTrack literal never invokes the
+ * transform and `z.infer` cannot tell normalised from raw. This function and
+ * `primarySubtag` are exported besides, so a caller passing "EN-GB" reaches
+ * them directly.
+ *
+ * SYMMETRIC, which it was not. The preference side was trimmed and the track
+ * side only lower-cased, so two logically equivalent raw values got different
+ * answers depending on which side of the comparison they arrived on: a manifest
+ * tag `"en-gb "` still shared a primary subtag with `en` but lost its EXACT
+ * match against an `en-gb` preference, and `" en"` failed to match anything at
+ * all because the padding landed inside the primary subtag. Nothing in the
+ * result explained either outcome. The asymmetry was not a safeguard: a padded
+ * tag is malformed input rather than hostile input, and declining to trim it
+ * protected nothing that lower-casing the very same value did not already
+ * concede.
  */
-export function primarySubtag(language: string): string {
-  const lower = language.toLowerCase();
-  return lower.split("-")[0] ?? lower;
+export function normaliseLanguageTag(tag: string): string {
+  return tag.trim().toLowerCase();
 }
+
+/** "en-GB" -> "en", and " EN-GB " -> "en"; see `normaliseLanguageTag`. */
+export function primarySubtag(language: string): string {
+  const normalised = normaliseLanguageTag(language);
+  return normalised.split("-")[0] ?? normalised;
+}
+
+/** Exactly four ASCII letters: the SHAPE of a BCP-47 script subtag. */
+const SCRIPT_SUBTAG = /^[a-z]{4}$/;
+
+/**
+ * The script a tag EXPLICITLY states, or null when it states none.
+ *
+ * Derived from subtag SHAPE, because shape is the only signal available here:
+ * BCP-47 orders a tag language-extlang-script-region-variant with no keyword
+ * marking any position, so `zh-Hant` and `en-GB` are structurally identical
+ * two-subtag strings and only the second subtag's form tells them apart. A
+ * script subtag is four letters (`Hant`, `Latn`, `Cyrl`); a region is two
+ * letters or three digits (`GB`, `419`); a variant is five to eight
+ * alphanumerics or four characters BEGINNING WITH A DIGIT (`1996`). So four
+ * ASCII letters in a script position is unambiguous, and a naive "the second
+ * subtag differs" test -- which would break `en-GB` against `en-US` -- is not
+ * needed.
+ *
+ * Positions 2 and 3 are examined, and only those: the script may sit behind at
+ * most one extlang (`zh-cmn-Hans-CN`), and nothing legal puts it later. The
+ * scan stops at any subtag shorter than two characters -- a one-character
+ * subtag is a singleton opening an extension or private-use sequence
+ * (`en-US-x-abcd`) whose contents are free-form and say nothing about writing,
+ * and an empty one means the tag is malformed, which is not a state to read a
+ * script out of. A tag whose PRIMARY subtag is that short is itself private-use
+ * (`x-abcd`) or irregular grandfathered (`i-ami`), and states no script here
+ * either.
+ *
+ * What shape CANNOT distinguish: a four-letter subtag that reaches position 2
+ * or 3 in a tag not following BCP-47's ordering is read as a script, and no
+ * registry lookup happens, so an unregistered four-letter script is treated
+ * exactly like a registered one. Both consequences are bounded in the same
+ * direction -- the strict policy below declines an AUTOMATIC selection and the
+ * track is still offered -- which is why a shape test is enough and a script
+ * registry is not vendored into this package.
+ */
+function scriptSubtag(tag: string): string | null {
+  const parts = normaliseLanguageTag(tag).split("-");
+  const primary = parts[0];
+  if (primary === undefined || primary.length < 2) return null;
+
+  for (let index = 1; index <= 2 && index < parts.length; index++) {
+    const part = parts[index];
+    if (part === undefined) return null;
+    if (part.length < 2) return null;
+    if (SCRIPT_SUBTAG.test(part)) return part;
+  }
+  return null;
+}
+
+/**
+ * Whether an explicitly stated, DIFFERING script disqualifies a language match.
+ *
+ * `ignore_script` is what this comparator has always done: same primary subtag,
+ * same language group, one degree of inexactness below an exact tag.
+ * `require_compatible_script` additionally refuses a pair where BOTH tags name
+ * a script and the two scripts differ. A tag that names no script is not in
+ * conflict with anything -- a bare `zh` preference stays broad, because the
+ * viewer expressed no script preference and inventing one for them would be the
+ * mirror of the defect this fixes.
+ *
+ * A PARAMETER, not two functions. Audio and subtitles share this comparator
+ * precisely so they cannot drift into disagreeing about what "the same
+ * language" is, and the two differ by one rule rather than by one algorithm.
+ *
+ * WHICH CONSUMER TAKES WHICH, and why they differ:
+ *
+ *   - Subtitles pass `require_compatible_script`. A script subtag is a
+ *     statement about the WRITING system, and automatically selecting
+ *     `zh-Hans` for a viewer who asked for `zh-Hant` puts text on screen they
+ *     may be unable to read while the reason trail tells them their language
+ *     was matched. `sr-Latn`/`sr-Cyrl`, `uz-Latn`/`uz-Cyrl` and
+ *     `az-Latn`/`az-Arab` are the same case.
+ *   - Audio passes `ignore_script`. A viewer who cannot READ a script can
+ *     almost always still HEAR the language, so the harm that motivates the
+ *     subtitle rule does not transfer; and `selectAudioTrack` must play
+ *     something, so narrowing the matcher there does not produce a careful
+ *     refusal -- it demotes a same-language track below an UNRELATED language
+ *     that happens to rank higher on role or channels, which is strictly worse
+ *     for the listener. Where a script tag on an audio track really does stand
+ *     in for a distinct spoken variety, the honest fix is an extlang- or
+ *     region-aware rule (`zh-yue` against `zh-cmn`), not this one.
+ */
+export type ScriptPolicy = "ignore_script" | "require_compatible_script";
 
 /**
  * How well a track's language matches the viewer's ordered preferences.
@@ -134,13 +235,18 @@ export function primarySubtag(language: string): string {
  * the match was, so a same-language-different-region track loses to an exact
  * one but still beats an unrelated language. Absent from the list entirely
  * returns null, which sorts after every match regardless of index.
+ *
+ * `scriptPolicy` is required rather than defaulted, so every call site states
+ * which rule it wants and a new consumer cannot inherit one by omission.
  */
 export function languageMatch(
   trackLanguage: string,
-  preferred: readonly string[]
+  preferred: readonly string[],
+  scriptPolicy: ScriptPolicy
 ): { groupIndex: number; exactIndex: number | null } | null {
-  const track = trackLanguage.toLowerCase();
+  const track = normaliseLanguageTag(trackLanguage);
   const trackPrimary = primarySubtag(track);
+  const trackScript = scriptSubtag(track);
 
   /*
    * TWO independent coordinates, because one number cannot carry both facts.
@@ -169,13 +275,46 @@ export function languageMatch(
   let exactIndex: number | null = null;
 
   for (let i = 0; i < preferred.length; i++) {
-    const want = (preferred[i] ?? "").trim().toLowerCase();
+    const want = normaliseLanguageTag(preferred[i] ?? "");
     if (!want || primarySubtag(want) !== trackPrimary) continue;
+
+    if (scriptPolicy === "require_compatible_script") {
+      // Only TWO STATED, DIFFERING scripts conflict. One side stating a script
+      // and the other not is a broader request being served, not a mismatch.
+      const wantScript = scriptSubtag(want);
+      if (trackScript !== null && wantScript !== null && trackScript !== wantScript) continue;
+    }
+
     if (groupIndex === null) groupIndex = i;
     if (want === track && exactIndex === null) exactIndex = i;
   }
 
   return groupIndex === null ? null : { groupIndex, exactIndex };
+}
+
+/**
+ * Whether this track shares a language with the preferences but ONLY across a
+ * script boundary: it matches under `ignore_script` and does not match under
+ * `require_compatible_script`.
+ *
+ * Exists so a policy can report that outcome instead of reporting the flat
+ * "nothing in your language" it now falls into. "There is no Chinese subtitle"
+ * and "there is one, in a script you did not ask for" are different facts with
+ * different remedies -- the second is a track a player should offer
+ * deliberately -- and collapsing them is the same class of conflation the
+ * reason vocabularies in this package exist to prevent.
+ *
+ * Defined by calling the shared comparator twice rather than by re-deriving the
+ * rule, so it cannot come to disagree with the matcher it describes.
+ */
+export function matchesOnlyAcrossScripts(
+  trackLanguage: string,
+  preferred: readonly string[]
+): boolean {
+  return (
+    languageMatch(trackLanguage, preferred, "ignore_script") !== null &&
+    languageMatch(trackLanguage, preferred, "require_compatible_script") === null
+  );
 }
 
 function firstRejectionReason(
@@ -206,8 +345,12 @@ function compareTracks(
 ): number {
   const preferred = capabilities.preferredAudioLanguages ?? [];
 
-  const matchA = languageMatch(a.language, preferred);
-  const matchB = languageMatch(b.language, preferred);
+  // `ignore_script`, deliberately: see `ScriptPolicy`. A listener who cannot
+  // read a script can still hear the language, and this policy must play
+  // something, so refusing a same-language track here would hand the choice to
+  // an unrelated language rather than to a careful refusal.
+  const matchA = languageMatch(a.language, preferred, "ignore_script");
+  const matchB = languageMatch(b.language, preferred, "ignore_script");
 
   // 1. Any language match beats none.
   if ((matchA === null) !== (matchB === null)) return matchA === null ? 1 : -1;
@@ -277,7 +420,7 @@ function reasonFor(
   capabilities: PlaybackCapabilities
 ): AudioSelectionReason {
   const preferred = capabilities.preferredAudioLanguages;
-  const match = languageMatch(selected.language, preferred);
+  const match = languageMatch(selected.language, preferred, "ignore_script");
   if (match) {
     return match.exactIndex !== null
       ? "preferred_language_exact"

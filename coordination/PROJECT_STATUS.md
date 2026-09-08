@@ -1,18 +1,18 @@
 # Project Liberty - Project Status
 
-> Generated 2026-09-05T17:47:42.358Z from the AI control plane.
+> Generated 2026-09-08T04:32:38.265Z from the AI control plane.
 
-**Overall completion:** 10/40 executable tasks (25%)
+**Overall completion:** 12/41 executable tasks (29%)
 
 ## Status summary
 
-- **BACKLOG:** 16
-- **READY:** 7
+- **BACKLOG:** 14
+- **READY:** 10
 - **CLAIMED:** 0
-- **IN_PROGRESS:** 0
-- **REVIEW:** 5
-- **BLOCKED:** 2
-- **DONE:** 10
+- **IN_PROGRESS:** 1
+- **REVIEW:** 1
+- **BLOCKED:** 3
+- **DONE:** 12
 - **CANCELED:** 0
 
 ## Milestones / phases
@@ -28,22 +28,21 @@
 
 ## Active work
 
-- **PL-0104** [REVIEW] Make catalog and search results navigable — owner: claude-frontend
+- **PL-0104** [IN_PROGRESS] Make catalog and search results navigable — owner: claude-frontend
 - **PL-0203** [REVIEW] Subtitle selection policy — owner: claude-media
-- **PL-0705** [REVIEW] Search loses text typed before hydration — owner: claude-frontend
-- **PL-0703** [REVIEW] Corrective: production rights-invariant breach in the watch route — owner: claude-security
-- **PL-AI-0004** [REVIEW] Review dependency scope and provenance reconciliation — owner: claude-lead
 
 ## Dispatch classification
 
-- **READY_AND_EXECUTABLE:** 5
+- **READY_AND_EXECUTABLE:** 8
 - **READY_BUT_EXTERNAL:** 2
-- **BLOCKED:** 2
-- **BACKLOG (dependency-gated):** 16
+- **BLOCKED:** 3
+- **BACKLOG (dependency-gated):** 14
 
 ## Recommended executable wave
 
-No conflict-free executable tasks can be assigned with current agent capacity.
+- **PL-0105** -> claude-frontend (P0/Frontend) Catalog metadata source port, and the surfaces still importing the fixture array
+- **PL-0706** -> claude-security (P0/Security) Corrective, re-run: production rights-invariant breach in the watch route
+- **PL-AI-0005** -> claude-lead (P0/Coordination) Show reviewers the full review surface
 
 ## Queued for external agents
 
@@ -54,15 +53,16 @@ No conflict-free executable tasks can be assigned with current agent capacity.
 
 - **PL-0302** First production provider: Requires a confirmed licensed API/provider and credentials
 - **PL-0602** Live provider integration: Requires licensed live feed/provider access
+- **PL-0703** Corrective: production rights-invariant breach in the watch route: Provenance invalid, per gpt-architect at 5b59c6c2. implementationBaseSha is f6c4b942ebbd02fd3fa9ed8f74fde4fc603affc2, recorded by an ordinary start, which opens the review range AFTER part of the implementation already existed: the first incident repair at 9933a55 sits before it, so the recorded range excludes half the implementation it claims to cover. The reviewer verified this cannot be repaired in place -- release is unavailable from REVIEW and deliberately preserves an existing base, and reconciliation refuses any task that already records one, because reconciliation establishes a base rather than revising one. This record is preserved as audit history rather than rewritten. Superseded by PL-0706, which reconciles from cf98b977b3c7c0113928bb9cc4d7fb6d02e802bd. The reviewer also refused both security-review and rights-review on the merits at that head: two fixture providers and two runtime allowlists coexisted, recreating the two-copy arrangement this corrective exists to remove.
 
 ## Agent capacity
 
 - **gpt-architect:** 0/6 active (external lane; not locally executable)
-- **claude-lead:** 1/2 active
-- **claude-frontend:** 2/2 active
+- **claude-lead:** 0/2 active
+- **claude-frontend:** 1/2 active
 - **claude-backend:** 0/1 active
 - **claude-media:** 1/1 active
 - **claude-test:** 0/1 active
-- **claude-security:** 1/1 active
+- **claude-security:** 0/1 active
 - **claude-infra:** 0/1 active
 - **human-commander:** 0/99 active (external lane; not locally executable)

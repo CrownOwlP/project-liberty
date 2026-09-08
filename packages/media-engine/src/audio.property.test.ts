@@ -12,7 +12,13 @@ import {
 } from "@liberty/contracts/testing/arbitraries";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { languageMatch, primarySubtag, selectAudioTrack } from "./audio";
+import {
+  languageMatch,
+  matchesOnlyAcrossScripts,
+  primarySubtag,
+  selectAudioTrack,
+  type ScriptPolicy
+} from "./audio";
 
 /**
  * Audio selection properties (fast-check).
@@ -35,6 +41,15 @@ import { languageMatch, primarySubtag, selectAudioTrack } from "./audio";
  */
 const AUTO_SELECTABLE: readonly AudioRole[] = ["original", "main", "dub"];
 const MANUAL_ONLY: readonly AudioRole[] = ["descriptive", "commentary"];
+
+/**
+ * Both script rules, so the laws below are checked of the SHARED comparator
+ * rather than of the one setting audio happens to pass. Spread from a typed
+ * constant rather than written inline, so the generated values are `ScriptPolicy`
+ * and not widened to `string`.
+ */
+const SCRIPT_POLICIES: readonly ScriptPolicy[] = ["ignore_script", "require_compatible_script"];
+const scriptPolicyArb = fc.constantFrom(...SCRIPT_POLICIES);
 
 /** Capabilities that reject nothing, so the comparator is what is under test. */
 const permissiveCapabilitiesArb = fc
@@ -260,43 +275,92 @@ describe("languageMatch reports two independent coordinates", () => {
   it("is case- and whitespace-insensitive on both sides", () => {
     /*
      * The policies take the TYPE rather than parsed output, so the schema's
-     * lower-casing `.transform()` never runs on a track an adapter constructed
-     * by hand. If this function were case-sensitive, an exported caller passing
+     * normalising `.transform()` never runs on a track an adapter constructed by
+     * hand. If this function were case-sensitive, an exported caller passing
      * "EN-GB" would silently match nothing.
+     *
+     * BOTH sides are padded here, which is the property form of the asymmetry
+     * this round removed. The track side used to be lower-cased and not
+     * trimmed, so an identically padded pair did not compare equal: leading
+     * padding put whitespace inside the track's primary subtag and matched
+     * nothing at all, trailing padding cost it only its exact match. This
+     * property fails against that code and passed before it was widened.
+     */
+    fc.assert(
+      fc.property(
+        languageTagArb,
+        fc.array(languageTagArb, { maxLength: 4 }),
+        scriptPolicyArb,
+        (language, preferred, scriptPolicy) => {
+          const asWritten = languageMatch(language, preferred, scriptPolicy);
+          const shouted = languageMatch(
+            `  ${language.toUpperCase()}  `,
+            preferred.map((tag) => `  ${tag.toUpperCase()}  `),
+            scriptPolicy
+          );
+          expect(shouted).toEqual(asWritten);
+        }
+      )
+    );
+  });
+
+  it("refuses under the strict rule only pairs the loose rule accepted", () => {
+    /*
+     * `require_compatible_script` REMOVES candidates from the preference list;
+     * it never invents one. So a strict match implies a loose match and its
+     * group can only be the same or later -- a containment that would break the
+     * moment the script rule started doing anything other than refusing pairs.
+     *
+     * The last line holds BY CONSTRUCTION today, because
+     * `matchesOnlyAcrossScripts` is written as this exact difference of two
+     * calls. It is asserted anyway, so that a future implementation which
+     * re-derives the rule instead of calling the comparator cannot diverge from
+     * it silently -- that helper is what the subtitle policy's script reason is
+     * built on. `languageTagArb` generates `zh-hans` and `zh-hant`, so the
+     * conflicting case is genuinely reached rather than assumed.
      */
     fc.assert(
       fc.property(languageTagArb, fc.array(languageTagArb, { maxLength: 4 }), (language, preferred) => {
-        const asWritten = languageMatch(language, preferred);
-        const shouted = languageMatch(
-          language.toUpperCase(),
-          preferred.map((tag) => `  ${tag.toUpperCase()}  `)
-        );
-        expect(shouted).toEqual(asWritten);
+        const loose = languageMatch(language, preferred, "ignore_script");
+        const strict = languageMatch(language, preferred, "require_compatible_script");
+
+        if (strict !== null) {
+          expect(loose).not.toBeNull();
+          if (loose !== null) expect(strict.groupIndex).toBeGreaterThanOrEqual(loose.groupIndex);
+        }
+        expect(matchesOnlyAcrossScripts(language, preferred)).toBe(loose !== null && strict === null);
       })
     );
   });
 
   it("never reports an exact match earlier than the language group it belongs to", () => {
     fc.assert(
-      fc.property(languageTagArb, fc.array(languageTagArb, { maxLength: 4 }), (language, preferred) => {
-        const match = languageMatch(language, preferred);
-        if (match === null) return;
+      fc.property(
+        languageTagArb,
+        fc.array(languageTagArb, { maxLength: 4 }),
+        scriptPolicyArb,
+        (language, preferred, scriptPolicy) => {
+          const match = languageMatch(language, preferred, scriptPolicy);
+          if (match === null) return;
 
-        expect(match.groupIndex).toBeGreaterThanOrEqual(0);
-        expect(match.groupIndex).toBeLessThan(preferred.length);
+          expect(match.groupIndex).toBeGreaterThanOrEqual(0);
+          expect(match.groupIndex).toBeLessThan(preferred.length);
 
-        const group = defined(preferred[match.groupIndex], "matched group preference");
-        expect(primarySubtag(group)).toBe(primarySubtag(language));
+          const group = defined(preferred[match.groupIndex], "matched group preference");
+          expect(primarySubtag(group)).toBe(primarySubtag(language));
 
-        if (match.exactIndex !== null) {
-          // An exact match is a member of its own group, so it can never sit
-          // before the group's first index. Collapsing the two coordinates into
-          // one is what made an unrequested "en-au" beat a listed "en-gb".
-          expect(match.exactIndex).toBeGreaterThanOrEqual(match.groupIndex);
-          const exact = defined(preferred[match.exactIndex], "matched exact preference");
-          expect(exact.trim().toLowerCase()).toBe(language.toLowerCase());
+          if (match.exactIndex !== null) {
+            // An exact match is a member of its own group, so it can never sit
+            // before the group's first index. Collapsing the two coordinates
+            // into one is what made an unrequested "en-au" beat a listed
+            // "en-gb". An exact match also survives BOTH script rules, since
+            // equal tags state equal scripts.
+            expect(match.exactIndex).toBeGreaterThanOrEqual(match.groupIndex);
+            const exact = defined(preferred[match.exactIndex], "matched exact preference");
+            expect(exact.trim().toLowerCase()).toBe(language.trim().toLowerCase());
+          }
         }
-      })
+      )
     );
   });
 });

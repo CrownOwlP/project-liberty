@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-05T17:47:42.360Z",
+  "generatedAt": "2026-09-08T04:32:38.269Z",
   "agent": "claude-frontend",
   "executionAvailable": true,
   "assigned": [
@@ -7,7 +7,7 @@
       "id": "PL-0104",
       "priority": "P0",
       "lane": "Frontend",
-      "status": "REVIEW",
+      "status": "IN_PROGRESS",
       "title": "Make catalog and search results navigable",
       "dependencies": [
         "PL-0102",
@@ -17,6 +17,11 @@
         "apps/web/src/components/catalog-card.tsx",
         "apps/web/src/lib/routes.ts",
         "apps/web/src/lib/routes.test.ts"
+      ],
+      "reviewDependencies": [
+        "apps/web/src/app/title/title-detail.ts",
+        "apps/web/src/components/catalog-rail.tsx",
+        "apps/web/src/components/search/search-results.tsx"
       ],
       "preferredAgent": "claude-frontend",
       "reviewAgent": "gpt-architect",
@@ -59,7 +64,7 @@
         }
       },
       "implementationAgent": "claude-frontend",
-      "updatedAt": "2026-09-05T17:47:41.938Z",
+      "updatedAt": "2026-09-08T04:32:37.772Z",
       "implementationBaseSha": "c3bb856f3d8c122acd46d5331067fac3a0266f2b",
       "implementationBaseProvenance": {
         "kind": "reconciled-existing-implementation",
@@ -82,56 +87,51 @@
         "baseCommitSurfaceTouches": [],
         "baseCommitSurfaceTouchesTruncated": false,
         "reason": "PL-0104's implementation predates its claim and is already in committed history, so an ordinary start would record a base that is false. The base was DERIVED, not chosen: git log --reverse over apps/web/src/lib/routes.ts gives the first commit that ever introduced the lane's own module, and this is that commit's parent. catalog-card.tsx was deliberately excluded from the derivation because the repository's root commit b484735 shipped a 14-line scaffold of it, which would have put the base before the repository existed and produced exactly the false field this path exists to prevent. The lane begins at b7bc31c, 'Four lanes: unforgeable pins, navigable results, persistence conflict rules, recommendation honesty' -- navigable results is this task -- and the missing apps/web/src/lib/routes.test.ts, named in this task's own allowedPaths, was added in 719d2d7. Both are inside base..HEAD. The commit window, both endpoints and the base commit's own surface touches are published for the reviewer to check that no earlier commit belongs to this implementation."
-      }
-    },
-    {
-      "id": "PL-0705",
-      "priority": "P0",
-      "lane": "Frontend",
-      "status": "REVIEW",
-      "title": "Search loses text typed before hydration",
-      "dependencies": [
-        "PL-0102"
-      ],
-      "allowedPaths": [
-        "apps/web/src/components/search/**",
-        "e2e/tests/search.spec.ts"
-      ],
-      "preferredAgent": "claude-frontend",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "typecheck",
-        "unit",
-        "e2e"
-      ],
-      "acceptance": "Text typed into the search field before the form hydrates is not lost: on mount the form adopts the DOM value if it differs from its own state, and a query typed at any point becomes an addressable URL. Proven by an EXECUTED Playwright run on WebKit, where the race reproduces, rather than only on Chromium where it does not. Separately the spec addresses the result heading exactly rather than by substring, because role-name matching is substring by default and a query equal to a title matches both the results heading and the card heading -- a spec defect that only appeared once the suite was first executed.",
-      "owner": "claude-frontend",
-      "gateResults": {
-        "typecheck": {
-          "status": "pass",
-          "at": "2026-09-05T16:15:19.769Z",
-          "by": "claude-frontend",
-          "commitSha": "4b56f7e29b7a0e9e50df88bc4c4e0f8b76bb27ed",
-          "evidence": "turbo run typecheck plus npm run check, plus the standalone e2e tsc pass, exit 0 on the tree committed this round"
-        },
-        "unit": {
-          "status": "pass",
-          "at": "2026-09-05T16:15:20.229Z",
-          "by": "claude-frontend",
-          "commitSha": "4b56f7e29b7a0e9e50df88bc4c4e0f8b76bb27ed",
-          "evidence": "vitest via npm run check, exit 0, on the tree committed this round; the hydration-adoption decision is pure and tested without a DOM across nine cases including divergence, cleared-to-empty and non-hydration renders"
-        },
-        "e2e": {
-          "status": "pass",
-          "at": "2026-09-05T17:47:38.408Z",
-          "by": "claude-frontend",
-          "commitSha": "c47e1bba1890e8cdc911b8b1db19abfeff81d7be",
-          "evidence": "Playwright executed in BOTH modes on 2026-09-05 at commit c47e1bba: production 78 passed / 0 failed / 18 skipped, development 87 passed / 0 failed / 9 skipped, across chromium, firefox, webkit and mobile-safari. The whole suite was green. This task's own proof, search.spec.ts 'text typed before hydration survives it', passed on all four browsers in both modes. In the previous run it was the only failure, and the cause was its own instrument rather than the product: page.unroute disposes routes without draining handlers still parked on the bundle gate, so each handler woke to find Playwright had already continued its route. It now uses unrouteAll with behavior wait. The assertions were also reordered so the address-bar check runs before the field-value check, because an UNHYDRATED field still holds what was typed into it and toHaveValue therefore passed even in the runs where React never arrived -- the URL is the only signal on this surface that cannot change without hydration, and it is the one that goes red if the adoption effect is deleted."
-        }
       },
-      "implementationAgent": "claude-frontend",
-      "updatedAt": "2026-09-05T16:15:20.690Z",
-      "implementationBaseSha": "f6c4b942ebbd02fd3fa9ed8f74fde4fc603affc2"
+      "review": {
+        "taskId": "PL-0104",
+        "implementationAgent": "claude-frontend",
+        "implementationOwner": "claude-frontend",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "5b59c6c2dc2bd45c6459a279ef3c38446a5db243",
+        "reviewedBaseSha": "c3bb856f3d8c122acd46d5331067fac3a0266f2b",
+        "reviewedTreeHash": "a5e091178e1123a4dc40df28b75fdd933f3095f3712d1d8bf6eeaedcc56f5cec",
+        "reviewedFileCount": 6,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [
+          "apps/web/src/app/title/title-detail.ts",
+          "apps/web/src/components/catalog-rail.tsx",
+          "apps/web/src/components/search/search-results.tsx"
+        ],
+        "outcome": "CHANGES_REQUESTED",
+        "reviewedAt": "2026-09-08T04:32:37.771Z",
+        "evidence": "CHANGES_REQUESTED for review-surface completeness, not for the link implementation. CatalogCard renders the visible title as the Next link name and the route resolver refuses known-broken ids, but the task fingerprint does not include the external titleHref definition or the two consumer modules whose wiring makes the acceptance true for home rails and search results. Add title-detail.ts, catalog-rail.tsx, and search-results.tsx as reviewDependencies rather than write paths. With those dependencies bound, the reconciled implementation range is credible and the code is otherwise approvable, with the stated coverage limitation that no PL-0104 gate mounts the component or clicks the link in a browser. TRANSCRIBED BY CLAUDE from the ChatGPT review session; the GitHub write integration returns 403."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PL-0104",
+          "implementationAgent": "claude-frontend",
+          "implementationOwner": "claude-frontend",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "5b59c6c2dc2bd45c6459a279ef3c38446a5db243",
+          "reviewedBaseSha": "c3bb856f3d8c122acd46d5331067fac3a0266f2b",
+          "reviewedTreeHash": "a5e091178e1123a4dc40df28b75fdd933f3095f3712d1d8bf6eeaedcc56f5cec",
+          "reviewedFileCount": 6,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "apps/web/src/app/title/title-detail.ts",
+            "apps/web/src/components/catalog-rail.tsx",
+            "apps/web/src/components/search/search-results.tsx"
+          ],
+          "outcome": "CHANGES_REQUESTED",
+          "reviewedAt": "2026-09-08T04:32:37.771Z",
+          "evidence": "CHANGES_REQUESTED for review-surface completeness, not for the link implementation. CatalogCard renders the visible title as the Next link name and the route resolver refuses known-broken ids, but the task fingerprint does not include the external titleHref definition or the two consumer modules whose wiring makes the acceptance true for home rails and search results. Add title-detail.ts, catalog-rail.tsx, and search-results.tsx as reviewDependencies rather than write paths. With those dependencies bound, the reconciled implementation range is credible and the code is otherwise approvable, with the stated coverage limitation that no PL-0104 gate mounts the component or clicks the link in a browser. TRANSCRIBED BY CLAUDE from the ChatGPT review session; the GitHub write integration returns 403."
+        }
+      ]
     }
   ],
   "review": [],

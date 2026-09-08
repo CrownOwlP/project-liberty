@@ -1,13 +1,13 @@
 import type { StreamCandidate } from "@liberty/contracts/domains/playback";
-import { normalizedContentIdSchema } from "@liberty/contracts/shared/ids";
 import { LATENCY_CEILING_MS } from "@liberty/media-engine";
 import {
   classifyHost,
-  DEFAULT_PROVIDER_HEALTH_POLICY,
-  healthPriorScore,
-  type RightsBasis
+  createFixtureProvider,
+  type FixtureProvider as SdkFixtureProvider,
+  type FixtureProviderRejectionReason,
+  type FixtureRightsBasis
 } from "@liberty/provider-sdk";
-import { NonDeploymentEnvironment } from "../../../deployment-environment";
+import { isLocalDeployment, NonDeploymentEnvironment } from "../../../deployment-environment";
 
 /* -------------------------------------------------------------------------
  * Where a session's candidates come from (PL-0501)
@@ -23,11 +23,12 @@ import { NonDeploymentEnvironment } from "../../../deployment-environment";
  * WHY THE SEAM EXISTS AT ALL rather than the route calling a provider directly:
  * `@liberty/provider-sdk`'s `AuthorizedMediaProvider` resolves candidates for a
  * `CatalogItemRef` -- a provider id, an external id and a rights basis -- and
- * nothing in this app yet maps a normalized content id onto one. That mapping
- * is a catalog/provider-registry question, not a session-API question, and
- * inventing an answer here would put provider configuration inside an HTTP
- * route. So the session API depends on the CAPABILITY, injectably, and the
- * registry lands behind it without this file changing.
+ * nothing in this app yet maps a normalized content id onto one for a REAL
+ * provider. That mapping is a catalog/provider-registry question, not a
+ * session-API question, and inventing an answer here would put provider
+ * configuration inside an HTTP route. So the session API depends on the
+ * CAPABILITY, injectably, and a registry lands behind it without this file
+ * changing.
  * ---------------------------------------------------------------------- */
 
 /**
@@ -100,7 +101,36 @@ export type AuthorizedCandidateResolver = (
 ) => AuthorizedCandidateResolution | Promise<AuthorizedCandidateResolution>;
 
 /* -------------------------------------------------------------------------
- * Development fixtures
+ * THE DEVELOPMENT FIXTURES, WHICH THIS MODULE NO LONGER IMPLEMENTS.
+ *
+ * Everything below CONFIGURES and CONSUMES `@liberty/provider-sdk`'s fixture
+ * provider. Nothing below declares rights, composes a media URL, states a media
+ * fact, invents a candidate id or carries a copy of the opaque-reference rule --
+ * and that is the whole point of this section rather than an incidental
+ * property of it.
+ *
+ * WHAT WAS HERE BEFORE, because the defect is worth naming precisely. This file
+ * built its own `owned` rights basis, its own three candidates, its own
+ * `fixtureUri`, its own reserved reference token and its own copy of
+ * `OPAQUE_RIGHTS_REFERENCE_PATTERN`, while `packages/provider-sdk/src/fixture/`
+ * independently implemented the same adapter. Two fixture providers asserting
+ * rights over the same imaginary media is the exact arrangement that produced
+ * the original incident -- a second, unguarded copy of these fixtures shipping
+ * in the watch route -- and having the second copy inside a package rather than
+ * inside a route did not change what it was. Product invariant 3 says provider
+ * adapters live behind `@liberty/provider-sdk`; there is now one of them.
+ *
+ * WHAT THIS MODULE STILL OWNS, and must, because the SDK cannot:
+ *
+ *   - the ORIGIN the operator configured, which is a fact about this
+ *     deployment;
+ *   - whether that origin is loopback, which is the SOURCE half of the loopback
+ *     permission. `url-policy.ts` requires two independently-owned facts, and
+ *     collapsing them into one owner is a defect this route has already had;
+ *   - whether this instance is a local deployment, which is the DEPLOYMENT half
+ *     of the same permission, read from the one classification in this app;
+ *   - the classification that decides whether a fixture provider may be
+ *     constructed at all.
  * ---------------------------------------------------------------------- */
 
 /**
@@ -114,96 +144,23 @@ export type AuthorizedCandidateResolver = (
  * `resolveAuthorizedCandidates` instead of restating it, so there is one reader
  * and the agreement is structural rather than remembered.
  *
- * `.invalid` is reserved by RFC 2606 and resolves
- * nowhere, so the default can never accidentally reach a real host -- the
- * fixtures fail, failover walks all three, and the reason trail shows the whole
- * sequence, which is more useful than a player that silently does nothing.
+ * `.invalid` is reserved by RFC 2606 and resolves nowhere, so the default can
+ * never accidentally reach a real host -- the fixtures fail, failover walks all
+ * three, and the reason trail shows the whole sequence, which is more useful
+ * than a player that silently does nothing.
  *
  * OPERATOR-SUPPLIED AND THEREFORE UNTRUSTED AS A URL, even though the operator
  * is not an attacker: a typo is as capable of aiming this at 169.254.169.254 as
- * malice is. Nothing here sanitises it. It is composed into a URL below in a way
- * that cannot be subverted by a query string or a fragment, and it is then
- * REFUSED, with a named reason, by `issue-session.ts`'s `checkUrl` gate -- the
- * same outbound URL policy the provider SDK runs. Stripping embedded credentials
- * or rewriting a private host here would be worse than leaving them: it would
- * make a misconfigured origin silently WORK, and the gate that exists to report
- * it would never fire.
+ * malice is. Nothing here sanitises it. It is handed to `createFixtureProvider`
+ * verbatim, which REFUSES it with a named `checkUrl` reason rather than
+ * rewriting it -- so a private host, a plaintext origin or embedded credentials
+ * produce a refusal a caller can report, and the composed candidate URLs are
+ * checked again by `issue-session.ts` immediately before any of them is
+ * published. Stripping credentials or rewriting a private host here would be
+ * worse than leaving them: it would make a misconfigured origin silently WORK,
+ * and the gates that exist to report it would never fire.
  */
 const FIXTURE_MEDIA_ORIGIN = process.env.LIBERTY_FIXTURE_MEDIA_ORIGIN ?? "https://fixtures.invalid";
-
-const FIXTURE_PROVIDER = "fixture";
-
-/**
- * The shape an internal rights reference is allowed to have.
- *
- * A `RightsBasis` carries a CATEGORY -- `rights`, plus the `basis` KIND, both
- * closed vocabularies `@liberty/provider-sdk` owns and checks -- and a
- * REFERENCE. The reference is an OPAQUE INTERNAL IDENTIFIER: it names a record
- * in the operator's own rights register and means nothing to anyone who does not
- * hold that register.
- *
- * IT IS OPAQUE BECAUSE THE AGREEMENTS THEMSELVES ARE NOT THIS REPOSITORY'S TO
- * CARRY. No licence body, no counterparty, no scope, no term dates and no URL
- * may be written into a rights basis. What is left is the category, which is the
- * part the engine actually enforces, plus an identifier that lets the operator
- * find the paperwork somewhere this repository cannot see. It matters downstream
- * too: `describeRightsBasis` in `@liberty/provider-sdk` renders the reference
- * into a human line for reason trails and logs, so whatever is written here is
- * something a bug-report screenshot can carry out of the building.
- *
- * WHAT THIS PATTERN DOES AND DOES NOT ESTABLISH, stated exactly, because a
- * comment that overclaims a check is worse than having no check. It admits only
- * lowercase alphanumeric groups joined by single hyphens, so it MECHANICALLY
- * excludes whitespace and prose, any URL (there is no `:` and no `/` in it),
- * userinfo or an address (`@`), and anything carrying capitals or punctuation.
- * It CANNOT tell whether a conforming token is a counterparty name, a date or a
- * contract title: `acme-tv-2026-emea` matches it. Those are refused by the
- * rights review, and the rule is written here so that review has one place to
- * point at.
- *
- * NOTHING PARSES OR BRANCHES ON THE VALUE. It is checked for shape and carried;
- * no code in this app splits it, reads a prefix out of it or decides anything
- * from its content. An identifier that gets interpreted has stopped being an
- * identifier, and the interpretation becomes a rights decision taken by a string
- * parser.
- */
-export const OPAQUE_RIGHTS_REFERENCE_PATTERN = /^[a-z0-9]{2,16}(?:-[a-z0-9]{1,16}){1,7}$/;
-
-/**
- * The longest an internal reference may be.
- *
- * A register id is short and a sentence is not, so length is the one crude
- * signal that separates them. The pattern above would otherwise admit 135
- * characters, which is long enough to hold a description.
- */
-export const MAX_RIGHTS_REFERENCE_LENGTH = 64;
-
-/**
- * Shape only -- see `OPAQUE_RIGHTS_REFERENCE_PATTERN` for what that can and
- * cannot establish, and for why nothing here reads what the token says.
- */
-export function isOpaqueRightsReference(value: string): boolean {
-  return value.length <= MAX_RIGHTS_REFERENCE_LENGTH && OPAQUE_RIGHTS_REFERENCE_PATTERN.test(value);
-}
-
-/**
- * The fixture provider's reference: a reserved all-zero token.
- *
- * IT NAMES NO RECORD ANYWHERE, AND THAT IS THE POINT. There is no agreement
- * covering imaginary media on a host that resolves nowhere, so a reference that
- * pointed at one would be the same fabrication in a smaller font. This token is
- * the rights-register counterpart of the RFC 2606 `.invalid` default origin
- * beside it: well formed, unmistakably reserved, and impossible to confuse with
- * a real entry.
- *
- * IT REPLACES A SENTENCE, and the replacement is a correction rather than a
- * tidy-up. The reference used to be prose: it described where the media came
- * from, named an environment variable and cited a heading in `docs/E2E.md`. That
- * is a scope description rather than an identifier, it is exactly the class of
- * content a rights basis must not carry, and `describeRightsBasis` would have
- * put the first sixty characters of it into any trail that printed the basis.
- */
-const FIXTURE_RIGHTS_REFERENCE = "lty-ref-00000000-0000-0000";
 
 /* -------------------------------------------------------------------------
  * WHERE THE ENVIRONMENT GATE WENT, AND WHY THERE IS NO `FIXTURE_ENVIRONMENTS`
@@ -219,9 +176,11 @@ const FIXTURE_RIGHTS_REFERENCE = "lty-ref-00000000-0000-0000";
  * in step by hand.
  *
  * The allowlist is now expressed exactly once, in
- * `app/api/deployment-environment.ts`, and consumed rather than re-tested. That
- * module also decides the shape of the consumption, and the two shapes are
- * different on purpose:
+ * `app/api/deployment-environment.ts`, and consumed rather than re-tested --
+ * including by `@liberty/provider-sdk`, which held a same-shaped array of its
+ * own until this corrective and now requires the classification to be handed to
+ * it. That module also decides the shape of the consumption, and the two shapes
+ * are different on purpose:
  *
  *   - `isLocalDeployment()` for the callers that need a boolean to hand to
  *     `checkUrl`, or to decide whether a development-only route exists;
@@ -254,197 +213,62 @@ function originIsLoopback(origin: string): boolean {
   try {
     return classifyHost(new URL(origin).hostname) === "loopback";
   } catch {
-    /* Not a URL at all. Not loopback, and reported as `url_unparseable` by the
-     * transport gate once it is composed into a candidate. */
+    /* Not a URL at all. Not loopback, and refused as `url_unparseable` by
+     * `createFixtureProvider` before any candidate exists. */
     return false;
   }
 }
 
 /**
- * Joins the operator's origin to a fixture path.
+ * The one fixture provider, in this route's vocabulary.
  *
- * Built through `URL` rather than by string concatenation, which is what the
- * previous `${origin}/${contentId}/${file}` did. Three real configurations broke
- * it, none of them exotic: a trailing slash produced a doubled one, an origin
- * carrying a query (`https://rig.test/?v=2`) swallowed the whole path into the
- * query string, and a fragment discarded it entirely. In each case the resulting
- * URL passed the transport gate -- it is the operator's own public https host --
- * and pointed somewhere else, so the failure arrived as a 404 from the rig with
- * nothing in the reason trail to explain it.
- *
- * Search and hash are dropped for the same reason `defineStremioSource` drops
- * them: they are not part of the origin's identity, and keeping them would make
- * the derived paths inconsistent with the base they came from.
- *
- * USERINFO IS DELIBERATELY PRESERVED. `https://user:pass@rig.test` survives into
- * the composed URL and is refused downstream as `url_credentials_present`.
- * Stripping it here would turn a credential-bearing misconfiguration into a
- * working stream and silence the one check that names it.
+ * A SHAPE ADAPTER AND NOT A SECOND PROVIDER, which is a distinction worth being
+ * explicit about in this file of all files. It renames three fields --
+ * `FixtureCandidate`'s `uri`, `mimeType` and `allowLoopback` become an
+ * `AuthorizedSource` -- and forwards the candidate unchanged. It declares no
+ * rights, composes no URL, invents no id and states no media fact; every one of
+ * those comes from `@liberty/provider-sdk`'s `FixtureProvider`, which this
+ * module imports as `SdkFixtureProvider` and wraps. If a future edit adds a
+ * field here that the SDK did not state, that is the duplication coming back.
  */
-function fixtureUri(origin: string, contentId: string, file: string): string {
-  try {
-    const url = new URL(origin);
-    url.search = "";
-    url.hash = "";
-    url.pathname = `${url.pathname.replace(/\/+$/, "")}/${contentId}/${file}`;
-    return url.toString();
-  } catch {
-    /* Unparseable. Joined verbatim so the candidate still exists and the
-     * transport gate reports `url_unparseable` against it, rather than this
-     * module silently producing a shorter list nobody can account for. */
-    return `${origin}/${contentId}/${file}`;
-  }
+export interface FixtureProvider {
+  /**
+   * The `NODE_ENV` that admitted this provider.
+   *
+   * Reported, never re-tested. Carried so a caller that logs or asserts WHICH
+   * environment authorised the fixtures reads the value the classification
+   * actually used, instead of re-reading `process.env` and possibly reporting a
+   * different one.
+   */
+  readonly environment: string;
+  /**
+   * The declaration every candidate below carries: a category from the provider
+   * SDK's own closed vocabularies plus an OPAQUE internal reference. The rule
+   * that reference has to satisfy lives in `@liberty/provider-sdk`'s
+   * `fixture/rights.ts` and is stated in exactly that one place.
+   */
+  readonly rightsBasis: FixtureRightsBasis;
+  candidates(contentId: string, context: ResolverContext): readonly AuthorizedCandidate[];
 }
 
 /**
- * Three candidates so failover has somewhere to go, listed WORST-FIRST.
+ * What asking for the fixture provider can answer.
  *
- * If this list were already in preference order, a defect in the ranking or in
- * this route's mapping would be invisible, because the wrong answer and the
- * right one would look identical.
- *
- * EVERY MEDIA FACT IS `null`, AND THAT IS THE WHOLE CORRECTION HERE. These
- * candidates used to state `height: 720`/`1080`, `bitrateKbps: 2800`/`5200`/
- * `6000` and `videoCodec: "h264"`/`audioCodec: "aac"`. Nothing had inspected the
- * files -- they may not exist, and when they do exist they are whatever an
- * operator packaged -- so all four were invented, which is exactly what PL-0205
- * exists to prevent and what `mapping.ts` had already removed from the Stremio
- * adapter.
- *
- * The codecs were the harmful pair, and harmful in the specific way that file
- * records: h264/aac is the most widely supported combination in existence, so
- * claiming it made every fixture pass capability eligibility PRECISELY BECAUSE
- * the values were ones every device accepts, and `compatibilityOf` then labelled
- * the session `verified` -- the response told a player we had ESTABLISHED that
- * this decodes here, about a file nobody has opened. `null` produces
- * `unverified`, which is the true statement.
- *
- * The heights were not much better. 720 was read off a filename this module
- * chose, which is circular, and 1080 on `master.m3u8` and `manifest.mpd` is not
- * even the right SHAPE of claim: an adaptive manifest has a ladder of
- * renditions, not a height.
- *
- * It also makes the dev rig representative for the first time. Every real
- * adapter in this repository emits four `null`s, because no protocol here states
- * these facts; a fixture that stated all four was exercising a path no provider
- * can produce, and hiding the unverified path a developer most needs to see.
- *
- * The two remaining numbers cannot be `null` -- the contract requires them -- so
- * each states the value that cannot flatter the candidate:
- *
- *   - `healthScore` is the health policy's PRIOR, which is what a source with
- *     zero observations scores. `health.ts` argues that placement at length: it
- *     is exactly `PROVIDER_HEALTH_FLOOR`, which media-engine compares with a
- *     strict `<`, so an unobserved source sits ON the floor and survives by no
- *     margin at all. The old 0.82/0.94/0.97 were invented, and at weight 30 they
- *     were the largest single fabricated contribution to the ranking.
- *   - `estimatedLatencyMs` is the latency ceiling, so the penalty dimension is
- *     charged in FULL. `scoring.ts` states the rule and the reason: an unknown
- *     positive dimension earns nothing, but an unknown PENALTY that contributed
- *     zero would reward a candidate for withholding information. Nothing timed
- *     these, so nothing gets the benefit.
- *
- * What still differs between the three is `protocol`, which is a genuine fact
- * read off the path exactly as `deriveProtocol` reads it. So the ranking still
- * reorders the list (dash, hls, progressive) and the worst-first property still
- * has something to prove, while the hls/dash tie exercises the id tiebreak.
- *
- * `origin` is a parameter rather than only an environment read so tests can pin
- * it. A test whose expectations depend on an operator's `.env.local` is a test
- * that fails on one machine and passes on another.
+ * A REFUSAL IS DATA, not an exception and not an empty list. The operator's
+ * origin is checked by the SDK's outbound URL policy at construction, so
+ * `https://user:pass@rig.test`, `https://10.0.0.5` and `not-a-url` each produce
+ * a NAMED reason here. Folding those into "no candidates" would lose the one
+ * thing that tells an operator what to fix, and folding them into
+ * `not-configured` would tell them to configure a provider they already
+ * configured.
  */
-function fixtureCandidates(
-  rightsBasis: RightsBasis,
-  contentId: string,
-  origin: string
-): readonly AuthorizedCandidate[] {
-  /*
-   * Re-checked here even though `playbackSessionRequestSchema` already refuses a
-   * non-normalized id before any resolver runs. An id is interpolated into a URL
-   * path, and `..` is not stopped by percent-encoding (dots are unreserved), so
-   * an unvalidated id could walk out of the origin's path prefix -- the same
-   * reasoning `mapping.ts` gives for its redundant rights check. An empty list
-   * rather than a throw: it lands as `no_candidates_resolved`, which is the
-   * reversible direction.
-   */
-  if (!normalizedContentIdSchema.safeParse(contentId).success) return [];
-
-  /*
-   * FAIL CLOSED ON A REFERENCE OF UNREVIEWED SHAPE. Unreachable while
-   * `FIXTURE_RIGHTS_REFERENCE` is the literal above -- it conforms, and this
-   * module builds the only basis that reaches here -- and that is exactly what
-   * it is for: an edit that replaces the token with a sentence, a URL or a
-   * counterparty's name produces NO CANDIDATES instead of publishing the
-   * sentence into a reason trail. A rights declaration nobody may read is not a
-   * declaration worth serving.
-   */
-  if (!isOpaqueRightsReference(rightsBasis.reference)) return [];
-
-  const rights = rightsBasis.rights;
-  const allowLoopback = originIsLoopback(origin);
-  const healthScore = healthPriorScore(DEFAULT_PROVIDER_HEALTH_POLICY);
-
-  /**
-   * Everything the same for all three, because nothing distinguishes them:
-   * four `null`s -- the contract's word for unknown, never a placeholder -- plus
-   * the two fields the contract will not let be unknown, each stating the value
-   * that cannot flatter the candidate. Shared rather than repeated so a future
-   * edit cannot make one fixture quietly more optimistic than its siblings.
-   */
-  const unmeasured = {
-    height: null,
-    bitrateKbps: null,
-    videoCodec: null,
-    audioCodec: null,
-    estimatedLatencyMs: LATENCY_CEILING_MS,
-    healthScore
-  } as const;
-
-  return [
-    {
-      candidate: {
-        id: `${contentId}-progressive`,
-        providerId: FIXTURE_PROVIDER,
-        rights,
-        protocol: "https",
-        ...unmeasured
-      },
-      source: {
-        uri: fixtureUri(origin, contentId, "720p.mp4"),
-        mimeType: "video/mp4",
-        allowLoopback
-      }
-    },
-    {
-      candidate: {
-        id: `${contentId}-hls`,
-        providerId: FIXTURE_PROVIDER,
-        rights,
-        protocol: "hls",
-        ...unmeasured
-      },
-      source: {
-        uri: fixtureUri(origin, contentId, "master.m3u8"),
-        mimeType: "application/vnd.apple.mpegurl",
-        allowLoopback
-      }
-    },
-    {
-      candidate: {
-        id: `${contentId}-dash`,
-        providerId: FIXTURE_PROVIDER,
-        rights,
-        protocol: "dash",
-        ...unmeasured
-      },
-      source: {
-        uri: fixtureUri(origin, contentId, "manifest.mpd"),
-        mimeType: "application/dash+xml",
-        allowLoopback
-      }
-    }
-  ];
-}
+export type FixtureProviderResult =
+  | { readonly status: "ready"; readonly provider: FixtureProvider }
+  | {
+      readonly status: "refused";
+      readonly reason: FixtureProviderRejectionReason;
+      readonly detail: string;
+    };
 
 /**
  * The fixture provider, which cannot be obtained without proof that this process
@@ -461,73 +285,115 @@ function fixtureCandidates(
  * ships.
  *
  * IT USED TO BE A CONDITION AND IS NOW A TYPE. The gate was
- * `FIXTURE_ENVIRONMENTS.includes(process.env.NODE_ENV ?? "")` in the resolver
- * below: correct, and deletable. Delete it and every fixture resolves in
+ * `FIXTURE_ENVIRONMENTS.includes(process.env.NODE_ENV ?? "")` inside the
+ * resolver: correct, and deletable. Delete it and every fixture resolves in
  * production, and everything still compiles. That is not a hypothetical failure
  * mode here -- `watch/watch-session.ts` shipped a second copy of these fixtures
  * under NO environment condition at all, and `docs/E2E.md` recorded the
  * difference as intended behaviour.
  *
- * `NonDeploymentEnvironment` cannot be constructed outside
- * `app/api/deployment-environment.ts` (private constructor, private field, so
- * TypeScript compares it nominally), and the only way to obtain one is
- * `classify`, which answers `null` for every environment outside the allowlist.
- * A caller therefore cannot reach this function without handling that `null`.
- * The fabricated basis is a value that CANNOT BE BUILT in a deployment, rather
- * than a value that is built and then withheld.
+ * THE CHAIN, END TO END, because it now crosses a package boundary:
  *
- * What it does not do is defend against an edit to these two modules. Nothing
- * in TypeScript can. What it defends against is the way this defect actually
+ *   1. `NonDeploymentEnvironment` cannot be constructed outside
+ *      `app/api/deployment-environment.ts` (private constructor, private field,
+ *      so TypeScript compares it nominally), and the only way to obtain one is
+ *      `classify`, which answers `null` for every environment outside the one
+ *      allowlist. A caller cannot reach this function without handling that
+ *      `null`, and deleting the check is a COMPILE ERROR rather than a silent
+ *      widening;
+ *   2. this function hands that witness to `createFixtureProvider` as the
+ *      deployment's `RuntimeClassification` -- the SDK reads `nodeEnv` off it
+ *      and classifies nothing itself, which is why there is no second allowlist
+ *      in that package any more;
+ *   3. `createFixtureProvider` mints its own nominal witness INSIDE the factory
+ *      and builds the rights basis there. It is the only path to either that
+ *      this app has: `NonProductionRuntime` and `fixtureRightsBasis` are not
+ *      exported from `@liberty/provider-sdk`, and the package publishes one
+ *      entry point, so neither can be named here at all. The fabricated `owned`
+ *      declaration is therefore a value that CANNOT BE BUILT from this app
+ *      except by going through step 1, rather than a value that is built and
+ *      then withheld.
+ *
+ * What it does not do is defend against an edit to those modules. Nothing in
+ * TypeScript can. What it defends against is the way this defect actually
  * recurs: a change somewhere else that quietly stops consulting the gate.
  *
  * A REMAINING GAP, recorded rather than papered over: a hosted deployment that
  * exports `NODE_ENV=development` and runs `next dev` still gets a witness.
  * Nothing here can distinguish that from a laptop, because it IS a development
  * build; the control for it is not shipping one.
+ *
+ * `origin` is a parameter rather than only an environment read so tests can pin
+ * it. A test whose expectations depend on an operator's `.env.local` is a test
+ * that fails on one machine and passes on another.
  */
-export interface FixtureProvider {
-  /**
-   * The `NODE_ENV` that admitted this provider.
-   *
-   * Reported, never re-tested. Carried so a caller that logs or asserts WHICH
-   * environment authorised the fixtures reads the value the classification
-   * actually used, instead of re-reading `process.env` and possibly reporting a
-   * different one.
-   */
-  readonly environment: string;
-  /**
-   * The declaration every candidate below carries: a category the provider SDK's
-   * own vocabularies recognise, plus an opaque reference. See
-   * `OPAQUE_RIGHTS_REFERENCE_PATTERN` and `FIXTURE_RIGHTS_REFERENCE`.
-   */
-  readonly rightsBasis: RightsBasis;
-  candidates(contentId: string, origin?: string): readonly AuthorizedCandidate[];
+export function fixtureProvider(
+  environment: NonDeploymentEnvironment,
+  origin: string = FIXTURE_MEDIA_ORIGIN
+): FixtureProviderResult {
+  const created = createFixtureProvider(environment, {
+    mediaOrigin: origin,
+    /*
+     * The engine's latency ceiling, so an untimed candidate is charged the
+     * penalty dimension IN FULL rather than rewarded for stating nothing.
+     * `scoring.ts` states the rule; the SDK requires the number from a composition
+     * root because a provider adapter must not depend on the ranker that scores
+     * its output.
+     */
+    unmeasuredLatencyMs: LATENCY_CEILING_MS,
+    /* The SOURCE half of the loopback permission, derived from the operator's
+     * own origin. */
+    allowLoopback: originIsLoopback(origin),
+    /*
+     * The DEPLOYMENT half, and it is answered from the witness rather than from
+     * a fresh read of `process.env`. Holding a `NonDeploymentEnvironment` means
+     * `classify` already accepted this `NODE_ENV`, so `isLocalDeployment` --
+     * which is one line over the same `classify` -- necessarily answers `true`
+     * for it. Passing the value through the app's own accessor rather than
+     * writing `true` keeps the two answers derived from ONE allowlist, and
+     * passing the witness's recorded `nodeEnv` rather than re-reading the
+     * process means the origin gate here and the per-candidate gate in
+     * `issue-session.ts` cannot be looking at two different environments.
+     */
+    localDeployment: isLocalDeployment(environment.nodeEnv)
+  });
+
+  if (!created.ok) {
+    return { status: "refused", reason: created.reason, detail: created.detail };
+  }
+  return { status: "ready", provider: toCandidateSource(created.provider) };
 }
 
-export function fixtureProvider(environment: NonDeploymentEnvironment): FixtureProvider {
-  /*
-   * Built here rather than at module scope, so the `owned` declaration does not
-   * exist as a value in a process that never presented a witness. A module-level
-   * constant would be constructed on import, in every environment, and the
-   * argument above would be about who may READ it rather than about whether it
-   * exists.
-   *
-   * `RightsBasis` is the provider SDK's type, so `operator-owned-master` is
-   * checked against `RIGHTS_BASES_FOR_RIGHTS` rather than being a word chosen
-   * here -- `authorized-candidates.test.ts` applies that table, because the
-   * fixture provider does not go through `defineStremioSource`'s constructor.
-   */
-  const rightsBasis: RightsBasis = {
-    rights: "owned",
-    basis: "operator-owned-master",
-    reference: FIXTURE_RIGHTS_REFERENCE
-  };
-
+/**
+ * The SDK provider's resolution, in this route's shape.
+ *
+ * The content id reaches the provider through its own `registry.lookup`, which
+ * is what turns a normalized content id into the `CatalogItemRef` the provider
+ * boundary takes. `null` -- an id this registry does not carry, including every
+ * id that is not a well-formed normalized content id -- becomes an EMPTY LIST
+ * rather than a throw: it lands as `no_candidates_resolved`, which is the
+ * reversible direction and an answer the endpoint can report. `..` matters here
+ * specifically, because dots are unreserved and survive percent-encoding, and
+ * the external id is interpolated into a URL path on the other side of the
+ * lookup.
+ */
+function toCandidateSource(provider: SdkFixtureProvider): FixtureProvider {
   return {
-    environment: environment.nodeEnv,
-    rightsBasis,
-    candidates: (contentId, origin = FIXTURE_MEDIA_ORIGIN) =>
-      fixtureCandidates(rightsBasis, contentId, origin)
+    environment: provider.runtime,
+    rightsBasis: provider.rightsBasis,
+    candidates: (contentId, context) => {
+      const item = provider.registry.lookup(contentId);
+      if (item === null) return [];
+
+      return provider.resolve(item, { requestId: context.requestId }).mapped.map((entry) => ({
+        candidate: entry.candidate,
+        source: {
+          uri: entry.uri,
+          mimeType: entry.mimeType,
+          allowLoopback: entry.allowLoopback
+        }
+      }));
+    }
   };
 }
 
@@ -552,9 +418,26 @@ export function fixtureProvider(environment: NonDeploymentEnvironment): FixtureP
  * compile. It is also not a source config value and must not become one: a
  * fixture source that could declare itself production-worthy is the same mistake
  * `url-policy.ts` refuses to make with `localDeployment`.
+ *
+ * A REFUSED ORIGIN IS `provider-unavailable` AND NOT `not-configured`. The two
+ * have different remedies and the response codes say so: `not-configured` means
+ * nothing is configured, which is what a hosted deployment gets, while a
+ * configured origin the URL policy refused is a misconfiguration whose named
+ * reason is the only useful thing to publish. The detail is the SDK's own --
+ * chosen text rather than a thrown string, which is the distinction
+ * `issue-session.ts` draws when it declines to echo an exception.
  */
-export const resolveAuthorizedCandidates: AuthorizedCandidateResolver = (contentId) => {
+export const resolveAuthorizedCandidates: AuthorizedCandidateResolver = (contentId, context) => {
   const environment = NonDeploymentEnvironment.classify();
   if (environment === null) return { status: "not-configured" };
-  return { status: "resolved", candidates: fixtureProvider(environment).candidates(contentId) };
+
+  const fixtures = fixtureProvider(environment);
+  if (fixtures.status === "refused") {
+    return {
+      status: "provider-unavailable",
+      detail: `the fixture provider could not be constructed (${fixtures.reason}): ${fixtures.detail}`
+    };
+  }
+
+  return { status: "resolved", candidates: fixtures.provider.candidates(contentId, context) };
 };

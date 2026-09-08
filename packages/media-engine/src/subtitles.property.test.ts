@@ -15,7 +15,7 @@ import {
 import fc from "fast-check";
 import type { Arbitrary } from "fast-check";
 import { describe, expect, it } from "vitest";
-import { primarySubtag, selectAudioTrack } from "./audio";
+import { matchesOnlyAcrossScripts, primarySubtag, selectAudioTrack } from "./audio";
 import { SUBTITLE_OUTCOME_BY_REASON, selectSubtitleTrack, withSelectedAudio } from "./subtitles";
 
 /**
@@ -319,6 +319,60 @@ describe("subtitles never appear uninvited", () => {
         // nothing on screen. With no audio language there is no forced track to
         // fall back to either.
         expect(selection.selected).toBeNull();
+      })
+    );
+  });
+});
+
+/**
+ * The languages a decision was actually made against, mirroring the private
+ * `effectiveLanguages`: the viewer's list when it holds any non-blank entry,
+ * otherwise the audio language for a hearing-impaired viewer, otherwise none.
+ *
+ * Restated here rather than exported, on the reasoning `audio.property.test.ts`
+ * gives for naming the auto-selectable roles itself: the property is about what
+ * the viewer asked for, so it should keep failing if the private derivation is
+ * quietly changed underneath it.
+ */
+function statedLanguages(policy: SubtitlePolicy): readonly string[] {
+  if (policy.preferredLanguages.some((language) => language.trim() !== "")) {
+    return policy.preferredLanguages;
+  }
+  if (policy.hearingImpaired && policy.audioLanguage !== null && policy.audioLanguage.trim() !== "") {
+    return [policy.audioLanguage];
+  }
+  return [];
+}
+
+describe("a stated script conflict is never selected automatically", () => {
+  it("never puts a script the viewer ruled out on screen, for any generated input", () => {
+    /*
+     * `languageTagArb` generates both `zh-hans` and `zh-hant`, so this reaches
+     * the conflict rather than passing vacuously.
+     *
+     * Stated as "the selected track does NOT match only by ignoring a script
+     * conflict", which is precisely the difference between the two `ScriptPolicy`
+     * rules -- so it fails if any comparison in `subtitles.ts` is ever switched
+     * to `ignore_script`, in the automatic pool or the forced one. A track whose
+     * script conflicts may still be OFFERED, and the list properties above
+     * already require that it is; this is only about what is put on screen for
+     * someone who did not choose it.
+     */
+    fc.assert(
+      fc.property(subtitleTracksArb, subtitlePolicyArb, (tracks, policy) => {
+        const selected = selectSubtitleTrack(tracks, policy).selected;
+        if (selected === null) return;
+
+        // A forced track answers to the AUDIO language; everything else answers
+        // to the languages the viewer stated or had derived for them.
+        const against =
+          selected.kind === "forced"
+            ? policy.audioLanguage === null
+              ? []
+              : [policy.audioLanguage]
+            : statedLanguages(policy);
+
+        expect(matchesOnlyAcrossScripts(selected.language, against)).toBe(false);
       })
     );
   });

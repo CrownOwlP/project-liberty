@@ -409,12 +409,23 @@ describe("outcomes", () => {
      * its allowlist. `test` is the one vitest sets, and the non-null assertion
      * is written as a throw so a failure here reads as "the allowlist changed"
      * rather than as a `TypeError` inside the fixture builder.
+     *
+     * The construction can also be REFUSED -- the origin goes through the same
+     * outbound URL policy this endpoint runs -- and that is a throw here too,
+     * for the same reason: it would mean the reserved `.invalid` host had
+     * stopped being admissible, which is a change to the transport policy and
+     * not something this test should report as a session outcome.
      */
     const environment = NonDeploymentEnvironment.classify("test");
     if (environment === null) throw new Error("`test` is no longer a non-deployment environment");
 
+    const fixtures = fixtureProvider(environment, "https://fixtures.invalid");
+    if (fixtures.status === "refused") {
+      throw new Error(`the fixture provider refused ${fixtures.reason}: ${fixtures.detail}`);
+    }
+
     const response = await issue(
-      fixtureProvider(environment).candidates(CONTENT_ID, "https://fixtures.invalid")
+      fixtures.provider.candidates(CONTENT_ID, { requestId: "test-request" })
     );
 
     expect(response.outcome).toBe("granted");

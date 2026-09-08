@@ -6,7 +6,10 @@ import {
   NON_DEPLOYMENT_ENVIRONMENTS,
   NonDeploymentEnvironment
 } from "../api/deployment-environment";
-import { fixtureProvider } from "../api/v1/playback/session/authorized-candidates";
+import {
+  fixtureProvider,
+  type FixtureProvider
+} from "../api/v1/playback/session/authorized-candidates";
 import {
   isWatchableContentId,
   loadPlaybackSession,
@@ -22,32 +25,56 @@ import {
  * The candidates below stand in for a provider registry; the rights and
  * eligibility decision they are run through is the real one from
  * `@liberty/media-engine`, and the transport decision is the real outbound URL
- * policy from `@liberty/provider-sdk`. The DEFAULT path is the session API's
- * fixture provider, imported rather than restated — the second copy that used
- * to live in `watch-session.ts` is what PL-0301 removed.
+ * policy from `@liberty/provider-sdk`. The DEFAULT path reaches the one fixture
+ * provider there is — `@liberty/provider-sdk`'s adapter, configured by the
+ * session API — through that module's resolver, imported rather than restated.
+ * The second copy that used to live in `watch-session.ts` is what PL-0301
+ * removed, and the third that briefly lived in the session API itself is what
+ * this corrective removed.
  */
 
 const CONTENT_ID = "aurora-fall";
 
+/** The correlation id the route generates per request; a literal here. */
+const CONTEXT = { requestId: "watch-test" } as const;
+
 /**
- * The session API's fixture provider, obtained once with a witness.
+ * The fixture candidates this route would serve, over an origin the test chose.
  *
  * `fixtureProvider` takes a `NonDeploymentEnvironment`, which only
  * `api/deployment-environment.ts` can mint and only for a `NODE_ENV` on its
- * allowlist -- so the fabricated `owned` declaration is a value this route
- * could not construct on a build that ships, rather than one it constructs and
- * then declines to use. `test` is the environment vitest sets.
+ * allowlist -- so the fabricated `owned` declaration is a value this route could
+ * not construct on a build that ships, rather than one it constructs and then
+ * declines to use. `test` is the environment vitest sets.
  *
- * Held rather than re-obtained per call, because several tests below rewrite
- * `NODE_ENV` to `production` to prove what a hosted process does to a candidate
- * it was GIVEN. Re-obtaining inside those tests would fail for the right reason
- * at the wrong layer and hide the assertion each of them is making.
+ * BUILT PER CALL AND SAFE INSIDE A TEST THAT HAS REWRITTEN `NODE_ENV`, because
+ * construction is a pure function of the witness and the origin: the deployment
+ * half of the loopback permission is answered from the witness's own recorded
+ * `nodeEnv`, and nothing under `@liberty/provider-sdk` reads the environment at
+ * all. The tests that set `NODE_ENV=production` are asserting what a hosted
+ * process does to a candidate it was GIVEN, and this helper keeps producing one.
+ *
+ * The origin is REQUIRED rather than defaulted: the module default is
+ * `LIBERTY_FIXTURE_MEDIA_ORIGIN`, and a test whose expectations depend on an
+ * operator's `.env.local` passes on one machine and fails on another.
  */
-const FIXTURE_ENVIRONMENT = NonDeploymentEnvironment.classify("test");
-if (FIXTURE_ENVIRONMENT === null) {
-  throw new Error("`test` is no longer on NON_DEPLOYMENT_ENVIRONMENTS");
+function fixtures(origin: string): FixtureProvider {
+  const environment = NonDeploymentEnvironment.classify("test");
+  if (environment === null) {
+    throw new Error("`test` is no longer on NON_DEPLOYMENT_ENVIRONMENTS");
+  }
+
+  const created = fixtureProvider(environment, origin);
+  if (created.status === "refused") {
+    throw new Error(`the fixture provider refused ${created.reason}: ${created.detail}`);
+  }
+  return created.provider;
 }
-const FIXTURES = fixtureProvider(FIXTURE_ENVIRONMENT);
+
+/** The candidates a pinned origin produces. */
+function fixtureCandidates(contentId: string, origin: string): readonly AuthorizedCandidate[] {
+  return fixtures(origin).candidates(contentId, CONTEXT);
+}
 
 /**
  * `process.env.NODE_ENV` is typed as a three-value union by Next's ambient
@@ -185,11 +212,11 @@ describe("what the route will not accept", () => {
      * walk out of the prefix. Reached through the seam because the route's own
      * check makes it unreachable through the front door.
      */
-    expect(FIXTURES.candidates("../../etc/passwd", "https://rig.test/media")).toEqual([]);
+    expect(fixtureCandidates("../../etc/passwd", "https://rig.test/media")).toEqual([]);
 
     const result = await loadPlaybackSession(CONTENT_ID, () => ({
       status: "resolved",
-      candidates: FIXTURES.candidates(CONTENT_ID, "https://rig.test/media")
+      candidates: fixtureCandidates(CONTENT_ID, "https://rig.test/media")
     }));
     expect(result.status).toBe("ok");
     if (result.status !== "ok") return;
@@ -212,24 +239,29 @@ describe("where the fixture path may run", () => {
    */
   it.each([...NON_DEPLOYMENT_ENVIRONMENTS])("serves fixtures under NODE_ENV=%s", async (value) => {
     /*
-     * AN EXPLICIT ALLOWED SET, not `not.toBe("not-configured")`. That form was
-     * also satisfied by `error`, `not-found` and `denied`-for-any-reason, so a
-     * resolver that had stopped working entirely would have passed the gate test
-     * for the gate it was meant to prove open.
+     * AN EXPLICIT ALLOWED SET, not `not.toBe("not-configured")`. That form is
+     * also satisfied by `not-found`, so a route that had stopped recognising
+     * this id would have passed the gate test for the gate it was meant to
+     * prove open.
      *
-     * `ok` OR `denied`, because whether the fixtures then SURVIVE depends on
-     * where an operator pointed `LIBERTY_FIXTURE_MEDIA_ORIGIN`: a rig on `http://`
-     * or on a private host is correctly refused by the transport gate and lands
-     * as `denied`. Both of those outcomes require the resolver to have answered
-     * `resolved` with a non-empty list, which is exactly the gate under test.
-     * `error` and `not-found` are excluded rather than tolerated -- neither is
-     * reachable here (the id is normalized and the fixture list is non-empty for
-     * it), so admitting them would only hide a regression. The happy path is
-     * pinned separately, with an origin this file chooses.
+     * THE SET GREW BY ONE WHEN THE FIXTURE ADAPTER MOVED BEHIND THE PROVIDER
+     * BOUNDARY, and the third member is not a tolerance. The outcome still
+     * depends on where an operator pointed `LIBERTY_FIXTURE_MEDIA_ORIGIN`, but
+     * the gate that refuses a bad rig now runs EARLIER: the SDK checks the
+     * origin with the same outbound URL policy at construction, so a rig on a
+     * private host is refused before any candidate exists and the resolver
+     * answers `provider-unavailable`, which this route renders as `error` with
+     * the policy's named reason. Previously the same rig produced three
+     * candidates that this route's own gate dropped one at a time, landing as
+     * `denied`. Both are refusals with a reason trail; which one an operator
+     * sees is a property of their origin. `not-found` and `not-configured`
+     * remain excluded, and `not-configured` is the only answer the ENVIRONMENT
+     * gate produces, which is what this test is about. The happy path is pinned
+     * separately, with an origin this file chooses.
      */
     setNodeEnv(value);
     const result = await loadPlaybackSession(CONTENT_ID);
-    expect(["ok", "denied"], `NODE_ENV=${value}`).toContain(result.status);
+    expect(["ok", "denied", "error"], `NODE_ENV=${value}`).toContain(result.status);
   });
 
   it.each(["production", "staging", "preview", "Production", "PRODUCTION", ""])(
@@ -265,15 +297,17 @@ describe("where the fixture path may run", () => {
 });
 
 describe("the fixtures the route actually serves", () => {
-  it("is the session API's set, not a second one declared here", () => {
+  it("is the one provider's set, not a second one declared here", () => {
     /*
-     * The duplicate this task removed stated `rights: "owned"` as a bare
+     * The duplicate this route once carried stated `rights: "owned"` as a bare
      * literal, invented h264/aac and heights, and had its own origin read. What
-     * is left is one provider: the ids, the rights and the (absent) media facts
-     * all come from the session API's `fixtureProvider`.
+     * is left is one provider -- `@liberty/provider-sdk`'s, configured by the
+     * session API and reached from here through its resolver -- and the ids, the
+     * rights and the (absent) media facts all come from it.
      */
-    for (const entry of FIXTURES.candidates(CONTENT_ID)) {
-      expect(entry.candidate.rights).toBe(FIXTURES.rightsBasis.rights);
+    const provider = fixtures("https://rig.test/media");
+    for (const entry of provider.candidates(CONTENT_ID, CONTEXT)) {
+      expect(entry.candidate.rights).toBe(provider.rightsBasis.rights);
       /* Every media fact unknown. A fixture claiming the most widely supported
        * codec pair in existence passed eligibility BECAUSE the values were ones
        * every device accepts, and the session then reported `verified` for a
@@ -287,7 +321,7 @@ describe("the fixtures the route actually serves", () => {
      * the machine the suite runs on. */
     const result = await loadPlaybackSession(CONTENT_ID, () => ({
       status: "resolved",
-      candidates: FIXTURES.candidates(CONTENT_ID, "https://rig.test")
+      candidates: fixtureCandidates(CONTENT_ID, "https://rig.test")
     }));
     expect(result.status).toBe("ok");
     if (result.status !== "ok") return;
@@ -308,26 +342,42 @@ describe("the transport gate", () => {
    * first and only ever hands the weaker checker a URL the policy already
    * parsed and accepted.
    */
-  function withOrigin(origin: string) {
-    /* The origin is PINNED rather than read from the environment. A test whose
-     * expectations depend on an operator's `.env.local` fails on one machine and
-     * passes on another. */
-    return loadPlaybackSession(CONTENT_ID, () => ({
-      status: "resolved",
-      candidates: FIXTURES.candidates(CONTENT_ID, origin)
-    }));
+
+  /**
+   * A resolved candidate carrying exactly the URI under test.
+   *
+   * HAND-BUILT RATHER THAN COMPOSED BY THE FIXTURE PROVIDER, and the change is
+   * the point rather than a convenience. What this block asserts is THIS
+   * ROUTE'S gate: `toPlaybackCandidates` runs `checkUrl` over whatever a
+   * resolver handed it, immediately before a URL reaches a browser. The fixture
+   * provider now refuses these origins at construction -- it runs the same
+   * policy over the operator's origin -- so feeding them through it would test
+   * the SDK's gate twice and this route's not at all, and the day a real
+   * provider registry lands behind this seam it is a resolver this route does
+   * not control that has to be checked. The provider's own origin refusals are
+   * asserted where they happen, in
+   * `api/v1/playback/session/authorized-candidates.test.ts`.
+   *
+   * The source states `allowLoopback: false`, which is what a source that did
+   * not opt in says. None of the addresses below is loopback, so it is the
+   * honest value rather than a convenient one; the loopback pair is asserted
+   * separately, over the fixture provider's own output, because there both
+   * halves of that permission have to be present.
+   */
+  function withUri(uri: string) {
+    return loadPlaybackSession(CONTENT_ID, resolving(authorized({ id: "under-test", uri })));
   }
 
   it.each([
-    ["https://user:pass@rig.test", "url_credentials_present"],
-    ["https://169.254.169.254", "url_private_address"],
-    ["http://169.254.169.254", "url_private_address"],
-    ["https://10.0.0.5", "url_private_address"],
-    ["https://[fd00::1]", "url_private_address"],
-    ["https://rig.internal", "url_private_address"],
-    ["http://cdn.example.test", "url_plaintext_http_not_loopback"]
-  ])("refuses an origin at %s as %s, and plays nothing", async (origin, reason) => {
-    const result = await withOrigin(origin);
+    ["https://user:pass@rig.test/media/720p.mp4", "url_credentials_present"],
+    ["https://169.254.169.254/media/720p.mp4", "url_private_address"],
+    ["http://169.254.169.254/media/720p.mp4", "url_private_address"],
+    ["https://10.0.0.5/media/720p.mp4", "url_private_address"],
+    ["https://[fd00::1]/media/720p.mp4", "url_private_address"],
+    ["https://rig.internal/media/720p.mp4", "url_private_address"],
+    ["http://cdn.example.test/media/720p.mp4", "url_plaintext_http_not_loopback"]
+  ])("refuses a candidate at %s as %s, and plays nothing", async (uri, reason) => {
+    const result = await withUri(uri);
     /* Denied rather than a granted session with an empty candidate list: a
      * grant with nothing in it sends the player to `fatal` with `no_candidates`,
      * which is a true statement made in the wrong place. */
@@ -340,15 +390,31 @@ describe("the transport gate", () => {
     /* The trail is rendered on the page and goes into a bug report screenshot.
      * `url-policy.ts` names the failure without repeating the URL, and nothing
      * here re-adds it. */
-    const result = await withOrigin("https://user:secret-token@rig.test");
+    const result = await withUri("https://user:secret-token@rig.test/media/720p.mp4");
     expect(result.status).toBe("denied");
     if (result.status !== "denied") return;
     expect(result.reasons.join(" ")).not.toContain("secret-token");
   });
 
   it("still admits a public https origin", async () => {
-    const result = await withOrigin("https://rig.test/media");
+    const result = await withUri("https://rig.test/media/720p.mp4");
     expect(result.status).toBe("ok");
+  });
+
+  it("runs over the fixture provider's own output too", async () => {
+    /*
+     * The gate is not bypassed for candidates that came from the provider this
+     * route actually uses -- it runs over whatever the resolver returned. The
+     * pinned origin is one the URL policy admits, so what this asserts is that
+     * all three survive rather than that any of them is dropped.
+     */
+    const result = await loadPlaybackSession(CONTENT_ID, () => ({
+      status: "resolved",
+      candidates: fixtureCandidates(CONTENT_ID, "https://rig.test/media")
+    }));
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") return;
+    expect(result.session.candidates.length).toBe(3);
   });
 
   it("needs both halves of the loopback permission, not just the source's", async () => {
@@ -362,18 +428,17 @@ describe("the transport gate", () => {
      * Asserted through the environment rather than by injecting a flag, because
      * the flag is exactly what this route must not let a source supply.
      */
+    const loopback = () => ({
+      status: "resolved" as const,
+      candidates: fixtureCandidates(CONTENT_ID, "http://127.0.0.1:8096")
+    });
+
     setNodeEnv("development");
-    const local = await loadPlaybackSession(CONTENT_ID, () => ({
-      status: "resolved",
-      candidates: FIXTURES.candidates(CONTENT_ID, "http://127.0.0.1:8096")
-    }));
+    const local = await loadPlaybackSession(CONTENT_ID, loopback);
     expect(local.status).toBe("ok");
 
     setNodeEnv("production");
-    const hosted = await loadPlaybackSession(CONTENT_ID, () => ({
-      status: "resolved",
-      candidates: FIXTURES.candidates(CONTENT_ID, "http://127.0.0.1:8096")
-    }));
+    const hosted = await loadPlaybackSession(CONTENT_ID, loopback);
     expect(hosted.status).toBe("denied");
     if (hosted.status !== "denied") return;
     expect(hosted.reasons.join(" ")).toContain("url_loopback_not_local_deployment");
@@ -492,25 +557,27 @@ describe("outcomes", () => {
      * IN TWO HALVES, UNPINNED AND PINNED, because the two claims have different
      * dependencies and only one of them is this route's. `resolveAuthorizedCandidates`
      * reads `LIBERTY_FIXTURE_MEDIA_ORIGIN` at module scope, so an operator whose
-     * rig is on `http://` or on a private host makes the default path answer
-     * `denied` -- correctly, by the transport gate. Requiring `ok` from it would
-     * fail this test for a reason it is not about, on that operator's machine
-     * only, which is why every sibling here pins an origin instead.
+     * rig is on `http://` or on a private host makes the default path refuse --
+     * correctly, and now as `error` rather than `denied`, because the origin is
+     * checked when the provider is constructed rather than when each candidate
+     * is published. Requiring `ok` from the unpinned half would fail this test
+     * for a reason it is not about, on that operator's machine only, which is
+     * why every sibling here pins an origin instead.
      */
 
     /* Origin-independent, and the half that is actually about "none is
      * injected": the route reached the fixture provider through its own default
-     * and got a non-empty list back. Both outcomes require that; neither
-     * `not-configured`, `error` nor `not-found` can. */
+     * and got an answer that only the fixture path can produce. Neither
+     * `not-configured` nor `not-found` can. */
     const byDefault = await loadPlaybackSession(CONTENT_ID);
-    expect(["ok", "denied"]).toContain(byDefault.status);
+    expect(["ok", "denied", "error"]).toContain(byDefault.status);
 
     /* The same provider, over an origin this file chose, so the failover and
      * transport properties are asserted against a rig no `.env.local` can
      * move. */
     const result = await loadPlaybackSession(CONTENT_ID, () => ({
       status: "resolved",
-      candidates: FIXTURES.candidates(CONTENT_ID, "https://rig.test/media")
+      candidates: fixtureCandidates(CONTENT_ID, "https://rig.test/media")
     }));
     expect(result.status).toBe("ok");
     if (result.status !== "ok") return;

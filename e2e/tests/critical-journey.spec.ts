@@ -89,8 +89,9 @@ test.beforeEach(() => {
 /**
  * Strings that only the fixture provider can put on this page.
  *
- * The file names are composed by `authorized-candidates.ts` and the ids are the
- * candidate ids it derives from the content id. On a build that resolves
+ * The file names are composed by the SDK's fixture provider,
+ * `packages/provider-sdk/src/fixture/provider.ts`, and the ids are the candidate
+ * ids it derives from the content id. On a build that resolves
  * candidates they reach the HTML whether or not the client hydrates: the session
  * is handed to `PlayerSurface`, a client component, so its props are serialised
  * into the streamed RSC payload that ships inside the document.
@@ -693,8 +694,9 @@ test("which branch the watch route takes is decided by the build, and both are a
    * THE WHOLE ARRAY, file names included, so the pairing is symmetric by
    * construction rather than by a second list somebody has to keep in step. The
    * file names belong here for the same reason the ids do: `fixtureUri` in
-   * `authorized-candidates.ts` composes `<origin>/<contentId>/<file>` through
-   * `URL`, so a configured rig changes the ORIGIN and never the three file
+   * `packages/provider-sdk/src/fixture/provider.ts` composes
+   * `<origin>/<contentId>/<file>` through `URL`, so a configured rig changes the
+   * ORIGIN and never the three file
    * names, and all three candidates share one origin -- so `checkUrl` and
    * `checkPlaybackSource` admit all three or none, and a page that reached
    * `status: "ok"` carries all three URIs. `fixtures.invalid` is the origin

@@ -6,7 +6,10 @@
  *
  *   1. `environment.ts` -- why a fabricated rights basis is a value that cannot
  *      be CONSTRUCTED in a production runtime, rather than one that is built and
- *      then withheld, and exactly what that does and does not establish.
+ *      then withheld, and exactly what that does and does not establish. It also
+ *      says why the runtime allowlist is NOT here: the deployment classifies its
+ *      own process, this package requires the classification to have happened,
+ *      and there is one allowlist rather than two that agree until they do not.
  *   2. `rights.ts` -- the declaration itself: a category from this package's own
  *      closed vocabularies, plus an OPAQUE internal reference that names a record
  *      in the operator's rights register and nothing else. No agreement text, no
@@ -21,13 +24,23 @@
  * one declares it and is confined to a non-production runtime because it cannot.
  */
 
-export { NON_PRODUCTION_RUNTIMES, NonProductionRuntime } from "./environment";
+/*
+ * `NonProductionRuntime` and `fixtureRightsBasis` are deliberately NOT re-
+ * exported, here or from `../index.ts`, and the omission is the mechanism rather
+ * than tidiness. `fixtureRightsBasis` is the only constructor of a fabricated
+ * `owned` declaration; keeping it off the public surface, together with the
+ * witness its signature demands, means a consumer cannot build that declaration
+ * without building a provider. `createFixtureProvider` mints the witness from
+ * the deployment's classification and is the only door. `./rights.ts` withholds
+ * its brand symbol for the same reason: a thing you can reach is a thing you can
+ * forge.
+ */
+export type { RuntimeClassification } from "./environment";
 
 export {
   FIXTURE_RIGHTS_REFERENCE,
   MAX_RIGHTS_REFERENCE_LENGTH,
   OPAQUE_RIGHTS_REFERENCE_PATTERN,
-  fixtureRightsBasis,
   isOpaqueRightsReference
 } from "./rights";
 export type { FixtureRightsBasis } from "./rights";

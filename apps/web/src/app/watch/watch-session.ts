@@ -39,13 +39,19 @@ import {
  * ("the watch page does not share that switch"), which is how a second copy of
  * a rights-asserting fixture set survives a review of the first one.
  *
- * THE FIXTURES ARE NOW THE SESSION API'S, IMPORTED RATHER THAN RESTATED.
- * `v1/playback/session/authorized-candidates.ts` is the one fixture provider:
- * one environment allowlist, one structured `RightsBasis`, one set of `null`
- * media facts, one `URL`-composed origin. A guarded-and-corrected copy here
- * would have satisfied every bullet of the fix and left the ARRANGEMENT that
- * produced the bug intact — two adapters asserting rights over the same
- * imaginary media, correct today by coincidence.
+ * THE FIXTURES ARE IMPORTED RATHER THAN RESTATED, and there is now exactly one
+ * implementation of them anywhere in the repository. The adapter lives in
+ * `@liberty/provider-sdk` (`src/fixture/`), where product invariant 3 says a
+ * provider adapter belongs; `v1/playback/session/authorized-candidates.ts`
+ * CONFIGURES it -- the operator's origin, the two halves of the loopback
+ * permission, the environment classification -- and this route reaches it
+ * through that module's resolver. One environment allowlist, one rights basis,
+ * one opaque-reference rule, one set of `null` media facts, one `URL`-composed
+ * origin. A guarded-and-corrected copy here would have satisfied every bullet of
+ * the fix and left the ARRANGEMENT that produced the bug intact — two adapters
+ * asserting rights over the same imaginary media, correct today by coincidence.
+ * The corrective that followed had to remove that arrangement a second time,
+ * because the first repair recreated it across a package boundary.
  *
  * AND THE FIXTURE BASIS IS NOW UNCONSTRUCTABLE ON A BUILD THAT SHIPS, which is
  * what closes the version of this defect that a comment cannot. `fixtureProvider`
