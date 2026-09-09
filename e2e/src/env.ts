@@ -226,12 +226,16 @@ export const DEPLOYMENT_PREAMBLE_REFUSAL: DeploymentPreambleRefusal =
  *
  * `lib/catalog-source-registry.ts` resolves `demoCatalogSource` only for a
  * `NonDeploymentEnvironment`, the same nominal witness the playback fixtures
- * need, so a deployment has no metadata source at all. The title route does not
- * go through that registry -- `demo-title-details.ts` needs a SYNCHRONOUS source
- * and says why -- but it calls `NonDeploymentEnvironment.classify()` itself, so
- * it is the same witness and the same gate rather than a second one. The demo
- * titles are
- * therefore present under `development` and absent under `production`, exactly
+ * need, so a deployment has no metadata source at all. THE TITLE ROUTE NOW GOES
+ * THROUGH THAT REGISTRY TOO, and no longer classifies anything itself. It needs a
+ * SYNCHRONOUS source, and the registry publishes
+ * `resolveSynchronousCatalogMetadataSource` for exactly that caller, so
+ * `demo-title-details.ts` names no implementation and classifies no environment:
+ * it forwards a `nodeEnv` it never interprets, and turns a `not-configured`
+ * resolution into `CatalogMetadataSourceNotConfiguredError`. One witness, one
+ * gate, one composition root, for every discovery surface rather than for all but
+ * one. The demo titles are therefore present under `development` and absent
+ * under `production`, exactly
  * as the playback fixtures are, and for the same stated reason -- serving
  * invented titles from a hosted build presents them to a reader as the product's
  * catalog.

@@ -128,9 +128,12 @@ export type AuthorizedCandidateResolver = (
  *     permission. `url-policy.ts` requires two independently-owned facts, and
  *     collapsing them into one owner is a defect this route has already had;
  *   - whether this instance is a local deployment, which is the DEPLOYMENT half
- *     of the same permission, read from the one classification in this app;
- *   - the classification that decides whether a fixture provider may be
- *     constructed at all.
+ *     of the same permission, read from the one classification this app
+ *     consults;
+ *   - obtaining the classification that decides whether a fixture provider may
+ *     be constructed at all. Performing it is not this module's job either --
+ *     that happens in `@liberty/contracts/shared/runtime` -- but asking for it
+ *     is, because this is where the answer is needed.
  * ---------------------------------------------------------------------- */
 
 /**
@@ -176,11 +179,12 @@ const FIXTURE_MEDIA_ORIGIN = process.env.LIBERTY_FIXTURE_MEDIA_ORIGIN ?? "https:
  * in step by hand.
  *
  * The allowlist is now expressed exactly once, in
- * `app/api/deployment-environment.ts`, and consumed rather than re-tested --
+ * `@liberty/contracts/shared/runtime`, and consumed rather than re-tested --
  * including by `@liberty/provider-sdk`, which held a same-shaped array of its
- * own until this corrective and now requires the classification to be handed to
- * it. That module also decides the shape of the consumption, and the two shapes
- * are different on purpose:
+ * own until PL-0301 and now requires an issued classification to be handed to
+ * it. `app/api/deployment-environment.ts` is this app's door to that module and
+ * decides the shape of the consumption; the two shapes are different on
+ * purpose:
  *
  *   - `isLocalDeployment()` for the callers that need a boolean to hand to
  *     `checkUrl`, or to decide whether a development-only route exists;
@@ -294,21 +298,24 @@ export type FixtureProviderResult =
  *
  * THE CHAIN, END TO END, because it now crosses a package boundary:
  *
- *   1. `NonDeploymentEnvironment` cannot be constructed outside
- *      `app/api/deployment-environment.ts` (private constructor, private field,
- *      so TypeScript compares it nominally), and the only way to obtain one is
- *      `classify`, which answers `null` for every environment outside the one
- *      allowlist. A caller cannot reach this function without handling that
- *      `null`, and deleting the check is a COMPILE ERROR rather than a silent
- *      widening;
- *   2. this function hands that witness to `createFixtureProvider` as the
- *      deployment's `RuntimeClassification` -- the SDK reads `nodeEnv` off it
- *      and classifies nothing itself, which is why there is no second allowlist
- *      in that package any more;
- *   3. `createFixtureProvider` mints its own nominal witness INSIDE the factory
- *      and builds the rights basis there. It is the only path to either that
- *      this app has: `NonProductionRuntime` and `fixtureRightsBasis` are not
- *      exported from `@liberty/provider-sdk`, and the package publishes one
+ *   1. `NonDeploymentEnvironment` is `ClassifiedRuntime` from
+ *      `@liberty/contracts/shared/runtime`, and cannot be built anywhere but
+ *      that module: its brand key is a `unique symbol` that module keeps to
+ *      itself, so no consumer can name the property and none can write it. The
+ *      only producer is `classifyRuntime`, which answers `null` for every
+ *      environment outside the one allowlist in this repository. A caller
+ *      cannot reach this function without handling that `null`, and deleting
+ *      the check is a COMPILE ERROR rather than a silent widening;
+ *   2. this function hands that capability to `createFixtureProvider`
+ *      unchanged. It is not re-boxed on the way through, so the object the SDK
+ *      receives is the object the classification issued;
+ *   3. `createFixtureProvider` asks the contracts module's registry whether
+ *      that exact object was issued -- the check a brand alone cannot make,
+ *      because a cast and a spread copy both type-check -- refuses by name if
+ *      it was not, and only then mints its own nominal witness INSIDE the
+ *      factory and builds the rights basis there. It is the only path to either
+ *      that this app has: `NonProductionRuntime` and `fixtureRightsBasis` are
+ *      not exported from `@liberty/provider-sdk`, and the package publishes one
  *      entry point, so neither can be named here at all. The fabricated `owned`
  *      declaration is therefore a value that CANNOT BE BUILT from this app
  *      except by going through step 1, rather than a value that is built and
@@ -316,7 +323,9 @@ export type FixtureProviderResult =
  *
  * What it does not do is defend against an edit to those modules. Nothing in
  * TypeScript can. What it defends against is the way this defect actually
- * recurs: a change somewhere else that quietly stops consulting the gate.
+ * recurs: a change somewhere else that quietly stops consulting the gate, or a
+ * call site that writes the permission-granting argument itself -- which is
+ * what the old structural `{ nodeEnv }` interface allowed and PL-0706 removed.
  *
  * A REMAINING GAP, recorded rather than papered over: a hosted deployment that
  * exports `NODE_ENV=development` and runs `next dev` still gets a witness.
@@ -345,15 +354,17 @@ export function fixtureProvider(
      * own origin. */
     allowLoopback: originIsLoopback(origin),
     /*
-     * The DEPLOYMENT half, and it is answered from the witness rather than from
-     * a fresh read of `process.env`. Holding a `NonDeploymentEnvironment` means
-     * `classify` already accepted this `NODE_ENV`, so `isLocalDeployment` --
-     * which is one line over the same `classify` -- necessarily answers `true`
-     * for it. Passing the value through the app's own accessor rather than
-     * writing `true` keeps the two answers derived from ONE allowlist, and
-     * passing the witness's recorded `nodeEnv` rather than re-reading the
-     * process means the origin gate here and the per-candidate gate in
-     * `issue-session.ts` cannot be looking at two different environments.
+     * The DEPLOYMENT half, and it is answered from the classification rather
+     * than from a fresh read of `process.env`. An ISSUED classification names a
+     * `NODE_ENV` the allowlist already admitted, so `isLocalDeployment` -- which
+     * is one line over the same `classifyRuntime` -- necessarily answers `true`
+     * for it; a value the classification did not issue is refused outright by
+     * `createFixtureProvider` whatever this line computes. Passing the value
+     * through the app's own accessor rather than writing `true` keeps the two
+     * answers derived from ONE allowlist, and passing the recorded `nodeEnv`
+     * rather than re-reading the process means the origin gate here and the
+     * per-candidate gate in `issue-session.ts` cannot be looking at two
+     * different environments.
      */
     localDeployment: isLocalDeployment(environment.nodeEnv)
   });

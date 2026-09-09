@@ -8,8 +8,7 @@ import {
   selectDeclaredItems,
   type SynchronousCatalogMetadataSource
 } from "../../lib/catalog-source";
-import { demoCatalogSource } from "../../lib/demo-catalog";
-import { NonDeploymentEnvironment } from "../api/deployment-environment";
+import { resolveSynchronousCatalogMetadataSource } from "../../lib/catalog-source-registry";
 
 /**
  * Fictional development fixtures for the title surface, built from the same
@@ -20,12 +19,21 @@ import { NonDeploymentEnvironment } from "../api/deployment-environment";
  * about the same work and nothing would catch it. Only the fields a detail view
  * adds — synopsis, presentation facts, the episode list — are declared here.
  *
- * IT NO LONGER IMPORTS `demoCatalog` DIRECTLY, and that is the point of this
- * change. The raw fixture array is ungated; reading it meant a hosted deployment
+ * IT NAMES NO IMPLEMENTATION, which it has not managed until now. It first
+ * imported the raw `demoCatalog` array, which is ungated: a hosted deployment
  * served invented titles from `/title/:id` while the home rails, already routed
- * through the port, refused. `docs/CATALOG_SOURCE.md` names that pair as
- * incoherent. The lookups below go through `CatalogMetadataSource`, so the
- * fixtures are not withheld from a deployment — they are unconstructible in one.
+ * through the port, refused, and `docs/CATALOG_SOURCE.md` names that pair as
+ * incoherent. The fix for that reached `demoCatalogSource` instead — gated, but
+ * still an implementation named here and an environment classified here, which
+ * made this a second module that knew both halves. Neither is imported now: the
+ * lookups below take a `SynchronousCatalogMetadataSource` from
+ * `lib/catalog-source-registry.ts`, the one composition root.
+ *
+ * The fixtures are still not withheld from a deployment — they are
+ * UNCONSTRUCTIBLE in one, because the registry cannot build `demoCatalogSource`
+ * without the `NonDeploymentEnvironment` witness. What reaches this module on a
+ * deployment is the registry's refusal, which `configuredSource` below turns into
+ * `CatalogMetadataSourceNotConfiguredError`.
  *
  * The extras declared in this file (synopsis, technical metadata, episodes) are
  * still fixtures with no source behind them, and they are still replaced when an
@@ -248,50 +256,69 @@ export class CatalogMetadataSourceNotConfiguredError extends Error {
 /**
  * The metadata source for this process, or a refusal.
  *
- * IT REACHES THE FIXTURE SOURCE DIRECTLY RATHER THAN THROUGH
- * `resolveCatalogMetadataSource`, and that is a wart with a reason.
+ * IT ASKS THE REGISTRY AND NAMES NO IMPLEMENTATION.
+ * `resolveSynchronousCatalogMetadataSource` is the registry's accessor for a
+ * caller that cannot await, and that is what this surface is:
  * `findDemoTitleDetail` is synchronous because `getTitleDetail` in
- * `title-detail.ts` is, and the registry's resolution carries a
- * `CatalogMetadataSource` whose `listRecords` and `findRecord` may answer with a
- * promise — correct for a real provider and unusable from a synchronous caller.
- * The registry used to carry `readFixtureCatalogItems`, which made the same
- * compromise for the same reason. It has been deleted, together with
- * `getHomeCatalog` — the one caller it existed to serve — now that the home route
- * awaits `loadHomeCatalog`. It was never usable here in any case: it answered
- * `[]` on a deployment, which is exactly the collapse of "refused" into "empty"
- * this module has to avoid.
+ * `title-detail.ts` is. This function used to classify `NODE_ENV` itself and
+ * construct `demoCatalogSource` itself, because the registry's only accessor
+ * carried a `CatalogMetadataSource` whose `listRecords` and `findRecord` may
+ * answer with a promise — correct for a real provider and unusable from here.
+ * The narrowing now lives in the registry, so the choice of implementation and
+ * the environment gate are made in one file for every discovery surface, and
+ * this one only translates the outcome into the vocabulary the title page
+ * publishes.
  *
- * The consequence is that a real provider does not land behind this function. It
- * lands in the registry, and this surface has to become asynchronous along with
- * the loader above it — the follow-up the home path has already completed and
- * this one has not.
+ * IT IS NOT THE OLD `readFixtureCatalogItems`. That accessor returned
+ * `readonly CatalogItem[]` and answered `[]` on a deployment, which is exactly
+ * the collapse of "refused" into "empty" this module has to avoid; it was
+ * deleted along with `getHomeCatalog`, its one caller. What the registry answers
+ * now is a tagged resolution, so the refusal below is a branch on a named status
+ * rather than a guess about what an empty list meant.
+ *
+ * A REAL PROVIDER STILL DOES NOT LAND BEHIND THIS FUNCTION, and the reason is
+ * unchanged — it does I/O, and this call site cannot await. What has changed is
+ * where that shows up: a provider that cannot answer synchronously is not
+ * assignable to `SynchronousCatalogMetadataSource`, so it is the REGISTRY that
+ * fails to compile, in the one file that composes sources, rather than this
+ * surface silently keeping a private route to the fixtures. The migration is the
+ * same one `docs/CATALOG_SOURCE.md` records: this function and the loader above
+ * it become asynchronous, and the narrow accessor disappears with them.
+ *
+ * THE REGISTRY'S REASON IS NOT REPUBLISHED VERBATIM. It refuses with
+ * `no_metadata_source_configured`; the page's vocabulary is
+ * `catalog_source_not_configured`, which is what the home rails and the search
+ * surface already publish and what `[titleId]/page.tsx` renders. The two are the
+ * same fact under two vocabularies today, so the mapping is total. If the
+ * registry ever names a second reason — a source that exists but cannot answer
+ * without awaiting — this branch has to choose what a reader is told rather than
+ * continuing to publish this one.
  *
  * `nodeEnv` IS A PARAMETER SO THE REFUSAL IS REACHABLE FROM A TEST, the same
- * arrangement `resolveCatalogMetadataSource` and `getSearchResults` use: a suite
- * states the environment it means instead of mutating `process.env` and racing
- * every other suite in the same worker. It is NOT a request input — nothing on
- * the title route passes one — and it defaults to a read of the process boundary
- * at CALL time, never at module scope, for the reason
+ * arrangement the registry and `getSearchResults` use: a suite states the
+ * environment it means instead of mutating `process.env` and racing every other
+ * suite in the same worker. It is NOT a request input — nothing on the title
+ * route passes one — and it is forwarded to the registry, which forwards it to
+ * `classify`. Every default on that chain, including this one, is a read of the
+ * process boundary at CALL time and never at module scope, for the reason
  * `deployment-environment.ts` gives: a module-scope read freezes the answer to
- * whatever the process looked like when the first route was loaded.
+ * whatever the process looked like when the first route was loaded. Only one of
+ * those defaults ever runs, because a hop that was given a value passes it on.
  *
- * Passing `undefined` EXPLICITLY re-enters that default and reads
+ * Passing `undefined` EXPLICITLY re-enters a default and therefore reads
  * `process.env.NODE_ENV`, which under vitest is `test` and therefore on the
  * allowlist. A caller that means "no environment was stated" passes `""`, which
  * is how `classify` itself spells an unset variable (`?? ""`).
- *
- * `NonDeploymentEnvironment` cannot be constructed outside that module and
- * `demoCatalogSource` requires one, so there is no expression here that reaches
- * the fixtures without handling the `null` — deleting the check is a compile
- * error rather than a silent widening.
  */
 function configuredSource(
   nodeEnv: string | undefined = process.env.NODE_ENV
 ): SynchronousCatalogMetadataSource {
-  const environment = NonDeploymentEnvironment.classify(nodeEnv);
-  if (environment === null) throw new CatalogMetadataSourceNotConfiguredError();
+  const resolution = resolveSynchronousCatalogMetadataSource(nodeEnv);
+  if (resolution.status === "not-configured") {
+    throw new CatalogMetadataSourceNotConfiguredError();
+  }
 
-  return demoCatalogSource(environment);
+  return resolution.source;
 }
 
 /**

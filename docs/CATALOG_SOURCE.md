@@ -29,6 +29,18 @@ is all it is.
 | `apps/web/src/lib/demo-catalog.ts` | One implementation: the development fixtures, gated. |
 | `apps/web/src/lib/catalog-source-registry.ts` | The only module that knows both. A real source lands here. |
 
+The registry has two accessors and one composition. `resolveCatalogMetadataSource`
+answers the port as published — `listRecords` and `findRecord` may return a
+promise, which is what a real provider needs.
+`resolveSynchronousCatalogMetadataSource` answers the same question for a caller
+that cannot await, returning a `SynchronousCatalogMetadataSource` or the same
+named refusal; the first delegates to the second, so the environment gate is
+classified once. Its one caller is the title surface (follow-up 5 below). It is
+**not** a return to the deleted `readFixtureCatalogItems`: that function returned
+`readonly CatalogItem[]` and answered `[]` on a deployment, collapsing "refused"
+into "empty"; both accessors return a tagged resolution, and neither can answer
+anything a caller could mistake for an empty catalog.
+
 ```ts
 interface CatalogMetadataSource {
   readonly sourceId: string;
@@ -131,10 +143,15 @@ rather than deleted, because each one is why a surface looks the way it does now
    so `loadSearchResults` can report a reason rather than "nothing matched".
 2. **Done — `apps/web/src/app/title/demo-title-details.ts`.** Its lookup goes
    through `findRecord` and its episode scan through `listRecords`, both obtained
-   from `demoCatalogSource` behind the `NonDeploymentEnvironment` witness. Because
-   the module already spends `null` on not-found, a process with no source
-   **throws** `CatalogMetadataSourceNotConfiguredError`, which `title-detail.ts`
-   maps by `instanceof`.
+   from `resolveSynchronousCatalogMetadataSource`. Because the module already
+   spends `null` on not-found, a process with no source **throws**
+   `CatalogMetadataSourceNotConfiguredError`, which `title-detail.ts` maps by
+   `instanceof`. It imports no implementation and classifies no environment: the
+   first version of this migration reached `demoCatalogSource` and called
+   `NonDeploymentEnvironment.classify` itself, which made a second module that
+   knew both the port and an implementation and contradicted the rule stated at
+   the top of this document. The witness is still what guards the fixtures; it is
+   now presented in the registry, once, for every discovery surface.
 3. **Done — `apps/web/src/app/api/v1/catalog/home/route.ts`.** It awaits
    `loadHomeCatalog()` and hands the result to a new `handler.ts`, which answers
    503 for both `catalog_source_not_configured` and `catalog_source_unavailable`
@@ -160,8 +177,18 @@ lane read the way they do.
    `getTitleDetail` answer without awaiting, so a real provider — which does
    I/O — cannot land behind them. It lands in the registry, and this surface has
    to become asynchronous along with the loader above it, the same edit the home
-   path has already made. `SynchronousCatalogMetadataSource` exists for exactly
-   this caller and is what disappears when the edit lands.
+   path has already made. `SynchronousCatalogMetadataSource` and
+   `resolveSynchronousCatalogMetadataSource` exist for exactly this caller and are
+   what disappear when the edit lands.
+
+   The narrow accessor does not postpone that edit; it is what forces it into
+   view. A source that does I/O is not assignable to
+   `SynchronousCatalogMetadataSource`, so the day one is configured the compile
+   error is in the registry, in the one file that composes sources. Whoever makes
+   that edit then chooses on purpose between finishing the async migration and
+   giving the refusal a second reason — a source is configured, and it cannot
+   answer without awaiting. Neither is written today, because neither is true
+   today.
 6. **Done — `docs/E2E.md` and the e2e harness have caught up.** This item
    recorded four surfaces outside this lane that still described the
    pre-migration behaviour. All four have since been corrected, checked one at a
@@ -223,14 +250,34 @@ Named so nobody reads a port as a product.
   but not its rights cannot express it as a `CatalogItem` at all, and the port
   works around it by making the *basis* the nullable half. The deeper fix is a
   contract change in `packages/contracts` and needs its own review.
-- **The rights reference's shape is unenforced.**
-  `apps/web/src/app/api/v1/playback/session/authorized-candidates.ts` owns
-  `OPAQUE_RIGHTS_REFERENCE_PATTERN`, which mechanically excludes prose, URLs and
-  addresses. The port does not apply it: importing that module would pull
-  `@liberty/media-engine` and `@liberty/provider-sdk` into the module graph of
-  every surface that renders a card, and restating the pattern would put a second
-  spelling of a rights rule in the repository. The fix is to move the predicate
-  into a leaf module both sides can reach.
+- **The rights reference's shape is unenforced on the catalog path.** The rule
+  itself is no longer homeless: `isOpaqueRightsReference`,
+  `OPAQUE_RIGHTS_REFERENCE_PATTERN` and `MAX_RIGHTS_REFERENCE_LENGTH` are
+  exported from `@liberty/provider-sdk`'s root — that export is the stable
+  address; the file behind it is `packages/provider-sdk/src/fixture/rights.ts`
+  today — and the copy that used to sit in
+  `apps/web/src/app/api/v1/playback/session/authorized-candidates.ts` is gone —
+  that module consumes the SDK and states no pattern of its own. *This document
+  and `catalog-source.ts` both used to say the predicate was owned by
+  `authorized-candidates.ts` and that the fix was to move it to a leaf module.
+  Both statements were false by the time they were read; the move had already
+  happened.* What is still true is that **the port does not apply the rule**, so a
+  catalog rights reference can be any string. Two things stand in the way, and
+  neither is the old one:
+  - `@liberty/provider-sdk` publishes a single entry point (`"exports":
+    "./src/index.ts"`, no subpaths), so importing the predicate pulls the SDK's
+    root index — fixture provider, health scoring, Stremio vocabulary — into the
+    module graph of every surface that renders a card. A subpath export would
+    remove the objection; that is an edit to a package manifest. It is *not* true,
+    as the older note claimed, that this would pull `@liberty/media-engine`: the
+    SDK depends on `@liberty/contracts` and `zod` only.
+  - Applying it is a behaviour change, not a tidy-up. Records would start being
+    refused for the shape of an identifier nothing reads, which needs a third
+    `CatalogRecordRefusalReason` and a rights decision about whether an
+    unparseable reference should withhold a work from browse at all.
+
+  Restating the pattern inside `apps/web` stays refused either way: a second
+  spelling of a rights rule is the defect the SDK's own comment exists to prevent.
 - **Episodes.** They are not catalog entities here; `demo-title-details.ts`
   generates them from a series' `episodeCount`. A real source states them, and
   where they live is an open question.

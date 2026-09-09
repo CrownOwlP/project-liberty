@@ -1,145 +1,15 @@
 {
-  "generatedAt": "2026-09-08T15:52:11.393Z",
+  "generatedAt": "2026-09-09T04:10:22.853Z",
   "agent": "claude-frontend",
   "executionAvailable": true,
   "assigned": [
-    {
-      "id": "PL-0104",
-      "priority": "P0",
-      "lane": "Frontend",
-      "status": "REVIEW",
-      "title": "Make catalog and search results navigable",
-      "dependencies": [
-        "PL-0102",
-        "PL-0103"
-      ],
-      "allowedPaths": [
-        "apps/web/src/components/catalog-card.tsx",
-        "apps/web/src/lib/routes.ts",
-        "apps/web/src/lib/routes.test.ts"
-      ],
-      "reviewDependencies": [
-        "apps/web/src/app/title/title-detail.ts",
-        "apps/web/src/components/catalog-rail.tsx",
-        "apps/web/src/components/search/search-results.tsx"
-      ],
-      "preferredAgent": "claude-frontend",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "lint",
-        "typecheck",
-        "unit",
-        "build"
-      ],
-      "acceptance": "Every catalog and search result opens its title details page, with an accessible link name",
-      "owner": "claude-frontend",
-      "gateResults": {
-        "lint": {
-          "status": "pass",
-          "at": "2026-09-05T17:47:40.168Z",
-          "by": "claude-frontend",
-          "commitSha": "c47e1bba1890e8cdc911b8b1db19abfeff81d7be",
-          "evidence": "npm run check exit 0 under pinned Node 22, this round, on the committed tree"
-        },
-        "typecheck": {
-          "status": "pass",
-          "at": "2026-09-05T17:47:40.610Z",
-          "by": "claude-frontend",
-          "commitSha": "c47e1bba1890e8cdc911b8b1db19abfeff81d7be",
-          "evidence": "turbo run typecheck via npm run check, exit 0, this round"
-        },
-        "unit": {
-          "status": "pass",
-          "at": "2026-09-05T17:47:41.050Z",
-          "by": "claude-frontend",
-          "commitSha": "c47e1bba1890e8cdc911b8b1db19abfeff81d7be",
-          "evidence": "vitest via npm run check, exit 0, this round, including apps/web/src/lib/routes.test.ts -- the file this task's allowedPaths named and that did not exist until 719d2d7; it covers the unrouted branch as carefully as the routable one, which is the point of the union"
-        },
-        "build": {
-          "status": "pass",
-          "at": "2026-09-05T17:47:41.489Z",
-          "by": "claude-frontend",
-          "commitSha": "c47e1bba1890e8cdc911b8b1db19abfeff81d7be",
-          "evidence": "next build via npm run check, exit 0, this round"
-        }
-      },
-      "implementationAgent": "claude-frontend",
-      "updatedAt": "2026-09-08T04:32:43.536Z",
-      "implementationBaseSha": "c3bb856f3d8c122acd46d5331067fac3a0266f2b",
-      "implementationBaseProvenance": {
-        "kind": "reconciled-existing-implementation",
-        "baseSha": "c3bb856f3d8c122acd46d5331067fac3a0266f2b",
-        "reconciledAt": "2026-09-05T17:47:39.745Z",
-        "reconciledBy": "claude-frontend",
-        "implementationAgent": "claude-frontend",
-        "headAtReconciliation": "c47e1bba1890e8cdc911b8b1db19abfeff81d7be",
-        "reviewSurface": "allowedPaths",
-        "surfaceCommitCount": 2,
-        "oldestSurfaceCommit": "b7bc31cb2799cf6838c5acdf5cefd906c5e699ca",
-        "newestSurfaceCommit": "719d2d7c31465901f3dbee1e936a180e87c3d44f",
-        "surfaceCommits": [
-          "719d2d7c31465901f3dbee1e936a180e87c3d44f",
-          "b7bc31cb2799cf6838c5acdf5cefd906c5e699ca"
-        ],
-        "surfaceCommitsTruncated": false,
-        "changedFileCount": 3,
-        "baseCommitSurfaceTouchCount": 0,
-        "baseCommitSurfaceTouches": [],
-        "baseCommitSurfaceTouchesTruncated": false,
-        "reason": "PL-0104's implementation predates its claim and is already in committed history, so an ordinary start would record a base that is false. The base was DERIVED, not chosen: git log --reverse over apps/web/src/lib/routes.ts gives the first commit that ever introduced the lane's own module, and this is that commit's parent. catalog-card.tsx was deliberately excluded from the derivation because the repository's root commit b484735 shipped a 14-line scaffold of it, which would have put the base before the repository existed and produced exactly the false field this path exists to prevent. The lane begins at b7bc31c, 'Four lanes: unforgeable pins, navigable results, persistence conflict rules, recommendation honesty' -- navigable results is this task -- and the missing apps/web/src/lib/routes.test.ts, named in this task's own allowedPaths, was added in 719d2d7. Both are inside base..HEAD. The commit window, both endpoints and the base commit's own surface touches are published for the reviewer to check that no earlier commit belongs to this implementation."
-      },
-      "review": {
-        "taskId": "PL-0104",
-        "implementationAgent": "claude-frontend",
-        "implementationOwner": "claude-frontend",
-        "reviewerAgent": "gpt-architect",
-        "reviewerClass": "external-reasoning",
-        "reviewerProvider": "openai",
-        "reviewedCommitSha": "5b59c6c2dc2bd45c6459a279ef3c38446a5db243",
-        "reviewedBaseSha": "c3bb856f3d8c122acd46d5331067fac3a0266f2b",
-        "reviewedTreeHash": "a5e091178e1123a4dc40df28b75fdd933f3095f3712d1d8bf6eeaedcc56f5cec",
-        "reviewedFileCount": 6,
-        "reviewedFingerprintSource": "git-object",
-        "reviewedDependencies": [
-          "apps/web/src/app/title/title-detail.ts",
-          "apps/web/src/components/catalog-rail.tsx",
-          "apps/web/src/components/search/search-results.tsx"
-        ],
-        "outcome": "CHANGES_REQUESTED",
-        "reviewedAt": "2026-09-08T04:32:37.771Z",
-        "evidence": "CHANGES_REQUESTED for review-surface completeness, not for the link implementation. CatalogCard renders the visible title as the Next link name and the route resolver refuses known-broken ids, but the task fingerprint does not include the external titleHref definition or the two consumer modules whose wiring makes the acceptance true for home rails and search results. Add title-detail.ts, catalog-rail.tsx, and search-results.tsx as reviewDependencies rather than write paths. With those dependencies bound, the reconciled implementation range is credible and the code is otherwise approvable, with the stated coverage limitation that no PL-0104 gate mounts the component or clicks the link in a browser. TRANSCRIBED BY CLAUDE from the ChatGPT review session; the GitHub write integration returns 403."
-      },
-      "reviewHistory": [
-        {
-          "taskId": "PL-0104",
-          "implementationAgent": "claude-frontend",
-          "implementationOwner": "claude-frontend",
-          "reviewerAgent": "gpt-architect",
-          "reviewerClass": "external-reasoning",
-          "reviewerProvider": "openai",
-          "reviewedCommitSha": "5b59c6c2dc2bd45c6459a279ef3c38446a5db243",
-          "reviewedBaseSha": "c3bb856f3d8c122acd46d5331067fac3a0266f2b",
-          "reviewedTreeHash": "a5e091178e1123a4dc40df28b75fdd933f3095f3712d1d8bf6eeaedcc56f5cec",
-          "reviewedFileCount": 6,
-          "reviewedFingerprintSource": "git-object",
-          "reviewedDependencies": [
-            "apps/web/src/app/title/title-detail.ts",
-            "apps/web/src/components/catalog-rail.tsx",
-            "apps/web/src/components/search/search-results.tsx"
-          ],
-          "outcome": "CHANGES_REQUESTED",
-          "reviewedAt": "2026-09-08T04:32:37.771Z",
-          "evidence": "CHANGES_REQUESTED for review-surface completeness, not for the link implementation. CatalogCard renders the visible title as the Next link name and the route resolver refuses known-broken ids, but the task fingerprint does not include the external titleHref definition or the two consumer modules whose wiring makes the acceptance true for home rails and search results. Add title-detail.ts, catalog-rail.tsx, and search-results.tsx as reviewDependencies rather than write paths. With those dependencies bound, the reconciled implementation range is credible and the code is otherwise approvable, with the stated coverage limitation that no PL-0104 gate mounts the component or clicks the link in a browser. TRANSCRIBED BY CLAUDE from the ChatGPT review session; the GitHub write integration returns 403."
-        }
-      ]
-    },
     {
       "id": "PL-0105",
       "priority": "P0",
       "lane": "Frontend",
       "status": "REVIEW",
       "title": "Catalog metadata source port, and the surfaces still importing the fixture array",
-      "notes": "Closes a control-plane gap as well as a code one. The port landed with no task covering it: PL-0104 declares only catalog-card.tsx, routes.ts and routes.test.ts, so apps/web/src/lib/catalog-source.ts, catalog-source-registry.ts, their tests and docs/CATALOG_SOURCE.md sat outside every declared surface - unreserved against a parallel writer, and outside any approval fingerprint. This task declares that surface and carries the three import migrations docs/CATALOG_SOURCE.md lists as follow-ups. lib/catalog.ts and lib/demo-catalog.ts are reviewDependencies rather than allowedPaths: the port's wiring lives in them and an approval has to bind to it, but they are not this task's to rewrite. The e2e mode split that catalog.api.spec.ts needs once the fixtures stop reaching a production build is deliberately NOT here, because e2e/** belongs to PL-0701; until it lands, that spec fails in the harness's default production mode and .github/workflows/ci.yml says so at the job that runs it.",
+      "notes": "Closes a control-plane gap as well as a code one. The port landed with no task covering it: PL-0104 declares only catalog-card.tsx, routes.ts and routes.test.ts, so apps/web/src/lib/catalog-source.ts, catalog-source-registry.ts, their tests and docs/CATALOG_SOURCE.md sat outside every declared surface - unreserved against a parallel writer, and outside any approval fingerprint. This task declares that surface and carries the three import migrations docs/CATALOG_SOURCE.md lists as follow-ups. lib/catalog.ts and lib/demo-catalog.ts are reviewDependencies rather than allowedPaths: the port's wiring lives in them and an approval has to bind to it, but they are not this task's to rewrite. The e2e mode split that catalog.api.spec.ts needs once the fixtures stop reaching a production build is deliberately NOT here, because e2e/** belongs to PL-0701; until it lands, that spec fails in the harness's default production mode and .github/workflows/ci.yml says so at the job that runs it. DECLARATION GAP CLOSED: e2e/src/env.ts added to allowedPaths. It was edited this round and no task declared it as a write path -- it sat only in PL-0706's reviewDependencies, which is a READ-ONLY surface by contract, so the edit was a genuine contract violation and an approval on either task would have bound to a surface narrower than the diff. The edit is THIS task's, not PL-0706's: the rewritten CATALOG_AVAILABILITY commentary is entirely about the port and the import migrations named in this task's acceptance -- the title route now resolving through lib/catalog-source-registry.ts via resolveSynchronousCatalogMetadataSource so demo-title-details.ts classifies no environment, the four discovery surfaces refusing in the single catalog_source_not_configured vocabulary, and the deletion of readFixtureCatalogItems from catalog-source-registry.ts together with getHomeCatalog from lib/catalog.ts. Its only reference to the runtime witness is the unchanged phrase 'the same nominal witness the playback fixtures need', which was true before PL-0706's move and is true after it; nothing in this file names a class, a constructor or classifyRuntime. env.ts is deliberately LEFT in PL-0706's reviewDependencies rather than removed: WEB_MODE and MANAGES_SERVER decide that task's production-versus-development assertion, so its approval must keep fingerprinting this file even though it does not own it -- which is exactly what the two-surface split is for, and is not the same-task allowedPaths/reviewDependencies redundancy the validator warns on. Collision-checked: e2e/src/env.ts is prefix-disjoint from every allowedPaths entry of PL-0203 (claude-media), PL-AI-0005 (claude-lead) and PL-0706 (claude-security, whose e2e entries are e2e/tests/*.spec.ts and e2e/src/fixtures.ts), and PL-0104 shares this task's owner so cannot conflict. PL-0701 declares e2e/** but is BACKLOG and unowned, and already latently contains this task's apps/web paths and PL-0706's e2e specs, so nothing new is created there.",
       "dependencies": [
         "PL-0102",
         "PL-0103"
@@ -152,7 +22,8 @@
         "apps/web/src/app/search/**",
         "apps/web/src/app/title/demo-title-details.ts",
         "apps/web/src/app/api/v1/catalog/home/**",
-        "docs/CATALOG_SOURCE.md"
+        "docs/CATALOG_SOURCE.md",
+        "e2e/src/env.ts"
       ],
       "reviewDependencies": [
         "apps/web/src/lib/catalog.ts",

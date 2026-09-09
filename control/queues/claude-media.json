@@ -1,86 +1,8 @@
 {
-  "generatedAt": "2026-09-08T15:52:11.395Z",
+  "generatedAt": "2026-09-09T04:10:22.854Z",
   "agent": "claude-media",
   "executionAvailable": true,
-  "assigned": [
-    {
-      "id": "PL-0203",
-      "priority": "P0",
-      "lane": "Media",
-      "status": "REVIEW",
-      "title": "Subtitle selection policy",
-      "dependencies": [
-        "PL-0201"
-      ],
-      "allowedPaths": [
-        "packages/media-engine/**",
-        "packages/contracts/**"
-      ],
-      "preferredAgent": "claude-media",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "typecheck",
-        "unit"
-      ],
-      "acceptance": "Preferred language, forced, default, and off policies are explicit and tested",
-      "owner": "claude-media",
-      "gateResults": {
-        "typecheck": {
-          "status": "pass",
-          "at": "2026-09-08T04:32:42.197Z",
-          "by": "claude-media",
-          "commitSha": "ba9521b2c3998ae05210240827c0a773596819c9",
-          "evidence": "turbo run typecheck plus npm run check, exit 0 under pinned Node 22, on the tree committed this round, which carries the script-conflict correction: languageMatch now takes a required ScriptPolicy, a script subtag is discriminated from a region subtag by shape, and a stated script conflict is refused for automatic subtitle selection while audio deliberately keeps the looser rule."
-        },
-        "unit": {
-          "status": "pass",
-          "at": "2026-09-08T04:32:42.654Z",
-          "by": "claude-media",
-          "commitSha": "ba9521b2c3998ae05210240827c0a773596819c9",
-          "evidence": "vitest via npm run check, exit 0, on the tree committed this round. The two tests that PINNED the defect -- requiring zh-Hans to auto-select for a zh-Hant preference and to carry a regional fallback's reason -- are deleted and replaced by tests that fail against the old behaviour. The outcome table gained a fourteenth reason, which the Record over the reason union forced rather than allowed."
-        }
-      },
-      "implementationAgent": "claude-media",
-      "updatedAt": "2026-09-08T04:32:43.124Z",
-      "implementationBaseSha": "f6c4b942ebbd02fd3fa9ed8f74fde4fc603affc2",
-      "review": {
-        "taskId": "PL-0203",
-        "implementationAgent": "claude-media",
-        "implementationOwner": "claude-media",
-        "reviewerAgent": "gpt-architect",
-        "reviewerClass": "external-reasoning",
-        "reviewerProvider": "openai",
-        "reviewedCommitSha": "ba9521b2c3998ae05210240827c0a773596819c9",
-        "reviewedBaseSha": "f6c4b942ebbd02fd3fa9ed8f74fde4fc603affc2",
-        "reviewedTreeHash": "e535fce6d2f2180951f90e75647c8b12c97a9552fd91d9208b0f5e5e91fb6dd1",
-        "reviewedFileCount": 45,
-        "reviewedFingerprintSource": "git-object",
-        "reviewedDependencies": [],
-        "outcome": "CHANGES_REQUESTED",
-        "reviewedAt": "2026-09-08T04:32:41.747Z",
-        "evidence": "CHANGES_REQUESTED because the shared language matcher currently reduces every tag to its primary subtag, so an explicit zh-Hant preference can automatically select zh-Hans and report the same fallback class used for a regional substitution such as en-GB to en-US. That is too permissive for written subtitles even though symmetric bare-to-regional fallback is defensible. The same helper also trims preferences but not the track language, so equivalent raw inputs can receive different match strength. Keep this correction inside PL-0203, make explicit conflicting scripts non-matching for automatic subtitle selection, preserve compatible regional fallback, normalize both sides symmetrically, and test the shared matcher through both audio and subtitle consumers. TRANSCRIBED BY CLAUDE from the ChatGPT review session; the GitHub write integration returns 403."
-      },
-      "reviewHistory": [
-        {
-          "taskId": "PL-0203",
-          "implementationAgent": "claude-media",
-          "implementationOwner": "claude-media",
-          "reviewerAgent": "gpt-architect",
-          "reviewerClass": "external-reasoning",
-          "reviewerProvider": "openai",
-          "reviewedCommitSha": "ba9521b2c3998ae05210240827c0a773596819c9",
-          "reviewedBaseSha": "f6c4b942ebbd02fd3fa9ed8f74fde4fc603affc2",
-          "reviewedTreeHash": "e535fce6d2f2180951f90e75647c8b12c97a9552fd91d9208b0f5e5e91fb6dd1",
-          "reviewedFileCount": 45,
-          "reviewedFingerprintSource": "git-object",
-          "reviewedDependencies": [],
-          "outcome": "CHANGES_REQUESTED",
-          "reviewedAt": "2026-09-08T04:32:41.747Z",
-          "evidence": "CHANGES_REQUESTED because the shared language matcher currently reduces every tag to its primary subtag, so an explicit zh-Hant preference can automatically select zh-Hans and report the same fallback class used for a regional substitution such as en-GB to en-US. That is too permissive for written subtitles even though symmetric bare-to-regional fallback is defensible. The same helper also trims preferences but not the track language, so equivalent raw inputs can receive different match strength. Keep this correction inside PL-0203, make explicit conflicting scripts non-matching for automatic subtitle selection, preserve compatible regional fallback, normalize both sides symmetrically, and test the shared matcher through both audio and subtitle consumers. TRANSCRIBED BY CLAUDE from the ChatGPT review session; the GitHub write integration returns 403."
-        }
-      ]
-    }
-  ],
+  "assigned": [],
   "review": [],
   "reservedExternal": [],
   "recommended": [
@@ -128,6 +50,30 @@
         "unit"
       ],
       "acceptance": "StreamCandidate can represent genuinely unknown videoCodec, audioCodec, height and bitrateKbps, and the media engine treats unknown as unknown rather than as a value: eligibility must not pass on an unverified codec, and scoring must not award or penalise a fabricated number",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PL-0206",
+      "priority": "P0",
+      "lane": "Media",
+      "status": "READY",
+      "title": "Macrolanguage and extlang equivalence in the shared language matcher",
+      "notes": "THE REVIEWER'S OWN CARVE-OUT FROM THE PL-0203 APPROVAL, not a finding of this lane's. gpt-architect approved PL-0203's script/trim corrective and, in the same verdict, identified this as a genuinely separate defect and agreed it should be its own cross-lane media task covering both audio and subtitles. In substance: the zh-yue / zh-cmn instinct points at it, but it is not a script issue -- those are Cantonese and Mandarin extended-language/macrolanguage distinctions; RFC 5646 specifically notes that the Chinese languages encompassed by zh are generally not mutually intelligible when spoken, so a matcher that collapses both to primary zh can call the wrong SPOKEN language a preferred-language fallback. The reviewer proposed P0 and stated explicitly that this does not invalidate the script/trim corrective PL-0203 landed. IT IS DISTINCT FROM THAT SCRIPT RULE, and the distinction is the whole task: a script subtag identifies a WRITING SYSTEM, which is why require_compatible_script is right for automatic subtitle selection and deliberately looser for audio; this is about MUTUAL INTELLIGIBILITY OF SPEECH, an audio-first fact that reaches subtitles only because both surfaces share one matcher. It depends on PL-0203 rather than racing it because it corrects the same function -- languageMatch in packages/media-engine/src/audio.ts, which subtitles.ts imports -- and two concurrent owners of that function would collide. Provenance of the verdict is the same as PL-0203's review record: transcribed by Claude from the ChatGPT review session rather than received over the agent bus.",
+      "dependencies": [
+        "PL-0203"
+      ],
+      "allowedPaths": [
+        "packages/media-engine/**",
+        "packages/contracts/**"
+      ],
+      "preferredAgent": "claude-media",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit"
+      ],
+      "acceptance": "The shared languageMatch in packages/media-engine/src/audio.ts stops reducing a tag to its primary subtag where that reduction crosses a MACROLANGUAGE boundary. A spoken-language distinction encompassed by a macrolanguage is not reported as a preferred-language fallback: zh-yue against zh-cmn, and either against a bare zh preference, must not answer with a fallback strength, because a fallback there tells the caller it may play Cantonese for a Mandarin preference. Canonical primary and extlang spellings of the SAME language are treated as equivalent in both directions -- cmn and zh-cmn are one language, yue and zh-yue are one language -- and the equivalence survives a region or script suffix on either side. The rule is exercised through BOTH consumers of the shared matcher, the audio track selection in audio.ts and the subtitle selection policy in subtitles.ts, rather than through the helper alone, so neither consumer can be corrected while the other keeps the old behaviour. Any new outcome carries its own named reason: a distinction that is not regional must not be reported with a regional-fallback reason.",
       "owner": null,
       "gateResults": {}
     },

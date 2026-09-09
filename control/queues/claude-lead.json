@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-08T15:52:11.392Z",
+  "generatedAt": "2026-09-09T04:10:22.852Z",
   "agent": "claude-lead",
   "executionAvailable": true,
   "assigned": [
@@ -9,6 +9,7 @@
       "lane": "Coordination",
       "status": "REVIEW",
       "title": "Show reviewers the full review surface",
+      "notes": "DECLARATION GAP CLOSED, NOT SCOPE WIDENED. docs/DEVELOPMENT.md and docs/GITHUB_SETUP.md were edited by this round's review-worker rewrite and no active task declared either, so an approval here would have bound to a surface narrower than the diff -- the precise defect the two-surface split exists to prevent. Both are the operator-facing half of one change: REVIEW_MAX_PATCH_BYTES no longer bounds a patch, it bounds one part's worth of review MATERIAL, and gpt-review-worker.mjs says in its own header that the name is kept only because it is the knob already published in .env.example and docs/GITHUB_SETUP.md. GITHUB_SETUP.md now states the variable 'does not bound a patch, despite its name' and describes full file content at the reviewed commit with the diff layered on as commentary; DEVELOPMENT.md's variable table says the same and cites scripts/cloud/review-context.mjs, a module inside this task's own scripts/cloud/** surface. Neither doc contains any PL-0105 or PL-0706 material, so the attribution is unambiguous. Collision-checked before adding: neither path overlaps any allowedPaths of the other active tasks (PL-0104 and PL-0105 under claude-frontend, PL-0203 under claude-media, PL-0706 under claude-security) -- docs/CATALOG_SOURCE.md, docs/E2E.md and docs/API_CONTRACTS.md are all prefix-disjoint from these two files. docs/DEVELOPMENT.md is also declared by PL-0003, which is DONE and unowned and therefore not an active conflict; PL-0003 already declares scripts/** and so already overlapped this task's surface before this edit.",
       "dependencies": [
         "PL-AI-0004"
       ],
@@ -16,7 +17,9 @@
         "scripts/cloud/**",
         "scripts/review-surface.mjs",
         "scripts/ai-control-plane.mjs",
-        "scripts/test-ai-control-plane.mjs"
+        "scripts/test-ai-control-plane.mjs",
+        "docs/DEVELOPMENT.md",
+        "docs/GITHUB_SETUP.md"
       ],
       "preferredAgent": "claude-lead",
       "reviewAgent": "gpt-architect",

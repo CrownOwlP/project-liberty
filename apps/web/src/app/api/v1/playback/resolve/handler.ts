@@ -95,8 +95,9 @@ export interface ResolveScaffoldOptions {
    * that RANKS CALLER-SUPPLIED CANDIDATES on a deployment nobody meant to be a
    * development one. That was corrected once by sharing the ALLOWLIST and
    * restating the `.includes` test here; it is corrected again by consuming
-   * `isLocalDeployment`, so `app/api/deployment-environment.ts` is the only
-   * place the allowlist is written and the only place it is tested.
+   * `isLocalDeployment`, which is one line over the single classification in
+   * `@liberty/contracts/shared/runtime` -- the only place the allowlist is
+   * written and the only place it is tested.
    */
   readonly available?: boolean | undefined;
 }

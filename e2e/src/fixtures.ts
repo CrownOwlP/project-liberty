@@ -107,8 +107,11 @@ export const CATALOG_ARTEFACTS_ON_PAGE: readonly string[] = CATALOG_ARTEFACTS.fi
  * hyphen-separated token of at most 64 characters.
  *
  * THEY ARE NOT AN AUTHENTICATION BYPASS AND CANNOT BECOME ONE. `resolveRequestAccount`
- * reaches `developmentAccount` only for a `NonDeploymentEnvironment`, whose
- * constructor is private and whose only producer refuses every `NODE_ENV` outside
+ * reaches `developmentAccount` only for a `NonDeploymentEnvironment`, which is not
+ * a class and has no constructor of any kind: it is a branded value, minted only
+ * by `classifyRuntime` in `@liberty/contracts/shared/runtime`, whose brand key is
+ * a `unique symbol` that module never exports -- so no other module can name the
+ * key and none can write one. That single mint refuses every `NODE_ENV` outside
  * `development` and `test`. On a production build these headers are read by
  * nothing: the request is refused before identity is even attempted. That is
  * asserted rather than assumed -- see the production half of

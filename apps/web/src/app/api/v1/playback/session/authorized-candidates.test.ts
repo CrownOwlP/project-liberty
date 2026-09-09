@@ -64,12 +64,14 @@ const PINNED_ORIGIN = "https://rig.test/media";
  * A witness for a named non-deployment environment.
  *
  * The witness is the whole point of the gate under test, so a test cannot
- * fabricate one: `NonDeploymentEnvironment` has a private constructor and a
- * private field, so there is no cast-free way to build one here, and a cast
- * would make every assertion below about a value the application can never see.
- * The throw is for the mistake of asking for a witness for `production` in a
- * test that meant `development` -- it names the value rather than returning
- * something usable.
+ * fabricate one: `NonDeploymentEnvironment` carries a brand whose key is a
+ * `unique symbol` private to `@liberty/contracts/shared/runtime`, so there is no
+ * cast-free way to build one here -- and a cast would not help either, because
+ * `createFixtureProvider` asks that module's registry whether the object it was
+ * handed was really issued. Every assertion below is therefore about a value the
+ * application can actually see. The throw is for the mistake of asking for a
+ * witness for `production` in a test that meant `development` -- it names the
+ * value rather than returning something usable.
  */
 function nonDeployment(nodeEnv: string): NonDeploymentEnvironment {
   const environment = NonDeploymentEnvironment.classify(nodeEnv);

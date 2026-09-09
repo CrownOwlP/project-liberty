@@ -72,6 +72,16 @@ workflow, so they always take their defaults in CI: `OPENAI_REVIEW_EFFORT` (defa
 `REVIEW_MAX_PATCH_BYTES` (default `400000`). Set them in the workflow's `env:` block if you need
 to change them; there is no repository-variable plumbing for either.
 
+`REVIEW_MAX_PATCH_BYTES` does **not** bound a patch, despite its name. It is the per-part budget
+over review MATERIAL: the worker shows the reviewer every blob the approval fingerprint binds to —
+full file content at the reviewed commit, with the range's diff layered on top as commentary — so
+an unchanged review dependency is counted and sent like any other file. A range too large for one
+part is split into more parts rather than truncated, and a single file whose material exceeds the
+budget is reported as `oversized`; any unreviewable file makes the whole range `changes_requested`
+deterministically, with zero model calls, instead of being silently omitted from the prompt.
+Lowering this value therefore buys smaller requests, not a smaller reviewed surface. The name is
+kept only because it is the knob already published to operators here and in `.env.example`.
+
 `LIBERTY_JOURNAL_DIR` is set to `coordination/agent-bus/cloud-journal` at workflow level in both
 agent workflows. That is what puts the crash-recovery journal in the repository instead of on an
 ephemeral runner's disk — see "Recovery scope" in the bus README. Do not unset it in a hosted run.

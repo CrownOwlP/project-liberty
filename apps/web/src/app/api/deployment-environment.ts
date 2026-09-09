@@ -1,12 +1,29 @@
+import { classifyRuntime, type ClassifiedRuntime } from "@liberty/contracts/shared/runtime";
+
 /* -------------------------------------------------------------------------
  * Is this process a deployment, or is it somebody's laptop?
  *
- * ONE FACT, READ IN ONE PLACE. Three permissions in this app need the answer --
- * whether the fixture provider may be constructed at all, whether the
- * candidate-ranking scaffold at `v1/playback/resolve` exists, and whether
- * `@liberty/provider-sdk`'s URL policy may be told `localDeployment: true`. They
- * are asked for at FOUR call sites, because two separate routes run their own
- * transport gate and so each need the last one. All four, as they stand today:
+ * THIS APP'S DOOR TO ONE CLASSIFICATION, WHICH IS NOT HERE. The allowlist, the
+ * `NODE_ENV` read and the capability they produce all live in
+ * `@liberty/contracts/shared/runtime`. This module holds no array, performs no
+ * comparison and reads no environment variable: every function below is one
+ * line over `classifyRuntime`. What it still owns is the VOCABULARY this
+ * application uses for the fact -- `NonDeploymentEnvironment` is what a route
+ * asks for, and reads better in a signature than a contracts-package type name
+ * would.
+ *
+ * WHY THE CLASSIFICATION MOVED (PL-0706). It used to be a class declared here,
+ * and `@liberty/provider-sdk` could not import it -- a package cannot depend on
+ * an application. So the SDK's `createFixtureProvider` took a structural
+ * interface with one field instead, `{ nodeEnv: string }`, exported from the
+ * package root alongside the factory. A hosted caller could write that literal
+ * and receive a fixture provider declaring `owned` over media nothing had
+ * opened, which made the whole gate a naming convention. The fix is a single
+ * nominal capability at a boundary BELOW both consumers: `@liberty/contracts`
+ * is already a dependency of this app and of the provider SDK, so both can
+ * consume the same issued value and neither can mint one.
+ *
+ * FIVE CALL SITES, ALL CONSUMERS, none of them a second decision:
  *
  *   - `v1/playback/session/authorized-candidates.ts` calls
  *     `NonDeploymentEnvironment.classify()`, because what it gates is the
@@ -16,176 +33,103 @@
  *   - `v1/playback/resolve/handler.ts` calls `isLocalDeployment()` to decide
  *     whether that development-only route answers at all;
  *   - `watch/watch-session.ts` calls `isLocalDeployment()` for the same
- *     `checkUrl` flag, on the watch page's own copy of the transport gate.
+ *     `checkUrl` flag, on the watch page's own copy of the transport gate;
+ *   - `lib/db/index.ts`, `lib/session/account.ts` and
+ *     `lib/catalog-source-registry.ts` call `classify` for the three gates that
+ *     keep a volatile store, a development identity and an invented catalog out
+ *     of a deployment.
  *
- * BEFORE THIS MODULE EXISTED EACH ONE DECIDED FOR ITSELF, and they did not agree:
- *
- *   - the fixture gate had already been corrected to an ALLOWLIST, because the
- *     old `NODE_ENV !== "production"` admitted `staging`, `preview`,
- *     `Production`, `""` and unset;
- *   - `issue-session.ts` still derived `localDeployment` from that same
- *     denylist, so a `staging` process was telling the SSRF gate it was a
- *     laptop;
- *   - `resolve/handler.ts` began on the same denylist -- which exposed a route
- *     that ranks CALLER-SUPPLIED candidates on any deployment whose `NODE_ENV`
- *     was not exactly `production` -- and was then corrected by restating the
- *     allowlist's `.includes` test locally, which is a copy rather than a
- *     consumer;
- *   - and `watch/watch-session.ts` had no environment test of any kind.
- *
- * Four call sites, four separate decisions about one question -- one of them the
- * decision not to ask. That is the shape this module
- * exists to remove, so the classification lives here and the callers consult
- * it. The array below is the only place the permitted values are written, and
- * `NonDeploymentEnvironment.classify` is the only place they are tested: every
- * other consumer either calls `classify` or calls `isLocalDeployment`, which is
- * itself one line over `classify`.
- *
- * A FIFTH CONSUMER IS IN ANOTHER PACKAGE, and it is the reason this file is the
- * only place the values are written. `@liberty/provider-sdk`'s fixture adapter
- * held its own `["development", "test"]` and tested a caller-supplied name
- * against it -- a second allowlist for one question, in a package that cannot
- * read `NODE_ENV` and never could. It no longer classifies anything: it takes a
- * `RuntimeClassification`, which is the shape `NonDeploymentEnvironment` already
- * has, so `authorized-candidates.ts` hands over the witness minted here rather
- * than a value derived from a second copy of the array. A package cannot import
- * from an application, so the direction of the dependency is the only one
- * available -- and it is also the right one, because the fact belongs to the
- * process and the process is here.
+ * BEFORE ANY OF THIS EXISTED EACH ONE DECIDED FOR ITSELF, and they did not agree:
+ * the fixture gate had been corrected to an allowlist while `issue-session.ts`
+ * still derived `localDeployment` from a `NODE_ENV !== "production"` denylist --
+ * so a `staging` process was telling the SSRF gate it was a laptop -- and
+ * `watch/watch-session.ts` had no environment test of any kind. Four call sites,
+ * four separate answers to one question, one of them the answer not to ask.
  *
  * SHARING THE CLASSIFICATION IS NOT SHARING THE PERMISSION, and the distinction
  * is the one `url-policy.ts` insists on. Loopback still requires TWO
  * independently-owned facts: a source that opted in, AND a deployment that says
  * it is local. This module supplies only the second, only ever as an input, and
- * it grants nothing by itself -- `originIsLoopback` in the fixture provider is
- * still what supplies the first, and the two are still checked separately with
- * separate reasons. What is shared is the reading of `NODE_ENV`, which is a
- * fact about the process and cannot honestly have two values at once.
- *
- * AN ALLOWLIST, for the reason every other gate in this repository is one:
- * `PLAYABLE_CONTENT_RIGHTS`, `RIGHTS_BASIS_KINDS` and the engine's eligibility
- * check all refuse what they do not recognise rather than permitting it. A
- * denylist of the single string `production` fails open on every value nobody
- * thought of, and the failure mode here is a hosted process describing itself
- * to an SSRF gate as a local one.
- *
- * WHY `NODE_ENV` AND NOT A DEDICATED FLAG. It is the one fact about the running
- * process that no configuration file can forge. `scripts/with-root-env.mjs`
- * refuses to apply `NODE_ENV` from a dotenv file at all (`NEVER_APPLIED`),
- * precisely so a copied `.env.local` cannot turn `next start` into a
- * fixture-serving deployment, and Next computes its own file set before merging
- * so `apps/web/.env.local` cannot either. A new `LIBERTY_IS_LOCAL` variable
- * would have none of that protection and would be a second switch that could
- * disagree with this one.
- *
- * THE REMAINING GAP, recorded rather than papered over: a hosted deployment
- * that exports `NODE_ENV=development` and runs `next dev` is indistinguishable
- * from a laptop here, because it IS a development build. Nothing a string test
- * can do closes that; the control for it is not shipping one.
+ * it grants nothing by itself -- `originIsLoopback` in `authorized-candidates.ts`
+ * is what supplies the first, and the two are still checked separately with
+ * separate reasons.
  *
  * WHERE THIS SHOULD EVENTUALLY LIVE: `apps/web/src/lib/`, beside the other
  * app-wide helpers. It is under `app/api/` because that was the only directory
  * every consumer could reach inside PL-0301's `allowedPaths` when it was
- * written. PL-0703 declares this FILE by name and the watch route, but not
- * `apps/web/src/lib/**`, so the move is still outside a declared surface and is
- * still not made here. It is named for the FACT rather than for any one caller,
- * so when the move happens it is a relocation and not a redesign.
+ * written. It is named for the FACT rather than for any one caller, so when the
+ * move happens it is a relocation and not a redesign.
  * ---------------------------------------------------------------------- */
 
 /**
  * The `NODE_ENV` values that mean "this process is not a deployment".
  *
- * These two are the whole set: `next dev` runs as `development`, and vitest
- * sets `test`. Every other value -- including no value at all -- is treated as
- * a deployment, which is the direction that fails safe.
- *
- * Exported so a test can enumerate the permitted values rather than restating
- * them, and so the one place to review a widening is this array -- in this
- * repository, not merely in this app: `@liberty/provider-sdk` keeps no runtime
- * allowlist of its own and is handed the answer computed here. Widening it is a
- * RIGHTS-RELEVANT edit: it widens the fixture provider's construction gate and
- * the resolve scaffold's availability at the same time, on purpose, because a
- * value that genuinely stopped being a deployment would have to change all three
- * answers together.
+ * RE-EXPORTED, NOT RESTATED. The array is declared once, in
+ * `@liberty/contracts/shared/runtime`, and that is also the only place its
+ * members are compared against anything. This line exists so the app's own
+ * suites can keep importing the set from the module they already import the
+ * classification from; a copy here would be the second allowlist this whole
+ * arrangement exists to prevent.
  */
-export const NON_DEPLOYMENT_ENVIRONMENTS: readonly string[] = ["development", "test"];
+export { NON_DEPLOYMENT_ENVIRONMENTS } from "@liberty/contracts/shared/runtime";
 
 /**
- * Evidence that this process is not a deployment, in a form only this module can
- * produce.
+ * Evidence that this process is not a deployment, in a form only the contracts
+ * module can produce.
  *
- * WHY A VALUE AND NOT A BOOLEAN, and why it is worth a class. The corrective
- * this type exists for (PL-0703) had to make a fabricated rights basis
- * UNREACHABLE from a deployment, and the previous arrangement enforced that with
- * a runtime `if` in the resolver: delete the condition and the fixtures ship. A
- * later edit can delete a condition and everything still compiles, which is
- * exactly how the watch route came to carry an unguarded second copy of the same
- * fixtures in the first place.
+ * AN ALIAS, DELIBERATELY, AND NOT A WRAPPER. Re-boxing the capability into an
+ * app-local type would mean this module could mint one -- which is exactly the
+ * property the corrective removed. The value a route holds is the value
+ * `classifyRuntime` issued and registered, unchanged, so a consumer that asks
+ * the registry (the fixture provider does, at the top of its factory) is asking
+ * about the same object.
  *
- * So the permission is carried by a VALUE instead. `fixtureProvider` in
- * `v1/playback/session/authorized-candidates.ts` takes one of these, and there
- * is no other way to obtain one than `classify`, which returns `null` outside
- * the allowlist. Under `strictNullChecks` the caller therefore cannot reach the
- * fixture provider without handling the `null` -- deleting that check is a
- * COMPILE ERROR rather than a silent widening, and the fabricated basis is a
- * value that cannot be constructed on a build that ships.
+ * WHY A VALUE AND NOT A BOOLEAN. What this gates is the CONSTRUCTION of things a
+ * deployment must not be able to build -- a fabricated rights basis, a volatile
+ * store standing in for a database, an invented catalog. The previous
+ * arrangement enforced that with a runtime `if`, and a later edit can delete a
+ * condition while everything still compiles; that is how the watch route came to
+ * carry an unguarded second copy of the fixtures. A caller cannot reach any of
+ * those constructors without handling the `null` from `classify`, so deleting
+ * the check is a COMPILE ERROR rather than a silent widening.
  *
- * TWO THINGS MAKE IT UNFORGEABLE FROM OUTSIDE, and both are needed:
- *
- *   - the CONSTRUCTOR is private, so no other module can `new` one;
- *   - a PRIVATE FIELD is present, so TypeScript compares this class nominally
- *     rather than structurally. Without it `{ nodeEnv: "test" }` would be
- *     assignable to the type and the whole mechanism would be decoration.
- *
- * What it is NOT is a security boundary against someone editing this file. It
- * is a boundary against the ordinary way this defect recurs: a change made
- * somewhere else that quietly stops consulting the gate. A forgery here has to
- * be written as a cast or as an edit to this module, both of which are visible
- * in a diff and neither of which is something a passing build will hide.
+ * WHAT MAKES IT UNFORGEABLE is a brand whose key is a `unique symbol` private to
+ * `@liberty/contracts/shared/runtime`, so no consumer can name it and therefore
+ * none can write it, plus a registry of the values that module actually issued,
+ * so a cast or a spread copy is caught at runtime by whoever asks. The full
+ * argument, and what it does not cover, is in that file.
  */
-export class NonDeploymentEnvironment {
-  /**
-   * The value that satisfied the allowlist.
-   *
-   * Private for the nominal-typing reason above, and exposed read-only through
-   * `nodeEnv` because a caller that reports WHICH environment admitted it (a
-   * test, a log line) should not have to re-read `process.env` and risk
-   * reporting a different answer from the one that was actually used.
-   */
-  private readonly value: string;
+export type NonDeploymentEnvironment = ClassifiedRuntime;
 
-  private constructor(value: string) {
-    this.value = value;
-  }
-
-  /** The `NODE_ENV` this witness was classified from. Never re-tested. */
-  get nodeEnv(): string {
-    return this.value;
-  }
-
+/**
+ * The app's name for the one classification.
+ *
+ * A PLAIN OBJECT RATHER THAN A CLASS, and the shape is what every call site
+ * already writes: `NonDeploymentEnvironment.classify(...)`. It used to be a
+ * class with a private constructor, which is a value a consumer can reach for --
+ * and a private field is a compile-time nominality trick that does nothing at
+ * runtime, so a spread copy of a real instance passed every check the class
+ * could make about itself. The brand-plus-registry in the contracts module
+ * catches that; a class could not.
+ */
+export const NonDeploymentEnvironment = {
   /**
    * Classifies the process, or answers `null` for a deployment.
    *
-   * The argument exists so a test can state the environment it means instead of
-   * mutating `process.env` and racing every other suite in the same worker. It
-   * defaults to a read of `process.env` AT CALL TIME, never at module scope: a
-   * module-scope read freezes the answer to whatever the process looked like
-   * when the first route was loaded, which in a serverless cold start is not
-   * necessarily the request's environment.
+   * Forwards to `classifyRuntime` and adds nothing. `nodeEnv` is optional rather
+   * than defaulted here, so the read of `process.env.NODE_ENV` happens in the
+   * one module that owns it: a default in this file would be a second reader,
+   * and two readers is how a route and the gate it consults come to be looking
+   * at different environments. Omitting the argument therefore still reads the
+   * environment AT CALL TIME, never at module scope.
    *
-   * `?? ""` rather than a nullish test, so an unset variable and an empty string
-   * are the same answer -- neither is on the allowlist, and both mean "nobody
-   * said", which is not a claim to be local.
+   * The argument exists so a test can state the environment it means instead of
+   * mutating `process.env` and racing every other suite in the same worker.
    */
-  static classify(
-    nodeEnv: string | undefined = process.env.NODE_ENV
-  ): NonDeploymentEnvironment | null {
-    const value = nodeEnv ?? "";
-    return NON_DEPLOYMENT_ENVIRONMENTS.includes(value)
-      ? new NonDeploymentEnvironment(value)
-      : null;
+  classify(nodeEnv?: string): NonDeploymentEnvironment | null {
+    return classifyRuntime(nodeEnv);
   }
-}
+} as const;
 
 /**
  * Whether this instance of Project Liberty is a local or development
@@ -194,8 +138,8 @@ export class NonDeploymentEnvironment {
  * The boolean form of the same classification, for the callers that need to
  * hand a `localDeployment` flag to `@liberty/provider-sdk`'s URL policy or to
  * decide whether a development-only route exists. It is one line over
- * `classify` rather than a second test of the array, so the two answers cannot
- * disagree.
+ * `classifyRuntime` rather than a second test of the array, so the two answers
+ * cannot disagree.
  *
  * A BOOLEAN IS THE RIGHT SHAPE HERE AND THE WRONG SHAPE FOR THE FIXTURES. What
  * this value gates is an INPUT to a check that runs either way: `checkUrl` is
@@ -204,7 +148,10 @@ export class NonDeploymentEnvironment {
  * CONSTRUCTION of a rights claim, where a caller that loses the check gets the
  * claim. Those need different mechanisms, and giving them the same one is what
  * produced the breach.
+ *
+ * It discards the capability it just obtained rather than returning it, which is
+ * the point: a boolean cannot be handed to anything that grants construction.
  */
-export function isLocalDeployment(nodeEnv: string | undefined = process.env.NODE_ENV): boolean {
-  return NonDeploymentEnvironment.classify(nodeEnv) !== null;
+export function isLocalDeployment(nodeEnv?: string): boolean {
+  return classifyRuntime(nodeEnv) !== null;
 }

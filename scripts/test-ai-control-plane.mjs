@@ -54,6 +54,103 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 
 /**
+ * A gitconfig path that cannot exist: a file inside a directory of the same
+ * name. Even if something created `liberty-nonexistent-gitconfig`, it would be
+ * a FILE, so nothing can also exist beneath it. Git reads a missing config path
+ * as an empty config, which is exactly the intent.
+ */
+const NO_GIT_CONFIG = path.join(
+  os.tmpdir(),
+  "liberty-nonexistent-gitconfig",
+  "none",
+);
+
+/**
+ * Git configuration isolation for every git process this run starts, whether
+ * this file spawns it directly or a control-plane child process does.
+ *
+ * The fixtures now run `git init`/`add`/`commit` dozens of times on whatever
+ * machine the suite happens to be on, and two ordinary settings in an
+ * operator's global config turn that into a silent hang or an unexplained
+ * failure:
+ *
+ *   - `commit.gpgsign = true` makes every fixture commit block on a pinentry
+ *     prompt. The git wrappers below discard stderr, so nothing is printed at
+ *     all -- the suite simply stops, in the middle of `npm run check`, with no
+ *     indication of which scenario it stopped in or why.
+ *   - `core.hooksPath` pointing at husky or lefthook runs the operator's own
+ *     hooks inside a temp copy that has no node_modules. The hook exits
+ *     non-zero, so `git commit` does, so the wrapper throws -- and the thrown
+ *     error names git, not the missing dependency.
+ *
+ * Pointing GIT_CONFIG_GLOBAL and GIT_CONFIG_SYSTEM at a path that does not
+ * exist removes both, and everything else the machine happens to carry with
+ * them. `GIT_CONFIG_COUNT`/`_KEY_0`/`_VALUE_0` then re-assert
+ * `commit.gpgsign=false` explicitly, because those two variables do not
+ * suppress a REPOSITORY-level setting and the fixtures copy the repository.
+ * `GIT_TERMINAL_PROMPT=0` makes any prompt that survives fail immediately
+ * instead of waiting for input that will never arrive.
+ *
+ * Stated once, on purpose. Fifteen inline copies of a rule is fifteen chances
+ * for one of them to drift.
+ *
+ * This is applied to the CHILD PROCESSES as well as to the inline wrappers, and
+ * that is not optional: the control-plane CLI runs git against the same fixture
+ * repositories. Isolating only one side would let a fixture write its index
+ * under one `core.autocrlf` while the CLI reads it under another, and on
+ * Windows that reads back as every file in the tree being modified.
+ */
+const GIT_ISOLATION_ENV = {
+  GIT_CONFIG_GLOBAL: NO_GIT_CONFIG,
+  GIT_CONFIG_SYSTEM: NO_GIT_CONFIG,
+  GIT_CONFIG_COUNT: "1",
+  GIT_CONFIG_KEY_0: "commit.gpgsign",
+  GIT_CONFIG_VALUE_0: "false",
+  GIT_TERMINAL_PROMPT: "0",
+};
+
+/**
+ * Bounds for every child process this suite starts.
+ *
+ * There was no timeout at all, which is the dangerous default here: a child
+ * that stops for a prompt waits forever, and since these helpers capture rather
+ * than stream their output, a hang produces no diagnostic whatsoever. Ten
+ * minutes is far beyond any single control-plane command -- the slowest walks
+ * the repository with `git ls-tree` -- so a healthy run on a slow laptop behind
+ * a real-time virus scanner cannot reach it, while a genuinely stuck child
+ * does, and fails with something to read.
+ *
+ * Node's default `maxBuffer` is 1 MB. That ceiling has already been hit once in
+ * this file -- one git wrapper below raises it to 32 MB for exactly that
+ * reason -- and exceeding it kills the child, so the failure looks nothing like
+ * "the output was long". 64 MB matches the ceiling
+ * scripts/ai-control-plane.mjs already uses for its own `git ls-tree`.
+ */
+const CHILD_TIMEOUT_MS = 10 * 60 * 1000;
+const CHILD_MAX_BUFFER = 64 * 1024 * 1024;
+
+/**
+ * Environment for every child process this suite starts.
+ *
+ * Inherits the real environment -- node and git both need PATH -- but drops
+ * LIBERTY_COMMIT_SHA first. scripts/ai-control-plane.mjs reads that variable as
+ * an override meaning "there is no git here; HEAD is this value", and several
+ * scenarios assert on its ABSENCE: the one expecting `cannot resolve HEAD`, and
+ * the whole provenance-reconciliation block, which needs the real commit graph
+ * to be consulted. If anything upstream ever exported it -- a wrapper script,
+ * a CI step, the operator's own shell -- those scenarios would fail for a
+ * reason that is nowhere in their source.
+ *
+ * Scenarios that WANT the override keep passing it in `env`, which is merged
+ * last and therefore reinstates it for exactly that call.
+ */
+function childEnv(env) {
+  const inherited = { ...process.env };
+  delete inherited.LIBERTY_COMMIT_SHA;
+  return { ...inherited, ...GIT_ISOLATION_ENV, ...env };
+}
+
+/**
  * Run a script and return stdout AND stderr combined.
  *
  * `run()` returns stdout only, so assertions about warnings -- which belong on
@@ -63,7 +160,9 @@ function runCombined(cwd, script, args = [], env = {}) {
   const result = spawnSync(process.execPath, [script, ...args], {
     cwd,
     encoding: "utf8",
-    env: { ...process.env, ...env },
+    env: childEnv(env),
+    timeout: CHILD_TIMEOUT_MS,
+    maxBuffer: CHILD_MAX_BUFFER,
   });
   return `${result.stdout ?? ""}${result.stderr ?? ""}`;
 }
@@ -78,7 +177,9 @@ function run(cwd, script, args = [], env = {}) {
     cwd,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
-    env: { ...process.env, ...env },
+    env: childEnv(env),
+    timeout: CHILD_TIMEOUT_MS,
+    maxBuffer: CHILD_MAX_BUFFER,
   });
 }
 function runFail(cwd, args, matcher, env = {}) {
@@ -189,18 +290,50 @@ function resetRuntimeState(repo) {
   fs.writeFileSync(file, JSON.stringify(doc, null, 2) + "\n");
 }
 
+/**
+ * Directory names never copied into a fixture repository.
+ *
+ * `.git` and `node_modules` were always excluded: a fixture builds its own
+ * history and never resolves a dependency.
+ *
+ * The build-output directories are excluded because of what copying them does
+ * to a real run. `freshRepo()` is called around 69 times and nothing is removed
+ * until the `finally` at the very end, so every one of those copies is live on
+ * disk simultaneously. `apps/web/.next` and `.turbo/cache` currently hold a few
+ * thousand files between them, none of which any scenario reads, and each copy
+ * writes all of them through the operator's real-time virus scanner. Two things
+ * go wrong. If a dev server is writing into `.next` while the suite runs,
+ * `fs.cpSync` throws EBUSY or EPERM and the suite dies in its first scenario,
+ * before any assertion has run. And even with nothing else running, the suite
+ * spends minutes producing no output, which is indistinguishable from a hang to
+ * the person watching it.
+ */
+const EXCLUDED_FIXTURE_DIRS = [
+  ".git",
+  "node_modules",
+  ".next",
+  ".turbo",
+  "dist",
+  "build",
+  "coverage",
+];
+
 function freshRepo() {
   const repo = path.join(temp, `repo-${++repoSeq}`);
   fs.cpSync(source, repo, {
     recursive: true,
     // Both an `includes` and an `endsWith` check per directory: without the
     // `endsWith`, cpSync recurses into the directory itself and walks the whole
-    // subtree before filtering each entry.
+    // subtree before filtering each entry. Both comparisons are delimited by
+    // path separators, so they match a whole path SEGMENT and never a prefix --
+    // a source directory legitimately named `distribution` or `builder` is
+    // unaffected.
     filter: (src) =>
-      !src.includes(`${path.sep}.git${path.sep}`) &&
-      !src.endsWith(`${path.sep}.git`) &&
-      !src.includes(`${path.sep}node_modules${path.sep}`) &&
-      !src.endsWith(`${path.sep}node_modules`),
+      !EXCLUDED_FIXTURE_DIRS.some(
+        (dir) =>
+          src.includes(`${path.sep}${dir}${path.sep}`) ||
+          src.endsWith(`${path.sep}${dir}`),
+      ),
   });
   resetRuntimeState(repo);
   resetBusState(repo);
@@ -571,7 +704,7 @@ function gitFixture(repo) {
       cwd: repo,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
-      env: { ...process.env, ...env },
+      env: { ...process.env, ...GIT_ISOLATION_ENV, ...env },
     });
   const head = () => git("rev-parse", "HEAD").trim();
   const commit = (message) => {
@@ -2519,9 +2652,12 @@ try {
         cwd: repo,
         encoding: "utf8",
         // Drop stderr: `git add -A` emits a CRLF advisory per file under a
-        // global core.autocrlf, which buries the actual test output.
+        // core.autocrlf, which buries the actual test output. GIT_ISOLATION_ENV
+        // now suppresses the global and system settings that produced it, but a
+        // repository-level one would do the same, and the advisory is noise
+        // either way.
         stdio: ["ignore", "pipe", "ignore"],
-        env: { ...process.env, ...gitEnv },
+        env: { ...process.env, ...GIT_ISOLATION_ENV, ...gitEnv },
       });
 
     git("init", "-q", "-b", "main");
@@ -2552,7 +2688,10 @@ try {
     const dirty = execFileSync(
       "git",
       ["status", "--porcelain", "--", "AGENTS.md"],
-      { cwd: repo, encoding: "utf8" },
+      // Same isolation as the wrapper that wrote the index above. A status read
+      // under a different `core.autocrlf` than the index was written with
+      // reports every text file as modified.
+      { cwd: repo, encoding: "utf8", env: { ...process.env, ...GIT_ISOLATION_ENV } },
     );
     if (dirty.trim()) {
       implementToReview(repo);
@@ -3049,7 +3188,7 @@ try {
         cwd: repo,
         encoding: "utf8",
         stdio: ["ignore", "pipe", "ignore"],
-        env: { ...process.env, ...gitEnv },
+        env: { ...process.env, ...GIT_ISOLATION_ENV, ...gitEnv },
       });
 
     git("init", "-q", "-b", "main");
@@ -3295,6 +3434,7 @@ try {
       unreviewableDecision,
       assertPartCoherent,
       aggregateDecision,
+      isBinaryBlob,
       isBinaryDiff,
     } = await import("../scripts/cloud/review-chunking.mjs");
 
@@ -3316,16 +3456,15 @@ try {
       nonBlockingFindings: [],
     });
 
-    // --- chunking covers every file, never truncates ---
+    // --- packing covers every file, never truncates ---
     {
       const files = ["a.ts", "b.ts", "c.ts"];
-      const { chunks, oversizedFiles, binaryFiles } = buildReviewChunks({
+      const { chunks, unreviewable } = buildReviewChunks({
         inScope: files,
         maxBytes: 100,
-        diffFor: () => "x".repeat(60),
+        sectionFor: () => ({ text: "x".repeat(60) }),
       });
-      assert.equal(oversizedFiles.length, 0);
-      assert.equal(binaryFiles.length, 0);
+      assert.equal(unreviewable.length, 0);
       assert.ok(chunks.length > 1, "60-byte files under a 100-byte budget must split");
       assert.deepEqual(
         chunks.flatMap((c) => c.files).sort(),
@@ -3333,48 +3472,74 @@ try {
         "every in-scope file must appear in exactly one chunk",
       );
       for (const chunk of chunks) {
-        assert.ok(chunk.patch.length <= 100, "no chunk may exceed the budget");
+        assert.ok(chunk.body.length <= 100, "no chunk may exceed the budget");
+      }
+    }
+
+    // --- the budget is measured in BYTES, not in UTF-16 code units ---
+    {
+      // Four characters, eight bytes. Measuring `.length` would pack two of
+      // these into a 10-byte budget and then tell the reviewer the part was 8
+      // bytes -- a budget quietly exceeded by exactly the factor the encoding
+      // costs, on precisely the non-ASCII content nobody tests with.
+      const { chunks } = buildReviewChunks({
+        inScope: ["one.ts", "two.ts"],
+        maxBytes: 10,
+        sectionFor: () => ({ text: "éééé" }),
+      });
+      assert.equal(chunks.length, 2, "an 8-byte section must not be counted as 4");
+      for (const chunk of chunks) {
+        assert.equal(chunk.bytes, 8, "the reported size must be the encoded size");
       }
     }
 
     // --- a single oversized file is refused, with no model call ---
     {
-      const { chunks, oversizedFiles } = buildReviewChunks({
+      const { chunks, unreviewable } = buildReviewChunks({
         inScope: ["huge.ts"],
         maxBytes: 100,
-        diffFor: () => "x".repeat(5000),
+        sectionFor: () => ({ text: "x".repeat(5000) }),
       });
       assert.equal(chunks.length, 0, "an unreviewable file must not become a chunk");
-      assert.equal(oversizedFiles.length, 1);
+      assert.deepEqual(unreviewable.map((u) => u.rel), ["huge.ts"]);
 
-      const decision = unreviewableDecision({
-        oversizedFiles,
-        binaryFiles: [],
-        maxBytes: 100,
-      });
+      const decision = unreviewableDecision({ unreviewable, maxBytes: 100 });
       assert.equal(decision.decision, "changes_requested");
       assert.equal(decision.reviewedScopeConfirmed, false);
       assert.match(decision.blockingFindings[0].finding, /above the 100-byte review budget/);
     }
 
-    // --- binary diffs fail closed ---
+    // --- binary content fails closed, from EITHER side ---
     {
       assert.equal(isBinaryDiff("Binary files a/x.png and b/x.png differ"), true);
       assert.equal(isBinaryDiff("GIT binary patch\nliteral 1234"), true);
       assert.equal(isBinaryDiff("@@ -1 +1 @@\n-a\n+b"), false);
 
-      const { chunks, binaryFiles } = buildReviewChunks({
+      // The diff test cannot answer for a file that did not change in the range
+      // and is bound by the approval anyway, so the blob is tested directly.
+      assert.equal(isBinaryBlob(Buffer.from("export const a = 1;\n")), false);
+      assert.equal(isBinaryBlob(Buffer.from([0x89, 0x50, 0x4e, 0x00, 0x01])), true);
+      assert.equal(isBinaryBlob(null), false);
+
+      const { chunks, unreviewable } = buildReviewChunks({
         inScope: ["logo.png"],
         maxBytes: 10_000,
-        diffFor: () => "diff --git a/logo.png b/logo.png\nBinary files a/logo.png and b/logo.png differ",
+        sectionFor: () => ({ unreviewable: { reason: "binary", detail: "the blob contains NUL bytes" } }),
       });
-      assert.equal(chunks.length, 0, "a binary change must never be treated as reviewed content");
-      assert.deepEqual(binaryFiles, ["logo.png"]);
+      assert.equal(chunks.length, 0, "binary content must never be treated as reviewed content");
+      assert.deepEqual(unreviewable.map((u) => u.rel), ["logo.png"]);
 
-      const decision = unreviewableDecision({ oversizedFiles: [], binaryFiles, maxBytes: 10_000 });
+      const decision = unreviewableDecision({ unreviewable, maxBytes: 10_000 });
       assert.equal(decision.decision, "changes_requested");
-      assert.match(decision.blockingFindings[0].finding, /binary change/);
+      assert.match(decision.blockingFindings[0].finding, /binary content/);
     }
+
+    // --- a refusal with nothing to refuse is a bug, not a verdict ---
+    assert.throws(
+      () => unreviewableDecision({ unreviewable: [], maxBytes: 100 }),
+      /that is not a refusal, it is a bug/,
+      "an empty refusal would be a changes_requested nobody could act on",
+    );
 
     // --- an approval without scope confirmation is refused ---
     assert.throws(
@@ -3431,6 +3596,7 @@ try {
         stdio: ["ignore", "pipe", "ignore"],
         env: {
           ...process.env,
+          ...GIT_ISOLATION_ENV,
           GIT_AUTHOR_NAME: "t",
           GIT_AUTHOR_EMAIL: "t@t",
           GIT_COMMITTER_NAME: "t",
@@ -3559,7 +3725,7 @@ try {
         cwd: repo,
         encoding: "utf8",
         stdio: ["ignore", "pipe", "ignore"],
-        env: { ...process.env, ...gitEnv },
+        env: { ...process.env, ...GIT_ISOLATION_ENV, ...gitEnv },
       });
     const stage = (mode, extra = []) =>
       run(repo, "scripts/cloud/stage-task-changes.mjs", [
@@ -3685,6 +3851,7 @@ try {
         stdio: ["ignore", "pipe", "ignore"],
         env: {
           ...process.env,
+          ...GIT_ISOLATION_ENV,
           GIT_AUTHOR_NAME: "t",
           GIT_AUTHOR_EMAIL: "t@t",
           GIT_COMMITTER_NAME: "t",
@@ -3787,7 +3954,7 @@ try {
     const git = (...a) =>
       execFileSync("git", a, {
         cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"],
-        env: { ...process.env, ...gitEnv },
+        env: { ...process.env, ...GIT_ISOLATION_ENV, ...gitEnv },
       });
 
     git("init", "-q", "-b", "main");
@@ -3913,7 +4080,7 @@ try {
     const git = (...a) =>
       execFileSync("git", a, {
         cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"],
-        env: { ...process.env, ...gitEnv },
+        env: { ...process.env, ...GIT_ISOLATION_ENV, ...gitEnv },
       });
     git("init", "-q", "-b", "main");
     git("add", "-A");
@@ -3988,7 +4155,7 @@ try {
     const git = (...a) =>
       execFileSync("git", a, {
         cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"],
-        env: { ...process.env, ...gitEnv },
+        env: { ...process.env, ...GIT_ISOLATION_ENV, ...gitEnv },
       });
     git("init", "-q", "-b", "main");
     git("add", "-A");
@@ -4222,7 +4389,7 @@ try {
     const git = (...a) =>
       execFileSync("git", a, {
         cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"],
-        env: { ...process.env, ...gitEnv },
+        env: { ...process.env, ...GIT_ISOLATION_ENV, ...gitEnv },
       });
 
     // The fixture must actually contain the dangerous configuration, or the
@@ -4399,7 +4566,7 @@ try {
     const git = (...a) =>
       execFileSync("git", a, {
         cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"],
-        env: { ...process.env, ...gitEnv },
+        env: { ...process.env, ...GIT_ISOLATION_ENV, ...gitEnv },
       });
     git("init", "-q", "-b", "main");
     git("add", "-A");
@@ -4672,7 +4839,7 @@ try {
     const git = (...a) =>
       execFileSync("git", a, {
         cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"],
-        env: { ...process.env, ...gitEnv },
+        env: { ...process.env, ...GIT_ISOLATION_ENV, ...gitEnv },
       });
     git("init", "-q", "-b", "main");
     git("add", "-A");
@@ -4724,8 +4891,9 @@ try {
     // neither untracked nor committed, so clean will not remove it and checkout
     // will not restore it. That is exactly what made this scenario fail against
     // a receiving checkout that was supposed to be pristine.
-    execFileSync("git", ["reset", "--hard", "--quiet"], { cwd: fresh, stdio: "ignore" });
-    execFileSync("git", ["clean", "-fdxq"], { cwd: fresh, stdio: "ignore" });
+    const gitEnvIsolated = { ...process.env, ...GIT_ISOLATION_ENV };
+    execFileSync("git", ["reset", "--hard", "--quiet"], { cwd: fresh, stdio: "ignore", env: gitEnvIsolated });
+    execFileSync("git", ["clean", "-fdxq"], { cwd: fresh, stdio: "ignore", env: gitEnvIsolated });
     assert.ok(
       !fs.existsSync(path.join(fresh, "apps", "web", "src", "lib", "patch-me.ts")),
       "the receiving checkout must genuinely be at the base commit before the patch is applied",
@@ -4736,11 +4904,13 @@ try {
 
     /*
      * Line endings normalised before comparing. `git apply` honours the
-     * checkout's autocrlf setting, so the same patch lands as CRLF on a Windows
-     * developer machine and LF on the Linux runner. What this scenario is about
-     * is whether the in-scope content crossed the boundary, not which newline
-     * convention the receiving checkout uses -- and the same distinction is why
-     * the fingerprinting code compares git blob ids rather than worktree bytes.
+     * checkout's autocrlf setting, so the same patch can land as CRLF on one
+     * machine and LF on another. GIT_ISOLATION_ENV makes that setting the same
+     * everywhere for this suite, but the normalisation stays: what this
+     * scenario is about is whether the in-scope content crossed the boundary,
+     * not which newline convention the receiving checkout uses -- and the same
+     * distinction is why the fingerprinting code compares git blob ids rather
+     * than worktree bytes.
      */
     assert.equal(
       fs.readFileSync(path.join(fresh, "apps", "web", "src", "lib", "patch-me.ts"), "utf8")
@@ -4765,7 +4935,8 @@ try {
     const gitIn = (cwd, ...a) =>
       execFileSync("git", a, {
         cwd, encoding: "utf8", maxBuffer: 32 * 1024 * 1024,
-        stdio: ["ignore", "pipe", "ignore"], env: { ...process.env, ...gitEnv },
+        stdio: ["ignore", "pipe", "ignore"],
+        env: { ...process.env, ...GIT_ISOLATION_ENV, ...gitEnv },
       });
 
     const makeRealPatch = (relPath, mutate) => {
@@ -4989,7 +5160,7 @@ try {
     const git = (...a) =>
       execFileSync("git", a, {
         cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"],
-        env: { ...process.env, ...gitEnv },
+        env: { ...process.env, ...GIT_ISOLATION_ENV, ...gitEnv },
       });
 
     writeFixtureFile(
@@ -5345,26 +5516,69 @@ try {
   /* ---------------------------------------------------------------------
    * 9ap. The reviewer is shown exactly what its approval binds to.
    *
-   *      Widening the fingerprint to allowedPaths + reviewDependencies while the
-   *      reviewer's diff builder still filtered to allowedPaths would bind an
-   *      approval, cryptographically, to code the independent reviewer never
-   *      saw. The evidence would read as stronger while its basis got weaker.
+   *      THE OBSERVED DEFECT, and it was this scenario's own.
    *
-   *      Neither side of the equality below is written down here, because a list
-   *      typed into this file agrees with whatever it was copied from and proves
-   *      nothing. The shown set is derived from the module the review worker
-   *      calls; the bound set is MEASURED, by perturbing each file and asking the
-   *      real CLI whether the fingerprint moved. Narrowing either side alone
-   *      breaks the equality.
+   *      The approval fingerprints every blob under allowedPaths +
+   *      reviewDependencies at the reviewed commit. The worker built the
+   *      reviewer's material from `git diff --name-only base commit`. Those are
+   *      different sets, and the difference ran the dangerous way: every
+   *      UNCHANGED blob in the surface was bound, cryptographically, to an
+   *      approval of material that never contained it. Not only unchanged review
+   *      dependencies -- equally a pre-existing file under a broad allowedPaths
+   *      glob, which git ls-tree fingerprints and a name-only diff omits.
+   *
+   *      The version of this scenario that was supposed to catch that could not.
+   *      Its "shown" side filtered candidate filenames through
+   *      `withinReviewSurface`, which models the surface the worker OUGHT to
+   *      show and never invokes the worker's selection at all. It proved its
+   *      claim by construction rather than by execution, so it stayed green over
+   *      the defect it was written to prevent -- worse than no test, because it
+   *      also stopped anyone looking.
+   *
+   *      Both sides are MEASURED now, in a real git repository:
+   *
+   *        bound  perturb one file, commit it, ask the real CLI whether the
+   *               fingerprint moved, restore it, assert it moved back
+   *        shown  call the context builder the worker itself calls, through the
+   *               same git adapter, and read what it actually produced
+   *
+   *      Neither list is written down. Narrowing either side alone breaks the
+   *      equality, and reverting the worker to changed-file selection breaks it
+   *      on the two files below that the range never touches.
    * ------------------------------------------------------------------- */
   {
-    const { classifyReviewPath, reviewSurfaceLabel, withinReviewSurface } =
-      await import("../scripts/review-surface.mjs");
+    const { classifyReviewPath, reviewSurfaceLabel } = await import(
+      "../scripts/review-surface.mjs"
+    );
+    const { buildReviewContext, gitReviewAdapter, materialBegin } = await import(
+      "../scripts/cloud/review-context.mjs"
+    );
+    const { unreviewableDecision } = await import(
+      "../scripts/cloud/review-chunking.mjs"
+    );
+
+    // Sentinels rather than assertions about file lists: a path can be named in
+    // a prompt without a byte of the file being in it, and "named" is exactly
+    // what the broken worker would have managed for the changed file too. These
+    // strings exist only inside file CONTENT, so finding them in the material
+    // proves the bytes were sent.
+    const UNCHANGED_DEPENDENCY = "LIBERTY-9AP-UNCHANGED-DEPENDENCY-SENTINEL";
+    const UNCHANGED_OWNED = "LIBERTY-9AP-UNCHANGED-OWNED-SENTINEL";
 
     const repo = freshRepo();
     writeFixtureFile(repo, "fixtures/rd/f/own.ts", "export const own = 1;\n");
-    writeFixtureFile(repo, "fixtures/rd/f/nested/deep.ts", "export const deep = 1;\n");
-    writeFixtureFile(repo, "fixtures/rd/shared/rights.ts", "export type R = 1;\n");
+    // Under allowedPaths, present before the range and never touched again: the
+    // second half of the finding, which has nothing to do with dependencies.
+    writeFixtureFile(
+      repo,
+      "fixtures/rd/f/nested/deep.ts",
+      `export const deep = "${UNCHANGED_OWNED}";\n`,
+    );
+    writeFixtureFile(
+      repo,
+      "fixtures/rd/shared/rights.ts",
+      `export type R = 1; // ${UNCHANGED_DEPENDENCY}\n`,
+    );
     writeFixtureFile(repo, "fixtures/rd/unrelated/other.ts", "export const other = 1;\n");
     addFixtureTasks(
       repo,
@@ -5382,9 +5596,51 @@ try {
       }),
     );
 
+    const fx = gitFixture(repo);
+    const base = fx.commit("base");
+    // The ONLY surface change in the review range, plus one outside it. A
+    // reviewer driven by the changed-file list would be handed exactly one file
+    // and would confirm full scope over it in good faith.
+    fs.appendFileSync(
+      path.join(repo, "fixtures", "rd", "f", "own.ts"),
+      "export const own2 = 2;\n",
+    );
+    fs.appendFileSync(
+      path.join(repo, "fixtures", "rd", "unrelated", "other.ts"),
+      "export const other2 = 2;\n",
+    );
+    const head = fx.commit("implementation");
+
+    /*
+     * The premise, pinned. If a later edit made everything in the fixture change
+     * in the range, every assertion below would still pass while testing
+     * nothing at all -- the defect only exists for files the range does not
+     * touch, so the fixture has to keep containing some.
+     */
+    const changedInRange = execFileSync("git", ["diff", "--name-only", base, head], {
+      cwd: repo,
+      encoding: "utf8",
+      env: { ...process.env, ...GIT_ISOLATION_ENV },
+    })
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+    assert.ok(
+      changedInRange.includes("fixtures/rd/f/own.ts"),
+      "the range must contain the one change the reviewer would have been shown",
+    );
+    assert.ok(
+      !changedInRange.includes("fixtures/rd/shared/rights.ts"),
+      "the declared dependency must NOT be in the range's changed files, or this proves nothing",
+    );
+    assert.ok(
+      !changedInRange.includes("fixtures/rd/f/nested/deep.ts"),
+      "and neither must the pre-existing file under the broad allowedPaths glob",
+    );
+
     const candidates = [
-      "fixtures/rd/f/own.ts",
       "fixtures/rd/f/nested/deep.ts",
+      "fixtures/rd/f/own.ts",
       "fixtures/rd/shared/rights.ts",
       "fixtures/rd/unrelated/other.ts",
     ];
@@ -5393,9 +5649,12 @@ try {
      * Files this task's approval demonstrably binds to.
      *
      * Measured through the fingerprint itself rather than by re-deriving the
-     * surface: perturb one file, ask the CLI for the hash, restore it. The
-     * restore is asserted, so a probe that corrupted the fixture would fail here
-     * instead of silently changing what every later candidate is compared to.
+     * surface: perturb one file, commit it -- the canonical fingerprint reads
+     * committed history, so an uncommitted probe would move nothing and every
+     * file would read as unbound -- ask the CLI for the hash, then restore and
+     * commit again. The restore is asserted, so a probe that corrupted the
+     * fixture fails here instead of silently changing what every later candidate
+     * is compared against.
      */
     const boundTo = (id) =>
       candidates.filter((rel) => {
@@ -5403,8 +5662,10 @@ try {
         const original = fs.readFileSync(abs);
         const before = currentTreeHash(repo, id);
         fs.appendFileSync(abs, "\n// fingerprint probe\n");
+        fx.commit(`probe ${rel}`);
         const moved = currentTreeHash(repo, id) !== before;
         fs.writeFileSync(abs, original);
+        fx.commit(`restore ${rel}`);
         assert.equal(
           currentTreeHash(repo, id),
           before,
@@ -5413,9 +5674,22 @@ try {
         return moved;
       });
 
-    /** Files the review worker would put in front of the reviewer. */
-    const shownTo = (id) =>
-      candidates.filter((rel) => withinReviewSurface(rel, taskOf(repo, id)));
+    /**
+     * The worker's own selection, over the real range, through the real adapter.
+     *
+     * `head` and `base` are pinned, so the probe commits `boundTo` leaves behind
+     * cannot move what this reads.
+     */
+    const reviewGit = gitReviewAdapter(execFileSync, repo);
+    const contextFor = (id, maxBytes = 400_000) =>
+      buildReviewContext({
+        task: taskOf(repo, id),
+        base,
+        commitSha: head,
+        maxBytes,
+        git: reviewGit,
+      });
+    const shownTo = (id) => [...contextFor(id).reviewedFiles].sort();
 
     for (const id of ["PL-RD-F", "PL-RD-F-BARE"]) {
       assert.deepEqual(
@@ -5435,6 +5709,96 @@ try {
       !shownTo("PL-RD-F-BARE").includes("fixtures/rd/shared/rights.ts"),
       "an undeclared dependency must not be shown, and is not bound to either",
     );
+
+    /*
+     * Listing a path is not showing a file. The approval binds to BYTES, so the
+     * bytes have to be in the material the model is actually sent -- which is
+     * what separates this scenario from the one it replaces.
+     */
+    {
+      const ctx = contextFor("PL-RD-F");
+      const material = ctx.chunks.map((chunk) => chunk.body).join("");
+
+      assert.ok(
+        material.includes(UNCHANGED_DEPENDENCY),
+        "the content of an unchanged review dependency must be in the material sent to the reviewer",
+      );
+      assert.ok(
+        material.includes(UNCHANGED_OWNED),
+        "so must the content of an unchanged pre-existing file under allowedPaths",
+      );
+      assert.ok(
+        material.includes("export const own2 = 2;"),
+        "and the change the range actually made must still be shown",
+      );
+      assert.ok(
+        !material.includes("export const other2 = 2;"),
+        "an out-of-scope change must not be smuggled into the reviewed material",
+      );
+
+      // Stated over every bound file rather than over the two sentinels, so a
+      // file added to the fixture later is covered without anyone remembering to
+      // add a sentinel for it.
+      for (const rel of ctx.fingerprinted) {
+        assert.ok(
+          material.includes(materialBegin("CONTENT", rel)),
+          `${rel}: the approval binds to this blob, so its content must be in the material`,
+        );
+      }
+
+      // No third outcome. Every file leaves the builder either shown in full or
+      // named as unreviewable; a silent omission is the failure mode that makes
+      // a partial surface look complete.
+      assert.deepEqual(
+        [
+          ...ctx.chunks.flatMap((chunk) => chunk.files),
+          ...ctx.unreviewable.map((item) => item.rel),
+        ].sort(),
+        [...ctx.reviewedFiles].sort(),
+        "every file the approval binds to must be shown in full or named as unreviewable",
+      );
+      assert.equal(
+        ctx.unreviewable.length,
+        0,
+        "nothing in this fixture is oversized, binary or unreadable",
+      );
+    }
+
+    /*
+     * The other half of the rule: running out of budget is a REFUSAL, never a
+     * quiet omission. Dropping the file that did not fit and reviewing the rest
+     * would hand the model a part it cannot tell from a complete one, and the
+     * approval would bind to the dropped file all the same.
+     */
+    {
+      const starved = contextFor("PL-RD-F", 40);
+      assert.equal(
+        starved.chunks.length,
+        0,
+        "no part may be built out of material that does not fit",
+      );
+      assert.deepEqual(
+        starved.unreviewable.map((item) => item.rel).sort(),
+        [...starved.reviewedFiles].sort(),
+        "every file that cannot be shown must be named, not dropped",
+      );
+
+      const refusal = unreviewableDecision({
+        unreviewable: starved.unreviewable,
+        maxBytes: 40,
+      });
+      assert.equal(refusal.decision, "changes_requested");
+      assert.equal(
+        refusal.reviewedScopeConfirmed,
+        false,
+        "a refusal must never claim the scope was reviewed",
+      );
+      assert.equal(
+        refusal.blockingFindings.length,
+        starved.reviewedFiles.length,
+        "each unshowable file must produce its own actionable finding",
+      );
+    }
 
     // Shown is not the same as writable, and the reviewer has to be able to tell
     // which is which. Collapsing the two would let a dependency's change be read
@@ -5457,7 +5821,11 @@ try {
     // No consumer may re-derive the surface. Two implementations of one rule is
     // precisely the drift this scenario exists to prevent, and the copy that
     // agrees today is the one that stops agreeing quietly.
-    for (const rel of ["scripts/ai-control-plane.mjs", "scripts/cloud/gpt-review-worker.mjs"]) {
+    for (const rel of [
+      "scripts/ai-control-plane.mjs",
+      "scripts/cloud/gpt-review-worker.mjs",
+      "scripts/cloud/review-context.mjs",
+    ]) {
       const body = fs.readFileSync(path.join(source, rel), "utf8");
       assert.match(
         body,
@@ -5468,7 +5836,30 @@ try {
         !/function reviewSurfacePatterns\b/.test(body),
         `${rel} must not carry a private copy of the review surface`,
       );
+      assert.ok(
+        !/function excludedFromFingerprint\b/.test(body),
+        `${rel} must not carry a private copy of the fingerprint exclusions`,
+      );
     }
+
+    /*
+     * The shape of the original defect, refused at its source.
+     *
+     * The measured equality above is the real guarantee; this is the cheap guard
+     * that names the specific mistake, because `git diff --name-only` in the
+     * worker is how it was made the first time. Selection belongs to
+     * review-context.mjs, where a regression can execute it -- which is exactly
+     * why the worker was left unable to build a file list of its own.
+     */
+    const workerBody = fs.readFileSync(
+      path.join(source, "scripts/cloud/gpt-review-worker.mjs"),
+      "utf8",
+    );
+    assert.ok(
+      !/--name-only/.test(workerBody),
+      "the worker must not derive reviewer material from a changed-file list; " +
+        "material is enumerated from the fingerprinted tree in review-context.mjs",
+    );
 
     // The write surface must NOT follow it. Widening any of these would hand a
     // dependency write, staging or ownership rights that no collision check ever
@@ -5978,7 +6369,7 @@ try {
     const git = (...a) =>
       execFileSync("git", a, {
         cwd: gitRepo, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"],
-        env: { ...process.env, ...gitEnv },
+        env: { ...process.env, ...GIT_ISOLATION_ENV, ...gitEnv },
       });
     const head = () => git("rev-parse", "HEAD").trim();
     const commit = (message) => {
@@ -6193,7 +6584,7 @@ try {
     const git = (...a) =>
       execFileSync("git", a, {
         cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"],
-        env: { ...process.env, ...gitEnv },
+        env: { ...process.env, ...GIT_ISOLATION_ENV, ...gitEnv },
       });
     const commit = (message) => {
       git("add", "-A");
@@ -7325,5 +7716,29 @@ try {
 
   console.log("AI control plane tests passed (66 scenarios).");
 } finally {
-  fs.rmSync(temp, { recursive: true, force: true });
+  /*
+   * Cleanup must never replace the result.
+   *
+   * `force` only suppresses ENOENT. Removing dozens of git repositories on
+   * Windows hits EBUSY or EPERM regularly -- a virus scanner or the search
+   * indexer still holds a handle on a file written seconds ago -- and Node only
+   * retries those when `maxRetries` is above zero. In a bare `finally` that
+   * exception REPLACES whatever the try block threw, so a suite that failed a
+   * real assertion reports a filesystem error and never names the scenario that
+   * broke. Retry first; if it still fails, say so and leave the real failure to
+   * propagate.
+   */
+  try {
+    fs.rmSync(temp, {
+      recursive: true,
+      force: true,
+      maxRetries: 10,
+      retryDelay: 200,
+    });
+  } catch (error) {
+    console.warn(
+      `warning: could not remove the temporary fixture directory ${temp}: ` +
+        `${error.message}. Nothing outside it was affected; delete it by hand.`,
+    );
+  }
 }

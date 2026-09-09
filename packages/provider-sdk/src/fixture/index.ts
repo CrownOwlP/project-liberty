@@ -7,9 +7,10 @@
  *   1. `environment.ts` -- why a fabricated rights basis is a value that cannot
  *      be CONSTRUCTED in a production runtime, rather than one that is built and
  *      then withheld, and exactly what that does and does not establish. It also
- *      says why the runtime allowlist is NOT here: the deployment classifies its
- *      own process, this package requires the classification to have happened,
- *      and there is one allowlist rather than two that agree until they do not.
+ *      says why the runtime allowlist is NOT here: the application classifies its
+ *      own process through `@liberty/contracts/shared/runtime`, this package
+ *      requires evidence that the classification happened, and there is one
+ *      allowlist rather than two that agree until they do not.
  *   2. `rights.ts` -- the declaration itself: a category from this package's own
  *      closed vocabularies, plus an OPAQUE internal reference that names a record
  *      in the operator's rights register and nothing else. No agreement text, no
@@ -31,11 +32,20 @@
  * `owned` declaration; keeping it off the public surface, together with the
  * witness its signature demands, means a consumer cannot build that declaration
  * without building a provider. `createFixtureProvider` mints the witness from
- * the deployment's classification and is the only door. `./rights.ts` withholds
+ * the classification it is handed and is the only door. `./rights.ts` withholds
  * its brand symbol for the same reason: a thing you can reach is a thing you can
  * forge.
+ *
+ * `RuntimeClassification` USED TO BE EXPORTED FROM HERE AND MUST NOT COME BACK.
+ * It was a structural interface holding one public field, so exporting it told
+ * every consumer the exact shape of the argument that unlocks the fixture
+ * provider -- and an argument whose shape you can read is an argument you can
+ * write. `createFixtureProvider` now takes `ClassifiedRuntime` from
+ * `@liberty/contracts/shared/runtime`, which a consumer can name (it is a public
+ * contract) and cannot mint: the brand key is a private symbol in that module
+ * and the factory checks the issuing registry. Nothing about the capability is
+ * re-published here, because this package has nothing to add to it.
  */
-export type { RuntimeClassification } from "./environment";
 
 export {
   FIXTURE_RIGHTS_REFERENCE,

@@ -176,3 +176,77 @@ export function reviewSurfaceLabel(task) {
     ? "allowedPaths + reviewDependencies"
     : "allowedPaths";
 }
+
+/* ---------------------------------------------------------------------------
+ * What the fingerprint actually hashes
+ *
+ * The patterns above say WHERE the reviewed surface is. The two definitions
+ * below say which files inside it contribute an object id to the approval, and
+ * they live here for the same reason the patterns do: the reviewer's material
+ * builder and the control plane's fingerprint have to enumerate the identical
+ * set. A file the fingerprint hashes but the material builder skips is a byte
+ * bound to an approval nobody was shown -- the failure this module exists to
+ * make impossible -- and a file the material builder shows but the fingerprint
+ * skips is merely noise, so the two errors are not symmetric and only a shared
+ * enumeration rules the dangerous one out.
+ * ------------------------------------------------------------------------- */
+
+/**
+ * Generated control-plane bookkeeping, never implementation.
+ *
+ * Excluded from the fingerprint because recording an approval would otherwise
+ * immediately invalidate that approval, and excluded from reviewer material for
+ * the same reason: it is not content anyone is being asked to judge.
+ */
+export const fingerprintExclusions = [
+  "control/tasks.json",
+  "control/events.jsonl",
+  "control/queues",
+  "coordination/PROJECT_STATUS.md",
+  "coordination/TASKS.md",
+  // Handoff traffic is coordination metadata, not implementation. Without this
+  // exclusion, publishing a review request would change the fingerprint of the
+  // very task being reviewed and invalidate the approval that came back.
+  "coordination/agent-bus",
+];
+
+export function excludedFromFingerprint(rel) {
+  // Write-then-rename temporaries are transient artefacts, never implementation.
+  if (rel.endsWith(".tmp")) return true;
+  return fingerprintExclusions.some(
+    (ex) => rel === ex || rel.startsWith(ex + "/"),
+  );
+}
+
+/** Path order the fingerprint hashes in: plain code-unit comparison. */
+export function compareSurfacePaths(a, b) {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+/**
+ * Parse `git ls-tree -r -z <commitish> -- <pathspecs>` into the exact
+ * `[relativePath, objectId]` pairs, in the exact order, that the approval hash
+ * is computed over.
+ *
+ * Only entries of type `blob` count. A tree entry that is not a blob -- a
+ * submodule, recorded as a `commit` -- has no content in this repository to hash
+ * or to show, so including it would put a path in front of the reviewer whose
+ * bytes live in another repository entirely.
+ */
+export function fingerprintEntries(lsTreeOutput) {
+  const entries = [];
+  for (const record of String(lsTreeOutput).split("\0")) {
+    if (!record.trim()) continue;
+    // "<mode> <type> <objectid>\t<path>"
+    const tab = record.indexOf("\t");
+    if (tab < 0) continue;
+    const meta = record.slice(0, tab).split(/\s+/);
+    const rel = record.slice(tab + 1);
+    const objectId = meta[2];
+    if (!objectId || meta[1] !== "blob") continue;
+    if (excludedFromFingerprint(rel)) continue;
+    entries.push([rel, objectId]);
+  }
+  entries.sort((a, b) => compareSurfacePaths(a[0], b[0]));
+  return entries;
+}

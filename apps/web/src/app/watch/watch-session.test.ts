@@ -42,10 +42,11 @@ const CONTEXT = { requestId: "watch-test" } as const;
  * The fixture candidates this route would serve, over an origin the test chose.
  *
  * `fixtureProvider` takes a `NonDeploymentEnvironment`, which only
- * `api/deployment-environment.ts` can mint and only for a `NODE_ENV` on its
- * allowlist -- so the fabricated `owned` declaration is a value this route could
- * not construct on a build that ships, rather than one it constructs and then
- * declines to use. `test` is the environment vitest sets.
+ * `@liberty/contracts/shared/runtime` can mint -- `api/deployment-environment.ts`
+ * is this app's door to it -- and only for a `NODE_ENV` on the one allowlist. So
+ * the fabricated `owned` declaration is a value this route could not construct
+ * on a build that ships, rather than one it constructs and then declines to use.
+ * `test` is the environment vitest sets.
  *
  * BUILT PER CALL AND SAFE INSIDE A TEST THAT HAS REWRITTEN `NODE_ENV`, because
  * construction is a pure function of the witness and the origin: the deployment

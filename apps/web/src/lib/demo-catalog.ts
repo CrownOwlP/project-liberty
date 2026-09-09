@@ -24,13 +24,15 @@ import type {
  * opened. The remedy there is the remedy here: the fixtures are not withheld
  * from a deployment, they are UNCONSTRUCTIBLE in one.
  *
- * `NonDeploymentEnvironment` is imported rather than restated. It cannot be
- * built outside `app/api/deployment-environment.ts` (private constructor, plus a
- * private field so TypeScript compares it nominally), and the only way to obtain
- * one is `classify`, which answers `null` for every environment outside its
- * allowlist. So `demoCatalogSource` cannot be reached without handling that
+ * `NonDeploymentEnvironment` is imported rather than restated. It is the
+ * capability `@liberty/contracts/shared/runtime` issues, and it cannot be built
+ * anywhere else: the brand key is a `unique symbol` that module keeps to itself,
+ * so no consumer can name the property and none can write it. The only producer
+ * is `classifyRuntime`, which answers `null` for every environment outside the
+ * one allowlist. So `demoCatalogSource` cannot be reached without handling that
  * `null`, and deleting the check is a compile error rather than a silent
- * widening. That module notes its eventual home is `apps/web/src/lib/`; this
+ * widening. `app/api/deployment-environment.ts` is the app-side name for the
+ * same capability, and it notes its eventual home is `apps/web/src/lib/`; this
  * import is one more caller waiting for the move.
  * ---------------------------------------------------------------------- */
 
@@ -39,9 +41,13 @@ import type {
  *
  * Declared once so an edit cannot make one fixture quietly more permissive than
  * its siblings, and `reference: null` because these works have no entry in any
- * rights register. `authorized-candidates.ts` faced the same question with a
- * non-nullable field and answered it with a reserved all-zero token; here the
- * field is nullable, so the truthful answer is available and is used.
+ * rights register. The playback side faced the same question with a NON-nullable
+ * field and answered it with a reserved all-zero token -- but that token is no
+ * longer minted in `apps/web`. It is `FIXTURE_RIGHTS_REFERENCE` in
+ * `@liberty/provider-sdk`'s `fixture/rights.ts`, which is the one place the
+ * opaque-reference rule is stated; `authorized-candidates.ts` forwards the SDK
+ * provider's `rightsBasis` unchanged rather than declaring one. Here the field is
+ * nullable, so the truthful answer is available and is used.
  */
 const DEMO_RIGHTS_BASIS: CatalogRightsBasis = {
   category: "owned",
@@ -202,10 +208,11 @@ export interface DemoCatalogMetadataSource extends SynchronousCatalogMetadataSou
  * the playback fixtures came to ship. A caller here cannot construct the witness
  * and cannot reach this function without one.
  *
- * What it does not defend against is an edit to this file or to
- * `deployment-environment.ts`. Nothing in TypeScript can. What it defends
- * against is the way the defect actually recurs: a change somewhere else that
- * quietly stops consulting the gate.
+ * What it does not defend against is an edit to this file, to
+ * `deployment-environment.ts`, or to `@liberty/contracts/shared/runtime` where
+ * the capability is minted. Nothing in TypeScript can. What it defends against
+ * is the way the defect actually recurs: a change somewhere else that quietly
+ * stops consulting the gate.
  *
  * The same remaining gap applies as everywhere else this witness is used: a
  * hosted deployment that exports `NODE_ENV=development` and runs `next dev` is

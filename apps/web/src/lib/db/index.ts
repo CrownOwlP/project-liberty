@@ -14,10 +14,12 @@ export { createPostgresRepository, postgresRepositoryOver } from "./postgres-rep
  *
  * ONE ALLOWLIST, CONSULTED RATHER THAN RESTATED. The question "is this process a
  * deployment" is already answered in exactly one place --
- * `app/api/deployment-environment.ts` -- and the reason that module exists is
- * that four call sites used to decide it separately and did not agree. This file
- * is a fifth consumer, not a fifth decision: it imports
- * `NonDeploymentEnvironment` and never tests `NODE_ENV` itself.
+ * `@liberty/contracts/shared/runtime`, reached through this app's
+ * `app/api/deployment-environment.ts` -- and the reason that arrangement exists
+ * is that four call sites used to decide it separately and did not agree. This
+ * file is one more consumer, not one more decision: it imports
+ * `NonDeploymentEnvironment` and never tests `NODE_ENV` itself. The `nodeEnv`
+ * parameter below is forwarded to `classify`, never compared to anything here.
  *
  * THE SELECTION, in the order it is made:
  *
@@ -35,11 +37,13 @@ export { createPostgresRepository, postgresRepositoryOver } from "./postgres-rep
  *      remedy named.
  *
  * WHY THE IN-MEMORY ADAPTER CANNOT BE REACHED BY CASE 4 EVEN IF THIS FUNCTION IS
- * EDITED. `createInMemoryRepository` takes a `NonDeploymentEnvironment`, whose
- * constructor is private and whose only producer is `classify()`. Deleting the
- * `null` check below does not widen the gate; it stops compiling. That is the
- * point of preferring a witness to a boolean: the illegal state is
- * unrepresentable rather than merely unreached.
+ * EDITED. `createInMemoryRepository` takes a `NonDeploymentEnvironment`, which is
+ * a branded capability whose key is a `unique symbol` private to
+ * `@liberty/contracts/shared/runtime` -- no consumer can name it, so no consumer
+ * can write one -- and whose only producer is `classify()`. Deleting the `null`
+ * check below does not widen the gate; it stops compiling. That is the point of
+ * preferring a witness to a boolean: the illegal state is unrepresentable rather
+ * than merely unreached.
  *
  * WHAT THIS ARRANGEMENT CANNOT DO, recorded here because it is the load-bearing
  * limitation of the whole task. There is no PostgreSQL in this environment, so

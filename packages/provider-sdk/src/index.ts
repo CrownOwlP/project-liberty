@@ -7,7 +7,11 @@ export type { CatalogItemRegistry } from "./registry";
  * The fixture adapter. `NonProductionRuntime` and `fixtureRightsBasis` are
  * absent on purpose and must stay absent -- see `./fixture/index.ts`.
  * `createFixtureProvider` is the only way to reach a fixture rights basis, and
- * it requires the deployment's own `RuntimeClassification` to get there.
+ * it requires a `ClassifiedRuntime` issued by
+ * `@liberty/contracts/shared/runtime` to get there. That type is deliberately
+ * NOT re-exported from this root: it belongs to the contracts package, this
+ * package adds nothing to it, and the structural interface that used to stand
+ * in its place here was the defect PL-0706 removed.
  */
 export {
   DEFAULT_FIXTURE_PROVIDER_ID,
@@ -28,8 +32,7 @@ export type {
   FixtureResolution,
   FixtureResolutionReason,
   FixtureRightsBasis,
-  FixtureVariant,
-  RuntimeClassification
+  FixtureVariant
 } from "./fixture";
 
 export {

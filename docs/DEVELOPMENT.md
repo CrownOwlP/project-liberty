@@ -464,10 +464,26 @@ Automation only (`@scope ci`, supplied by GitHub Actions, all optional locally):
 | `GH_TOKEN`               | secret    | Used by `scripts/cloud/git-auth.mjs` to push control-plane state.                 |
 | `OPENAI_REVIEW_MODEL`    | non-empty | Review model override; defaults in code when unset.                               |
 | `OPENAI_REVIEW_EFFORT`   | non-empty | Reasoning effort override; defaults in code when unset.                           |
-| `REVIEW_MAX_PATCH_BYTES` | integer   | Largest patch the review worker will send to the model.                           |
+| `REVIEW_MAX_PATCH_BYTES` | integer   | Per-part budget over review *material*, not over a patch. See below.              |
 | `LIBERTY_JOURNAL_DIR`    | non-empty | Durable agent-bus journal directory. Unset means the journal is in-repo and not durable across runners. |
 | `LIBERTY_COMMIT_SHA`     | hex40     | Commit sha override for harnesses with no git checkout. Never set on a real runner: it makes the control plane record a sha it did not verify. |
 | `LIBERTY_CI_CONCLUSION`  | non-empty | CI conclusion reported into the mission-control status snapshot.                  |
+
+`REVIEW_MAX_PATCH_BYTES` no longer bounds a patch, and the name is the only part
+of it that still says so — it is kept because it is the knob already published to
+operators in `.env.example` and `docs/GITHUB_SETUP.md`, and renaming it would
+silently ignore an override someone had already configured. What it bounds is one
+part's worth of review **material**: `scripts/cloud/review-context.mjs` enumerates
+the reviewed surface from the same fingerprinted tree the approval binds to, and
+sends each file's full content at the reviewed commit with the range's diff
+layered on top as commentary. An unchanged review dependency is therefore shown,
+and counted, exactly like a changed file. A range too large for one part is split
+into more parts rather than truncated; a single file whose material exceeds the
+whole budget is reported as `oversized`; and any file that cannot be shown —
+oversized, binary, unreadable, or unclassifiable against the surface — makes the
+entire range `changes_requested` deterministically, with zero model calls, rather
+than being dropped from the prompt. Lowering this value buys smaller requests, not
+a smaller reviewed surface.
 
 A name set in `.env.local` but absent from `.env.example` produces a warning
 rather than a failure. It is usually documentation lagging behind a feature —

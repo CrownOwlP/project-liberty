@@ -13,13 +13,15 @@ import type { ContentRights } from "@liberty/contracts/shared/rights";
  * rewrite the surface around it". PL-0301 and PL-0302 do not close this: they supply STREAM
  * CANDIDATES, which is what a title plays from, not what a catalog is made of.
  *
- * EVERY DISCOVERY SURFACE NOW READS THROUGH THIS PORT, and none of them holds
- * the direct import any more. The home rails reach it through `loadHomeCatalog`
- * in `lib/catalog.ts`, `app/search/search.ts` through
- * `resolveCatalogMetadataSource`, and `app/title/demo-title-details.ts` through
- * `demoCatalogSource`. `lib/demo-catalog.ts` still exports the raw `demoCatalog`
- * array, but its only remaining readers are test files, so the environment gate
- * in front of the fixtures is no longer bypassable from shipped code.
+ * EVERY DISCOVERY SURFACE NOW READS THROUGH THIS PORT, and none of them names an
+ * implementation any more. All three reach it through
+ * `lib/catalog-source-registry.ts`: the home rails via `loadHomeCatalog` in
+ * `lib/catalog.ts` and `app/search/search.ts` via `resolveCatalogMetadataSource`,
+ * `app/title/demo-title-details.ts` via `resolveSynchronousCatalogMetadataSource`
+ * because that surface cannot await. `lib/demo-catalog.ts` still exports the raw
+ * `demoCatalog` array, but its only remaining readers are test files, so the
+ * environment gate in front of the fixtures is no longer bypassable from shipped
+ * code.
  *
  * This module is the interface such a provider would implement. It does not
  * implement one. There is no ingestion here, no refresh, no dedupe and no
@@ -51,18 +53,41 @@ import type { ContentRights } from "@liberty/contracts/shared/rights";
  * stopped being an identifier, and the interpretation becomes a rights decision
  * taken by a string parser.
  *
- * WHAT IS NOT CHECKED HERE, stated rather than implied. `authorized-candidates.ts`
- * carries `OPAQUE_RIGHTS_REFERENCE_PATTERN`, a shape test that mechanically
- * excludes whitespace, prose, URLs and addresses from a reference. This module
- * does not apply it and does not restate it. Applying it would mean importing
- * that module, which value-imports `@liberty/media-engine` and
- * `@liberty/provider-sdk` -- pulling the playback ranking engine into the module
- * graph of every surface that renders a card -- and restating it would put a
- * second spelling of a rights rule in the repository, which is the defect that
- * file's own comment exists to prevent. So the shape of a catalog rights
- * reference is unenforced today. It is recorded in `docs/CATALOG_SOURCE.md` as
- * an open item, with the one honest fix: move the predicate to a leaf module
- * both sides can reach.
+ * WHAT IS NOT CHECKED HERE, stated rather than implied. THE SHAPE OF A CATALOG
+ * RIGHTS REFERENCE IS UNENFORCED. A shape test exists -- `isOpaqueRightsReference`
+ * over `OPAQUE_RIGHTS_REFERENCE_PATTERN` and `MAX_RIGHTS_REFERENCE_LENGTH`, which
+ * mechanically excludes whitespace, prose, URLs and addresses -- and this module
+ * neither applies it nor restates it.
+ *
+ * WHERE IT LIVES: `@liberty/provider-sdk`, exported from that package's root.
+ * The export is the stable address; the file behind it, as of this edit, is
+ * `packages/provider-sdk/src/fixture/rights.ts`. It is a leaf: that file is where
+ * the rule is written, its own comment says so, and the second copy that used to
+ * sit in `app/api/v1/playback/session/authorized-candidates.ts` is gone -- that
+ * module now consumes the SDK and states no pattern of its own. An older version
+ * of this comment named `authorized-candidates.ts` as the owner and named "move the
+ * predicate to a leaf module" as the fix. Both statements have expired: the move
+ * has happened, and what is left is the smaller question below.
+ *
+ * WHY THE PORT STILL DOES NOT APPLY IT, which is a smaller reason than the one it
+ * replaces. `@liberty/provider-sdk` publishes a single entry point -- its
+ * `package.json` sets `"exports": "./src/index.ts"` and no subpaths -- so
+ * importing the predicate imports that root index, and with it the fixture
+ * provider, the health scoring and the Stremio source vocabulary, into the module
+ * graph of every surface that renders a card. That is a real cost for one regular
+ * expression, and it is smaller than the cost this comment used to claim: the SDK
+ * depends on `@liberty/contracts` and `zod` and nothing else, so no version of
+ * this import pulls `@liberty/media-engine` anywhere. A subpath export would
+ * remove the objection entirely; that is an edit to a package manifest, outside
+ * this surface.
+ *
+ * AND IT WOULD BE A BEHAVIOUR CHANGE RATHER THAN A TIDY-UP. Enforcing the rule
+ * here means records start being refused for the shape of an identifier nothing
+ * reads, which needs a third `CatalogRecordRefusalReason` and a rights review to
+ * decide whether an unparseable reference should withhold a work from browse at
+ * all. Restating the pattern in this file remains refused outright: a second
+ * spelling of a rights rule is the defect the SDK's own comment exists to
+ * prevent. `docs/CATALOG_SOURCE.md` carries this as an open item.
  */
 export interface CatalogRightsBasis {
   /** The enforced part. One of the shared rights vocabulary's three values. */
@@ -144,11 +169,21 @@ export interface CatalogMetadataSource {
  * A source that answers without awaiting.
  *
  * Narrower than the port and assignable to it. THE CALLER IT EXISTS FOR IS THE
- * TITLE SURFACE: `configuredSource` in `app/title/demo-title-details.ts` is
- * typed to this, because `findDemoTitleDetail` is synchronous -- `getTitleDetail`
- * in `app/title/title-detail.ts` is -- and a synchronous caller can only be
- * served by a source that answers synchronously. `DemoCatalogMetadataSource` in
- * `lib/demo-catalog.ts` is the one implementation.
+ * TITLE SURFACE, and the module that hands the source over is the registry:
+ * `resolveSynchronousCatalogMetadataSource` in `lib/catalog-source-registry.ts`
+ * returns this type or a named refusal, and `configuredSource` in
+ * `app/title/demo-title-details.ts` is the one caller, because
+ * `findDemoTitleDetail` is synchronous -- `getTitleDetail` in
+ * `app/title/title-detail.ts` is -- and a synchronous caller can only be served
+ * by a source that answers synchronously. `DemoCatalogMetadataSource` in
+ * `lib/demo-catalog.ts` is the one implementation, and the registry is the only
+ * module that names it.
+ *
+ * THAT NARROW ACCESSOR IS WHAT KEEPS THE MIGRATION HONEST rather than what
+ * postpones it. A real provider is not assignable to this interface, so the day
+ * one lands the compile error is in the registry -- the file whose job is
+ * composing sources -- instead of the title surface quietly keeping a private
+ * route to the fixtures, which is what it had before.
  *
  * THE HOME ROUTE IS NO LONGER ONE OF ITS CALLERS, and the comment here used to
  * name it as the only one. `app/api/v1/catalog/home/route.ts` called a

@@ -1,6 +1,11 @@
+import {
+  classifyRuntime,
+  NON_DEPLOYMENT_ENVIRONMENTS,
+  type ClassifiedRuntime
+} from "@liberty/contracts/shared/runtime";
 import type { CatalogItemRef, ProviderContext } from "../provider";
 import { describe, expect, it } from "vitest";
-import { NonProductionRuntime, type RuntimeClassification } from "./environment";
+import { NonProductionRuntime } from "./environment";
 import { FIXTURE_RIGHTS_REFERENCE, isOpaqueRightsReference } from "./rights";
 import {
   createFixtureProvider,
@@ -33,16 +38,27 @@ const BASE_OPTIONS: FixtureProviderOptions = {
 };
 
 /**
- * A deployment's classification, stated by the test the way a deployment states
- * it.
+ * A classification, obtained the only way anybody can obtain one.
  *
  * This package does not classify a process and has no allowlist of runtime
- * names -- `environment.ts` says why, and `apps/web`'s
- * `deployment-environment.ts` is what performs the classification in the one
- * application that uses this adapter. So a test supplies the answer directly,
- * which is also the only thing a caller can do.
+ * names -- `environment.ts` says why. The single classification lives in
+ * `@liberty/contracts/shared/runtime`, `apps/web`'s `deployment-environment.ts`
+ * is the application's door to it, and a test goes through the same door. It
+ * CANNOT state the answer directly: the brand key is a private symbol in that
+ * module, so a literal does not compile (asserted below).
+ *
+ * The throw names the value rather than returning something usable, for the
+ * mistake of asking for a classification the allowlist does not admit.
  */
-const TEST_RUNTIME: RuntimeClassification = { nodeEnv: "test" };
+function classification(nodeEnv: string): ClassifiedRuntime {
+  const classified = classifyRuntime(nodeEnv);
+  if (classified === null) {
+    throw new Error(`${JSON.stringify(nodeEnv)} is not on NON_DEPLOYMENT_ENVIRONMENTS`);
+  }
+  return classified;
+}
+
+const TEST_RUNTIME: ClassifiedRuntime = classification("test");
 
 function build(options: FixtureProviderOptions): FixtureProvider {
   const created = createFixtureProvider(TEST_RUNTIME, options);
@@ -60,7 +76,7 @@ function build(options: FixtureProviderOptions): FixtureProvider {
  */
 function refusalReason(
   options: FixtureProviderOptions,
-  deployment: RuntimeClassification = TEST_RUNTIME
+  deployment: ClassifiedRuntime = TEST_RUNTIME
 ): string {
   const created = createFixtureProvider(deployment, options);
   return created.ok ? "accepted" : created.reason;
@@ -72,52 +88,66 @@ function itemFor(overrides: Partial<CatalogItemRef> = {}): CatalogItemRef {
 
 describe("the runtime witness", () => {
   /*
-   * THE ALLOWLIST IS NOT HERE ANY MORE, AND THIS ASSERTS THAT IT IS NOT. This
-   * module used to hold `["development", "test"]` and refuse everything else --
-   * a second copy of the array `apps/web/src/app/api/deployment-environment.ts`
-   * owns, for one question that cannot honestly have two answers. Which names
-   * mean production is the deployment's decision, taken where `NODE_ENV` is
-   * actually readable, and it is taken before anything gets here: the
-   * application's `NonDeploymentEnvironment.classify` answers `null` for
-   * `production`, so no witness for it is ever requested.
+   * THE ALLOWLIST IS NOT HERE, AND THIS ASSERTS THAT IT IS NOT. This module used
+   * to hold `["development", "test"]` and refuse everything else -- a second
+   * copy of one array, for a question that cannot honestly have two answers.
+   * Which names mean production is decided where `NODE_ENV` is actually
+   * readable, and it is decided before anything gets here: `classifyRuntime`
+   * issues nothing for `production`, so no witness for it can be requested.
    *
-   * The assertion is deliberately the uncomfortable one. If somebody
-   * re-introduces a runtime allowlist in this package, this line fails and says
-   * so, rather than the duplication quietly reappearing behind a green suite.
+   * What this package does with an issued classification is accept it and
+   * report its name. If somebody re-introduces a runtime allowlist here, one of
+   * these lines fails and says so, rather than the duplication quietly
+   * reappearing behind a green suite.
    */
-  it("has no opinion about which runtime names mean production", () => {
-    expect(NonProductionRuntime.from({ nodeEnv: "production" })).not.toBeNull();
-    expect(NonProductionRuntime.from({ nodeEnv: "staging" })).not.toBeNull();
+  it("accepts every classification the one allowlist issued, and tests none of them", () => {
+    for (const nodeEnv of NON_DEPLOYMENT_ENVIRONMENTS) {
+      expect(NonProductionRuntime.from(classification(nodeEnv))?.name, nodeEnv).toBe(nodeEnv);
+    }
   });
 
   /*
-   * What it does still refuse, and the reason it is a shape check rather than a
-   * classification: the name is carried into `FixtureRightsBasis.attestedRuntime`
-   * and into the provider's `runtime`, so a blank one is a provenance field that
-   * records nothing while looking like it records something.
+   * The refusal that replaced the blank-name check, and the reason it is
+   * strictly stronger: it asks whether `classifyRuntime` ISSUED this object, by
+   * identity, rather than whether the string it carries looks plausible.
+   *
+   * Both forgeries that get past a compile-time brand are exercised. The cast is
+   * the blunt one; the SPREAD is the subtle one and the reason a brand alone
+   * would not have been enough -- it copies the brand and needs no cast at all,
+   * so only object identity distinguishes it from the real thing.
    */
-  it("refuses a classification that states nothing", () => {
-    expect(NonProductionRuntime.from({ nodeEnv: "" })).toBeNull();
-    expect(NonProductionRuntime.from({ nodeEnv: "   " })).toBeNull();
+  it("refuses a classification the contracts module never issued", () => {
+    const cast = { nodeEnv: "test" } as unknown as ClassifiedRuntime;
+    expect(NonProductionRuntime.from(cast)).toBeNull();
+
+    const copied: ClassifiedRuntime = { ...TEST_RUNTIME };
+    expect(NonProductionRuntime.from(copied)).toBeNull();
   });
 
-  it("reports the name it was attested from rather than re-deriving one", () => {
-    expect(NonProductionRuntime.from({ nodeEnv: "development" })?.name).toBe("development");
-  });
-
-  it("is refused by the factory when the deployment classified nothing", () => {
-    expect(refusalReason(BASE_OPTIONS, { nodeEnv: "" })).toBe("fixture_runtime_not_classified");
+  it("is refused by the factory, by name, before it looks at anything else", () => {
+    const cast = { nodeEnv: "test" } as unknown as ClassifiedRuntime;
+    const copied: ClassifiedRuntime = { ...TEST_RUNTIME };
+    expect(refusalReason(BASE_OPTIONS, cast)).toBe("fixture_runtime_not_classified");
+    expect(refusalReason(BASE_OPTIONS, copied)).toBe("fixture_runtime_not_classified");
+    /*
+     * The classification is checked BEFORE the origin, so a caller holding a
+     * forgery is told about the forgery rather than about its URL. Asserted with
+     * an origin that would otherwise be refused for its own reason.
+     */
+    expect(
+      refusalReason({ ...BASE_OPTIONS, mediaOrigin: "http://10.0.0.5/" }, cast)
+    ).toBe("fixture_runtime_not_classified");
   });
 
   /*
-   * The two forgeries the type system has to refuse, asserted as COMPILE errors
+   * The forgeries the type system refuses outright, asserted as COMPILE errors
    * rather than as runtime behaviour, because that is the only place they exist.
    * `@ts-expect-error` fails the build if the line ever stops being an error,
    * which is the regression worth catching: it is exactly what would happen if
-   * the private field or the private constructor were removed, and both are load
-   * bearing (see `environment.ts`).
+   * the brand, the private field or the private constructor were removed, and
+   * all three are load bearing (see `environment.ts`).
    */
-  it("cannot be forged structurally or constructed directly", () => {
+  it("cannot be named into existence, forged structurally or constructed directly", () => {
     /*
      * Each directive is a SINGLE line sitting directly above its statement.
      * `@ts-expect-error` applies to the line after the comment it appears in, so
@@ -125,10 +155,13 @@ describe("the runtime witness", () => {
      * find no error there, and fail the build as an unused directive -- which
      * would be a broken test rather than the passing one it looks like.
      */
+    // @ts-expect-error -- the brand key is a private symbol in @liberty/contracts, so a literal is not a classification.
+    const literal: ClassifiedRuntime = { nodeEnv: "test" };
     // @ts-expect-error -- a private field makes the class nominal: a structural stand-in is not assignable.
     const structural: NonProductionRuntime = { name: "test" };
     // @ts-expect-error -- the constructor is private, so `from` is the only door in.
     const direct = new NonProductionRuntime("test");
+    expect(literal).toBeDefined();
     expect(structural).toBeDefined();
     expect(direct).toBeDefined();
   });

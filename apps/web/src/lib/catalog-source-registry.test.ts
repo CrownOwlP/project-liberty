@@ -6,6 +6,7 @@ import {
 import type { CatalogMetadataRecord } from "./catalog-source";
 import {
   resolveCatalogMetadataSource,
+  resolveSynchronousCatalogMetadataSource,
   type CatalogMetadataSourceResolution,
   type CatalogSourceUnavailableReason
 } from "./catalog-source-registry";
@@ -149,16 +150,116 @@ describe("resolveCatalogMetadataSource", () => {
   });
 });
 
+describe("resolveSynchronousCatalogMetadataSource", () => {
+  /*
+   * WHAT THIS ACCESSOR IS FOR, asserted rather than described.
+   *
+   * `findDemoTitleDetail` in `app/title/demo-title-details.ts` is synchronous
+   * because `getTitleDetail` is, so it cannot consume a resolution whose source
+   * may answer with a promise. Before this existed, that surface obtained the
+   * fixture source itself and classified `NODE_ENV` itself -- a second module
+   * that knew both the port and an implementation, which is precisely what the
+   * registry exists to be the only one of.
+   *
+   * THE ASSERTION IS PARTLY A COMPILE-TIME ONE, deliberately. `.map` is called on
+   * the result of `listRecords()` with no `await`, which only type-checks if the
+   * accessor really returns a `SynchronousCatalogMetadataSource`; if it ever
+   * widens to the async-capable port this line stops compiling rather than
+   * starting to compare a promise against an array at runtime.
+   */
+  it("answers a source a synchronous caller can use without awaiting", () => {
+    const resolution = resolveSynchronousCatalogMetadataSource("development");
+
+    expect(resolution.status).toBe("configured");
+    if (resolution.status !== "configured") return;
+
+    expect(resolution.source.listRecords().map((entry) => entry.item.id)).toEqual(
+      demoCatalog.map((item) => item.id)
+    );
+    expect(resolution.source.findRecord("northstar")?.item.id).toBe("northstar");
+    expect(resolution.source.findRecord("no-such-title")).toBeNull();
+  });
+
+  /* Tied to the allowlist rather than restating it, as above. */
+  it("configures the fixture source for every environment the allowlist admits", () => {
+    expect(NON_DEPLOYMENT_ENVIRONMENTS.length).toBeGreaterThan(0);
+
+    for (const nodeEnv of NON_DEPLOYMENT_ENVIRONMENTS) {
+      const resolution = resolveSynchronousCatalogMetadataSource(nodeEnv);
+
+      expect(resolution.status, nodeEnv).toBe("configured");
+      if (resolution.status !== "configured") continue;
+      expect(resolution.source.sourceId, nodeEnv).toBe("demo-fixtures");
+    }
+  });
+
+  /*
+   * THE ONE THAT MATTERS, and it is the reason this accessor is not the deleted
+   * `readFixtureCatalogItems` under a new name. That function answered `[]` on a
+   * deployment, which a caller cannot tell apart from a catalog that genuinely
+   * contains nothing. This one answers a REFUSAL WITH A NAME, and the assertion
+   * is written as a whole-value comparison so that an implementation which
+   * started returning an empty source -- one with a `sourceId` and no records --
+   * fails here rather than passing a status check.
+   */
+  it("refuses on a deployment with a named reason, never an empty catalog", () => {
+    for (const nodeEnv of DEPLOYMENT_ENVIRONMENTS) {
+      expect(
+        resolveSynchronousCatalogMetadataSource(nodeEnv),
+        JSON.stringify(nodeEnv)
+      ).toEqual({
+        status: "not-configured",
+        reason: "no_metadata_source_configured"
+      });
+    }
+  });
+
+  /*
+   * ONE ENVIRONMENT GATE, NOT TWO. The two accessors are two views of a single
+   * composition, and the failure this guards against is the one the title
+   * surface actually had: a second place that decided for itself whether this
+   * process may see fixtures. Compared on observable facts for the reason
+   * `observe` gives -- a configured resolution carries closures, and two calls
+   * build two of them.
+   */
+  it("gates on the same classification as the async-capable accessor", async () => {
+    for (const nodeEnv of [...NON_DEPLOYMENT_ENVIRONMENTS, ...DEPLOYMENT_ENVIRONMENTS]) {
+      expect(
+        await observe(resolveSynchronousCatalogMetadataSource(nodeEnv)),
+        JSON.stringify(nodeEnv)
+      ).toEqual(await observe(resolveCatalogMetadataSource(nodeEnv)));
+    }
+  });
+
+  /*
+   * The default argument is a read of the process boundary at CALL time, not a
+   * frozen module-scope value -- the same property the async-capable accessor is
+   * asserted for above, and it has to hold on both or the title surface and the
+   * search surface can disagree about one process.
+   */
+  it("reads the process environment when given no argument", async () => {
+    expect(await observe(resolveSynchronousCatalogMetadataSource())).toEqual(
+      await observe(resolveSynchronousCatalogMetadataSource(process.env.NODE_ENV))
+    );
+  });
+});
+
 /*
  * THERE IS NO `readFixtureCatalogItems` SUITE ANY MORE.
  *
- * The registry used to export a second, synchronous accessor that reached
- * `demoCatalogSource` directly, and this file asserted both of its directions.
- * It existed only to be the default argument of `getHomeCatalog` in
+ * The registry used to export a synchronous accessor that returned
+ * `readonly CatalogItem[]`, and this file asserted both of its directions. It
+ * existed only to be the default argument of `getHomeCatalog` in
  * `lib/catalog.ts`, which existed only to serve the home API route
  * synchronously; that route now awaits `loadHomeCatalog`, so both functions had
  * nothing but test callers left and were deleted rather than kept alive for
  * them.
+ *
+ * `resolveSynchronousCatalogMetadataSource`, asserted above, is NOT that function
+ * returning under another name. The deleted one answered `[]` on a deployment and
+ * had nowhere in its return type to put a reason; this one answers the same
+ * tagged resolution as `resolveCatalogMetadataSource` and refuses by name, which
+ * is the property its own suite is written around.
  *
  * Nothing it proved has been lost. The `resolveCatalogMetadataSource` tests above
  * cover both directions of the environment gate, and "the demo metadata source"

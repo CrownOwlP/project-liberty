@@ -41,14 +41,16 @@ import type { LibertyRepository } from "./repository";
  *
  * IT CANNOT BE SELECTED IN A DEPLOYMENT, and that is enforced by a type rather
  * than by a condition. `createInMemoryRepository` requires a
- * `NonDeploymentEnvironment`, whose constructor is private and whose only
- * producer is `NonDeploymentEnvironment.classify()` in
- * `app/api/deployment-environment.ts` -- which answers `null` for every
- * `NODE_ENV` outside the `development`/`test` allowlist, including no value at
- * all. Under `strictNullChecks` a caller cannot reach this function without
- * handling that `null`, so deleting the check is a COMPILE ERROR rather than a
- * silent widening. That is the mechanism `fixtureProvider` uses, chosen for the
- * same reason: a runtime `if` is a line a later edit can delete while everything
+ * `NonDeploymentEnvironment`: a branded capability whose key is a `unique
+ * symbol` private to `@liberty/contracts/shared/runtime`, so no consumer can
+ * name the property and none can write one. Its only producer is
+ * `NonDeploymentEnvironment.classify()` in `app/api/deployment-environment.ts`,
+ * which forwards to that module and answers `null` for every `NODE_ENV` outside
+ * the `development`/`test` allowlist, including no value at all. Under
+ * `strictNullChecks` a caller cannot reach this function without handling that
+ * `null`, so deleting the check is a COMPILE ERROR rather than a silent
+ * widening. That is the mechanism `fixtureProvider` uses, chosen for the same
+ * reason: a runtime `if` is a line a later edit can delete while everything
  * still compiles.
  *
  * WHERE THE RULES COME FROM. Every decision this adapter makes is delegated to

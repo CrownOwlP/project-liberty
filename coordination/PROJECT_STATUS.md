@@ -1,25 +1,25 @@
 # Project Liberty - Project Status
 
-> Generated 2026-09-08T15:52:11.389Z from the AI control plane.
+> Generated 2026-09-09T04:10:22.850Z from the AI control plane.
 
-**Overall completion:** 12/41 executable tasks (29%)
+**Overall completion:** 14/42 executable tasks (33%)
 
 ## Status summary
 
 - **BACKLOG:** 14
-- **READY:** 7
+- **READY:** 8
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 0
-- **REVIEW:** 5
+- **REVIEW:** 3
 - **BLOCKED:** 3
-- **DONE:** 12
+- **DONE:** 14
 - **CANCELED:** 0
 
 ## Milestones / phases
 
 - **M0 — AI Engineering System + Repository Foundation:** COMPLETE, 4/4 (100%)
 - **M1 — Core Discovery Experience:** COMPLETE, 3/3 (100%)
-- **M2 — Media Resolution + Provider Foundation:** IN_PROGRESS, 2/6 (33%)
+- **M2 — Media Resolution + Provider Foundation:** IN_PROGRESS, 3/6 (50%)
 - **M3 — Identity + Personal State:** NOT_STARTED, 0/4 (0%)
 - **M4 — Playback Vertical Slice:** NOT_STARTED, 0/6 (0%)
 - **M5 — Live + Intelligence Boundaries:** NOT_STARTED, 0/2 (0%)
@@ -28,15 +28,13 @@
 
 ## Active work
 
-- **PL-0104** [REVIEW] Make catalog and search results navigable — owner: claude-frontend
-- **PL-0203** [REVIEW] Subtitle selection policy — owner: claude-media
 - **PL-AI-0005** [REVIEW] Show reviewers the full review surface — owner: claude-lead
 - **PL-0105** [REVIEW] Catalog metadata source port, and the surfaces still importing the fixture array — owner: claude-frontend
 - **PL-0706** [REVIEW] Corrective, re-run: production rights-invariant breach in the watch route — owner: claude-security
 
 ## Dispatch classification
 
-- **READY_AND_EXECUTABLE:** 5
+- **READY_AND_EXECUTABLE:** 6
 - **READY_BUT_EXTERNAL:** 2
 - **BLOCKED:** 3
 - **BACKLOG (dependency-gated):** 14
@@ -60,9 +58,9 @@ No conflict-free executable tasks can be assigned with current agent capacity.
 
 - **gpt-architect:** 0/6 active (external lane; not locally executable)
 - **claude-lead:** 1/2 active
-- **claude-frontend:** 2/2 active
+- **claude-frontend:** 1/2 active
 - **claude-backend:** 0/1 active
-- **claude-media:** 1/1 active
+- **claude-media:** 0/1 active
 - **claude-test:** 0/1 active
 - **claude-security:** 1/1 active
 - **claude-infra:** 0/1 active

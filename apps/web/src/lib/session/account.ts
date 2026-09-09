@@ -32,9 +32,11 @@ import { NonDeploymentEnvironment } from "../../app/api/deployment-environment";
  * that authentication would have withheld, because there is nothing to withhold:
  * there are no real accounts, no stored credentials and no sign-in to bypass. It
  * cannot be reached from a build that ships -- `NonDeploymentEnvironment` is the
- * same nominal witness `fixtureProvider` and the in-memory repository require,
- * its constructor is private, and `classify` answers `null` for every `NODE_ENV`
- * outside the `development`/`test` allowlist. The day sign-in exists, this module
+ * same branded capability `fixtureProvider` and the in-memory repository
+ * require, its brand key is a `unique symbol` private to
+ * `@liberty/contracts/shared/runtime` so nothing outside that module can write
+ * one, and `classify` answers `null` for every `NODE_ENV` outside the
+ * `development`/`test` allowlist. The day sign-in exists, this module
  * grows a third branch that reads the verified session and the development branch
  * keeps the gate it already has.
  *

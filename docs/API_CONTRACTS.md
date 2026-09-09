@@ -351,10 +351,13 @@ The selection is:
 4. `DATABASE_URL` unset, in a deployment → **refused**, with the operator's remedy named.
 
 The in-memory adapter cannot be selected in a deployment *by construction*, not by a runtime
-condition: `createInMemoryRepository` requires a `NonDeploymentEnvironment` witness, whose
-constructor is private and whose only producer answers `null` outside the
-`development`/`test` allowlist. Deleting the check is a compile error. Every response names
-which adapter answered, as `served_by_postgres_adapter` or `served_by_in_memory_adapter`.
+condition: `createInMemoryRepository` requires a `NonDeploymentEnvironment`, which is the
+branded capability `classifyRuntime` issues in `@liberty/contracts/shared/runtime` — not a
+class, and with no constructor at all. Its brand key is a `unique symbol` that module never
+exports, so no consumer can name the key or write one, and that single mint answers `null`
+outside the `development`/`test` allowlist, which is declared there and nowhere else.
+Deleting the check is a compile error. Every response names which adapter answered, as
+`served_by_postgres_adapter` or `served_by_in_memory_adapter`.
 
 **No SQL in these routes has been executed against PostgreSQL.** There is no database in the
 development environment, so the PostgreSQL adapter is unexercised and the `integration` gate

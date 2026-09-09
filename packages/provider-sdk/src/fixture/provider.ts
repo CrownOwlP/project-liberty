@@ -2,6 +2,7 @@ import { unknownMediaFacts, type StreamCandidate } from "@liberty/contracts/doma
 import { normalizedContentIdSchema } from "@liberty/contracts/shared/ids";
 import type { MediaFact } from "@liberty/contracts/shared/media-facts";
 import type { ContentRights } from "@liberty/contracts/shared/rights";
+import type { ClassifiedRuntime } from "@liberty/contracts/shared/runtime";
 import {
   DEFAULT_PROVIDER_HEALTH_POLICY,
   evaluateProviderHealth,
@@ -13,7 +14,7 @@ import type { AuthorizedMediaProvider, CatalogItemRef, ProviderContext } from ".
 import type { CatalogItemRegistry } from "../registry";
 import { describeRightsBasis } from "../stremio/source";
 import { checkUrl, truncate, type UrlRejectionReason } from "../stremio/url-policy";
-import { NonProductionRuntime, type RuntimeClassification } from "./environment";
+import { NonProductionRuntime } from "./environment";
 import { fixtureRightsBasis, isOpaqueRightsReference, type FixtureRightsBasis } from "./rights";
 
 /**
@@ -34,9 +35,11 @@ import { fixtureRightsBasis, isOpaqueRightsReference, type FixtureRightsBasis } 
  * nothing has ever opened, and the only real control on that declaration is that
  * it cannot be constructed in a production runtime. `./environment.ts` carries
  * the whole argument and `./rights.ts` carries its second half.
- * `createFixtureProvider` takes the deployment's own runtime classification for
- * that reason and for no other, and it is the only function in this package that
- * can mint the witness `fixtureRightsBasis` demands.
+ * `createFixtureProvider` takes a `ClassifiedRuntime` -- the branded, registered
+ * capability that `@liberty/contracts/shared/runtime` issues and that only the
+ * one classification in this repository can mint -- for that reason and for no
+ * other, and it is the only function in this package that can mint the witness
+ * `fixtureRightsBasis` demands.
  *
  * WHAT IT DELIBERATELY DOES NOT DO:
  *
@@ -386,19 +389,24 @@ function fixtureUri(base: URL, contentId: string, file: string): string {
  * `owned` declaration.
  *
  * `deployment` is first because it is the reason this function is allowed to
- * exist at all. It is the deployment's OWN classification of the process rather
- * than a boolean, because a boolean argument says nothing about who decided and
- * a condition can be deleted and still compile while a missing argument cannot.
- * This package does not classify anything and holds no allowlist of runtime
- * names: see `./environment.ts` for what the resulting witness does and does not
- * establish, and for why the allowlist lives in the application instead.
+ * exist at all. It is the CAPABILITY the one classification in this repository
+ * issued, not a boolean and not a shape: a boolean argument says nothing about
+ * who decided, a condition can be deleted and still compile while a missing
+ * argument cannot, and a structural record of one field is something any caller
+ * can write for itself -- which is precisely what this parameter used to be and
+ * what PL-0706 corrected. This package does not classify anything and holds no
+ * allowlist of runtime names: see `./environment.ts` for what the resulting
+ * witness does and does not establish, and for where the allowlist lives.
  *
  * Returns a result rather than throwing, on the same division the rest of this
  * package draws: configuration is expected to be wrong, so a bad origin, a bad
- * id, an unusable latency or a classification that states nothing is DATA a
- * caller can report. The one thing that does throw is `fixtureRightsBasis`, and
- * it throws because reaching its failure means somebody edited a rights constant
- * in this package.
+ * id or an unusable latency is DATA a caller can report. An unissued
+ * classification is returned the same way rather than thrown, because this
+ * factory's whole contract is that every refusal is a named reason a route can
+ * publish, and a throw here would arrive at `issue-session.ts` as the
+ * anonymous `provider-unavailable` every other exception does. The one thing
+ * that does throw is `fixtureRightsBasis`, and it throws because reaching its
+ * failure means somebody edited a rights constant in this package.
  *
  * The witness and the basis are both built HERE, inside the factory, and never
  * at module scope. A module-level constant would be constructed on import in
@@ -406,22 +414,27 @@ function fixtureUri(base: URL, contentId: string, file: string): string {
  * may READ the fabricated declaration rather than about whether it exists.
  */
 export function createFixtureProvider(
-  deployment: RuntimeClassification,
+  deployment: ClassifiedRuntime,
   options: FixtureProviderOptions
 ): CreateFixtureProviderResult {
   /*
-   * Minted before anything else is looked at, so a caller that classified
-   * nothing gets that answer rather than a refusal about its origin. The witness
-   * itself is never returned: it exists so `fixtureRightsBasis` cannot be
-   * reached from anywhere but this function.
+   * THE FIRST THING THIS FUNCTION DOES, before it reads any other field off any
+   * argument. `NonProductionRuntime.from` answers `null` exactly when
+   * `isClassifiedRuntime` says the contracts module did not issue this object,
+   * so the two forgeries a compile-time brand cannot stop -- a cast, and a
+   * spread copy of a real classification -- are refused here at runtime rather
+   * than turning into a provider. The witness itself is never returned: it
+   * exists so `fixtureRightsBasis` cannot be reached from anywhere but this
+   * function, and holding one is proof the registry was consulted.
    */
   const runtime = NonProductionRuntime.from(deployment);
   if (runtime === null) {
     return fail(
       "fixture_runtime_not_classified",
-      "the deployment stated no runtime: its nodeEnv was blank. A fixture provider is admitted " +
-        "by a classification the deployment performed, not by this package's opinion of one, and " +
-        "a blank name would be carried into the rights basis as provenance that records nothing"
+      "this runtime classification was not issued by @liberty/contracts/shared/runtime. A " +
+        "fixture provider declares owned rights over media nothing has opened, so it is admitted " +
+        "only by a classification the application performed at the process boundary -- a copied " +
+        "or cast value carries the brand but not the decision"
     );
   }
 

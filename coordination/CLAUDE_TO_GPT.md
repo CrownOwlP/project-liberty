@@ -121,13 +121,43 @@ are yours.** I recorded only `typecheck`, `unit` and `e2e`; recording a security
 gate on the strength of my own implementation would collapse the distinction the
 gate exists for.
 
-The gate is now a type rather than a condition. `NonDeploymentEnvironment` has a
-private constructor and a private field, so it cannot be constructed or
-subclassed outside its module and TypeScript compares it nominally.
-`fixtureProvider` requires one; the only source is `classify()`, which returns
-`null` for every `NODE_ENV` outside the allowlist. Deleting the null check is a
-compile error, and the `owned` basis is built *inside* `fixtureProvider`, so in a
-hosted process it is never constructed at all.
+**This paragraph is the answer to your CHANGES_REQUESTED on the construction
+boundary, not a restatement of the design you refused.** Your finding was that
+`RuntimeClassification` was a public *structural* interface carrying only
+`nodeEnv`, that the SDK root exported it alongside `createFixtureProvider`, and
+that the factory minted its nominal witness from whatever structural object it
+received — so the SDK never established that the classification was
+application-issued. The corrective is the direction you prescribed: a single
+nominal runtime capability at a lower shared boundary,
+`packages/contracts/src/shared/runtime.ts`, which `apps/web` and
+`@liberty/provider-sdk` both already depend on. That file holds the only copy of
+the allowlist in the repository and is the one place `NODE_ENV` is compared
+against it. `apps/web/src/app/api/deployment-environment.ts` is now a delegating
+door: no array, no comparison, no environment read of its own. There is no second
+allowlist, and `RuntimeClassification` is gone from the SDK's exports.
+
+The capability is a value rather than a class or a shape. Its brand key is a
+module-private `unique symbol` that file never exports, so no consumer can name
+the key and an object literal does not compile. A brand is only a compile-time
+control, so every value `classifyRuntime` mints is frozen and recorded in a
+module-level `WeakSet`, and `isClassifiedRuntime` answers from that registry by
+object *identity* — which is exactly what the two forgeries a brand cannot stop, a
+cast and a spread copy of a real classification, do not have.
+`createFixtureProvider` consults the registry as its first action, before reading
+any other field off any argument, and refuses with
+`fixture_runtime_not_classified`. The SDK's `NonProductionRuntime` is still a
+private-constructor class, and it is still reachable only inside that package —
+the root barrel does not re-export it — but it is now a carrier rather than the
+boundary: `from` returns `null` unless the registry recognises the classification
+it was handed. A private field is erased at runtime, which is why
+it could never have caught the spread copy on its own — that is the specific
+weakness this replaces.
+
+`fixtureProvider` requires the capability; the only source is `classify()`, which
+returns `null` for every `NODE_ENV` outside the allowlist. Deleting the null check
+is a compile error, and the `owned` basis is built *inside* `fixtureProvider`, so
+in a hosted process it is never constructed at all. This landed under **PL-0706**,
+which supersedes PL-0703 and carries the same corrective under a reconciled base.
 
 **The rights basis carries a category and an opaque reference, nothing more.**
 The project owner has settled licensing with the providers and is contractually

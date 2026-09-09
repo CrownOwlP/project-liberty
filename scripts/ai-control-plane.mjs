@@ -28,6 +28,8 @@ import {
   validateReviewRange,
 } from "./review-range.mjs";
 import {
+  excludedFromFingerprint,
+  fingerprintEntries,
   normalizePrefix,
   normalizesToRepositoryRoot,
   reviewPathspecs,
@@ -490,24 +492,13 @@ function deferredReasons(d, classification, wave) {
  * would also have narrowed what their approvals bind to, so a later edit to a
  * shared schema would silently stop invalidating the reviews that relied on it.
  * ------------------------------------------------------------------------- */
-const fingerprintExclusions = [
-  "control/tasks.json",
-  "control/events.jsonl",
-  "control/queues",
-  "coordination/PROJECT_STATUS.md",
-  "coordination/TASKS.md",
-  // Handoff traffic is coordination metadata, not implementation. Without this
-  // exclusion, publishing a review request would change the fingerprint of the
-  // very task being reviewed and invalidate the approval that came back.
-  "coordination/agent-bus",
-];
-function excludedFromFingerprint(rel) {
-  // Write-then-rename temporaries are transient artefacts, never implementation.
-  if (rel.endsWith(".tmp")) return true;
-  return fingerprintExclusions.some(
-    (ex) => rel === ex || rel.startsWith(ex + "/"),
-  );
-}
+/*
+ * `fingerprintExclusions` and `excludedFromFingerprint` moved to
+ * ./review-surface.mjs, alongside the patterns, when the review worker acquired
+ * a second need for them. The worker enumerates the fingerprinted tree to decide
+ * what the reviewer is SHOWN, so a private copy of the exclusion rule here would
+ * be a second way for the shown set and the bound set to disagree.
+ */
 function filesForPattern(pattern) {
   const prefix = normalizePrefix(pattern);
   if (!prefix) return [];
@@ -587,20 +578,9 @@ function gitFingerprint(task, commitish = "HEAD") {
         maxBuffer: 64 * 1024 * 1024,
       },
     );
-    const entries = [];
-    for (const record of out.split("\0")) {
-      if (!record.trim()) continue;
-      // "<mode> <type> <objectid>\t<path>"
-      const tab = record.indexOf("\t");
-      if (tab < 0) continue;
-      const meta = record.slice(0, tab).split(/\s+/);
-      const rel = record.slice(tab + 1);
-      const objectId = meta[2];
-      if (!objectId || meta[1] !== "blob") continue;
-      if (excludedFromFingerprint(rel)) continue;
-      entries.push([rel, objectId]);
-    }
-    entries.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
+    // Parsed, filtered and ordered by the shared enumeration, so the reviewer's
+    // material builder cannot end up walking a different set of blobs.
+    const entries = fingerprintEntries(out);
     const hash = crypto.createHash("sha256");
     for (const [rel, objectId] of entries) {
       hash.update(rel);

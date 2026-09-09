@@ -55,8 +55,9 @@ import {
  *
  * AND THE FIXTURE BASIS IS NOW UNCONSTRUCTABLE ON A BUILD THAT SHIPS, which is
  * what closes the version of this defect that a comment cannot. `fixtureProvider`
- * takes a `NonDeploymentEnvironment` — a value only
- * `app/api/deployment-environment.ts` can mint, and only for a `NODE_ENV` on its
+ * takes a `NonDeploymentEnvironment` — a branded value only
+ * `@liberty/contracts/shared/runtime` can mint, reached through
+ * `app/api/deployment-environment.ts`, and only for a `NODE_ENV` on the one
  * allowlist — so a future route that wanted its own fixtures could not build the
  * `owned` declaration without first handling the `null` that a deployment gets.
  * The previous gate was a condition inside the resolver, and a condition is
