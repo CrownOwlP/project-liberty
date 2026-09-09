@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-09T04:10:22.852Z",
+  "generatedAt": "2026-09-09T04:10:36.954Z",
   "agent": "claude-lead",
   "executionAvailable": true,
   "assigned": [
@@ -33,21 +33,21 @@
       "gateResults": {
         "repo-validate": {
           "status": "pass",
-          "at": "2026-09-08T15:52:09.887Z",
+          "at": "2026-09-09T04:10:31.618Z",
           "by": "claude-lead",
-          "commitSha": "ed5d11d5e0d7b639dceed45a583c81160e4302c2",
-          "evidence": "npm run check exit 0 under pinned Node 22, this round, including ai:validate, repo:validate and env:validate across development, test and production"
+          "commitSha": "eecca6b621a2fccaab09ab3ec15d3bc93936df3b",
+          "evidence": "repo:validate and env:validate across all three modes, exit 0 on the tree committed this round"
         },
         "unit": {
           "status": "pass",
-          "at": "2026-09-08T15:52:10.401Z",
+          "at": "2026-09-09T04:10:32.096Z",
           "by": "claude-lead",
-          "commitSha": "ed5d11d5e0d7b639dceed45a583c81160e4302c2",
-          "evidence": "node scripts/test-ai-control-plane.mjs exit 0 under pinned Node 22, this round; the suite includes the regression that perturbs files and asserts the set shown to a reviewer equals the set the approval fingerprints, which is this task's whole acceptance"
+          "commitSha": "eecca6b621a2fccaab09ab3ec15d3bc93936df3b",
+          "evidence": "npm run test:scripts exit 0 on the tree committed this round. Reviewer material is now enumerated from the fingerprinted tree through the SAME parser the fingerprint hashes with, so the shown set and the bound set are one function rather than two that agree by intention; a file that cannot be shown within the budget produces a deterministic unreviewable refusal rather than being dropped. Scenario 9ap builds a real git fixture and calls the worker's own context builder, and asserts that sentinel strings living only inside UNCHANGED files appear in the material actually sent, so it fails against the implementation it was previously unable to test."
         }
       },
       "implementationAgent": "claude-lead",
-      "updatedAt": "2026-09-08T15:52:10.903Z",
+      "updatedAt": "2026-09-09T04:10:32.580Z",
       "implementationBaseSha": "6845e374f10b6f5ad057e816020d23c5f149c5bd",
       "implementationBaseProvenance": {
         "kind": "reconciled-existing-implementation",
@@ -75,7 +75,43 @@
         "baseCommitSurfaceTouches": [],
         "baseCommitSurfaceTouchesTruncated": false,
         "reason": "PL-AI-0005's implementation predates its claim and is already in committed history. The base was DERIVED: git log --reverse over scripts/review-surface.mjs gives the first commit that introduced the canonical helper this task exists to create, and this is that commit's parent. review-surface.mjs is the correct probe rather than any other declared path, because scripts/cloud and scripts/ai-control-plane.mjs both long predate the lane and would place the base before the work began. The commit window and both endpoints are published for the reviewer."
-      }
+      },
+      "review": {
+        "taskId": "PL-AI-0005",
+        "implementationAgent": "claude-lead",
+        "implementationOwner": "claude-lead",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "eecca6b621a2fccaab09ab3ec15d3bc93936df3b",
+        "reviewedBaseSha": "6845e374f10b6f5ad057e816020d23c5f149c5bd",
+        "reviewedTreeHash": "fea2cfe05bc965ed43307d5c6bfac2c76cb74ec16e40dc4137deeda1377c242a",
+        "reviewedFileCount": 28,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [],
+        "outcome": "CHANGES_REQUESTED",
+        "reviewedAt": "2026-09-09T04:10:31.171Z",
+        "evidence": "CHANGES_REQUESTED on security-review because the review worker still derives what the reviewer sees from git diff name-only over the review range while the approval fingerprint derives what it binds to from git ls-tree over the entire current review surface. An unchanged file under allowedPaths or reviewDependencies is therefore hashed into the approval while never appearing in the review material. The regression that claims to prove equality cannot catch this because its shownTo helper calls withinReviewSurface directly instead of exercising the worker's changed-file selection, so it tests the declarative surface rather than the actual prompt. Make the reviewer material cover every blob contributing to the fingerprint and make the regression measure the real worker path before this trust-boundary task can be approved. Reviewed at f0e1546a74e8b7632ab5549e4dea7d762bcf73da; this record binds to the later commit because request-changes cannot bind to a sha whose reviewed surface has since changed. TRANSCRIBED BY CLAUDE from the ChatGPT review session; the GitHub write integration returns 403."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PL-AI-0005",
+          "implementationAgent": "claude-lead",
+          "implementationOwner": "claude-lead",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "eecca6b621a2fccaab09ab3ec15d3bc93936df3b",
+          "reviewedBaseSha": "6845e374f10b6f5ad057e816020d23c5f149c5bd",
+          "reviewedTreeHash": "fea2cfe05bc965ed43307d5c6bfac2c76cb74ec16e40dc4137deeda1377c242a",
+          "reviewedFileCount": 28,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [],
+          "outcome": "CHANGES_REQUESTED",
+          "reviewedAt": "2026-09-09T04:10:31.171Z",
+          "evidence": "CHANGES_REQUESTED on security-review because the review worker still derives what the reviewer sees from git diff name-only over the review range while the approval fingerprint derives what it binds to from git ls-tree over the entire current review surface. An unchanged file under allowedPaths or reviewDependencies is therefore hashed into the approval while never appearing in the review material. The regression that claims to prove equality cannot catch this because its shownTo helper calls withinReviewSurface directly instead of exercising the worker's changed-file selection, so it tests the declarative surface rather than the actual prompt. Make the reviewer material cover every blob contributing to the fingerprint and make the regression measure the real worker path before this trust-boundary task can be approved. Reviewed at f0e1546a74e8b7632ab5549e4dea7d762bcf73da; this record binds to the later commit because request-changes cannot bind to a sha whose reviewed surface has since changed. TRANSCRIBED BY CLAUDE from the ChatGPT review session; the GitHub write integration returns 403."
+        }
+      ]
     }
   ],
   "review": [],

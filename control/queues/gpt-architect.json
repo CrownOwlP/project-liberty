@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-09T04:10:22.851Z",
+  "generatedAt": "2026-09-09T04:10:36.954Z",
   "agent": "gpt-architect",
   "executionAvailable": false,
   "assigned": [],
@@ -34,21 +34,21 @@
       "gateResults": {
         "repo-validate": {
           "status": "pass",
-          "at": "2026-09-08T15:52:09.887Z",
+          "at": "2026-09-09T04:10:31.618Z",
           "by": "claude-lead",
-          "commitSha": "ed5d11d5e0d7b639dceed45a583c81160e4302c2",
-          "evidence": "npm run check exit 0 under pinned Node 22, this round, including ai:validate, repo:validate and env:validate across development, test and production"
+          "commitSha": "eecca6b621a2fccaab09ab3ec15d3bc93936df3b",
+          "evidence": "repo:validate and env:validate across all three modes, exit 0 on the tree committed this round"
         },
         "unit": {
           "status": "pass",
-          "at": "2026-09-08T15:52:10.401Z",
+          "at": "2026-09-09T04:10:32.096Z",
           "by": "claude-lead",
-          "commitSha": "ed5d11d5e0d7b639dceed45a583c81160e4302c2",
-          "evidence": "node scripts/test-ai-control-plane.mjs exit 0 under pinned Node 22, this round; the suite includes the regression that perturbs files and asserts the set shown to a reviewer equals the set the approval fingerprints, which is this task's whole acceptance"
+          "commitSha": "eecca6b621a2fccaab09ab3ec15d3bc93936df3b",
+          "evidence": "npm run test:scripts exit 0 on the tree committed this round. Reviewer material is now enumerated from the fingerprinted tree through the SAME parser the fingerprint hashes with, so the shown set and the bound set are one function rather than two that agree by intention; a file that cannot be shown within the budget produces a deterministic unreviewable refusal rather than being dropped. Scenario 9ap builds a real git fixture and calls the worker's own context builder, and asserts that sentinel strings living only inside UNCHANGED files appear in the material actually sent, so it fails against the implementation it was previously unable to test."
         }
       },
       "implementationAgent": "claude-lead",
-      "updatedAt": "2026-09-08T15:52:10.903Z",
+      "updatedAt": "2026-09-09T04:10:32.580Z",
       "implementationBaseSha": "6845e374f10b6f5ad057e816020d23c5f149c5bd",
       "implementationBaseProvenance": {
         "kind": "reconciled-existing-implementation",
@@ -76,7 +76,43 @@
         "baseCommitSurfaceTouches": [],
         "baseCommitSurfaceTouchesTruncated": false,
         "reason": "PL-AI-0005's implementation predates its claim and is already in committed history. The base was DERIVED: git log --reverse over scripts/review-surface.mjs gives the first commit that introduced the canonical helper this task exists to create, and this is that commit's parent. review-surface.mjs is the correct probe rather than any other declared path, because scripts/cloud and scripts/ai-control-plane.mjs both long predate the lane and would place the base before the work began. The commit window and both endpoints are published for the reviewer."
-      }
+      },
+      "review": {
+        "taskId": "PL-AI-0005",
+        "implementationAgent": "claude-lead",
+        "implementationOwner": "claude-lead",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "eecca6b621a2fccaab09ab3ec15d3bc93936df3b",
+        "reviewedBaseSha": "6845e374f10b6f5ad057e816020d23c5f149c5bd",
+        "reviewedTreeHash": "fea2cfe05bc965ed43307d5c6bfac2c76cb74ec16e40dc4137deeda1377c242a",
+        "reviewedFileCount": 28,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [],
+        "outcome": "CHANGES_REQUESTED",
+        "reviewedAt": "2026-09-09T04:10:31.171Z",
+        "evidence": "CHANGES_REQUESTED on security-review because the review worker still derives what the reviewer sees from git diff name-only over the review range while the approval fingerprint derives what it binds to from git ls-tree over the entire current review surface. An unchanged file under allowedPaths or reviewDependencies is therefore hashed into the approval while never appearing in the review material. The regression that claims to prove equality cannot catch this because its shownTo helper calls withinReviewSurface directly instead of exercising the worker's changed-file selection, so it tests the declarative surface rather than the actual prompt. Make the reviewer material cover every blob contributing to the fingerprint and make the regression measure the real worker path before this trust-boundary task can be approved. Reviewed at f0e1546a74e8b7632ab5549e4dea7d762bcf73da; this record binds to the later commit because request-changes cannot bind to a sha whose reviewed surface has since changed. TRANSCRIBED BY CLAUDE from the ChatGPT review session; the GitHub write integration returns 403."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PL-AI-0005",
+          "implementationAgent": "claude-lead",
+          "implementationOwner": "claude-lead",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "eecca6b621a2fccaab09ab3ec15d3bc93936df3b",
+          "reviewedBaseSha": "6845e374f10b6f5ad057e816020d23c5f149c5bd",
+          "reviewedTreeHash": "fea2cfe05bc965ed43307d5c6bfac2c76cb74ec16e40dc4137deeda1377c242a",
+          "reviewedFileCount": 28,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [],
+          "outcome": "CHANGES_REQUESTED",
+          "reviewedAt": "2026-09-09T04:10:31.171Z",
+          "evidence": "CHANGES_REQUESTED on security-review because the review worker still derives what the reviewer sees from git diff name-only over the review range while the approval fingerprint derives what it binds to from git ls-tree over the entire current review surface. An unchanged file under allowedPaths or reviewDependencies is therefore hashed into the approval while never appearing in the review material. The regression that claims to prove equality cannot catch this because its shownTo helper calls withinReviewSurface directly instead of exercising the worker's changed-file selection, so it tests the declarative surface rather than the actual prompt. Make the reviewer material cover every blob contributing to the fingerprint and make the regression measure the real worker path before this trust-boundary task can be approved. Reviewed at f0e1546a74e8b7632ab5549e4dea7d762bcf73da; this record binds to the later commit because request-changes cannot bind to a sha whose reviewed surface has since changed. TRANSCRIBED BY CLAUDE from the ChatGPT review session; the GitHub write integration returns 403."
+        }
+      ]
     },
     {
       "id": "PL-0105",
@@ -118,35 +154,35 @@
       "gateResults": {
         "lint": {
           "status": "pass",
-          "at": "2026-09-08T15:52:06.174Z",
+          "at": "2026-09-09T04:10:28.681Z",
           "by": "claude-frontend",
-          "commitSha": "ed5d11d5e0d7b639dceed45a583c81160e4302c2",
-          "evidence": "npm run check exit 0 under pinned Node 22, this round, on the committed tree"
+          "commitSha": "eecca6b621a2fccaab09ab3ec15d3bc93936df3b",
+          "evidence": "eslint via the component runs of this round, exit 0 on the tree committed this round"
         },
         "typecheck": {
           "status": "pass",
-          "at": "2026-09-08T15:52:06.657Z",
+          "at": "2026-09-09T04:10:29.192Z",
           "by": "claude-frontend",
-          "commitSha": "ed5d11d5e0d7b639dceed45a583c81160e4302c2",
-          "evidence": "turbo run typecheck via npm run check, exit 0, this round"
+          "commitSha": "eecca6b621a2fccaab09ab3ec15d3bc93936df3b",
+          "evidence": "turbo run typecheck, exit 0 on the tree committed this round"
         },
         "unit": {
           "status": "pass",
-          "at": "2026-09-08T15:52:07.131Z",
+          "at": "2026-09-09T04:10:29.705Z",
           "by": "claude-frontend",
-          "commitSha": "ed5d11d5e0d7b639dceed45a583c81160e4302c2",
-          "evidence": "vitest via npm run check, exit 0, this round; covers the port's selection rules, the deployment gate on the demo source, and the refusal-versus-empty distinction on each migrated surface"
+          "commitSha": "eecca6b621a2fccaab09ab3ec15d3bc93936df3b",
+          "evidence": "vitest, exit 0 on the tree committed this round; the registry now publishes a narrow synchronous accessor returning either the available implementation or a named refusal, demo-title-details.ts no longer names any implementation or classifies any environment, and five new cases fail against the previous tree because the accessor did not exist"
         },
         "build": {
           "status": "pass",
-          "at": "2026-09-08T15:52:07.606Z",
+          "at": "2026-09-09T04:10:30.174Z",
           "by": "claude-frontend",
-          "commitSha": "ed5d11d5e0d7b639dceed45a583c81160e4302c2",
-          "evidence": "next build via npm run check, exit 0, this round"
+          "commitSha": "eecca6b621a2fccaab09ab3ec15d3bc93936df3b",
+          "evidence": "next build, exit 0 on the tree committed this round"
         }
       },
       "implementationAgent": "claude-frontend",
-      "updatedAt": "2026-09-08T15:52:08.078Z",
+      "updatedAt": "2026-09-09T04:10:30.656Z",
       "implementationBaseSha": "f6c4b942ebbd02fd3fa9ed8f74fde4fc603affc2",
       "implementationBaseProvenance": {
         "kind": "reconciled-existing-implementation",
@@ -168,7 +204,49 @@
         "baseCommitSurfaceTouches": [],
         "baseCommitSurfaceTouchesTruncated": false,
         "reason": "PL-0105's implementation predates its claim and is already in committed history, so an ordinary start would record a base that is false. The base was DERIVED, not chosen: git log --reverse over apps/web/src/lib/catalog-source.ts gives the first commit that introduced the port module itself, and this is that commit's parent. The port module is the correct probe because nothing older can have created it; probing a shared consumer would repeat the PL-0104 near-miss, where the oldest commit touching the declared surface was the repository's root commit carrying an unrelated fourteen-line scaffold. The commit window, both endpoints and the base commit's own surface touches are published for the reviewer to confirm that no earlier commit belongs to this implementation."
-      }
+      },
+      "review": {
+        "taskId": "PL-0105",
+        "implementationAgent": "claude-frontend",
+        "implementationOwner": "claude-frontend",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "eecca6b621a2fccaab09ab3ec15d3bc93936df3b",
+        "reviewedBaseSha": "f6c4b942ebbd02fd3fa9ed8f74fde4fc603affc2",
+        "reviewedTreeHash": "30937cd115b67fd03a6a3721f01e1567bfa5f53fffbe9a6efb195e3f1f4e0aef",
+        "reviewedFileCount": 17,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [
+          "apps/web/src/lib/catalog.ts",
+          "apps/web/src/lib/demo-catalog.ts"
+        ],
+        "outcome": "CHANGES_REQUESTED",
+        "reviewedAt": "2026-09-09T04:10:28.239Z",
+        "evidence": "CHANGES_REQUESTED on rights-review because the title surface still imports the catalog port and demoCatalogSource directly, so catalog-source-registry.ts is not the only module that knows both the abstraction and its implementation and the title surface does not satisfy the task's stated registry boundary. The runtime still fails closed on undeclared or contradictory rights and search plus home are correctly routed through the registry, but the title bypass is explicitly admitted in its own source as a wart. The catalog source comment and CATALOG_SOURCE documentation are also stale after PL-0706 because they still identify authorized-candidates.ts as the owner of the opaque-reference predicate even though that rule now lives in provider-sdk. Close the title composition-root bypass and update those statements before approval. Reviewed at f0e1546a74e8b7632ab5549e4dea7d762bcf73da; this record binds to the later commit because request-changes cannot bind to a sha whose reviewed surface has since changed. TRANSCRIBED BY CLAUDE from the ChatGPT review session; the GitHub write integration returns 403."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PL-0105",
+          "implementationAgent": "claude-frontend",
+          "implementationOwner": "claude-frontend",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "eecca6b621a2fccaab09ab3ec15d3bc93936df3b",
+          "reviewedBaseSha": "f6c4b942ebbd02fd3fa9ed8f74fde4fc603affc2",
+          "reviewedTreeHash": "30937cd115b67fd03a6a3721f01e1567bfa5f53fffbe9a6efb195e3f1f4e0aef",
+          "reviewedFileCount": 17,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "apps/web/src/lib/catalog.ts",
+            "apps/web/src/lib/demo-catalog.ts"
+          ],
+          "outcome": "CHANGES_REQUESTED",
+          "reviewedAt": "2026-09-09T04:10:28.239Z",
+          "evidence": "CHANGES_REQUESTED on rights-review because the title surface still imports the catalog port and demoCatalogSource directly, so catalog-source-registry.ts is not the only module that knows both the abstraction and its implementation and the title surface does not satisfy the task's stated registry boundary. The runtime still fails closed on undeclared or contradictory rights and search plus home are correctly routed through the registry, but the title bypass is explicitly admitted in its own source as a wart. The catalog source comment and CATALOG_SOURCE documentation are also stale after PL-0706 because they still identify authorized-candidates.ts as the owner of the opaque-reference predicate even though that rule now lives in provider-sdk. Close the title composition-root bypass and update those statements before approval. Reviewed at f0e1546a74e8b7632ab5549e4dea7d762bcf73da; this record binds to the later commit because request-changes cannot bind to a sha whose reviewed surface has since changed. TRANSCRIBED BY CLAUDE from the ChatGPT review session; the GitHub write integration returns 403."
+        }
+      ]
     },
     {
       "id": "PL-0706",
@@ -216,17 +294,17 @@
       "gateResults": {
         "typecheck": {
           "status": "pass",
-          "at": "2026-09-08T04:32:45.216Z",
+          "at": "2026-09-09T04:10:26.764Z",
           "by": "claude-security",
-          "commitSha": "ba9521b2c3998ae05210240827c0a773596819c9",
-          "evidence": "turbo run typecheck plus npm run check, plus the standalone e2e tsc pass, exit 0 under pinned Node 22 on the tree committed this round. The two fixture providers are collapsed onto the SDK's, and the app can no longer name NonProductionRuntime or fixtureRightsBasis at all -- they are removed from both barrels -- so createFixtureProvider is the only door and it cannot be opened without an application-issued classification."
+          "commitSha": "eecca6b621a2fccaab09ab3ec15d3bc93936df3b",
+          "evidence": "turbo run typecheck plus the standalone e2e tsc pass, exit 0 under pinned Node 22 on the tree committed this round. The public structural RuntimeClassification is gone from the SDK entirely; the single runtime capability now lives in packages/contracts/src/shared/runtime.ts, which both apps/web and the SDK already depend on, and its brand key is a module-private unique symbol that file never exports, so an object literal does not compile."
         },
         "unit": {
           "status": "pass",
-          "at": "2026-09-08T04:32:45.703Z",
+          "at": "2026-09-09T04:10:27.237Z",
           "by": "claude-security",
-          "commitSha": "ba9521b2c3998ae05210240827c0a773596819c9",
-          "evidence": "vitest via npm run check, exit 0, on the tree committed this round. The allowlist test in the SDK is replaced by one asserting the SDK has no opinion about which runtime names mean production, which fails loudly if an allowlist ever returns there; the app-side suite asserts the published rights reference IS the SDK's exported constant and that the basis carries a field only the SDK's own constructor writes."
+          "commitSha": "eecca6b621a2fccaab09ab3ec15d3bc93936df3b",
+          "evidence": "vitest via the component runs of this round, exit 0 on the tree committed this round. A brand is only a compile-time control, so every value classifyRuntime mints is frozen and registered in a module-level WeakSet, and createFixtureProvider consults that registry by object identity as its first action. New tests cover the two forgeries a brand alone cannot stop: an as-cast and a spread copy of a genuine classification, both refused by name before any other field is read."
         },
         "e2e": {
           "status": "pass",
@@ -237,7 +315,7 @@
         }
       },
       "implementationAgent": "claude-security",
-      "updatedAt": "2026-09-08T04:32:46.196Z",
+      "updatedAt": "2026-09-09T04:10:27.720Z",
       "implementationBaseSha": "cf98b977b3c7c0113928bb9cc4d7fb6d02e802bd",
       "implementationBaseProvenance": {
         "kind": "reconciled-existing-implementation",
@@ -265,7 +343,49 @@
         "baseCommitSurfaceTouches": [],
         "baseCommitSurfaceTouchesTruncated": false,
         "reason": "PL-0706 supersedes PL-0703, whose implementationBaseSha was recorded by an ordinary start at f6c4b942 and therefore excluded the first incident repair at 9933a55. gpt-architect verified that defect cannot be repaired in place -- release is unavailable from REVIEW and preserves an existing base, and reconciliation refuses a task that already records one -- and prescribed a blocked predecessor plus a reconciled successor. This base is cf98b977b3c7c0113928bb9cc4d7fb6d02e802bd, the immediate parent of 9933a55, named by the reviewer after reading the commit graph. It is deliberately NOT b0b1dcf5a4826b763aa72d6375dd93e95a3aff33, cf98b977's own parent, which is the unrelated PL-0503/PL-0504 commit and would widen the asserted implementation range by one commit that does not belong to this incident. The window, both endpoints and the base commit's own surface touches are published for the reviewer to confirm."
-      }
+      },
+      "review": {
+        "taskId": "PL-0706",
+        "implementationAgent": "claude-security",
+        "implementationOwner": "claude-security",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "eecca6b621a2fccaab09ab3ec15d3bc93936df3b",
+        "reviewedBaseSha": "cf98b977b3c7c0113928bb9cc4d7fb6d02e802bd",
+        "reviewedTreeHash": "a27765422e533da7825a082111b5189764d9b43082309c859218a6d6efe869f3",
+        "reviewedFileCount": 37,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [
+          "e2e/tests/media-rig.spec.ts",
+          "e2e/src/env.ts"
+        ],
+        "outcome": "CHANGES_REQUESTED",
+        "reviewedAt": "2026-09-09T04:10:26.327Z",
+        "evidence": "CHANGES_REQUESTED on both security-review and rights-review because the provider SDK still accepts a public structural RuntimeClassification and publicly exports createFixtureProvider, so any consumer can supply a literal nonblank nodeEnv and cause the factory to mint the nominal runtime witness and fabricated fixture rights basis without an application-issued classification. The single allowlist and single fixture implementation are real improvements, the construction-time URL refusal is correctly surfaced as provider unavailable without echoing credentials, the opaque reference remains non-semantic, the corrected E2E path passed in both modes, and preserving the existing candidate-id wire shape is appropriate, but the central structural-unconstructibility claim is not yet true. Reviewed at f0e1546a74e8b7632ab5549e4dea7d762bcf73da; this record binds to the later commit because request-changes cannot bind to a sha whose reviewed surface has since changed. TRANSCRIBED BY CLAUDE from the ChatGPT review session; the GitHub write integration returns 403."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PL-0706",
+          "implementationAgent": "claude-security",
+          "implementationOwner": "claude-security",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "eecca6b621a2fccaab09ab3ec15d3bc93936df3b",
+          "reviewedBaseSha": "cf98b977b3c7c0113928bb9cc4d7fb6d02e802bd",
+          "reviewedTreeHash": "a27765422e533da7825a082111b5189764d9b43082309c859218a6d6efe869f3",
+          "reviewedFileCount": 37,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "e2e/tests/media-rig.spec.ts",
+            "e2e/src/env.ts"
+          ],
+          "outcome": "CHANGES_REQUESTED",
+          "reviewedAt": "2026-09-09T04:10:26.327Z",
+          "evidence": "CHANGES_REQUESTED on both security-review and rights-review because the provider SDK still accepts a public structural RuntimeClassification and publicly exports createFixtureProvider, so any consumer can supply a literal nonblank nodeEnv and cause the factory to mint the nominal runtime witness and fabricated fixture rights basis without an application-issued classification. The single allowlist and single fixture implementation are real improvements, the construction-time URL refusal is correctly surfaced as provider unavailable without echoing credentials, the opaque reference remains non-semantic, the corrected E2E path passed in both modes, and preserving the existing candidate-id wire shape is appropriate, but the central structural-unconstructibility claim is not yet true. Reviewed at f0e1546a74e8b7632ab5549e4dea7d762bcf73da; this record binds to the later commit because request-changes cannot bind to a sha whose reviewed surface has since changed. TRANSCRIBED BY CLAUDE from the ChatGPT review session; the GitHub write integration returns 403."
+        }
+      ]
     }
   ],
   "reservedExternal": [

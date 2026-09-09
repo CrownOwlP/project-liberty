@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-09T04:10:22.853Z",
+  "generatedAt": "2026-09-09T04:10:36.955Z",
   "agent": "claude-frontend",
   "executionAvailable": true,
   "assigned": [
@@ -43,35 +43,35 @@
       "gateResults": {
         "lint": {
           "status": "pass",
-          "at": "2026-09-08T15:52:06.174Z",
+          "at": "2026-09-09T04:10:28.681Z",
           "by": "claude-frontend",
-          "commitSha": "ed5d11d5e0d7b639dceed45a583c81160e4302c2",
-          "evidence": "npm run check exit 0 under pinned Node 22, this round, on the committed tree"
+          "commitSha": "eecca6b621a2fccaab09ab3ec15d3bc93936df3b",
+          "evidence": "eslint via the component runs of this round, exit 0 on the tree committed this round"
         },
         "typecheck": {
           "status": "pass",
-          "at": "2026-09-08T15:52:06.657Z",
+          "at": "2026-09-09T04:10:29.192Z",
           "by": "claude-frontend",
-          "commitSha": "ed5d11d5e0d7b639dceed45a583c81160e4302c2",
-          "evidence": "turbo run typecheck via npm run check, exit 0, this round"
+          "commitSha": "eecca6b621a2fccaab09ab3ec15d3bc93936df3b",
+          "evidence": "turbo run typecheck, exit 0 on the tree committed this round"
         },
         "unit": {
           "status": "pass",
-          "at": "2026-09-08T15:52:07.131Z",
+          "at": "2026-09-09T04:10:29.705Z",
           "by": "claude-frontend",
-          "commitSha": "ed5d11d5e0d7b639dceed45a583c81160e4302c2",
-          "evidence": "vitest via npm run check, exit 0, this round; covers the port's selection rules, the deployment gate on the demo source, and the refusal-versus-empty distinction on each migrated surface"
+          "commitSha": "eecca6b621a2fccaab09ab3ec15d3bc93936df3b",
+          "evidence": "vitest, exit 0 on the tree committed this round; the registry now publishes a narrow synchronous accessor returning either the available implementation or a named refusal, demo-title-details.ts no longer names any implementation or classifies any environment, and five new cases fail against the previous tree because the accessor did not exist"
         },
         "build": {
           "status": "pass",
-          "at": "2026-09-08T15:52:07.606Z",
+          "at": "2026-09-09T04:10:30.174Z",
           "by": "claude-frontend",
-          "commitSha": "ed5d11d5e0d7b639dceed45a583c81160e4302c2",
-          "evidence": "next build via npm run check, exit 0, this round"
+          "commitSha": "eecca6b621a2fccaab09ab3ec15d3bc93936df3b",
+          "evidence": "next build, exit 0 on the tree committed this round"
         }
       },
       "implementationAgent": "claude-frontend",
-      "updatedAt": "2026-09-08T15:52:08.078Z",
+      "updatedAt": "2026-09-09T04:10:30.656Z",
       "implementationBaseSha": "f6c4b942ebbd02fd3fa9ed8f74fde4fc603affc2",
       "implementationBaseProvenance": {
         "kind": "reconciled-existing-implementation",
@@ -93,7 +93,49 @@
         "baseCommitSurfaceTouches": [],
         "baseCommitSurfaceTouchesTruncated": false,
         "reason": "PL-0105's implementation predates its claim and is already in committed history, so an ordinary start would record a base that is false. The base was DERIVED, not chosen: git log --reverse over apps/web/src/lib/catalog-source.ts gives the first commit that introduced the port module itself, and this is that commit's parent. The port module is the correct probe because nothing older can have created it; probing a shared consumer would repeat the PL-0104 near-miss, where the oldest commit touching the declared surface was the repository's root commit carrying an unrelated fourteen-line scaffold. The commit window, both endpoints and the base commit's own surface touches are published for the reviewer to confirm that no earlier commit belongs to this implementation."
-      }
+      },
+      "review": {
+        "taskId": "PL-0105",
+        "implementationAgent": "claude-frontend",
+        "implementationOwner": "claude-frontend",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "eecca6b621a2fccaab09ab3ec15d3bc93936df3b",
+        "reviewedBaseSha": "f6c4b942ebbd02fd3fa9ed8f74fde4fc603affc2",
+        "reviewedTreeHash": "30937cd115b67fd03a6a3721f01e1567bfa5f53fffbe9a6efb195e3f1f4e0aef",
+        "reviewedFileCount": 17,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [
+          "apps/web/src/lib/catalog.ts",
+          "apps/web/src/lib/demo-catalog.ts"
+        ],
+        "outcome": "CHANGES_REQUESTED",
+        "reviewedAt": "2026-09-09T04:10:28.239Z",
+        "evidence": "CHANGES_REQUESTED on rights-review because the title surface still imports the catalog port and demoCatalogSource directly, so catalog-source-registry.ts is not the only module that knows both the abstraction and its implementation and the title surface does not satisfy the task's stated registry boundary. The runtime still fails closed on undeclared or contradictory rights and search plus home are correctly routed through the registry, but the title bypass is explicitly admitted in its own source as a wart. The catalog source comment and CATALOG_SOURCE documentation are also stale after PL-0706 because they still identify authorized-candidates.ts as the owner of the opaque-reference predicate even though that rule now lives in provider-sdk. Close the title composition-root bypass and update those statements before approval. Reviewed at f0e1546a74e8b7632ab5549e4dea7d762bcf73da; this record binds to the later commit because request-changes cannot bind to a sha whose reviewed surface has since changed. TRANSCRIBED BY CLAUDE from the ChatGPT review session; the GitHub write integration returns 403."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PL-0105",
+          "implementationAgent": "claude-frontend",
+          "implementationOwner": "claude-frontend",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "eecca6b621a2fccaab09ab3ec15d3bc93936df3b",
+          "reviewedBaseSha": "f6c4b942ebbd02fd3fa9ed8f74fde4fc603affc2",
+          "reviewedTreeHash": "30937cd115b67fd03a6a3721f01e1567bfa5f53fffbe9a6efb195e3f1f4e0aef",
+          "reviewedFileCount": 17,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "apps/web/src/lib/catalog.ts",
+            "apps/web/src/lib/demo-catalog.ts"
+          ],
+          "outcome": "CHANGES_REQUESTED",
+          "reviewedAt": "2026-09-09T04:10:28.239Z",
+          "evidence": "CHANGES_REQUESTED on rights-review because the title surface still imports the catalog port and demoCatalogSource directly, so catalog-source-registry.ts is not the only module that knows both the abstraction and its implementation and the title surface does not satisfy the task's stated registry boundary. The runtime still fails closed on undeclared or contradictory rights and search plus home are correctly routed through the registry, but the title bypass is explicitly admitted in its own source as a wart. The catalog source comment and CATALOG_SOURCE documentation are also stale after PL-0706 because they still identify authorized-candidates.ts as the owner of the opaque-reference predicate even though that rule now lives in provider-sdk. Close the title composition-root bypass and update those statements before approval. Reviewed at f0e1546a74e8b7632ab5549e4dea7d762bcf73da; this record binds to the later commit because request-changes cannot bind to a sha whose reviewed surface has since changed. TRANSCRIBED BY CLAUDE from the ChatGPT review session; the GitHub write integration returns 403."
+        }
+      ]
     }
   ],
   "review": [],

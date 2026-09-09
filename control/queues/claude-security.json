@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-09T04:10:22.856Z",
+  "generatedAt": "2026-09-09T04:10:36.958Z",
   "agent": "claude-security",
   "executionAvailable": true,
   "assigned": [
@@ -49,17 +49,17 @@
       "gateResults": {
         "typecheck": {
           "status": "pass",
-          "at": "2026-09-08T04:32:45.216Z",
+          "at": "2026-09-09T04:10:26.764Z",
           "by": "claude-security",
-          "commitSha": "ba9521b2c3998ae05210240827c0a773596819c9",
-          "evidence": "turbo run typecheck plus npm run check, plus the standalone e2e tsc pass, exit 0 under pinned Node 22 on the tree committed this round. The two fixture providers are collapsed onto the SDK's, and the app can no longer name NonProductionRuntime or fixtureRightsBasis at all -- they are removed from both barrels -- so createFixtureProvider is the only door and it cannot be opened without an application-issued classification."
+          "commitSha": "eecca6b621a2fccaab09ab3ec15d3bc93936df3b",
+          "evidence": "turbo run typecheck plus the standalone e2e tsc pass, exit 0 under pinned Node 22 on the tree committed this round. The public structural RuntimeClassification is gone from the SDK entirely; the single runtime capability now lives in packages/contracts/src/shared/runtime.ts, which both apps/web and the SDK already depend on, and its brand key is a module-private unique symbol that file never exports, so an object literal does not compile."
         },
         "unit": {
           "status": "pass",
-          "at": "2026-09-08T04:32:45.703Z",
+          "at": "2026-09-09T04:10:27.237Z",
           "by": "claude-security",
-          "commitSha": "ba9521b2c3998ae05210240827c0a773596819c9",
-          "evidence": "vitest via npm run check, exit 0, on the tree committed this round. The allowlist test in the SDK is replaced by one asserting the SDK has no opinion about which runtime names mean production, which fails loudly if an allowlist ever returns there; the app-side suite asserts the published rights reference IS the SDK's exported constant and that the basis carries a field only the SDK's own constructor writes."
+          "commitSha": "eecca6b621a2fccaab09ab3ec15d3bc93936df3b",
+          "evidence": "vitest via the component runs of this round, exit 0 on the tree committed this round. A brand is only a compile-time control, so every value classifyRuntime mints is frozen and registered in a module-level WeakSet, and createFixtureProvider consults that registry by object identity as its first action. New tests cover the two forgeries a brand alone cannot stop: an as-cast and a spread copy of a genuine classification, both refused by name before any other field is read."
         },
         "e2e": {
           "status": "pass",
@@ -70,7 +70,7 @@
         }
       },
       "implementationAgent": "claude-security",
-      "updatedAt": "2026-09-08T04:32:46.196Z",
+      "updatedAt": "2026-09-09T04:10:27.720Z",
       "implementationBaseSha": "cf98b977b3c7c0113928bb9cc4d7fb6d02e802bd",
       "implementationBaseProvenance": {
         "kind": "reconciled-existing-implementation",
@@ -98,7 +98,49 @@
         "baseCommitSurfaceTouches": [],
         "baseCommitSurfaceTouchesTruncated": false,
         "reason": "PL-0706 supersedes PL-0703, whose implementationBaseSha was recorded by an ordinary start at f6c4b942 and therefore excluded the first incident repair at 9933a55. gpt-architect verified that defect cannot be repaired in place -- release is unavailable from REVIEW and preserves an existing base, and reconciliation refuses a task that already records one -- and prescribed a blocked predecessor plus a reconciled successor. This base is cf98b977b3c7c0113928bb9cc4d7fb6d02e802bd, the immediate parent of 9933a55, named by the reviewer after reading the commit graph. It is deliberately NOT b0b1dcf5a4826b763aa72d6375dd93e95a3aff33, cf98b977's own parent, which is the unrelated PL-0503/PL-0504 commit and would widen the asserted implementation range by one commit that does not belong to this incident. The window, both endpoints and the base commit's own surface touches are published for the reviewer to confirm."
-      }
+      },
+      "review": {
+        "taskId": "PL-0706",
+        "implementationAgent": "claude-security",
+        "implementationOwner": "claude-security",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "eecca6b621a2fccaab09ab3ec15d3bc93936df3b",
+        "reviewedBaseSha": "cf98b977b3c7c0113928bb9cc4d7fb6d02e802bd",
+        "reviewedTreeHash": "a27765422e533da7825a082111b5189764d9b43082309c859218a6d6efe869f3",
+        "reviewedFileCount": 37,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [
+          "e2e/tests/media-rig.spec.ts",
+          "e2e/src/env.ts"
+        ],
+        "outcome": "CHANGES_REQUESTED",
+        "reviewedAt": "2026-09-09T04:10:26.327Z",
+        "evidence": "CHANGES_REQUESTED on both security-review and rights-review because the provider SDK still accepts a public structural RuntimeClassification and publicly exports createFixtureProvider, so any consumer can supply a literal nonblank nodeEnv and cause the factory to mint the nominal runtime witness and fabricated fixture rights basis without an application-issued classification. The single allowlist and single fixture implementation are real improvements, the construction-time URL refusal is correctly surfaced as provider unavailable without echoing credentials, the opaque reference remains non-semantic, the corrected E2E path passed in both modes, and preserving the existing candidate-id wire shape is appropriate, but the central structural-unconstructibility claim is not yet true. Reviewed at f0e1546a74e8b7632ab5549e4dea7d762bcf73da; this record binds to the later commit because request-changes cannot bind to a sha whose reviewed surface has since changed. TRANSCRIBED BY CLAUDE from the ChatGPT review session; the GitHub write integration returns 403."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PL-0706",
+          "implementationAgent": "claude-security",
+          "implementationOwner": "claude-security",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "eecca6b621a2fccaab09ab3ec15d3bc93936df3b",
+          "reviewedBaseSha": "cf98b977b3c7c0113928bb9cc4d7fb6d02e802bd",
+          "reviewedTreeHash": "a27765422e533da7825a082111b5189764d9b43082309c859218a6d6efe869f3",
+          "reviewedFileCount": 37,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "e2e/tests/media-rig.spec.ts",
+            "e2e/src/env.ts"
+          ],
+          "outcome": "CHANGES_REQUESTED",
+          "reviewedAt": "2026-09-09T04:10:26.327Z",
+          "evidence": "CHANGES_REQUESTED on both security-review and rights-review because the provider SDK still accepts a public structural RuntimeClassification and publicly exports createFixtureProvider, so any consumer can supply a literal nonblank nodeEnv and cause the factory to mint the nominal runtime witness and fabricated fixture rights basis without an application-issued classification. The single allowlist and single fixture implementation are real improvements, the construction-time URL refusal is correctly surfaced as provider unavailable without echoing credentials, the opaque reference remains non-semantic, the corrected E2E path passed in both modes, and preserving the existing candidate-id wire shape is appropriate, but the central structural-unconstructibility claim is not yet true. Reviewed at f0e1546a74e8b7632ab5549e4dea7d762bcf73da; this record binds to the later commit because request-changes cannot bind to a sha whose reviewed surface has since changed. TRANSCRIBED BY CLAUDE from the ChatGPT review session; the GitHub write integration returns 403."
+        }
+      ]
     }
   ],
   "review": [],
