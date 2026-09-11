@@ -1,5 +1,15 @@
 import type { AccountIdentity } from "@liberty/auth";
-import { NonDeploymentEnvironment } from "../../app/api/deployment-environment";
+/*
+ * Both come through `app/api/deployment-environment.ts`, this app's door for the
+ * CAPABILITY: it re-exports the registry check alongside the allowlist and the
+ * name predicate, so this file reaches `@liberty/contracts/shared/runtime` by
+ * one route rather than two. Nothing is restated -- a re-export creates no local
+ * binding, so this is the same function `createFixtureProvider` calls.
+ */
+import {
+  isClassifiedRuntime,
+  NonDeploymentEnvironment
+} from "../../app/api/deployment-environment";
 
 /* -------------------------------------------------------------------------
  * Who is making this request (PL-0402)
@@ -39,6 +49,17 @@ import { NonDeploymentEnvironment } from "../../app/api/deployment-environment";
  * `development`/`test` allowlist. The day sign-in exists, this module
  * grows a third branch that reads the verified session and the development branch
  * keeps the gate it already has.
+ *
+ * AND THE CAPABILITY IS CHECKED, NOT ONLY DECLARED. The brand is a compile-time
+ * control, and two values get past one at runtime: an
+ * `as unknown as NonDeploymentEnvironment`, and a spread copy of a genuine
+ * classification, which carries the brand and needs no cast. Either would have
+ * been handed a development identity by a function that merely accepted the
+ * type, so `developmentAccount` asks the contracts registry -- by object
+ * identity, as its first action, before a header is read -- whether that module
+ * issued this exact value. It is the ordering `createFixtureProvider` documents,
+ * and it is what lets the paragraph above be a statement about callers rather
+ * than about types.
  *
  * WHAT IT DELIBERATELY DOES NOT DO: it does not read a profile id. A client that
  * could name its own active profile would make `authorizeProfileAccess` compare
@@ -142,18 +163,58 @@ function developmentIdentifier(
 /**
  * The identity a development request acts as.
  *
- * Takes the witness, so it cannot be called from a deployment. `environment` is
- * read for the `NODE_ENV` it reports and is never re-tested.
+ * Takes the witness, so a deployment cannot obtain an identity here: it cannot
+ * be issued one, and a value it manufactured instead is refused rather than
+ * accepted on the strength of its type. The witness's ISSUANCE is checked below,
+ * by identity; the `NODE_ENV` it carries is then read
+ * for the trail and is never re-tested against the allowlist, because which name
+ * means "not a deployment" was decided by the mint and is not this file's
+ * question.
  *
  * The session id defaults to a value DERIVED from the account id rather than to
  * a constant, so two development accounts do not share one row in
  * `active_profile_selection` -- which is keyed by session and would otherwise
  * make one household's profile choice reselect the other's.
+ *
+ * THE FORGERY REFUSAL REUSES `authentication_not_configured` RATHER THAN NAMING
+ * A THIRD REASON, and the constraint is worth stating. This union is published:
+ * `accountRefusalCode` in `db/request-context.ts` widens it into
+ * `RequestContextReasonCode` by identity, and the three route groups'
+ * `contract.ts` files enumerate every code they can answer, so a new member is
+ * an API-contract change across files this lane does not own. It is also the
+ * right one of the two that exist: `development_identifier_malformed` names a
+ * header and is classified as the CALLER's fault by
+ * `contextRefusalIsClientFault`, and nothing on the wire can reach this
+ * parameter. What is left is the fact itself -- this process has not been shown
+ * to be a non-deployment, so it has no way to identify anybody -- which is
+ * exactly what `authentication_not_configured` says. The DETAIL names the
+ * forgery, and does not repeat the deployment branch's remedy, because wiring an
+ * auth instance is not the remedy for a manufactured capability.
  */
 export function developmentAccount(
   environment: NonDeploymentEnvironment,
   headers: Headers
 ): RequestAccountResolution {
+  /*
+   * THE FIRST THING THIS FUNCTION DOES, before a header is read and before
+   * `nodeEnv` is read off the witness -- the ordering `createFixtureProvider`
+   * documents. It matters here in a way a reader can check: a forged capability
+   * arriving with a malformed development header is told about the capability,
+   * not about the header, so the refusal names the fault that actually blocks
+   * the request.
+   */
+  if (!isClassifiedRuntime(environment)) {
+    return {
+      ok: false,
+      reason: "authentication_not_configured",
+      detail:
+        "the runtime classification handed to developmentAccount was not issued by " +
+        "@liberty/contracts/shared/runtime, so nothing has shown this process is not a " +
+        "deployment and no development identity is granted; a cast or a spread copy carries " +
+        "the capability's brand but not the decision behind it"
+    };
+  }
+
   const account = developmentIdentifier(
     headers,
     DEVELOPMENT_ACCOUNT_HEADER,
@@ -187,22 +248,24 @@ export function developmentAccount(
  * whatever the process looked like when the first route was loaded, which in a
  * serverless cold start is not necessarily the request's environment.
  *
- * `nodeEnv` defaults to that read and exists for the reason
- * `NonDeploymentEnvironment.classify`'s own parameter does: a test states the
- * environment it means instead of mutating `process.env` and racing every other
- * suite in the same worker. It is not a configuration switch -- nothing but a
- * test passes it, and passing `"development"` in a hosted process would require
- * editing a caller rather than setting a variable.
+ * `environment` IS THE CAPABILITY OR `null`, AND NEVER A RUNTIME NAME. It used
+ * to be a `nodeEnv` string forwarded to `classify`, so a caller could state the
+ * environment it wished to be treated as and receive a real capability for it --
+ * a development identity in a process that was not a development one. The
+ * parameter that remains cannot do that: the default reads the process, `null`
+ * is how a test asks for the deployment branch, and the granting case can only
+ * be a value the mint issued -- which `developmentAccount` establishes by asking
+ * the registry rather than by trusting the parameter's type. It is still not a
+ * request input either: nothing on the wire reaches it.
  *
- * THE `null` BRANCH CANNOT BE DROPPED. `classify` returns
+ * THE `null` BRANCH CANNOT BE DROPPED. The parameter is
  * `NonDeploymentEnvironment | null` and `developmentAccount` takes the non-null
  * type, so removing it does not widen the gate -- it fails to compile.
  */
 export function resolveRequestAccount(
   request: Request,
-  nodeEnv: string | undefined = process.env.NODE_ENV
+  environment: NonDeploymentEnvironment | null = NonDeploymentEnvironment.classify()
 ): RequestAccountResolution {
-  const environment = NonDeploymentEnvironment.classify(nodeEnv);
   if (environment === null) {
     return {
       ok: false,

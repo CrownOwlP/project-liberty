@@ -404,11 +404,13 @@ describe("outcomes", () => {
      * fails on another.
      *
      * The provider is reached through a witness because there is no other way to
-     * reach it -- `fixtureProvider` takes a `NonDeploymentEnvironment`, which
-     * only `deployment-environment.ts` can mint and only for an environment on
-     * its allowlist. `test` is the one vitest sets, and the non-null assertion
-     * is written as a throw so a failure here reads as "the allowlist changed"
-     * rather than as a `TypeError` inside the fixture builder.
+     * reach it -- `fixtureProvider` takes a `NonDeploymentEnvironment`, and the
+     * only source is `classify()`, which takes no argument and classifies the
+     * PROCESS. This test is issued one because vitest runs as `test`, which the
+     * one allowlist admits; it cannot ask for one by naming an environment. The
+     * non-null branch is written as a throw so a failure here reads as "this
+     * process is not a test process" rather than as a `TypeError` inside the
+     * fixture builder.
      *
      * The construction can also be REFUSED -- the origin goes through the same
      * outbound URL policy this endpoint runs -- and that is a throw here too,
@@ -416,8 +418,10 @@ describe("outcomes", () => {
      * stopped being admissible, which is a change to the transport policy and
      * not something this test should report as a session outcome.
      */
-    const environment = NonDeploymentEnvironment.classify("test");
-    if (environment === null) throw new Error("`test` is no longer a non-deployment environment");
+    const environment = NonDeploymentEnvironment.classify();
+    if (environment === null) {
+      throw new Error("this process is not classified as a non-deployment; vitest sets NODE_ENV=test");
+    }
 
     const fixtures = fixtureProvider(environment, "https://fixtures.invalid");
     if (fixtures.status === "refused") {

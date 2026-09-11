@@ -10,6 +10,7 @@ import {
 import { isSurfaceable } from "../../lib/catalog";
 import { selectDeclaredItems } from "../../lib/catalog-source";
 import { resolveCatalogMetadataSource } from "../../lib/catalog-source-registry";
+import { NonDeploymentEnvironment } from "../api/deployment-environment";
 
 /**
  * Explicit result union, the same shape PL-0101 uses for the catalog.
@@ -188,18 +189,27 @@ export const CATALOG_SOURCE_NOT_CONFIGURED_REASON = "catalog_source_not_configur
  * and is not a shape a catalog of real size can use; `docs/CATALOG_SOURCE.md`
  * records it as an open design question rather than an oversight.
  *
- * `now` and `nodeEnv` are parameters so a test can state the time and the
- * environment it means instead of mutating `process.env` and racing every other
- * suite in the same worker. `nodeEnv` is NOT a request input — nothing on the
- * search page passes one — and it defaults to a read of the process boundary at
- * CALL time, never at module scope.
+ * `now` is a parameter so a test can state the time it means instead of the
+ * clock's.
+ *
+ * `environment` IS THE CAPABILITY OR `null`, NEVER A RUNTIME NAME. It is the
+ * third parameter so a test can reach the deployment refusal without mutating
+ * `process.env` and racing every other suite in the same worker, and it is
+ * forwarded to the registry unchanged. It used to be a `nodeEnv` string, which
+ * meant a caller could name the environment it wished to be treated as; the mint
+ * takes no argument now, so the only non-`null` value anything can pass is one
+ * it received from a classification of the running process. A test that wants
+ * the refusal passes `null`.
+ *
+ * It is NOT a request input — nothing on the search page passes one — and the
+ * default classifies the process at CALL time, never at module scope.
  */
 export async function getSearchResults(
   query: string,
   now: Date = new Date(),
-  nodeEnv: string | undefined = process.env.NODE_ENV
+  environment: NonDeploymentEnvironment | null = NonDeploymentEnvironment.classify()
 ): Promise<SearchResponse | null> {
-  const resolution = resolveCatalogMetadataSource(nodeEnv);
+  const resolution = resolveCatalogMetadataSource(environment);
   if (resolution.status === "not-configured") return null;
 
   const records = await resolution.source.listRecords();

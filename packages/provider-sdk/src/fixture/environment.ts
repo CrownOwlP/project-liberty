@@ -35,6 +35,15 @@ import { isClassifiedRuntime, type ClassifiedRuntime } from "@liberty/contracts/
  * and recorded in a registry that `isClassifiedRuntime` answers from. A literal
  * does not compile; a cast and a spread copy compile and are refused below.
  *
+ * AND THE MINT ITSELF TAKES NO RUNTIME NAME. `classifyRuntime()` reads the
+ * process it is running in, so an issued classification is a fact somebody
+ * OBSERVED rather than one a caller stated. It briefly accepted a `nodeEnv`
+ * argument, which meant a hosted caller could be issued a genuine, registered
+ * classification of `test` -- the structural interface's defect one level down,
+ * wearing the official mint's signature. The registry proves this module was
+ * handed a value that mint issued; the mint's empty parameter list is what makes
+ * that worth proving.
+ *
  * WHERE THE ALLOWLIST IS, AND WHY THERE IS NO `NON_PRODUCTION_RUNTIMES` HERE.
  * This module used to carry `["development", "test"]` and test a caller-supplied
  * name against it, while `apps/web` carried the same two values for the same

@@ -1,5 +1,17 @@
 import type { CatalogItem } from "@liberty/contracts/domains/catalog";
-import type { NonDeploymentEnvironment } from "../app/api/deployment-environment";
+/*
+ * BOTH COME THROUGH `app/api/deployment-environment.ts`, this app's door onto
+ * `@liberty/contracts/shared/runtime`. That door names the CAPABILITY and
+ * re-exports the registry check beside it, alongside the allowlist and the name
+ * predicate, so this file reaches one module by one route instead of two. The
+ * check is not restated by the re-export -- a re-export creates no local binding
+ * and adds no hop -- so this is the same function `createFixtureProvider` and
+ * `localDeploymentFor` call.
+ */
+import {
+  isClassifiedRuntime,
+  type NonDeploymentEnvironment
+} from "../app/api/deployment-environment";
 import type {
   CatalogMetadataRecord,
   CatalogRightsBasis,
@@ -21,8 +33,34 @@ import type {
  * the search index, the title pages, the share previews -- states them as fact.
  * That is the discovery-layer version of the defect PL-0703 removed from the
  * playback path, where a fixture provider declared `owned` over media nobody had
- * opened. The remedy there is the remedy here: the fixtures are not withheld
- * from a deployment, they are UNCONSTRUCTIBLE in one.
+ * opened. The remedy there is the remedy here, and what it establishes is a
+ * statement about what a CALLER can reach along this path rather than a claim
+ * that the fixture source cannot be built at all: the gate is not a runtime `if`
+ * a later edit can drop, because the only mint answers `null` in a hosted
+ * process, every parameter on the path is typed to take that capability or
+ * `null` so no argument can introduce some other answer, and
+ * `demoCatalogSource`'s own parameter is non-nullable, which makes deleting the
+ * registry's `null` branch a compile error rather than a silent widening.
+ *
+ * AND THE TYPE IS NO LONGER TAKEN ON TRUST. `demoCatalogSource` consults
+ * `isClassifiedRuntime` as its first action, so the two forgeries a compile-time
+ * brand cannot stop -- an `as unknown as NonDeploymentEnvironment`, and a spread
+ * copy of a real classification, which carries the brand and needs no cast at
+ * all -- are refused at runtime instead of yielding the fixtures. An earlier
+ * version of this header recorded both as getting past this function, which was
+ * true then and is the gap the check closed. It is the ordering
+ * `createFixtureProvider` uses in
+ * `@liberty/provider-sdk`: ask the registry before reading any other field off
+ * any argument.
+ *
+ * WHAT IT STILL DOES NOT BIND is an edit to any of the three files named further
+ * down, or code inside the deployment that rewrites its own `NODE_ENV` before
+ * the mint reads it -- a statement executing in the deployment, with the same
+ * reach as an edit and the same visibility in a diff.
+ * `docs/CATALOG_SOURCE.md` states this boundary as a list, and its entry for
+ * this function now records that it consults the registry as its first action
+ * and throws, which is what the code below does. If the two ever disagree, this
+ * file is the one that can be checked against the code beside it.
  *
  * `NonDeploymentEnvironment` is imported rather than restated. It is the
  * capability `@liberty/contracts/shared/runtime` issues, and it cannot be built
@@ -202,25 +240,66 @@ export interface DemoCatalogMetadataSource extends SynchronousCatalogMetadataSou
  * The fixture metadata source, obtainable only with proof that this process is
  * not a deployment.
  *
- * The argument is the whole control, and it is a value rather than a condition
- * for the reason `fixtureProvider` gives at length: a runtime `if` can be
- * deleted and everything still compiles, which is how a second, ungated copy of
- * the playback fixtures came to ship. A caller here cannot construct the witness
- * and cannot reach this function without one.
+ * THE CONTROL IS THE ARGUMENT PLUS THE QUESTION ASKED OF IT, and both halves are
+ * needed. The argument is a value rather than a condition for the reason
+ * `fixtureProvider` gives at length: a runtime `if` can be deleted and
+ * everything still compiles, which is how a second, ungated copy of the playback
+ * fixtures came to ship. But a parameter typed `NonDeploymentEnvironment` is
+ * only the COMPILE-TIME half -- a cast and a spread copy both type-check -- so
+ * the runtime half is the identity check below, which asks the registry whether
+ * the contracts module issued this exact object.
  *
  * What it does not defend against is an edit to this file, to
  * `deployment-environment.ts`, or to `@liberty/contracts/shared/runtime` where
  * the capability is minted. Nothing in TypeScript can. What it defends against
  * is the way the defect actually recurs: a change somewhere else that quietly
- * stops consulting the gate.
+ * stops consulting the gate, or a caller that manufactures the value the gate
+ * asks for.
  *
  * The same remaining gap applies as everywhere else this witness is used: a
  * hosted deployment that exports `NODE_ENV=development` and runs `next dev` is
  * indistinguishable from a laptop here, because it IS a development build.
+ *
+ * WHY THE REFUSAL IS A THROW, in a repository where a refusal is normally a
+ * returned reason. This function's contract is to return a source; it has no
+ * result union to put a reason in, and it cannot grow one without editing the
+ * one module that calls it outside a test. That caller is
+ * `lib/catalog-source-registry.ts`, which owns the
+ * `not-configured` / `no_metadata_source_configured` vocabulary and is outside
+ * this lane's paths. The three alternatives are all worse: returning `null` does
+ * not compile at that call site; answering a source over an empty record list is
+ * the collapse of "refused" into "empty" that the registry header and the
+ * deleted `readFixtureCatalogItems` are both arguments against; and leaving the
+ * check out is the gap this edit exists to close. A throw on this chain is not
+ * novel either -- `CatalogMetadataSourceNotConfiguredError` in
+ * `app/title/demo-title-details.ts` is one, and `fixtureRightsBasis` in the SDK
+ * throws for the same class of condition: one only an edit or a forgery reaches.
+ *
+ * IT IS AN `Error` AND NOT A NAMED SUBCLASS, unlike that one, because nothing
+ * branches on it. `title-detail.ts` tests for its class with `instanceof` and so
+ * needs one; every caller of this function either holds a genuine capability or
+ * is a defect. If something ever has to tell this failure from another, the
+ * upgrade is the class-with-a-`reason`-field pattern in `demo-title-details.ts`,
+ * not a comparison against the message text below.
  */
 export function demoCatalogSource(
   environment: NonDeploymentEnvironment
 ): DemoCatalogMetadataSource {
+  /*
+   * THE FIRST THING THIS FUNCTION DOES, before it reads `nodeEnv` or anything
+   * else off the argument. The ordering is the one `createFixtureProvider`
+   * documents and is not incidental: a forged capability must be reported as a
+   * forgery rather than half-consumed first.
+   */
+  if (!isClassifiedRuntime(environment)) {
+    throw new Error(
+      "the runtime classification handed to demoCatalogSource was not issued by " +
+        "@liberty/contracts/shared/runtime, so nothing has shown this process is not a " +
+        "deployment; these fixtures are an invented catalog and a cast or a spread copy " +
+        "carries the capability's brand but not the decision behind it"
+    );
+  }
+
   return {
     sourceId: "demo-fixtures",
     environment: environment.nodeEnv,

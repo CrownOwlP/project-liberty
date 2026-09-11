@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   NON_DEPLOYMENT_ENVIRONMENTS,
-  NonDeploymentEnvironment
+  NonDeploymentEnvironment,
+  isNonDeploymentEnvironmentName
 } from "../app/api/deployment-environment";
 import type { CatalogMetadataRecord } from "./catalog-source";
 import {
@@ -13,7 +14,7 @@ import {
 import { demoCatalog, demoCatalogSource } from "./demo-catalog";
 
 /*
- * Environments that are not on the allowlist, written out rather than derived.
+ * Runtime NAMES that are not on the allowlist, written out rather than derived.
  *
  * A list computed as "everything except `NON_DEPLOYMENT_ENVIRONMENTS`" is not
  * computable -- the complement of a two-element allowlist over all strings is
@@ -21,14 +22,21 @@ import { demoCatalog, demoCatalogSource } from "./demo-catalog";
  * the near-misses an allowlist exists to catch: a capitalised spelling, a
  * hosting platform's own stage names, and the empty string.
  *
- * `""` IS HOW AN UNSET VARIABLE IS EXPRESSED HERE, and it is faithful rather
- * than convenient. Passing `undefined` explicitly would re-enter the default
- * parameter and read `process.env.NODE_ENV`, which under vitest is `test` -- so
- * a test that passed `undefined` expecting a refusal would be asserting the
- * opposite of what it appeared to. `classify` maps an unset variable to `""`
- * with `?? ""` for exactly this reason: neither is a claim to be local.
+ * THEY ARE NAMES, AND THE ONLY THING IN THIS FILE THAT TAKES ONE IS
+ * `isNonDeploymentEnvironmentName`. They used to be passed to the accessors,
+ * which forwarded them to the mint -- which is the hole PL-0706 closed: a
+ * process could name the environment it wished to be treated as and be issued a
+ * genuine capability for it. Neither accessor takes a name now, so name-by-name
+ * coverage of the allowlist is asserted against the predicate that answers about
+ * a string and grants nothing, and the accessors are exercised against the two
+ * things they can actually be handed: a classification, or `null`.
+ *
+ * `""` IS HOW AN UNSET VARIABLE IS EXPRESSED HERE, and it is faithful rather than
+ * convenient: `isNonDeploymentEnvironmentName` maps an absent value to `""` with
+ * `?? ""` for exactly this reason, so neither is a claim to be local. Both are
+ * asserted below.
  */
-const DEPLOYMENT_ENVIRONMENTS = [
+const DEPLOYMENT_ENVIRONMENT_NAMES = [
   "production",
   "Production",
   "PRODUCTION",
@@ -38,6 +46,30 @@ const DEPLOYMENT_ENVIRONMENTS = [
   "ci",
   ""
 ] as const;
+
+/**
+ * This process's own classification, minted once at import.
+ *
+ * `classify()` TAKES NO ARGUMENT: it classifies THE PROCESS, so nothing in this
+ * file can ask to be treated as an environment it is not running in. This suite
+ * is issued a real capability because vitest really does run as `test`, which
+ * the one allowlist admits -- the classification is true, not a loophole -- and
+ * it is the only way anything in this repository reaches the granting branch.
+ *
+ * The refusing branch is reached by passing `null`, which is precisely the value
+ * a deployment receives from the same mint.
+ */
+function classifiedProcess(): NonDeploymentEnvironment {
+  const environment = NonDeploymentEnvironment.classify();
+  if (environment === null) {
+    throw new Error(
+      "this process is not classified as a non-deployment; vitest sets NODE_ENV=test, which NON_DEPLOYMENT_ENVIRONMENTS admits"
+    );
+  }
+  return environment;
+}
+
+const TEST_RUNTIME: NonDeploymentEnvironment = classifiedProcess();
 
 /**
  * Everything a resolution OBSERVABLY says, reduced to comparable values.
@@ -88,22 +120,65 @@ async function observe(
   };
 }
 
-describe("resolveCatalogMetadataSource", () => {
-  /*
-   * Tied to the allowlist rather than restating it. If a value is ever added to
-   * `NON_DEPLOYMENT_ENVIRONMENTS`, this test starts covering it without being
-   * edited -- and if the registry ever stops consulting that array, this fails.
-   */
-  it("configures the fixture source for every environment the allowlist admits", () => {
+/*
+ * The allowlist itself, asserted where it can now be asked about.
+ *
+ * WHY IT IS NOT ASSERTED THROUGH THE REGISTRY ANY MORE. These two tests used to
+ * be loops over `NON_DEPLOYMENT_ENVIRONMENTS` and the deployment names, handed
+ * to the accessors. That only worked because the accessors forwarded a name to
+ * the mint, which is the defect: a hosted process calling either one with `test`
+ * received a genuine capability and the demo catalog with it. The names are now
+ * asked of `isNonDeploymentEnvironmentName`, which answers about a string and
+ * issues, registers and grants nothing, so the coverage survives the parameter
+ * that carried it.
+ *
+ * IT IS THE SAME ARRAY THE REGISTRY'S GATE RESTS ON, one function call away:
+ * `classifyRuntime` admits a process by calling this exact predicate, and
+ * `NonDeploymentEnvironment.classify` is one line over `classifyRuntime`. So a
+ * value added to the allowlist starts being covered here without an edit.
+ *
+ * WHAT THIS PAIR DOES NOT PROVE, said rather than implied: that the mint still
+ * consults the array. That link is a line inside `classifyRuntime` and is not
+ * observable from a name. What the accessor suites below assert is the gate
+ * itself, against the two values it can be handed -- a classification this
+ * process was issued, and `null`.
+ */
+describe("the runtime allowlist the registry's gate rests on", () => {
+  it("admits every name NON_DEPLOYMENT_ENVIRONMENTS publishes", () => {
     expect(NON_DEPLOYMENT_ENVIRONMENTS.length).toBeGreaterThan(0);
 
     for (const nodeEnv of NON_DEPLOYMENT_ENVIRONMENTS) {
-      const resolution = resolveCatalogMetadataSource(nodeEnv);
-
-      expect(resolution.status, nodeEnv).toBe("configured");
-      if (resolution.status !== "configured") continue;
-      expect(resolution.source.sourceId, nodeEnv).toBe("demo-fixtures");
+      expect(isNonDeploymentEnvironmentName(nodeEnv), nodeEnv).toBe(true);
     }
+  });
+
+  /*
+   * THE ONE THAT MATTERS AT THE NAME LEVEL. An allowlist exists to refuse what it
+   * does not recognise, so the near-misses are asserted alongside the obvious
+   * ones -- a capitalised spelling and a hosting platform's stage name are how
+   * this fails open if the comparison is ever loosened.
+   */
+  it("refuses every deployment name, the near-misses, and an unset variable", () => {
+    for (const nodeEnv of DEPLOYMENT_ENVIRONMENT_NAMES) {
+      expect(isNonDeploymentEnvironmentName(nodeEnv), JSON.stringify(nodeEnv)).toBe(false);
+    }
+
+    expect(isNonDeploymentEnvironmentName(undefined)).toBe(false);
+  });
+});
+
+describe("resolveCatalogMetadataSource", () => {
+  /*
+   * The granting branch, reached the only way anything can reach it: with a
+   * classification this process was actually issued. There is no loop over
+   * environment names here because there is no parameter to put one in.
+   */
+  it("configures the fixture source when handed a classification", () => {
+    const resolution = resolveCatalogMetadataSource(TEST_RUNTIME);
+
+    expect(resolution.status).toBe("configured");
+    if (resolution.status !== "configured") return;
+    expect(resolution.source.sourceId).toBe("demo-fixtures");
   });
 
   /*
@@ -111,41 +186,44 @@ describe("resolveCatalogMetadataSource", () => {
    * cannot serve six invented titles as though they were the catalog. The
    * refusal is a named reason and not an empty list, because "no provider is
    * configured" has an operator remedy and "the catalog is empty" does not.
+   *
+   * `null` IS THE DEPLOYMENT, not a stand-in for one: it is exactly what
+   * `classify()` answers in a hosted process, so this exercises the branch a
+   * deployment takes rather than a simulation of it.
    */
   it("configures nothing on a deployment, with a stated reason", () => {
-    for (const nodeEnv of DEPLOYMENT_ENVIRONMENTS) {
-      const resolution = resolveCatalogMetadataSource(nodeEnv);
-
-      expect(resolution, JSON.stringify(nodeEnv)).toEqual({
-        status: "not-configured",
-        reason: "no_metadata_source_configured"
-      });
-    }
+    expect(resolveCatalogMetadataSource(null)).toEqual({
+      status: "not-configured",
+      reason: "no_metadata_source_configured"
+    });
   });
 
   /*
-   * The default argument is a read of the process boundary at CALL time, not a
-   * frozen module-scope value. Compared against the same read rather than
-   * against a hardcoded verdict, so this asserts the wiring without also
-   * asserting which environment the suite happens to run in.
+   * The default argument classifies the process at CALL time, and does not
+   * freeze a verdict at module scope. Compared against an explicit call to the
+   * same mint rather than against a hardcoded expectation, so this asserts the
+   * wiring without also asserting which environment the suite happens to run in.
    *
    * COMPARED ON OBSERVABLE FACTS RATHER THAN ON THE TWO OBJECTS. See `observe`
    * above: the configured branch carries closures, two calls build two of them,
    * and `toEqual` reads that as a difference while printing none. What this
    * asserts is what it always meant to assert -- that the parameterless call
    * lands on the same branch, with the same source, publishing the same records,
-   * as the call that states `process.env.NODE_ENV` explicitly.
+   * as the call that states the classification explicitly.
    *
    * It is not a vacuous comparison of two refusals: vitest sets `NODE_ENV=test`,
-   * which `NON_DEPLOYMENT_ENVIRONMENTS` admits, so both sides are configured
-   * resolutions here. A default argument that read anything else -- a
-   * module-scope snapshot taken before the environment was set, a hardcoded
-   * value, nothing at all -- puts the two calls on different branches and this
-   * fails.
+   * which the allowlist admits, so both sides are configured resolutions here. A
+   * default that answered anything else -- a module-scope snapshot taken before
+   * the environment was set, a hardcoded `null`, nothing at all -- puts the two
+   * calls on different branches and this fails.
+   *
+   * WHAT IT NO LONGER HAS TO RULE OUT is a default that read the environment
+   * from somewhere other than the process, because `classify` accepts nothing
+   * from which a different environment could arrive.
    */
-  it("reads the process environment when given no argument", async () => {
+  it("classifies the process when given no argument", async () => {
     expect(await observe(resolveCatalogMetadataSource())).toEqual(
-      await observe(resolveCatalogMetadataSource(process.env.NODE_ENV))
+      await observe(resolveCatalogMetadataSource(NonDeploymentEnvironment.classify()))
     );
   });
 });
@@ -168,29 +246,17 @@ describe("resolveSynchronousCatalogMetadataSource", () => {
    * starting to compare a promise against an array at runtime.
    */
   it("answers a source a synchronous caller can use without awaiting", () => {
-    const resolution = resolveSynchronousCatalogMetadataSource("development");
+    const resolution = resolveSynchronousCatalogMetadataSource(TEST_RUNTIME);
 
     expect(resolution.status).toBe("configured");
     if (resolution.status !== "configured") return;
 
+    expect(resolution.source.sourceId).toBe("demo-fixtures");
     expect(resolution.source.listRecords().map((entry) => entry.item.id)).toEqual(
       demoCatalog.map((item) => item.id)
     );
     expect(resolution.source.findRecord("northstar")?.item.id).toBe("northstar");
     expect(resolution.source.findRecord("no-such-title")).toBeNull();
-  });
-
-  /* Tied to the allowlist rather than restating it, as above. */
-  it("configures the fixture source for every environment the allowlist admits", () => {
-    expect(NON_DEPLOYMENT_ENVIRONMENTS.length).toBeGreaterThan(0);
-
-    for (const nodeEnv of NON_DEPLOYMENT_ENVIRONMENTS) {
-      const resolution = resolveSynchronousCatalogMetadataSource(nodeEnv);
-
-      expect(resolution.status, nodeEnv).toBe("configured");
-      if (resolution.status !== "configured") continue;
-      expect(resolution.source.sourceId, nodeEnv).toBe("demo-fixtures");
-    }
   });
 
   /*
@@ -203,15 +269,10 @@ describe("resolveSynchronousCatalogMetadataSource", () => {
    * fails here rather than passing a status check.
    */
   it("refuses on a deployment with a named reason, never an empty catalog", () => {
-    for (const nodeEnv of DEPLOYMENT_ENVIRONMENTS) {
-      expect(
-        resolveSynchronousCatalogMetadataSource(nodeEnv),
-        JSON.stringify(nodeEnv)
-      ).toEqual({
-        status: "not-configured",
-        reason: "no_metadata_source_configured"
-      });
-    }
+    expect(resolveSynchronousCatalogMetadataSource(null)).toEqual({
+      status: "not-configured",
+      reason: "no_metadata_source_configured"
+    });
   });
 
   /*
@@ -223,23 +284,25 @@ describe("resolveSynchronousCatalogMetadataSource", () => {
    * build two of them.
    */
   it("gates on the same classification as the async-capable accessor", async () => {
-    for (const nodeEnv of [...NON_DEPLOYMENT_ENVIRONMENTS, ...DEPLOYMENT_ENVIRONMENTS]) {
+    const cases: readonly (NonDeploymentEnvironment | null)[] = [TEST_RUNTIME, null];
+
+    for (const environment of cases) {
       expect(
-        await observe(resolveSynchronousCatalogMetadataSource(nodeEnv)),
-        JSON.stringify(nodeEnv)
-      ).toEqual(await observe(resolveCatalogMetadataSource(nodeEnv)));
+        await observe(resolveSynchronousCatalogMetadataSource(environment)),
+        environment === null ? "deployment" : "classified process"
+      ).toEqual(await observe(resolveCatalogMetadataSource(environment)));
     }
   });
 
   /*
-   * The default argument is a read of the process boundary at CALL time, not a
-   * frozen module-scope value -- the same property the async-capable accessor is
+   * The default argument classifies the process at CALL time and does not freeze
+   * a verdict at module scope -- the same property the async-capable accessor is
    * asserted for above, and it has to hold on both or the title surface and the
    * search surface can disagree about one process.
    */
-  it("reads the process environment when given no argument", async () => {
+  it("classifies the process when given no argument", async () => {
     expect(await observe(resolveSynchronousCatalogMetadataSource())).toEqual(
-      await observe(resolveSynchronousCatalogMetadataSource(process.env.NODE_ENV))
+      await observe(resolveSynchronousCatalogMetadataSource(NonDeploymentEnvironment.classify()))
     );
   });
 });
@@ -270,22 +333,40 @@ describe("resolveSynchronousCatalogMetadataSource", () => {
 
 describe("the demo metadata source", () => {
   /*
-   * OBTAINING ONE REQUIRES HANDLING THE REFUSAL, and this test has to do it in
-   * full view: `classify` answers `NonDeploymentEnvironment | null` and
-   * `demoCatalogSource` takes the non-null type, so there is no expression that
-   * reaches the fixtures without this branch. That is the whole control -- a
-   * runtime `if` in the registry could be deleted and everything would still
-   * compile.
+   * OBTAINING ONE REQUIRES HANDLING THE REFUSAL, and `classifiedProcess` at the
+   * top of this file does it in full view: `classify()` answers
+   * `NonDeploymentEnvironment | null` and `demoCatalogSource` takes the non-null
+   * type, so there is no expression that reaches the fixtures without that
+   * branch. That is what makes it a control rather than a formality: a bare
+   * runtime `if` in front of an ungated factory could be deleted and everything
+   * would still compile, whereas deleting the `null` branch in the registry is a
+   * type error, because the factory's parameter is not nullable.
    */
-  const environment = NonDeploymentEnvironment.classify("development");
-  if (environment === null) {
-    throw new Error("development is on NON_DEPLOYMENT_ENVIRONMENTS and must classify");
-  }
-  const source = demoCatalogSource(environment);
+  const source = demoCatalogSource(TEST_RUNTIME);
 
-  it("reports the environment that admitted it, rather than re-reading one", () => {
-    expect(source.environment).toBe("development");
-    expect(demoCatalogSource(environment).environment).toBe(environment.nodeEnv);
+  /*
+   * The source reports the environment carried by the capability it was given.
+   *
+   * WHAT THIS NO LONGER DISCRIMINATES, stated rather than left for a reader to
+   * discover. It used to classify `development` from a process running as `test`,
+   * so a `demoCatalogSource` that re-read `process.env` instead of reading its
+   * argument answered a different string and failed here. Nothing mints from a
+   * name any more, so the only capability this suite can hold carries this
+   * process's own `NODE_ENV` and the two answers coincide -- and the alternative,
+   * assigning `process.env.NODE_ENV` mid-suite to manufacture a divergence, races
+   * every other file sharing this worker, which is the trade every comment in
+   * this lane refuses.
+   *
+   * WHAT SURVIVES is that the field is populated from the capability rather than
+   * invented: `nodeEnv` is the only member `NonDeploymentEnvironment` exposes, so
+   * a source that answered anything else would have had to read the environment
+   * itself. The value is asserted to be one the allowlist admits, which is the
+   * property that made it worth reporting.
+   */
+  it("reports the environment its capability carries", () => {
+    expect(source.environment).toBe(TEST_RUNTIME.nodeEnv);
+    expect(isNonDeploymentEnvironmentName(source.environment)).toBe(true);
+    expect(demoCatalogSource(TEST_RUNTIME).environment).toBe(TEST_RUNTIME.nodeEnv);
   });
 
   /*
@@ -329,5 +410,63 @@ describe("the demo metadata source", () => {
     expect(source.findRecord("")).toBeNull();
     /* Episode ids are generated by the title surface, not held by the catalog. */
     expect(source.findRecord("northstar-s1e1")).toBeNull();
+  });
+});
+
+/*
+ * The runtime half of the gate on the fixtures, which the type cannot supply.
+ *
+ * `demoCatalogSource`'s parameter is checked by the COMPILER, and two values get
+ * past a compiler: an `as unknown as NonDeploymentEnvironment`, and a spread copy
+ * of a genuine classification. The cast is the blunt forgery; the SPREAD is the
+ * subtle one and the reason a brand alone was never enough -- object spread
+ * copies the symbol-keyed brand along with everything else, so it type-checks
+ * with no cast at all and only object IDENTITY tells it from the real thing.
+ * Both are exercised, matching
+ * `packages/provider-sdk/src/fixture/provider.test.ts` and the equivalent suites
+ * in `lib/db/in-memory-repository.test.ts` and `lib/session/account.test.ts`.
+ *
+ * NEITHER CASE THROWS WITHOUT THE REGISTRY CHECK IN `demoCatalogSource`. A
+ * forgery is not `null`, so the registry's deployment branch never sees it, and
+ * the factory itself reads nothing off the argument but `nodeEnv` -- which both
+ * forgeries carry, and carry as a value the allowlist admits. Without the check
+ * each one is handed a working source over all six fixture records, which is the
+ * exact outcome the gate exists to keep out of a hosted build.
+ *
+ * THERE IS NO ORDERING TEST HERE, unlike the fixture provider's and
+ * `developmentAccount`'s. Those refuse other things too -- an origin, a malformed
+ * header -- so "the forgery is reported first" is a fact with two possible
+ * answers. This function's only other act is reading `nodeEnv`, which produces no
+ * refusal of its own, so such a test would pass with and without the check and is
+ * not worth writing.
+ *
+ * The granting direction is not restated: `demoCatalogSource(TEST_RUNTIME)` is
+ * called in the suite above, at describe-body scope, so a check that refused a
+ * genuine capability would fail there during collection.
+ */
+describe("a classification the contracts module never issued", () => {
+  it("cannot obtain the fixture source", () => {
+    const cast = { nodeEnv: "test" } as unknown as NonDeploymentEnvironment;
+    /* Genuine, then copied: the copy carries the brand and is refused anyway. */
+    const copied: NonDeploymentEnvironment = { ...TEST_RUNTIME };
+    const forgeries: readonly (readonly [string, NonDeploymentEnvironment])[] = [
+      ["a cast", cast],
+      ["a spread copy", copied]
+    ];
+
+    for (const [label, forged] of forgeries) {
+      /*
+       * A throw rather than a returned reason, because this function's contract
+       * is to return a source and it has no result union to put one in; the
+       * registry above it publishes `no_metadata_source_configured` properly for
+       * the caller that came through it with `null`. Matched on the phrase that
+       * names the fault rather than on the whole message, so rewording the rest
+       * does not break this.
+       */
+      expect(() => demoCatalogSource(forged), label).toThrow(
+        "the runtime classification handed to demoCatalogSource was not issued by " +
+          "@liberty/contracts/shared/runtime"
+      );
+    }
   });
 });

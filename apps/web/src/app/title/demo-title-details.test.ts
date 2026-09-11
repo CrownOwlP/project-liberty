@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { NON_DEPLOYMENT_ENVIRONMENTS } from "../api/deployment-environment";
+import { NonDeploymentEnvironment } from "../api/deployment-environment";
 import {
   CatalogMetadataSourceNotConfiguredError,
   findDemoTitleDetail
@@ -26,40 +26,47 @@ import { loadTitleDetail } from "./title-detail";
  * ---------------------------------------------------------------------- */
 
 /**
- * Environments that are not on the allowlist, written out rather than derived,
- * for the reason `lib/catalog-source-registry.test.ts` gives at length: the
- * complement of a two-element allowlist over all strings is not computable, so
- * these are the values a real deployment reports plus the near-misses an
- * allowlist exists to catch.
+ * This process's own classification, minted once at import.
  *
- * `""` IS HOW AN UNSET VARIABLE IS EXPRESSED. Passing `undefined` would re-enter
- * `findDemoTitleDetail`'s default parameter and read `process.env.NODE_ENV`,
- * which under vitest is `test` and therefore ON the allowlist -- so a test that
- * passed `undefined` expecting a refusal would be asserting the opposite of what
- * it appeared to.
+ * `findDemoTitleDetail` TAKES THE CAPABILITY OR `null`, NOT A RUNTIME NAME.
+ * There used to be a list of deployment names here, passed as the second
+ * argument and forwarded through the registry to the mint -- which is the hole
+ * PL-0706 closed, because a hosted process could name `test` and be issued a
+ * genuine capability for it. The granting case is now the classification this
+ * process really holds (vitest runs as `test`, which the one allowlist admits,
+ * so the classification is true rather than asserted), and the refusing case is
+ * `null`, which is exactly what `classify()` answers in a deployment.
+ *
+ * `null` IS ALSO WHY `undefined` IS NEVER PASSED HERE. `undefined` re-enters the
+ * default parameter and classifies this process, which is on the allowlist -- so
+ * a test that passed it expecting a refusal would be asserting the opposite of
+ * what it appeared to.
+ *
+ * Name-by-name coverage of the allowlist has not been dropped, only moved: it is
+ * asserted against `isNonDeploymentEnvironmentName` in
+ * `lib/catalog-source-registry.test.ts`, which answers about a string and issues
+ * nothing.
  */
-const DEPLOYMENT_ENVIRONMENTS = [
-  "production",
-  "Production",
-  "PRODUCTION",
-  "staging",
-  "preview",
-  "prod",
-  "ci",
-  ""
-] as const;
+function classifiedProcess(): NonDeploymentEnvironment {
+  const environment = NonDeploymentEnvironment.classify();
+  if (environment === null) {
+    throw new Error(
+      "this process is not classified as a non-deployment; vitest sets NODE_ENV=test, which NON_DEPLOYMENT_ENVIRONMENTS admits"
+    );
+  }
+  return environment;
+}
+
+const TEST_RUNTIME: NonDeploymentEnvironment = classifiedProcess();
 
 /** A fixed clock, so nothing here depends on when the suite runs. */
 const ISO = "2026-08-14T00:00:00.000Z";
 
 describe("findDemoTitleDetail on a deployment", () => {
-  it("throws for every environment outside the allowlist", () => {
-    for (const nodeEnv of DEPLOYMENT_ENVIRONMENTS) {
-      expect(
-        () => findDemoTitleDetail("aurora-fall", nodeEnv),
-        JSON.stringify(nodeEnv)
-      ).toThrow(CatalogMetadataSourceNotConfiguredError);
-    }
+  it("throws rather than answering when there is no classification", () => {
+    expect(() => findDemoTitleDetail("aurora-fall", null)).toThrow(
+      CatalogMetadataSourceNotConfiguredError
+    );
   });
 
   /*
@@ -69,7 +76,7 @@ describe("findDemoTitleDetail on a deployment", () => {
    * a process that never consulted a catalog.
    */
   it("refuses an unknown id the same way, rather than reporting not-found", () => {
-    expect(() => findDemoTitleDetail("no-such-title", "production")).toThrow(
+    expect(() => findDemoTitleDetail("no-such-title", null)).toThrow(
       CatalogMetadataSourceNotConfiguredError
     );
   });
@@ -78,7 +85,7 @@ describe("findDemoTitleDetail on a deployment", () => {
     let thrown: unknown = null;
 
     try {
-      findDemoTitleDetail("aurora-fall", "production");
+      findDemoTitleDetail("aurora-fall", null);
     } catch (error) {
       thrown = error;
     }
@@ -93,19 +100,16 @@ describe("findDemoTitleDetail on a deployment", () => {
 
 describe("findDemoTitleDetail outside a deployment", () => {
   /*
-   * Tied to the allowlist rather than restating it. If a value is ever added to
-   * `NON_DEPLOYMENT_ENVIRONMENTS`, this starts covering it without being edited.
+   * The granting branch, reached the only way anything can reach it: with a
+   * classification this process was actually issued. There is no loop over
+   * environment names because there is no parameter to put one in.
    */
-  it("answers a detail for every environment the allowlist admits", () => {
-    expect(NON_DEPLOYMENT_ENVIRONMENTS.length).toBeGreaterThan(0);
+  it("answers a detail when handed a classification", () => {
+    const detail = findDemoTitleDetail("aurora-fall", TEST_RUNTIME);
 
-    for (const nodeEnv of NON_DEPLOYMENT_ENVIRONMENTS) {
-      const detail = findDemoTitleDetail("aurora-fall", nodeEnv);
-
-      expect(detail, nodeEnv).not.toBeNull();
-      expect(detail?.id, nodeEnv).toBe("aurora-fall");
-      expect(detail?.kind, nodeEnv).toBe("movie");
-    }
+    expect(detail).not.toBeNull();
+    expect(detail?.id).toBe("aurora-fall");
+    expect(detail?.kind).toBe("movie");
   });
 
   /*
@@ -114,18 +118,18 @@ describe("findDemoTitleDetail outside a deployment", () => {
    * `listRecords` and regenerating the series' episode list.
    */
   it("resolves a series directly and an episode through its series", () => {
-    const series = findDemoTitleDetail("northstar", "development");
+    const series = findDemoTitleDetail("northstar", TEST_RUNTIME);
     expect(series?.kind).toBe("series");
     expect(series?.id).toBe("northstar");
 
-    const episode = findDemoTitleDetail("northstar-s1e1", "development");
+    const episode = findDemoTitleDetail("northstar-s1e1", TEST_RUNTIME);
     expect(episode?.kind).toBe("episode");
     expect(episode?.id).toBe("northstar-s1e1");
   });
 
   it("answers null for an id nothing knows about", () => {
-    expect(findDemoTitleDetail("no-such-title", "development")).toBeNull();
-    expect(findDemoTitleDetail("", "development")).toBeNull();
+    expect(findDemoTitleDetail("no-such-title", TEST_RUNTIME)).toBeNull();
+    expect(findDemoTitleDetail("", TEST_RUNTIME)).toBeNull();
   });
 
   /*
@@ -134,8 +138,8 @@ describe("findDemoTitleDetail outside a deployment", () => {
    * against a source that always refuses, the other against one that never does.
    */
   it("keeps not-found and refused apart, which is why one of them throws", () => {
-    expect(findDemoTitleDetail("no-such-title", "development")).toBeNull();
-    expect(() => findDemoTitleDetail("no-such-title", "production")).toThrow(
+    expect(findDemoTitleDetail("no-such-title", TEST_RUNTIME)).toBeNull();
+    expect(() => findDemoTitleDetail("no-such-title", null)).toThrow(
       CatalogMetadataSourceNotConfiguredError
     );
   });
@@ -144,16 +148,17 @@ describe("findDemoTitleDetail outside a deployment", () => {
 /*
  * The refusal as a reader actually receives it.
  *
- * The source is injected rather than left to default, because the default reads
- * `process.env.NODE_ENV` and under vitest that is `test`. Injecting the same
+ * The source is injected rather than left to default, because the default
+ * classifies this process and under vitest that succeeds. Injecting the same
  * shape `getTitleDetail` builds -- `findDemoTitleDetail` wrapped in a
  * `generatedAt` -- exercises the real throw through the real loader while still
- * letting the test state which environment it means.
+ * letting the test choose the branch it means, by handing the fixture module
+ * `null` instead of the capability.
  */
 describe("the refusal as loadTitleDetail publishes it", () => {
   it("reports catalog_source_not_configured rather than the generic source failure", async () => {
     const result = await loadTitleDetail("aurora-fall", (id) => {
-      const detail = findDemoTitleDetail(id, "production");
+      const detail = findDemoTitleDetail(id, null);
       return detail === null ? null : { detail, generatedAt: ISO };
     });
 
@@ -174,7 +179,7 @@ describe("the refusal as loadTitleDetail publishes it", () => {
 
   it("loads normally through the same injected shape outside a deployment", async () => {
     const result = await loadTitleDetail("aurora-fall", (id) => {
-      const detail = findDemoTitleDetail(id, "development");
+      const detail = findDemoTitleDetail(id, TEST_RUNTIME);
       return detail === null ? null : { detail, generatedAt: ISO };
     });
 
@@ -190,7 +195,7 @@ describe("the refusal as loadTitleDetail publishes it", () => {
    */
   it("keeps not-found apart from the refusal at the loader boundary", async () => {
     const missing = await loadTitleDetail("no-such-title", (id) => {
-      const detail = findDemoTitleDetail(id, "development");
+      const detail = findDemoTitleDetail(id, TEST_RUNTIME);
       return detail === null ? null : { detail, generatedAt: ISO };
     });
 

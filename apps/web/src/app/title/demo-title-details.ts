@@ -9,6 +9,7 @@ import {
   type SynchronousCatalogMetadataSource
 } from "../../lib/catalog-source";
 import { resolveSynchronousCatalogMetadataSource } from "../../lib/catalog-source-registry";
+import { NonDeploymentEnvironment } from "../api/deployment-environment";
 
 /**
  * Fictional development fixtures for the title surface, built from the same
@@ -29,11 +30,18 @@ import { resolveSynchronousCatalogMetadataSource } from "../../lib/catalog-sourc
  * lookups below take a `SynchronousCatalogMetadataSource` from
  * `lib/catalog-source-registry.ts`, the one composition root.
  *
- * The fixtures are still not withheld from a deployment — they are
- * UNCONSTRUCTIBLE in one, because the registry cannot build `demoCatalogSource`
- * without the `NonDeploymentEnvironment` witness. What reaches this module on a
- * deployment is the registry's refusal, which `configuredSource` below turns into
- * `CatalogMetadataSourceNotConfiguredError`.
+ * A DEPLOYMENT DOES NOT REACH THE FIXTURES THROUGH THIS MODULE, and the reason is
+ * structural rather than a check a later edit could quietly drop: the registry
+ * cannot build `demoCatalogSource` without a `NonDeploymentEnvironment`, the only
+ * mint for one reads the process and answers `null` for a deployment, and no
+ * function on this path takes an environment NAME through which some other answer
+ * could be supplied. What reaches this module on a deployment is the registry's
+ * refusal, which `configuredSource` below turns into
+ * `CatalogMetadataSourceNotConfiguredError`. That binds a CALLER; it is not a
+ * claim that the fixture source cannot be built at all, and
+ * `docs/CATALOG_SOURCE.md` states the exact boundary — a cast past the brand, an
+ * edit to one of three files, and code that rewrites its own `NODE_ENV` all lie
+ * outside it.
  *
  * The extras declared in this file (synopsis, technical metadata, episodes) are
  * still fixtures with no source behind them, and they are still replaced when an
@@ -294,26 +302,32 @@ export class CatalogMetadataSourceNotConfiguredError extends Error {
  * without awaiting — this branch has to choose what a reader is told rather than
  * continuing to publish this one.
  *
- * `nodeEnv` IS A PARAMETER SO THE REFUSAL IS REACHABLE FROM A TEST, the same
- * arrangement the registry and `getSearchResults` use: a suite states the
- * environment it means instead of mutating `process.env` and racing every other
- * suite in the same worker. It is NOT a request input — nothing on the title
- * route passes one — and it is forwarded to the registry, which forwards it to
- * `classify`. Every default on that chain, including this one, is a read of the
- * process boundary at CALL time and never at module scope, for the reason
+ * `environment` IS A PARAMETER SO THE REFUSAL IS REACHABLE FROM A TEST, the same
+ * arrangement the registry and `getSearchResults` use: a suite reaches the
+ * deployment branch by passing `null` instead of mutating `process.env` and
+ * racing every other suite in the same worker. It is NOT a request input —
+ * nothing on the title route passes one — and it is forwarded to the registry
+ * unchanged. Every default on that chain, including this one, classifies the
+ * process at CALL time and never at module scope, for the reason
  * `deployment-environment.ts` gives: a module-scope read freezes the answer to
  * whatever the process looked like when the first route was loaded. Only one of
  * those defaults ever runs, because a hop that was given a value passes it on.
  *
- * Passing `undefined` EXPLICITLY re-enters a default and therefore reads
- * `process.env.NODE_ENV`, which under vitest is `test` and therefore on the
- * allowlist. A caller that means "no environment was stated" passes `""`, which
- * is how `classify` itself spells an unset variable (`?? ""`).
+ * IT IS THE CAPABILITY OR `null`, NEVER A RUNTIME NAME. It used to be a `nodeEnv`
+ * string forwarded to `classify`, and a caller could therefore name an
+ * environment this process was not running in and be issued a genuine capability
+ * for it. The mint declares no parameter now, so the only non-`null` value
+ * anything can hand this function is one that came from a classification of the
+ * running process, and `null` is the only value a deployment can obtain.
+ *
+ * Passing `undefined` EXPLICITLY re-enters the default and therefore classifies
+ * this process, which under vitest is `test` and therefore on the allowlist. A
+ * test that means "a deployment" passes `null`.
  */
 function configuredSource(
-  nodeEnv: string | undefined = process.env.NODE_ENV
+  environment: NonDeploymentEnvironment | null = NonDeploymentEnvironment.classify()
 ): SynchronousCatalogMetadataSource {
-  const resolution = resolveSynchronousCatalogMetadataSource(nodeEnv);
+  const resolution = resolveSynchronousCatalogMetadataSource(environment);
   if (resolution.status === "not-configured") {
     throw new CatalogMetadataSourceNotConfiguredError();
   }
@@ -334,18 +348,18 @@ function configuredSource(
  * entities here — they are generated from a series' `episodeCount` — so the
  * second question is the only way to reach one.
  *
- * `nodeEnv` is forwarded to `configuredSource`, whose comment carries the whole
- * argument for it: it exists so a test can reach the deployment refusal without
- * mutating `process.env`, it is never a request input, and `undefined` means
- * "read the process" rather than "no environment". `getTitleDetail` in
- * `title-detail.ts` calls this with one argument and therefore gets the process
- * default, which is the production path.
+ * `environment` is forwarded to `configuredSource`, whose comment carries the
+ * whole argument for it: it is the capability or `null` rather than a runtime
+ * name, it exists so a test can reach the deployment refusal by passing `null`
+ * without mutating `process.env`, and it is never a request input.
+ * `getTitleDetail` in `title-detail.ts` calls this with one argument and
+ * therefore gets the process default, which is the production path.
  */
 export function findDemoTitleDetail(
   contentId: string,
-  nodeEnv: string | undefined = process.env.NODE_ENV
+  environment: NonDeploymentEnvironment | null = NonDeploymentEnvironment.classify()
 ): TitleDetail | null {
-  const source = configuredSource(nodeEnv);
+  const source = configuredSource(environment);
 
   const record = source.findRecord(contentId);
   if (record !== null) {

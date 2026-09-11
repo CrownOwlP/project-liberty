@@ -32,9 +32,22 @@ const HOUSEHOLD: AccountIdentity = { userId: "household-a", sessionId: "session-
 const INSTANT = new Date("2026-09-04T10:00:00.000Z");
 const CONTENT = "aurora-fall";
 
+/**
+ * The in-memory adapter, admitted by THIS process's own classification.
+ *
+ * `classify` takes no argument -- it reads the process rather than a name its
+ * caller supplied. The witness is genuine because the process running this suite
+ * really is a test process: vitest sets `NODE_ENV=test`, which
+ * `NON_DEPLOYMENT_ENVIRONMENTS` admits. Nothing in this file rewrites
+ * `NODE_ENV`, so the answer is the same whenever it is asked.
+ */
 function newRepository(): LibertyRepository {
-  const environment = NonDeploymentEnvironment.classify("test");
-  if (environment === null) throw new Error('NonDeploymentEnvironment.classify rejected "test"');
+  const environment = NonDeploymentEnvironment.classify();
+  if (environment === null) {
+    throw new Error(
+      "this process is not classified as a non-deployment; vitest sets NODE_ENV=test, which NON_DEPLOYMENT_ENVIRONMENTS admits"
+    );
+  }
   return createInMemoryRepository(environment, createInMemoryStore());
 }
 

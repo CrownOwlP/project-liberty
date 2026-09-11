@@ -13,6 +13,7 @@ import {
 } from "@liberty/provider-sdk";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  isNonDeploymentEnvironmentName,
   NON_DEPLOYMENT_ENVIRONMENTS,
   NonDeploymentEnvironment
 } from "../../../deployment-environment";
@@ -61,40 +62,52 @@ const CONTEXT: ResolverContext = { requestId: "test-request" };
 const PINNED_ORIGIN = "https://rig.test/media";
 
 /**
- * A witness for a named non-deployment environment.
+ * This process's own witness, minted once at import.
  *
- * The witness is the whole point of the gate under test, so a test cannot
- * fabricate one: `NonDeploymentEnvironment` carries a brand whose key is a
- * `unique symbol` private to `@liberty/contracts/shared/runtime`, so there is no
- * cast-free way to build one here -- and a cast would not help either, because
+ * A TEST CANNOT FABRICATE ONE AND CAN NO LONGER ASK FOR ONE BY NAME.
+ * `NonDeploymentEnvironment` carries a brand whose key is a `unique symbol`
+ * private to `@liberty/contracts/shared/runtime`, so there is no cast-free way
+ * to build one here -- and a cast would not help either, because
  * `createFixtureProvider` asks that module's registry whether the object it was
- * handed was really issued. Every assertion below is therefore about a value the
- * application can actually see. The throw is for the mistake of asking for a
- * witness for `production` in a test that meant `development` -- it names the
- * value rather than returning something usable.
+ * handed was really issued. `classify()` takes no argument either: it answers
+ * for the process. This suite gets a real witness because the process running
+ * it really is a test process, which is the point of the arrangement rather
+ * than a way around it. The throw reports the only condition that leaves this
+ * file without one.
+ *
+ * MINTED AT IMPORT, BEFORE ANY TEST REWRITES `NODE_ENV`, and held. A
+ * classification records what the process was when it was issued and the
+ * registry answers by identity, so tests below that make the process look
+ * hosted still hold a genuine witness -- which is what lets them assert what a
+ * hosted process does to a candidate it was GIVEN, as opposed to whether it
+ * could have obtained one.
  */
-function nonDeployment(nodeEnv: string): NonDeploymentEnvironment {
-  const environment = NonDeploymentEnvironment.classify(nodeEnv);
+function classifiedProcess(): NonDeploymentEnvironment {
+  const environment = NonDeploymentEnvironment.classify();
   if (environment === null) {
-    throw new Error(`${JSON.stringify(nodeEnv)} is not on NON_DEPLOYMENT_ENVIRONMENTS`);
+    throw new Error(
+      "this process is not classified as a non-deployment; vitest sets NODE_ENV=test, which NON_DEPLOYMENT_ENVIRONMENTS admits"
+    );
   }
   return environment;
 }
 
+const TEST_RUNTIME: NonDeploymentEnvironment = classifiedProcess();
+
 /**
  * The provider under test, built for the environment vitest itself runs in.
  *
- * SAFE TO BUILD INSIDE A TEST THAT HAS REWRITTEN `NODE_ENV`, which it was not
- * before. Construction is now a pure function of the witness and the origin:
- * the deployment half of the loopback permission is answered from the witness's
- * own recorded `nodeEnv` rather than from a fresh `process.env` read, and
+ * SAFE TO BUILD INSIDE A TEST THAT HAS REWRITTEN `NODE_ENV`. Construction is a
+ * pure function of the witness and the origin: the deployment half of the
+ * loopback permission is `localDeploymentFor(witness)`, which asks the registry
+ * whether that object was issued rather than re-reading `process.env`, and
  * nothing under `@liberty/provider-sdk` reads the environment at all. So the
  * distinction being asserted below -- that the provider cannot be OBTAINED in a
  * deployment, as opposed to answering differently once it has been -- stays
- * visible without a module-scope singleton to keep it alive.
+ * visible.
  */
 function fixtures(origin: string): FixtureProvider {
-  const created = fixtureProvider(nonDeployment("test"), origin);
+  const created = fixtureProvider(TEST_RUNTIME, origin);
   if (created.status === "refused") {
     throw new Error(`the fixture provider refused ${created.reason}: ${created.detail}`);
   }
@@ -260,30 +273,57 @@ describe("the witness the fixture provider requires", () => {
    * `null` the compiler will not let it ignore -- and the SDK behind it cannot
    * mint a substitute, because it holds no allowlist and exports neither the
    * runtime witness nor the basis constructor that needs one.
+   *
+   * THE ALLOWLIST AND THE MINT ARE NOW ASSERTED SEPARATELY, because they are two
+   * questions and only one of them may be asked about an arbitrary string.
+   * `isNonDeploymentEnvironmentName` answers "would this NAME be admitted" and
+   * issues nothing, so a test may hand it anything; the mint answers only about
+   * the process, so a test that wants a different answer changes the process.
+   * They used to be one function with one argument, and that argument was the
+   * whole gate.
    */
   it.each(["production", "staging", "preview", "Production", "PRODUCTION", "", "dev", "prod"])(
-    "cannot be obtained for NODE_ENV=%j",
+    "is a name the allowlist refuses: %j",
     (value) => {
-      expect(NonDeploymentEnvironment.classify(value)).toBeNull();
+      expect(isNonDeploymentEnvironmentName(value)).toBe(false);
     }
   );
 
+  it.each([...NON_DEPLOYMENT_ENVIRONMENTS])("is a name the allowlist admits: %s", (value) => {
+    expect(isNonDeploymentEnvironmentName(value)).toBe(true);
+  });
+
+  /*
+   * THE MINT, WHICH CAN ONLY BE ASKED ABOUT THIS PROCESS. `classify` takes no
+   * argument -- there is nothing to pass -- so the only way to change its answer
+   * is to change what the process is. That is what `setNodeEnv` does here, and
+   * it is the whole difference between the mechanism before this corrective and
+   * after it: a hosted process could previously call `classify("test")` and be
+   * issued a genuine capability, and now a caller that wants a different answer
+   * has to BE a different process. `afterEach` puts the environment back.
+   */
+  it("answers for the process, and refuses one that is a deployment", () => {
+    setNodeEnv("production");
+    expect(NonDeploymentEnvironment.classify()).toBeNull();
+
+    setNodeEnv("staging");
+    expect(NonDeploymentEnvironment.classify()).toBeNull();
+  });
+
   it("cannot be obtained when NODE_ENV is unset", () => {
-    /*
-     * Through the PROCESS rather than by passing `undefined`. An explicit
-     * `undefined` argument triggers the parameter default, which reads
-     * `process.env.NODE_ENV` -- so `classify(undefined)` is `classify()` and
-     * under vitest that answers `test`. `afterEach` puts it back.
-     */
     setNodeEnv(undefined);
     expect(NonDeploymentEnvironment.classify()).toBeNull();
   });
 
-  it.each([...NON_DEPLOYMENT_ENVIRONMENTS])("is obtainable for NODE_ENV=%s", (value) => {
-    const environment = NonDeploymentEnvironment.classify(value);
+  it.each([...NON_DEPLOYMENT_ENVIRONMENTS])("is obtainable by a NODE_ENV=%s process", (value) => {
+    setNodeEnv(value);
+    const environment = NonDeploymentEnvironment.classify();
     expect(environment).not.toBeNull();
+    if (environment === null) return;
+    /* The name in the capability is the process's own, never a caller's. */
+    expect(environment.nodeEnv).toBe(value);
 
-    const created = fixtureProvider(nonDeployment(value), PINNED_ORIGIN);
+    const created = fixtureProvider(environment, PINNED_ORIGIN);
     expect(created.status).toBe("ready");
     if (created.status !== "ready") return;
     /* Reported rather than re-derived, so a caller that logs which environment
@@ -436,7 +476,7 @@ describe("the operator-supplied origin", () => {
    * neighbouring one is not" is stated in one vocabulary.
    */
   function outcome(origin: string): string {
-    const created = fixtureProvider(nonDeployment("test"), origin);
+    const created = fixtureProvider(TEST_RUNTIME, origin);
     return created.status === "ready" ? "accepted" : created.reason;
   }
 
@@ -472,7 +512,7 @@ describe("the operator-supplied origin", () => {
      * credential-bearing misconfiguration into a working stream and silence the
      * only check that names it.
      */
-    const created = fixtureProvider(nonDeployment("test"), "https://user:pass@rig.test");
+    const created = fixtureProvider(TEST_RUNTIME, "https://user:pass@rig.test");
     expect(created.status).toBe("refused");
     if (created.status !== "refused") return;
     expect(created.reason).toBe("url_credentials_present");
@@ -513,7 +553,7 @@ describe("the operator-supplied origin", () => {
      * itself is the genuine one, not a stubbed string.
      */
     const resolve: AuthorizedCandidateResolver = () => {
-      const created = fixtureProvider(nonDeployment("test"), "https://10.0.0.5");
+      const created = fixtureProvider(TEST_RUNTIME, "https://10.0.0.5");
       if (created.status === "ready") throw new Error("a private origin was admitted");
       return {
         status: "provider-unavailable",
@@ -550,7 +590,7 @@ describe("the loopback opt-in", () => {
       /*
        * The provider is CONSTRUCTIBLE for a loopback origin only because both
        * permissions are present: the source half is derived from the origin, and
-       * the deployment half comes from the witness's own environment. The
+       * the deployment half from the witness this app was issued. The
        * per-candidate gate downstream then asks the same question again, from
        * the request's environment rather than the provider's -- which is why a
        * candidate built here still fails on a hosted process.
@@ -573,12 +613,13 @@ describe("the loopback opt-in", () => {
     /*
      * The two owners, side by side. This route builds the provider successfully
      * for a loopback rig because it supplies BOTH facts -- the source half
-     * derived from the operator's origin, the deployment half from the witness --
+     * derived from the operator's origin, the deployment half from the witness
+     * the contracts module issued to this process --
      * while the same address checked with neither permission is refused for the
      * source half first, which is the reason that names something an operator
      * can fix.
      */
-    const created = fixtureProvider(nonDeployment("test"), "http://127.0.0.1:8096");
+    const created = fixtureProvider(TEST_RUNTIME, "http://127.0.0.1:8096");
     expect(created.status).toBe("ready");
 
     const neither = checkUrl("http://127.0.0.1:8096", HOSTED);

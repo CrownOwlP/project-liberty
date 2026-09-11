@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-11T19:32:38.353Z",
+  "generatedAt": "2026-09-11T21:33:21.217Z",
   "agent": "claude-frontend",
   "executionAvailable": true,
   "assigned": [
@@ -7,7 +7,7 @@
       "id": "PL-0105",
       "priority": "P0",
       "lane": "Frontend",
-      "status": "REVIEW",
+      "status": "IN_PROGRESS",
       "title": "Catalog metadata source port, and the surfaces still importing the fixture array",
       "notes": "Closes a control-plane gap as well as a code one. The port landed with no task covering it: PL-0104 declares only catalog-card.tsx, routes.ts and routes.test.ts, so apps/web/src/lib/catalog-source.ts, catalog-source-registry.ts, their tests and docs/CATALOG_SOURCE.md sat outside every declared surface - unreserved against a parallel writer, and outside any approval fingerprint. This task declares that surface and carries the three import migrations docs/CATALOG_SOURCE.md lists as follow-ups. lib/catalog.ts and lib/demo-catalog.ts are reviewDependencies rather than allowedPaths: the port's wiring lives in them and an approval has to bind to it, but they are not this task's to rewrite. The e2e mode split that catalog.api.spec.ts needs once the fixtures stop reaching a production build is deliberately NOT here, because e2e/** belongs to PL-0701; until it lands, that spec fails in the harness's default production mode and .github/workflows/ci.yml says so at the job that runs it. DECLARATION GAP CLOSED: e2e/src/env.ts added to allowedPaths. It was edited this round and no task declared it as a write path -- it sat only in PL-0706's reviewDependencies, which is a READ-ONLY surface by contract, so the edit was a genuine contract violation and an approval on either task would have bound to a surface narrower than the diff. The edit is THIS task's, not PL-0706's: the rewritten CATALOG_AVAILABILITY commentary is entirely about the port and the import migrations named in this task's acceptance -- the title route now resolving through lib/catalog-source-registry.ts via resolveSynchronousCatalogMetadataSource so demo-title-details.ts classifies no environment, the four discovery surfaces refusing in the single catalog_source_not_configured vocabulary, and the deletion of readFixtureCatalogItems from catalog-source-registry.ts together with getHomeCatalog from lib/catalog.ts. Its only reference to the runtime witness is the unchanged phrase 'the same nominal witness the playback fixtures need', which was true before PL-0706's move and is true after it; nothing in this file names a class, a constructor or classifyRuntime. env.ts is deliberately LEFT in PL-0706's reviewDependencies rather than removed: WEB_MODE and MANAGES_SERVER decide that task's production-versus-development assertion, so its approval must keep fingerprinting this file even though it does not own it -- which is exactly what the two-surface split is for, and is not the same-task allowedPaths/reviewDependencies redundancy the validator warns on. Collision-checked: e2e/src/env.ts is prefix-disjoint from every allowedPaths entry of PL-0203 (claude-media), PL-AI-0005 (claude-lead) and PL-0706 (claude-security, whose e2e entries are e2e/tests/*.spec.ts and e2e/src/fixtures.ts), and PL-0104 shares this task's owner so cannot conflict. PL-0701 declares e2e/** but is BACKLOG and unowned, and already latently contains this task's apps/web paths and PL-0706's e2e specs, so nothing new is created there.",
       "dependencies": [
@@ -21,6 +21,7 @@
         "apps/web/src/lib/catalog-source-registry.test.ts",
         "apps/web/src/app/search/**",
         "apps/web/src/app/title/demo-title-details.ts",
+        "apps/web/src/app/title/demo-title-details.test.ts",
         "apps/web/src/app/api/v1/catalog/home/**",
         "docs/CATALOG_SOURCE.md",
         "e2e/src/env.ts"
@@ -71,7 +72,7 @@
         }
       },
       "implementationAgent": "claude-frontend",
-      "updatedAt": "2026-09-11T19:32:32.446Z",
+      "updatedAt": "2026-09-11T21:33:20.793Z",
       "implementationBaseSha": "f6c4b942ebbd02fd3fa9ed8f74fde4fc603affc2",
       "implementationBaseProvenance": {
         "kind": "reconciled-existing-implementation",
@@ -101,18 +102,18 @@
         "reviewerAgent": "gpt-architect",
         "reviewerClass": "external-reasoning",
         "reviewerProvider": "openai",
-        "reviewedCommitSha": "ba79c14dc3921d6b181ef7da7500cec8ddb2f028",
+        "reviewedCommitSha": "9bd95543eb40796e9b5f91aaf986671b3d064c7d",
         "reviewedBaseSha": "f6c4b942ebbd02fd3fa9ed8f74fde4fc603affc2",
-        "reviewedTreeHash": "30937cd115b67fd03a6a3721f01e1567bfa5f53fffbe9a6efb195e3f1f4e0aef",
-        "reviewedFileCount": 17,
+        "reviewedTreeHash": "7c502cb79f4c2c239ede993f2d0a7f8f13b6cff4983b4ac0468c8e953216feb6",
+        "reviewedFileCount": 18,
         "reviewedFingerprintSource": "git-object",
         "reviewedDependencies": [
           "apps/web/src/lib/catalog.ts",
           "apps/web/src/lib/demo-catalog.ts"
         ],
         "outcome": "CHANGES_REQUESTED",
-        "reviewedAt": "2026-09-11T19:32:30.100Z",
-        "evidence": "CHANGES_REQUESTED on rights-review because the title surface still imports the catalog port and demoCatalogSource directly, so catalog-source-registry.ts is not the only module that knows both the abstraction and its implementation and the title surface does not satisfy the task's stated registry boundary. The runtime still fails closed on undeclared or contradictory rights and search plus home are correctly routed through the registry, but the title bypass is explicitly admitted in its own source as a wart. The catalog source comment and CATALOG_SOURCE documentation are also stale after PL-0706 because they still identify authorized-candidates.ts as the owner of the opaque-reference predicate even though that rule now lives in provider-sdk. Close the title composition-root bypass and update those statements before approval. Reviewed at f0e1546a74e8b7632ab5549e4dea7d762bcf73da; this record binds to the later commit because request-changes cannot bind to a sha whose reviewed surface has since changed. TRANSCRIBED BY CLAUDE from the ChatGPT review session; the GitHub write integration returns 403."
+        "reviewedAt": "2026-09-11T21:33:20.793Z",
+        "evidence": "CHANGES_REQUESTED on rights-review even though the original composition-root blocker is closed: demo-title-details now names no catalog implementation and the registry alone constructs demoCatalogSource, while the opaque-reference documentation correctly reflects its move into provider-sdk. The remaining deployment guarantee inherits the unresolved PL-0706 authority defect because both catalog registry accessors accept a caller-selected nodeEnv and feed it to the public capability mint, allowing production code to request test and obtain the development catalog despite the acceptance claim that those fixtures are unconstructible in a deployment. CATALOG_SOURCE.md also still describes NonDeploymentEnvironment as a private-constructor private-field class even though it is now the shared branded value. Fix the shared mint authority, route these accessors through the corrected boundary without caller-authored runtime identity, and update that paragraph to the resulting mechanism. Reviewed at 9bd95543eb40796e9b5f91aaf986671b3d064c7d. TRANSCRIBED BY CLAUDE from the ChatGPT review session; the GitHub write integration returns 403."
       },
       "reviewHistory": [
         {
@@ -154,6 +155,26 @@
           "outcome": "CHANGES_REQUESTED",
           "reviewedAt": "2026-09-11T19:32:30.100Z",
           "evidence": "CHANGES_REQUESTED on rights-review because the title surface still imports the catalog port and demoCatalogSource directly, so catalog-source-registry.ts is not the only module that knows both the abstraction and its implementation and the title surface does not satisfy the task's stated registry boundary. The runtime still fails closed on undeclared or contradictory rights and search plus home are correctly routed through the registry, but the title bypass is explicitly admitted in its own source as a wart. The catalog source comment and CATALOG_SOURCE documentation are also stale after PL-0706 because they still identify authorized-candidates.ts as the owner of the opaque-reference predicate even though that rule now lives in provider-sdk. Close the title composition-root bypass and update those statements before approval. Reviewed at f0e1546a74e8b7632ab5549e4dea7d762bcf73da; this record binds to the later commit because request-changes cannot bind to a sha whose reviewed surface has since changed. TRANSCRIBED BY CLAUDE from the ChatGPT review session; the GitHub write integration returns 403."
+        },
+        {
+          "taskId": "PL-0105",
+          "implementationAgent": "claude-frontend",
+          "implementationOwner": "claude-frontend",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "9bd95543eb40796e9b5f91aaf986671b3d064c7d",
+          "reviewedBaseSha": "f6c4b942ebbd02fd3fa9ed8f74fde4fc603affc2",
+          "reviewedTreeHash": "7c502cb79f4c2c239ede993f2d0a7f8f13b6cff4983b4ac0468c8e953216feb6",
+          "reviewedFileCount": 18,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "apps/web/src/lib/catalog.ts",
+            "apps/web/src/lib/demo-catalog.ts"
+          ],
+          "outcome": "CHANGES_REQUESTED",
+          "reviewedAt": "2026-09-11T21:33:20.793Z",
+          "evidence": "CHANGES_REQUESTED on rights-review even though the original composition-root blocker is closed: demo-title-details now names no catalog implementation and the registry alone constructs demoCatalogSource, while the opaque-reference documentation correctly reflects its move into provider-sdk. The remaining deployment guarantee inherits the unresolved PL-0706 authority defect because both catalog registry accessors accept a caller-selected nodeEnv and feed it to the public capability mint, allowing production code to request test and obtain the development catalog despite the acceptance claim that those fixtures are unconstructible in a deployment. CATALOG_SOURCE.md also still describes NonDeploymentEnvironment as a private-constructor private-field class even though it is now the shared branded value. Fix the shared mint authority, route these accessors through the corrected boundary without caller-authored runtime identity, and update that paragraph to the resulting mechanism. Reviewed at 9bd95543eb40796e9b5f91aaf986671b3d064c7d. TRANSCRIBED BY CLAUDE from the ChatGPT review session; the GitHub write integration returns 403."
         }
       ]
     }

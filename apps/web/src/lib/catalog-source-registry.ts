@@ -30,9 +30,22 @@ import { demoCatalogSource } from "./demo-catalog";
  * job is to render a page.
  *
  * THE GENERAL ACCESSOR DELEGATES TO THE NARROW ONE, so the two cannot disagree
- * about the environment gate -- there is one classification and one construction
- * in this file, not two. The delegation is also the record of a fact rather than
- * a design: the only implementation that exists answers synchronously, because
+ * about the environment gate -- the refusal branch and the construction are
+ * written once, in the narrow accessor, and the general one adds nothing but the
+ * wider return type. Each takes the capability its caller holds and only falls
+ * back to classifying the process when given nothing, so one resolution
+ * classifies at most once: the delegation below states the `environment`, which
+ * re-enters no default.
+ *
+ * NEITHER ACCESSOR TAKES A RUNTIME NAME. Both used to take a `nodeEnv` they
+ * forwarded to `classify`, which meant a hosted process could name the
+ * environment it wished to be treated as and be issued a genuine capability for
+ * it -- and the fixtures with it. They take the capability, or `null`, and the
+ * only producer of a non-`null` one is a mint that reads the process and
+ * declares no parameter. See `app/api/deployment-environment.ts`.
+ *
+ * The delegation is also the record of a fact rather than a design: the only
+ * implementation that exists answers synchronously, because
  * it is an in-process fixture array. The published port stays async-capable
  * because a real provider does I/O; that the fixtures do not is a fact about the
  * fixtures.
@@ -94,18 +107,24 @@ export type SynchronousCatalogMetadataSourceResolution =
 /**
  * The metadata source for this process, or a stated reason there is none.
  *
- * The environment is read at CALL time and never at module scope, for the reason
- * `deployment-environment.ts` gives: a module-scope read freezes the answer to
- * whatever the process looked like when the first route was loaded, which in a
- * serverless cold start is not necessarily the request's environment.
+ * The environment is classified at CALL time and never at module scope, for the
+ * reason `deployment-environment.ts` gives: a default argument is evaluated per
+ * call, while a module-scope read freezes the answer to whatever the process
+ * looked like when the first route was loaded, which in a serverless cold start
+ * is not necessarily the request's environment.
  *
- * `nodeEnv` is a parameter so a test can state the environment it means instead
- * of mutating `process.env` and racing every other suite in the same worker.
+ * `environment` IS THE CAPABILITY OR `null`, NEVER A RUNTIME NAME. It used to be
+ * a `nodeEnv` string forwarded to `classify`, so a caller could name the
+ * environment it wished to be treated as and be issued a real capability for it.
+ * There is nothing to name now: the default is the parameterless mint, which
+ * reads THIS process, and a caller cannot pass a non-`null` value it did not
+ * receive from that mint. A test that wants the refusal passes `null` -- the
+ * answer a deployment gets, obtained the way a deployment gets it.
  */
 export function resolveCatalogMetadataSource(
-  nodeEnv: string | undefined = process.env.NODE_ENV
+  environment: NonDeploymentEnvironment | null = NonDeploymentEnvironment.classify()
 ): CatalogMetadataSourceResolution {
-  return resolveSynchronousCatalogMetadataSource(nodeEnv);
+  return resolveSynchronousCatalogMetadataSource(environment);
 }
 
 /**
@@ -127,18 +146,23 @@ export function resolveCatalogMetadataSource(
  * has no metadata source" and "the catalog contains nothing" have different
  * remedies, and a caller handed `[]` cannot tell which one it is looking at.
  *
- * `demoCatalogSource` REQUIRES A `NonDeploymentEnvironment` and `classify`
- * answers `null` outside its allowlist, so there is no expression in this
- * function that reaches the fixtures without handling that `null` -- deleting the
- * check is a compile error rather than a silent widening. That control now runs
- * in one place for every discovery surface, which is the point of both accessors
- * living here.
+ * `demoCatalogSource` REQUIRES A `NonDeploymentEnvironment`, and this function is
+ * handed one or `null`, so there is no expression here that reaches the fixtures
+ * without handling that `null` -- deleting the check is a compile error rather
+ * than a silent widening.
+ *
+ * THE CAPABILITY CANNOT BE ASKED FOR BY NAME, which is what makes the branch
+ * below a gate rather than a formality. Its brand is a `unique symbol` private to
+ * `@liberty/contracts/shared/runtime`, so no consumer can write one; its only
+ * producer is `classifyRuntime`, which declares no parameter and classifies the
+ * process it is running in; and the default below is this app's one-line door to
+ * that mint. A deployment therefore arrives here with `null`, because `null` is
+ * the only thing the mint will give it. That control now runs in one place for
+ * every discovery surface, which is the point of both accessors living here.
  */
 export function resolveSynchronousCatalogMetadataSource(
-  nodeEnv: string | undefined = process.env.NODE_ENV
+  environment: NonDeploymentEnvironment | null = NonDeploymentEnvironment.classify()
 ): SynchronousCatalogMetadataSourceResolution {
-  const environment = NonDeploymentEnvironment.classify(nodeEnv);
-
   if (environment === null) {
     return { status: "not-configured", reason: "no_metadata_source_configured" };
   }

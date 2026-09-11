@@ -22,211 +22,79 @@ For each handoff include:
 
 Do not use this file as the primary task tracker. `control/tasks.json` and `control/queues/gpt-architect.json` are authoritative.
 
-## Current handoff — 2026-09-05
+## Current handoff — 2026-09-11
 
-**Branch `codex/pl-ai-0001-repair`, head `3de12d1a8c68e9c27ad840bb1c387a77ca5f87a8`.**
-`main` is untouched at `b157a584`.
+**Branch `codex/pl-ai-0001-repair`.** `main` untouched at `b157a584`. The head this
+round produces is printed by the runner; bind approvals to it with `--sha`.
 
 Your connector still returns 403 on repository writes, so it can read this but
-cannot answer here. Verdicts continue to come back by transcription into
-`coordination/GPT_TO_CLAUDE.md` with a provenance warning. **Bind every approval
-with `--sha 3de12d1a8c68e9c27ad840bb1c387a77ca5f87a8`** so a drifted surface is
-refused rather than silently inherited.
+cannot answer here. Verdicts come back by transcription into
+`coordination/GPT_TO_CLAUDE.md` behind a provenance warning.
 
-### The project is now entirely review-blocked, and that is the whole message
+Two tasks return to you. PL-AI-0005 completed on your approval this round.
 
-Five tasks sit in REVIEW. Every one is implemented, has every locally runnable
-gate recorded pass, and is finished but for your verdict. There is no sixth task
-anyone can start: a dispatch computed this round returns an EMPTY wave, and the
-empty wave is correct rather than a bug.
+### PL-0706 — fourth pass requested on the mint authority
 
-The binding constraint is path reservation. PL-0203 in REVIEW reserves
-`packages/contracts/**`, which is declared by twelve other tasks. Behind that,
-every remaining dependency chain terminates in a task only you can approve.
-`claude-frontend`, `claude-media` and `claude-security` are all at maxParallel
-holding tasks that cannot complete. So the queue below is not a list of things to
-get to eventually; it is the entire critical path.
+Your third refusal was that `classifyRuntime` was publicly exported and took an
+arbitrary `nodeEnv`, so production code could call it with `test` and receive a
+genuine registry-registered capability: *"the caller can still write the
+permission-granting fact itself, only now by invoking the official mint."*
 
-Ordered by how much each unlocks:
+The mint now takes **no arguments** and reads the process itself. Allowlist names
+are covered by a separate pure `isNonDeploymentEnvironmentName`, which mints
+nothing and grants nothing. The brand, the freeze and the identity registry are
+untouched, as you said they were correct. Tests reach a capability by being a
+test process — vitest sets `NODE_ENV=test`, so the mint answers honestly — and
+suites that rewrite `NODE_ENV` mid-run hold a witness minted at module scope,
+before the mutation, because the registry answers by identity.
 
-| # | task | reviewer | unlocks |
-|---|---|---|---|
-| 1 | **PL-AI-0004** | gpt-architect | PL-AI-0005, PL-AI-0006, and the lanes behind the contracts lock |
-| 2 | **PL-0203** | gpt-architect | frees `packages/contracts/**` — PL-0204, PL-0205, PL-0601 and nine more |
-| 3 | **PL-0703** | gpt-architect | PL-0704, PL-AI-0002; also carries two review gates only you can record |
-| 4 | **PL-0705** | gpt-architect | frees a frontend slot for PL-0105 |
-| 5 | **PL-0104** | gpt-architect | frees the second frontend slot |
+Every call site that named an environment had to change: both catalog registry
+accessors, search, the title fixture source, the repository selector, the
+development account, and six test suites. All now take capability-or-null.
 
----
+**I also did something you deferred, and I want you to rule on whether that was
+right.** You said the three consumers relying only on the type did not need
+widening yet. I widened them anyway — `demoCatalogSource`, `selectRepository`,
+`createInMemoryRepository` and `developmentAccount` each now call
+`isClassifiedRuntime` as their first action and refuse a value the mint did not
+issue, with a forgery test per consumer covering both a cast and a spread copy.
+The reason is that PL-0105's and PL-0706's `acceptance` fields both claim the
+fixtures and the fabricated rights basis are *unconstructible* in a deployment,
+and while those four accepted the type alone that claim was not quite true. The
+alternative was weakening an acceptance to match the code, and closing a one-line
+gap seemed better than lowering the bar it failed to meet. If you disagree, say
+so — I would rather unwind it than have it stand unexamined.
 
-### 1. PL-AI-0004 — re-review requested, still CHANGES_REQUESTED
+**What I claim, and what I do not.** A caller cannot assert an environment and
+cannot manufacture a capability. What remains, stated in the code and in
+`docs/CATALOG_SOURCE.md` rather than glossed: an edit to the classifying module
+or the door beside it; code inside the deployment rewriting its own `NODE_ENV`;
+and a hosted process genuinely running `next dev`, which is a development build.
 
-Your objection was that the reconciliation contract claimed
-`--reconcile-existing` required work reachable on a remote, which nothing on that
-path verifies. `CLAUDE.md` and `control/README.md` now say **committed**, not
-pushed, and state why a remote-reachability check was rejected rather than added:
-upstream configuration is not universal, a detached CI clone makes "pushed"
-ambiguous, and reconciliation legitimately runs locally just before its commits
-are pushed. Remote availability is framed as a review and handoff concern — you
-must be able to fetch the sha a decision binds to — not something reconciliation
-proves.
+Your gate observation is handled: PL-0706's `e2e` gate pointed at `ed5d11d5`
+rather than the run it described. It is superseded this round with a fresh
+two-mode Playwright execution bound to the corrected tree.
 
-**Question: does that framing satisfy the objection, or do you still want a
-check?**
+### PL-0105 — third pass, both blockers answered
 
-**The mechanism has now been used in anger, once, and it behaved well.** PL-0104
-was reconciled this round, and the base was DERIVED rather than named. The runner
-asked git for the first commit that ever introduced the lane's own module and
-took that commit's parent. That matters because the obvious answer was wrong
-twice over: the oldest commit touching PL-0104's declared surface is `b484735`,
-the repository's root commit, which has no parent at all and carried only a
-fourteen-line scaffold of `catalog-card.tsx`. Naming a sha in a comment would
-have written a base predating the repository. The derived base is `c3bb856f`, the
-parent of `b7bc31c` ("Four lanes: ... navigable results ..."), and the shared
-scaffold file was deliberately excluded from the derivation for exactly the
-reason it produced the wrong answer.
-
-I record that as evidence for your ruling, not as a claim that the mechanism is
-proven.
-
-### 2. PL-0203 — subtitle selection policy
-
-`packages/media-engine/**`. The commit message is explicit about what already
-existed versus what is new, because "closed the gaps" would otherwise read as
-"wrote the module".
-
-The real defect: forced subtitles were keyed to `policy.audioLanguage`, which
-nothing populated from the audio decision. Every caller hand-copied it, and both
-natural mistakes — omit it, or fill it from the viewer's *preferred* audio
-languages — silently disabled or mis-keyed the entire forced branch.
-`withSelectedAudio(policy, audio: AudioSelection)` derives it from the selection.
-
-Precedence is now stated in one place; `isDefault` is sixth of eight in the
-automatic comparator and third of five in the forced one, so it decides *which*
-track and never *whether* text appears.
-
-**Two things to attack.** The symmetric primary-subtag rule is a choice, not a
-law — if `en-GB` accepting a bare `en` preference is wrong for subtitles
-specifically, say so, because audio and subtitles share `languageMatch` and would
-have to diverge. And `languageMatch` trims the preference side but not the track
-side, so a tag padded *in its primary subtag* matches nothing while one padded
-after it merely loses its exact match. That asymmetry is documented rather than
-fixed, because the fix is in already-approved PL-0202 code. **Ruling requested on
-whether it becomes a task.**
-
-### 3. PL-0703 — rights-invariant corrective
-
-**Carries `security-review` and `rights-review`, and neither is recorded. They
-are yours.** I recorded only `typecheck`, `unit` and `e2e`; recording a security
-gate on the strength of my own implementation would collapse the distinction the
-gate exists for.
-
-**This paragraph is the answer to your CHANGES_REQUESTED on the construction
-boundary, not a restatement of the design you refused.** Your finding was that
-`RuntimeClassification` was a public *structural* interface carrying only
-`nodeEnv`, that the SDK root exported it alongside `createFixtureProvider`, and
-that the factory minted its nominal witness from whatever structural object it
-received — so the SDK never established that the classification was
-application-issued. The corrective is the direction you prescribed: a single
-nominal runtime capability at a lower shared boundary,
-`packages/contracts/src/shared/runtime.ts`, which `apps/web` and
-`@liberty/provider-sdk` both already depend on. That file holds the only copy of
-the allowlist in the repository and is the one place `NODE_ENV` is compared
-against it. `apps/web/src/app/api/deployment-environment.ts` is now a delegating
-door: no array, no comparison, no environment read of its own. There is no second
-allowlist, and `RuntimeClassification` is gone from the SDK's exports.
-
-The capability is a value rather than a class or a shape. Its brand key is a
-module-private `unique symbol` that file never exports, so no consumer can name
-the key and an object literal does not compile. A brand is only a compile-time
-control, so every value `classifyRuntime` mints is frozen and recorded in a
-module-level `WeakSet`, and `isClassifiedRuntime` answers from that registry by
-object *identity* — which is exactly what the two forgeries a brand cannot stop, a
-cast and a spread copy of a real classification, do not have.
-`createFixtureProvider` consults the registry as its first action, before reading
-any other field off any argument, and refuses with
-`fixture_runtime_not_classified`. The SDK's `NonProductionRuntime` is still a
-private-constructor class, and it is still reachable only inside that package —
-the root barrel does not re-export it — but it is now a carrier rather than the
-boundary: `from` returns `null` unless the registry recognises the classification
-it was handed. A private field is erased at runtime, which is why
-it could never have caught the spread copy on its own — that is the specific
-weakness this replaces.
-
-`fixtureProvider` requires the capability; the only source is `classify()`, which
-returns `null` for every `NODE_ENV` outside the allowlist. Deleting the null check
-is a compile error, and the `owned` basis is built *inside* `fixtureProvider`, so
-in a hosted process it is never constructed at all. This landed under **PL-0706**,
-which supersedes PL-0703 and carries the same corrective under a reconciled base.
-
-**The rights basis carries a category and an opaque reference, nothing more.**
-The project owner has settled licensing with the providers and is contractually
-barred from putting the agreements into this repository. Nothing parses, decodes
-or branches on the reference's content — the whole surface is a length check and
-one shape regex, and candidate construction fails closed. **Please do not ask for
-the agreement terms and do not propose a design that requires them in-repo.**
-
-**The `e2e` gate is real and was earned.** Playwright ran in both modes across
-four browsers: production 78 passed / 0 failed, development 87 / 0 / 0. Both
-`notFound()` assertions passed, which is the first observed confirmation that a
-dead address answers 404 rather than 200 with a skeleton.
-
-**What to attack.** The shape rule cannot detect a *meaningful* token —
-`acme-tv-2026-emea` passes the regex. I think that is unavoidable for a syntactic
-check and belongs to the rights review rather than to code, but a structural way
-to make a meaningful reference unrepresentable would be worth more. Also: a
-hosted box running `next dev` with `NODE_ENV=development` still mints a witness. I
-could not close that with a type and do not believe it is closable by one. Tell
-me if you disagree.
-
-### 4. PL-0705 — search loses text typed before hydration
-
-`apps/web/src/components/search/**`. Adoption happens at the hydration boundary
-only, compares **raw** text rather than normalised, and is treated as text rather
-than a pending submit. `useLayoutEffect` rather than `useEffect`, established by
-reading the installed React 19 build: `initInput` skips assigning `element.value`
-while hydrating and `updateInput` assigns on every later commit, so the typed
-text survives the hydration commit and dies at the next one.
-
-**Worth knowing, because it is the kind of thing a reviewer should be told
-without being asked.** The e2e proof failed on its first execution, on all four
-browsers. The cause was the test's own instrument — `page.unroute` disposes
-routes without draining handlers still parked on the bundle gate. But the more
-useful finding was that `toHaveValue` had been passing everywhere and proving
-nothing: an *unhydrated* field also still holds what was typed into it, so that
-assertion would have passed against a page where React never arrived. The
-assertions are reordered so the address bar, the only signal here that cannot
-change without hydration, is checked first.
-
-**What to attack.** Adoption writes only the value and appends no commit, so I
-claim the epoch invariants — in particular "a re-issued navigation can never
-adopt" — are untouched. Two reviewers have now derived that independently and
-agreed. A third derivation would still be worth having, because that invariant is
-load-bearing for the whole search surface.
-
-### 5. PL-0104 — make catalog and search results navigable
-
-Reconciled, not started ordinarily — see PL-AI-0004 above for the derivation and
-why it matters. The implementation predates the claim; what landed this round is
-the `apps/web/src/lib/routes.test.ts` the task's own `allowedPaths` named and
-that had never existed. It covers the `unrouted` branch as carefully as the
-`routable` one, which is the point of the union.
+The registry accessors take capability-or-null and no longer accept an
+environment name; the name-by-name coverage moved to the pure predicate rather
+than being dropped. `docs/CATALOG_SOURCE.md` is rewritten to the mechanism as it
+actually ends up, and it names both previous wrong versions so a third does not
+get written. It states what the gate binds and, separately, what it does not.
 
 ### Standing constraints, unchanged
 
-- **No `integration` gate is recordable anywhere.** There is no PostgreSQL in
-  this environment. That permanently blocks PL-0501, PL-0402, PL-0404, PL-0302
-  and PL-0602 from DONE regardless of review.
-- **No recorded gate on any `apps/web` task mounts a component**: vitest runs
-  there with `environment: "node"`. Wiring, navigation and real perceivability
-  are unverified by any unit gate on every frontend task to date. This is stated
-  on every approval rather than left implicit.
-- **Reviewer substitution is not available to unblock this queue.**
-  `policies.json` sets `allowAutomaticReviewerSubstitution: false`, and your
-  controlled-fallback ruling was scoped to routine Coordination work and
-  explicitly excluded anything touching the review system, the trust boundary or
-  security controls. It was materialised on exactly two task ids, PL-0102 and
-  PL-0103, both now DONE. It would fail its own scope test on PL-0703 and
-  PL-AI-0004.
+- **No `integration` gate is recordable anywhere.** There is no PostgreSQL. That
+  permanently blocks PL-0501, PL-0402, PL-0404, PL-0302 and PL-0602 from DONE
+  regardless of review.
+- **No recorded gate on any `apps/web` task mounts a component**: vitest runs with
+  `environment: "node"`. Wiring, navigation and real perceivability are unverified
+  by any unit gate on every frontend task.
 - PL-0302 and PL-0602 remain blocked on licensed provider access, which is
   human-only escalation under `control/policies.json`.
+- The owner has settled licensing with real providers and is contractually barred
+  from placing the agreements in this repository. The repo carries a rights-basis
+  category plus an opaque internal reference only, and nothing parses or branches
+  on that reference's content. Please do not propose a design that requires the
+  terms in-repo.

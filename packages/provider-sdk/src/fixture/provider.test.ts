@@ -1,5 +1,6 @@
 import {
   classifyRuntime,
+  isNonDeploymentEnvironmentName,
   NON_DEPLOYMENT_ENVIRONMENTS,
   type ClassifiedRuntime
 } from "@liberty/contracts/shared/runtime";
@@ -38,27 +39,42 @@ const BASE_OPTIONS: FixtureProviderOptions = {
 };
 
 /**
- * A classification, obtained the only way anybody can obtain one.
+ * This process's classification, obtained the only way anybody can obtain one.
  *
- * This package does not classify a process and has no allowlist of runtime
- * names -- `environment.ts` says why. The single classification lives in
- * `@liberty/contracts/shared/runtime`, `apps/web`'s `deployment-environment.ts`
- * is the application's door to it, and a test goes through the same door. It
- * CANNOT state the answer directly: the brand key is a private symbol in that
- * module, so a literal does not compile (asserted below).
+ * IT IS NOT ASKED FOR BY NAME, BECAUSE THERE IS NO LONGER A NAME TO ASK WITH.
+ * `classifyRuntime` takes no argument: it classifies the process it runs in.
+ * This suite legitimately receives a capability because the process it runs in
+ * legitimately is a test process -- vitest sets `NODE_ENV=test`, which is on the
+ * one allowlist -- and not because anything here said so. A previous version of
+ * this helper passed a runtime name to the mint, which is the authority the
+ * corrective removed: the object it returned was genuine, registered and frozen,
+ * and the fact it was founded on had been written by the caller.
  *
- * The throw names the value rather than returning something usable, for the
- * mistake of asking for a classification the allowlist does not admit.
+ * This package classifies nothing and holds no allowlist of runtime names --
+ * `environment.ts` says why, and reads no `process.env` at all. The throw
+ * reports the one condition that would leave this suite without a capability:
+ * the process not being a test process.
  */
-function classification(nodeEnv: string): ClassifiedRuntime {
-  const classified = classifyRuntime(nodeEnv);
+function classifiedProcess(): ClassifiedRuntime {
+  const classified = classifyRuntime();
   if (classified === null) {
-    throw new Error(`${JSON.stringify(nodeEnv)} is not on NON_DEPLOYMENT_ENVIRONMENTS`);
+    throw new Error(
+      "this process is not classified as a non-deployment; vitest sets NODE_ENV=test, which NON_DEPLOYMENT_ENVIRONMENTS admits"
+    );
   }
   return classified;
 }
 
-const TEST_RUNTIME: ClassifiedRuntime = classification("test");
+/**
+ * Minted ONCE, at import, and reused.
+ *
+ * A classification records what the process was when it was issued, and the
+ * registry answers by identity for as long as the value is held -- so a suite
+ * that later changes what the process looks like still has a real capability in
+ * hand. Nothing in this file changes the environment; the app-side suites that
+ * do rely on exactly this property.
+ */
+const TEST_RUNTIME: ClassifiedRuntime = classifiedProcess();
 
 function build(options: FixtureProviderOptions): FixtureProvider {
   const created = createFixtureProvider(TEST_RUNTIME, options);
@@ -93,17 +109,28 @@ describe("the runtime witness", () => {
    * copy of one array, for a question that cannot honestly have two answers.
    * Which names mean production is decided where `NODE_ENV` is actually
    * readable, and it is decided before anything gets here: `classifyRuntime`
-   * issues nothing for `production`, so no witness for it can be requested.
+   * issues nothing for a process running as `production`, so no witness for one
+   * can exist.
    *
-   * What this package does with an issued classification is accept it and
-   * report its name. If somebody re-introduces a runtime allowlist here, one of
-   * these lines fails and says so, rather than the duplication quietly
-   * reappearing behind a green suite.
+   * ONE CLASSIFICATION IS EXERCISED HERE RATHER THAN EVERY MEMBER OF THE
+   * ALLOWLIST, and that is a consequence of the corrective rather than a gap.
+   * A capability can now only describe the process asking for it, and this
+   * package deliberately never touches `process.env`, so this suite has exactly
+   * one real classification available to it: its own. It is enough for what
+   * this file can honestly assert, because `from` has ONE branch -- the identity
+   * check -- and no branch that reads the name. The members of the allowlist are
+   * exercised against the mint in `apps/web`, where the process is the app's to
+   * vary.
    */
-  it("accepts every classification the one allowlist issued, and tests none of them", () => {
-    for (const nodeEnv of NON_DEPLOYMENT_ENVIRONMENTS) {
-      expect(NonProductionRuntime.from(classification(nodeEnv))?.name, nodeEnv).toBe(nodeEnv);
-    }
+  it("accepts the classification it was issued, and tests the name in it against nothing", () => {
+    const witness = NonProductionRuntime.from(TEST_RUNTIME);
+    expect(witness?.name).toBe(TEST_RUNTIME.nodeEnv);
+    /* Not an allowlist test performed here: the assertion is that the ONE
+     * allowlist, in the contracts package, is what admitted the name this
+     * package is now reporting. If a copy of that array reappears in this
+     * directory, it is a second answer to a question already answered. */
+    expect(isNonDeploymentEnvironmentName(TEST_RUNTIME.nodeEnv)).toBe(true);
+    expect(NON_DEPLOYMENT_ENVIRONMENTS).toContain(TEST_RUNTIME.nodeEnv);
   });
 
   /*

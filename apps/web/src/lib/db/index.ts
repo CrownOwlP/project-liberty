@@ -1,4 +1,7 @@
-import { NonDeploymentEnvironment } from "../../app/api/deployment-environment";
+import {
+  isClassifiedRuntime,
+  NonDeploymentEnvironment
+} from "../../app/api/deployment-environment";
 import { createInMemoryRepository } from "./in-memory-repository";
 import { createPostgresRepository } from "./postgres-repository";
 import type { LibertyRepository } from "./repository";
@@ -18,10 +21,23 @@ export { createPostgresRepository, postgresRepositoryOver } from "./postgres-rep
  * `app/api/deployment-environment.ts` -- and the reason that arrangement exists
  * is that four call sites used to decide it separately and did not agree. This
  * file is one more consumer, not one more decision: it imports
- * `NonDeploymentEnvironment` and never tests `NODE_ENV` itself. The `nodeEnv`
- * parameter below is forwarded to `classify`, never compared to anything here.
+ * `NonDeploymentEnvironment` and never tests `NODE_ENV` itself. It does not
+ * name an environment either -- `selectRepository` takes the CAPABILITY, or
+ * `null`, and defaults it to `classify()`, which reads the process. There is no
+ * runtime name anywhere in this file to compare, forward, or get wrong.
  *
- * THE SELECTION, in the order it is made:
+ * `isClassifiedRuntime` AND THE CAPABILITY COME THROUGH THE SAME DOOR, in one
+ * import. The door re-exports the registry check alongside the allowlist and the
+ * name predicate, so there is one route from this file to the classification
+ * rather than two. The predicate is not restated here or anywhere else: a
+ * re-export creates no local binding and no second hop, so the function called
+ * below is the one `@liberty/contracts/shared/runtime` declares. The imports in
+ * `in-memory-repository.ts` and `session/account.ts` were moved with this one.
+ *
+ * THE SELECTION, in the order it is made. Before any of it, a capability the
+ * contracts module never issued is REFUSED outright -- see `selectRepository` --
+ * so the four cases below are only ever reached with `null` or with a genuine
+ * classification:
  *
  *   1. `DATABASE_URL` present and well-formed -> the PostgreSQL adapter. This is
  *      the production implementation, and it is chosen by CONFIGURATION rather
@@ -44,6 +60,15 @@ export { createPostgresRepository, postgresRepositoryOver } from "./postgres-rep
  * check below does not widen the gate; it stops compiling. That is the point of
  * preferring a witness to a boolean: the illegal state is unrepresentable rather
  * than merely unreached.
+ *
+ * THE BRAND IS THE COMPILE-TIME HALF, AND BOTH HALVES ARE NOW HERE. Two things
+ * get past a brand at runtime -- an `as unknown as NonDeploymentEnvironment`,
+ * and a spread copy of a real classification, which carries the brand and needs
+ * no cast -- and neither is admitted by the allowlist. So `selectRepository`
+ * asks the registry by object identity before it selects anything, and
+ * `createInMemoryRepository` asks again as its own first statement for a caller
+ * that did not come through here. Until that pair existed, this file held the
+ * compile-time half of the control and not the runtime half.
  *
  * WHAT THIS ARRANGEMENT CANNOT DO, recorded here because it is the load-bearing
  * limitation of the whole task. There is no PostgreSQL in this environment, so
@@ -109,13 +134,63 @@ let cached: { readonly key: string; readonly resolution: RepositoryResolution } 
  * two refusals -- without mutating `process.env` and racing every other suite in
  * the same worker. `resolveRepository` is the caching wrapper over it.
  *
- * `nodeEnv` is passed through to `classify` rather than read here, for the same
- * reason: a test states the environment it means.
+ * `environment` IS THE CAPABILITY OR `null`, NEVER A RUNTIME NAME. It used to be
+ * a `nodeEnv` string forwarded to `classify`, which meant a caller could name
+ * the environment it wished to be treated as and be issued a real capability
+ * for it. There is nothing to name now: the default reads the process, and a
+ * test that wants the deployment branch passes `null` -- which is the answer a
+ * deployment gets, obtained the way a deployment gets it. A non-`null` value it
+ * did not receive from the mint is refused below, which is what makes the
+ * previous sentence a fact about callers rather than about types.
+ *
+ * THE REFUSAL REUSES `storage_not_configured` RATHER THAN NAMING A THIRD REASON,
+ * and that is a constraint worth stating rather than a shrug. This union is
+ * published: `repositoryRefusalCode` in `db/request-context.ts` widens it into
+ * `RequestContextReasonCode` by identity, and the three route groups' own
+ * `contract.ts` files enumerate every code they can answer, so a new member is
+ * an API-contract change across files this lane does not own. It is also a true
+ * statement of what happened -- no store was selected -- and
+ * `contextRefusalIsClientFault` already classifies it as not the caller's fault,
+ * which is right: nothing on the wire can reach this parameter. What the shared
+ * code cannot carry is the REMEDY, which is not the one the other
+ * `storage_not_configured` branch names: setting `DATABASE_URL` does not fix a
+ * manufactured capability, because this refusal is returned before the variable
+ * is looked at. That is the DETAIL's job, and the detail names the forgery
+ * exactly and names no variable.
  */
 export function selectRepository(
   databaseUrl: string | undefined,
-  nodeEnv: string | undefined = process.env.NODE_ENV
+  environment: NonDeploymentEnvironment | null = NonDeploymentEnvironment.classify()
 ): RepositoryResolution {
+  /*
+   * THE FIRST THING THIS FUNCTION DOES, before `databaseUrl` is even trimmed,
+   * matching the ordering `createFixtureProvider` documents: consult the
+   * registry before reading any other field off any argument.
+   *
+   * `null` IS NOT A FORGERY AND IS PASSED OVER. It is the answer a deployment
+   * gets from the mint, and it is handled below by the branch that exists for
+   * it. What this refuses is a non-`null` value the contracts module never
+   * issued.
+   *
+   * IT REFUSES THE WHOLE SELECTION, INCLUDING THE POSTGRESQL BRANCH THAT WOULD
+   * NOT HAVE READ THE CAPABILITY AT ALL. That is deliberate: a composition root
+   * handed a manufactured capability has been lied to about the one fact it
+   * gates on, and answering it with a working repository because this particular
+   * request happened to take the other branch would make the check depend on
+   * configuration. Refusing outright is also the direction that fails safe.
+   */
+  if (environment !== null && !isClassifiedRuntime(environment)) {
+    return {
+      ok: false,
+      reason: "storage_not_configured",
+      detail:
+        "the runtime classification handed to selectRepository was not issued by " +
+        "@liberty/contracts/shared/runtime, so nothing has shown this process is not a " +
+        "deployment and no store is selected; a cast or a spread copy carries the " +
+        "capability's brand but not the decision behind it"
+    };
+  }
+
   const configured = (databaseUrl ?? "").trim();
 
   if (configured !== "") {
@@ -149,7 +224,6 @@ export function selectRepository(
     };
   }
 
-  const environment = NonDeploymentEnvironment.classify(nodeEnv);
   if (environment === null) {
     return {
       ok: false,

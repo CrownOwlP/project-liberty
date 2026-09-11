@@ -16,133 +16,127 @@ These are authentic decisions of an independent cross-provider reviewer, carried
 by hand across a broken transport. They are not machine-attested, and nothing in
 this repository can prove the transcription is faithful.
 
-## Session of 2026-09-06, reviewed at head `f0e1546a74e8b7632ab5549e4dea7d762bcf73da`
+## Session of 2026-09-11, reviewed at head `9bd95543eb40796e9b5f91aaf986671b3d064c7d`
 
-The reviewer verified exact-head CI independently — run `34247522915`, successful
-— and opened by saying it plainly: *"The green run does not override the review
-findings below."*
+The reviewer verified exact-head CI independently (run `34639407080`, successful)
+and opened with the shape of the round: *"The rework materially closes the
+previous findings, but PL-0706 still has one fundamental authority defect."*
 
-**Two approvals and three rework lanes.**
+**One approval, two returns.**
 
-### PL-0203 — APPROVED at `f0e1546`
+### PL-AI-0005 — APPROVED at `9bd95543`
 
-No blockers. The script rule is correct, **including the decision not to apply it
-to audio**: RFC 5646 explicitly says script subtags are not appropriate for
-unwritten content such as audio recordings. The positional argument for telling a
-script subtag from a region subtag also holds — the ABNF reserves room for three
-extlang positions, but RFC 5646 permanently makes the second and third invalid,
-so a valid script can sit after at most the one extlang the scanner examines.
+`security-review`: APPROVED. No blockers.
 
-And it found a real defect inside the question that was asked of it. The
-`zh-yue` / `zh-cmn` instinct points at something, but it is **not** a script
-issue: those are extended-language and macrolanguage distinctions, and RFC 5646
-notes that the Chinese languages encompassed by `zh` are generally not mutually
-intelligible when spoken. A matcher collapsing both to primary `zh` can therefore
-call the wrong spoken language a preferred-language fallback. Carved out as its
-own cross-lane P0 task covering both audio and subtitles, plus canonical
-primary/extlang equivalents such as `cmn` versus `zh-cmn`. It does not invalidate
-the script corrective, and the reviewer noted the code already distinguishes the
-future issue from the script rule rather than pretending one solves the other.
+> The two previous blockers are actually closed. `review-context.mjs` enumerates
+> the current material from `fingerprintEntries`, which is the same parser used by
+> `gitFingerprint`; unchanged blobs therefore cannot disappear merely because
+> `git diff` has nothing to say about them. Full current content is the subject,
+> with the diff relegated to explanatory material. Oversized, binary, unreadable,
+> and unclassifiable material fails closed instead of being omitted. Scenario 9ap
+> now creates a real Git history, calls `buildReviewContext` through the real Git
+> adapter, verifies unchanged owned and dependency sentinels are actually present
+> in prompt material, independently perturbs the canonical fingerprint, and
+> verifies every reviewed path leaves through either shown material or
+> deterministic refusal. The malformed-budget NaN path is also closed.
 
-### PL-0104 — APPROVED at `f0e1546`
+It also ruled on something not asked: **gitlinks are not a blocker at this head.**
+The system fingerprints repository blobs and treats a changed non-blob entry as
+review material without pretending its external bytes are locally bound. If
+submodules are ever adopted, binding gitlink commit ids for stale-review detection
+should be designed explicitly rather than smuggled into this repair.
 
-No blockers. The only blocker from the previous pass was review-surface
-completeness, and all three dependencies are now bound, so the approval binds six
-files rather than three. None of the implementation or dependency files changed
-in the corrective rounds that followed, so nothing reopened. The absence of a
-DOM-mounted component test remains recorded coverage debt rather than a
-contradiction.
+### PL-0706 — CHANGES_REQUESTED, third refusal, and the deepest one yet
 
-### PL-0706 — CHANGES_REQUESTED; both security-review and rights-review refused again
+`security-review` and `rights-review` both refused again.
 
-> the new construction boundary is still structurally forgeable.
-> `RuntimeClassification` is a public structural interface containing only
-> `nodeEnv`, the root SDK exports that type and `createFixtureProvider`, and the
-> factory mints its nominal `NonProductionRuntime` from whatever structural
-> object it receives. The file itself correctly admits that a hosted caller
-> passing a literal classification for test receives a provider. Therefore the
-> SDK does not establish that the classification was application-issued, and the
-> acceptance claim that the fabricated rights basis is structurally
-> unconstructible in deployment is still false.
+> `packages/contracts/src/shared/runtime.ts:215-226` — **capability mint remains
+> caller-controlled.** The brand, freeze, and WeakSet correctly defeat structural
+> literals, casts, mutations and spread copies. But `classifyRuntime` itself is
+> publicly exported and accepts an arbitrary `nodeEnv`. Any consumer can call
+> `classifyRuntime('test')` while actually running in production and receive a
+> genuine frozen object that was inserted into `issuedRuntimes`;
+> `isClassifiedRuntime` will then correctly return true for a classification that
+> was nevertheless based on a caller-authored fiction. The registry proves that
+> the mint issued the object, not that the mint observed the running process.
+> `provider.test.ts:41-55` demonstrates this authority directly by calling the
+> public mint with a chosen runtime name. **This is the same trust-boundary
+> failure as the structural interface one level earlier: the caller can still
+> write the permission-granting fact itself, only now by invoking the official
+> mint.**
 
-The prescribed direction, and the refusal to bend:
+That last sentence is the finding. Three designs have now been refused for the
+same reason at three different depths — a structural interface, then a nominal
+witness the SDK minted from anything, then a mint that let the caller name the
+environment. Each time the forgeable thing moved one level up and stayed
+forgeable.
 
-> The fix should not be another duplicated allowlist. The clean architecture is a
-> single nominal runtime capability at a lower shared boundary that both the app
-> and SDK consume, with one place that performs the classification. A plain
-> exported interface cannot prove provenance. I would not weaken PL-0706's
-> acceptance to fit the current implementation; this task exists specifically
-> because call-site discipline failed once already.
+The prescribed fix:
 
-Both of Claude's judgement calls were endorsed: mapping an invalid configured
-origin to `provider-unavailable` rather than `not-configured`, because
-configuration exists and was rejected and `checkUrl` avoids echoing credentials
-into a client-visible detail; and preserving the existing `contentId-key`
-candidate ids rather than silently changing a published session and failover
-identifier, with cross-provider namespacing deferred until multiple providers are
-actually aggregated.
+> Make the production capability mint derive the runtime from the process
+> boundary with no caller-supplied runtime name. Preserve testability below that
+> boundary by injecting capability-or-null into consumers, testing a separate pure
+> name predicate, or using isolated test processes; do not expose a
+> capability-producing function whose argument can say test while the process is
+> production.
+
+And on scope, deferring what did not need doing yet:
+
+> The three other consumers that currently rely only on the type do not need to
+> widen this corrective yet. Fix the authority of the mint first; once a genuine
+> capability can only originate from the actual process boundary, their
+> compile-time requirement again has useful meaning. The fixture provider itself
+> is doing the stronger identity check correctly.
+
+It also recorded a gate defect worth carrying forward: **PL-0706's recorded `e2e`
+gate still points at `ed5d11d5` rather than the post-rewrite execution**, so after
+the correction the two-mode Playwright run must be executed again and that gate
+superseded with evidence bound to the corrected tree.
+
+Everything else on the task was called sound: the single allowlist, the single
+fixture provider, the SDK's identity check, the URL refusal ordering, the opaque
+rights rule and the candidate-id contract.
 
 ### PL-0105 — CHANGES_REQUESTED on rights-review
 
-Blocker one, `apps/web/src/app/title/demo-title-details.ts`: the acceptance says
-the registry is the only module that knows both the port and an implementation,
-and that the title surface reads the registry. The title module instead imported
-both the port and `demoCatalogSource` directly and performed its own environment
-classification. **Its own comment called this a wart** and said a real provider
-could not land behind the title function until that surface changed — which
-directly contradicts the machine-readable acceptance.
+The original composition-root blocker is **closed** — the reviewer said so
+explicitly: `demo-title-details.ts` now names no catalog implementation, the
+registry alone constructs the demo source, and the opaque-reference documentation
+correctly reflects its move into provider-sdk. Two things remained.
 
-The fix was scoped rather than assumed: a narrow registry API returning the
-available synchronous implementation plus a named refusal satisfies the
-single-composition-root property while preserving the documented future async
-migration. *"The important part is that demo-title-details.ts stops knowing
-demoCatalogSource exists."*
+> `apps/web/src/lib/catalog-source-registry.ts:105-108, 137-146` — **the
+> deployment gate inherits PL-0706's caller-controlled mint.** Both registry
+> accessors accept a caller-selected `nodeEnv`, which they feed to
+> `NonDeploymentEnvironment.classify`. Calling either accessor with `test` from a
+> production process mints a genuine capability and returns the demo catalog. That
+> contradicts PL-0105's acceptance claim that the fixtures are unconstructible in
+> a deployment. Do not invent another catalog-specific gate; let the PL-0706
+> correction remove caller-controlled capability minting, then make these
+> accessors consume that corrected process boundary.
 
-Blocker two: `apps/web/src/lib/catalog-source.ts` and `docs/CATALOG_SOURCE.md`
-both still said `authorized-candidates.ts` owns the opaque-reference predicate and
-that moving it to a leaf module was future work. PL-0706 had already moved it, so
-both statements were false, and PL-0105's acceptance requires that doc to stay
-accurate about unresolved gaps.
+> `docs/CATALOG_SOURCE.md:91-97` — still describes the removed class witness. It
+> says `NonDeploymentEnvironment` has a private constructor and private field. At
+> this head it is an alias of the branded `ClassifiedRuntime` value and has
+> neither. The paragraph also concludes that the fixtures are unconstructible in
+> deployment, which is stronger than the current caller-selectable mint actually
+> establishes. **Rewrite this section after blocker 1 so it describes the real
+> final mechanism rather than replacing one stale explanation with another.**
 
-Explicitly endorsed: a missing basis is not defaulted from `item.rights`, a
-contradictory category is refused, search consumes the registry, and the home API
-awaits the loader rather than translating missing configuration into empty rails.
+That doc paragraph has now been wrong twice. The correction records both wrong
+versions by name so a third does not get written.
 
-### PL-AI-0005 — CHANGES_REQUESTED on security-review, and this is the sharpest finding of the round
+### On the round itself — the leaf-hold sequencing was endorsed
 
-> the approval fingerprint hashes every blob under allowedPaths union
-> reviewDependencies at the reviewed commit, but `buildReviewContext` begins with
-> `git diff --name-only base commit` and only sends files that changed in that
-> range. Any unchanged file in the fingerprinted surface is therefore
-> cryptographically bound to the approval without being shown to the reviewer.
-> **This is exactly the failure PL-AI-0005 says it prevents.**
+Worth recording, because it was a judgement call taken without asking:
 
-Not limited to unchanged review dependencies — it also affects an unchanged
-pre-existing file under a broad `allowedPaths` glob, which `git ls-tree`
-fingerprints and `git diff --name-only` omits.
+> Your PL-0203 sequencing call was correct. Keeping the new PL-0706 leaf
+> physically outside the repository until PL-0203 completed preserved exactly the
+> reviewed PL-0203 tree and avoided both a write-surface collision and a stale
+> approval. **That was not bypassing provenance; committing the leaf first would
+> have been the provenance violation.**
 
-And the second blocker is the instructive one:
+### The reviewer's summary
 
-> scenario 9ap claims to prove the reviewer-visible set equals the fingerprinted
-> set, but its `shownTo` function merely filters candidate filenames with
-> `withinReviewSurface`. It never invokes the worker's changed-file selection at
-> all. Thus the test models the surface the worker ought to show, not the files
-> the worker actually sends, which is why the unit gate stays green over blocker
-> one.
-
-A regression that proves its claim by construction rather than by exercising the
-real path — which is why the defect it was written to catch survived underneath
-it.
-
-The prescribed fix: derive reviewer material from the actual fingerprinted tree;
-every blob whose object id contributes to the approval must either be supplied as
-readable material or produce a **deterministic unreviewable result**; and make
-9ap interrogate the same context builder the worker uses.
-
-### The reviewer's own summary
-
-> This pass gives 2 approvals and 3 real rework lanes. The two approvals should
-> immediately release a meaningful amount of the board, especially PL-0203's
-> broad `packages/contracts/**` reservation. The three changes requests are each
-> narrow in cause even though PL-0706 and PL-AI-0005 sit on important trust
-> boundaries.
+> So this round is 1 approval, 2 returns: PL-AI-0005 can move through its security
+> gate; PL-0706 needs the mint-authority correction; PL-0105 should follow that
+> correction rather than building a second workaround around it.

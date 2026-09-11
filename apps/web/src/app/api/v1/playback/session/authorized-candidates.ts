@@ -7,7 +7,7 @@ import {
   type FixtureProviderRejectionReason,
   type FixtureRightsBasis
 } from "@liberty/provider-sdk";
-import { isLocalDeployment, NonDeploymentEnvironment } from "../../../deployment-environment";
+import { localDeploymentFor, NonDeploymentEnvironment } from "../../../deployment-environment";
 
 /* -------------------------------------------------------------------------
  * Where a session's candidates come from (PL-0501)
@@ -190,7 +190,13 @@ const FIXTURE_MEDIA_ORIGIN = process.env.LIBERTY_FIXTURE_MEDIA_ORIGIN ?? "https:
  *     `checkUrl`, or to decide whether a development-only route exists;
  *   - `NonDeploymentEnvironment.classify()` for THIS one, because what is gated
  *     here is not an input to a later check -- it is the construction of a
- *     rights claim. See `fixtureProvider`.
+ *     rights claim. See `fixtureProvider`;
+ *   - `localDeploymentFor(environment)` for the flag that travels WITH such a
+ *     classification, so the two are one answer rather than two reads.
+ *
+ * NONE OF THE THREE TAKES A RUNTIME NAME. The mint reads the process and
+ * declares no parameter, so this module cannot ask to be classified as anything
+ * -- which is the difference between consuming the gate and restating it.
  * ---------------------------------------------------------------------- */
 
 /**
@@ -302,10 +308,12 @@ export type FixtureProviderResult =
  *      `@liberty/contracts/shared/runtime`, and cannot be built anywhere but
  *      that module: its brand key is a `unique symbol` that module keeps to
  *      itself, so no consumer can name the property and none can write it. The
- *      only producer is `classifyRuntime`, which answers `null` for every
- *      environment outside the one allowlist in this repository. A caller
- *      cannot reach this function without handling that `null`, and deleting
- *      the check is a COMPILE ERROR rather than a silent widening;
+ *      only producer is `classifyRuntime`, which TAKES NO ARGUMENT -- it
+ *      classifies the process it is running in, and answers `null` for every
+ *      environment outside the one allowlist in this repository, so no caller
+ *      can obtain one by naming an environment it is not in. A caller cannot
+ *      reach this function without handling that `null`, and deleting the check
+ *      is a COMPILE ERROR rather than a silent widening;
  *   2. this function hands that capability to `createFixtureProvider`
  *      unchanged. It is not re-boxed on the way through, so the object the SDK
  *      receives is the object the classification issued;
@@ -354,19 +362,21 @@ export function fixtureProvider(
      * own origin. */
     allowLoopback: originIsLoopback(origin),
     /*
-     * The DEPLOYMENT half, and it is answered from the classification rather
-     * than from a fresh read of `process.env`. An ISSUED classification names a
-     * `NODE_ENV` the allowlist already admitted, so `isLocalDeployment` -- which
-     * is one line over the same `classifyRuntime` -- necessarily answers `true`
-     * for it; a value the classification did not issue is refused outright by
-     * `createFixtureProvider` whatever this line computes. Passing the value
-     * through the app's own accessor rather than writing `true` keeps the two
-     * answers derived from ONE allowlist, and passing the recorded `nodeEnv`
-     * rather than re-reading the process means the origin gate here and the
-     * per-candidate gate in `issue-session.ts` cannot be looking at two
-     * different environments.
+     * The DEPLOYMENT half, and it is answered from the classification this
+     * function was handed rather than from a fresh read of `process.env`.
+     * `localDeploymentFor` asks the contracts registry whether that exact
+     * object was issued: an issued classification means this process was
+     * admitted by the one allowlist, which is what the flag states, and a cast
+     * or a spread copy answers `false` here and is refused outright by
+     * `createFixtureProvider` before this option is read at all.
+     *
+     * NOT `true`, and not a second call to `isLocalDeployment()`. A literal
+     * would hardcode one of the two independently-owned permissions
+     * `url-policy.ts` requires -- the mistake `allowLoopback` above was
+     * corrected for -- and a second call would ask the process a question the
+     * classification in hand has already answered.
      */
-    localDeployment: isLocalDeployment(environment.nodeEnv)
+    localDeployment: localDeploymentFor(environment)
   });
 
   if (!created.ok) {

@@ -34,22 +34,38 @@ const HOUSEHOLD_B: AccountIdentity = { userId: "household-b", sessionId: "sessio
 const INSTANT = new Date("2026-09-04T10:00:00.000Z");
 
 /**
- * A repository admitted by the `test` environment.
+ * THIS process's own classification, and the repository admitted by it.
  *
- * `classify` is called with an explicit value rather than being left to read
- * `process.env`, so the suite does not depend on -- or race -- whatever another
- * suite in the same worker has done to it.
+ * `classify` takes no argument -- it reads the process rather than a name its
+ * caller supplied, which is the corrective that removed the way a hosted caller
+ * could ask to be treated as a test one. This suite gets a real witness because
+ * the process running it really is a test process: vitest sets `NODE_ENV=test`,
+ * which `NON_DEPLOYMENT_ENVIRONMENTS` admits. Nothing in this file rewrites
+ * `NODE_ENV`, so classifying at the call site is the same answer as classifying
+ * at import.
+ *
+ * The witness is reachable on its own because the forgery cases below need a
+ * GENUINE one to copy: a spread of a real classification is the forgery a brand
+ * cannot stop, and it cannot be written without something real to spread.
  */
-function repository(): LibertyRepository {
-  const environment = NonDeploymentEnvironment.classify("test");
+function classifiedProcess(): NonDeploymentEnvironment {
+  const environment = NonDeploymentEnvironment.classify();
   /*
    * Not a `!`. The whole point of the witness is that the `null` is handled, and
    * a test that reached for a non-null assertion would be demonstrating the
-   * opposite of what the type is for. `"test"` is on the allowlist, so this
-   * never fires.
+   * opposite of what the type is for. The throw names the only condition that
+   * leaves this file without one.
    */
-  if (environment === null) throw new Error('NonDeploymentEnvironment.classify rejected "test"');
-  return createInMemoryRepository(environment, createInMemoryStore());
+  if (environment === null) {
+    throw new Error(
+      "this process is not classified as a non-deployment; vitest sets NODE_ENV=test, which NON_DEPLOYMENT_ENVIRONMENTS admits"
+    );
+  }
+  return environment;
+}
+
+function repository(): LibertyRepository {
+  return createInMemoryRepository(classifiedProcess(), createInMemoryStore());
 }
 
 function sessionFor(account: AccountIdentity, activeProfileId: string | null): LibertySession {
@@ -113,6 +129,42 @@ async function createProfile(
   if (!created.ok) throw new Error(`expected a profile, got ${created.reason}`);
   return created.profile.id;
 }
+
+/*
+ * The gate on the constructor itself, which is the runtime half of a control
+ * whose other half is a type.
+ *
+ * `createInMemoryRepository` is re-exported from `./index.ts` and can be called
+ * without going through `selectRepository`, so it asks the contracts registry as
+ * its own first statement. Both forgeries a compile-time brand cannot stop are
+ * exercised, matching `packages/provider-sdk/src/fixture/provider.test.ts`: the
+ * cast is the blunt one, and the SPREAD is the subtle one -- it copies the brand,
+ * needs no cast, and only object identity tells it from the real thing.
+ *
+ * NEITHER CASE THROWS WITHOUT THAT CHECK. A forgery satisfies the parameter's
+ * type, carries a `nodeEnv` the adapter is happy to report as `admittedBy`, and
+ * would have produced a working volatile store.
+ */
+describe("a classification the contracts module never issued", () => {
+  it("cannot build the development adapter", () => {
+    const cast = { nodeEnv: "test" } as unknown as NonDeploymentEnvironment;
+    const copied: NonDeploymentEnvironment = { ...classifiedProcess() };
+
+    for (const forged of [cast, copied]) {
+      /*
+       * A throw rather than a returned reason, because this function's contract
+       * is total -- it has no result union to put one in, and the composition
+       * root above it publishes `storage_not_configured` properly for the caller
+       * that came through it. Matched on the phrase that names the fault rather
+       * than on the whole message, so rewording the remedy does not break this.
+       */
+      expect(() => createInMemoryRepository(forged, createInMemoryStore())).toThrow(
+        /was not issued by/
+      );
+    }
+  });
+
+});
 
 describe("profiles", () => {
   it("mints an id the read side recognises, and never takes one from the caller", async () => {

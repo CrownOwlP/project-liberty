@@ -59,13 +59,26 @@ function advancingClock(): () => Date {
   };
 }
 
-/** One store shared by every call in a test, which is what a process would have. */
+/**
+ * One store shared by every call in a test, which is what a process would have.
+ *
+ * The adapter is admitted by THIS process's own classification. `classify` takes
+ * no argument -- it reads the process rather than a name its caller supplied --
+ * and the witness is genuine because the process running this suite really is a
+ * test process: vitest sets `NODE_ENV=test`, which
+ * `NON_DEPLOYMENT_ENVIRONMENTS` admits. Nothing in this file rewrites
+ * `NODE_ENV`, so the answer is the same whenever it is asked.
+ */
 function options(
   account: AccountIdentity = HOUSEHOLD_A,
   store: InMemoryStore = createInMemoryStore()
 ): RequestContextOptions {
-  const environment = NonDeploymentEnvironment.classify("test");
-  if (environment === null) throw new Error('NonDeploymentEnvironment.classify rejected "test"');
+  const environment = NonDeploymentEnvironment.classify();
+  if (environment === null) {
+    throw new Error(
+      "this process is not classified as a non-deployment; vitest sets NODE_ENV=test, which NON_DEPLOYMENT_ENVIRONMENTS admits"
+    );
+  }
   return {
     repository: createInMemoryRepository(environment, store),
     account,

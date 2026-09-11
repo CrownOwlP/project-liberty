@@ -16,7 +16,17 @@ import {
   type StoredProgress,
   type WatchlistEntryRow
 } from "@liberty/persistence";
-import type { NonDeploymentEnvironment } from "../../app/api/deployment-environment";
+/*
+ * Both come through `app/api/deployment-environment.ts`, this app's door for the
+ * CAPABILITY: it re-exports the registry check alongside the allowlist and the
+ * name predicate, so this file reaches `@liberty/contracts/shared/runtime` by
+ * one route rather than two. Nothing is restated -- a re-export creates no local
+ * binding, so this is the same function `createFixtureProvider` calls.
+ */
+import {
+  isClassifiedRuntime,
+  type NonDeploymentEnvironment
+} from "../../app/api/deployment-environment";
 import type { LibertyRepository } from "./repository";
 
 /* -------------------------------------------------------------------------
@@ -39,11 +49,12 @@ import type { LibertyRepository } from "./repository";
  * `index.ts` records that once; this paragraph exists so the claim is also
  * refused at the point where somebody would be most tempted to make it.
  *
- * IT CANNOT BE SELECTED IN A DEPLOYMENT, and that is enforced by a type rather
- * than by a condition. `createInMemoryRepository` requires a
- * `NonDeploymentEnvironment`: a branded capability whose key is a `unique
- * symbol` private to `@liberty/contracts/shared/runtime`, so no consumer can
- * name the property and none can write one. Its only producer is
+ * IT CANNOT BE SELECTED IN A DEPLOYMENT, and that is enforced by a type PLUS an
+ * identity check rather than by a condition on a runtime name.
+ * `createInMemoryRepository` requires a `NonDeploymentEnvironment`: a branded
+ * capability whose key is a `unique symbol` private to
+ * `@liberty/contracts/shared/runtime`, so no consumer can name the property and
+ * none can write one. Its only producer is
  * `NonDeploymentEnvironment.classify()` in `app/api/deployment-environment.ts`,
  * which forwards to that module and answers `null` for every `NODE_ENV` outside
  * the `development`/`test` allowlist, including no value at all. Under
@@ -52,6 +63,16 @@ import type { LibertyRepository } from "./repository";
  * widening. That is the mechanism `fixtureProvider` uses, chosen for the same
  * reason: a runtime `if` is a line a later edit can delete while everything
  * still compiles.
+ *
+ * AND THE TYPE ALONE WAS NOT THE WHOLE CONTROL. A brand is checked by the
+ * compiler, and two things get past a compiler at runtime: an
+ * `as unknown as NonDeploymentEnvironment`, and a spread copy of a genuine
+ * classification, which copies the brand and needs no cast. Neither was admitted
+ * by the allowlist, and until this file asked, either one would have built a
+ * volatile store. So the first statement of `createInMemoryRepository` asks the
+ * contracts registry, by object identity, whether that module issued this exact
+ * value -- the same question `createFixtureProvider` asks, in the same position,
+ * before it reads any other field.
  *
  * WHERE THE RULES COME FROM. Every decision this adapter makes is delegated to
  * the pure resolvers in `@liberty/persistence`: `resolveProgressWrite` and
@@ -164,18 +185,51 @@ export interface InMemoryRepository extends LibertyRepository {
  * Build the development repository.
  *
  * `environment` is a WITNESS, not a configuration value. Its purpose is that it
- * cannot be obtained in a deployment; see the header. It is read once, for the
- * `NODE_ENV` it reports, and never re-tested.
+ * cannot be obtained in a deployment; see the header. Its ISSUANCE is checked
+ * below, by identity; the `NODE_ENV` it carries is then read once, for the
+ * `admittedBy` it reports, and is never re-tested against the allowlist -- which
+ * name means "not a deployment" was decided by the mint and is not this file's
+ * question.
  *
  * `store` is injectable so that tests can seed and inspect one. It defaults to a
  * fresh store, which is the right default for a caller that has not said
  * otherwise -- a shared module-level store would make two adapters built in one
  * process invisibly the same adapter.
+ *
+ * WHY THE REFUSAL IS A THROW HERE AND A RETURNED REASON IN `index.ts`. This
+ * function's contract is total: it returns a repository, and it has no result
+ * union to put a reason in. Giving it one would change its return type for the
+ * three route suites that build an adapter directly
+ * (`app/api/v1/{profiles,progress,watchlist}/handler.test.ts`), which are
+ * outside this lane's paths -- and it would duplicate a refusal the composition
+ * root already publishes properly. `selectRepository` asks the same question
+ * first and answers `storage_not_configured` with a named detail, so a caller
+ * that came through the composition root never reaches this throw. What the
+ * throw covers is the other door: this function is re-exported from `./index.ts`
+ * and can be called directly, and an exported constructor will eventually be
+ * called by something that did not come through the function beside it -- the
+ * reasoning `mapping.ts` in the provider SDK gives for its own redundant check.
  */
 export function createInMemoryRepository(
   environment: NonDeploymentEnvironment,
   store: InMemoryStore = createInMemoryStore()
 ): InMemoryRepository {
+  /*
+   * THE FIRST STATEMENT OF THE BODY, and nothing has been read off the witness
+   * before it. `liveProfilesOf` below is a hoisted declaration rather than an
+   * execution, so nothing runs ahead of this either. The one thing that does
+   * precede it is the `store` parameter's own default -- an empty `Map` per
+   * table, which is inert and is discarded with the throw.
+   */
+  if (!isClassifiedRuntime(environment)) {
+    throw new Error(
+      "the runtime classification handed to createInMemoryRepository was not issued by " +
+        "@liberty/contracts/shared/runtime, so nothing has shown this process is not a " +
+        "deployment; a cast or a spread copy carries the capability's brand but not the " +
+        "decision behind it, and this adapter is a volatile store with no durability"
+    );
+  }
+
   /** The account's profiles that are still on the picker, in the table's order. */
   function liveProfilesOf(userId: string): readonly ProfileRow[] {
     return [...store.profiles.values()]

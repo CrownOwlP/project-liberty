@@ -39,33 +39,49 @@ const CONTENT_ID = "aurora-fall";
 const CONTEXT = { requestId: "watch-test" } as const;
 
 /**
- * The fixture candidates this route would serve, over an origin the test chose.
+ * This process's own witness, minted once at import.
  *
  * `fixtureProvider` takes a `NonDeploymentEnvironment`, which only
  * `@liberty/contracts/shared/runtime` can mint -- `api/deployment-environment.ts`
- * is this app's door to it -- and only for a `NODE_ENV` on the one allowlist. So
- * the fabricated `owned` declaration is a value this route could not construct
- * on a build that ships, rather than one it constructs and then declines to use.
- * `test` is the environment vitest sets.
+ * is this app's door to it -- and it mints from the PROCESS: `classify()` takes
+ * no argument, so nothing here can ask to be treated as an environment it is not
+ * running in. This suite is issued one because vitest really does run as `test`,
+ * which the one allowlist admits. So the fabricated `owned` declaration is a
+ * value this route could not construct on a build that ships, rather than one it
+ * constructs and then declines to use.
  *
- * BUILT PER CALL AND SAFE INSIDE A TEST THAT HAS REWRITTEN `NODE_ENV`, because
- * construction is a pure function of the witness and the origin: the deployment
- * half of the loopback permission is answered from the witness's own recorded
- * `nodeEnv`, and nothing under `@liberty/provider-sdk` reads the environment at
- * all. The tests that set `NODE_ENV=production` are asserting what a hosted
- * process does to a candidate it was GIVEN, and this helper keeps producing one.
+ * MINTED AT IMPORT, BEFORE ANY TEST REWRITES `NODE_ENV`, and held for the file.
+ * The tests below that set `NODE_ENV=production` are asserting what a hosted
+ * process does to a candidate it was GIVEN, as opposed to whether it could have
+ * obtained one, and they need a genuine witness to produce that candidate. A
+ * classification records what the process was when it was issued and the
+ * registry answers by identity, so a held witness stays genuine; building the
+ * provider from it stays safe under a rewritten environment because the
+ * deployment half of the loopback permission is `localDeploymentFor(witness)`,
+ * an identity question rather than a fresh `process.env` read, and nothing under
+ * `@liberty/provider-sdk` reads the environment at all.
+ */
+function classifiedProcess(): NonDeploymentEnvironment {
+  const environment = NonDeploymentEnvironment.classify();
+  if (environment === null) {
+    throw new Error(
+      "this process is not classified as a non-deployment; vitest sets NODE_ENV=test, which NON_DEPLOYMENT_ENVIRONMENTS admits"
+    );
+  }
+  return environment;
+}
+
+const TEST_RUNTIME: NonDeploymentEnvironment = classifiedProcess();
+
+/**
+ * The fixture candidates this route would serve, over an origin the test chose.
  *
  * The origin is REQUIRED rather than defaulted: the module default is
  * `LIBERTY_FIXTURE_MEDIA_ORIGIN`, and a test whose expectations depend on an
  * operator's `.env.local` passes on one machine and fails on another.
  */
 function fixtures(origin: string): FixtureProvider {
-  const environment = NonDeploymentEnvironment.classify("test");
-  if (environment === null) {
-    throw new Error("`test` is no longer on NON_DEPLOYMENT_ENVIRONMENTS");
-  }
-
-  const created = fixtureProvider(environment, origin);
+  const created = fixtureProvider(TEST_RUNTIME, origin);
   if (created.status === "refused") {
     throw new Error(`the fixture provider refused ${created.reason}: ${created.detail}`);
   }

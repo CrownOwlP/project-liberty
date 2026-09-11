@@ -88,13 +88,95 @@ same split `TitleDetailSource` documents.
 
 ## How the fixtures are kept out of a deployment
 
-`demoCatalogSource` takes a `NonDeploymentEnvironment` — the nominal witness
-declared in `apps/web/src/app/api/deployment-environment.ts` (private
-constructor, private field). It cannot be constructed anywhere else, and the only
-way to obtain one is `NonDeploymentEnvironment.classify()`, which answers `null`
-for every `NODE_ENV` outside its allowlist. So the fixtures are not *withheld*
-from a deployment; they are **unconstructible** in one, and deleting the check is
-a compile error rather than a silent widening.
+`demoCatalogSource` takes a `NonDeploymentEnvironment`, and that argument is one
+half of the gate; the other half is the question the function asks of it, which
+is the registry check described in the list below. The argument is **not** a
+class and has no constructor of its own:
+`apps/web/src/app/api/deployment-environment.ts` declares it as an alias of
+`ClassifiedRuntime`, the branded value `@liberty/contracts/shared/runtime`
+issues. The same identifier is also a `const` object in that file, but it is a
+namespace and not a constructor: its one member, `classify()`, forwards to the
+mint and adds nothing, including the argument it used to add. PL-0706 replaced an
+earlier class-with-a-private-field arrangement, because a private field is a
+compile-time nominality trick that a spread copy of a real instance walks
+straight through. Three mechanisms make the value unwritable outside the
+contracts module:
+
+- **A brand nothing else can name.** The key is a module-private `unique symbol`
+  that is never exported, so an object literal cannot carry it and no consumer
+  can write one.
+- **A registry of the values that module actually issued.** Each issued
+  classification is recorded in a `WeakSet` keyed by object identity, and
+  `isClassifiedRuntime` answers from it — which is how a cast or a spread copy,
+  both of which type-check, is caught at runtime *by a consumer that asks*.
+- **A mint that takes no argument.** `classifyRuntime()` reads
+  `process.env.NODE_ENV` from the process it is running in, at call time, and
+  answers `null` for every value outside the allowlist.
+  `NonDeploymentEnvironment.classify()` is one line over it and adds nothing.
+
+**Nothing on this path takes an environment name.**
+`resolveCatalogMetadataSource` and `resolveSynchronousCatalogMetadataSource` each
+take a `NonDeploymentEnvironment | null`, defaulting to `classify()`; so does
+`getSearchResults`'s third parameter, and `findDemoTitleDetail`'s second. Every
+one of them used to take a `nodeEnv` string and forward it to the mint, which
+meant a hosted process could call any of them with `test` and be issued a
+genuine, registered capability — and the demo catalog with it. There is nothing
+left to name: a caller either forwards a capability it was given or passes
+`null`, and a test reaches the refusing branch with `null` rather than with a
+word. Name-by-name coverage of the allowlist moved to
+`isNonDeploymentEnvironmentName`, a predicate that answers about a string and
+issues, registers and grants nothing.
+
+So the gate is not a runtime `if` that a later edit can drop. The only mint
+answers `null` in a hosted process; every parameter on this path is typed to take
+that capability or `null`, so there is no argument through which some other
+answer could be introduced; and `demoCatalogSource`'s own parameter is
+non-nullable, which makes deleting the `null` branch in the registry a compile
+error rather than a silent widening. That is a statement about what a **caller**
+can reach along this path. It is not a claim that the fixture source cannot be
+built at all, and the list below is the exact boundary.
+
+**What that establishes and what it does not**, stated exactly — and this
+paragraph has been wrong twice, which is why it is now a list. It first said the
+fixtures were **unconstructible** in a deployment while the accessors still let a
+caller mint a capability by naming an environment, so the mechanism did not
+support the claim. It was then corrected into a second false statement: that
+`NonDeploymentEnvironment` is a class with a private constructor and a private
+field, which describes the arrangement PL-0706 **removed** rather than the alias
+that replaced it. Neither is restated here:
+
+- **It binds a caller, not an edit.** A change to `demo-catalog.ts`, to
+  `deployment-environment.ts`, or to `@liberty/contracts/shared/runtime` defeats
+  it, and nothing in TypeScript can prevent that. What it prevents is the way
+  this defect actually recurs — a call site that quietly stops consulting the
+  gate, or one that hands a permission-granting factory a value it wrote itself.
+- **`demoCatalogSource` consults the registry.** It calls `isClassifiedRuntime`
+  as its first action — before it reads `nodeEnv` or anything else off the
+  argument, the ordering `createFixtureProvider` documents — and **throws** when
+  the contracts module did not issue that exact object. So the two forgeries a
+  compile-time brand cannot stop are refused at runtime rather than yielding the
+  fixtures: an `as unknown as NonDeploymentEnvironment`, and a spread copy of a
+  real classification, which carries the brand and needs no cast at all.
+  `apps/web/src/lib/catalog-source-registry.test.ts` exercises both. The same
+  check, in the same position, is in `selectRepository` and
+  `createInMemoryRepository` in `apps/web/src/lib/db/` — the first of those
+  passes `null` through, because `null` is what a deployment is given and not a
+  forgery — in `developmentAccount` in `apps/web/src/lib/session/account.ts`,
+  and in `createFixtureProvider` in `@liberty/provider-sdk`. *This entry used to
+  record the gap as open and the edit as unmade, which was true when it was
+  written.* What the check adds is only this: it asks about an OBJECT, so it
+  binds a caller that manufactures a capability. It says nothing about the three
+  items around it — an edit, a rewritten environment, or a development build
+  that is genuinely one.
+- **Code running inside the deployment that rewrites its own environment**
+  defeats it: assigning `process.env.NODE_ENV` before the call changes what the
+  mint observes, because what it observes is the process. That is a statement
+  executing in the deployment, with the same reach as an edit and the same
+  visibility in a diff. It is not something a caller can do *through* this path,
+  which is the boundary PL-0706 moved.
+- **A hosted build that exports `NODE_ENV=development` and runs `next dev`** is
+  indistinguishable from a laptop, because it *is* a development build. No
+  string test closes that; the control for it is not shipping one.
 
 This is the same control PL-0703 applied to the playback fixtures, for a related
 reason. The `owned` category on these six works is true — they are original works

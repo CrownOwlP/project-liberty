@@ -1,18 +1,18 @@
 # Project Liberty - Project Status
 
-> Generated 2026-09-11T19:32:38.350Z from the AI control plane.
+> Generated 2026-09-11T21:33:21.215Z from the AI control plane.
 
-**Overall completion:** 14/42 executable tasks (33%)
+**Overall completion:** 15/42 executable tasks (36%)
 
 ## Status summary
 
 - **BACKLOG:** 14
 - **READY:** 8
 - **CLAIMED:** 0
-- **IN_PROGRESS:** 0
-- **REVIEW:** 3
+- **IN_PROGRESS:** 2
+- **REVIEW:** 0
 - **BLOCKED:** 3
-- **DONE:** 14
+- **DONE:** 15
 - **CANCELED:** 0
 
 ## Milestones / phases
@@ -28,9 +28,8 @@
 
 ## Active work
 
-- **PL-AI-0005** [REVIEW] Show reviewers the full review surface — owner: claude-lead
-- **PL-0105** [REVIEW] Catalog metadata source port, and the surfaces still importing the fixture array — owner: claude-frontend
-- **PL-0706** [REVIEW] Corrective, re-run: production rights-invariant breach in the watch route — owner: claude-security
+- **PL-0105** [IN_PROGRESS] Catalog metadata source port, and the surfaces still importing the fixture array — owner: claude-frontend
+- **PL-0706** [IN_PROGRESS] Corrective, re-run: production rights-invariant breach in the watch route — owner: claude-security
 
 ## Dispatch classification
 
@@ -57,7 +56,7 @@ No conflict-free executable tasks can be assigned with current agent capacity.
 ## Agent capacity
 
 - **gpt-architect:** 0/6 active (external lane; not locally executable)
-- **claude-lead:** 1/2 active
+- **claude-lead:** 0/2 active
 - **claude-frontend:** 1/2 active
 - **claude-backend:** 0/1 active
 - **claude-media:** 0/1 active

@@ -5,7 +5,7 @@ import type {
   SeriesCatalogItem
 } from "@liberty/contracts/domains/catalog";
 import { SEARCH_QUERY_MAX_LENGTH, normalizeSearchQuery } from "@liberty/contracts/domains/search";
-import { NON_DEPLOYMENT_ENVIRONMENTS } from "../api/deployment-environment";
+import { NonDeploymentEnvironment } from "../api/deployment-environment";
 import {
   CATALOG_SOURCE_NOT_CONFIGURED_REASON,
   describeSearchState,
@@ -18,38 +18,44 @@ import {
 const NOW = new Date("2026-08-17T00:00:00.000Z");
 const ISO = NOW.toISOString();
 
-/*
- * Environments that are not on the allowlist, written out rather than derived,
- * for the reason `lib/catalog-source-registry.test.ts` gives: the complement of
- * a two-element allowlist over all strings is not computable, so these are the
- * values a real deployment reports plus the near-misses an allowlist exists to
- * catch.
+/**
+ * This process's own classification, minted once at import.
  *
- * `""` IS HOW AN UNSET VARIABLE IS EXPRESSED HERE. Passing `undefined` would
- * re-enter `getSearchResults`'s default parameter and read `process.env.NODE_ENV`,
- * which under vitest is `test` -- so a test that passed `undefined` expecting a
- * refusal would be asserting the opposite of what it appeared to.
+ * `getSearchResults` TAKES THE CAPABILITY OR `null`, NOT A RUNTIME NAME. There
+ * used to be a list of deployment names here, passed as the third argument and
+ * forwarded to the mint -- which is the hole PL-0706 closed, because a hosted
+ * process could name `test` and be issued a genuine capability. The granting
+ * case is now the classification this process really holds (vitest runs as
+ * `test`, which the one allowlist admits, so the classification is true), and
+ * the refusing case is `null`, which is exactly what a deployment receives.
+ *
+ * Name-by-name coverage of the allowlist has not been dropped, only moved: it is
+ * asserted against `isNonDeploymentEnvironmentName` in
+ * `lib/catalog-source-registry.test.ts`, which answers about a string and grants
+ * nothing.
  */
-const DEPLOYMENT_ENVIRONMENTS = [
-  "production",
-  "Production",
-  "PRODUCTION",
-  "staging",
-  "preview",
-  "prod",
-  "ci",
-  ""
-] as const;
+function classifiedProcess(): NonDeploymentEnvironment {
+  const environment = NonDeploymentEnvironment.classify();
+  if (environment === null) {
+    throw new Error(
+      "this process is not classified as a non-deployment; vitest sets NODE_ENV=test, which NON_DEPLOYMENT_ENVIRONMENTS admits"
+    );
+  }
+  return environment;
+}
+
+const TEST_RUNTIME: NonDeploymentEnvironment = classifiedProcess();
 
 /*
  * The two sources every loader test below is written against, with the
  * environment STATED rather than inherited from whatever the suite runs in.
- * `getSearchResults` reads `process.env.NODE_ENV` when given no third argument,
- * and a test that relied on that would silently assert "whatever this machine
- * is" instead of the fact it means.
+ * `getSearchResults` classifies the process when given no third argument, and a
+ * test that relied on that would silently assert "whatever this machine is"
+ * instead of the fact it means -- and could never reach the refusal at all,
+ * because vitest's own environment is on the allowlist.
  */
-const fixtureSource = (query: string) => getSearchResults(query, NOW, "development");
-const deploymentSource = (query: string) => getSearchResults(query, NOW, "production");
+const fixtureSource = (query: string) => getSearchResults(query, NOW, TEST_RUNTIME);
+const deploymentSource = (query: string) => getSearchResults(query, NOW, null);
 
 /*
  * Per-kind builders, for the reason PL-0101's catalog tests use them:
@@ -294,35 +300,20 @@ describe("searchCatalog ordering determinism", () => {
 
 describe("getSearchResults against the configured metadata source", () => {
   it("finds a title by prefix where the fixtures are permitted", async () => {
-    const response = await getSearchResults("aurora", NOW, "development");
+    const response = await getSearchResults("aurora", NOW, TEST_RUNTIME);
 
-    if (response === null) throw new Error("development must have a configured source");
+    if (response === null) throw new Error("a classified process must have a configured source");
     expect(idsOf(response)).toEqual(["aurora-fall"]);
     expect(response.results[0]?.matchedOn).toBe("title-prefix");
     expect(response.generatedAt).toBe(ISO);
   });
 
   it("finds titles by genre where the fixtures are permitted", async () => {
-    const response = await getSearchResults("drama", NOW, "development");
+    const response = await getSearchResults("drama", NOW, TEST_RUNTIME);
 
-    if (response === null) throw new Error("development must have a configured source");
+    if (response === null) throw new Error("a classified process must have a configured source");
     expect(idsOf(response)).toEqual(["northstar"]);
     expect(response.results[0]?.matchedOn).toBe("genre-contains");
-  });
-
-  /*
-   * Tied to the allowlist rather than restating it. If a value is ever added to
-   * `NON_DEPLOYMENT_ENVIRONMENTS`, this starts covering it without being edited
-   * -- and if search ever stops consulting the registry, it fails.
-   */
-  it("answers for every environment the allowlist admits", async () => {
-    expect(NON_DEPLOYMENT_ENVIRONMENTS.length).toBeGreaterThan(0);
-
-    for (const nodeEnv of NON_DEPLOYMENT_ENVIRONMENTS) {
-      const response = await getSearchResults("aurora", NOW, nodeEnv);
-      expect(response, nodeEnv).not.toBeNull();
-      expect(response === null ? [] : idsOf(response), nodeEnv).toEqual(["aurora-fall"]);
-    }
   });
 
   /*
@@ -330,11 +321,13 @@ describe("getSearchResults against the configured metadata source", () => {
    * serve six invented titles as search results. `null` and NOT an empty
    * `SearchResponse`: an empty response is a claim that the catalog was searched
    * and matched nothing, and no catalog was searched.
+   *
+   * `null` IS THE DEPLOYMENT rather than a stand-in for one -- it is what
+   * `classify()` answers in a hosted process -- so this is the branch a
+   * deployment actually takes.
    */
   it("answers null on a deployment rather than an empty result set", async () => {
-    for (const nodeEnv of DEPLOYMENT_ENVIRONMENTS) {
-      expect(await getSearchResults("aurora", NOW, nodeEnv), JSON.stringify(nodeEnv)).toBeNull();
-    }
+    expect(await getSearchResults("aurora", NOW, null)).toBeNull();
   });
 
   /*
@@ -343,15 +336,24 @@ describe("getSearchResults against the configured metadata source", () => {
    * one against a source that always answers, the other against one that never
    * does.
    */
-  it("gives a deployment and a development build different answers", async () => {
-    expect(await getSearchResults("aurora", NOW, "production")).not.toEqual(
-      await getSearchResults("aurora", NOW, "development")
+  it("gives a deployment and a classified process different answers", async () => {
+    expect(await getSearchResults("aurora", NOW, null)).not.toEqual(
+      await getSearchResults("aurora", NOW, TEST_RUNTIME)
     );
   });
 
-  it("reads the process environment when given no argument", async () => {
+  /*
+   * The third argument defaults to a classification of THIS process, taken at
+   * call time. Compared against an explicit call to the same mint rather than
+   * against a hardcoded verdict, so this asserts the wiring without also
+   * asserting which environment the suite happens to run in. It is not a vacuous
+   * comparison of two `null`s: vitest's environment is on the allowlist, so both
+   * sides are real responses, and a default of `null` or a frozen module-scope
+   * verdict puts them on different branches.
+   */
+  it("classifies the process when given no third argument", async () => {
     expect(await getSearchResults("aurora", NOW)).toEqual(
-      await getSearchResults("aurora", NOW, process.env.NODE_ENV)
+      await getSearchResults("aurora", NOW, NonDeploymentEnvironment.classify())
     );
   });
 });
@@ -379,16 +381,12 @@ describe("loadSearchResults", () => {
    * refuse in the same vocabulary instead of inventing one each.
    */
   it("refuses on a deployment with a stated reason rather than reporting empty", async () => {
-    for (const nodeEnv of DEPLOYMENT_ENVIRONMENTS) {
-      const result = await loadSearchResults("aurora", (query) =>
-        getSearchResults(query, NOW, nodeEnv)
-      );
+    const result = await loadSearchResults("aurora", deploymentSource);
 
-      expect(result, JSON.stringify(nodeEnv)).toEqual({
-        status: "error",
-        reason: CATALOG_SOURCE_NOT_CONFIGURED_REASON
-      });
-    }
+    expect(result).toEqual({
+      status: "error",
+      reason: CATALOG_SOURCE_NOT_CONFIGURED_REASON
+    });
   });
 
   /*

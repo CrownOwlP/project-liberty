@@ -8,8 +8,8 @@
  * the in-memory repository and the demo catalog may be selected, and whether a
  * caller may tell the outbound URL policy `localDeployment: true`. The value
  * below is the only thing that answers it, and holding one is proof that the
- * answer was computed here rather than asserted by whoever wanted the
- * permission.
+ * answer was computed here, from this process, rather than asserted by whoever
+ * wanted the permission.
  *
  * WHY THIS FILE IS IN `@liberty/contracts` AND NOT SOMEWHERE MORE OBVIOUS. The
  * classification has to be reachable from BOTH `apps/web` -- which owns the
@@ -29,11 +29,34 @@
  * fact about the running process, and a fact that arrived over a network would
  * be somebody else's claim about our process.
  *
- * TWO MECHANISMS, AND THEY CLOSE DIFFERENT HOLES. This is the same pair
- * `packages/media-inspection/src/egress.ts` uses for `PinnedTarget`, for the
- * same reason and after the same review finding:
+ * THREE MECHANISMS, AND THEY CLOSE THREE DIFFERENT HOLES. The second and third
+ * are the pair `packages/media-inspection/src/egress.ts` uses for
+ * `PinnedTarget`, for the same reason and after the same review finding. The
+ * first is the one this file was corrected for, and it is the one the other two
+ * depend on to mean anything:
  *
- *   1. A BRAND THAT CANNOT BE WRITTEN DOWN. `classifiedRuntime` below is a
+ *   1. THE MINT READS THE PROCESS AND TAKES NOTHING FROM ITS CALLER.
+ *      `classifyRuntime()` declares no parameters, so there is no argument to
+ *      write: the `NODE_ENV` it classifies is the one `process.env` holds at
+ *      the moment of the call. It used to take a `nodeEnv` that DEFAULTED to
+ *      that read, and the default was what every production call site used --
+ *      but the parameter meant a hosted process could call
+ *      `classifyRuntime("test")` and receive a genuine classification: branded,
+ *      frozen, and recorded in the registry below, because this module really
+ *      had issued it. Every check downstream then answered honestly about an
+ *      object whose permission-granting fact the caller had written. A registry
+ *      proves the mint issued a value; only a mint with no argument proves the
+ *      mint OBSERVED the process.
+ *
+ *      The allowlist stays testable without a way to mint from a name.
+ *      `isNonDeploymentEnvironmentName` answers "would this name be admitted"
+ *      for any string, issues nothing and grants nothing; and a consumer that
+ *      has to be exercised against a refusing environment takes a
+ *      `ClassifiedRuntime | null` from its caller rather than a runtime name,
+ *      so `null` is how a test says "a deployment" and the only source of the
+ *      non-`null` case remains this function.
+ *
+ *   2. A BRAND THAT CANNOT BE WRITTEN DOWN. `classifiedRuntime` below is a
  *      module-private `unique symbol`. It is not exported, so no other module
  *      -- in this package or in any consumer -- can NAME the key, and an object
  *      literal that omits it is not a `ClassifiedRuntime`. There is no exported
@@ -42,7 +65,7 @@
  *      Fabrication stops being something a reviewer has to notice and becomes
  *      something the compiler refuses.
  *
- *   2. A REGISTRY OF THE VALUES THIS MODULE ACTUALLY ISSUED. A brand alone is a
+ *   3. A REGISTRY OF THE VALUES THIS MODULE ACTUALLY ISSUED. A brand alone is a
  *      COMPILE-TIME control, and two things get past a compile-time control at
  *      runtime: an explicit `as unknown as ClassifiedRuntime`, and a spread --
  *      `{ ...realClassification, nodeEnv: "test" }` copies the brand along with
@@ -79,9 +102,18 @@
  *
  *   - AN EDIT TO THIS FILE defeats it, and nothing in TypeScript can prevent
  *     that. What it prevents is the way this defect actually recurs: a change
- *     made somewhere else that quietly stops consulting the gate, or a call
- *     site that hands a permission-granting factory a literal it wrote itself.
- *     Both used to compile. Neither does.
+ *     made somewhere else that quietly stops consulting the gate, a call site
+ *     that hands a permission-granting factory a literal it wrote itself, or a
+ *     call site that tells the mint which environment to classify. All three
+ *     used to compile. None do.
+ *   - CODE INSIDE THE PROCESS THAT REWRITES ITS OWN ENVIRONMENT. Assigning
+ *     `process.env.NODE_ENV` before a call changes what this module observes,
+ *     because what it observes is the process. That is a statement executing in
+ *     the deployment, with the same reach as an edit to this file and the same
+ *     visibility in a diff; it is not something a caller can do THROUGH this
+ *     module, which is the boundary that moved. It is also how a test states an
+ *     environment it does not have: the process really becomes that process for
+ *     the duration, and the classification it then issues is a true one.
  *   - A CONSUMER THAT DOES NOT ASK. `isClassifiedRuntime` is a function, so a
  *     permission that takes a `ClassifiedRuntime` and never calls it is
  *     protected by the brand alone -- which is to say, against a literal but
@@ -120,6 +152,29 @@
 export const NON_DEPLOYMENT_ENVIRONMENTS: readonly string[] = ["development", "test"];
 
 /**
+ * Whether a runtime NAME is one the allowlist admits.
+ *
+ * A PREDICATE, AND DELIBERATELY NOT A MINT. It answers a question about a
+ * string. It issues nothing, registers nothing, brands nothing and grants
+ * nothing, so a caller may pass any name it likes -- including one belonging to
+ * a process it is not running in -- and receive only a boolean. That is the
+ * whole reason it can safely take an argument when `classifyRuntime` cannot.
+ *
+ * IT EXISTS SO THE ALLOWLIST STAYS TESTABLE. `classifyRuntime` can only ever be
+ * asked about the process running the test, so "does `staging` get in" is a
+ * question the mint can no longer be asked directly. It is asked here instead,
+ * of the same array the mint consults -- one line below, in the only comparison
+ * this repository performs on `NODE_ENV`.
+ *
+ * `?? ""` rather than a nullish test, so an unset variable and an empty string
+ * are the same answer -- neither is on the allowlist, and both mean "nobody
+ * said", which is not a claim to be local.
+ */
+export function isNonDeploymentEnvironmentName(nodeEnv: string | undefined): boolean {
+  return NON_DEPLOYMENT_ENVIRONMENTS.includes(nodeEnv ?? "");
+}
+
+/**
  * The brand.
  *
  * Module-private and never exported, so no other module can name the key and
@@ -130,8 +185,8 @@ export const NON_DEPLOYMENT_ENVIRONMENTS: readonly string[] = ["development", "t
 const classifiedRuntime: unique symbol = Symbol("liberty.runtime.classified");
 
 /**
- * Evidence that this process was classified as a non-deployment, in a form only
- * this module can produce.
+ * Evidence that THIS process was classified as a non-deployment, in a form only
+ * this module can produce and only from the process itself.
  *
  * WHY A VALUE AND NOT A BOOLEAN. What this gates is the CONSTRUCTION of things
  * a deployment must not be able to build -- a fabricated `owned` rights basis,
@@ -143,7 +198,8 @@ const classifiedRuntime: unique symbol = Symbol("liberty.runtime.classified");
  */
 export interface ClassifiedRuntime {
   /**
-   * The `NODE_ENV` that satisfied the allowlist.
+   * The `NODE_ENV` this process was running under when the allowlist admitted
+   * it.
    *
    * Carried so a caller that reports WHICH environment admitted it -- a log
    * line, a reason trail, a fixture rights basis's `attestedRuntime` -- reads
@@ -160,9 +216,10 @@ export interface ClassifiedRuntime {
  * The classifications this module has issued, by identity.
  *
  * Weak so that holding the registry never holds a classification alive. Nothing
- * removes an entry: `NODE_ENV` does not change under a running process, so a
- * classification stays true for as long as somebody still holds it, and an
- * expiry would be a new failure mode for no gain.
+ * removes an entry, and nothing re-validates one: a classification records what
+ * the process was when it was minted, which is the fact its holders were
+ * granted their permission on, and an expiry would be a new failure mode for no
+ * gain.
  */
 const issuedRuntimes = new WeakSet<ClassifiedRuntime>();
 
@@ -183,39 +240,38 @@ export function isClassifiedRuntime(value: ClassifiedRuntime): boolean {
 }
 
 /**
- * Classifies the process, or answers `null` for a deployment.
+ * Classifies THIS process, or answers `null` for a deployment.
  *
- * THE ONE PLACE `NODE_ENV` IS TESTED. Several callers take a `nodeEnv`
- * parameter -- the repository selector, the catalog source registry, the
- * account resolver, the search and title surfaces -- and default it to
- * `process.env.NODE_ENV` so a test can override it, but every one of them
- * forwards the value on and none of them compares it to anything. The
- * comparison happens on the line below, and in `apps/web` and the packages it
- * depends on it happens nowhere else.
+ * NO ARGUMENT, AND THAT ABSENCE IS THE CONTROL. The environment classified is
+ * the one the process is running under; there is nothing for a caller to state,
+ * so no caller can obtain a capability for an environment it is not in. The
+ * previous signature took a `nodeEnv` that defaulted to this same read, which
+ * meant a hosted process could ask for -- and receive -- a genuine
+ * classification of `test`. Everything downstream was then correct about an
+ * object founded on a caller's own claim. See the header.
  *
- * The argument exists so a test can state the environment it means instead of
- * mutating `process.env` and racing every other suite in the same worker. It
- * defaults to a read AT CALL TIME, never at module scope: a module-scope read
+ * THE ONE PLACE `NODE_ENV` IS COMPARED TO ANYTHING is
+ * `isNonDeploymentEnvironmentName`, immediately above, and the read below is
+ * the only one any permission in `apps/web` or the packages it depends on rests
+ * on. Consumers take the capability, or `null`, and forward it; there is no
+ * parameter anywhere on this path through which a name could be supplied
+ * instead of observed.
+ *
+ * THE READ HAPPENS AT CALL TIME, never at module scope: a module-scope read
  * freezes the answer to whatever the process looked like when the first route
  * was loaded, which in a serverless cold start is not necessarily the request's
  * environment.
  *
- * `?? ""` rather than a nullish test, so an unset variable and an empty string
- * are the same answer -- neither is on the allowlist, and both mean "nobody
- * said", which is not a claim to be local.
- *
  * A FRESH VALUE PER CALL, not a memoised one. Two holders sharing one object
- * would be indistinguishable to the registry, which is harmless, but a cached
- * classification would also have to be invalidated when the argument differs
- * from the last one -- and a cache keyed on the very thing it is classifying is
- * a cache that exists to be got wrong. Minting is a frozen object literal and a
- * `WeakSet` insert.
+ * would be indistinguishable to the registry, which is harmless, but a cache
+ * would have to decide when a classification stops being true -- and the answer
+ * is "when the process's environment changes", which is precisely the thing the
+ * cache would be there to avoid re-reading. Minting is a frozen object literal
+ * and a `WeakSet` insert.
  */
-export function classifyRuntime(
-  nodeEnv: string | undefined = process.env.NODE_ENV
-): ClassifiedRuntime | null {
-  const value = nodeEnv ?? "";
-  if (!NON_DEPLOYMENT_ENVIRONMENTS.includes(value)) return null;
+export function classifyRuntime(): ClassifiedRuntime | null {
+  const value = process.env.NODE_ENV ?? "";
+  if (!isNonDeploymentEnvironmentName(value)) return null;
 
   const classified: ClassifiedRuntime = Object.freeze({
     [classifiedRuntime]: true as const,
