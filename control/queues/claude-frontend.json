@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-11T19:32:25.053Z",
+  "generatedAt": "2026-09-11T19:32:38.353Z",
   "agent": "claude-frontend",
   "executionAvailable": true,
   "assigned": [
@@ -43,35 +43,35 @@
       "gateResults": {
         "lint": {
           "status": "pass",
-          "at": "2026-09-09T04:10:28.681Z",
+          "at": "2026-09-11T19:32:30.538Z",
           "by": "claude-frontend",
-          "commitSha": "eecca6b621a2fccaab09ab3ec15d3bc93936df3b",
+          "commitSha": "ba79c14dc3921d6b181ef7da7500cec8ddb2f028",
           "evidence": "eslint via the component runs of this round, exit 0 on the tree committed this round"
         },
         "typecheck": {
           "status": "pass",
-          "at": "2026-09-09T04:10:29.192Z",
+          "at": "2026-09-11T19:32:31.004Z",
           "by": "claude-frontend",
-          "commitSha": "eecca6b621a2fccaab09ab3ec15d3bc93936df3b",
+          "commitSha": "ba79c14dc3921d6b181ef7da7500cec8ddb2f028",
           "evidence": "turbo run typecheck, exit 0 on the tree committed this round"
         },
         "unit": {
           "status": "pass",
-          "at": "2026-09-09T04:10:29.705Z",
+          "at": "2026-09-11T19:32:31.462Z",
           "by": "claude-frontend",
-          "commitSha": "eecca6b621a2fccaab09ab3ec15d3bc93936df3b",
+          "commitSha": "ba79c14dc3921d6b181ef7da7500cec8ddb2f028",
           "evidence": "vitest, exit 0 on the tree committed this round; the registry now publishes a narrow synchronous accessor returning either the available implementation or a named refusal, demo-title-details.ts no longer names any implementation or classifies any environment, and five new cases fail against the previous tree because the accessor did not exist"
         },
         "build": {
           "status": "pass",
-          "at": "2026-09-09T04:10:30.174Z",
+          "at": "2026-09-11T19:32:31.955Z",
           "by": "claude-frontend",
-          "commitSha": "eecca6b621a2fccaab09ab3ec15d3bc93936df3b",
+          "commitSha": "ba79c14dc3921d6b181ef7da7500cec8ddb2f028",
           "evidence": "next build, exit 0 on the tree committed this round"
         }
       },
       "implementationAgent": "claude-frontend",
-      "updatedAt": "2026-09-09T04:10:30.656Z",
+      "updatedAt": "2026-09-11T19:32:32.446Z",
       "implementationBaseSha": "f6c4b942ebbd02fd3fa9ed8f74fde4fc603affc2",
       "implementationBaseProvenance": {
         "kind": "reconciled-existing-implementation",
@@ -101,7 +101,7 @@
         "reviewerAgent": "gpt-architect",
         "reviewerClass": "external-reasoning",
         "reviewerProvider": "openai",
-        "reviewedCommitSha": "eecca6b621a2fccaab09ab3ec15d3bc93936df3b",
+        "reviewedCommitSha": "ba79c14dc3921d6b181ef7da7500cec8ddb2f028",
         "reviewedBaseSha": "f6c4b942ebbd02fd3fa9ed8f74fde4fc603affc2",
         "reviewedTreeHash": "30937cd115b67fd03a6a3721f01e1567bfa5f53fffbe9a6efb195e3f1f4e0aef",
         "reviewedFileCount": 17,
@@ -111,7 +111,7 @@
           "apps/web/src/lib/demo-catalog.ts"
         ],
         "outcome": "CHANGES_REQUESTED",
-        "reviewedAt": "2026-09-09T04:10:28.239Z",
+        "reviewedAt": "2026-09-11T19:32:30.100Z",
         "evidence": "CHANGES_REQUESTED on rights-review because the title surface still imports the catalog port and demoCatalogSource directly, so catalog-source-registry.ts is not the only module that knows both the abstraction and its implementation and the title surface does not satisfy the task's stated registry boundary. The runtime still fails closed on undeclared or contradictory rights and search plus home are correctly routed through the registry, but the title bypass is explicitly admitted in its own source as a wart. The catalog source comment and CATALOG_SOURCE documentation are also stale after PL-0706 because they still identify authorized-candidates.ts as the owner of the opaque-reference predicate even though that rule now lives in provider-sdk. Close the title composition-root bypass and update those statements before approval. Reviewed at f0e1546a74e8b7632ab5549e4dea7d762bcf73da; this record binds to the later commit because request-changes cannot bind to a sha whose reviewed surface has since changed. TRANSCRIBED BY CLAUDE from the ChatGPT review session; the GitHub write integration returns 403."
       },
       "reviewHistory": [
@@ -133,6 +133,26 @@
           ],
           "outcome": "CHANGES_REQUESTED",
           "reviewedAt": "2026-09-09T04:10:28.239Z",
+          "evidence": "CHANGES_REQUESTED on rights-review because the title surface still imports the catalog port and demoCatalogSource directly, so catalog-source-registry.ts is not the only module that knows both the abstraction and its implementation and the title surface does not satisfy the task's stated registry boundary. The runtime still fails closed on undeclared or contradictory rights and search plus home are correctly routed through the registry, but the title bypass is explicitly admitted in its own source as a wart. The catalog source comment and CATALOG_SOURCE documentation are also stale after PL-0706 because they still identify authorized-candidates.ts as the owner of the opaque-reference predicate even though that rule now lives in provider-sdk. Close the title composition-root bypass and update those statements before approval. Reviewed at f0e1546a74e8b7632ab5549e4dea7d762bcf73da; this record binds to the later commit because request-changes cannot bind to a sha whose reviewed surface has since changed. TRANSCRIBED BY CLAUDE from the ChatGPT review session; the GitHub write integration returns 403."
+        },
+        {
+          "taskId": "PL-0105",
+          "implementationAgent": "claude-frontend",
+          "implementationOwner": "claude-frontend",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "ba79c14dc3921d6b181ef7da7500cec8ddb2f028",
+          "reviewedBaseSha": "f6c4b942ebbd02fd3fa9ed8f74fde4fc603affc2",
+          "reviewedTreeHash": "30937cd115b67fd03a6a3721f01e1567bfa5f53fffbe9a6efb195e3f1f4e0aef",
+          "reviewedFileCount": 17,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "apps/web/src/lib/catalog.ts",
+            "apps/web/src/lib/demo-catalog.ts"
+          ],
+          "outcome": "CHANGES_REQUESTED",
+          "reviewedAt": "2026-09-11T19:32:30.100Z",
           "evidence": "CHANGES_REQUESTED on rights-review because the title surface still imports the catalog port and demoCatalogSource directly, so catalog-source-registry.ts is not the only module that knows both the abstraction and its implementation and the title surface does not satisfy the task's stated registry boundary. The runtime still fails closed on undeclared or contradictory rights and search plus home are correctly routed through the registry, but the title bypass is explicitly admitted in its own source as a wart. The catalog source comment and CATALOG_SOURCE documentation are also stale after PL-0706 because they still identify authorized-candidates.ts as the owner of the opaque-reference predicate even though that rule now lives in provider-sdk. Close the title composition-root bypass and update those statements before approval. Reviewed at f0e1546a74e8b7632ab5549e4dea7d762bcf73da; this record binds to the later commit because request-changes cannot bind to a sha whose reviewed surface has since changed. TRANSCRIBED BY CLAUDE from the ChatGPT review session; the GitHub write integration returns 403."
         }
       ]
