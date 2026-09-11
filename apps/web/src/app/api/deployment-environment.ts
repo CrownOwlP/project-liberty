@@ -87,6 +87,13 @@ import {
  * they already import the classification from; a copy here would be the second
  * allowlist this whole arrangement exists to prevent.
  *
+ * RE-EXPORTING IT HANDS OUT NO MUTATION CHANNEL, and that is a property of the
+ * array rather than of these two lines. It is frozen where it is declared, so a
+ * holder of this binding cannot cast it and append `production` -- which, once
+ * the mint stopped taking a runtime name, was the last public input through
+ * which a consumer could still change who the classifier admits. Were it merely
+ * `readonly`, this door would be the app re-exporting its own authority.
+ *
  * `isNonDeploymentEnvironmentName` ANSWERS ABOUT A STRING AND ISSUES NOTHING.
  * It is what a test uses to assert which names are admitted, now that no
  * function anywhere will mint a capability from a name. Nothing in this

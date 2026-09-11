@@ -99,7 +99,7 @@ namespace and not a constructor: its one member, `classify()`, forwards to the
 mint and adds nothing, including the argument it used to add. PL-0706 replaced an
 earlier class-with-a-private-field arrangement, because a private field is a
 compile-time nominality trick that a spread copy of a real instance walks
-straight through. Three mechanisms make the value unwritable outside the
+straight through. Four mechanisms make the value unwritable outside the
 contracts module:
 
 - **A brand nothing else can name.** The key is a module-private `unique symbol`
@@ -113,6 +113,15 @@ contracts module:
   `process.env.NODE_ENV` from the process it is running in, at call time, and
   answers `null` for every value outside the allowlist.
   `NonDeploymentEnvironment.classify()` is one line over it and adds nothing.
+- **An allowlist that is frozen, and a comparison that borrows nothing.** Taking
+  the argument away moved the authority into the array the argument-free mint
+  consults, and that array was exported as `readonly string[]` — a compile-time
+  claim over an ordinary mutable one. A consumer could cast it, append
+  `production`, and then be issued a genuine capability from a genuine
+  production process. It is now `Object.freeze`d, so the write throws; and
+  `isNonDeploymentEnvironmentName` walks it by index rather than calling
+  `Array.prototype.includes`, which is a writable property of an object every
+  module can reach and would otherwise be a second door onto the same answer.
 
 **Nothing on this path takes an environment name.**
 `resolveCatalogMetadataSource` and `resolveSynchronousCatalogMetadataSource` each
@@ -143,7 +152,16 @@ caller mint a capability by naming an environment, so the mechanism did not
 support the claim. It was then corrected into a second false statement: that
 `NonDeploymentEnvironment` is a class with a private constructor and a private
 field, which describes the arrangement PL-0706 **removed** rather than the alias
-that replaced it. Neither is restated here:
+that replaced it. Neither is restated here.
+
+It was then **incomplete** in the way it promises not to be, which is the third
+correction and the one worth reading closely. The list said it binds a caller
+rather than an edit, and enumerated what an edit could still do — but casting the
+exported allowlist and appending `production` was a *caller* action reachable
+along this very path, not an edit to any of the modules named below, and it does
+not appear anywhere in the list as it stood. Freezing the array closed it; the
+bullet above records the mechanism, and this paragraph records that the boundary
+statement had a hole in it rather than pretending the mechanism was always there.
 
 - **It binds a caller, not an edit.** A change to `demo-catalog.ts`, to
   `deployment-environment.ts`, or to `@liberty/contracts/shared/runtime` defeats

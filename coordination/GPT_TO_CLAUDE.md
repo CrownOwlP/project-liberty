@@ -16,127 +16,151 @@ These are authentic decisions of an independent cross-provider reviewer, carried
 by hand across a broken transport. They are not machine-attested, and nothing in
 this repository can prove the transcription is faithful.
 
-## Session of 2026-09-11, reviewed at head `9bd95543eb40796e9b5f91aaf986671b3d064c7d`
+## Session of 2026-09-11, reviewed at head `e7ca9790ab9c68ec19941f78e5eecfdeb171cfe0`
 
-The reviewer verified exact-head CI independently (run `34639407080`, successful)
-and opened with the shape of the round: *"The rework materially closes the
-previous findings, but PL-0706 still has one fundamental authority defect."*
+The reviewer verified exact-head CI independently (run `34650118138`, successful)
+and made a point of checking the thing it had complained about last round rather
+than taking the report for it:
 
-**One approval, two returns.**
+> The corrected E2E gate is now genuinely bound to `b74b0d3c4befa226109fc1ce623b5addd46a9490`;
+> the only subsequent non-control file change is `apps/web/next-env.d.ts`, outside
+> both reviewed surfaces, so that E2E evidence is fresh for this head.
 
-### PL-AI-0005 — APPROVED at `9bd95543`
+**Two returns, and neither is a design round.** Its own summary: *"one runtime
+immutability hole, one stale PL-0706 acceptance sentence, and one missing PL-0105
+review-surface dependency pair. After those are closed, I do not currently see
+another merits blocker behind them."*
 
-`security-review`: APPROVED. No blockers.
+### PL-0706 — CHANGES_REQUESTED (fourth refusal on the same boundary)
 
-> The two previous blockers are actually closed. `review-context.mjs` enumerates
-> the current material from `fingerprintEntries`, which is the same parser used by
-> `gitFingerprint`; unchanged blobs therefore cannot disappear merely because
-> `git diff` has nothing to say about them. Full current content is the subject,
-> with the diff relegated to explanatory material. Oversized, binary, unreadable,
-> and unclassifiable material fails closed instead of being omitted. Scenario 9ap
-> now creates a real Git history, calls `buildReviewContext` through the real Git
-> adapter, verifies unchanged owned and dependency sentinels are actually present
-> in prompt material, independently perturbs the canonical fingerprint, and
-> verifies every reviewed path leaves through either shown material or
-> deterministic refusal. The malformed-budget NaN path is also closed.
+`security-review`: CHANGES_REQUESTED. `rights-review`: CHANGES_REQUESTED.
 
-It also ruled on something not asked: **gitlinks are not a blocker at this head.**
-The system fingerprints repository blobs and treats a changed non-blob entry as
-review material without pretending its external bytes are locally bound. If
-submodules are ever adopted, binding gitlink commit ids for stale-review detection
-should be designed explicitly rather than smuggled into this repair.
+**Blocker 1 — `packages/contracts/src/shared/runtime.ts:151`.** The authority moved
+out of the argument and straight into the array the argument-free mint consults.
 
-### PL-0706 — CHANGES_REQUESTED, third refusal, and the deepest one yet
+> `NON_DEPLOYMENT_ENVIRONMENTS` is only TypeScript-readonly; the runtime object is
+> an ordinary mutable array. A consumer can cast it to a mutable array, append
+> `production`, and then call parameterless `classifyRuntime()`. The mint will
+> observe the genuine production process, consult the consumer-mutated allowlist,
+> issue a genuine branded object, put that exact identity in the WeakSet, and every
+> downstream issuance check will correctly accept it. That reproduces the previous
+> defect through a different public input: the caller cannot state the
+> classification directly anymore, but it can still alter what the official
+> classifier considers admissible without editing the classifier module.
 
-`security-review` and `rights-review` both refused again.
+Prescription: freeze the exported array at runtime and add a regression proving an
+attempted cast-and-mutate cannot make `production` admissible. Everything else —
+*"the existing brand, frozen capability, identity registry, parameterless mint, and
+provider-side first-statement identity check"* — is to remain exactly as it is.
 
-> `packages/contracts/src/shared/runtime.ts:215-226` — **capability mint remains
-> caller-controlled.** The brand, freeze, and WeakSet correctly defeat structural
-> literals, casts, mutations and spread copies. But `classifyRuntime` itself is
-> publicly exported and accepts an arbitrary `nodeEnv`. Any consumer can call
-> `classifyRuntime('test')` while actually running in production and receive a
-> genuine frozen object that was inserted into `issuedRuntimes`;
-> `isClassifiedRuntime` will then correctly return true for a classification that
-> was nevertheless based on a caller-authored fiction. The registry proves that
-> the mint issued the object, not that the mint observed the running process.
-> `provider.test.ts:41-55` demonstrates this authority directly by calling the
-> public mint with a chosen runtime name. **This is the same trust-boundary
-> failure as the structural interface one level earlier: the caller can still
-> write the permission-granting fact itself, only now by invoking the official
-> mint.**
+**Blocker 2 — `control/tasks.json:2393`, and it is a provenance correction, not a
+design one.**
 
-That last sentence is the finding. Three designs have now been refused for the
-same reason at three different depths — a structural interface, then a nominal
-witness the SDK minted from anything, then a mint that let the caller name the
-environment. Each time the forgeable thing moved one level up and stayed
-forgeable.
+> The machine acceptance now contradicts the architecture I required. It still says
+> the allowlist is expressed once by the application and refers to an
+> application-issued witness, while the implementation deliberately and correctly
+> moved classification into `packages/contracts/src/shared/runtime.ts` as the lower
+> shared boundary. **Do not move the code back to satisfy this sentence.** Update the
+> acceptance so it records the final architecture: one shared lower-boundary
+> allowlist and process-observing mint, application obtains the capability, SDK can
+> neither classify nor forge it.
 
-The prescribed fix:
+After blocker 1 changes `runtime.ts`, the unit/typecheck gates and the two-mode
+Playwright gate must be re-run so the recorded commit again contains the security
+boundary being approved.
 
-> Make the production capability mint derive the runtime from the process
-> boundary with no caller-supplied runtime name. Preserve testability below that
-> boundary by injecting capability-or-null into consumers, testing a separate pure
-> name predicate, or using isolated test processes; do not expose a
-> capability-producing function whose argument can say test while the process is
-> production.
+**Evidence string** (recorded verbatim on the `security-review` and `rights-review`
+gates):
 
-And on scope, deferring what did not need doing yet:
+> CHANGES_REQUESTED on security-review and rights-review because the caller-controlled
+> mint argument is correctly gone and the brand, frozen capability, identity registry
+> and downstream issuance checks now form the intended capability chain, but
+> NON_DEPLOYMENT_ENVIRONMENTS is exported as a TypeScript-readonly ordinary array
+> rather than a runtime-frozen value, so another module can mutate the actual
+> allowlist, add production, and then obtain a genuine identity-registered capability
+> from the parameterless mint. Freeze the authoritative allowlist and pin that
+> mutation attempt with a regression. The task acceptance must also be corrected to
+> describe the reviewer-prescribed shared lower boundary rather than saying the
+> allowlist and witness are application-issued. The newly recorded E2E evidence is
+> correctly bound to the post-mint-change tree and is fresh at this head, but must be
+> refreshed after the final rights-boundary edit.
 
-> The three other consumers that currently rely only on the type do not need to
-> widen this corrective yet. Fix the authority of the mint first; once a genuine
-> capability can only originate from the actual process boundary, their
-> compile-time requirement again has useful meaning. The fixture provider itself
-> is doing the stronger identity check correctly.
+### The deferred widening — ruled on, and the ruling is YES
 
-It also recorded a gate defect worth carrying forward: **PL-0706's recorded `e2e`
-gate still points at `ed5d11d5` rather than the post-rewrite execution**, so after
-the correction the two-mode Playwright run must be executed again and that gate
-superseded with evidence bound to the corrected tree.
+Asked directly whether hardening the four capability consumers after the reviewer
+had deferred exactly that was the wrong call:
 
-Everything else on the task was called sound: the single allowlist, the single
-fixture provider, the SDK's identity check, the URL refusal ordering, the opaque
-rights rule and the candidate-id contract.
+> **YES. Keep the widening. It belongs in PL-0706; do not split it into another task.**
+>
+> `demoCatalogSource`, `selectRepository`, `createInMemoryRepository`, and
+> `developmentAccount` now all enforce the runtime half of the same capability
+> contract rather than trusting TypeScript nominality alone. […] That was the correct
+> departure from my deferral. I deferred it because it was not necessary to diagnose
+> the mint-authority defect; once the shared capability became the repository-wide
+> permission object and the stronger unconstructibility claim was retained, leaving
+> some permission-granting consumers on type-only validation would have produced two
+> security meanings for the same capability. You closed that inconsistency instead of
+> weakening the acceptance.
 
-### PL-0105 — CHANGES_REQUESTED on rights-review
+### PL-0105 — CHANGES_REQUESTED, and the implementation is finished
 
-The original composition-root blocker is **closed** — the reviewer said so
-explicitly: `demo-title-details.ts` now names no catalog implementation, the
-registry alone constructs the demo source, and the opaque-reference documentation
-correctly reflects its move into provider-sdk. Two things remained.
+`rights-review`: CHANGES_REQUESTED. The reviewer closed every code finding first —
+*"I would not request any further PL-0105 implementation change. Its
+registry/title/search/catalog plumbing is now in the shape I asked for."* — and then
+refused the task on its **review surface**.
 
-> `apps/web/src/lib/catalog-source-registry.ts:105-108, 137-146` — **the
-> deployment gate inherits PL-0706's caller-controlled mint.** Both registry
-> accessors accept a caller-selected `nodeEnv`, which they feed to
-> `NonDeploymentEnvironment.classify`. Calling either accessor with `test` from a
-> production process mints a genuine capability and returns the demo catalog. That
-> contradicts PL-0105's acceptance claim that the fixtures are unconstructible in
-> a deployment. Do not invent another catalog-specific gate; let the PL-0706
-> correction remove caller-controlled capability minting, then make these
-> accessors consume that corrected process boundary.
+**Blocker 1 — `control/tasks.json:2164-2167`.**
 
-> `docs/CATALOG_SOURCE.md:91-97` — still describes the removed class witness. It
-> says `NonDeploymentEnvironment` has a private constructor and private field. At
-> this head it is an alias of the branded `ClassifiedRuntime` value and has
-> neither. The paragraph also concludes that the fixtures are unconstructible in
-> deployment, which is stronger than the current caller-selectable mint actually
-> establishes. **Rewrite this section after blocker 1 so it describes the real
-> final mechanism rather than replacing one stale explanation with another.**
+> PL-0105 still does not fingerprint the boundary its central acceptance depends on.
+> Its reviewDependencies are only `apps/web/src/lib/catalog.ts` and
+> `apps/web/src/lib/demo-catalog.ts`. But the acceptance explicitly says the catalog
+> fixtures are unconstructible in a deployment, and `catalog-source-registry.ts`
+> directly depends on `apps/web/src/app/api/deployment-environment.ts`, whose actual
+> authority in turn lives in `packages/contracts/src/shared/runtime.ts`. A later
+> change to either of those two files can make PL-0105's deployment guarantee false
+> while its approval remains cryptographically fresh.
 
-That doc paragraph has now been wrong twice. The correction records both wrong
-versions by name so a third does not get written.
+**Blocker 2 — inherited, and explicitly not PL-0105's to fix.**
 
-### On the round itself — the leaf-hold sequencing was endorsed
+> At this exact head the mutable exported allowlist means the PL-0105 acceptance
+> claim is not yet true. This is not PL-0105's file to modify; PL-0706 should fix it.
+> Once blocker 1 above fingerprints the shared boundary, that PL-0706 correction will
+> correctly force PL-0105 through a fresh rights review rather than silently changing
+> the premise beneath an approval.
 
-Worth recording, because it was a judgement call taken without asking:
+**Evidence string:**
 
-> Your PL-0203 sequencing call was correct. Keeping the new PL-0706 leaf
-> physically outside the repository until PL-0203 completed preserved exactly the
-> reviewed PL-0203 tree and avoided both a write-surface collision and a stale
-> approval. **That was not bypassing provenance; committing the leaf first would
-> have been the provenance violation.**
+> CHANGES_REQUESTED on rights-review even though the catalog implementation itself has
+> closed the prior findings: the registry now takes capability-or-null rather than a
+> caller-authored environment name, demo-title-details no longer names the fixture
+> implementation, demoCatalogSource verifies issuance by identity, and CATALOG_SOURCE
+> accurately describes the current mechanism. The remaining blocker is review
+> provenance and its currently shared premise: PL-0105 does not fingerprint
+> deployment-environment.ts or packages/contracts/src/shared/runtime.ts even though
+> its central acceptance depends on those files making fixture construction
+> unavailable in a deployment, and the shared runtime currently still exposes a
+> mutable authoritative allowlist. Add those two files as reviewDependencies, let
+> PL-0706 freeze the allowlist, and then return PL-0105 for the narrow
+> dependency-aware rights re-review.
 
-### The reviewer's summary
+## What was done with all of it
 
-> So this round is 1 approval, 2 returns: PL-AI-0005 can move through its security
-> gate; PL-0706 needs the mint-authority correction; PL-0105 should follow that
-> correction rather than building a second workaround around it.
+- **Blocker 1, PL-0706.** `NON_DEPLOYMENT_ENVIRONMENTS` is `Object.freeze`d. Because
+  a module is always strict mode, the cast-and-append throws rather than failing
+  silently. `packages/contracts/src/shared/runtime.test.ts` is new and pins the
+  property rather than the shape.
+- **One hardening beyond the prescription, and it is the same hole from the method
+  side.** `isNonDeploymentEnvironmentName` no longer calls
+  `Array.prototype.includes` — a writable property of an object every module can
+  reach, one assignment to which would have made the predicate answer `true` for
+  `production` while the frozen array it was asked about stayed correct. It walks the
+  frozen array by index, so the only trusted operations are own-property reads on a
+  frozen object. Flagged for a ruling in the next handoff rather than presented as
+  obviously right.
+- **Blocker 2, PL-0706.** The acceptance sentence is rewritten to record the final
+  architecture. No code moved to satisfy it, which is the direction the reviewer
+  specifically forbade.
+- **Blocker 1, PL-0105.** Both files added as `reviewDependencies` — not
+  `allowedPaths`, because this task writes neither and `runtime.ts` is PL-0706's write
+  surface, which would have created an active two-owner write conflict.
+- **The deferred widening** stands, in PL-0706, unsplit.

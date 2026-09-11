@@ -127,7 +127,10 @@ export class NonProductionRuntime {
    * `classifyRuntime` only ever mints for a member of
    * `NON_DEPLOYMENT_ENVIRONMENTS`, so an issued classification always names a
    * non-empty runtime, and an unissued one does not get past the line below
-   * whatever it carries. A guard no input can reach is a claim no test can
+   * whatever it carries. That first clause is a runtime guarantee rather than a
+   * TypeScript one: the array is frozen where it is declared, so no consumer can
+   * cast away its `readonly` and append `""` -- or `production` -- and thereby
+   * change what an issued classification is allowed to say. A guard no input can reach is a claim no test can
    * check, and the check that replaced it is strictly stronger -- the same
    * exchange `createPinnedLookup` made when it dropped its empty-address guard
    * for an identity check.

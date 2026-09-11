@@ -29,11 +29,13 @@
  * fact about the running process, and a fact that arrived over a network would
  * be somebody else's claim about our process.
  *
- * THREE MECHANISMS, AND THEY CLOSE THREE DIFFERENT HOLES. The second and third
- * are the pair `packages/media-inspection/src/egress.ts` uses for
- * `PinnedTarget`, for the same reason and after the same review finding. The
- * first is the one this file was corrected for, and it is the one the other two
- * depend on to mean anything:
+ * FOUR MECHANISMS, AND THEY CLOSE FOUR DIFFERENT HOLES. The third and fourth are
+ * the pair `packages/media-inspection/src/egress.ts` uses for `PinnedTarget`,
+ * for the same reason and after the same review finding. The first and second
+ * are the two this file was corrected for, in successive rounds, and they come
+ * first because the other two depend on them to mean anything -- the same defect
+ * came back through a different public input once the first was closed, which is
+ * why they are adjacent here rather than in the order they were written:
  *
  *   1. THE MINT READS THE PROCESS AND TAKES NOTHING FROM ITS CALLER.
  *      `classifyRuntime()` declares no parameters, so there is no argument to
@@ -56,7 +58,31 @@
  *      so `null` is how a test says "a deployment" and the only source of the
  *      non-`null` case remains this function.
  *
- *   2. A BRAND THAT CANNOT BE WRITTEN DOWN. `classifiedRuntime` below is a
+ *   2. THE ALLOWLIST THE MINT CONSULTS IS FROZEN, AND THE COMPARISON READS
+ *      NOTHING OFF A PROTOTYPE. Taking the argument away moved the authority out
+ *      of the caller's hands and straight into this array -- and the array was
+ *      exported as `readonly string[]`, which is a COMPILE-TIME claim over an
+ *      ordinary mutable one. `(NON_DEPLOYMENT_ENVIRONMENTS as string[]).push(
+ *      "production")` compiled, mutated the very array the mint consults, and
+ *      the next parameterless `classifyRuntime()` would then observe a genuine
+ *      production process, admit it, brand it, freeze it and register its
+ *      identity. Every downstream check would have been right about it. The
+ *      caller could no longer STATE the classification, but it could still
+ *      rewrite what the official classifier admits, without editing this module
+ *      -- the same defect one input further out.
+ *
+ *      `Object.freeze` closes it, and in a module (always strict) the attempted
+ *      write throws rather than failing silently. The membership test below then
+ *      walks the frozen array by index instead of calling `includes`, so the
+ *      only trusted operations are reads of own properties on a frozen object:
+ *      `Array.prototype.includes` is reassignable, and a gate whose answer can
+ *      be changed by patching a prototype is a gate with a second door. What
+ *      remains is patching `Object.freeze` itself before this module loads,
+ *      which is the same class as the edits named under WHAT THIS DOES NOT
+ *      CLAIM: a statement executing inside the deployment, not something a
+ *      consumer can do through this module.
+ *
+ *   3. A BRAND THAT CANNOT BE WRITTEN DOWN. `classifiedRuntime` below is a
  *      module-private `unique symbol`. It is not exported, so no other module
  *      -- in this package or in any consumer -- can NAME the key, and an object
  *      literal that omits it is not a `ClassifiedRuntime`. There is no exported
@@ -65,7 +91,7 @@
  *      Fabrication stops being something a reviewer has to notice and becomes
  *      something the compiler refuses.
  *
- *   3. A REGISTRY OF THE VALUES THIS MODULE ACTUALLY ISSUED. A brand alone is a
+ *   4. A REGISTRY OF THE VALUES THIS MODULE ACTUALLY ISSUED. A brand alone is a
  *      COMPILE-TIME control, and two things get past a compile-time control at
  *      runtime: an explicit `as unknown as ClassifiedRuntime`, and a spread --
  *      `{ ...realClassification, nodeEnv: "test" }` copies the brand along with
@@ -103,9 +129,19 @@
  *   - AN EDIT TO THIS FILE defeats it, and nothing in TypeScript can prevent
  *     that. What it prevents is the way this defect actually recurs: a change
  *     made somewhere else that quietly stops consulting the gate, a call site
- *     that hands a permission-granting factory a literal it wrote itself, or a
- *     call site that tells the mint which environment to classify. All three
- *     used to compile. None do.
+ *     that hands a permission-granting factory a literal it wrote itself, a
+ *     call site that tells the mint which environment to classify, and a call
+ *     site that casts the allowlist and appends to it. All four used to compile
+ *     and the last two used to work. None do.
+ *   - PATCHING A BUILT-IN before this module is evaluated -- replacing
+ *     `Object.freeze` so the allowlist is never actually frozen. It is named
+ *     here rather than defended against because there is nowhere left to stand:
+ *     any defence would itself be built out of the built-ins being patched. It
+ *     is the same KIND of thing as rewriting `process.env.NODE_ENV`, the next
+ *     entry below, and not the same kind as the four call-site mistakes in the
+ *     entry above: it is a statement running inside the deployment, as visible in a
+ *     diff as an edit to this file, and not something reachable THROUGH this
+ *     module's surface.
  *   - CODE INSIDE THE PROCESS THAT REWRITES ITS OWN ENVIRONMENT. Assigning
  *     `process.env.NODE_ENV` before a call changes what this module observes,
  *     because what it observes is the process. That is a statement executing in
@@ -148,8 +184,19 @@
  * demo catalog's, the in-memory repository's and the resolve scaffold's
  * availability all at once, on purpose, because a value that genuinely stopped
  * being a deployment would have to change every one of those answers together.
+ *
+ * FROZEN, BECAUSE `readonly` IS ERASED AND THIS ARRAY IS NOW THE AUTHORITY.
+ * Once the mint stopped taking a runtime name, this became the only public
+ * input left that can change who the classifier admits, and a `readonly string[]`
+ * annotation over an ordinary array is a promise the runtime does not keep --
+ * one cast and one `push` and a deployment is on the allowlist. Widening the set
+ * has to be an edit to this line, visible in a diff and reviewable as a rights
+ * change, rather than a statement somewhere else. See mechanism 2 in the header.
  */
-export const NON_DEPLOYMENT_ENVIRONMENTS: readonly string[] = ["development", "test"];
+export const NON_DEPLOYMENT_ENVIRONMENTS: readonly string[] = Object.freeze([
+  "development",
+  "test"
+]);
 
 /**
  * Whether a runtime NAME is one the allowlist admits.
@@ -169,9 +216,23 @@ export const NON_DEPLOYMENT_ENVIRONMENTS: readonly string[] = ["development", "t
  * `?? ""` rather than a nullish test, so an unset variable and an empty string
  * are the same answer -- neither is on the allowlist, and both mean "nobody
  * said", which is not a claim to be local.
+ *
+ * WALKED BY INDEX RATHER THAN `includes`, and that is not a style choice. This
+ * is the only comparison in the repository that decides whether a process may
+ * fabricate a rights basis, and `Array.prototype.includes` is a writable
+ * property of an object every module can reach: one assignment to it and this
+ * function answers `true` for `production` while the array it is asked about is
+ * still correct and still frozen. Reading `.length` and an index off a frozen
+ * array touches no prototype at all, so freezing the data and refusing to
+ * borrow behaviour close the same hole from both sides. `for...of` would not
+ * do -- it goes through `Symbol.iterator`, which is reachable the same way.
  */
 export function isNonDeploymentEnvironmentName(nodeEnv: string | undefined): boolean {
-  return NON_DEPLOYMENT_ENVIRONMENTS.includes(nodeEnv ?? "");
+  const name = nodeEnv ?? "";
+  for (let index = 0; index < NON_DEPLOYMENT_ENVIRONMENTS.length; index += 1) {
+    if (NON_DEPLOYMENT_ENVIRONMENTS[index] === name) return true;
+  }
+  return false;
 }
 
 /**
