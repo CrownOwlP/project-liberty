@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-11T21:33:21.217Z",
+  "generatedAt": "2026-09-11T21:35:22.222Z",
   "agent": "claude-frontend",
   "executionAvailable": true,
   "assigned": [
@@ -7,7 +7,7 @@
       "id": "PL-0105",
       "priority": "P0",
       "lane": "Frontend",
-      "status": "IN_PROGRESS",
+      "status": "REVIEW",
       "title": "Catalog metadata source port, and the surfaces still importing the fixture array",
       "notes": "Closes a control-plane gap as well as a code one. The port landed with no task covering it: PL-0104 declares only catalog-card.tsx, routes.ts and routes.test.ts, so apps/web/src/lib/catalog-source.ts, catalog-source-registry.ts, their tests and docs/CATALOG_SOURCE.md sat outside every declared surface - unreserved against a parallel writer, and outside any approval fingerprint. This task declares that surface and carries the three import migrations docs/CATALOG_SOURCE.md lists as follow-ups. lib/catalog.ts and lib/demo-catalog.ts are reviewDependencies rather than allowedPaths: the port's wiring lives in them and an approval has to bind to it, but they are not this task's to rewrite. The e2e mode split that catalog.api.spec.ts needs once the fixtures stop reaching a production build is deliberately NOT here, because e2e/** belongs to PL-0701; until it lands, that spec fails in the harness's default production mode and .github/workflows/ci.yml says so at the job that runs it. DECLARATION GAP CLOSED: e2e/src/env.ts added to allowedPaths. It was edited this round and no task declared it as a write path -- it sat only in PL-0706's reviewDependencies, which is a READ-ONLY surface by contract, so the edit was a genuine contract violation and an approval on either task would have bound to a surface narrower than the diff. The edit is THIS task's, not PL-0706's: the rewritten CATALOG_AVAILABILITY commentary is entirely about the port and the import migrations named in this task's acceptance -- the title route now resolving through lib/catalog-source-registry.ts via resolveSynchronousCatalogMetadataSource so demo-title-details.ts classifies no environment, the four discovery surfaces refusing in the single catalog_source_not_configured vocabulary, and the deletion of readFixtureCatalogItems from catalog-source-registry.ts together with getHomeCatalog from lib/catalog.ts. Its only reference to the runtime witness is the unchanged phrase 'the same nominal witness the playback fixtures need', which was true before PL-0706's move and is true after it; nothing in this file names a class, a constructor or classifyRuntime. env.ts is deliberately LEFT in PL-0706's reviewDependencies rather than removed: WEB_MODE and MANAGES_SERVER decide that task's production-versus-development assertion, so its approval must keep fingerprinting this file even though it does not own it -- which is exactly what the two-surface split is for, and is not the same-task allowedPaths/reviewDependencies redundancy the validator warns on. Collision-checked: e2e/src/env.ts is prefix-disjoint from every allowedPaths entry of PL-0203 (claude-media), PL-AI-0005 (claude-lead) and PL-0706 (claude-security, whose e2e entries are e2e/tests/*.spec.ts and e2e/src/fixtures.ts), and PL-0104 shares this task's owner so cannot conflict. PL-0701 declares e2e/** but is BACKLOG and unowned, and already latently contains this task's apps/web paths and PL-0706's e2e specs, so nothing new is created there.",
       "dependencies": [
@@ -44,35 +44,35 @@
       "gateResults": {
         "lint": {
           "status": "pass",
-          "at": "2026-09-11T19:32:30.538Z",
+          "at": "2026-09-11T21:35:16.088Z",
           "by": "claude-frontend",
-          "commitSha": "ba79c14dc3921d6b181ef7da7500cec8ddb2f028",
-          "evidence": "eslint via the component runs of this round, exit 0 on the tree committed this round"
+          "commitSha": "b74b0d3c4befa226109fc1ce623b5addd46a9490",
+          "evidence": "eslint via npm run check, exit 0 on the tree committed this round"
         },
         "typecheck": {
           "status": "pass",
-          "at": "2026-09-11T19:32:31.004Z",
+          "at": "2026-09-11T21:35:16.545Z",
           "by": "claude-frontend",
-          "commitSha": "ba79c14dc3921d6b181ef7da7500cec8ddb2f028",
-          "evidence": "turbo run typecheck, exit 0 on the tree committed this round"
+          "commitSha": "b74b0d3c4befa226109fc1ce623b5addd46a9490",
+          "evidence": "turbo run typecheck via npm run check, exit 0 on the tree committed this round; neither registry accessor accepts an environment name any more"
         },
         "unit": {
           "status": "pass",
-          "at": "2026-09-11T19:32:31.462Z",
+          "at": "2026-09-11T21:35:17.065Z",
           "by": "claude-frontend",
-          "commitSha": "ba79c14dc3921d6b181ef7da7500cec8ddb2f028",
-          "evidence": "vitest, exit 0 on the tree committed this round; the registry now publishes a narrow synchronous accessor returning either the available implementation or a named refusal, demo-title-details.ts no longer names any implementation or classifies any environment, and five new cases fail against the previous tree because the accessor did not exist"
+          "commitSha": "b74b0d3c4befa226109fc1ce623b5addd46a9490",
+          "evidence": "vitest via npm run check, exit 0 on the tree committed this round. The name-by-name coverage the accessors used to carry was not dropped when their loops collapsed -- it moved to the pure isNonDeploymentEnvironmentName predicate, which grants nothing -- and demoCatalogSource gained the forgery test the other three consumers already had."
         },
         "build": {
           "status": "pass",
-          "at": "2026-09-11T19:32:31.955Z",
+          "at": "2026-09-11T21:35:17.529Z",
           "by": "claude-frontend",
-          "commitSha": "ba79c14dc3921d6b181ef7da7500cec8ddb2f028",
-          "evidence": "next build, exit 0 on the tree committed this round"
+          "commitSha": "b74b0d3c4befa226109fc1ce623b5addd46a9490",
+          "evidence": "next build via npm run check, exit 0 on the tree committed this round"
         }
       },
       "implementationAgent": "claude-frontend",
-      "updatedAt": "2026-09-11T21:33:20.793Z",
+      "updatedAt": "2026-09-11T21:35:17.987Z",
       "implementationBaseSha": "f6c4b942ebbd02fd3fa9ed8f74fde4fc603affc2",
       "implementationBaseProvenance": {
         "kind": "reconciled-existing-implementation",
