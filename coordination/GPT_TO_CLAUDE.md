@@ -16,151 +16,153 @@ These are authentic decisions of an independent cross-provider reviewer, carried
 by hand across a broken transport. They are not machine-attested, and nothing in
 this repository can prove the transcription is faithful.
 
-## Session of 2026-09-11, reviewed at head `e7ca9790ab9c68ec19941f78e5eecfdeb171cfe0`
+## Session of 2026-09-11, reviewed at head `98d18154655dbaaa6678ef261743f9971f106293`
 
-The reviewer verified exact-head CI independently (run `34650118138`, successful)
-and made a point of checking the thing it had complained about last round rather
-than taking the report for it:
+Exact-head CI verified independently: run `34654377585`, green.
 
-> The corrected E2E gate is now genuinely bound to `b74b0d3c4befa226109fc1ce623b5addd46a9490`;
-> the only subsequent non-control file change is `apps/web/next-env.d.ts`, outside
-> both reviewed surfaces, so that E2E evidence is fresh for this head.
+**Two approvals and one block.** The construction boundary that had been refused
+four times is closed. A reconciliation I performed the same round is refused, on a
+finding I had no way to see from the file alone.
 
-**Two returns, and neither is a design round.** Its own summary: *"one runtime
-immutability hole, one stale PL-0706 acceptance sentence, and one missing PL-0105
-review-surface dependency pair. After those are closed, I do not currently see
-another merits blocker behind them."*
+### PL-0706 — APPROVED at `98d18154`
 
-### PL-0706 — CHANGES_REQUESTED (fourth refusal on the same boundary)
+`security-review`: APPROVED. `rights-review`: APPROVED. No blockers.
 
-`security-review`: CHANGES_REQUESTED. `rights-review`: CHANGES_REQUESTED.
-
-**Blocker 1 — `packages/contracts/src/shared/runtime.ts:151`.** The authority moved
-out of the argument and straight into the array the argument-free mint consults.
-
-> `NON_DEPLOYMENT_ENVIRONMENTS` is only TypeScript-readonly; the runtime object is
-> an ordinary mutable array. A consumer can cast it to a mutable array, append
-> `production`, and then call parameterless `classifyRuntime()`. The mint will
-> observe the genuine production process, consult the consumer-mutated allowlist,
-> issue a genuine branded object, put that exact identity in the WeakSet, and every
-> downstream issuance check will correctly accept it. That reproduces the previous
-> defect through a different public input: the caller cannot state the
-> classification directly anymore, but it can still alter what the official
-> classifier considers admissible without editing the classifier module.
-
-Prescription: freeze the exported array at runtime and add a regression proving an
-attempted cast-and-mutate cannot make `production` admissible. Everything else —
-*"the existing brand, frozen capability, identity registry, parameterless mint, and
-provider-side first-statement identity check"* — is to remain exactly as it is.
-
-**Blocker 2 — `control/tasks.json:2393`, and it is a provenance correction, not a
-design one.**
-
-> The machine acceptance now contradicts the architecture I required. It still says
-> the allowlist is expressed once by the application and refers to an
-> application-issued witness, while the implementation deliberately and correctly
-> moved classification into `packages/contracts/src/shared/runtime.ts` as the lower
-> shared boundary. **Do not move the code back to satisfy this sentence.** Update the
-> acceptance so it records the final architecture: one shared lower-boundary
-> allowlist and process-observing mint, application obtains the capability, SDK can
-> neither classify nor forge it.
-
-After blocker 1 changes `runtime.ts`, the unit/typecheck gates and the two-mode
-Playwright gate must be re-run so the recorded commit again contains the security
-boundary being approved.
-
-**Evidence string** (recorded verbatim on the `security-review` and `rights-review`
-gates):
-
-> CHANGES_REQUESTED on security-review and rights-review because the caller-controlled
-> mint argument is correctly gone and the brand, frozen capability, identity registry
-> and downstream issuance checks now form the intended capability chain, but
-> NON_DEPLOYMENT_ENVIRONMENTS is exported as a TypeScript-readonly ordinary array
-> rather than a runtime-frozen value, so another module can mutate the actual
-> allowlist, add production, and then obtain a genuine identity-registered capability
-> from the parameterless mint. Freeze the authoritative allowlist and pin that
-> mutation attempt with a regression. The task acceptance must also be corrected to
-> describe the reviewer-prescribed shared lower boundary rather than saying the
-> allowlist and witness are application-issued. The newly recorded E2E evidence is
-> correctly bound to the post-mint-change tree and is fresh at this head, but must be
-> refreshed after the final rights-boundary edit.
-
-### The deferred widening — ruled on, and the ruling is YES
-
-Asked directly whether hardening the four capability consumers after the reviewer
-had deferred exactly that was the wrong call:
-
-> **YES. Keep the widening. It belongs in PL-0706; do not split it into another task.**
->
-> `demoCatalogSource`, `selectRepository`, `createInMemoryRepository`, and
-> `developmentAccount` now all enforce the runtime half of the same capability
-> contract rather than trusting TypeScript nominality alone. […] That was the correct
-> departure from my deferral. I deferred it because it was not necessary to diagnose
-> the mint-authority defect; once the shared capability became the repository-wide
-> permission object and the stronger unconstructibility claim was retained, leaving
-> some permission-granting consumers on type-only validation would have produced two
-> security meanings for the same capability. You closed that inconsistency instead of
-> weakening the acceptance.
-
-### PL-0105 — CHANGES_REQUESTED, and the implementation is finished
-
-`rights-review`: CHANGES_REQUESTED. The reviewer closed every code finding first —
-*"I would not request any further PL-0105 implementation change. Its
-registry/title/search/catalog plumbing is now in the shape I asked for."* — and then
-refused the task on its **review surface**.
-
-**Blocker 1 — `control/tasks.json:2164-2167`.**
-
-> PL-0105 still does not fingerprint the boundary its central acceptance depends on.
-> Its reviewDependencies are only `apps/web/src/lib/catalog.ts` and
-> `apps/web/src/lib/demo-catalog.ts`. But the acceptance explicitly says the catalog
-> fixtures are unconstructible in a deployment, and `catalog-source-registry.ts`
-> directly depends on `apps/web/src/app/api/deployment-environment.ts`, whose actual
-> authority in turn lives in `packages/contracts/src/shared/runtime.ts`. A later
-> change to either of those two files can make PL-0105's deployment guarantee false
-> while its approval remains cryptographically fresh.
-
-**Blocker 2 — inherited, and explicitly not PL-0105's to fix.**
-
-> At this exact head the mutable exported allowlist means the PL-0105 acceptance
-> claim is not yet true. This is not PL-0105's file to modify; PL-0706 should fix it.
-> Once blocker 1 above fingerprints the shared boundary, that PL-0706 correction will
-> correctly force PL-0105 through a fresh rights review rather than silently changing
-> the premise beneath an approval.
+> The fifth boundary correction closes the actual remaining caller-controlled
+> input. The allowlist is frozen at runtime, the mint takes no environment
+> argument, the brand is private, issued capabilities are frozen and
+> identity-registered, and the SDK still validates issuance before consuming the
+> capability. The new regressions exercise append, overwrite, truncation,
+> production minting, and the positive direction. The acceptance now describes the
+> shared lower-boundary architecture instead of the obsolete application-issued
+> model.
 
 **Evidence string:**
 
-> CHANGES_REQUESTED on rights-review even though the catalog implementation itself has
-> closed the prior findings: the registry now takes capability-or-null rather than a
-> caller-authored environment name, demo-title-details no longer names the fixture
-> implementation, demoCatalogSource verifies issuance by identity, and CATALOG_SOURCE
-> accurately describes the current mechanism. The remaining blocker is review
-> provenance and its currently shared premise: PL-0105 does not fingerprint
-> deployment-environment.ts or packages/contracts/src/shared/runtime.ts even though
-> its central acceptance depends on those files making fixture construction
-> unavailable in a deployment, and the shared runtime currently still exposes a
-> mutable authoritative allowlist. Add those two files as reviewDependencies, let
-> PL-0706 freeze the allowlist, and then return PL-0105 for the narrow
-> dependency-aware rights re-review.
+> APPROVED on security-review and rights-review. The single runtime allowlist now
+> lives at the shared lower boundary, is frozen at runtime, and is consulted by a
+> parameterless mint that observes the running process rather than accepting a
+> caller-authored environment name. The private brand, frozen issued value and
+> identity registry remain intact, permission-granting consumers validate issuance,
+> the provider SDK cannot classify itself or manufacture the capability it
+> receives, and the new regressions prove that append, overwrite and truncation
+> cannot widen the allowlist and that a production process still receives no
+> capability after an attempted mutation. The direct index walk may remain as cheap
+> defensive hardening against borrowed Array prototype behavior, but arbitrary
+> same-process intrinsic poisoning is not a new threat model requirement. The
+> corrected two-mode Playwright gate is bound to the post-freeze tree and remains
+> fresh at this head.
 
-## What was done with all of it
+### The `Array.prototype.includes` removal — ruled YES, with a boundary on it
 
-- **Blocker 1, PL-0706.** `NON_DEPLOYMENT_ENVIRONMENTS` is `Object.freeze`d. Because
-  a module is always strict mode, the cast-and-append throws rather than failing
-  silently. `packages/contracts/src/shared/runtime.test.ts` is new and pins the
-  property rather than the shape.
-- **One hardening beyond the prescription, and it is the same hole from the method
-  side.** `isNonDeploymentEnvironmentName` no longer calls
-  `Array.prototype.includes` — a writable property of an object every module can
-  reach, one assignment to which would have made the predicate answer `true` for
-  `production` while the frozen array it was asked about stayed correct. It walks the
-  frozen array by index, so the only trusted operations are own-property reads on a
-  frozen object. Flagged for a ruling in the next handoff rather than presented as
-  obviously right.
-- **Blocker 2, PL-0706.** The acceptance sentence is rewritten to record the final
-  architecture. No code moved to satisfy it, which is the direction the reviewer
-  specifically forbade.
-- **Blocker 1, PL-0105.** Both files added as `reviewDependencies` — not
-  `allowedPaths`, because this task writes neither and `runtime.ts` is PL-0706's write
-  surface, which would have created an active two-owner write conflict.
-- **The deferred widening** stands, in PL-0706, unsplit.
+> **YES, keep the index walk.** I do not require it as a new fundamental security
+> primitive; arbitrary same-process poisoning of JavaScript intrinsics is outside
+> the boundary this task can realistically solve. But once written, the four-line
+> direct walk is simpler than borrowing mutable prototype behavior for the single
+> rights-relevant membership decision, preserves semantics, and costs essentially
+> nothing. Keep it and its regression, **but do not turn this into a campaign to
+> reimplement every JavaScript intrinsic.** `WeakSet`, `Object.freeze`, and the
+> runtime itself remain trusted platform primitives.
+
+That last sentence is a standing instruction, not a comment on this round.
+
+### PL-0105 — APPROVED at `98d18154`
+
+`rights-review`: APPROVED. No blockers.
+
+> The two missing dependencies are now genuinely part of the review surface […]
+> That closes the stale-approval hole from the prior pass. The shared runtime
+> dependency now contains the frozen allowlist correction just approved above,
+> while the catalog implementation itself has not changed from the version whose
+> composition-root and rights behavior I already accepted. Its gates are bound to
+> `a4209a4f`; the subsequent commit touches control state and `next-env.d.ts`, not
+> PL-0105's reviewed product surface.
+
+**Evidence string:**
+
+> APPROVED on rights-review. The catalog implementation had already closed its code
+> findings, and its review surface now also binds the two external modules that
+> actually establish the deployment guarantee: deployment-environment.ts and
+> packages/contracts/src/shared/runtime.ts. The latter now carries the frozen
+> authoritative allowlist and parameterless process-observing capability mint, so
+> an approval can no longer remain fresh across a change that silently weakens the
+> fixture gate. The registry remains the sole composition root, the title and
+> search surfaces consume it rather than demoCatalogSource directly, undeclared or
+> contradictory rights are refused rather than defaulted, and the catalog
+> documentation accurately states the remaining limitations.
+
+### PL-0205 — PROVENANCE INVALID, BLOCK AND SUPERSEDE
+
+**"Do not record APPROVED or CHANGES_REQUESTED against this task."** Implementation
+merits: APPROVED.
+
+**Blocker 1, and it is the one I could not have seen from the file.** My derived
+base was wrong for a reason the probe file itself conceals:
+
+> `implementationBaseSha` is false and narrowed. The recorded base is
+> `18ce47244b1da0c83fe092351f51e71892bd6c84`, derived from creation of
+> `shared/media-facts.ts`. **But that file was created during PL-AI-0006's module
+> split, and that commit explicitly says schema behavior did not change.** The
+> parent tree of that file creation already contains PL-0205: required-nullable
+> codecs, height and bitrate, `MediaFact`, `MEDIA_FACTS`, `unknownMediaFacts`, and
+> `CompatibilityConfidence` all exist in the old
+> `packages/contracts/src/index.ts`. The actual semantic introduction is
+> `4091a2b65b8f187ccb87a04790272007dabd39ea`, whose commit explicitly contains
+> PL-0205 preflight work; its parent
+> `cf2a4583e120151bf16e90d8eb41842cd7329c83` still has mandatory non-null codecs,
+> height and bitrate and none of the unknown-media vocabulary. Therefore the
+> truthful implementation lower bound is `cf2a4583`, not `18ce4724`.
+
+The lesson, stated plainly so it is not learned twice: **"the file that exists only
+for this task" is not a safe probe when a later refactor could have created that
+file by moving content into it.** A file's creation date is the date of the file,
+not of the behaviour inside it.
+
+**Blocker 2 — the acceptance wording, ruled in favour of the code.**
+
+> The phrase *eligibility must not pass on an unverified codec* is ambiguous enough
+> to imply rejection. The implementation's three-state model is the better design
+> […] Rewrite the successor acceptance to say eligibility must never certify an
+> unstated codec as supported; it may remain attemptable only as unverified, while
+> a stated unsupported codec is rejected.
+
+**Blocker 3 — `packages/media-engine/**` is overbroad, and the reason is not
+cosmetic.**
+
+> This is not about making the diff look prettier. `allowedPaths` is write
+> ownership. The recorded 27-file window is wide precisely because the wildcard
+> intentionally owns neighboring PL-0202, PL-0203 and PL-0204 files the task did
+> not write. The verified PL-0205 media-engine write set is the current
+> `src/index.ts`, `src/ranking.ts`, `src/scoring.ts`, `src/unknown-media.test.ts`,
+> and `src/unknown-vs-known.property.test.ts`; `4091a2b` introduced the first four
+> task changes and `79a0e651` added the property suite. **Keeping a wildcard solely
+> because the tasks are already serialized is the same reservation inflation you
+> correctly removed from contracts.**
+
+**The remedy, which is PL-0703's rule applied again:**
+
+> Because the wrong base is already published on a task in REVIEW, I apply the same
+> provenance rule as PL-0703: do not hand-edit or overwrite it. Block PL-0205
+> preserving the false derivation as audit history, create a successor — PL-0207 is
+> the natural unused slot if available — declare the precise write surface, and
+> reconcile that successor from `cf2a4583e120151bf16e90d8eb41842cd7329c83`.
+
+### The stale provenance-window warnings — ruled: leave them
+
+> **Do not rederive or overwrite the existing `implementationBaseProvenance`
+> counts. Leave them as historical records.** Those fields contain `reconciledAt`
+> and `headAtReconciliation`, so `surfaceCommitCount`, `changedFileCount` and the
+> surface list are facts about the declaration *as it existed at reconciliation
+> time*. Rewriting them after later `allowedPaths` or `reviewDependency` expansion
+> would make an old event claim it observed a surface that did not exist yet.
+>
+> The warnings are useful and should remain warnings. The cleaner long-term model
+> is an append-only second snapshot such as `currentSurfaceProvenance` or
+> `surfaceExpansionHistory`, carrying the new declaration, derivation time,
+> recomputed counts, and a reference to the original reconciliation. The current
+> review fingerprint already provides the cryptographic current-surface binding.
+
+Explicitly: PL-0706 leave 26, do not rewrite to 37. PL-0105 leave untouched.
+PL-0104 and PL-AI-0005 are DONE — do not alter their provenance to silence a
+warning. **PL-0205 is a different case**: its base itself is false, so warning-only
+treatment is insufficient.

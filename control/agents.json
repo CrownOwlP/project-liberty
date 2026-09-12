@@ -43,9 +43,10 @@
       "provider": "anthropic",
       "kind": "local-subagent",
       "capabilities": ["Media", "Player", "Live"],
-      "maxParallel": 1,
+      "maxParallel": 2,
       "writeMode": "worktree",
-      "definition": ".claude/agents/media-engineer.md"
+      "definition": ".claude/agents/media-engineer.md",
+      "notes": "Raised from 1 to 2, on exactly the precedent claude-frontend set and for the identical reason. This is the only local agent advertising Media, Player or Live, so with a limit of 1 a single task sitting in REVIEW behind an external reviewer stopped the whole lane -- PL-0204, PL-0206 and PL-0601 were all reported by dispatch as deferred while one media task waited on a verdict, and PL-0601's implementation was already finished in the tree. The limit exists to prevent overlapping writes, and overlap is prevented structurally by allowedPaths, which conflictWithActive enforces on every claim and refuses regardless of owner. So raising this changes nothing about safety: PL-0204 and PL-0206 remain mutually exclusive with PL-0207 because they genuinely share media-engine files, and only a task with a disjoint surface -- PL-0601, which writes contracts/src/domains/live.ts and docs/LIVE_TV.md and nothing either of them touches -- becomes claimable. Two rather than unlimited is deliberate, in the same words claude-frontend used: it lets one task wait on review while another proceeds, without pretending one agent can hold an open-ended number of surfaces at once."
     },
     {
       "id": "claude-test",

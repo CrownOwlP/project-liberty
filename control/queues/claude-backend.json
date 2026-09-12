@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-11T22:31:26.815Z",
+  "generatedAt": "2026-09-12T01:28:53.874Z",
   "agent": "claude-backend",
   "executionAvailable": true,
   "assigned": [],
@@ -12,19 +12,50 @@
       "lane": "Backend",
       "status": "READY",
       "title": "Auth integration decision",
+      "notes": "ALLOWEDPATHS BOTH NARROWED AND WIDENED, AND THE WIDENING IS THE MORE IMPORTANT HALF. As declared, this task reserved docs/**, apps/web/src/** and packages/contracts/** -- all twenty-one documents, the entire web application and the whole contracts package -- for a decision record. Each of those three prefix-contains an active task's write surface, so a P0 that is already finished in the tree could not be claimed by anyone. Worse, and in the opposite direction, packages/auth/** was NOT declared at all, yet nine files there are this task's primary output: a reconcile-existing run would have reported the bulk of its own implementation as outside its surface. Both errors come from declaring a surface by guess before the work exists rather than from reading it afterwards. THE IMPLEMENTATION IS ALREADY IN THE TREE and only the control-plane record lags, the same pattern as PL-0204, PL-0205 and PL-0601. All four acceptance clauses are met: packages/auth exports the seam at . and ./server with better-auth a dependency of that package alone; sessions are database-backed through @better-auth/drizzle-adapter and packages/persistence/migrations/0000_profile_scoped_identity.sql; packages/auth/src/enabled-surface.ts carries ENABLED_AUTH_CAPABILITIES and WITHHELD_AUTH_PLUGIN_FAMILIES with findSurfaceViolations defaulting unknown plugins to violations; and both better-auth and its adapter are pinned at exactly 1.7.1 with no caret, asserted by enabled-surface.test.ts against REVIEWED_BETTER_AUTH_VERSION. The decision itself is ADR-007 in docs/DECISIONS.md, which self-labels Proposed because claude-lead wrote it and is also this task's reviewAgent -- see the reviewAgent change below. TWO HONEST CAVEATS STATED IN THE ADR RATHER THAN HIDDEN, and neither is an unmet clause: the migration has never been executed against a database, because there is no PostgreSQL anywhere in this environment; and better-auth.ts is deliberately untested. PROVENANCE: this must be started with --reconcile-existing, not against HEAD. The probe is packages/auth/src/enabled-surface.ts -- but after the PL-0205 finding, a filename probe is not enough on its own: whoever reconciles it must confirm the candidate base tree contains neither ENABLED_AUTH_CAPABILITIES nor WITHHELD_AUTH_PLUGIN_FAMILIES anywhere, so a file created by a later move cannot open the range after the behaviour it claims to cover. REVIEWAGENT MOVED FROM claude-lead TO gpt-architect. This task carries a security-review gate on an authentication boundary, and its decision record was written by claude-lead. A reviewer that is also the author is not a reviewer; routing it outward makes the review stricter rather than looser, which is the only direction this may be changed in.",
       "dependencies": [],
       "allowedPaths": [
-        "docs/**",
-        "apps/web/src/**",
-        "packages/contracts/**"
+        "packages/auth/**",
+        "docs/DECISIONS.md",
+        "docs/DATA_MODEL.md"
       ],
-      "preferredAgent": "gpt-architect",
-      "reviewAgent": "claude-lead",
+      "preferredAgent": "claude-backend",
+      "reviewAgent": "gpt-architect",
       "qualityGates": [
         "architecture-review",
         "security-review"
       ],
       "acceptance": "A recorded decision selects the auth approach and states the boundary it implies: a packages/auth seam that the rest of the application depends on instead of the vendor library, database-backed sessions, a deliberately small enabled surface with the advanced plugin stacks left off, and an exact-pinned dependency whose upgrades are treated as security-sensitive work rather than floated on a caret range",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PL-0305",
+      "priority": "P1",
+      "lane": "Provider",
+      "status": "READY",
+      "title": "A real catalog metadata source",
+      "notes": "The discovery layer has no metadata source. PL-0105 landed a seam, and docs/CATALOG_SOURCE.md says so in its first line; this task is the thing that belongs behind it, tracked so the gap stays visible instead of being hidden by a port that looks finished. docs/PRODUCT_SPEC.md step 2 of the initial user journey is browse/search normalized metadata, and nothing in this repository ingests any: every surface reads six fictional works. PL-0301 and PL-0302 do not close it - they supply stream candidates, which is what a title plays from, not what a catalog is made of. PARTLY BLOCKED, and the split is deliberate rather than a hedge. The design half - identity and dedupe, refresh and staleness, tombstones, paging, provider-side search, the locale-tagged contract, and the undeclared-rights state that catalogItemSchema cannot currently express - needs no external access and can begin now. Connecting an actual metadata provider, and carrying artwork, cannot: both need an agreement and credentials, which control/policies.json escalates to human-only under Licensing and Credentials - the same categories that block PL-0302. It is a DIFFERENT agreement from PL-0302's, covering catalog metadata and image rights rather than stream rights, so this is not merely waiting on that task; the honest status is BACKLOG with the ceiling named, not BLOCKED on someone else's licence.",
+      "dependencies": [
+        "PL-0105"
+      ],
+      "allowedPaths": [
+        "packages/catalog-ingestion/**",
+        "apps/web/src/lib/catalog-source.ts",
+        "apps/web/src/lib/catalog-source-registry.ts",
+        "docs/CATALOG_SOURCE.md",
+        "docs/ARCHITECTURE.md"
+      ],
+      "preferredAgent": "claude-backend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "architecture-review",
+        "security-review",
+        "rights-review",
+        "typecheck",
+        "unit"
+      ],
+      "acceptance": "A metadata source stands behind resolveCatalogMetadataSource and answers what the port deliberately does not. Ingestion: something fetches, schedules and backfills, rather than an array being maintained by hand. Refresh: an answer carries its age and a stated staleness policy, so nobody has to guess how old a rail is. Identity and dedupe: how a provider's native id becomes a normalizedContentId, and what happens when two sources describe the same work, is settled as a design decision before it is coded - this is the largest missing piece and it is not a coding question. Deletion: a work that disappears from a source produces a tombstone, so it stays distinguishable from a fetch that failed. Paging and provider-side search: listRecords returning everything is a shape only six fixtures can use, and who owns ranking and paging is part of the contract rather than an accident of in-memory filtering. Artwork: images arrive with their own licensing, tracked separately from the work's, or they do not arrive. Localization and availability: title, genre and synopsis are locale-tagged and a work can be offered in more than one language, and availability windows and territory exist, so the empty state's claim about a region is backed by something. Every record declares a rights basis whose category agrees with its item and whose reference is an opaque internal identifier or null, and the ingestion path is treated as untrusted third-party I/O - allowlisted egress, bounded bodies, redirects revalidated, and no media address anywhere in a catalog payload.",
       "owner": null,
       "gateResults": {}
     }
