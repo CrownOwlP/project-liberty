@@ -1,6 +1,6 @@
 # Project Liberty - Project Status
 
-> Generated 2026-09-12T17:16:45.373Z from the AI control plane.
+> Generated 2026-09-12T17:16:58.967Z from the AI control plane.
 
 **Overall completion:** 18/45 executable tasks (40%)
 
@@ -9,8 +9,8 @@
 - **BACKLOG:** 13
 - **READY:** 7
 - **CLAIMED:** 0
-- **IN_PROGRESS:** 1
-- **REVIEW:** 0
+- **IN_PROGRESS:** 0
+- **REVIEW:** 1
 - **BLOCKED:** 6
 - **DONE:** 18
 - **CANCELED:** 0
@@ -28,7 +28,7 @@
 
 ## Active work
 
-- **PL-0204** [IN_PROGRESS] Candidate failover policy — owner: claude-media
+- **PL-0204** [REVIEW] Candidate failover policy — owner: claude-media
 
 ## Dispatch classification
 

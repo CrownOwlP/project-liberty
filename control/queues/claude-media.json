@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-12T17:16:45.378Z",
+  "generatedAt": "2026-09-12T17:16:58.970Z",
   "agent": "claude-media",
   "executionAvailable": true,
   "assigned": [
@@ -7,7 +7,7 @@
       "id": "PL-0204",
       "priority": "P0",
       "lane": "Media",
-      "status": "IN_PROGRESS",
+      "status": "REVIEW",
       "title": "Candidate failover policy",
       "dependencies": [
         "PL-0201"
@@ -41,28 +41,28 @@
       "gateResults": {
         "typecheck": {
           "status": "pass",
-          "at": "2026-09-12T14:01:22.710Z",
+          "at": "2026-09-12T17:16:50.940Z",
           "by": "claude-media",
-          "commitSha": "77a54764a94075df0ee2b2c904363d6f2d74c76f",
-          "evidence": "turbo run typecheck via npm run check, exit 0 under pinned Node 22 on the tree this gate is recorded against."
+          "commitSha": "916fc101a3dfa8d066a50f5b34d3c5db5f4e1eeb",
+          "evidence": "turbo run typecheck via npm run check, exit 0 under pinned Node 22 on the tree committed this round, after boundedPolicy stopped treating an infinite budget as a stated bound."
         },
         "unit": {
           "status": "pass",
-          "at": "2026-09-12T14:01:23.290Z",
+          "at": "2026-09-12T17:16:51.383Z",
           "by": "claude-media",
-          "commitSha": "77a54764a94075df0ee2b2c904363d6f2d74c76f",
-          "evidence": "vitest via npm run check, exit 0 on the tree this gate is recorded against: fifty-nine unit cases in failover.test.ts plus sixteen properties in failover.property.test.ts and twelve in scheduling.property.test.ts, counted rather than estimated. Bounded is pinned by the budget never being exceeded however many candidates exist and by a NaN attempt budget being read as no budget rather than as no bound. Deterministic is pinned by the plan being identical under any permutation of the candidates, of the reported failures, and of both at once, and by exclusions ordered by code point rather than host collation. Observable is pinned by the trail quoting the ENFORCED budget rather than the stated one and by an unattributed rights failure keeping its kind so it cannot be read as a stray timeout."
+          "commitSha": "916fc101a3dfa8d066a50f5b34d3c5db5f4e1eeb",
+          "evidence": "vitest via npm run check, exit 0 on the tree committed this round. The corrective replaces one wrong regression with four. boundedPolicy now delegates to an enforceableBudget helper asking Number.isFinite, so the question is whether a number can bound anything rather than which exceptional values somebody thought of -- an allowlist, for the same reason every other gate here is one, because enumerating NaN and the two infinities would be a denylist over the numbers and a denylist fails open on whatever it missed. The four cases are an infinite attempt budget, an infinite per-candidate retry budget, a NEGATIVE infinity that no enumeration of named values would have caught, and a finite budget passed through unchanged so the other three cannot pass merely because the guard zeroes everything. The test this replaces asserted the opposite and explained why, which is the finding worth keeping: a regression suite agreeing with the code is not evidence that either is right."
         },
         "performance": {
           "status": "pass",
-          "at": "2026-09-12T14:01:23.799Z",
+          "at": "2026-09-12T17:16:51.825Z",
           "by": "claude-media",
-          "commitSha": "77a54764a94075df0ee2b2c904363d6f2d74c76f",
-          "evidence": "npm run bench:failover in packages/media-engine, exit 0 under pinned Node 22 on the tree this gate is recorded against. Run separately and deliberately: the one wall-clock assertion is deselected by name in packages/media-engine/vitest.config.ts unless vitest runs --mode bench, so a performance gate recorded from npm run check would have described the five deterministic read-count assertions and omitted the timed one entirely. This run executes all six -- a bounded number of candidate fields read per candidate at both sizes, no more read per unit of sorted work at 4096 candidates than at 512, a 4096-candidate pool ranked inside the budget a request can afford, a bounded number of failure fields per failure in both shapes and at both sizes, and no greater per-failure cost at 4096 unattributed or attributable failures than at 512."
+          "commitSha": "916fc101a3dfa8d066a50f5b34d3c5db5f4e1eeb",
+          "evidence": "npm run bench:failover in packages/media-engine, exit 0 under pinned Node 22 on the tree committed this round. Re-run rather than carried over, because the scheduler itself changed: boundedPolicy is now on every path that reads a budget. Run separately and deliberately, since the one wall-clock assertion is deselected by name in packages/media-engine/vitest.config.ts unless vitest runs --mode bench; all six assertions executed."
         }
       },
       "implementationAgent": "claude-media",
-      "updatedAt": "2026-09-12T17:16:43.987Z",
+      "updatedAt": "2026-09-12T17:16:52.265Z",
       "implementationBaseSha": "cf2a4583e120151bf16e90d8eb41842cd7329c83",
       "implementationBaseProvenance": {
         "kind": "reconciled-existing-implementation",
