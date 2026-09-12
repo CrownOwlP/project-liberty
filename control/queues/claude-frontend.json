@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-12T14:01:31.886Z",
+  "generatedAt": "2026-09-12T17:16:45.375Z",
   "agent": "claude-frontend",
   "executionAvailable": true,
   "assigned": [],
@@ -12,16 +12,18 @@
       "lane": "Frontend",
       "status": "READY",
       "title": "notFound() never reaches the wire: dead addresses answer 200",
+      "notes": "IMPLEMENTED IN THE TREE AND NEVER CLAIMED, like the rest of recovery packet 1 -- but PARTIALLY, and the two gaps are different in kind. This is the fifth task found in that state, and its code landed while it sat BACKLOG and unowned: control/events.jsonl records apps/web/src/app/loading.tsx and page.tsx being edited as belonging to PL-0704 while it was blocked on a lifecycle dependency. So it must be started with --reconcile-existing, never against HEAD. IT IS A MODIFICATION TASK IN THE REVIEWER'S TAXONOMY, MOSTLY, and that changes the probe. Its central act was a DELETION -- the root loading.tsx removed -- and marker absence cannot witness a deletion. What it also did, and what CAN be witnessed, is introduce two named components where anonymous route-level skeletons used to be: CatalogSkeleton in app/page.tsx and PlaybackLoading in app/watch/[contentId]/page.tsx, each now a Suspense fallback sitting BELOW the existence decision rather than a loading file wrapping the whole segment. Those two names are new even though their markup is not, so a pickaxe on the names finds the relocation, which is precisely this task's work. Use them as the witnesses; do not use the deleted file. TWO GAPS AGAINST THE ACCEPTANCE, AND ONLY ONE IS A CODE GAP. FIRST, THE TITLE SKELETON, WHICH I BELIEVE IS A CONTRACT GAP RATHER THAN A DEFECT AND AM FLAGGING FOR A RULING RATHER THAN FIXING. The acceptance says any fix must KEEP the loading skeletons rather than deleting them to move a status code. Home and watch comply: both relocated their skeleton into a Suspense boundary below a cheap existence check that consults nobody. The title route did not -- it deleted its skeleton outright -- and its own header argues why: on that route a status line precedes the first body byte, so no byte may be sent before the catalog answers whether the title exists, which is the definition of having nothing to stream. A full-page skeleton there IS the defect the task exists to remove. The only honest way to restore one would be a section whose data does not depend on the title existing, and none exists today. So the code looks right and the clause looks over-general. I am not rewriting the acceptance to match the code unasked -- that is the move the reviewer has twice had to authorise explicitly, on PL-0205's wording and on PL-0706's -- so it is proposed here and left for the verdict. SECOND, THE PRODUCTION-MODE 404, WHICH IS NOT THIS TASK'S TO CLOSE. An unknown title answers 404 under development and 200 with a refusal panel under production, and that is correct rather than broken: on a hosted build no catalog metadata source is constructible, so loadTitleDetail reports error rather than not-found, notFound() is unreachable, and a build that answered 404 there would be claiming an absence it never looked for. The precondition is a catalog source that exists in a deployment, which is PL-0305's, now READY since PL-0105 completed. ALLOWEDPATHS CORRECTED IN BOTH DIRECTIONS. apps/web/src/app/(home)/** is DROPPED: it is a dead declaration for a route-group approach that was considered and rejected, it reserves a directory that does not exist, and it starves nothing only by accident. apps/web/src/app/loading.tsx is KEPT even though the file is deleted, because the deletion is the change and a surface that omitted it would not fingerprint the task's central act. TWO PATHS ADDED. docs/E2E.md, because it and .github/workflows/ci.yml currently CONTRADICT EACH OTHER about whether the two 404 assertions have ever been observed passing -- E2E.md claims an executed 2026-09-05 pass on all four browser projects, ci.yml says UNKNOWN, expected to pass, never observed passing -- and settling that is exactly what this task's EXECUTED clause is about. It is declared by PL-0706, which is DONE, and by PL-0703, which is BLOCKED, so no active conflict. And .github/workflows/ci.yml, which UNTIL NOW WAS DECLARED BY NO TASK IN THE REPOSITORY AT ALL: every CI change this project has made has landed outside every declared surface. That is a real declaration hole rather than a convenience, and this task adopting it is a partial fix at best -- the file is repository governance rather than frontend, and it should eventually belong to whatever task adopts CLAUDE.md and control/README.md, which are undeclared for the same reason.",
       "dependencies": [
         "PL-0103"
       ],
       "allowedPaths": [
         "apps/web/src/app/loading.tsx",
         "apps/web/src/app/page.tsx",
-        "apps/web/src/app/(home)/**",
         "apps/web/src/app/title/**",
         "apps/web/src/app/watch/**",
-        "e2e/tests/critical-journey.spec.ts"
+        "e2e/tests/critical-journey.spec.ts",
+        "docs/E2E.md",
+        ".github/workflows/ci.yml"
       ],
       "preferredAgent": "claude-frontend",
       "reviewAgent": "gpt-architect",

@@ -444,11 +444,29 @@ export function byCodePoint(a: string, b: string): number {
  * which is the same asymmetry `ChargedAttempts` states: it may rule a candidate
  * out, never in.
  *
- * `NaN` ONLY, AND `Infinity` DELIBERATELY UNTOUCHED. An infinite budget is a
- * caller STATING a bound and the comparisons already express it exactly; a
- * negative or zero one is a caller stating a bound of nothing, and terminating
- * immediately is what that means. `NaN` is the one value that is never anything
- * a caller meant.
+ * EVERY NON-FINITE VALUE, NOT JUST `NaN`. This used to read "`NaN` only, and
+ * `Infinity` deliberately untouched", on the argument that an infinite budget is
+ * a caller STATING a bound and the comparisons already express it exactly. That
+ * argument was wrong, and gpt-architect refused the task over it: an infinite
+ * budget is not a bound, it is the absence of one wearing a number's clothes.
+ * `attemptsUsed >= Infinity` is false forever and `count > Infinity` is false
+ * forever, so a caller supplying `Number.POSITIVE_INFINITY` for both fields --
+ * and both are ordinary `number`s, so no cast is needed -- has a session that
+ * never terminates under repeated transient failure. That is precisely the
+ * unbounded reload loop pointed at a CDN that the paragraph above describes,
+ * reached through the front door instead of through arithmetic.
+ *
+ * The tests PINNED the old behaviour as intended, which is the part worth
+ * remembering: a regression suite agreeing with the code is not evidence that
+ * either is right, and this task's single acceptance clause -- that retry and
+ * fallback behaviour is BOUNDED -- was contradicted by an assertion written to
+ * protect it.
+ *
+ * So the rule is now the property rather than the value: a budget must be a
+ * FINITE number to be enforced, and anything else reads as the most conservative
+ * bound. A negative or zero budget is still left exactly as it is, because that
+ * one really is a caller stating a bound of nothing, and terminating immediately
+ * is what it means.
  *
  * Substituting `DEFAULT_FAILOVER_POLICY` was rejected: fabricating a budget
  * nobody asked for is the same class of invention as fabricating a failure kind,
@@ -474,11 +492,23 @@ export function byCodePoint(a: string, b: string): number {
  */
 export function boundedPolicy(policy: FailoverPolicy): FailoverPolicy {
   return {
-    maxAttempts: Number.isNaN(policy.maxAttempts) ? 0 : policy.maxAttempts,
-    maxTransientRetriesPerCandidate: Number.isNaN(policy.maxTransientRetriesPerCandidate)
-      ? 0
-      : policy.maxTransientRetriesPerCandidate
+    maxAttempts: enforceableBudget(policy.maxAttempts),
+    maxTransientRetriesPerCandidate: enforceableBudget(policy.maxTransientRetriesPerCandidate)
   };
+}
+
+/**
+ * A single budget, reduced to one that can actually be enforced.
+ *
+ * `Number.isFinite` rather than a pair of tests against `NaN` and the two
+ * infinities: the question is not which exceptional values were thought of, it
+ * is whether this number can bound anything at all. Written as an allowlist for
+ * the same reason every other gate in this repository is one -- `NaN`, `Infinity`
+ * and `-Infinity` are the whole set today, but a test enumerating them would be a
+ * denylist, and a denylist over the numbers fails open on whatever it missed.
+ */
+function enforceableBudget(budget: number): number {
+  return Number.isFinite(budget) ? budget : 0;
 }
 
 function countOf(kinds: readonly PlaybackFailureKind[], kind: PlaybackFailureKind): number {
@@ -571,11 +601,10 @@ function exclusionFor(
  * caller's guarantee to make, and `planFailover` makes it by ranking.
  *
  * Total for every input: an empty list, a zero or negative `maxAttempts`
- * (terminal immediately), a `NaN` in either half of the policy (read as the
- * conservative bound -- see the note at the top of the body, because `NaN` is
- * the one value that would otherwise silently mean NO bound), and failures
- * naming ids that were never supplied (counted, surfaced, attributed to
- * nothing).
+ * (terminal immediately), a NON-FINITE value in either half of the policy --
+ * `NaN` or either infinity, all read as the conservative bound, see
+ * `boundedPolicy` above -- and failures naming ids that were never supplied
+ * (counted, surfaced, attributed to nothing).
  */
 export function scheduleAttempts(
   orderedCandidateIds: readonly string[],

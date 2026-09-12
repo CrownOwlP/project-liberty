@@ -291,8 +291,9 @@ function exhaustionReason(
  * the line to delete.
  *
  * Total for every input, including a zero or negative `maxAttempts` (terminal
- * immediately), a `NaN` policy (see `scheduleAttempts`) and failures naming
- * candidates that do not exist (counted, surfaced, attributed to nothing).
+ * immediately), a NON-FINITE policy value -- `NaN` or either infinity, see
+ * `scheduleAttempts` -- and failures naming candidates that do not exist
+ * (counted, surfaced, attributed to nothing).
  */
 export function planFailover(
   candidates: readonly StreamCandidate[],
@@ -359,10 +360,11 @@ export function planFailover(
 
   const trail = [
     next === null ? REASON_TEXT[reason] : `${next.candidate.id}: ${REASON_TEXT[reason]}`,
-    /* The ENFORCED budget, not the stated one. They differ only for a `NaN`
-     * nobody meant to pass (see `boundedPolicy`), and that is exactly the case
-     * where a trail reading `0/NaN attempts used` would send its reader looking
-     * for a bound the scheduler never applied. */
+    /* The ENFORCED budget, not the stated one. They differ whenever the stated
+     * budget is NON-FINITE (see `boundedPolicy`), which is exactly the case
+     * where a trail reading `0/NaN attempts used` -- or, since the corrective,
+     * `0/Infinity attempts used` -- would send its reader looking for a bound
+     * the scheduler never applied. */
     `${attemptsUsed}/${boundedPolicy(policy).maxAttempts} attempts used`,
     excluded.length > 0
       ? `ruled out: ${excluded.map((entry) => `${entry.candidateId}=${entry.reason}`).join(", ")}`

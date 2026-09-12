@@ -66,6 +66,43 @@ the same defect this document exists to clean up. It is stated here, in the
 coordination space that is sanctioned for exactly this, until a task owns the
 doctrine change. See the open questions at the end.
 
+## Progress
+
+**Recovery packet 1 is in review** at `64b631d5`: PL-0601, PL-0401 and PL-0204,
+each reconciled on its own independently proven base.
+
+| Task | Witnesses | Introduction | Proven base | Window |
+|---|---|---|---|---|
+| PL-0601 | `liveChannelSchema`, `epgListingSchema` | `fc1ea4d5` | `33588cdc` | **1 commit, 3 files** |
+| PL-0401 | `ENABLED_AUTH_CAPABILITIES`, `WITHHELD_AUTH_PLUGIN_FAMILIES` | `1dd8e73e` | `fc1ea4d5` | 7 commits, 14 files |
+| PL-0204 | `planFailover`, `playbackAttemptFailureSchema` | `4091a2b6` | `cf2a4583` | 9 commits, 12 files |
+
+PL-0601's window is the tightest review range this project has produced, and it is
+what a narrowed declaration and a true base look like when both are right.
+
+**Two overlaps in those shas are recorded rather than smoothed over.** PL-0401's
+base *is* PL-0601's introduction commit — live TV and auth landed back to back, so
+the two windows abut exactly. More seriously, **PL-0204's base and introduction are
+identical to PL-0207's**: commit `4091a2b6` introduced `planFailover` *and*
+`unknownMediaFacts`, so one commit carried work belonging to two tasks and
+PL-0204's window necessarily contains PL-0207's already-approved work. Nothing in
+the mechanism can separate them — the base is where the behaviour began and the
+upper bound is HEAD — and narrowing PL-0204's declaration to make the overlap
+disappear would be reservation inflation in reverse. It is a historical discipline
+failure from before any of this was enforced.
+
+**The probe now self-tests before it is trusted, and that was learned the hard
+way.** A first attempt at this packet reported all three bases as unprovable and
+looked exactly like correct fail-closed behaviour. It was not: `git rev-list`
+refuses the pickaxe, and inside a `for /f` backquote that refusal was invisible,
+so a command that *refused* and a command that legitimately *found nothing* were
+indistinguishable. A probe that cannot tell "never introduced" from "I am not
+working" is a machine for producing confident-looking silence. The pickaxe now runs
+as a redirected command with stderr captured, and the mechanism is first asked one
+question whose answer is already known — where `unknownMediaFacts` was introduced,
+which PL-0207 established is `4091a2b6`. If that comes back empty, the real proofs
+are skipped rather than reported as refusals.
+
 ## Classification
 
 ### A. Implemented, unreviewed — sixteen
@@ -99,7 +136,7 @@ claim → reconcile → gate → review.
 | Task | What is done | What is not |
 |---|---|---|
 | PL-0701 | The harness, seven specs, the CI jobs | The critical journey does not reach a progress write, and says so in its own spec. CI records the suite as deliberately partly red. |
-| PL-0704 | Home and watch relocated their skeletons below the existence decision; the root `loading.tsx` is gone | The title route **deleted** its skeleton, which its acceptance forbids — but the deletion argument is sound, so this is a **contract gap to ratify, not a code gap to repair**. The production-mode 404 for an unknown title is unprovable until a catalog source exists in a deployment, which is **PL-0305's** to supply. Also needs `--reconcile-existing`: its code landed while it sat unowned. |
+| PL-0704 | Home and watch relocated their skeletons below the existence decision; the root `loading.tsx` is gone | The title route **deleted** its skeleton, which its acceptance forbids — but the deletion argument is sound, so this is a **contract gap to ratify, not a code gap to repair**, and it is proposed in the task record and left for a ruling rather than rewritten unasked. The production-mode 404 for an unknown title is unprovable until a catalog source exists in a deployment, which is **PL-0305's** to supply. Also needs `--reconcile-existing`: its code landed while it sat unowned. **Mostly a modification task** — its central act was a deletion, which marker absence cannot witness. The witnesses are the two names it introduced where anonymous route-level skeletons used to be: `CatalogSkeleton` and `PlaybackLoading`. Record corrected this round: the dead `app/(home)/**` declaration dropped, `docs/E2E.md` and `.github/workflows/ci.yml` added. |
 
 ### C. Genuinely unstarted — two
 
@@ -134,9 +171,11 @@ rather than bending a dependency to stay in it.
   migration as a **reviewDependency**, or stop using it as evidence and let the
   Drizzle adapter and configuration carry the clause alone. **Resolved as: added
   as a reviewDependency**, because the ADR genuinely rests on it.
-- **`.github/workflows/ci.yml` is declared by no task at all.** Every CI change so
-  far has landed outside every declared surface. That is a real declaration hole
-  and it needs an owner.
+- **`.github/workflows/ci.yml` was declared by no task at all**, so every CI change
+  this project has made landed outside every declared surface. PL-0704 adopts it
+  this round, which is a partial fix at best: the file is repository governance
+  rather than frontend, and it belongs with whatever task eventually adopts
+  `CLAUDE.md` and `control/README.md`.
 - **`docs/E2E.md` and `ci.yml` contradict each other** about whether the two 404
   assertions have ever been observed passing. One of them is stale. PL-0704 owns
   settling it.

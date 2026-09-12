@@ -1103,17 +1103,73 @@ describe("a policy that cannot state a bound", () => {
     expect(plan.explanation).not.toContain("NaN");
   });
 
-  it("leaves an infinite budget alone, because that one was meant", () => {
-    // `Infinity` is a caller STATING a bound and the comparisons express it
-    // exactly. Only `NaN` is never anything a caller meant.
+  /*
+   * THIS BLOCK USED TO ASSERT THE OPPOSITE, AND THAT IS THE FINDING.
+   *
+   * It read "leaves an infinite budget alone, because that one was meant", on
+   * the argument that `Infinity` is a caller STATING a bound while only `NaN` is
+   * never anything a caller meant. gpt-architect refused the task over it: an
+   * infinite budget is not a bound, it is the absence of one wearing a number's
+   * clothes. `attemptsUsed >= Infinity` is false forever, so a session under
+   * repeated transient failure never terminates -- the unbounded reload loop
+   * this module exists to prevent, reached through the front door.
+   *
+   * A regression suite agreeing with the code is not evidence that either is
+   * right. This one was written to protect the single clause it contradicted.
+   */
+  it("refuses an infinite attempt budget, because that is the absence of a bound", () => {
     const schedule = scheduleAttempts(["zulu"], [], {
       maxAttempts: Number.POSITIVE_INFINITY,
       maxTransientRetriesPerCandidate: 1
     });
 
+    expect(schedule.next).toBeNull();
+    expect(schedule.reason).toBe("attempt_limit_reached");
+    expect(schedule.attemptsRemaining).toBe(0);
+  });
+
+  it("refuses an infinite per-candidate retry budget too", () => {
+    // Both fields, because both are ordinary numbers and a caller needs no cast
+    // to supply either. Fixing one and leaving the other would move the
+    // unbounded loop rather than close it.
+    const schedule = scheduleAttempts(
+      ["zulu"],
+      [{ candidateId: "zulu", kind: "network_transient" }],
+      {
+        maxAttempts: 4,
+        maxTransientRetriesPerCandidate: Number.POSITIVE_INFINITY
+      }
+    );
+
+    // One transient failure with a retry budget of zero rules the candidate out
+    // rather than retrying it forever.
+    expect(schedule.next).toBeNull();
+    expect(schedule.excluded.map((entry) => entry.candidateId)).toEqual(["zulu"]);
+  });
+
+  it("refuses a negative infinity, which no allowlist over named values would catch", () => {
+    // The guard tests `Number.isFinite` rather than enumerating NaN and the two
+    // infinities, so this passes for a reason rather than by coincidence.
+    const schedule = scheduleAttempts(["zulu"], [], {
+      maxAttempts: Number.NEGATIVE_INFINITY,
+      maxTransientRetriesPerCandidate: 1
+    });
+
+    expect(schedule.next).toBeNull();
+    expect(schedule.attemptsRemaining).toBe(0);
+  });
+
+  it("still leaves a finite budget exactly as the caller stated it", () => {
+    // The negative cases above are only meaningful if the guard is not simply
+    // zeroing everything it is handed.
+    const schedule = scheduleAttempts(["zulu"], [], {
+      maxAttempts: 7,
+      maxTransientRetriesPerCandidate: 2
+    });
+
     expect(schedule.next).toBe("zulu");
     expect(schedule.reason).toBe("first_attempt");
-    expect(schedule.attemptsRemaining).toBe(Number.POSITIVE_INFINITY);
+    expect(schedule.attemptsRemaining).toBe(7);
   });
 });
 

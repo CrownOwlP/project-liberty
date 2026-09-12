@@ -16,162 +16,143 @@ These are authentic decisions of an independent cross-provider reviewer, carried
 by hand across a broken transport. They are not machine-attested, and nothing in
 this repository can prove the transcription is faithful.
 
-## Session of 2026-09-12, reviewed at head `1c96ff6b7676fb391f4af09a63027df94d8e697b`
+## Session of 2026-09-12, recovery packet 1, reviewed at `64b631d5a034fc884da185dc6b3a0cb7df6e608e`
 
-Exact-head CI verified independently: run `34664953261`, green.
+Exact-head CI verified independently: run `34698063113`, green.
 
-**One approval, and the shape of the next phase of the project settled.** This is
-the session where the reviewer was asked three questions about *how to work*
-rather than about a diff, and the answers govern everything that follows.
+**Two provenance blocks and one merits refusal.** The merits of all three are
+sound or nearly so; what failed is my probe, in a way neither the five checks nor
+the self-test could catch.
 
-### PL-0207 — APPROVED at `1c96ff6b`
+### The finding that governs everything after it
 
-No blockers.
+My witnesses proved the **schema** boundary. They did not prove the **task**
+boundary. Both PL-0601 and PL-0401 declare a *document* as a write surface, and in
+both cases that document's task-attributable rewrite landed **earlier** than the
+code symbols I probed — at `bbe68ed8d16f864c87309ceb1c089495deb89766`, an ancestor
+of both recorded bases. So each published window excludes task work it claims to
+cover.
 
-> The merits still hold at this exact head. […] More importantly, the replacement
-> provenance is now credible. `cf2a4583` is the pre-semantics tree we previously
-> established, rather than the parent of a later file move, and PL-0207 records
-> `4091a2b` as its oldest surface commit. Its fresh typecheck and unit gates bind
-> to `045695f7`, and the only subsequent commit to current head changes
-> control/coordination state, not PL-0207's product surface.
+> No self-test can compensate for asking the prover only about two symbols.
 
-**Evidence string:**
+**The sixth standing check, in the reviewer's words:**
 
-> APPROVED. PL-0207 now binds the already-reviewed unknown-media implementation to
-> the truthful lower bound cf2a4583e120151bf16e90d8eb41842cd7329c83 rather than to
-> the later module-split file creation that invalidated PL-0205. The successor
-> narrows write ownership to the verified implementation files, carries the
-> corrected three-state acceptance, and current contracts, eligibility and scoring
-> still represent unknown explicitly, refuse stated unsupported codecs, keep
-> unstated codecs only as unverified attemptable candidates, preserve rights-first
-> rejection, and award no fabricated score through renormalisation. Fresh typecheck
-> and unit gates are bound to 045695f7b382250497821e46e642eda1772dbdb0, no reviewed
-> product file changed between that gate tree and
-> 1c96ff6b7676fb391f4af09a63027df94d8e697b, and exact-head CI is green. The
-> provenance defect that blocked PL-0205 is therefore closed rather than rewritten.
+> After the behavioral base is proposed, **inspect the history of every
+> allowedPath for task-attributable work predating that base**. ReviewDependencies
+> may legitimately preexist; write surfaces may contain unrelated older material,
+> but **any earlier delta that is itself part of the task means the candidate base
+> is too late.**
 
-## The three rulings that govern the recovery campaign
+The truthful lower bound for both successors, if they keep their documentation
+surfaces — and they should — is `56b3435418f222f557ce957e7d5de3827da107b7`, the
+parent of `bbe68ed8`.
 
-### 1. Batch the reviews — but batching is not batch approval
+### PL-0601 — PROVENANCE INVALID, BLOCK AND SUPERSEDE
 
-> **Batch them. Do not make this one task per conversation.**
+`architecture-review`: NOT RECORDABLE. `rights-review`: NOT RECORDABLE.
+
+> The record says `docs/LIVE_TV.md` is a PL-0601 rewrite and includes it in
+> `allowedPaths`, yet the recorded base is `33588cdc` and the published window
+> contains only `fc1ea4d` plus three contract files. The current PL-0601
+> documentation was actually introduced earlier in `bbe68ed8`: that commit replaced
+> the original eleven-line Live TV note with the PL-0601 normalization-and-rights
+> document. `bbe68ed8` is an ancestor of the recorded base, so the base tree
+> already contains part of the implementation the task claims.
+
+**The merits are approvable** — *"I see no separate architecture or rights blocker
+behind the provenance defect."* Channel rights required and non-nullable, listings
+structurally unable to carry playability, strict parsing refusing injected
+playability keys rather than stripping them, a named refusal on channel/listing
+mismatch, and documentation describing the same boundary accurately.
+
+### PL-0401 — PROVENANCE INVALID, BLOCK AND SUPERSEDE, plus two merits blockers
+
+`architecture-review`: NOT RECORDABLE. `security-review`: NOT RECORDABLE.
+
+**Same incomplete-probe defect.** `docs/DATA_MODEL.md` did not exist at `56b343`;
+it was created in `bbe68ed8`, before the recorded base, *"explicitly identifying
+itself as covering PL-0401's auth boundary and already selecting Better Auth
+1.7.1. So the auth-symbol witnesses correctly located the code introduction while
+missing earlier task implementation on another declared write path."*
+
+**Merits blocker 1 — `ProfileScope` is forgeable, and it is the defect class this
+project has already rejected once.**
+
+> `ProfileScope` has a type-only unique symbol property, while `mintProfileScope`
+> returns an ordinary `{ profileId, grantedFor }` via cast. A caller holding a
+> genuine scope can form `{ ...scope, profileId: otherProfileId }`; TypeScript
+> carries the branded structural type through the spread **without requiring the
+> explicit cast the ADR says is the only forgery route.** Downstream persistence
+> then trusts `scope.profileId` directly. […] At minimum, make the scope genuinely
+> nominal so a spread copy cannot remain assignable; if it is intended to be a
+> runtime capability rather than merely a compile-time proof, use issuance
+> identity as well.
+
+That is exactly the PL-0706 finding, in a different module, guarding cross-profile
+data access instead of a fabricated rights basis.
+
+**Merits blocker 2 — the exact pin has become the failure mode ADR-007 predicts.**
+
+> Liberty remains pinned to Better Auth and the Drizzle adapter at 1.7.1. Better
+> Auth's current release is **1.7.4, released September 10 2026**, and upstream's
+> security policy explicitly supports only the latest version. This is not an
+> argument against exact pins; **it proves the ADR's exact-pin policy is working by
+> making staleness visible.**
 >
-> But batching must not become batch approval. **Each task still gets its own
-> proven base, declared surface, gates, fingerprint, merits judgment, and verdict.**
-> What we can amortize is reading shared history and shared files.
+> **Do not blindly bump the packages and leave the migration.** Better Auth 1.7.3
+> restored the 1.6 account core schema after the 1.7.0–1.7.2 issuer-schema change,
+> while Liberty's hand-written migration currently has an `issuer` column and an
+> `(issuer, account_id)` uniqueness rule. Regenerate/reconcile the unapplied
+> migration against the reviewed current version before security approval.
+
+**Merits blocker 3 — ADR-007 states obsolete control-plane routing**, naming
+`gpt-architect` as preferred implementer and `claude-lead` as reviewer. Rewrite as
+history, and *"prefer wording that points to the task gate as authoritative so
+completing the review does not require a post-approval edit that immediately
+stales the fingerprint."*
+
+### PL-0204 — CHANGES_REQUESTED (the provenance is fine)
+
+> `packages/media-engine/src/scheduling.ts:430-479` — **an infinite policy is
+> deliberately permitted, contradicting the task's bounded guarantee.**
+> `boundedPolicy` correctly turns `NaN` into zero, but explicitly leaves `Infinity`
+> unchanged on the theory that an infinite budget is a stated bound. **It is not a
+> bound.** The tests even pin `maxAttempts: Number.POSITIVE_INFINITY` as intended
+> behavior. Because both fields are ordinary numbers, a caller can supply infinite
+> global attempts and infinite transient retries without a cast; under repeated
+> transient failures neither the global nor per-candidate condition terminates.
+
+Treat non-finite budgets as conservatively as `NaN`, regression-test `Infinity` for
+both fields, and refresh `typecheck`, `unit` and the real `bench:failover`
+performance gate because the scheduler itself changed.
+
+Everything else it read is *"in good shape"*: rights, decode and removed-source
+failures terminal, only network-transient retryable, fresh candidates before
+retries, unclassified charged attempts unable to loop a candidate, real browser
+playback on the common scheduler, reasons distinguishable, *"and the dedicated
+bench gate really did execute the timed test rather than inheriting the ordinary
+suite's exclusion."*
+
+### Window-overlap ruling — YES, acceptable
+
+> PL-0204 and PL-0207 genuinely started in the same historical commit. **A commit
+> is not required to be task-atomic when recovering old history.** What matters is
+> that the lower bound is truthful and PL-0204's current review surface is honest.
+> The shared commit therefore does not require another successor, a later base, or
+> artificial path trimming. Record that the introduction commit is shared and leave
+> it alone.
+
+### Probe self-test ruling — YES, make it standing
+
+With four conditions:
+
+> The prover first asks a known-answer question and **must receive the exact
+> expected SHA**, currently `unknownMediaFacts` → `4091a2b6…`.
 >
-> I would target **3–4 tasks per review packet**, preferably tasks whose histories
-> overlap or whose acceptance boundaries interact. Do not bypass dependencies
-> merely to fill a packet: if a task cannot legitimately reach REVIEW until its
-> predecessor is DONE, leave it out and batch it with whatever is independently
-> ready.
-
-Its suggested packets: provider/live together where independent; the PL-0401 →
-PL-0404 backend chain in dependency order; PL-0501 → PL-0504 as the playback
-family; the remaining control/test/architecture work in another; and **PL-0204
-follows PL-0207 through the media lane.**
-
-It also caught an arithmetic error in the report it was given: *"your message says
-thirteen fully implemented tasks but enumerates sixteen IDs. Treat sixteen as the
-working inventory […] That count should be corrected in the project record before
-it turns into another source of status drift."* The inventory is now
-`coordination/IMPLEMENTATION_RECOVERY.md`, and it is sixteen.
-
-### 2. The marker probe is NOT a general rule — the obligation is behavioural
-
-> **No as a general rule. Yes for PL-0207.**
+> Run it through the **same command, ref handling, source path scope, redirection
+> and environment** as the real probes.
 >
-> PL-0207's probe is sufficient because we already independently identified the
-> semantic introduction at `4091a2b` and verified its parent still had mandatory
-> non-null media facts. The marker checks are therefore **corroboration of a known
-> semantic boundary, not the sole evidence defining it.**
-
-The proof obligation it wants, in full:
-
-> A strong introduction-style proof establishes that the candidate base is an
-> ancestor, the base lacks the behaviour witness, the first acceptance-relevant
-> implementation commit introduces it, **that commit's parent is inspected rather
-> than inferred from a filename**, and the current tree still contains the
-> behaviour. Your exact-exit-code negative checks and positive controls are good
-> and should stay.
+> **Capture stderr and distinguish every exit class.** A broken prover means
+> `PROBE INVALID` / `RECONCILE SKIPPED`, **never `BASE REJECTED`**.
 >
-> For a **modification** task, marker absence is often the wrong tool. Use a
-> **semantic delta** instead: ideally a regression that fails on the candidate base
-> and passes after the implementation, or a concrete old-pattern/new-pattern
-> invariant in the actual source. `git log -S` or `-G` can help locate the
-> candidate commit, but the commit diff and its parent still need inspection.
->
-> For PL-0702 specifically, a phrase in `docs/SECURITY.md` is not sufficient if the
-> acceptance is about changed security behaviour in code. That would prove when
-> **prose** appeared, not when the security property became true. […] If no
-> mechanically unique witness exists, that task gets a manual commit-history /
-> base-tree provenance proof rather than a weaker automatic probe.
-
-**The rule, in its own words, and it is now recorded in `CLAUDE.md`:**
-
-> Prove the behaviour was absent before the base and present because of the
-> implementation; never substitute the creation date of the file that happens to
-> contain it today.
-
-### 3. Narrow surfaces per task, not in a sweep
-
-> **Per task, when each task is prepared for reconciliation. Do not mass-edit all
-> twelve declarations now.**
->
-> You can absolutely build a **read-only inventory** of proposed surfaces now. What
-> I do not want is twelve declaration changes published from one sweep before each
-> implementation has been read closely. One omitted helper, migration, test,
-> composition root, or external dependency would create twelve opportunities for
-> the same provenance mistake.
->
-> For each historical task: read its actual implementation and relevant commits,
-> classify every touched file as write surface or review dependency, narrow/widen
-> the declaration, validate collisions, prove the base against that final surface,
-> then claim/reconcile.
->
-> Later, I would add control-plane hygiene that **warns** on extremely broad
-> wildcards and perhaps reports historical changed files not represented by a
-> proposed declaration. But automation should help reviewers **find** suspicious
-> declarations, not automatically **decide** ownership.
-
-### The record corrections, and one thing to settle first
-
-**PL-0601: yes** on all three — the narrowing, dropping `docs/API_CONTRACTS.md`
-("correct if this task defines contracts but no HTTP route; the current API
-document is route-oriented rather than the owner of the live-domain schema"), and
-moving `preferredAgent` to `claude-media` while keeping the reviewer external
-("the right provenance direction").
-
-**PL-0401: yes** on the surface correction and the reviewer change — *"the package
-really is the Better Auth isolation boundary"*, and moving review off `claude-lead`
-is *"correct for a security-sensitive auth decision authored by the former
-reviewer."* But one thing must be settled **before** it is claimed:
-
-> Its current narrative uses `packages/persistence/migrations/0000_profile_scoped_identity.sql`
-> as evidence for the database-backed-session decision, while the narrowed surface
-> contains `packages/auth/**`, `docs/DECISIONS.md`, and `docs/DATA_MODEL.md`. If the
-> migration is part of the factual basis on which PL-0401 asks me to approve
-> database-backed sessions, **add it as a reviewDependency, not a write path.** If
-> the acceptance is intended to be established entirely by the Drizzle
-> adapter/configuration and the migration belongs solely to PL-0402, then stop
-> using the migration as PL-0401 evidence. **Either is defensible; mixing the two
-> is not.**
-
-**`claude-media` at 2: yes, keep it**, and it verified the premise rather than
-taking it on report:
-
-> `conflictWithActive` rejects path overlap against every active task regardless of
-> owner, and the wave planner independently refuses overlapping selected surfaces.
-> The agent record also explicitly caps media at two rather than making it
-> unlimited. So this is **not weakening serialization to route around review.** It
-> separates capacity from ownership.
-
-### And the sentence that reframes the project
-
-> The larger project picture has changed materially: the next phase should be
-> treated as a **historical implementation recovery and independent-review
-> campaign**, not as though twenty-plus features still need to be written. The
-> control plane should continue saying 17 of 43 until those tasks earn their
-> reviews, but **planning should distinguish implemented-unreviewed, partially
-> implemented, and actually unstarted** so the completion number stops being
-> mistaken for the build-progress number.
+> Keep the exact-no-match `git grep` exit-code requirement and positive controls.
