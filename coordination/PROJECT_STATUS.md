@@ -1,8 +1,8 @@
 # Project Liberty - Project Status
 
-> Generated 2026-09-12T01:29:04.495Z from the AI control plane.
+> Generated 2026-09-12T02:35:18.731Z from the AI control plane.
 
-**Overall completion:** 17/43 executable tasks (40%)
+**Overall completion:** 18/43 executable tasks (42%)
 
 ## Status summary
 
@@ -10,9 +10,9 @@
 - **READY:** 8
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 0
-- **REVIEW:** 1
+- **REVIEW:** 0
 - **BLOCKED:** 4
-- **DONE:** 17
+- **DONE:** 18
 - **CANCELED:** 0
 
 ## Milestones / phases
@@ -28,7 +28,7 @@
 
 ## Active work
 
-- **PL-0207** [REVIEW] Corrective, re-run: unknown media metadata semantics under an honest review range — owner: claude-media
+No tasks are currently claimed, in progress, or in review.
 
 ## Dispatch classification
 
@@ -39,6 +39,7 @@
 
 ## Recommended executable wave
 
+- **PL-0204** -> claude-media (P0/Media) Candidate failover policy
 - **PL-0401** -> claude-backend (P0/Backend) Auth integration decision
 - **PL-0704** -> claude-frontend (P0/Frontend) notFound() never reaches the wire: dead addresses answer 200
 - **PL-0601** -> claude-media (P1/Live) Channel and EPG contracts
@@ -60,7 +61,7 @@ No READY work is waiting on an external agent lane.
 - **claude-lead:** 0/2 active
 - **claude-frontend:** 0/2 active
 - **claude-backend:** 0/1 active
-- **claude-media:** 1/2 active
+- **claude-media:** 0/2 active
 - **claude-test:** 0/1 active
 - **claude-security:** 0/1 active
 - **claude-infra:** 0/1 active
