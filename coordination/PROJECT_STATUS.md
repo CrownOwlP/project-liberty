@@ -1,16 +1,16 @@
 # Project Liberty - Project Status
 
-> Generated 2026-09-12T02:35:27.821Z from the AI control plane.
+> Generated 2026-09-12T14:01:31.883Z from the AI control plane.
 
 **Overall completion:** 18/43 executable tasks (42%)
 
 ## Status summary
 
 - **BACKLOG:** 13
-- **READY:** 8
+- **READY:** 5
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 0
-- **REVIEW:** 0
+- **REVIEW:** 3
 - **BLOCKED:** 4
 - **DONE:** 18
 - **CANCELED:** 0
@@ -20,29 +20,28 @@
 - **M0 — AI Engineering System + Repository Foundation:** COMPLETE, 4/4 (100%)
 - **M1 — Core Discovery Experience:** COMPLETE, 3/3 (100%)
 - **M2 — Media Resolution + Provider Foundation:** IN_PROGRESS, 3/6 (50%)
-- **M3 — Identity + Personal State:** NOT_STARTED, 0/4 (0%)
+- **M3 — Identity + Personal State:** IN_PROGRESS, 0/4 (0%)
 - **M4 — Playback Vertical Slice:** NOT_STARTED, 0/6 (0%)
-- **M5 — Live + Intelligence Boundaries:** NOT_STARTED, 0/2 (0%)
+- **M5 — Live + Intelligence Boundaries:** IN_PROGRESS, 0/2 (0%)
 - **M6 — Shared-Agent Automation Bridge:** NOT_STARTED, 0/2 (0%)
 - **EXT — External Licensed Integrations:** BLOCKED, 0/2 (0%), 2 blocked
 
 ## Active work
 
-No tasks are currently claimed, in progress, or in review.
+- **PL-0204** [REVIEW] Candidate failover policy — owner: claude-media
+- **PL-0401** [REVIEW] Auth integration decision — owner: claude-backend
+- **PL-0601** [REVIEW] Channel and EPG contracts — owner: claude-media
 
 ## Dispatch classification
 
-- **READY_AND_EXECUTABLE:** 8
+- **READY_AND_EXECUTABLE:** 5
 - **READY_BUT_EXTERNAL:** 0
 - **BLOCKED:** 4
 - **BACKLOG (dependency-gated):** 13
 
 ## Recommended executable wave
 
-- **PL-0204** -> claude-media (P0/Media) Candidate failover policy
-- **PL-0401** -> claude-backend (P0/Backend) Auth integration decision
 - **PL-0704** -> claude-frontend (P0/Frontend) notFound() never reaches the wire: dead addresses answer 200
-- **PL-0601** -> claude-media (P1/Live) Channel and EPG contracts
 
 ## Queued for external agents
 
@@ -60,8 +59,8 @@ No READY work is waiting on an external agent lane.
 - **gpt-architect:** 0/6 active (external lane; not locally executable)
 - **claude-lead:** 0/2 active
 - **claude-frontend:** 0/2 active
-- **claude-backend:** 0/1 active
-- **claude-media:** 0/2 active
+- **claude-backend:** 1/1 active
+- **claude-media:** 2/2 active
 - **claude-test:** 0/1 active
 - **claude-security:** 0/1 active
 - **claude-infra:** 0/1 active
