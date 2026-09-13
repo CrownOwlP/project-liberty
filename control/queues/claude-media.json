@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-12T17:16:58.970Z",
+  "generatedAt": "2026-09-13T03:15:37.051Z",
   "agent": "claude-media",
   "executionAvailable": true,
   "assigned": [
@@ -7,7 +7,7 @@
       "id": "PL-0204",
       "priority": "P0",
       "lane": "Media",
-      "status": "REVIEW",
+      "status": "IN_PROGRESS",
       "title": "Candidate failover policy",
       "dependencies": [
         "PL-0201"
@@ -62,7 +62,7 @@
         }
       },
       "implementationAgent": "claude-media",
-      "updatedAt": "2026-09-12T17:16:52.265Z",
+      "updatedAt": "2026-09-13T03:15:35.763Z",
       "implementationBaseSha": "cf2a4583e120151bf16e90d8eb41842cd7329c83",
       "implementationBaseProvenance": {
         "kind": "reconciled-existing-implementation",
@@ -100,16 +100,16 @@
         "reviewerAgent": "gpt-architect",
         "reviewerClass": "external-reasoning",
         "reviewerProvider": "openai",
-        "reviewedCommitSha": "64b631d5a034fc884da185dc6b3a0cb7df6e608e",
+        "reviewedCommitSha": "3e049bf0221a438fa85f5a067bb5f5d2faba7f42",
         "reviewedBaseSha": "cf2a4583e120151bf16e90d8eb41842cd7329c83",
-        "reviewedTreeHash": "b62a62ad1e4a675afb00480e231173fae55dfe450477fe265afd043b6bad92b4",
+        "reviewedTreeHash": "cbb288d5148bd34452056651bc19d4035de42c0bbc5ce90d5ece9c1712cff4f8",
         "reviewedFileCount": 12,
         "reviewedFingerprintSource": "git-object",
         "reviewedDependencies": [
           "apps/web/src/components/player/playback-machine.ts"
         ],
         "outcome": "CHANGES_REQUESTED",
-        "reviewedAt": "2026-09-12T17:16:43.986Z",
+        "reviewedAt": "2026-09-13T03:15:35.763Z",
         "evidence": "CHANGES_REQUESTED on the merits because the implementation deliberately preserves Number.POSITIVE_INFINITY as a policy budget while the task promises bounded retry and fallback; with infinite global attempts and infinite per-candidate transient retries, repeated transient failure has no terminating budget. Treat non-finite policy values in the same fail-closed direction already used for NaN, add regressions for both infinite fields, and refresh typecheck, unit and the dedicated bench performance gate. The rest of the failover policy is sound: rights, decode and unavailable-source findings are terminal, only network-transient is retryable, fresh candidates precede retries, charged unclassified attempts cannot silently reset the budget, the browser uses the shared scheduler, and reasons remain deterministic and observable. The historical window sharing its introduction commit and lower bound with PL-0207 is acceptable because one old commit carried both tasks and the current PL-0204 review surface, rather than commit exclusivity, defines what this approval will bind. Reviewed at 64b631d5a034fc884da185dc6b3a0cb7df6e608e. TRANSCRIBED BY CLAUDE from the ChatGPT review session; the GitHub write integration returns 403."
       },
       "reviewHistory": [
@@ -130,6 +130,25 @@
           ],
           "outcome": "CHANGES_REQUESTED",
           "reviewedAt": "2026-09-12T17:16:43.986Z",
+          "evidence": "CHANGES_REQUESTED on the merits because the implementation deliberately preserves Number.POSITIVE_INFINITY as a policy budget while the task promises bounded retry and fallback; with infinite global attempts and infinite per-candidate transient retries, repeated transient failure has no terminating budget. Treat non-finite policy values in the same fail-closed direction already used for NaN, add regressions for both infinite fields, and refresh typecheck, unit and the dedicated bench performance gate. The rest of the failover policy is sound: rights, decode and unavailable-source findings are terminal, only network-transient is retryable, fresh candidates precede retries, charged unclassified attempts cannot silently reset the budget, the browser uses the shared scheduler, and reasons remain deterministic and observable. The historical window sharing its introduction commit and lower bound with PL-0207 is acceptable because one old commit carried both tasks and the current PL-0204 review surface, rather than commit exclusivity, defines what this approval will bind. Reviewed at 64b631d5a034fc884da185dc6b3a0cb7df6e608e. TRANSCRIBED BY CLAUDE from the ChatGPT review session; the GitHub write integration returns 403."
+        },
+        {
+          "taskId": "PL-0204",
+          "implementationAgent": "claude-media",
+          "implementationOwner": "claude-media",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "3e049bf0221a438fa85f5a067bb5f5d2faba7f42",
+          "reviewedBaseSha": "cf2a4583e120151bf16e90d8eb41842cd7329c83",
+          "reviewedTreeHash": "cbb288d5148bd34452056651bc19d4035de42c0bbc5ce90d5ece9c1712cff4f8",
+          "reviewedFileCount": 12,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "apps/web/src/components/player/playback-machine.ts"
+          ],
+          "outcome": "CHANGES_REQUESTED",
+          "reviewedAt": "2026-09-13T03:15:35.763Z",
           "evidence": "CHANGES_REQUESTED on the merits because the implementation deliberately preserves Number.POSITIVE_INFINITY as a policy budget while the task promises bounded retry and fallback; with infinite global attempts and infinite per-candidate transient retries, repeated transient failure has no terminating budget. Treat non-finite policy values in the same fail-closed direction already used for NaN, add regressions for both infinite fields, and refresh typecheck, unit and the dedicated bench performance gate. The rest of the failover policy is sound: rights, decode and unavailable-source findings are terminal, only network-transient is retryable, fresh candidates precede retries, charged unclassified attempts cannot silently reset the budget, the browser uses the shared scheduler, and reasons remain deterministic and observable. The historical window sharing its introduction commit and lower bound with PL-0207 is acceptable because one old commit carried both tasks and the current PL-0204 review surface, rather than commit exclusivity, defines what this approval will bind. Reviewed at 64b631d5a034fc884da185dc6b3a0cb7df6e608e. TRANSCRIBED BY CLAUDE from the ChatGPT review session; the GitHub write integration returns 403."
         }
       ]
