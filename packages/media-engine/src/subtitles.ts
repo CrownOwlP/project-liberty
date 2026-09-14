@@ -6,6 +6,7 @@ import type {
 } from "@liberty/contracts/domains/subtitles";
 import {
   languageMatch,
+  matchesOnlyAcrossMacrolanguage,
   matchesOnlyAcrossScripts,
   normaliseLanguageTag,
   type AudioSelection
@@ -69,14 +70,21 @@ import {
  * explaining either. Both policies take the TYPE rather than parsed output, so
  * the schema's normalising `.transform()` never ran on those values. Then:
  *
- *   - they MATCH when their PRIMARY SUBTAGS are equal, where the primary subtag
- *     is everything before the first "-" (`primarySubtag`) -- EXCEPT when both
- *     tags explicitly state a script and the scripts differ, which is not a
- *     match at all here (consequence 4 below);
+ *   - they MATCH when they name the same SPOKEN LANGUAGE (`spokenLanguage`),
+ *     which is the primary subtag for almost every tag and is the EXTENDED
+ *     LANGUAGE subtag where one is present: `zh-cmn` and `cmn` are one language,
+ *     `zh-yue` and `zh-cmn` are two, and a bare `zh` is neither of them. This
+ *     used to read "their PRIMARY SUBTAGS are equal", and PL-0206 is why it does
+ *     not -- a macrolanguage is not a language, and reducing both varieties to
+ *     `zh` let a Mandarin preference be served Cantonese under a reason saying
+ *     the language had matched (consequence 5 below);
+ *   - EXCEPT when both tags explicitly state a script and the scripts differ,
+ *     which is not a match at all here (consequence 4 below);
  *   - the match is EXACT when the whole tags are equal, and a VARIANT match
- *     otherwise;
+ *     otherwise. So `cmn` against a `zh-cmn` preference is a variant match: one
+ *     language, and not the spelling the viewer typed;
  *   - a blank preference entry is skipped outright, and a track stating no
- *     language has an empty primary subtag, which no well-formed tag shares. An
+ *     language yields an empty language id, which no well-formed tag shares. An
  *     unstated language is therefore never a wildcard -- the failure mode a
  *     `startsWith` comparator has with an empty needle.
  *
@@ -121,6 +129,29 @@ import {
  *      the language; `ScriptPolicy` in `audio.ts` carries that argument in full
  *      and is one parameter of one shared comparator rather than a second copy
  *      of it.
+ *   5. A DIFFERENT SPOKEN VARIETY is not a fallback either, and it is not a
+ *      script conflict (PL-0206). `zh` is a macrolanguage, and RFC 5646 notes
+ *      that the languages it encompasses are generally not mutually intelligible
+ *      when SPOKEN. Reducing `zh-yue` and `zh-cmn` to `zh` made them one language
+ *      to the comparator, so a Mandarin preference could be served Cantonese
+ *      under a reason saying the language had matched -- the wrong language,
+ *      reported as a success. `spokenLanguage` now collapses an extlang toward
+ *      the SPECIFIC language rather than the macrolanguage, so the two spellings
+ *      of one language agree and the two varieties do not, and the outcome gets
+ *      its own reason (`preferred_language_other_variety_only`) rather than
+ *      borrowing the script one or the regional one. The three remedies differ:
+ *      a script conflict wants a font and the dialogue is still the viewer's, a
+ *      regional difference is cosmetic and is still selected, and this one is
+ *      simply not their language.
+ *
+ *      IT CANNOT COINCIDE WITH CONSEQUENCE 4, which is worth stating because the
+ *      obvious worry is a track across both. `matchesOnlyAcrossScripts` requires
+ *      a match under `ignore_script`; setting the script aside leaves the
+ *      spoken-language comparison, and a different variety fails it. So
+ *      `zh-yue-Hant` against a `zh-cmn-Hans` preference is not across both
+ *      boundaries -- it is the wrong language, and the script question is moot.
+ *      Only a track in the viewer's own spoken language can be across the script
+ *      boundary.
  * ---------------------------------------------------------------------- */
 
 export type SubtitleRejectionReason = "unsupported_subtitle_format";
@@ -159,6 +190,15 @@ export type SubtitleSelectionReason =
    * be chosen deliberately. The remedy is a player affordance, not a different
    * title. */
   | "preferred_language_other_script_only"
+  /* The MACROLANGUAGE exists, in a spoken variety the viewer did not ask for:
+   * `zh-yue` against a `zh-cmn` preference, or either against a bare `zh`. A
+   * SEPARATE reason from the script one and from the regional fallback, because
+   * the acceptance for PL-0206 requires it and because the three have different
+   * remedies -- a script conflict is about reading, a regional difference is
+   * cosmetic and still selected, and this one is the wrong language. Reporting it
+   * as a regional fallback would be the exact defect the task exists to remove,
+   * moved from the matcher into the vocabulary. */
+  | "preferred_language_other_variety_only"
   | "no_preferred_language_available"
   /* Nothing was selected because there was nothing to select from. */
   | "no_subtitle_tracks"
@@ -167,7 +207,7 @@ export type SubtitleSelectionReason =
 /**
  * What a reason MEANS for the screen, as opposed to why it happened.
  *
- * Fourteen reasons is the right granularity for a debugger and the wrong one for
+ * Fifteen reasons is the right granularity for a debugger and the wrong one for
  * a player: rendering a "no subtitles available" affordance should not require
  * an exhaustive `switch`, and every consumer that writes its own is one release
  * away from disagreeing with the next. So the classification is published here
@@ -214,6 +254,9 @@ export const SUBTITLE_OUTCOME_BY_REASON: Record<SubtitleSelectionReason, Subtitl
   /* Nothing on screen ON PURPOSE: the track exists and is offered, and showing
    * it uninvited is the harm the script rule exists to prevent. */
   preferred_language_other_script_only: { showsText: false, showsFullSubtitles: false },
+  /* Same shape, same reason: the track exists and is offered, and putting a
+   * different spoken language on screen uninvited is the harm PL-0206 removes. */
+  preferred_language_other_variety_only: { showsText: false, showsFullSubtitles: false },
   no_preferred_language_available: { showsText: false, showsFullSubtitles: false },
   no_subtitle_tracks: { showsText: false, showsFullSubtitles: false },
   no_eligible_tracks: { showsText: false, showsFullSubtitles: false }
@@ -568,8 +611,11 @@ function compareIds(a: string, b: string): number {
  * cannot get full subtitles. "There is a Chinese track, in the other script" is
  * an offer the player should make and the viewer should accept or decline --
  * saying instead that nothing exists in their language would simply be false.
- * "You expressed no preference" is a settings problem, not a content one. One
- * shared "no subtitles" reason would send every one of those to the wrong place.
+ * "There is a Chinese track, in the other spoken variety" is a fifth answer
+ * again (PL-0206): also an offer, but one no font or transliteration fixes,
+ * because Cantonese is not Mandarin written differently. "You expressed no
+ * preference" is a settings problem, not a content one. One shared "no subtitles"
+ * reason would send every one of those to the wrong place.
  */
 function unmatchedReason(
   effective: EffectiveLanguages,
@@ -600,6 +646,30 @@ function unmatchedReason(
   if (eligible.some((track) => matchesOnlyAcrossScripts(track.language, effective.languages))) {
     return "preferred_language_other_script_only";
   }
+  /*
+   * AFTER the script case, and the two are MUTUALLY EXCLUSIVE rather than
+   * merely ordered -- which is worth stating, because the obvious worry is a
+   * track across both boundaries at once and there is no such track.
+   *
+   * `matchesOnlyAcrossScripts` requires a match under `ignore_script`. Setting
+   * the script aside is exactly what that policy does, so what remains is the
+   * spoken-language comparison -- and a different variety fails it. `zh-yue-Hant`
+   * against a `zh-cmn-Hans` preference is therefore NOT "across both": it is the
+   * wrong language, and the script question is moot once that is true. Only a
+   * track in the viewer's own spoken language can be across the script boundary,
+   * which is the only case where a font or a transliteration is the remedy.
+   *
+   * So the order below is a reading order, not a precedence. Either branch can
+   * fire and never both.
+   *
+   * Over every eligible track, for the same reason the script case is: the claim
+   * is about the stream rather than about one pool.
+   */
+  if (
+    eligible.some((track) => matchesOnlyAcrossMacrolanguage(track.language, effective.languages))
+  ) {
+    return "preferred_language_other_variety_only";
+  }
   return "no_preferred_language_available";
 }
 
@@ -624,6 +694,8 @@ const REASON_TEXT: Record<SubtitleSelectionReason, string> = {
     "a preferred language exists only as a commentary track; those require an explicit choice",
   preferred_language_other_script_only:
     "a preferred language exists only in a different script, which may be unreadable and is never shown automatically",
+  preferred_language_other_variety_only:
+    "a preferred macrolanguage exists only as a different spoken variety, which is not the same language and is never shown automatically",
   no_preferred_language_available: "no subtitle track is available in a preferred language",
   no_subtitle_tracks: "the stream offered no subtitle tracks at all",
   no_eligible_tracks: "no subtitle track is in a format this client can render"
@@ -769,7 +841,8 @@ export function withSelectedAudio(policy: SubtitlePolicy, audio: AudioSelection)
  *      what the viewer likes to read.
  *   6. NOTHING, and which nothing: `no_preference_expressed`,
  *      `preferred_language_forced_only`, `preferred_language_manual_only`,
- *      `preferred_language_other_script_only`, or
+ *      `preferred_language_other_script_only`,
+ *      `preferred_language_other_variety_only`, or
  *      `no_preferred_language_available`.
  *
  * Where `isDefault` sits, because it is the input most often mistaken for an

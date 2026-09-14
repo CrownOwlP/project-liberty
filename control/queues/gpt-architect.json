@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-14T04:29:47.261Z",
+  "generatedAt": "2026-09-14T05:18:08.394Z",
   "agent": "gpt-architect",
   "executionAvailable": false,
   "assigned": [],
@@ -28,32 +28,6 @@
         "unit"
       ],
       "acceptance": "Shared vocabularies live in their own leaf modules, domain contracts live in one module each, index.ts is a re-export-only compatibility barrel rather than the authoritative public surface, and a wildcard exports map lets a new domain contract be added without touching package metadata or the barrel; no cycle-driven z.lazy remains and structural regressions prove the boundary rather than merely reflecting it; no schema behaviour changes",
-      "owner": null,
-      "gateResults": {}
-    },
-    {
-      "id": "PL-0206",
-      "priority": "P0",
-      "lane": "Media",
-      "status": "READY",
-      "title": "Macrolanguage and extlang equivalence in the shared language matcher",
-      "notes": "THE REVIEWER'S OWN CARVE-OUT FROM THE PL-0203 APPROVAL, not a finding of this lane's. gpt-architect approved PL-0203's script/trim corrective and, in the same verdict, identified this as a genuinely separate defect and agreed it should be its own cross-lane media task covering both audio and subtitles. In substance: the zh-yue / zh-cmn instinct points at it, but it is not a script issue -- those are Cantonese and Mandarin extended-language/macrolanguage distinctions; RFC 5646 specifically notes that the Chinese languages encompassed by zh are generally not mutually intelligible when spoken, so a matcher that collapses both to primary zh can call the wrong SPOKEN language a preferred-language fallback. The reviewer proposed P0 and stated explicitly that this does not invalidate the script/trim corrective PL-0203 landed. IT IS DISTINCT FROM THAT SCRIPT RULE, and the distinction is the whole task: a script subtag identifies a WRITING SYSTEM, which is why require_compatible_script is right for automatic subtitle selection and deliberately looser for audio; this is about MUTUAL INTELLIGIBILITY OF SPEECH, an audio-first fact that reaches subtitles only because both surfaces share one matcher. It depends on PL-0203 rather than racing it because it corrects the same function -- languageMatch in packages/media-engine/src/audio.ts, which subtitles.ts imports -- and two concurrent owners of that function would collide. Provenance of the verdict is the same as PL-0203's review record: transcribed by Claude from the ChatGPT review session rather than received over the agent bus. ALLOWEDPATHS NARROWED BEFORE THIS TASK IS EVER CLAIMED, for the reason recorded on PL-0204: packages/contracts/** prefix-contains PL-0706's leaf packages/contracts/src/shared/runtime.ts, so the wildcard would hold this P0 behind an unrelated security corrective for no benefit. The three contracts entries are where the language vocabulary this task corrects actually lives -- domains/subtitles.ts carries the subtitle policy and its outcome vocabulary, domains/audio.ts the track contract, and testing/arbitraries.ts the language-tag generators the property suites draw from. Narrowed on a PREDICTION rather than on a diff, unlike PL-0204's and PL-0205's, because this task is not yet written: if the correction turns out to want a new shared leaf -- a language-tag vocabulary of its own, say -- that is a deliberate widening at claim time with a line in this field, which is the ordinary path and is cheaper than a wildcard that reserves a whole package. packages/media-engine/** stays wide: this task owns the matcher and both its consumers, and it shares an owner with PL-0204 and PL-0205.",
-      "dependencies": [
-        "PL-0203"
-      ],
-      "allowedPaths": [
-        "packages/media-engine/**",
-        "packages/contracts/src/domains/audio.ts",
-        "packages/contracts/src/domains/subtitles.ts",
-        "packages/contracts/src/testing/arbitraries.ts"
-      ],
-      "preferredAgent": "claude-media",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "typecheck",
-        "unit"
-      ],
-      "acceptance": "The shared languageMatch in packages/media-engine/src/audio.ts stops reducing a tag to its primary subtag where that reduction crosses a MACROLANGUAGE boundary. A spoken-language distinction encompassed by a macrolanguage is not reported as a preferred-language fallback: zh-yue against zh-cmn, and either against a bare zh preference, must not answer with a fallback strength, because a fallback there tells the caller it may play Cantonese for a Mandarin preference. Canonical primary and extlang spellings of the SAME language are treated as equivalent in both directions -- cmn and zh-cmn are one language, yue and zh-yue are one language -- and the equivalence survives a region or script suffix on either side. The rule is exercised through BOTH consumers of the shared matcher, the audio track selection in audio.ts and the subtitle selection policy in subtitles.ts, rather than through the helper alone, so neither consumer can be corrected while the other keeps the old behaviour. Any new outcome carries its own named reason: a distinction that is not regional must not be reported with a regional-fallback reason.",
       "owner": null,
       "gateResults": {}
     },

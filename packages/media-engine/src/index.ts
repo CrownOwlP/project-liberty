@@ -20,9 +20,11 @@ export type { CandidateScore, ScoreComponent, ScoreDimension } from "./scoring";
 export {
   selectAudioTrack,
   languageMatch,
+  matchesOnlyAcrossMacrolanguage,
   matchesOnlyAcrossScripts,
   normaliseLanguageTag,
-  primarySubtag
+  primarySubtag,
+  spokenLanguage
 } from "./audio";
 // `ScriptPolicy` is exported because `languageMatch` now REQUIRES one: without
 // the type an external caller cannot name the argument it has to pass.

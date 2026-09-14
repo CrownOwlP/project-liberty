@@ -197,6 +197,14 @@ export const providerIdArb: Arbitrary<string> = fc.constantFrom(
  * parsed output — so a provider adapter constructing a track literal never runs
  * the transform and `"EN-GB"` genuinely reaches the comparator. Generating only
  * pre-normalised tags would hide every case-folding defect in `languageMatch`.
+ *
+ * EXTLANG TAGS ARE HERE FOR PL-0206, and they are the reason two properties had
+ * to be tightened rather than merely kept passing. `zh-cmn` and `cmn` are one
+ * spoken language written two ways, so a matched pair no longer necessarily
+ * shares a PRIMARY subtag -- the properties that asserted primary-subtag equality
+ * were restating the rule that task removed, and now ask `spokenLanguage`. A bare
+ * `zh` is deliberately included alongside them: it names the macrolanguage and
+ * neither variety, which is the case the matcher must refuse in both directions.
  */
 export const languageTagArb: Arbitrary<string> = fc.constantFrom(
   "en",
@@ -210,8 +218,13 @@ export const languageTagArb: Arbitrary<string> = fc.constantFrom(
   "pt-br",
   "pt-pt",
   "PT-BR",
+  "zh",
   "zh-hans",
   "zh-hant",
+  "zh-cmn",
+  "zh-yue",
+  "cmn",
+  "yue-hk",
   "de",
   "es"
 );

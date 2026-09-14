@@ -15,7 +15,7 @@ import {
 import fc from "fast-check";
 import type { Arbitrary } from "fast-check";
 import { describe, expect, it } from "vitest";
-import { matchesOnlyAcrossScripts, primarySubtag, selectAudioTrack } from "./audio";
+import { matchesOnlyAcrossScripts, selectAudioTrack, spokenLanguage } from "./audio";
 import { SUBTITLE_OUTCOME_BY_REASON, selectSubtitleTrack, withSelectedAudio } from "./subtitles";
 
 /**
@@ -85,7 +85,7 @@ const forcedTripleArb = tripleOfKind("forced");
 /**
  * The same tracks with an arbitrary subset stating NO language.
  *
- * `languageTagArb` generates fifteen well-formed tags and no empty one, so the
+ * `languageTagArb` generates twenty well-formed tags and no empty one, so the
  * suite above has never once reached a track whose language is absent -- and
  * `subtitleTrackSchema.language` is `.min(2)` only on `.parse()`, while
  * `selectSubtitleTrack` takes the TYPE, so an adapter constructing a literal
@@ -474,7 +474,14 @@ describe("the forced policy is keyed to the audio that will play", () => {
         // arriving here with `null` is itself the defect.
         expect(audioLanguage).not.toBeNull();
         if (audioLanguage === null) return;
-        expect(primarySubtag(selected.language)).toBe(primarySubtag(audioLanguage));
+        /*
+         * `spokenLanguage`, not `primarySubtag`, since PL-0206 -- the same
+         * tightening as the matching property in audio.property.test.ts. A
+         * forced track keyed to the audio language must name the same LANGUAGE,
+         * and with `zh-cmn` and `cmn` both in the arbitrary, primary-subtag
+         * equality is no longer that claim.
+         */
+        expect(spokenLanguage(selected.language)).toBe(spokenLanguage(audioLanguage));
       })
     );
   });

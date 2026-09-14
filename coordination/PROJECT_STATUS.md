@@ -1,15 +1,15 @@
 # Project Liberty - Project Status
 
-> Generated 2026-09-14T04:29:47.257Z from the AI control plane.
+> Generated 2026-09-14T05:18:08.392Z from the AI control plane.
 
 **Overall completion:** 20/45 executable tasks (44%)
 
 ## Status summary
 
 - **BACKLOG:** 13
-- **READY:** 6
+- **READY:** 5
 - **CLAIMED:** 0
-- **IN_PROGRESS:** 0
+- **IN_PROGRESS:** 1
 - **REVIEW:** 0
 - **BLOCKED:** 6
 - **DONE:** 20
@@ -28,18 +28,17 @@
 
 ## Active work
 
-No tasks are currently claimed, in progress, or in review.
+- **PL-0206** [IN_PROGRESS] Macrolanguage and extlang equivalence in the shared language matcher — owner: claude-media
 
 ## Dispatch classification
 
-- **READY_AND_EXECUTABLE:** 6
+- **READY_AND_EXECUTABLE:** 5
 - **READY_BUT_EXTERNAL:** 0
 - **BLOCKED:** 6
 - **BACKLOG (dependency-gated):** 13
 
 ## Recommended executable wave
 
-- **PL-0206** -> claude-media (P0/Media) Macrolanguage and extlang equivalence in the shared language matcher
 - **PL-0405** -> claude-backend (P0/Backend) Corrective, re-run: auth integration decision, with a forgeable profile scope and an unsupported pin
 - **PL-0704** -> claude-frontend (P0/Frontend) notFound() never reaches the wire: dead addresses answer 200
 
@@ -62,7 +61,7 @@ No READY work is waiting on an external agent lane.
 - **claude-lead:** 0/2 active
 - **claude-frontend:** 0/2 active
 - **claude-backend:** 0/1 active
-- **claude-media:** 0/2 active
+- **claude-media:** 1/2 active
 - **claude-test:** 0/1 active
 - **claude-security:** 0/1 active
 - **claude-infra:** 0/1 active

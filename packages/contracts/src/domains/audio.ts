@@ -33,8 +33,17 @@ export const audioTrackSchema = z.object({
   id: z.string().min(1),
   /**
    * BCP-47-ish. Normalised to lower case so "en-US" and "en-us" cannot become
-   * two different languages; matching is on the primary subtag, so a viewer who
-   * asked for "en-GB" is still served an "en" track rather than nothing.
+   * two different languages; matching is on the SPOKEN LANGUAGE, which is the
+   * primary subtag for almost every tag, so a viewer who asked for "en-GB" is
+   * still served an "en" track rather than nothing.
+   *
+   * The exception is an EXTENDED LANGUAGE subtag ("zh-cmn", "zh-yue"), which
+   * names the language rather than the "zh" it is prefixed with. A macrolanguage
+   * is not a language, and RFC 5646 notes the varieties "zh" encompasses are
+   * generally not mutually intelligible when spoken -- so Cantonese is not served
+   * to a listener who asked for Mandarin, and neither is served for a bare "zh".
+   * The prefixed and bare spellings of one variety are the same language in both
+   * directions. The rule lives in `languageMatch` in `@liberty/media-engine`.
    */
   language: z.string().min(2).transform((value) => value.toLowerCase()),
   codec: audioCodecSchema,

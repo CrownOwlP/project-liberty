@@ -3,10 +3,12 @@ import type { AudioTrack } from "@liberty/contracts/domains/audio";
 import type { PlaybackCapabilities } from "@liberty/contracts/domains/playback";
 import {
   languageMatch,
+  matchesOnlyAcrossMacrolanguage,
   matchesOnlyAcrossScripts,
   normaliseLanguageTag,
   primarySubtag,
-  selectAudioTrack
+  selectAudioTrack,
+  spokenLanguage
 } from "./audio";
 
 const track = (over: Partial<AudioTrack> & { id: string }): AudioTrack => ({
@@ -187,14 +189,170 @@ describe("languageMatch and the script rule", () => {
     // subtag opens an extension or private-use sequence whose contents are
     // free-form, so a four-letter subtag there states nothing about writing.
     expect(languageMatch("zh-cmn-hans-cn", ["zh-hant"], "require_compatible_script")).toBeNull();
-    expect(languageMatch("zh-cmn-hans-cn", ["zh-hant"], "ignore_script")).toEqual({
-      groupIndex: 0,
-      exactIndex: null
-    });
+    /*
+     * THIS ASSERTION USED TO EXPECT A MATCH, AND PL-0206 IS WHY IT DOES NOT.
+     *
+     * Under `ignore_script` the script conflict is set aside, and the old rule
+     * then reduced both tags to `zh` and called them the same language. They are
+     * not: `zh-cmn` is Mandarin and a bare `zh` names the macrolanguage without
+     * choosing a variety. The comparator now asks `spokenLanguage`, so this pair
+     * no longer matches at all -- and `matchesOnlyAcrossMacrolanguage` is what
+     * reports that a Chinese track nevertheless exists.
+     *
+     * The script half of this test is unchanged, which is the point of keeping
+     * both halves here: the extlang offset that lets `scriptSubtag` find `hans`
+     * in position 2 is the same offset that lets `spokenLanguage` find `cmn` in
+     * position 1, and neither rule was disturbed by the other.
+     */
+    expect(languageMatch("zh-cmn-hans-cn", ["zh-hant"], "ignore_script")).toBeNull();
+    expect(matchesOnlyAcrossMacrolanguage("zh-cmn-hans-cn", ["zh-hant"])).toBe(true);
     expect(languageMatch("zh-x-hant", ["zh-hans"], "require_compatible_script")).toEqual({
       groupIndex: 0,
       exactIndex: null
     });
+  });
+});
+
+describe("spokenLanguage, and the macrolanguage boundary (PL-0206)", () => {
+  it("collapses an extlang toward the specific language, not the macrolanguage", () => {
+    // Both spellings of one language agree, which is the half of the acceptance
+    // that says cmn and zh-cmn are one language in BOTH directions.
+    expect(spokenLanguage("zh-cmn")).toBe("cmn");
+    expect(spokenLanguage("cmn")).toBe("cmn");
+    expect(spokenLanguage("zh-yue")).toBe("yue");
+    expect(spokenLanguage("yue")).toBe("yue");
+  });
+
+  it("leaves a bare macrolanguage as itself, because it names no variety", () => {
+    // The mirror of the script rule: a tag that states nothing is not in
+    // conflict with anything, and inventing a variety for the viewer would be
+    // the defect this task removes, pointed the other way.
+    expect(spokenLanguage("zh")).toBe("zh");
+    expect(spokenLanguage("ar")).toBe("ar");
+  });
+
+  it("survives a region or script suffix on either side", () => {
+    expect(spokenLanguage("zh-yue-hant-hk")).toBe("yue");
+    expect(spokenLanguage("yue-hk")).toBe("yue");
+    expect(spokenLanguage("zh-cmn-hans-cn")).toBe("cmn");
+  });
+
+  it("does not mistake a region, a script or a variant for an extlang", () => {
+    // Shape decides, as it does for scripts: a region is two letters or three
+    // DIGITS, a script is four letters, a variant is five to eight or four
+    // beginning with a digit. Only three ASCII letters in position 1 is an
+    // extlang, and nothing else can take that shape there.
+    expect(spokenLanguage("en-gb")).toBe("en");
+    expect(spokenLanguage("es-419")).toBe("es");
+    expect(spokenLanguage("zh-hant")).toBe("zh");
+    expect(spokenLanguage("de-1996")).toBe("de");
+    expect(spokenLanguage("en-us-x-abc")).toBe("en");
+  });
+
+  it("refuses to call Cantonese a fallback for Mandarin, in both directions", () => {
+    // The motivating case. A fallback strength here tells the caller it may play
+    // Cantonese for a Mandarin preference.
+    expect(languageMatch("zh-yue", ["zh-cmn"], "ignore_script")).toBeNull();
+    expect(languageMatch("zh-cmn", ["zh-yue"], "ignore_script")).toBeNull();
+    expect(matchesOnlyAcrossMacrolanguage("zh-yue", ["zh-cmn"])).toBe(true);
+  });
+
+  it("refuses either variety against a bare macrolanguage preference", () => {
+    expect(languageMatch("zh-yue", ["zh"], "ignore_script")).toBeNull();
+    expect(languageMatch("zh-cmn", ["zh"], "ignore_script")).toBeNull();
+    expect(matchesOnlyAcrossMacrolanguage("zh-yue", ["zh"])).toBe(true);
+    // And the other way round: a bare zh track against a variety preference.
+    expect(languageMatch("zh", ["zh-cmn"], "ignore_script")).toBeNull();
+    expect(matchesOnlyAcrossMacrolanguage("zh", ["zh-cmn"])).toBe(true);
+  });
+
+  it("still matches the same language across its two spellings", () => {
+    // The equivalence has to hold or the rule has merely broken Chinese.
+    expect(languageMatch("zh-cmn", ["cmn"], "ignore_script")).toEqual({
+      groupIndex: 0,
+      exactIndex: null
+    });
+    expect(languageMatch("yue-hk", ["zh-yue"], "ignore_script")).toEqual({
+      groupIndex: 0,
+      exactIndex: null
+    });
+    // Exactness still means the viewer typed THIS tag, not merely this language.
+    expect(languageMatch("zh-yue", ["zh-yue"], "ignore_script")).toEqual({
+      groupIndex: 0,
+      exactIndex: 0
+    });
+  });
+
+  it("leaves every language without an extlang exactly as it was", () => {
+    // The regression that matters most: this task must not narrow anything but
+    // the macrolanguage case.
+    expect(languageMatch("en-gb", ["en"], "ignore_script")).toEqual({
+      groupIndex: 0,
+      exactIndex: null
+    });
+    expect(languageMatch("en-gb", ["en-us", "en-gb"], "ignore_script")).toEqual({
+      groupIndex: 0,
+      exactIndex: 1
+    });
+    expect(languageMatch("fr", ["de", "fr"], "ignore_script")).toEqual({
+      groupIndex: 1,
+      exactIndex: 1
+    });
+  });
+
+  it("reports nothing across the boundary when the languages are simply unrelated", () => {
+    // Otherwise the new reason would fire for every miss and mean nothing.
+    expect(matchesOnlyAcrossMacrolanguage("fr", ["zh-cmn"])).toBe(false);
+    expect(matchesOnlyAcrossMacrolanguage("en-gb", ["en-us"])).toBe(false);
+  });
+
+  it("only detects the boundary when the prefixed spelling is on one side", () => {
+    /*
+     * The asymmetry, pinned rather than left to be discovered from a reason code
+     * that seemed wrong. `spokenLanguage` treats `cmn` and `zh-cmn` as one
+     * language in both directions; this reporter cannot, because it needs a
+     * shared MACROLANGUAGE to notice and the only place one appears in a tag is
+     * the prefix of the prefixed spelling.
+     *
+     * So a bare `cmn` track against a bare `zh` preference reports
+     * `no_preferred_language_available` rather than the variety reason. That is a
+     * reporting gap and not a selection defect -- nothing is selected either way
+     * -- and closing it needs a macrolanguage registry, which this package has
+     * declined to vendor for scripts on the same reasoning.
+     */
+    expect(matchesOnlyAcrossMacrolanguage("zh", ["zh-cmn"])).toBe(true);
+    expect(matchesOnlyAcrossMacrolanguage("cmn", ["zh"])).toBe(false);
+    expect(matchesOnlyAcrossMacrolanguage("yue-hk", ["zh"])).toBe(false);
+    // The matcher itself stays symmetric, which is the part that decides things.
+    expect(languageMatch("cmn", ["zh"], "ignore_script")).toBeNull();
+    expect(languageMatch("zh", ["cmn"], "ignore_script")).toBeNull();
+  });
+
+  it("selectAudioTrack takes Mandarin over a better Cantonese track", () => {
+    /*
+     * Through the CONSUMER, not the helper. The acceptance requires the rule to
+     * be exercised where it decides something, because a matcher can be correct
+     * while the selection built on it is not.
+     *
+     * The two-channel Mandarin track has to beat the six-channel Cantonese one,
+     * and only the language rule can do that: language is the first key in
+     * `compareTracks` and channels is the fifth. Under the old rule both tracks
+     * matched `zh-cmn` equally, the language key tied, and six channels won --
+     * so this assertion fails against the code this task replaces, which is the
+     * only kind of regression worth writing.
+     */
+    const selection = selectAudioTrack(
+      [
+        track({ id: "yue", language: "zh-yue", channels: 6 }),
+        track({ id: "cmn", language: "cmn", channels: 2 })
+      ],
+      caps({ preferredAudioLanguages: ["zh-cmn"] })
+    );
+
+    expect(selection.selected?.id).toBe("cmn");
+    // `cmn` and `zh-cmn` are one language spelled two ways, so this is a subtag
+    // match rather than an exact one.
+    expect(selection.reason).toBe("preferred_language_primary_subtag");
   });
 });
 

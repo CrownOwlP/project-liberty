@@ -144,6 +144,65 @@ export function primarySubtag(language: string): string {
   return normalised.split("-")[0] ?? normalised;
 }
 
+/** Exactly three ASCII letters: the SHAPE of a BCP-47 extended-language subtag. */
+const EXTLANG_SUBTAG = /^[a-z]{3}$/;
+
+/**
+ * The SPOKEN language a tag names, which is not always its primary subtag.
+ *
+ * `primarySubtag` answers a question about string structure. This answers the
+ * question the matcher actually needs -- which language will come out of the
+ * speakers -- and the two differ exactly where a MACROLANGUAGE has been narrowed
+ * by an extended-language subtag.
+ *
+ * WHY THIS EXISTS (PL-0206). `zh` is a macrolanguage. RFC 5646 notes that the
+ * languages it encompasses are generally NOT mutually intelligible when spoken,
+ * and Cantonese and Mandarin are the standing example. Reducing `zh-yue` and
+ * `zh-cmn` to `zh` made them the same language to this comparator, so a viewer
+ * who asked for Mandarin could be handed Cantonese and told, in the reason trail,
+ * that their preferred language had been matched. That is not a regional
+ * fallback and it is not a script conflict; it is the wrong language, reported as
+ * a success. gpt-architect carved this out of the PL-0203 approval for that
+ * reason, and was explicit that it is a spoken-language problem rather than
+ * another script rule.
+ *
+ * DERIVED FROM SHAPE, LIKE `scriptSubtag`, AND FOR THE SAME REASON -- no registry
+ * is vendored into this package. BCP-47 spells a language subtag as `2*3ALPHA
+ * ["-" extlang]`, an extlang as exactly `3ALPHA`, a region as two letters or
+ * three DIGITS, and a script as four letters. So three ASCII letters immediately
+ * after a two- or three-letter primary is unambiguously an extlang: no region,
+ * script or variant can take that shape in that position. RFC 5646 permanently
+ * invalidates the second and third extlang positions, so there is at most one to
+ * find.
+ *
+ * THE COLLAPSE RUNS TOWARD THE SPECIFIC, NOT THE GENERAL. `zh-yue` becomes `yue`
+ * rather than `zh`, so the prefixed and bare spellings of one language are the
+ * same language in both directions -- `cmn` and `zh-cmn` are one, `yue` and
+ * `zh-yue` are one -- and the equivalence survives whatever region or script
+ * follows, because those subtags are not consulted here at all. A bare `zh` stays
+ * `zh`: it names the macrolanguage and nothing narrower, so it is neither
+ * Cantonese nor Mandarin, and treating it as either would invent a preference the
+ * viewer did not express. That is the same asymmetry the script rule already
+ * uses, where a tag naming no script conflicts with nothing.
+ *
+ * WHAT THIS DELIBERATELY DOES NOT DO. It does not know which primary subtags are
+ * macrolanguages, and it does not need to: a tag either narrows itself with an
+ * extlang or it does not. The cost is that `zh` and `cmn` are simply different
+ * languages here rather than related ones, which is why the boundary is REPORTED
+ * separately by `matchesOnlyAcrossMacrolanguage` instead of being silently
+ * absorbed into a fallback strength.
+ */
+export function spokenLanguage(language: string): string {
+  const parts = normaliseLanguageTag(language).split("-");
+  const primary = parts[0];
+  if (primary === undefined) return "";
+  if (primary.length < 2 || primary.length > 3) return primary;
+
+  const second = parts[1];
+  if (second !== undefined && EXTLANG_SUBTAG.test(second)) return second;
+  return primary;
+}
+
 /** Exactly four ASCII letters: the SHAPE of a BCP-47 script subtag. */
 const SCRIPT_SUBTAG = /^[a-z]{4}$/;
 
@@ -196,8 +255,10 @@ function scriptSubtag(tag: string): string | null {
 /**
  * Whether an explicitly stated, DIFFERING script disqualifies a language match.
  *
- * `ignore_script` is what this comparator has always done: same primary subtag,
- * same language group, one degree of inexactness below an exact tag.
+ * `ignore_script` is the comparator's base rule: same SPOKEN LANGUAGE, same
+ * language group, one degree of inexactness below an exact tag. It read "same
+ * primary subtag" until PL-0206, which is a different claim wherever an extlang
+ * is present -- see `spokenLanguage`.
  * `require_compatible_script` additionally refuses a pair where BOTH tags name
  * a script and the two scripts differ. A tag that names no script is not in
  * conflict with anything -- a bare `zh` preference stays broad, because the
@@ -223,8 +284,11 @@ function scriptSubtag(tag: string): string | null {
  *     refusal -- it demotes a same-language track below an UNRELATED language
  *     that happens to rank higher on role or channels, which is strictly worse
  *     for the listener. Where a script tag on an audio track really does stand
- *     in for a distinct spoken variety, the honest fix is an extlang- or
- *     region-aware rule (`zh-yue` against `zh-cmn`), not this one.
+ *     in for a distinct spoken variety, the honest fix was said here to be an
+ *     extlang-aware rule rather than this one -- and PL-0206 built it. It is
+ *     `spokenLanguage`, it applies to BOTH policies rather than being a second
+ *     `ScriptPolicy` value, and it is not a script rule at all: `zh-yue` and
+ *     `zh-cmn` are different languages whatever script either is written in.
  */
 export type ScriptPolicy = "ignore_script" | "require_compatible_script";
 
@@ -245,7 +309,15 @@ export function languageMatch(
   scriptPolicy: ScriptPolicy
 ): { groupIndex: number; exactIndex: number | null } | null {
   const track = normaliseLanguageTag(trackLanguage);
-  const trackPrimary = primarySubtag(track);
+  /*
+   * THE SPOKEN LANGUAGE, NOT THE PRIMARY SUBTAG (PL-0206). This comparison used
+   * to be `primarySubtag(want) !== primarySubtag(track)`, which made `zh-yue` and
+   * `zh-cmn` the same language and let a Mandarin preference be served Cantonese
+   * under a fallback strength. `spokenLanguage` collapses an extlang toward the
+   * specific language instead of toward the macrolanguage, so the prefixed and
+   * bare spellings agree and the two varieties do not.
+   */
+  const trackLanguageId = spokenLanguage(track);
   const trackScript = scriptSubtag(track);
 
   /*
@@ -276,7 +348,7 @@ export function languageMatch(
 
   for (let i = 0; i < preferred.length; i++) {
     const want = normaliseLanguageTag(preferred[i] ?? "");
-    if (!want || primarySubtag(want) !== trackPrimary) continue;
+    if (!want || spokenLanguage(want) !== trackLanguageId) continue;
 
     if (scriptPolicy === "require_compatible_script") {
       // Only TWO STATED, DIFFERING scripts conflict. One side stating a script
@@ -315,6 +387,65 @@ export function matchesOnlyAcrossScripts(
     languageMatch(trackLanguage, preferred, "ignore_script") !== null &&
     languageMatch(trackLanguage, preferred, "require_compatible_script") === null
   );
+}
+
+/**
+ * Whether this track shares a MACROLANGUAGE with the preferences but not a
+ * spoken language: `zh-yue` against a `zh-cmn` preference, or either against a
+ * bare `zh`.
+ *
+ * The counterpart to `matchesOnlyAcrossScripts`, and it exists for the same
+ * reason (PL-0206). Once `languageMatch` stopped reducing a tag to its primary
+ * subtag, a Cantonese track against a Mandarin preference stopped being a
+ * fallback -- correctly -- and became indistinguishable from no Chinese audio at
+ * all. Those are different facts with different remedies: the first is a track
+ * worth OFFERING and refusing to select automatically, the second is nothing to
+ * offer. Collapsing them would trade one conflation for another.
+ *
+ * DEFINED AS THE DIFFERENCE BETWEEN THE TWO RULES rather than by re-deriving
+ * either, so it cannot drift from the matcher it describes. The old rule is the
+ * primary-subtag comparison this task removed; the new rule is `languageMatch`
+ * itself. A track that the old rule matched and the new rule does not is, by
+ * construction, one whose macrolanguage the viewer asked for and whose spoken
+ * language they did not.
+ *
+ * `ignore_script` on both sides deliberately: this asks a question about SPEECH,
+ * and a script conflict is a separate finding with its own reason. The two turn
+ * out to be mutually exclusive rather than overlapping -- setting the script
+ * aside leaves the spoken-language comparison, which a different variety fails --
+ * so no track is ever across both, and `subtitles.ts` records that argument where
+ * it chooses between them.
+ *
+ * WHAT THIS DETECTS AND WHAT IT CANNOT, because the asymmetry is real and the
+ * function above does not share it. `spokenLanguage` treats `cmn` and `zh-cmn` as
+ * one language in both directions, which is the whole point of collapsing toward
+ * the specific. This helper cannot: it needs a shared MACROLANGUAGE to notice,
+ * and the only place a macrolanguage appears in a tag is the prefix of the
+ * prefixed spelling. So it answers true for `zh` against `zh-cmn`, and FALSE for
+ * `cmn` against `zh` -- one spoken language, two spellings, two different
+ * findings. A bare `cmn` track against a bare `zh` preference therefore reports
+ * `no_preferred_language_available` rather than the variety reason.
+ *
+ * That is a reporting gap rather than a selection defect: nothing is selected in
+ * either case, and the matcher itself is symmetric. Closing it needs a
+ * macrolanguage registry -- knowing that `cmn` belongs to `zh` is not derivable
+ * from either string -- and this package has declined to vendor a registry for
+ * scripts on the same reasoning. Stated here rather than left for someone to
+ * discover from a reason code that seemed wrong.
+ */
+export function matchesOnlyAcrossMacrolanguage(
+  trackLanguage: string,
+  preferred: readonly string[]
+): boolean {
+  if (languageMatch(trackLanguage, preferred, "ignore_script") !== null) return false;
+
+  const trackPrimary = primarySubtag(trackLanguage);
+  if (!trackPrimary) return false;
+  for (const want of preferred) {
+    const wanted = normaliseLanguageTag(want);
+    if (wanted && primarySubtag(wanted) === trackPrimary) return true;
+  }
+  return false;
 }
 
 function firstRejectionReason(

@@ -15,8 +15,8 @@ import { describe, expect, it } from "vitest";
 import {
   languageMatch,
   matchesOnlyAcrossScripts,
-  primarySubtag,
   selectAudioTrack,
+  spokenLanguage,
   type ScriptPolicy
 } from "./audio";
 
@@ -347,7 +347,14 @@ describe("languageMatch reports two independent coordinates", () => {
           expect(match.groupIndex).toBeLessThan(preferred.length);
 
           const group = defined(preferred[match.groupIndex], "matched group preference");
-          expect(primarySubtag(group)).toBe(primarySubtag(language));
+          /*
+           * `spokenLanguage`, not `primarySubtag`, since PL-0206. This asserted
+           * primary-subtag equality, which was a restatement of the rule that
+           * task removed -- and once `zh-cmn` and `cmn` are in the arbitrary it
+           * is false: one spoken language, two primary subtags. The stronger and
+           * still-true claim is that a matched pair names the same LANGUAGE.
+           */
+          expect(spokenLanguage(group)).toBe(spokenLanguage(language));
 
           if (match.exactIndex !== null) {
             // An exact match is a member of its own group, so it can never sit

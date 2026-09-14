@@ -258,6 +258,87 @@ describe("selectSubtitleTrack preferred language", () => {
     expect(result.reason).toBe("preferred_language_primary_subtag");
   });
 
+  it("refuses a Cantonese subtitle for a Mandarin viewer, under its own reason (PL-0206)", () => {
+    /*
+     * THROUGH THE CONSUMER, WHICH THE ACCEPTANCE REQUIRES. Both consumers share
+     * one comparator precisely so they cannot drift, and the way that guarantee
+     * fails is one of them being corrected while the other keeps the old
+     * behaviour -- so the rule is exercised where it decides something rather
+     * than only where it is computed.
+     *
+     * The reason is its own value, not the script one and not the regional one.
+     * A script conflict is about READING and the dialogue is still the viewer's;
+     * a regional difference is cosmetic and is still selected. This is the wrong
+     * language, and reporting it as a regional fallback would move the defect
+     * from the matcher into the vocabulary.
+     */
+    const result = selectSubtitleTrack(
+      [track({ id: "yue", language: "zh-yue", isDefault: true })],
+      policy({ preferredLanguages: ["zh-cmn"] })
+    );
+
+    expect(result.selected).toBeNull();
+    expect(result.reason).toBe("preferred_language_other_variety_only");
+    // Still offered, never chosen. Same bargain as the script rule.
+    expect(result.ordered.map((t) => t.id)).toEqual(["yue"]);
+    expect(SUBTITLE_OUTCOME_BY_REASON[result.reason]).toEqual({
+      showsText: false,
+      showsFullSubtitles: false
+    });
+  });
+
+  it("keeps the variety reason distinct from the script and regional ones", () => {
+    // Three different findings that all used to be reachable as one, and the
+    // remedies differ: a font, nothing at all, and an offer.
+    const variety = selectSubtitleTrack(
+      [track({ id: "yue", language: "zh-yue" })],
+      policy({ preferredLanguages: ["zh-cmn"] })
+    );
+    const script = selectSubtitleTrack(
+      [track({ id: "zh-hans", language: "zh-hans" })],
+      policy({ preferredLanguages: ["zh-hant"] })
+    );
+    const region = selectSubtitleTrack(
+      [track({ id: "en-us", language: "en-us" })],
+      policy({ preferredLanguages: ["en-gb"] })
+    );
+
+    expect(variety.reason).toBe("preferred_language_other_variety_only");
+    expect(script.reason).toBe("preferred_language_other_script_only");
+    expect(region.reason).toBe("preferred_language_primary_subtag");
+    expect(new Set([variety.reason, script.reason, region.reason]).size).toBe(3);
+  });
+
+  it("still selects the same language across its two spellings", () => {
+    // The equivalence clause. If this fails the task has merely broken Chinese
+    // rather than corrected it.
+    const result = selectSubtitleTrack(
+      [track({ id: "cmn", language: "cmn" })],
+      policy({ preferredLanguages: ["zh-cmn"] })
+    );
+    expect(result.selected?.id).toBe("cmn");
+  });
+
+  it("reports a wrong-variety track as wrong-variety even when its script also differs", () => {
+    /*
+     * The obvious worry is a track across both boundaries at once, and the point
+     * of this test is that there is no such track.
+     *
+     * `matchesOnlyAcrossScripts` requires a match under `ignore_script`, and
+     * setting the script aside leaves the spoken-language comparison, which a
+     * different variety fails. So `zh-yue-hant` against `zh-cmn-hans` is not
+     * both: it is the wrong language, and the script question is moot. Only a
+     * track in the viewer's own spoken language can be across the script
+     * boundary -- which is the only case where a font is the remedy.
+     */
+    const result = selectSubtitleTrack(
+      [track({ id: "yue-hant", language: "zh-yue-hant" })],
+      policy({ preferredLanguages: ["zh-cmn-hans"] })
+    );
+    expect(result.reason).toBe("preferred_language_other_variety_only");
+    expect(result.reason).not.toBe("preferred_language_other_script_only");
+  });
+
   it("tells 'your language is not here' from 'it is here in another script'", () => {
     // The two empty screens this split exists for. One is a content-availability
     // answer; the other is an offer the player should make.
@@ -1184,7 +1265,7 @@ describe("selectSubtitleTrack outcome classification", () => {
     // nothing claims full subtitles, so both are ruled out first. Without these
     // the assertion would keep passing through a table that had lost a reason or
     // had every entry set to false.
-    expect(Object.keys(SUBTITLE_OUTCOME_BY_REASON)).toHaveLength(14);
+    expect(Object.keys(SUBTITLE_OUTCOME_BY_REASON)).toHaveLength(15);
     expect(outcomes.some((outcome) => outcome.showsFullSubtitles)).toBe(true);
 
     for (const outcome of outcomes) {
