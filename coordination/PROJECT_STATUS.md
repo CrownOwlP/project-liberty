@@ -1,8 +1,8 @@
 # Project Liberty - Project Status
 
-> Generated 2026-09-14T04:07:03.255Z from the AI control plane.
+> Generated 2026-09-14T04:29:47.257Z from the AI control plane.
 
-**Overall completion:** 18/45 executable tasks (40%)
+**Overall completion:** 20/45 executable tasks (44%)
 
 ## Status summary
 
@@ -10,16 +10,16 @@
 - **READY:** 6
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 0
-- **REVIEW:** 2
+- **REVIEW:** 0
 - **BLOCKED:** 6
-- **DONE:** 18
+- **DONE:** 20
 - **CANCELED:** 0
 
 ## Milestones / phases
 
 - **M0 — AI Engineering System + Repository Foundation:** COMPLETE, 4/4 (100%)
 - **M1 — Core Discovery Experience:** COMPLETE, 3/3 (100%)
-- **M2 — Media Resolution + Provider Foundation:** IN_PROGRESS, 3/6 (50%)
+- **M2 — Media Resolution + Provider Foundation:** IN_PROGRESS, 4/6 (67%)
 - **M3 — Identity + Personal State:** NOT_STARTED, 0/4 (0%), 1 blocked
 - **M4 — Playback Vertical Slice:** NOT_STARTED, 0/6 (0%)
 - **M5 — Live + Intelligence Boundaries:** NOT_STARTED, 0/2 (0%), 1 blocked
@@ -28,8 +28,7 @@
 
 ## Active work
 
-- **PL-0204** [REVIEW] Candidate failover policy — owner: claude-media
-- **PL-0603** [REVIEW] Corrective, re-run: channel and EPG contracts under an honest review range — owner: claude-media
+No tasks are currently claimed, in progress, or in review.
 
 ## Dispatch classification
 
@@ -40,6 +39,7 @@
 
 ## Recommended executable wave
 
+- **PL-0206** -> claude-media (P0/Media) Macrolanguage and extlang equivalence in the shared language matcher
 - **PL-0405** -> claude-backend (P0/Backend) Corrective, re-run: auth integration decision, with a forgeable profile scope and an unsupported pin
 - **PL-0704** -> claude-frontend (P0/Frontend) notFound() never reaches the wire: dead addresses answer 200
 
@@ -62,7 +62,7 @@ No READY work is waiting on an external agent lane.
 - **claude-lead:** 0/2 active
 - **claude-frontend:** 0/2 active
 - **claude-backend:** 0/1 active
-- **claude-media:** 2/2 active
+- **claude-media:** 0/2 active
 - **claude-test:** 0/1 active
 - **claude-security:** 0/1 active
 - **claude-infra:** 0/1 active

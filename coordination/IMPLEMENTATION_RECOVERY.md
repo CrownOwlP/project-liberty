@@ -39,6 +39,33 @@ PL-0205 was blocked for violating exactly that, in the most plausible possible
 way: its probe file existed only for that task, and had nevertheless been *created*
 by a later refactor that moved the behaviour into it.
 
+### The standing sequence, as the reviewer finally stated it
+
+> prove the prover with a known exact answer → derive behavioral witnesses → prove
+> absence/presence and ordering → derive candidate base → derive the complete
+> **rename-aware** pre-base set over the declared write surface → compare it against
+> the recorded inspection by **identity, count and disposition** → only then
+> reconcile.
+
+**The binding check is the inspection record, not a search.** Searching pre-base
+commit messages for the task id is kept only as a cheap alarm and *"must never
+authorize a base"*. PL-0603 is why: the commit carrying that task's Live TV
+document is labelled `PL-0702`, because the document travelled as a passenger
+inside a security commit during the unclaimed-preflight era. A message search
+would have cleared the very base it was invented to catch.
+
+So the runner derives the complete set of pre-base commits touching any declared
+write path and refuses unless that set matches the one written into the task
+record — by count and by identity. And the record must carry a **per-SHA
+disposition**, not just a list: *why* each pre-base commit is somebody else's work
+rather than this task's.
+
+**Rename-awareness is non-negotiable.** `--full-history` stops path simplification
+from hiding commits but does not follow a file through an earlier rename. For leaf
+files, follow rename history; for broader declarations, enumerate the lineage
+conservatively. Otherwise a file that originated under an old pathname recreates
+exactly the blind spot PL-0205 exposed for moved code.
+
 **An introduction-style proof** must establish all five of: the candidate base is
 an ancestor of HEAD; the base lacks the behaviour witness; the first
 acceptance-relevant implementation commit introduces it; **that commit's parent is
@@ -68,40 +95,43 @@ doctrine change. See the open questions at the end.
 
 ## Progress
 
-**Recovery packet 1 is in review** at `64b631d5`: PL-0601, PL-0401 and PL-0204,
-each reconciled on its own independently proven base.
+**Recovery packet 1 is closed.** Of the three tasks it opened, two were refused on
+provenance and superseded, and all outcomes are now settled:
 
-| Task | Witnesses | Introduction | Proven base | Window |
-|---|---|---|---|---|
-| PL-0601 | `liveChannelSchema`, `epgListingSchema` | `fc1ea4d5` | `33588cdc` | **1 commit, 3 files** |
-| PL-0401 | `ENABLED_AUTH_CAPABILITIES`, `WITHHELD_AUTH_PLUGIN_FAMILIES` | `1dd8e73e` | `fc1ea4d5` | 7 commits, 14 files |
-| PL-0204 | `planFailover`, `playbackAttemptFailureSchema` | `4091a2b6` | `cf2a4583` | 9 commits, 12 files |
+| Task | Outcome |
+|---|---|
+| PL-0204 | **APPROVED** at `30724b26`, after one merits refusal — an infinite budget was being treated as a stated bound, and a regression test was pinning that as intended behaviour. |
+| PL-0601 | Provenance invalid, **BLOCKED**, superseded by **PL-0603 — APPROVED** at `30724b26` from base `56b34354`. |
+| PL-0401 | Provenance invalid, **BLOCKED**, superseded by **PL-0405**, which is created and deliberately unclaimed because it carries three real merits blockers. |
 
-PL-0601's window is the tightest review range this project has produced, and it is
-what a narrowed declaration and a true base look like when both are right.
+**What the packet cost, and what it bought.** Three of its bases were wrong or
+unprovable before one was right, and each failure taught the mechanism something
+it could not have been told:
 
-**Two overlaps in those shas are recorded rather than smoothed over.** PL-0401's
-base *is* PL-0601's introduction commit — live TV and auth landed back to back, so
-the two windows abut exactly. More seriously, **PL-0204's base and introduction are
-identical to PL-0207's**: commit `4091a2b6` introduced `planFailover` *and*
-`unknownMediaFacts`, so one commit carried work belonging to two tasks and
-PL-0204's window necessarily contains PL-0207's already-approved work. Nothing in
-the mechanism can separate them — the base is where the behaviour began and the
-upper bound is HEAD — and narrowing PL-0204's declaration to make the overlap
-disappear would be reservation inflation in reverse. It is a historical discipline
-failure from before any of this was enforced.
+- **A `for /f` backquote swallowed git's stderr**, so a command that *refused* and
+  a command that legitimately *found nothing* produced identical evidence. Three
+  BASE REJECTED lines that looked like care and proved nothing.
+- **`git rev-list` refuses the pickaxe** outright — a detail I had traded a
+  formatting problem for.
+- **`--oneline` prints only the subject**, and this repository writes task ids into
+  commit *bodies*.
+- **The witnesses proved the schema boundary, not the task boundary.** Both PL-0601
+  and PL-0401 declare a *document* as a write surface, and both documents changed
+  earlier than the code symbols being probed.
+- **And the fix for that was itself wrong**: searching pre-base commit messages for
+  the task id would not have caught PL-0601, because the commit carrying its
+  document is labelled `PL-0702`.
 
-**The probe now self-tests before it is trusted, and that was learned the hard
-way.** A first attempt at this packet reported all three bases as unprovable and
-looked exactly like correct fail-closed behaviour. It was not: `git rev-list`
-refuses the pickaxe, and inside a `for /f` backquote that refusal was invisible,
-so a command that *refused* and a command that legitimately *found nothing* were
-indistinguishable. A probe that cannot tell "never introduced" from "I am not
-working" is a machine for producing confident-looking silence. The pickaxe now runs
-as a redirected command with stderr captured, and the mechanism is first asked one
-question whose answer is already known — where `unknownMediaFacts` was introduced,
-which PL-0207 established is `4091a2b6`. If that comes back empty, the real proofs
-are skipped rather than reported as refusals.
+Every one of those was caught by a prover refusing to answer rather than by a
+reviewer catching a false answer — except the fourth, which the reviewer caught.
+The `PROBE INVALID` / `BASE REJECTED` distinction, which was the reviewer's
+condition rather than my idea, is what made the difference three rounds running.
+
+**PL-0204's window shares its base and introduction commit with PL-0207**, because
+commit `4091a2b6` introduced `planFailover` *and* `unknownMediaFacts`. Ruled
+acceptable: a commit is not required to be task-atomic when recovering old
+history, and what binds is the current review surface rather than commit
+exclusivity.
 
 ## Classification
 

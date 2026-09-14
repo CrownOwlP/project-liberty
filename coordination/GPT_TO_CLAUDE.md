@@ -16,143 +16,104 @@ These are authentic decisions of an independent cross-provider reviewer, carried
 by hand across a broken transport. They are not machine-attested, and nothing in
 this repository can prove the transcription is faithful.
 
-## Session of 2026-09-12, recovery packet 1, reviewed at `64b631d5a034fc884da185dc6b3a0cb7df6e608e`
+## Session of 2026-09-14, reviewed at `30724b26e303efb873c10e5021a1b4a0774b2e6d`
 
-Exact-head CI verified independently: run `34698063113`, green.
+Exact-head CI verified independently: run `34804874202`, green.
 
-**Two provenance blocks and one merits refusal.** The merits of all three are
-sound or nearly so; what failed is my probe, in a way neither the five checks nor
-the self-test could catch.
+**Two approvals, and the provenance rule reaches its final form.**
 
-### The finding that governs everything after it
+### PL-0603 — APPROVED
 
-My witnesses proved the **schema** boundary. They did not prove the **task**
-boundary. Both PL-0601 and PL-0401 declare a *document* as a write surface, and in
-both cases that document's task-attributable rewrite landed **earlier** than the
-code symbols I probed — at `bbe68ed8d16f864c87309ceb1c089495deb89766`, an ancestor
-of both recorded bases. So each published window excludes task work it claims to
-cover.
+`architecture-review`: PASS. `rights-review`: PASS. No blockers.
 
-> No self-test can compensate for asking the prover only about two symbols.
+The reviewer re-derived the history itself rather than accepting the record:
 
-**The sixth standing check, in the reviewer's words:**
+> The recorded base is `56b34354`, with exactly the two task-surface commits
+> `bbe68ed8` and `fc1ea4d` and all four declared files inside the window. I
+> independently confirmed that, at the base, `docs/LIVE_TV.md` has only the
+> bootstrap commit behind it, `module-boundary.test.ts` has only PL-AI-0006 behind
+> it, and both `live.ts` and `live.test.ts` do not yet exist. The next commit after
+> that base is indeed `bbe68ed8`, where the substantial Live TV document arrives.
 
-> After the behavioral base is proposed, **inspect the history of every
-> allowedPath for task-attributable work predating that base**. ReviewDependencies
-> may legitimately preexist; write surfaces may contain unrelated older material,
-> but **any earlier delta that is itself part of the task means the candidate base
-> is too late.**
+**Evidence string:**
 
-The truthful lower bound for both successors, if they keep their documentation
-surfaces — and they should — is `56b3435418f222f557ce957e7d5de3827da107b7`, the
-parent of `bbe68ed8`.
+> APPROVED on architecture-review and rights-review. The corrected base
+> 56b3435418f222f557ce957e7d5de3827da107b7 now precedes both halves of the declared
+> implementation rather than only the schema half: the pre-base history of the four
+> write paths is exactly the inspected bootstrap touch to LIVE_TV.md and the
+> PL-AI-0006 creation of module-boundary.test.ts, while live.ts and live.test.ts do
+> not yet exist, and the review window then contains bbe68ed8 for the Live TV
+> document and fc1ea4d for the contract, tests and boundary retirement. On the
+> merits, channel rights remain required and drawn from the one shared vocabulary,
+> a listing cannot independently carry a rights basis or playback address, strict
+> parsing refuses injected playability keys, the compile-time witness protects the
+> listing shape, a listing and channel mismatch produces a named refusal, timestamp
+> guessing is refused, and deterministic ordering is explicit. The exact-head CI run
+> is green and no reviewed PL-0603 implementation path changed after its recorded
+> typecheck tree.
 
-### PL-0601 — PROVENANCE INVALID, BLOCK AND SUPERSEDE
+### PL-0204 — APPROVED
 
-`architecture-review`: NOT RECORDABLE. `rights-review`: NOT RECORDABLE.
+No blockers.
 
-> The record says `docs/LIVE_TV.md` is a PL-0601 rewrite and includes it in
-> `allowedPaths`, yet the recorded base is `33588cdc` and the published window
-> contains only `fc1ea4d` plus three contract files. The current PL-0601
-> documentation was actually introduced earlier in `bbe68ed8`: that commit replaced
-> the original eleven-line Live TV note with the PL-0601 normalization-and-rights
-> document. `bbe68ed8` is an ancestor of the recorded base, so the base tree
-> already contains part of the implementation the task claims.
+> The merits blocker is closed. `boundedPolicy` now routes both policy fields
+> through `enforceableBudget`, which maps non-finite values to zero instead of
+> preserving infinity. The old infinity-acceptance regression is gone and the suite
+> now covers positive infinity in both fields, negative infinity, and a finite
+> control case.
 
-**The merits are approvable** — *"I see no separate architecture or rights blocker
-behind the provenance defect."* Channel rights required and non-nullable, listings
-structurally unable to carry playability, strict parsing refusing injected
-playability keys rather than stripping them, a named refusal on channel/listing
-mismatch, and documentation describing the same boundary accurately.
+**One terminology correction it made, worth keeping:**
 
-### PL-0401 — PROVENANCE INVALID, BLOCK AND SUPERSEDE, plus two merits blockers
+> `playback-machine.ts` is outside PL-0204's write surface, but it is **not** outside
+> its **review** surface — it is a declared `reviewDependency`. The remaining
+> NaN-oriented comments there are not blocking: the operative code asks
+> `boundedPolicy` for the enforced value and its repaired test is general rather
+> than keyed exclusively to NaN.
 
-`architecture-review`: NOT RECORDABLE. `security-review`: NOT RECORDABLE.
+**Evidence string:**
 
-**Same incomplete-probe defect.** `docs/DATA_MODEL.md` did not exist at `56b343`;
-it was created in `bbe68ed8`, before the recorded base, *"explicitly identifying
-itself as covering PL-0401's auth boundary and already selecting Better Auth
-1.7.1. So the auth-symbol witnesses correctly located the code introduction while
-missing earlier task implementation on another declared write path."*
+> APPROVED. The previous boundedness blocker is closed at the policy boundary rather
+> than patched as a special Infinity case: both attempt budgets now pass through one
+> enforceableBudget rule that refuses every non-finite number in the conservative
+> direction, while finite stated budgets retain their value. The regressions reverse
+> the previously incorrect positive-infinity assertion and independently cover an
+> infinite global budget, an infinite per-candidate budget, negative infinity and an
+> ordinary finite control. Rights, decode and source-unavailable findings remain
+> terminal, only network-transient remains retryable, fresh candidates still precede
+> retries, unclassified charged attempts cannot silently reset the budget, the
+> browser remains wired to the shared scheduler, and the reason trail continues to
+> quote the enforced budget. Typecheck, unit and the dedicated bench performance
+> gate were freshly executed against the corrected scheduler tree, no reviewed
+> PL-0204 surface changed afterwards, and exact-head CI is green.
 
-**Merits blocker 1 — `ProfileScope` is forgeable, and it is the defect class this
-project has already rejected once.**
+### The sixth check — ADOPTED, with one non-negotiable refinement
 
-> `ProfileScope` has a type-only unique symbol property, while `mintProfileScope`
-> returns an ordinary `{ profileId, grantedFor }` via cast. A caller holding a
-> genuine scope can form `{ ...scope, profileId: otherProfileId }`; TypeScript
-> carries the branded structural type through the spread **without requiring the
-> explicit cast the ADR says is the only forgery route.** Downstream persistence
-> then trusts `scope.profileId` directly. […] At minimum, make the scope genuinely
-> nominal so a spread copy cannot remain assignable; if it is intended to be a
-> runtime capability rather than merely a compile-time proof, use issuance
-> identity as well.
-
-That is exactly the PL-0706 finding, in a different module, guarding cross-profile
-data access instead of a fabricated rights basis.
-
-**Merits blocker 2 — the exact pin has become the failure mode ADR-007 predicts.**
-
-> Liberty remains pinned to Better Auth and the Drizzle adapter at 1.7.1. Better
-> Auth's current release is **1.7.4, released September 10 2026**, and upstream's
-> security policy explicitly supports only the latest version. This is not an
-> argument against exact pins; **it proves the ADR's exact-pin policy is working by
-> making staleness visible.**
+> **YES — adopt the inspection-record form as the standing rule.**
 >
-> **Do not blindly bump the packages and leave the migration.** Better Auth 1.7.3
-> restored the 1.6 account core schema after the 1.7.0–1.7.2 issuer-schema change,
-> while Liberty's hand-written migration currently has an `issuer` column and an
-> `(issuer, account_id)` uniqueness rule. Regenerate/reconcile the unapplied
-> migration against the reviewed current version before security approval.
+> This is materially stronger than task-ID searching. The task-ID search can remain
+> a cheap alarm, but **it must never authorize a base.** The binding condition
+> should be exactly what you now describe: derive the complete pre-base commit set
+> touching the declared write surface, compare that mechanically with the recorded
+> inspected set by identity and count, and refuse reconciliation on any mismatch.
+> PL-0603 demonstrates why this is necessary: the critical document change lived in
+> a commit whose label belonged to another task.
 
-**Merits blocker 3 — ADR-007 states obsolete control-plane routing**, naming
-`gpt-architect` as preferred implementer and `claude-lead` as reviewer. Rewrite as
-history, and *"prefer wording that points to the task gate as authoritative so
-completing the review does not require a post-approval edit that immediately
-stales the fingerprint."*
+**The refinement, and it is called non-negotiable:**
 
-### PL-0204 — CHANGES_REQUESTED (the provenance is fine)
-
-> `packages/media-engine/src/scheduling.ts:430-479` — **an infinite policy is
-> deliberately permitted, contradicting the task's bounded guarantee.**
-> `boundedPolicy` correctly turns `NaN` into zero, but explicitly leaves `Infinity`
-> unchanged on the theory that an infinite budget is a stated bound. **It is not a
-> bound.** The tests even pin `maxAttempts: Number.POSITIVE_INFINITY` as intended
-> behavior. Because both fields are ordinary numbers, a caller can supply infinite
-> global attempts and infinite transient retries without a cast; under repeated
-> transient failures neither the global nor per-candidate condition terminates.
-
-Treat non-finite budgets as conservatively as `NaN`, regression-test `Infinity` for
-both fields, and refresh `typecheck`, `unit` and the real `bench:failover`
-performance gate because the scheduler itself changed.
-
-Everything else it read is *"in good shape"*: rights, decode and removed-source
-failures terminal, only network-transient retryable, fresh candidates before
-retries, unclassified charged attempts unable to loop a candidate, real browser
-playback on the common scheduler, reasons distinguishable, *"and the dedicated
-bench gate really did execute the timed test rather than inheriting the ordinary
-suite's exclusion."*
-
-### Window-overlap ruling — YES, acceptable
-
-> PL-0204 and PL-0207 genuinely started in the same historical commit. **A commit
-> is not required to be task-atomic when recovering old history.** What matters is
-> that the lower bound is truthful and PL-0204's current review surface is honest.
-> The shared commit therefore does not require another successor, a later base, or
-> artificial path trimming. Record that the introduction commit is shared and leave
-> it alone.
-
-### Probe self-test ruling — YES, make it standing
-
-With four conditions:
-
-> The prover first asks a known-answer question and **must receive the exact
-> expected SHA**, currently `unknownMediaFacts` → `4091a2b6…`.
+> Make the history construction **rename-aware**. `--full-history` prevents path
+> simplification from hiding commits, but it does not by itself follow a file
+> through an earlier rename. For leaf files, follow rename history; for broader path
+> declarations, enumerate the relevant lineage conservatively. Otherwise a document
+> or implementation that originated under an old pathname can recreate the same
+> blind spot that PL-0205 exposed for moved code.
 >
-> Run it through the **same command, ref handling, source path scope, redirection
-> and environment** as the real probes.
->
-> **Capture stderr and distinguish every exit class.** A broken prover means
-> `PROBE INVALID` / `RECONCILE SKIPPED`, **never `BASE REJECTED`**.
->
-> Keep the exact-no-match `git grep` exit-code requirement and positive controls.
+> Also keep a **per-SHA disposition** in the inspection record, not merely the SHA
+> set — PL-0603 already does this correctly by saying exactly why `b484735c` and
+> `f06dec1b` are pre-existing work rather than task work.
+
+**The standing sequence, in full:**
+
+> prove the prover with a known exact answer → derive behavioral witnesses → prove
+> absence/presence and ordering → derive candidate base → derive the complete
+> rename-aware pre-base set over the declared write surface → compare it against
+> the recorded inspection by identity, count and disposition → only then reconcile.
