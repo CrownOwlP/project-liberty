@@ -1,16 +1,16 @@
 # Project Liberty - Project Status
 
-> Generated 2026-09-14T03:44:49.534Z from the AI control plane.
+> Generated 2026-09-14T04:07:03.255Z from the AI control plane.
 
 **Overall completion:** 18/45 executable tasks (40%)
 
 ## Status summary
 
 - **BACKLOG:** 13
-- **READY:** 7
+- **READY:** 6
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 0
-- **REVIEW:** 1
+- **REVIEW:** 2
 - **BLOCKED:** 6
 - **DONE:** 18
 - **CANCELED:** 0
@@ -29,10 +29,11 @@
 ## Active work
 
 - **PL-0204** [REVIEW] Candidate failover policy — owner: claude-media
+- **PL-0603** [REVIEW] Corrective, re-run: channel and EPG contracts under an honest review range — owner: claude-media
 
 ## Dispatch classification
 
-- **READY_AND_EXECUTABLE:** 7
+- **READY_AND_EXECUTABLE:** 6
 - **READY_BUT_EXTERNAL:** 0
 - **BLOCKED:** 6
 - **BACKLOG (dependency-gated):** 13
@@ -41,7 +42,6 @@
 
 - **PL-0405** -> claude-backend (P0/Backend) Corrective, re-run: auth integration decision, with a forgeable profile scope and an unsupported pin
 - **PL-0704** -> claude-frontend (P0/Frontend) notFound() never reaches the wire: dead addresses answer 200
-- **PL-0603** -> claude-media (P1/Live) Corrective, re-run: channel and EPG contracts under an honest review range
 
 ## Queued for external agents
 
@@ -62,7 +62,7 @@ No READY work is waiting on an external agent lane.
 - **claude-lead:** 0/2 active
 - **claude-frontend:** 0/2 active
 - **claude-backend:** 0/1 active
-- **claude-media:** 1/2 active
+- **claude-media:** 2/2 active
 - **claude-test:** 0/1 active
 - **claude-security:** 0/1 active
 - **claude-infra:** 0/1 active
