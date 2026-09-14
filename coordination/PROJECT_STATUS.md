@@ -1,6 +1,6 @@
 # Project Liberty - Project Status
 
-> Generated 2026-09-14T05:18:08.392Z from the AI control plane.
+> Generated 2026-09-14T05:26:06.500Z from the AI control plane.
 
 **Overall completion:** 20/45 executable tasks (44%)
 
@@ -9,8 +9,8 @@
 - **BACKLOG:** 13
 - **READY:** 5
 - **CLAIMED:** 0
-- **IN_PROGRESS:** 1
-- **REVIEW:** 0
+- **IN_PROGRESS:** 0
+- **REVIEW:** 1
 - **BLOCKED:** 6
 - **DONE:** 20
 - **CANCELED:** 0
@@ -28,7 +28,7 @@
 
 ## Active work
 
-- **PL-0206** [IN_PROGRESS] Macrolanguage and extlang equivalence in the shared language matcher — owner: claude-media
+- **PL-0206** [REVIEW] Macrolanguage and extlang equivalence in the shared language matcher — owner: claude-media
 
 ## Dispatch classification
 
