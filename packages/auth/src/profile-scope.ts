@@ -63,19 +63,32 @@
  *      was not issued here. A consumer that calls it cannot accidentally skip
  *      the check, because the check and the read are the same expression.
  *
+ * THE CONSUMERS ASK. `@liberty/persistence` was converted in the same task
+ * after its write surface was widened: every exported function in
+ * `progress-repository.ts`, `watchlist-repository.ts` and
+ * `profile-repository.ts` obtains the id through `profileIdFromScope` as its
+ * first statement, ahead of argument validation and ahead of any I/O, and
+ * `scope.profileId` is not read directly anywhere in that package.
+ * `packages/persistence/src/scope-forgery.test.ts` attempts the spread forgery
+ * against each of them and asserts it is refused without a database round trip.
+ * That file is the thing that makes this module's guarantee real, because a
+ * registry closes nothing unless the consumer consults it.
+ *
  * WHAT THIS DOES NOT YET CLOSE -- READ THIS BEFORE TREATING THE DEFECT AS FIXED.
  *
- *   THE PERSISTENCE CONSUMERS DO NOT YET ASK. `packages/persistence/src/
- *   progress-repository.ts`, `watchlist-repository.ts` and
- *   `profile-repository.ts` still read `input.scope.profileId` directly into
- *   their Drizzle predicates. Against those call sites a forged scope still
- *   works, because a registry closes nothing unless the consumer consults it.
- *   `packages/persistence/src/**` is NOT a write path of PL-0405 as the task is
- *   currently declared -- only `migrations/0000_profile_scoped_identity.sql` is
- *   -- so this module deliberately ships the mechanism and states, here, that
- *   the bypass remains reachable until each of those reads becomes
- *   `profileIdFromScope(input.scope)`. PL-0405's own notes require that
- *   widening; see the task record and `docs/DECISIONS.md` ADR-007.
+ *   ONE CONSUMER IS STILL UNCONVERTED.
+ *   `apps/web/src/lib/db/in-memory-repository.ts` is a second, complete
+ *   repository implementation -- the volatile store used for local development
+ *   -- and it reads `input.scope.profileId` directly in fourteen places. A
+ *   forged scope still works against it. `apps/web/**` is outside PL-0405's
+ *   write surface, so the conversion is named here rather than done.
+ *
+ *   THE EXPOSURE IS BOUNDED AND THE BOUND IS WORTH STATING PRECISELY:
+ *   `createInMemoryRepository` refuses to construct unless handed a
+ *   `ClassifiedRuntime` that `@liberty/contracts` actually issued, so it cannot
+ *   exist in a deployment at all. This is a development- and test-process
+ *   bypass, not a production one. It is still a cross-profile bypass, and the
+ *   remedy is the same three-word change at each site.
  *
  *   AN EDIT TO THIS FILE defeats it, and nothing in TypeScript can prevent that.
  *   What it prevents is how the defect actually recurs: a caller that copies a
@@ -124,9 +137,15 @@ export interface ProfileScope {
    *
    * @deprecated Read it with `profileIdFromScope(scope)` instead. A direct read
    * answers honestly about a spread copy whose `profileId` the holder replaced;
-   * the accessor consults the issuance registry first. The property stays
-   * public only because `@liberty/persistence` still reads it directly and is
-   * outside PL-0405's declared write surface.
+   * the accessor consults the issuance registry first.
+   *
+   * IT WOULD BE BETTER IF THIS PROPERTY WERE NOT PUBLIC AT ALL -- an unchecked
+   * read would then be a compile error rather than a deprecation -- and it is
+   * public because one consumer still needs it to compile:
+   * `apps/web/src/lib/db/in-memory-repository.ts` reads it in fourteen places
+   * and is outside PL-0405's write surface. `@liberty/persistence` no longer
+   * reads it anywhere. Removing the property is the finishing move, and it is
+   * a one-package change once that adapter is converted.
    */
   readonly profileId: string;
   /** The account the grant was made for. See `scopeBelongsToSession`. */

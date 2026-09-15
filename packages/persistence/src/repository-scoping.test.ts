@@ -1,4 +1,5 @@
 import type { LibertySession, ProfileScope } from "@liberty/auth";
+import { authorizeProfileAccess, isIssuedProfileScope } from "@liberty/auth";
 import type { SQL } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
@@ -135,14 +136,45 @@ function recordingDb(recorded: Recorded, rows: readonly unknown[]): LibertyDatab
   return chain as LibertyDatabase;
 }
 
+const HOUSEHOLD = "user_household";
+const OTHER_HOUSEHOLD = "user_someone_else";
+
 /**
- * A scope, forged.
+ * A scope, obtained the only way a scope can now legitimately be obtained.
  *
- * `ProfileScope`'s brand is a non-exported `unique symbol`, so producing one
- * outside `authorizeProfileAccess` requires exactly this cast -- which is the
- * enforcement working as designed. A test is the one legitimate place for it.
+ * THIS USED TO BE A CAST, and the cast used to be justified in this very
+ * comment: "producing one outside `authorizeProfileAccess` requires exactly
+ * this cast -- which is the enforcement working as designed." That was the
+ * defect, not the enforcement. `ProfileScope`'s brand was a type-only `unique
+ * symbol` that nothing ever wrote at runtime, so a cast literal was
+ * indistinguishable from a real grant to every consumer in this package -- and
+ * so was `{ ...realScope, profileId: someoneElsesId }`, which needed no cast at
+ * all. PL-0405 made issuance a runtime fact: a frozen object recorded in a
+ * `WeakSet` inside `@liberty/auth`, with `profileIdFromScope` consulting the
+ * registry before it yields the id a predicate is built from. A cast literal is
+ * now refused, which is why these fixtures changed.
+ *
+ * The fixtures go through `authorizeProfileAccess` instead. That is not merely
+ * a workaround for a stricter check: a test that builds the capability by hand
+ * is testing the repository against a state the system cannot produce, which is
+ * how this file came to assert that a forged scope reaches a SQL statement.
  */
-const scope = { profileId: "profile_ada", grantedFor: "user_household" } as unknown as ProfileScope;
+function issuedScope(profileId: string, ownerUserId: string): ProfileScope {
+  const decision = authorizeProfileAccess({
+    session: {
+      account: { userId: ownerUserId, sessionId: `session_minting_${ownerUserId}` },
+      activeProfileId: profileId
+    },
+    requestedProfileId: profileId,
+    ownership: { profileId, ownerUserId, archivedAt: null }
+  });
+  if (!decision.allowed) {
+    throw new Error(`fixture is wrong: expected a grant, got ${decision.reason}`);
+  }
+  return decision.scope;
+}
+
+const scope = issuedScope("profile_ada", HOUSEHOLD);
 const OTHER_PROFILE = "profile_grace";
 
 const INSTANT = new Date("2026-08-21T20:00:00.000Z");
@@ -320,15 +352,14 @@ describe("the profile predicate is bound to the scope, not to a literal", () => 
  * The account level (PL-0402)
  * ---------------------------------------------------------------------- */
 
-const HOUSEHOLD = "user_household";
-const OTHER_HOUSEHOLD = "user_someone_else";
-
 /**
- * A session for the account the forged scope above was granted to.
+ * A session for the account the scope above was granted to.
  *
- * `scope.grantedFor` is `"user_household"`, so this session and that scope agree
- * -- which is what lets the functions taking both get past
- * `scopeBelongsToSession` and reach the statement this file is here to inspect.
+ * `scope.grantedFor` is `HOUSEHOLD`, so this session and that scope agree --
+ * which is what lets the functions taking both get past `scopeBelongsToSession`
+ * and reach the statement this file is here to inspect. Since PL-0405 agreeing
+ * is necessary but no longer sufficient: the scope must also have been ISSUED,
+ * which is why `scope` comes from `authorizeProfileAccess` rather than a cast.
  */
 const session: LibertySession = {
   account: { userId: HOUSEHOLD, sessionId: "session_tv_lounge" },
@@ -428,11 +459,15 @@ describe("every account-level profile statement names the account", () => {
       "resolveLibertySession",
       "selectActiveProfile"
     ]);
-    // The forged scope at the top of this file was granted to this account. If
-    // that ever stops being true, every call below refuses on
-    // `scope_not_granted_to_this_session` and the statement assertions pass
-    // vacuously because no statement was built.
+    // The scope at the top of this file was granted to this account AND was
+    // issued by `@liberty/auth`. If either ever stops being true, every call
+    // below refuses on `scope_not_granted_to_this_session` and the statement
+    // assertions pass vacuously because no statement was built. That is not
+    // hypothetical: it is exactly what happened when issuance became a runtime
+    // check and this fixture was still a cast, so the second assertion is the
+    // one this guard was missing.
     expect(scope.grantedFor).toBe(HOUSEHOLD);
+    expect(isIssuedProfileScope(scope)).toBe(true);
   });
 
   it.each(accountCalls)("$name builds at least one statement", async ({ rows, run }) => {
@@ -626,18 +661,24 @@ describe("resolveLibertySession", () => {
 
 describe("a scope that was granted to another session", () => {
   /**
-   * The forgery this file is allowed to make, pointed the other way.
+   * A REAL scope for the same profile, granted to a different household.
    *
-   * `ProfileScope`'s brand proves that SOME authorization decision happened. It
-   * cannot prove the decision was made for THIS session, because a scope is a
-   * plain object that can outlive the request that earned it -- a cache, a
-   * closure, a module-level variable. `grantedFor` is what closes that, and
-   * nothing in this package was checking it before this audit.
+   * The intent is unchanged and the mechanism is not. Issuance proves that SOME
+   * authorization decision happened; it cannot prove the decision was made for
+   * THIS session, because a scope is an object that can outlive the request
+   * that earned it -- a cache, a closure, a module-level variable. `grantedFor`
+   * is what closes that, and nothing in this package was checking it before the
+   * audit that added `refuseForeignScope`.
+   *
+   * IT IS NOW A GENUINE GRANT RATHER THAN A CAST, and that makes the test
+   * SHARPER rather than merely compatible. A cast object fails
+   * `scopeBelongsToSession` twice over -- wrong account and never issued -- so
+   * it could not distinguish the two reasons, and would have passed even if the
+   * `grantedFor` comparison were deleted. This scope is issued and frozen and
+   * fails on exactly one thing: it belongs to `OTHER_HOUSEHOLD`. Delete the
+   * account comparison and this test goes red, which is what it is for.
    */
-  const foreignScope = {
-    profileId: scope.profileId,
-    grantedFor: OTHER_HOUSEHOLD
-  } as unknown as ProfileScope;
+  const foreignScope = issuedScope(scope.profileId, OTHER_HOUSEHOLD);
 
   it("cannot select a profile", async () => {
     const recorded = emptyRecording();

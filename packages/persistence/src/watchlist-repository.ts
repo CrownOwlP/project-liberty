@@ -1,4 +1,4 @@
-import type { ProfileScope } from "@liberty/auth";
+import { type ProfileScope, profileIdFromScope } from "@liberty/auth";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import type { LibertyDatabase } from "./client";
 import {
@@ -18,7 +18,11 @@ import {
  *
  * The same enforcement as progress and for the same reason: a `ProfileScope`
  * argument, a `profile_id` predicate on every statement, and `profile_id` as the
- * leading column of the primary key. What one profile put on its list is not
+ * leading column of the primary key. The predicate's value comes from
+ * `profileIdFromScope(input.scope)` -- the first statement of every function
+ * here -- and never from `scope.profileId`, because a spread copy of a genuine
+ * scope carries a replaced `profileId` past the compiler with no cast; see the
+ * header of `progress-repository.ts` and `packages/auth/src/profile-scope.ts`. What one profile put on its list is not
  * visible to another profile in the same household, and that is a product
  * requirement rather than a security nicety -- a shared list is a different,
  * worse product.
@@ -68,6 +72,9 @@ export async function addToWatchlist(
   db: LibertyDatabase,
   input: { readonly scope: ProfileScope; readonly contentId: string; readonly instant: Date }
 ): Promise<WatchlistMutation> {
+  // Issuance first; see the header.
+  const profileId = profileIdFromScope(input.scope);
+
   const contentId = parseContentId(input.contentId);
   if (!contentId.ok) return { ok: false, reason: contentId.reason, detail: contentId.detail };
 
@@ -93,7 +100,7 @@ export async function addToWatchlist(
   const inserted = await db
     .insert(watchlistEntry)
     .values({
-      profileId: input.scope.profileId,
+      profileId,
       contentId: contentId.contentId,
       addedAt: input.instant
     })
@@ -118,6 +125,9 @@ export async function removeFromWatchlist(
   db: LibertyDatabase,
   input: { readonly scope: ProfileScope; readonly contentId: string }
 ): Promise<WatchlistMutation> {
+  // Issuance first; see the header.
+  const profileId = profileIdFromScope(input.scope);
+
   const contentId = parseContentId(input.contentId);
   if (!contentId.ok) return { ok: false, reason: contentId.reason, detail: contentId.detail };
 
@@ -125,7 +135,7 @@ export async function removeFromWatchlist(
     .delete(watchlistEntry)
     .where(
       and(
-        eq(watchlistEntry.profileId, input.scope.profileId),
+        eq(watchlistEntry.profileId, profileId),
         eq(watchlistEntry.contentId, contentId.contentId)
       )
     )
@@ -152,6 +162,9 @@ export async function listWatchlist(
   db: LibertyDatabase,
   input: { readonly scope: ProfileScope; readonly limit: number }
 ): Promise<readonly WatchlistEntryRow[] | ListLimitRejection> {
+  // Issuance first; see the header.
+  const profileId = profileIdFromScope(input.scope);
+
   // `limit` is required so the page size is a decision at the call site, but a
   // required number is still an unvalidated one: `?limit=abc` arrives as NaN and
   // PostgreSQL answers `LIMIT NaN` with a syntax error nobody can attribute.
@@ -161,7 +174,7 @@ export async function listWatchlist(
   return db
     .select()
     .from(watchlistEntry)
-    .where(eq(watchlistEntry.profileId, input.scope.profileId))
+    .where(eq(watchlistEntry.profileId, profileId))
     .orderBy(desc(watchlistEntry.addedAt), desc(watchlistEntry.contentId))
     .limit(limit.limit);
 }
@@ -177,6 +190,9 @@ export async function watchlistContains(
   db: LibertyDatabase,
   input: { readonly scope: ProfileScope; readonly contentIds: readonly string[] }
 ): Promise<ReadonlySet<string>> {
+  // Issuance first; see the header.
+  const profileId = profileIdFromScope(input.scope);
+
   const valid: string[] = [];
   for (const candidate of input.contentIds) {
     const parsed = parseContentId(candidate);
@@ -191,7 +207,7 @@ export async function watchlistContains(
     .from(watchlistEntry)
     .where(
       and(
-        eq(watchlistEntry.profileId, input.scope.profileId),
+        eq(watchlistEntry.profileId, profileId),
         inArray(watchlistEntry.contentId, valid)
       )
     );
