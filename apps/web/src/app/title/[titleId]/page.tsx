@@ -46,13 +46,24 @@ export const revalidate = 0;
  * route declares no loading boundary — a different experience, not an absent
  * one.
  *
- * WHEN THIS BECOMES WORTH REVISITING: when the title page grows a section whose
- * data is independent of the title's existence — recommendations, a continue-
- * watching row, anything PL-0301's provider adapter fetches separately. That
- * section can have a `<Suspense>` of its own INSIDE this page, below the
- * decision, exactly as `watch/[contentId]/page.tsx` does. What must not come
+ * THIS IS A RULED EXEMPTION RATHER THAN AN OVERSIGHT. PL-0704's acceptance
+ * required every route it governs to KEEP a relocated skeleton, which on this
+ * route would have required the defect the task exists to remove. The clause was
+ * amended on 2026-09-15 rather than this file, and the reasoning above is now
+ * part of the criterion so that a later reader cannot mistake the absence for a
+ * deletion somebody forgot to finish.
+ *
+ * WHEN THIS BECOMES WORTH REVISITING — and the amended clause says the exemption
+ * lapses rather than merely that it is worth revisiting: when the title page
+ * grows a section whose data is independent of the title's existence —
+ * recommendations, a continue-watching row, anything PL-0301's provider adapter
+ * fetches separately. That section can have a `<Suspense>` of its own INSIDE this
+ * page, below the decision, exactly as `watch/[contentId]/page.tsx` does — and at
+ * that point it MUST, because the clause binds again. What must not come
  * back is a `loading.tsx`, in this segment or any segment above it;
- * `watch/route-loading-boundaries.test.ts` fails the unit gate if one does.
+ * `watch/route-loading-boundaries.test.ts` fails the unit gate if one does, and
+ * its "holds the title route to its exemption" case fails if a `<Suspense>`
+ * appears here without a named skeleton as its fallback.
  * ---------------------------------------------------------------------- */
 
 interface TitlePageProps {

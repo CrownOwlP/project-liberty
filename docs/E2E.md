@@ -8,8 +8,9 @@ attached, that the catalog-to-title-to-player journey is reproducible, and that 
 resume point can be leased, written and read back.
 
 Three things to know before reading anything below as coverage. **The suite now
-runs in CI, in both modes, and the job is red** — see "The suite runs in CI, and
-the job is red" for exactly what that job does and does not do. **Every
+runs in CI, in both modes, and no run of that job has ever been observed** — see
+"The suite runs in CI, and no run of it has been observed" for exactly what that
+job does and does not do. **Every
 mode-split file is a gate only when both modes are run**; one run is half a
 statement. And **the suite has been executed locally, on the whole device matrix
 and in both modes, on 2026-09-05** — "What the 2026-09-05 run observed" records
@@ -17,7 +18,7 @@ what that run did and did not show, and it is what closes two of the three
 entries under "Known blockers found by the first real run".
 
 **A second local execution, on 2026-09-15, re-ran the `api` and `chromium`
-projects in both modes and is recorded under "What the 2026-09-15 run
+projects in both modes and is recorded under "What the 2026-09-15 shim run
 observed".** It is narrower than the first — two projects rather than five — and
 it exists because the surface the first run measured has moved since:
 `demo-title-details.ts`, `watch-session.ts`, `e2e/src/env.ts`,
@@ -28,6 +29,19 @@ reading. It is also what settles a contradiction this file was one side of:
 observed passing* while this file recorded them as observed on 2026-09-05. Both
 have now been observed on the current tree, and the workflow's comment has been
 corrected rather than this one.
+
+**That second run used a SUBSTITUTED browser revision, and a third run has since
+replaced it on the pinned one.** The 2026-09-15 shim run launched Chromium
+revision 1194 behind a directory of symlinks presenting it under the 1234 names,
+because `playwright install` could not reach `cdn.playwright.dev` from that
+container. It was disclosed at the time, here and in the gate evidence, and the
+commander ruled it **narrow local evidence and not pinned-browser verification**.
+The constraint is gone: revision **1234** — Chrome for Testing / Chrome Headless
+Shell **151.0.7922.34**, which is what `@playwright/test` 1.62.1 asks for — is
+installed, and the suite was re-run on it in both modes later the same day.
+**"What the 2026-09-15 pinned run observed" is the section that now carries the
+numbers**; the shim section is kept, marked superseded, because a document that
+quietly drops a disclosed caveat reads exactly like one that never had it.
 
 Everything it owns lives in `e2e/`, and **no `data-testid` was added anywhere** —
 every locator addresses a role, a heading or an accessible name, so a test failing
@@ -94,6 +108,13 @@ build keyed to the package version, so a caret range means the browser a
 recorded gate result refers to can change under a lockfile refresh, and
 "e2e passed" becomes evidence about a browser nobody chose.
 
+**Which revision that is, concretely, since two sections below turn on it:**
+1.62.1 asks for chromium **1234**, Chrome for Testing / Chrome Headless Shell
+**151.0.7922.34**. `npx playwright install --dry-run chromium` prints the
+revision and the path it would install to, and is the cheapest way to check that
+the browser a run is about to launch is the one the lockfile names — including
+when an ambient `PLAYWRIGHT_BROWSERS_PATH` is pointing somewhere else.
+
 ### The root script this would like, and does not have
 
 PL-0701 did not edit the root `package.json` — another task's reviewed surface
@@ -109,7 +130,7 @@ and this harness needs `npm install` and `playwright install` to have been run
 inside `e2e/` first. In CI it belongs in a job of its own, which it now has — see
 below.
 
-### The suite runs in CI, and the job is red
+### The suite runs in CI, and no run of it has been observed
 
 This section used to be headed "This suite is not executed in CI. Only compiled."
 That was true when it was written and stopped being true when
@@ -140,7 +161,17 @@ about this harness means.
     **Not** `npm run browsers` and **not** `--with-deps`: the job downloads only
     the engine it launches, and `--with-deps` is a root `apt-get` on Linux that
     throws outright on Windows, so it is not the spelling this repository
-    standardises on.
+    standardises on. **This is also what would make a run of this job a
+    pinned-revision run**: `playwright install` takes the revision from the
+    installed `@playwright/test`, which `e2e/package.json` pins to 1.62.1 exactly,
+    so the job downloads and launches 1234 without naming a number anywhere. The
+    failure mode to know about is an environment that sets
+    `PLAYWRIGHT_BROWSERS_PATH` at a tree holding some other revision — a
+    GitHub-hosted `ubuntu-latest` runner sets neither that nor
+    `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD`, but the container behind the 2026-09-15
+    runs set both, which is exactly how the first of those runs ended up on a
+    substituted revision. Worth re-checking if a self-hosted runner is ever
+    adopted.
   - Two suite steps, **sequential, one runner, not a matrix**:
     `LIBERTY_E2E_WEB_MODE=production npm test -- --project=api --project=chromium`
     and then the same line with `=development`. Both are conditioned on the
@@ -155,22 +186,33 @@ about this harness means.
 
 **The job carries no `continue-on-error`, no `|| true`, and no retries**
 (`retries: 0` lives in `playwright.config.ts` and is deliberate there). It fails
-when the suite fails, and **it is expected to be red today**. A green tick over a
+when the suite fails. A green tick over a
 red suite is the audit fiction this repository keeps deleting; an expected-failure
 baseline was considered in that job's header and rejected, on the grounds that the
 authoritative list of acceptable failures would then live in the file furthest
 from the tests.
 
-**What that expectation now rests on has narrowed to one test.** The 2026-09-05
-local run covered the two projects this job runs, `api` and `chromium`, in both
-modes, and the only failure on either was `search.spec.ts` "text typed before
-hydration survives it" — the harness defect recorded under "Known blockers found
-by the first real run". Whether the job stays red therefore depends on a repair
-that has not been executed anywhere, and this paragraph is a record of one local
-run rather than a prediction about the next CI one.
+**THIS SECTION USED TO SAY THE JOB WAS EXPECTED TO BE RED, AND THAT PREDICTION IS
+WITHDRAWN RATHER THAN DELETED.** It rested on `search.spec.ts` "text typed before
+hydration survives it", the single failure of the 2026-09-05 local run across the
+two projects this job runs; that test has passed in every local run since,
+including the 2026-09-15 pinned-revision run. `ci.yml`'s own header dropped the
+same prediction and this file did not, which left the two contradicting each
+other in the opposite direction from the contradiction they were in before —
+recorded because one half of a document correcting itself is how that keeps
+happening.
 
-**Read the red against "Known blockers found by the first real run" below, and
-not against the list in `ci.yml`'s own header.** That header enumerates three
+**WHAT REPLACES IT IS NOT "EXPECTED GREEN".** No run of this job has been
+observed: the working branch carried no workflow runs when the job was added, and
+the evidence this repository has about the suite is local, on a container, on two
+of the five projects. A local run is not this job — different machine, different
+install path, a cold `turbo run build` this container had cached, and
+`process.env.CI` unset so `reuseExistingServer` is on and `forbidOnly` is off.
+"Expected green" would be the same class of claim "expected to pass" was for the
+404 assertions, and this file deleted that one.
+
+**Read whatever mark it eventually produces against "Known blockers found by the
+first real run" below, and not against the list in `ci.yml`'s own header.** That header enumerates three
 expected failures as of the day the job was added, and one of them has since
 stopped being true: it says `catalog.api.spec.ts` asserts non-empty rails and
 therefore fails under `production`, and that spec has had its mode split since —
@@ -541,7 +583,7 @@ was never identified.
 
 **CI does run both**, as two sequential steps of the `e2e` job with the second
 guarded so a red production run cannot suppress it — see "The suite runs in CI,
-and the job is red". What CI does not do is make the local pair optional: the job
+and no run of it has been observed". What CI does not do is make the local pair optional: the job
 runs `api` and `chromium` only, so a WebKit or mobile-safari claim still comes
 from a local run of both modes.
 
@@ -601,7 +643,15 @@ the assertions were observed passing rather than expected to pass — and it say
 nothing whatever about a later commit. Every row of the coverage table that this
 run exercised is in the same position: observed once, not guaranteed.
 
-### What the 2026-09-15 run observed
+### What the 2026-09-15 shim run observed — SUPERSEDED as pinned-browser evidence
+
+**Read the next section first.** This run happened, its numbers were real and its
+one caveat was disclosed rather than discovered later — but it launched a
+**substituted browser revision**, the commander ruled it narrow local evidence
+rather than pinned-browser verification, and the pinned run recorded below has
+replaced it. It is kept because deleting a superseded disclosure is how a
+document stops being auditable, and because the two runs agreeing is itself a
+small piece of evidence.
 
 A local run in a Linux container, `api` and `chromium` only — **exactly the pair
 the CI `e2e` job runs**, and not the device matrix. WebKit, mobile-safari and
@@ -641,6 +691,130 @@ under test was Chromium 141.0.7390.37 rather than the pinned one. That is a real
 narrowing of the evidence and is the reason the pinning comment in
 `playwright.config.ts` exists; on a runner that can install the pinned build the
 shim is unnecessary.
+
+**What the ruling on that was, and what replaced it.** The disclosure above was
+accepted as narrow local evidence and **rejected as pinned-browser
+verification** — a suite that passes on a Chromium four milestones from the one
+the lockfile names has shown that the application works on some browser, not that
+it works on the browser this repository tests with, and streaming and Suspense
+flush behaviour are exactly the areas where those can differ. PL-0704's
+acceptance was amended the same day to say PINNED BROWSER REVISION in as many
+words. The pinned run below is what satisfies it, and everything this section
+says about counts and statuses should be read as corroboration of that run rather
+than as the evidence itself.
+
+### What the 2026-09-15 pinned run observed
+
+**The same two projects, the same two modes, on the browser revision the
+lockfile names.** This is the run PL-0704's amended acceptance asks for, and it
+is the one to cite. `api` and `chromium` only — the CI `e2e` pair — so WebKit,
+mobile-safari and Firefox are as absent here as they were from the shim run and
+nothing below is a claim about them.
+
+**The revision, and how it was established rather than assumed.**
+`@playwright/test` is pinned to 1.62.1, which asks for chromium **1234**. That
+build is installed in Playwright's default cache, `/root/.cache/ms-playwright/`,
+as `chromium-1234` and `chromium_headless_shell-1234` (Chrome for Testing
+**151.0.7922.34**) alongside `ffmpeg-1011`.
+
+The container's shell exports `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers` and
+`PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1` globally, and `/opt/pw-browsers` holds the
+**wrong** revision — the same 1194 the shim run used. Both variables were
+therefore unset **for the run only**, with `env -u`, so Playwright resolves its
+own default cache:
+
+```bash
+cd e2e
+env -u PLAYWRIGHT_BROWSERS_PATH -u PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD \
+  LIBERTY_E2E_WEB_MODE=development npx playwright test --project=api --project=chromium
+env -u PLAYWRIGHT_BROWSERS_PATH -u PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD \
+  npx playwright test --project=api --project=chromium
+```
+
+Nothing in `e2e/` was changed for it — no `executablePath`, no `channel`, no edit
+to `playwright.config.ts`. Unsetting an environment variable the repository does
+not set is not a harness change, and a harness that needed one to reach its own
+pinned browser would be the finding rather than the workaround.
+
+**Three independent checks that the executable was 1234 and not 1194**, because
+"it ran" is precisely the claim the shim run could also have made:
+
+- `npx playwright install --dry-run chromium` under the same `env -u` prints
+  `Install location: /root/.cache/ms-playwright/chromium-1234` and
+  `.../chromium_headless_shell-1234`. Under the ambient environment it prints
+  `/opt/pw-browsers/chromium-1234` — a path that does not exist, which is what a
+  run with the variables left in place would have failed on rather than silently
+  fallen back from;
+- the launch itself, with `DEBUG=pw:browser`, names the binary:
+  `<launching> /root/.cache/ms-playwright/chromium_headless_shell-1234/chrome-headless-shell-linux64/chrome-headless-shell`;
+- the two binaries identify themselves differently, and the difference is four
+  milestones: the 1234 shell answers `Google Chrome for Testing 151.0.7922.34`,
+  `/opt/pw-browsers/chromium-1194/chrome-linux/chrome` answers
+  `Chromium 141.0.7390.37`. The shim run's browser was the second of those.
+
+**The results.** Exit codes are the process's own, not a reading of the summary
+line:
+
+- `LIBERTY_E2E_WEB_MODE=development`: **43 passed, 3 skipped, 0 failed** — exit 0.
+- `production` (the default): **34 passed, 12 skipped, 0 failed** — exit 0.
+
+The statuses PL-0704 is about, as the specs read them:
+
+| address | `development` | `production` |
+| --- | --- | --- |
+| `/title/no-such-title-pl0701` | **404** | **200**, `catalog_source_not_configured` |
+| `/watch/Not%20A%20Valid%20Id` | **404** | **404** |
+| `/` | **200**, with `Loading catalog` in the served bytes | same |
+| `/watch/<demo id>` | **200**, with `Loading player` in the served bytes | same |
+| `/title/<demo id>` | **200**, with **no** `Loading title` in the served bytes | same |
+
+The dev server's own request log is the second witness under `development`, and
+it is a witness to the status rather than to the spec's reading of it:
+
+```
+GET /title/no-such-title-pl0701 404 in 93ms
+GET /watch/Not%20A%20Valid%20Id 404 in 179ms
+GET /title/aurora-fall 200 in 157ms
+```
+
+`next start` logs no requests, so `production` has no witness of that kind. It has
+a different one: a hand probe with `curl`, against a `next start` server started
+outside Playwright with the three variables the harness pins
+(`CONTENT_RIGHTS_ENFORCEMENT=strict`, `LIBERTY_FIXTURE_MEDIA_ORIGIN=https://fixtures.invalid`,
+`DATABASE_URL=`), reading the status and grepping the served bytes — no browser,
+no spec, no fixture code in the path:
+
+```
+/api/health                    200
+/title/no-such-title-pl0701    200   no "Loading title"   (body carries catalog_source_not_configured)
+/watch/Not%20A%20Valid%20Id    404   no "Loading player"
+/title/aurora-fall             200   no "Loading title"
+/                              200   "Loading catalog" present
+/watch/aurora-fall             200   "Loading player" present
+```
+
+Every one of those agrees with the assertion that reads the same address. It is
+a second reading of the same server rather than a second run, and it is on this
+tree rather than on the one the specs were written against.
+
+**NOTHING BEHAVED DIFFERENTLY ON 1234 THAN ON 1194**, which is worth stating
+because it was not the expected-free outcome: a newer Chromium can legitimately
+change when a shell is flushed, and that is the whole reason a revision is
+pinned. Same counts in both modes, same skips, same statuses, no new flake, no
+test that changed its mind. The counts are identical to the shim run's because
+this round's one new assertion was added **inside** an existing test rather than
+as a new one — see the exemption entry below.
+
+**One environment difference, and it is not a browser one.** The `production` run
+failed on its first attempt before any test ran: `turbo run build` inside
+`webServer` could not build `@liberty/auth`, because `better-auth` and
+`@better-auth/drizzle-adapter` were absent from this worktree's `node_modules`
+while being present in `package-lock.json`. A plain `npm install` at the root
+placed them — no change to `package.json` or to the lockfile — and the run then
+proceeded. Worth recording because the failure surfaces as a `webServer` timeout
+message in a Playwright log, three layers from the cause, and because it says a
+stale `node_modules` fails this suite's `production` half before it is a suite at
+all.
 
 ### `LIBERTY_E2E_WEB_MODE=development` served no client JavaScript — fixed, and observed fixed on 2026-09-05
 
@@ -772,10 +946,14 @@ tree, fails while any loading file sits above a `notFound()`-capable page, and
 runs in the unit gate. Read that, and read it again the next time a `loading.tsx`
 appears in a diff.
 
-**Re-observed on 2026-09-15, on a tree that has moved since.** The 2026-09-05 run
-predates changes to `demo-title-details.ts`, `watch-session.ts`, `e2e/src/env.ts`,
+**Re-observed on 2026-09-15, on a tree that has moved since, and then re-observed
+ON THE PINNED BROWSER.** The 2026-09-05 run predates changes to
+`demo-title-details.ts`, `watch-session.ts`, `e2e/src/env.ts`,
 `e2e/src/fixtures.ts` and `critical-journey.spec.ts`, so it had stopped being
-evidence about the current code. Both assertions passed again on `chromium`:
+evidence about the current code. Both assertions passed again on `chromium` in
+the 2026-09-15 shim run, and both passed again in the pinned run that superseded
+it — the one to cite, because the shim run's browser was revision 1194 and
+PL-0704's amended acceptance asks for 1234. In the pinned run:
 `/title/no-such-title-pl0701` answered **404** under `development` and the 200
 `catalog_source_not_configured` refusal under `production`, and
 `/watch/Not%20A%20Valid%20Id` answered **404** in both modes. Neither served-bytes
@@ -783,9 +961,13 @@ check found its skeleton string. The dev server's own request log is the
 second witness to the status rather than the spec's reading of it:
 
 ```
-GET /title/no-such-title-pl0701 404 in 140ms
-GET /watch/Not%20A%20Valid%20Id 404 in 71ms
+GET /title/no-such-title-pl0701 404 in 93ms
+GET /watch/Not%20A%20Valid%20Id 404 in 179ms
 ```
+
+A 404 that only arrives on one Chromium would be a browser artefact rather than a
+product property, so the two revisions agreeing is worth one sentence: the
+statuses above were identical on 1194 and on 1234.
 
 **WHAT WAS NOT TRADED FOR THOSE TWO STATUSES IS NOW ASSERTED TOO, and it was
 not before.** "Any fix must keep the loading skeletons rather than deleting them
@@ -811,6 +993,55 @@ exists nowhere passes trivially. Two checks now close that, one per gate.
 
 Between them, a repair that had bought the 404 by deleting the skeletons now
 fails two gates instead of passing all of them.
+
+#### The title route is exempt, and the exemption is asserted rather than asserted-to-be-fine
+
+The clause says "on every route where a section's data does not depend on the
+address existing", and **the title route is not one of them**. That is a ruling,
+made on 2026-09-15 and written into PL-0704's acceptance with its reasoning
+attached, not a route that was left half-repaired. The reasoning, because an
+exemption without one is indistinguishable from an oversight: a well-formed
+unknown title id is indistinguishable from a real one until the catalog answers;
+a response's status line precedes its first body byte; so no byte of this page
+may be sent before that load resolves — which is the definition of having nothing
+to stream. A full-page skeleton there **is** the defect this task exists to
+remove, so the clause in its original wording required the defect on one of the
+three routes it governs.
+
+**The exemption is empirical and reversible, and both gates now say so in a way
+that can fail.**
+
+- **e2e**, in "the relocated skeletons are still served where something is
+  actually waiting": `/title/<demo id>` — an address that EXISTS — answers **200**
+  with **no** `Loading title` in the served bytes, in both modes. This is the
+  positive form of the exemption's premise. The `not.toContain` on the *unknown*
+  id cannot distinguish "refused before any byte went out" from "this string is
+  nowhere in the repository"; adding the valid id is what makes the pair say the
+  first.
+- **unit**, `route-loading-boundaries.test.ts` "holds the title route to its
+  exemption, and to the clause the moment it lapses": the page is allowed to
+  declare no `<Suspense>` at all, which is today's tree, or to declare one whose
+  fallback is a named skeleton component defined in the page — the state the
+  clause requires once it binds again. It may not declare one with a `null`, a
+  fragment or an inline-element fallback. Confirmed non-vacuous by recreating both
+  states: a `<Suspense fallback={<div />}>` fails it with the message a
+  contributor needs, and the same boundary with a defined
+  `RecommendationsSkeleton` passes.
+
+**The reversal condition, stated as the acceptance states it.** The moment the
+title page grows a section whose data does not depend on the title existing —
+recommendations, continue-watching, anything PL-0301 or PL-0501 fetches
+separately — it gains an in-page `<Suspense>` below the decision exactly as the
+watch route has, and the clause binds again. At that point the route moves into
+the positive list above and this sub-section is what should be deleted.
+
+**What neither check can see, recorded here rather than nowhere.** The clause's
+trigger is semantic — "data that does not depend on the address existing" — and
+no static or HTTP-level check recognises one. What both checks watch for is the
+*marker* the clause says such a section arrives with: the boundary. A
+contributor who adds an independent section and streams nothing for it leaves
+both gates green and the clause unsatisfied. The reversal is caught where it
+becomes visible, which is not the same as where it becomes true.
 
 The unit guard was confirmed non-vacuous the same way, by recreating the illegal
 state: writing a trivial `apps/web/src/app/loading.tsx` back and running

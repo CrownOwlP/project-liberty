@@ -195,11 +195,18 @@ describe("route loading boundaries", () => {
    * these two specific relocations and a rule inferred from the tree would be
    * satisfied by whatever the tree happens to contain.
    *
-   * `title/[titleId]/page.tsx` is deliberately NOT in this list. It has no
-   * skeleton and its own header argues why -- whether a title exists IS the load
-   * there, so nothing can honestly be streamed ahead of the answer. That is the
-   * one point where this acceptance clause and the code disagree, and it is
-   * raised for a ruling rather than settled here.
+   * `title/[titleId]/page.tsx` is deliberately NOT in this list, and that is now
+   * a RULED EXEMPTION rather than a disagreement left open. The round that wrote
+   * this comment flagged the title route as the one point where the clause and
+   * the code conflicted; the clause was amended on 2026-09-15 rather than the
+   * code, and the exemption carries its reasoning: a well-formed unknown title id
+   * is indistinguishable from a real one until the catalog answers, a status line
+   * precedes the first body byte, so no byte may be sent before that load
+   * resolves -- which is the definition of having nothing to stream. A full-page
+   * skeleton there IS the defect this task exists to remove.
+   *
+   * The exemption is EMPIRICAL AND REVERSIBLE, and the test below is what makes
+   * the reversal checkable rather than merely written down.
    */
   it("keeps the two skeletons PL-0704 relocated, rather than deleting them", () => {
     const relocated = [
@@ -229,6 +236,82 @@ describe("route loading boundaries", () => {
     }
 
     expect(missing).toEqual([]);
+  });
+
+  /*
+   * THE TITLE ROUTE'S EXEMPTION, ASSERTED RATHER THAN DOCUMENTED.
+   *
+   * The amended acceptance exempts `title/[titleId]/page.tsx` from the clause
+   * above "EMPIRICAL AND REVERSIBLE, not permanent: the moment the title page
+   * grows a section whose data does not depend on the title existing --
+   * recommendations, continue-watching, anything PL-0301 or PL-0501 fetches
+   * separately -- it gains an in-page Suspense below the decision exactly as the
+   * watch route has, and this clause binds again."
+   *
+   * That sentence is a condition, so it is written here as one. The page is
+   * allowed exactly two states and the assertion self-adjusts between them:
+   *
+   *   - NO `<Suspense>` at all, which is today's tree. The exemption's premise
+   *     holds: there is nothing on the route that can stream ahead of the
+   *     existence decision, so there is no skeleton to keep.
+   *   - A `<Suspense>`, which means the route has grown something that CAN wait
+   *     independently -- and then the clause binds and the fallback must be a
+   *     real named skeleton defined in the page, not `null` and not a fragment.
+   *     `notFound()` above it is required separately, by the ordering test below.
+   *
+   * WHAT THIS CANNOT SEE, stated because a guard whose blind spot is unrecorded
+   * is worse than none. The clause's trigger is semantic -- a section whose data
+   * does not depend on the title existing -- and no static check can recognise
+   * one. What is observable is the MARKER the clause says such a section brings
+   * with it: the in-page boundary. A contributor who adds an independent section
+   * and streams nothing for it leaves this test green and the clause unsatisfied,
+   * and neither the e2e suite nor `tsc` would notice either. The reversal is
+   * caught at the point it becomes visible, which is not the same as caught at
+   * the point it becomes true.
+   */
+  it("holds the title route to its exemption, and to the clause the moment it lapses", () => {
+    const source = readFileSync(join(APP_DIRECTORY, "title", "[titleId]", "page.tsx"), "utf8");
+    const lines = codeLines(source);
+
+    /*
+     * The premise first, and asserted rather than assumed: this route decides
+     * existence at all. If `notFound()` ever leaves this page the exemption stops
+     * being an exemption from anything, and the branch below would go quiet for
+     * the wrong reason. The route is also required to be in NOT_FOUND_PAGES by
+     * the first test in this file, which is what keeps the two from drifting.
+     */
+    expect(
+      IMPORTS_NOT_FOUND.test(source) && CALLS_NOT_FOUND.test(source),
+      "title/[titleId]/page.tsx no longer decides existence, so PL-0704's exemption for it " +
+        "describes a route that no longer exists"
+    ).toBe(true);
+
+    /*
+     * The condition itself, written without an early return so that this test
+     * always evaluates it. It is satisfied TODAY by its first branch -- the page
+     * declares no boundary -- and a reader should know that: the value here is
+     * the day the first branch stops being true, not the assertion it makes
+     * meanwhile. The message is the whole of it, because it has to tell somebody
+     * who has just added a recommendations rail why a task they have never read
+     * now governs their diff.
+     */
+    const declaresSuspense = firstLineContaining(lines, "<Suspense") !== -1;
+    const fallback = /<Suspense\s+fallback=\{<([A-Z][A-Za-z0-9_]*)\s*\/>\}/.exec(
+      lines.join("\n")
+    );
+    const keepsANamedSkeleton =
+      fallback?.[1] !== undefined && source.includes(`function ${fallback[1]}(`);
+
+    expect(
+      !declaresSuspense || keepsANamedSkeleton,
+      `title/[titleId]/page.tsx now declares a <Suspense>, so it has grown a section that waits ` +
+        `on something other than the title's existence. PL-0704's exemption for this route was ` +
+        `conditional on there being nothing to stream here, and it has lapsed: the boundary must ` +
+        `have a named skeleton component defined in this page as its fallback -- relocated below ` +
+        `the notFound(), the way watch/[contentId]/page.tsx does it -- rather than null, a ` +
+        `fragment or an inline element. Add it to the relocated list above and to docs/E2E.md ` +
+        `while you are here`
+    ).toBe(true);
   });
 
   it("calls notFound() before any Suspense boundary the page declares itself", () => {

@@ -371,21 +371,37 @@ test("which title the title route can serve is decided by the build, and both ar
  * lost, exactly as the paragraph above describes: the home one into a
  * `<Suspense>` inside `app/page.tsx`, the player one into a `<Suspense>` inside
  * `watch/[contentId]/page.tsx`, both BELOW the decision on their route. Only the
- * title route ends with no skeleton, deliberately and for the reason given there.
+ * title route ends with no skeleton -- a RULED EXEMPTION carrying its reasoning
+ * and its reversal condition, set out at the end of this file above "the
+ * relocated skeletons are still served where something is actually waiting", and
+ * asserted there rather than merely asserted to be acceptable.
  *
- * BOTH ASSERTIONS BELOW HAVE NOW BEEN OBSERVED PASSING, which is a different and
- * weaker claim than "they pass". This block used to say they were EXPECTED to pass
- * and UNVERIFIED, because the round that wrote it committed ahead of any run. Two
- * runs have happened since: the 2026-09-05 device-matrix run recorded in
- * `docs/E2E.md`, and a 2026-09-15 re-execution on the current tree -- `api` and
- * `chromium`, both modes -- which matters because `demo-title-details.ts`,
- * `watch-session.ts`, `src/env.ts`, `src/fixtures.ts` and this file all moved after
- * the first. In the second, `/title/no-such-title-pl0701` answered 404 under
- * `development` and the 200 `catalog_source_not_configured` refusal under
- * `production`, and `/watch/Not%20A%20Valid%20Id` answered 404 in both; neither
- * served-bytes check found its skeleton string. `retries` is 0 and neither run was
- * CI, so what this establishes is that no Suspense boundary sat above either
- * decision at those commits -- not that none ever will, which is what
+ * BOTH ASSERTIONS BELOW HAVE NOW BEEN OBSERVED PASSING ON THE PINNED BROWSER,
+ * which is a different and weaker claim than "they pass". This block used to say
+ * they were EXPECTED to pass and UNVERIFIED, because the round that wrote it
+ * committed ahead of any run. Three runs have happened since: the 2026-09-05
+ * device-matrix run recorded in `docs/E2E.md`; a 2026-09-15 re-execution on the
+ * current tree -- `api` and `chromium`, both modes -- which mattered because
+ * `demo-title-details.ts`, `watch-session.ts`, `src/env.ts`, `src/fixtures.ts` and
+ * this file all moved after the first; and a second 2026-09-15 run that replaced
+ * it, because that one launched chromium revision 1194 behind a symlink shim
+ * presenting it as 1234 and was ruled narrow local evidence rather than
+ * pinned-browser verification.
+ *
+ * THE PINNED RUN IS THE ONE TO CITE. Revision 1234, Chrome for Testing
+ * 151.0.7922.34, which is what `@playwright/test` 1.62.1 asks for. In it,
+ * `/title/no-such-title-pl0701` answered 404 under `development` and the 200
+ * `catalog_source_not_configured` refusal under `production`, and
+ * `/watch/Not%20A%20Valid%20Id` answered 404 in both; neither served-bytes check
+ * found its skeleton string; 43 passed / 3 skipped under `development` and 34
+ * passed / 12 skipped under `production`, exit 0 each. Nothing behaved
+ * differently on 1234 than on 1194, which is worth one line rather than none: a
+ * status that only survives on one engine would be a browser artefact and not the
+ * product property these tests claim to assert.
+ *
+ * `retries` is 0 and none of the three runs was CI, so what this establishes is
+ * that no Suspense boundary sat above either decision at those commits -- not that
+ * none ever will, which is what
  * `apps/web/src/app/watch/route-loading-boundaries.test.ts` is for. Nothing here is
  * relaxed to match either reading; "Neither is relaxed, in either direction" below
  * is the reason.
@@ -804,11 +820,39 @@ test("an unplayable content id does not reach the player", async ({ page }) => {
  * racing the thing it is trying to observe. `response.text()` is the shell as it
  * went out.
  *
- * The title route is deliberately absent from this test. It has no skeleton and
- * the block above `what an unknown title gets` says why: whether a title exists
- * IS the load there, so there is nothing that could honestly be streamed ahead of
- * the answer. That is the one place the acceptance's clause and the code
- * disagree, and it is flagged for a ruling rather than papered over here.
+ * THE TITLE ROUTE IS EXEMPT, AND THE EXEMPTION IS NOW ASSERTED HERE RATHER THAN
+ * ARGUED FOR. This block used to say the route was the one place the acceptance's
+ * clause and the code disagreed, and that the disagreement was flagged for a
+ * ruling. The ruling came on 2026-09-15 and went the way the code did: the clause
+ * was amended, not the route. The reasoning is now part of the criterion -- a
+ * well-formed unknown title id is indistinguishable from a real one until the
+ * catalog answers, the status line precedes the first body byte, so no byte may
+ * be sent before that load resolves, which is the definition of having nothing to
+ * stream. A full-page skeleton there IS the defect PL-0704 exists to remove, so
+ * the unamended clause required the defect on one of the three routes it governs.
+ *
+ * So the title route joins this test on the other side of the assertion: it is
+ * checked for the ABSENCE of a streamed shell on an address that EXISTS, which is
+ * the empirical premise the exemption rests on. The two `not.toContain` checks
+ * earlier in this file cover the same route on an address that does not exist,
+ * and neither of them can tell "refused before any byte" from "has no skeleton
+ * anywhere"; the pair below can, because a route that streamed a shell ahead of
+ * its decision would fail the valid-id half while the refused-id half stayed
+ * green.
+ *
+ * THE EXEMPTION IS EMPIRICAL AND REVERSIBLE, and the reversal is written into the
+ * criterion: the moment the title page grows a section whose data does not depend
+ * on the title existing -- recommendations, continue-watching, anything PL-0301 or
+ * PL-0501 fetches separately -- it gains an in-page Suspense below the decision
+ * exactly as the watch route has, and the clause binds again. That day the
+ * valid-id assertion below stops being the right shape and the route belongs in
+ * the positive list with the other two. The reversal is caught at the point it
+ * becomes visible, by
+ * `apps/web/src/app/watch/route-loading-boundaries.test.ts` "holds the title route
+ * to its exemption, and to the clause the moment it lapses", which requires any
+ * `<Suspense>` this page grows to carry a real named skeleton. Neither that check
+ * nor this one can see a section added with no boundary at all, and that blind
+ * spot is recorded in both places rather than in neither.
  * ---------------------------------------------------------------------- */
 
 test("the relocated skeletons are still served where something is actually waiting", async ({
@@ -829,4 +873,36 @@ test("the relocated skeletons are still served where something is actually waiti
     "the player skeleton is gone from the shell -- PL-0704 moved it inside " +
       "watch/[contentId]/page.tsx below the identity gate, it did not delete it"
   ).toContain("Loading player");
+
+  /*
+   * THE EXEMPT ROUTE, ON AN ADDRESS THAT EXISTS. The two routes above must stream
+   * their skeleton; this one must stream nothing. A 200 is asserted alongside it
+   * so the absence cannot be bought with a refusal -- on a build with no catalog
+   * this address answers the 200 `catalog_source_not_configured` panel rather than
+   * the title, which is a different body and the same requirement: no byte of
+   * either goes out ahead of the decision, so neither carries the shell.
+   *
+   * Mode-independent for that reason, and NOT a check that the string "Loading
+   * title" has been deleted from the repository -- it has, but that is what makes
+   * the refused-id assertions earlier in this file trivially green, and it is
+   * exactly the vacuity this test exists to remove. What this asserts is that the
+   * address a real user reaches does not receive a streamed shell either, which is
+   * the fact the exemption is granted on.
+   *
+   * The guard is the one the rest of this file uses, narrowed to this block
+   * rather than applied to the whole test. Against an external deployment this
+   * harness was not told the build of, a demo id is not known to name anything,
+   * so a status assertion on it would be guessing -- but the two assertions above
+   * are about boundaries this repository declares and stay in force there.
+   */
+  if (CATALOG_AVAILABILITY === "unknown") return;
+
+  const exemptTitle = await page.goto(`/title/${DEMO.movie.id}`);
+  expect(exemptTitle?.status()).toBe(200);
+  expect(
+    (await exemptTitle?.text()) ?? "",
+    "the title route streamed a shell ahead of its existence decision -- PL-0704's exemption " +
+      "for this route is granted on there being nothing here that can wait independently of " +
+      "whether the title exists, and something now can"
+  ).not.toContain("Loading title");
 });

@@ -364,9 +364,23 @@ jobs:
   #     `chromium` in both modes -- `/title/no-such-title-pl0701` 404 under
   #     `development` and the 200 `catalog_source_not_configured` refusal under
   #     `production`, `/watch/Not%20A%20Valid%20Id` 404 in both -- with neither
-  #     served-bytes skeleton check finding its string. Observed twice is still
-  #     not guaranteed: `retries` is 0, and neither run was this job on a GitHub
-  #     runner. Both halves of PL-0704's
+  #     served-bytes skeleton check finding its string.
+  #     THAT 2026-09-15 RUN USED A SUBSTITUTED BROWSER REVISION, and this entry
+  #     did not say so when it was written. It launched chromium 1194 behind a
+  #     symlink shim presenting it as 1234, because `playwright install` could
+  #     not reach the CDN from that container; the caveat was disclosed in
+  #     docs/E2E.md and in the gate evidence, and the commander ruled it narrow
+  #     local evidence and NOT pinned-browser verification. A third run, later
+  #     the same day, re-ran both modes on the PINNED revision 1234 (Chrome for
+  #     Testing 151.0.7922.34) from Playwright's default cache, with the
+  #     container's `PLAYWRIGHT_BROWSERS_PATH` unset for the run so it resolved
+  #     there rather than at the 1194 tree that variable pointed at. Same
+  #     statuses, same counts -- development 43 passed / 3 skipped, production
+  #     34 passed / 12 skipped, exit 0 both -- and nothing behaved differently on
+  #     the newer engine. THAT is the run to cite; the shim numbers are
+  #     corroboration. Observed three times is still
+  #     not guaranteed: `retries` is 0, and none of the three was this job on a
+  #     GitHub runner. Both halves of PL-0704's
   #     repair have landed. Each existence decision now sits above every
   #     Suspense boundary its own page declares, AND the three loading files
   #     that installed a boundary above a segment are deleted:
@@ -376,7 +390,15 @@ jobs:
   #     relocated rather than surrendered -- home into a `<Suspense>` inside
   #     `app/page.tsx`, the player into one inside `watch/[contentId]/page.tsx`,
   #     both BELOW the decision -- and the title route deliberately has none,
-  #     because whether a title exists IS the load there. Note the unknown-title
+  #     because whether a title exists IS the load there. That last one is now a
+  #     RULED EXEMPTION in PL-0704's acceptance rather than a deviation from it,
+  #     it carries its reasoning, and it is reversible: the moment the title page
+  #     grows a section that can wait on something other than the title's
+  #     existence, it must gain an in-page Suspense below the decision and the
+  #     keep-the-skeletons clause binds again. Both gates assert that now -- the
+  #     e2e suite requires `/title/<demo id>` to answer 200 with no streamed
+  #     shell, and the unit guard fails if a `<Suspense>` appears on that page
+  #     without a named skeleton as its fallback. Note the unknown-title
   #     404 is asserted under `development` only: on a hosted build the metadata
   #     source throws, `loadTitleDetail` reports `error` rather than
   #     `not-found`, and the spec requires the 200 refusal there instead.
@@ -386,14 +408,16 @@ jobs:
   #     docs/E2E.md;
   #   - `search.spec.ts`'s typing tests passed on `chromium` in both modes on
   #     2026-09-15, including "text typed before hydration survives it", which
-  #     was the single red of the 2026-09-05 device-matrix run. That is ONE
+  #     was the single red of the 2026-09-05 device-matrix run. They passed again
+  #     in the pinned-revision run of the same day. That is ONE
   #     browser project. docs/E2E.md keeps the blocker entry open because it was
   #     found on four, and PL-0705's acceptance names WebKit specifically; this
   #     job launches neither WebKit nor Firefox and claims nothing about them;
   #   - `development`-ONLY ASSERTIONS ARE NO LONGER UNKNOWN AS A CLASS. This
   #     entry said no `development` run had happened since `allowedDevOrigins`
-  #     was added to `apps/web/next.config.ts`; two have, on 2026-09-05 and
-  #     2026-09-15, and the second was green across `api` and `chromium`. So the
+  #     was added to `apps/web/next.config.ts`; three have, on 2026-09-05 and
+  #     twice on 2026-09-15, and the last of them was green across `api` and
+  #     `chromium` on the pinned browser revision. So the
   #     production half of each pair is no longer unproven to be non-vacuous
   #     either. The development step below still runs even after the production
   #     step has failed, for the unchanged reason: one red mode must not hide the
@@ -492,6 +516,27 @@ jobs:
       # `--ignore-scripts` above means no browser arrives with the install, which
       # is the point: browsers are asked for explicitly, here, and only the one
       # this job launches. NOT `--with-deps` -- see the note above the job.
+      #
+      # THIS IS WHAT MAKES THE JOB'S RUN A PINNED-REVISION RUN, and it is worth
+      # naming because the amended PL-0704 acceptance asks for one. `playwright
+      # install` takes the revision from the installed `@playwright/test`, which
+      # `e2e/package.json` pins to 1.62.1 exactly and `e2e/package-lock.json`
+      # fixes -- so this step downloads chromium 1234 and the run launches it.
+      # Nothing here selects a browser by version number, and nothing should:
+      # a literal here would be a second place to update and a silent way to
+      # disagree with the lockfile.
+      #
+      # The one way this goes wrong is an environment that sets
+      # PLAYWRIGHT_BROWSERS_PATH to a tree holding a different revision -- then
+      # both this step and the runs below resolve there, and the suite either
+      # fails to find an executable or, if something has been made to fit the
+      # expected names, silently tests a browser nobody pinned. A GitHub-hosted
+      # `ubuntu-latest` runner sets neither that variable nor
+      # PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD, so the default cache is used; the
+      # local container that produced the 2026-09-15 evidence DID set both, and
+      # the first of the two runs recorded there was on a substituted revision
+      # because of it. If a self-hosted runner is ever adopted, check this
+      # before trusting a green mark from it.
       - name: Install the browser this job launches
         id: browsers
         working-directory: e2e
