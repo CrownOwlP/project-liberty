@@ -2658,6 +2658,87 @@ function validateState(d) {
     }
   }
 
+  /*
+   * Supersession: a dependency that no legal sequence of transitions can satisfy.
+   *
+   * A corrective re-run supersedes its predecessor, and the predecessor is left
+   * BLOCKED deliberately -- its provenance record is preserved as audit history
+   * rather than repaired, on the rule PL-0703 established. But BLOCKED transitions
+   * only to BACKLOG, READY or CANCELED, so a superseded task can never reach DONE,
+   * and `completion.requireAllDependenciesDone` then gates every dependent of it
+   * forever.
+   *
+   * That is not hypothetical. PL-0301 sat dependency-gated behind PL-0205 while
+   * PL-0207, its named successor, was already DONE -- and through PL-0301 it held
+   * PL-0302, PL-0501, PL-0502, PL-0701 and PL-0702, the entire M4 playback vertical
+   * slice. Nothing here could see it, because the supersession existed only as
+   * prose inside `blockedReason` and `notes`. A human noticed. This rule is the
+   * cheap alarm that means the next one does not have to.
+   *
+   * IT REPORTS AND NEVER REPAIRS. Repointing a dependency is a task-DEFINITION
+   * change: deliberate, reasoned, and recorded as an event. An automatic repointer
+   * would make the graph self-modifying on the strength of a field any writer can
+   * set, which is a larger failure than the one it fixes.
+   *
+   * ERROR rather than WARN for the DONE case is deliberate. `validate` already
+   * treats provenance drift as a warning and structural impossibility as an error.
+   * An unsatisfiable dependency is structural -- no legal transition sequence
+   * resolves it -- so it belongs beside "missing dependency", not beside drift.
+   * While the successor is NOT yet DONE the same edge is only a future deadlock,
+   * so it warns: a warning that arrives before the stall is the entire point.
+   *
+   * WHAT THIS CANNOT DO. `supersededBy` is self-asserted, exactly like `fromAgent`
+   * on the agent bus. It proves somebody wrote a pointer, not that the successor
+   * carries the predecessor's work. A wrong pointer yields a wrong error or hides
+   * a real deadlock. Do not describe this as proving supersession.
+   */
+  const dependentsOf = new Map();
+  for (const task of tasks)
+    for (const dep of task.dependencies ?? []) {
+      if (!dependentsOf.has(dep)) dependentsOf.set(dep, []);
+      dependentsOf.get(dep).push(task.id);
+    }
+  for (const task of tasks) {
+    const successorId = task.supersededBy;
+    if (successorId === undefined || successorId === null) continue;
+    if (typeof successorId !== "string" || !successorId.trim()) {
+      errors.push(`${task.id}: supersededBy is present but not a task id`);
+      continue;
+    }
+    if (successorId === task.id) {
+      errors.push(`${task.id}: supersededBy names itself`);
+      continue;
+    }
+    const successor = map.get(successorId);
+    if (!successor) {
+      errors.push(
+        `${task.id}: supersededBy names unknown task ${successorId}`,
+      );
+      continue;
+    }
+    if (task.status === "DONE")
+      errors.push(
+        `${task.id}: is DONE and also declares supersededBy ${successorId}; a completed task and its replacement are two records of the same work`,
+      );
+    // A one-way pointer is a typo waiting to be trusted. Checked only when the
+    // successor states the relationship at all, so a predecessor may be annotated
+    // before its successor is.
+    if (successor.supersedes !== undefined && successor.supersedes !== task.id)
+      errors.push(
+        `${task.id}: supersededBy names ${successorId}, but ${successorId} declares supersedes ${successor.supersedes}`,
+      );
+    for (const dependentId of dependentsOf.get(task.id) ?? []) {
+      if (successor.status === "DONE")
+        errors.push(
+          `${dependentId}: depends on ${task.id}, which is superseded by ${successorId} and cannot reach DONE, while ${successorId} already is DONE; repoint the dependency deliberately and record why`,
+        );
+      else
+        warnings.push(
+          `${dependentId}: depends on ${task.id}, which declares supersededBy ${successorId}; a superseded task cannot reach DONE, so this edge becomes unsatisfiable the moment ${successorId} completes`,
+        );
+    }
+  }
+
   for (const milestone of milestoneDoc.milestones ?? []) {
     for (const id of milestone.tasks ?? [])
       if (!map.has(id))

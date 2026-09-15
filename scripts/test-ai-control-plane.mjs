@@ -3661,33 +3661,95 @@ try {
 
   /* ---------------------------------------------------------------------
    * 9w. Orchestration paths are refused for autonomous selection.
+   *
+   *     MOVED ONTO A FIXTURE SET, on this file's standing rule, after it went
+   *     red for the fourth time in the same way: it read the live backlog and
+   *     asserted that claude-lead had nothing autonomously workable, which was
+   *     a fact about that day's data, not an invariant. Authoring PL-0901 -- a
+   *     READY claude-lead task whose allowedPaths are two files under docs/ --
+   *     made the assertion false while `touchesOrchestration` behaved exactly
+   *     as specified. Rewriting the expectation to match would have left the
+   *     trap armed for the next non-orchestration lead task, and would have been
+   *     byte-for-byte indistinguishable from rewriting it to match a regression.
+   *
+   *     The invariant underneath is narrow and does not involve the live graph
+   *     at all: when the only task dispatchable to an agent owns orchestration
+   *     paths, selection must refuse it, say why, and claim nothing. Frozen
+   *     candidates make that provable in both directions -- the refusal fires,
+   *     and a control task with the same lane, priority and agent IS selected,
+   *     so the scenario cannot pass by selection being broken outright.
+   *
+   *     select-task.mjs reads only control/tasks.json and the CLI's own dispatch
+   *     output and hard-codes no task id, so a fixture set here tests the same
+   *     contract production reads. (That is not true of the bus/orchestrator
+   *     scenarios, which pin PL-AI-0001 and PL-AI-0002 because
+   *     orchestrator-gate.mjs names that pair as its activation contract.)
    * ------------------------------------------------------------------- */
   {
     const SHA = "b8".repeat(20);
     const repo = freshRepo();
 
-    // PL-AI-0002 owns .github/**, control/**, scripts/**, docs/** -- it IS the
-    // orchestration machinery, so an autonomous worker must never select it.
-    const doneBootstrap = (id) => {
-      run(repo, CLI, ["claim", id, "claude-lead"], { LIBERTY_COMMIT_SHA: SHA });
-      run(repo, CLI, ["start", id, "claude-lead"], { LIBERTY_COMMIT_SHA: SHA });
-      for (const g of taskOf(repo, id).qualityGates) {
-        run(repo, CLI, ["gate", id, g, "pass", "smoke"], { LIBERTY_COMMIT_SHA: SHA });
-      }
-      run(repo, CLI, ["review", id], { LIBERTY_COMMIT_SHA: SHA });
-      run(repo, CLI, ["approve", id, "gpt-architect", "reviewed"], { LIBERTY_COMMIT_SHA: SHA });
-      run(repo, CLI, ["done", id], { LIBERTY_COMMIT_SHA: SHA });
-    };
-    doneBootstrap("PL-AI-0001");
-    doneBootstrap("PL-AI-0002");
+    const leadTask = (id, overrides) =>
+      fixtureTask(id, {
+        priority: "P0",
+        lane: "Coordination",
+        preferredAgent: "claude-lead",
+        acceptance: "fixture task used by the autonomous-selection regressions",
+        ...overrides,
+      });
 
+    /*
+     * One candidate, and it owns the machinery that supervises autonomy:
+     * scripts/. A task allowed to write there could rewrite the reviewer that
+     * judges its own change, which is the one loop this system must not close
+     * by itself.
+     */
+    useFixtureTaskSet(
+      repo,
+      leadTask("PL-OR-0001", {
+        title: "PL-OR-0001 owns the orchestration machinery",
+        allowedPaths: ["scripts/fixtures-or/**"],
+      }),
+    );
     const out = run(repo, "scripts/cloud/select-task.mjs", ["--agent", "claude-lead"], {
       LIBERTY_COMMIT_SHA: SHA,
     });
     assert.match(
       out,
-      /privileged review-before-main lane|No autonomously workable task/,
+      /Skipped, requires the privileged review-before-main lane: PL-OR-0001/,
+      `an orchestration-owning task must be skipped by name, so the refusal is legible:\n${out}`,
+    );
+    assert.match(
+      out,
+      /No autonomously workable task for claude-lead/,
       `an orchestration-owning task must not be auto-selected:\n${out}`,
+    );
+    assert.equal(
+      taskOf(repo, "PL-OR-0001").status,
+      "READY",
+      "a refused candidate must be left untouched, not claimed and then rejected",
+    );
+
+    /*
+     * The same fixture shape with a non-orchestration surface IS selected.
+     * Without this half, deleting the dispatch logic entirely would turn the
+     * assertions above green.
+     */
+    const control = freshRepo();
+    useFixtureTaskSet(
+      control,
+      leadTask("PL-OR-0002", {
+        title: "PL-OR-0002 owns nothing privileged",
+        allowedPaths: ["fixtures/or/**"],
+      }),
+    );
+    const selected = run(control, "scripts/cloud/select-task.mjs", ["--agent", "claude-lead"], {
+      LIBERTY_COMMIT_SHA: SHA,
+    });
+    assert.match(
+      selected,
+      /Claimed and started PL-OR-0002/,
+      `an ordinary task in the same lane must still be selected:\n${selected}`,
     );
     // Nothing was claimed as a side effect.
     const claimedByLead = tasksOf(repo).filter(
@@ -7697,6 +7759,151 @@ try {
   }
 
   /* ---------------------------------------------------------------------
+   * 10s. A dependency on a superseded task is refused, and the rule is proved
+   *      to fire rather than merely proved not to complain.
+   *
+   *      The defect this guards is not theoretical and it was not cheap.
+   *      PL-0301 sat dependency-gated behind PL-0205 -- BLOCKED, terminal,
+   *      superseded by PL-0207, which was already DONE -- and through PL-0301
+   *      it held PL-0302, PL-0501, PL-0502, PL-0701 and PL-0702, the entire M4
+   *      playback vertical slice. BLOCKED transitions only to BACKLOG, READY or
+   *      CANCELED, so no legal sequence of transitions could ever satisfy that
+   *      edge. `validate` said the graph was valid, because the supersession
+   *      lived in prose inside blockedReason and notes, which no check reads.
+   *
+   *      A rule like this fails in one characteristic way: it stays silent
+   *      forever and everybody assumes it is working. So this scenario asserts
+   *      BOTH directions on the same fixture set -- the broken graph errors with
+   *      a message naming both ends, and the repaired graph validates clean --
+   *      and the repair is the real repair, repointing the dependency at the
+   *      successor, not deleting the pointer that makes the rule visible.
+   *
+   *      Fixtures, not live data, on this file's standing rule: the live graph
+   *      currently has exactly zero such edges, so a scenario reading it would
+   *      pass by being inert and would keep passing after a regression.
+   * ------------------------------------------------------------------- */
+  {
+    const repo = freshRepo();
+    const superseded = (id, overrides = {}) =>
+      fixtureTask(id, {
+        lane: "Coordination",
+        preferredAgent: "claude-lead",
+        // No reviewAgent: a DONE fixture would otherwise need a full historical
+        // review record, which is a different mechanism than the one under test.
+        reviewAgent: null,
+        acceptance: "fixture task used by the supersession regressions",
+        ...overrides,
+      });
+
+    /* --- the broken graph, reconstructed --------------------------------- */
+    useFixtureTaskSet(
+      repo,
+      superseded("PL-SUP-0001", {
+        title: "PL-SUP-0001 the superseded predecessor",
+        status: "BLOCKED",
+        supersededBy: "PL-SUP-0002",
+        allowedPaths: ["fixtures/sup/pred/**"],
+      }),
+      superseded("PL-SUP-0002", {
+        title: "PL-SUP-0002 the corrective re-run that replaced it",
+        status: "DONE",
+        supersedes: "PL-SUP-0001",
+        allowedPaths: ["fixtures/sup/succ/**"],
+      }),
+      superseded("PL-SUP-0003", {
+        title: "PL-SUP-0003 the dependent the deadlock strands",
+        status: "BACKLOG",
+        dependencies: ["PL-SUP-0001"],
+        allowedPaths: ["fixtures/sup/dep/**"],
+      }),
+    );
+    runFail(
+      repo,
+      ["validate"],
+      /PL-SUP-0003: depends on PL-SUP-0001, which is superseded by PL-SUP-0002 and cannot reach DONE/,
+      {},
+    );
+
+    /* --- the repair is a repoint, not a deletion ------------------------- */
+    const tasksFile = path.join(repo, "control", "tasks.json");
+    const repoint = () => {
+      const doc = JSON.parse(fs.readFileSync(tasksFile, "utf8"));
+      doc.tasks.find((t) => t.id === "PL-SUP-0003").dependencies = [
+        "PL-SUP-0002",
+      ];
+      fs.writeFileSync(tasksFile, JSON.stringify(doc, null, 2) + "\n");
+    };
+    repoint();
+    assert.match(
+      runCombined(repo, CLI, ["validate"]),
+      /AI control plane valid/,
+      "repointing the dependency at the completed successor must clear the error, " +
+        "and the supersession pointer itself must remain valid rather than having " +
+        "to be deleted to make validate pass",
+    );
+
+    /* --- while the successor is unfinished the same edge only warns ------ */
+    const mutate = (fn) => {
+      const doc = JSON.parse(fs.readFileSync(tasksFile, "utf8"));
+      fn(doc, Object.fromEntries(doc.tasks.map((t) => [t.id, t])));
+      fs.writeFileSync(tasksFile, JSON.stringify(doc, null, 2) + "\n");
+    };
+    mutate((_doc, byId) => {
+      byId["PL-SUP-0002"].status = "REVIEW";
+      byId["PL-SUP-0002"].owner = "claude-lead";
+      byId["PL-SUP-0003"].dependencies = ["PL-SUP-0001"];
+    });
+    const pending = runCombined(repo, CLI, ["validate"]);
+    assert.match(
+      pending,
+      /AI control plane valid/,
+      "a superseded predecessor whose successor is not yet DONE is a future " +
+        "deadlock, not a present one, and must not fail the build",
+    );
+    assert.match(
+      pending,
+      /WARN: PL-SUP-0003: depends on PL-SUP-0001, which declares supersededBy PL-SUP-0002/,
+      "...but it must warn, because a warning that arrives before the stall is " +
+        "the whole reason this rule exists",
+    );
+
+    /* --- the pointer itself is checked, so it cannot be trusted blindly -- */
+    mutate((_doc, byId) => {
+      byId["PL-SUP-0003"].dependencies = ["PL-SUP-0002"];
+      byId["PL-SUP-0002"].status = "DONE";
+      byId["PL-SUP-0001"].supersededBy = "PL-SUP-9999";
+    });
+    runFail(repo, ["validate"], /supersededBy names unknown task PL-SUP-9999/, {});
+
+    mutate((_doc, byId) => {
+      byId["PL-SUP-0001"].supersededBy = "PL-SUP-0001";
+    });
+    runFail(repo, ["validate"], /supersededBy names itself/, {});
+
+    mutate((_doc, byId) => {
+      byId["PL-SUP-0001"].supersededBy = "PL-SUP-0002";
+      byId["PL-SUP-0002"].supersedes = "PL-SUP-0003";
+    });
+    runFail(
+      repo,
+      ["validate"],
+      /supersededBy names PL-SUP-0002, but PL-SUP-0002 declares supersedes PL-SUP-0003/,
+      {},
+    );
+
+    mutate((_doc, byId) => {
+      byId["PL-SUP-0002"].supersedes = "PL-SUP-0001";
+      byId["PL-SUP-0001"].status = "DONE";
+    });
+    runFail(
+      repo,
+      ["validate"],
+      /PL-SUP-0001: is DONE and also declares supersededBy PL-SUP-0002/,
+      {},
+    );
+  }
+
+  /* ---------------------------------------------------------------------
    * 11. The live repository state must be untouched by the whole run.
    *     This now also guards coordination/agent-bus, so a test that forgets
    *     freshRepo() cannot publish a real handoff message.
@@ -7714,7 +7921,7 @@ try {
     "running the test suite must not mutate any live control/ or coordination/ file",
   );
 
-  console.log("AI control plane tests passed (66 scenarios).");
+  console.log("AI control plane tests passed (67 scenarios).");
 } finally {
   /*
    * Cleanup must never replace the result.

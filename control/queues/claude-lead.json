@@ -1,8 +1,98 @@
 {
-  "generatedAt": "2026-09-15T05:36:47.470Z",
+  "generatedAt": "2026-09-15T17:50:43.393Z",
   "agent": "claude-lead",
   "executionAvailable": true,
-  "assigned": [],
+  "assigned": [
+    {
+      "id": "PL-AI-0007",
+      "priority": "P0",
+      "lane": "Coordination",
+      "status": "REVIEW",
+      "title": "Supersession is a field, and a task cannot stay gated behind one",
+      "description": "Four tasks -- PL-0205, PL-0401, PL-0601, PL-0703 -- are BLOCKED, terminal, and superseded by a corrective re-run. Each says so only in prose. BLOCKED transitions only to BACKLOG, READY or CANCELED, so a superseded task can never reach DONE, and with completion.requireAllDependenciesDone true, any task depending on one is gated forever. That is not a hypothetical: PL-0301 was gated behind PL-0205 while PL-0207 sat DONE, and with it PL-0302, PL-0501, PL-0502, PL-0701 and PL-0702. A human noticed. Nothing in ai:validate could have.",
+      "notes": "SCOPE IS THE VALIDATOR, NOT A DEPENDENCY REWRITER. The rule reports; it never edits a dependency, because repointing a dependency is a task-definition change and those are deliberate, reasoned and recorded -- see PL-0301's own notes for what that looks like. An automatic repointer would make the graph self-modifying on the strength of a field any writer can set. THE RULE, PRECISELY. For each task T declaring supersededBy S: S must exist, must not be T, and T must not itself be DONE, or that is an ERROR, because a DONE task that claims to be superseded is two contradictory records of the same work. If S declares supersedes, it must name T -- a one-way pointer is a typo waiting to be trusted. Then, for each task D whose dependencies contain T: if S is DONE, ERROR, because D is gated behind a task that can never complete while its replacement already has; if S is not DONE, WARN, because the edge is not yet fatal but will become so the moment S completes, and a warning that arrives before the deadlock is the entire point. WHY ERROR AND NOT WARN FOR THE FIRST CASE. ai:validate already treats provenance drift as a warning and structural impossibility as an error. A dependency that can never be satisfied is structural: no sequence of legal transitions resolves it. It belongs with 'missing dependency' and 'invalid status', not with drift. WHAT THIS RULE CANNOT DO, STATED SO NOBODY OVERTRUSTS IT. supersededBy is self-asserted, exactly like fromAgent on the agent bus. It proves that somebody wrote a pointer, not that the successor genuinely carries the predecessor's work. A wrong pointer produces a wrong error or hides a real deadlock. It is a cheap alarm on a failure mode that has already cost this project one stalled milestone, not a proof of anything.",
+      "dependencies": [],
+      "allowedPaths": [
+        "scripts/ai-control-plane.mjs",
+        "scripts/test-ai-control-plane.mjs",
+        "control/README.md"
+      ],
+      "reviewDependencies": [
+        "control/policies.json"
+      ],
+      "preferredAgent": "claude-lead",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "repo-validate",
+        "typecheck",
+        "unit"
+      ],
+      "acceptance": "ai:validate refuses a task graph in which a task depends on a task that declares supersededBy and whose named successor is DONE, and warns when the successor is not yet DONE. It also refuses a supersededBy naming a missing task, naming itself, declared on a DONE task, or contradicted by the successor's supersedes field. The rule reports and never edits a dependency. The four existing supersession pairs validate clean, and a regression in scripts/test-ai-control-plane.mjs proves the rule fires -- both that it errors on a reconstructed PL-0301-behind-PL-0205 graph and that it stays silent on the repaired one, so it cannot pass by being inert.",
+      "owner": "claude-lead",
+      "gateResults": {
+        "repo-validate": {
+          "status": "pass",
+          "at": "2026-09-15T17:32:54.251Z",
+          "by": "claude-lead",
+          "commitSha": "80e3d3e3e0130571a1a0791b496a9e2cce0c6c7a",
+          "evidence": "npm run repo:validate at the PL-AI-0007 working tree, exit 0, 'Project Liberty repository validation passed.' Re-run after the control/README.md section documenting supersession was written, because that file is a declared write path and validate-repo.mjs reads the repository layout this task's documentation describes."
+        },
+        "typecheck": {
+          "status": "pass",
+          "at": "2026-09-15T17:32:54.458Z",
+          "by": "claude-lead",
+          "commitSha": "80e3d3e3e0130571a1a0791b496a9e2cce0c6c7a",
+          "evidence": "npx turbo run typecheck --force, exit 0, 9 of 9 tasks and 0 cached. STATED PLAINLY BECAUSE IT WOULD OTHERWISE OVERCLAIM: this task's code is scripts/ai-control-plane.mjs and scripts/test-ai-control-plane.mjs, which are plain ESM and are not in any workspace, so no tsc pass covers them and this gate proves only that the change broke nothing in the nine TypeScript projects. The regression evidence for the rule itself is under the unit gate, where it belongs."
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-09-15T17:32:54.650Z",
+          "by": "claude-lead",
+          "commitSha": "80e3d3e3e0130571a1a0791b496a9e2cce0c6c7a",
+          "evidence": "Two executions, and the second is the one that matters. npx turbo run test --force, exit 0, 15 of 15 tasks and 0 cached, 2096 passed 1 skipped 0 failed. Then node scripts/test-ai-control-plane.mjs, exit 0, 'AI control plane tests passed (67 scenarios)' -- the suite that actually exercises validate, up from 66. Scenario 10s is new and asserts the rule in BOTH directions on one frozen fixture set, because a validator rule fails characteristically by staying silent forever while everyone assumes it works: the reconstructed PL-0301-behind-PL-0205 shape errors naming both ends, the repair clears it BY REPOINTING THE DEPENDENCY AT THE SUCCESSOR rather than by deleting the pointer, a successor that is not yet DONE warns instead of failing the build, and four malformed pointers are each refused -- unknown successor, self-reference, a successor whose supersedes disagrees, and supersededBy on a DONE task. Fixtures rather than live data on this suite's standing rule: the live graph now has zero such edges, so a scenario reading it would pass by being inert. ALSO REPAIRED, AND DISCLOSED RATHER THAN QUIETLY FIXED: scenario 9w went red because authoring PL-0901 gave claude-lead an autonomously workable task, which falsified an assertion that was a screenshot of that day's backlog rather than an invariant. On this file's own standing rule the scenario was moved onto a frozen fixture set instead of having its expectation rewritten -- rewriting it would be indistinguishable from rewriting it to match a regression -- and it now proves both halves: an orchestration-owning candidate is skipped by name and left READY, and an identical candidate with a non-privileged surface is still selected, so the scenario cannot pass by selection being broken outright. The other two script suites were run to prove the change is contained: node scripts/test-validate-env.mjs exit 0, 38 scenarios; node scripts/cloud/test-dispatcher.mjs exit 0, 35 scenarios."
+        }
+      },
+      "implementationAgent": "claude-lead",
+      "updatedAt": "2026-09-15T17:32:54.857Z",
+      "implementationBaseSha": "80e3d3e3e0130571a1a0791b496a9e2cce0c6c7a"
+    },
+    {
+      "id": "PL-0901",
+      "priority": "P0",
+      "lane": "Architecture",
+      "status": "REVIEW",
+      "title": "Windows desktop shell and the PlayerAdapter boundary",
+      "description": "Project Liberty's first production target is Windows desktop on the commander's own machine. The commander has settled the direction: a Tauri shell, the existing Next.js application preserved rather than rewritten and served by a Next standalone sidecar, a PlayerAdapter boundary the application and domain layers depend on instead of any concrete player, libmpv for compatible non-DRM playback, Shaka/EME retained for DRM-capable playback, capability routing made explicit before playback rather than discovered during it, and an LGPL-compatible libmpv/FFmpeg build pipeline of our own rather than a GPL prebuilt. This task records that decision and specifies the boundary. It writes documentation only -- no shell, no adapter, no dependency is added here, because the instruction is that architecture is recorded before a large irreversible implementation, not after it.",
+      "notes": "THE AUDIT CAME FIRST AND IT FOUND A CLEAN SLATE. A repository-wide search for electron, tauri, mpv, libmpv, webview2, neutralino and nw.js across every .ts, .tsx, .json, .md, .mjs and .yml outside node_modules returned nothing. So neither shell was favoured by anything already in the tree, and the decision was made on evidence rather than on inertia. Today's player is shaka-player ~5.2.6 with xstate ^5.32.5 and custom-media-element in apps/web. THE DECIDING FACT IS COMPOSITING, NOT BUNDLE SIZE. Putting HTML chrome over a hardware-accelerated native video surface in one window on Windows is a documented, shipping arrangement on WebView2 -- ICoreWebView2Controller2::put_DefaultBackgroundColor accepts alpha 0 or 255 only, and at 0 the host's content renders beneath -- and has no supported path on Chromium, where PPAPI is gone and child HWNDs are no longer in the window hierarchy. Stremio ships the WebView2 plus libmpv --wid arrangement in production on Windows and measured its previous render-API-into-a-texture approach as 2-5x worse. Any size-based argument for Tauri should be dropped: with a Node sidecar the installer lands near Electron's anyway. THE SIDECAR IS WHAT PRESERVES THE APPLICATION. Tauri's default is a static export, which would force every /api/v1 route handler off Next -- a rewrite of the application's architecture, which the instruction forbids. output: standalone in a sidecar keeps Server Components, route handlers, proxy.ts, cookies(), headers(), Server Actions and ISR working. It costs a Node runtime in the bundle, a loopback listener, supervision code and Tauri's CSP injection, which does not reach an external http origin. ONE QUESTION THIS TASK DOES NOT DECIDE AND MUST NOT DECIDE SILENTLY. A sidecar runs the application's server on a machine the user administers. If provider resolution runs there, then the boundary that enforces invariants 1 and 2 executes from files the user can read and replace, with whatever credentials it needs in its environment. The alternative is that the desktop build implements those specific routes as an authenticated proxy to the backend -- same route, same contract, same URL, a different implementation behind it, selected by build target, which is ordinary adapter work rather than a rewrite. This document states the question, states the recommendation, and leaves the ruling to the reviewer and the commander. It is a design input to PL-0501 and is cheaper to supply now than to retrofit. DRM IS A ROUTING CONSTRAINT, NOT A GAP TO CLOSE. mpv has no CDM and cannot be given one. That is not something to work around: the mpv adapter must REFUSE a DRM-protected candidate with a named reason and must never attempt it, never fall back and never degrade. Which means capability routing has to be an explicit, reasoned decision before playback -- canPlay returning a reason on both branches -- rather than a guess discovered at load time. That is what makes invariant 2 structural here rather than a promise, and it is why the boundary carries a capability descriptor at all. THE LICENSING WORK IS THE LONG POLE AND IT GATES SHIPPING RATHER THAN PROTOTYPING. A stock prebuilt libmpv is a GPL build and must not ship in a closed-source product; the one LGPL variant on offer statically links an LGPLv3 FFmpeg and carries its builder's own no-warranty disclaimer. Building our own with -Dgpl=false and an LGPL FFmpeg, with an SBOM, converts an open-ended exposure into a reviewable artifact. Nothing in this document is legal advice and counsel review is named as a precondition of shipping rather than assumed.",
+      "dependencies": [],
+      "allowedPaths": [
+        "docs/DESKTOP_PLAYBACK.md",
+        "docs/ARCHITECTURE.md"
+      ],
+      "reviewDependencies": [
+        "apps/web/src/components/player/playback-machine.ts",
+        "apps/web/src/components/player/engine.ts",
+        "apps/web/src/components/player/shaka-engine.ts",
+        "apps/web/src/components/player/playback-session.ts",
+        "packages/contracts/src/domains/playback.ts",
+        "docs/RESEARCH_PLAYBACK.md",
+        "docs/AV_SYNC_MEASUREMENT.md",
+        "docs/CONTENT_RIGHTS.md"
+      ],
+      "preferredAgent": "claude-lead",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "architecture-review",
+        "rights-review"
+      ],
+      "acceptance": "A recorded architecture decision states the Windows desktop target, the Tauri shell, the preserved Next.js application served by a standalone sidecar, and the LGPL-compatible libmpv/FFmpeg build pipeline, each with the evidence it rests on and the strongest argument against it. It specifies PlayerAdapter as an interface the application and domain layers depend on -- load an authorized playback session, play, pause, seek, stop, select audio track, select subtitle track, set volume, expose position and duration, expose buffering and stall events, expose recoverable and fatal errors, expose track metadata, expose A/V sync telemetry where available, dispose -- with no mpv, Electron, Tauri or Shaka type reachable from it, and names the two implementations behind it and the explicit capability routing that chooses between them, including the requirement that the mpv adapter refuse DRM-protected candidates with a named reason rather than attempt them. It states that media addresses continue to come only from authorized provider resolution and the playback-session boundary and that the client can never submit one, that stream candidate ranking stays in @liberty/media-engine, and that provider-specific logic stays in @liberty/provider-sdk. It states where provider resolution runs in the desktop build as an open question with a recommendation rather than deciding it silently, because that answer is a design input to PL-0501. It records what was verified, what was not, and which specific facts would reverse each decision. No shell, adapter or dependency is implemented here.",
+      "owner": "claude-lead",
+      "gateResults": {},
+      "implementationAgent": "claude-lead",
+      "updatedAt": "2026-09-15T17:50:43.130Z",
+      "implementationBaseSha": "80e3d3e3e0130571a1a0791b496a9e2cce0c6c7a"
+    }
+  ],
   "review": [],
   "reservedExternal": [],
   "recommended": [

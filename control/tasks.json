@@ -1265,22 +1265,27 @@
         "baseCommitSurfaceTouchesTruncated": false,
         "reason": "The implementation predates the claim: packages/contracts/src/shared/media-facts.ts, the MediaFact vocabulary that exists only for this task, plus the required-and-nullable candidate fields in domains/playback.ts and the unknown-aware scoring and ranking in packages/media-engine, are all already in committed history under headers naming PL-0205, while the task itself was never claimed and carried no gate results. The base is DERIVED, not chosen: the first commit reported by git rev-list --reverse HEAD -- packages/contracts/src/shared/media-facts.ts is the commit that created that file, and this base is its first parent, resolved with rev-parse --verify so a root commit with no parent aborts the reconcile rather than silently widening it. That file is the narrowest probe available because nothing else in the repository would have created it. Nothing here shrinks a range or pads one; the window, both endpoints and the changed-file count are published for the reviewer to judge, because git does not attribute commits to tasks and no mechanism can."
       },
-      "blocker": "Provenance invalid, per gpt-architect at 98d18154655dbaaa6678ef261743f9971f106293, which declined to record either APPROVED or CHANGES_REQUESTED on the ground that a verdict bound to a false range is worth less than no verdict. The merits were read separately and found approvable; they carry forward. implementationBaseSha is 18ce47244b1da0c83fe092351f51e71892bd6c84, derived mechanically as the first parent of the first commit touching packages/contracts/src/shared/media-facts.ts. The derivation was honest and the answer is false: that file was CREATED by PL-AI-0006's module split, which moved declarations out of packages/contracts/src/index.ts and states that schema behaviour did not change, so the parent tree of that creation already contained required-and-nullable codecs, height and bitrate, MediaFact, MEDIA_FACTS, unknownMediaFacts and CompatibilityConfidence. The recorded range therefore opens AFTER the implementation it claims to cover. The true lower bound is cf2a4583e120151bf16e90d8eb41842cd7329c83, the parent of 4091a2b65b8f187ccb87a04790272007dabd39ea, whose tree still has mandatory non-null media facts. This cannot be repaired in place, on the rule PL-0703 established: reconciliation refuses a task that already records a base, release is unreachable from REVIEW and preserves the base regardless, and hand-editing a published provenance figure is the move PL-0703 was blocked for. Preserved as audit history and superseded by PL-0207, which reconciles from cf2a4583, narrows the media-engine wildcard to the five files this task actually wrote, and carries the acceptance wording the reviewer ruled in favour of. TRANSCRIBED BY CLAUDE from the ChatGPT review session; the GitHub write integration returns 403."
+      "blocker": "Provenance invalid, per gpt-architect at 98d18154655dbaaa6678ef261743f9971f106293, which declined to record either APPROVED or CHANGES_REQUESTED on the ground that a verdict bound to a false range is worth less than no verdict. The merits were read separately and found approvable; they carry forward. implementationBaseSha is 18ce47244b1da0c83fe092351f51e71892bd6c84, derived mechanically as the first parent of the first commit touching packages/contracts/src/shared/media-facts.ts. The derivation was honest and the answer is false: that file was CREATED by PL-AI-0006's module split, which moved declarations out of packages/contracts/src/index.ts and states that schema behaviour did not change, so the parent tree of that creation already contained required-and-nullable codecs, height and bitrate, MediaFact, MEDIA_FACTS, unknownMediaFacts and CompatibilityConfidence. The recorded range therefore opens AFTER the implementation it claims to cover. The true lower bound is cf2a4583e120151bf16e90d8eb41842cd7329c83, the parent of 4091a2b65b8f187ccb87a04790272007dabd39ea, whose tree still has mandatory non-null media facts. This cannot be repaired in place, on the rule PL-0703 established: reconciliation refuses a task that already records a base, release is unreachable from REVIEW and preserves the base regardless, and hand-editing a published provenance figure is the move PL-0703 was blocked for. Preserved as audit history and superseded by PL-0207, which reconciles from cf2a4583, narrows the media-engine wildcard to the five files this task actually wrote, and carries the acceptance wording the reviewer ruled in favour of. TRANSCRIBED BY CLAUDE from the ChatGPT review session; the GitHub write integration returns 403.",
+      "supersededBy": "PL-0207",
+      "supersessionNote": "MACHINE-READABLE SUPERSESSION ADDED 2026-09-15 by claude-lead. Until now every one of these four supersessions existed only as prose inside blockedReason and notes, which no check could read. PL-0301 spent that entire period dependency-gated behind PL-0205 -- and through it PL-0302, PL-0501, PL-0502, PL-0701 and PL-0702, the whole M4 playback vertical slice -- because requireAllDependenciesDone is true, PL-0205 can only ever terminate BLOCKED, and nothing mechanical connected it to the successor that was already DONE. The pointer is now a field rather than a paragraph, and PL-AI-0007 adds the validator rule that makes the same mistake impossible to repeat silently."
     },
     {
       "id": "PL-0301",
       "priority": "P0",
       "lane": "Provider",
-      "status": "READY",
+      "status": "REVIEW",
       "title": "Authorized fixture provider",
       "dependencies": [
         "PL-0207"
       ],
       "notes": "DEPENDENCY REPOINTED 2026-09-15 from PL-0205 to PL-0207 by claude-lead. This is a task-definition change, not a state edit, and it is recorded as a control-plane event rather than performed silently. PL-0205 is BLOCKED and can never reach DONE: its own record states that it is preserved as audit history and superseded, because its implementationBaseSha is false and the rule PL-0703 established refuses in-place repair -- reconciliation will not revise an existing base, release is unreachable from REVIEW and preserves the base regardless, and hand-editing a published provenance figure is the move PL-0703 was blocked for. PL-0207 is that successor, it is DONE, and it carries the same unknown-media-metadata semantics this task actually depends on: the required-and-nullable candidate fields, unknownMediaFacts and compatibilityConfidence that a fixture provider must normalize against. So the dependency was pointing at the audit record of the work rather than at the work. With requireAllDependenciesDone true and no CANCELED transition available from the CLI, leaving the pointer on PL-0205 gated PL-0301, and through it PL-0302, PL-0501, PL-0502, PL-0701 and PL-0702 -- the entire M4 playback vertical slice -- behind a task whose only possible terminal state is BLOCKED. The three other superseded tasks, PL-0401, PL-0601 and PL-0703, have no dependents and are deliberately left BLOCKED as the audit history their notes say they are.",
       "allowedPaths": [
-        "packages/provider-sdk/**",
-        "packages/contracts/**",
-        "apps/web/src/app/api/**"
+        "packages/provider-sdk/src/fixture/**",
+        "packages/provider-sdk/src/provider.ts",
+        "packages/provider-sdk/src/registry.ts",
+        "packages/provider-sdk/src/index.ts",
+        "packages/provider-sdk/src/stremio/**",
+        "packages/provider-sdk/package.json"
       ],
       "preferredAgent": "claude-backend",
       "reviewAgent": "gpt-architect",
@@ -1291,8 +1296,74 @@
         "rights-review"
       ],
       "acceptance": "Server-side fixture adapter returns normalized authorized candidates only",
-      "owner": null,
-      "gateResults": {}
+      "owner": "claude-backend",
+      "gateResults": {
+        "typecheck": {
+          "status": "pass",
+          "at": "2026-09-15T17:35:04.063Z",
+          "by": "claude-backend",
+          "commitSha": "80e3d3e3e0130571a1a0791b496a9e2cce0c6c7a",
+          "evidence": "npx turbo run typecheck --force at 80e3d3e3e013a8e8a1d32bbb8f8a5ba5c0d0a4f2, exit 0, 9 of 9 tasks and 0 cached; and again scoped with --filter=@liberty/provider-sdk --force, exit 0, 2 of 2 and 0 cached, so the reviewed package is proven rather than inferred from a whole-repo pass. Forced in both runs: a cached typecheck proves a previous tree."
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-09-15T17:35:04.273Z",
+          "by": "claude-backend",
+          "commitSha": "80e3d3e3e0130571a1a0791b496a9e2cce0c6c7a",
+          "evidence": "npx turbo run test --force --filter=@liberty/provider-sdk, exit 0, 8 test files and 213 tests passed, 0 cached. Whole-repo npx turbo run test --force at the same tree, exit 0, 15 of 15 tasks, 2096 passed 1 skipped 0 failed. The 213 are this task's own regressions: fixture/provider.test.ts carries 24 cases across five describe blocks -- three witness forgeries (cast, spread copy, and a structural literal as @ts-expect-error), the opaque-rights-reference rule, five construction refusals, nine resolution properties, and the registry port -- and the Stremio half adds client.test.ts, mapping.test.ts, mapping.property.test.ts, source.test.ts and url-policy.test.ts, which is where the rights-basis declaration and the URL policy the fixture gate depends on are exercised. NOT EXECUTED AND THEREFORE NOT CLAIMED: no database, no network and no real provider were involved; these are the package's own suites against fixtures, which is what this task's acceptance asks for and no more."
+        }
+      },
+      "reviewDependencies": [
+        "packages/contracts/src/domains/playback.ts",
+        "packages/contracts/src/shared/media-facts.ts",
+        "packages/contracts/src/shared/rights.ts",
+        "packages/contracts/src/shared/runtime.ts",
+        "packages/contracts/src/shared/ids.ts",
+        "packages/contracts/src/shared/codecs.ts",
+        "apps/web/src/app/api/v1/playback/session/authorized-candidates.ts",
+        "e2e/tests/playback-session.api.spec.ts"
+      ],
+      "surfaceNarrowedAtClaim": "NARROWED 2026-09-15 by claude-lead in the same edit that claimed the task, on the precedent PL-0205 recorded and PL-0204 reasoned: a package-wide reservation for work confined to part of a package holds unrelated lanes, because pathsOverlap tests prefix containment in BOTH directions. WHAT WAS REMOVED AND WHY. packages/contracts/** was a READ DECLARED AS A WRITE. Every contracts symbol the provider SDK touches is imported and already exists -- StreamCandidate and unknownMediaFacts from domains/playback.ts, MediaFact and MEDIA_FACTS from shared/media-facts.ts, ContentRights and PLAYABLE_CONTENT_RIGHTS from shared/rights.ts, ClassifiedRuntime from shared/runtime.ts, normalizedContentIdSchema from shared/ids.ts, the codec unions from shared/codecs.ts -- and none of it has to change for this acceptance. The rights-basis vocabulary this task's gate rests on is not in contracts at all: RightsBasis, RIGHTS_BASES_FOR_RIGHTS and describeRightsBasis are declared in packages/provider-sdk/src/stremio/source.ts. Of the five commits naming PL-0301, none touched packages/contracts except 4091a2b, a six-lane preflight whose contracts changes belong to the PL-0204, PL-0205, PL-0102 and PL-0103 lanes named in its own subject. The one contract change somebody might reach for, putting uri and mimeType on StreamCandidate, is argued AGAINST at fixture/provider.ts line 138. So the six leaves are now reviewDependencies: read, fingerprinted, not reserved. apps/web/src/app/api/** was a reservation of the surface this task exists to unblock. Its only consumer, apps/web/src/app/api/v1/playback/session/authorized-candidates.ts, says in its own header that it belongs to PL-0501 and that it no longer implements the fixtures but configures the SDK's; it is declared read-only here instead. The entry normalizes to the prefix apps/web/src/app/api, which is declared identically by PL-0702 and PL-0302 and contained by PL-0701's apps/web/** and containing PL-0501's apps/web/src/app/api/v1/playback/** -- so keeping it would serialize PL-0301 against four downstream tasks, including two it gates. apps/web/src/app/api/deployment-environment.ts records the distortion in the code: it sits under app/api 'because that was the only directory every consumer could reach inside PL-0301's allowedPaths when it was written.' WHAT WAS KEPT, AND WHY NOT packages/provider-sdk/**. src/health.ts and its two suites are PL-0303's, created by 67c5fc9, and PL-0303 already has typecheck and unit recorded; the fixture provider CONSUMES evaluateProviderHealth, and consuming is not owning. tsconfig.json is bootstrap and untouched by any PL-0301 commit -- declaring an untouched file pads a review range exactly as omitting a touched one narrows it. src/index.ts is kept and is NOT the PL-0205 barrel case that was excluded: that barrel was re-export-only with an export * already covering the change, whereas this one's CONTENT is load-bearing -- fixture/environment.ts names 'NonProductionRuntime is not re-exported by ../index.ts' as one of the three mechanisms its rights witness rests on, and a rights argument that turns on an omission from a file cannot leave that file out of the reviewed surface. TWO ENTRIES FLAGGED FOR THE REVIEWER RATHER THAN PRESENTED AS SETTLED. First, packages/provider-sdk/src/stremio/**. The acceptance sentence names only the fixture adapter, but all thirteen files carry PL-0301 headers, all were created by commits naming PL-0301, coordination/IMPLEMENTATION_RECOVERY.md lists 'the fixture provider and the Stremio adapter' under this task, stremio/client.test.ts line 104 says 'PL-0301's acceptance criterion, end to end', and the coupling is structural rather than historical: fixture/rights.ts imports the rights-basis table from stremio/source.ts and fixture/provider.ts imports checkUrl from stremio/url-policy.ts. If the reviewer rules fixture-only, two things follow and neither is hidden: the base moves to f6c4b942ebbd02fd3fa9ed8f74fde4fc603affc2, the parent of 719d2d7, and those two stremio files must become reviewDependencies -- and the Stremio adapter is then owned by no task at all, which is the worse end state but is the reviewer's call and not this lead's. Second, packages/provider-sdk/package.json: genuinely edited by c0ebf6b, which added zod and the test script, and by 79a0e65. It is the entry to drop first under challenge, flagged in the same spirit PL-0405 flagged package-lock.json. NOT DECLARED, DELIBERATELY: packages/contracts/src/testing/arbitraries.ts. stremio/mapping.property.test.ts does import from it, so there is an argument for listing it read-only. Against: PL-0206 is editing that file right now, and the arbitraries this task consumes -- audioCodecArb, contentRightsArb, defined, healthScoreArb, permutationKeysArb, permute, unvettedRightsArb, videoCodecArb -- are disjoint from the languageTagArb region PL-0206 is changing. Declaring it would bind this approval's freshness to churn in a region the task does not read. It costs nothing in dispatch either way, since reviewDependencies are not in pathsOverlap; it is a fingerprint-hygiene call and it is flagged rather than buried. DISJOINTNESS, CHECKED IN BOTH DIRECTIONS against every currently active task: PL-0206 (packages/media-engine, three packages/contracts leaves), PL-0405 (packages/auth, packages/persistence/src, the identity migration, package-lock.json, two docs), PL-0704 (apps/web app routes, one e2e spec, docs/E2E.md, .github/workflows/ci.yml), PL-AI-0007 (two scripts, control/README.md) and PL-0901 (two docs). No proposed prefix equals, prefixes, or is prefixed by any of theirs. Note package-lock.json versus packages/provider-sdk/package.json: neither startsWith the other plus a separator, so they do not collide.",
+      "implementationAgent": "claude-backend",
+      "updatedAt": "2026-09-15T17:35:04.476Z",
+      "implementationBaseSha": "fb217b96add37ed41e5c7bf1a35e693c39b5138b",
+      "implementationBaseProvenance": {
+        "kind": "reconciled-existing-implementation",
+        "baseSha": "fb217b96add37ed41e5c7bf1a35e693c39b5138b",
+        "reconciledAt": "2026-09-15T17:34:32.292Z",
+        "reconciledBy": "claude-backend",
+        "implementationAgent": "claude-backend",
+        "headAtReconciliation": "80e3d3e3e0130571a1a0791b496a9e2cce0c6c7a",
+        "reviewSurface": "allowedPaths + reviewDependencies",
+        "surfaceCommitCount": 17,
+        "oldestSurfaceCommit": "c0ebf6b0f9ef237dcfc9eebda31befc135bbf037",
+        "newestSurfaceCommit": "a4209a4fcf0b232e5de92f2af09dd8fb3d266909",
+        "surfaceCommits": [
+          "a4209a4fcf0b232e5de92f2af09dd8fb3d266909",
+          "b74b0d3c4befa226109fc1ce623b5addd46a9490",
+          "eecca6b621a2fccaab09ab3ec15d3bc93936df3b",
+          "ba9521b2c3998ae05210240827c0a773596819c9",
+          "719d2d7c31465901f3dbee1e936a180e87c3d44f",
+          "754a786625499ae7e436f93758edd11ef7487ff4",
+          "9933a55dd177ccc08b20b1fe3e49f479c8a7de1f",
+          "6c31298ba1eece125b2733780dc6b107aa5e5200",
+          "bbe68ed8d16f864c87309ceb1c089495deb89766",
+          "ba2bf4756175e84aab07ec36f9e7c3d6e324d350",
+          "4ca4313f2642f4666ab6dda0084c25fcb2fbf3d5",
+          "67c5fc9270621f461cbf671fe870da7394d20065",
+          "79a0e651bd06068d785b54dfd9080245d7b9280b",
+          "f06dec1b21925bf1af8c676bc7e24bc4ecf3d002",
+          "4091a2b65b8f187ccb87a04790272007dabd39ea",
+          "f711522205cc9a4b03ecb52bc55224d6466338a9",
+          "c0ebf6b0f9ef237dcfc9eebda31befc135bbf037"
+        ],
+        "surfaceCommitsTruncated": false,
+        "changedFileCount": 30,
+        "baseCommitSurfaceTouchCount": 0,
+        "baseCommitSurfaceTouches": [],
+        "baseCommitSurfaceTouchesTruncated": false,
+        "reason": "The base is fb217b96add37ed41e5c7bf1a35e693c39b5138b, the first parent of c0ebf6b, the earliest commit that names PL-0301. It is proven against the TREE rather than against filenames or commit messages, because this project has lost four tasks to bases that passed every mechanical check and were still false. At fb217b9, git ls-tree -r packages/provider-sdk returns exactly three paths -- package.json, src/index.ts and tsconfig.json -- so no adapter of any kind exists in the parent tree, fixture or Stremio, and the BEHAVIOUR is absent rather than merely the files. That is the PL-0205 standard: that failure came from a witness file created by a later refactor that only MOVED declarations, so the parent tree already held the semantics. Nothing can have been moved into a package whose entire content is a bootstrap barrel and a tsconfig. Probes used were stremio/source.ts and stremio/mapping.ts, which are genuinely new at c0ebf6b; src/provider.ts was deliberately NOT used as a probe, because git show fb217b9:packages/provider-sdk/src/index.ts shows the AuthorizedMediaProvider interface and the allowlist assertion already present in the barrel and merely relocated into that file, which is the same trap in a second place. src/index.ts and package.json were likewise not used, since both exist at the bootstrap commit b484735. The base commit itself changes nothing under the reviewed surface. THE IMPLEMENTATION PREDATES THE CLAIM BY DESIGN, NOT BY OVERSIGHT: coordination/IMPLEMENTATION_RECOVERY.md lists this task in the table headed Implemented, unreviewed, the record carried owner null with no gate results and no base, and the five fixture files were created at 719d2d7 while the task sat BACKLOG. ONE CLASSIFICATION IS LOAD-BEARING AND IS PUBLISHED RATHER THAN BURIED: this base covers the Stremio adapter as well as the fixture adapter, because every file under packages/provider-sdk/src/stremio carries a PL-0301 header, all were created by commits naming PL-0301, IMPLEMENTATION_RECOVERY names both, client.test.ts line 104 says PL-0301s acceptance criterion end to end, and fixture/rights.ts and fixture/provider.ts import the rights-basis table and checkUrl from that directory, so the fixture gate cannot be reviewed without it. If the reviewer rules the surface is fixture-only, this base is wrong and the correct one is f6c4b942ebbd02fd3fa9ed8f74fde4fc603affc2, the parent of 719d2d7 -- and the Stremio adapter is then owned by no task at all."
+      }
     },
     {
       "id": "PL-0302",
@@ -1508,7 +1579,9 @@
         "baseCommitSurfaceTouchesTruncated": false,
         "reason": "The implementation predates the claim. packages/auth holds nine source files, better-auth and its Drizzle adapter are pinned there at exactly 1.7.1 with no caret range, enabled-surface.ts declares the permitted capabilities and the withheld plugin families, and the decision itself is ADR-007 in docs/DECISIONS.md -- while the task was never claimed and carried no gate results. THE BASE WAS PROVEN RATHER THAN GUESSED, on the same rule and by the same five checks as PL-0601, using ENABLED_AUTH_CAPABILITIES and WITHHELD_AUTH_PLUGIN_FAMILIES as behaviour witnesses. The declared surface was corrected in BOTH directions before this run: narrowed from docs and apps and contracts wildcards that between them reserved most of the repository, and widened to packages/auth, which the task had never declared despite that package being its primary output -- so a reconcile against the old declaration would have reported the bulk of its own implementation as outside its surface. The migration ADR-007 rests on is a reviewDependency rather than a write path, on the reviewer's instruction that citing it as evidence while leaving it outside the surface was the one unacceptable option."
       },
-      "blocker": "Provenance invalid plus three merits blockers, per gpt-architect at 64b631d5a034fc884da185dc6b3a0cb7df6e608e, which recorded neither architecture-review nor security-review. Same incomplete-probe defect as PL-0601: ENABLED_AUTH_CAPABILITIES and WITHHELD_AUTH_PLUGIN_FAMILIES correctly located the code introduction while missing earlier task implementation on another declared write path, because docs/DATA_MODEL.md did not exist at 56b343 and was created in bbe68ed8, before the recorded base fc1ea4d54c9e7d2b2f6d9aa71a977abdc3bcb400, already identifying itself as covering this task's auth boundary and already selecting Better Auth 1.7.1. The true lower bound is 56b3435418f222f557ce957e7d5de3827da107b7. THREE MERITS BLOCKERS CARRY TO THE SUCCESSOR. First, ProfileScope is forgeable and it is the PL-0706 defect in a second place: the brand is type-only and mintProfileScope returns an ordinary object via cast, so a holder of a genuine scope can spread it with a replacement profileId and keep the branded type without the explicit cast ADR-007 calls the only forgery route, while persistence trusts scope.profileId directly -- a cross-profile data-access bypass. Second, better-auth and its Drizzle adapter are pinned at 1.7.1 while upstream supports only the current 1.7.4 from 2026-09-10; the reviewer noted this proves the exact-pin policy working rather than failing, and required that the hand-written migration be reconciled against the reviewed version first, because 1.7.3 restored the 1.6 account core schema while the migration still carries an issuer column and an issuer plus account_id uniqueness rule. Third, ADR-007 states obsolete control-plane routing. Preserved as audit history and superseded by PL-0405. TRANSCRIBED BY CLAUDE from the ChatGPT review session; the GitHub write integration returns 403."
+      "blocker": "Provenance invalid plus three merits blockers, per gpt-architect at 64b631d5a034fc884da185dc6b3a0cb7df6e608e, which recorded neither architecture-review nor security-review. Same incomplete-probe defect as PL-0601: ENABLED_AUTH_CAPABILITIES and WITHHELD_AUTH_PLUGIN_FAMILIES correctly located the code introduction while missing earlier task implementation on another declared write path, because docs/DATA_MODEL.md did not exist at 56b343 and was created in bbe68ed8, before the recorded base fc1ea4d54c9e7d2b2f6d9aa71a977abdc3bcb400, already identifying itself as covering this task's auth boundary and already selecting Better Auth 1.7.1. The true lower bound is 56b3435418f222f557ce957e7d5de3827da107b7. THREE MERITS BLOCKERS CARRY TO THE SUCCESSOR. First, ProfileScope is forgeable and it is the PL-0706 defect in a second place: the brand is type-only and mintProfileScope returns an ordinary object via cast, so a holder of a genuine scope can spread it with a replacement profileId and keep the branded type without the explicit cast ADR-007 calls the only forgery route, while persistence trusts scope.profileId directly -- a cross-profile data-access bypass. Second, better-auth and its Drizzle adapter are pinned at 1.7.1 while upstream supports only the current 1.7.4 from 2026-09-10; the reviewer noted this proves the exact-pin policy working rather than failing, and required that the hand-written migration be reconciled against the reviewed version first, because 1.7.3 restored the 1.6 account core schema while the migration still carries an issuer column and an issuer plus account_id uniqueness rule. Third, ADR-007 states obsolete control-plane routing. Preserved as audit history and superseded by PL-0405. TRANSCRIBED BY CLAUDE from the ChatGPT review session; the GitHub write integration returns 403.",
+      "supersededBy": "PL-0405",
+      "supersessionNote": "MACHINE-READABLE SUPERSESSION ADDED 2026-09-15 by claude-lead. Until now every one of these four supersessions existed only as prose inside blockedReason and notes, which no check could read. PL-0301 spent that entire period dependency-gated behind PL-0205 -- and through it PL-0302, PL-0501, PL-0502, PL-0701 and PL-0702, the whole M4 playback vertical slice -- because requireAllDependenciesDone is true, PL-0205 can only ever terminate BLOCKED, and nothing mechanical connected it to the successor that was already DONE. The pointer is now a field rather than a paragraph, and PL-AI-0007 adds the validator rule that makes the same mistake impossible to repeat silently."
     },
     {
       "id": "PL-0402",
@@ -1754,7 +1827,9 @@
         "baseCommitSurfaceTouchesTruncated": false,
         "reason": "The implementation predates the claim. packages/contracts/src/domains/live.ts is a complete contract module whose header names this task, live.test.ts is its suite, and docs/LIVE_TV.md is written around it -- while the task was never claimed and carried no gate results. THE BASE WAS PROVEN RATHER THAN GUESSED, on the rule the reviewer stated after PL-0205: prove the behaviour was absent before the base and present because of the implementation, and never substitute the creation date of the file that happens to contain it today. Two behaviour witnesses were used, liveChannelSchema and epgListingSchema, located with git log --reverse and the pickaxe over packages and apps, which reports where a symbol first appears anywhere in source and is therefore immune to a later refactor moving it between files. The runner verified that the liveChannelSchema introduction is at or before the epgListingSchema introduction, so the first marker really is the boundary; that this base is that commit's first parent, resolved with rev-parse --verify; that neither witness appears in source at this base, each asserted on an exact no-match exit code rather than merely a non-zero one; and that HEAD still carries them. It also self-tested the probe itself first, against a marker whose introduction commit was already known, because an earlier run produced three refusals that turned out to mean only that the command was broken."
       },
-      "blocker": "Provenance invalid, per gpt-architect at 64b631d5a034fc884da185dc6b3a0cb7df6e608e, which recorded neither architecture-review nor rights-review because a verdict bound to a false range is worth less than no verdict. The merits were read and found approvable and carry forward. implementationBaseSha is 33588cdce6de6a21c19a0f4725cc87b199deaa50, proven with two behaviour witnesses, liveChannelSchema and epgListingSchema, located by content pickaxe. Five checks passed and the answer is still false, because THE WITNESSES PROVED THE SCHEMA BOUNDARY AND NOT THE TASK BOUNDARY: docs/LIVE_TV.md is an allowedPath and part of the stated implementation, and its PL-0601 rewrite -- the commit replacing the original eleven-line Live TV note with the normalization-and-rights document -- landed at bbe68ed8d16f864c87309ceb1c089495deb89766, an ancestor of the recorded base. The base tree therefore already contained part of the implementation, and the published one-commit three-file window excluded task work it claimed to cover. The true lower bound is 56b3435418f222f557ce957e7d5de3827da107b7, the parent of bbe68ed8, while docs/LIVE_TV.md remains a write surface. This cannot be repaired in place on the rule PL-0703 established. Preserved as audit history and superseded by PL-0603. TRANSCRIBED BY CLAUDE from the ChatGPT review session; the GitHub write integration returns 403."
+      "blocker": "Provenance invalid, per gpt-architect at 64b631d5a034fc884da185dc6b3a0cb7df6e608e, which recorded neither architecture-review nor rights-review because a verdict bound to a false range is worth less than no verdict. The merits were read and found approvable and carry forward. implementationBaseSha is 33588cdce6de6a21c19a0f4725cc87b199deaa50, proven with two behaviour witnesses, liveChannelSchema and epgListingSchema, located by content pickaxe. Five checks passed and the answer is still false, because THE WITNESSES PROVED THE SCHEMA BOUNDARY AND NOT THE TASK BOUNDARY: docs/LIVE_TV.md is an allowedPath and part of the stated implementation, and its PL-0601 rewrite -- the commit replacing the original eleven-line Live TV note with the normalization-and-rights document -- landed at bbe68ed8d16f864c87309ceb1c089495deb89766, an ancestor of the recorded base. The base tree therefore already contained part of the implementation, and the published one-commit three-file window excluded task work it claimed to cover. The true lower bound is 56b3435418f222f557ce957e7d5de3827da107b7, the parent of bbe68ed8, while docs/LIVE_TV.md remains a write surface. This cannot be repaired in place on the rule PL-0703 established. Preserved as audit history and superseded by PL-0603. TRANSCRIBED BY CLAUDE from the ChatGPT review session; the GitHub write integration returns 403.",
+      "supersededBy": "PL-0603",
+      "supersessionNote": "MACHINE-READABLE SUPERSESSION ADDED 2026-09-15 by claude-lead. Until now every one of these four supersessions existed only as prose inside blockedReason and notes, which no check could read. PL-0301 spent that entire period dependency-gated behind PL-0205 -- and through it PL-0302, PL-0501, PL-0502, PL-0701 and PL-0702, the whole M4 playback vertical slice -- because requireAllDependenciesDone is true, PL-0205 can only ever terminate BLOCKED, and nothing mechanical connected it to the successor that was already DONE. The pointer is now a field rather than a paragraph, and PL-AI-0007 adds the validator rule that makes the same mistake impossible to repeat silently."
     },
     {
       "id": "PL-0602",
@@ -2033,7 +2108,9 @@
       "implementationAgent": "claude-security",
       "updatedAt": "2026-09-08T04:32:37.213Z",
       "implementationBaseSha": "f6c4b942ebbd02fd3fa9ed8f74fde4fc603affc2",
-      "blocker": "Provenance invalid, per gpt-architect at 5b59c6c2. implementationBaseSha is f6c4b942ebbd02fd3fa9ed8f74fde4fc603affc2, recorded by an ordinary start, which opens the review range AFTER part of the implementation already existed: the first incident repair at 9933a55 sits before it, so the recorded range excludes half the implementation it claims to cover. The reviewer verified this cannot be repaired in place -- release is unavailable from REVIEW and deliberately preserves an existing base, and reconciliation refuses any task that already records one, because reconciliation establishes a base rather than revising one. This record is preserved as audit history rather than rewritten. Superseded by PL-0706, which reconciles from cf98b977b3c7c0113928bb9cc4d7fb6d02e802bd. The reviewer also refused both security-review and rights-review on the merits at that head: two fixture providers and two runtime allowlists coexisted, recreating the two-copy arrangement this corrective exists to remove."
+      "blocker": "Provenance invalid, per gpt-architect at 5b59c6c2. implementationBaseSha is f6c4b942ebbd02fd3fa9ed8f74fde4fc603affc2, recorded by an ordinary start, which opens the review range AFTER part of the implementation already existed: the first incident repair at 9933a55 sits before it, so the recorded range excludes half the implementation it claims to cover. The reviewer verified this cannot be repaired in place -- release is unavailable from REVIEW and deliberately preserves an existing base, and reconciliation refuses any task that already records one, because reconciliation establishes a base rather than revising one. This record is preserved as audit history rather than rewritten. Superseded by PL-0706, which reconciles from cf98b977b3c7c0113928bb9cc4d7fb6d02e802bd. The reviewer also refused both security-review and rights-review on the merits at that head: two fixture providers and two runtime allowlists coexisted, recreating the two-copy arrangement this corrective exists to remove.",
+      "supersededBy": "PL-0706",
+      "supersessionNote": "MACHINE-READABLE SUPERSESSION ADDED 2026-09-15 by claude-lead. Until now every one of these four supersessions existed only as prose inside blockedReason and notes, which no check could read. PL-0301 spent that entire period dependency-gated behind PL-0205 -- and through it PL-0302, PL-0501, PL-0502, PL-0701 and PL-0702, the whole M4 playback vertical slice -- because requireAllDependenciesDone is true, PL-0205 can only ever terminate BLOCKED, and nothing mechanical connected it to the successor that was already DONE. The pointer is now a field rather than a paragraph, and PL-AI-0007 adds the validator rule that makes the same mistake impossible to repeat silently."
     },
     {
       "id": "PL-0702",
@@ -2963,7 +3040,8 @@
           "evidence": "APPROVED on security-review and rights-review. The single runtime allowlist now lives at the shared lower boundary, is frozen at runtime, and is consulted by a parameterless mint that observes the running process rather than accepting a caller-authored environment name. The private brand, frozen issued value and identity registry remain intact, permission-granting consumers validate issuance, the provider SDK cannot classify itself or manufacture the capability it receives, and the new regressions prove that append, overwrite and truncation cannot widen the allowlist and that a production process still receives no capability after an attempted mutation. The direct index walk may remain as cheap defensive hardening against borrowed Array prototype behavior, but arbitrary same-process intrinsic poisoning is not a new threat model requirement. The corrected two-mode Playwright gate is bound to the post-freeze tree and remains fresh at this head. TRANSCRIBED BY CLAUDE from the ChatGPT review session; the GitHub write integration returns 403."
         }
       ],
-      "completedAt": "2026-09-12T01:28:51.495Z"
+      "completedAt": "2026-09-12T01:28:51.495Z",
+      "supersedes": "PL-0703"
     },
     {
       "id": "PL-0206",
@@ -3120,7 +3198,8 @@
           "evidence": "APPROVED. PL-0207 now binds the already-reviewed unknown-media implementation to the truthful lower bound cf2a4583e120151bf16e90d8eb41842cd7329c83 rather than to the later module-split file creation that invalidated PL-0205. The successor narrows write ownership to the verified implementation files, carries the corrected three-state acceptance, and current contracts, eligibility and scoring still represent unknown explicitly, refuse stated unsupported codecs, keep unstated codecs only as unverified attemptable candidates, preserve rights-first rejection, and award no fabricated score through renormalisation. Fresh typecheck and unit gates are bound to 045695f7b382250497821e46e642eda1772dbdb0, no reviewed product file changed between that gate tree and 1c96ff6b7676fb391f4af09a63027df94d8e697b, and exact-head CI is green. The provenance defect that blocked PL-0205 is therefore closed rather than rewritten. TRANSCRIBED BY CLAUDE from the ChatGPT review session; the GitHub write integration returns 403, so no connector-authored message exists."
         }
       ],
-      "completedAt": "2026-09-12T02:35:18.281Z"
+      "completedAt": "2026-09-12T02:35:18.281Z",
+      "supersedes": "PL-0205"
     },
     {
       "id": "PL-0603",
@@ -3230,7 +3309,8 @@
           "evidence": "APPROVED on architecture-review and rights-review. The corrected base 56b3435418f222f557ce957e7d5de3827da107b7 now precedes both halves of the declared implementation rather than only the schema half: the pre-base history of the four write paths is exactly the inspected bootstrap touch to LIVE_TV.md and the PL-AI-0006 creation of module-boundary.test.ts, while live.ts and live.test.ts do not yet exist, and the review window then contains bbe68ed8 for the Live TV document and fc1ea4d for the contract, tests and boundary retirement. On the merits, channel rights remain required and drawn from the one shared vocabulary, a listing cannot independently carry a rights basis or playback address, strict parsing refuses injected playability keys, the compile-time witness protects the listing shape, a listing and channel mismatch produces a named refusal, timestamp guessing is refused, and deterministic ordering is explicit. The exact-head CI run is green and no reviewed PL-0603 implementation path changed after its recorded typecheck tree. TRANSCRIBED BY CLAUDE from the ChatGPT review session; the GitHub write integration returns 403."
         }
       ],
-      "completedAt": "2026-09-14T04:29:33.971Z"
+      "completedAt": "2026-09-14T04:29:33.971Z",
+      "supersedes": "PL-0601"
     },
     {
       "id": "PL-0405",
@@ -3282,7 +3362,97 @@
       },
       "implementationAgent": "claude-backend",
       "updatedAt": "2026-09-15T05:36:47.042Z",
-      "implementationBaseSha": "68c432645131336393f3d5e08503951193ca5350"
+      "implementationBaseSha": "68c432645131336393f3d5e08503951193ca5350",
+      "supersedes": "PL-0401"
+    },
+    {
+      "id": "PL-AI-0007",
+      "priority": "P0",
+      "lane": "Coordination",
+      "status": "REVIEW",
+      "title": "Supersession is a field, and a task cannot stay gated behind one",
+      "description": "Four tasks -- PL-0205, PL-0401, PL-0601, PL-0703 -- are BLOCKED, terminal, and superseded by a corrective re-run. Each says so only in prose. BLOCKED transitions only to BACKLOG, READY or CANCELED, so a superseded task can never reach DONE, and with completion.requireAllDependenciesDone true, any task depending on one is gated forever. That is not a hypothetical: PL-0301 was gated behind PL-0205 while PL-0207 sat DONE, and with it PL-0302, PL-0501, PL-0502, PL-0701 and PL-0702. A human noticed. Nothing in ai:validate could have.",
+      "notes": "SCOPE IS THE VALIDATOR, NOT A DEPENDENCY REWRITER. The rule reports; it never edits a dependency, because repointing a dependency is a task-definition change and those are deliberate, reasoned and recorded -- see PL-0301's own notes for what that looks like. An automatic repointer would make the graph self-modifying on the strength of a field any writer can set. THE RULE, PRECISELY. For each task T declaring supersededBy S: S must exist, must not be T, and T must not itself be DONE, or that is an ERROR, because a DONE task that claims to be superseded is two contradictory records of the same work. If S declares supersedes, it must name T -- a one-way pointer is a typo waiting to be trusted. Then, for each task D whose dependencies contain T: if S is DONE, ERROR, because D is gated behind a task that can never complete while its replacement already has; if S is not DONE, WARN, because the edge is not yet fatal but will become so the moment S completes, and a warning that arrives before the deadlock is the entire point. WHY ERROR AND NOT WARN FOR THE FIRST CASE. ai:validate already treats provenance drift as a warning and structural impossibility as an error. A dependency that can never be satisfied is structural: no sequence of legal transitions resolves it. It belongs with 'missing dependency' and 'invalid status', not with drift. WHAT THIS RULE CANNOT DO, STATED SO NOBODY OVERTRUSTS IT. supersededBy is self-asserted, exactly like fromAgent on the agent bus. It proves that somebody wrote a pointer, not that the successor genuinely carries the predecessor's work. A wrong pointer produces a wrong error or hides a real deadlock. It is a cheap alarm on a failure mode that has already cost this project one stalled milestone, not a proof of anything.",
+      "dependencies": [],
+      "allowedPaths": [
+        "scripts/ai-control-plane.mjs",
+        "scripts/test-ai-control-plane.mjs",
+        "control/README.md"
+      ],
+      "reviewDependencies": [
+        "control/policies.json"
+      ],
+      "preferredAgent": "claude-lead",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "repo-validate",
+        "typecheck",
+        "unit"
+      ],
+      "acceptance": "ai:validate refuses a task graph in which a task depends on a task that declares supersededBy and whose named successor is DONE, and warns when the successor is not yet DONE. It also refuses a supersededBy naming a missing task, naming itself, declared on a DONE task, or contradicted by the successor's supersedes field. The rule reports and never edits a dependency. The four existing supersession pairs validate clean, and a regression in scripts/test-ai-control-plane.mjs proves the rule fires -- both that it errors on a reconstructed PL-0301-behind-PL-0205 graph and that it stays silent on the repaired one, so it cannot pass by being inert.",
+      "owner": "claude-lead",
+      "gateResults": {
+        "repo-validate": {
+          "status": "pass",
+          "at": "2026-09-15T17:32:54.251Z",
+          "by": "claude-lead",
+          "commitSha": "80e3d3e3e0130571a1a0791b496a9e2cce0c6c7a",
+          "evidence": "npm run repo:validate at the PL-AI-0007 working tree, exit 0, 'Project Liberty repository validation passed.' Re-run after the control/README.md section documenting supersession was written, because that file is a declared write path and validate-repo.mjs reads the repository layout this task's documentation describes."
+        },
+        "typecheck": {
+          "status": "pass",
+          "at": "2026-09-15T17:32:54.458Z",
+          "by": "claude-lead",
+          "commitSha": "80e3d3e3e0130571a1a0791b496a9e2cce0c6c7a",
+          "evidence": "npx turbo run typecheck --force, exit 0, 9 of 9 tasks and 0 cached. STATED PLAINLY BECAUSE IT WOULD OTHERWISE OVERCLAIM: this task's code is scripts/ai-control-plane.mjs and scripts/test-ai-control-plane.mjs, which are plain ESM and are not in any workspace, so no tsc pass covers them and this gate proves only that the change broke nothing in the nine TypeScript projects. The regression evidence for the rule itself is under the unit gate, where it belongs."
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-09-15T17:32:54.650Z",
+          "by": "claude-lead",
+          "commitSha": "80e3d3e3e0130571a1a0791b496a9e2cce0c6c7a",
+          "evidence": "Two executions, and the second is the one that matters. npx turbo run test --force, exit 0, 15 of 15 tasks and 0 cached, 2096 passed 1 skipped 0 failed. Then node scripts/test-ai-control-plane.mjs, exit 0, 'AI control plane tests passed (67 scenarios)' -- the suite that actually exercises validate, up from 66. Scenario 10s is new and asserts the rule in BOTH directions on one frozen fixture set, because a validator rule fails characteristically by staying silent forever while everyone assumes it works: the reconstructed PL-0301-behind-PL-0205 shape errors naming both ends, the repair clears it BY REPOINTING THE DEPENDENCY AT THE SUCCESSOR rather than by deleting the pointer, a successor that is not yet DONE warns instead of failing the build, and four malformed pointers are each refused -- unknown successor, self-reference, a successor whose supersedes disagrees, and supersededBy on a DONE task. Fixtures rather than live data on this suite's standing rule: the live graph now has zero such edges, so a scenario reading it would pass by being inert. ALSO REPAIRED, AND DISCLOSED RATHER THAN QUIETLY FIXED: scenario 9w went red because authoring PL-0901 gave claude-lead an autonomously workable task, which falsified an assertion that was a screenshot of that day's backlog rather than an invariant. On this file's own standing rule the scenario was moved onto a frozen fixture set instead of having its expectation rewritten -- rewriting it would be indistinguishable from rewriting it to match a regression -- and it now proves both halves: an orchestration-owning candidate is skipped by name and left READY, and an identical candidate with a non-privileged surface is still selected, so the scenario cannot pass by selection being broken outright. The other two script suites were run to prove the change is contained: node scripts/test-validate-env.mjs exit 0, 38 scenarios; node scripts/cloud/test-dispatcher.mjs exit 0, 35 scenarios."
+        }
+      },
+      "implementationAgent": "claude-lead",
+      "updatedAt": "2026-09-15T17:32:54.857Z",
+      "implementationBaseSha": "80e3d3e3e0130571a1a0791b496a9e2cce0c6c7a"
+    },
+    {
+      "id": "PL-0901",
+      "priority": "P0",
+      "lane": "Architecture",
+      "status": "REVIEW",
+      "title": "Windows desktop shell and the PlayerAdapter boundary",
+      "description": "Project Liberty's first production target is Windows desktop on the commander's own machine. The commander has settled the direction: a Tauri shell, the existing Next.js application preserved rather than rewritten and served by a Next standalone sidecar, a PlayerAdapter boundary the application and domain layers depend on instead of any concrete player, libmpv for compatible non-DRM playback, Shaka/EME retained for DRM-capable playback, capability routing made explicit before playback rather than discovered during it, and an LGPL-compatible libmpv/FFmpeg build pipeline of our own rather than a GPL prebuilt. This task records that decision and specifies the boundary. It writes documentation only -- no shell, no adapter, no dependency is added here, because the instruction is that architecture is recorded before a large irreversible implementation, not after it.",
+      "notes": "THE AUDIT CAME FIRST AND IT FOUND A CLEAN SLATE. A repository-wide search for electron, tauri, mpv, libmpv, webview2, neutralino and nw.js across every .ts, .tsx, .json, .md, .mjs and .yml outside node_modules returned nothing. So neither shell was favoured by anything already in the tree, and the decision was made on evidence rather than on inertia. Today's player is shaka-player ~5.2.6 with xstate ^5.32.5 and custom-media-element in apps/web. THE DECIDING FACT IS COMPOSITING, NOT BUNDLE SIZE. Putting HTML chrome over a hardware-accelerated native video surface in one window on Windows is a documented, shipping arrangement on WebView2 -- ICoreWebView2Controller2::put_DefaultBackgroundColor accepts alpha 0 or 255 only, and at 0 the host's content renders beneath -- and has no supported path on Chromium, where PPAPI is gone and child HWNDs are no longer in the window hierarchy. Stremio ships the WebView2 plus libmpv --wid arrangement in production on Windows and measured its previous render-API-into-a-texture approach as 2-5x worse. Any size-based argument for Tauri should be dropped: with a Node sidecar the installer lands near Electron's anyway. THE SIDECAR IS WHAT PRESERVES THE APPLICATION. Tauri's default is a static export, which would force every /api/v1 route handler off Next -- a rewrite of the application's architecture, which the instruction forbids. output: standalone in a sidecar keeps Server Components, route handlers, proxy.ts, cookies(), headers(), Server Actions and ISR working. It costs a Node runtime in the bundle, a loopback listener, supervision code and Tauri's CSP injection, which does not reach an external http origin. ONE QUESTION THIS TASK DOES NOT DECIDE AND MUST NOT DECIDE SILENTLY. A sidecar runs the application's server on a machine the user administers. If provider resolution runs there, then the boundary that enforces invariants 1 and 2 executes from files the user can read and replace, with whatever credentials it needs in its environment. The alternative is that the desktop build implements those specific routes as an authenticated proxy to the backend -- same route, same contract, same URL, a different implementation behind it, selected by build target, which is ordinary adapter work rather than a rewrite. This document states the question, states the recommendation, and leaves the ruling to the reviewer and the commander. It is a design input to PL-0501 and is cheaper to supply now than to retrofit. DRM IS A ROUTING CONSTRAINT, NOT A GAP TO CLOSE. mpv has no CDM and cannot be given one. That is not something to work around: the mpv adapter must REFUSE a DRM-protected candidate with a named reason and must never attempt it, never fall back and never degrade. Which means capability routing has to be an explicit, reasoned decision before playback -- canPlay returning a reason on both branches -- rather than a guess discovered at load time. That is what makes invariant 2 structural here rather than a promise, and it is why the boundary carries a capability descriptor at all. THE LICENSING WORK IS THE LONG POLE AND IT GATES SHIPPING RATHER THAN PROTOTYPING. A stock prebuilt libmpv is a GPL build and must not ship in a closed-source product; the one LGPL variant on offer statically links an LGPLv3 FFmpeg and carries its builder's own no-warranty disclaimer. Building our own with -Dgpl=false and an LGPL FFmpeg, with an SBOM, converts an open-ended exposure into a reviewable artifact. Nothing in this document is legal advice and counsel review is named as a precondition of shipping rather than assumed.",
+      "dependencies": [],
+      "allowedPaths": [
+        "docs/DESKTOP_PLAYBACK.md",
+        "docs/ARCHITECTURE.md"
+      ],
+      "reviewDependencies": [
+        "apps/web/src/components/player/playback-machine.ts",
+        "apps/web/src/components/player/engine.ts",
+        "apps/web/src/components/player/shaka-engine.ts",
+        "apps/web/src/components/player/playback-session.ts",
+        "packages/contracts/src/domains/playback.ts",
+        "docs/RESEARCH_PLAYBACK.md",
+        "docs/AV_SYNC_MEASUREMENT.md",
+        "docs/CONTENT_RIGHTS.md"
+      ],
+      "preferredAgent": "claude-lead",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "architecture-review",
+        "rights-review"
+      ],
+      "acceptance": "A recorded architecture decision states the Windows desktop target, the Tauri shell, the preserved Next.js application served by a standalone sidecar, and the LGPL-compatible libmpv/FFmpeg build pipeline, each with the evidence it rests on and the strongest argument against it. It specifies PlayerAdapter as an interface the application and domain layers depend on -- load an authorized playback session, play, pause, seek, stop, select audio track, select subtitle track, set volume, expose position and duration, expose buffering and stall events, expose recoverable and fatal errors, expose track metadata, expose A/V sync telemetry where available, dispose -- with no mpv, Electron, Tauri or Shaka type reachable from it, and names the two implementations behind it and the explicit capability routing that chooses between them, including the requirement that the mpv adapter refuse DRM-protected candidates with a named reason rather than attempt them. It states that media addresses continue to come only from authorized provider resolution and the playback-session boundary and that the client can never submit one, that stream candidate ranking stays in @liberty/media-engine, and that provider-specific logic stays in @liberty/provider-sdk. It states where provider resolution runs in the desktop build as an open question with a recommendation rather than deciding it silently, because that answer is a design input to PL-0501. It records what was verified, what was not, and which specific facts would reverse each decision. No shell, adapter or dependency is implemented here.",
+      "owner": "claude-lead",
+      "gateResults": {},
+      "implementationAgent": "claude-lead",
+      "updatedAt": "2026-09-15T17:50:43.130Z",
+      "implementationBaseSha": "80e3d3e3e0130571a1a0791b496a9e2cce0c6c7a"
     }
   ]
 }

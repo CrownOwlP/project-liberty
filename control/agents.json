@@ -5,7 +5,20 @@
       "id": "gpt-architect",
       "provider": "openai",
       "kind": "external-reasoning",
-      "capabilities": ["Architecture", "Product", "Media", "Provider", "Backend", "Security", "Live", "Coordination", "Recommendations", "Review", "Research", "Integration"],
+      "capabilities": [
+        "Architecture",
+        "Product",
+        "Media",
+        "Provider",
+        "Backend",
+        "Security",
+        "Live",
+        "Coordination",
+        "Recommendations",
+        "Review",
+        "Research",
+        "Integration"
+      ],
       "maxParallel": 6,
       "writeMode": "branch-or-review",
       "notes": "Architecture, decomposition, complex reasoning, review, integration design, and high-leverage implementation. Requires repository/GitHub visibility to operate on current code."
@@ -14,7 +27,12 @@
       "id": "claude-lead",
       "provider": "anthropic",
       "kind": "local-lead",
-      "capabilities": ["Coordination", "Integration", "Architecture", "Review"],
+      "capabilities": [
+        "Coordination",
+        "Integration",
+        "Architecture",
+        "Review"
+      ],
       "maxParallel": 2,
       "writeMode": "worktree",
       "notes": "Claude Code Desktop lead. Decomposes work, coordinates subagents, integrates and verifies."
@@ -23,7 +41,10 @@
       "id": "claude-frontend",
       "provider": "anthropic",
       "kind": "local-subagent",
-      "capabilities": ["Frontend", "Player"],
+      "capabilities": [
+        "Frontend",
+        "Player"
+      ],
       "maxParallel": 2,
       "writeMode": "worktree",
       "definition": ".claude/agents/frontend-builder.md",
@@ -33,16 +54,24 @@
       "id": "claude-backend",
       "provider": "anthropic",
       "kind": "local-subagent",
-      "capabilities": ["Backend", "Provider"],
-      "maxParallel": 1,
+      "capabilities": [
+        "Backend",
+        "Provider"
+      ],
+      "maxParallel": 2,
       "writeMode": "worktree",
-      "definition": ".claude/agents/backend-builder.md"
+      "definition": ".claude/agents/backend-builder.md",
+      "notes": "Raised from 1 to 2 on 2026-09-15, on exactly the precedent claude-frontend set and claude-media followed, for the identical reason and with the identical bound. This is the only local agent advertising Backend or Provider, so with a limit of 1 a single task sitting in REVIEW behind an external reviewer stopped the whole lane: PL-0405 moved to REVIEW for gpt-architect and ai:dispatch immediately reported 'no conflict-free executable tasks', with PL-0301 deferred for capacity alone -- not for paths, which had just been narrowed to be disjoint from every active task, and not for dependencies, which were satisfied. PL-0301 is the P0 that gates PL-0302, PL-0501, PL-0502, PL-0701 and PL-0702, so one external verdict was holding the entire M4 playback vertical slice behind a capacity number rather than behind any real conflict. THE LIMIT EXISTS TO PREVENT OVERLAPPING WRITES, AND OVERLAP IS ALREADY PREVENTED STRUCTURALLY by allowedPaths, which conflictWithActive enforces on every claim and refuses regardless of owner. So raising this changes nothing about safety: PL-0305 and PL-0301 remain subject to the same path arithmetic they were before, and a genuinely overlapping pair stays mutually exclusive. Two rather than unlimited is deliberate, in the same words the other two lanes used: it lets one task wait on review while another proceeds, without pretending one agent can hold an open-ended number of surfaces at once."
     },
     {
       "id": "claude-media",
       "provider": "anthropic",
       "kind": "local-subagent",
-      "capabilities": ["Media", "Player", "Live"],
+      "capabilities": [
+        "Media",
+        "Player",
+        "Live"
+      ],
       "maxParallel": 2,
       "writeMode": "worktree",
       "definition": ".claude/agents/media-engineer.md",
@@ -52,7 +81,10 @@
       "id": "claude-test",
       "provider": "anthropic",
       "kind": "local-subagent",
-      "capabilities": ["Test", "Review"],
+      "capabilities": [
+        "Test",
+        "Review"
+      ],
       "maxParallel": 1,
       "writeMode": "worktree",
       "definition": ".claude/agents/test-engineer.md"
@@ -61,7 +93,10 @@
       "id": "claude-security",
       "provider": "anthropic",
       "kind": "local-subagent",
-      "capabilities": ["Security", "Review"],
+      "capabilities": [
+        "Security",
+        "Review"
+      ],
       "maxParallel": 1,
       "writeMode": "read-mostly",
       "definition": ".claude/agents/security-reviewer.md"
@@ -70,7 +105,10 @@
       "id": "claude-infra",
       "provider": "anthropic",
       "kind": "local-subagent",
-      "capabilities": ["Infra", "Observability"],
+      "capabilities": [
+        "Infra",
+        "Observability"
+      ],
       "maxParallel": 1,
       "writeMode": "worktree",
       "definition": ".claude/agents/infra-engineer.md"
@@ -79,7 +117,12 @@
       "id": "human-commander",
       "provider": "human",
       "kind": "executive",
-      "capabilities": ["ExecutiveDecision", "Credentials", "Budget", "Licensing"],
+      "capabilities": [
+        "ExecutiveDecision",
+        "Credentials",
+        "Budget",
+        "Licensing"
+      ],
       "maxParallel": 99,
       "writeMode": "approval"
     }

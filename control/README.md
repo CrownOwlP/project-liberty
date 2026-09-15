@@ -372,6 +372,56 @@ None of them authenticate — nothing in a local CLI can. They exist so a caller
 that is wrong about who owns a task is refused loudly rather than silently
 mutating another agent's lane.
 
+## Supersession, and a dependency nothing can satisfy
+
+A corrective re-run **supersedes** its predecessor, and the predecessor stays
+`BLOCKED` on purpose: its provenance record is preserved as audit history rather
+than repaired, on the rule PL-0703 established. But `BLOCKED` transitions only to
+`BACKLOG`, `READY` or `CANCELED`. A superseded task can therefore never reach
+`DONE`, and with `completion.requireAllDependenciesDone`, every task depending on
+one is gated forever.
+
+That is not a hypothetical. `PL-0301` sat dependency-gated behind `PL-0205` —
+BLOCKED, terminal, superseded by `PL-0207`, which was already `DONE` — and
+through `PL-0301` it held `PL-0302`, `PL-0501`, `PL-0502`, `PL-0701` and
+`PL-0702`: the entire M4 playback vertical slice. `validate` reported the graph
+as valid the whole time, because the supersession existed only as prose inside
+`blockedReason` and `notes`, which no check reads. A human noticed.
+
+So supersession is a field:
+
+```json
+{ "id": "PL-0205", "status": "BLOCKED", "supersededBy": "PL-0207" }
+{ "id": "PL-0207", "status": "DONE",    "supersedes": "PL-0205" }
+```
+
+`validate` then enforces:
+
+- `supersededBy` must name an existing task, must not name itself, and must not
+  appear on a task that is `DONE` — a completed task and its replacement are two
+  records of the same work.
+- If the successor declares `supersedes`, it must name the predecessor. A
+  one-way pointer is a typo waiting to be trusted.
+- A task depending on a superseded task is an **error** once the successor is
+  `DONE`, and a **warning** while it is not. The distinction is deliberate:
+  `validate` treats provenance drift as a warning and structural impossibility as
+  an error, and an unsatisfiable dependency is structural — no legal sequence of
+  transitions resolves it — so it belongs beside "missing dependency", not beside
+  drift. While the successor is unfinished the same edge is only a *future*
+  deadlock, and a warning that arrives before the stall is the entire point.
+
+**The rule reports and never repairs.** Repointing a dependency is a task
+*definition* change: deliberate, reasoned, and recorded as an event — see
+`PL-0301`'s notes for what that looks like in practice. An automatic repointer
+would make the task graph self-modifying on the strength of a field any writer
+can set, which is a larger failure than the one it fixes.
+
+**What it cannot do.** `supersededBy` is self-asserted, exactly like `fromAgent`
+on the agent bus. It proves that somebody wrote a pointer, not that the successor
+carries the predecessor's work. A wrong pointer produces a wrong error, or hides
+a real deadlock. It is a cheap alarm on a failure mode that has already cost this
+project a stalled milestone — not a proof of anything.
+
 ## Returning a task to a queue
 
 `ai:release` and `ai:unblock` null the owner and put the task back in

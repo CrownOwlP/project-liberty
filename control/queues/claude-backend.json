@@ -1,8 +1,104 @@
 {
-  "generatedAt": "2026-09-15T05:36:47.471Z",
+  "generatedAt": "2026-09-15T17:50:43.394Z",
   "agent": "claude-backend",
   "executionAvailable": true,
   "assigned": [
+    {
+      "id": "PL-0301",
+      "priority": "P0",
+      "lane": "Provider",
+      "status": "REVIEW",
+      "title": "Authorized fixture provider",
+      "dependencies": [
+        "PL-0207"
+      ],
+      "notes": "DEPENDENCY REPOINTED 2026-09-15 from PL-0205 to PL-0207 by claude-lead. This is a task-definition change, not a state edit, and it is recorded as a control-plane event rather than performed silently. PL-0205 is BLOCKED and can never reach DONE: its own record states that it is preserved as audit history and superseded, because its implementationBaseSha is false and the rule PL-0703 established refuses in-place repair -- reconciliation will not revise an existing base, release is unreachable from REVIEW and preserves the base regardless, and hand-editing a published provenance figure is the move PL-0703 was blocked for. PL-0207 is that successor, it is DONE, and it carries the same unknown-media-metadata semantics this task actually depends on: the required-and-nullable candidate fields, unknownMediaFacts and compatibilityConfidence that a fixture provider must normalize against. So the dependency was pointing at the audit record of the work rather than at the work. With requireAllDependenciesDone true and no CANCELED transition available from the CLI, leaving the pointer on PL-0205 gated PL-0301, and through it PL-0302, PL-0501, PL-0502, PL-0701 and PL-0702 -- the entire M4 playback vertical slice -- behind a task whose only possible terminal state is BLOCKED. The three other superseded tasks, PL-0401, PL-0601 and PL-0703, have no dependents and are deliberately left BLOCKED as the audit history their notes say they are.",
+      "allowedPaths": [
+        "packages/provider-sdk/src/fixture/**",
+        "packages/provider-sdk/src/provider.ts",
+        "packages/provider-sdk/src/registry.ts",
+        "packages/provider-sdk/src/index.ts",
+        "packages/provider-sdk/src/stremio/**",
+        "packages/provider-sdk/package.json"
+      ],
+      "preferredAgent": "claude-backend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "security-review",
+        "rights-review"
+      ],
+      "acceptance": "Server-side fixture adapter returns normalized authorized candidates only",
+      "owner": "claude-backend",
+      "gateResults": {
+        "typecheck": {
+          "status": "pass",
+          "at": "2026-09-15T17:35:04.063Z",
+          "by": "claude-backend",
+          "commitSha": "80e3d3e3e0130571a1a0791b496a9e2cce0c6c7a",
+          "evidence": "npx turbo run typecheck --force at 80e3d3e3e013a8e8a1d32bbb8f8a5ba5c0d0a4f2, exit 0, 9 of 9 tasks and 0 cached; and again scoped with --filter=@liberty/provider-sdk --force, exit 0, 2 of 2 and 0 cached, so the reviewed package is proven rather than inferred from a whole-repo pass. Forced in both runs: a cached typecheck proves a previous tree."
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-09-15T17:35:04.273Z",
+          "by": "claude-backend",
+          "commitSha": "80e3d3e3e0130571a1a0791b496a9e2cce0c6c7a",
+          "evidence": "npx turbo run test --force --filter=@liberty/provider-sdk, exit 0, 8 test files and 213 tests passed, 0 cached. Whole-repo npx turbo run test --force at the same tree, exit 0, 15 of 15 tasks, 2096 passed 1 skipped 0 failed. The 213 are this task's own regressions: fixture/provider.test.ts carries 24 cases across five describe blocks -- three witness forgeries (cast, spread copy, and a structural literal as @ts-expect-error), the opaque-rights-reference rule, five construction refusals, nine resolution properties, and the registry port -- and the Stremio half adds client.test.ts, mapping.test.ts, mapping.property.test.ts, source.test.ts and url-policy.test.ts, which is where the rights-basis declaration and the URL policy the fixture gate depends on are exercised. NOT EXECUTED AND THEREFORE NOT CLAIMED: no database, no network and no real provider were involved; these are the package's own suites against fixtures, which is what this task's acceptance asks for and no more."
+        }
+      },
+      "reviewDependencies": [
+        "packages/contracts/src/domains/playback.ts",
+        "packages/contracts/src/shared/media-facts.ts",
+        "packages/contracts/src/shared/rights.ts",
+        "packages/contracts/src/shared/runtime.ts",
+        "packages/contracts/src/shared/ids.ts",
+        "packages/contracts/src/shared/codecs.ts",
+        "apps/web/src/app/api/v1/playback/session/authorized-candidates.ts",
+        "e2e/tests/playback-session.api.spec.ts"
+      ],
+      "surfaceNarrowedAtClaim": "NARROWED 2026-09-15 by claude-lead in the same edit that claimed the task, on the precedent PL-0205 recorded and PL-0204 reasoned: a package-wide reservation for work confined to part of a package holds unrelated lanes, because pathsOverlap tests prefix containment in BOTH directions. WHAT WAS REMOVED AND WHY. packages/contracts/** was a READ DECLARED AS A WRITE. Every contracts symbol the provider SDK touches is imported and already exists -- StreamCandidate and unknownMediaFacts from domains/playback.ts, MediaFact and MEDIA_FACTS from shared/media-facts.ts, ContentRights and PLAYABLE_CONTENT_RIGHTS from shared/rights.ts, ClassifiedRuntime from shared/runtime.ts, normalizedContentIdSchema from shared/ids.ts, the codec unions from shared/codecs.ts -- and none of it has to change for this acceptance. The rights-basis vocabulary this task's gate rests on is not in contracts at all: RightsBasis, RIGHTS_BASES_FOR_RIGHTS and describeRightsBasis are declared in packages/provider-sdk/src/stremio/source.ts. Of the five commits naming PL-0301, none touched packages/contracts except 4091a2b, a six-lane preflight whose contracts changes belong to the PL-0204, PL-0205, PL-0102 and PL-0103 lanes named in its own subject. The one contract change somebody might reach for, putting uri and mimeType on StreamCandidate, is argued AGAINST at fixture/provider.ts line 138. So the six leaves are now reviewDependencies: read, fingerprinted, not reserved. apps/web/src/app/api/** was a reservation of the surface this task exists to unblock. Its only consumer, apps/web/src/app/api/v1/playback/session/authorized-candidates.ts, says in its own header that it belongs to PL-0501 and that it no longer implements the fixtures but configures the SDK's; it is declared read-only here instead. The entry normalizes to the prefix apps/web/src/app/api, which is declared identically by PL-0702 and PL-0302 and contained by PL-0701's apps/web/** and containing PL-0501's apps/web/src/app/api/v1/playback/** -- so keeping it would serialize PL-0301 against four downstream tasks, including two it gates. apps/web/src/app/api/deployment-environment.ts records the distortion in the code: it sits under app/api 'because that was the only directory every consumer could reach inside PL-0301's allowedPaths when it was written.' WHAT WAS KEPT, AND WHY NOT packages/provider-sdk/**. src/health.ts and its two suites are PL-0303's, created by 67c5fc9, and PL-0303 already has typecheck and unit recorded; the fixture provider CONSUMES evaluateProviderHealth, and consuming is not owning. tsconfig.json is bootstrap and untouched by any PL-0301 commit -- declaring an untouched file pads a review range exactly as omitting a touched one narrows it. src/index.ts is kept and is NOT the PL-0205 barrel case that was excluded: that barrel was re-export-only with an export * already covering the change, whereas this one's CONTENT is load-bearing -- fixture/environment.ts names 'NonProductionRuntime is not re-exported by ../index.ts' as one of the three mechanisms its rights witness rests on, and a rights argument that turns on an omission from a file cannot leave that file out of the reviewed surface. TWO ENTRIES FLAGGED FOR THE REVIEWER RATHER THAN PRESENTED AS SETTLED. First, packages/provider-sdk/src/stremio/**. The acceptance sentence names only the fixture adapter, but all thirteen files carry PL-0301 headers, all were created by commits naming PL-0301, coordination/IMPLEMENTATION_RECOVERY.md lists 'the fixture provider and the Stremio adapter' under this task, stremio/client.test.ts line 104 says 'PL-0301's acceptance criterion, end to end', and the coupling is structural rather than historical: fixture/rights.ts imports the rights-basis table from stremio/source.ts and fixture/provider.ts imports checkUrl from stremio/url-policy.ts. If the reviewer rules fixture-only, two things follow and neither is hidden: the base moves to f6c4b942ebbd02fd3fa9ed8f74fde4fc603affc2, the parent of 719d2d7, and those two stremio files must become reviewDependencies -- and the Stremio adapter is then owned by no task at all, which is the worse end state but is the reviewer's call and not this lead's. Second, packages/provider-sdk/package.json: genuinely edited by c0ebf6b, which added zod and the test script, and by 79a0e65. It is the entry to drop first under challenge, flagged in the same spirit PL-0405 flagged package-lock.json. NOT DECLARED, DELIBERATELY: packages/contracts/src/testing/arbitraries.ts. stremio/mapping.property.test.ts does import from it, so there is an argument for listing it read-only. Against: PL-0206 is editing that file right now, and the arbitraries this task consumes -- audioCodecArb, contentRightsArb, defined, healthScoreArb, permutationKeysArb, permute, unvettedRightsArb, videoCodecArb -- are disjoint from the languageTagArb region PL-0206 is changing. Declaring it would bind this approval's freshness to churn in a region the task does not read. It costs nothing in dispatch either way, since reviewDependencies are not in pathsOverlap; it is a fingerprint-hygiene call and it is flagged rather than buried. DISJOINTNESS, CHECKED IN BOTH DIRECTIONS against every currently active task: PL-0206 (packages/media-engine, three packages/contracts leaves), PL-0405 (packages/auth, packages/persistence/src, the identity migration, package-lock.json, two docs), PL-0704 (apps/web app routes, one e2e spec, docs/E2E.md, .github/workflows/ci.yml), PL-AI-0007 (two scripts, control/README.md) and PL-0901 (two docs). No proposed prefix equals, prefixes, or is prefixed by any of theirs. Note package-lock.json versus packages/provider-sdk/package.json: neither startsWith the other plus a separator, so they do not collide.",
+      "implementationAgent": "claude-backend",
+      "updatedAt": "2026-09-15T17:35:04.476Z",
+      "implementationBaseSha": "fb217b96add37ed41e5c7bf1a35e693c39b5138b",
+      "implementationBaseProvenance": {
+        "kind": "reconciled-existing-implementation",
+        "baseSha": "fb217b96add37ed41e5c7bf1a35e693c39b5138b",
+        "reconciledAt": "2026-09-15T17:34:32.292Z",
+        "reconciledBy": "claude-backend",
+        "implementationAgent": "claude-backend",
+        "headAtReconciliation": "80e3d3e3e0130571a1a0791b496a9e2cce0c6c7a",
+        "reviewSurface": "allowedPaths + reviewDependencies",
+        "surfaceCommitCount": 17,
+        "oldestSurfaceCommit": "c0ebf6b0f9ef237dcfc9eebda31befc135bbf037",
+        "newestSurfaceCommit": "a4209a4fcf0b232e5de92f2af09dd8fb3d266909",
+        "surfaceCommits": [
+          "a4209a4fcf0b232e5de92f2af09dd8fb3d266909",
+          "b74b0d3c4befa226109fc1ce623b5addd46a9490",
+          "eecca6b621a2fccaab09ab3ec15d3bc93936df3b",
+          "ba9521b2c3998ae05210240827c0a773596819c9",
+          "719d2d7c31465901f3dbee1e936a180e87c3d44f",
+          "754a786625499ae7e436f93758edd11ef7487ff4",
+          "9933a55dd177ccc08b20b1fe3e49f479c8a7de1f",
+          "6c31298ba1eece125b2733780dc6b107aa5e5200",
+          "bbe68ed8d16f864c87309ceb1c089495deb89766",
+          "ba2bf4756175e84aab07ec36f9e7c3d6e324d350",
+          "4ca4313f2642f4666ab6dda0084c25fcb2fbf3d5",
+          "67c5fc9270621f461cbf671fe870da7394d20065",
+          "79a0e651bd06068d785b54dfd9080245d7b9280b",
+          "f06dec1b21925bf1af8c676bc7e24bc4ecf3d002",
+          "4091a2b65b8f187ccb87a04790272007dabd39ea",
+          "f711522205cc9a4b03ecb52bc55224d6466338a9",
+          "c0ebf6b0f9ef237dcfc9eebda31befc135bbf037"
+        ],
+        "surfaceCommitsTruncated": false,
+        "changedFileCount": 30,
+        "baseCommitSurfaceTouchCount": 0,
+        "baseCommitSurfaceTouches": [],
+        "baseCommitSurfaceTouchesTruncated": false,
+        "reason": "The base is fb217b96add37ed41e5c7bf1a35e693c39b5138b, the first parent of c0ebf6b, the earliest commit that names PL-0301. It is proven against the TREE rather than against filenames or commit messages, because this project has lost four tasks to bases that passed every mechanical check and were still false. At fb217b9, git ls-tree -r packages/provider-sdk returns exactly three paths -- package.json, src/index.ts and tsconfig.json -- so no adapter of any kind exists in the parent tree, fixture or Stremio, and the BEHAVIOUR is absent rather than merely the files. That is the PL-0205 standard: that failure came from a witness file created by a later refactor that only MOVED declarations, so the parent tree already held the semantics. Nothing can have been moved into a package whose entire content is a bootstrap barrel and a tsconfig. Probes used were stremio/source.ts and stremio/mapping.ts, which are genuinely new at c0ebf6b; src/provider.ts was deliberately NOT used as a probe, because git show fb217b9:packages/provider-sdk/src/index.ts shows the AuthorizedMediaProvider interface and the allowlist assertion already present in the barrel and merely relocated into that file, which is the same trap in a second place. src/index.ts and package.json were likewise not used, since both exist at the bootstrap commit b484735. The base commit itself changes nothing under the reviewed surface. THE IMPLEMENTATION PREDATES THE CLAIM BY DESIGN, NOT BY OVERSIGHT: coordination/IMPLEMENTATION_RECOVERY.md lists this task in the table headed Implemented, unreviewed, the record carried owner null with no gate results and no base, and the five fixture files were created at 719d2d7 while the task sat BACKLOG. ONE CLASSIFICATION IS LOAD-BEARING AND IS PUBLISHED RATHER THAN BURIED: this base covers the Stremio adapter as well as the fixture adapter, because every file under packages/provider-sdk/src/stremio carries a PL-0301 header, all were created by commits naming PL-0301, IMPLEMENTATION_RECOVERY names both, client.test.ts line 104 says PL-0301s acceptance criterion end to end, and fixture/rights.ts and fixture/provider.ts import the rights-basis table and checkUrl from that directory, so the fixture gate cannot be reviewed without it. If the reviewer rules the surface is fixture-only, this base is wrong and the correct one is f6c4b942ebbd02fd3fa9ed8f74fde4fc603affc2, the parent of 719d2d7 -- and the Stremio adapter is then owned by no task at all."
+      }
+    },
     {
       "id": "PL-0405",
       "priority": "P0",
@@ -53,39 +149,13 @@
       },
       "implementationAgent": "claude-backend",
       "updatedAt": "2026-09-15T05:36:47.042Z",
-      "implementationBaseSha": "68c432645131336393f3d5e08503951193ca5350"
+      "implementationBaseSha": "68c432645131336393f3d5e08503951193ca5350",
+      "supersedes": "PL-0401"
     }
   ],
   "review": [],
   "reservedExternal": [],
   "recommended": [
-    {
-      "id": "PL-0301",
-      "priority": "P0",
-      "lane": "Provider",
-      "status": "READY",
-      "title": "Authorized fixture provider",
-      "dependencies": [
-        "PL-0207"
-      ],
-      "notes": "DEPENDENCY REPOINTED 2026-09-15 from PL-0205 to PL-0207 by claude-lead. This is a task-definition change, not a state edit, and it is recorded as a control-plane event rather than performed silently. PL-0205 is BLOCKED and can never reach DONE: its own record states that it is preserved as audit history and superseded, because its implementationBaseSha is false and the rule PL-0703 established refuses in-place repair -- reconciliation will not revise an existing base, release is unreachable from REVIEW and preserves the base regardless, and hand-editing a published provenance figure is the move PL-0703 was blocked for. PL-0207 is that successor, it is DONE, and it carries the same unknown-media-metadata semantics this task actually depends on: the required-and-nullable candidate fields, unknownMediaFacts and compatibilityConfidence that a fixture provider must normalize against. So the dependency was pointing at the audit record of the work rather than at the work. With requireAllDependenciesDone true and no CANCELED transition available from the CLI, leaving the pointer on PL-0205 gated PL-0301, and through it PL-0302, PL-0501, PL-0502, PL-0701 and PL-0702 -- the entire M4 playback vertical slice -- behind a task whose only possible terminal state is BLOCKED. The three other superseded tasks, PL-0401, PL-0601 and PL-0703, have no dependents and are deliberately left BLOCKED as the audit history their notes say they are.",
-      "allowedPaths": [
-        "packages/provider-sdk/**",
-        "packages/contracts/**",
-        "apps/web/src/app/api/**"
-      ],
-      "preferredAgent": "claude-backend",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "typecheck",
-        "unit",
-        "security-review",
-        "rights-review"
-      ],
-      "acceptance": "Server-side fixture adapter returns normalized authorized candidates only",
-      "owner": null,
-      "gateResults": {}
-    },
     {
       "id": "PL-0305",
       "priority": "P1",

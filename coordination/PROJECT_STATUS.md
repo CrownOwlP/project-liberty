@@ -1,16 +1,16 @@
 # Project Liberty - Project Status
 
-> Generated 2026-09-15T05:36:47.469Z from the AI control plane.
+> Generated 2026-09-15T17:50:43.391Z from the AI control plane.
 
-**Overall completion:** 20/45 executable tasks (44%)
+**Overall completion:** 20/47 executable tasks (43%)
 
 ## Status summary
 
 - **BACKLOG:** 12
-- **READY:** 4
+- **READY:** 3
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 0
-- **REVIEW:** 3
+- **REVIEW:** 6
 - **BLOCKED:** 6
 - **DONE:** 20
 - **CANCELED:** 0
@@ -23,18 +23,22 @@
 - **M3 — Identity + Personal State:** NOT_STARTED, 0/4 (0%), 1 blocked
 - **M4 — Playback Vertical Slice:** NOT_STARTED, 0/6 (0%)
 - **M5 — Live + Intelligence Boundaries:** NOT_STARTED, 0/2 (0%), 1 blocked
-- **M6 — Shared-Agent Automation Bridge:** NOT_STARTED, 0/2 (0%)
+- **M6 — Shared-Agent Automation Bridge:** IN_PROGRESS, 0/3 (0%)
 - **EXT — External Licensed Integrations:** BLOCKED, 0/2 (0%), 2 blocked
+- **M7 — Windows Desktop Shell + Native Playback:** IN_PROGRESS, 0/1 (0%)
 
 ## Active work
 
+- **PL-0301** [REVIEW] Authorized fixture provider — owner: claude-backend
 - **PL-0704** [REVIEW] notFound() never reaches the wire: dead addresses answer 200 — owner: claude-frontend
 - **PL-0206** [REVIEW] Macrolanguage and extlang equivalence in the shared language matcher — owner: claude-media
 - **PL-0405** [REVIEW] Corrective, re-run: auth integration decision, with a forgeable profile scope and an unsupported pin — owner: claude-backend
+- **PL-AI-0007** [REVIEW] Supersession is a field, and a task cannot stay gated behind one — owner: claude-lead
+- **PL-0901** [REVIEW] Windows desktop shell and the PlayerAdapter boundary — owner: claude-lead
 
 ## Dispatch classification
 
-- **READY_AND_EXECUTABLE:** 4
+- **READY_AND_EXECUTABLE:** 3
 - **READY_BUT_EXTERNAL:** 0
 - **BLOCKED:** 6
 - **BACKLOG (dependency-gated):** 12
@@ -59,9 +63,9 @@ No READY work is waiting on an external agent lane.
 ## Agent capacity
 
 - **gpt-architect:** 0/6 active (external lane; not locally executable)
-- **claude-lead:** 0/2 active
+- **claude-lead:** 2/2 active
 - **claude-frontend:** 1/2 active
-- **claude-backend:** 1/1 active
+- **claude-backend:** 2/2 active
 - **claude-media:** 1/2 active
 - **claude-test:** 0/1 active
 - **claude-security:** 0/1 active

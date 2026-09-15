@@ -54,6 +54,59 @@ Structured logging/tracing boundary. It must avoid sensitive data by default.
 
 User experience plus thin HTTP route handlers. Route handlers validate input and call application/domain logic rather than embedding provider behavior.
 
+## Desktop target and the `PlayerAdapter` boundary
+
+The first production target is **Windows desktop**, and it is a shell around this application rather
+than a second application. `docs/DESKTOP_PLAYBACK.md` is the record: the decisions, the evidence each
+one rests on, the strongest argument against each, and the facts that would reverse each. This
+section is the part of it the rest of the architecture has to know.
+
+```text
+Tauri v2 shell (Rust)  ──►  child HWND: libmpv, vo=gpu-next, gpu-context=d3d11
+        │                          ▲
+        │  WebView2 (DefaultBackgroundColor A=0, composited above)
+        │      │
+        │      └── the existing Next.js app, unchanged, served by a Next
+        │          `output: 'standalone'` sidecar on loopback
+        │
+        └── PlayerAdapter ── WebPlayerAdapter (Shaka/EME, also the desktop DRM path)
+                          └─ NativePlayerAdapter (libmpv)
+```
+
+**The application is preserved, not rewritten.** A static export would delete route handlers,
+`proxy.ts`, `cookies()`, `headers()`, Server Actions and ISR; a standalone sidecar keeps all of them,
+at the cost of a Node runtime, a loopback listener, supervision code we write ourselves, and Tauri's
+CSP injection no longer reaching our pages.
+
+**The shell choice is decided by compositing and by nothing else.** Putting HTML chrome over a
+hardware-accelerated native video surface in one window on Windows is documented and shipping on
+WebView2 and has no supported path on Chromium. Any size-based argument for Tauri is void: with a
+Node sidecar the installer lands near Electron's.
+
+**`PlayerAdapter` is the boundary the application and domain layers depend on**, not a concrete
+player. No `shaka-player`, `mpv`/`libmpv`, `@tauri-apps/*` or `electron` type is reachable from it —
+no `any`, no engine-handle passthrough, no opaque engine-configuration bag. Two implementations sit
+behind it, and **capability routing between them is an explicit, reasoned decision taken before
+playback**: `canPlay` returns a reason on both branches. mpv has no CDM and cannot be given one, so
+the native adapter **refuses** a DRM-protected candidate with a named reason and never attempts it,
+never falls back and never degrades. That is what makes invariant 2 structural here rather than
+promised, and the named refusal is what satisfies invariant 4.
+
+**The existing XState machine in `apps/web/src/components/player/playback-machine.ts` remains the
+single source of playback truth.** The native adapter translates mpv's properties and events into the
+machine's existing events; it does not become a second state machine. Candidate ranking stays in
+`@liberty/media-engine`, provider-specific behavior stays in `@liberty/provider-sdk`, and media
+addresses continue to come only from authorized provider resolution and the playback-session
+boundary — the adapter has no method that accepts a URL.
+
+**One question is open and is published rather than decided.** A sidecar runs this application's
+server on a machine the user administers, so if provider resolution runs there, the boundary
+enforcing invariants 1 and 2 executes from files the user can read and replace. The alternative is
+that the desktop build implements those specific routes as an authenticated proxy to the backend —
+same route, same contract, same URL, a different implementation selected by build target.
+`docs/DESKTOP_PLAYBACK.md` §8 states the question and the recommendation and leaves the ruling to the
+reviewer and the commander. **It is a design input to PL-0501.**
+
 ## Scalability path
 
 Extract only when justified:
@@ -73,4 +126,6 @@ Do not prematurely distribute the system. A modular monolith keeps local develop
 - Untrusted provider URLs are never fetched by unrestricted generic server code.
 - Playback policy is deterministic given the same inputs.
 - Every playback failure has a machine-readable reason.
+- A playback engine is reached only through `PlayerAdapter`, and no engine type is reachable from it.
+- Which engine plays a candidate is decided before playback, with a reason recorded on both branches.
 - Cross-module changes update contracts/docs first or in the same commit.
