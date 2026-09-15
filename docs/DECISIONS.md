@@ -88,16 +88,24 @@ Use PostgreSQL for durable state and Redis only for ephemeral/cached workloads. 
 
 ## ADR-007 - Authentication seam, database sessions, and a minted profile scope
 
-**Status:** Proposed (PL-0401) — **`claude-lead`'s recommendation, not a ratified decision.**
+**Status:** Proposed. **`control/tasks.json` is authoritative for who implements this, who
+reviews it, and whether it has been ratified. This document does not restate any of that.**
 
-This ADR is written by `claude-lead`. `control/tasks.json` reserves PL-0401 for
-`preferredAgent: gpt-architect` and names `reviewAgent: claude-lead`, so the one agent that
-cannot ratify this text is its author: self-approval is prohibited by
-`control/policies.json` → `review.allowSelfApproval: false`, and an ADR whose author is also
-its reviewer would be a decision with no independent judgement behind it. Treat the status as
-**Proposed** until `gpt-architect` rules on it through the control plane. Nothing below may be
-cited as a settled decision; it is cited as the reasoning the existing implementation already
-rests on, written down where a decision is supposed to live.
+Read the task record — PL-0405, which supersedes PL-0401 — for the routing and for the gate
+results. An ADR that names agents in prose goes stale the moment the control plane is corrected,
+and this one did: an earlier revision of this paragraph named `gpt-architect` as the preferred
+implementer and `claude-lead` as the reviewer, which stopped being true when the review of an
+authentication boundary was routed away from the agent that had written the decision. Worse, the
+restatement was self-defeating — completing the review would have required editing this file
+immediately afterwards, and that edit would have staled the approval fingerprint the review had
+just bound to it.
+
+Two rules stand behind the routing rather than being descriptions of it, so they are recorded
+here as rules: self-approval is prohibited by `control/policies.json` →
+`review.allowSelfApproval: false`, and this ADR carries a `security-review` gate because it is
+an authentication boundary. Until every required gate on the governing task is recorded as
+`pass`, nothing below may be cited as a settled decision; it is cited as the reasoning the
+existing implementation rests on, written down where a decision is supposed to live.
 
 **What this replaces.** `docs/RESEARCH_IDENTITY.md` was the only record of this reasoning, and
 that file disclaims itself: it is a transcription of a ChatGPT session, not an agent-bus
@@ -108,21 +116,24 @@ points here for the decision.
 
 ### The decision
 
-Authenticate with **Better Auth 1.7.1**, exact-pinned, reached only through a `@liberty/auth`
+Authenticate with **Better Auth 1.7.5**, exact-pinned, reached only through a `@liberty/auth`
 seam; keep **sessions in PostgreSQL** through the official Drizzle adapter; enable a
 **deliberately small capability surface** with no plugin stack; and model **viewer profiles
-above authentication**, gated by a pure authorization function that mints a branded
-`ProfileScope` in exactly one place.
+above authentication**, gated by a pure authorization function that **issues** a `ProfileScope`
+in exactly one place — a frozen value recorded in a module-private registry, so that a consumer
+can establish it was issued rather than merely that it type-checks.
 
-The first four clauses are PL-0401's stated acceptance. The fifth is the one the implementation
+The first four clauses are the task's stated acceptance. The fifth is the one the implementation
 added, and it is the load-bearing part: it is what makes "no logic may bypass authentication" a
-property of the type system rather than a rule people are asked to remember.
+property of the running program rather than a rule people are asked to remember. An earlier
+revision of this ADR claimed the type system alone did that. It did not, and the correction is
+recorded below rather than quietly applied.
 
 ### Alternatives considered
 
 | Option | State as surveyed 2026-08-19 | Verdict |
 | --- | --- | --- |
-| **Better Auth** | 1.7.1, MIT, Next.js 16 / App Router support, database sessions, Drizzle adapter | **Chosen** |
+| **Better Auth** | MIT, Next.js 16 / App Router support, database sessions, Drizzle adapter; surveyed at 1.7.1, pinned at 1.7.5 | **Chosen** |
 | Clerk | `@clerk/nextjs` 7.7.6, MIT SDK, first-class App Router support | Rejected — the main alternative; see below |
 | Auth.js v5 | still `5.0.0-beta.32` on npm's beta tag, ISC; its own README points new projects at Better Auth except for stateless/no-DB sessions | Rejected for greenfield |
 | WorkOS AuthKit | 4.3.1, MIT, App-Router SDK, hosted identity | Rejected — enterprise SSO strengths are not this product's requirement |
@@ -160,15 +171,38 @@ out. For a product where a household shares a screen, revocation is the requirem
 refinement. The cost is a database read on the session path and a table to keep clean.
 
 **An exact pin, and upgrades are security-sensitive work.** `packages/auth/package.json` pins
-`better-auth` and `@better-auth/drizzle-adapter` to `1.7.1` exactly, not to a caret range,
-because Better Auth's published security policy supports only the latest version. Both failure
-modes here are real: a caret range admits a version nobody reviewed, and a pin nobody bumps
-strands us on a version upstream has stopped patching. The pin is chosen because it is the
-**visible** failure. `REVIEWED_BETTER_AUTH_VERSION` in `enabled-surface.ts` records the version
-the surface was reviewed against, and `enabled-surface.test.ts` imports `package.json` and asserts
-that both `better-auth` and `@better-auth/drizzle-adapter` equal it, with no range operator — so
-the bump is mechanically all-or-nothing and cannot drift into a comment that claims a review that
-did not happen.
+`better-auth` and `@better-auth/drizzle-adapter` to `1.7.5` exactly, not to a caret range,
+because Better Auth's published security policy supports only the latest version — `SECURITY.md`
+in full: *"We only support the latest version of Better Auth. Older versions are not supported."*
+Both failure modes here are real: a caret range admits a version nobody reviewed, and a pin
+nobody bumps strands us on a version upstream has stopped patching. The pin is chosen because it
+is the **visible** failure. `REVIEWED_BETTER_AUTH_VERSION` in `enabled-surface.ts` records the
+version the surface was reviewed against, and `enabled-surface.test.ts` imports `package.json`
+and asserts that both `better-auth` and `@better-auth/drizzle-adapter` equal it, with no range
+operator — so the bump is mechanically all-or-nothing and cannot drift into a comment that
+claims a review that did not happen.
+
+**The pin went stale, and that is the mechanism working.** This ADR shipped at `1.7.1`
+(2026-08-18) and the PL-0401 review found it four patch releases behind upstream's supported
+version. A caret range would have moved the dependency silently and nobody would have reviewed
+what arrived; the pin made the distance legible and forced the upgrade through this gate. The
+finding named `1.7.4` (2026-09-10) as current. By the time PL-0405 was implemented,
+`npm view better-auth dist-tags` reported `latest: 1.7.5` (2026-09-14), so the pin is `1.7.5`:
+the rule is "the version upstream currently supports", not "the version the last review named",
+and pinning `1.7.4` would have reproduced the defect one release later. Upstream also publishes
+a `release-1.6` line (`1.6.33`, 2026-09-14); `SECURITY.md` does not extend support to it, so it
+is noted and not relied on.
+
+**The upgrade carried a schema change with it, and the two moved together.** Better Auth
+`1.7.3` (PR #11153) abandoned the `account` schema introduced in `1.7.0` and went back to
+identifying accounts by `(providerId, accountId)`, dropping the `issuer` requirement; the same
+release (PR #11178) added default-on schema validation that rejects authentication requests when
+the database holds a required column the library never writes. Liberty's hand-written first
+migration still carried `issuer NOT NULL` and `UNIQUE (issuer, account_id)` — a shape no
+supported version uses, and one under which the library's own diff reports that *"every insert
+into `account` fails"*. Bumping the pin without reconciling the migration would have produced a
+configuration whose first sign-up fails, so the migration was reconciled in the same change; see
+the consequence below.
 
 **A small enabled surface, written down as data.** `ENABLED_AUTH_CAPABILITIES` lists exactly
 four capabilities — email/password, email verification, password reset, database sessions — and
@@ -191,20 +225,68 @@ session — rather than as a column on the identity record. A column would resel
 phone because someone chose it on the television, and would leave selection state behind when a
 session is revoked.
 
-`ProfileScope` is a branded type whose brand is a non-exported `unique symbol`, and
-`mintProfileScope` in `authorization.ts` is the only producer of one anywhere in the repository.
-It is module-private and deliberately not in `session.ts`, because `index.ts` re-exports
-everything `session.ts` exports and a mint living there would escape the package and the brand
-would protect nothing. Every profile-scoped repository takes a `ProfileScope` rather than a
-`profileId: string`, so "did anyone check this profile belongs to this account" is answered by
-the compiler at every call site. The single `as ProfileScope` cast in the codebase sits next to
-the decision that justifies it, where a reviewer can find it.
+`ProfileScope` is **issued**, not merely branded. `issueProfileScope` in
+`packages/auth/src/profile-scope.ts` is the only producer of one anywhere in the repository; it
+is called from exactly two places, the two grant branches in `authorization.ts`, and it is
+deliberately absent from `index.ts`, which re-exports that module **by name rather than with
+`export *`** so the producer cannot leave the package. Every profile-scoped repository takes a
+`ProfileScope` rather than a `profileId: string`, so "did anyone check this profile belongs to
+this account" is asked at every call site.
+
+**An earlier revision of this ADR was wrong about how that is enforced, and the error was a
+cross-profile data-access bypass rather than a documentation defect.** It said: *"Forging one
+requires an explicit cast that is greppable and reviewable."* It did not. The brand was a
+`declare const … : unique symbol` — a phantom that existed in the type system and was never
+written at runtime — and the producer returned an object literal through `as ProfileScope`. A
+holder of a genuine scope could therefore write
+
+```ts
+const forged = { ...realScope, profileId: someoneElsesProfileId };
+```
+
+with **no cast at all**: a spread copies every property the type declares, including the brand,
+so the copy is a `ProfileScope` to the compiler. `@liberty/persistence` reads `scope.profileId`
+straight into its `WHERE profile_id = $1` predicates, so one household member holding a
+legitimate scope could read and write another profile's viewing history. This is the same defect
+PL-0706 found in `ClassifiedRuntime`, in a second place.
+
+**The type system cannot fix it, so the fix is a runtime registry.** There is no TypeScript
+construction under which a spread copy stops being assignable — a `private` class field is
+compared nominally at compile time and is an ordinary property at runtime, and a branded
+property is simply copied. Only **object identity** distinguishes a copy from the value that was
+issued, and identity is a runtime fact. So `profile-scope.ts` applies the four mechanisms this
+repository already uses for `ClassifiedRuntime` and for `PinnedTarget` in
+`@liberty/media-inspection`: a module-private real `Symbol` brand; `Object.freeze` on every
+issued scope, so a holder cannot edit one in place and keep its identity; a `WeakSet` of the
+values this module actually issued; and an identity check as the consumer's first action.
+`profileIdFromScope(scope)` is the supported way to obtain the id a data predicate is built
+from — it consults the registry **before** it reads the field and throws
+`ForgedProfileScopeError` otherwise, so the check and the read are one expression and cannot be
+separated by a later edit. `scopeBelongsToSession` likewise answers `false` for a value that was
+not issued; that matters specifically because a spread forgery keeps a **genuine** `grantedFor`,
+which is the one field an account comparison looks at.
+
+**What is not yet closed, stated here rather than left to be discovered.** A registry closes
+nothing unless the consumers consult it, and the consumers of a scope's `profileId` are in
+another package. `packages/persistence/src/progress-repository.ts`,
+`watchlist-repository.ts` and the read paths of `profile-repository.ts` still read
+`input.scope.profileId` directly, and against those call sites a forged scope still works.
+`packages/persistence/src/**` is not a write path of the task that made this correction, so the
+mechanism ships with its consumers unconverted, and the bypass remains reachable on those paths
+until each read becomes `profileIdFromScope(input.scope)`. Treating the defect as fixed before
+that is done would be worse than the state this replaced, because it would read as fixed. The
+one consumer that has been converted is `refuseForeignScope` in `profile-repository.ts`, by way
+of `scopeBelongsToSession` — it is the check every function taking both a session and a scope
+already ran first, so hardening the function hardened the call site without editing it.
 
 **This is how the no-bypass invariant is enforced.** The mandatory product invariant is that no
 logic may bypass authentication. A rule stated in prose is enforced by review; a value that
-cannot be constructed without passing through `authorizeProfileAccess` or
-`authorizeProfileSelection` is enforced by the build. Forging one requires an explicit cast that
-is greppable and reviewable, which is a materially different thing from forgetting a check.
+cannot be **produced** outside `authorizeProfileAccess` or `authorizeProfileSelection`, and
+cannot be **copied** into a different profile without the copy being detectable, is enforced by
+the running program. The residual, named exactly: an edit to `profile-scope.ts` itself defeats
+it, and so does patching `Object.freeze` or `WeakSet.prototype.has` before the module loads.
+Both are statements executing inside the process and as visible in a diff as any other change;
+neither is reachable *through* the module's surface, which is the boundary that moved.
 
 **Authorization is pure, and both branches produce a reason.** `authorizeProfileAccess` performs
 no I/O: the caller loads the `ProfileOwnership` record and hands it in. That is what makes
@@ -237,10 +319,28 @@ leaking a new reason verbatim.
   selection whose claimed owner disagrees with the profile's real owner is refused by PostgreSQL
   as well as by `authorizeProfileAccess`. The failure this guards against leaks one household's
   viewing history to another, which is worth two independent enforcements.
-- **The migration has never been executed.** It is hand-written so the first migration could be
-  read as a whole, and its Better Auth tables are transcribed from the vendor's published core
-  schema. It must be reconciled against `npx @better-auth/cli generate` before it is applied to
-  any database that matters. That reconciliation is outstanding work, not a completed step.
+- **The migration's `account` table was reconciled against 1.7.5, and the `issuer` column is
+  gone.** `packages/persistence/migrations/0000_profile_scoped_identity.sql` previously carried
+  `"issuer" text NOT NULL` and `UNIQUE ("issuer", "account_id")`, transcribed from the
+  `1.7.0`–`1.7.2` account schema that `1.7.3` abandoned. Both were removed and replaced with
+  `UNIQUE ("provider_id", "account_id")`. Upstream offers two remedies — make `issuer` nullable,
+  or remove the column; removal is correct here because this is the first migration and has
+  never been applied, so there is no data to preserve. The replacement uniqueness rule is
+  **Liberty's, not the library's**: `getAuthTablesWithResolvedIndexes({})` on 1.7.5 declares no
+  unique index on `account` at all, and the library instead detects duplicates at runtime in
+  `findAccountByKey` and throws. A duplicate `(provider_id, account_id)` pair is therefore an
+  unrecoverable state for the library, and the database is the only place that can make it
+  unrepresentable.
+- **The migration has still never been executed, and the Drizzle table definition has not been
+  reconciled with it.** There is no PostgreSQL anywhere in this environment, so the reconciliation
+  above was performed against the installed package's own schema definitions
+  (`buildAuthTables` in `@better-auth/core`) and its published changelog, not against an applied
+  database. Separately, `packages/persistence/src/schema/auth.ts` — outside the write surface of
+  the task that made this change — still declares `issuer: text("issuer").notNull()` and the
+  `(issuer, accountId)` unique index, so it now disagrees with the SQL and would propose
+  reinstating both on the next `drizzle-kit generate`. That file must be corrected before the
+  migration is applied to any database that matters; it is outstanding work, not a completed
+  step.
 - **`better-auth.ts` is not unit-tested, on purpose.** Every assertion available without a real
   PostgreSQL would be an assertion about a stub of the vendor's behaviour. The one exception —
   `describeConfiguredSurface`, a statement about Liberty's own data — was moved out into
@@ -251,11 +351,14 @@ leaking a new reason verbatim.
   one by policy.
 - **PL-0402, PL-0403 and PL-0404 are downstream of this and already assume it.** Their acceptance
   criteria name profile-scoped rows, a `(profileId, contentId)` key and a server-issued writer
-  epoch. If `gpt-architect` rules against any clause here, those three are affected, which is the
-  cost of recording the decision after the implementation rather than before it.
+  epoch. If the review rules against any clause here, those three are affected, which is the
+  cost of recording the decision after the implementation rather than before it. They also own
+  `packages/persistence`, which is where the unconverted `scope.profileId` reads named above
+  live, so the sequencing between them and this ADR's outstanding work is a control-plane
+  question and is settled in the task records, not here.
 
 **Reason:** the auth choice is the decision the whole viewer-state model hangs off, and it was
 recorded nowhere a decision is looked for. The seam, the database sessions, the exact pin and the
-minted scope are each chosen for revocability and reviewability over convenience — the same
+issued scope are each chosen for revocability and reviewability over convenience — the same
 preference ADR-006 makes with its rights allowlist, and for the same reason: the failure that
 cannot be undone is the one the design should refuse first.

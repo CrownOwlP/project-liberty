@@ -24,12 +24,14 @@ the auth tables and the profile-scoped tables, which PL-0402 requires.
 
 ## Verified dependencies
 
-Checked against the live npm registry and upstream documentation on 2026-08-21.
+Checked against the live npm registry and upstream documentation on 2026-08-21. The two Better
+Auth rows were re-checked on **2026-09-15** (PL-0405) and moved from `1.7.1` to `1.7.5`; every
+other row is unchanged and still carries its original date.
 
 | Package | Version | Licence | Source |
 | --- | --- | --- | --- |
-| `better-auth` | **1.7.1** (exact pin) | MIT | <https://registry.npmjs.org/better-auth/latest> |
-| `@better-auth/drizzle-adapter` | **1.7.1** (exact pin) | MIT | <https://unpkg.com/@better-auth/drizzle-adapter@1.7.1/package.json> |
+| `better-auth` | **1.7.5** (exact pin) | MIT | `npm view better-auth dist-tags` → `latest: 1.7.5`, published 2026-09-14T22:10:52Z |
+| `@better-auth/drizzle-adapter` | **1.7.5** (exact pin) | MIT | `npm view @better-auth/drizzle-adapter dist-tags` → `latest: 1.7.5`, published 2026-09-14T22:12:01Z |
 | `drizzle-orm` | 0.45.2 (`^0.45.2`) | Apache-2.0 | <https://registry.npmjs.org/-/package/drizzle-orm/dist-tags>, <https://unpkg.com/drizzle-orm@0.45.2/package.json> |
 | `drizzle-kit` | 0.31.10 (`^0.31.10`, dev) | Apache-2.0 | <https://registry.npmjs.org/-/package/drizzle-kit/dist-tags> |
 | `drizzle-zod` | 0.8.3 (`^0.8.3`) | Apache-2.0 | <https://unpkg.com/drizzle-zod@0.8.3/package.json> |
@@ -38,20 +40,29 @@ Checked against the live npm registry and upstream documentation on 2026-08-21.
 
 Corroborating facts read from the same sources:
 
-- Better Auth 1.7.1 declares `drizzle-orm: ^0.45.2 || >=1.0.0-rc.1 <2.0.0` and
-  `drizzle-kit: >=0.31.4 || >=1.0.0-beta.1` as optional peers, so the **stable** Drizzle line
-  satisfies it — `drizzle-orm@1.0.0` is still an `rc` and was not chosen.
-- Better Auth 1.7.1 declares `next: ^14.0.0 || ^15.0.0 || ^16.0.0` as an optional peer and ships a
+- Better Auth 1.7.5 declares `drizzle-orm: ^0.45.2 || >=1.0.0-rc.1 <2.0.0` and
+  `drizzle-kit: >=0.31.4 || >=1.0.0-beta.1` as optional peers — unchanged from 1.7.1 — so the
+  **stable** Drizzle line still satisfies it; `drizzle-orm@1.0.0` is still an `rc` and was not
+  chosen.
+- Better Auth 1.7.5 declares `next: ^14.0.0 || ^15.0.0 || ^16.0.0` as an optional peer and ships a
   `better-auth/next-js` export, so App Router support is current. The repository is on
   `eslint-config-next@^16`.
 - The Drizzle adapter is documented at
   <https://www.better-auth.com/docs/adapters/drizzle> and the current guidance is to install
-  `@better-auth/drizzle-adapter` and import `drizzleAdapter` from it. `better-auth@1.7.1` depends on
-  exactly `@better-auth/drizzle-adapter@1.7.1`, so both are pinned to the same version.
+  `@better-auth/drizzle-adapter` and import `drizzleAdapter` from it. `better-auth@1.7.5` depends on
+  exactly `@better-auth/drizzle-adapter@1.7.5`, so both are pinned to the same version.
 - Better Auth's security policy states: *"We only support the latest version of Better Auth. Older
   versions are not supported."* (<https://github.com/better-auth/better-auth/blob/main/SECURITY.md>).
   Hence the **exact pin** rather than a caret range, `REVIEWED_BETTER_AUTH_VERSION` in
   `packages/auth/src/enabled-surface.ts`, and the rule that bumping it is security-review work.
+  Upstream also publishes a `release-1.6` dist-tag (`1.6.33`, 2026-09-14); the policy text does
+  not extend support to it, so "the latest version" is read as the `latest` tag and nothing else.
+- **The pin moved 1.7.1 → 1.7.5 on 2026-09-15, and the migration moved with it.** Better Auth
+  `1.7.3` (PR #11153) abandoned the `1.7.0`–`1.7.2` `account` schema, restoring account identity
+  by `(providerId, accountId)` and dropping the `issuer` requirement; the same release
+  (PR #11178) added default-on schema validation that rejects authentication requests when the
+  database holds a required column the library never writes. See the `account` table note below
+  and ADR-007.
 
 ### The zod version boundary — read this before touching `contracts.ts`
 
@@ -90,8 +101,13 @@ user ──┬── session ──── active_profile_selection ──┐
 verification   (standalone)
 ```
 
-`user`, `session`, `account` and `verification` are Better Auth's core schema, transcribed from
-<https://www.better-auth.com/docs/concepts/database>. Everything below `profile` is Liberty's.
+`user`, `session`, `account` and `verification` are Better Auth's core schema. They were
+originally transcribed from <https://www.better-auth.com/docs/concepts/database>; the `account`
+table was re-derived on 2026-09-15 from the installed package itself — `buildAuthTables` in
+`node_modules/@better-auth/core/dist/db/get-tables.mjs`, evaluated through
+`getAuthTablesWithResolvedIndexes({})` — because a documentation page is a second-hand account of
+what the library writes and the `issuer` episode below is what that costs. Everything below
+`profile` is Liberty's.
 
 ### Profiles live above auth
 
@@ -128,10 +144,23 @@ is unusable without something to name a device by, and they expire with the sess
 
 Four places, none of which depends on the others:
 
-1. **The type.** Every profile-scoped repository function takes a `ProfileScope`, never a
-   `profileId: string`. `ProfileScope` carries a non-exported `unique symbol` brand and is minted
-   only by `authorizeProfileAccess` / `authorizeProfileSelection` in `@liberty/auth`. Forging one
-   requires an explicit `as ProfileScope` cast that a reviewer can grep for.
+1. **The type, and — since PL-0405 — the issuance registry behind it.** Every profile-scoped
+   repository function takes a `ProfileScope`, never a `profileId: string`. The scope is
+   **issued** only by `authorizeProfileAccess` / `authorizeProfileSelection` in `@liberty/auth`:
+   `packages/auth/src/profile-scope.ts` brands it with a module-private real `Symbol`, freezes
+   it, and records its identity in a `WeakSet`. This paragraph used to claim that forging one
+   "requires an explicit `as ProfileScope` cast that a reviewer can grep for". **That was false**,
+   and it was a cross-profile data-access bypass rather than a documentation slip: a holder of a
+   genuine scope could write `{ ...scope, profileId: someoneElsesId }` with no cast at all,
+   because a spread copies the branded property along with everything else. Only object identity
+   separates a copy from an issued value, so `profileIdFromScope(scope)` consults the registry
+   before it reads the field and throws otherwise.
+
+   **Not yet complete, and the gap is on the persistence side.** `progress-repository.ts`,
+   `watchlist-repository.ts` and the read paths of `profile-repository.ts` still read
+   `scope.profileId` directly, so a forged scope still works against them; those files were
+   outside PL-0405's write surface. The converted call site is `refuseForeignScope` in
+   `profile-repository.ts`, which asks by way of `scopeBelongsToSession`. See ADR-007.
 2. **The predicate.** Every statement carries `profile_id = scope.profileId` in its `WHERE` or its
    conflict target — never a post-query filter, which a future `.map` can drop.
 3. **The primary key.** `profile_id` is the *leading* column of both viewer-state keys, so the index
@@ -237,10 +266,24 @@ behind it.
    `@better-auth/drizzle-adapter`, `drizzle-orm`, `drizzle-zod`, `pg`, `drizzle-kit`, `@types/pg` —
    are not installed yet. Nothing in either package will typecheck or test until this is done. The
    root `package.json` and `package-lock.json` were deliberately not edited.
-2. **Reconcile the Better Auth tables.** Run `npx @better-auth/cli@1.7.1 generate` against
-   `createLibertyAuth`'s configuration and diff its output against
-   `packages/persistence/src/schema/auth.ts`. The hand-written version exists so the first migration
-   could be *reviewed as a whole*, not to replace the generator.
+
+   **`package-lock.json` is stale as of 2026-09-15 and must be regenerated.** PL-0405 moved the
+   Better Auth pin from `1.7.1` to `1.7.5` in `packages/auth/package.json`, but the root lockfile
+   is outside that task's write surface and still resolves `1.7.1`. `npm ci` will refuse the
+   mismatch — loudly, which is the fail-safe direction — until somebody who owns the root surface
+   runs `npm install` and commits the result.
+2. **Reconcile the Better Auth tables — PARTLY DONE, AND THE REMAINDER IS NAMED.** The SQL
+   migration's `account` table was reconciled against **1.7.5** on 2026-09-15 by reading the
+   installed package's own `buildAuthTables` rather than the documentation site: the `issuer`
+   column and the `(issuer, account_id)` unique rule were removed and
+   `UNIQUE (provider_id, account_id)` put in their place. See ADR-007 for the evidence.
+   `packages/persistence/src/schema/auth.ts` was **not** reconciled — it was outside PL-0405's
+   write surface — so it still declares `issuer: text("issuer").notNull()` and the
+   `(issuer, accountId)` unique index, and therefore now disagrees with the SQL and would propose
+   reinstating both on the next `drizzle-kit generate`. **Correct that file before step 3.** Then
+   run `npx @better-auth/cli@1.7.5 generate` against `createLibertyAuth`'s configuration and diff
+   its output against the hand-written schema. The hand-written version exists so the first
+   migration could be *reviewed as a whole*, not to replace the generator.
 3. **`npm run db:generate -w @liberty/persistence`.** `migrations/0000_profile_scoped_identity.sql`
    is hand-written and reviewed, but drizzle-kit also needs its `migrations/meta/` journal and
    snapshot, which cannot be produced without running the tool. Diff the generated SQL against the
@@ -269,18 +312,29 @@ Nothing was executed. In particular:
   `Parameters<typeof drizzleAdapter>[0]` and `…[1]["schema"]` in `packages/auth/src/better-auth.ts`,
   which depend on the adapter's exported signature; and drizzle-zod's `.shape` surface in
   `contracts.test.ts`, which is a zod v4 object.
-- **The hand-written Better Auth schema is transcribed from documentation**, not generated. Field
-  names, nullability and the `(issuer, account_id)` unique index came from the docs page dated to
-  the 1.7.1 line; the CLI is authoritative and has not been run.
+- **The hand-written Better Auth schema is still not generated.** `user`, `session` and
+  `verification` remain transcriptions from the docs page dated to the 1.7.1 line. `account` was
+  re-derived on 2026-09-15 from the installed 1.7.5 package's `buildAuthTables` output, which is
+  the function the library itself consults — a strictly better source than the docs page, and the
+  reason the `issuer` drift was found at all — but `npx @better-auth/cli generate` is still
+  authoritative and still has not been run.
+- **`packages/persistence/src/schema/auth.ts` disagrees with the migration as of 2026-09-15.** The
+  SQL dropped `issuer`; the Drizzle table definition still declares it `notNull` and still carries
+  `unique("account_issuer_account_id_key")`. The file was outside the write surface of the task
+  that corrected the SQL. Until it is corrected, `drizzle-kit generate` will propose adding the
+  column back, and `packages/persistence/src/repository-scoping.test.ts` builds its `ProfileScope`
+  fixtures with `as unknown as ProfileScope`, which the issuance registry now rejects.
 - **The first migration SQL has never been applied to a PostgreSQL instance.** Syntax, constraint
   names and the composite foreign key to `profile (id, user_id)` are unexecuted.
 - **`drizzle-orm@0.45.2`'s array-returning table-config callback and `check()` helper** are used
   throughout the schema. Both are believed current for the 0.45 line; neither was compiled.
 - **The `COALESCE` in `writeProgress`** and the pure resolver's runtime-retention rule are asserted
   to agree by reading, not by an integration test.
-- **The exact-pinned Better Auth version was read from the registry on 2026-08-21** and will be
-  stale the moment upstream publishes. Because upstream supports only the latest version, that
-  staleness is a security item, not a housekeeping one.
+- **The exact-pinned Better Auth version was re-read from the registry on 2026-09-15**
+  (`latest: 1.7.5`, published 2026-09-14) and will be stale the moment upstream publishes. Because
+  upstream supports only the latest version, that staleness is a security item, not a housekeeping
+  one — and it has already produced one finding: the 1.7.1 pin was four releases behind by the
+  time PL-0401 was reviewed.
 - **Anything requiring a database is untested by construction:** the SQL guard's atomicity under
   concurrent writes, the `ON CONFLICT` upsert paths, cascade behaviour, the CHECK constraints, and
   the composite foreign key. These need an integration suite against a real PostgreSQL instance
