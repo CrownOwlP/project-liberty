@@ -1,16 +1,13 @@
 {
-  "generatedAt": "2026-09-14T16:23:31.655Z",
+  "generatedAt": "2026-09-15T05:36:47.471Z",
   "agent": "claude-backend",
   "executionAvailable": true,
-  "assigned": [],
-  "review": [],
-  "reservedExternal": [],
-  "recommended": [
+  "assigned": [
     {
       "id": "PL-0405",
       "priority": "P0",
       "lane": "Backend",
-      "status": "READY",
+      "status": "REVIEW",
       "title": "Corrective, re-run: auth integration decision, with a forgeable profile scope and an unsupported pin",
       "description": "This task SUPERSEDES PL-0401. It carries three merits blockers as well as a provenance correction, and the merits are the larger half. PROVENANCE: PL-0401 recorded implementationBaseSha fc1ea4d54c9e7d2b2f6d9aa71a977abdc3bcb400, proven with ENABLED_AUTH_CAPABILITIES and WITHHELD_AUTH_PLUGIN_FAMILIES. Those witnesses correctly located the code introduction and missed earlier task implementation on another declared write path: docs/DATA_MODEL.md did not exist at 56b343 and was created in bbe68ed8, before the recorded base, already identifying itself as covering this task's auth boundary and already selecting Better Auth 1.7.1. The true lower bound is 56b3435418f222f557ce957e7d5de3827da107b7 while docs/DATA_MODEL.md remains a write surface. PL-0401 is BLOCKED with the false range preserved as audit history. DO NOT CLAIM THIS TASK UNTIL THE THREE BLOCKERS IN THE NOTES ARE IMPLEMENTED; it is created now so the findings are recorded against a task rather than living only in a review transcript.",
       "notes": "BLOCKER 1, AND IT IS THE PL-0706 DEFECT IN A SECOND PLACE. ProfileScope carries a type-only unique symbol property while mintProfileScope returns an ordinary object via cast, so a caller holding a genuine scope can write a spread with a replacement profileId and TypeScript carries the branded structural type straight through -- without the explicit cast ADR-007 claims is the only forgery route. Downstream persistence then trusts scope.profileId directly, which makes this a cross-profile data-access bypass rather than a typing nicety. The prescription: make the scope genuinely nominal so a spread copy cannot remain assignable, and if it is meant to be a runtime capability rather than a compile-time proof, use issuance identity as well. The pattern already exists in this repository twice -- ClassifiedRuntime in packages/contracts/src/shared/runtime.ts and PinnedTarget in media-inspection -- module-private brand, freeze, WeakSet registry, identity check as the consumer's first action. THE SURFACE THIS IMPLIES IS WIDER THAN THIS TASK CURRENTLY DECLARES, AND THAT IS SETTLED BEFORE THE CLAIM RATHER THAN DISCOVERED DURING IT. The reviewer offered two levels: at minimum make the scope genuinely nominal so a spread copy cannot remain assignable, and if it is meant to be a runtime capability, use issuance identity as well. The minimum is NOT ACHIEVABLE IN THE TYPE SYSTEM, and PL-0706 already established why: a spread copies a branded property along with everything else and type-checks with no cast at all, so only object identity rejects it. TypeScript cannot make a spread unassignable. Therefore the runtime registry is not the optional upper level here, it is the only level that works -- and a registry closes nothing unless the consumers ASK. The consumers are in another package: packages/persistence/src/progress-repository.ts and watchlist-repository.ts read scope.profileId straight into their predicates, and profile-repository.ts and repository-scoping.test.ts also handle the type. So this task must declare packages/persistence/src/** as a write path when it is claimed, not merely the migration, and it will then overlap PL-0402, PL-0403 and PL-0404, which are BACKLOG today and must be sequenced after it. The alternative -- brand and registry in packages/auth with no consumer asking -- would produce a capability that looks unforgeable and is not, which is worse than the present state because it would read as fixed. Whoever claims this should widen the declaration in the same edit that claims it, and say so in the reason. BLOCKER 2, AND THE EXACT PIN IS WORKING RATHER THAN FAILING. better-auth and its Drizzle adapter are pinned at exactly 1.7.1. Upstream's current release is 1.7.4, from 2026-09-10, and its security policy supports only the latest version. The reviewer was explicit that this is not an argument against exact pins: it proves the policy works by making staleness visible, which is what ADR-007 said it was for. Move both packages together and update REVIEWED_BETTER_AUTH_VERSION. DO NOT BUMP AND LEAVE THE MIGRATION: 1.7.3 restored the 1.6 account core schema after the issuer-schema change in 1.7.0 through 1.7.2, while this repository's hand-written migration still has an issuer column and an (issuer, account_id) uniqueness rule. The migration must be regenerated or reconciled against the reviewed version BEFORE security approval. That is why packages/persistence/migrations/0000_profile_scoped_identity.sql moves from reviewDependency to WRITE PATH here: on PL-0401 it was only evidence, and read-only was correct; here it has to change, and reviewDependencies are read-only by contract. PL-0402 also owns packages/persistence and is BACKLOG, so no active conflict exists today, but the two must be sequenced and the reviewer should say which owns that file afterwards. BLOCKER 3. ADR-007 still states obsolete control-plane routing, naming gpt-architect as preferred implementer and claude-lead as reviewer, while the record now correctly has claude-backend implementing and gpt-architect reviewing independently. Rewrite that paragraph as history rather than as current routing, and prefer wording that points at the task gate as authoritative -- otherwise completing the review needs a post-approval edit that immediately stales the fingerprint it just bound. TWO HONEST CAVEATS CARRIED FORWARD FROM PL-0401, neither an unmet clause: the migration has never been executed, because no PostgreSQL exists in this environment, and better-auth.ts is deliberately untested. SEQUENCING: this task is READY rather than BLOCKED because nothing external gates it, but it should not be claimed until the three blockers are implemented, and claiming it early would reserve packages/auth and two documents while no work was happening.",
@@ -19,10 +16,14 @@
         "packages/auth/**",
         "docs/DECISIONS.md",
         "docs/DATA_MODEL.md",
-        "packages/persistence/migrations/0000_profile_scoped_identity.sql"
+        "packages/persistence/migrations/0000_profile_scoped_identity.sql",
+        "packages/persistence/src/**",
+        "package-lock.json"
       ],
+      "surfaceWidenedAtClaim": "WIDENED 2026-09-15 by claude-lead in the same edit that claimed the task, which is what the notes instruct: 'this task must declare packages/persistence/src/** as a write path when it is claimed, not merely the migration' and 'whoever claims this should widen the declaration in the same edit that claims it, and say so in the reason'. TWO ENTRIES WERE ADDED, AND THEY ARE NOT THE SAME KIND OF ADDITION. First, packages/persistence/src/**, exactly as prescribed: the registry is the only mechanism that rejects a spread forgery, TypeScript cannot make a spread unassignable, and a registry closes nothing unless the consumers ask, so the consumers must change. This was demonstrated rather than argued: with the issuance check in place and persistence untouched, packages/persistence/src/repository-scoping.test.ts fails six tests, because its fixtures build scopes with 'as unknown as ProfileScope' and refuseForeignScope now refuses them. progress-repository.ts moves from reviewDependency to write path for the same reason and is removed from reviewDependencies rather than listed twice. Second, package-lock.json, WHICH THE REVIEWER DID NOT NAME AND WHICH IS THEREFORE FLAGGED FOR THE REVIEWER RATHER THAN PRESENTED AS PRESCRIBED. The notes require better-auth and its Drizzle adapter to move together; the root lockfile still resolves 1.7.1, so after the pin moves, npm ci refuses the mismatch and every gate that starts from a clean install fails before it runs. Leaving it stale would ship a dependency bump that cannot be installed reproducibly, so the lockfile is part of moving the packages rather than a separate concern. It is a generated file owned by no active task; PL-0001, which generated it, is DONE. If the reviewer would rather see it as its own task, it is one entry to remove. NO OTHER WRITE SURFACE WAS ADDED, and packages/persistence/src/schema/auth.ts is inside the prescribed entry rather than an extra: it still declares the issuer column and the (issuer, account_id) unique that the migration reconciliation removes, so leaving it would make drizzle-kit propose reinstating both on the next generate. REVIEWDEPENDENCIES ALSO CHANGED, AND IT IS A REPLACEMENT RATHER THAN A WIDENING OF WRITE ACCESS. packages/persistence/src/progress-repository.ts left the list because it became a write path and listing it in both would say two different things about the same file. In its place the two files the reviewer named as the pattern this implementation must copy are declared read-only: packages/contracts/src/shared/runtime.ts (ClassifiedRuntime) and packages/media-inspection/src/pin.ts (PinnedTarget). Neither is written; they are declared so the approval fingerprints the originals against which the copy is judged, which is exactly what reviewDependencies is for. If the reviewer considers that padding, they are two entries to remove and nothing else changes.",
       "reviewDependencies": [
-        "packages/persistence/src/progress-repository.ts"
+        "packages/contracts/src/shared/runtime.ts",
+        "packages/media-inspection/src/pin.ts"
       ],
       "preferredAgent": "claude-backend",
       "reviewAgent": "gpt-architect",
@@ -33,6 +34,55 @@
         "unit"
       ],
       "acceptance": "A recorded decision selects the auth approach and states the boundary it implies: a packages/auth seam the rest of the application depends on instead of the vendor library, database-backed sessions, a deliberately small enabled surface with the advanced plugin stacks left off, and an exact-pinned dependency whose upgrades are treated as security-sensitive work rather than floated on a caret range. The pinned version must be one upstream currently supports, and the hand-written migration must agree with that version's account schema rather than an abandoned intermediate one. ProfileScope must be UNFORGEABLE by a holder of a genuine scope: a spread copy carrying a replaced profileId must not remain assignable, and any consumer that grants data access on the strength of a scope must establish that the scope was ISSUED rather than merely that it type-checks. The decision record must describe the routing that actually applies, or point at the task record as authoritative rather than restating it.",
+      "owner": "claude-backend",
+      "gateResults": {
+        "typecheck": {
+          "status": "pass",
+          "at": "2026-09-15T05:36:23.753Z",
+          "by": "claude-backend",
+          "commitSha": "0337663aa9cdf1572298492b5f49e37e48f6e0a2",
+          "evidence": "npx turbo run typecheck --force at 0337663aa9cdf1572298492b5f49e37e48f6e0a2, exit 0, 9 of 9 tasks successful and 0 cached, 28.8s, run by the lead in the integrated checkout. Forced rather than cached deliberately. Run against a tree installed by npm ci from the regenerated lockfile -- npm ci exit 0 with better-auth resolving to 1.7.5 -- so the typecheck covers the bumped dependency rather than the old resolution. The same command was run in the PL-0405 worktree at 3e93d0a, also exit 0, likewise forced."
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-09-15T05:36:23.972Z",
+          "by": "claude-backend",
+          "commitSha": "0337663aa9cdf1572298492b5f49e37e48f6e0a2",
+          "evidence": "npx turbo run test --force at 0337663aa9cdf1572298492b5f49e37e48f6e0a2, exit 0, 15 of 15 tasks and 0 cached, 2096 passed 1 skipped 0 failed. Two new suites carry this task's security claim. packages/auth/src/profile-scope.test.ts, 14 cases, attempts three distinct forgeries and asserts rejection at the consumer boundary for each: a spread copy with a replaced profileId built WITH NO CAST ANYWHERE, so the file stops compiling the day TypeScript can reject it; a hand-built object via as unknown as ProfileScope; and a structurally-correct never-issued object, frozen, same keys, and a symbol with the same description, which one case first asserts is indistinguishable under Object.isFrozen, Object.keys and symbol description before the next asserts it is still refused. It also asserts that the spread copy carries the SAME brand symbol object as the genuine scope, which is the load-bearing fact making the brand insufficient on its own. packages/persistence/src/scope-forgery.test.ts, 14 cases, proves the other half -- that the repositories ASK -- because the auth suite proves only that the mechanism exists. It is exhaustive over all ten exported repository functions rather than representative, since the defect it guards is an eleventh function reading the field directly, and its db is a Proxy that throws on any property access so that refused and refused before doing any I/O are distinguished rather than conflated. INTERMEDIATE FAILURE REPORTED RATHER THAN DROPPED: an earlier run of this gate at 4b3ae21 exited 1 with 6 failures in packages/persistence/src/repository-scoping.test.ts. That was the fix working -- those fixtures minted scopes with as unknown as ProfileScope and the issuance check refused them -- and it was left red rather than neutralised until the task's write surface was widened to packages/persistence/src/** as the task record prescribes. The fixtures now obtain genuine issued scopes; the foreign-scope fixture became strictly sharper in the process, because as a cast it failed on two counts at once and would have passed with the account comparison deleted, while as a real grant to another household it fails on exactly one thing and goes red if that comparison is removed."
+        }
+      },
+      "implementationAgent": "claude-backend",
+      "updatedAt": "2026-09-15T05:36:47.042Z",
+      "implementationBaseSha": "68c432645131336393f3d5e08503951193ca5350"
+    }
+  ],
+  "review": [],
+  "reservedExternal": [],
+  "recommended": [
+    {
+      "id": "PL-0301",
+      "priority": "P0",
+      "lane": "Provider",
+      "status": "READY",
+      "title": "Authorized fixture provider",
+      "dependencies": [
+        "PL-0207"
+      ],
+      "notes": "DEPENDENCY REPOINTED 2026-09-15 from PL-0205 to PL-0207 by claude-lead. This is a task-definition change, not a state edit, and it is recorded as a control-plane event rather than performed silently. PL-0205 is BLOCKED and can never reach DONE: its own record states that it is preserved as audit history and superseded, because its implementationBaseSha is false and the rule PL-0703 established refuses in-place repair -- reconciliation will not revise an existing base, release is unreachable from REVIEW and preserves the base regardless, and hand-editing a published provenance figure is the move PL-0703 was blocked for. PL-0207 is that successor, it is DONE, and it carries the same unknown-media-metadata semantics this task actually depends on: the required-and-nullable candidate fields, unknownMediaFacts and compatibilityConfidence that a fixture provider must normalize against. So the dependency was pointing at the audit record of the work rather than at the work. With requireAllDependenciesDone true and no CANCELED transition available from the CLI, leaving the pointer on PL-0205 gated PL-0301, and through it PL-0302, PL-0501, PL-0502, PL-0701 and PL-0702 -- the entire M4 playback vertical slice -- behind a task whose only possible terminal state is BLOCKED. The three other superseded tasks, PL-0401, PL-0601 and PL-0703, have no dependents and are deliberately left BLOCKED as the audit history their notes say they are.",
+      "allowedPaths": [
+        "packages/provider-sdk/**",
+        "packages/contracts/**",
+        "apps/web/src/app/api/**"
+      ],
+      "preferredAgent": "claude-backend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "security-review",
+        "rights-review"
+      ],
+      "acceptance": "Server-side fixture adapter returns normalized authorized candidates only",
       "owner": null,
       "gateResults": {}
     },
