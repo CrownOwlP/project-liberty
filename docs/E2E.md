@@ -16,6 +16,19 @@ and in both modes, on 2026-09-05** — "What the 2026-09-05 run observed" record
 what that run did and did not show, and it is what closes two of the three
 entries under "Known blockers found by the first real run".
 
+**A second local execution, on 2026-09-15, re-ran the `api` and `chromium`
+projects in both modes and is recorded under "What the 2026-09-15 run
+observed".** It is narrower than the first — two projects rather than five — and
+it exists because the surface the first run measured has moved since:
+`demo-title-details.ts`, `watch-session.ts`, `e2e/src/env.ts`,
+`e2e/src/fixtures.ts` and `critical-journey.spec.ts` all changed after that
+commit, so 2026-09-05's result is no longer a statement about the tree anyone is
+reading. It is also what settles a contradiction this file was one side of:
+`.github/workflows/ci.yml` recorded PL-0704's two 404 assertions as *never
+observed passing* while this file recorded them as observed on 2026-09-05. Both
+have now been observed on the current tree, and the workflow's comment has been
+corrected rather than this one.
+
 Everything it owns lives in `e2e/`, and **no `data-testid` was added anywhere** —
 every locator addresses a role, a heading or an accessible name, so a test failing
 here means the thing a reader interacts with changed, not that a private hook
@@ -588,6 +601,47 @@ the assertions were observed passing rather than expected to pass — and it say
 nothing whatever about a later commit. Every row of the coverage table that this
 run exercised is in the same position: observed once, not guaranteed.
 
+### What the 2026-09-15 run observed
+
+A local run in a Linux container, `api` and `chromium` only — **exactly the pair
+the CI `e2e` job runs**, and not the device matrix. WebKit, mobile-safari and
+Firefox were not launched and nothing below is a claim about them.
+
+```bash
+cd e2e && npm ci
+LIBERTY_E2E_WEB_MODE=development npx playwright test --project=api --project=chromium
+                                 npx playwright test --project=api --project=chromium
+```
+
+- `LIBERTY_E2E_WEB_MODE=development`: **43 passed, 3 skipped, 0 failed** — exit 0.
+- `production` (the default): **34 passed, 12 skipped, 0 failed** — exit 0.
+
+Those counts include one test this round added, `critical-journey.spec.ts` "the
+relocated skeletons are still served where something is actually waiting". An
+earlier run of the same command, before that test existed, was 42/3 and 33/12
+with the same zero failures.
+
+No test was red in either mode, and the skips are the mode splits and the media
+rig. **That includes `search.spec.ts` "text typed before hydration survives it"**,
+which was the single red of 2026-09-05 and the subject of the third entry below;
+it passed here on `chromium` in both modes. That entry is left standing as
+written rather than closed from here: it names all four browser projects and this
+run launched one of them, so the observation belongs to whoever owns PL-0705's
+WebKit clause, not to a 404 task that happened to run the file.
+
+**The container could not use the Playwright-pinned browser build.** Its
+preinstalled `chromium` is revision 1194 (Chromium 141) while `@playwright/test`
+1.62.1 requires 1234, and the 1194 headless shell also predates the
+`chrome-headless-shell-linux64/chrome-headless-shell` layout that version looks
+for. `playwright install` was unavailable. The run therefore used a
+**registry shim outside the repository** — a scratch directory of symlinks
+presenting the 1194 build under the 1234 names, selected with
+`PLAYWRIGHT_BROWSERS_PATH`. Nothing in `e2e/` was changed for it, and the browser
+under test was Chromium 141.0.7390.37 rather than the pinned one. That is a real
+narrowing of the evidence and is the reason the pinning comment in
+`playwright.config.ts` exists; on a runner that can install the pinned build the
+shim is unnecessary.
+
 ### `LIBERTY_E2E_WEB_MODE=development` served no client JavaScript — fixed, and observed fixed on 2026-09-05
 
 Next 16's dev server refuses requests for `/_next/*` dev resources whose host is
@@ -648,7 +702,7 @@ exercised by that run and no longer rest on an unexercised setting. What has not
 changed is the rule the marking encodes — a production-only run still proves
 nothing about them.
 
-### `notFound()` did not produce a 404 on any route in this app — fixed by PL-0704, and observed fixed on 2026-09-05
+### `notFound()` did not produce a 404 on any route in this app — fixed by PL-0704, observed fixed on 2026-09-05, re-observed on 2026-09-15
 
 `critical-journey.spec.ts` asserts a real 404 for an unknown title
 (`/title/<unknown>`) and for a malformed watch id (`/watch/Not%20A%20Valid%20Id`).
@@ -717,6 +771,51 @@ of those specs:
 tree, fails while any loading file sits above a `notFound()`-capable page, and
 runs in the unit gate. Read that, and read it again the next time a `loading.tsx`
 appears in a diff.
+
+**Re-observed on 2026-09-15, on a tree that has moved since.** The 2026-09-05 run
+predates changes to `demo-title-details.ts`, `watch-session.ts`, `e2e/src/env.ts`,
+`e2e/src/fixtures.ts` and `critical-journey.spec.ts`, so it had stopped being
+evidence about the current code. Both assertions passed again on `chromium`:
+`/title/no-such-title-pl0701` answered **404** under `development` and the 200
+`catalog_source_not_configured` refusal under `production`, and
+`/watch/Not%20A%20Valid%20Id` answered **404** in both modes. Neither served-bytes
+check found its skeleton string. The dev server's own request log is the
+second witness to the status rather than the spec's reading of it:
+
+```
+GET /title/no-such-title-pl0701 404 in 140ms
+GET /watch/Not%20A%20Valid%20Id 404 in 71ms
+```
+
+**WHAT WAS NOT TRADED FOR THOSE TWO STATUSES IS NOW ASSERTED TOO, and it was
+not before.** "Any fix must keep the loading skeletons rather than deleting them
+to move a status code" was the one clause of PL-0704's acceptance nothing
+executed checked: every assertion in this suite is satisfied just as well by a
+repository with no skeletons left, because `not.toContain` on a string that
+exists nowhere passes trivially. Two checks now close that, one per gate.
+
+- **e2e**, `critical-journey.spec.ts` "the relocated skeletons are still served
+  where something is actually waiting": `/` and `/watch/<demo id>` each answer
+  **200** with `Loading catalog` and `Loading player` respectively in the served
+  bytes. Mode-independent, and observed passing in both modes — both fallbacks sit
+  above an `await` that crosses an I/O boundary on either build, so React has a
+  suspended child when it flushes the shell whatever the answer turns out to be.
+  It was confirmed by hand first, eight consecutive `curl` probes across a
+  `next dev` and a `next start` server, before being written as a spec.
+- **unit**, `route-loading-boundaries.test.ts` "keeps the two skeletons PL-0704
+  relocated, rather than deleting them": `app/page.tsx` must still define
+  `CatalogSkeleton` and render it as a Suspense fallback, and
+  `watch/[contentId]/page.tsx` the same for `PlaybackLoading`. This one cannot be
+  satisfied by a timing accident, and it fails in `tsc`-invisible ways the e2e
+  test would take a browser to notice.
+
+Between them, a repair that had bought the 404 by deleting the skeletons now
+fails two gates instead of passing all of them.
+
+The unit guard was confirmed non-vacuous the same way, by recreating the illegal
+state: writing a trivial `apps/web/src/app/loading.tsx` back and running
+`route-loading-boundaries.test.ts` produces two named violations, one per
+`notFound()`-capable route, and the file was removed again.
 
 `apps/web/src/app/search/loading.tsx` is the one loading file that remains, and it
 is deliberately not one of the three. `/search` never calls `notFound()`, so its
@@ -850,7 +949,7 @@ before 2026-09-05.
 | Resolve gate | Under the default `production` mode, `/api/v1/playback/resolve` answers **404 `route_not_available` with no verdict attached** to the request that would otherwise have succeeded |
 | Rights boundary | Under `development`, an unrightsed candidate posted to `/api/v1/playback/resolve` never yields `selected` or `ranked` — with a rightsed control candidate beside it, so the refusal is about rights and not about an outage |
 | Robustness | `"not json"`, `7`, `null`, `[]` all produce a well-formed `denied` and never a 500 |
-| Journey | Home route → title route → Play link → watch route → back. **Every step is now mode-split.** The rail step is the catalog rows above. The **title** step asserts the demo title and its genre under `development`, and under `production` asserts 200 with the "We couldn't load this title" panel, **`catalog_source_not_configured`** in `p.code.state-detail`, and neither the title nor the genre anywhere in the document — `demo-title-details.ts` reads the metadata port now, and the previous note here saying that step was mode-independent described the round before it moved. **This row previously named `title_source_unavailable` as the code asserted here**; that was the loader's generic reason, and it stopped being what the page publishes when `title-detail.ts`'s catch learned to test for `CatalogMetadataSourceNotConfiguredError` and republish its `reason`. The generic code still exists for a source that throws anything else and is not asserted from here. The **Play** step asserts the link and the click under `development` and asserts that **no Play control exists** under `production`, which is a rights property: a page that has read no rights basis must not offer one. An **unknown title** is a real 404 under `development` — the **status**, plus the absence of the loading-skeleton string from the served bytes, never the 404's copy, which renders on hydration and a non-JS consumer never sees — and under `production` gets the same 200 refusal a known id gets, because a process with no catalog cannot tell the two apart and must not claim to. The **watch** 404 (`/watch/Not%20A%20Valid%20Id`) stays mode-independent: it is decided by `isWatchableContentId`, a format check that consults nothing |
+| Journey | Home route → title route → Play link → watch route → back. **Every step is now mode-split.** The rail step is the catalog rows above. The **title** step asserts the demo title and its genre under `development`, and under `production` asserts 200 with the "We couldn't load this title" panel, **`catalog_source_not_configured`** in `p.code.state-detail`, and neither the title nor the genre anywhere in the document — `demo-title-details.ts` reads the metadata port now, and the previous note here saying that step was mode-independent described the round before it moved. **This row previously named `title_source_unavailable` as the code asserted here**; that was the loader's generic reason, and it stopped being what the page publishes when `title-detail.ts`'s catch learned to test for `CatalogMetadataSourceNotConfiguredError` and republish its `reason`. The generic code still exists for a source that throws anything else and is not asserted from here. The **Play** step asserts the link and the click under `development` and asserts that **no Play control exists** under `production`, which is a rights property: a page that has read no rights basis must not offer one. An **unknown title** is a real 404 under `development` — the **status**, plus the absence of the loading-skeleton string from the served bytes, never the 404's copy, which renders on hydration and a non-JS consumer never sees — and under `production` gets the same 200 refusal a known id gets, because a process with no catalog cannot tell the two apart and must not claim to. The **watch** 404 (`/watch/Not%20A%20Valid%20Id`) stays mode-independent: it is decided by `isWatchableContentId`, a format check that consults nothing. And the **skeletons those two 404s must not have cost** are asserted positively and mode-independently: `/` and `/watch/<demo id>` each answer 200 with their skeleton string in the served bytes, which is what makes the two absence checks mean "refused" rather than "deleted" |
 | Journey | **Progress is not in it, and the spec says so rather than faking it.** Nothing under `components/**` fetches `/api/v1/progress` or `/api/v1/profiles`, so there is no click path from the player to a progress write. The leg is asserted at the wire instead. That is a claim about those two route groups specifically and not about client code in general — `components/player/cmcd-beacon.ts` does POST to `/api/v1/telemetry/cmcd`, which nothing here asserts either |
 | Player | **`development` build only.** `<liberty-video>` mounts and **never carries a `src`**; the reason trail renders; the three fixture candidate ids and the three fixture file names are in the document. Under `production` the same spec asserts the opposite and does not skip: the unavailable panel is shown, `liberty-video` has count **0**, no reason trail exists, and **no fixture file name or candidate id appears anywhere in the HTML** — a player on that build would mean a fixture escaped into a shipped artifact. The document check holds whether or not the client hydrated, because the session reaches the page as props of a client component and therefore as serialised RSC payload. The `src` half is mode-independent: `liberty-video[src]` must match nothing in either mode, though on a production build it is the development branch that stops the pair being vacuous |
 | Search | Idle, results, empty and refused stay **four** distinct states; the query is escaped rather than interpreted; typing becomes an addressable URL, and text typed before hydration survives it. **Which settled state any non-empty query reaches is mode-split**: under `development` a matching query lists the demo title with its `matchedOn` reason and a non-matching one reaches `empty`, while under `production` **both** reach `error` / `catalog_source_not_configured` — the heading "We couldn't run that search", the reason code in `p.code.state-detail`, and "Search is currently unavailable." in the one live region. That the two queries get the *same* refusal is itself asserted: on a build that consults no catalog the answer cannot depend on the query. `/search` with **no** `q` reaches the idle panel on both builds, and that is asserted as an ordering property — `loadSearchResults` decides `idle` before the source, so a deployment must not greet a reader with a refusal for a search they never ran. The escaping test reads the **field's value** rather than a results heading, because the refusal panel does not quote the query, and the two typing tests assert whichever settled panel the build can reach plus the absence of the idle one, so they stay about the address bar and about hydration on both builds. **This row previously said the production state was `empty` and "specifically not `error`"; that described `search.ts` before it moved off the fixture array.** **The typing test failed on the first real run, for three causes.** On every project under `development`, for the `allowedDevOrigins` reason above. Under `production` on WebKit and mobile-safari, because `fill` landed before the form had hydrated and nothing on the surface re-read the input's value afterwards — PL-0705 is that repair: `search-form.tsx` now adopts the DOM value once, at the hydration commit, and `search.spec.ts` asserts it from outside by holding every client script until the text is typed. And on Chromium and Firefox it tripped Playwright strict mode, because `getByRole("heading", { name: "Northstar" })` matched both the results `<h2>` and the card `<h3>` (role-name matching is substring by default) — the matching test now passes `exact: true` and the two typing tests no longer address the card at all. **On 2026-09-05 the address-bar test passed in both modes on all four browser projects**, which retires the first and third of those causes. **The hydration test is the one red in that run**, and for a fourth cause that is a defect in the harness rather than in the page — see "`page.unroute` disposed routes whose handlers were still holding them". The adoption rule itself was observed working end to end on exactly one of the eight project-and-mode combinations, Firefox under `production`; everywhere else that run left it neither confirmed nor contradicted |

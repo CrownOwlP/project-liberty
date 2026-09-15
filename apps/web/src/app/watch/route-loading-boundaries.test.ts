@@ -180,6 +180,57 @@ describe("route loading boundaries", () => {
     expect(violations).toEqual([]);
   });
 
+  /*
+   * THE CLAUSE THE TWO RULES ABOVE WOULD OTHERWISE LET A DELETION SATISFY.
+   *
+   * PL-0704's acceptance says a fix "must keep the loading skeletons rather than
+   * deleting them to move a status code", and both rules above are satisfied
+   * perfectly by a repository with no skeletons in it at all -- deleting every
+   * boundary is the cheapest way to have none above a `notFound()`. The
+   * relocation is the work; the deletion is the shortcut it was chosen over, and
+   * nothing in this file could tell the two apart.
+   *
+   * So the two boundaries that were MOVED are named, and are required to still be
+   * there. Named explicitly rather than derived, because the property is about
+   * these two specific relocations and a rule inferred from the tree would be
+   * satisfied by whatever the tree happens to contain.
+   *
+   * `title/[titleId]/page.tsx` is deliberately NOT in this list. It has no
+   * skeleton and its own header argues why -- whether a title exists IS the load
+   * there, so nothing can honestly be streamed ahead of the answer. That is the
+   * one point where this acceptance clause and the code disagree, and it is
+   * raised for a ruling rather than settled here.
+   */
+  it("keeps the two skeletons PL-0704 relocated, rather than deleting them", () => {
+    const relocated = [
+      { file: "page.tsx", fallback: "CatalogSkeleton" },
+      { file: join("watch", "[contentId]", "page.tsx"), fallback: "PlaybackLoading" }
+    ];
+
+    const missing: string[] = [];
+
+    for (const { file, fallback } of relocated) {
+      const source = readFileSync(join(APP_DIRECTORY, file), "utf8");
+
+      if (!source.includes(`function ${fallback}(`)) {
+        missing.push(
+          `app/${file} no longer defines ${fallback}. PL-0704 MOVED this skeleton out of a ` +
+            `loading file and into this page, below the route's existence decision; deleting ` +
+            `it instead is the shortcut its acceptance forbids`
+        );
+      }
+
+      if (!source.includes(`<Suspense fallback={<${fallback} />}>`)) {
+        missing.push(
+          `app/${file} no longer renders <Suspense fallback={<${fallback} />}>, so nothing on ` +
+            `this route shows a wait that is really happening`
+        );
+      }
+    }
+
+    expect(missing).toEqual([]);
+  });
+
   it("calls notFound() before any Suspense boundary the page declares itself", () => {
     /*
      * The other direction of the same rule. Removing the `loading.tsx` files is

@@ -373,13 +373,30 @@ test("which title the title route can serve is decided by the build, and both ar
  * `watch/[contentId]/page.tsx`, both BELOW the decision on their route. Only the
  * title route ends with no skeleton, deliberately and for the reason given there.
  *
- * BOTH ASSERTIONS BELOW ARE THEREFORE EXPECTED TO PASS, AND ARE UNVERIFIED, which
- * is not the same claim as "they pass". This suite runs at the very end of the
- * round, after the commit, so no execution has yet seen the repaired tree; the
- * status is the one `docs/E2E.md` files as fixed, unverified, and the first run of
- * these two lines is what turns the expectation into a result. They are not
+ * BOTH ASSERTIONS BELOW HAVE NOW BEEN OBSERVED PASSING, which is a different and
+ * weaker claim than "they pass". This block used to say they were EXPECTED to pass
+ * and UNVERIFIED, because the round that wrote it committed ahead of any run. Two
+ * runs have happened since: the 2026-09-05 device-matrix run recorded in
+ * `docs/E2E.md`, and a 2026-09-15 re-execution on the current tree -- `api` and
+ * `chromium`, both modes -- which matters because `demo-title-details.ts`,
+ * `watch-session.ts`, `src/env.ts`, `src/fixtures.ts` and this file all moved after
+ * the first. In the second, `/title/no-such-title-pl0701` answered 404 under
+ * `development` and the 200 `catalog_source_not_configured` refusal under
+ * `production`, and `/watch/Not%20A%20Valid%20Id` answered 404 in both; neither
+ * served-bytes check found its skeleton string. `retries` is 0 and neither run was
+ * CI, so what this establishes is that no Suspense boundary sat above either
+ * decision at those commits -- not that none ever will, which is what
+ * `apps/web/src/app/watch/route-loading-boundaries.test.ts` is for. Nothing here is
  * relaxed to match either reading; "Neither is relaxed, in either direction" below
  * is the reason.
+ *
+ * THE `not.toContain` ASSERTIONS BELOW CANNOT SEE THE OTHER HALF OF THE
+ * ACCEPTANCE. They say the skeleton string is absent from a refused address, and
+ * they pass identically against a repository with no skeletons left in it --
+ * which is precisely the shortcut "any fix must keep the loading skeletons"
+ * forbids. The positive case is now asserted at the END of this file, by "the
+ * relocated skeletons are still served where something is actually waiting", and
+ * that test is what makes these two mean "refused" rather than "absent".
  *
  * `search/loading.tsx` is the one loading file that remains, and it is NOT one of
  * the three. `/search` never calls `notFound()`, so its boundary is above nothing
@@ -757,4 +774,59 @@ test("an unplayable content id does not reach the player", async ({ page }) => {
   expect(served, "the player skeleton was flushed for an id the route refused").not.toContain(
     "Loading player"
   );
+});
+
+/* -------------------------------------------------------------------------
+ * THE OTHER HALF OF PL-0704'S ACCEPTANCE, WHICH THE TWO TESTS ABOVE CANNOT SEE
+ *
+ * "Any fix must keep the loading skeletons rather than deleting them to move a
+ * status code." Every assertion above this point is satisfied just as well by a
+ * repository with no skeletons left in it: a 404 is a 404, and `not.toContain`
+ * on a string that exists nowhere passes trivially. That is exactly the shortcut
+ * the clause forbids, and until this test it was the one clause of the
+ * acceptance nothing executed checked.
+ *
+ * So this asserts the POSITIVE case for both boundaries that were relocated
+ * rather than removed, on the addresses that legitimately stream them. It is the
+ * pair that makes the two `not.toContain` assertions above mean "refused" instead
+ * of "absent".
+ *
+ * MODE-INDEPENDENT, AND THAT IS A PROPERTY OF THE ARRANGEMENT RATHER THAN LUCK.
+ * Both fallbacks sit above an `await` that crosses an I/O boundary in either
+ * build -- `loadHomeCatalog` and `loadPlaybackSession` -- so React has a
+ * suspended child when it flushes the shell whether the eventual answer is the
+ * fixture catalog, the demo session, or the refusal a deployment produces. What
+ * the boundary resolves TO is mode-split and is asserted by the tests above; that
+ * it EXISTS is not.
+ *
+ * The served bytes rather than the DOM, for the same reason the two tests above
+ * use them: the fallback is replaced on hydration, so a DOM assertion would be
+ * racing the thing it is trying to observe. `response.text()` is the shell as it
+ * went out.
+ *
+ * The title route is deliberately absent from this test. It has no skeleton and
+ * the block above `what an unknown title gets` says why: whether a title exists
+ * IS the load there, so there is nothing that could honestly be streamed ahead of
+ * the answer. That is the one place the acceptance's clause and the code
+ * disagree, and it is flagged for a ruling rather than papered over here.
+ * ---------------------------------------------------------------------- */
+
+test("the relocated skeletons are still served where something is actually waiting", async ({
+  page
+}) => {
+  const home = await page.goto("/");
+  expect(home?.status()).toBe(200);
+  expect(
+    (await home?.text()) ?? "",
+    "the home catalog skeleton is gone from the shell -- PL-0704 relocated it into " +
+      "app/page.tsx, it did not delete it"
+  ).toContain("Loading catalog");
+
+  const watch = await page.goto(`/watch/${DEMO.movie.id}`);
+  expect(watch?.status()).toBe(200);
+  expect(
+    (await watch?.text()) ?? "",
+    "the player skeleton is gone from the shell -- PL-0704 moved it inside " +
+      "watch/[contentId]/page.tsx below the identity gate, it did not delete it"
+  ).toContain("Loading player");
 });

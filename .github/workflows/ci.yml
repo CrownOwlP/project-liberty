@@ -331,7 +331,7 @@ jobs:
         run: npm run typecheck
 
   # ==========================================================================
-  # The e2e SUITE, EXECUTED. Expected to be RED today, deliberately.
+  # The e2e SUITE, EXECUTED. No run of THIS JOB has been observed.
   # ==========================================================================
   #
   # PL-0701's acceptance is "reproducible in CI", and a suite that is only
@@ -341,10 +341,11 @@ jobs:
   #
   # READ THIS BEFORE YOU TRY TO MAKE IT GREEN.
   #
-  # The suite is currently PARTLY RED ON PURPOSE. docs/E2E.md, "Known blockers
-  # found by the first real run", is the authority: it lists the failures and
-  # says why the assertions are left failing rather than relaxed. What follows
-  # is a convenience copy, and it is therefore the copy that goes stale -- it
+  # This header said "Expected to be RED today, deliberately" and the list below
+  # said the suite was PARTLY RED ON PURPOSE. Neither survives the two local
+  # executions on record. docs/E2E.md, "Known blockers found by the first real
+  # run", is still the authority on what is and is not established, and what
+  # follows is a convenience copy -- and therefore the copy that goes stale -- it
   # has already had to be corrected once, and the stale entry was exactly the
   # hazard the baseline argument further down describes. It listed
   # `catalog.api.spec.ts` as asserting non-empty rails and therefore failing
@@ -354,8 +355,18 @@ jobs:
   # is red now that is a real one. Read this list against docs/E2E.md, not
   # instead of it. As of this revision:
   #
-  #   - THE TWO 404 ASSERTIONS in `critical-journey.spec.ts` are UNKNOWN:
-  #     expected to pass, never observed passing. Both halves of PL-0704's
+  #   - THE TWO 404 ASSERTIONS in `critical-journey.spec.ts` have been OBSERVED
+  #     PASSING, which is what this entry used to say they had never been. It
+  #     read "UNKNOWN: expected to pass, never observed passing", and it was the
+  #     stale half of a contradiction with docs/E2E.md, which had recorded them
+  #     passing in the 2026-09-05 device-matrix run since before this comment was
+  #     last read. They passed again on 2026-09-15 on the current tree, on
+  #     `chromium` in both modes -- `/title/no-such-title-pl0701` 404 under
+  #     `development` and the 200 `catalog_source_not_configured` refusal under
+  #     `production`, `/watch/Not%20A%20Valid%20Id` 404 in both -- with neither
+  #     served-bytes skeleton check finding its string. Observed twice is still
+  #     not guaranteed: `retries` is 0, and neither run was this job on a GitHub
+  #     runner. Both halves of PL-0704's
   #     repair have landed. Each existence decision now sits above every
   #     Suspense boundary its own page declares, AND the three loading files
   #     that installed a boundary above a segment are deleted:
@@ -373,25 +384,28 @@ jobs:
   #     `validate` job and is the authority on whether a boundary has crept back
   #     above a `notFound()`-capable page -- it, not this comment and not
   #     docs/E2E.md;
-  #   - `search.spec.ts`'s typing tests are UNKNOWN, which is not the same as
-  #     passing. The first real run failed for two separate causes, both
-  #     addressed since; the spec now also carries "text typed before hydration
-  #     survives it", added with that repair. None of it has been re-executed;
-  #   - EVERY `development`-ONLY ASSERTION IS UNKNOWN for the same reason, and
-  #     that includes the development half of every paired assertion in
-  #     `critical-journey.spec.ts` and `playback-session.api.spec.ts`. The
-  #     blocker that served no client JavaScript under
-  #     `LIBERTY_E2E_WEB_MODE=development` was fixed by `allowedDevOrigins` in
-  #     `apps/web/next.config.ts` and no `development` run has happened since.
-  #     Until one does, the production half of each pair is also unproven to be
-  #     non-vacuous -- which is why the development step below runs even after
-  #     the production step has failed.
+  #   - `search.spec.ts`'s typing tests passed on `chromium` in both modes on
+  #     2026-09-15, including "text typed before hydration survives it", which
+  #     was the single red of the 2026-09-05 device-matrix run. That is ONE
+  #     browser project. docs/E2E.md keeps the blocker entry open because it was
+  #     found on four, and PL-0705's acceptance names WebKit specifically; this
+  #     job launches neither WebKit nor Firefox and claims nothing about them;
+  #   - `development`-ONLY ASSERTIONS ARE NO LONGER UNKNOWN AS A CLASS. This
+  #     entry said no `development` run had happened since `allowedDevOrigins`
+  #     was added to `apps/web/next.config.ts`; two have, on 2026-09-05 and
+  #     2026-09-15, and the second was green across `api` and `chromium`. So the
+  #     production half of each pair is no longer unproven to be non-vacuous
+  #     either. The development step below still runs even after the production
+  #     step has failed, for the unchanged reason: one red mode must not hide the
+  #     other.
   #
   # WHAT THIS JOB DOES NOT DO ABOUT THAT. No `continue-on-error`. No `|| true`.
   # No `--pass-with-no-tests`, no retries (`retries: 0` is set in
   # `playwright.config.ts` and is deliberate there). The job fails when the suite
-  # fails, which today means this job is RED, and that red mark is the accurate
-  # state of the harness. A green tick over a red suite is the audit fiction this
+  # fails, and whatever mark that produces is the accurate state of the harness.
+  # This sentence used to add "which today means this job is RED"; that stopped
+  # being true and is the second stale prediction this block has carried.
+  # A green tick over a red suite is the audit fiction this
   # repository keeps deleting; a job that reports "known failures only" while
   # nobody maintains the list of known failures is the same fiction with an
   # inventory attached.
@@ -407,8 +421,12 @@ jobs:
   # fails when an entry stops failing, and that is PL-0701's surface, not this
   # file's.
   #
-  # SO: this job is green only when the suite is green in both modes. Until then
-  # its failure is the signal, and the entries above are what to read it against.
+  # SO: this job is green only when the suite is green in both modes. The local
+  # runs above say the suite IS green in both modes, for the two projects this
+  # job runs -- but a local run on a container is not this job, and until this
+  # workflow has actually reported, "expected green" is the same kind of claim
+  # "expected to pass" was for the 404s. The entries above are what to read a
+  # result against; they are not a prediction of one.
   #
   # BOTH MODES, and the second is not optional. docs/E2E.md, "Both modes are the
   # gate, not a choice": the strings the `production` half requires to be ABSENT
