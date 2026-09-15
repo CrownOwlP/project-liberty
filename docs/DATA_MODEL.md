@@ -156,11 +156,18 @@ Four places, none of which depends on the others:
    separates a copy from an issued value, so `profileIdFromScope(scope)` consults the registry
    before it reads the field and throws otherwise.
 
-   **Not yet complete, and the gap is on the persistence side.** `progress-repository.ts`,
-   `watchlist-repository.ts` and the read paths of `profile-repository.ts` still read
-   `scope.profileId` directly, so a forged scope still works against them; those files were
-   outside PL-0405's write surface. The converted call site is `refuseForeignScope` in
-   `profile-repository.ts`, which asks by way of `scopeBelongsToSession`. See ADR-007.
+   **`@liberty/persistence` asks, and one adapter still does not.** Every exported function in
+   `progress-repository.ts`, `watchlist-repository.ts` and `profile-repository.ts` obtains the id
+   through `profileIdFromScope(input.scope)` as its first statement — ahead of argument
+   validation and ahead of any I/O — and `scope.profileId` is not read directly anywhere in the
+   package. `scope-forgery.test.ts` attempts the spread forgery against all ten and asserts each
+   refuses without a database round trip.
+
+   Still unconverted: `apps/web/src/lib/db/in-memory-repository.ts`, the volatile development
+   store, which reads `input.scope.profileId` in fourteen places. It cannot be constructed
+   outside a non-deployment process — `createInMemoryRepository` demands an issued
+   `ClassifiedRuntime` — so the bypass is bounded to development and test, and it is still a
+   bypass. See ADR-007.
 2. **The predicate.** Every statement carries `profile_id = scope.profileId` in its `WHERE` or its
    conflict target — never a post-query filter, which a future `.map` can drop.
 3. **The primary key.** `profile_id` is the *leading* column of both viewer-state keys, so the index
@@ -267,23 +274,22 @@ behind it.
    are not installed yet. Nothing in either package will typecheck or test until this is done. The
    root `package.json` and `package-lock.json` were deliberately not edited.
 
-   **`package-lock.json` is stale as of 2026-09-15 and must be regenerated.** PL-0405 moved the
-   Better Auth pin from `1.7.1` to `1.7.5` in `packages/auth/package.json`, but the root lockfile
-   is outside that task's write surface and still resolves `1.7.1`. `npm ci` will refuse the
-   mismatch — loudly, which is the fail-safe direction — until somebody who owns the root surface
-   runs `npm install` and commits the result.
-2. **Reconcile the Better Auth tables — PARTLY DONE, AND THE REMAINDER IS NAMED.** The SQL
-   migration's `account` table was reconciled against **1.7.5** on 2026-09-15 by reading the
-   installed package's own `buildAuthTables` rather than the documentation site: the `issuer`
-   column and the `(issuer, account_id)` unique rule were removed and
-   `UNIQUE (provider_id, account_id)` put in their place. See ADR-007 for the evidence.
-   `packages/persistence/src/schema/auth.ts` was **not** reconciled — it was outside PL-0405's
-   write surface — so it still declares `issuer: text("issuer").notNull()` and the
-   `(issuer, accountId)` unique index, and therefore now disagrees with the SQL and would propose
-   reinstating both on the next `drizzle-kit generate`. **Correct that file before step 3.** Then
-   run `npx @better-auth/cli@1.7.5 generate` against `createLibertyAuth`'s configuration and diff
-   its output against the hand-written schema. The hand-written version exists so the first
-   migration could be *reviewed as a whole*, not to replace the generator.
+   **`package-lock.json` was regenerated against the `1.7.5` pin on 2026-09-15 and verified.**
+   `rm -rf node_modules && npm ci` exits 0 and resolves `better-auth@1.7.5` and
+   `@better-auth/drizzle-adapter@1.7.5`, so `npm ci` is now a usable install path rather than one
+   that refuses on a `package.json`/lockfile mismatch.
+2. **Reconcile the Better Auth tables — DONE FOR `account` AGAINST THE INSTALLED PACKAGE, STILL
+   NOT DONE AGAINST THE GENERATOR.** On 2026-09-15 both statements of the schema —
+   `migrations/0000_profile_scoped_identity.sql` and `packages/persistence/src/schema/auth.ts` —
+   were reconciled against **1.7.5** by reading the installed package's own `buildAuthTables`
+   rather than the documentation site: the `issuer` column and the `(issuer, account_id)` unique
+   rule were removed from both, and `UNIQUE (provider_id, account_id)` put in their place. The SQL
+   and the Drizzle definition therefore agree, and `drizzle-kit generate` will not propose
+   reinstating the abandoned schema. See ADR-007 for the evidence. Still run
+   `npx @better-auth/cli@1.7.5 generate` against `createLibertyAuth`'s configuration and diff its
+   output against the hand-written schema — the CLI is authoritative and has not been run. The
+   hand-written version exists so the first migration could be *reviewed as a whole*, not to
+   replace the generator.
 3. **`npm run db:generate -w @liberty/persistence`.** `migrations/0000_profile_scoped_identity.sql`
    is hand-written and reviewed, but drizzle-kit also needs its `migrations/meta/` journal and
    snapshot, which cannot be produced without running the tool. Diff the generated SQL against the
@@ -318,12 +324,12 @@ Nothing was executed. In particular:
   the function the library itself consults — a strictly better source than the docs page, and the
   reason the `issuer` drift was found at all — but `npx @better-auth/cli generate` is still
   authoritative and still has not been run.
-- **`packages/persistence/src/schema/auth.ts` disagrees with the migration as of 2026-09-15.** The
-  SQL dropped `issuer`; the Drizzle table definition still declares it `notNull` and still carries
-  `unique("account_issuer_account_id_key")`. The file was outside the write surface of the task
-  that corrected the SQL. Until it is corrected, `drizzle-kit generate` will propose adding the
-  column back, and `packages/persistence/src/repository-scoping.test.ts` builds its `ProfileScope`
-  fixtures with `as unknown as ProfileScope`, which the issuance registry now rejects.
+- **`apps/web/src/lib/db/in-memory-repository.ts` has not been converted to `profileIdFromScope`.**
+  It reads `input.scope.profileId` in fourteen places and a forged scope still works against it.
+  It cannot be constructed outside a non-deployment process, so the exposure is bounded to
+  development and test. Converting it is also what would let `profileId` be removed from the
+  `ProfileScope` interface, which is the change that turns an unchecked read from a deprecation
+  into a compile error.
 - **The first migration SQL has never been applied to a PostgreSQL instance.** Syntax, constraint
   names and the composite foreign key to `profile (id, user_id)` are unexecuted.
 - **`drizzle-orm@0.45.2`'s array-returning table-config callback and `check()` helper** are used

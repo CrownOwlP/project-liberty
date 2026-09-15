@@ -266,18 +266,40 @@ separated by a later edit. `scopeBelongsToSession` likewise answers `false` for 
 not issued; that matters specifically because a spread forgery keeps a **genuine** `grantedFor`,
 which is the one field an account comparison looks at.
 
-**What is not yet closed, stated here rather than left to be discovered.** A registry closes
-nothing unless the consumers consult it, and the consumers of a scope's `profileId` are in
-another package. `packages/persistence/src/progress-repository.ts`,
-`watchlist-repository.ts` and the read paths of `profile-repository.ts` still read
-`input.scope.profileId` directly, and against those call sites a forged scope still works.
-`packages/persistence/src/**` is not a write path of the task that made this correction, so the
-mechanism ships with its consumers unconverted, and the bypass remains reachable on those paths
-until each read becomes `profileIdFromScope(input.scope)`. Treating the defect as fixed before
-that is done would be worse than the state this replaced, because it would read as fixed. The
-one consumer that has been converted is `refuseForeignScope` in `profile-repository.ts`, by way
-of `scopeBelongsToSession` — it is the check every function taking both a session and a scope
-already ran first, so hardening the function hardened the call site without editing it.
+**The consumers ask, and that is what makes the registry worth having.** A registry closes
+nothing unless the code granting access consults it. `@liberty/persistence` was converted in the
+same task, after the write surface was widened to `packages/persistence/src/**` — which the task
+record had prescribed before the claim. Every exported function in `progress-repository.ts`,
+`watchlist-repository.ts` and `profile-repository.ts` now obtains the id through
+`profileIdFromScope(input.scope)` **as its first statement**, ahead of argument validation and
+ahead of any I/O, and `scope.profileId` is not read directly anywhere in that package.
+
+Three details of that shape are deliberate. **First**, the check is the read: the accessor
+returns the string, so there is no boolean guard sitting above a field access that a later edit
+could delete while the code still compiles. **Second**, it runs before `parseContentId` and
+`parseListLimit`, so a forged scope never reaches a database round trip and cannot use a
+validation reason code as an oracle for what the repository would have done. **Third**, the two
+functions that take a session as well as a scope refuse earlier still, in `refuseForeignScope`,
+because `scopeBelongsToSession` now establishes issuance as well as the account match — those
+return a reason code rather than throwing, because they have a mapped wire contract to report it
+through and the other eight return rows, where an empty list is indistinguishable from a refusal.
+
+`packages/persistence/src/scope-forgery.test.ts` attempts the spread forgery against all ten
+exported functions and asserts each refuses without touching a database. Its `db` is a proxy that
+throws on any property access, so "refused" and "refused before doing any I/O" are distinguished
+rather than conflated.
+
+**What is still not closed, stated here rather than left to be discovered.**
+`apps/web/src/lib/db/in-memory-repository.ts` is a second, complete repository implementation —
+the volatile store used for local development — and it reads `input.scope.profileId` directly in
+fourteen places. A forged scope still works against it. `apps/web/**` was outside the write
+surface, so the conversion is named rather than done. **The bound is worth stating precisely
+rather than reassuringly:** `createInMemoryRepository` refuses to construct unless handed a
+`ClassifiedRuntime` that `@liberty/contracts` actually issued, so it cannot exist in a
+deployment. This is a development- and test-process bypass, not a production one — and it is
+still a cross-profile bypass. The finishing move after that conversion is to remove `profileId`
+from the `ProfileScope` interface entirely, so an unchecked read becomes a compile error rather
+than a deprecation; that adapter is the only thing keeping the property public.
 
 **This is how the no-bypass invariant is enforced.** The mandatory product invariant is that no
 logic may bypass authentication. A rule stated in prose is enforced by review; a value that
@@ -331,21 +353,28 @@ leaking a new reason verbatim.
   `findAccountByKey` and throws. A duplicate `(provider_id, account_id)` pair is therefore an
   unrecoverable state for the library, and the database is the only place that can make it
   unrepresentable.
-- **The migration has still never been executed, and the Drizzle table definition has not been
-  reconciled with it.** There is no PostgreSQL anywhere in this environment, so the reconciliation
-  above was performed against the installed package's own schema definitions
-  (`buildAuthTables` in `@better-auth/core`) and its published changelog, not against an applied
-  database. Separately, `packages/persistence/src/schema/auth.ts` — outside the write surface of
-  the task that made this change — still declares `issuer: text("issuer").notNull()` and the
-  `(issuer, accountId)` unique index, so it now disagrees with the SQL and would propose
-  reinstating both on the next `drizzle-kit generate`. That file must be corrected before the
-  migration is applied to any database that matters; it is outstanding work, not a completed
-  step.
+- **The Drizzle table definition agrees with the SQL.** `packages/persistence/src/schema/auth.ts`
+  dropped `issuer` and `unique("account_issuer_account_id_key")` and gained
+  `unique("account_provider_id_account_id_key").on(table.providerId, table.accountId)`, so
+  `drizzle-kit generate` will not propose reinstating the abandoned schema. The two are a single
+  schema stated twice and nothing mechanical compares them, which is recorded in that file's
+  header.
+- **The migration has still never been executed.** There is no PostgreSQL anywhere in this
+  environment, so the reconciliation above was performed against the installed package's own
+  schema definitions (`buildAuthTables` in `@better-auth/core`, evaluated through
+  `getAuthTablesWithResolvedIndexes({})`) and its published changelog, not against an applied
+  database. `npx @better-auth/cli generate` remains authoritative and has not been run. That is
+  outstanding work, not a completed step.
 - **`better-auth.ts` is not unit-tested, on purpose.** Every assertion available without a real
   PostgreSQL would be an assertion about a stub of the vendor's behaviour. The one exception —
   `describeConfiguredSurface`, a statement about Liberty's own data — was moved out into
   `enabled-surface.ts` precisely because living in the untested file is how its previous defect
   survived.
+- **`npm ci` accepts the tree, which is the other half of the pin.** The root `package-lock.json`
+  was regenerated against `1.7.5` and verified from a clean slate: `rm -rf node_modules && npm ci`
+  exits 0 and resolves `better-auth@1.7.5` and `@better-auth/drizzle-adapter@1.7.5`. A pin that
+  `package.json` declares and the lockfile contradicts is not a completed bump — `npm ci` refuses
+  the mismatch, which is the fail-safe direction but is still a broken tree.
 - **Upgrading Better Auth requires the `security-review` gate.** Bumping the dependency and
   `REVIEWED_BETTER_AUTH_VERSION` is a single mechanical change by test, and a security-sensitive
   one by policy.
@@ -353,9 +382,9 @@ leaking a new reason verbatim.
   criteria name profile-scoped rows, a `(profileId, contentId)` key and a server-issued writer
   epoch. If the review rules against any clause here, those three are affected, which is the
   cost of recording the decision after the implementation rather than before it. They also own
-  `packages/persistence`, which is where the unconverted `scope.profileId` reads named above
-  live, so the sequencing between them and this ADR's outstanding work is a control-plane
-  question and is settled in the task records, not here.
+  `packages/persistence`, which this task wrote to in order to convert the scope consumers, so
+  which task owns those files afterwards is a control-plane question and is settled in the task
+  records, not here.
 
 **Reason:** the auth choice is the decision the whole viewer-state model hangs off, and it was
 recorded nowhere a decision is looked for. The seam, the database sessions, the exact pin and the
