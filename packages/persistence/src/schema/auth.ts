@@ -9,12 +9,23 @@ import { boolean, index, pgTable, text, timestamp, unique } from "drizzle-orm/pg
  * owning half of a migration cannot produce one first migration; one package
  * owning the whole database can.
  *
- * TRANSCRIBED FROM https://www.better-auth.com/docs/concepts/database (core
- * schema section, read 2026-08-21 against Better Auth 1.7.1). The authoritative
- * generator is `npx @better-auth/cli generate`, and this file must be
- * reconciled against its output before the first migration is applied -- see
- * `docs/DATA_MODEL.md`. It is written by hand here so the first migration can be
- * REVIEWED as a whole rather than arriving as generated output nobody read.
+ * `user`, `session` and `verification` are TRANSCRIBED FROM
+ * https://www.better-auth.com/docs/concepts/database (core schema section, read
+ * 2026-08-21 against Better Auth 1.7.1). `account` was RE-DERIVED on 2026-09-15
+ * (PL-0405) from the installed package itself -- `buildAuthTables` in
+ * `@better-auth/core`, evaluated through `getAuthTablesWithResolvedIndexes({})`,
+ * which is the function the library consults to decide what it writes. The docs
+ * page is a second-hand account of that function, and the indirection is what
+ * let this table drift a whole schema generation behind; see the `account`
+ * comment below. The authoritative generator is still
+ * `npx @better-auth/cli generate` and it must still be run before the first
+ * migration is applied -- see `docs/DATA_MODEL.md`. It is written by hand here
+ * so the first migration can be REVIEWED as a whole rather than arriving as
+ * generated output nobody read.
+ *
+ * THIS FILE AND `migrations/0000_profile_scoped_identity.sql` MUST AGREE. They
+ * are two statements of one schema and nothing mechanical compares them, so a
+ * change to either is a change to both.
  *
  * `@liberty/auth` does not import this file. It receives these tables as an
  * argument, which is what keeps the dependency arrow pointing one way:
@@ -68,9 +79,35 @@ export const session = pgTable(
 /**
  * One authentication method linked to a user.
  *
- * The `(issuer, accountId)` unique index is Better Auth's, not ours, and it is
- * the constraint that stops two provider identities collapsing into one local
- * account. Credential (password) accounts use the `local:credential` issuer.
+ * NO `issuer` COLUMN, AND THE UNIQUE KEY IS `(providerId, accountId)` (PL-0405).
+ * This table used to carry `issuer: text("issuer").notNull()` and
+ * `unique("account_issuer_account_id_key")`, transcribed from the 1.7.0-1.7.2
+ * account schema. Better Auth ABANDONED that schema in 1.7.3 (PR #11153):
+ * "Restore sign-in compatibility with 1.6 databases by identifying accounts
+ * with `(providerId, accountId)` and removing the `issuer` requirement
+ * introduced in 1.7.0. ... For SQL databases, also make `issuer` nullable or
+ * remove the column so sign-ups and account linking can succeed." Removed
+ * rather than made nullable, because the first migration has never been applied
+ * and there is no data to preserve.
+ *
+ * LEAVING IT WOULD HAVE BROKEN AUTHENTICATION OUTRIGHT, not merely been stale.
+ * The same release (PR #11178) added default-on schema validation: `diffSchema`
+ * in `@better-auth/core` reports any NOT NULL, defaultless column the library
+ * never writes as `unexpected-required-column`, and `formatSchemaFinding`
+ * special-cases the name `issuer` with a link to the 1.7 upgrade guide. Its
+ * words: every insert into `account` fails.
+ *
+ * THE `(providerId, accountId)` UNIQUE INDEX IS OURS, NOT THE LIBRARY'S, and
+ * saying so is the point of this paragraph -- the previous one claimed the
+ * opposite about the index it was describing.
+ * `getAuthTablesWithResolvedIndexes({})` on 1.7.5 declares no unique index on
+ * `account` at all. The library enforces account identity in code, in
+ * `findAccountByKey`, which selects on that pair with `limit: 2` and throws
+ * "Multiple accounts match the same accountId for provider ..." on two matches.
+ * A duplicate pair is therefore an unrecoverable state for the library, and the
+ * database is the only place that can make it unrepresentable. Safe by
+ * construction: credential accounts key on `("credential", user id)` and social
+ * accounts on `(provider, subject)`.
  *
  * `password` holds a hash produced by the library. It never leaves this table
  * and must never appear in a reason trail, a log line or an error message.
@@ -82,7 +119,6 @@ export const account = pgTable(
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
-    issuer: text("issuer").notNull(),
     accountId: text("account_id").notNull(),
     providerId: text("provider_id").notNull(),
     accessToken: text("access_token"),
@@ -102,7 +138,7 @@ export const account = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull()
   },
   (table) => [
-    unique("account_issuer_account_id_key").on(table.issuer, table.accountId),
+    unique("account_provider_id_account_id_key").on(table.providerId, table.accountId),
     index("account_user_id_idx").on(table.userId)
   ]
 );
