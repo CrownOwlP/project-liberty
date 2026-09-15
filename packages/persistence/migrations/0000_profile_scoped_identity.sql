@@ -14,11 +14,20 @@
 -- window in which a progress row can exist without a profile id.
 --
 -- REVIEW STATUS. Hand-written so the first migration could be read as a whole.
--- The four Better Auth tables are transcribed from
--- https://www.better-auth.com/docs/concepts/database (core schema, read
--- 2026-08-21 against Better Auth 1.7.1) and MUST be reconciled against
--- `npx @better-auth/cli generate` before this is applied to any database that
--- matters. Nothing in this file has been executed; see `docs/DATA_MODEL.md`.
+-- The four Better Auth tables are reconciled against BETTER AUTH 1.7.5 -- the
+-- exact version pinned in `packages/auth/package.json` and asserted by
+-- `REVIEWED_BETTER_AUTH_VERSION`. The reconciliation was done against the
+-- INSTALLED PACKAGE rather than the documentation site: `buildAuthTables` in
+-- `node_modules/@better-auth/core/dist/db/get-tables.mjs` is the function the
+-- library itself uses to decide what columns it writes, and
+-- `getAuthTablesWithResolvedIndexes({})` was evaluated to enumerate the default
+-- (no-plugin) field set and index set this migration must satisfy.
+--
+-- THE `issuer` COLUMN WAS REMOVED HERE; see the `account` table below for the
+-- full reasoning and the upstream citation. Nothing in this file has been
+-- executed against a database -- there is no PostgreSQL in this environment --
+-- so this is still a reviewed transcription and not a verified apply; see
+-- `docs/DATA_MODEL.md`.
 -- ---------------------------------------------------------------------------
 
 --> statement-breakpoint
@@ -51,11 +60,56 @@ CREATE TABLE "session" (
 --> statement-breakpoint
 CREATE INDEX "session_user_id_idx" ON "session" ("user_id");
 
+-- ---------------------------------------------------------------------------
+-- THE ACCOUNT TABLE, AND WHY IT NO LONGER HAS AN `issuer` COLUMN (PL-0405)
+--
+-- This table used to carry `"issuer" text NOT NULL` and
+-- `UNIQUE ("issuer", "account_id")`. Both were transcribed from the 1.7.0-1.7.2
+-- account schema. Better Auth ABANDONED that schema in 1.7.3 and the repository
+-- was left pinned at 1.7.1, so the migration described a shape no supported
+-- version of the library uses.
+--
+-- UPSTREAM, VERBATIM (better-auth CHANGELOG 1.7.3, PR #11153): "Restore sign-in
+-- compatibility with 1.6 databases by identifying accounts with
+-- `(providerId, accountId)` and removing the `issuer` requirement introduced in
+-- 1.7.0. ... If you applied the 1.7.0 through 1.7.2 account schema, remove its
+-- issuer unique index before upgrading. For SQL databases, also make `issuer`
+-- nullable or remove the column so sign-ups and account linking can succeed.
+-- `auth migrate` does not perform this cleanup."
+--
+-- REMOVED RATHER THAN MADE NULLABLE, which is the stronger of the two remedies
+-- upstream offers. Nullable is the remedy for a DEPLOYED 1.7.0-1.7.2 database
+-- that already holds rows; this is the FIRST migration and has never been
+-- applied anywhere, so there is no data to preserve and a nullable column
+-- nothing writes is just a column the next reader has to ask about.
+--
+-- IT WOULD ALSO BREAK AUTHENTICATION OUTRIGHT IF LEFT NOT NULL. 1.7.3 added
+-- start-up and per-request schema validation (PR #11178), enabled by default
+-- including in production. `diffSchema` in
+-- `node_modules/@better-auth/core/dist/db/schema-diff.mjs` reports any column
+-- that is `NOT NULL`, has no default, and is not one the library writes as
+-- `unexpected-required-column` -- and `formatSchemaFinding` special-cases the
+-- name `issuer` with a link to the 1.7 upgrade guide. Its own words: "every
+-- insert into `account` fails".
+--
+-- THE REPLACEMENT UNIQUENESS RULE IS OURS, NOT THE LIBRARY'S, AND IS STATED AS
+-- SUCH. `getAuthTablesWithResolvedIndexes({})` on 1.7.5 reports no unique index
+-- on `account` at all: the library enforces account identity in code, in
+-- `findAccountByKey` (`node_modules/better-auth/dist/db/internal-adapter.mjs`),
+-- which selects on `(providerId, accountId)` with `limit: 2` and throws
+-- "Multiple accounts match the same accountId for provider ..." when it finds
+-- two. A duplicate pair is therefore an unrecoverable state for the library, and
+-- the database is the only place that can make it unrepresentable. The
+-- constraint is defence in depth rather than a transcription, and it is safe:
+-- credential accounts key on ("credential", user id) and social accounts on
+-- (provider, subject), both unique by construction. `diffSchema` inspects
+-- columns only, so an additional constraint is not schema drift to the library.
+-- ---------------------------------------------------------------------------
+
 --> statement-breakpoint
 CREATE TABLE "account" (
   "id" text PRIMARY KEY NOT NULL,
   "user_id" text NOT NULL,
-  "issuer" text NOT NULL,
   "account_id" text NOT NULL,
   "provider_id" text NOT NULL,
   "access_token" text,
@@ -67,9 +121,7 @@ CREATE TABLE "account" (
   "password" text,
   "created_at" timestamp with time zone NOT NULL,
   "updated_at" timestamp with time zone NOT NULL,
-  -- Better Auth's own constraint. It is what stops two provider identities
-  -- collapsing into one local account.
-  CONSTRAINT "account_issuer_account_id_key" UNIQUE ("issuer", "account_id"),
+  CONSTRAINT "account_provider_id_account_id_key" UNIQUE ("provider_id", "account_id"),
   CONSTRAINT "account_user_id_user_id_fk" FOREIGN KEY ("user_id")
     REFERENCES "user" ("id") ON DELETE cascade
 );

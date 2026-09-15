@@ -22,34 +22,20 @@
  * mean migrating product data rather than replacing an adapter.
  * ---------------------------------------------------------------------- */
 
-/**
- * A brand nobody outside this module can produce.
- *
- * `unique symbol` is deliberately NOT exported: TypeScript will not let a caller
- * name it, so `{ profileId: "..." } as ProfileScope` is the only forgery
- * available and it requires an explicit cast that a reviewer can grep for. The
- * point is that every profile-scoped repository takes a `ProfileScope` rather
- * than a `string`, so "did anyone check this profile belongs to this account"
- * is answered by the type system at every call site instead of by discipline.
- */
-declare const profileScopeBrand: unique symbol;
+import type { ProfileScope } from "./profile-scope";
+import { isIssuedProfileScope } from "./profile-scope";
 
-/**
- * Proof that an authorization decision granted access to one specific profile.
- *
- * Minted only by `authorizeProfileAccess` and `authorizeProfileSelection`, the
- * two grants in `authorization.ts` -- and they are two because a session may act
- * as its active profile and may CHOOSE one, which are different decisions with
- * different preconditions. Carrying `grantedFor` -- the account
- * the grant was made for -- means a scope that leaked across a request boundary
- * can still be checked against the session it is being used under, rather than
- * being an unattributable bearer token inside the process.
- */
-export interface ProfileScope {
-  readonly profileId: string;
-  readonly grantedFor: string;
-  readonly [profileScopeBrand]: true;
-}
+/* -------------------------------------------------------------------------
+ * `ProfileScope` USED TO BE DEFINED HERE, and the brand it carried was a
+ * `declare const ... : unique symbol` -- a phantom that existed in the type
+ * system and nowhere at runtime. The comment above it claimed an explicit cast
+ * was the only available forgery. It was not: a spread copy with a replaced
+ * `profileId` type-checked with no cast at all. PL-0405 moved the type to
+ * `./profile-scope`, where the brand is a real `Symbol`, every issued scope is
+ * frozen and recorded in a `WeakSet`, and the consumer's first action is an
+ * identity check. Read that module's header for the whole argument, including
+ * what it does NOT yet close.
+ * ---------------------------------------------------------------------- */
 
 /** Who the account is. This, and nothing else, is what authentication produces. */
 export interface AccountIdentity {
@@ -90,7 +76,18 @@ export interface ProfileOwnership {
  *
  * Cheap, and worth calling in any layer that receives a scope it did not itself
  * obtain. A scope is not a capability that should survive a change of session.
+ *
+ * ISSUANCE IS CHECKED FIRST, AND A VALUE THAT WAS NOT ISSUED ANSWERS `false`.
+ * This function used to compare `grantedFor` and nothing else, which meant a
+ * forged scope -- a spread copy with a replaced `profileId`, whose `grantedFor`
+ * is therefore still genuine -- passed it. That is the exact shape of the
+ * PL-0405 bypass: the field this function reads is the one field the forger has
+ * no reason to change. It returns `false` rather than throwing because its
+ * contract is a boolean question asked by callers that already have a denial
+ * path; `profileIdFromScope` is the throwing accessor for callers that need the
+ * id itself.
  */
 export function scopeBelongsToSession(scope: ProfileScope, session: LibertySession): boolean {
+  if (!isIssuedProfileScope(scope)) return false;
   return scope.grantedFor === session.account.userId;
 }

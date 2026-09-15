@@ -1,4 +1,6 @@
-import type { LibertySession, ProfileOwnership, ProfileScope } from "./session";
+import type { ProfileScope } from "./profile-scope";
+import { issueProfileScope } from "./profile-scope";
+import type { LibertySession, ProfileOwnership } from "./session";
 
 /* -------------------------------------------------------------------------
  * Profile authorization (PL-0402)
@@ -21,18 +23,18 @@ import type { LibertySession, ProfileOwnership, ProfileScope } from "./session";
  * answers, because the remedies are different and only one of them is a bug.
  * ---------------------------------------------------------------------- */
 
-/**
- * The only place in the repository that produces a `ProfileScope`.
+/* -------------------------------------------------------------------------
+ * `mintProfileScope` USED TO LIVE HERE and was the single `as ProfileScope`
+ * cast in the codebase. The cast was the problem rather than the safeguard: the
+ * object it returned carried no runtime brand and no identity anything could
+ * check, so a caller holding the result could spread it, replace `profileId`
+ * and hand the copy to a repository that could not tell the difference.
  *
- * NOT exported, and deliberately not defined in `session.ts`: `index.ts`
- * re-exports everything `session.ts` exports, so a mint function living there
- * would escape the package and the brand would protect nothing. Kept
- * module-private here, the single `as ProfileScope` cast in the codebase sits
- * next to the decision that justifies it.
- */
-function mintProfileScope(profileId: string, grantedFor: string): ProfileScope {
-  return { profileId, grantedFor } as ProfileScope;
-}
+ * Issuance now lives in `./profile-scope`, which freezes each scope and records
+ * its identity. This module remains the only caller of it -- the two grant
+ * branches below -- and `issueProfileScope` is deliberately absent from
+ * `index.ts`, so the package's public surface still has no producer.
+ * ---------------------------------------------------------------------- */
 
 /**
  * Every conclusion this function can reach, granting or denying.
@@ -218,7 +220,7 @@ export function authorizeProfileAccess(
   return {
     allowed: true,
     reason: "active_profile_of_session",
-    scope: mintProfileScope(requestedProfileId, session.account.userId),
+    scope: issueProfileScope(requestedProfileId, session.account.userId),
     trail
   };
 }
@@ -325,7 +327,7 @@ export function authorizeProfileSelection(input: {
   return {
     allowed: true,
     reason: "selectable_profile_of_account",
-    scope: mintProfileScope(input.ownership.profileId, input.session.account.userId),
+    scope: issueProfileScope(input.ownership.profileId, input.session.account.userId),
     trail
   };
 }

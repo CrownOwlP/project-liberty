@@ -215,5 +215,34 @@ export function findSurfaceViolations(report: AuthSurfaceReport): readonly Surfa
  * `enabled-surface.test.ts` reads `package.json` and asserts both
  * `better-auth` and `@better-auth/drizzle-adapter` equal this string, so the
  * bump is now mechanically all-or-nothing.
+ *
+ * 1.7.1 -> 1.7.5 (PL-0405), AND THE STALENESS IS THE POLICY WORKING RATHER THAN
+ * FAILING. 1.7.1 was published 2026-08-18 and was four patch releases behind by
+ * the time the PL-0401 review read it; upstream's SECURITY.md says, in full,
+ * "We only support the latest version of Better Auth. Older versions are not
+ * supported." A caret range would have floated the dependency forward silently
+ * and nobody would have reviewed the version that arrived. The pin made the
+ * distance visible and forced this edit through the security gate, which is
+ * exactly what ADR-007 claimed exact pinning was for.
+ *
+ * THE REVIEW NAMED 1.7.4 AND THE PIN IS 1.7.5, on purpose. The PL-0405 record
+ * states "upstream's current release is 1.7.4, from 2026-09-10". That was true
+ * when it was written and is not true now: `npm view better-auth dist-tags`
+ * reports `latest: 1.7.5`, published 2026-09-14T22:10:52Z, with
+ * `@better-auth/drizzle-adapter@1.7.5` published two minutes later. Pinning the
+ * version the finding named would have left us on a version upstream had already
+ * stopped supporting -- reproducing the defect being corrected, one release
+ * later. The support rule is "the latest", not "the latest as of the review".
+ *
+ * WHAT THE BUMP CARRIED WITH IT. 1.7.3 (PR #11153) abandoned the 1.7.0-1.7.2
+ * `account` schema and went back to identifying accounts by
+ * `(providerId, accountId)`, and 1.7.3 (PR #11178) added default-on schema
+ * validation that REJECTS authentication requests when the database holds a
+ * required column the library never writes. Both bear directly on
+ * `packages/persistence/migrations/0000_profile_scoped_identity.sql`, which
+ * carried an `issuer` column and an `(issuer, account_id)` unique rule until
+ * this task; the migration was reconciled in the same change, because bumping
+ * the pin without it would have produced a configuration whose first sign-up
+ * fails.
  */
-export const REVIEWED_BETTER_AUTH_VERSION = "1.7.1";
+export const REVIEWED_BETTER_AUTH_VERSION = "1.7.5";

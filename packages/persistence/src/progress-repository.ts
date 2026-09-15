@@ -1,4 +1,4 @@
-import type { ProfileScope } from "@liberty/auth";
+import { type ProfileScope, profileIdFromScope } from "@liberty/auth";
 import { and, desc, eq, isNotNull, sql } from "drizzle-orm";
 import type { LibertyDatabase } from "./client";
 import {
@@ -22,10 +22,30 @@ import {
  * Progress persistence (PL-0403)
  *
  * Every function takes a `ProfileScope`. There is no overload that accepts a
- * `profileId` string, and every statement carries `profile_id = scope.profileId`
- * in its WHERE or its conflict target. Profile scoping is therefore enforced in
- * three independent places -- the type of the argument, the SQL predicate, and
- * the primary key itself -- and no single mistake defeats all three.
+ * `profileId` string, and every statement carries `profile_id = ...` in its
+ * WHERE or its conflict target. Profile scoping is therefore enforced in three
+ * independent places -- the type of the argument, the SQL predicate, and the
+ * primary key itself -- and no single mistake defeats all three.
+ *
+ * THE ID COMES FROM `profileIdFromScope`, NEVER FROM `scope.profileId` (PL-0405).
+ * The type of the argument is the compile-time half of the control and it is
+ * not the whole of it: a holder of a genuine scope can spread it with a
+ * replacement `profileId` and the copy type-checks with no cast at all, so a
+ * function that read the field directly would build `WHERE profile_id = $1` out
+ * of a value the caller chose. `profileIdFromScope` consults `@liberty/auth`'s
+ * issuance registry -- object identity, which a copy does not have -- and throws
+ * before it returns anything.
+ *
+ * IT IS THE FIRST STATEMENT OF EVERY FUNCTION HERE, ahead of argument validation
+ * and ahead of any I/O, because that is the prescribed shape of this control in
+ * `packages/contracts/src/shared/runtime.ts`: the check is the consumer's first
+ * action, before it reads any other field. Two things follow that would not
+ * follow from checking later -- a forged scope never reaches a database round
+ * trip, and it cannot use a validation reason code (`content_id_invalid`,
+ * `instant_not_representable`) as an oracle for what the repository would have
+ * done. The binding it produces is the ONLY source of the id in the function
+ * body, which is what stops a later edit separating the check from the read:
+ * delete the check and the read no longer compiles.
  *
  * DIRECT TO POSTGRESQL. No queue, no Redis, no write-behind. The research is
  * explicit that write-behind waits for a MEASURED PostgreSQL problem, and the
@@ -85,6 +105,9 @@ export async function issueWriterLease(
     readonly instant: Date;
   }
 ): Promise<{ readonly ok: true; readonly epoch: number; readonly writerId: string } | ProgressRepositoryFailure> {
+  // Issuance first; see the header. Ahead of `parseContentId` deliberately.
+  const profileId = profileIdFromScope(input.scope);
+
   const contentId = parseContentId(input.contentId);
   if (!contentId.ok) return { ok: false, reason: contentId.reason, detail: contentId.detail };
 
@@ -108,7 +131,7 @@ export async function issueWriterLease(
   const rows = await db
     .insert(playbackProgress)
     .values({
-      profileId: input.scope.profileId,
+      profileId,
       contentId: contentId.contentId,
       // NULL, NOT ZERO, and this is the whole reason `position_seconds` is
       // nullable. A lease is a claim on the right to write; it is not a write.
@@ -159,11 +182,14 @@ export async function writeProgress(
     readonly instant: Date;
   }
 ): Promise<ProgressWriteResolution | ProgressRepositoryFailure> {
+  // Issuance first; see the header. Ahead of `parseContentId` deliberately.
+  const profileId = profileIdFromScope(input.scope);
+
   const contentId = parseContentId(input.contentId);
   if (!contentId.ok) return { ok: false, reason: contentId.reason, detail: contentId.detail };
 
   const key = and(
-    eq(playbackProgress.profileId, input.scope.profileId),
+    eq(playbackProgress.profileId, profileId),
     eq(playbackProgress.contentId, contentId.contentId)
   );
 
@@ -236,6 +262,9 @@ export async function readProgress(
   db: LibertyDatabase,
   input: { readonly scope: ProfileScope; readonly contentId: string }
 ): Promise<PlaybackProgressRow | null | ProgressRepositoryFailure> {
+  // Issuance first; see the header. Ahead of `parseContentId` deliberately.
+  const profileId = profileIdFromScope(input.scope);
+
   const contentId = parseContentId(input.contentId);
   if (!contentId.ok) return { ok: false, reason: contentId.reason, detail: contentId.detail };
 
@@ -244,7 +273,7 @@ export async function readProgress(
     .from(playbackProgress)
     .where(
       and(
-        eq(playbackProgress.profileId, input.scope.profileId),
+        eq(playbackProgress.profileId, profileId),
         eq(playbackProgress.contentId, contentId.contentId)
       )
     )
@@ -264,6 +293,9 @@ export async function listContinueWatching(
   db: LibertyDatabase,
   input: { readonly scope: ProfileScope; readonly limit: number }
 ): Promise<readonly PlaybackProgressRow[] | ListLimitRejection> {
+  // Issuance first; see the header. Ahead of `parseContentId` deliberately.
+  const profileId = profileIdFromScope(input.scope);
+
   // Required is not validated: `?limit=abc` arrives as NaN and `LIMIT NaN` is a
   // PostgreSQL syntax error that reaches the handler as a driver exception
   // naming neither the caller nor the parameter.
@@ -275,7 +307,7 @@ export async function listContinueWatching(
     .from(playbackProgress)
     .where(
       and(
-        eq(playbackProgress.profileId, input.scope.profileId),
+        eq(playbackProgress.profileId, profileId),
         // A row with no reported position is a LEASE, not progress. Including it
         // would put a title at the top of this list purely because somebody
         // opened it, and there would be nothing to resume from -- the defect

@@ -4,7 +4,7 @@ import type {
   ProfileOwnership,
   ProfileScope
 } from "@liberty/auth";
-import { scopeBelongsToSession } from "@liberty/auth";
+import { isIssuedProfileScope, profileIdFromScope, scopeBelongsToSession } from "@liberty/auth";
 import { and, asc, count, eq, isNull } from "drizzle-orm";
 import type { LibertyDatabase } from "./client";
 import type { ProfileRow } from "./contracts";
@@ -27,11 +27,21 @@ import {
  * a `ProfileScope`, for the operations that act AS one profile.
  *
  * There is no function that takes a bare `profileId: string`. That is the
- * enforcement: `ProfileScope` is minted only by `authorizeProfileAccess` in
- * `@liberty/auth`, its brand is a non-exported `unique symbol`, and so a caller
- * cannot reach a profile's data without having passed the authorization
- * decision. Forging one requires an explicit `as ProfileScope` cast, which a
- * reviewer can grep for and which is not something anybody writes by accident.
+ * enforcement: a `ProfileScope` is ISSUED only by `authorizeProfileAccess` and
+ * `authorizeProfileSelection` in `@liberty/auth`, so a caller cannot reach a
+ * profile's data without having passed the authorization decision.
+ *
+ * "FORGING ONE REQUIRES AN EXPLICIT CAST" IS WHAT THIS PARAGRAPH USED TO SAY,
+ * AND IT WAS FALSE (PL-0405). The brand was a type-only `unique symbol`, so a
+ * holder of a genuine scope could write `{ ...scope, profileId: someoneElsesId }`
+ * and the copy type-checked with NO cast at all -- and this file then read
+ * `input.scope.profileId` straight into its predicates. The brand is now a real
+ * `Symbol`, every issued scope is frozen and recorded in a `WeakSet`, and the id
+ * used in a statement here comes from `profileIdFromScope(input.scope)`, which
+ * consults that registry and throws before returning. `scope.profileId` is not
+ * read directly anywhere in this package any more, including in the refusal
+ * messages: `refuseForeignScope` below will not echo the id of a scope that was
+ * never issued, because that id is a string the caller wrote.
  *
  * THE BRAND IS NOT THE WHOLE CHECK, and the two places that would be wrong if it
  * were are marked below. A scope proves that SOME session was authorised for
@@ -403,16 +413,40 @@ export type ScopeMismatch = {
  * request, is a working capability for another account's profile.
  */
 function refuseForeignScope(session: LibertySession, scope: ProfileScope): ScopeMismatch | null {
+  // `scopeBelongsToSession` now answers `false` for a value `@liberty/auth`
+  // never issued as well as for one granted to another account, so passing it
+  // is the issuance proof every caller below relies on. It is checked first,
+  // before any argument validation and before any I/O.
   if (scopeBelongsToSession(scope, session)) return null;
+
   return {
     ok: false,
     reason: "scope_not_granted_to_this_session",
-    // The profile id is named and the two ACCOUNT ids are not. This is the
-    // sharpest finding in the file -- a scope crossing a session boundary is
-    // never a UI mistake -- and it has to be investigable, but a detail that
-    // printed both user ids would put one account's identifier into the other
-    // account's error surface, which is the leak in miniature.
-    detail: `the scope for profile ${scope.profileId} was granted to a different account than this session's`
+    // ONE REASON CODE, TWO DETAILS, AND THE SPLIT IS ABOUT WHOSE STRING THIS IS.
+    // The reason stays single because it is accurate for both cases -- a scope
+    // that was never issued was certainly not granted to this session -- and
+    // because `ScopeMismatch["reason"]` is mapped identity-wise into the public
+    // `ProfilesReasonCode`, so a new member would be a wire-contract change
+    // rather than a diagnostic improvement.
+    //
+    // The DETAIL differs because `profileId` on an unissued scope is a string
+    // the caller wrote. Interpolating it would put an attacker-chosen value into
+    // a reason trail where every other profile id is one the system minted, and
+    // would report "granted to a different account" about an object no grant
+    // ever produced -- a confident, wrong diagnosis. So the id is echoed only
+    // once issuance is established.
+    detail: isIssuedProfileScope(scope)
+      ? // The profile id is named and the two ACCOUNT ids are not. This is the
+        // sharpest finding in the file -- a scope crossing a session boundary is
+        // never a UI mistake -- and it has to be investigable, but a detail that
+        // printed both user ids would put one account's identifier into the
+        // other account's error surface, which is the leak in miniature.
+        // `profileIdFromScope` rather than the field even here, on the branch
+        // that has just established issuance: it cannot throw, and keeping the
+        // accessor means no direct read of `scope.profileId` survives anywhere
+        // in this package for a later edit to copy.
+        `the scope for profile ${profileIdFromScope(scope)} was granted to a different account than this session's`
+      : "this scope was not issued by @liberty/auth: it is a copy, a cast or a hand-built object, and no authorization decision stands behind it"
   };
 }
 
@@ -446,20 +480,28 @@ export async function selectActiveProfile(
   const mismatch = refuseForeignScope(input.session, input.scope);
   if (mismatch !== null) return mismatch;
 
+  // Safe by construction rather than by luck: `refuseForeignScope` returned
+  // `null`, which means `scopeBelongsToSession` established issuance, so this
+  // cannot throw here. It is still the accessor rather than a field read,
+  // because the invariant worth keeping is that `scope.profileId` is not read
+  // directly anywhere in this package -- greppable, and asserted by
+  // `scope-forgery.test.ts` exercising every exported function.
+  const profileId = profileIdFromScope(input.scope);
+
   await db
     .insert(activeProfileSelection)
     .values({
       sessionId: input.session.account.sessionId,
-      profileId: input.scope.profileId,
+      profileId,
       userId: input.session.account.userId,
       selectedAt: input.instant
     })
     .onConflictDoUpdate({
       target: activeProfileSelection.sessionId,
-      set: { profileId: input.scope.profileId, selectedAt: input.instant }
+      set: { profileId, selectedAt: input.instant }
     });
 
-  return { ok: true, profileId: input.scope.profileId };
+  return { ok: true, profileId };
 }
 
 /**
@@ -568,12 +610,20 @@ export async function archiveProfile(
   const mismatch = refuseForeignScope(input.session, input.scope);
   if (mismatch !== null) return mismatch;
 
+  // Safe by construction rather than by luck: `refuseForeignScope` returned
+  // `null`, which means `scopeBelongsToSession` established issuance, so this
+  // cannot throw here. It is still the accessor rather than a field read,
+  // because the invariant worth keeping is that `scope.profileId` is not read
+  // directly anywhere in this package -- greppable, and asserted by
+  // `scope-forgery.test.ts` exercising every exported function.
+  const profileId = profileIdFromScope(input.scope);
+
   const archived = await db
     .update(profile)
     .set({ archivedAt: input.instant })
     .where(
       and(
-        eq(profile.id, input.scope.profileId),
+        eq(profile.id, profileId),
         eq(profile.userId, input.session.account.userId),
         isNull(profile.archivedAt)
       )
@@ -585,7 +635,7 @@ export async function archiveProfile(
     return {
       ok: false,
       reason: "no_live_profile_for_scope",
-      detail: `no live profile ${input.scope.profileId} is owned by this account; it is already archived, or the scope does not name a profile of this account`
+      detail: `no live profile ${profileId} is owned by this account; it is already archived, or the scope does not name a profile of this account`
     };
   }
 
@@ -610,7 +660,7 @@ export async function archiveProfile(
     .delete(activeProfileSelection)
     .where(
       and(
-        eq(activeProfileSelection.profileId, input.scope.profileId),
+        eq(activeProfileSelection.profileId, profileId),
         eq(activeProfileSelection.userId, input.session.account.userId)
       )
     );
