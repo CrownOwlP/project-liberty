@@ -29,6 +29,9 @@
 import type {
   EngineConfig,
   EngineLoader,
+  EngineUnavailableDetail,
+  EngineUnavailableReason,
+  PlaybackEngineId,
   RawEngineStats,
   ShakaEngine,
   ShakaPlayerHandle
@@ -41,20 +44,20 @@ import {
 import { describePlaybackError, type PlaybackError } from "./shaka-error";
 import { toPlaybackStats, type PlaybackStatsSnapshot } from "./playback-stats";
 
-/**
- * Why the engine is not usable. Each of these is a real, observed browser
- * situation rather than a defensive placeholder:
- *   - `engine_load_failed` — the dynamic import rejected. An ad-blocker
- *     matching the chunk, a proxy rewriting the response, a CSP without the
- *     right `script-src`, or simply an offline reload.
- *   - `browser_unsupported` — no Media Source Extensions, or no EME where the
- *     content needs it. This is a capability answer, not a fault.
- *   - `attach_failed` — Shaka refused the media element.
+/*
+ * THE ENGINE-UNAVAILABLE VOCABULARY MOVED TO `engine.ts` (PL-0903), and is
+ * re-exported here so that every consumer's import site is unchanged.
+ *
+ * It moved because it is not this module's vocabulary. This file is the Shaka
+ * session — its own header says so — and a vocabulary that a native adapter must
+ * report through cannot be owned by the web engine's implementation. `engine.ts`
+ * is the port layer, which is where a second implementation plugs in. The
+ * members, their spelling and their meaning are unchanged by the move; what
+ * changed is that each is now DEFINED by the lifecycle failure it names rather
+ * than by the browser situation that produces it, and that the engine's own
+ * detail travels beside it. Read the union's own comment for the argument.
  */
-export type EngineUnavailableReason =
-  | "engine_load_failed"
-  | "browser_unsupported"
-  | "attach_failed";
+export type { EngineUnavailableDetail, EngineUnavailableReason, PlaybackEngineId };
 
 export type EngineState =
   | { readonly status: "idle" }
@@ -63,6 +66,24 @@ export type EngineState =
   | {
       readonly status: "unavailable";
       readonly reason: EngineUnavailableReason;
+      /**
+       * WHOSE failure this is, and the engine's own code for it. Beside the
+       * reason, never encoded in it — see `EngineUnavailableDetail`.
+       *
+       * OPTIONAL, AND IT SHOULD NOT BE. This repository's stated discipline for
+       * a fact that may be unknown is required-and-nullable (PL-0207, cited
+       * again in PL-0902's notes), because an omitted field and a field that
+       * says "not established" read identically at the consumer. It is optional
+       * here for one mechanical reason: `playback-machine.test.ts` builds an
+       * `EngineState` literal without it, that file is outside PL-0903's
+       * `allowedPaths`, and a required member — even a nullable one — would fail
+       * `tsc` there. PL-0502 owns `apps/web/src/components/player/**` and can
+       * tighten this to `readonly detail: EngineUnavailableDetail | null` in the
+       * same change that renames `browser_unsupported`.
+       *
+       * Every unavailability this controller reports carries one.
+       */
+      readonly detail?: EngineUnavailableDetail;
       readonly error: PlaybackError;
     }
   | { readonly status: "destroyed" };
@@ -101,6 +122,27 @@ export const BASELINE_ENGINE_CONFIG: EngineConfig = {
 
 const BROWSER_UNSUPPORTED_MESSAGE =
   "This browser does not support the media APIs playback requires.";
+
+/** This controller is one engine, and it is always the same one. */
+const WEB_SHAKA: PlaybackEngineId = "web-shaka";
+
+/**
+ * This engine's own codes for an unavailability, closed so that a new call site
+ * has to name its case rather than pass a string.
+ *
+ * They are finer-grained than the reason on purpose, and that is the immediate
+ * payoff of carrying detail beside the reason rather than widening the reason:
+ * `engine_load_failed` covers both a rejected import and a constructor that
+ * threw, and `browser_unsupported` covers both "the probe said no" and "the
+ * probe itself threw". Those were indistinguishable in a bug report before this,
+ * and they have completely different remedies.
+ */
+type WebShakaUnavailableCode =
+  | "web-shaka.import_rejected"
+  | "web-shaka.player_construction_failed"
+  | "web-shaka.support_probe_threw"
+  | "web-shaka.unsupported_platform"
+  | "web-shaka.attach_rejected";
 
 export class PlaybackController {
   readonly #loadEngine: EngineLoader;
@@ -321,11 +363,15 @@ export class PlaybackController {
     try {
       supported = engine.isBrowserSupported();
     } catch (cause) {
-      this.#fail("browser_unsupported", cause);
+      this.#fail("browser_unsupported", "web-shaka.support_probe_threw", cause);
       return null;
     }
     if (!supported) {
-      this.#fail("browser_unsupported", new Error(BROWSER_UNSUPPORTED_MESSAGE));
+      this.#fail(
+        "browser_unsupported",
+        "web-shaka.unsupported_platform",
+        new Error(BROWSER_UNSUPPORTED_MESSAGE)
+      );
       return null;
     }
 
@@ -357,7 +403,7 @@ export class PlaybackController {
         await player.attach(mediaElement);
       } catch (cause) {
         await this.#teardownPlayer();
-        this.#fail("attach_failed", cause);
+        this.#fail("attach_failed", "web-shaka.attach_rejected", cause);
         return null;
       }
       if (this.#destroyed) {
@@ -374,7 +420,7 @@ export class PlaybackController {
     try {
       return await this.#loadEngine();
     } catch (cause) {
-      this.#fail("engine_load_failed", cause);
+      this.#fail("engine_load_failed", "web-shaka.import_rejected", cause);
       return null;
     }
   }
@@ -383,7 +429,7 @@ export class PlaybackController {
     try {
       return engine.createPlayer();
     } catch (cause) {
-      this.#fail("engine_load_failed", cause);
+      this.#fail("engine_load_failed", "web-shaka.player_construction_failed", cause);
       return null;
     }
   }
@@ -421,10 +467,32 @@ export class PlaybackController {
     this.#report(describePlaybackError(detail, "player-event"));
   };
 
-  #fail(reason: EngineUnavailableReason, cause: unknown): void {
+  /**
+   * `reason` says WHAT failed; `code` says what this engine called it.
+   *
+   * NOTE WHAT IS NOT DONE HERE. `code` is not folded into the `PlaybackError`,
+   * whose `code`/`category` are Shaka's numbers and are read by
+   * `classifyPlaybackFailure` to decide retryability. An unavailability's error
+   * reaches the machine as `ENGINE_ERROR` on the same route every other error
+   * does, so it is classified — and it classifies to `null`, because it is built
+   * from a value that is not a `shaka.util.Error` and therefore carries
+   * `category: null` and `code: null`. Keeping the engine detail out of those
+   * two fields is what preserves that, permanently and by type rather than by
+   * habit.
+   */
+  #fail(
+    reason: EngineUnavailableReason,
+    code: WebShakaUnavailableCode,
+    cause: unknown
+  ): void {
     const error = describePlaybackError(cause, "engine-load");
     this.#report(error);
-    this.#setEngineState({ status: "unavailable", reason, error });
+    this.#setEngineState({
+      status: "unavailable",
+      reason,
+      detail: { engine: WEB_SHAKA, code },
+      error
+    });
   }
 
   #report(error: PlaybackError): void {
