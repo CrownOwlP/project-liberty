@@ -1,13 +1,21 @@
 import { describe, expect, it } from "vitest";
+import { PLAYBACK_FAILURE_KINDS } from "@liberty/contracts/domains/failover";
+import { ENGINE_UNAVAILABLE_REASONS } from "./engine";
 import type {
   EngineConfig,
   EngineLoader,
+  EngineUnavailableReason,
   RawEngineStats,
   ShakaEngine,
   ShakaPlayerHandle
 } from "./engine";
-import { PlaybackController, type PlaybackControllerEvent } from "./playback-controller";
-import type { PlaybackError } from "./shaka-error";
+import { classifyPlaybackFailure, isRetryableFailure } from "./playback-failure";
+import {
+  PlaybackController,
+  type EngineState,
+  type PlaybackControllerEvent
+} from "./playback-controller";
+import { describePlaybackError, type PlaybackError } from "./shaka-error";
 
 /*
  * The engine is injected, so none of this needs a browser, a DOM or an 88 MB
@@ -397,5 +405,258 @@ describe("stats seam", () => {
     expect(controller.getPlaybackStats()?.timeToFirstFrameMs).toBe(1500);
     expect(controller.getPlaybackStats()?.droppedFrames).toBeNull();
     expect(controller.getRawEngineStats()).toBe(player.stats);
+  });
+});
+
+
+/* =========================================================================
+ * PL-0903 — the engine-unavailable vocabulary
+ * ====================================================================== */
+
+/**
+ * Names of ENGINES AND LIBRARIES. No member of the vocabulary may contain one:
+ * a member that names an engine is a member only that engine can report, and a
+ * union of those is the coupling PL-0903 exists to remove.
+ */
+const ENGINE_PRODUCT_NOUNS = ["shaka", "mpv", "libmpv", "hls", "tauri", "electron", "dll"];
+
+/**
+ * The above plus the HOST nouns. Applied to the member that means "the engine
+ * could not be loaded", which is the one a native adapter needs and the one this
+ * task is judged on — it must name neither an engine nor the kind of host it
+ * happens to be running in.
+ *
+ * `browser_unsupported` is deliberately NOT held to this list. It contains a
+ * host noun and is a known misnomer; its spelling is preserved because
+ * `playback-machine.test.ts` builds it in a fixture and that file is outside
+ * this task's write surface. See the union's comment in `engine.ts`.
+ */
+const ENGINE_AND_HOST_NOUNS = [...ENGINE_PRODUCT_NOUNS, "browser", "web", "native", "page"];
+
+const namesSomething = (reason: string, nouns: readonly string[]): readonly string[] =>
+  nouns.filter((noun) => reason.includes(noun));
+
+/** An engine whose `createPlayer` throws — the constructor half of a load failure. */
+const throwingConstructor = (): ShakaEngine => ({
+  isBrowserSupported: () => true,
+  createPlayer: () => {
+    throw new Error("Player constructor threw");
+  }
+});
+
+/** An engine whose support probe itself throws, rather than answering false. */
+const throwingProbe = (): ShakaEngine => ({
+  isBrowserSupported: () => {
+    throw new Error("support probe threw");
+  },
+  createPlayer: () => new FakePlayer()
+});
+
+const attachRejectingLoader = (): EngineLoader => {
+  const player = new FakePlayer();
+  player.attachImpl = () => Promise.reject(new Error("attach refused"));
+  return loaderFor(player);
+};
+
+/** Every unavailability this controller can actually reach, driven for real. */
+async function reachableUnavailableStates(): Promise<
+  readonly { readonly case: string; readonly state: Extract<EngineState, { status: "unavailable" }> }[]
+> {
+  const cases: readonly { readonly case: string; readonly loadEngine: EngineLoader }[] = [
+    { case: "import rejected", loadEngine: () => Promise.reject(new Error("blocked by client")) },
+    { case: "constructor threw", loadEngine: () => Promise.resolve(throwingConstructor()) },
+    { case: "support probe threw", loadEngine: () => Promise.resolve(throwingProbe()) },
+    { case: "host unsupported", loadEngine: loaderFor(new FakePlayer(), false) },
+    { case: "attach rejected", loadEngine: attachRejectingLoader() }
+  ];
+
+  const collected: { case: string; state: Extract<EngineState, { status: "unavailable" }> }[] = [];
+  for (const entry of cases) {
+    const controller = new PlaybackController({ loadEngine: entry.loadEngine });
+    await controller.attach(MEDIA);
+    await flush();
+    const state = controller.getEngineState();
+    /* A case that stopped producing an unavailability would silently shrink the
+     * coverage of every assertion below, so it fails here instead. */
+    expect(state.status, `${entry.case} no longer reports unavailable`).toBe("unavailable");
+    if (state.status !== "unavailable") continue;
+    collected.push({ case: entry.case, state });
+  }
+  return collected;
+}
+
+/**
+ * The native case, as a TYPE-LEVEL PROOF that does not need a native adapter.
+ *
+ * There is no `NativePlayerAdapter` yet, so no runtime path can produce this.
+ * What can be proven today is the thing PL-0903 is actually about: that the
+ * vocabulary CAN express "the native engine's library did not load", with the
+ * library named in the detail and not in the member. This literal does not
+ * compile if `engine_load_failed` is removed, if `detail` is removed, or if
+ * `native-mpv` is not a `PlaybackEngineId` — which is the whole widening,
+ * checked by `tsc` on every run.
+ */
+const NATIVE_LIBRARY_MISSING: EngineState = {
+  status: "unavailable",
+  reason: "engine_load_failed",
+  detail: { engine: "native-mpv", code: "native-mpv.loader_failed" },
+  error: describePlaybackError(new Error("libmpv-2.dll could not be loaded."), "engine-load")
+};
+
+describe("the engine-unavailable vocabulary is engine-neutral (PL-0903)", () => {
+  it("says an engine is missing without naming an engine or a host", async () => {
+    /*
+     * THE REGRESSION THE TASK ASKS FOR. It fails if `browser_unsupported` is
+     * ever again the only way to say an engine is missing: collapse the two
+     * cases onto that member, or rename the missing-engine member to anything
+     * that names a browser, an engine or a library, and one of these fails.
+     *
+     * This is the same path a native adapter takes for "libmpv-2.dll is not
+     * loadable": the engine was never obtained, so nothing about the host or the
+     * source was learned.
+     */
+    const controller = new PlaybackController({
+      loadEngine: () => Promise.reject(new Error("blocked by client"))
+    });
+    await controller.attach(MEDIA);
+
+    const state = controller.getEngineState();
+    expect(state.status).toBe("unavailable");
+    if (state.status !== "unavailable") return;
+
+    expect(state.reason).toBe("engine_load_failed");
+    expect(state.reason).not.toBe("browser_unsupported");
+    expect(namesSomething(state.reason, ENGINE_AND_HOST_NOUNS)).toEqual([]);
+  });
+
+  it("keeps a missing engine and an unsupportable host as two different answers", async () => {
+    /*
+     * The other half of the same guarantee. One member for both would make a
+     * library that is not installed indistinguishable from a machine that cannot
+     * run the one that is — different remedies, and on desktop the first is an
+     * install problem and the second is a hardware one.
+     */
+    const missing = new PlaybackController({
+      loadEngine: () => Promise.reject(new Error("blocked by client"))
+    });
+    await missing.attach(MEDIA);
+
+    const unsupportable = new PlaybackController({
+      loadEngine: loaderFor(new FakePlayer(), false)
+    });
+    await unsupportable.attach(MEDIA);
+
+    const a = missing.getEngineState();
+    const b = unsupportable.getEngineState();
+    if (a.status !== "unavailable" || b.status !== "unavailable") {
+      throw new Error("both controllers should be unavailable");
+    }
+    expect(a.reason).not.toBe(b.reason);
+  });
+
+  it("names no engine in any member of the vocabulary", () => {
+    for (const reason of ENGINE_UNAVAILABLE_REASONS) {
+      expect(namesSomething(reason, ENGINE_PRODUCT_NOUNS), reason).toEqual([]);
+    }
+  });
+
+  it("can express a native library that did not load, with the library beside the reason", () => {
+    if (NATIVE_LIBRARY_MISSING.status !== "unavailable") throw new Error("unreachable");
+    const { reason, detail, error } = NATIVE_LIBRARY_MISSING;
+
+    /* The member says WHAT failed and nothing else. */
+    expect(reason).toBe("engine_load_failed");
+    expect(namesSomething(reason, ENGINE_AND_HOST_NOUNS)).toEqual([]);
+
+    /* WHO failed, and its own code, travel beside it. */
+    expect(detail?.engine).toBe("native-mpv");
+    expect(detail?.code).toBe("native-mpv.loader_failed");
+
+    /* And the engine's own number space never reaches Shaka's fields. */
+    expect(error.code).toBeNull();
+    expect(error.category).toBeNull();
+    expect(error.message).toContain("libmpv-2.dll");
+  });
+
+  it("carries this engine's detail beside the reason on every unavailability", async () => {
+    const states = await reachableUnavailableStates();
+    expect(states).toHaveLength(5);
+
+    for (const { case: name, state } of states) {
+      expect(state.detail?.engine, name).toBe("web-shaka");
+      /* Namespaced, so a code read out of context still says whose it is. */
+      expect(state.detail?.code ?? "", name).toMatch(/^web-shaka\./);
+      /* The detail is NOT smuggled into the member. */
+      expect(state.reason.includes(state.detail?.code ?? "!"), name).toBe(false);
+    }
+
+    /* The detail is finer-grained than the reason, which is the point of it:
+     * two different failures under one member are now distinguishable. */
+    const loadFailures = states.filter(({ state }) => state.reason === "engine_load_failed");
+    expect(loadFailures).toHaveLength(2);
+    expect(new Set(loadFailures.map(({ state }) => state.detail?.code)).size).toBe(2);
+  });
+
+  it("reaches all three members, so none is vestigial", async () => {
+    const states = await reachableUnavailableStates();
+    const reasons = new Set(states.map(({ state }) => state.reason));
+    expect([...reasons].sort()).toEqual([...ENGINE_UNAVAILABLE_REASONS].sort());
+  });
+});
+
+describe("no unavailability reason can reach the failover scheduler as retryable (PL-0903)", () => {
+  it("shares no member with the failure-kind vocabulary the scheduler classifies", () => {
+    /*
+     * The structural half of the guarantee. `@liberty/media-engine` decides
+     * retryability from a `PlaybackFailureKind`, and `network_transient` is the
+     * only retryable one. No unavailability reason IS a kind, so none can be
+     * passed where a kind is expected even by a mistaken cast.
+     */
+    const kinds: readonly string[] = PLAYBACK_FAILURE_KINDS;
+    const overlap = ENGINE_UNAVAILABLE_REASONS.filter((reason) => kinds.includes(reason));
+    expect(overlap).toEqual([]);
+    expect(kinds).toContain("network_transient");
+    expect(ENGINE_UNAVAILABLE_REASONS).not.toContain("network_transient" as EngineUnavailableReason);
+  });
+
+  it("classifies every unavailability it reports as unclassified, never as retryable", async () => {
+    /*
+     * The behavioural half, and the one that matters. An unavailability's
+     * `PlaybackError` is ALSO reported on the ordinary error route — the
+     * controller calls `#report` before it sets the state — so it does reach
+     * `classifyPlaybackFailure` through the machine's `ENGINE_ERROR` handler.
+     * It must come back `null`: an invented kind here would charge a candidate
+     * for an engine that never ran, and a `network_transient` would re-load a
+     * library that is not installed.
+     */
+    const states = await reachableUnavailableStates();
+    expect(states).toHaveLength(5);
+
+    for (const { case: name, state } of states) {
+      const kind = classifyPlaybackFailure(state.error);
+      expect(kind, name).toBeNull();
+      expect(isRetryableFailure(kind), name).toBe(false);
+    }
+  });
+
+  it("keeps the engine's own code out of the two fields the classifier reads", async () => {
+    /*
+     * WHY THE DETAIL'S `code` IS A STRING. `classifyPlaybackFailure` reads
+     * `category`, `code` and `detail` off the `PlaybackError`, all pinned to
+     * Shaka 5.2.x. mpv's error numbers live on a different scale — -13 is
+     * MPV_ERROR_LOADING_FAILED, while Shaka's category 1 is NETWORK — so an
+     * engine number written into either field would be read on Shaka's scale and
+     * could classify as retryable. A namespaced string is not assignable to
+     * `number | null`, so this cannot be done by accident; the runtime assertion
+     * is the shadow of that.
+     */
+    const states = [...(await reachableUnavailableStates()).map(({ state }) => state)];
+    if (NATIVE_LIBRARY_MISSING.status === "unavailable") states.push(NATIVE_LIBRARY_MISSING);
+
+    for (const state of states) {
+      expect(state.error.category).toBeNull();
+      expect(state.error.code).toBeNull();
+      expect(typeof state.detail?.code).toBe("string");
+    }
   });
 });

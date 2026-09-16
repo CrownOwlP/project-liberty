@@ -98,3 +98,129 @@ export interface ShakaEngine {
  * has to surface as a state.
  */
 export type EngineLoader = () => Promise<ShakaEngine>;
+
+/* -------------------------------------------------------------------------
+ * The engine-NEUTRAL half (PL-0903)
+ *
+ * Everything above this line is the Shaka port: structural shapes pinned to
+ * Shaka 5.2.x, for the one engine that runs in a page. Everything below it is
+ * vocabulary that BOTH engines report through, and it lives here rather than in
+ * `playback-controller.ts` because that module is, by its own header, the Shaka
+ * session. A vocabulary a native adapter must speak cannot be defined inside the
+ * web engine's own implementation module.
+ *
+ * `docs/DESKTOP_PLAYBACK.md` §6 records the gap this closes: the machine's
+ * `ENGINE_STATE { status: "unavailable" }` branch is the same branch for
+ * "libmpv-2.dll is not loadable" and for "this browser has no MSE", and until
+ * now the only vocabulary on it described a browser.
+ * ---------------------------------------------------------------------- */
+
+/**
+ * Which implementation produced a report.
+ *
+ * The same two values as `PlayerAdapterId` in `docs/DESKTOP_PLAYBACK.md` §3,
+ * and deliberately the same spelling, so that when PL-0901's boundary is built
+ * the two identities are one identity rather than two that must be mapped. It
+ * is NOT declared here as `PlayerAdapterId`, because that name belongs to a
+ * boundary this task does not own and must not pre-empt.
+ *
+ * An IDENTITY FOR THE REASON TRAIL, NEVER A SWITCH. Nothing may branch on this
+ * to choose behaviour; §3's rule is that which engine is playing is a fact about
+ * the build target, not a fact the application reasons over.
+ */
+export type PlaybackEngineId = "web-shaka" | "native-mpv";
+
+/**
+ * Why an engine is not usable, in terms of WHAT FAILED rather than of WHO.
+ *
+ * THE MEMBER NAMES THE FAILURE; THE ENGINE IS CARRIED BESIDE IT. This is the
+ * whole decision PL-0903 exists to take, and the alternative it rejects is worth
+ * stating: a `libmpv_unavailable` member added next to `browser_unsupported`
+ * would leave one union naming one engine's failure modes and one library's, so
+ * every later engine would add its own member and the consumers would grow a
+ * switch over engines that §3 forbids one layer up. The engine's identity and
+ * its own code go in `EngineUnavailableDetail`, which sits next to the reason on
+ * the state and is never folded into it.
+ *
+ * The three members are three DIFFERENT LIFECYCLE FAILURES, and each one has a
+ * real instance on both engines:
+ *
+ *   - `engine_load_failed` — THE ENGINE COULD NOT BE OBTAINED. Nothing about the
+ *     host or the source was learned, because no engine ever ran.
+ *       web: the dynamic `import()` rejected (an ad-blocker matching the chunk, a
+ *       proxy rewriting the response, a CSP without the right `script-src`, an
+ *       offline reload), or the constructor threw.
+ *       native: `libmpv-2.dll` is not present or not loadable, or `mpv_create()`
+ *       failed. THIS IS THE MEMBER A NATIVE ENGINE REPORTS WHEN THE LIBRARY IS
+ *       MISSING, and it names no engine, no library and no browser.
+ *
+ *   - `browser_unsupported` — THE ENGINE RAN AND THE HOST CANNOT SUPPORT IT.
+ *     A capability answer, not a fault.
+ *       web: `isBrowserSupported()` is false — no Media Source Extensions, or no
+ *       EME where the content needs it.
+ *       native: `mpv_initialize()` failed, or no usable video output exists on
+ *       this machine.
+ *     THE SPELLING IS A KNOWN WART AND IT IS NOT RENAMED HERE. The neutral name
+ *     for this class is "the host cannot run this engine"; `browser_unsupported`
+ *     says "browser" and is therefore a misnomer the moment the engine is a
+ *     native library. It is kept because `playback-machine.test.ts` constructs
+ *     this literal in a fixture, that file is outside PL-0903's `allowedPaths`,
+ *     and a rename would fail `tsc` in a file this task may not repair — which
+ *     would also break the requirement that the existing web reasons keep their
+ *     present tests. A SECOND, NEUTRALLY SPELLED MEMBER WAS NOT ADDED FOR IT:
+ *     two names for one class is the coupling above, not a fix for it. The
+ *     rename belongs to PL-0502, whose `allowedPaths` is
+ *     `apps/web/src/components/player/**` and therefore covers both this file
+ *     and the fixture, and it is a pure rename with no behaviour in it.
+ *
+ *   - `attach_failed` — THE ENGINE RAN ON THIS HOST AND COULD NOT BE BOUND TO
+ *     ITS OUTPUT SURFACE.
+ *       web: `player.attach(mediaElement)` rejected.
+ *       native: embedding into the window handle (`--wid`) failed.
+ *
+ * WHAT IS DELIBERATELY NOT A MEMBER: "the engine loaded and refused this
+ * source". `docs/DESKTOP_PLAYBACK.md` §3 already owns that answer as
+ * `PlayerRefusalCode` on `canPlay`, and it is a different kind of fact —
+ * unavailability is decided ONCE, before any source is loaded, and ends the
+ * session at `#fatal`; a refusal is per-candidate and feeds failover. Putting a
+ * per-source outcome in this union is the one way an unavailability reason could
+ * plausibly reach the failover scheduler at all, so it is refused by
+ * construction rather than guarded against afterwards.
+ *
+ * Declared as an array with the type derived from it, the same way
+ * `PLAYBACK_FAILURE_KINDS` is derived from its schema in `@liberty/contracts`:
+ * a hand-written second list is a second fact, and the one that drifts is always
+ * the one nothing reads.
+ */
+export const ENGINE_UNAVAILABLE_REASONS = [
+  "engine_load_failed",
+  "browser_unsupported",
+  "attach_failed"
+] as const;
+
+export type EngineUnavailableReason = (typeof ENGINE_UNAVAILABLE_REASONS)[number];
+
+/**
+ * The engine's own account of an unavailability, carried BESIDE the reason.
+ *
+ * `code` IS A STRING AND THAT IS A SAFETY PROPERTY, not a style choice. The
+ * numeric `code` and `category` on `PlaybackError` are pinned to Shaka 5.2.x and
+ * are exactly the fields `classifyPlaybackFailure` reads to decide a
+ * `PlaybackFailureKind` — of which `network_transient` is the only retryable
+ * one. An engine-specific number placed anywhere a Shaka number is read would be
+ * interpreted on Shaka's scale: libmpv's `MPV_ERROR_LOADING_FAILED` is -13, and
+ * mpv's END_FILE error numbers collide with Shaka's category space outright. A
+ * namespaced string is not assignable to `number | null`, so the compiler, not a
+ * reviewer, is what stops that detail from ever landing in a classified field.
+ *
+ * Namespace every code with its engine id (`"web-shaka.attach_rejected"`,
+ * `"native-mpv.loader_failed"`), so a code read out of context still says whose
+ * number space it belongs to.
+ *
+ * `null` where the engine supplied nothing. Never a zero and never a code
+ * borrowed from the other engine.
+ */
+export interface EngineUnavailableDetail {
+  readonly engine: PlaybackEngineId;
+  readonly code: string | null;
+}
