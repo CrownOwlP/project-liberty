@@ -192,6 +192,147 @@ Served `cache-control: no-store` on every path including the 500: a playback
 session is per-viewer, per-device and time-bounded, and a shared cache holding one
 would serve one viewer's session to another.
 
+## Content protection on a playback candidate
+
+Defined by PL-0902 in `@liberty/contracts`:
+`packages/contracts/src/shared/drm.ts` (the vocabulary) and
+`packages/contracts/src/domains/playback.ts` (`resolvedStreamCandidateSchema`).
+
+**No route emits this yet.** It is written here before the wire carries it, on
+purpose: PL-0501 issues the playback session that will carry it, and retrofitting
+a discriminated field into a shipped response is the change PL-0501's acceptance
+warns about. What follows is the contract PL-0501 implements, not a description
+of today's `/playback/session` response — the shape documented under
+[The granted session](#the-granted-session) is unchanged until PL-0501 lands.
+
+### Why it exists
+
+`docs/DESKTOP_PLAYBACK.md` §4: the desktop build routes between an mpv adapter
+that has **no Content Decryption Module and cannot be given one** and a
+Shaka/EME adapter that has one, and `PlayerAdapter.canPlay` must return a
+reasoned decision on both branches. A refusal that says `drm_required` without
+naming a system is not a debuggable trail, which is product invariant 4. So the
+candidate states a capability descriptor, not a boolean.
+
+This describes an encryption requirement so that a player which cannot satisfy it
+**refuses**. It adds no decryption, no key handling and no fallback: there is no
+key, key id, initialisation data, PSSH or certificate anywhere in the contract,
+and the protection descriptor is `.strict()` at every variant so a producer that
+tries to attach one gets a parse failure rather than a silent strip. The mpv
+adapter's refusal stays a refusal.
+
+### The descriptor
+
+`contentProtectionSchema` is a discriminated union on `state` with **three**
+members:
+
+```json
+{ "state": "clear" }
+{ "state": "unknown", "why": "provider_did_not_state" }
+{ "state": "protected", "keySystem": "widevine", "licenseUrl": "https://licence.example/acquire" }
+```
+
+- `clear` is an **assertion** that the stream is unencrypted. Somebody looked.
+- `unknown` is an assertion that nobody established it. It carries no key system
+  because there is none, and `why` is closed
+  (`provider_did_not_state`, `provider_value_unrecognised`, `not_inspected`) so
+  the trail sends a reader to the producer, to the normalizer or to inspection
+  rather than saying only that something was not known.
+- `protected` names the key system from a closed vocabulary
+  (`widevine`, `playready`, `fairplay`, `clearkey`) and the licence acquisition
+  endpoint where the boundary that produced the candidate knows one.
+  `licenseUrl` is required-and-nullable: `null` means the endpoint was not
+  stated, and routing does not depend on it — `canPlay` needs the *system*, a
+  load needs the *endpoint*.
+
+`licenseUrl` must be `https` with no credentials in the authority. A licence
+exchange over `http` publishes the CDM's challenge to the path, and
+`https://user:pass@host/` is the shape `checkUrl` already refuses before a media
+URL is published; a licence endpoint is not held to a lesser standard than a
+media URL.
+
+**Unknown must never read as clear.** `requiresContentDecryptionModule()` returns
+`true` for `unknown` as well as for `protected`, so an unestablished encryption
+state routes to the adapter that has a CDM and is refused by the native adapter
+under `drm_required_no_cdm` with a reason that says the state was *unstated*
+rather than positive. Getting that backwards is the one way this design produces
+a product-invariant-2 incident.
+
+### Where it lives, and why
+
+On the **resolved candidate** — `resolvedStreamCandidateSchema`, which is
+`streamCandidateSchema` plus `protection` — and restated verbatim by the playback
+session that publishes that candidate. It is **not** on `streamCandidateSchema`.
+
+`streamCandidateSchema` is the ranker's input. `docs/DESKTOP_PLAYBACK.md` §4
+rules that a desktop client reports the **union** of both engines' capabilities
+and that per-candidate routing decides afterwards, explicitly accepting that
+ranking may prefer a candidate only one adapter can play. Ranking therefore has
+no use for a key system, and the first score component that discounted protected
+candidates would be a second opinion about routing living in the one component §4
+says must not hold one.
+
+`packages/provider-sdk/src/fixture/provider.ts` keeps the playable address off
+`StreamCandidate` and on a separate `FixtureCandidate`, so `@liberty/media-engine`
+"could not read `uri` even by accident", and because that seam is where a
+short-lived playback credential would be minted. That argument is not
+candidate-versus-session — it is **ranker-input versus player-input** — and both
+halves of this descriptor are player-input. The licence endpoint is an address in
+exactly `uri`'s class and follows it. The key system is not an address at all: it
+is a stable capability fact of the same kind as `protocol` and `videoCodec`, so
+nothing in the `uri` argument excludes it from a candidate — what excludes it
+from the *scored* candidate is the paragraph above.
+
+Consequence: adding this field changed no existing candidate's meaning.
+`streamCandidateSchema` is byte-for-byte what it was, every current producer
+still parses, and `/playback/resolve` is unaffected. A candidate that states no
+protection remains a valid thing to **rank** and is not a valid thing to
+**play**.
+
+### What PL-0501 has to do
+
+1. Add `protection: contentProtectionSchema` to `playbackSessionCandidateSchema`
+   in `apps/web/src/app/api/v1/playback/session/contract.ts`, carrying the
+   resolved candidate's value verbatim rather than re-deriving one.
+2. Pin the obligation so it cannot be dropped later:
+
+   ```ts
+   const SESSION_CANDIDATE_STATES_PROTECTION: StatesContentProtection<PlaybackSessionCandidate> = true;
+   ```
+
+   `StatesContentProtection` is exported from
+   `@liberty/contracts/domains/playback` and resolves to `never` for a shape
+   without the field, so the declaration stops compiling if it is removed or
+   renamed. This is the inverse of `domains/live.ts`'s `CarriesNoPlayability`.
+3. Add `export * from "./shared/drm";` to `packages/contracts/src/index.ts`.
+   PL-0902's write surface did not include the barrel, so the vocabulary is
+   reachable today only through its authoritative subpath,
+   `@liberty/contracts/shared/drm`. That is a real public surface — the barrel is
+   a compatibility re-export and `domains/live.ts` is already absent from it — but
+   the omission should not outlive the next task that owns `index.ts`.
+
+The session's descriptor is a copy, not a second opinion. Two boundaries each
+deciding what a candidate's protection is would eventually disagree, and the
+disagreement would surface as a router refusing a candidate the session
+advertised as clear.
+
+### Normalization stays inside `@liberty/provider-sdk`
+
+`keySystemSchema` is a closed enum, so a provider's own spelling —
+`com.widevine.alpha`, `com.microsoft.playready`, `org.w3.clearkey`, `DRM: WV` —
+**does not parse**. There is exactly one place that spelling can be turned into a
+contract value, and product invariant 3 says which: the adapter, behind
+`@liberty/provider-sdk`. Nothing outside that package should contain a mapping
+table, and the contract is shaped so that nothing outside it can.
+
+The failure mode is the part that matters. An adapter that meets a spelling it
+cannot map **must** emit `{ "state": "unknown", "why": "provider_value_unrecognised" }`.
+It must not emit `clear`, and it must not omit the field: an unmapped provider
+string becoming a claim that the stream is unencrypted is exactly the accident
+the third state exists to prevent. `PROTECTION_NOT_STATED` is exported as the
+safe default so that "I do not know" is a one-token import and `{ state: "clear" }`
+is the thing somebody has to type deliberately.
+
 ## `POST /api/v1/playback/resolve`
 
 Purpose: rank already-authorized candidates for the requesting device.
