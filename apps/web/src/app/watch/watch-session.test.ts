@@ -1,4 +1,5 @@
 import { unknownMediaFacts, type StreamCandidate } from "@liberty/contracts/domains/playback";
+import { PROTECTION_NOT_STATED } from "@liberty/contracts/shared/drm";
 import { MEDIA_FACTS } from "@liberty/contracts/shared/media-facts";
 import type { ContentRights } from "@liberty/contracts/shared/rights";
 import { afterEach, describe, expect, it } from "vitest";
@@ -143,7 +144,16 @@ function authorized(init: {
    */
   return {
     candidate,
-    source: { uri: init.uri, mimeType: null, allowLoopback: init.allowLoopback ?? false }
+    source: { uri: init.uri, mimeType: null, allowLoopback: init.allowLoopback ?? false },
+    /*
+     * `protection` joined `AuthorizedCandidate` with PL-0902's descriptor, and
+     * this route READS the produced type rather than publishing it -- the watch
+     * page hands `PlaybackCandidate`s to the player, which carries no
+     * protection field yet. So this states the safe value and asserts nothing
+     * about it; the session API's own suites are where the descriptor's
+     * carriage is pinned.
+     */
+    protection: PROTECTION_NOT_STATED
   };
 }
 

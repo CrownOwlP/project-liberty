@@ -1,4 +1,8 @@
 import { unknownMediaFacts } from "@liberty/contracts/domains/playback";
+import {
+  PROTECTION_NOT_STATED,
+  requiresContentDecryptionModule
+} from "@liberty/contracts/shared/drm";
 import { MEDIA_FACTS } from "@liberty/contracts/shared/media-facts";
 import { PLAYABLE_CONTENT_RIGHTS } from "@liberty/contracts/shared/rights";
 import { LATENCY_CEILING_MS, PROVIDER_HEALTH_FLOOR } from "@liberty/media-engine";
@@ -346,6 +350,40 @@ describe("what the fixtures state about the media", () => {
      */
     for (const entry of candidates()) {
       expect(unknownMediaFacts(entry.candidate)).toEqual([...MEDIA_FACTS]);
+    }
+  });
+
+  it("states that the provider did not state a protection status, and never that it is clear", () => {
+    /*
+     * THE OPEN QUESTION THIS TASK DECIDED, pinned so the decision is visible if
+     * it is ever changed. `@liberty/provider-sdk`'s `FixtureCandidate` carries
+     * no protection field, so this shape adapter has nothing to forward. The
+     * honest descriptor for a clear development fixture is `{ state: "clear" }`
+     * -- and that is an ASSERTION ABOUT THE BYTES, which product invariant 3
+     * reserves to a provider adapter. What this module may state, because it is
+     * a true observation about the producer rather than about the media, is
+     * that the provider stated nothing.
+     *
+     * The value is safe by construction, and that is the reason it is
+     * acceptable rather than merely convenient:
+     * `requiresContentDecryptionModule` is `true` for `unknown`, so the failure
+     * mode is a clear fixture routed to the adapter that HAS a CDM, refused by
+     * the mpv adapter under `drm_required_no_cdm` with a reason that says the
+     * state was unstated. It is never a candidate attempted without the CDM it
+     * needs.
+     *
+     * `not: clear` is asserted separately from the equality. The equality could
+     * be relaxed one day -- if the SDK starts stating `clear` here, this route
+     * will forward it and this test becomes wrong in the right direction -- but
+     * a fixture reaching a router as `clear` FROM THIS FILE, which has looked at
+     * nothing, is the invariant-2 reading §4 names, and that must never become
+     * true no matter who edits the mapping.
+     */
+    for (const entry of candidates()) {
+      expect(entry.protection).toEqual(PROTECTION_NOT_STATED);
+      expect(entry.protection).toEqual({ state: "unknown", why: "provider_did_not_state" });
+      expect(entry.protection.state).not.toBe("clear");
+      expect(requiresContentDecryptionModule(entry.protection)).toBe(true);
     }
   });
 
