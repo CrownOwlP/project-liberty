@@ -28,6 +28,20 @@ import type { ContentRights } from "@liberty/contracts/shared/rights";
  * network; see `docs/CATALOG_SOURCE.md` for the list of what is deliberately
  * unanswered.
  *
+ * THOSE FOUR NOW EXIST -- IN A PACKAGE, NOT HERE, AND STILL WITH NO PROVIDER.
+ * PL-0305 built `@liberty/catalog-ingestion`: identity and dedupe, an
+ * `observedAt` with a staleness policy over it, tombstones that only a complete
+ * pass can mint, cursor paging, and a transport that is PL-0304's egress
+ * boundary rather than a second one. The port below is UNCHANGED by it, and
+ * that is a constraint rather than a preference. A record here still carries no
+ * age, `listRecords` still returns everything, and there is still no way to say
+ * a work was withdrawn -- because expressing any of those means importing the
+ * package's vocabulary, `apps/web` cannot declare that dependency inside
+ * PL-0305's `allowedPaths`, and a second spelling of a freshness or tombstone
+ * rule inside `apps/web` is exactly the drift this file argues against
+ * elsewhere. `catalog-source-registry.ts` names the two manifest edits that
+ * unblock it.
+ *
  * IT IS EXPRESSED IN THE PUBLISHED CONTRACTS AND ADDS NO VOCABULARY OF ITS OWN.
  * The work is a `CatalogItem` from `@liberty/contracts/domains/catalog` and the
  * rights category is `ContentRights` from `@liberty/contracts/shared/rights`. A

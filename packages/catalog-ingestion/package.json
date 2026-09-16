@@ -1,0 +1,31 @@
+{
+  "name": "@liberty/catalog-ingestion",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./package.json": "./package.json"
+  },
+  "types": "./src/index.ts",
+  "scripts": {
+    "build": "tsc --noEmit",
+    "lint": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@liberty/contracts": "0.1.0",
+    "@liberty/media-inspection": "0.1.0",
+    "@liberty/provider-sdk": "0.1.0",
+    "zod": "^3.0.0"
+  },
+  "devDependencies": {
+    "fast-check": "^4.9.0",
+    "typescript": "^5.9.0",
+    "vitest": "^3.0.0"
+  }
+}

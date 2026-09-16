@@ -21,6 +21,19 @@ What has been added is the interface a real metadata provider would implement,
 and the wiring that lets one be dropped in without rewriting the surfaces. That
 is all it is.
 
+**PL-0305 added the other half of the design and still did not add a provider.**
+`packages/catalog-ingestion` now holds the ingestion machinery -- identity and
+dedupe, refresh and staleness, tombstones, paging, provider-side search as a
+declared capability, locale tags, availability windows, artwork with its own
+licence, and the egress-bound transport -- driven by a `CatalogMetadataProvider`
+port with nothing behind it. `resolveCatalogMetadataProvider()` answers
+`not-configured` unconditionally, because choosing a source is a **Licensing**
+decision and keying it is a **Credentials** one, and `control/policies.json`
+reserves both to the human commander. Two sections at the foot of this document
+are the record: [the ingestion package](#pl-0305-the-ingestion-package) and
+[the rights position](#the-rights-position-on-a-real-source), the second of
+which is the evidence the commander would decide from.
+
 ## The port
 
 | File | Role |
@@ -319,32 +332,90 @@ lane read the way they do.
 
 Named so nobody reads a port as a product.
 
-- **Ingestion.** Nothing fetches, schedules, batches or backfills. There is no
-  worker; `docs/ARCHITECTURE.md` lists "metadata ingestion worker" as an
-  extraction candidate and it remains one.
-- **Refresh and staleness.** No TTL, no cache, no invalidation, no `updatedAt`.
-  `listRecords` is asked and answers; how old the answer is, nobody records.
-- **Identity and dedupe.** `normalizedContentIdSchema` says what an id looks
-  like. Nothing says how a provider's native id becomes one, or what happens when
-  two providers describe the same work. This is the single largest missing piece
-  and it is a design question, not a coding one.
-- **Deletion.** No tombstones. A work that vanishes from a source simply stops
-  appearing, which is indistinguishable from a failed fetch.
-- **Provider-side search.** `searchCatalog` filters an in-memory array. The port
-  has no search capability, so a source of any real size would have to be listed
-  in full and filtered locally. Adding one is a contract question (ranking,
-  paging, and who owns relevance), which is why it was not invented here.
-- **Paging.** `listRecords` returns everything. That is fine for six fixtures and
-  is not a shape a catalog of real size can use.
-- **Artwork and image rights.** `CatalogItem` carries no image field at all —
-  `catalog-card.tsx` renders a decorative gradient. Artwork carries its own
-  licensing, separate from the work's, and nothing here addresses it.
-- **Localization.** `title`, `genre` and `synopsis` are single strings with no
-  language tag. There is no locale in the port and no way for a source to offer
-  one work under two languages.
-- **Availability windows and territory.** No start/end dates, no region. The
-  home page's empty state already says "in your region", which today is a phrase
-  with nothing behind it.
+- **Ingestion. PARTLY CLOSED BY PL-0305, and the remaining part is the
+  provider.** `packages/catalog-ingestion` has the pass: `runIngestionPass`
+  pages a provider by cursor, clamps to the provider's declared maximum page
+  size, resumes from a backfill cursor, bounds itself with `maxPages`, validates
+  every record and reports a named refusal for each one it drops.
+  `planNextPassAt` schedules the next pass with capped exponential backoff.
+  What none of it has is a provider to run against -- see the two sections
+  below. `docs/ARCHITECTURE.md` still lists "metadata ingestion worker" as an
+  extraction candidate: the package is a library, and nothing schedules it in a
+  process yet.
+- **Refresh and staleness. CLOSED IN THE PACKAGE, NOT YET IN THE PORT.**
+  Every ingested record carries an `observedAt`, `assessFreshness` grades it
+  `fresh`/`stale`/`expired` against a two-bound `StalenessPolicy`, and
+  `projectCatalogAnswer` dates a whole set by its OLDEST record -- a rail is as
+  current as its stalest row. `CatalogMetadataSource` in `apps/web` still
+  returns bare records with no age, because the port cannot import the
+  package's freshness vocabulary yet (see the ingestion section below) and a
+  second spelling of it inside `apps/web` is not worth the drift.
+- **Identity and dedupe. DECIDED BY PL-0305.** The three decisions are written
+  out in the header of `packages/catalog-ingestion/src/identity.ts`, with the
+  alternatives each one rejected: (1) a normalized id is NAMESPACED BY ITS
+  SOURCE, so two providers cannot collide by accident and the failure mode is a
+  visible duplicate rather than a silent merge; (2) two records are the same
+  work ONLY on a shared third-party authority identifier -- never on title,
+  year or runtime at any confidence, because a wrong merge merges two rights
+  bases and is a rights defect rather than a cosmetic one; (3) which source is
+  canonical is DECLARED in a precedence list, and a record from an undeclared
+  source is refused rather than ranked last. The cost of (1) is stated there
+  too: ids are not portable between sources, so dropping a provider is a
+  migration. Disagreeing with these is a review of the decision, which is the
+  point of writing them down.
+- **Deletion. CLOSED IN THE PACKAGE.** `WorkTombstone` distinguishes a
+  withdrawal from an absence, and `runIngestionPass` mints one ONLY from a
+  complete successful full pass, or from an explicit `withdrawn` list off a
+  provider that declared `reportsDeletions`. It withholds tombstones by name in
+  the three cases where absence is not evidence -- `pass_failed`,
+  `page_limit_reached` and `incremental_pass` -- and a record that was SEEN and
+  then refused is spared, because failing validation is not the same as being
+  withdrawn. The third of those is the trap worth naming: an incremental sync
+  that tombstones what it did not see deletes the whole catalog except this
+  morning's edits, and every step of the reasoning looks correct.
+- **Provider-side search. ANSWERED AS A CONTRACT IN THE PACKAGE; `apps/web` is
+  unchanged.** `ProviderCapabilities.providerSideSearch` is a declaration, not a
+  probe, and `requireProviderSideSearch` refuses by name rather than falling
+  back to listing a source in full. Ownership is settled: paging is always the
+  provider's and is always by cursor, never by offset; relevance ranking belongs
+  to whoever ran the query, so a provider's result order is never re-sorted
+  here, and the platform ranks only when it searched its own store.
+  `searchCatalog` in `apps/web` still filters an in-memory array of six
+  fixtures, because there is no store behind it.
+- **Paging. ANSWERED AT THE PROVIDER BOUNDARY, NOT AT THE PORT.**
+  `fetchPage` is cursor-based and `listRecords` on the `apps/web` port still
+  returns everything. The port's shape is not a shape a real catalog can use and
+  that has not changed; what has changed is that the ingestion side no longer
+  assumes it can enumerate a source in one call.
+- **Artwork and image rights. MODELLED, AND DELIBERATELY NOT DELIVERED.**
+  `ArtworkRef` carries a `role`, an OPAQUE `assetRef` -- never a URL, so a
+  provider's image CDN link has nowhere to go -- and a REQUIRED rights basis of
+  its own, separate from the work's. Required rather than nullable because the
+  risk is asymmetric: an undeclared work is refused and nothing is published,
+  whereas an undeclared image that reached a page is a copy of somebody's file
+  served from our origin. `project.ts` then DROPS artwork on the way to
+  `CatalogItem`, which still carries no image field and where
+  `catalog-card.tsx` still renders a decorative gradient -- so images are
+  ingested and not delivered. That is the "or they do not arrive" half of
+  PL-0305's acceptance criterion, made structural. Delivering them needs an
+  image-rights agreement, which is a separate Licensing decision from the
+  metadata one.
+- **Localization. CLOSED IN THE PACKAGE, NOT IN THE PORT.** An ingested work
+  holds locale-tagged sets for title, genre and synopsis, and `selectLocalized`
+  collapses them at the READ -- exact locale match across the whole preference
+  list first, then primary-subtag match -- refusing rather than falling back to
+  whichever language the source listed first. `CatalogItem` still holds one
+  untagged string for each, which is correct for a card and is why the choice
+  happens at projection time with the reader's preferences in hand.
+- **Availability windows and territory. MODELLED IN THE PACKAGE; the empty
+  state's phrase still has nothing behind it in a running build.**
+  `AvailabilityWindow` carries an ISO 3166-1 territory (or `WW`), and open-ended
+  start and end dates where `null` means OPEN and NO WINDOW AT ALL means
+  unstated -- two different facts that a nullable-both-ends window would
+  conflate. `projectToCatalogRecord` evaluates them, and how to read an unstated
+  availability is the CALLER's decision (`refuse` or `treat_as_worldwide`) with
+  no default, because both readings are defensible and burying one in a default
+  argument would hide a rights choice.
 - **The catalog contract has no undeclared-rights state.** `titleRightsBasisSchema`
   is nullable; `catalogItemSchema.rights` is not. So a source that knows of a work
   but not its rights cannot express it as a `CatalogItem` at all, and the port
@@ -381,3 +452,220 @@ Named so nobody reads a port as a product.
 - **Episodes.** They are not catalog entities here; `demo-title-details.ts`
   generates them from a series' `episodeCount`. A real source states them, and
   where they live is an open question.
+
+## PL-0305: the ingestion package
+
+`packages/catalog-ingestion` (`@liberty/catalog-ingestion`) is the half of a
+real catalog source that needed no external access, built so the half that does
+is a wiring change rather than a redesign. **It configures no provider**, which
+is the subject of the next section.
+
+It is a package rather than a folder in `apps/web` for the reason
+`@liberty/media-inspection` is: this is scheduled cross-provider I/O against
+infrastructure nobody here administers, and a rail renders what it is given
+while this decides what exists. Being outside the app is also what lets it
+import `isOpaqueRightsReference` from `@liberty/provider-sdk` and finally APPLY
+the opaque-rights-reference rule on a catalog path. The objection recorded
+further up this document -- that the SDK publishes one root entry point, so a
+browse surface importing the predicate pulls the fixture provider, the health
+scoring and the Stremio vocabulary into the bundle of every page that renders a
+card -- is a bundle cost, and a server-side ingestion package does not pay it.
+`apps/web` still does not import it, and restating the pattern there is still
+refused.
+
+| Module | What it decides |
+| --- | --- |
+| `record.ts` | The ingestion vocabulary: locale-tagged text, availability windows, artwork with its own basis, tombstones, provenance. Zod schemas, because this is the parse boundary for untrusted I/O. |
+| `identity.ts` | Id derivation and dedupe. The three decisions, and what each one rejected. |
+| `freshness.ts` | `observedAt`, a two-bound staleness policy, and capped backoff. |
+| `provider.ts` | The `CatalogMetadataProvider` port, its declared capabilities, and `resolveCatalogMetadataProvider()` -- which answers `not-configured`. |
+| `safety.ts` | `findMediaAddresses` and `checkRightsBasis`. The two checks that make this a rights boundary. |
+| `ingest.ts` | One pass: paging, backfill, per-record refusals, and the tombstone rule. |
+| `project.ts` | Collapse to `CatalogItem` for one reader: locale, territory, and the age of the answer. |
+| `transport.ts` | The ONLY network path, and it is PL-0304's, not a new one. |
+
+### How catalog metadata stays separate from playback resolution
+
+Three mechanisms, stated because a single assertion is not evidence:
+
+1. **The vocabulary has no field for an address.** There is no url, uri, src,
+   href, manifest or stream anywhere in `record.ts`, and artwork is an opaque
+   `assetRef` rather than a link. Nothing here *can* say where to fetch a work.
+2. **The raw payload is scanned before it is parsed.** `findMediaAddresses` runs
+   on the provider's untouched response, and it runs FIRST -- before zod, which
+   silently strips unknown keys. A schema parse first would discard a
+   `streamUrl` and leave the record looking clean, so the provider sending one
+   would never be noticed. It refuses on the KEY as well as the value, because a
+   key that is empty today is populated tomorrow. It catches
+   protocol-relative (`//host/x`) and bare-host (`host/x`) references, which
+   `new URL()` does not.
+3. **The projection emits `CatalogItem`, which has no image or stream field**,
+   and drops artwork rather than mapping it. `e2e/tests/catalog.api.spec.ts`
+   already asserts that no key in a catalog response is an address and no value
+   is an absolute URL; nothing in this package can make that assertion fail.
+
+Playback resolution remains where it was: `@liberty/provider-sdk` adapters, the
+playback-session boundary, and invariant 1's rights check before ranking.
+Nothing in this package is reachable from it.
+
+### How network access goes through the existing egress boundary
+
+`transport.ts` is forty lines over `fetchManifestText` from
+`@liberty/media-inspection` and adds one thing: a `JSON.parse`. It writes no
+allowlist, no DNS logic, no redirect policy and no size cap of its own, so the
+four controls PL-0304 took several review rounds to settle are the ones a
+catalog fetch gets:
+
+- a fail-closed host allowlist (an empty one fetches nothing);
+- every resolved address classified before the socket, with the survivors
+  carried forward as a `PinnedTarget` so the name is never resolved twice;
+- a body metered incrementally rather than trusted from `Content-Length`;
+- every redirect hop re-authorised against the same policy, inside one deadline.
+
+`transport.test.ts` asserts the composition rather than re-testing the gate: each
+negative case checks BOTH the refusal reason AND that the transport was never
+reached, which is the assertion a wrapper that called `fetch` and checked the
+allowlist afterwards would fail.
+
+The function's name is about its first caller, not its contents -- its own header
+describes it as fetching "ONE document, of bounded size, within one deadline,
+over a redirect chain", and there is nothing manifest-specific in it. A second
+copy for catalogs would be a second SSRF filter to keep in agreement with the
+first, and the one nobody updates is the one that decides.
+
+`userAgent` is **required with no default**, because several candidate sources
+make it a condition of access rather than a courtesy, and a default would be a
+string this package chose on an operator's behalf.
+
+### What PL-0305 did NOT do, and why
+
+- **No provider is configured.** See the next section. This is the whole point.
+- **`apps/web` does not import this package, and cannot yet.** Declaring the
+  dependency means editing `apps/web/package.json`, which is outside PL-0305's
+  `allowedPaths`; and adding any new workspace package needs two entries in
+  `package-lock.json`, which is outside it too. So the adapter that turns
+  projected records into a `CatalogMetadataSource` -- a few lines in
+  `catalog-source-registry.ts` -- is not written. `ProjectedCatalogRecord` is
+  deliberately **structurally identical** to the port's `CatalogMetadataRecord`,
+  both spelled in published contract types and neither importing the other, so
+  that adapter is an assignment rather than a mapping when it can be written.
+- **Nothing schedules a pass.** `planNextPassAt` says when the next one is due;
+  no process calls it. There is no worker, no queue and no store -- ingestion
+  produces `AcceptedWork` and tombstones and hands them back, and where they are
+  persisted is the next task's question.
+- **The port still has no age, no paging and no tombstone.** Those need the
+  dependency above.
+- **`@liberty/media-inspection` has no `./http` subpath**, so importing its
+  barrel pulls `hls.ts` and with it `m3u8-parser`, whose ambient declaration
+  lives in that package's own source tree. `packages/catalog-ingestion/tsconfig.json`
+  names that declaration file to keep the build honest. The real fix is a subpath
+  export on that package's manifest, which is outside this task's paths.
+- **The contract still cannot express undeclared rights.** `catalogItemSchema.rights`
+  is non-nullable, so `project.ts` has to put SOME category on an item whose basis
+  is null while keeping `record.rights` null. The item's field is not read by
+  anything that gates; the deeper fix is still a `packages/contracts` change with
+  its own review.
+
+## The rights position on a real source
+
+**No metadata source has been selected, and selecting one is not an engineering
+decision.** `control/policies.json` puts `Licensing` and `Credentials` under
+`escalation.humanOnly`. PL-0305's own task record says the same. What follows is
+the evidence a commander would decide from, and what was and was not verified.
+
+### How this evidence was gathered, and its limits
+
+Each primary source below was fetched on **2026-09-16** and is quoted. Three
+limits, stated rather than left to be discovered:
+
+1. **Terms change.** A quotation dated today is not a licence position next
+   quarter. Any decision here should re-read the primary document at the time it
+   is taken.
+2. **One canonical document could not be read.** TMDB's own API terms page
+   (`themoviedb.org/api-terms-of-use`) is disallowed by that site's robots.txt
+   and was not retrieved; what is quoted for TMDB is its developer FAQ, which is
+   a summary published by the same party and is not the contract.
+3. **This is not legal advice, and one question in particular is not an
+   engineering question.** Bare facts -- a title, a year, a runtime -- are
+   generally not copyrightable in the United States, but a COMPILATION of them
+   can attract the EU/UK sui generis database right independently of copyright.
+   Whether bulk ingestion of a third party's catalog engages that right is a
+   question for counsel, not for this document, and it applies to every
+   candidate below including the CC0 one.
+
+### Candidates
+
+**Wikidata** -- the only candidate that needs no credential and whose data
+carries an explicit public-domain dedication.
+
+> "All structured data in the main, property and lexeme namespaces is made
+> available under the Creative Commons CC0 License."
+> -- <https://www.wikidata.org/wiki/Wikidata:Licensing>
+
+The same page records that text in OTHER namespaces is CC BY-SA, so the
+distinction matters: the structured statements about a film are CC0; prose is
+not. CC0 imposes no attribution condition. Coverage of film and television is
+broad but uneven, and it is community-maintained rather than editorial, so
+quality is a product question rather than a rights one.
+
+Access is unauthenticated, but not unconditional. The Wikimedia User-Agent
+policy applies:
+
+> "Scripts should use an informative User-Agent string with contact information,
+> or they may be IP-blocked without notice."
+> -- <https://meta.wikimedia.org/wiki/User-Agent_policy>
+
+The same policy forbids a bot presenting a browser's User-Agent. This is why
+`CatalogDocumentOptions.userAgent` is required with no default. Rate limits and
+query timeouts on the public SPARQL endpoint were **not** verified here -- the
+Wikidata Query Service documentation was not retrievable from this environment
+-- and should be read before any pass is scheduled against it.
+
+**TMDB** -- the richest film/TV metadata source, and the one that needs both
+escalation categories.
+
+> "You can apply for an API key by clicking the 'API' link from the left hand
+> sidebar within your account settings page."
+>
+> "Our API is free to use for non-commercial purposes as long as you attribute
+> TMDB as the source of the data and/or images."
+>
+> "If you are interested in obtaining a license to use our API and/or our
+> data/images for commercial purposes, please contact [sales]."
+> -- <https://developer.themoviedb.org/docs/faq> (the FAQ; see limit 2 above)
+
+Attribution is a required, specific string ("This product uses the TMDB API but
+is not endorsed or certified by TMDB") in an about or credits surface. So TMDB
+is a **Credentials** escalation (an API key) AND a **Licensing** one (whether
+Project Liberty is commercial, which is not a question this repository can
+answer about itself). Its images are covered by the same terms, which is a
+second and separate reason artwork is modelled but not delivered.
+
+**Other keyed aggregators** (OMDb, JustWatch, Gracenote and similar) were **not
+assessed**. They are named here so their absence is legible as "not researched"
+rather than "ruled out".
+
+### What would have to happen
+
+1. A commander decision under **Licensing**, naming the source and recording
+   what its terms permit for this product's actual commercial posture, and
+   whether counsel has been asked about database rights on bulk ingestion.
+2. If the source is keyed, a **Credentials** escalation. No environment variable
+   has been introduced for one and no placeholder exists anywhere in this
+   package: a stub that looks like a real key makes an unconfigured build look
+   configured. Note that `apps/web` reads dotenv from `apps/web/`, **not** the
+   repository root -- `docs/DEVELOPMENT.md` records this and it has cost
+   debugging rounds before.
+3. A separate decision for **artwork**, if images are wanted. Image rights are
+   not the work's rights, and `ArtworkRef` keeps them apart on purpose.
+4. An adapter implementing `CatalogMetadataProvider`, constructed over
+   `transport.ts`, plus an entry in the operator's `EgressPolicy.allowedHosts`
+   -- without which it fetches nothing, by design.
+5. The `apps/web` dependency and the registry adapter described above.
+
+Until (1), `resolveCatalogMetadataProvider()` answers `not-configured` with the
+reason `no_catalog_provider_licensed`, and
+`packages/catalog-ingestion/src/provider.test.ts` asserts it does. That test is a
+tripwire, not a claim that the refusal is permanent: it fails the day somebody
+returns a configured provider, which is exactly when a rights review needs to
+have happened.
