@@ -6,6 +6,7 @@ import {
   streamCandidatesArb,
   unvettedRightsCandidatesArb
 } from "@liberty/contracts/testing/arbitraries";
+import { PROTECTION_NOT_STATED } from "@liberty/contracts/shared/drm";
 import { PLAYABLE_RIGHTS } from "@liberty/media-engine";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
@@ -65,7 +66,8 @@ function authorize(candidate: StreamCandidate): AuthorizedCandidate {
       uri: `https://fixtures.invalid/${slug(candidate.id)}/manifest.mpd`,
       mimeType: "application/dash+xml",
       allowLoopback: false
-    }
+    },
+    protection: PROTECTION_NOT_STATED
   };
 }
 

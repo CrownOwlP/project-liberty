@@ -1,4 +1,5 @@
 import type { StreamCandidate } from "@liberty/contracts/domains/playback";
+import { PROTECTION_NOT_STATED, type ContentProtection } from "@liberty/contracts/shared/drm";
 import type { ContentRights } from "@liberty/contracts/shared/rights";
 import { describe, expect, it } from "vitest";
 import { NonDeploymentEnvironment } from "../../../deployment-environment";
@@ -51,6 +52,9 @@ function authorized(init: {
   audioCodec?: StreamCandidate["audioCodec"];
   estimatedLatencyMs?: number;
   healthScore?: number;
+  /** Defaults to the safe "nobody established it", exactly as a resolver with
+   * nothing to say must state it. Overridden where a test is about the copy. */
+  protection?: ContentProtection;
 }): AuthorizedCandidate {
   const candidate: StreamCandidate = {
     id: init.id,
@@ -70,7 +74,8 @@ function authorized(init: {
       uri: init.uri ?? `https://cdn.example.com/${init.id}/manifest.mpd`,
       mimeType: "application/dash+xml",
       allowLoopback: false
-    }
+    },
+    protection: init.protection ?? PROTECTION_NOT_STATED
   };
 }
 
@@ -284,6 +289,64 @@ describe("outcomes", () => {
     /* Invariant 4 applies to a grant as much as to a denial. */
     expect(response.reasons.length).toBeGreaterThan(0);
     expect(response.reasons[0].code).toBe("session_issued");
+  });
+
+  it("publishes each candidate's protection descriptor verbatim", async () => {
+    /*
+     * PL-0902's field, carried rather than derived. `docs/API_CONTRACTS.md`:
+     * "the session's descriptor is a copy, not a second opinion. Two boundaries
+     * each deciding what a candidate's protection is would eventually disagree,
+     * and the disagreement would surface as a router refusing a candidate the
+     * session advertised as clear." So this asserts OBJECT EQUALITY against
+     * three different descriptors rather than that the field merely parses: a
+     * session that normalised, defaulted or upgraded any of them would be the
+     * second opinion.
+     */
+    const protections: readonly ContentProtection[] = [
+      { state: "clear" },
+      { state: "unknown", why: "provider_value_unrecognised" },
+      {
+        state: "protected",
+        keySystem: "widevine",
+        licenseUrl: "https://licence.example.com/acquire"
+      }
+    ];
+
+    const response = await issue(
+      protections.map((protection, index) =>
+        authorized({ id: `candidate-${index}`, protection })
+      )
+    );
+
+    expect(response.outcome).toBe("granted");
+    if (response.outcome !== "granted") return;
+
+    const published = new Map(
+      response.session.candidates.map((entry) => [entry.id, entry.protection])
+    );
+    protections.forEach((protection, index) => {
+      expect(published.get(`candidate-${index}`)).toEqual(protection);
+    });
+  });
+
+  it("states protection on every published candidate, so none can reach a router unstated", async () => {
+    /*
+     * The field is required by the schema, and the response is re-validated on
+     * the way out -- but the schema cannot say that the value came from the
+     * RESOLVER. What this pins is that the default path states the safe value
+     * rather than omitting the descriptor and relying on a reader's reflex:
+     * `requiresContentDecryptionModule` is true for `unknown`, so a candidate
+     * that says nothing is routed to the adapter that has a CDM instead of
+     * being attempted without one.
+     */
+    const response = await issue([GOOD, ALSO_GOOD]);
+
+    expect(response.outcome).toBe("granted");
+    if (response.outcome !== "granted") return;
+    for (const candidate of response.session.candidates) {
+      expect(candidate.protection).toEqual(PROTECTION_NOT_STATED);
+      expect(candidate.protection.state).not.toBe("clear");
+    }
   });
 
   it("carries reasons on every branch it can produce", async () => {

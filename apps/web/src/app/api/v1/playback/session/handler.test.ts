@@ -1,4 +1,5 @@
 import type { StreamCandidate } from "@liberty/contracts/domains/playback";
+import { PROTECTION_NOT_STATED } from "@liberty/contracts/shared/drm";
 import type { ContentRights } from "@liberty/contracts/shared/rights";
 import { describe, expect, it } from "vitest";
 import type { AuthorizedCandidate, AuthorizedCandidateResolver } from "./authorized-candidates";
@@ -48,7 +49,10 @@ function authorizedWith(rights: ContentRights): AuthorizedCandidate {
       uri: "https://cdn.example.com/aurora-fall/manifest.mpd",
       mimeType: "application/dash+xml",
       allowLoopback: false
-    }
+    },
+    /* What a resolver with nothing to say must state out loud. `unknown`
+     * requires a CDM, so the conservative value is also the cheap one. */
+    protection: PROTECTION_NOT_STATED
   };
 }
 

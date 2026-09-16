@@ -397,16 +397,25 @@ export async function issuePlaybackSession(
 
   /* ---- 6. Transport, immediately before a URL is published ------------ */
 
-  const sources = new Map(authorized.map((entry) => [entry.candidate.id, entry.source]));
+  /*
+   * Keyed to the WHOLE authorized entry rather than to its `source` alone, so
+   * the address and the protection descriptor published for an id can only ever
+   * come from the same resolved candidate. Two maps would be two lookups that a
+   * later edit could let disagree, and a session that published one candidate's
+   * URL beside another's key system is the disagreement the "copy, not a second
+   * opinion" rule exists to prevent.
+   */
+  const authorizedById = new Map(authorized.map((entry) => [entry.candidate.id, entry]));
   const playable: PlaybackSessionCandidate[] = [];
   const transportReasons: PlaybackSessionReason[] = [];
   const rankedReasons: PlaybackSessionReason[] = [];
 
   for (const entry of decision.ranked) {
     const id = entry.candidate.id;
-    const source = sources.get(id);
+    const resolvedEntry = authorizedById.get(id);
+    const source = resolvedEntry?.source;
 
-    if (source === undefined) {
+    if (resolvedEntry === undefined || source === undefined) {
       /* Reachable only if the ranking returned an id it was not given, which is
        * a defect rather than a data problem -- so it is reported rather than
        * skipped in silence. */
@@ -443,7 +452,18 @@ export async function issuePlaybackSession(
        * means here. Publishing `""` would fail this response's own schema and
        * turn a working stream into a 500. */
       mimeType: source.mimeType === null || source.mimeType.trim() === "" ? null : source.mimeType,
-      compatibility: entry.compatibility
+      compatibility: entry.compatibility,
+      /*
+       * VERBATIM. `docs/API_CONTRACTS.md`: "the session's descriptor is a copy,
+       * not a second opinion". Nothing here inspects, defaults, narrows or
+       * upgrades it -- the value published is the object the resolver stated,
+       * so a router and this session can never disagree about what a candidate
+       * requires. There is deliberately no branch on `state` anywhere in this
+       * file: routing is `PlayerAdapter.canPlay`'s job (§4), and a session that
+       * dropped a `protected` candidate here would be ranking by protection,
+       * which §4 says the ranker must not do either.
+       */
+      protection: resolvedEntry.protection
     });
     rankedReasons.push(playbackReason("candidate_ranked", entry.reason, id));
   }

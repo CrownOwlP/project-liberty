@@ -1,8 +1,10 @@
 import { failoverPolicySchema } from "@liberty/contracts/domains/failover";
 import {
   compatibilityConfidenceSchema,
-  playbackCapabilitiesSchema
+  playbackCapabilitiesSchema,
+  type StatesContentProtection
 } from "@liberty/contracts/domains/playback";
+import { contentProtectionSchema } from "@liberty/contracts/shared/drm";
 import { normalizedContentIdSchema } from "@liberty/contracts/shared/ids";
 import type { RejectionReason } from "@liberty/media-engine";
 import type { UrlRejectionReason } from "@liberty/provider-sdk";
@@ -227,16 +229,66 @@ export function playbackReason(
  * decode error on it is a foreseeable outcome and not evidence that the
  * provider has gone bad. A failover policy that cannot tell those apart will
  * blame the wrong thing.
+ *
+ * `protection` IS A COPY, NOT A SECOND OPINION (PL-0902, docs/API_CONTRACTS.md
+ * "What PL-0501 has to do"). It is `contentProtectionSchema` from
+ * `@liberty/contracts/shared/drm` -- the same three-state descriptor the
+ * resolved candidate carries -- and `issue-session.ts` restates the resolved
+ * candidate's value VERBATIM rather than deriving one. Two boundaries each
+ * deciding what a candidate's protection is would eventually disagree, and the
+ * disagreement would surface as a router refusing a candidate this session
+ * advertised as clear.
+ *
+ * It is REQUIRED, and not `.optional()` or `.default({ state: "clear" })`, for
+ * the reason `drm.ts` and docs/DESKTOP_PLAYBACK.md §4 both give: an absent
+ * field reading as "unencrypted" is the one-word mistake that produces an
+ * invariant-2 incident. A producer with nothing to say states
+ * `PROTECTION_NOT_STATED` out loud, and `requiresContentDecryptionModule` is
+ * `true` for that, so the failure mode is a candidate routed to the adapter
+ * that HAS a CDM rather than one attempted without one.
+ *
+ * It is on the WIRE CANDIDATE and not on the ranker's `StreamCandidate`. §4
+ * rules that a desktop client reports the UNION of both engines' capabilities
+ * and that per-candidate routing decides afterwards, so ranking has no use for
+ * a key system; the first score component that discounted protected candidates
+ * would be a second opinion about routing living in the one component §4 says
+ * must not hold one.
  */
 export const playbackSessionCandidateSchema = z.object({
   id: z.string().min(1),
   providerId: z.string().min(1),
   uri: z.string().min(1),
   mimeType: z.string().min(1).nullable(),
-  compatibility: compatibilityConfidenceSchema
+  compatibility: compatibilityConfidenceSchema,
+  protection: contentProtectionSchema
 });
 
 export type PlaybackSessionCandidate = z.infer<typeof playbackSessionCandidateSchema>;
+
+/**
+ * The obligation above, pinned so it cannot be dropped by a later edit.
+ *
+ * `StatesContentProtection<Shape>` resolves to `true` for a shape that carries
+ * `protection` and to `never` for one that does not, so removing or renaming
+ * the field turns this declaration into `const x: never = true` and the build
+ * fails HERE -- at the line that states the rule -- rather than in a router
+ * three packages away that quietly stopped being able to decide anything.
+ *
+ * `@liberty/contracts` published it expressly so this task would not need a
+ * contracts write: the type is structural rather than
+ * `ResolvedStreamCandidate`-shaped, because the session publishes a NARROWER
+ * projection (no `rights`, no `healthScore`, no `estimatedLatencyMs`) and
+ * requiring the ranker's internal signals on the wire in order to state a key
+ * system would be the wrong trade. It is the inverse of `domains/live.ts`'s
+ * `CarriesNoPlayability`, which pins the same kind of rule in the other
+ * direction.
+ *
+ * Exported rather than left as a file-local binding so that it is not an unused
+ * declaration a linter or a tidying pass could delete; a pin nothing references
+ * is a pin that survives until somebody is in a hurry.
+ */
+export const SESSION_CANDIDATE_STATES_PROTECTION: StatesContentProtection<PlaybackSessionCandidate> =
+  true;
 
 /**
  * The session itself.

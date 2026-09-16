@@ -1,4 +1,5 @@
 import type { StreamCandidate } from "@liberty/contracts/domains/playback";
+import { PROTECTION_NOT_STATED, type ContentProtection } from "@liberty/contracts/shared/drm";
 import { LATENCY_CEILING_MS } from "@liberty/media-engine";
 import {
   classifyHost,
@@ -62,9 +63,29 @@ export interface AuthorizedSource {
   readonly allowLoopback: boolean;
 }
 
+/**
+ * A candidate, its address, and what it states about content protection.
+ *
+ * This is `ResolvedStreamCandidate` in this route's vocabulary --
+ * `StreamCandidate` plus `protection` -- with the address kept on `source` for
+ * the reason above. `protection` sits beside `source` rather than inside
+ * `candidate` because `candidate` is the RANKER's input and
+ * `docs/API_CONTRACTS.md` is explicit that the descriptor is player-input:
+ * `@liberty/media-engine` has no use for a key system, and a score component
+ * that discounted protected candidates would be a second opinion about routing.
+ *
+ * REQUIRED, never optional. A resolver that has nothing to say states
+ * `PROTECTION_NOT_STATED`; it may not stay silent, because an absent field and
+ * a producer that predates the field are indistinguishable, and the reading an
+ * absent field invites is "there is no DRM" -- which
+ * `docs/DESKTOP_PLAYBACK.md` §4 names as the one way this design produces an
+ * invariant-2 incident.
+ */
 export interface AuthorizedCandidate {
   readonly candidate: StreamCandidate;
   readonly source: AuthorizedSource;
+  /** What the producing boundary states about encryption. Never derived here. */
+  readonly protection: ContentProtection;
 }
 
 /**
@@ -397,7 +418,50 @@ export function fixtureProvider(
  * specifically, because dots are unreserved and survive percent-encoding, and
  * the external id is interpolated into a URL path on the other side of the
  * lookup.
- */
+ *
+ * -------------------------------------------------------------------------
+ * WHY EVERY FIXTURE CANDIDATE LEAVES HERE AS `PROTECTION_NOT_STATED`, AND WHY
+ * THAT IS NOT THIS SHAPE ADAPTER STATING A MEDIA FACT.
+ *
+ * The open question, recorded rather than absorbed. `FixtureCandidate` in
+ * `@liberty/provider-sdk` carries `candidate`, `uri`, `mimeType`,
+ * `allowLoopback` and `unknownFacts` -- and nothing about encryption. The
+ * honest descriptor for a clear development fixture is `{ state: "clear" }`,
+ * because somebody would have had to look and nothing is encrypted; but
+ * `{ state: "clear" }` is an ASSERTION ABOUT THE BYTES, and product invariant 3
+ * says only a provider adapter may make one. `provider-sdk` is not this task's
+ * surface, so this file cannot make the fixture provider say it.
+ *
+ * `PROTECTION_NOT_STATED` is `{ state: "unknown", why: "provider_did_not_state" }`,
+ * and that is the distinction this file turns on: it is not a claim about the
+ * media at all, it is a TRUE OBSERVATION ABOUT THE PRODUCER -- this provider
+ * did not state one -- which is exactly the fact a shape adapter is in a
+ * position to report. The rule this module states about itself ("declares no
+ * rights, composes no URL, invents no id and states no media fact") is
+ * therefore kept rather than bent: the alternative reading, in which supplying
+ * any value at all is a media fact, would make the field unfillable from here
+ * and would leave the session publishing candidates with no protection
+ * descriptor, which the wire contract no longer permits.
+ *
+ * IT IS SAFE BY CONSTRUCTION AND THE FAILURE MODE IS NAMED.
+ * `requiresContentDecryptionModule` returns `true` for `unknown` as well as for
+ * `protected`, so the worst this costs is a clear development fixture routed to
+ * the EME adapter that has a CDM it does not need, and refused by the mpv
+ * adapter under `drm_required_no_cdm` with a reason that says the state was
+ * UNSTATED rather than positive. It is not a rights breach and it cannot become
+ * one: there is no direction in which "unknown" is read as "clear".
+ *
+ * THE GAP IS IN `provider-sdk` AND IS UNOWNED. The fixture provider is the
+ * boundary that knows these three files are unencrypted, so
+ * `FixtureCandidate.protection` -- stated once, in the adapter, as
+ * `{ state: "clear" }` -- is where the right answer belongs, and this mapping
+ * would then forward it unchanged like every other field. That is a
+ * `packages/provider-sdk` write, it is nobody's task at the time of writing,
+ * and it is flagged for the reviewer here and in this task's report rather than
+ * performed quietly from outside the package that owns it. Until it exists,
+ * ANY fixture routed by protection is routed conservatively, which is the
+ * reversible direction.
+ * ---------------------------------------------------------------------- */
 function toCandidateSource(provider: SdkFixtureProvider): FixtureProvider {
   return {
     environment: provider.runtime,
@@ -412,7 +476,11 @@ function toCandidateSource(provider: SdkFixtureProvider): FixtureProvider {
           uri: entry.uri,
           mimeType: entry.mimeType,
           allowLoopback: entry.allowLoopback
-        }
+        },
+        /* See the block comment above. The SDK states nothing, so what is
+         * reported is that the SDK stated nothing -- not a guess at what it
+         * would have said. */
+        protection: PROTECTION_NOT_STATED
       }));
     }
   };

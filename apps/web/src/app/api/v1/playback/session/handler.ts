@@ -3,7 +3,10 @@ import {
   playbackSessionResponseSchema,
   type PlaybackSessionResponse
 } from "./contract";
-import { issuePlaybackSession, type IssueSessionOptions } from "./issue-session";
+import {
+  decidePlaybackSession,
+  type PlaybackSessionOptions
+} from "./playback-session-implementation";
 
 /* -------------------------------------------------------------------------
  * The HTTP half of POST /api/v1/playback/session
@@ -13,6 +16,16 @@ import { issuePlaybackSession, type IssueSessionOptions } from "./issue-session"
  * nowhere to accept an injected resolver, and testing one means testing it with
  * whatever the deployment happens to be configured with. This file takes the
  * options; `route.ts` is the three-line adapter that supplies none.
+ *
+ * IT IS ALSO THE WHOLE OF WHAT SITS IN FRONT OF THE BUILD-TARGET SEAM, and that
+ * is the reason `docs/DESKTOP_PLAYBACK.md` §8's "the contract is preserved
+ * exactly" is a structural claim here rather than a promise. The decision comes
+ * from `./playback-session-implementation`, which is one module under the web
+ * target and a different one under the desktop target (see `../build-target.ts`).
+ * Everything below -- the schema re-validation, the status derivation, the
+ * `no-store` header, the shape of the 500 -- runs unchanged in both builds,
+ * because it is compiled from this one file either way. No client can tell the
+ * two apart, and there is nothing here for one to branch on.
  * ---------------------------------------------------------------------- */
 
 /**
@@ -26,30 +39,16 @@ import { issuePlaybackSession, type IssueSessionOptions } from "./issue-session"
 const NO_STORE = { "cache-control": "no-store" };
 
 /**
- * A body that is not JSON is a MALFORMED REQUEST, not a server fault.
+ * A decision, as the HTTP response the contract says it is.
  *
- * `request.json()` throws on one, and letting that propagate would turn the
- * most trivial client bug into a 500 with no reason trail -- the exact shape of
- * failure invariant 4 exists to forbid. `null` is not a valid request body
- * either, so it reaches the same schema and produces the same well-formed
- * `denied` any other malformed body produces. Nothing here inspects
- * `content-type`: the schema is what decides, and a correct body sent with a
- * wrong header is still a correct body.
+ * SPLIT OUT FROM THE HANDLER so that it is one function rather than one
+ * function per target: `playback-session-implementation.desktop.test.ts` drives
+ * the forwarding implementation through this exact envelope and asserts the
+ * same statuses, the same bodies and the same header the web suite asserts, so
+ * "the contract is identical across targets" is checked against the shipped
+ * code rather than argued from the file layout.
  */
-async function readJsonBody(request: Request): Promise<unknown> {
-  try {
-    return await request.json();
-  } catch {
-    return null;
-  }
-}
-
-export async function handlePlaybackSessionRequest(
-  request: Request,
-  options: IssueSessionOptions = {}
-): Promise<Response> {
-  const response = await issuePlaybackSession(await readJsonBody(request), options);
-
+export function playbackSessionResponse(response: PlaybackSessionResponse): Response {
   /*
    * Validated against the published contract before it leaves the server, the
    * same way the catalog route is. The reason is not paranoia about our own
@@ -76,4 +75,11 @@ export async function handlePlaybackSessionRequest(
     status: playbackSessionHttpStatus(validated),
     headers: NO_STORE
   });
+}
+
+export async function handlePlaybackSessionRequest(
+  request: Request,
+  options: PlaybackSessionOptions = {}
+): Promise<Response> {
+  return playbackSessionResponse(await decidePlaybackSession(request, options));
 }
