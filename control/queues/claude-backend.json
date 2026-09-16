@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-16T01:23:54.555Z",
+  "generatedAt": "2026-09-16T02:01:59.203Z",
   "agent": "claude-backend",
   "executionAvailable": true,
   "assigned": [
@@ -7,7 +7,7 @@
       "id": "PL-0305",
       "priority": "P1",
       "lane": "Provider",
-      "status": "IN_PROGRESS",
+      "status": "REVIEW",
       "title": "A real catalog metadata source",
       "notes": "The discovery layer has no metadata source. PL-0105 landed a seam, and docs/CATALOG_SOURCE.md says so in its first line; this task is the thing that belongs behind it, tracked so the gap stays visible instead of being hidden by a port that looks finished. docs/PRODUCT_SPEC.md step 2 of the initial user journey is browse/search normalized metadata, and nothing in this repository ingests any: every surface reads six fictional works. PL-0301 and PL-0302 do not close it - they supply stream candidates, which is what a title plays from, not what a catalog is made of. PARTLY BLOCKED, and the split is deliberate rather than a hedge. The design half - identity and dedupe, refresh and staleness, tombstones, paging, provider-side search, the locale-tagged contract, and the undeclared-rights state that catalogItemSchema cannot currently express - needs no external access and can begin now. Connecting an actual metadata provider, and carrying artwork, cannot: both need an agreement and credentials, which control/policies.json escalates to human-only under Licensing and Credentials - the same categories that block PL-0302. It is a DIFFERENT agreement from PL-0302's, covering catalog metadata and image rights rather than stream rights, so this is not merely waiting on that task; the honest status is BACKLOG with the ceiling named, not BLOCKED on someone else's licence.",
       "dependencies": [
@@ -18,7 +18,8 @@
         "apps/web/src/lib/catalog-source.ts",
         "apps/web/src/lib/catalog-source-registry.ts",
         "docs/CATALOG_SOURCE.md",
-        "docs/ARCHITECTURE.md"
+        "docs/ARCHITECTURE.md",
+        "package-lock.json"
       ],
       "preferredAgent": "claude-backend",
       "reviewAgent": "gpt-architect",
@@ -31,10 +32,26 @@
       ],
       "acceptance": "A metadata source stands behind resolveCatalogMetadataSource and answers what the port deliberately does not. Ingestion: something fetches, schedules and backfills, rather than an array being maintained by hand. Refresh: an answer carries its age and a stated staleness policy, so nobody has to guess how old a rail is. Identity and dedupe: how a provider's native id becomes a normalizedContentId, and what happens when two sources describe the same work, is settled as a design decision before it is coded - this is the largest missing piece and it is not a coding question. Deletion: a work that disappears from a source produces a tombstone, so it stays distinguishable from a fetch that failed. Paging and provider-side search: listRecords returning everything is a shape only six fixtures can use, and who owns ranking and paging is part of the contract rather than an accident of in-memory filtering. Artwork: images arrive with their own licensing, tracked separately from the work's, or they do not arrive. Localization and availability: title, genre and synopsis are locale-tagged and a work can be offered in more than one language, and availability windows and territory exist, so the empty state's claim about a region is backed by something. Every record declares a rights basis whose category agrees with its item and whose reference is an opaque internal identifier or null, and the ingestion path is treated as untrusted third-party I/O - allowlisted egress, bounded bodies, redirects revalidated, and no media address anywhere in a catalog payload.",
       "owner": "claude-backend",
-      "gateResults": {},
+      "gateResults": {
+        "typecheck": {
+          "status": "pass",
+          "at": "2026-09-16T02:01:43.898Z",
+          "by": "claude-backend",
+          "commitSha": "5489ae031350ef1d4304275e71464708f0c4aded",
+          "evidence": "npx turbo run typecheck --force at integrated head 5489ae031350ef1d4304275e71464708f0c4aded, exit 0, 10 of 10 tasks and 0 cached -- 10 rather than 9 because packages/catalog-ingestion is new. Run against a tree installed by npm ci from the updated lockfile, exit 0, which is the thing that was NOT true in the task worktree: npm ci failed there with 'Missing: @liberty/catalog-ingestion@0.1.0 from lock file' and the implementer correctly stopped and reported rather than editing a file outside its surface. The lockfile was added to the surface by the lead and regenerated; the delta is additions only, 28 lines, three entries."
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-09-16T02:01:44.089Z",
+          "by": "claude-backend",
+          "commitSha": "5489ae031350ef1d4304275e71464708f0c4aded",
+          "evidence": "npx turbo run test --force at integrated head 5489ae031350ef1d4304275e71464708f0c4aded, exit 0, 17 of 17 and 0 cached, 2284 passed; 81 new cases across 7 files in packages/catalog-ingestion. THE ORDERING IN THE INGEST PASS IS LOAD-BEARING AND IS TESTED AS SUCH: findMediaAddresses scans the RAW payload BEFORE zod parses it, because zod strips unknown keys, so a schema-first pipeline would silently discard a streamUrl and the record would look clean -- meaning a provider sending media addresses would never be noticed. It refuses on the KEY as well as the value, since an empty streamUrl today is a populated one tomorrow, and catches protocol-relative and bare-host forms that new URL() rejects. The sharpest regression is the incremental-pass tombstone rule: a pass that tombstoned everything it did not see would delete the whole catalog except the morning's edits while every step looked correct. The implementer found and fixed that class of bug in its own first version -- the seen-set was populated from ACCEPTED records, so a record read and then refused would have been tombstoned as a withdrawal -- and there are now two tests pinning the distinction. Mutation-checked: deleting the incremental branch fails that test and only that test. provider.test.ts is a deliberate tripwire that fails the day someone returns a configured provider, which is exactly the day a rights review must have happened."
+        }
+      },
       "implementationAgent": "claude-backend",
-      "updatedAt": "2026-09-16T00:43:21.488Z",
-      "implementationBaseSha": "a3e7d13323cda0479aa5352efb7bdb5dea973125"
+      "updatedAt": "2026-09-16T02:01:59.008Z",
+      "implementationBaseSha": "a3e7d13323cda0479aa5352efb7bdb5dea973125",
+      "surfaceWidenedAtClaim": "WIDENED 2026-09-16 by claude-lead to include package-lock.json, and FLAGGED TO THE REVIEWER AS OURS RATHER THAN PRESCRIBED, on exactly the precedent PL-0405 set and had approved this round. This task creates a new workspace package, packages/catalog-ingestion, and the root lockfile does not know it: npm ci fails with 'Missing: @liberty/catalog-ingestion@0.1.0 from lock file', and .github/workflows/ci.yml runs npm ci, so CI is red until the lockfile lands. A package that cannot be installed reproducibly is not a completed package, so the lockfile is part of adding one rather than a separate concern. The delta was computed with npm install --package-lock-only and is ADDITIONS ONLY, 28 lines, three entries: the workspace link, the package manifest, and its nested zod 3.25.76 -- which exists because root node_modules carries zod 4.4.3 as a transitive dependency of something else and every workspace declaring zod ^3.0.0 gets a nested 3.25.76. Nothing else in the file changed. The implementer stopped and reported rather than editing it, which was correct; this is the lead recording the widening instead of it being discovered in a red CI run. If the reviewer would rather see the lockfile as its own change, it is one entry to remove."
     }
   ],
   "review": [],

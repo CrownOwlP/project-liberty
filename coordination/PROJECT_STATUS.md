@@ -1,6 +1,6 @@
 # Project Liberty - Project Status
 
-> Generated 2026-09-16T01:23:54.554Z from the AI control plane.
+> Generated 2026-09-16T02:01:59.202Z from the AI control plane.
 
 **Overall completion:** 25/50 executable tasks (50%)
 
@@ -9,8 +9,8 @@
 - **BACKLOG:** 9
 - **READY:** 4
 - **CLAIMED:** 0
-- **IN_PROGRESS:** 2
-- **REVIEW:** 4
+- **IN_PROGRESS:** 0
+- **REVIEW:** 6
 - **BLOCKED:** 6
 - **DONE:** 25
 - **CANCELED:** 0
@@ -29,8 +29,8 @@
 
 ## Active work
 
-- **PL-0501** [IN_PROGRESS] Playback session API — owner: claude-media
-- **PL-0305** [IN_PROGRESS] A real catalog metadata source — owner: claude-backend
+- **PL-0501** [REVIEW] Playback session API — owner: claude-media
+- **PL-0305** [REVIEW] A real catalog metadata source — owner: claude-backend
 - **PL-0206** [REVIEW] Macrolanguage and extlang equivalence in the shared language matcher — owner: claude-media
 - **PL-0902** [REVIEW] DRM capability on the candidate and playback-session contract — owner: claude-lead
 - **PL-0903** [REVIEW] An engine-unavailable reason that can say libmpv did not load — owner: claude-frontend
