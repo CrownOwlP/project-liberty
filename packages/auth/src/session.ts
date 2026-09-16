@@ -23,7 +23,7 @@
  * ---------------------------------------------------------------------- */
 
 import type { ProfileScope } from "./profile-scope";
-import { isIssuedProfileScope } from "./profile-scope";
+import { grantedAccountFromScope, isIssuedProfileScope } from "./profile-scope";
 
 /* -------------------------------------------------------------------------
  * `ProfileScope` USED TO BE DEFINED HERE, and the brand it carried was a
@@ -89,5 +89,12 @@ export interface ProfileOwnership {
  */
 export function scopeBelongsToSession(scope: ProfileScope, session: LibertySession): boolean {
   if (!isIssuedProfileScope(scope)) return false;
-  return scope.grantedFor === session.account.userId;
+  /*
+   * `grantedAccountFromScope` rather than `scope.grantedFor` -- and since round
+   * 43 there is no `scope.grantedFor` to read, because the payload is declared
+   * on a module-private type inside `profile-scope.ts`. The accessor cannot
+   * throw on this line: `isIssuedProfileScope` has just answered yes, and the
+   * registry has no removal path.
+   */
+  return grantedAccountFromScope(scope) === session.account.userId;
 }

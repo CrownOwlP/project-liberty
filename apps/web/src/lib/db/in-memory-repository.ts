@@ -1,5 +1,5 @@
 import type { ProfileOwnership } from "@liberty/auth";
-import { scopeBelongsToSession } from "@liberty/auth";
+import { isIssuedProfileScope, profileIdFromScope, scopeBelongsToSession } from "@liberty/auth";
 import {
   describeUnrepresentableInstant,
   isMintedProfileId,
@@ -41,6 +41,12 @@ import type { LibertyRepository } from "./repository";
  * the PostgreSQL adapter stays the production implementation with no
  * development-shaped compromise inside it.
  *
+ * A CORRECTION OF FACT, 2026-09-15 (PL-0405 round 43). PostgreSQL 16.15 now
+ * exists in this container and the first migration has been applied to it, so
+ * "there will not be one" is no longer a safe assertion. Nothing else in this
+ * paragraph changes: no `DATABASE_URL` is configured for `next dev`, for vitest
+ * or for CI, so this adapter is still what makes those three runnable.
+ *
  * WHAT IT IS NOT. It is not a database. It has no durability, no transactions,
  * no cross-process visibility and no constraints beyond the ones written below.
  * It therefore CANNOT stand in for the `integration` quality gate on PL-0402,
@@ -73,6 +79,49 @@ import type { LibertyRepository } from "./repository";
  * contracts registry, by object identity, whether that module issued this exact
  * value -- the same question `createFixtureProvider` asks, in the same position,
  * before it reads any other field.
+ *
+ * AND THE PROFILE IDS ARE ASKED FOR, NOT READ (PL-0405 round 43). Every
+ * profile id a store key, a stored row or a filter predicate is built from comes
+ * from `profileIdFromScope(input.scope)`, and that call is the FIRST STATEMENT of
+ * every method here that takes a `ProfileScope`. It is the same shape
+ * `@liberty/persistence` uses and it is here for the same reason, which is worth
+ * restating because the bound on this file made it tempting to skip.
+ *
+ * `ProfileScope` carries a module-private brand, and a brand is a compile-time
+ * fact. A holder of a GENUINE scope can write `{ ...scope, profileId: victim }`
+ * with no cast at all -- a spread copies the branded property along with
+ * everything else -- so a method reading `input.scope.profileId` would key this
+ * store with a value the caller chose. `profileIdFromScope` consults the
+ * issuance registry in `@liberty/auth` by object IDENTITY, which a copy does not
+ * have, and throws `ForgedProfileScopeError` before returning anything.
+ *
+ * THE BOUND ON THIS FILE IS NOT A REASON TO SKIP IT, and the bound is worth
+ * stating precisely rather than reassuringly. `createInMemoryRepository` refuses
+ * to construct without an issued `ClassifiedRuntime`, so this adapter cannot
+ * exist in a deployment: the exposure was a development- and test-process
+ * bypass, not a production one. It was still a CROSS-PROFILE bypass -- one
+ * household member's scope, copied, reading another profile's rows -- and a
+ * registry that only half the repositories consult is a capability that reads as
+ * unforgeable and is not, which is worse than one that never claimed to be.
+ *
+ * FIRST STATEMENT, AHEAD OF `parseContentId` AND `parseListLimit`. Two things
+ * follow from that ordering and neither follows from checking later: a forged
+ * scope never reaches the store, and it cannot use a validation reason code
+ * (`content_id_invalid`, `limit_not_a_positive_integer`) as an ORACLE for what
+ * this adapter would have done with a well-formed argument. The binding is then
+ * the only source of the id in the body, so deleting the check stops the method
+ * compiling rather than silently restoring the direct read.
+ *
+ * THE ONE METHOD THAT DOES NOT BEGIN WITH IT is `selectActiveProfile`, and it
+ * is the same exception `@liberty/persistence` makes, for the same reason. It
+ * takes a session as well as a scope, so it begins with `scopeBelongsToSession`
+ * -- which establishes ISSUANCE FIRST and then the account match, so a forged
+ * scope is refused there, ahead of any store access, before
+ * `profileIdFromScope` is reached. It refuses with a reason code rather than a
+ * throw because it HAS a reason channel that the routes already map, and a
+ * reason is the better refusal wherever one exists. The other six have no such
+ * channel -- their results are rows -- and an unforgeable capability that
+ * returns an empty list is indistinguishable from an empty list.
  *
  * WHERE THE RULES COME FROM. Every decision this adapter makes is delegated to
  * the pure resolvers in `@liberty/persistence`: `resolveProgressWrite` and
@@ -344,9 +393,30 @@ export function createInMemoryRepository(
         return {
           ok: false,
           reason: "scope_not_granted_to_this_session",
-          detail: `the scope for profile ${input.scope.profileId} was granted to a different account than this session's`
+          /*
+           * ONE REASON CODE, TWO DETAILS, exactly as `refuseForeignScope` in
+           * `@liberty/persistence` splits them, because the two adapters must
+           * refuse the same way. `profileId` on an UNISSUED scope is a string
+           * the caller wrote: interpolating it would put an attacker-chosen
+           * value into a reason trail where every other profile id is one the
+           * system minted, and would diagnose "granted to a different account"
+           * about an object no grant ever produced. The id is echoed only once
+           * issuance is established -- and through the accessor even there, so
+           * that no direct read of `scope.profileId` survives in this file for a
+           * later edit to copy.
+           */
+          detail: isIssuedProfileScope(input.scope)
+            ? `the scope for profile ${profileIdFromScope(input.scope)} was granted to a different account than this session's`
+            : "this scope was not issued by @liberty/auth: it is a copy, a cast or a hand-built object, and no authorization decision stands behind it"
         };
       }
+
+      /*
+       * Safe by construction rather than by luck: `scopeBelongsToSession`
+       * returned true, which means it established issuance, so this cannot
+       * throw here.
+       */
+      const profileId = profileIdFromScope(input.scope);
 
       /*
        * PostgreSQL refuses a selection naming a profile this account does not
@@ -359,19 +429,19 @@ export function createInMemoryRepository(
        * routes -- the only producers of a `ProfileScope` are the two grants in
        * `@liberty/auth`, and both establish ownership before minting one.
        */
-      const owned = store.profiles.get(input.scope.profileId);
+      const owned = store.profiles.get(profileId);
       if (owned === undefined || owned.userId !== input.session.account.userId) {
         throw new Error(
-          `active_profile_selection would violate profile ownership for ${input.scope.profileId}`
+          `active_profile_selection would violate profile ownership for ${profileId}`
         );
       }
 
       store.selections.set(input.session.account.sessionId, {
-        profileId: input.scope.profileId,
+        profileId,
         userId: input.session.account.userId,
         selectedAt: input.instant
       });
-      return { ok: true, profileId: input.scope.profileId };
+      return { ok: true, profileId };
     },
 
     resolveSession: async (account) => {
@@ -391,6 +461,9 @@ export function createInMemoryRepository(
      * ---------------------------------------------------------------- */
 
     issueWriterLease: async (input) => {
+      // Issuance first; see the header. Ahead of `parseContentId` deliberately.
+      const profileId = profileIdFromScope(input.scope);
+
       const contentId = parseContentId(input.contentId);
       if (!contentId.ok) return { ok: false, reason: contentId.reason, detail: contentId.detail };
 
@@ -407,7 +480,7 @@ export function createInMemoryRepository(
         };
       }
 
-      const key = scopedKey(input.scope.profileId, contentId.contentId);
+      const key = scopedKey(profileId, contentId.contentId);
       const stored = store.progress.get(key);
       /*
        * `nextWriterEpoch` rather than arithmetic written here. In PostgreSQL the
@@ -421,7 +494,7 @@ export function createInMemoryRepository(
 
       if (stored === undefined) {
         store.progress.set(key, {
-          profileId: input.scope.profileId,
+          profileId,
           contentId: contentId.contentId,
           /*
            * NULL, NOT ZERO. A lease is a claim on the right to write; it is not
@@ -454,10 +527,13 @@ export function createInMemoryRepository(
     },
 
     writeProgress: async (input) => {
+      // Issuance first; see the header. Ahead of `parseContentId` deliberately.
+      const profileId = profileIdFromScope(input.scope);
+
       const contentId = parseContentId(input.contentId);
       if (!contentId.ok) return { ok: false, reason: contentId.reason, detail: contentId.detail };
 
-      const key = scopedKey(input.scope.profileId, contentId.contentId);
+      const key = scopedKey(profileId, contentId.contentId);
       const stored = store.progress.get(key);
 
       /*
@@ -483,7 +559,7 @@ export function createInMemoryRepository(
        * lie.
        */
       store.progress.set(key, {
-        profileId: input.scope.profileId,
+        profileId,
         contentId: contentId.contentId,
         positionSeconds: resolution.next.positionSeconds,
         runtimeSeconds: resolution.next.runtimeSeconds,
@@ -496,9 +572,12 @@ export function createInMemoryRepository(
     },
 
     readProgress: async (input) => {
+      // Issuance first; see the header. Ahead of `parseContentId` deliberately.
+      const profileId = profileIdFromScope(input.scope);
+
       const contentId = parseContentId(input.contentId);
       if (!contentId.ok) return { ok: false, reason: contentId.reason, detail: contentId.detail };
-      return store.progress.get(scopedKey(input.scope.profileId, contentId.contentId)) ?? null;
+      return store.progress.get(scopedKey(profileId, contentId.contentId)) ?? null;
     },
 
     /* ----------------------------------------------------------------
@@ -506,10 +585,13 @@ export function createInMemoryRepository(
      * ---------------------------------------------------------------- */
 
     addToWatchlist: async (input) => {
+      // Issuance first; see the header. Ahead of `parseContentId` deliberately.
+      const profileId = profileIdFromScope(input.scope);
+
       const contentId = parseContentId(input.contentId);
       if (!contentId.ok) return { ok: false, reason: contentId.reason, detail: contentId.detail };
 
-      const key = scopedKey(input.scope.profileId, contentId.contentId);
+      const key = scopedKey(profileId, contentId.contentId);
       const existing = store.watchlist.get(key);
 
       /*
@@ -536,7 +618,7 @@ export function createInMemoryRepository(
 
       if (resolution.reason === "added") {
         store.watchlist.set(key, {
-          profileId: input.scope.profileId,
+          profileId,
           contentId: contentId.contentId,
           addedAt: input.instant
         });
@@ -550,10 +632,13 @@ export function createInMemoryRepository(
     },
 
     removeFromWatchlist: async (input) => {
+      // Issuance first; see the header. Ahead of `parseContentId` deliberately.
+      const profileId = profileIdFromScope(input.scope);
+
       const contentId = parseContentId(input.contentId);
       if (!contentId.ok) return { ok: false, reason: contentId.reason, detail: contentId.detail };
 
-      const key = scopedKey(input.scope.profileId, contentId.contentId);
+      const key = scopedKey(profileId, contentId.contentId);
       const existing = store.watchlist.get(key);
       store.watchlist.delete(key);
 
@@ -565,11 +650,14 @@ export function createInMemoryRepository(
     },
 
     listWatchlist: async (input) => {
+      // Issuance first; see the header. Ahead of `parseListLimit` deliberately.
+      const profileId = profileIdFromScope(input.scope);
+
       const limit = parseListLimit(input.limit);
       if (!limit.ok) return limit;
 
       return [...store.watchlist.values()]
-        .filter((row) => row.profileId === input.scope.profileId)
+        .filter((row) => row.profileId === profileId)
         /*
          * Most recently added first, with `contentId` descending as the
          * tie-break, matching `ORDER BY added_at DESC, content_id DESC`. A bulk
