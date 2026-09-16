@@ -5,6 +5,9 @@
 > adapter, no dependency and no source file is added by it; `control/tasks.json` declares
 > `docs/DESKTOP_PLAYBACK.md` and `docs/ARCHITECTURE.md` as its entire write surface.
 >
+> **§8 was ruled by the commander on 2026-09-16** and now records a decision rather than the open
+> question it published through round 42. Everything else is as recorded on 2026-09-15.
+>
 > Every version number, API identifier and licence quotation below comes from research verified
 > against primary sources on 2026-09-15 (`desktop-research-01-shell-and-mpv.md`,
 > `desktop-research-02-sidecar-and-security.md`). §11 states what was verified, what was not, and
@@ -30,6 +33,7 @@
 | D3 | **A `PlayerAdapter` boundary** the application and domain layers depend on | Two engines with disjoint strengths must be interchangeable without either one's types reaching the app | A boundary written before either implementation exists will be wrong somewhere; the mitigation is that it is small and that the state machine, not the adapter, holds the truth |
 | D4 | **libmpv** for compatible non-DRM playback, **Shaka/EME** for DRM-capable playback, **capability routing explicit before playback** | mpv has no CDM and cannot be given one; Shaka has no MKV, no libass, no per-frame timing telemetry | Two engines is two failure surfaces, two telemetry shapes and two sets of bugs, for a product whose first principle is playback reliability |
 | D5 | **Our own LGPL-compatible libmpv/FFmpeg build pipeline**, not a prebuilt | A stock prebuilt libmpv is a GPL build; the one LGPL variant on offer statically links an LGPLv3 FFmpeg and carries its builder's own no-warranty disclaimer | It is a week of build engineering for an artifact that does not exist yet, spent before the compositing proof says the architecture is real at all |
+| D6 | **Provider resolution is proxied to an authenticated backend in the desktop build**, never resolved on the user-administered sidecar — **ruled by the commander on 2026-09-16** (§8) | A resolution boundary running on a machine its user administers is one they can read, patch and replace, with provider credentials in its environment | It adds a network round trip to the resolution path and a second route implementation that the web build never exercises |
 
 **The second research report corrected the first on three points.** This document carries the
 corrected version of each deliberately, and says so, because a document that quietly presents the
@@ -40,7 +44,8 @@ superseded version is worse than one that shows its working:
    named pipe, because our HTTP server can authenticate and mpv's IPC protocol cannot — mpv's own
    documentation says it is *"explicitly insecure: there is no authentication, no encryption"* and
    exposes `run`, which runs arbitrary system commands. The first report ranked these backwards.
-   The argument that survives against a sidecar is not the port; it is §8.
+   The argument that survives against a sidecar is not the port; it is the trust-boundary argument in
+   §8, which is now ruled rather than open.
 2. **Tauri's installer-size advantage does not survive the sidecar.** Measured at the one production
    precedent: ~160 MB total with 84 MB of Node, against ~200 MB for a comparable Electron app —
    roughly 1.25x, not 4x. **No size-based reasoning appears anywhere below**, and if it reappears in
@@ -621,7 +626,11 @@ They are two capabilities and a router.
 
 ### What the playback-session boundary must surface
 
-**This is a required contract addition and it does not exist today.**
+**This is a required contract addition, it does not exist today, and it is now
+[PL-0902](#12-what-this-task-did-not-do) — which gates the capability routing specified in this
+section.** `canPlay` cannot make a reasoned DRM decision from a contract that carries no DRM field,
+so until PL-0902 lands, the routing described here is a specification with nothing to read.
+
 `streamCandidateSchema` in `packages/contracts/src/domains/playback.ts` carries `rights`, `protocol`,
 `height`, `bitrateKbps`, `videoCodec` and `audioCodec` — and **nothing that states whether the
 stream is encrypted**. A grep for `drm` across `packages/contracts/src` returns nothing. So routing
@@ -857,14 +866,15 @@ authoritative in the native build exactly as the `<video>` element and Shaka are
 | `track-list`, `aid`, `sid` | *nothing* | The machine deliberately does not model tracks; track state belongs to the adapter and the controls layer |
 | `avsync` and the frame counters | *nothing* | PL-0504's diagnostics channel, as a named proxy (§5) |
 
-### Two contract seams this mapping exposes, neither of them fixed here
+### Two contract seams this mapping exposes, both now carrying task numbers
 
-1. **`EngineUnavailableReason` has no native member.** It is
+1. **`EngineUnavailableReason` has no native member — [PL-0903](#12-what-this-task-did-not-do).** It is
    `"engine_load_failed" | "browser_unsupported" | "attach_failed"` in `playback-controller.ts`, and
    on desktop `browser_unsupported` is a misnomer while "libmpv could not be loaded" has no member at
    all. The honest reading is that the union is Shaka-shaped, and it needs either a native member or
    engine-neutral spelling before a native adapter can report truthfully through it.
-2. **`PlaybackError` is engine-neutral in shape but Shaka-numbered in content.** `code`, `category`
+2. **`PlaybackError` is engine-neutral in shape but Shaka-numbered in content —
+   [PL-0904](#12-what-this-task-did-not-do).** `code`, `category`
    and `categoryName` are documented as pinned to Shaka 5.2.x, and `PlaybackErrorOrigin` is
    `"engine-load" | "configure" | "manifest-load" | "player-event" | "source-rejected"`. A native
    adapter must therefore report `code: null` and `category: null` and carry its mpv reason in
@@ -872,9 +882,9 @@ authoritative in the native build exactly as the `<video>` element and Shaka are
    reason. Pushing an mpv error number into a Shaka-numbered field would produce a trail that reads
    as a Shaka error category and is not one.
 
-Both are changes to files this task may not write (`reviewDependencies` are read-only here). They are
-recorded as findings for the task that implements the adapter, and they are exactly the kind of thing
-that is cheap now and expensive after two engines are reporting through one union.
+Both are changes to files this task may not write (`reviewDependencies` are read-only here), and both
+are now their own tasks rather than findings in a report — see §12. They are exactly the kind of
+thing that is cheap now and expensive after two engines are reporting through one union.
 
 ---
 
@@ -907,7 +917,8 @@ never a candidate.
 the adapters contain none. Note the specific hazard the desktop target introduces: `provider-sdk` is
 **not** reachable from client components today and must not become so. A Tauri command or a native
 adapter that reached for a provider adapter would put provider behaviour — and eventually provider
-credentials — on the user's machine, which is §8's question arriving through a side door.
+credentials — on the user's machine, which is the exposure §8's ruling exists to prevent, arriving
+through a side door.
 
 **Nothing bypasses DRM, authentication, subscriptions, geographic restrictions, paywalls or content
 rights.** The DRM refusal in §4 is the sharpest instance: the native adapter has no path that could
@@ -927,72 +938,117 @@ state-changing requests. A random port is **obscurity only** — a local process
 in milliseconds — and must not be counted as a control. Chrome 142's Local Network Access permission
 gating is defence in depth we get for free and is not a substitute for `Host` validation.
 
+**And what makes that set sufficient rather than merely acceptable is §8's ruling**: because
+provider resolution is proxied and the desktop build ships no provider credential, the sidecar holds
+no provider secret for these controls to be the last line in front of. They keep other local
+processes out of the user's own session, which is what they are good at. They were never strong
+enough to be the only thing protecting a provider relationship, and under the ruling they do not
+have to be.
+
 ---
 
-## 8. The open question: where provider resolution runs in the desktop build
+## 8. Where provider resolution runs in the desktop build — ruled
 
-**This document does not decide this, and it must not be decided silently.**
+**This section used to publish an open question.** It was published as open through round 42 and
+**closed by the commander on 2026-09-16**, and it is recorded here as a ruling rather than as a
+recommendation that happened to win. A reader who needs to tell the two apart can: the reasoning
+below is the ruling's, the alternatives are kept because the decision is only legible next to what
+was rejected, and nothing in this section is any longer awaiting anyone.
 
-### The question
+### The ruling
 
-A sidecar runs the application's server on a machine the user administers. `/api/v1/playback/session`
-is the authorized provider-resolution boundary. If it resolves on-device, then **the code enforcing
-invariants 1 and 2 executes from files the user can read and replace, with whatever provider
-credentials it needs in its environment**. The user has administrator rights on that machine: they
-can read the process environment, attach a debugger, replace `server.js`, or read the traced
-`node_modules` tree. A resolution boundary that runs on the client is a resolution boundary the
-client can edit, and shipping provider credentials to a user-controlled machine is the kind of thing
-that ends a provider relationship.
+> **Provider resolution and any credential-bearing provider calls must not rely on the
+> user-administered local sidecar as the trust boundary. The desktop build proxies those specific
+> routes to an authenticated backend service while preserving the same application-facing route
+> contract.**
 
-Note that this is a **stronger** objection to the sidecar than the open-port argument the first
-research report led with, and unlike that one it survives scrutiny. §0 carries the retraction; this
-is what replaced it.
+### What it applies to, and how the split is made
 
-### The three readings
+The affected surface is the **provider-resolution and playback-session routes — `/api/v1/playback/*`**,
+including `/api/v1/playback/session`. Everything else the application serves continues to run in the
+sidecar exactly as §2 describes; this is a rule about a handful of routes, not about the sidecar.
 
-| | What it is | Where the risk sits |
+**The split is by build target, not by runtime configuration.** There is no environment variable, no
+config key and no feature flag that can put resolution back on-device in a shipped desktop build.
+That is not fastidiousness about configuration hygiene: **a runtime flag that can flip resolution
+back on-device is the same exposure with an extra step**, because the flag lives on the machine the
+user administers, next to the code it would re-enable. A build that contains the on-device resolver
+at all is a build from which the on-device resolver can be reached. The desktop target therefore does
+not compile it in, and that is the property to test for — an assertion that the desktop bundle
+contains no provider-resolution implementation is worth more than any amount of configuration
+discipline.
+
+### The contract is preserved exactly
+
+Same route path. Same URL. Same request shape, same response shape, same status codes, same error
+bodies, same reason-trail semantics — the behaviour `docs/API_CONTRACTS.md` specifies, unchanged, and
+invariant 5 applies to this target like any other. **The desktop implementation differs behind the
+boundary and nowhere in front of it**, so nothing in `apps/web` client code can tell which build it
+is running in, and no client code may branch on it. A component that needed to know would be evidence
+that the contract had not in fact been preserved.
+
+### What the proxy carries, and what it must never carry
+
+- It **forwards an authenticated caller identity** to the backend — the session or profile identity
+  the request already carries — and the backend performs resolution, rights evaluation, ranking and
+  URL signing.
+- It **never receives a provider credential**, and the desktop build never ships one. No provider
+  API key, no provider OAuth client secret, no signing key reaches the user's machine in any form,
+  including in a build artifact, an environment variable, a config file or a cached response.
+- **The sidecar therefore holds no provider secret at all.** That is the property that makes §7's
+  loopback analysis *sufficient* rather than merely *acceptable*: an attacker who reads the sidecar's
+  process environment, attaches a debugger to it, or replaces `server.js` outright obtains an
+  authenticated path to the same backend the legitimate user already has, and nothing else. There is
+  no credential in that process worth extracting, and no resolution logic in it worth patching out,
+  because neither is there. The bearer token, the `Host` validation and the loopback bind in §7 are
+  still required — they keep other local processes out of the user's own session — but they are no
+  longer the only thing standing between a local attacker and a provider relationship.
+
+### Why: the invariants stay enforceable on a machine the user administers
+
+**Invariant 1** (only licensed, user-owned or public-domain content may enter playback resolution)
+and **invariant 2** (no bypass of DRM, paywalls, authentication, geographic restrictions or content
+rights) are enforced by the resolution boundary. Code that runs on a machine its user administers is
+code that user can read, patch and replace. Under this ruling the enforcement executes on
+infrastructure we operate, and what runs on the desktop is a forwarder that cannot decide anything an
+attacker would want decided differently. The invariants are therefore **enforceable** there rather
+than merely asserted there, which is the same standard `docs/CONTENT_RIGHTS.md` already sets for
+provider adapters: authorization is established, not assumed.
+
+### The alternatives, and why each was not taken
+
+They stay in the document because the ruling's reasoning is unreadable without them.
+
+| | What it is | Disposition |
 | --- | --- | --- |
-| **(a)** static export, every `/api/v1` route moved to the backend | Cleanest engineering; smallest bundle; instant cold start; no sidecar | **Schedule.** It is the option that most plausibly *is* the rewrite the instruction forbids |
-| **(b)** sidecar, app fully intact including on-device resolution | Maximum literal compliance; zero changes; fastest to stand up | **Rights and credentials.** The liability is discovered during a provider audit, not during testing |
-| **(c)** sidecar, with the resolution routes implemented as an authenticated proxy to the backend | Same route, same contract, same URL, different implementation by build target | **Coordination.** PL-0501 has to be told before it builds |
+| **(a)** static export, every `/api/v1` route moved to the backend | Cleanest engineering; smallest bundle; instant cold start; no sidecar | **Not needed.** Moving the whole API layer off Next is the rewrite the preservation constraint forbids, and the ruling obtains the same trust-boundary benefit without it — by relocating the implementation of a handful of routes rather than the architecture of all of them |
+| **(b)** sidecar, app fully intact including on-device resolution | Maximum literal compliance; zero changes; fastest to stand up | **Refused.** The boundary enforcing invariants 1 and 2 would execute from files the user can read and replace, with provider credentials in its environment. That is a rights and credential exposure **discovered during a provider audit, not during testing** — it passes every functional check right up until it ends a provider relationship |
+| **(c)** sidecar, resolution routes proxied to an authenticated backend | Same route, same URL, same contract; implementation selected by build target | **Ruled.** This is the decision above |
 
-### The recommendation, and the reasoning
+Note that (b)'s refusal rests on a **stronger** objection than the open-TCP-port argument the first
+research report led with, and unlike that one it survives scrutiny. §0 carries the retraction of the
+port argument; this is what replaced it.
 
-**(c).** Ship the Next app whole in a sidecar, and let the handful of routes that constitute the
-provider-resolution and playback-session boundary be, in the desktop build, a thin authenticated
-proxy to the backend service rather than an on-device resolver. Same route, same contract, same URL,
-same `docs/API_CONTRACTS.md` shape — a different implementation behind it, selected by build target,
-which is ordinary adapter work of exactly the kind `PlayerAdapter` itself is.
+### The cost, accepted rather than argued away
 
-Why: it satisfies the preservation constraint (nothing about the application or its architecture is
-rewritten; the routing surface is identical); it keeps the trust boundary where it belongs (no
-provider credentials on user disk, no client-editable resolution); and it is arguably what PL-0501
-should build regardless, because a session boundary whose implementation is pluggable per deployment
-target is more testable and more defensible than one that assumes co-location.
+The ruling is (c), and (c) is (b) plus a constraint, so it inherits every one of (b)'s costs: the
+Node runtime in the bundle, the thin precedent, the unmeasured cold start, the CSP regression and the
+supervision code (§2). It adds two of its own. **A network round trip enters the resolution path**
+that an on-device resolver would not have had, so desktop session latency is bounded below by the
+backend's, and an offline or degraded-network desktop cannot resolve at all — the failure has to be
+surfaced as an honest unavailable outcome rather than as an empty candidate list. And **the desktop
+build now has a route implementation that the web build does not exercise**, which is a second code
+path needing its own tests; the mitigation is that it is a forwarder with no policy in it, and that
+the contract it must satisfy is already written down.
 
-**The case against (c), stated as strongly as the case for it.** It is (b) plus a design constraint,
-so it inherits every one of (b)'s costs — the Node runtime, the thin precedent, the unmeasured cold
-start, the CSP regression, the supervision code. And it requires PL-0501 to be told **now**, before
-it builds; if PL-0501 has already committed to on-device resolution, this becomes a change request
-rather than a design input.
+### PL-0501: settled, not merely informed
 
-### What is actually being asked
-
-"Do not rewrite the existing web application or architecture" almost certainly means *do not throw
-away the working Next app and rebuild it*. It very probably does **not** mean *never change where a
-secret executes*. But the author of this document should not be the one to settle that silently, and
-neither should PL-0501 by default. **The ruling belongs to the reviewer and the commander.**
-
-> Option (a) costs a visible API-layer refactor and is the cleanest result. Option (b) costs nothing
-> structurally but places provider resolution and its credentials on the user's machine. Option (c)
-> costs one route's implementation being target-specific and gets the benefits of both. Which
-> reading of "do not rewrite" applies?
-
-**This is a design input to PL-0501, not an integration detail.** The answer decides whether
-`/api/v1/playback/session` is a remote call, a local resolver, or a local proxy, and that shapes the
-session boundary's implementation from its first line. It is much cheaper to supply now than to
-retrofit — which is the entire reason this question is published here rather than deferred to
-whoever hits it first.
+This was a design input to PL-0501 while it was open. It is now **settled**, and PL-0501 builds
+`/api/v1/playback/session` with a **target-selected implementation from the start**: one
+implementation that resolves, one that forwards, chosen by build target, behind one contract. That is
+ordinary adapter work of exactly the kind `PlayerAdapter` itself is, and it is cheaper as a first
+design than as a later seam — which was the argument for closing the question before PL-0501 began
+rather than after.
 
 ---
 
@@ -1244,8 +1300,9 @@ any DRM field in `packages/contracts/src/domains/playback.ts`; `EngineUnavailabl
 | **Counsel rejects LGPL libmpv distribution**, or the statically-linked LGPLv3 FFmpeg proves unacceptable | mpv is out entirely. Reconsider **Media Foundation** (native, no licence issue, far weaker format support) or a commercially licensed SDK. **This is why §9 starts now** | D4, D5 |
 | **Measured cold start for the sidecar is bad enough to be a user-visible regression** and no splash mitigates it | Reopen (a) — static export with the API on the backend — on performance grounds rather than on architecture grounds | D2 |
 | **`frontendDist` mutation does not produce a local origin** and `.remote()` is required | D2 stands, but the widened IPC surface is recorded as an accepted risk and the GHSA-7gmj-67g7-phm9 class of bug becomes materially more relevant to us | D2 |
-| The commander or reviewer rules that **on-device provider resolution is acceptable** | §8 resolves to (b); PL-0501 builds a local resolver and the credential-handling question moves to whatever protects it on disk | §8 only |
-| The commander or reviewer rules that **"do not rewrite" permits moving the API layer** | §8 resolves to (a), and D2 itself is reopened — the sidecar's whole justification is preservation | D2, §8 |
+| The backend cannot serve resolution at desktop-acceptable latency, or the offline case turns out to be a product requirement rather than an honest unavailable outcome | D6 is not reversed — the credential exposure it exists to prevent does not become acceptable because resolution got slow — but the remedy has to be found inside it: caching an already-resolved session, pre-resolution, or a backend closer to the user. **A local resolver is not on the table** | D6 (remedy, not reversal) |
+| The commander reopens D6 and rules that **on-device provider resolution is acceptable after all** | §8 resolves to (b); PL-0501 builds a local resolver and the credential-handling question moves to whatever protects it on disk. Recorded here because a superseded ruling must be visibly superseded rather than quietly replaced | D6 |
+| The commander rules that **"do not rewrite" permits moving the whole API layer** | §8 resolves to (a), and D2 itself is reopened — the sidecar's whole justification is preservation | D2, D6 |
 | **`next-electron-rsc` or an equivalent ships a verified Next 16 integration with an active maintainer** | Materially strengthens Electron, but **does not by itself flip the decision**, because §1 is unaffected | D1 (no change expected) |
 | **Tauri 3.0 acquires a date and includes Windows-affecting breakage** | Does not flip the shell choice; changes the pinning strategy | D1 (pinning only) |
 
@@ -1258,15 +1315,22 @@ written are `docs/DESKTOP_PLAYBACK.md` and a cross-linked section in `docs/ARCHI
 TypeScript in §3 is a **specification of a boundary**, not a file that exists; when it is
 implemented, the implementing task owns its path and this document is what it is reviewed against.
 
-Three items are handed on deliberately rather than resolved:
+### The three follow-up contract tasks
 
-1. **The ADR-register pointer in `docs/DECISIONS.md`**, which lands once PL-0405 clears review (see
-   the header).
-2. **The capability/DRM descriptor** on the candidate contract (§4) — PL-0201 owns the candidate
-   representation, PL-0501 owns the session wire contract, and routing cannot be implemented before
-   one of them adds it.
-3. **The `EngineUnavailableReason` and `PlaybackError` seams** (§6), which are Shaka-shaped today and
-   need engine-neutral spelling before a second adapter reports through them.
+The gaps this document found in the existing contracts are not left floating as findings in a report.
+The commander ordered them as tasks, and this document points at them:
 
-And one question is handed **up** rather than on: §8, which is the reviewer's and the commander's to
-rule on, and which PL-0501 needs the answer to before it builds.
+| Task | What it changes | Why it exists |
+| --- | --- | --- |
+| **PL-0902** | DRM capability and requirements on the stream-candidate or playback-session contract | Today `packages/contracts/src` contains **no `drm` at all**. **This gates the capability routing in §4**: `canPlay` cannot make a reasoned DRM decision from a contract that carries no DRM field, so until it lands, §4 specifies a decision with nothing to read |
+| **PL-0903** | A generic engine-unavailable reason that can represent libmpv failing to load | `EngineUnavailableReason` in `playback-controller.ts` is Shaka-shaped — `browser_unsupported` is a misnomer on desktop and "libmpv could not be loaded" has no member at all (§6) |
+| **PL-0904** | A playback error origin and type for native failures | So mpv errors are not forced into Shaka 5.2.x numeric codes in `shaka-error.ts`, producing a trail that reads as a Shaka error category and is not one (§6) |
+
+### Still open, and explicitly so
+
+**The ADR-register pointer in `docs/DECISIONS.md`**, which lands once PL-0405 clears review (see the
+header). That is the only thing this document defers.
+
+**§8 is no longer among them.** It was handed up rather than on, and it came back: the commander
+ruled on 2026-09-16, and §8 now records the ruling, its reasoning, its cost, and the alternatives it
+rejected.

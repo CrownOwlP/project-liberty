@@ -92,7 +92,10 @@
       "name": "Windows Desktop Shell + Native Playback",
       "objective": "Record the desktop/player architecture, then deliver Windows playback behind a PlayerAdapter boundary the application never sees through.",
       "tasks": [
-        "PL-0901"
+        "PL-0901",
+        "PL-0902",
+        "PL-0903",
+        "PL-0904"
       ]
     }
   ]

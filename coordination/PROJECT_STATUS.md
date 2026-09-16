@@ -1,12 +1,12 @@
 # Project Liberty - Project Status
 
-> Generated 2026-09-15T17:52:51.066Z from the AI control plane.
+> Generated 2026-09-16T00:22:33.675Z from the AI control plane.
 
-**Overall completion:** 20/47 executable tasks (43%)
+**Overall completion:** 20/50 executable tasks (40%)
 
 ## Status summary
 
-- **BACKLOG:** 12
+- **BACKLOG:** 15
 - **READY:** 3
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 0
@@ -25,7 +25,7 @@
 - **M5 — Live + Intelligence Boundaries:** NOT_STARTED, 0/2 (0%), 1 blocked
 - **M6 — Shared-Agent Automation Bridge:** IN_PROGRESS, 0/3 (0%)
 - **EXT — External Licensed Integrations:** BLOCKED, 0/2 (0%), 2 blocked
-- **M7 — Windows Desktop Shell + Native Playback:** IN_PROGRESS, 0/1 (0%)
+- **M7 — Windows Desktop Shell + Native Playback:** IN_PROGRESS, 0/4 (0%)
 
 ## Active work
 
@@ -41,7 +41,7 @@
 - **READY_AND_EXECUTABLE:** 3
 - **READY_BUT_EXTERNAL:** 0
 - **BLOCKED:** 6
-- **BACKLOG (dependency-gated):** 12
+- **BACKLOG (dependency-gated):** 15
 
 ## Recommended executable wave
 

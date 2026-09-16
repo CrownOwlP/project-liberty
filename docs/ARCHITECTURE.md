@@ -99,13 +99,29 @@ machine's existing events; it does not become a second state machine. Candidate 
 addresses continue to come only from authorized provider resolution and the playback-session
 boundary — the adapter has no method that accepts a URL.
 
-**One question is open and is published rather than decided.** A sidecar runs this application's
-server on a machine the user administers, so if provider resolution runs there, the boundary
-enforcing invariants 1 and 2 executes from files the user can read and replace. The alternative is
-that the desktop build implements those specific routes as an authenticated proxy to the backend —
-same route, same contract, same URL, a different implementation selected by build target.
-`docs/DESKTOP_PLAYBACK.md` §8 states the question and the recommendation and leaves the ruling to the
-reviewer and the commander. **It is a design input to PL-0501.**
+**Provider resolution does not run on the user's machine, and that is a ruling rather than a
+preference.** A sidecar runs this application's server on a machine the user administers, so
+resolution running there would put the boundary enforcing invariants 1 and 2 in files the user can
+read and replace, with provider credentials in its environment. The commander ruled on 2026-09-16
+that the desktop build **proxies the provider-resolution and playback-session routes
+(`/api/v1/playback/*`) to an authenticated backend service**, preserving the same application-facing
+contract: same route, same URL, same request and response shape, same `docs/API_CONTRACTS.md`
+behaviour, with the implementation selected **by build target and never by runtime configuration** —
+a flag that could flip resolution back on-device is the same exposure with an extra step.
+
+The proxy forwards an authenticated caller identity and **never receives a provider credential**, so
+the sidecar holds no provider secret at all. That is what keeps invariants 1 and 2 enforceable on a
+machine the user administers rather than merely asserted there, and it is what makes the desktop
+build's loopback listener a session-isolation control rather than the last line in front of a
+provider relationship. `docs/DESKTOP_PLAYBACK.md` §8 records the ruling, its cost, and the
+alternatives it rejected. **PL-0501 builds `/api/v1/playback/session` with a target-selected
+implementation from the start.**
+
+Three contract gaps this decision exposed are tracked as their own tasks: **PL-0902** (DRM capability
+on the candidate or session contract — `packages/contracts/src` carries no `drm` field today, and it
+gates the capability routing above), **PL-0903** (an engine-unavailable reason that can represent
+libmpv failing to load), and **PL-0904** (a playback error origin for native failures, so mpv errors
+are not forced into Shaka's numeric codes).
 
 ## Scalability path
 

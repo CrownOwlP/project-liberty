@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-15T17:52:51.068Z",
+  "generatedAt": "2026-09-16T00:22:33.676Z",
   "agent": "claude-lead",
   "executionAvailable": true,
   "assigned": [
@@ -32,24 +32,24 @@
       "gateResults": {
         "repo-validate": {
           "status": "pass",
-          "at": "2026-09-15T17:32:54.251Z",
+          "at": "2026-09-16T00:20:57.803Z",
           "by": "claude-lead",
-          "commitSha": "80e3d3e3e0130571a1a0791b496a9e2cce0c6c7a",
-          "evidence": "npm run repo:validate at the PL-AI-0007 working tree, exit 0, 'Project Liberty repository validation passed.' Re-run after the control/README.md section documenting supersession was written, because that file is a declared write path and validate-repo.mjs reads the repository layout this task's documentation describes."
+          "commitSha": "e097590ee79e112f26073b293a4ad7fbb2bd1fd6",
+          "evidence": "npm run repo:validate at integrated head e097590ee79e112f26073b293a4ad7fbb2bd1fd6, exit 0, 'Project Liberty repository validation passed.' Re-run this round because control/README.md is a declared write path and three new tasks plus a new milestone entered control/ around it."
         },
         "typecheck": {
           "status": "pass",
-          "at": "2026-09-15T17:32:54.458Z",
+          "at": "2026-09-16T00:20:57.993Z",
           "by": "claude-lead",
-          "commitSha": "80e3d3e3e0130571a1a0791b496a9e2cce0c6c7a",
-          "evidence": "npx turbo run typecheck --force, exit 0, 9 of 9 tasks and 0 cached. STATED PLAINLY BECAUSE IT WOULD OTHERWISE OVERCLAIM: this task's code is scripts/ai-control-plane.mjs and scripts/test-ai-control-plane.mjs, which are plain ESM and are not in any workspace, so no tsc pass covers them and this gate proves only that the change broke nothing in the nine TypeScript projects. The regression evidence for the rule itself is under the unit gate, where it belongs."
+          "commitSha": "e097590ee79e112f26073b293a4ad7fbb2bd1fd6",
+          "evidence": "npx turbo run typecheck --force at integrated head e097590ee79e112f26073b293a4ad7fbb2bd1fd6, exit 0, 9 of 9 tasks and 0 cached. Same disclosure as round 42 and it still applies: this task's code is plain ESM outside every workspace, so no tsc pass covers it and this gate proves only that the change broke nothing in the nine TypeScript projects. The regression evidence is under unit."
         },
         "unit": {
           "status": "pass",
-          "at": "2026-09-15T17:32:54.650Z",
+          "at": "2026-09-16T00:20:57.620Z",
           "by": "claude-lead",
-          "commitSha": "80e3d3e3e0130571a1a0791b496a9e2cce0c6c7a",
-          "evidence": "Two executions, and the second is the one that matters. npx turbo run test --force, exit 0, 15 of 15 tasks and 0 cached, 2096 passed 1 skipped 0 failed. Then node scripts/test-ai-control-plane.mjs, exit 0, 'AI control plane tests passed (67 scenarios)' -- the suite that actually exercises validate, up from 66. Scenario 10s is new and asserts the rule in BOTH directions on one frozen fixture set, because a validator rule fails characteristically by staying silent forever while everyone assumes it works: the reconstructed PL-0301-behind-PL-0205 shape errors naming both ends, the repair clears it BY REPOINTING THE DEPENDENCY AT THE SUCCESSOR rather than by deleting the pointer, a successor that is not yet DONE warns instead of failing the build, and four malformed pointers are each refused -- unknown successor, self-reference, a successor whose supersedes disagrees, and supersededBy on a DONE task. Fixtures rather than live data on this suite's standing rule: the live graph now has zero such edges, so a scenario reading it would pass by being inert. ALSO REPAIRED, AND DISCLOSED RATHER THAN QUIETLY FIXED: scenario 9w went red because authoring PL-0901 gave claude-lead an autonomously workable task, which falsified an assertion that was a screenshot of that day's backlog rather than an invariant. On this file's own standing rule the scenario was moved onto a frozen fixture set instead of having its expectation rewritten -- rewriting it would be indistinguishable from rewriting it to match a regression -- and it now proves both halves: an orchestration-owning candidate is skipped by name and left READY, and an identical candidate with a non-privileged surface is still selected, so the scenario cannot pass by selection being broken outright. The other two script suites were run to prove the change is contained: node scripts/test-validate-env.mjs exit 0, 38 scenarios; node scripts/cloud/test-dispatcher.mjs exit 0, 35 scenarios."
+          "commitSha": "e097590ee79e112f26073b293a4ad7fbb2bd1fd6",
+          "evidence": "RE-RUN ON THE PUSHED TREE, round 43, superseding the round-42 evidence string rather than standing on it. At integrated head e097590ee79e112f26073b293a4ad7fbb2bd1fd6, whose ancestry contains 461cca5, the commit now on origin/codex/pl-ai-0001-repair. node scripts/test-ai-control-plane.mjs, exit 0, 'AI control plane tests passed (67 scenarios)'. npx turbo run test --force, exit 0, 15 of 15 tasks and 0 cached, 2112 passed 1 skipped 0 failed. Nothing in this task's declared surface changed between the two rounds: git diff --name-only 461cca5..HEAD over scripts/ai-control-plane.mjs, scripts/test-ai-control-plane.mjs and control/README.md is EMPTY, so the re-run confirms the rule still holds against a tree that moved around it rather than re-proving a tree that did not move. The rule's behaviour is unchanged and deliberately so: report-only, never auto-repair; WARNING while the named successor is unfinished and ERROR once it is DONE; the four malformed-pointer refusals intact. ai:validate at this head exits 0 with the four supersession pairs clean and no supersession finding of any kind."
         }
       },
       "implementationAgent": "claude-lead",
@@ -89,7 +89,7 @@
       "owner": "claude-lead",
       "gateResults": {},
       "implementationAgent": "claude-lead",
-      "updatedAt": "2026-09-15T17:50:43.130Z",
+      "updatedAt": "2026-09-16T00:22:33.488Z",
       "implementationBaseSha": "80e3d3e3e0130571a1a0791b496a9e2cce0c6c7a"
     }
   ],
