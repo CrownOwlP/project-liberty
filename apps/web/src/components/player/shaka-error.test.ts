@@ -143,3 +143,152 @@ describe("redactMediaUrl", () => {
     expect(redactMediaUrl(null)).toBeNull();
   });
 });
+
+/* -------------------------------------------------------------------------
+ * PL-0904 — the engine axis
+ *
+ * Everything above this line predates PL-0904 and is UNCHANGED, including the
+ * import on line 2. The engine axis was added beside the route axis rather than
+ * on top of it precisely so that none of it had to move; if any assertion above
+ * had needed editing, the design would have been changing the meaning of an
+ * existing Shaka case, which is the thing this task may not do.
+ * ---------------------------------------------------------------------- */
+
+import {
+  describeNativePlaybackError,
+  type NativeMpvPlaybackError,
+  type PlaybackError
+} from "./shaka-error";
+
+describe("the engine that produced the error", () => {
+  it("names the web engine on every route through the Shaka normaliser", () => {
+    // Including the routes where nothing Shaka-shaped arrived: the engine is a
+    // claim about who produced the error, and `fault: null` is the separate
+    // claim that no engine-numbered code came with it.
+    expect(describePlaybackError(shakaError(2, 4, 4001), "manifest-load").engine).toBe("web-shaka");
+    expect(describePlaybackError(new TypeError("import failed"), "engine-load")).toMatchObject({
+      engine: "web-shaka",
+      fault: null
+    });
+  });
+
+  it("carries Shaka's numbering in a fault that only the web tag unlocks", () => {
+    const error = describePlaybackError(shakaError(2, 6, 6007), "player-event");
+    expect(error.fault).toEqual({ code: 6007, category: 6, categoryName: "DRM" });
+    // The flat trio is a projection of the same three values, kept because
+    // `summarisePlaybackError` reads them by name. It cannot disagree with the
+    // fault because both are written from one source.
+    expect(error.code).toBe(error.fault?.code ?? null);
+    expect(error.category).toBe(error.fault?.category ?? null);
+    expect(error.categoryName).toBe(error.fault?.categoryName ?? null);
+  });
+
+  it("keeps the route axis and the engine axis independent", () => {
+    // The ruling PL-0903 asked for, made executable: one route, two engines,
+    // and neither field says anything about the other. A single union would
+    // have had to spell this pair as one member and would have lost the ability
+    // to ask either question on its own.
+    const web = describePlaybackError(shakaError(2, 1, 1002), "player-event");
+    const native = describeNativePlaybackError({ reason: "error" }, "player-event");
+    expect([web.origin, web.engine]).toEqual(["player-event", "web-shaka"]);
+    expect([native.origin, native.engine]).toEqual(["player-event", "native-mpv"]);
+    expect(describeNativePlaybackError({ reason: "error" }, "engine-load").origin).toBe(
+      "engine-load"
+    );
+  });
+});
+
+describe("a native failure, without borrowing a Shaka number", () => {
+  it("keeps every Shaka-numbered field null while keeping mpv's own value", () => {
+    // THE WHOLE POINT. -13 is an `mpv_error`; 13 is not a Shaka category and
+    // 1001 is. Neither may ever appear in `code` or `category`, because
+    // `classifyPlaybackFailure`, the reason trail and every dashboard
+    // downstream read those on shaka-player 5.2.x's scale.
+    const error = describeNativePlaybackError({ reason: "error", mpvError: -13 }, "player-event");
+    expect(error.code).toBeNull();
+    expect(error.category).toBeNull();
+    expect(error.categoryName).toBeNull();
+    expect(error.fault).toEqual({ reason: "error", mpvError: -13 });
+  });
+
+  it("does not discard the diagnostic when there is no number at all", () => {
+    const error = describeNativePlaybackError({ reason: "error" }, "player-event");
+    expect(error.fault).toEqual({ reason: "error", mpvError: null });
+    expect(error.message).toBe("mpv playback ended with an error (END_FILE error)");
+    expect(
+      describeNativePlaybackError({ reason: "error", mpvError: -13 }, "player-event").message
+    ).toBe("mpv playback ended with an error (END_FILE error, mpv_error -13)");
+  });
+
+  it("treats END_FILE _STOP and _REDIRECT as our own control flow", () => {
+    // Exactly as LOAD_INTERRUPTED is on the web path: a stop we issued and a
+    // redirect we followed are not candidate failures, and charging one would
+    // make every failover look like a fault caused by what it failed over to.
+    for (const reason of ["stop", "redirect"] as const) {
+      const error = describeNativePlaybackError({ reason }, "player-event");
+      expect(error.aborted, reason).toBe(true);
+      expect(error.fatal, reason).toBe(false);
+    }
+
+    const failed = describeNativePlaybackError({ reason: "error" }, "player-event");
+    expect(failed.aborted).toBe(false);
+    expect(failed.fatal).toBe(true);
+  });
+
+  it("reports a severity of unknown rather than inventing one libmpv never sent", () => {
+    // mpv has no severity concept. "critical" would be a field we filled in on
+    // its behalf, and `errorIsRecoverableWithinBudget` reads `fatal` anyway.
+    expect(describeNativePlaybackError({ reason: "error" }, "player-event").severity).toBe(
+      "unknown"
+    );
+  });
+
+  it("carries an engine-neutral detail when the adapter has one", () => {
+    // `detail` is the slot a classifier is allowed to act on, because every one
+    // of its variants names a number space that belongs to neither engine.
+    const error = describeNativePlaybackError(
+      { reason: "error", detail: { kind: "timeout", url: "https://cdn.example.com/a.mkv" } },
+      "player-event"
+    );
+    expect(error.detail).toEqual({ kind: "timeout", url: "https://cdn.example.com/a.mkv" });
+    expect(describeNativePlaybackError({ reason: "error" }, "player-event").detail).toBeNull();
+  });
+});
+
+describe("what the type system refuses, rather than what a comment asks for", () => {
+  it("will not let an mpv number be written into the Shaka-numbered code", () => {
+    const native = describeNativePlaybackError({ reason: "error", mpvError: -13 }, "player-event");
+    const borrowed = { ...native, code: 1001 };
+    // @ts-expect-error `code` on a native error is `null`, not `number | null`.
+    const rejected: NativeMpvPlaybackError = borrowed;
+    expect(rejected.engine).toBe("native-mpv");
+  });
+
+  it("will not build a playback error out of a clean end of file or a quit", () => {
+    // DESKTOP_PLAYBACK.md §6 routes `_EOF` to MEDIA_ENDED and `_QUIT` to
+    // ENGINE_STATE destroyed. `NativeFailureReason` is that routing table as a
+    // type, so getting it wrong fails the build rather than charging the
+    // attempt budget for a file that played to the end.
+    // @ts-expect-error "eof" is not a NativeFailureReason.
+    const eof = describeNativePlaybackError({ reason: "eof" }, "player-event");
+    // @ts-expect-error "quit" is not a NativeFailureReason.
+    const quit = describeNativePlaybackError({ reason: "quit" }, "player-event");
+    expect([eof.engine, quit.engine]).toEqual(["native-mpv", "native-mpv"]);
+  });
+
+  it("will not let a caller read an engine code without narrowing first", () => {
+    const errors: PlaybackError[] = [
+      describePlaybackError(shakaError(2, 3, 3016), "player-event"),
+      describeNativePlaybackError({ reason: "error", mpvError: -13 }, "player-event")
+    ];
+
+    const numbers = errors.map((error) => {
+      // @ts-expect-error `fault` is a union: `code` exists on only one arm.
+      const unnarrowed = error.fault?.code ?? null;
+      void unnarrowed;
+      return error.engine === "web-shaka" ? (error.fault?.code ?? null) : null;
+    });
+
+    expect(numbers).toEqual([3016, null]);
+  });
+});
