@@ -4,9 +4,13 @@ Covers PL-0401 (auth boundary), PL-0402 (profile model), PL-0403 (progress persi
 PL-0404 (watchlist). The specification is `docs/RESEARCH_IDENTITY.md`; this document records how
 those rulings were implemented and, equally, what has **not** been verified.
 
-> **Nothing in this lane has been executed.** No `npm install`, no `tsc`, no `vitest`, no
-> `drizzle-kit`, no PostgreSQL. Every claim below is a claim about source that was written, not
-> about software that was run. See "Unverified" at the end.
+> **What has been executed, as of 2026-09-15 (PL-0405 round 43).** `npm ci`, `npm run typecheck`
+> and `npm run test` all run and pass. PostgreSQL 16.15 now exists in the working environment, and
+> `migrations/0000_profile_scoped_identity.sql` **has been applied to it** and exercised with live
+> Better Auth 1.7.5 sign-up and sign-in. `drizzle-kit` has still not been run. The original
+> blanket caveat on this document — "nothing in this lane has been executed" — is no longer true
+> and has been replaced by the itemised list under "Unverified" at the end, which is now a list of
+> what specifically remains.
 
 ---
 
@@ -285,11 +289,10 @@ behind it.
    rather than the documentation site: the `issuer` column and the `(issuer, account_id)` unique
    rule were removed from both, and `UNIQUE (provider_id, account_id)` put in their place. The SQL
    and the Drizzle definition therefore agree, and `drizzle-kit generate` will not propose
-   reinstating the abandoned schema. See ADR-007 for the evidence. Still run
-   `npx @better-auth/cli@1.7.5 generate` against `createLibertyAuth`'s configuration and diff its
-   output against the hand-written schema — the CLI is authoritative and has not been run. The
-   hand-written version exists so the first migration could be *reviewed as a whole*, not to
-   replace the generator.
+   reinstating the abandoned schema. See ADR-007 for the evidence. **The generator has now been
+   run and it agrees** — see "Verifying the schema against the generator" below. The hand-written
+   version exists so the first migration could be *reviewed as a whole*, not to replace the
+   generator.
 3. **`npm run db:generate -w @liberty/persistence`.** `migrations/0000_profile_scoped_identity.sql`
    is hand-written and reviewed, but drizzle-kit also needs its `migrations/meta/` journal and
    snapshot, which cannot be produced without running the tool. Diff the generated SQL against the
@@ -308,40 +311,102 @@ behind it.
 
 ---
 
+## Verifying the schema against the generator
+
+Executed on 2026-09-15 against PostgreSQL 16.15 (cluster `16/main`, started with
+`pg_ctlcluster 16 main start`). Reproduce it as follows.
+
+1. **A role and a database of your own**, so nothing runs as a superuser:
+
+   ```sql
+   CREATE ROLE liberty LOGIN PASSWORD 'liberty';
+   CREATE DATABASE liberty_pl0405 OWNER liberty;
+   ```
+
+2. **Apply the migration.**
+   `psql -h 127.0.0.1 -U liberty -d liberty_pl0405 -v ON_ERROR_STOP=1 -f packages/persistence/migrations/0000_profile_scoped_identity.sql`
+   — eight `CREATE TABLE`, seven `CREATE INDEX`, exit 0.
+
+3. **Run the generator.** The CLI is the npm package **`auth`**, not `@better-auth/cli`.
+   `@better-auth/cli` is marked deprecated on npm ("Package no longer supported"), its newest
+   release is `1.4.21`, and it takes `better-auth@1.4.21` as a *direct* dependency — so it would
+   describe a version this repository does not use. `auth@1.7.5` takes `better-auth@1.7.5` and
+   `@better-auth/core@1.7.5` exactly, and is the version-matched generator.
+
+   It needs a module that exports a constructed instance, which this repository does not otherwise
+   have, because `createLibertyAuth` is a factory taking a database, a schema and a mailer. Write
+   a throwaway one that calls `createLibertyAuth` with `resolveAuthConfig(...)`,
+   `createDatabase({ connectionString })` and `betterAuthSchema` — using the real factory matters,
+   because the generator reads `auth.options` and a hand-written option object would generate a
+   schema for a configuration Liberty does not run. Then:
+
+   ```
+   npx auth@1.7.5 generate --config <that file> --output <somewhere outside the repo> --yes
+   ```
+
+**What it produced, and the diff.** The generated `account` table has **no `issuer` column** and
+declares **no unique index on `account`** — only `index("account_userId_idx")` — which confirms
+both round-42 removals and confirms that `UNIQUE ("provider_id", "account_id")` is **Liberty's
+own** rather than a transcription. A field-by-field comparison of
+`getAuthTablesWithResolvedIndexes(auth.options)` against `information_schema` on the applied
+database found **no missing column, no extra column, no type mismatch and no nullability
+mismatch** across `user`, `session`, `account` and `verification`; every index and unique the
+library asks for (`session.userId`, `account.userId`, `verification.identifier`, `user.email`,
+`session.token`) exists physically. `indexesByTable` is empty, so the library declares no
+composite or unique index of its own at all.
+
+**Two differences from the generated file that are deliberate and are not defects.** The generator
+emits `timestamp(...)` — `timestamp without time zone` — where this repository uses
+`timestamp with time zone` throughout; the library's own field type is `date`, `diffSchema`
+inspects column presence and nullability but not types, and the values round-trip correctly in
+the live test below. The generator would also name the two foreign-key indexes
+`session_userId_idx` / `account_userId_idx` where this repository names them
+`session_user_id_idx` / `account_user_id_idx`; index names are not part of anything the library
+inspects. The generated file additionally puts `defaultNow()` on several `created_at`/`updated_at`
+columns where this migration has no database default — the library supplies those values on every
+insert, which the live test confirms, and a column the library writes is never reported as
+`unexpected-required-column`.
+
+**Executed end to end, not only compared.** With that database, a real Better Auth 1.7.5 sign-up
+and sign-in wrote rows to `user`, `account` and `session`; the credential account landed as
+`provider_id = 'credential'`, `account_id = <user id>`, which is the pairing the safety argument
+for the unique constraint rests on; a deliberate duplicate of that pair was refused with SQLSTATE
+23505 on `account_provider_id_account_id_key`; and the library's default-on schema validation ran
+throughout without raising `SchemaMismatchError`. The profile half was exercised directly in SQL:
+`UNIQUE (user_id, display_name)` refuses a repeated name, the composite foreign key
+`active_profile_selection_profile_owner_fk` refuses a selection naming another household's
+profile, `playback_progress_position_within_runtime` and `playback_progress_epoch_positive` refuse
+the rows they are meant to, a lease with a `NULL` position is accepted, and deleting the account
+cascades the profile, the selection, the progress row and the watchlist entry away.
+
+**No change to the migration was required.**
+
+---
+
 ## Unverified
 
-Nothing was executed. In particular:
+Down to this, as of 2026-09-15:
 
-- **No test has been run.** The vitest files were written to the repository's conventions but their
-  pass/fail state is unknown.
-- **No typecheck has been run.** The most likely places to break: the derived types
-  `Parameters<typeof drizzleAdapter>[0]` and `…[1]["schema"]` in `packages/auth/src/better-auth.ts`,
-  which depend on the adapter's exported signature; and drizzle-zod's `.shape` surface in
-  `contracts.test.ts`, which is a zod v4 object.
-- **The hand-written Better Auth schema is still not generated.** `user`, `session` and
-  `verification` remain transcriptions from the docs page dated to the 1.7.1 line. `account` was
-  re-derived on 2026-09-15 from the installed 1.7.5 package's `buildAuthTables` output, which is
-  the function the library itself consults — a strictly better source than the docs page, and the
-  reason the `issuer` drift was found at all — but `npx @better-auth/cli generate` is still
-  authoritative and still has not been run.
-- **`apps/web/src/lib/db/in-memory-repository.ts` has not been converted to `profileIdFromScope`.**
-  It reads `input.scope.profileId` in fourteen places and a forged scope still works against it.
-  It cannot be constructed outside a non-deployment process, so the exposure is bounded to
-  development and test. Converting it is also what would let `profileId` be removed from the
-  `ProfileScope` interface, which is the change that turns an unchecked read from a deprecation
-  into a compile error.
-- **The first migration SQL has never been applied to a PostgreSQL instance.** Syntax, constraint
-  names and the composite foreign key to `profile (id, user_id)` are unexecuted.
-- **`drizzle-orm@0.45.2`'s array-returning table-config callback and `check()` helper** are used
-  throughout the schema. Both are believed current for the 0.45 line; neither was compiled.
+- **`drizzle-kit` has still not been run.** `migrations/meta/`'s journal and snapshot do not exist,
+  so `npm run db:generate` and `npm run db:migrate` are still untried and the migration is applied
+  by `psql` rather than by the tool that is supposed to own it.
+- **`user`, `session` and `verification` in `schema/auth.ts` are still transcriptions** from the
+  docs page dated to the 1.7.1 line, rather than being derived. They now agree with the 1.7.5
+  generator column for column, which is evidence, but the file was not regenerated from it.
 - **The `COALESCE` in `writeProgress`** and the pure resolver's runtime-retention rule are asserted
   to agree by reading, not by an integration test.
+- **Concurrency is untested.** The guarded `UPDATE ... WHERE writer_epoch = $ AND writer_id = $
+  AND write_seq < $` was executed as a statement but never raced against a second writer. That is
+  the `integration` gate's question, not a single session's.
 - **The exact-pinned Better Auth version was re-read from the registry on 2026-09-15**
   (`latest: 1.7.5`, published 2026-09-14) and will be stale the moment upstream publishes. Because
   upstream supports only the latest version, that staleness is a security item, not a housekeeping
   one — and it has already produced one finding: the 1.7.1 pin was four releases behind by the
   time PL-0401 was reviewed.
-- **Anything requiring a database is untested by construction:** the SQL guard's atomicity under
-  concurrent writes, the `ON CONFLICT` upsert paths, cascade behaviour, the CHECK constraints, and
-  the composite foreign key. These need an integration suite against a real PostgreSQL instance
-  before the `integration` gate on PL-0402/0403/0404 can honestly be recorded as `pass`.
+- **A single applied migration is not the `integration` gate.** Cascade behaviour, the CHECK
+  constraints and the composite foreign key were each exercised once, by hand, in one session
+  against a scratch database that no longer needs to exist. The `ON CONFLICT` upsert paths and the
+  guarded `UPDATE` under concurrent writers were not. PL-0402/0403/0404 still need a committed
+  integration suite against a real PostgreSQL instance before their `integration` gate can
+  honestly be recorded as `pass`; what this document now records is that the schema those tests
+  would run against is real and correct, not that the tests exist.

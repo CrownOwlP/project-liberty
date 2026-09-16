@@ -24,10 +24,40 @@
 -- (no-plugin) field set and index set this migration must satisfy.
 --
 -- THE `issuer` COLUMN WAS REMOVED HERE; see the `account` table below for the
--- full reasoning and the upstream citation. Nothing in this file has been
--- executed against a database -- there is no PostgreSQL in this environment --
--- so this is still a reviewed transcription and not a verified apply; see
+-- full reasoning and the upstream citation.
+--
+-- APPLIED, AND VERIFIED AGAINST THE GENERATOR (2026-09-15, PL-0405 round 43).
+-- This file used to end its header by saying nothing in it had ever been
+-- executed, because no PostgreSQL existed in the working environment. One does
+-- now. The file was applied to an empty PostgreSQL 16.15 database as a
+-- non-superuser role and exits 0 -- eight CREATE TABLE, seven CREATE INDEX --
+-- and applies cleanly a second time to a second empty database.
+--
+-- The generator was also run, and it is NOT the one the comment below used to
+-- name. `@better-auth/cli` is deprecated on npm and its newest release is
+-- 1.4.21, which takes `better-auth@1.4.21` as a direct dependency; running it
+-- would have described a version this repository does not use. The CLI now
+-- ships as the npm package `auth`, and `auth@1.7.5` pins `better-auth@1.7.5`
+-- and `@better-auth/core@1.7.5` exactly. `npx auth@1.7.5 generate`, run against
+-- a module that constructs the real `createLibertyAuth` option object, produced
+-- a Drizzle schema whose `account` table has NO `issuer` column and declares NO
+-- unique index on `account` -- confirming both removals below, and confirming
+-- that the `(provider_id, account_id)` unique is OURS.
+--
+-- A field-by-field diff of `getAuthTablesWithResolvedIndexes(auth.options)`
+-- against `information_schema` on the applied database found no missing column,
+-- no extra column, no type mismatch and no nullability mismatch. A live 1.7.5
+-- sign-up and sign-in wrote rows to `user`, `account` and `session` without the
+-- library's default-on schema validation objecting, and a deliberate duplicate
+-- `(provider_id, account_id)` was refused with SQLSTATE 23505. NOTHING IN THIS
+-- FILE NEEDED TO CHANGE AS A RESULT. The reproduction recipe and the two
+-- deliberate differences from the generated file -- `timestamptz` rather than
+-- `timestamp`, and this repository's index naming -- are in
 -- `docs/DATA_MODEL.md`.
+--
+-- WHAT IS STILL NOT EXECUTED: drizzle-kit, so `migrations/meta/` has no journal
+-- or snapshot; and the guarded UPDATE under concurrent writers, which is the
+-- `integration` gate's question rather than this one's.
 -- ---------------------------------------------------------------------------
 
 --> statement-breakpoint

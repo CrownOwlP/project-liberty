@@ -6,6 +6,7 @@ import {
   authorizeProfileSelection,
   externalProfileAccessReason
 } from "./authorization";
+import { profileIdFromScope } from "./profile-scope";
 import type { LibertySession, ProfileOwnership } from "./session";
 import { scopeBelongsToSession } from "./session";
 
@@ -54,7 +55,7 @@ describe("authorizeProfileAccess", () => {
     expect(decision.allowed).toBe(true);
     if (!decision.allowed) return;
     expect(decision.reason).toBe("active_profile_of_session");
-    expect(decision.scope.profileId).toBe("profile_adult");
+    expect(profileIdFromScope(decision.scope)).toBe("profile_adult");
     expect(scopeBelongsToSession(decision.scope, session("profile_adult"))).toBe(true);
   });
 
@@ -181,7 +182,7 @@ describe("authorizeProfileSelection", () => {
 
     expect(decision.allowed).toBe(true);
     if (!decision.allowed) return;
-    expect(decision.scope.profileId).toBe("profile_kids");
+    expect(profileIdFromScope(decision.scope)).toBe("profile_kids");
   });
 
   it("still refuses another household's profile at selection time", () => {
@@ -239,7 +240,7 @@ describe("authorizeProfileSelection", () => {
     expect(decision.allowed).toBe(true);
     if (!decision.allowed) return;
     expect(decision.reason).toBe("selectable_profile_of_account");
-    expect(decision.scope.profileId).toBe("profile_kids");
+    expect(profileIdFromScope(decision.scope)).toBe("profile_kids");
   });
 });
 

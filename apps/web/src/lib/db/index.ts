@@ -80,6 +80,17 @@ export { createPostgresRepository, postgresRepositoryOver } from "./postgres-rep
  * gate on those three tasks is therefore NOT satisfiable from this lane and must
  * not be recorded as passing on the strength of the in-memory adapter: passing
  * against a `Map` is evidence about the `Map`.
+ *
+ * A CORRECTION OF FACT, 2026-09-15 (PL-0405 round 43). PostgreSQL 16.15 now
+ * exists in this container, and `packages/persistence/migrations/0000_profile_scoped_identity.sql`
+ * has been applied to it and exercised with live Better Auth sign-up and
+ * sign-in. That does NOT change anything this paragraph concludes:
+ * `postgres-repository.ts` still has not executed a single statement, the
+ * environment a developer or CI runs in still has no database configured, and
+ * the `integration` gate still needs a committed suite rather than one
+ * session's scratch database. The sentence above is kept because it is the
+ * reason this adapter exists; this note is here so it is not read as a claim
+ * that a database is impossible.
  * ---------------------------------------------------------------------- */
 
 /** The environment variable that selects PostgreSQL. Declared `@optional` in `.env.example`. */

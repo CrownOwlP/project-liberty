@@ -1,5 +1,9 @@
 import type { LibertySession, ProfileScope } from "@liberty/auth";
-import { ForgedProfileScopeError, authorizeProfileAccess } from "@liberty/auth";
+import {
+  ForgedProfileScopeError,
+  authorizeProfileAccess,
+  profileIdFromScope
+} from "@liberty/auth";
 import { describe, expect, it } from "vitest";
 import type { LibertyDatabase } from "./client";
 import { archiveProfile, selectActiveProfile } from "./profile-repository";
@@ -32,12 +36,20 @@ import {
  * is "somebody added a tenth function and read the field directly", and a
  * sample of three would not catch that.
  *
- * THE FORGERY IS THE ONE THAT MATTERED. `{ ...realScope, profileId: victim }`
- * needs no cast -- a spread copies the branded property along with everything
- * else -- and it keeps a GENUINE `grantedFor`, so the account comparison that
- * `refuseForeignScope` performs would pass it. Before PL-0405 every function
- * below would have executed a statement reading or writing another household's
- * rows.
+ * THE FORGERY IS THE ONE THAT MATTERED, AND ITS SPELLING CHANGED IN ROUND 43.
+ * `Object.assign({}, realScope, { profileId: victim })` needs no cast -- it has
+ * type `ProfileScope & { profileId: string }`, which is assignable to
+ * `ProfileScope` -- and it keeps a GENUINE `grantedFor`, so the account
+ * comparison that `refuseForeignScope` performs would pass it. Before PL-0405
+ * every function below would have executed a statement reading or writing
+ * another household's rows.
+ *
+ * Round 42 wrote the same forgery as `{ ...realScope, profileId: victim }`.
+ * Round 43 removed `profileId` from the public `ProfileScope`, so that literal
+ * is now rejected by excess-property checking -- which is a real improvement in
+ * what an honest consumer can accidentally write, and NOT a second control,
+ * because the spelling above compiles just as happily. The registry is still
+ * the only thing that rejects it.
  *
  * NO DATABASE IS SUPPLIED, AND THAT IS THE SECOND ASSERTION. `refusingDb` throws
  * on any property access at all, so a function that reaches the driver fails
@@ -78,7 +90,20 @@ const realScope = issuedScope(OWN_PROFILE, HOUSEHOLD);
  * nothing in TypeScript can currently reject it, which is the finding that made
  * the runtime registry necessary in the first place.
  */
-const forgedScope: ProfileScope = { ...realScope, profileId: VICTIM_PROFILE };
+const forgedScope: ProfileScope = Object.assign({}, realScope, { profileId: VICTIM_PROFILE });
+
+/**
+ * The runtime shape the public type no longer describes.
+ *
+ * Round 43 moved `profileId` and `grantedFor` onto a module-private type inside
+ * `@liberty/auth`, so no consumer can read either without a checked accessor.
+ * The three assertions below are about the OBJECT -- that the forgery really
+ * did replace the id and really did keep the account -- so they reach in
+ * through this alias, deliberately and visibly.
+ */
+function runtimeShape(scope: ProfileScope): { profileId: string; grantedFor: string } {
+  return scope as unknown as { profileId: string; grantedFor: string };
+}
 
 const session: LibertySession = {
   account: { userId: HOUSEHOLD, sessionId: "session_tv_lounge" },
@@ -109,9 +134,9 @@ describe("a spread forgery carries a genuine grantedFor", () => {
     // a copy of a scope granted to THIS household, so every field except
     // `profileId` is genuine and every check except an identity check agrees
     // with it.
-    expect(forgedScope.grantedFor).toBe(realScope.grantedFor);
-    expect(forgedScope.grantedFor).toBe(HOUSEHOLD);
-    expect(forgedScope.profileId).toBe(VICTIM_PROFILE);
+    expect(runtimeShape(forgedScope).grantedFor).toBe(runtimeShape(realScope).grantedFor);
+    expect(runtimeShape(forgedScope).grantedFor).toBe(HOUSEHOLD);
+    expect(runtimeShape(forgedScope).profileId).toBe(VICTIM_PROFILE);
   });
 });
 
@@ -264,6 +289,6 @@ describe("profile-repository refuses a forged scope, with a reason rather than a
     // an issued scope belonging to another household IS diagnosable, and the
     // existing refusal message is preserved for it.
     const foreign = issuedScope(OWN_PROFILE, "user_someone_else");
-    expect(foreign.profileId).toBe(OWN_PROFILE);
+    expect(profileIdFromScope(foreign)).toBe(OWN_PROFILE);
   });
 });

@@ -1,5 +1,10 @@
 import type { LibertySession, ProfileScope } from "@liberty/auth";
-import { authorizeProfileAccess, isIssuedProfileScope } from "@liberty/auth";
+import {
+  authorizeProfileAccess,
+  grantedAccountFromScope,
+  isIssuedProfileScope,
+  profileIdFromScope
+} from "@liberty/auth";
 import type { SQL } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
@@ -180,7 +185,7 @@ const OTHER_PROFILE = "profile_grace";
 const INSTANT = new Date("2026-08-21T20:00:00.000Z");
 
 const progressRow = {
-  profileId: scope.profileId,
+  profileId: profileIdFromScope(scope),
   contentId: "the-northstar-affair",
   positionSeconds: 600,
   runtimeSeconds: 5400,
@@ -190,7 +195,7 @@ const progressRow = {
   updatedAt: INSTANT
 };
 
-const watchlistRow = { profileId: scope.profileId, contentId: "the-northstar-affair", addedAt: INSTANT };
+const watchlistRow = { profileId: profileIdFromScope(scope), contentId: "the-northstar-affair", addedAt: INSTANT };
 
 const leaseRow = { epoch: 4, writerId: "writer_television" };
 
@@ -310,7 +315,7 @@ describe("every repository statement is scoped to a profile", () => {
     for (const row of recorded.values) {
       // The INSERT paths (`addToWatchlist`, `issueWriterLease`) carry no WHERE;
       // their scoping is the value written plus the composite primary key.
-      expect(row["profileId"]).toBe(scope.profileId);
+      expect(row["profileId"]).toBe(profileIdFromScope(scope));
     }
   });
 
@@ -343,7 +348,7 @@ describe("the profile predicate is bound to the scope, not to a literal", () => 
       // Parameterised, so the id can never be spliced into the statement text --
       // and present, so the predicate is about THIS profile rather than about
       // `profile_id` in the abstract.
-      expect(query.params).toContain(scope.profileId);
+      expect(query.params).toContain(profileIdFromScope(scope));
     }
   });
 });
@@ -355,7 +360,7 @@ describe("the profile predicate is bound to the scope, not to a literal", () => 
 /**
  * A session for the account the scope above was granted to.
  *
- * `scope.grantedFor` is `HOUSEHOLD`, so this session and that scope agree --
+ * The scope's granting account is `HOUSEHOLD`, so this session and that scope agree --
  * which is what lets the functions taking both get past `scopeBelongsToSession`
  * and reach the statement this file is here to inspect. Since PL-0405 agreeing
  * is necessary but no longer sufficient: the scope must also have been ISSUED,
@@ -363,7 +368,7 @@ describe("the profile predicate is bound to the scope, not to a literal", () => 
  */
 const session: LibertySession = {
   account: { userId: HOUSEHOLD, sessionId: "session_tv_lounge" },
-  activeProfileId: scope.profileId
+  activeProfileId: profileIdFromScope(scope)
 };
 
 /** A well-formed profile id of the shape `newProfileId` actually mints. */
@@ -426,17 +431,17 @@ const accountCalls: readonly {
     // Non-empty, or the UPDATE's `RETURNING` comes back empty, the function
     // refuses with `no_live_profile_for_scope` and the DELETE that releases the
     // selection -- the second statement worth checking -- is never built.
-    rows: [{ id: scope.profileId }],
+    rows: [{ id: profileIdFromScope(scope) }],
     run: (db) => archiveProfile(db, { session, scope, instant: INSTANT })
   },
   {
     name: "loadActiveProfileId",
-    rows: [{ profileId: scope.profileId }],
+    rows: [{ profileId: profileIdFromScope(scope) }],
     run: (db) => loadActiveProfileId(db, session.account)
   },
   {
     name: "resolveLibertySession",
-    rows: [{ profileId: scope.profileId }],
+    rows: [{ profileId: profileIdFromScope(scope) }],
     run: (db) => resolveLibertySession(db, session.account)
   }
 ];
@@ -466,7 +471,7 @@ describe("every account-level profile statement names the account", () => {
     // hypothetical: it is exactly what happened when issuance became a runtime
     // check and this fixture was still a cast, so the second assertion is the
     // one this guard was missing.
-    expect(scope.grantedFor).toBe(HOUSEHOLD);
+    expect(grantedAccountFromScope(scope)).toBe(HOUSEHOLD);
     expect(isIssuedProfileScope(scope)).toBe(true);
   });
 
@@ -624,7 +629,7 @@ describe("the one read that cannot carry an account predicate", () => {
     // other half, and it is the one that makes the read a lookup rather than a
     // scan -- `active_profile_selection` is keyed by session id.
     const recorded = emptyRecording();
-    await loadActiveProfileId(recordingDb(recorded, [{ profileId: scope.profileId }]), session.account);
+    await loadActiveProfileId(recordingDb(recorded, [{ profileId: profileIdFromScope(scope) }]), session.account);
 
     expect(recorded.wheres.length).toBeGreaterThan(0);
     for (const where of recorded.wheres) {
@@ -641,12 +646,12 @@ describe("resolveLibertySession", () => {
     // `activeProfileId` could arrive, which is the same absence `ProgressWrite`
     // maintains for client-asserted timestamps.
     const resolved = await resolveLibertySession(
-      recordingDb(emptyRecording(), [{ profileId: scope.profileId }]),
+      recordingDb(emptyRecording(), [{ profileId: profileIdFromScope(scope) }]),
       session.account
     );
 
     expect(resolved.account).toEqual(session.account);
-    expect(resolved.activeProfileId).toBe(scope.profileId);
+    expect(resolved.activeProfileId).toBe(profileIdFromScope(scope));
   });
 
   it("reports null when nothing is selected, rather than inventing a profile", async () => {
@@ -678,7 +683,7 @@ describe("a scope that was granted to another session", () => {
    * fails on exactly one thing: it belongs to `OTHER_HOUSEHOLD`. Delete the
    * account comparison and this test goes red, which is what it is for.
    */
-  const foreignScope = issuedScope(scope.profileId, OTHER_HOUSEHOLD);
+  const foreignScope = issuedScope(profileIdFromScope(scope), OTHER_HOUSEHOLD);
 
   it("cannot select a profile", async () => {
     const recorded = emptyRecording();
@@ -699,7 +704,7 @@ describe("a scope that was granted to another session", () => {
 
   it("cannot archive a profile", async () => {
     const recorded = emptyRecording();
-    const result = await archiveProfile(recordingDb(recorded, [{ id: scope.profileId }]), {
+    const result = await archiveProfile(recordingDb(recorded, [{ id: profileIdFromScope(scope) }]), {
       session,
       scope: foreignScope,
       instant: INSTANT
@@ -725,14 +730,14 @@ describe("a scope that was granted to another session", () => {
     // prevent, in miniature.
     expect(result.detail).not.toContain(HOUSEHOLD);
     expect(result.detail).not.toContain(OTHER_HOUSEHOLD);
-    expect(result.detail).toContain(scope.profileId);
+    expect(result.detail).toContain(profileIdFromScope(scope));
   });
 });
 
 describe("archiving releases the sessions pointed at the profile", () => {
   it("archives, then deletes the selection rows, in that order", async () => {
     const recorded = emptyRecording();
-    const result = await archiveProfile(recordingDb(recorded, [{ id: scope.profileId }]), {
+    const result = await archiveProfile(recordingDb(recorded, [{ id: profileIdFromScope(scope) }]), {
       session,
       scope,
       instant: INSTANT

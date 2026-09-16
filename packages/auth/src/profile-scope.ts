@@ -56,6 +56,29 @@
  *      defeating the registry without copying anything. In a module (always
  *      strict) the attempted write throws rather than failing silently.
  *
+ *   5. THE PAYLOAD IS NOT ON THE PUBLIC TYPE AT ALL (round 43). `profileId`
+ *      and `grantedFor` are declared on a MODULE-PRIVATE `IssuedProfileScope`,
+ *      not on the exported `ProfileScope`, so `scope.profileId` outside this
+ *      module is a COMPILE ERROR rather than a deprecation warning. This is
+ *      strictly stronger than the accessor alone, and it was not available in
+ *      round 42: `apps/web/src/lib/db/in-memory-repository.ts` was then reading
+ *      the field in fourteen places and outside the write surface, so removing
+ *      the property would have failed `typecheck`. That adapter now asks, so
+ *      the property came off.
+ *
+ *      WHAT IT DOES AND DOES NOT BUY, because the difference matters and the
+ *      honest version is smaller than the tempting one. It makes an UNCHECKED
+ *      READ impossible to write. It does NOT make the spread forgery
+ *      impossible: the object literal form `{ ...real, profileId: victim }` is
+ *      now rejected by excess-property checking, but
+ *      `Object.assign({}, real, { profileId: victim })` produces
+ *      `ProfileScope & { profileId: string }` and is assignable to
+ *      `ProfileScope` WITH NO CAST ANYWHERE. `profile-scope.test.ts` uses that
+ *      second form deliberately, so the suite keeps attempting a cast-free
+ *      forgery. The registry is still the only thing that rejects it, and this
+ *      mechanism is about what an honest consumer can accidentally write, not
+ *      about what a forger can construct.
+ *
  *   4. THE IDENTITY CHECK IS THE CONSUMER'S FIRST ACTION, and it is not
  *      optional-looking. `profileIdFromScope` is the supported way to obtain the
  *      id a data predicate is built from: it consults the registry BEFORE it
@@ -63,32 +86,36 @@
  *      was not issued here. A consumer that calls it cannot accidentally skip
  *      the check, because the check and the read are the same expression.
  *
- * THE CONSUMERS ASK. `@liberty/persistence` was converted in the same task
- * after its write surface was widened: every exported function in
- * `progress-repository.ts`, `watchlist-repository.ts` and
- * `profile-repository.ts` obtains the id through `profileIdFromScope` as its
- * first statement, ahead of argument validation and ahead of any I/O, and
- * `scope.profileId` is not read directly anywhere in that package.
- * `packages/persistence/src/scope-forgery.test.ts` attempts the spread forgery
- * against each of them and asserts it is refused without a database round trip.
- * That file is the thing that makes this module's guarantee real, because a
- * registry closes nothing unless the consumer consults it.
+ * EVERY CONSUMER ASKS, AND THAT IS NOW TRUE OF ALL THREE (round 43).
+ * `@liberty/persistence` was converted in round 42 after its write surface was
+ * widened: every exported function in `progress-repository.ts`,
+ * `watchlist-repository.ts` and `profile-repository.ts` obtains the id through
+ * `profileIdFromScope` as its first statement, ahead of argument validation and
+ * ahead of any I/O. `apps/web/src/lib/db/in-memory-repository.ts` -- the second,
+ * complete repository implementation, the volatile store used for local
+ * development -- was named here in round 42 as the remaining hole and read
+ * `input.scope.profileId` in fourteen places; it was converted in round 43 in
+ * the same shape, its seven scope-taking methods binding the id as their first
+ * statement.
  *
- * WHAT THIS DOES NOT YET CLOSE -- READ THIS BEFORE TREATING THE DEFECT AS FIXED.
+ * TWO FORGERY SUITES ATTEMPT THE ATTACK AGAINST THOSE CONSUMERS rather than
+ * describing it: `packages/persistence/src/scope-forgery.test.ts` and
+ * `apps/web/src/lib/db/scope-forgery.test.ts`. Both are exhaustive over their
+ * repository's exported surface rather than representative, because the defect
+ * they guard is an extra function reading the field directly, and both assert
+ * the refusal happens BEFORE any storage access. Those files are what make this
+ * module's guarantee real, because a registry closes nothing unless the
+ * consumer consults it.
  *
- *   ONE CONSUMER IS STILL UNCONVERTED.
- *   `apps/web/src/lib/db/in-memory-repository.ts` is a second, complete
- *   repository implementation -- the volatile store used for local development
- *   -- and it reads `input.scope.profileId` directly in fourteen places. A
- *   forged scope still works against it. `apps/web/**` is outside PL-0405's
- *   write surface, so the conversion is named here rather than done.
+ * WHAT THIS STILL DOES NOT CLOSE -- READ THIS BEFORE TREATING THE DEFECT AS
+ * WHOLLY FIXED.
  *
- *   THE EXPOSURE IS BOUNDED AND THE BOUND IS WORTH STATING PRECISELY:
- *   `createInMemoryRepository` refuses to construct unless handed a
- *   `ClassifiedRuntime` that `@liberty/contracts` actually issued, so it cannot
- *   exist in a deployment at all. This is a development- and test-process
- *   bypass, not a production one. It is still a cross-profile bypass, and the
- *   remedy is the same three-word change at each site.
+ *   A FORGERY CAN STILL BE CONSTRUCTED WITHOUT A CAST. Removing `profileId`
+ *   from the public type rejects `{ ...real, profileId: victim }`, but
+ *   `Object.assign({}, real, { profileId: victim })` type-checks as
+ *   `ProfileScope` with no cast at all. Only the registry rejects it, which is
+ *   why mechanism 5 is an ergonomic guarantee about unchecked reads and not a
+ *   second control.
  *
  *   AN EDIT TO THIS FILE defeats it, and nothing in TypeScript can prevent that.
  *   What it prevents is how the defect actually recurs: a caller that copies a
@@ -133,25 +160,36 @@ const profileScopeBrand: unique symbol = Symbol("liberty.auth.profile-scope");
  */
 export interface ProfileScope {
   /**
-   * The profile this grant names.
+   * The brand, and the ONLY member of the public type.
    *
-   * @deprecated Read it with `profileIdFromScope(scope)` instead. A direct read
-   * answers honestly about a spread copy whose `profileId` the holder replaced;
-   * the accessor consults the issuance registry first.
-   *
-   * IT WOULD BE BETTER IF THIS PROPERTY WERE NOT PUBLIC AT ALL -- an unchecked
-   * read would then be a compile error rather than a deprecation -- and it is
-   * public because one consumer still needs it to compile:
-   * `apps/web/src/lib/db/in-memory-repository.ts` reads it in fourteen places
-   * and is outside PL-0405's write surface. `@liberty/persistence` no longer
-   * reads it anywhere. Removing the property is the finishing move, and it is
-   * a one-package change once that adapter is converted.
+   * There is deliberately nothing else here. The profile id and the granting
+   * account live on `IssuedProfileScope` below, which is module-private, so the
+   * only way to obtain either outside `@liberty/auth` is through an accessor
+   * that consults the registry first. See mechanism 5.
    */
-  readonly profileId: string;
-  /** The account the grant was made for. See `scopeBelongsToSession`. */
-  readonly grantedFor: string;
-  /** The brand. Unwritable outside this module; see mechanism 1. */
   readonly [profileScopeBrand]: true;
+}
+
+/**
+ * What an issued scope actually holds. MODULE-PRIVATE, AND THAT IS THE POINT.
+ *
+ * The runtime object is unchanged -- `profileId` and `grantedFor` are ordinary
+ * own enumerable properties, exactly as before -- so nothing about the value's
+ * behaviour, its freezing or its `Object.keys` moved. What moved is the TYPE
+ * the rest of the repository sees: `ProfileScope` no longer declares them, so
+ * `scope.profileId` outside this file does not compile.
+ *
+ * Round 42 left the property public with a `@deprecated` tag and said why: the
+ * in-memory adapter in `apps/web` read it fourteen times and was outside the
+ * write surface, so removing it would have failed `typecheck`. That was the
+ * only thing keeping it public, the adapter was converted in round 43, and the
+ * property came off in the same round.
+ */
+interface IssuedProfileScope extends ProfileScope {
+  /** The profile this grant names. Read it with `profileIdFromScope`. */
+  readonly profileId: string;
+  /** The account the grant was made for. Read it with `grantedAccountFromScope`. */
+  readonly grantedFor: string;
 }
 
 /**
@@ -197,7 +235,7 @@ export class ForgedProfileScopeError extends Error {
  * scope is still writable.
  */
 export function issueProfileScope(profileId: string, grantedFor: string): ProfileScope {
-  const scope: ProfileScope = Object.freeze({
+  const scope: IssuedProfileScope = Object.freeze({
     [profileScopeBrand]: true as const,
     profileId,
     grantedFor
@@ -239,7 +277,16 @@ export function isIssuedProfileScope(scope: ProfileScope): boolean {
  */
 export function profileIdFromScope(scope: ProfileScope): string {
   if (!issuedScopes.has(scope)) throw new ForgedProfileScopeError();
-  return scope.profileId;
+  /*
+   * THE ONE CAST IN THIS MODULE, AND IT IS GUARDED BY THE LINE ABOVE. The
+   * registry answered yes, which means this exact object came out of
+   * `issueProfileScope`, which means it really does carry the payload -- so the
+   * assertion is backed by a runtime proof rather than by a hope. It is the
+   * price of mechanism 5: the property cannot be on the public type and also be
+   * readable from it. Every other read in the repository goes through this
+   * function, so the cast exists once, here, where the proof is.
+   */
+  return (scope as IssuedProfileScope).profileId;
 }
 
 /**
@@ -251,5 +298,6 @@ export function profileIdFromScope(scope: ProfileScope): string {
  */
 export function grantedAccountFromScope(scope: ProfileScope): string {
   if (!issuedScopes.has(scope)) throw new ForgedProfileScopeError();
-  return scope.grantedFor;
+  // Guarded by the line above, exactly as in `profileIdFromScope`.
+  return (scope as IssuedProfileScope).grantedFor;
 }

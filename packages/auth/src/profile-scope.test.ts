@@ -25,11 +25,22 @@ import type { LibertySession, ProfileOwnership } from "./session";
  *
  * THE THREE FORGERIES, in ascending order of how hard they are to notice:
  *
- *   1. A SPREAD COPY WITH A REPLACED `profileId`. The one that mattered. It
- *      needs no cast: TypeScript spreads the branded property along with
- *      everything else, so `{ ...realScope, profileId: victim }` is a
- *      `ProfileScope` as far as the compiler is concerned. `grantedFor` stays
- *      genuine, so any check that looks only at the account passes it too.
+ *   1. A COPY WITH A REPLACED `profileId`. The one that mattered, and the one
+ *      whose SPELLING round 43 changed. It still needs no cast.
+ *
+ *      Round 42 wrote it as `{ ...realScope, profileId: victim }`, and that
+ *      line no longer compiles, because round 43 took `profileId` off the
+ *      public `ProfileScope` and excess-property checking rejects a literal
+ *      naming a property the target type does not declare. THAT IS NOT THE
+ *      FORGERY BEING CLOSED, only one way of writing it:
+ *      `Object.assign({}, real, { profileId: victim })` has type
+ *      `ProfileScope & { profileId: string }`, is assignable to `ProfileScope`,
+ *      and contains NO CAST ANYWHERE. `forge` below uses that form, so this
+ *      file still attempts a cast-free forgery and the registry is still the
+ *      only thing that rejects it.
+ *
+ *      `grantedFor` stays genuine, so any check that looks only at the account
+ *      passes it too.
  *   2. A HAND-BUILT OBJECT of the right shape, reached with
  *      `as unknown as ProfileScope`. This is the forgery the old comment in
  *      `session.ts` claimed was the only one available.
@@ -48,6 +59,24 @@ const session: LibertySession = {
   account: { userId: ACCOUNT, sessionId: "session_1" },
   activeProfileId: OWN_PROFILE
 };
+
+/**
+ * The runtime shape of a scope, which the public type no longer describes.
+ *
+ * Round 43 moved `profileId` and `grantedFor` onto a module-private type, so a
+ * consumer cannot read either without going through a checked accessor -- which
+ * is the property under test in `describe("the type no longer exposes the
+ * payload")` below. The OBJECT still carries both, and a few cases here have to
+ * assert facts about the object rather than about the type: that a forgery
+ * really did replace the id, that a genuine scope cannot be written in place.
+ * Those reach in through this alias, deliberately and visibly.
+ *
+ * `unknown` is in the middle because `ProfileScope` and this type no longer
+ * overlap structurally, which is itself the removal working.
+ */
+function runtimeShape(scope: ProfileScope): { profileId: string; grantedFor: string } {
+  return scope as unknown as { profileId: string; grantedFor: string };
+}
 
 const ownership: ProfileOwnership = {
   profileId: OWN_PROFILE,
@@ -84,7 +113,7 @@ describe("a genuine scope", () => {
     // object -- a forgery that never copies anything. Modules are strict, so
     // the write throws.
     expect(() => {
-      (scope as { profileId: string }).profileId = VICTIM_PROFILE;
+      runtimeShape(scope).profileId = VICTIM_PROFILE;
     }).toThrow(TypeError);
 
     expect(profileIdFromScope(scope)).toBe(OWN_PROFILE);
@@ -93,20 +122,25 @@ describe("a genuine scope", () => {
 
 describe("forgery 1: a spread copy with a replaced profileId", () => {
   /**
-   * NO CAST APPEARS IN THIS FUNCTION, and that is the finding. If a future edit
-   * makes the spread stop type-checking, this file stops compiling and the
-   * suite has told the truth either way -- a compile error here would mean the
-   * type system had somehow acquired the ability to reject it, which
-   * `docs/DECISIONS.md` ADR-007 currently records as impossible.
+   * NO CAST APPEARS IN THIS FUNCTION, and that is still the finding.
+   *
+   * `Object.assign({}, real, { profileId })` returns
+   * `ProfileScope & { profileId: string }`, which is assignable to the declared
+   * return type without an assertion. The object-literal spelling
+   * `{ ...real, profileId }` was what round 42 used; round 43's removal of
+   * `profileId` from `ProfileScope` makes that spelling a compile error through
+   * excess-property checking, and this one shows why that is an ergonomic win
+   * rather than a second control -- a forger writes the other spelling and the
+   * compiler has nothing to say about it.
    */
   function forge(real: ProfileScope): ProfileScope {
-    return { ...real, profileId: VICTIM_PROFILE };
+    return Object.assign({}, real, { profileId: VICTIM_PROFILE });
   }
 
   it("type-checks without a cast, and the registry rejects it anyway", () => {
     const forged = forge(genuineScope());
 
-    expect(forged.profileId).toBe(VICTIM_PROFILE);
+    expect(runtimeShape(forged).profileId).toBe(VICTIM_PROFILE);
     expect(isIssuedProfileScope(forged)).toBe(false);
   });
 
@@ -123,7 +157,7 @@ describe("forgery 1: a spread copy with a replaced profileId", () => {
     // and the account comparison alone would say yes.
     const forged = forge(genuineScope());
 
-    expect(forged.grantedFor).toBe(ACCOUNT);
+    expect(runtimeShape(forged).grantedFor).toBe(ACCOUNT);
     expect(scopeBelongsToSession(forged, session)).toBe(false);
   });
 
@@ -194,6 +228,44 @@ describe("forgery 3: a structurally-correct object that was never issued", () =>
     expect(isIssuedProfileScope(forged)).toBe(false);
     expect(() => profileIdFromScope(forged)).toThrow(ForgedProfileScopeError);
     expect(scopeBelongsToSession(forged, session)).toBe(false);
+  });
+});
+
+describe("the type no longer exposes the payload (round 43)", () => {
+  /**
+   * MECHANISM 5, ASSERTED AS FAR AS A RUNTIME TEST CAN ASSERT IT.
+   *
+   * The real guarantee is a COMPILE-TIME one and therefore cannot be expressed
+   * as an expectation: `scope.profileId` outside `@liberty/auth` does not
+   * compile, and the evidence for that is `npm run typecheck`, not this file.
+   * What a test CAN pin is the pair of facts the removal rests on, either of
+   * which could be broken by a later edit without breaking anything else:
+   *
+   *   - the object still carries the payload at runtime, so the accessors have
+   *     something to return and the cast inside them is sound;
+   *   - the accessors are the published way to reach it, and they answer the
+   *     same values a direct read would have.
+   *
+   * If somebody re-adds `readonly profileId: string` to the public interface,
+   * these keep passing -- that is the limit of a runtime test here, and the
+   * compile errors it would NOT cause are exactly why the removal is worth
+   * more than the `@deprecated` tag it replaced.
+   */
+  it("the accessors return what the runtime object holds", () => {
+    const scope = genuineScope();
+
+    expect(runtimeShape(scope).profileId).toBe(OWN_PROFILE);
+    expect(runtimeShape(scope).grantedFor).toBe(ACCOUNT);
+    expect(profileIdFromScope(scope)).toBe(runtimeShape(scope).profileId);
+    expect(grantedAccountFromScope(scope)).toBe(runtimeShape(scope).grantedFor);
+  });
+
+  it("the payload is still ordinary own enumerable data, so nothing downstream moved", () => {
+    // The removal was a change to the TYPE, not to the value. Stated here so a
+    // reviewer does not have to take the header's word for it: `Object.keys`
+    // still reports both fields, which is what `profile-scope.test.ts` forgery
+    // 3 relies on to build an indistinguishable counterfeit.
+    expect(Object.keys(genuineScope()).sort()).toStrictEqual(["grantedFor", "profileId"]);
   });
 });
 
