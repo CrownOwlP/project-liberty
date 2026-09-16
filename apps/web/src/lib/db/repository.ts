@@ -26,6 +26,13 @@ import type {
  * tests and zero consumers precisely because the only door into them is a door
  * nobody here can open.
  *
+ * A CORRECTION OF FACT, 2026-09-15 (PL-0405 round 43). PostgreSQL 16.15 now
+ * exists in this container and the first migration has been applied to it. The
+ * port is still right and stays: nothing configures a `DATABASE_URL` for `next
+ * dev`, for vitest or for CI, so a route naming `LibertyDatabase` directly
+ * would still be unexercisable by everything that actually runs here. What has
+ * changed is that "there will not be one" is no longer a safe thing to assert.
+ *
  * So the port is the persistence function set WITH ITS `db` ARGUMENT REMOVED,
  * and that is expressed mechanically by `Bound` below rather than retyped. The
  * consequence worth having is that this file cannot drift from the package: a

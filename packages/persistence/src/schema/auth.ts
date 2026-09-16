@@ -17,11 +17,23 @@ import { boolean, index, pgTable, text, timestamp, unique } from "drizzle-orm/pg
  * which is the function the library consults to decide what it writes. The docs
  * page is a second-hand account of that function, and the indirection is what
  * let this table drift a whole schema generation behind; see the `account`
- * comment below. The authoritative generator is still
- * `npx @better-auth/cli generate` and it must still be run before the first
- * migration is applied -- see `docs/DATA_MODEL.md`. It is written by hand here
- * so the first migration can be REVIEWED as a whole rather than arriving as
- * generated output nobody read.
+ * comment below.
+ *
+ * THE GENERATOR HAS NOW BEEN RUN (2026-09-15, round 43), AND IT IS NOT THE ONE
+ * THIS COMMENT USED TO NAME. `@better-auth/cli` is deprecated on npm and stops
+ * at 1.4.21, which pins `better-auth@1.4.21` as a direct dependency; the CLI
+ * moved to the npm package `auth`, and `auth@1.7.5` pins `better-auth@1.7.5`
+ * exactly. `npx auth@1.7.5 generate`, run against the real `createLibertyAuth`
+ * option object, produced a Drizzle schema that agrees with this file column
+ * for column, with no `issuer` and no unique index on `account`. Two deliberate
+ * differences from its output are recorded in `docs/DATA_MODEL.md`: this file
+ * uses `withTimezone: true` where the generator emits a bare `timestamp`, and
+ * it names the foreign-key indexes in snake_case where the generator uses the
+ * camelCase property name. Neither is something the library inspects.
+ *
+ * This file is still written by hand so the first migration can be REVIEWED as
+ * a whole rather than arriving as generated output nobody read; the generator
+ * is now the check on it rather than an unrun obligation.
  *
  * THIS FILE AND `migrations/0000_profile_scoped_identity.sql` MUST AGREE. They
  * are two statements of one schema and nothing mechanical compares them, so a

@@ -289,17 +289,42 @@ exported functions and asserts each refuses without touching a database. Its `db
 throws on any property access, so "refused" and "refused before doing any I/O" are distinguished
 rather than conflated.
 
-**What is still not closed, stated here rather than left to be discovered.**
-`apps/web/src/lib/db/in-memory-repository.ts` is a second, complete repository implementation —
-the volatile store used for local development — and it reads `input.scope.profileId` directly in
-fourteen places. A forged scope still works against it. `apps/web/**` was outside the write
-surface, so the conversion is named rather than done. **The bound is worth stating precisely
-rather than reassuringly:** `createInMemoryRepository` refuses to construct unless handed a
-`ClassifiedRuntime` that `@liberty/contracts` actually issued, so it cannot exist in a
-deployment. This is a development- and test-process bypass, not a production one — and it is
-still a cross-profile bypass. The finishing move after that conversion is to remove `profileId`
-from the `ProfileScope` interface entirely, so an unchecked read becomes a compile error rather
-than a deprecation; that adapter is the only thing keeping the property public.
+**The second repository asks too, since 2026-09-15 (round 43).**
+`apps/web/src/lib/db/in-memory-repository.ts` — a complete second implementation, the volatile
+store used for local development — read `input.scope.profileId` directly in fourteen places, and
+the round that wrote the paragraph above named it as the remaining hole because `apps/web/**` was
+outside the write surface. The surface was widened to `apps/web/src/lib/db/**` and the adapter was
+converted in the same shape: its seven scope-taking methods bind
+`profileIdFromScope(input.scope)` as their first statement, ahead of `parseContentId` and
+`parseListLimit`, and `selectActiveProfile` is the one exception for the reason the persistence
+package makes the same exception — it takes a session as well, so it begins with
+`scopeBelongsToSession`, which establishes issuance first and refuses with a mapped reason code
+rather than a throw. `apps/web/src/lib/db/scope-forgery.test.ts` attempts the forgery against
+every scope-taking method, with a store proxy that throws on any property access, and asserts the
+classification of the adapter's members is **complete** — the three lists it partitions them into
+must together equal the adapter's own keys, so a twelfth method fails that test until somebody
+decides which list it belongs in.
+
+The bound on the old hole is restated rather than dropped, because it is what the risk assessment
+rested on: `createInMemoryRepository` refuses to construct unless handed a `ClassifiedRuntime`
+that `@liberty/contracts` actually issued, so it could not exist in a deployment. It was a
+development- and test-process bypass, not a production one — and it was still a cross-profile
+bypass, which is why it was closed rather than documented.
+
+**`profileId` and `grantedFor` are off the public `ProfileScope` interface (round 43).** They are
+declared on a module-private `IssuedProfileScope` inside `profile-scope.ts`, so `scope.profileId`
+anywhere outside `@liberty/auth` is now a **compile error** rather than a `@deprecated` tag. The
+in-memory adapter was the only thing keeping the property public; once it asked, the property came
+off, and `npm run typecheck` is the evidence that nothing still reads it. **What that buys and
+what it does not, because the tempting claim is bigger than the true one:** it makes an unchecked
+read impossible to write, and it rejects the object-literal spelling of the forgery
+(`{ ...real, profileId: victim }`) through excess-property checking. It does **not** make the
+forgery impossible — `Object.assign({}, real, { profileId: victim })` is
+`ProfileScope & { profileId: string }`, assignable to `ProfileScope`, with no cast anywhere, and
+both forgery suites were rewritten to use that spelling so they keep attempting a cast-free
+attack. The runtime registry remains the only thing that rejects a forged value. The removal also
+costs one cast, inside `profileIdFromScope`, immediately after the registry has answered yes —
+the one place in the repository where that assertion is backed by a runtime proof.
 
 **This is how the no-bypass invariant is enforced.** The mandatory product invariant is that no
 logic may bypass authentication. A rule stated in prose is enforced by review; a value that
@@ -359,12 +384,31 @@ leaking a new reason verbatim.
   `drizzle-kit generate` will not propose reinstating the abandoned schema. The two are a single
   schema stated twice and nothing mechanical compares them, which is recorded in that file's
   header.
-- **The migration has still never been executed.** There is no PostgreSQL anywhere in this
-  environment, so the reconciliation above was performed against the installed package's own
-  schema definitions (`buildAuthTables` in `@better-auth/core`, evaluated through
-  `getAuthTablesWithResolvedIndexes({})`) and its published changelog, not against an applied
-  database. `npx @better-auth/cli generate` remains authoritative and has not been run. That is
-  outstanding work, not a completed step.
+- **The migration has now been executed, and the generator has now been run (2026-09-15).**
+  PostgreSQL 16.15 was installed in the working environment, so the caveat this entry used to
+  carry was removed by doing the work rather than by rewording it.
+  `0000_profile_scoped_identity.sql` was applied to an empty database as a non-superuser role and
+  exits 0 — eight `CREATE TABLE`, seven `CREATE INDEX`, no errors — and applies cleanly a second
+  time to a second empty database. **The authoritative generator is `npx auth@1.7.5 generate`,
+  not `npx @better-auth/cli generate`:** `@better-auth/cli` is deprecated on npm
+  ("Package no longer supported") and its latest release is `1.4.21`, which pins
+  `better-auth@1.4.21` as a direct dependency, so running it would have described a version this
+  repository does not use. The CLI moved to the npm package named **`auth`**, whose `1.7.5`
+  release pins `better-auth@1.7.5` and `@better-auth/core@1.7.5` exactly. It was run against a
+  module constructing the real `createLibertyAuth` option object and it generated a Drizzle
+  schema. **The generated `account` table has no `issuer` column and declares no unique index on
+  `account` — only `index("account_userId_idx")`.** Both round-42 removals are confirmed by the
+  generator, and `UNIQUE ("provider_id", "account_id")` is confirmed to be **ours**: the
+  generator does not declare it. A field-by-field diff of the library's expected table set against
+  the applied database found **no missing column, no extra column, no type mismatch and no
+  nullability mismatch** in `user`, `session`, `account` or `verification`. The library's own
+  default-on schema validation ran during a live sign-up and sign-in against that database without
+  raising `SchemaMismatchError`, real rows were written to all three of `user`, `account` and
+  `session`, and the `(provider_id, account_id)` constraint refused a deliberate duplicate with
+  SQLSTATE 23505. **No change to the migration was required.** What remains unexecuted is
+  `drizzle-kit`'s own journal and snapshot under `migrations/meta/`, and the concurrency
+  behaviour of the guarded `UPDATE`, which needs the `integration` gate rather than a single
+  session.
 - **`better-auth.ts` is not unit-tested, on purpose.** Every assertion available without a real
   PostgreSQL would be an assertion about a stub of the vendor's behaviour. The one exception —
   `describeConfiguredSurface`, a statement about Liberty's own data — was moved out into
