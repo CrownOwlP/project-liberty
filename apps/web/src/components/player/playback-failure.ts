@@ -31,10 +31,33 @@
  * Category and code numbers are pinned to shaka-player 5.2.x, the same pin
  * `shaka-error.ts` carries. They are read from the already-normalised
  * `PlaybackError`, so nothing here indexes Shaka's positional `data` array.
+ *
+ * 3. CLASSIFICATION IS DERIVED PER ENGINE AND THE RESULT IS ENGINE-NEUTRAL
+ *    (PL-0904). `PlaybackFailureKind` names four REMEDIES, and a remedy is a
+ *    product fact rather than an engine fact: a stream that is gone is
+ *    `source_unavailable` whether Shaka or mpv discovered it. So the vocabulary
+ *    stays exactly as `@liberty/contracts` defines it and `@liberty/media-engine`
+ *    consumes it, and what varies is the DERIVATION — one branch per engine,
+ *    each reading only its own engine's numbering, dispatched by narrowing the
+ *    `PlaybackError` union on `engine`.
+ *
+ *    That shape is what keeps `packages/media-engine` from learning about
+ *    either engine. The alternative — an engine-qualified kind, or an engine
+ *    field on `PlaybackAttemptFailure` — would put "which player was running"
+ *    into the scheduler's decision, and the scheduler's whole premise is that it
+ *    decides on a multiset of remedies and nothing else. The engine is visible
+ *    in the reason trail, where a human debugging a session needs it; it is
+ *    absent from the failover input, where it would only ever be a reason to
+ *    retry one engine's failure and not the other's.
  * ---------------------------------------------------------------------- */
 
 import type { PlaybackFailureKind } from "@liberty/contracts/domains/failover";
-import type { PlaybackError, PlaybackErrorDetail } from "./shaka-error";
+import type {
+  NativeMpvPlaybackError,
+  PlaybackError,
+  PlaybackErrorDetail,
+  WebShakaPlaybackError
+} from "./shaka-error";
 
 /* Pinned to shaka-player 5.2.x, `shaka.util.Error.Category`. */
 const CATEGORY_NETWORK = 1;
@@ -133,7 +156,7 @@ function classifyHttpStatus(status: number): PlaybackFailureKind | null {
   return null;
 }
 
-function classifyNetworkError(error: PlaybackError): PlaybackFailureKind | null {
+function classifyNetworkError(error: WebShakaPlaybackError): PlaybackFailureKind | null {
   /*
    * A timeout and a transport-level failure are transient by definition: no
    * response arrived, so nothing was learned about the asset, the rights or the
@@ -148,7 +171,14 @@ function classifyNetworkError(error: PlaybackError): PlaybackFailureKind | null 
 }
 
 /**
- * The one place a `PlaybackError` becomes a contract failure kind.
+ * Shaka 5.2.x's category and code, and NOTHING ELSE'S.
+ *
+ * The parameter is `WebShakaPlaybackError` rather than `PlaybackError` on
+ * purpose: handing this function a native error is a compile error, which is
+ * the property PL-0903 asked for. Its body is unchanged from before PL-0904 —
+ * every existing Shaka case means exactly what it meant, and the unmodified
+ * regressions in `playback-failure.test.ts` and `shaka-error.test.ts` are the
+ * proof.
  *
  * DRM is `rights_unverifiable` for every code in the category, including the
  * ones that wrap a network failure underneath. That is deliberate and it is
@@ -170,15 +200,7 @@ function classifyNetworkError(error: PlaybackError): PlaybackFailureKind | null 
  * reading `lib/util/error.js` for the pinned Shaka minor code by code, which is
  * a deliberate edit rather than a default.
  */
-export function classifyPlaybackFailure(error: PlaybackError): PlaybackFailureKind | null {
-  /*
-   * LOAD_INTERRUPTED and OPERATION_ABORTED describe OUR control flow — a second
-   * `load()`, a teardown — and arrive with CRITICAL severity. Charging a
-   * candidate for one would make every failover look like a fault caused by the
-   * candidate it failed over TO.
-   */
-  if (error.aborted) return null;
-
+function classifyShakaFailure(error: WebShakaPlaybackError): PlaybackFailureKind | null {
   switch (error.category) {
     case CATEGORY_DRM:
       return "rights_unverifiable";
@@ -194,6 +216,82 @@ export function classifyPlaybackFailure(error: PlaybackError): PlaybackFailureKi
 }
 
 /**
+ * libmpv's END_FILE, and TODAY IT CLASSIFIES NOTHING. That is the answer, not a
+ * stub.
+ *
+ * `_STOP` and `_REDIRECT` never arrive here — `error.aborted` took them one
+ * branch up, which is why the guard below is about `_ERROR` and not about them.
+ * What is left is `_ERROR` carrying an `mpv_error` value, and there is no
+ * honest table from that value to one of the four remedies:
+ *
+ *   - `docs/DESKTOP_PLAYBACK.md` §5 records that PL-0901's research verified
+ *     that `_ERROR` carries an `error` field and did NOT enumerate the
+ *     `mpv_error` enum. A mapping written here would be written from memory.
+ *   - Even fully enumerated it is coarser than Shaka's pairs: mpv collapses a
+ *     network failure and a demuxer failure into one loading failure, and the
+ *     two have opposite remedies.
+ *
+ * SO IT RETURNS `null`, AND THE SYSTEM IS ALREADY BUILT FOR THAT. Rule 1 above:
+ * an unclassified error still ends the attempt, `countAttempt` in
+ * `playback-machine.ts` has already charged it to the candidate, and
+ * `@liberty/media-engine` rules the candidate out as
+ * `attempt_failed_unclassified` — more attempts than named failures is exactly
+ * the evidence the scheduler is built to read. Nothing silently resets the
+ * budget and nothing is retried on a guess.
+ *
+ * AN INVENTED KIND HERE WOULD BE WORSE THAN THE `null`, and PL-0204's approval
+ * turned on that. `network_transient` would buy a second `load()` for a failure
+ * that will never succeed, including for a rights failure mpv reported as a
+ * generic loading error; `decode_failed` would permanently discard a stream
+ * that was briefly unreachable. This is the same defect the removed
+ * `network_transient` fallback in `recordCandidateFailure` was, and it is not
+ * being reintroduced through a different door.
+ *
+ * WHAT WOULD CHANGE THIS, precisely: the `mpv_error` enum read off
+ * `include/mpv/client.h` at the pinned client API version, value by value, the
+ * way `lib/util/error.js` was read for Shaka — a deliberate edit, with the
+ * values written down here, by the task that writes the adapter. Or an
+ * ENGINE-NEUTRAL `detail` the adapter can honestly fill in: `classifyHttpStatus`
+ * above reads HTTP's scale, not Shaka's, so a native error carrying a real
+ * `http-status` detail could be classified by it without either engine learning
+ * about the other. That branch is deliberately NOT written yet, because mpv
+ * surfaces no HTTP status today and the only way to fake one would be to parse
+ * FFmpeg's English error text — which is the provider-free-text regex the
+ * failover contract was written to forbid.
+ */
+function classifyNativeFailure(error: NativeMpvPlaybackError): PlaybackFailureKind | null {
+  if (error.fault === null || error.fault.reason !== "error") return null;
+  return null;
+}
+
+/**
+ * The one place a `PlaybackError` becomes a contract failure kind.
+ *
+ * Dispatch is a narrow on `engine`, so each engine's numbering is read by
+ * exactly one function and only ever in its own terms. The kind that comes back
+ * is engine-neutral: `@liberty/media-engine` receives a remedy and never learns
+ * which player produced it.
+ */
+export function classifyPlaybackFailure(error: PlaybackError): PlaybackFailureKind | null {
+  /*
+   * LOAD_INTERRUPTED and OPERATION_ABORTED describe OUR control flow — a second
+   * `load()`, a teardown — and arrive with CRITICAL severity. mpv's END_FILE
+   * `_STOP` and `_REDIRECT` are the same fact. Charging a candidate for one
+   * would make every failover look like a fault caused by the candidate it
+   * failed over TO. Checked before the dispatch because it is true on both
+   * engines for the same reason.
+   */
+  if (error.aborted) return null;
+
+  switch (error.engine) {
+    case "web-shaka":
+      return classifyShakaFailure(error);
+    case "native-mpv":
+      return classifyNativeFailure(error);
+  }
+}
+
+/**
  * The `<video>` element's own `MediaError`, which is a different number space
  * to Shaka's and reaches us on a different route.
  *
@@ -202,6 +300,14 @@ export function classifyPlaybackFailure(error: PlaybackError): PlaybackFailureKi
  * normally re-reports these as its own category-3 errors, but not always — a
  * decode failure that kills the element while Shaka is mid-teardown arrives
  * only here, and an unwired `error` listener loses it silently.
+ *
+ * IT TAKES A BARE NUMBER AND NOT A `PlaybackError`, so it is outside the
+ * per-engine dispatch above and stays that way. The number space is the HTML
+ * standard's, which belongs to neither engine — the same reason the
+ * `media-element` variant of `PlaybackErrorDetail` sits beside the engine fault
+ * rather than inside it. The web path is simply the only one that has a
+ * `<video>` element to hear it from; if the native shell ever grows one, this
+ * function is already the right shape for it.
  */
 export function classifyMediaElementError(mediaErrorCode: number | null): PlaybackFailureKind | null {
   switch (mediaErrorCode) {

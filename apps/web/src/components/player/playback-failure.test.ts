@@ -129,3 +129,93 @@ describe("classification", () => {
     expect(isAbortedMediaElementError(null)).toBe(false);
   });
 });
+
+/* -------------------------------------------------------------------------
+ * PL-0904 — classification derived per engine, neutral on the way out
+ *
+ * Everything above this line predates PL-0904 and is UNCHANGED. That is the
+ * evidence that every existing Shaka case still means what it meant: the Shaka
+ * branch is the same function body reached through a narrow, and the whole
+ * table above still passes without an edit.
+ * ---------------------------------------------------------------------- */
+
+import { describeNativePlaybackError } from "./shaka-error";
+
+function classifyNative(reason: "error" | "stop" | "redirect", mpvError?: number) {
+  return classifyPlaybackFailure(
+    describeNativePlaybackError(
+      mpvError === undefined ? { reason } : { reason, mpvError },
+      "player-event"
+    )
+  );
+}
+
+describe("a native failure is never read on Shaka's scale", () => {
+  it("refuses to classify an mpv error value, including ones that collide with Shaka's", () => {
+    /*
+     * 6, 3 and 4 are DRM, MEDIA and MANIFEST on shaka-player 5.2.x, and the
+     * Shaka branch turns each of them into a kind. Read on mpv's scale they
+     * mean nothing of the sort. If the dispatch ever sent a native error to the
+     * Shaka classifier — or if an mpv number reached `category` — these three
+     * would come back `rights_unverifiable`, `decode_failed` and
+     * `source_unavailable`, and a stream we are not entitled to play would be
+     * retried or a briefly-unreachable one permanently discarded.
+     */
+    expect(classifyNative("error", 6)).toBeNull();
+    expect(classifyNative("error", 3)).toBeNull();
+    expect(classifyNative("error", 4)).toBeNull();
+    // And the values mpv actually reports, which are negative.
+    expect(classifyNative("error", -13)).toBeNull();
+    expect(classifyNative("error", -17)).toBeNull();
+  });
+
+  it("stays unclassified when there is no mpv error value either", () => {
+    /*
+     * This is the honest outcome, not a gap. The attempt is still charged by
+     * `countAttempt`, the candidate is still marked tried, and
+     * `@liberty/media-engine` rules it out as `attempt_failed_unclassified`
+     * because it sees more attempts than named failures. Manufacturing a kind
+     * to avoid this branch is what PL-0204's approval turned on NOT doing.
+     */
+    expect(classifyNative("error")).toBeNull();
+  });
+
+  it("never classifies mpv END_FILE reasons that describe our own control flow", () => {
+    expect(classifyNative("stop", -13)).toBeNull();
+    expect(classifyNative("redirect")).toBeNull();
+  });
+
+  it("classifies the media element's codes without reference to either engine", () => {
+    // `classifyMediaElementError` is outside the per-engine dispatch on purpose:
+    // `MediaError.code` is the HTML standard's number space, belonging to
+    // neither engine, and the assertions above in this file still hold.
+    expect(classifyMediaElementError(3)).toBe("decode_failed");
+  });
+});
+
+describe("the kind that reaches the media engine is engine-neutral", () => {
+  it("returns only kinds the contract defines, from either engine", () => {
+    /*
+     * The failover scheduler decides on a multiset of REMEDIES. If PL-0904 had
+     * qualified the kind by engine — `decode_failed_mpv`, or a kind plus an
+     * engine field — `packages/media-engine` would have had to learn which
+     * players exist in order to decide anything. It does not, and this asserts
+     * the surface that keeps it that way: whatever the engine, the output is
+     * either one of the contract's four kinds or `null`.
+     */
+    const outcomes = [
+      classify({ severity: 2, category: 6, code: 6007 }),
+      classify({ severity: 2, category: 3, code: 3016 }),
+      classify({ severity: 2, category: 4, code: 4001 }),
+      httpStatus(503),
+      classifyNative("error", -13),
+      classifyNative("stop")
+    ];
+
+    for (const outcome of outcomes) {
+      expect(outcome === null || PLAYBACK_FAILURE_KINDS.includes(outcome)).toBe(true);
+    }
+    // Both engines are represented, and both engine-neutral answers appear.
+    expect(outcomes.filter((outcome) => outcome === null)).toHaveLength(2);
+  });
+});
