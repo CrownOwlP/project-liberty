@@ -1,171 +1,72 @@
 {
-  "generatedAt": "2026-09-16T00:23:30.318Z",
+  "generatedAt": "2026-09-16T00:41:22.510Z",
   "agent": "claude-backend",
   "executionAvailable": true,
-  "assigned": [
+  "assigned": [],
+  "review": [],
+  "reservedExternal": [],
+  "recommended": [
     {
-      "id": "PL-0301",
+      "id": "PL-0402",
       "priority": "P0",
-      "lane": "Provider",
-      "status": "REVIEW",
-      "title": "Authorized fixture provider",
+      "lane": "Backend",
+      "status": "READY",
+      "title": "Profile model",
       "dependencies": [
-        "PL-0207"
+        "PL-0405"
       ],
-      "notes": "DEPENDENCY REPOINTED 2026-09-15 from PL-0205 to PL-0207 by claude-lead. This is a task-definition change, not a state edit, and it is recorded as a control-plane event rather than performed silently. PL-0205 is BLOCKED and can never reach DONE: its own record states that it is preserved as audit history and superseded, because its implementationBaseSha is false and the rule PL-0703 established refuses in-place repair -- reconciliation will not revise an existing base, release is unreachable from REVIEW and preserves the base regardless, and hand-editing a published provenance figure is the move PL-0703 was blocked for. PL-0207 is that successor, it is DONE, and it carries the same unknown-media-metadata semantics this task actually depends on: the required-and-nullable candidate fields, unknownMediaFacts and compatibilityConfidence that a fixture provider must normalize against. So the dependency was pointing at the audit record of the work rather than at the work. With requireAllDependenciesDone true and no CANCELED transition available from the CLI, leaving the pointer on PL-0205 gated PL-0301, and through it PL-0302, PL-0501, PL-0502, PL-0701 and PL-0702 -- the entire M4 playback vertical slice -- behind a task whose only possible terminal state is BLOCKED. The three other superseded tasks, PL-0401, PL-0601 and PL-0703, have no dependents and are deliberately left BLOCKED as the audit history their notes say they are.",
       "allowedPaths": [
-        "packages/provider-sdk/src/fixture/**",
-        "packages/provider-sdk/src/provider.ts",
-        "packages/provider-sdk/src/registry.ts",
-        "packages/provider-sdk/src/index.ts",
-        "packages/provider-sdk/src/stremio/**",
-        "packages/provider-sdk/package.json"
+        "apps/web/src/**",
+        "packages/contracts/**",
+        "packages/**"
       ],
       "preferredAgent": "claude-backend",
       "reviewAgent": "gpt-architect",
       "qualityGates": [
         "typecheck",
         "unit",
-        "security-review",
-        "rights-review"
+        "integration",
+        "security-review"
       ],
-      "acceptance": "Server-side fixture adapter returns normalized authorized candidates only",
-      "owner": "claude-backend",
-      "gateResults": {
-        "typecheck": {
-          "status": "pass",
-          "at": "2026-09-15T17:35:04.063Z",
-          "by": "claude-backend",
-          "commitSha": "80e3d3e3e0130571a1a0791b496a9e2cce0c6c7a",
-          "evidence": "npx turbo run typecheck --force at 80e3d3e3e013a8e8a1d32bbb8f8a5ba5c0d0a4f2, exit 0, 9 of 9 tasks and 0 cached; and again scoped with --filter=@liberty/provider-sdk --force, exit 0, 2 of 2 and 0 cached, so the reviewed package is proven rather than inferred from a whole-repo pass. Forced in both runs: a cached typecheck proves a previous tree."
-        },
-        "unit": {
-          "status": "pass",
-          "at": "2026-09-15T17:35:04.273Z",
-          "by": "claude-backend",
-          "commitSha": "80e3d3e3e0130571a1a0791b496a9e2cce0c6c7a",
-          "evidence": "npx turbo run test --force --filter=@liberty/provider-sdk, exit 0, 8 test files and 213 tests passed, 0 cached. Whole-repo npx turbo run test --force at the same tree, exit 0, 15 of 15 tasks, 2096 passed 1 skipped 0 failed. The 213 are this task's own regressions: fixture/provider.test.ts carries 24 cases across five describe blocks -- three witness forgeries (cast, spread copy, and a structural literal as @ts-expect-error), the opaque-rights-reference rule, five construction refusals, nine resolution properties, and the registry port -- and the Stremio half adds client.test.ts, mapping.test.ts, mapping.property.test.ts, source.test.ts and url-policy.test.ts, which is where the rights-basis declaration and the URL policy the fixture gate depends on are exercised. NOT EXECUTED AND THEREFORE NOT CLAIMED: no database, no network and no real provider were involved; these are the package's own suites against fixtures, which is what this task's acceptance asks for and no more."
-        }
-      },
-      "reviewDependencies": [
-        "packages/contracts/src/domains/playback.ts",
-        "packages/contracts/src/shared/media-facts.ts",
-        "packages/contracts/src/shared/rights.ts",
-        "packages/contracts/src/shared/runtime.ts",
-        "packages/contracts/src/shared/ids.ts",
-        "packages/contracts/src/shared/codecs.ts",
-        "apps/web/src/app/api/v1/playback/session/authorized-candidates.ts",
-        "e2e/tests/playback-session.api.spec.ts"
-      ],
-      "surfaceNarrowedAtClaim": "NARROWED 2026-09-15 by claude-lead in the same edit that claimed the task, on the precedent PL-0205 recorded and PL-0204 reasoned: a package-wide reservation for work confined to part of a package holds unrelated lanes, because pathsOverlap tests prefix containment in BOTH directions. WHAT WAS REMOVED AND WHY. packages/contracts/** was a READ DECLARED AS A WRITE. Every contracts symbol the provider SDK touches is imported and already exists -- StreamCandidate and unknownMediaFacts from domains/playback.ts, MediaFact and MEDIA_FACTS from shared/media-facts.ts, ContentRights and PLAYABLE_CONTENT_RIGHTS from shared/rights.ts, ClassifiedRuntime from shared/runtime.ts, normalizedContentIdSchema from shared/ids.ts, the codec unions from shared/codecs.ts -- and none of it has to change for this acceptance. The rights-basis vocabulary this task's gate rests on is not in contracts at all: RightsBasis, RIGHTS_BASES_FOR_RIGHTS and describeRightsBasis are declared in packages/provider-sdk/src/stremio/source.ts. Of the five commits naming PL-0301, none touched packages/contracts except 4091a2b, a six-lane preflight whose contracts changes belong to the PL-0204, PL-0205, PL-0102 and PL-0103 lanes named in its own subject. The one contract change somebody might reach for, putting uri and mimeType on StreamCandidate, is argued AGAINST at fixture/provider.ts line 138. So the six leaves are now reviewDependencies: read, fingerprinted, not reserved. apps/web/src/app/api/** was a reservation of the surface this task exists to unblock. Its only consumer, apps/web/src/app/api/v1/playback/session/authorized-candidates.ts, says in its own header that it belongs to PL-0501 and that it no longer implements the fixtures but configures the SDK's; it is declared read-only here instead. The entry normalizes to the prefix apps/web/src/app/api, which is declared identically by PL-0702 and PL-0302 and contained by PL-0701's apps/web/** and containing PL-0501's apps/web/src/app/api/v1/playback/** -- so keeping it would serialize PL-0301 against four downstream tasks, including two it gates. apps/web/src/app/api/deployment-environment.ts records the distortion in the code: it sits under app/api 'because that was the only directory every consumer could reach inside PL-0301's allowedPaths when it was written.' WHAT WAS KEPT, AND WHY NOT packages/provider-sdk/**. src/health.ts and its two suites are PL-0303's, created by 67c5fc9, and PL-0303 already has typecheck and unit recorded; the fixture provider CONSUMES evaluateProviderHealth, and consuming is not owning. tsconfig.json is bootstrap and untouched by any PL-0301 commit -- declaring an untouched file pads a review range exactly as omitting a touched one narrows it. src/index.ts is kept and is NOT the PL-0205 barrel case that was excluded: that barrel was re-export-only with an export * already covering the change, whereas this one's CONTENT is load-bearing -- fixture/environment.ts names 'NonProductionRuntime is not re-exported by ../index.ts' as one of the three mechanisms its rights witness rests on, and a rights argument that turns on an omission from a file cannot leave that file out of the reviewed surface. TWO ENTRIES FLAGGED FOR THE REVIEWER RATHER THAN PRESENTED AS SETTLED. First, packages/provider-sdk/src/stremio/**. The acceptance sentence names only the fixture adapter, but all thirteen files carry PL-0301 headers, all were created by commits naming PL-0301, coordination/IMPLEMENTATION_RECOVERY.md lists 'the fixture provider and the Stremio adapter' under this task, stremio/client.test.ts line 104 says 'PL-0301's acceptance criterion, end to end', and the coupling is structural rather than historical: fixture/rights.ts imports the rights-basis table from stremio/source.ts and fixture/provider.ts imports checkUrl from stremio/url-policy.ts. If the reviewer rules fixture-only, two things follow and neither is hidden: the base moves to f6c4b942ebbd02fd3fa9ed8f74fde4fc603affc2, the parent of 719d2d7, and those two stremio files must become reviewDependencies -- and the Stremio adapter is then owned by no task at all, which is the worse end state but is the reviewer's call and not this lead's. Second, packages/provider-sdk/package.json: genuinely edited by c0ebf6b, which added zod and the test script, and by 79a0e65. It is the entry to drop first under challenge, flagged in the same spirit PL-0405 flagged package-lock.json. NOT DECLARED, DELIBERATELY: packages/contracts/src/testing/arbitraries.ts. stremio/mapping.property.test.ts does import from it, so there is an argument for listing it read-only. Against: PL-0206 is editing that file right now, and the arbitraries this task consumes -- audioCodecArb, contentRightsArb, defined, healthScoreArb, permutationKeysArb, permute, unvettedRightsArb, videoCodecArb -- are disjoint from the languageTagArb region PL-0206 is changing. Declaring it would bind this approval's freshness to churn in a region the task does not read. It costs nothing in dispatch either way, since reviewDependencies are not in pathsOverlap; it is a fingerprint-hygiene call and it is flagged rather than buried. DISJOINTNESS, CHECKED IN BOTH DIRECTIONS against every currently active task: PL-0206 (packages/media-engine, three packages/contracts leaves), PL-0405 (packages/auth, packages/persistence/src, the identity migration, package-lock.json, two docs), PL-0704 (apps/web app routes, one e2e spec, docs/E2E.md, .github/workflows/ci.yml), PL-AI-0007 (two scripts, control/README.md) and PL-0901 (two docs). No proposed prefix equals, prefixes, or is prefixed by any of theirs. Note package-lock.json versus packages/provider-sdk/package.json: neither startsWith the other plus a separator, so they do not collide.",
-      "implementationAgent": "claude-backend",
-      "updatedAt": "2026-09-15T17:35:04.476Z",
-      "implementationBaseSha": "fb217b96add37ed41e5c7bf1a35e693c39b5138b",
-      "implementationBaseProvenance": {
-        "kind": "reconciled-existing-implementation",
-        "baseSha": "fb217b96add37ed41e5c7bf1a35e693c39b5138b",
-        "reconciledAt": "2026-09-15T17:34:32.292Z",
-        "reconciledBy": "claude-backend",
-        "implementationAgent": "claude-backend",
-        "headAtReconciliation": "80e3d3e3e0130571a1a0791b496a9e2cce0c6c7a",
-        "reviewSurface": "allowedPaths + reviewDependencies",
-        "surfaceCommitCount": 17,
-        "oldestSurfaceCommit": "c0ebf6b0f9ef237dcfc9eebda31befc135bbf037",
-        "newestSurfaceCommit": "a4209a4fcf0b232e5de92f2af09dd8fb3d266909",
-        "surfaceCommits": [
-          "a4209a4fcf0b232e5de92f2af09dd8fb3d266909",
-          "b74b0d3c4befa226109fc1ce623b5addd46a9490",
-          "eecca6b621a2fccaab09ab3ec15d3bc93936df3b",
-          "ba9521b2c3998ae05210240827c0a773596819c9",
-          "719d2d7c31465901f3dbee1e936a180e87c3d44f",
-          "754a786625499ae7e436f93758edd11ef7487ff4",
-          "9933a55dd177ccc08b20b1fe3e49f479c8a7de1f",
-          "6c31298ba1eece125b2733780dc6b107aa5e5200",
-          "bbe68ed8d16f864c87309ceb1c089495deb89766",
-          "ba2bf4756175e84aab07ec36f9e7c3d6e324d350",
-          "4ca4313f2642f4666ab6dda0084c25fcb2fbf3d5",
-          "67c5fc9270621f461cbf671fe870da7394d20065",
-          "79a0e651bd06068d785b54dfd9080245d7b9280b",
-          "f06dec1b21925bf1af8c676bc7e24bc4ecf3d002",
-          "4091a2b65b8f187ccb87a04790272007dabd39ea",
-          "f711522205cc9a4b03ecb52bc55224d6466338a9",
-          "c0ebf6b0f9ef237dcfc9eebda31befc135bbf037"
-        ],
-        "surfaceCommitsTruncated": false,
-        "changedFileCount": 30,
-        "baseCommitSurfaceTouchCount": 0,
-        "baseCommitSurfaceTouches": [],
-        "baseCommitSurfaceTouchesTruncated": false,
-        "reason": "The base is fb217b96add37ed41e5c7bf1a35e693c39b5138b, the first parent of c0ebf6b, the earliest commit that names PL-0301. It is proven against the TREE rather than against filenames or commit messages, because this project has lost four tasks to bases that passed every mechanical check and were still false. At fb217b9, git ls-tree -r packages/provider-sdk returns exactly three paths -- package.json, src/index.ts and tsconfig.json -- so no adapter of any kind exists in the parent tree, fixture or Stremio, and the BEHAVIOUR is absent rather than merely the files. That is the PL-0205 standard: that failure came from a witness file created by a later refactor that only MOVED declarations, so the parent tree already held the semantics. Nothing can have been moved into a package whose entire content is a bootstrap barrel and a tsconfig. Probes used were stremio/source.ts and stremio/mapping.ts, which are genuinely new at c0ebf6b; src/provider.ts was deliberately NOT used as a probe, because git show fb217b9:packages/provider-sdk/src/index.ts shows the AuthorizedMediaProvider interface and the allowlist assertion already present in the barrel and merely relocated into that file, which is the same trap in a second place. src/index.ts and package.json were likewise not used, since both exist at the bootstrap commit b484735. The base commit itself changes nothing under the reviewed surface. THE IMPLEMENTATION PREDATES THE CLAIM BY DESIGN, NOT BY OVERSIGHT: coordination/IMPLEMENTATION_RECOVERY.md lists this task in the table headed Implemented, unreviewed, the record carried owner null with no gate results and no base, and the five fixture files were created at 719d2d7 while the task sat BACKLOG. ONE CLASSIFICATION IS LOAD-BEARING AND IS PUBLISHED RATHER THAN BURIED: this base covers the Stremio adapter as well as the fixture adapter, because every file under packages/provider-sdk/src/stremio carries a PL-0301 header, all were created by commits naming PL-0301, IMPLEMENTATION_RECOVERY names both, client.test.ts line 104 says PL-0301s acceptance criterion end to end, and fixture/rights.ts and fixture/provider.ts import the rights-basis table and checkUrl from that directory, so the fixture gate cannot be reviewed without it. If the reviewer rules the surface is fixture-only, this base is wrong and the correct one is f6c4b942ebbd02fd3fa9ed8f74fde4fc603affc2, the parent of 719d2d7 -- and the Stremio adapter is then owned by no task at all."
-      }
+      "acceptance": "Profiles are modelled above authentication rather than inside the auth library, with the active profile carried alongside the session rather than inside the identity record; profile scoping is present in the first migration rather than retrofitted, because that is the part that is expensive to reverse; profiles can be created and selected with authorization tests",
+      "owner": null,
+      "gateResults": {}
     },
     {
-      "id": "PL-0405",
-      "priority": "P0",
-      "lane": "Backend",
-      "status": "REVIEW",
-      "title": "Corrective, re-run: auth integration decision, with a forgeable profile scope and an unsupported pin",
-      "description": "This task SUPERSEDES PL-0401. It carries three merits blockers as well as a provenance correction, and the merits are the larger half. PROVENANCE: PL-0401 recorded implementationBaseSha fc1ea4d54c9e7d2b2f6d9aa71a977abdc3bcb400, proven with ENABLED_AUTH_CAPABILITIES and WITHHELD_AUTH_PLUGIN_FAMILIES. Those witnesses correctly located the code introduction and missed earlier task implementation on another declared write path: docs/DATA_MODEL.md did not exist at 56b343 and was created in bbe68ed8, before the recorded base, already identifying itself as covering this task's auth boundary and already selecting Better Auth 1.7.1. The true lower bound is 56b3435418f222f557ce957e7d5de3827da107b7 while docs/DATA_MODEL.md remains a write surface. PL-0401 is BLOCKED with the false range preserved as audit history. DO NOT CLAIM THIS TASK UNTIL THE THREE BLOCKERS IN THE NOTES ARE IMPLEMENTED; it is created now so the findings are recorded against a task rather than living only in a review transcript.",
-      "notes": "BLOCKER 1, AND IT IS THE PL-0706 DEFECT IN A SECOND PLACE. ProfileScope carries a type-only unique symbol property while mintProfileScope returns an ordinary object via cast, so a caller holding a genuine scope can write a spread with a replacement profileId and TypeScript carries the branded structural type straight through -- without the explicit cast ADR-007 claims is the only forgery route. Downstream persistence then trusts scope.profileId directly, which makes this a cross-profile data-access bypass rather than a typing nicety. The prescription: make the scope genuinely nominal so a spread copy cannot remain assignable, and if it is meant to be a runtime capability rather than a compile-time proof, use issuance identity as well. The pattern already exists in this repository twice -- ClassifiedRuntime in packages/contracts/src/shared/runtime.ts and PinnedTarget in media-inspection -- module-private brand, freeze, WeakSet registry, identity check as the consumer's first action. THE SURFACE THIS IMPLIES IS WIDER THAN THIS TASK CURRENTLY DECLARES, AND THAT IS SETTLED BEFORE THE CLAIM RATHER THAN DISCOVERED DURING IT. The reviewer offered two levels: at minimum make the scope genuinely nominal so a spread copy cannot remain assignable, and if it is meant to be a runtime capability, use issuance identity as well. The minimum is NOT ACHIEVABLE IN THE TYPE SYSTEM, and PL-0706 already established why: a spread copies a branded property along with everything else and type-checks with no cast at all, so only object identity rejects it. TypeScript cannot make a spread unassignable. Therefore the runtime registry is not the optional upper level here, it is the only level that works -- and a registry closes nothing unless the consumers ASK. The consumers are in another package: packages/persistence/src/progress-repository.ts and watchlist-repository.ts read scope.profileId straight into their predicates, and profile-repository.ts and repository-scoping.test.ts also handle the type. So this task must declare packages/persistence/src/** as a write path when it is claimed, not merely the migration, and it will then overlap PL-0402, PL-0403 and PL-0404, which are BACKLOG today and must be sequenced after it. The alternative -- brand and registry in packages/auth with no consumer asking -- would produce a capability that looks unforgeable and is not, which is worse than the present state because it would read as fixed. Whoever claims this should widen the declaration in the same edit that claims it, and say so in the reason. BLOCKER 2, AND THE EXACT PIN IS WORKING RATHER THAN FAILING. better-auth and its Drizzle adapter are pinned at exactly 1.7.1. Upstream's current release is 1.7.4, from 2026-09-10, and its security policy supports only the latest version. The reviewer was explicit that this is not an argument against exact pins: it proves the policy works by making staleness visible, which is what ADR-007 said it was for. Move both packages together and update REVIEWED_BETTER_AUTH_VERSION. DO NOT BUMP AND LEAVE THE MIGRATION: 1.7.3 restored the 1.6 account core schema after the issuer-schema change in 1.7.0 through 1.7.2, while this repository's hand-written migration still has an issuer column and an (issuer, account_id) uniqueness rule. The migration must be regenerated or reconciled against the reviewed version BEFORE security approval. That is why packages/persistence/migrations/0000_profile_scoped_identity.sql moves from reviewDependency to WRITE PATH here: on PL-0401 it was only evidence, and read-only was correct; here it has to change, and reviewDependencies are read-only by contract. PL-0402 also owns packages/persistence and is BACKLOG, so no active conflict exists today, but the two must be sequenced and the reviewer should say which owns that file afterwards. BLOCKER 3. ADR-007 still states obsolete control-plane routing, naming gpt-architect as preferred implementer and claude-lead as reviewer, while the record now correctly has claude-backend implementing and gpt-architect reviewing independently. Rewrite that paragraph as history rather than as current routing, and prefer wording that points at the task gate as authoritative -- otherwise completing the review needs a post-approval edit that immediately stales the fingerprint it just bound. TWO HONEST CAVEATS CARRIED FORWARD FROM PL-0401, neither an unmet clause: the migration has never been executed, because no PostgreSQL exists in this environment, and better-auth.ts is deliberately untested. SEQUENCING: this task is READY rather than BLOCKED because nothing external gates it, but it should not be claimed until the three blockers are implemented, and claiming it early would reserve packages/auth and two documents while no work was happening.",
-      "dependencies": [],
-      "allowedPaths": [
-        "packages/auth/**",
-        "docs/DECISIONS.md",
-        "docs/DATA_MODEL.md",
-        "packages/persistence/migrations/0000_profile_scoped_identity.sql",
-        "packages/persistence/src/**",
-        "package-lock.json",
-        "apps/web/src/lib/db/**"
+      "id": "PL-0303",
+      "priority": "P1",
+      "lane": "Provider",
+      "status": "READY",
+      "title": "Provider health contract",
+      "dependencies": [
+        "PL-0301"
       ],
-      "surfaceWidenedAtClaim": "WIDENED 2026-09-15 by claude-lead in the same edit that claimed the task, which is what the notes instruct: 'this task must declare packages/persistence/src/** as a write path when it is claimed, not merely the migration' and 'whoever claims this should widen the declaration in the same edit that claims it, and say so in the reason'. TWO ENTRIES WERE ADDED, AND THEY ARE NOT THE SAME KIND OF ADDITION. First, packages/persistence/src/**, exactly as prescribed: the registry is the only mechanism that rejects a spread forgery, TypeScript cannot make a spread unassignable, and a registry closes nothing unless the consumers ask, so the consumers must change. This was demonstrated rather than argued: with the issuance check in place and persistence untouched, packages/persistence/src/repository-scoping.test.ts fails six tests, because its fixtures build scopes with 'as unknown as ProfileScope' and refuseForeignScope now refuses them. progress-repository.ts moves from reviewDependency to write path for the same reason and is removed from reviewDependencies rather than listed twice. Second, package-lock.json, WHICH THE REVIEWER DID NOT NAME AND WHICH IS THEREFORE FLAGGED FOR THE REVIEWER RATHER THAN PRESENTED AS PRESCRIBED. The notes require better-auth and its Drizzle adapter to move together; the root lockfile still resolves 1.7.1, so after the pin moves, npm ci refuses the mismatch and every gate that starts from a clean install fails before it runs. Leaving it stale would ship a dependency bump that cannot be installed reproducibly, so the lockfile is part of moving the packages rather than a separate concern. It is a generated file owned by no active task; PL-0001, which generated it, is DONE. If the reviewer would rather see it as its own task, it is one entry to remove. NO OTHER WRITE SURFACE WAS ADDED, and packages/persistence/src/schema/auth.ts is inside the prescribed entry rather than an extra: it still declares the issuer column and the (issuer, account_id) unique that the migration reconciliation removes, so leaving it would make drizzle-kit propose reinstating both on the next generate. REVIEWDEPENDENCIES ALSO CHANGED, AND IT IS A REPLACEMENT RATHER THAN A WIDENING OF WRITE ACCESS. packages/persistence/src/progress-repository.ts left the list because it became a write path and listing it in both would say two different things about the same file. In its place the two files the reviewer named as the pattern this implementation must copy are declared read-only: packages/contracts/src/shared/runtime.ts (ClassifiedRuntime) and packages/media-inspection/src/pin.ts (PinnedTarget). Neither is written; they are declared so the approval fingerprints the originals against which the copy is judged, which is exactly what reviewDependencies is for. If the reviewer considers that padding, they are two entries to remove and nothing else changes. SECOND WIDENING 2026-09-15, ROUND 43, BY COMMANDER INSTRUCTION AND WITH THE SAME DISCLOSURE. apps/web/src/lib/db/** was added so the in-memory repository can be converted. The first round named it as the one remaining hole and stated its bound precisely rather than reassuringly: createInMemoryRepository refuses to construct without an issued ClassifiedRuntime, so it cannot exist in a deployment -- a development- and test-process bypass, not a production one -- and it is still a cross-profile bypass, because fourteen call sites read input.scope.profileId off the object instead of asking the registry. A registry that half the repositories ask is a capability that reads as unforgeable and is not, which is the failure mode this whole corrective exists to remove, so leaving it would have been the PL-0706 defect in a THIRD place. The commander ruled on 2026-09-15 that all profile ids must flow through the same validated accessor as the production repositories. CONFLICT CHECKED IN BOTH DIRECTIONS BEFORE ADDING: the prefix apps/web/src/lib/db is disjoint from PL-0704's apps/web/src/app/loading.tsx, apps/web/src/app/page.tsx, apps/web/src/app/title and apps/web/src/app/watch, which are the only other active apps/web declarations; PL-0701's apps/web/** would contain it, but PL-0701 is BACKLOG and unowned. Removing profileId from the ProfileScope interface entirely -- the change that turns an unchecked read from a deprecation into a compile error -- becomes reachable once this conversion lands, and whether to take it is flagged for the reviewer rather than assumed.",
-      "reviewDependencies": [
-        "packages/contracts/src/shared/runtime.ts",
-        "packages/media-inspection/src/pin.ts"
+      "allowedPaths": [
+        "packages/provider-sdk/**",
+        "packages/contracts/**",
+        "packages/observability/**"
       ],
       "preferredAgent": "claude-backend",
       "reviewAgent": "gpt-architect",
       "qualityGates": [
-        "architecture-review",
-        "security-review",
-        "integration",
         "typecheck",
         "unit"
       ],
-      "acceptance": "A recorded decision selects the auth approach and states the boundary it implies: a packages/auth seam the rest of the application depends on instead of the vendor library, database-backed sessions, a deliberately small enabled surface with the advanced plugin stacks left off, and an exact-pinned dependency whose upgrades are treated as security-sensitive work rather than floated on a caret range. The pinned version must be one upstream currently supports, and the hand-written migration must agree with that version's account schema rather than an abandoned intermediate one. ProfileScope must be UNFORGEABLE by a holder of a genuine scope: a spread copy carrying a replaced profileId must not remain assignable, and any consumer that grants data access on the strength of a scope must establish that the scope was ISSUED rather than merely that it type-checks. The decision record must describe the routing that actually applies, or point at the task record as authoritative rather than restating it.",
-      "owner": "claude-backend",
+      "acceptance": "A provider with zero observations reports unknown with a null observed success rate and a zero sample count, never a mid-range score and never a pass; any prior used to rank an unobserved provider is labelled as a prior rather than presented as measured availability; degraded-but-usable is a state distinct from up and down; health output is pure over the observations plus an explicit policy version, with no hidden wall-clock decay; and health never affects entitlement, so a provider at perfect health still cannot make an unauthorized candidate eligible",
+      "owner": null,
       "gateResults": {
         "typecheck": {
           "status": "pass",
-          "at": "2026-09-16T00:21:16.335Z",
-          "by": "claude-backend",
-          "commitSha": "e097590ee79e112f26073b293a4ad7fbb2bd1fd6",
-          "evidence": "npx turbo run typecheck --force at integrated head e097590ee79e112f26073b293a4ad7fbb2bd1fd6, exit 0, 9 of 9 tasks and 0 cached, run against a tree whose node_modules came from npm ci on the committed lockfile with better-auth resolving to 1.7.5. A ROUND-42 CORRECTION THAT BELONGS IN THE RECORD RATHER THAN IN A CHANGELOG: this round's first typecheck in the working worktree returned exit 0 as a TURBO CACHE HIT, 9 of 9 cached in 95ms, over a tree where packages/*/node_modules were absent and better-auth did not resolve at all. Forced, the same tree exited 2 with 'Cannot find module better-auth' plus roughly forty TS2532 in the web app. The dependency linkage was repaired and every figure quoted in this round's evidence is from a --force run. That is exactly why this project forces rather than caches, and it is reported because an exit code that was observed is evidence even when it is superseded."
+          "at": "2026-08-20T16:02:03.512Z",
+          "evidence": "turbo run typecheck --filter @liberty/provider-sdk exit 0 under pinned Node 22 resolved via npx node@22."
         },
         "unit": {
           "status": "pass",
-          "at": "2026-09-16T00:21:16.522Z",
-          "by": "claude-backend",
-          "commitSha": "e097590ee79e112f26073b293a4ad7fbb2bd1fd6",
-          "evidence": "npx turbo run test --force at integrated head e097590ee79e112f26073b293a4ad7fbb2bd1fd6, exit 0, 15 of 15 tasks and 0 cached, 2112 passed 1 skipped 0 failed -- up from 2096 at round 42. THE HOLE ROUND 42 NAMED IS CLOSED. apps/web/src/lib/db/in-memory-repository.ts read input.scope.profileId in fourteen places and was a cross-profile bypass in every development and test process; all fourteen are gone, seven scope-taking methods now bind profileIdFromScope as their FIRST statement ahead of content-id and limit parsing so a forged scope cannot use a validation reason code as an oracle, and selectActiveProfile keeps the one documented exception it shares with persistence, establishing issuance through scopeBelongsToSession before the account match and refusing with a mapped reason rather than a throw. AND THE PROPERTY CAME OFF THE TYPE. profileId and grantedFor moved to a module-private IssuedProfileScope; the public ProfileScope carries only the brand, which turns every future unchecked read from a deprecation into a compile error. The removal produced exactly the compile errors that prove it bites -- 3, 4, 16, 6 and 5 across five suites -- each converted to the accessor rather than cast away. THE LIMIT IS STATED RATHER THAN IMPLIED: it does not make forgery impossible. Object.assign({}, real, {profileId: victim}) was verified under tsc --strict to type as ProfileScope with NO CAST ANYWHERE, so both forgery suites were rewritten to that spelling and the runtime registry remains the only control. New apps/web/src/lib/db/scope-forgery.test.ts, 13 cases, store behind a Proxy that throws on any property access so refused and refused-before-touching-storage are distinguished, exhaustiveness MACHINE-CHECKED by partitioning the adapter's members and asserting the partition equals Object.keys, and one case runs a genuine scope through to the store, because a refusal suite passes just as happily against a repository that refuses everything."
-        },
-        "integration": {
-          "status": "pass",
-          "at": "2026-09-16T00:21:56.445Z",
-          "by": "claude-backend",
-          "commitSha": "e097590ee79e112f26073b293a4ad7fbb2bd1fd6",
-          "evidence": "THE MIGRATION WAS EXECUTED, NOT RECONCILED. PostgreSQL 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1), cluster 16/main, installed and started in this container; a dedicated role and database were created rather than using the superuser. psql -v ON_ERROR_STOP=1 -f packages/persistence/migrations/0000_profile_scoped_identity.sql exit 0, 8 CREATE TABLE and 7 CREATE INDEX; re-applied to a second empty database, exit 0, 8 tables, 20 indexes, 26 constraints, proving the file is clean from empty rather than only from the state the first run left. THE GENERATOR WAS RUN, AND THE COMMAND THIS REPOSITORY TOLD READERS TO RUN IS THE WRONG ONE. @better-auth/cli is deprecated on npm, latest 1.4.21, and depends on better-auth 1.4.21 directly, so npx @better-auth/cli generate would have described a version this repository does not use. The version-matched CLI is the npm package 'auth': auth@1.7.5 pins better-auth 1.7.5 and @better-auth/core 1.7.5 exactly. npx auth@1.7.5 generate against the real createLibertyAuth config, exit 0, 'Schema was generated successfully!'. THE DIFF, FIELD BY FIELD against information_schema on the applied database: no missing column, no extra column, no type mismatch, no nullability mismatch across user, session, account and verification; every index and unique the library asks for exists physically. All three round-42 changes confirmed -- the issuer column is absent from the generated schema, the library declares NO unique index on account at all, and the (provider_id, account_id) unique is therefore OURS rather than upstream's, which round 42 claimed and this round proves. Its safety argument was executed rather than argued: a deliberate duplicate was refused with 23505 on account_provider_id_account_id_key. Live Better Auth 1.7.5 sign-up and sign-in wrote rows to user, account and session with the library's default-on schema validation running and no SchemaMismatchError. The profile half was exercised in SQL: the display-name unique, the cross-household selection refusal, both progress check constraints, a NULL-position lease, and the delete cascade. NO CHANGE TO THE MIGRATION WAS REQUIRED. THREE THINGS THIS DOES NOT PROVE, STATED SO THE GATE IS NOT READ AS MORE THAN IT IS: drizzle-kit is still unrun and migrations/meta carries no journal or snapshot, so the file is applied by psql rather than by the tool that owns it; concurrency was never raced, so the guarded writer-epoch UPDATE was executed as a statement and not contended, and postgres-repository.ts has still executed nothing; and a naive mechanical diff reports 36 false findings because the expected schema keys fields camelCase while the physical columns are snake_case -- the clean diff quoted here maps expected fields through the Drizzle schema to physical names, and a reviewer re-running the naive comparison should know why it disagrees. Reproduction recipe recorded in docs/DATA_MODEL.md."
+          "at": "2026-08-20T16:02:03.607Z",
+          "evidence": "turbo run test --filter @liberty/provider-sdk exit 0 under pinned Node 22: zero observations yielding unknown with a null observed rate and a zero sample count, a prior labelled rather than presented as measurement at the same ranking number as a measured value, the degraded band held distinct from up and down, purity over observations plus an explicit policy version with Date.now replaced by a thrower to prove no wall clock is read, whole-report permutation invariance under generated policies, monotonicity in each count, and a compile-time guard that no health type can carry entitlement."
         }
-      },
-      "implementationAgent": "claude-backend",
-      "updatedAt": "2026-09-16T00:22:33.148Z",
-      "implementationBaseSha": "68c432645131336393f3d5e08503951193ca5350",
-      "supersedes": "PL-0401",
-      "gateAddedRound43": "The integration gate was ADDED to this task on 2026-09-16, not inherited. Both PL-0401 and PL-0405 carried the same honest caveat through every prior round -- the hand-written identity migration has never been executed, because no PostgreSQL exists in this environment -- and the caveat was true, so it was carried rather than papered over. It is no longer true: PostgreSQL 16.15 installs and runs in this session's container, the migration was applied to two empty databases, and Better Auth 1.7.5's own generator was run and diffed against the applied schema. Evidence that exists and is not recorded against a gate is prose a reviewer has to take on trust, so the gate was added rather than the evidence being left in a report. Adding a required gate mid-flight can only raise what DONE demands of this task and never lower it, which is why it is done here rather than deferred to a successor."
-    }
-  ],
-  "review": [],
-  "reservedExternal": [],
-  "recommended": [
+      }
+    },
     {
       "id": "PL-0305",
       "priority": "P1",

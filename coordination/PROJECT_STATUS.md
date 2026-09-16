@@ -1,51 +1,49 @@
 # Project Liberty - Project Status
 
-> Generated 2026-09-16T00:23:30.317Z from the AI control plane.
+> Generated 2026-09-16T00:41:22.509Z from the AI control plane.
 
-**Overall completion:** 20/50 executable tasks (40%)
+**Overall completion:** 25/50 executable tasks (50%)
 
 ## Status summary
 
-- **BACKLOG:** 15
-- **READY:** 3
+- **BACKLOG:** 9
+- **READY:** 9
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 0
-- **REVIEW:** 6
+- **REVIEW:** 1
 - **BLOCKED:** 6
-- **DONE:** 20
+- **DONE:** 25
 - **CANCELED:** 0
 
 ## Milestones / phases
 
 - **M0 — AI Engineering System + Repository Foundation:** COMPLETE, 4/4 (100%)
 - **M1 — Core Discovery Experience:** COMPLETE, 3/3 (100%)
-- **M2 — Media Resolution + Provider Foundation:** IN_PROGRESS, 4/6 (67%)
+- **M2 — Media Resolution + Provider Foundation:** IN_PROGRESS, 5/6 (83%)
 - **M3 — Identity + Personal State:** NOT_STARTED, 0/4 (0%), 1 blocked
 - **M4 — Playback Vertical Slice:** NOT_STARTED, 0/6 (0%)
 - **M5 — Live + Intelligence Boundaries:** NOT_STARTED, 0/2 (0%), 1 blocked
-- **M6 — Shared-Agent Automation Bridge:** IN_PROGRESS, 0/3 (0%)
+- **M6 — Shared-Agent Automation Bridge:** IN_PROGRESS, 1/3 (33%)
 - **EXT — External Licensed Integrations:** BLOCKED, 0/2 (0%), 2 blocked
-- **M7 — Windows Desktop Shell + Native Playback:** IN_PROGRESS, 0/4 (0%)
+- **M7 — Windows Desktop Shell + Native Playback:** IN_PROGRESS, 1/4 (25%)
 
 ## Active work
 
-- **PL-0301** [REVIEW] Authorized fixture provider — owner: claude-backend
-- **PL-0704** [REVIEW] notFound() never reaches the wire: dead addresses answer 200 — owner: claude-frontend
 - **PL-0206** [REVIEW] Macrolanguage and extlang equivalence in the shared language matcher — owner: claude-media
-- **PL-0405** [REVIEW] Corrective, re-run: auth integration decision, with a forgeable profile scope and an unsupported pin — owner: claude-backend
-- **PL-AI-0007** [REVIEW] Supersession is a field, and a task cannot stay gated behind one — owner: claude-lead
-- **PL-0901** [REVIEW] Windows desktop shell and the PlayerAdapter boundary — owner: claude-lead
 
 ## Dispatch classification
 
-- **READY_AND_EXECUTABLE:** 3
+- **READY_AND_EXECUTABLE:** 9
 - **READY_BUT_EXTERNAL:** 0
 - **BLOCKED:** 6
-- **BACKLOG (dependency-gated):** 15
+- **BACKLOG (dependency-gated):** 9
 
 ## Recommended executable wave
 
-No conflict-free executable tasks can be assigned with current agent capacity.
+- **PL-0902** -> claude-lead (P0/Architecture) DRM capability on the candidate and playback-session contract
+- **PL-0305** -> claude-backend (P1/Provider) A real catalog metadata source
+- **PL-0903** -> claude-frontend (P1/Player) An engine-unavailable reason that can say libmpv did not load
+- **PL-0904** -> claude-frontend (P1/Player) Playback errors carry an origin, so a native failure is not a Shaka number
 
 ## Queued for external agents
 
@@ -63,9 +61,9 @@ No READY work is waiting on an external agent lane.
 ## Agent capacity
 
 - **gpt-architect:** 0/6 active (external lane; not locally executable)
-- **claude-lead:** 2/2 active
-- **claude-frontend:** 1/2 active
-- **claude-backend:** 2/2 active
+- **claude-lead:** 0/2 active
+- **claude-frontend:** 0/2 active
+- **claude-backend:** 0/2 active
 - **claude-media:** 1/2 active
 - **claude-test:** 0/1 active
 - **claude-security:** 0/1 active

@@ -1,98 +1,8 @@
 {
-  "generatedAt": "2026-09-16T00:23:30.318Z",
+  "generatedAt": "2026-09-16T00:41:22.510Z",
   "agent": "claude-lead",
   "executionAvailable": true,
-  "assigned": [
-    {
-      "id": "PL-AI-0007",
-      "priority": "P0",
-      "lane": "Coordination",
-      "status": "REVIEW",
-      "title": "Supersession is a field, and a task cannot stay gated behind one",
-      "description": "Four tasks -- PL-0205, PL-0401, PL-0601, PL-0703 -- are BLOCKED, terminal, and superseded by a corrective re-run. Each says so only in prose. BLOCKED transitions only to BACKLOG, READY or CANCELED, so a superseded task can never reach DONE, and with completion.requireAllDependenciesDone true, any task depending on one is gated forever. That is not a hypothetical: PL-0301 was gated behind PL-0205 while PL-0207 sat DONE, and with it PL-0302, PL-0501, PL-0502, PL-0701 and PL-0702. A human noticed. Nothing in ai:validate could have.",
-      "notes": "SCOPE IS THE VALIDATOR, NOT A DEPENDENCY REWRITER. The rule reports; it never edits a dependency, because repointing a dependency is a task-definition change and those are deliberate, reasoned and recorded -- see PL-0301's own notes for what that looks like. An automatic repointer would make the graph self-modifying on the strength of a field any writer can set. THE RULE, PRECISELY. For each task T declaring supersededBy S: S must exist, must not be T, and T must not itself be DONE, or that is an ERROR, because a DONE task that claims to be superseded is two contradictory records of the same work. If S declares supersedes, it must name T -- a one-way pointer is a typo waiting to be trusted. Then, for each task D whose dependencies contain T: if S is DONE, ERROR, because D is gated behind a task that can never complete while its replacement already has; if S is not DONE, WARN, because the edge is not yet fatal but will become so the moment S completes, and a warning that arrives before the deadlock is the entire point. WHY ERROR AND NOT WARN FOR THE FIRST CASE. ai:validate already treats provenance drift as a warning and structural impossibility as an error. A dependency that can never be satisfied is structural: no sequence of legal transitions resolves it. It belongs with 'missing dependency' and 'invalid status', not with drift. WHAT THIS RULE CANNOT DO, STATED SO NOBODY OVERTRUSTS IT. supersededBy is self-asserted, exactly like fromAgent on the agent bus. It proves that somebody wrote a pointer, not that the successor genuinely carries the predecessor's work. A wrong pointer produces a wrong error or hides a real deadlock. It is a cheap alarm on a failure mode that has already cost this project one stalled milestone, not a proof of anything.",
-      "dependencies": [],
-      "allowedPaths": [
-        "scripts/ai-control-plane.mjs",
-        "scripts/test-ai-control-plane.mjs",
-        "control/README.md"
-      ],
-      "reviewDependencies": [
-        "control/policies.json"
-      ],
-      "preferredAgent": "claude-lead",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "repo-validate",
-        "typecheck",
-        "unit"
-      ],
-      "acceptance": "ai:validate refuses a task graph in which a task depends on a task that declares supersededBy and whose named successor is DONE, and warns when the successor is not yet DONE. It also refuses a supersededBy naming a missing task, naming itself, declared on a DONE task, or contradicted by the successor's supersedes field. The rule reports and never edits a dependency. The four existing supersession pairs validate clean, and a regression in scripts/test-ai-control-plane.mjs proves the rule fires -- both that it errors on a reconstructed PL-0301-behind-PL-0205 graph and that it stays silent on the repaired one, so it cannot pass by being inert.",
-      "owner": "claude-lead",
-      "gateResults": {
-        "repo-validate": {
-          "status": "pass",
-          "at": "2026-09-16T00:20:57.803Z",
-          "by": "claude-lead",
-          "commitSha": "e097590ee79e112f26073b293a4ad7fbb2bd1fd6",
-          "evidence": "npm run repo:validate at integrated head e097590ee79e112f26073b293a4ad7fbb2bd1fd6, exit 0, 'Project Liberty repository validation passed.' Re-run this round because control/README.md is a declared write path and three new tasks plus a new milestone entered control/ around it."
-        },
-        "typecheck": {
-          "status": "pass",
-          "at": "2026-09-16T00:20:57.993Z",
-          "by": "claude-lead",
-          "commitSha": "e097590ee79e112f26073b293a4ad7fbb2bd1fd6",
-          "evidence": "npx turbo run typecheck --force at integrated head e097590ee79e112f26073b293a4ad7fbb2bd1fd6, exit 0, 9 of 9 tasks and 0 cached. Same disclosure as round 42 and it still applies: this task's code is plain ESM outside every workspace, so no tsc pass covers it and this gate proves only that the change broke nothing in the nine TypeScript projects. The regression evidence is under unit."
-        },
-        "unit": {
-          "status": "pass",
-          "at": "2026-09-16T00:20:57.620Z",
-          "by": "claude-lead",
-          "commitSha": "e097590ee79e112f26073b293a4ad7fbb2bd1fd6",
-          "evidence": "RE-RUN ON THE PUSHED TREE, round 43, superseding the round-42 evidence string rather than standing on it. At integrated head e097590ee79e112f26073b293a4ad7fbb2bd1fd6, whose ancestry contains 461cca5, the commit now on origin/codex/pl-ai-0001-repair. node scripts/test-ai-control-plane.mjs, exit 0, 'AI control plane tests passed (67 scenarios)'. npx turbo run test --force, exit 0, 15 of 15 tasks and 0 cached, 2112 passed 1 skipped 0 failed. Nothing in this task's declared surface changed between the two rounds: git diff --name-only 461cca5..HEAD over scripts/ai-control-plane.mjs, scripts/test-ai-control-plane.mjs and control/README.md is EMPTY, so the re-run confirms the rule still holds against a tree that moved around it rather than re-proving a tree that did not move. The rule's behaviour is unchanged and deliberately so: report-only, never auto-repair; WARNING while the named successor is unfinished and ERROR once it is DONE; the four malformed-pointer refusals intact. ai:validate at this head exits 0 with the four supersession pairs clean and no supersession finding of any kind."
-        }
-      },
-      "implementationAgent": "claude-lead",
-      "updatedAt": "2026-09-15T17:32:54.857Z",
-      "implementationBaseSha": "80e3d3e3e0130571a1a0791b496a9e2cce0c6c7a"
-    },
-    {
-      "id": "PL-0901",
-      "priority": "P0",
-      "lane": "Architecture",
-      "status": "REVIEW",
-      "title": "Windows desktop shell and the PlayerAdapter boundary",
-      "description": "Project Liberty's first production target is Windows desktop on the commander's own machine. The commander has settled the direction: a Tauri shell, the existing Next.js application preserved rather than rewritten and served by a Next standalone sidecar, a PlayerAdapter boundary the application and domain layers depend on instead of any concrete player, libmpv for compatible non-DRM playback, Shaka/EME retained for DRM-capable playback, capability routing made explicit before playback rather than discovered during it, and an LGPL-compatible libmpv/FFmpeg build pipeline of our own rather than a GPL prebuilt. This task records that decision and specifies the boundary. It writes documentation only -- no shell, no adapter, no dependency is added here, because the instruction is that architecture is recorded before a large irreversible implementation, not after it.",
-      "notes": "THE AUDIT CAME FIRST AND IT FOUND A CLEAN SLATE. A repository-wide search for electron, tauri, mpv, libmpv, webview2, neutralino and nw.js across every .ts, .tsx, .json, .md, .mjs and .yml outside node_modules returned nothing. So neither shell was favoured by anything already in the tree, and the decision was made on evidence rather than on inertia. Today's player is shaka-player ~5.2.6 with xstate ^5.32.5 and custom-media-element in apps/web. THE DECIDING FACT IS COMPOSITING, NOT BUNDLE SIZE. Putting HTML chrome over a hardware-accelerated native video surface in one window on Windows is a documented, shipping arrangement on WebView2 -- ICoreWebView2Controller2::put_DefaultBackgroundColor accepts alpha 0 or 255 only, and at 0 the host's content renders beneath -- and has no supported path on Chromium, where PPAPI is gone and child HWNDs are no longer in the window hierarchy. Stremio ships the WebView2 plus libmpv --wid arrangement in production on Windows and measured its previous render-API-into-a-texture approach as 2-5x worse. Any size-based argument for Tauri should be dropped: with a Node sidecar the installer lands near Electron's anyway. THE SIDECAR IS WHAT PRESERVES THE APPLICATION. Tauri's default is a static export, which would force every /api/v1 route handler off Next -- a rewrite of the application's architecture, which the instruction forbids. output: standalone in a sidecar keeps Server Components, route handlers, proxy.ts, cookies(), headers(), Server Actions and ISR working. It costs a Node runtime in the bundle, a loopback listener, supervision code and Tauri's CSP injection, which does not reach an external http origin. ONE QUESTION THIS TASK DOES NOT DECIDE AND MUST NOT DECIDE SILENTLY. A sidecar runs the application's server on a machine the user administers. If provider resolution runs there, then the boundary that enforces invariants 1 and 2 executes from files the user can read and replace, with whatever credentials it needs in its environment. The alternative is that the desktop build implements those specific routes as an authenticated proxy to the backend -- same route, same contract, same URL, a different implementation behind it, selected by build target, which is ordinary adapter work rather than a rewrite. This document states the question, states the recommendation, and leaves the ruling to the reviewer and the commander. It is a design input to PL-0501 and is cheaper to supply now than to retrofit. DRM IS A ROUTING CONSTRAINT, NOT A GAP TO CLOSE. mpv has no CDM and cannot be given one. That is not something to work around: the mpv adapter must REFUSE a DRM-protected candidate with a named reason and must never attempt it, never fall back and never degrade. Which means capability routing has to be an explicit, reasoned decision before playback -- canPlay returning a reason on both branches -- rather than a guess discovered at load time. That is what makes invariant 2 structural here rather than a promise, and it is why the boundary carries a capability descriptor at all. THE LICENSING WORK IS THE LONG POLE AND IT GATES SHIPPING RATHER THAN PROTOTYPING. A stock prebuilt libmpv is a GPL build and must not ship in a closed-source product; the one LGPL variant on offer statically links an LGPLv3 FFmpeg and carries its builder's own no-warranty disclaimer. Building our own with -Dgpl=false and an LGPL FFmpeg, with an SBOM, converts an open-ended exposure into a reviewable artifact. Nothing in this document is legal advice and counsel review is named as a precondition of shipping rather than assumed.",
-      "dependencies": [],
-      "allowedPaths": [
-        "docs/DESKTOP_PLAYBACK.md",
-        "docs/ARCHITECTURE.md"
-      ],
-      "reviewDependencies": [
-        "apps/web/src/components/player/playback-machine.ts",
-        "apps/web/src/components/player/engine.ts",
-        "apps/web/src/components/player/shaka-engine.ts",
-        "apps/web/src/components/player/playback-session.ts",
-        "packages/contracts/src/domains/playback.ts",
-        "docs/RESEARCH_PLAYBACK.md",
-        "docs/AV_SYNC_MEASUREMENT.md",
-        "docs/CONTENT_RIGHTS.md"
-      ],
-      "preferredAgent": "claude-lead",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "architecture-review",
-        "rights-review"
-      ],
-      "acceptance": "A recorded architecture decision states the Windows desktop target, the Tauri shell, the preserved Next.js application served by a standalone sidecar, and the LGPL-compatible libmpv/FFmpeg build pipeline, each with the evidence it rests on and the strongest argument against it. It specifies PlayerAdapter as an interface the application and domain layers depend on -- load an authorized playback session, play, pause, seek, stop, select audio track, select subtitle track, set volume, expose position and duration, expose buffering and stall events, expose recoverable and fatal errors, expose track metadata, expose A/V sync telemetry where available, dispose -- with no mpv, Electron, Tauri or Shaka type reachable from it, and names the two implementations behind it and the explicit capability routing that chooses between them, including the requirement that the mpv adapter refuse DRM-protected candidates with a named reason rather than attempt them. It states that media addresses continue to come only from authorized provider resolution and the playback-session boundary and that the client can never submit one, that stream candidate ranking stays in @liberty/media-engine, and that provider-specific logic stays in @liberty/provider-sdk. It states where provider resolution runs in the desktop build as an open question with a recommendation rather than deciding it silently, because that answer is a design input to PL-0501. It records what was verified, what was not, and which specific facts would reverse each decision. No shell, adapter or dependency is implemented here.",
-      "owner": "claude-lead",
-      "gateResults": {},
-      "implementationAgent": "claude-lead",
-      "updatedAt": "2026-09-16T00:22:33.488Z",
-      "implementationBaseSha": "80e3d3e3e0130571a1a0791b496a9e2cce0c6c7a"
-    }
-  ],
+  "assigned": [],
   "review": [],
   "reservedExternal": [],
   "recommended": [
@@ -120,6 +30,42 @@
       "acceptance": "Shared vocabularies live in their own leaf modules, domain contracts live in one module each, index.ts is a re-export-only compatibility barrel rather than the authoritative public surface, and a wildcard exports map lets a new domain contract be added without touching package metadata or the barrel; no cycle-driven z.lazy remains and structural regressions prove the boundary rather than merely reflecting it; no schema behaviour changes",
       "owner": null,
       "gateResults": {}
+    },
+    {
+      "reviewAgent": "gpt-architect",
+      "owner": null,
+      "gateResults": {},
+      "id": "PL-0902",
+      "priority": "P0",
+      "lane": "Architecture",
+      "status": "READY",
+      "title": "DRM capability on the candidate and playback-session contract",
+      "description": "packages/contracts/src contains no occurrence of drm, widevine, playready or eme -- verified by grep across the whole source tree on 2026-09-15. So a resolved candidate carries no statement about whether it is encrypted, under which system, or against which license server. PL-0901 makes that a blocking gap rather than a cosmetic one: the desktop build routes between an mpv adapter that has no CDM and cannot be given one, and a Shaka/EME adapter that has one, and PlayerAdapter.canPlay is required to return a REASON on both branches rather than a boolean guess. A reasoned decision cannot be made from a contract that carries no field to reason about, so this gates the capability routing in PL-0901 section 4.",
+      "notes": "THE SHAPE IS A CAPABILITY DESCRIPTOR, NOT A BOOLEAN. An isDrm flag would answer the routing question and nothing else; the adapter also has to say WHY it refused, and a reason trail that says drm_required with no system named is not debuggable, which is invariant 4. The reviewer should expect at minimum the protection system and, where the boundary knows it, the license acquisition endpoint -- and should rule on whether an UNKNOWN encryption state is representable, because absent is not the same as none. A candidate whose encryption state was never established must not read as clear; that is the same required-and-nullable discipline PL-0207 established for media facts, and the precedent is deliberate. WHERE IT LIVES IS PART OF THE QUESTION. The descriptor could sit on streamCandidate, on the playback-session response, or on both with one deriving from the other. The candidate is what the ranker scores and the session is what the player is handed, and PL-0301's implementation already argues at packages/provider-sdk/src/fixture/provider.ts that the playable address belongs on the session rather than the candidate, for a reason that may or may not extend to the key system. Settle it before writing it. NOTHING HERE MAY WEAKEN A PROTECTION. This task describes encryption so the correct player is chosen and so a refusal is explainable. It adds no decryption, no key handling and no fallback that would attempt a protected source with an engine that has no CDM -- invariant 2 -- and the mpv adapter's refusal must stay a refusal rather than becoming a degraded attempt. SEQUENCING: overlaps PL-0206 and PL-AI-0006 on packages/contracts and must be sequenced after whichever is active. It should land before PL-0501 writes the session response, because retrofitting a discriminated field into a shipped contract is the change PL-0501's own acceptance warns about.",
+      "dependencies": [
+        "PL-0901"
+      ],
+      "allowedPaths": [
+        "packages/contracts/src/domains/playback.ts",
+        "packages/contracts/src/shared/drm.ts",
+        "packages/contracts/src/stream-candidate.test.ts",
+        "packages/contracts/src/stream-candidate.property.test.ts",
+        "docs/API_CONTRACTS.md"
+      ],
+      "reviewDependencies": [
+        "docs/DESKTOP_PLAYBACK.md",
+        "packages/contracts/src/shared/media-facts.ts",
+        "packages/contracts/src/shared/rights.ts",
+        "packages/provider-sdk/src/fixture/provider.ts"
+      ],
+      "preferredAgent": "claude-lead",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "architecture-review",
+        "rights-review"
+      ],
+      "acceptance": "A resolved stream candidate, or the playback session that carries it, states its content-protection requirement explicitly: the protection system where one applies, an unencrypted state that is asserted rather than inferred from an absent field, and an UNKNOWN state that is representable and does not read as unencrypted. PlayerAdapter.canPlay can decide routing from the contract alone, without inspecting a URL, a manifest or a provider-specific field, and can name the protection system in its refusal reason. Adding the field changes no existing candidate's meaning by accident: a candidate that omits it is refused by the schema rather than defaulted to clear. Provider-specific spellings stay inside @liberty/provider-sdk and are normalized before they reach the contract. No decryption, key handling or protection bypass is added."
     },
     {
       "id": "PL-AI-0002",

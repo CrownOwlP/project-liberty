@@ -1273,7 +1273,7 @@
       "id": "PL-0301",
       "priority": "P0",
       "lane": "Provider",
-      "status": "REVIEW",
+      "status": "DONE",
       "title": "Authorized fixture provider",
       "dependencies": [
         "PL-0207"
@@ -1296,7 +1296,7 @@
         "rights-review"
       ],
       "acceptance": "Server-side fixture adapter returns normalized authorized candidates only",
-      "owner": "claude-backend",
+      "owner": null,
       "gateResults": {
         "typecheck": {
           "status": "pass",
@@ -1311,6 +1311,20 @@
           "by": "claude-backend",
           "commitSha": "80e3d3e3e0130571a1a0791b496a9e2cce0c6c7a",
           "evidence": "npx turbo run test --force --filter=@liberty/provider-sdk, exit 0, 8 test files and 213 tests passed, 0 cached. Whole-repo npx turbo run test --force at the same tree, exit 0, 15 of 15 tasks, 2096 passed 1 skipped 0 failed. The 213 are this task's own regressions: fixture/provider.test.ts carries 24 cases across five describe blocks -- three witness forgeries (cast, spread copy, and a structural literal as @ts-expect-error), the opaque-rights-reference rule, five construction refusals, nine resolution properties, and the registry port -- and the Stremio half adds client.test.ts, mapping.test.ts, mapping.property.test.ts, source.test.ts and url-policy.test.ts, which is where the rights-basis declaration and the URL policy the fixture gate depends on are exercised. NOT EXECUTED AND THEREFORE NOT CLAIMED: no database, no network and no real provider were involved; these are the package's own suites against fixtures, which is what this task's acceptance asks for and no more."
+        },
+        "security-review": {
+          "status": "pass",
+          "at": "2026-09-16T00:40:47.367Z",
+          "by": "gpt-architect",
+          "commitSha": "3f0256dda187956b700e372f370deec0347420d3",
+          "evidence": "gpt-architect: PASS. The fixture provider returns authorized normalized candidates only, does not itself fetch arbitrary media, and keeps provider-specific behaviour behind @liberty/provider-sdk. TRANSPORT: transcribed by claude-lead from gpt-architect's round-43 verdicts, RELAYED BY THE HUMAN COMMANDER in chat rather than read by Claude from the review page or delivered over the agent bus. coordination/agent-bus/gpt-to-claude/ is still empty because repository writes from that integration return 403. This is an authentic reviewer decision carried by hand across a broken transport and it is NOT machine-attested; nothing in this repository can prove the transcription is faithful. One checkable claim in the verdict was checked rather than assumed: it states it reviewed remote head 3f0256dda187956b700e372f370deec0347420d3, and git fetch confirms origin/codex/pl-ai-0001-repair is exactly that sha, so the reviewer could in fact fetch what it says it read. The verdicts are also internally consistent with the in-progress review Claude read directly from the ChatGPT page one round earlier, which named the same two corrective items, the same Stremio-surface question and the same PL-0902-gates-routing point."
+        },
+        "rights-review": {
+          "status": "pass",
+          "at": "2026-09-16T00:40:47.602Z",
+          "by": "gpt-architect",
+          "commitSha": "3f0256dda187956b700e372f370deec0347420d3",
+          "evidence": "gpt-architect: PASS. Authorization and URL policy stay inside provider-sdk and unknown media facts are reported honestly rather than invented. THE SURFACE RULING, WHICH THIS TASK ASKED FOR: keep packages/provider-sdk/src/stremio/** inside the reviewed PL-0301 surface, because the fixture implementation structurally depends on the rights and url-policy logic there and splitting it now would leave the Stremio portion ownerless. The narrowed contracts and API entries stay reviewDependencies rather than write ownership. The dependency repoint PL-0205 to PL-0207 is accepted. TRANSPORT: transcribed by claude-lead from gpt-architect's round-43 verdicts, RELAYED BY THE HUMAN COMMANDER in chat rather than read by Claude from the review page or delivered over the agent bus. coordination/agent-bus/gpt-to-claude/ is still empty because repository writes from that integration return 403. This is an authentic reviewer decision carried by hand across a broken transport and it is NOT machine-attested; nothing in this repository can prove the transcription is faithful. One checkable claim in the verdict was checked rather than assumed: it states it reviewed remote head 3f0256dda187956b700e372f370deec0347420d3, and git fetch confirms origin/codex/pl-ai-0001-repair is exactly that sha, so the reviewer could in fact fetch what it says it read. The verdicts are also internally consistent with the in-progress review Claude read directly from the ChatGPT page one round earlier, which named the same two corrective items, the same Stremio-surface question and the same PL-0902-gates-routing point."
         }
       },
       "reviewDependencies": [
@@ -1325,7 +1339,7 @@
       ],
       "surfaceNarrowedAtClaim": "NARROWED 2026-09-15 by claude-lead in the same edit that claimed the task, on the precedent PL-0205 recorded and PL-0204 reasoned: a package-wide reservation for work confined to part of a package holds unrelated lanes, because pathsOverlap tests prefix containment in BOTH directions. WHAT WAS REMOVED AND WHY. packages/contracts/** was a READ DECLARED AS A WRITE. Every contracts symbol the provider SDK touches is imported and already exists -- StreamCandidate and unknownMediaFacts from domains/playback.ts, MediaFact and MEDIA_FACTS from shared/media-facts.ts, ContentRights and PLAYABLE_CONTENT_RIGHTS from shared/rights.ts, ClassifiedRuntime from shared/runtime.ts, normalizedContentIdSchema from shared/ids.ts, the codec unions from shared/codecs.ts -- and none of it has to change for this acceptance. The rights-basis vocabulary this task's gate rests on is not in contracts at all: RightsBasis, RIGHTS_BASES_FOR_RIGHTS and describeRightsBasis are declared in packages/provider-sdk/src/stremio/source.ts. Of the five commits naming PL-0301, none touched packages/contracts except 4091a2b, a six-lane preflight whose contracts changes belong to the PL-0204, PL-0205, PL-0102 and PL-0103 lanes named in its own subject. The one contract change somebody might reach for, putting uri and mimeType on StreamCandidate, is argued AGAINST at fixture/provider.ts line 138. So the six leaves are now reviewDependencies: read, fingerprinted, not reserved. apps/web/src/app/api/** was a reservation of the surface this task exists to unblock. Its only consumer, apps/web/src/app/api/v1/playback/session/authorized-candidates.ts, says in its own header that it belongs to PL-0501 and that it no longer implements the fixtures but configures the SDK's; it is declared read-only here instead. The entry normalizes to the prefix apps/web/src/app/api, which is declared identically by PL-0702 and PL-0302 and contained by PL-0701's apps/web/** and containing PL-0501's apps/web/src/app/api/v1/playback/** -- so keeping it would serialize PL-0301 against four downstream tasks, including two it gates. apps/web/src/app/api/deployment-environment.ts records the distortion in the code: it sits under app/api 'because that was the only directory every consumer could reach inside PL-0301's allowedPaths when it was written.' WHAT WAS KEPT, AND WHY NOT packages/provider-sdk/**. src/health.ts and its two suites are PL-0303's, created by 67c5fc9, and PL-0303 already has typecheck and unit recorded; the fixture provider CONSUMES evaluateProviderHealth, and consuming is not owning. tsconfig.json is bootstrap and untouched by any PL-0301 commit -- declaring an untouched file pads a review range exactly as omitting a touched one narrows it. src/index.ts is kept and is NOT the PL-0205 barrel case that was excluded: that barrel was re-export-only with an export * already covering the change, whereas this one's CONTENT is load-bearing -- fixture/environment.ts names 'NonProductionRuntime is not re-exported by ../index.ts' as one of the three mechanisms its rights witness rests on, and a rights argument that turns on an omission from a file cannot leave that file out of the reviewed surface. TWO ENTRIES FLAGGED FOR THE REVIEWER RATHER THAN PRESENTED AS SETTLED. First, packages/provider-sdk/src/stremio/**. The acceptance sentence names only the fixture adapter, but all thirteen files carry PL-0301 headers, all were created by commits naming PL-0301, coordination/IMPLEMENTATION_RECOVERY.md lists 'the fixture provider and the Stremio adapter' under this task, stremio/client.test.ts line 104 says 'PL-0301's acceptance criterion, end to end', and the coupling is structural rather than historical: fixture/rights.ts imports the rights-basis table from stremio/source.ts and fixture/provider.ts imports checkUrl from stremio/url-policy.ts. If the reviewer rules fixture-only, two things follow and neither is hidden: the base moves to f6c4b942ebbd02fd3fa9ed8f74fde4fc603affc2, the parent of 719d2d7, and those two stremio files must become reviewDependencies -- and the Stremio adapter is then owned by no task at all, which is the worse end state but is the reviewer's call and not this lead's. Second, packages/provider-sdk/package.json: genuinely edited by c0ebf6b, which added zod and the test script, and by 79a0e65. It is the entry to drop first under challenge, flagged in the same spirit PL-0405 flagged package-lock.json. NOT DECLARED, DELIBERATELY: packages/contracts/src/testing/arbitraries.ts. stremio/mapping.property.test.ts does import from it, so there is an argument for listing it read-only. Against: PL-0206 is editing that file right now, and the arbitraries this task consumes -- audioCodecArb, contentRightsArb, defined, healthScoreArb, permutationKeysArb, permute, unvettedRightsArb, videoCodecArb -- are disjoint from the languageTagArb region PL-0206 is changing. Declaring it would bind this approval's freshness to churn in a region the task does not read. It costs nothing in dispatch either way, since reviewDependencies are not in pathsOverlap; it is a fingerprint-hygiene call and it is flagged rather than buried. DISJOINTNESS, CHECKED IN BOTH DIRECTIONS against every currently active task: PL-0206 (packages/media-engine, three packages/contracts leaves), PL-0405 (packages/auth, packages/persistence/src, the identity migration, package-lock.json, two docs), PL-0704 (apps/web app routes, one e2e spec, docs/E2E.md, .github/workflows/ci.yml), PL-AI-0007 (two scripts, control/README.md) and PL-0901 (two docs). No proposed prefix equals, prefixes, or is prefixed by any of theirs. Note package-lock.json versus packages/provider-sdk/package.json: neither startsWith the other plus a separator, so they do not collide.",
       "implementationAgent": "claude-backend",
-      "updatedAt": "2026-09-15T17:35:04.476Z",
+      "updatedAt": "2026-09-16T00:41:21.518Z",
       "implementationBaseSha": "fb217b96add37ed41e5c7bf1a35e693c39b5138b",
       "implementationBaseProvenance": {
         "kind": "reconciled-existing-implementation",
@@ -1363,7 +1377,62 @@
         "baseCommitSurfaceTouches": [],
         "baseCommitSurfaceTouchesTruncated": false,
         "reason": "The base is fb217b96add37ed41e5c7bf1a35e693c39b5138b, the first parent of c0ebf6b, the earliest commit that names PL-0301. It is proven against the TREE rather than against filenames or commit messages, because this project has lost four tasks to bases that passed every mechanical check and were still false. At fb217b9, git ls-tree -r packages/provider-sdk returns exactly three paths -- package.json, src/index.ts and tsconfig.json -- so no adapter of any kind exists in the parent tree, fixture or Stremio, and the BEHAVIOUR is absent rather than merely the files. That is the PL-0205 standard: that failure came from a witness file created by a later refactor that only MOVED declarations, so the parent tree already held the semantics. Nothing can have been moved into a package whose entire content is a bootstrap barrel and a tsconfig. Probes used were stremio/source.ts and stremio/mapping.ts, which are genuinely new at c0ebf6b; src/provider.ts was deliberately NOT used as a probe, because git show fb217b9:packages/provider-sdk/src/index.ts shows the AuthorizedMediaProvider interface and the allowlist assertion already present in the barrel and merely relocated into that file, which is the same trap in a second place. src/index.ts and package.json were likewise not used, since both exist at the bootstrap commit b484735. The base commit itself changes nothing under the reviewed surface. THE IMPLEMENTATION PREDATES THE CLAIM BY DESIGN, NOT BY OVERSIGHT: coordination/IMPLEMENTATION_RECOVERY.md lists this task in the table headed Implemented, unreviewed, the record carried owner null with no gate results and no base, and the five fixture files were created at 719d2d7 while the task sat BACKLOG. ONE CLASSIFICATION IS LOAD-BEARING AND IS PUBLISHED RATHER THAN BURIED: this base covers the Stremio adapter as well as the fixture adapter, because every file under packages/provider-sdk/src/stremio carries a PL-0301 header, all were created by commits naming PL-0301, IMPLEMENTATION_RECOVERY names both, client.test.ts line 104 says PL-0301s acceptance criterion end to end, and fixture/rights.ts and fixture/provider.ts import the rights-basis table and checkUrl from that directory, so the fixture gate cannot be reviewed without it. If the reviewer rules the surface is fixture-only, this base is wrong and the correct one is f6c4b942ebbd02fd3fa9ed8f74fde4fc603affc2, the parent of 719d2d7 -- and the Stremio adapter is then owned by no task at all."
-      }
+      },
+      "review": {
+        "taskId": "PL-0301",
+        "implementationAgent": "claude-backend",
+        "implementationOwner": "claude-backend",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "3f0256dda187956b700e372f370deec0347420d3",
+        "reviewedBaseSha": "fb217b96add37ed41e5c7bf1a35e693c39b5138b",
+        "reviewedTreeHash": "983f840e2ee381c6dfeabe07fa0a53d9d6dbfcb5c6fa3f10eba8977d2170db12",
+        "reviewedFileCount": 30,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [
+          "packages/contracts/src/domains/playback.ts",
+          "packages/contracts/src/shared/media-facts.ts",
+          "packages/contracts/src/shared/rights.ts",
+          "packages/contracts/src/shared/runtime.ts",
+          "packages/contracts/src/shared/ids.ts",
+          "packages/contracts/src/shared/codecs.ts",
+          "apps/web/src/app/api/v1/playback/session/authorized-candidates.ts",
+          "e2e/tests/playback-session.api.spec.ts"
+        ],
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-09-16T00:41:15.064Z",
+        "evidence": "APPROVED at 3f0256dda187956b700e372f370deec0347420d3. security-review PASS and rights-review PASS. The fixture provider returns authorized normalized candidates only, does not fetch arbitrary media itself, and keeps provider-specific behaviour behind @liberty/provider-sdk. The reviewer ruled on the surface question this task published rather than leaving it implicit: packages/provider-sdk/src/stremio/** STAYS INSIDE the reviewed surface, because the fixture implementation structurally depends on the rights and url-policy logic there and splitting it now would leave the Stremio portion owned by no task at all -- which is the outcome the task record argued was the worse one. The narrowed contracts and API entries remain reviewDependencies rather than write ownership, so the round-43 narrowing stands. The dependency repoint from PL-0205 to PL-0207 is accepted. TRANSCRIBED BY CLAUDE-LEAD from gpt-architect's round-43 verdicts, relayed by the human commander in chat rather than read from the review page or delivered over the agent bus; coordination/agent-bus/gpt-to-claude/ is still empty because that integration's repository writes return 403. Authentic reviewer decision, carried by hand, NOT machine-attested. The verdict states it reviewed remote head 3f0256dda187956b700e372f370deec0347420d3 and git fetch confirms origin/codex/pl-ai-0001-repair is exactly that sha, so the one mechanically checkable claim in it was checked rather than assumed."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PL-0301",
+          "implementationAgent": "claude-backend",
+          "implementationOwner": "claude-backend",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "3f0256dda187956b700e372f370deec0347420d3",
+          "reviewedBaseSha": "fb217b96add37ed41e5c7bf1a35e693c39b5138b",
+          "reviewedTreeHash": "983f840e2ee381c6dfeabe07fa0a53d9d6dbfcb5c6fa3f10eba8977d2170db12",
+          "reviewedFileCount": 30,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "packages/contracts/src/domains/playback.ts",
+            "packages/contracts/src/shared/media-facts.ts",
+            "packages/contracts/src/shared/rights.ts",
+            "packages/contracts/src/shared/runtime.ts",
+            "packages/contracts/src/shared/ids.ts",
+            "packages/contracts/src/shared/codecs.ts",
+            "apps/web/src/app/api/v1/playback/session/authorized-candidates.ts",
+            "e2e/tests/playback-session.api.spec.ts"
+          ],
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-09-16T00:41:15.064Z",
+          "evidence": "APPROVED at 3f0256dda187956b700e372f370deec0347420d3. security-review PASS and rights-review PASS. The fixture provider returns authorized normalized candidates only, does not fetch arbitrary media itself, and keeps provider-specific behaviour behind @liberty/provider-sdk. The reviewer ruled on the surface question this task published rather than leaving it implicit: packages/provider-sdk/src/stremio/** STAYS INSIDE the reviewed surface, because the fixture implementation structurally depends on the rights and url-policy logic there and splitting it now would leave the Stremio portion owned by no task at all -- which is the outcome the task record argued was the worse one. The narrowed contracts and API entries remain reviewDependencies rather than write ownership, so the round-43 narrowing stands. The dependency repoint from PL-0205 to PL-0207 is accepted. TRANSCRIBED BY CLAUDE-LEAD from gpt-architect's round-43 verdicts, relayed by the human commander in chat rather than read from the review page or delivered over the agent bus; coordination/agent-bus/gpt-to-claude/ is still empty because that integration's repository writes return 403. Authentic reviewer decision, carried by hand, NOT machine-attested. The verdict states it reviewed remote head 3f0256dda187956b700e372f370deec0347420d3 and git fetch confirms origin/codex/pl-ai-0001-repair is exactly that sha, so the one mechanically checkable claim in it was checked rather than assumed."
+        }
+      ],
+      "completedAt": "2026-09-16T00:41:21.518Z"
     },
     {
       "id": "PL-0302",
@@ -1396,7 +1465,7 @@
       "id": "PL-0303",
       "priority": "P1",
       "lane": "Provider",
-      "status": "BACKLOG",
+      "status": "READY",
       "title": "Provider health contract",
       "dependencies": [
         "PL-0301"
@@ -1587,7 +1656,7 @@
       "id": "PL-0402",
       "priority": "P0",
       "lane": "Backend",
-      "status": "BACKLOG",
+      "status": "READY",
       "title": "Profile model",
       "dependencies": [
         "PL-0405"
@@ -1667,7 +1736,7 @@
       "id": "PL-0501",
       "priority": "P0",
       "lane": "Player",
-      "status": "BACKLOG",
+      "status": "READY",
       "title": "Playback session API",
       "dependencies": [
         "PL-0201",
@@ -1973,7 +2042,7 @@
       "id": "PL-0704",
       "priority": "P0",
       "lane": "Frontend",
-      "status": "REVIEW",
+      "status": "DONE",
       "title": "notFound() never reaches the wire: dead addresses answer 200",
       "notes": "IMPLEMENTED IN THE TREE AND NEVER CLAIMED, like the rest of recovery packet 1 -- but PARTIALLY, and the two gaps are different in kind. This is the fifth task found in that state, and its code landed while it sat BACKLOG and unowned: control/events.jsonl records apps/web/src/app/loading.tsx and page.tsx being edited as belonging to PL-0704 while it was blocked on a lifecycle dependency. So it must be started with --reconcile-existing, never against HEAD. IT IS A MODIFICATION TASK IN THE REVIEWER'S TAXONOMY, MOSTLY, and that changes the probe. Its central act was a DELETION -- the root loading.tsx removed -- and marker absence cannot witness a deletion. What it also did, and what CAN be witnessed, is introduce two named components where anonymous route-level skeletons used to be: CatalogSkeleton in app/page.tsx and PlaybackLoading in app/watch/[contentId]/page.tsx, each now a Suspense fallback sitting BELOW the existence decision rather than a loading file wrapping the whole segment. Those two names are new even though their markup is not, so a pickaxe on the names finds the relocation, which is precisely this task's work. Use them as the witnesses; do not use the deleted file. TWO GAPS AGAINST THE ACCEPTANCE, AND ONLY ONE IS A CODE GAP. FIRST, THE TITLE SKELETON, WHICH I BELIEVE IS A CONTRACT GAP RATHER THAN A DEFECT AND AM FLAGGING FOR A RULING RATHER THAN FIXING. The acceptance says any fix must KEEP the loading skeletons rather than deleting them to move a status code. Home and watch comply: both relocated their skeleton into a Suspense boundary below a cheap existence check that consults nobody. The title route did not -- it deleted its skeleton outright -- and its own header argues why: on that route a status line precedes the first body byte, so no byte may be sent before the catalog answers whether the title exists, which is the definition of having nothing to stream. A full-page skeleton there IS the defect the task exists to remove. The only honest way to restore one would be a section whose data does not depend on the title existing, and none exists today. So the code looks right and the clause looks over-general. I am not rewriting the acceptance to match the code unasked -- that is the move the reviewer has twice had to authorise explicitly, on PL-0205's wording and on PL-0706's -- so it is proposed here and left for the verdict. SECOND, THE PRODUCTION-MODE 404, WHICH IS NOT THIS TASK'S TO CLOSE. An unknown title answers 404 under development and 200 with a refusal panel under production, and that is correct rather than broken: on a hosted build no catalog metadata source is constructible, so loadTitleDetail reports error rather than not-found, notFound() is unreachable, and a build that answered 404 there would be claiming an absence it never looked for. The precondition is a catalog source that exists in a deployment, which is PL-0305's, now READY since PL-0105 completed. ALLOWEDPATHS CORRECTED IN BOTH DIRECTIONS. apps/web/src/app/(home)/** is DROPPED: it is a dead declaration for a route-group approach that was considered and rejected, it reserves a directory that does not exist, and it starves nothing only by accident. apps/web/src/app/loading.tsx is KEPT even though the file is deleted, because the deletion is the change and a surface that omitted it would not fingerprint the task's central act. TWO PATHS ADDED. docs/E2E.md, because it and .github/workflows/ci.yml currently CONTRADICT EACH OTHER about whether the two 404 assertions have ever been observed passing -- E2E.md claims an executed 2026-09-05 pass on all four browser projects, ci.yml says UNKNOWN, expected to pass, never observed passing -- and settling that is exactly what this task's EXECUTED clause is about. It is declared by PL-0706, which is DONE, and by PL-0703, which is BLOCKED, so no active conflict. And .github/workflows/ci.yml, which UNTIL NOW WAS DECLARED BY NO TASK IN THE REPOSITORY AT ALL: every CI change this project has made has landed outside every declared surface. That is a real declaration hole rather than a convenience, and this task adopting it is a partial fix at best -- the file is repository governance rather than frontend, and it should eventually belong to whatever task adopts CLAUDE.md and control/README.md, which are undeclared for the same reason.",
       "dependencies": [
@@ -1996,7 +2065,7 @@
         "e2e"
       ],
       "acceptance": "An unknown title id and a malformed watch id each answer HTTP 404 rather than a skeleton served at 200, proven by an EXECUTED Playwright run ON THE PINNED BROWSER REVISION rather than by a route calling notFound(), and rather than by a run on a substituted revision. The cause is that a segment's loading file wraps that segment in Suspense, so React flushes the shell at 200 before the access-fallback error escapes the render and Next can set the status; the root loading file wraps every route in the application, so per-route fixes alone are insufficient. THE SKELETON CLAUSE, AMENDED. Any fix must RELOCATE the loading skeletons below the existence decision rather than deleting them to move a status code, ON EVERY ROUTE WHERE A SECTION'S DATA DOES NOT DEPEND ON THE ADDRESS EXISTING. The title route is exempt, and the exemption is reasoned rather than granted: a well-formed unknown title id is indistinguishable from a real one until the catalog answers, the status line precedes the first body byte, so no byte may be sent before that load resolves -- which is the definition of having nothing to stream. A full-page skeleton there IS the defect this task exists to remove, so the unamended clause required the defect on one of the three routes it governs. The exemption is EMPIRICAL AND REVERSIBLE, not permanent: the moment the title page grows a section whose data does not depend on the title existing -- recommendations, continue-watching, anything PL-0301 or PL-0501 fetches separately -- it gains an in-page Suspense below the decision exactly as the watch route has, and this clause binds again. Home and watch satisfy it today and a positive check proves each, because the original wording was satisfied by a repository with no skeletons in it at all: every assertion was a not.toContain on a string that exists nowhere. DEPENDS ON PL-0103 because the title route is that task's declared write surface; this is a lifecycle dependency, not a technical one.",
-      "owner": "claude-frontend",
+      "owner": null,
       "gateResults": {
         "typecheck": {
           "status": "pass",
@@ -2021,7 +2090,7 @@
         }
       },
       "implementationAgent": "claude-frontend",
-      "updatedAt": "2026-09-16T00:22:33.317Z",
+      "updatedAt": "2026-09-16T00:41:22.090Z",
       "implementationBaseSha": "f6c4b942ebbd02fd3fa9ed8f74fde4fc603affc2",
       "implementationBaseProvenance": {
         "kind": "reconciled-existing-implementation",
@@ -2051,7 +2120,44 @@
         "reason": "The base is f6c4b942ebbd02fd3fa9ed8f74fde4fc603affc2, the first parent of 719d2d7c31465901f3dbee1e936a180e87c3d44f, derived from history rather than named: 719d2d7 is the one commit that deletes all three loading files, retires HomeLoading and WatchLoading, and introduces CatalogSkeleton and PlaybackLoading, and 'git grep <Suspense> f6c4b94 -- apps/web/src/app' returns only a prose comment, so not one Suspense boundary of this task's arrangement existed in the base tree under any name or in any file. Because the two named witnesses are relocations and could have carried the PL-0205 risk, they are backed by that structural absence, by the paired disappearance of HomeLoading and WatchLoading in the same commit, and by route-loading-boundaries.test.ts being a genuine add there -- the only renames in this repository are PL-AI-0006's four packages/contracts moves, outside this surface. The whole declared surface was swept rename-aware with --full-history plus --follow on the five leaf paths and a conservative 13-file enumeration of title/** and watch/**, reconstructing the deleted apps/web/src/app/loading.tsx deliberately; that yields exactly 23 pre-base commits, every one pre-existing work: c9efc49, 5399c92 and 4091a2b build the three loading files that are the defect, ba2bf47 writes the two 404 assertions as PL-0701's acceptance harness twelve days before this task existed, 8b1172b is the first executed run, which created PL-0704 in control/tasks.json and states in the code that the fix is not done here, and c469e92 adds the comment DO NOT DELETE THIS TO RECOVER THE 404 ... The status is PL-0704's to fix, in the root file. The two document paths were proven separately because that is what sank PL-0601 and PL-0401: .github/workflows/ci.yml contains no 404, loading, skeleton or PL-0704 text whatsoever at the base and gains the entire 404 CI record at 719d2d7, while docs/E2E.md carries only 8b1172b's failing-run report whose prescribed route-group remedy this task rejected rather than implemented. The probes were proven before use, reproducing gpt-architect's own PL-0603 re-derivation exactly and reproducing the three-deletions-one-survivor loading-file set recorded in control/events.jsonl. ONE CLASSIFICATION IS LOAD-BEARING AND IS FLAGGED RATHER THAN BURIED: ba2bf47 and 8b1172b put this task's exact subject matter on its declared e2e and docs paths before the base. They are classified as the task's input rather than its implementation, because ba2bf47 predates PL-0704's existence in control/tasks.json by twelve days and was written by PL-0701's harness lane as an expected-to-pass assertion, and 8b1172b is the commit that created PL-0704, says in the code being changed that the fix is not done here, and proposes a route-group remedy PL-0704 recorded as considered and rejected. If the reviewer rules that authoring a deliberately-red acceptance assertion is part of delivering that acceptance, this base moves and this derivation is wrong."
       },
       "acceptancePriorToAmendment": "An unknown title id and a malformed watch id each answer HTTP 404 rather than a skeleton served at 200, proven by an EXECUTED Playwright run rather than by a route calling notFound(). The cause is that a segment's loading file wraps that segment in Suspense, so React flushes the shell at 200 before the access-fallback error escapes the render and Next can set the status; the root loading file wraps every route in the application, so per-route fixes alone are insufficient. Any fix must keep the loading skeletons rather than deleting them to move a status code. DEPENDS ON PL-0103 because the title route is that task's declared write surface and it is currently in REVIEW; this is a lifecycle dependency, not a technical one.",
-      "acceptanceAmendment": "AMENDED 2026-09-15, round 43, by commander instruction, and recorded as an amendment rather than applied silently. Two changes. FIRST, the title-route exemption, which the round-42 implementation flagged for a ruling rather than fixing: the implementer's view was 'amend the clause, do not amend the code', the commander ruled the same way, and the reasoning is now in the acceptance itself so a later reader cannot mistake the exemption for an oversight. The previous wording is preserved verbatim in acceptancePriorToAmendment, because an acceptance criterion that quietly changes shape is indistinguishable from one that was never met. SECOND, the e2e clause now says PINNED BROWSER REVISION explicitly. Round 42 recorded an executed run on Chromium revision 1194 behind a symlink shim presenting it as 1234, disclosed in the gate evidence and in docs/E2E.md, because playwright install was unavailable in that environment. The commander ruled that acceptable as narrow local evidence and NOT as pinned-browser verification. The constraint has since been removed -- cdn.playwright.dev is reachable from this container and revision 1234, Chrome Headless Shell 151.0.7922.34, is installed -- so the clause now demands what is actually achievable rather than what was achievable last round, and the substituted-revision run must be superseded rather than defended."
+      "acceptanceAmendment": "AMENDED 2026-09-15, round 43, by commander instruction, and recorded as an amendment rather than applied silently. Two changes. FIRST, the title-route exemption, which the round-42 implementation flagged for a ruling rather than fixing: the implementer's view was 'amend the clause, do not amend the code', the commander ruled the same way, and the reasoning is now in the acceptance itself so a later reader cannot mistake the exemption for an oversight. The previous wording is preserved verbatim in acceptancePriorToAmendment, because an acceptance criterion that quietly changes shape is indistinguishable from one that was never met. SECOND, the e2e clause now says PINNED BROWSER REVISION explicitly. Round 42 recorded an executed run on Chromium revision 1194 behind a symlink shim presenting it as 1234, disclosed in the gate evidence and in docs/E2E.md, because playwright install was unavailable in that environment. The commander ruled that acceptable as narrow local evidence and NOT as pinned-browser verification. The constraint has since been removed -- cdn.playwright.dev is reachable from this container and revision 1234, Chrome Headless Shell 151.0.7922.34, is installed -- so the clause now demands what is actually achievable rather than what was achievable last round, and the substituted-revision run must be superseded rather than defended.",
+      "review": {
+        "taskId": "PL-0704",
+        "implementationAgent": "claude-frontend",
+        "implementationOwner": "claude-frontend",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "3f0256dda187956b700e372f370deec0347420d3",
+        "reviewedBaseSha": "f6c4b942ebbd02fd3fa9ed8f74fde4fc603affc2",
+        "reviewedTreeHash": "9b209a387559d07626b0220135b9af66c649a1c9e9aca47a26d26fe721160d8c",
+        "reviewedFileCount": 15,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [],
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-09-16T00:41:15.682Z",
+        "evidence": "APPROVED at 3f0256dda187956b700e372f370deec0347420d3. The browser-substitution concern is closed by the real Playwright revision 1234 run. The earlier Chromium 1194 shim evidence MAY REMAIN AS SUPERSEDED HISTORICAL EVIDENCE BUT MUST NOT BE REPRESENTED AS THE FINAL PINNED-BROWSER GATE, which is how docs/E2E.md and the gate evidence already carry it. The acceptance wording change is accepted: skeleton relocation is required where content can render independently of the address and existence decision, and the title route does not need a pre-decision full-page skeleton when rendering one would commit the HTTP response before notFound() can be determined. The positive, non-vacuous skeleton assertions are to be kept. TRANSCRIBED BY CLAUDE-LEAD from gpt-architect's round-43 verdicts, relayed by the human commander in chat rather than read from the review page or delivered over the agent bus; coordination/agent-bus/gpt-to-claude/ is still empty because that integration's repository writes return 403. Authentic reviewer decision, carried by hand, NOT machine-attested. The verdict states it reviewed remote head 3f0256dda187956b700e372f370deec0347420d3 and git fetch confirms origin/codex/pl-ai-0001-repair is exactly that sha, so the one mechanically checkable claim in it was checked rather than assumed."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PL-0704",
+          "implementationAgent": "claude-frontend",
+          "implementationOwner": "claude-frontend",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "3f0256dda187956b700e372f370deec0347420d3",
+          "reviewedBaseSha": "f6c4b942ebbd02fd3fa9ed8f74fde4fc603affc2",
+          "reviewedTreeHash": "9b209a387559d07626b0220135b9af66c649a1c9e9aca47a26d26fe721160d8c",
+          "reviewedFileCount": 15,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [],
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-09-16T00:41:15.682Z",
+          "evidence": "APPROVED at 3f0256dda187956b700e372f370deec0347420d3. The browser-substitution concern is closed by the real Playwright revision 1234 run. The earlier Chromium 1194 shim evidence MAY REMAIN AS SUPERSEDED HISTORICAL EVIDENCE BUT MUST NOT BE REPRESENTED AS THE FINAL PINNED-BROWSER GATE, which is how docs/E2E.md and the gate evidence already carry it. The acceptance wording change is accepted: skeleton relocation is required where content can render independently of the address and existence decision, and the title route does not need a pre-decision full-page skeleton when rendering one would commit the HTTP response before notFound() can be determined. The positive, non-vacuous skeleton assertions are to be kept. TRANSCRIBED BY CLAUDE-LEAD from gpt-architect's round-43 verdicts, relayed by the human commander in chat rather than read from the review page or delivered over the agent bus; coordination/agent-bus/gpt-to-claude/ is still empty because that integration's repository writes return 403. Authentic reviewer decision, carried by hand, NOT machine-attested. The verdict states it reviewed remote head 3f0256dda187956b700e372f370deec0347420d3 and git fetch confirms origin/codex/pl-ai-0001-repair is exactly that sha, so the one mechanically checkable claim in it was checked rather than assumed."
+        }
+      ],
+      "completedAt": "2026-09-16T00:41:22.090Z"
     },
     {
       "id": "PL-0703",
@@ -3318,7 +3424,7 @@
       "id": "PL-0405",
       "priority": "P0",
       "lane": "Backend",
-      "status": "REVIEW",
+      "status": "DONE",
       "title": "Corrective, re-run: auth integration decision, with a forgeable profile scope and an unsupported pin",
       "description": "This task SUPERSEDES PL-0401. It carries three merits blockers as well as a provenance correction, and the merits are the larger half. PROVENANCE: PL-0401 recorded implementationBaseSha fc1ea4d54c9e7d2b2f6d9aa71a977abdc3bcb400, proven with ENABLED_AUTH_CAPABILITIES and WITHHELD_AUTH_PLUGIN_FAMILIES. Those witnesses correctly located the code introduction and missed earlier task implementation on another declared write path: docs/DATA_MODEL.md did not exist at 56b343 and was created in bbe68ed8, before the recorded base, already identifying itself as covering this task's auth boundary and already selecting Better Auth 1.7.1. The true lower bound is 56b3435418f222f557ce957e7d5de3827da107b7 while docs/DATA_MODEL.md remains a write surface. PL-0401 is BLOCKED with the false range preserved as audit history. DO NOT CLAIM THIS TASK UNTIL THE THREE BLOCKERS IN THE NOTES ARE IMPLEMENTED; it is created now so the findings are recorded against a task rather than living only in a review transcript.",
       "notes": "BLOCKER 1, AND IT IS THE PL-0706 DEFECT IN A SECOND PLACE. ProfileScope carries a type-only unique symbol property while mintProfileScope returns an ordinary object via cast, so a caller holding a genuine scope can write a spread with a replacement profileId and TypeScript carries the branded structural type straight through -- without the explicit cast ADR-007 claims is the only forgery route. Downstream persistence then trusts scope.profileId directly, which makes this a cross-profile data-access bypass rather than a typing nicety. The prescription: make the scope genuinely nominal so a spread copy cannot remain assignable, and if it is meant to be a runtime capability rather than a compile-time proof, use issuance identity as well. The pattern already exists in this repository twice -- ClassifiedRuntime in packages/contracts/src/shared/runtime.ts and PinnedTarget in media-inspection -- module-private brand, freeze, WeakSet registry, identity check as the consumer's first action. THE SURFACE THIS IMPLIES IS WIDER THAN THIS TASK CURRENTLY DECLARES, AND THAT IS SETTLED BEFORE THE CLAIM RATHER THAN DISCOVERED DURING IT. The reviewer offered two levels: at minimum make the scope genuinely nominal so a spread copy cannot remain assignable, and if it is meant to be a runtime capability, use issuance identity as well. The minimum is NOT ACHIEVABLE IN THE TYPE SYSTEM, and PL-0706 already established why: a spread copies a branded property along with everything else and type-checks with no cast at all, so only object identity rejects it. TypeScript cannot make a spread unassignable. Therefore the runtime registry is not the optional upper level here, it is the only level that works -- and a registry closes nothing unless the consumers ASK. The consumers are in another package: packages/persistence/src/progress-repository.ts and watchlist-repository.ts read scope.profileId straight into their predicates, and profile-repository.ts and repository-scoping.test.ts also handle the type. So this task must declare packages/persistence/src/** as a write path when it is claimed, not merely the migration, and it will then overlap PL-0402, PL-0403 and PL-0404, which are BACKLOG today and must be sequenced after it. The alternative -- brand and registry in packages/auth with no consumer asking -- would produce a capability that looks unforgeable and is not, which is worse than the present state because it would read as fixed. Whoever claims this should widen the declaration in the same edit that claims it, and say so in the reason. BLOCKER 2, AND THE EXACT PIN IS WORKING RATHER THAN FAILING. better-auth and its Drizzle adapter are pinned at exactly 1.7.1. Upstream's current release is 1.7.4, from 2026-09-10, and its security policy supports only the latest version. The reviewer was explicit that this is not an argument against exact pins: it proves the policy works by making staleness visible, which is what ADR-007 said it was for. Move both packages together and update REVIEWED_BETTER_AUTH_VERSION. DO NOT BUMP AND LEAVE THE MIGRATION: 1.7.3 restored the 1.6 account core schema after the issuer-schema change in 1.7.0 through 1.7.2, while this repository's hand-written migration still has an issuer column and an (issuer, account_id) uniqueness rule. The migration must be regenerated or reconciled against the reviewed version BEFORE security approval. That is why packages/persistence/migrations/0000_profile_scoped_identity.sql moves from reviewDependency to WRITE PATH here: on PL-0401 it was only evidence, and read-only was correct; here it has to change, and reviewDependencies are read-only by contract. PL-0402 also owns packages/persistence and is BACKLOG, so no active conflict exists today, but the two must be sequenced and the reviewer should say which owns that file afterwards. BLOCKER 3. ADR-007 still states obsolete control-plane routing, naming gpt-architect as preferred implementer and claude-lead as reviewer, while the record now correctly has claude-backend implementing and gpt-architect reviewing independently. Rewrite that paragraph as history rather than as current routing, and prefer wording that points at the task gate as authoritative -- otherwise completing the review needs a post-approval edit that immediately stales the fingerprint it just bound. TWO HONEST CAVEATS CARRIED FORWARD FROM PL-0401, neither an unmet clause: the migration has never been executed, because no PostgreSQL exists in this environment, and better-auth.ts is deliberately untested. SEQUENCING: this task is READY rather than BLOCKED because nothing external gates it, but it should not be claimed until the three blockers are implemented, and claiming it early would reserve packages/auth and two documents while no work was happening.",
@@ -3347,7 +3453,7 @@
         "unit"
       ],
       "acceptance": "A recorded decision selects the auth approach and states the boundary it implies: a packages/auth seam the rest of the application depends on instead of the vendor library, database-backed sessions, a deliberately small enabled surface with the advanced plugin stacks left off, and an exact-pinned dependency whose upgrades are treated as security-sensitive work rather than floated on a caret range. The pinned version must be one upstream currently supports, and the hand-written migration must agree with that version's account schema rather than an abandoned intermediate one. ProfileScope must be UNFORGEABLE by a holder of a genuine scope: a spread copy carrying a replaced profileId must not remain assignable, and any consumer that grants data access on the strength of a scope must establish that the scope was ISSUED rather than merely that it type-checks. The decision record must describe the routing that actually applies, or point at the task record as authoritative rather than restating it.",
-      "owner": "claude-backend",
+      "owner": null,
       "gateResults": {
         "typecheck": {
           "status": "pass",
@@ -3369,19 +3475,76 @@
           "by": "claude-backend",
           "commitSha": "e097590ee79e112f26073b293a4ad7fbb2bd1fd6",
           "evidence": "THE MIGRATION WAS EXECUTED, NOT RECONCILED. PostgreSQL 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1), cluster 16/main, installed and started in this container; a dedicated role and database were created rather than using the superuser. psql -v ON_ERROR_STOP=1 -f packages/persistence/migrations/0000_profile_scoped_identity.sql exit 0, 8 CREATE TABLE and 7 CREATE INDEX; re-applied to a second empty database, exit 0, 8 tables, 20 indexes, 26 constraints, proving the file is clean from empty rather than only from the state the first run left. THE GENERATOR WAS RUN, AND THE COMMAND THIS REPOSITORY TOLD READERS TO RUN IS THE WRONG ONE. @better-auth/cli is deprecated on npm, latest 1.4.21, and depends on better-auth 1.4.21 directly, so npx @better-auth/cli generate would have described a version this repository does not use. The version-matched CLI is the npm package 'auth': auth@1.7.5 pins better-auth 1.7.5 and @better-auth/core 1.7.5 exactly. npx auth@1.7.5 generate against the real createLibertyAuth config, exit 0, 'Schema was generated successfully!'. THE DIFF, FIELD BY FIELD against information_schema on the applied database: no missing column, no extra column, no type mismatch, no nullability mismatch across user, session, account and verification; every index and unique the library asks for exists physically. All three round-42 changes confirmed -- the issuer column is absent from the generated schema, the library declares NO unique index on account at all, and the (provider_id, account_id) unique is therefore OURS rather than upstream's, which round 42 claimed and this round proves. Its safety argument was executed rather than argued: a deliberate duplicate was refused with 23505 on account_provider_id_account_id_key. Live Better Auth 1.7.5 sign-up and sign-in wrote rows to user, account and session with the library's default-on schema validation running and no SchemaMismatchError. The profile half was exercised in SQL: the display-name unique, the cross-household selection refusal, both progress check constraints, a NULL-position lease, and the delete cascade. NO CHANGE TO THE MIGRATION WAS REQUIRED. THREE THINGS THIS DOES NOT PROVE, STATED SO THE GATE IS NOT READ AS MORE THAN IT IS: drizzle-kit is still unrun and migrations/meta carries no journal or snapshot, so the file is applied by psql rather than by the tool that owns it; concurrency was never raced, so the guarded writer-epoch UPDATE was executed as a statement and not contended, and postgres-repository.ts has still executed nothing; and a naive mechanical diff reports 36 false findings because the expected schema keys fields camelCase while the physical columns are snake_case -- the clean diff quoted here maps expected fields through the Drizzle schema to physical names, and a reviewer re-running the naive comparison should know why it disagrees. Reproduction recipe recorded in docs/DATA_MODEL.md."
+        },
+        "architecture-review": {
+          "status": "pass",
+          "at": "2026-09-16T00:40:47.857Z",
+          "by": "gpt-architect",
+          "commitSha": "3f0256dda187956b700e372f370deec0347420d3",
+          "evidence": "gpt-architect: PASS. Round 43 closes the blocking findings from the previous review. Removing profileId and grantedFor from the public ProfileScope type is accepted AND PREFERRED. Better Auth 1.7.5 remains the pinned target and must not be downgraded to 1.7.4. The project-owned UNIQUE(provider_id, account_id) is to stay documented as Liberty defence-in-depth rather than as an upstream Better Auth requirement. TRANSPORT: transcribed by claude-lead from gpt-architect's round-43 verdicts, RELAYED BY THE HUMAN COMMANDER in chat rather than read by Claude from the review page or delivered over the agent bus. coordination/agent-bus/gpt-to-claude/ is still empty because repository writes from that integration return 403. This is an authentic reviewer decision carried by hand across a broken transport and it is NOT machine-attested; nothing in this repository can prove the transcription is faithful. One checkable claim in the verdict was checked rather than assumed: it states it reviewed remote head 3f0256dda187956b700e372f370deec0347420d3, and git fetch confirms origin/codex/pl-ai-0001-repair is exactly that sha, so the reviewer could in fact fetch what it says it read. The verdicts are also internally consistent with the in-progress review Claude read directly from the ChatGPT page one round earlier, which named the same two corrective items, the same Stremio-surface question and the same PL-0902-gates-routing point."
+        },
+        "security-review": {
+          "status": "pass",
+          "at": "2026-09-16T00:40:48.061Z",
+          "by": "gpt-architect",
+          "commitSha": "3f0256dda187956b700e372f370deec0347420d3",
+          "evidence": "gpt-architect: PASS. The in-memory repository now obtains profile ids through the checked ProfileScope accessor rather than direct property access. THE WEAKSET ISSUANCE REGISTRY REMAINS THE ACTUAL RUNTIME CONTROL and the type-level brand alone is not to be described as sufficient -- the reviewer restated this explicitly, and it is the wording this task's own documentation is held to. The cast-free Object.assign forgery regression is called useful and is to remain. The PostgreSQL migration execution and diff evidence now satisfies the previously missing real-database verification. TRANSPORT: transcribed by claude-lead from gpt-architect's round-43 verdicts, RELAYED BY THE HUMAN COMMANDER in chat rather than read by Claude from the review page or delivered over the agent bus. coordination/agent-bus/gpt-to-claude/ is still empty because repository writes from that integration return 403. This is an authentic reviewer decision carried by hand across a broken transport and it is NOT machine-attested; nothing in this repository can prove the transcription is faithful. One checkable claim in the verdict was checked rather than assumed: it states it reviewed remote head 3f0256dda187956b700e372f370deec0347420d3, and git fetch confirms origin/codex/pl-ai-0001-repair is exactly that sha, so the reviewer could in fact fetch what it says it read. The verdicts are also internally consistent with the in-progress review Claude read directly from the ChatGPT page one round earlier, which named the same two corrective items, the same Stremio-surface question and the same PL-0902-gates-routing point."
         }
       },
       "implementationAgent": "claude-backend",
-      "updatedAt": "2026-09-16T00:22:33.148Z",
+      "updatedAt": "2026-09-16T00:41:21.897Z",
       "implementationBaseSha": "68c432645131336393f3d5e08503951193ca5350",
       "supersedes": "PL-0401",
-      "gateAddedRound43": "The integration gate was ADDED to this task on 2026-09-16, not inherited. Both PL-0401 and PL-0405 carried the same honest caveat through every prior round -- the hand-written identity migration has never been executed, because no PostgreSQL exists in this environment -- and the caveat was true, so it was carried rather than papered over. It is no longer true: PostgreSQL 16.15 installs and runs in this session's container, the migration was applied to two empty databases, and Better Auth 1.7.5's own generator was run and diffed against the applied schema. Evidence that exists and is not recorded against a gate is prose a reviewer has to take on trust, so the gate was added rather than the evidence being left in a report. Adding a required gate mid-flight can only raise what DONE demands of this task and never lower it, which is why it is done here rather than deferred to a successor."
+      "gateAddedRound43": "The integration gate was ADDED to this task on 2026-09-16, not inherited. Both PL-0401 and PL-0405 carried the same honest caveat through every prior round -- the hand-written identity migration has never been executed, because no PostgreSQL exists in this environment -- and the caveat was true, so it was carried rather than papered over. It is no longer true: PostgreSQL 16.15 installs and runs in this session's container, the migration was applied to two empty databases, and Better Auth 1.7.5's own generator was run and diffed against the applied schema. Evidence that exists and is not recorded against a gate is prose a reviewer has to take on trust, so the gate was added rather than the evidence being left in a report. Adding a required gate mid-flight can only raise what DONE demands of this task and never lower it, which is why it is done here rather than deferred to a successor.",
+      "review": {
+        "taskId": "PL-0405",
+        "implementationAgent": "claude-backend",
+        "implementationOwner": "claude-backend",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "3f0256dda187956b700e372f370deec0347420d3",
+        "reviewedBaseSha": "68c432645131336393f3d5e08503951193ca5350",
+        "reviewedTreeHash": "eb720a36ff81cbd238b723eee9216d1f96ba00f3238537c6f97b4a16f5782e63",
+        "reviewedFileCount": 54,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [
+          "packages/contracts/src/shared/runtime.ts",
+          "packages/media-inspection/src/pin.ts"
+        ],
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-09-16T00:41:15.491Z",
+        "evidence": "APPROVED at 3f0256dda187956b700e372f370deec0347420d3. architecture-review PASS and security-review PASS; round 43 closes the blocking findings from the previous review. The in-memory repository now obtains profile ids through the checked accessor rather than direct property access, and removing profileId and grantedFor from the public ProfileScope type is accepted and preferred. THE WEAKSET ISSUANCE REGISTRY REMAINS THE ACTUAL RUNTIME CONTROL: the reviewer was explicit that the type-level brand alone is not to be described as sufficient, which is the wording this task's documentation is held to going forward. The cast-free Object.assign forgery regression is to remain. Better Auth 1.7.5 stays pinned and must not be downgraded to 1.7.4. The PostgreSQL migration execution and diff evidence satisfies the previously missing real-database verification. The project-owned UNIQUE(provider_id, account_id) stays documented as Liberty defence-in-depth rather than as an upstream requirement. TRANSCRIBED BY CLAUDE-LEAD from gpt-architect's round-43 verdicts, relayed by the human commander in chat rather than read from the review page or delivered over the agent bus; coordination/agent-bus/gpt-to-claude/ is still empty because that integration's repository writes return 403. Authentic reviewer decision, carried by hand, NOT machine-attested. The verdict states it reviewed remote head 3f0256dda187956b700e372f370deec0347420d3 and git fetch confirms origin/codex/pl-ai-0001-repair is exactly that sha, so the one mechanically checkable claim in it was checked rather than assumed."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PL-0405",
+          "implementationAgent": "claude-backend",
+          "implementationOwner": "claude-backend",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "3f0256dda187956b700e372f370deec0347420d3",
+          "reviewedBaseSha": "68c432645131336393f3d5e08503951193ca5350",
+          "reviewedTreeHash": "eb720a36ff81cbd238b723eee9216d1f96ba00f3238537c6f97b4a16f5782e63",
+          "reviewedFileCount": 54,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "packages/contracts/src/shared/runtime.ts",
+            "packages/media-inspection/src/pin.ts"
+          ],
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-09-16T00:41:15.491Z",
+          "evidence": "APPROVED at 3f0256dda187956b700e372f370deec0347420d3. architecture-review PASS and security-review PASS; round 43 closes the blocking findings from the previous review. The in-memory repository now obtains profile ids through the checked accessor rather than direct property access, and removing profileId and grantedFor from the public ProfileScope type is accepted and preferred. THE WEAKSET ISSUANCE REGISTRY REMAINS THE ACTUAL RUNTIME CONTROL: the reviewer was explicit that the type-level brand alone is not to be described as sufficient, which is the wording this task's documentation is held to going forward. The cast-free Object.assign forgery regression is to remain. Better Auth 1.7.5 stays pinned and must not be downgraded to 1.7.4. The PostgreSQL migration execution and diff evidence satisfies the previously missing real-database verification. The project-owned UNIQUE(provider_id, account_id) stays documented as Liberty defence-in-depth rather than as an upstream requirement. TRANSCRIBED BY CLAUDE-LEAD from gpt-architect's round-43 verdicts, relayed by the human commander in chat rather than read from the review page or delivered over the agent bus; coordination/agent-bus/gpt-to-claude/ is still empty because that integration's repository writes return 403. Authentic reviewer decision, carried by hand, NOT machine-attested. The verdict states it reviewed remote head 3f0256dda187956b700e372f370deec0347420d3 and git fetch confirms origin/codex/pl-ai-0001-repair is exactly that sha, so the one mechanically checkable claim in it was checked rather than assumed."
+        }
+      ],
+      "completedAt": "2026-09-16T00:41:21.897Z"
     },
     {
       "id": "PL-AI-0007",
       "priority": "P0",
       "lane": "Coordination",
-      "status": "REVIEW",
+      "status": "DONE",
       "title": "Supersession is a field, and a task cannot stay gated behind one",
       "description": "Four tasks -- PL-0205, PL-0401, PL-0601, PL-0703 -- are BLOCKED, terminal, and superseded by a corrective re-run. Each says so only in prose. BLOCKED transitions only to BACKLOG, READY or CANCELED, so a superseded task can never reach DONE, and with completion.requireAllDependenciesDone true, any task depending on one is gated forever. That is not a hypothetical: PL-0301 was gated behind PL-0205 while PL-0207 sat DONE, and with it PL-0302, PL-0501, PL-0502, PL-0701 and PL-0702. A human noticed. Nothing in ai:validate could have.",
       "notes": "SCOPE IS THE VALIDATOR, NOT A DEPENDENCY REWRITER. The rule reports; it never edits a dependency, because repointing a dependency is a task-definition change and those are deliberate, reasoned and recorded -- see PL-0301's own notes for what that looks like. An automatic repointer would make the graph self-modifying on the strength of a field any writer can set. THE RULE, PRECISELY. For each task T declaring supersededBy S: S must exist, must not be T, and T must not itself be DONE, or that is an ERROR, because a DONE task that claims to be superseded is two contradictory records of the same work. If S declares supersedes, it must name T -- a one-way pointer is a typo waiting to be trusted. Then, for each task D whose dependencies contain T: if S is DONE, ERROR, because D is gated behind a task that can never complete while its replacement already has; if S is not DONE, WARN, because the edge is not yet fatal but will become so the moment S completes, and a warning that arrives before the deadlock is the entire point. WHY ERROR AND NOT WARN FOR THE FIRST CASE. ai:validate already treats provenance drift as a warning and structural impossibility as an error. A dependency that can never be satisfied is structural: no sequence of legal transitions resolves it. It belongs with 'missing dependency' and 'invalid status', not with drift. WHAT THIS RULE CANNOT DO, STATED SO NOBODY OVERTRUSTS IT. supersededBy is self-asserted, exactly like fromAgent on the agent bus. It proves that somebody wrote a pointer, not that the successor genuinely carries the predecessor's work. A wrong pointer produces a wrong error or hides a real deadlock. It is a cheap alarm on a failure mode that has already cost this project one stalled milestone, not a proof of anything.",
@@ -3402,7 +3565,7 @@
         "unit"
       ],
       "acceptance": "ai:validate refuses a task graph in which a task depends on a task that declares supersededBy and whose named successor is DONE, and warns when the successor is not yet DONE. It also refuses a supersededBy naming a missing task, naming itself, declared on a DONE task, or contradicted by the successor's supersedes field. The rule reports and never edits a dependency. The four existing supersession pairs validate clean, and a regression in scripts/test-ai-control-plane.mjs proves the rule fires -- both that it errors on a reconstructed PL-0301-behind-PL-0205 graph and that it stays silent on the repaired one, so it cannot pass by being inert.",
-      "owner": "claude-lead",
+      "owner": null,
       "gateResults": {
         "repo-validate": {
           "status": "pass",
@@ -3427,14 +3590,55 @@
         }
       },
       "implementationAgent": "claude-lead",
-      "updatedAt": "2026-09-15T17:32:54.857Z",
-      "implementationBaseSha": "80e3d3e3e0130571a1a0791b496a9e2cce0c6c7a"
+      "updatedAt": "2026-09-16T00:41:21.719Z",
+      "implementationBaseSha": "80e3d3e3e0130571a1a0791b496a9e2cce0c6c7a",
+      "review": {
+        "taskId": "PL-AI-0007",
+        "implementationAgent": "claude-lead",
+        "implementationOwner": "claude-lead",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "3f0256dda187956b700e372f370deec0347420d3",
+        "reviewedBaseSha": "80e3d3e3e0130571a1a0791b496a9e2cce0c6c7a",
+        "reviewedTreeHash": "68591b10632cf6c09614a4bb074e0a3d0648e6aca36f43a26acf3761e28319e3",
+        "reviewedFileCount": 4,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [
+          "control/policies.json"
+        ],
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-09-16T00:41:15.283Z",
+        "evidence": "APPROVED at 3f0256dda187956b700e372f370deec0347420d3. The supersession fields are accepted and the validator behaviour is correct: a warning while the successor is unfinished, an error once a dependency remains pointed at a superseded task whose successor is DONE. REPORT-ONLY BEHAVIOUR IS REQUIRED and automatic repointing must not be added. The reviewer restated the limit in the same terms the implementation does: supersededBy and supersedes remain assertions about graph INTENT, not proof that the replacement carries equivalent implementation. The malformed-pointer checks and the frozen-fixture regression approach are accepted. TRANSCRIBED BY CLAUDE-LEAD from gpt-architect's round-43 verdicts, relayed by the human commander in chat rather than read from the review page or delivered over the agent bus; coordination/agent-bus/gpt-to-claude/ is still empty because that integration's repository writes return 403. Authentic reviewer decision, carried by hand, NOT machine-attested. The verdict states it reviewed remote head 3f0256dda187956b700e372f370deec0347420d3 and git fetch confirms origin/codex/pl-ai-0001-repair is exactly that sha, so the one mechanically checkable claim in it was checked rather than assumed."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PL-AI-0007",
+          "implementationAgent": "claude-lead",
+          "implementationOwner": "claude-lead",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "3f0256dda187956b700e372f370deec0347420d3",
+          "reviewedBaseSha": "80e3d3e3e0130571a1a0791b496a9e2cce0c6c7a",
+          "reviewedTreeHash": "68591b10632cf6c09614a4bb074e0a3d0648e6aca36f43a26acf3761e28319e3",
+          "reviewedFileCount": 4,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "control/policies.json"
+          ],
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-09-16T00:41:15.283Z",
+          "evidence": "APPROVED at 3f0256dda187956b700e372f370deec0347420d3. The supersession fields are accepted and the validator behaviour is correct: a warning while the successor is unfinished, an error once a dependency remains pointed at a superseded task whose successor is DONE. REPORT-ONLY BEHAVIOUR IS REQUIRED and automatic repointing must not be added. The reviewer restated the limit in the same terms the implementation does: supersededBy and supersedes remain assertions about graph INTENT, not proof that the replacement carries equivalent implementation. The malformed-pointer checks and the frozen-fixture regression approach are accepted. TRANSCRIBED BY CLAUDE-LEAD from gpt-architect's round-43 verdicts, relayed by the human commander in chat rather than read from the review page or delivered over the agent bus; coordination/agent-bus/gpt-to-claude/ is still empty because that integration's repository writes return 403. Authentic reviewer decision, carried by hand, NOT machine-attested. The verdict states it reviewed remote head 3f0256dda187956b700e372f370deec0347420d3 and git fetch confirms origin/codex/pl-ai-0001-repair is exactly that sha, so the one mechanically checkable claim in it was checked rather than assumed."
+        }
+      ],
+      "completedAt": "2026-09-16T00:41:21.719Z"
     },
     {
       "id": "PL-0901",
       "priority": "P0",
       "lane": "Architecture",
-      "status": "REVIEW",
+      "status": "DONE",
       "title": "Windows desktop shell and the PlayerAdapter boundary",
       "description": "Project Liberty's first production target is Windows desktop on the commander's own machine. The commander has settled the direction: a Tauri shell, the existing Next.js application preserved rather than rewritten and served by a Next standalone sidecar, a PlayerAdapter boundary the application and domain layers depend on instead of any concrete player, libmpv for compatible non-DRM playback, Shaka/EME retained for DRM-capable playback, capability routing made explicit before playback rather than discovered during it, and an LGPL-compatible libmpv/FFmpeg build pipeline of our own rather than a GPL prebuilt. This task records that decision and specifies the boundary. It writes documentation only -- no shell, no adapter, no dependency is added here, because the instruction is that architecture is recorded before a large irreversible implementation, not after it.",
       "notes": "THE AUDIT CAME FIRST AND IT FOUND A CLEAN SLATE. A repository-wide search for electron, tauri, mpv, libmpv, webview2, neutralino and nw.js across every .ts, .tsx, .json, .md, .mjs and .yml outside node_modules returned nothing. So neither shell was favoured by anything already in the tree, and the decision was made on evidence rather than on inertia. Today's player is shaka-player ~5.2.6 with xstate ^5.32.5 and custom-media-element in apps/web. THE DECIDING FACT IS COMPOSITING, NOT BUNDLE SIZE. Putting HTML chrome over a hardware-accelerated native video surface in one window on Windows is a documented, shipping arrangement on WebView2 -- ICoreWebView2Controller2::put_DefaultBackgroundColor accepts alpha 0 or 255 only, and at 0 the host's content renders beneath -- and has no supported path on Chromium, where PPAPI is gone and child HWNDs are no longer in the window hierarchy. Stremio ships the WebView2 plus libmpv --wid arrangement in production on Windows and measured its previous render-API-into-a-texture approach as 2-5x worse. Any size-based argument for Tauri should be dropped: with a Node sidecar the installer lands near Electron's anyway. THE SIDECAR IS WHAT PRESERVES THE APPLICATION. Tauri's default is a static export, which would force every /api/v1 route handler off Next -- a rewrite of the application's architecture, which the instruction forbids. output: standalone in a sidecar keeps Server Components, route handlers, proxy.ts, cookies(), headers(), Server Actions and ISR working. It costs a Node runtime in the bundle, a loopback listener, supervision code and Tauri's CSP injection, which does not reach an external http origin. ONE QUESTION THIS TASK DOES NOT DECIDE AND MUST NOT DECIDE SILENTLY. A sidecar runs the application's server on a machine the user administers. If provider resolution runs there, then the boundary that enforces invariants 1 and 2 executes from files the user can read and replace, with whatever credentials it needs in its environment. The alternative is that the desktop build implements those specific routes as an authenticated proxy to the backend -- same route, same contract, same URL, a different implementation behind it, selected by build target, which is ordinary adapter work rather than a rewrite. This document states the question, states the recommendation, and leaves the ruling to the reviewer and the commander. It is a design input to PL-0501 and is cheaper to supply now than to retrofit. DRM IS A ROUTING CONSTRAINT, NOT A GAP TO CLOSE. mpv has no CDM and cannot be given one. That is not something to work around: the mpv adapter must REFUSE a DRM-protected candidate with a named reason and must never attempt it, never fall back and never degrade. Which means capability routing has to be an explicit, reasoned decision before playback -- canPlay returning a reason on both branches -- rather than a guess discovered at load time. That is what makes invariant 2 structural here rather than a promise, and it is why the boundary carries a capability descriptor at all. THE LICENSING WORK IS THE LONG POLE AND IT GATES SHIPPING RATHER THAN PROTOTYPING. A stock prebuilt libmpv is a GPL build and must not ship in a closed-source product; the one LGPL variant on offer statically links an LGPLv3 FFmpeg and carries its builder's own no-warranty disclaimer. Building our own with -Dgpl=false and an LGPL FFmpeg, with an SBOM, converts an open-ended exposure into a reviewable artifact. Nothing in this document is legal advice and counsel review is named as a precondition of shipping rather than assumed.",
@@ -3460,11 +3664,81 @@
         "rights-review"
       ],
       "acceptance": "A recorded architecture decision states the Windows desktop target, the Tauri shell, the preserved Next.js application served by a standalone sidecar, and the LGPL-compatible libmpv/FFmpeg build pipeline, each with the evidence it rests on and the strongest argument against it. It specifies PlayerAdapter as an interface the application and domain layers depend on -- load an authorized playback session, play, pause, seek, stop, select audio track, select subtitle track, set volume, expose position and duration, expose buffering and stall events, expose recoverable and fatal errors, expose track metadata, expose A/V sync telemetry where available, dispose -- with no mpv, Electron, Tauri or Shaka type reachable from it, and names the two implementations behind it and the explicit capability routing that chooses between them, including the requirement that the mpv adapter refuse DRM-protected candidates with a named reason rather than attempt them. It states that media addresses continue to come only from authorized provider resolution and the playback-session boundary and that the client can never submit one, that stream candidate ranking stays in @liberty/media-engine, and that provider-specific logic stays in @liberty/provider-sdk. It states where provider resolution runs in the desktop build as an open question with a recommendation rather than deciding it silently, because that answer is a design input to PL-0501. It records what was verified, what was not, and which specific facts would reverse each decision. No shell, adapter or dependency is implemented here.",
-      "owner": "claude-lead",
-      "gateResults": {},
+      "owner": null,
+      "gateResults": {
+        "architecture-review": {
+          "status": "pass",
+          "at": "2026-09-16T00:40:48.257Z",
+          "by": "gpt-architect",
+          "commitSha": "3f0256dda187956b700e372f370deec0347420d3",
+          "evidence": "gpt-architect: PASS on the desktop direction as recorded: Tauri v2 Windows shell, the existing Next.js application preserved, a Next standalone sidecar, a PlayerAdapter boundary independent of mpv, Tauri and Shaka implementation types, libmpv for compatible non-DRM native playback, Shaka/EME for DRM-capable playback, capability routing before playback, and route selection as a BUILD-TARGET architecture decision rather than a runtime flag that could restore local credential-bearing resolution. PL-0902, PL-0903 and PL-0904 are confirmed as the correct place for the DRM capability contract, the generic engine-unavailable reason and the engine-neutral playback error origin, and PL-0902 MUST GATE implementation of native-versus-DRM player routing. TRANSPORT: transcribed by claude-lead from gpt-architect's round-43 verdicts, RELAYED BY THE HUMAN COMMANDER in chat rather than read by Claude from the review page or delivered over the agent bus. coordination/agent-bus/gpt-to-claude/ is still empty because repository writes from that integration return 403. This is an authentic reviewer decision carried by hand across a broken transport and it is NOT machine-attested; nothing in this repository can prove the transcription is faithful. One checkable claim in the verdict was checked rather than assumed: it states it reviewed remote head 3f0256dda187956b700e372f370deec0347420d3, and git fetch confirms origin/codex/pl-ai-0001-repair is exactly that sha, so the reviewer could in fact fetch what it says it read. The verdicts are also internally consistent with the in-progress review Claude read directly from the ChatGPT page one round earlier, which named the same two corrective items, the same Stremio-surface question and the same PL-0902-gates-routing point."
+        },
+        "rights-review": {
+          "status": "pass",
+          "at": "2026-09-16T00:40:48.498Z",
+          "by": "gpt-architect",
+          "commitSha": "3f0256dda187956b700e372f370deec0347420d3",
+          "evidence": "gpt-architect: PASS. mpv explicitly refuses DRM-required candidates rather than attempting them. Provider resolution and credential-bearing provider operations are NOT trusted to the user-administered sidecar; desktop playback and provider routes use an authenticated backend proxy while preserving the application-facing route contract. The LGPL-compatible libmpv/FFmpeg pipeline is to be built by us with pinned inputs and an SBOM before shipping. TRANSPORT: transcribed by claude-lead from gpt-architect's round-43 verdicts, RELAYED BY THE HUMAN COMMANDER in chat rather than read by Claude from the review page or delivered over the agent bus. coordination/agent-bus/gpt-to-claude/ is still empty because repository writes from that integration return 403. This is an authentic reviewer decision carried by hand across a broken transport and it is NOT machine-attested; nothing in this repository can prove the transcription is faithful. One checkable claim in the verdict was checked rather than assumed: it states it reviewed remote head 3f0256dda187956b700e372f370deec0347420d3, and git fetch confirms origin/codex/pl-ai-0001-repair is exactly that sha, so the reviewer could in fact fetch what it says it read. The verdicts are also internally consistent with the in-progress review Claude read directly from the ChatGPT page one round earlier, which named the same two corrective items, the same Stremio-surface question and the same PL-0902-gates-routing point."
+        }
+      },
       "implementationAgent": "claude-lead",
-      "updatedAt": "2026-09-16T00:22:33.488Z",
-      "implementationBaseSha": "80e3d3e3e0130571a1a0791b496a9e2cce0c6c7a"
+      "updatedAt": "2026-09-16T00:41:22.276Z",
+      "implementationBaseSha": "80e3d3e3e0130571a1a0791b496a9e2cce0c6c7a",
+      "review": {
+        "taskId": "PL-0901",
+        "implementationAgent": "claude-lead",
+        "implementationOwner": "claude-lead",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "3f0256dda187956b700e372f370deec0347420d3",
+        "reviewedBaseSha": "80e3d3e3e0130571a1a0791b496a9e2cce0c6c7a",
+        "reviewedTreeHash": "66e04cee994c31c2c03b7cd226044e8d50b75d83ccbe69b185bb5ad2727ce549",
+        "reviewedFileCount": 10,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [
+          "apps/web/src/components/player/playback-machine.ts",
+          "apps/web/src/components/player/engine.ts",
+          "apps/web/src/components/player/shaka-engine.ts",
+          "apps/web/src/components/player/playback-session.ts",
+          "packages/contracts/src/domains/playback.ts",
+          "docs/RESEARCH_PLAYBACK.md",
+          "docs/AV_SYNC_MEASUREMENT.md",
+          "docs/CONTENT_RIGHTS.md"
+        ],
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-09-16T00:41:15.900Z",
+        "evidence": "APPROVED at 3f0256dda187956b700e372f370deec0347420d3. architecture-review PASS and rights-review PASS on the desktop direction as recorded: Tauri v2 Windows shell, the existing Next.js application preserved, a Next standalone sidecar, a PlayerAdapter boundary independent of mpv, Tauri and Shaka implementation types, libmpv for compatible non-DRM native playback, Shaka/EME for DRM-capable playback, capability routing before playback, mpv explicitly refusing DRM-required candidates rather than attempting them, and our own LGPL-compatible libmpv/FFmpeg pipeline with pinned inputs and an SBOM before shipping. The security ruling is affirmed: provider resolution and credential-bearing provider operations are NOT trusted to the user-administered sidecar, desktop playback and provider routes use an authenticated backend proxy preserving the application-facing route contract, and ROUTE SELECTION IS A BUILD-TARGET ARCHITECTURE DECISION, not a runtime flag that could restore local credential-bearing resolution. PL-0902, PL-0903 and PL-0904 are confirmed as the right home for the DRM capability contract, the generic engine-unavailable reason and the engine-neutral playback error origin, and PL-0902 MUST GATE implementation of native-versus-DRM player routing. TRANSCRIBED BY CLAUDE-LEAD from gpt-architect's round-43 verdicts, relayed by the human commander in chat rather than read from the review page or delivered over the agent bus; coordination/agent-bus/gpt-to-claude/ is still empty because that integration's repository writes return 403. Authentic reviewer decision, carried by hand, NOT machine-attested. The verdict states it reviewed remote head 3f0256dda187956b700e372f370deec0347420d3 and git fetch confirms origin/codex/pl-ai-0001-repair is exactly that sha, so the one mechanically checkable claim in it was checked rather than assumed."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PL-0901",
+          "implementationAgent": "claude-lead",
+          "implementationOwner": "claude-lead",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "3f0256dda187956b700e372f370deec0347420d3",
+          "reviewedBaseSha": "80e3d3e3e0130571a1a0791b496a9e2cce0c6c7a",
+          "reviewedTreeHash": "66e04cee994c31c2c03b7cd226044e8d50b75d83ccbe69b185bb5ad2727ce549",
+          "reviewedFileCount": 10,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "apps/web/src/components/player/playback-machine.ts",
+            "apps/web/src/components/player/engine.ts",
+            "apps/web/src/components/player/shaka-engine.ts",
+            "apps/web/src/components/player/playback-session.ts",
+            "packages/contracts/src/domains/playback.ts",
+            "docs/RESEARCH_PLAYBACK.md",
+            "docs/AV_SYNC_MEASUREMENT.md",
+            "docs/CONTENT_RIGHTS.md"
+          ],
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-09-16T00:41:15.900Z",
+          "evidence": "APPROVED at 3f0256dda187956b700e372f370deec0347420d3. architecture-review PASS and rights-review PASS on the desktop direction as recorded: Tauri v2 Windows shell, the existing Next.js application preserved, a Next standalone sidecar, a PlayerAdapter boundary independent of mpv, Tauri and Shaka implementation types, libmpv for compatible non-DRM native playback, Shaka/EME for DRM-capable playback, capability routing before playback, mpv explicitly refusing DRM-required candidates rather than attempting them, and our own LGPL-compatible libmpv/FFmpeg pipeline with pinned inputs and an SBOM before shipping. The security ruling is affirmed: provider resolution and credential-bearing provider operations are NOT trusted to the user-administered sidecar, desktop playback and provider routes use an authenticated backend proxy preserving the application-facing route contract, and ROUTE SELECTION IS A BUILD-TARGET ARCHITECTURE DECISION, not a runtime flag that could restore local credential-bearing resolution. PL-0902, PL-0903 and PL-0904 are confirmed as the right home for the DRM capability contract, the generic engine-unavailable reason and the engine-neutral playback error origin, and PL-0902 MUST GATE implementation of native-versus-DRM player routing. TRANSCRIBED BY CLAUDE-LEAD from gpt-architect's round-43 verdicts, relayed by the human commander in chat rather than read from the review page or delivered over the agent bus; coordination/agent-bus/gpt-to-claude/ is still empty because that integration's repository writes return 403. Authentic reviewer decision, carried by hand, NOT machine-attested. The verdict states it reviewed remote head 3f0256dda187956b700e372f370deec0347420d3 and git fetch confirms origin/codex/pl-ai-0001-repair is exactly that sha, so the one mechanically checkable claim in it was checked rather than assumed."
+        }
+      ],
+      "completedAt": "2026-09-16T00:41:22.276Z"
     },
     {
       "reviewAgent": "gpt-architect",
@@ -3473,7 +3747,7 @@
       "id": "PL-0902",
       "priority": "P0",
       "lane": "Architecture",
-      "status": "BACKLOG",
+      "status": "READY",
       "title": "DRM capability on the candidate and playback-session contract",
       "description": "packages/contracts/src contains no occurrence of drm, widevine, playready or eme -- verified by grep across the whole source tree on 2026-09-15. So a resolved candidate carries no statement about whether it is encrypted, under which system, or against which license server. PL-0901 makes that a blocking gap rather than a cosmetic one: the desktop build routes between an mpv adapter that has no CDM and cannot be given one, and a Shaka/EME adapter that has one, and PlayerAdapter.canPlay is required to return a REASON on both branches rather than a boolean guess. A reasoned decision cannot be made from a contract that carries no field to reason about, so this gates the capability routing in PL-0901 section 4.",
       "notes": "THE SHAPE IS A CAPABILITY DESCRIPTOR, NOT A BOOLEAN. An isDrm flag would answer the routing question and nothing else; the adapter also has to say WHY it refused, and a reason trail that says drm_required with no system named is not debuggable, which is invariant 4. The reviewer should expect at minimum the protection system and, where the boundary knows it, the license acquisition endpoint -- and should rule on whether an UNKNOWN encryption state is representable, because absent is not the same as none. A candidate whose encryption state was never established must not read as clear; that is the same required-and-nullable discipline PL-0207 established for media facts, and the precedent is deliberate. WHERE IT LIVES IS PART OF THE QUESTION. The descriptor could sit on streamCandidate, on the playback-session response, or on both with one deriving from the other. The candidate is what the ranker scores and the session is what the player is handed, and PL-0301's implementation already argues at packages/provider-sdk/src/fixture/provider.ts that the playable address belongs on the session rather than the candidate, for a reason that may or may not extend to the key system. Settle it before writing it. NOTHING HERE MAY WEAKEN A PROTECTION. This task describes encryption so the correct player is chosen and so a refusal is explainable. It adds no decryption, no key handling and no fallback that would attempt a protected source with an engine that has no CDM -- invariant 2 -- and the mpv adapter's refusal must stay a refusal rather than becoming a degraded attempt. SEQUENCING: overlaps PL-0206 and PL-AI-0006 on packages/contracts and must be sequenced after whichever is active. It should land before PL-0501 writes the session response, because retrofitting a discriminated field into a shipped contract is the change PL-0501's own acceptance warns about.",
@@ -3509,7 +3783,7 @@
       "id": "PL-0903",
       "priority": "P1",
       "lane": "Player",
-      "status": "BACKLOG",
+      "status": "READY",
       "title": "An engine-unavailable reason that can say libmpv did not load",
       "description": "EngineUnavailableReason in apps/web/src/components/player/playback-controller.ts is Shaka-shaped. Its members describe a browser that cannot run the web engine, and browser_unsupported is a misnomer the moment the engine is a native library in a desktop shell rather than a script in a page. There is no member that means the native player failed to load. A NativePlayerAdapter would have to report a false reason or invent one locally, and either makes the failure less debuggable than the web path it sits beside.",
       "notes": "THE VOCABULARY, NOT A NEW MEMBER. Adding a libmpv_unavailable member beside browser_unsupported would leave the union naming one engine's failure modes and one library's, which is the same coupling one layer up. The question for the reviewer is whether the reason should describe WHAT FAILED in engine-neutral terms -- the engine could not be loaded, the platform cannot run this engine, the engine loaded and refused this source -- with the engine's own detail carried beside it rather than encoded in the member name. COUPLED TO PL-0904 AND DELIBERATELY SEPARATE. Both are the same observation in two places: the player's error vocabulary assumes Shaka. They are separate tasks because they have different consumers -- unavailability is a startup decision the controller makes before any source is loaded, while a playback error is a per-attempt outcome the failover scheduler classifies -- and because merging them would put one review range across two behaviours. Whoever takes the second should read the first's verdict. DO NOT BREAK THE FAILOVER CLASSIFICATION. packages/media-engine consumes playback failures and treats network_transient as the only retryable class; an unavailability reason that leaks into that path as retryable would make the player retry a library that is not installed.",
@@ -3541,7 +3815,7 @@
       "id": "PL-0904",
       "priority": "P1",
       "lane": "Player",
-      "status": "BACKLOG",
+      "status": "READY",
       "title": "Playback errors carry an origin, so a native failure is not a Shaka number",
       "description": "PlaybackError in apps/web/src/components/player/shaka-error.ts carries code and category pinned to Shaka 5.2.x numbering. A native adapter has no such numbers: libmpv reports MPV_EVENT_END_FILE with a reason and an error field, on an entirely different scale. Today a NativePlayerAdapter must either report null in both fields, which discards the only diagnostic it has, or borrow a Shaka number that means something else, which is worse. PL-0901 requires the adapter boundary to expose recoverable and fatal errors without leaking an engine type, and this is where that leaks.",
       "notes": "AN ORIGIN, SO THE NUMBER MEANS SOMETHING. The proposal the desktop document records is that an error names the engine that produced it, and that its engine-specific code is read only in that origin's terms. The reviewer should also rule on whether the classification the failover scheduler consumes -- rights, decode, source_unavailable, network_transient -- stays engine-neutral and is derived per origin, which is the shape that keeps packages/media-engine from learning about either engine. AN HONEST CONSEQUENCE, RECORDED BEFORE IT IS DISCOVERED. mpv's END_FILE error is coarser than Shaka's code pairs, so a native origin will legitimately classify to unknown more often. The scheduler already handles that: an unclassified charged attempt cannot silently reset the budget, and attemptsByCandidate and attempt_failed_unclassified exist for exactly this. Do not manufacture a false classification to avoid the unknown branch -- PL-0204's approval turned on the budget being honest about what it could not classify. COUPLED TO PL-0903, SEPARATE FOR THE REASON RECORDED THERE.",
