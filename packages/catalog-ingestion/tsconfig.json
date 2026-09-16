@@ -1,0 +1,28 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "include": [
+    "src/**/*.ts",
+    /*
+     * `@liberty/media-inspection` publishes ONE entry point (`.`) plus
+     * `./node/*`, so `transport.ts` reaches `fetchManifestText` through the
+     * barrel -- and the barrel also re-exports `./hls`, whose first line is
+     * `import { Parser } from "m3u8-parser"`. That package ships no types, and
+     * the ambient declaration that supplies them lives in the media-inspection
+     * source tree where only that package's own tsconfig includes it. Compiled
+     * from here, `hls.ts` is in the program and its shim is not, which is a
+     * TS7016 on a file this package never calls.
+     *
+     * Naming the shim is the smallest honest fix available inside PL-0305's
+     * `allowedPaths`. THE RIGHT FIX IS A SUBPATH EXPORT -- `./http` on
+     * `@liberty/media-inspection`, so a consumer that wants the bounded fetch
+     * does not pull the HLS parser into its program at all -- and that is an
+     * edit to that package's manifest, which this task may not make. Recorded in
+     * `docs/CATALOG_SOURCE.md` as an open item rather than left here to be
+     * rediscovered.
+     */
+    "../media-inspection/src/m3u8-parser.d.ts"
+  ]
+}

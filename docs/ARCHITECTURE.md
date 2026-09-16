@@ -46,6 +46,40 @@ Purity is necessary but not sufficient, so the two layers are now two **files**.
 
 Still outstanding: `scheduling.ts` value-imports `PLAYBACK_FAILURE_KINDS` from `@liberty/contracts/domains/failover`, whose first line is `import { z } from "zod"` and which builds its schemas at module scope, so **zod still reaches the player bundle**. The fix is a zod-free constant module inside `@liberty/contracts` that both the schema and the engine read; deriving the kinds from the engine's own policy table instead would type-check but would invert the stated invariant that membership is a schema fact and precedence is a product decision.
 
+### `@liberty/catalog-ingestion`
+
+Where the catalog comes from: identity and dedupe, refresh and staleness,
+tombstones, cursor paging, locale-tagged records, availability windows, artwork
+with its own rights basis, and one ingestion pass over a
+`CatalogMetadataProvider`. **No provider is configured**, and that is a
+`Licensing`/`Credentials` decision reserved to the human commander rather than
+an unfinished edit -- `resolveCatalogMetadataProvider()` answers
+`not-configured` with a named reason. `docs/CATALOG_SOURCE.md` carries the
+evidenced shortlist and the whole boundary statement.
+
+Three things about it are architectural rather than incidental:
+
+- **A catalog record cannot hold a media address.** The vocabulary has no url,
+  uri, src, href, manifest or stream field, artwork is an opaque asset reference
+  rather than a link, and `findMediaAddresses` scans the RAW provider payload --
+  before validation, since a schema parse silently strips unknown keys -- and
+  refuses a record that carries one. Catalog metadata and playback resolution
+  are different boundaries; this is what keeps them that way rather than a
+  promise that they are.
+- **Its only network path is PL-0304's.** `transport.ts` is a thin adapter over
+  `fetchManifestText` in `@liberty/media-inspection`, so allowlisted egress,
+  pre-socket address classification, pinned addresses, bounded bodies and
+  per-hop redirect re-authorisation are the existing controls rather than new
+  ones. Adding a second fetcher to this package is the defect to watch for.
+- **It is outside `apps/web` partly so it can import `@liberty/provider-sdk`.**
+  That is how the opaque-rights-reference rule is finally applied on a catalog
+  path without being restated: the SDK publishes one root entry point, which a
+  browse surface cannot afford to pull into a page bundle and a server-side
+  ingestion package can.
+
+It is a library. Nothing schedules it in a process yet, which is why the
+extraction candidate below still stands.
+
 ### `@liberty/observability`
 
 Structured logging/tracing boundary. It must avoid sensitive data by default.
@@ -128,7 +162,9 @@ are not forced into Shaka's numeric codes).
 Extract only when justified:
 
 - provider-health worker;
-- metadata ingestion worker;
+- metadata ingestion worker (the policy now lives in
+  `@liberty/catalog-ingestion`; what is missing is a process that schedules a
+  pass and a store that holds the result);
 - recommendation service;
 - live EPG ingest;
 - playback telemetry pipeline.
