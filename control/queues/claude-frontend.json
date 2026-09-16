@@ -1,48 +1,31 @@
 {
-  "generatedAt": "2026-09-16T00:41:22.510Z",
+  "generatedAt": "2026-09-16T01:23:54.555Z",
   "agent": "claude-frontend",
   "executionAvailable": true,
-  "assigned": [],
-  "review": [],
-  "reservedExternal": [],
-  "recommended": [
-    {
-      "id": "PL-0501",
-      "priority": "P0",
-      "lane": "Player",
-      "status": "READY",
-      "title": "Playback session API",
-      "dependencies": [
-        "PL-0201",
-        "PL-0301"
-      ],
-      "allowedPaths": [
-        "apps/web/src/app/api/v1/playback/**",
-        "packages/media-engine/**",
-        "packages/provider-sdk/**",
-        "packages/contracts/**"
-      ],
-      "preferredAgent": "claude-media",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "typecheck",
-        "unit",
-        "integration",
-        "security-review",
-        "rights-review"
-      ],
-      "acceptance": "Server resolves authorized provider candidates and clients cannot submit arbitrary media URLs; the session response is a discriminated union on outcome (granted, denied, unavailable) with reasons present on every branch rather than as an optional field, because a denial with no reason trail violates the reason-trail invariant exactly as much as a grant with none",
-      "owner": null,
-      "gateResults": {}
-    },
+  "assigned": [
     {
       "reviewAgent": "gpt-architect",
-      "owner": null,
-      "gateResults": {},
+      "owner": "claude-frontend",
+      "gateResults": {
+        "typecheck": {
+          "status": "pass",
+          "at": "2026-09-16T01:22:42.499Z",
+          "by": "claude-frontend",
+          "commitSha": "a074b986e899ba8b91d018c4bb71f8c12089b608",
+          "evidence": "npx turbo run typecheck --force at integrated head a074b986e899ba8b91d018c4bb71f8c12089b608, exit 0, 9 of 9 and 0 cached. The native case is proven by a TYPE-LEVEL literal rather than a fake adapter -- there is no NativePlayerAdapter yet, so no runtime path can produce one, and the literal fails tsc if engine_load_failed, the detail field, or the native-mpv engine id disappears. Three separate mutations were confirmed to fail tsc with exit 2."
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-09-16T01:22:42.708Z",
+          "by": "claude-frontend",
+          "commitSha": "a074b986e899ba8b91d018c4bb71f8c12089b608",
+          "evidence": "npx turbo run test --force at integrated head a074b986e899ba8b91d018c4bb71f8c12089b608, exit 0, 15 of 15 and 0 cached, 2172 passed. THE FINDING IS THAT TWO OF THE THREE MEMBERS WERE ALREADY ENGINE-NEUTRAL AND NOBODY HAD NOTICED: engine_load_failed is exactly 'libmpv did not load' and names no engine, no library and no host. The gap was never a missing member; it was that the union was DOCUMENTED as three observed browser situations, so a native adapter author would reasonably conclude none applied and invent one. So this is a re-specification plus the missing detail channel, not a new member -- and adding libmpv_unavailable beside browser_unsupported was refused, because that would leave the union naming one engine's failure modes and one library's, which is the coupling the task exists to remove. 'The engine loaded and refused this source' was also refused: unavailability is decided once before any source, while a per-source refusal is per-candidate and feeds failover, and DESKTOP_PLAYBACK section 3 already owns it as PlayerRefusalCode on canPlay. That refusal is what satisfies the no-retryable constraint BY CONSTRUCTION rather than by a guard. CONSTRAINT PROVEN IN THREE LAYERS: the reason set and the failure-kind set are disjoint and neither contains network_transient; the live route was traced -- an unavailability does reach classifyPlaybackFailure as ENGINE_ERROR and returns null because describePlaybackError of a non-shaka error yields category null and code null -- and the detail's code is a namespaced STRING precisely so an mpv number cannot be assigned where the classifier reads Shaka's scale; and the unavailability state path terminates at fatal without touching the scheduler. Five mutations were each confirmed to fail, including collapsing the missing-engine case onto browser_unsupported and building the error from a Shaka timeout."
+        }
+      },
       "id": "PL-0903",
       "priority": "P1",
       "lane": "Player",
-      "status": "READY",
+      "status": "REVIEW",
       "title": "An engine-unavailable reason that can say libmpv did not load",
       "description": "EngineUnavailableReason in apps/web/src/components/player/playback-controller.ts is Shaka-shaped. Its members describe a browser that cannot run the web engine, and browser_unsupported is a misnomer the moment the engine is a native library in a desktop shell rather than a script in a page. There is no member that means the native player failed to load. A NativePlayerAdapter would have to report a false reason or invent one locally, and either makes the failure less debuggable than the web path it sits beside.",
       "notes": "THE VOCABULARY, NOT A NEW MEMBER. Adding a libmpv_unavailable member beside browser_unsupported would leave the union naming one engine's failure modes and one library's, which is the same coupling one layer up. The question for the reviewer is whether the reason should describe WHAT FAILED in engine-neutral terms -- the engine could not be loaded, the platform cannot run this engine, the engine loaded and refused this source -- with the engine's own detail carried beside it rather than encoded in the member name. COUPLED TO PL-0904 AND DELIBERATELY SEPARATE. Both are the same observation in two places: the player's error vocabulary assumes Shaka. They are separate tasks because they have different consumers -- unavailability is a startup decision the controller makes before any source is loaded, while a playback error is a per-attempt outcome the failover scheduler classifies -- and because merging them would put one review range across two behaviours. Whoever takes the second should read the first's verdict. DO NOT BREAK THE FAILOVER CLASSIFICATION. packages/media-engine consumes playback failures and treats network_transient as the only retryable class; an unavailability reason that leaks into that path as retryable would make the player retry a library that is not installed.",
@@ -65,16 +48,34 @@
         "unit",
         "architecture-review"
       ],
-      "acceptance": "The engine-unavailable vocabulary can represent a native engine failing to load without naming Shaka, a browser or libmpv in the member itself, and the existing web reasons keep their present meaning and their present tests. An engine's own detail is carried beside the reason rather than encoded in it. No unavailability reason reaches the failover scheduler as retryable. The rename or widening is proven by a regression that fails if browser_unsupported is reintroduced as the only way to say an engine is missing."
+      "acceptance": "The engine-unavailable vocabulary can represent a native engine failing to load without naming Shaka, a browser or libmpv in the member itself, and the existing web reasons keep their present meaning and their present tests. An engine's own detail is carried beside the reason rather than encoded in it. No unavailability reason reaches the failover scheduler as retryable. The rename or widening is proven by a regression that fails if browser_unsupported is reintroduced as the only way to say an engine is missing.",
+      "implementationAgent": "claude-frontend",
+      "updatedAt": "2026-09-16T01:22:43.556Z",
+      "implementationBaseSha": "a3e7d13323cda0479aa5352efb7bdb5dea973125"
     },
     {
       "reviewAgent": "gpt-architect",
-      "owner": null,
-      "gateResults": {},
+      "owner": "claude-frontend",
+      "gateResults": {
+        "typecheck": {
+          "status": "pass",
+          "at": "2026-09-16T01:22:42.905Z",
+          "by": "claude-frontend",
+          "commitSha": "a074b986e899ba8b91d018c4bb71f8c12089b608",
+          "evidence": "npx turbo run typecheck --force at integrated head a074b986e899ba8b91d018c4bb71f8c12089b608, exit 0, 9 of 9 and 0 cached. Three of the nine mutation checks are compile-time: widening code to number|null, admitting EOF as a failure reason, and flattening the fault so a code is readable without narrowing each produce tsc exit 2."
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-09-16T01:22:43.122Z",
+          "by": "claude-frontend",
+          "commitSha": "a074b986e899ba8b91d018c4bb71f8c12089b608",
+          "evidence": "npx turbo run test --force at integrated head a074b986e899ba8b91d018c4bb71f8c12089b608, exit 0, 15 of 15 and 0 cached, 2172 passed; 16 new cases, web suite 759 to 775 in its own worktree. THE ENGINE-SPECIFIC CODE IS NOT A FIELD BESIDE A TAG, IT IS INSIDE A VARIANT THE TAG UNLOCKS: a tag alone leaves error.code readable without anyone consulting it, while a discriminated union makes the narrow mandatory and the wrong read a build failure. Three independent barriers keep an mpv number off the classified fields -- code is typed as the literal null on the native variant, fault is a union so an unnarrowed read does not compile, and dispatch narrows on engine so the Shaka classifier cannot receive a native error. Mutation M4 is the one worth reading: it takes TWO simultaneous mutations to make an mpv 6 come back as rights_unverifiable, and the first barrier catches it alone. THE NATIVE BRANCH CLASSIFIES NOTHING AND THAT IS THE ANSWER RATHER THAN A STUB: stop and redirect are taken by aborted a branch up, what remains is an mpv error with no honest table, and the http-status branch was deliberately NOT written even though it would be engine-neutral, because mpv surfaces no HTTP status and the only way to produce one is parsing FFmpeg's English error text, which the failover contract forbids. PL-0204's approval turned on the budget being honest about what it could not classify. BOTH TEST FILES ARE APPEND-ONLY: git diff shows 149 and 90 insertions and ZERO deleted lines, so every pre-existing Shaka regression passes unmodified."
+        }
+      },
       "id": "PL-0904",
       "priority": "P1",
       "lane": "Player",
-      "status": "READY",
+      "status": "REVIEW",
       "title": "Playback errors carry an origin, so a native failure is not a Shaka number",
       "description": "PlaybackError in apps/web/src/components/player/shaka-error.ts carries code and category pinned to Shaka 5.2.x numbering. A native adapter has no such numbers: libmpv reports MPV_EVENT_END_FILE with a reason and an error field, on an entirely different scale. Today a NativePlayerAdapter must either report null in both fields, which discards the only diagnostic it has, or borrow a Shaka number that means something else, which is worse. PL-0901 requires the adapter boundary to expose recoverable and fatal errors without leaking an engine type, and this is where that leaks.",
       "notes": "AN ORIGIN, SO THE NUMBER MEANS SOMETHING. The proposal the desktop document records is that an error names the engine that produced it, and that its engine-specific code is read only in that origin's terms. The reviewer should also rule on whether the classification the failover scheduler consumes -- rights, decode, source_unavailable, network_transient -- stays engine-neutral and is derived per origin, which is the shape that keeps packages/media-engine from learning about either engine. AN HONEST CONSEQUENCE, RECORDED BEFORE IT IS DISCOVERED. mpv's END_FILE error is coarser than Shaka's code pairs, so a native origin will legitimately classify to unknown more often. The scheduler already handles that: an unclassified charged attempt cannot silently reset the budget, and attemptsByCandidate and attempt_failed_unclassified exist for exactly this. Do not manufacture a false classification to avoid the unknown branch -- PL-0204's approval turned on the budget being honest about what it could not classify. COUPLED TO PL-0903, SEPARATE FOR THE REASON RECORDED THERE.",
@@ -99,7 +100,13 @@
         "unit",
         "architecture-review"
       ],
-      "acceptance": "A playback error names the origin that produced it, and an engine-specific code is interpretable only against that origin rather than being read on one engine's numbering. A native error can be represented without borrowing a Shaka code and without discarding the detail the engine did supply. The classification packages/media-engine consumes stays engine-neutral, derived per origin, and unchanged in meaning for every existing Shaka case, proven by the existing shaka-error regressions continuing to pass unmodified. An error that cannot be classified stays unclassified rather than being assigned a plausible class."
+      "acceptance": "A playback error names the origin that produced it, and an engine-specific code is interpretable only against that origin rather than being read on one engine's numbering. A native error can be represented without borrowing a Shaka code and without discarding the detail the engine did supply. The classification packages/media-engine consumes stays engine-neutral, derived per origin, and unchanged in meaning for every existing Shaka case, proven by the existing shaka-error regressions continuing to pass unmodified. An error that cannot be classified stays unclassified rather than being assigned a plausible class.",
+      "implementationAgent": "claude-frontend",
+      "updatedAt": "2026-09-16T01:22:43.756Z",
+      "implementationBaseSha": "a3e7d13323cda0479aa5352efb7bdb5dea973125"
     }
-  ]
+  ],
+  "review": [],
+  "reservedExternal": [],
+  "recommended": []
 }

@@ -1,8 +1,103 @@
 {
-  "generatedAt": "2026-09-16T00:41:22.511Z",
+  "generatedAt": "2026-09-16T01:23:54.555Z",
   "agent": "claude-media",
   "executionAvailable": true,
   "assigned": [
+    {
+      "id": "PL-0501",
+      "priority": "P0",
+      "lane": "Player",
+      "status": "IN_PROGRESS",
+      "title": "Playback session API",
+      "dependencies": [
+        "PL-0201",
+        "PL-0301"
+      ],
+      "allowedPaths": [
+        "apps/web/src/app/api/v1/playback/**",
+        "apps/web/next.config.ts",
+        "apps/web/src/app/watch/watch-session.test.ts"
+      ],
+      "preferredAgent": "claude-media",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "integration",
+        "security-review",
+        "rights-review"
+      ],
+      "acceptance": "Server resolves authorized provider candidates and clients cannot submit arbitrary media URLs; the session response is a discriminated union on outcome (granted, denied, unavailable) with reasons present on every branch rather than as an optional field, because a denial with no reason trail violates the reason-trail invariant exactly as much as a grant with none",
+      "owner": "claude-media",
+      "gateResults": {},
+      "reviewDependencies": [
+        "packages/media-engine/src/ranking.ts",
+        "packages/media-engine/src/failover.ts",
+        "packages/media-engine/src/scheduling.ts",
+        "packages/media-engine/src/index.ts",
+        "packages/provider-sdk/src/fixture/provider.ts",
+        "packages/provider-sdk/src/stremio/url-policy.ts",
+        "packages/provider-sdk/src/index.ts",
+        "packages/contracts/src/domains/playback.ts",
+        "packages/contracts/src/shared/drm.ts",
+        "packages/contracts/src/domains/failover.ts",
+        "packages/contracts/src/shared/ids.ts",
+        "packages/contracts/src/shared/rights.ts",
+        "packages/contracts/src/shared/runtime.ts",
+        "apps/web/src/app/api/deployment-environment.ts",
+        "apps/web/src/components/player/playback-session.ts",
+        "e2e/tests/playback-session.api.spec.ts",
+        "e2e/src/contract.ts",
+        "docs/DESKTOP_PLAYBACK.md",
+        "docs/API_CONTRACTS.md",
+        "docs/CONTENT_RIGHTS.md",
+        "docs/SECURITY.md"
+      ],
+      "surfaceNarrowedAtClaim": "NARROWED 2026-09-16 by claude-lead in the same edit that claimed the task, on the PL-0205 precedent and the PL-0301 worked example the reviewer approved this round. THREE PACKAGE-WIDE WILDCARDS WERE READS DECLARED AS WRITES, and each was checked against the implementation rather than assumed. packages/media-engine: issue-session.ts imports DEFAULT_FAILOVER_POLICY, PLAYABLE_RIGHTS, rankStreamCandidates and RejectionReason, and its own header states there is ONE allowlist consulted at two points rather than two that can drift -- the engine is consumed, not changed. The apparent counter-example resolves the right way: commit 34c16c9 is titled PL-0204/PL-0501 and rewrote failover.ts, but scheduling.ts says in its own header that the scheduling half is PL-0204's, and PL-0204 is DONE. packages/provider-sdk: authorized-candidates.ts states that it is A SHAPE ADAPTER AND NOT A SECOND PROVIDER, renaming three fields and forwarding the candidate unchanged, and PL-0301's own narrowing settled that the fixture and stremio trees are PL-0301's. packages/contracts: PL-0902 published StatesContentProtection<Shape> EXPRESSLY so this task would not need a contracts write -- its API_CONTRACTS section 'What PL-0501 has to do' lists three steps, two of which are inside this task's own route directory, and the third, an index.ts barrel re-export, is provably unnecessary because every contracts import in the session tree already uses the authoritative subpath. Keeping the wildcard would ALSO have collided with PL-0902, which is actively editing those files, rather than only with PL-0206. TWO ENTRIES WERE ADDED AND BOTH ARE FLAGGED RATHER THAN PRESENTED AS PRESCRIBED. apps/web/next.config.ts is a PREDICTION, not a diff: DESKTOP_PLAYBACK section 8 requires the desktop split to be by BUILD TARGET and not runtime configuration -- no environment variable, no config key, no feature flag -- and says the property to test for is that the desktop bundle contains no provider-resolution implementation at all. That needs build-time module resolution, and next.config.ts is the only place in this app that configures resolution. A search for buildTarget, BUILD_TARGET, LIBERTY_TARGET and desktop across apps/web/src, packages, scripts and next.config.ts returns zero hits and there is no apps/desktop, so nothing for this exists yet. It is the entry to drop first if the implementer finds a config-free mechanism. apps/web/src/app/watch/watch-session.test.ts CONSTRUCTS an AuthorizedCandidate, so if this task moves that type to PL-0902's ResolvedStreamCandidate with its required protection field, that constructor stops typechecking and the repair is outside the playback tree. watch-session.ts itself only READS the produced type and is therefore not declared. THE RISK OF BEING WRONG IS STATED RATHER THAN ASSUMED AWAY. The load-bearing removal is packages/media-engine: if rankStreamCandidates must change signature to accept a resolved candidate, or a sixth RejectionReason is required, this task stops at the compile-time engineReasonCode link in contract.ts and must re-widen at claim time -- costing one round and a collision with PL-0206 that it would have had anyway. The confidence rests on PL-0902, the task actually adding the field, having deliberately left streamCandidateSchema byte-for-byte unchanged so the engine need not move. For provider-sdk the cost of being wrong is smaller and is a follow-up rather than a blocked round, and it has a named open question: the honest protection value for a clear dev fixture is state clear, which only the provider may state, while this task can only supply PROTECTION_NOT_STATED. That is safe by construction, since unknown requires a CDM, so the failure mode is a fixture routed to the EME adapter unnecessarily rather than a breach -- but it sits in tension with the shape-adapter rule quoted above and appears to be UNOWNED BY ANY TASK. Flagged for the reviewer rather than absorbed here. DISJOINTNESS CHECKED IN BOTH DIRECTIONS against every active task. Every proposed prefix begins apps/; every PL-0206 and PL-0902 prefix begins packages/, except PL-0902's docs/API_CONTRACTS.md, which shares no prefix with any apps/ entry -- which is also why that document is a reviewDependency here and not a write, since PL-0902 is updating its session section and two editors in one file is the collision the field exists to avoid. PL-0305, PL-0903 and PL-0904 hold apps/web/src/lib and apps/web/src/components/player; these are apps/web/src/app and the app-root config file. No proposed prefix is a prefix of any of theirs.",
+      "implementationAgent": "claude-media",
+      "updatedAt": "2026-09-16T01:23:54.544Z",
+      "implementationBaseSha": "cb622345f12611585771e2f1af808034bd5aa042",
+      "implementationBaseProvenance": {
+        "kind": "reconciled-existing-implementation",
+        "baseSha": "cb622345f12611585771e2f1af808034bd5aa042",
+        "reconciledAt": "2026-09-16T01:23:54.543Z",
+        "reconciledBy": "claude-media",
+        "implementationAgent": "claude-media",
+        "headAtReconciliation": "a074b986e899ba8b91d018c4bb71f8c12089b608",
+        "reviewSurface": "allowedPaths + reviewDependencies",
+        "surfaceCommitCount": 24,
+        "oldestSurfaceCommit": "4ca4313f2642f4666ab6dda0084c25fcb2fbf3d5",
+        "newestSurfaceCommit": "a074b986e899ba8b91d018c4bb71f8c12089b608",
+        "surfaceCommits": [
+          "5b7aba7685b10b2311c625287be0dd8670665b28",
+          "7079aed9d792dbedcf779ed5ac3c2c170ca6eabb",
+          "1ee833d2f7834729b871f868a2bcd6c7cc8d1981",
+          "916fc101a3dfa8d066a50f5b34d3c5db5f4e1eeb",
+          "a4209a4fcf0b232e5de92f2af09dd8fb3d266909",
+          "b74b0d3c4befa226109fc1ce623b5addd46a9490",
+          "eecca6b621a2fccaab09ab3ec15d3bc93936df3b",
+          "ba9521b2c3998ae05210240827c0a773596819c9",
+          "719d2d7c31465901f3dbee1e936a180e87c3d44f",
+          "8b1172b2190d3ddfecb5afd28ea73a293e17def1",
+          "3c92942bc7eee0a7aab4440e254d8e11d3a849a9",
+          "754a786625499ae7e436f93758edd11ef7487ff4",
+          "9933a55dd177ccc08b20b1fe3e49f479c8a7de1f",
+          "b0b1dcf5a4826b763aa72d6375dd93e95a3aff33",
+          "6358abc8a8c9b6183e561ca795a4d29ae7fd2881",
+          "c3bb856f3d8c122acd46d5331067fac3a0266f2b",
+          "34c16c97c9ae0a1dec5b708f4f81ed62ecb94afb",
+          "bbe68ed8d16f864c87309ceb1c089495deb89766",
+          "ba2bf4756175e84aab07ec36f9e7c3d6e324d350",
+          "4ca4313f2642f4666ab6dda0084c25fcb2fbf3d5"
+        ],
+        "surfaceCommitsTruncated": true,
+        "changedFileCount": 31,
+        "baseCommitSurfaceTouchCount": 0,
+        "baseCommitSurfaceTouches": [],
+        "baseCommitSurfaceTouchesTruncated": false,
+        "reason": "The base is cb622345f12611585771e2f1af808034bd5aa042, the parent of 4ca4313, the earliest commit that names PL-0501, and it is proven against the TREE rather than against filenames or commit messages. At cb622345, git ls-tree -r over apps/web/src/app/api/v1/playback returns exactly ONE path, resolve/route.ts: the entire session/ subtree -- contract.ts, issue-session.ts, authorized-candidates.ts, handler.ts, route.ts and their four suites, 2671 lines -- does not exist. So the behaviour is absent and not merely the files, which is the PL-0205 standard: that failure came from a witness file created by a later refactor that only MOVED declarations, and nothing can have been moved into a directory that does not exist. THE IMPLEMENTATION PREDATES THE CLAIM BY DESIGN, NOT BY OVERSIGHT: coordination/IMPLEMENTATION_RECOVERY.md lists this task among the implemented-but-unreviewed lanes, and the record carried owner null with no gate results and no base. Checked against the acceptance clause by clause: the server resolves and the client names, with authorized-candidates.ts stating that a resolver is a function of a normalized content id so there is no parameter through which a caller could suggest a stream; playbackSessionRequestSchema is strict at both levels with only contentId and capabilities; the response is a discriminatedUnion on outcome with granted, denied and unavailable; and reasons is a nonempty array shared by all three branches with three factory functions each taking the primary reason as a required positional argument, so a branch with no reasons is not constructible. THE WINDOW IS HONEST BUT NOT EXCLUSIVE, AND THAT IS PUBLISHED RATHER THAN LEFT TO BE DISCOVERED: commits inside cb622345..HEAD that touch this surface include work attributed to other tasks -- 9933a55 is PL-0301's rights repair to the watch page, bbe68ed is PL-0702's, and the engine half of 34c16c9 is PL-0204's. A review range cannot open in the middle of a commit and this repository commits across lanes, which is the same shape the reviewer accepted for PL-0706 and PL-0704. WHAT REMAINS IS NOT COVERED BY THIS BASE AND IS NOT CLAIMED TO BE: the desktop target-selected implementation required by DESKTOP_PLAYBACK section 8 does not exist in any form -- zero hits for buildTarget, BUILD_TARGET, LIBERTY_TARGET or desktop across apps/web/src, packages, scripts and next.config.ts, and no apps/desktop -- and carrying PL-0902's protection field onto the session candidate has not happened because drm.ts only landed in this same round. Both are this round's work and will sit inside the window above."
+      }
+    },
     {
       "id": "PL-0206",
       "priority": "P0",
@@ -50,101 +145,5 @@
   ],
   "review": [],
   "reservedExternal": [],
-  "recommended": [
-    {
-      "id": "PL-0501",
-      "priority": "P0",
-      "lane": "Player",
-      "status": "READY",
-      "title": "Playback session API",
-      "dependencies": [
-        "PL-0201",
-        "PL-0301"
-      ],
-      "allowedPaths": [
-        "apps/web/src/app/api/v1/playback/**",
-        "packages/media-engine/**",
-        "packages/provider-sdk/**",
-        "packages/contracts/**"
-      ],
-      "preferredAgent": "claude-media",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "typecheck",
-        "unit",
-        "integration",
-        "security-review",
-        "rights-review"
-      ],
-      "acceptance": "Server resolves authorized provider candidates and clients cannot submit arbitrary media URLs; the session response is a discriminated union on outcome (granted, denied, unavailable) with reasons present on every branch rather than as an optional field, because a denial with no reason trail violates the reason-trail invariant exactly as much as a grant with none",
-      "owner": null,
-      "gateResults": {}
-    },
-    {
-      "reviewAgent": "gpt-architect",
-      "owner": null,
-      "gateResults": {},
-      "id": "PL-0903",
-      "priority": "P1",
-      "lane": "Player",
-      "status": "READY",
-      "title": "An engine-unavailable reason that can say libmpv did not load",
-      "description": "EngineUnavailableReason in apps/web/src/components/player/playback-controller.ts is Shaka-shaped. Its members describe a browser that cannot run the web engine, and browser_unsupported is a misnomer the moment the engine is a native library in a desktop shell rather than a script in a page. There is no member that means the native player failed to load. A NativePlayerAdapter would have to report a false reason or invent one locally, and either makes the failure less debuggable than the web path it sits beside.",
-      "notes": "THE VOCABULARY, NOT A NEW MEMBER. Adding a libmpv_unavailable member beside browser_unsupported would leave the union naming one engine's failure modes and one library's, which is the same coupling one layer up. The question for the reviewer is whether the reason should describe WHAT FAILED in engine-neutral terms -- the engine could not be loaded, the platform cannot run this engine, the engine loaded and refused this source -- with the engine's own detail carried beside it rather than encoded in the member name. COUPLED TO PL-0904 AND DELIBERATELY SEPARATE. Both are the same observation in two places: the player's error vocabulary assumes Shaka. They are separate tasks because they have different consumers -- unavailability is a startup decision the controller makes before any source is loaded, while a playback error is a per-attempt outcome the failover scheduler classifies -- and because merging them would put one review range across two behaviours. Whoever takes the second should read the first's verdict. DO NOT BREAK THE FAILOVER CLASSIFICATION. packages/media-engine consumes playback failures and treats network_transient as the only retryable class; an unavailability reason that leaks into that path as retryable would make the player retry a library that is not installed.",
-      "dependencies": [
-        "PL-0901"
-      ],
-      "allowedPaths": [
-        "apps/web/src/components/player/playback-controller.ts",
-        "apps/web/src/components/player/playback-controller.test.ts",
-        "apps/web/src/components/player/engine.ts"
-      ],
-      "reviewDependencies": [
-        "docs/DESKTOP_PLAYBACK.md",
-        "apps/web/src/components/player/shaka-engine.ts",
-        "apps/web/src/components/player/playback-machine.ts"
-      ],
-      "preferredAgent": "claude-frontend",
-      "qualityGates": [
-        "typecheck",
-        "unit",
-        "architecture-review"
-      ],
-      "acceptance": "The engine-unavailable vocabulary can represent a native engine failing to load without naming Shaka, a browser or libmpv in the member itself, and the existing web reasons keep their present meaning and their present tests. An engine's own detail is carried beside the reason rather than encoded in it. No unavailability reason reaches the failover scheduler as retryable. The rename or widening is proven by a regression that fails if browser_unsupported is reintroduced as the only way to say an engine is missing."
-    },
-    {
-      "reviewAgent": "gpt-architect",
-      "owner": null,
-      "gateResults": {},
-      "id": "PL-0904",
-      "priority": "P1",
-      "lane": "Player",
-      "status": "READY",
-      "title": "Playback errors carry an origin, so a native failure is not a Shaka number",
-      "description": "PlaybackError in apps/web/src/components/player/shaka-error.ts carries code and category pinned to Shaka 5.2.x numbering. A native adapter has no such numbers: libmpv reports MPV_EVENT_END_FILE with a reason and an error field, on an entirely different scale. Today a NativePlayerAdapter must either report null in both fields, which discards the only diagnostic it has, or borrow a Shaka number that means something else, which is worse. PL-0901 requires the adapter boundary to expose recoverable and fatal errors without leaking an engine type, and this is where that leaks.",
-      "notes": "AN ORIGIN, SO THE NUMBER MEANS SOMETHING. The proposal the desktop document records is that an error names the engine that produced it, and that its engine-specific code is read only in that origin's terms. The reviewer should also rule on whether the classification the failover scheduler consumes -- rights, decode, source_unavailable, network_transient -- stays engine-neutral and is derived per origin, which is the shape that keeps packages/media-engine from learning about either engine. AN HONEST CONSEQUENCE, RECORDED BEFORE IT IS DISCOVERED. mpv's END_FILE error is coarser than Shaka's code pairs, so a native origin will legitimately classify to unknown more often. The scheduler already handles that: an unclassified charged attempt cannot silently reset the budget, and attemptsByCandidate and attempt_failed_unclassified exist for exactly this. Do not manufacture a false classification to avoid the unknown branch -- PL-0204's approval turned on the budget being honest about what it could not classify. COUPLED TO PL-0903, SEPARATE FOR THE REASON RECORDED THERE.",
-      "dependencies": [
-        "PL-0901"
-      ],
-      "allowedPaths": [
-        "apps/web/src/components/player/shaka-error.ts",
-        "apps/web/src/components/player/shaka-error.test.ts",
-        "apps/web/src/components/player/playback-failure.ts",
-        "apps/web/src/components/player/playback-failure.test.ts"
-      ],
-      "reviewDependencies": [
-        "docs/DESKTOP_PLAYBACK.md",
-        "packages/media-engine/src/failover.ts",
-        "packages/contracts/src/domains/failover.ts",
-        "apps/web/src/components/player/playback-machine.ts"
-      ],
-      "preferredAgent": "claude-frontend",
-      "qualityGates": [
-        "typecheck",
-        "unit",
-        "architecture-review"
-      ],
-      "acceptance": "A playback error names the origin that produced it, and an engine-specific code is interpretable only against that origin rather than being read on one engine's numbering. A native error can be represented without borrowing a Shaka code and without discarding the detail the engine did supply. The classification packages/media-engine consumes stays engine-neutral, derived per origin, and unchanged in meaning for every existing Shaka case, proven by the existing shaka-error regressions continuing to pass unmodified. An error that cannot be classified stays unclassified rather than being assigned a plausible class."
-    }
-  ]
+  "recommended": []
 }

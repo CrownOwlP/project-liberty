@@ -1,8 +1,42 @@
 {
-  "generatedAt": "2026-09-16T00:41:22.510Z",
+  "generatedAt": "2026-09-16T01:23:54.555Z",
   "agent": "claude-backend",
   "executionAvailable": true,
-  "assigned": [],
+  "assigned": [
+    {
+      "id": "PL-0305",
+      "priority": "P1",
+      "lane": "Provider",
+      "status": "IN_PROGRESS",
+      "title": "A real catalog metadata source",
+      "notes": "The discovery layer has no metadata source. PL-0105 landed a seam, and docs/CATALOG_SOURCE.md says so in its first line; this task is the thing that belongs behind it, tracked so the gap stays visible instead of being hidden by a port that looks finished. docs/PRODUCT_SPEC.md step 2 of the initial user journey is browse/search normalized metadata, and nothing in this repository ingests any: every surface reads six fictional works. PL-0301 and PL-0302 do not close it - they supply stream candidates, which is what a title plays from, not what a catalog is made of. PARTLY BLOCKED, and the split is deliberate rather than a hedge. The design half - identity and dedupe, refresh and staleness, tombstones, paging, provider-side search, the locale-tagged contract, and the undeclared-rights state that catalogItemSchema cannot currently express - needs no external access and can begin now. Connecting an actual metadata provider, and carrying artwork, cannot: both need an agreement and credentials, which control/policies.json escalates to human-only under Licensing and Credentials - the same categories that block PL-0302. It is a DIFFERENT agreement from PL-0302's, covering catalog metadata and image rights rather than stream rights, so this is not merely waiting on that task; the honest status is BACKLOG with the ceiling named, not BLOCKED on someone else's licence.",
+      "dependencies": [
+        "PL-0105"
+      ],
+      "allowedPaths": [
+        "packages/catalog-ingestion/**",
+        "apps/web/src/lib/catalog-source.ts",
+        "apps/web/src/lib/catalog-source-registry.ts",
+        "docs/CATALOG_SOURCE.md",
+        "docs/ARCHITECTURE.md"
+      ],
+      "preferredAgent": "claude-backend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "architecture-review",
+        "security-review",
+        "rights-review",
+        "typecheck",
+        "unit"
+      ],
+      "acceptance": "A metadata source stands behind resolveCatalogMetadataSource and answers what the port deliberately does not. Ingestion: something fetches, schedules and backfills, rather than an array being maintained by hand. Refresh: an answer carries its age and a stated staleness policy, so nobody has to guess how old a rail is. Identity and dedupe: how a provider's native id becomes a normalizedContentId, and what happens when two sources describe the same work, is settled as a design decision before it is coded - this is the largest missing piece and it is not a coding question. Deletion: a work that disappears from a source produces a tombstone, so it stays distinguishable from a fetch that failed. Paging and provider-side search: listRecords returning everything is a shape only six fixtures can use, and who owns ranking and paging is part of the contract rather than an accident of in-memory filtering. Artwork: images arrive with their own licensing, tracked separately from the work's, or they do not arrive. Localization and availability: title, genre and synopsis are locale-tagged and a work can be offered in more than one language, and availability windows and territory exist, so the empty state's claim about a region is backed by something. Every record declares a rights basis whose category agrees with its item and whose reference is an opaque internal identifier or null, and the ingestion path is treated as untrusted third-party I/O - allowlisted egress, bounded bodies, redirects revalidated, and no media address anywhere in a catalog payload.",
+      "owner": "claude-backend",
+      "gateResults": {},
+      "implementationAgent": "claude-backend",
+      "updatedAt": "2026-09-16T00:43:21.488Z",
+      "implementationBaseSha": "a3e7d13323cda0479aa5352efb7bdb5dea973125"
+    }
+  ],
   "review": [],
   "reservedExternal": [],
   "recommended": [
@@ -66,36 +100,6 @@
           "evidence": "turbo run test --filter @liberty/provider-sdk exit 0 under pinned Node 22: zero observations yielding unknown with a null observed rate and a zero sample count, a prior labelled rather than presented as measurement at the same ranking number as a measured value, the degraded band held distinct from up and down, purity over observations plus an explicit policy version with Date.now replaced by a thrower to prove no wall clock is read, whole-report permutation invariance under generated policies, monotonicity in each count, and a compile-time guard that no health type can carry entitlement."
         }
       }
-    },
-    {
-      "id": "PL-0305",
-      "priority": "P1",
-      "lane": "Provider",
-      "status": "READY",
-      "title": "A real catalog metadata source",
-      "notes": "The discovery layer has no metadata source. PL-0105 landed a seam, and docs/CATALOG_SOURCE.md says so in its first line; this task is the thing that belongs behind it, tracked so the gap stays visible instead of being hidden by a port that looks finished. docs/PRODUCT_SPEC.md step 2 of the initial user journey is browse/search normalized metadata, and nothing in this repository ingests any: every surface reads six fictional works. PL-0301 and PL-0302 do not close it - they supply stream candidates, which is what a title plays from, not what a catalog is made of. PARTLY BLOCKED, and the split is deliberate rather than a hedge. The design half - identity and dedupe, refresh and staleness, tombstones, paging, provider-side search, the locale-tagged contract, and the undeclared-rights state that catalogItemSchema cannot currently express - needs no external access and can begin now. Connecting an actual metadata provider, and carrying artwork, cannot: both need an agreement and credentials, which control/policies.json escalates to human-only under Licensing and Credentials - the same categories that block PL-0302. It is a DIFFERENT agreement from PL-0302's, covering catalog metadata and image rights rather than stream rights, so this is not merely waiting on that task; the honest status is BACKLOG with the ceiling named, not BLOCKED on someone else's licence.",
-      "dependencies": [
-        "PL-0105"
-      ],
-      "allowedPaths": [
-        "packages/catalog-ingestion/**",
-        "apps/web/src/lib/catalog-source.ts",
-        "apps/web/src/lib/catalog-source-registry.ts",
-        "docs/CATALOG_SOURCE.md",
-        "docs/ARCHITECTURE.md"
-      ],
-      "preferredAgent": "claude-backend",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "architecture-review",
-        "security-review",
-        "rights-review",
-        "typecheck",
-        "unit"
-      ],
-      "acceptance": "A metadata source stands behind resolveCatalogMetadataSource and answers what the port deliberately does not. Ingestion: something fetches, schedules and backfills, rather than an array being maintained by hand. Refresh: an answer carries its age and a stated staleness policy, so nobody has to guess how old a rail is. Identity and dedupe: how a provider's native id becomes a normalizedContentId, and what happens when two sources describe the same work, is settled as a design decision before it is coded - this is the largest missing piece and it is not a coding question. Deletion: a work that disappears from a source produces a tombstone, so it stays distinguishable from a fetch that failed. Paging and provider-side search: listRecords returning everything is a shape only six fixtures can use, and who owns ranking and paging is part of the contract rather than an accident of in-memory filtering. Artwork: images arrive with their own licensing, tracked separately from the work's, or they do not arrive. Localization and availability: title, genre and synopsis are locale-tagged and a work can be offered in more than one language, and availability windows and territory exist, so the empty state's claim about a region is backed by something. Every record declares a rights basis whose category agrees with its item and whose reference is an opaque internal identifier or null, and the ingestion path is treated as untrusted third-party I/O - allowlisted egress, bounded bodies, redirects revalidated, and no media address anywhere in a catalog payload.",
-      "owner": null,
-      "gateResults": {}
     }
   ]
 }

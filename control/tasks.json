@@ -1736,7 +1736,7 @@
       "id": "PL-0501",
       "priority": "P0",
       "lane": "Player",
-      "status": "READY",
+      "status": "IN_PROGRESS",
       "title": "Playback session API",
       "dependencies": [
         "PL-0201",
@@ -1744,9 +1744,8 @@
       ],
       "allowedPaths": [
         "apps/web/src/app/api/v1/playback/**",
-        "packages/media-engine/**",
-        "packages/provider-sdk/**",
-        "packages/contracts/**"
+        "apps/web/next.config.ts",
+        "apps/web/src/app/watch/watch-session.test.ts"
       ],
       "preferredAgent": "claude-media",
       "reviewAgent": "gpt-architect",
@@ -1758,8 +1757,75 @@
         "rights-review"
       ],
       "acceptance": "Server resolves authorized provider candidates and clients cannot submit arbitrary media URLs; the session response is a discriminated union on outcome (granted, denied, unavailable) with reasons present on every branch rather than as an optional field, because a denial with no reason trail violates the reason-trail invariant exactly as much as a grant with none",
-      "owner": null,
-      "gateResults": {}
+      "owner": "claude-media",
+      "gateResults": {},
+      "reviewDependencies": [
+        "packages/media-engine/src/ranking.ts",
+        "packages/media-engine/src/failover.ts",
+        "packages/media-engine/src/scheduling.ts",
+        "packages/media-engine/src/index.ts",
+        "packages/provider-sdk/src/fixture/provider.ts",
+        "packages/provider-sdk/src/stremio/url-policy.ts",
+        "packages/provider-sdk/src/index.ts",
+        "packages/contracts/src/domains/playback.ts",
+        "packages/contracts/src/shared/drm.ts",
+        "packages/contracts/src/domains/failover.ts",
+        "packages/contracts/src/shared/ids.ts",
+        "packages/contracts/src/shared/rights.ts",
+        "packages/contracts/src/shared/runtime.ts",
+        "apps/web/src/app/api/deployment-environment.ts",
+        "apps/web/src/components/player/playback-session.ts",
+        "e2e/tests/playback-session.api.spec.ts",
+        "e2e/src/contract.ts",
+        "docs/DESKTOP_PLAYBACK.md",
+        "docs/API_CONTRACTS.md",
+        "docs/CONTENT_RIGHTS.md",
+        "docs/SECURITY.md"
+      ],
+      "surfaceNarrowedAtClaim": "NARROWED 2026-09-16 by claude-lead in the same edit that claimed the task, on the PL-0205 precedent and the PL-0301 worked example the reviewer approved this round. THREE PACKAGE-WIDE WILDCARDS WERE READS DECLARED AS WRITES, and each was checked against the implementation rather than assumed. packages/media-engine: issue-session.ts imports DEFAULT_FAILOVER_POLICY, PLAYABLE_RIGHTS, rankStreamCandidates and RejectionReason, and its own header states there is ONE allowlist consulted at two points rather than two that can drift -- the engine is consumed, not changed. The apparent counter-example resolves the right way: commit 34c16c9 is titled PL-0204/PL-0501 and rewrote failover.ts, but scheduling.ts says in its own header that the scheduling half is PL-0204's, and PL-0204 is DONE. packages/provider-sdk: authorized-candidates.ts states that it is A SHAPE ADAPTER AND NOT A SECOND PROVIDER, renaming three fields and forwarding the candidate unchanged, and PL-0301's own narrowing settled that the fixture and stremio trees are PL-0301's. packages/contracts: PL-0902 published StatesContentProtection<Shape> EXPRESSLY so this task would not need a contracts write -- its API_CONTRACTS section 'What PL-0501 has to do' lists three steps, two of which are inside this task's own route directory, and the third, an index.ts barrel re-export, is provably unnecessary because every contracts import in the session tree already uses the authoritative subpath. Keeping the wildcard would ALSO have collided with PL-0902, which is actively editing those files, rather than only with PL-0206. TWO ENTRIES WERE ADDED AND BOTH ARE FLAGGED RATHER THAN PRESENTED AS PRESCRIBED. apps/web/next.config.ts is a PREDICTION, not a diff: DESKTOP_PLAYBACK section 8 requires the desktop split to be by BUILD TARGET and not runtime configuration -- no environment variable, no config key, no feature flag -- and says the property to test for is that the desktop bundle contains no provider-resolution implementation at all. That needs build-time module resolution, and next.config.ts is the only place in this app that configures resolution. A search for buildTarget, BUILD_TARGET, LIBERTY_TARGET and desktop across apps/web/src, packages, scripts and next.config.ts returns zero hits and there is no apps/desktop, so nothing for this exists yet. It is the entry to drop first if the implementer finds a config-free mechanism. apps/web/src/app/watch/watch-session.test.ts CONSTRUCTS an AuthorizedCandidate, so if this task moves that type to PL-0902's ResolvedStreamCandidate with its required protection field, that constructor stops typechecking and the repair is outside the playback tree. watch-session.ts itself only READS the produced type and is therefore not declared. THE RISK OF BEING WRONG IS STATED RATHER THAN ASSUMED AWAY. The load-bearing removal is packages/media-engine: if rankStreamCandidates must change signature to accept a resolved candidate, or a sixth RejectionReason is required, this task stops at the compile-time engineReasonCode link in contract.ts and must re-widen at claim time -- costing one round and a collision with PL-0206 that it would have had anyway. The confidence rests on PL-0902, the task actually adding the field, having deliberately left streamCandidateSchema byte-for-byte unchanged so the engine need not move. For provider-sdk the cost of being wrong is smaller and is a follow-up rather than a blocked round, and it has a named open question: the honest protection value for a clear dev fixture is state clear, which only the provider may state, while this task can only supply PROTECTION_NOT_STATED. That is safe by construction, since unknown requires a CDM, so the failure mode is a fixture routed to the EME adapter unnecessarily rather than a breach -- but it sits in tension with the shape-adapter rule quoted above and appears to be UNOWNED BY ANY TASK. Flagged for the reviewer rather than absorbed here. DISJOINTNESS CHECKED IN BOTH DIRECTIONS against every active task. Every proposed prefix begins apps/; every PL-0206 and PL-0902 prefix begins packages/, except PL-0902's docs/API_CONTRACTS.md, which shares no prefix with any apps/ entry -- which is also why that document is a reviewDependency here and not a write, since PL-0902 is updating its session section and two editors in one file is the collision the field exists to avoid. PL-0305, PL-0903 and PL-0904 hold apps/web/src/lib and apps/web/src/components/player; these are apps/web/src/app and the app-root config file. No proposed prefix is a prefix of any of theirs.",
+      "implementationAgent": "claude-media",
+      "updatedAt": "2026-09-16T01:23:54.544Z",
+      "implementationBaseSha": "cb622345f12611585771e2f1af808034bd5aa042",
+      "implementationBaseProvenance": {
+        "kind": "reconciled-existing-implementation",
+        "baseSha": "cb622345f12611585771e2f1af808034bd5aa042",
+        "reconciledAt": "2026-09-16T01:23:54.543Z",
+        "reconciledBy": "claude-media",
+        "implementationAgent": "claude-media",
+        "headAtReconciliation": "a074b986e899ba8b91d018c4bb71f8c12089b608",
+        "reviewSurface": "allowedPaths + reviewDependencies",
+        "surfaceCommitCount": 24,
+        "oldestSurfaceCommit": "4ca4313f2642f4666ab6dda0084c25fcb2fbf3d5",
+        "newestSurfaceCommit": "a074b986e899ba8b91d018c4bb71f8c12089b608",
+        "surfaceCommits": [
+          "5b7aba7685b10b2311c625287be0dd8670665b28",
+          "7079aed9d792dbedcf779ed5ac3c2c170ca6eabb",
+          "1ee833d2f7834729b871f868a2bcd6c7cc8d1981",
+          "916fc101a3dfa8d066a50f5b34d3c5db5f4e1eeb",
+          "a4209a4fcf0b232e5de92f2af09dd8fb3d266909",
+          "b74b0d3c4befa226109fc1ce623b5addd46a9490",
+          "eecca6b621a2fccaab09ab3ec15d3bc93936df3b",
+          "ba9521b2c3998ae05210240827c0a773596819c9",
+          "719d2d7c31465901f3dbee1e936a180e87c3d44f",
+          "8b1172b2190d3ddfecb5afd28ea73a293e17def1",
+          "3c92942bc7eee0a7aab4440e254d8e11d3a849a9",
+          "754a786625499ae7e436f93758edd11ef7487ff4",
+          "9933a55dd177ccc08b20b1fe3e49f479c8a7de1f",
+          "b0b1dcf5a4826b763aa72d6375dd93e95a3aff33",
+          "6358abc8a8c9b6183e561ca795a4d29ae7fd2881",
+          "c3bb856f3d8c122acd46d5331067fac3a0266f2b",
+          "34c16c97c9ae0a1dec5b708f4f81ed62ecb94afb",
+          "bbe68ed8d16f864c87309ceb1c089495deb89766",
+          "ba2bf4756175e84aab07ec36f9e7c3d6e324d350",
+          "4ca4313f2642f4666ab6dda0084c25fcb2fbf3d5"
+        ],
+        "surfaceCommitsTruncated": true,
+        "changedFileCount": 31,
+        "baseCommitSurfaceTouchCount": 0,
+        "baseCommitSurfaceTouches": [],
+        "baseCommitSurfaceTouchesTruncated": false,
+        "reason": "The base is cb622345f12611585771e2f1af808034bd5aa042, the parent of 4ca4313, the earliest commit that names PL-0501, and it is proven against the TREE rather than against filenames or commit messages. At cb622345, git ls-tree -r over apps/web/src/app/api/v1/playback returns exactly ONE path, resolve/route.ts: the entire session/ subtree -- contract.ts, issue-session.ts, authorized-candidates.ts, handler.ts, route.ts and their four suites, 2671 lines -- does not exist. So the behaviour is absent and not merely the files, which is the PL-0205 standard: that failure came from a witness file created by a later refactor that only MOVED declarations, and nothing can have been moved into a directory that does not exist. THE IMPLEMENTATION PREDATES THE CLAIM BY DESIGN, NOT BY OVERSIGHT: coordination/IMPLEMENTATION_RECOVERY.md lists this task among the implemented-but-unreviewed lanes, and the record carried owner null with no gate results and no base. Checked against the acceptance clause by clause: the server resolves and the client names, with authorized-candidates.ts stating that a resolver is a function of a normalized content id so there is no parameter through which a caller could suggest a stream; playbackSessionRequestSchema is strict at both levels with only contentId and capabilities; the response is a discriminatedUnion on outcome with granted, denied and unavailable; and reasons is a nonempty array shared by all three branches with three factory functions each taking the primary reason as a required positional argument, so a branch with no reasons is not constructible. THE WINDOW IS HONEST BUT NOT EXCLUSIVE, AND THAT IS PUBLISHED RATHER THAN LEFT TO BE DISCOVERED: commits inside cb622345..HEAD that touch this surface include work attributed to other tasks -- 9933a55 is PL-0301's rights repair to the watch page, bbe68ed is PL-0702's, and the engine half of 34c16c9 is PL-0204's. A review range cannot open in the middle of a commit and this repository commits across lanes, which is the same shape the reviewer accepted for PL-0706 and PL-0704. WHAT REMAINS IS NOT COVERED BY THIS BASE AND IS NOT CLAIMED TO BE: the desktop target-selected implementation required by DESKTOP_PLAYBACK section 8 does not exist in any form -- zero hits for buildTarget, BUILD_TARGET, LIBERTY_TARGET or desktop across apps/web/src, packages, scripts and next.config.ts, and no apps/desktop -- and carrying PL-0902's protection field onto the session candidate has not happened because drm.ts only landed in this same round. Both are this round's work and will sit inside the window above."
+      }
     },
     {
       "id": "PL-0502",
@@ -2883,7 +2949,7 @@
       "id": "PL-0305",
       "priority": "P1",
       "lane": "Provider",
-      "status": "READY",
+      "status": "IN_PROGRESS",
       "title": "A real catalog metadata source",
       "notes": "The discovery layer has no metadata source. PL-0105 landed a seam, and docs/CATALOG_SOURCE.md says so in its first line; this task is the thing that belongs behind it, tracked so the gap stays visible instead of being hidden by a port that looks finished. docs/PRODUCT_SPEC.md step 2 of the initial user journey is browse/search normalized metadata, and nothing in this repository ingests any: every surface reads six fictional works. PL-0301 and PL-0302 do not close it - they supply stream candidates, which is what a title plays from, not what a catalog is made of. PARTLY BLOCKED, and the split is deliberate rather than a hedge. The design half - identity and dedupe, refresh and staleness, tombstones, paging, provider-side search, the locale-tagged contract, and the undeclared-rights state that catalogItemSchema cannot currently express - needs no external access and can begin now. Connecting an actual metadata provider, and carrying artwork, cannot: both need an agreement and credentials, which control/policies.json escalates to human-only under Licensing and Credentials - the same categories that block PL-0302. It is a DIFFERENT agreement from PL-0302's, covering catalog metadata and image rights rather than stream rights, so this is not merely waiting on that task; the honest status is BACKLOG with the ceiling named, not BLOCKED on someone else's licence.",
       "dependencies": [
@@ -2906,8 +2972,11 @@
         "unit"
       ],
       "acceptance": "A metadata source stands behind resolveCatalogMetadataSource and answers what the port deliberately does not. Ingestion: something fetches, schedules and backfills, rather than an array being maintained by hand. Refresh: an answer carries its age and a stated staleness policy, so nobody has to guess how old a rail is. Identity and dedupe: how a provider's native id becomes a normalizedContentId, and what happens when two sources describe the same work, is settled as a design decision before it is coded - this is the largest missing piece and it is not a coding question. Deletion: a work that disappears from a source produces a tombstone, so it stays distinguishable from a fetch that failed. Paging and provider-side search: listRecords returning everything is a shape only six fixtures can use, and who owns ranking and paging is part of the contract rather than an accident of in-memory filtering. Artwork: images arrive with their own licensing, tracked separately from the work's, or they do not arrive. Localization and availability: title, genre and synopsis are locale-tagged and a work can be offered in more than one language, and availability windows and territory exist, so the empty state's claim about a region is backed by something. Every record declares a rights basis whose category agrees with its item and whose reference is an opaque internal identifier or null, and the ingestion path is treated as untrusted third-party I/O - allowlisted egress, bounded bodies, redirects revalidated, and no media address anywhere in a catalog payload.",
-      "owner": null,
-      "gateResults": {}
+      "owner": "claude-backend",
+      "gateResults": {},
+      "implementationAgent": "claude-backend",
+      "updatedAt": "2026-09-16T00:43:21.488Z",
+      "implementationBaseSha": "a3e7d13323cda0479aa5352efb7bdb5dea973125"
     },
     {
       "id": "PL-0706",
@@ -3742,12 +3811,27 @@
     },
     {
       "reviewAgent": "gpt-architect",
-      "owner": null,
-      "gateResults": {},
+      "owner": "claude-lead",
+      "gateResults": {
+        "typecheck": {
+          "status": "pass",
+          "at": "2026-09-16T01:22:42.081Z",
+          "by": "claude-lead",
+          "commitSha": "a074b986e899ba8b91d018c4bb71f8c12089b608",
+          "evidence": "npx turbo run typecheck --force at integrated head a074b986e899ba8b91d018c4bb71f8c12089b608, exit 0, 9 of 9 tasks and 0 cached; also forced in the task worktree at 8a78bb0, exit 0. Includes two compile-time pins that are part of the deliverable rather than incidental: StatesContentProtection<Shape> resolves to never for a shape lacking the field, so PL-0501 can declare the obligation and fail the build if it drops it, and two type-level declarations exercise it in both directions."
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-09-16T01:22:42.271Z",
+          "by": "claude-lead",
+          "commitSha": "a074b986e899ba8b91d018c4bb71f8c12089b608",
+          "evidence": "npx turbo run test --force at integrated head a074b986e899ba8b91d018c4bb71f8c12089b608, exit 0, 15 of 15 and 0 cached, 2172 passed 1 skipped. PL-0902 adds 58 cases across stream-candidate.test.ts and stream-candidate.property.test.ts. THE DESIGN WAS MEASURED BEFORE IT WAS CHOSEN: adding the field to streamCandidateSchema directly was tried and breaks typecheck in 11 files across 4 packages, none of them in this task's surface; that experiment was reverted before anything was written and is corroboration rather than the reason. The architectural reason is that streamCandidateSchema is the RANKER's input and DESKTOP_PLAYBACK section 4 rules that ranking may prefer a candidate only one adapter can play, so a score component discounting protected candidates would be a second opinion about routing living in the one component that must not hold one. Hence resolvedStreamCandidateSchema extends it and streamCandidateSchema is byte-for-byte unchanged. MUTATION-CHECKED FOUR WAYS, each caught and then restored: requiresContentDecryptionModule narrowed to === protected (3 failures), protection given a .default of clear (4), .strict() removed from the protected variant (2), and the licence URL allowed over http (2). Unknown is a MEMBER OF THE UNION rather than null or an absent field, deliberately -- null is the right spelling of unknown for a media fact, but every reader's reflex for a null DRM field is 'there is no DRM', and requiresContentDecryptionModule is written as state !== clear so a fourth state added later defaults to requiring a CDM rather than to a silent attempt. packages/contracts/src/testing/arbitraries.ts was NOT touched because PL-0206 is editing it; the generators are local to the property file and composed from the shared streamCandidateArb, with the follow-up named in the file."
+        }
+      },
       "id": "PL-0902",
       "priority": "P0",
       "lane": "Architecture",
-      "status": "READY",
+      "status": "REVIEW",
       "title": "DRM capability on the candidate and playback-session contract",
       "description": "packages/contracts/src contains no occurrence of drm, widevine, playready or eme -- verified by grep across the whole source tree on 2026-09-15. So a resolved candidate carries no statement about whether it is encrypted, under which system, or against which license server. PL-0901 makes that a blocking gap rather than a cosmetic one: the desktop build routes between an mpv adapter that has no CDM and cannot be given one, and a Shaka/EME adapter that has one, and PlayerAdapter.canPlay is required to return a REASON on both branches rather than a boolean guess. A reasoned decision cannot be made from a contract that carries no field to reason about, so this gates the capability routing in PL-0901 section 4.",
       "notes": "THE SHAPE IS A CAPABILITY DESCRIPTOR, NOT A BOOLEAN. An isDrm flag would answer the routing question and nothing else; the adapter also has to say WHY it refused, and a reason trail that says drm_required with no system named is not debuggable, which is invariant 4. The reviewer should expect at minimum the protection system and, where the boundary knows it, the license acquisition endpoint -- and should rule on whether an UNKNOWN encryption state is representable, because absent is not the same as none. A candidate whose encryption state was never established must not read as clear; that is the same required-and-nullable discipline PL-0207 established for media facts, and the precedent is deliberate. WHERE IT LIVES IS PART OF THE QUESTION. The descriptor could sit on streamCandidate, on the playback-session response, or on both with one deriving from the other. The candidate is what the ranker scores and the session is what the player is handed, and PL-0301's implementation already argues at packages/provider-sdk/src/fixture/provider.ts that the playable address belongs on the session rather than the candidate, for a reason that may or may not extend to the key system. Settle it before writing it. NOTHING HERE MAY WEAKEN A PROTECTION. This task describes encryption so the correct player is chosen and so a refusal is explainable. It adds no decryption, no key handling and no fallback that would attempt a protected source with an engine that has no CDM -- invariant 2 -- and the mpv adapter's refusal must stay a refusal rather than becoming a degraded attempt. SEQUENCING: overlaps PL-0206 and PL-AI-0006 on packages/contracts and must be sequenced after whichever is active. It should land before PL-0501 writes the session response, because retrofitting a discriminated field into a shipped contract is the change PL-0501's own acceptance warns about.",
@@ -3774,16 +3858,34 @@
         "architecture-review",
         "rights-review"
       ],
-      "acceptance": "A resolved stream candidate, or the playback session that carries it, states its content-protection requirement explicitly: the protection system where one applies, an unencrypted state that is asserted rather than inferred from an absent field, and an UNKNOWN state that is representable and does not read as unencrypted. PlayerAdapter.canPlay can decide routing from the contract alone, without inspecting a URL, a manifest or a provider-specific field, and can name the protection system in its refusal reason. Adding the field changes no existing candidate's meaning by accident: a candidate that omits it is refused by the schema rather than defaulted to clear. Provider-specific spellings stay inside @liberty/provider-sdk and are normalized before they reach the contract. No decryption, key handling or protection bypass is added."
+      "acceptance": "A resolved stream candidate, or the playback session that carries it, states its content-protection requirement explicitly: the protection system where one applies, an unencrypted state that is asserted rather than inferred from an absent field, and an UNKNOWN state that is representable and does not read as unencrypted. PlayerAdapter.canPlay can decide routing from the contract alone, without inspecting a URL, a manifest or a provider-specific field, and can name the protection system in its refusal reason. Adding the field changes no existing candidate's meaning by accident: a candidate that omits it is refused by the schema rather than defaulted to clear. Provider-specific spellings stay inside @liberty/provider-sdk and are normalized before they reach the contract. No decryption, key handling or protection bypass is added.",
+      "implementationAgent": "claude-lead",
+      "updatedAt": "2026-09-16T01:22:43.348Z",
+      "implementationBaseSha": "a3e7d13323cda0479aa5352efb7bdb5dea973125"
     },
     {
       "reviewAgent": "gpt-architect",
-      "owner": null,
-      "gateResults": {},
+      "owner": "claude-frontend",
+      "gateResults": {
+        "typecheck": {
+          "status": "pass",
+          "at": "2026-09-16T01:22:42.499Z",
+          "by": "claude-frontend",
+          "commitSha": "a074b986e899ba8b91d018c4bb71f8c12089b608",
+          "evidence": "npx turbo run typecheck --force at integrated head a074b986e899ba8b91d018c4bb71f8c12089b608, exit 0, 9 of 9 and 0 cached. The native case is proven by a TYPE-LEVEL literal rather than a fake adapter -- there is no NativePlayerAdapter yet, so no runtime path can produce one, and the literal fails tsc if engine_load_failed, the detail field, or the native-mpv engine id disappears. Three separate mutations were confirmed to fail tsc with exit 2."
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-09-16T01:22:42.708Z",
+          "by": "claude-frontend",
+          "commitSha": "a074b986e899ba8b91d018c4bb71f8c12089b608",
+          "evidence": "npx turbo run test --force at integrated head a074b986e899ba8b91d018c4bb71f8c12089b608, exit 0, 15 of 15 and 0 cached, 2172 passed. THE FINDING IS THAT TWO OF THE THREE MEMBERS WERE ALREADY ENGINE-NEUTRAL AND NOBODY HAD NOTICED: engine_load_failed is exactly 'libmpv did not load' and names no engine, no library and no host. The gap was never a missing member; it was that the union was DOCUMENTED as three observed browser situations, so a native adapter author would reasonably conclude none applied and invent one. So this is a re-specification plus the missing detail channel, not a new member -- and adding libmpv_unavailable beside browser_unsupported was refused, because that would leave the union naming one engine's failure modes and one library's, which is the coupling the task exists to remove. 'The engine loaded and refused this source' was also refused: unavailability is decided once before any source, while a per-source refusal is per-candidate and feeds failover, and DESKTOP_PLAYBACK section 3 already owns it as PlayerRefusalCode on canPlay. That refusal is what satisfies the no-retryable constraint BY CONSTRUCTION rather than by a guard. CONSTRAINT PROVEN IN THREE LAYERS: the reason set and the failure-kind set are disjoint and neither contains network_transient; the live route was traced -- an unavailability does reach classifyPlaybackFailure as ENGINE_ERROR and returns null because describePlaybackError of a non-shaka error yields category null and code null -- and the detail's code is a namespaced STRING precisely so an mpv number cannot be assigned where the classifier reads Shaka's scale; and the unavailability state path terminates at fatal without touching the scheduler. Five mutations were each confirmed to fail, including collapsing the missing-engine case onto browser_unsupported and building the error from a Shaka timeout."
+        }
+      },
       "id": "PL-0903",
       "priority": "P1",
       "lane": "Player",
-      "status": "READY",
+      "status": "REVIEW",
       "title": "An engine-unavailable reason that can say libmpv did not load",
       "description": "EngineUnavailableReason in apps/web/src/components/player/playback-controller.ts is Shaka-shaped. Its members describe a browser that cannot run the web engine, and browser_unsupported is a misnomer the moment the engine is a native library in a desktop shell rather than a script in a page. There is no member that means the native player failed to load. A NativePlayerAdapter would have to report a false reason or invent one locally, and either makes the failure less debuggable than the web path it sits beside.",
       "notes": "THE VOCABULARY, NOT A NEW MEMBER. Adding a libmpv_unavailable member beside browser_unsupported would leave the union naming one engine's failure modes and one library's, which is the same coupling one layer up. The question for the reviewer is whether the reason should describe WHAT FAILED in engine-neutral terms -- the engine could not be loaded, the platform cannot run this engine, the engine loaded and refused this source -- with the engine's own detail carried beside it rather than encoded in the member name. COUPLED TO PL-0904 AND DELIBERATELY SEPARATE. Both are the same observation in two places: the player's error vocabulary assumes Shaka. They are separate tasks because they have different consumers -- unavailability is a startup decision the controller makes before any source is loaded, while a playback error is a per-attempt outcome the failover scheduler classifies -- and because merging them would put one review range across two behaviours. Whoever takes the second should read the first's verdict. DO NOT BREAK THE FAILOVER CLASSIFICATION. packages/media-engine consumes playback failures and treats network_transient as the only retryable class; an unavailability reason that leaks into that path as retryable would make the player retry a library that is not installed.",
@@ -3806,16 +3908,34 @@
         "unit",
         "architecture-review"
       ],
-      "acceptance": "The engine-unavailable vocabulary can represent a native engine failing to load without naming Shaka, a browser or libmpv in the member itself, and the existing web reasons keep their present meaning and their present tests. An engine's own detail is carried beside the reason rather than encoded in it. No unavailability reason reaches the failover scheduler as retryable. The rename or widening is proven by a regression that fails if browser_unsupported is reintroduced as the only way to say an engine is missing."
+      "acceptance": "The engine-unavailable vocabulary can represent a native engine failing to load without naming Shaka, a browser or libmpv in the member itself, and the existing web reasons keep their present meaning and their present tests. An engine's own detail is carried beside the reason rather than encoded in it. No unavailability reason reaches the failover scheduler as retryable. The rename or widening is proven by a regression that fails if browser_unsupported is reintroduced as the only way to say an engine is missing.",
+      "implementationAgent": "claude-frontend",
+      "updatedAt": "2026-09-16T01:22:43.556Z",
+      "implementationBaseSha": "a3e7d13323cda0479aa5352efb7bdb5dea973125"
     },
     {
       "reviewAgent": "gpt-architect",
-      "owner": null,
-      "gateResults": {},
+      "owner": "claude-frontend",
+      "gateResults": {
+        "typecheck": {
+          "status": "pass",
+          "at": "2026-09-16T01:22:42.905Z",
+          "by": "claude-frontend",
+          "commitSha": "a074b986e899ba8b91d018c4bb71f8c12089b608",
+          "evidence": "npx turbo run typecheck --force at integrated head a074b986e899ba8b91d018c4bb71f8c12089b608, exit 0, 9 of 9 and 0 cached. Three of the nine mutation checks are compile-time: widening code to number|null, admitting EOF as a failure reason, and flattening the fault so a code is readable without narrowing each produce tsc exit 2."
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-09-16T01:22:43.122Z",
+          "by": "claude-frontend",
+          "commitSha": "a074b986e899ba8b91d018c4bb71f8c12089b608",
+          "evidence": "npx turbo run test --force at integrated head a074b986e899ba8b91d018c4bb71f8c12089b608, exit 0, 15 of 15 and 0 cached, 2172 passed; 16 new cases, web suite 759 to 775 in its own worktree. THE ENGINE-SPECIFIC CODE IS NOT A FIELD BESIDE A TAG, IT IS INSIDE A VARIANT THE TAG UNLOCKS: a tag alone leaves error.code readable without anyone consulting it, while a discriminated union makes the narrow mandatory and the wrong read a build failure. Three independent barriers keep an mpv number off the classified fields -- code is typed as the literal null on the native variant, fault is a union so an unnarrowed read does not compile, and dispatch narrows on engine so the Shaka classifier cannot receive a native error. Mutation M4 is the one worth reading: it takes TWO simultaneous mutations to make an mpv 6 come back as rights_unverifiable, and the first barrier catches it alone. THE NATIVE BRANCH CLASSIFIES NOTHING AND THAT IS THE ANSWER RATHER THAN A STUB: stop and redirect are taken by aborted a branch up, what remains is an mpv error with no honest table, and the http-status branch was deliberately NOT written even though it would be engine-neutral, because mpv surfaces no HTTP status and the only way to produce one is parsing FFmpeg's English error text, which the failover contract forbids. PL-0204's approval turned on the budget being honest about what it could not classify. BOTH TEST FILES ARE APPEND-ONLY: git diff shows 149 and 90 insertions and ZERO deleted lines, so every pre-existing Shaka regression passes unmodified."
+        }
+      },
       "id": "PL-0904",
       "priority": "P1",
       "lane": "Player",
-      "status": "READY",
+      "status": "REVIEW",
       "title": "Playback errors carry an origin, so a native failure is not a Shaka number",
       "description": "PlaybackError in apps/web/src/components/player/shaka-error.ts carries code and category pinned to Shaka 5.2.x numbering. A native adapter has no such numbers: libmpv reports MPV_EVENT_END_FILE with a reason and an error field, on an entirely different scale. Today a NativePlayerAdapter must either report null in both fields, which discards the only diagnostic it has, or borrow a Shaka number that means something else, which is worse. PL-0901 requires the adapter boundary to expose recoverable and fatal errors without leaking an engine type, and this is where that leaks.",
       "notes": "AN ORIGIN, SO THE NUMBER MEANS SOMETHING. The proposal the desktop document records is that an error names the engine that produced it, and that its engine-specific code is read only in that origin's terms. The reviewer should also rule on whether the classification the failover scheduler consumes -- rights, decode, source_unavailable, network_transient -- stays engine-neutral and is derived per origin, which is the shape that keeps packages/media-engine from learning about either engine. AN HONEST CONSEQUENCE, RECORDED BEFORE IT IS DISCOVERED. mpv's END_FILE error is coarser than Shaka's code pairs, so a native origin will legitimately classify to unknown more often. The scheduler already handles that: an unclassified charged attempt cannot silently reset the budget, and attemptsByCandidate and attempt_failed_unclassified exist for exactly this. Do not manufacture a false classification to avoid the unknown branch -- PL-0204's approval turned on the budget being honest about what it could not classify. COUPLED TO PL-0903, SEPARATE FOR THE REASON RECORDED THERE.",
@@ -3840,7 +3960,10 @@
         "unit",
         "architecture-review"
       ],
-      "acceptance": "A playback error names the origin that produced it, and an engine-specific code is interpretable only against that origin rather than being read on one engine's numbering. A native error can be represented without borrowing a Shaka code and without discarding the detail the engine did supply. The classification packages/media-engine consumes stays engine-neutral, derived per origin, and unchanged in meaning for every existing Shaka case, proven by the existing shaka-error regressions continuing to pass unmodified. An error that cannot be classified stays unclassified rather than being assigned a plausible class."
+      "acceptance": "A playback error names the origin that produced it, and an engine-specific code is interpretable only against that origin rather than being read on one engine's numbering. A native error can be represented without borrowing a Shaka code and without discarding the detail the engine did supply. The classification packages/media-engine consumes stays engine-neutral, derived per origin, and unchanged in meaning for every existing Shaka case, proven by the existing shaka-error regressions continuing to pass unmodified. An error that cannot be classified stays unclassified rather than being assigned a plausible class.",
+      "implementationAgent": "claude-frontend",
+      "updatedAt": "2026-09-16T01:22:43.756Z",
+      "implementationBaseSha": "a3e7d13323cda0479aa5352efb7bdb5dea973125"
     }
   ]
 }
