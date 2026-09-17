@@ -1,21 +1,28 @@
+import type { ManifestFetchDependencies } from "@liberty/media-inspection";
 import type { ExternalRef, SourceWorkRef } from "./identity";
 import type { IngestedWork } from "./record";
+import type { CatalogDocumentOptions } from "./transport";
+import { createWikidataProvider, type WikidataConfigRefusal, type WikidataRightsRegister, type WikidataSelection } from "./wikidata";
+import { WIKIDATA_SOURCE_ID } from "./wikidata-query";
 
 /* -------------------------------------------------------------------------
- * The provider adapter boundary -- and the fact that nothing stands behind it
+ * The provider adapter boundary, and the one source that now stands behind it
  *
- * THIS IS THE PORT A REAL METADATA PROVIDER IMPLEMENTS, and PL-0305 deliberately
- * ships it with NO IMPLEMENTATION. `resolveCatalogMetadataProvider` at the foot
- * of this file answers `not-configured` unconditionally, and that is the honest
- * state of this repository rather than a stub waiting to be filled in.
+ * THIS IS THE PORT A REAL METADATA PROVIDER IMPLEMENTS. In round 44 it shipped
+ * with NO IMPLEMENTATION, because choosing where a product's catalog comes from
+ * is a LICENSING decision that `control/policies.json` reserves to the human
+ * commander. THAT DECISION HAS SINCE BEEN TAKEN -- Wikidata, 2026-09-17, as an
+ * initial source choice and not an exclusive mandate -- and
+ * `resolveCatalogMetadataProvider` at the foot of this file now composes an
+ * adapter for it. The composition root section down there carries the decision's
+ * scope limits in full, because they are the part a reader is most likely to
+ * skip and most likely to get wrong.
  *
- * WHY NOTHING IS WIRED. Choosing where a product's catalog comes from is a
- * LICENSING decision, and attaching a key to it is a CREDENTIALS decision.
- * `control/policies.json` lists both under `escalation.humanOnly`, so neither is
- * an engineering default and neither can be taken here. PL-0305's own task
- * record says the same thing in the same words. `docs/CATALOG_SOURCE.md` carries
- * the evidenced shortlist the commander would be deciding between; this module
- * carries the shape whichever one is chosen has to fit.
+ * EVERYTHING BETWEEN HERE AND THERE IS UNCHANGED BY THAT, deliberately. The port
+ * has no Wikidata-shaped field, no Wikidata vocabulary and no knowledge that an
+ * adapter exists; `wikidata.ts` imports FROM this file and nothing in this
+ * section imports from it. A second source joins or replaces the first without
+ * any of these types moving.
  *
  * WHAT A "NOT CONFIGURED" ANSWER IS FOR. It is the same control the catalog port
  * in `apps/web` already applies: a named refusal rather than an empty list, so
@@ -194,50 +201,184 @@ export function requireProviderSideSearch(
   return { ok: true, search: search.bind(provider) };
 }
 
+/* -------------------------------------------------------------------------
+ * THE COMPOSITION ROOT -- AND IT NOW HAS SOMETHING TO COMPOSE
+ *
+ * PL-0305 shipped this file in round 44 with `resolveCatalogMetadataProvider`
+ * answering `not-configured` unconditionally, because choosing a catalog source
+ * is a LICENSING decision and `control/policies.json` reserves Licensing to the
+ * human commander. THAT DECISION HAS BEEN TAKEN. It is recorded on the task as
+ * `licensingDecision` and in `control/events.jsonl` as a `decision.licensing`
+ * event dated 2026-09-17: WIKIDATA IS THE INITIAL CATALOG METADATA SOURCE,
+ * chosen because it needs no credential and keeps this seam replaceable.
+ *
+ * THE SCOPE OF THAT DECISION IS PART OF IT, and this module is built to the
+ * scope rather than to the headline:
+ *
+ *   - It is an INITIAL SOURCE CHOICE AND NOT AN EXCLUSIVE OR PERMANENT SOURCE
+ *     MANDATE, in the decision's own words. So the resolver below is a REGISTRY
+ *     OVER LICENSED SOURCES that happens to have one entry, not a function that
+ *     returns the Wikidata provider. A caller names the source it wants; a name
+ *     that is not licensed is refused BY NAME. Nothing in `ingest.ts`,
+ *     `project.ts`, `identity.ts`, `freshness.ts` or `safety.ts` mentions
+ *     Wikidata, and the port above is byte-for-byte what it was before the
+ *     adapter existed.
+ *   - NO CREDENTIALED SOURCE IS AUTHORISED. TMDB and everything else needing an
+ *     API key remains a separate Credentials escalation. There is still no
+ *     environment variable read anywhere in this package and still no
+ *     placeholder credential, and `resolveCatalogMetadataProvider({ sourceId:
+ *     "tmdb", ... })` answers `no_catalog_provider_licensed` -- which is what
+ *     keeps that refusal reachable, and therefore testable, rather than dead.
+ *   - NOTHING IS DECIDED ABOUT THE EU/UK SUI GENERIS DATABASE RIGHT. It applies
+ *     to Wikidata as much as to any other candidate and it is for counsel. It is
+ *     recorded in `docs/CATALOG_SOURCE.md` as open; no code here can settle it.
+ *   - ONLY WIKIDATA'S CC0 POSITION ON STRUCTURED DATA IN THE MAIN, PROPERTY AND
+ *     LEXEME NAMESPACES WAS EVIDENCED. Text elsewhere is CC BY-SA. That line is
+ *     enforced in `wikidata-query.ts` -- a frozen host set, an entity-id pattern
+ *     admitting only those three namespaces, no federated `SERVICE` clause, and
+ *     no request for any image, sitelink or article extract -- and the
+ *     construction below refuses a runtime whose egress allowlist could reach
+ *     anything else.
+ *
+ * WHAT THE RESOLVER TAKES, AND WHY THAT IS NOT A LICENSING KNOB. The round-44
+ * version declared no parameter, and its test asserted the arity, on the ground
+ * that nothing an operator could set should change what this build's catalog is.
+ * That property is PRESERVED and is now the thing worth testing: the runtime
+ * below carries a transport, an egress policy, a User-Agent, a rights register
+ * and which slice of the source to read -- deployment facts, all of which a
+ * deployment must supply and none of which can change WHICH SOURCE answers. The
+ * source is decided by `sourceId` against a list of licensed names, and a
+ * runtime cannot add to that list.
+ * ---------------------------------------------------------------------- */
+
+/**
+ * The names this repository has a licensing decision for.
+ *
+ * ONE ENTRY, AND THE SHAPE IS A LIST BECAUSE THE DECISION SAID SO. Frozen, and
+ * walked by index rather than through `Array.prototype.includes` for the reason
+ * `packages/contracts/src/shared/runtime.ts` gives about its own allowlist: a
+ * single assignment to that writable prototype property would make the check
+ * answer `true` for a source nobody licensed while the frozen array stayed
+ * correct.
+ */
+export const LICENSED_CATALOG_SOURCE_IDS: readonly string[] = Object.freeze([
+  WIKIDATA_SOURCE_ID
+]);
+
+export function isLicensedCatalogSourceId(sourceId: string): boolean {
+  for (let index = 0; index < LICENSED_CATALOG_SOURCE_IDS.length; index += 1) {
+    if (LICENSED_CATALOG_SOURCE_IDS[index] === sourceId) return true;
+  }
+  return false;
+}
+
 /**
  * Why this build has no catalog metadata provider.
  *
- * A union with one member so a second reason is additive, the same shape
- * `CatalogSourceUnavailableReason` uses in `apps/web`. The name states the
- * actual blocker: not "unimplemented", not "coming soon" -- no provider has been
- * licensed, and licensing is a decision this repository's policy reserves to the
- * human commander.
+ * `no_catalog_provider_licensed` SURVIVES THE DECISION rather than being
+ * deleted by it. Wikidata is licensed; nothing else is, and a deployment that
+ * asks for anything else has to be told that in those words -- including a
+ * deployment that asks for a keyed source, which is the escalation the decision
+ * explicitly did not grant.
+ *
+ * `catalog_provider_configuration_refused` is the new one: the source IS
+ * licensed and this runtime cannot be composed over it. Separate from the first
+ * because the remedies are opposite -- one needs a human decision, the other
+ * needs a corrected deployment -- and a single reason would send an operator
+ * to the wrong one.
  */
-export type CatalogProviderUnavailableReason = "no_catalog_provider_licensed";
+export type CatalogProviderUnavailableReason =
+  | "no_catalog_provider_licensed"
+  | "catalog_provider_configuration_refused";
+
+/**
+ * Everything a deployment must supply to reach a licensed source.
+ *
+ * NONE OF IT DECIDES WHICH SOURCE ANSWERS. `sourceId` selects among licensed
+ * names and the rest is how to reach the one selected: the egress policy, the
+ * limits, the required User-Agent, the transport for the runtime being composed
+ * for, which slice of the source to read, and the operator's rights register.
+ * There is no field here a caller could set to introduce a source, and no field
+ * that carries a credential -- see `docs/CATALOG_SOURCE.md` on why a
+ * placeholder for one would be worse than its absence.
+ */
+export interface CatalogProviderRuntime {
+  /** Which licensed source to compose. */
+  readonly sourceId: string;
+  readonly selection: WikidataSelection;
+  readonly document: CatalogDocumentOptions;
+  readonly transport: ManifestFetchDependencies;
+  /**
+   * The operator's rights register.
+   *
+   * REQUIRED WITH NO DEFAULT. `noRightsBasisEstablished` is the honest answer
+   * for an operator who holds no register, and it must be passed by name:
+   * inheriting it would make "we have not done the rights work" a silent state
+   * rather than a stated one. It refuses every record.
+   */
+  readonly rightsRegister: WikidataRightsRegister;
+}
 
 export type CatalogMetadataProviderResolution =
   | { readonly status: "configured"; readonly provider: CatalogMetadataProvider }
-  | { readonly status: "not-configured"; readonly reason: CatalogProviderUnavailableReason };
+  | {
+      readonly status: "not-configured";
+      readonly reason: "no_catalog_provider_licensed";
+      readonly detail: string;
+    }
+  | {
+      readonly status: "not-configured";
+      readonly reason: "catalog_provider_configuration_refused";
+      readonly refusal: WikidataConfigRefusal;
+      readonly detail: string;
+    };
 
 /**
- * The provider this build has. There is none.
+ * The provider this deployment has, or a named reason it has none.
  *
- * THIS FUNCTION IS THE COMPOSITION ROOT OF THE INGESTION PACKAGE and it is
- * intentionally the only place a provider could be named. It takes no
- * configuration argument, reads no environment variable and consults no file,
- * which is the point: there is no value an operator could set today that would
- * make it answer anything else, so nothing about this build's catalog can be
- * changed by configuration alone.
+ * THE SEAM IS UNCHANGED BY THE FACT THAT SOMETHING NOW STANDS BEHIND IT. This is
+ * still the only place in the package a provider is named, `ingest.ts` still
+ * takes one as an argument and knows nothing about where it came from, and a
+ * second licensed source is one entry in `LICENSED_CATALOG_SOURCE_IDS` plus one
+ * branch here.
  *
- * WHAT WOULD CHANGE ON THE DAY A PROVIDER IS CHOSEN, so the next engineer is not
- * guessing:
+ * WHAT THIS STILL DOES NOT DO: read an environment variable, read a file,
+ * consult a default, or hold a credential. A deployment that passes no runtime
+ * gets no provider, and there is no ambient configuration that could supply one.
  *
- *   1. A commander decision recorded against the Licensing escalation category,
- *      naming the source and what its terms permit. `docs/CATALOG_SOURCE.md`
- *      has the shortlist and the evidence.
- *   2. If that source needs a key: a Credentials escalation, and a secret
- *      delivered through whatever `apps/web`'s environment loader is extended to
- *      carry. Note `docs/DEVELOPMENT.md` -- `apps/web` reads dotenv from
- *      `apps/web/`, not the repository root. NO ENVIRONMENT VARIABLE IS READ
- *      HERE and none is invented: a placeholder that looks like a real key is
- *      worse than an absence, because it makes an unconfigured build look
- *      configured.
- *   3. An adapter implementing `CatalogMetadataProvider`, constructed over the
- *      transport in `transport.ts` -- which is the existing PL-0304 egress
- *      boundary and not a new one -- and an entry added to the operator's
- *      `EgressPolicy.allowedHosts`, without which it fetches nothing.
- *   4. This function returns it.
+ * WHAT IS STILL NOT WIRED, STATED HERE RATHER THAN IMPLIED: `apps/web` does not
+ * consume this. `resolveCatalogMetadataSource` in
+ * `apps/web/src/lib/catalog-source-registry.ts` still answers
+ * `no_metadata_source_configured`, because the adapter that would sit there
+ * needs `apps/web/package.json` to declare a dependency on this package and that
+ * file is outside PL-0305's `allowedPaths`. The ingestion side is real; the
+ * application side is one manifest edit away and that edit is not this task's to
+ * make. `docs/CATALOG_SOURCE.md` records it.
  */
-export function resolveCatalogMetadataProvider(): CatalogMetadataProviderResolution {
-  return { status: "not-configured", reason: "no_catalog_provider_licensed" };
+export function resolveCatalogMetadataProvider(
+  runtime: CatalogProviderRuntime
+): CatalogMetadataProviderResolution {
+  if (!isLicensedCatalogSourceId(runtime.sourceId)) {
+    return {
+      status: "not-configured",
+      reason: "no_catalog_provider_licensed",
+      detail: `no licensing decision names ${runtime.sourceId} as a catalog metadata source`
+    };
+  }
+
+  const created = createWikidataProvider({
+    selection: runtime.selection,
+    document: runtime.document,
+    transport: runtime.transport,
+    rightsRegister: runtime.rightsRegister
+  });
+  if (!created.ok) {
+    return {
+      status: "not-configured",
+      reason: "catalog_provider_configuration_refused",
+      refusal: created.reason,
+      detail: created.detail
+    };
+  }
+  return { status: "configured", provider: created.provider };
 }

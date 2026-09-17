@@ -18,28 +18,38 @@ import { demoCatalogSource } from "./demo-catalog";
  * `resolveAuthorizedCandidates`, so the operator's remedy ("configure a metadata
  * source") is legible instead of arriving as a blank page.
 
- * PL-0305 BUILT THE INGESTION HALF AND STILL DID NOT MAKE ONE, and this comment
- * is the record of exactly how far it got, because the sentence above is easy to
- * read as "nobody has started". `@liberty/catalog-ingestion` now holds the
- * identity and dedupe decision, refresh and staleness, tombstones, cursor
- * paging, provider-side search as a declared capability, locale tags,
- * availability windows, artwork with its own rights basis, and the
- * egress-bound transport -- all of it behind a `CatalogMetadataProvider` port
- * whose one resolver answers `not-configured` with the reason
- * `no_catalog_provider_licensed`. Choosing a source is a Licensing decision and
- * keying it is a Credentials one, and `control/policies.json` reserves both to
- * the human commander. `docs/CATALOG_SOURCE.md` carries the evidence.
+ * A REAL SOURCE EXISTS NOW, ON THE INGESTION SIDE, AND THIS FILE STILL CANNOT
+ * REACH IT. That is the precise state, and the sentence above is easy to read as
+ * something weaker. `@liberty/catalog-ingestion` holds the identity and dedupe
+ * decision, refresh and staleness, tombstones, cursor paging, provider-side
+ * search as a declared capability, locale tags, availability windows, artwork
+ * with its own rights basis, and the egress-bound transport -- and since
+ * 2026-09-17 its `resolveCatalogMetadataProvider()` returns a WIKIDATA provider,
+ * on a human-commander Licensing decision recorded as an INITIAL SOURCE CHOICE
+ * AND NOT AN EXCLUSIVE MANDATE. No credentialed source is authorised; asking
+ * that resolver for one answers `no_catalog_provider_licensed` by name.
+ * `docs/CATALOG_SOURCE.md` carries the decision and its scope limits in full.
  *
- * SO THE EDIT THIS FILE IS WAITING FOR IS NAMED RATHER THAN IMAGINED, and it is
- * NOT "write an adapter". `projectToCatalogRecord` in that package already emits
+ * SO THE EDIT THIS FILE IS WAITING FOR IS NAMED RATHER THAN IMAGINED, AND IT IS
+ * THE ONLY THING BETWEEN THIS DEPLOYMENT AND A REAL CATALOG. It is NOT "write an
+ * adapter". `projectToCatalogRecord` in that package already emits
  * `{ item: CatalogItem; rights: { category, reference } | null }`, which is
  * STRUCTURALLY the `CatalogMetadataRecord` below -- both spelled in published
  * contract types, neither importing the other -- so the adapter is an assignment
- * rather than a mapping. What stops it being written today is two manifest
- * edits outside PL-0305's `allowedPaths`: `apps/web/package.json` has to declare
- * the dependency, and `package-lock.json` needs the two entries any new
- * workspace package needs. Neither is a design problem and neither was worked
- * around by importing something undeclared.
+ * rather than a mapping. What stops it being written is one manifest edit
+ * outside PL-0305's `allowedPaths`: `apps/web/package.json` has to declare the
+ * dependency. Neither that nor the lockfile entry is a design problem, and
+ * neither was worked around by importing something undeclared.
+ *
+ * TWO THINGS TO KNOW BEFORE MAKING THAT EDIT, because a real source is not the
+ * same thing as a servable catalog. The Wikidata adapter states NO RIGHTS BASIS
+ * -- a Wikidata item says a film exists, not that this operator may show it --
+ * so without an operator rights register every record is refused by name, and
+ * the rail is empty with a reason per record rather than populated. And it
+ * states NO AVAILABILITY WINDOW, so the fail-closed reading of unstated
+ * availability refuses everything a second time. Both are the correct outcomes
+ * and both are why this file answering `no_metadata_source_configured` today is
+ * not the only thing standing between here and a catalog.
  *
  * AND WHEN IT LANDS, IT IS STILL THE COMPILE ERROR THIS FILE ALREADY PREDICTS. A
  * source over a real provider does I/O, so it is not assignable to

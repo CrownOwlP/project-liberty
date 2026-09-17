@@ -15,7 +15,8 @@
     "build": "tsc --noEmit",
     "lint": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:live": "vitest run --mode live src/wikidata.live.test.ts"
   },
   "dependencies": {
     "@liberty/contracts": "0.1.0",

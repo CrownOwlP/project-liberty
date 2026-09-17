@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  LICENSED_CATALOG_SOURCE_IDS,
+  isLicensedCatalogSourceId,
   requireProviderSideSearch,
-  resolveCatalogMetadataProvider,
   type CatalogMetadataProvider
 } from "./provider";
 
@@ -17,32 +18,51 @@ const base = (over: Partial<CatalogMetadataProvider> = {}): CatalogMetadataProvi
   ...over
 });
 
-describe("resolveCatalogMetadataProvider", () => {
+describe("the list of licensed catalog sources", () => {
   /*
-   * WHAT THIS CATCHES: a provider being wired in without the licensing decision
-   * that `control/policies.json` reserves to the human commander. This assertion
-   * fails the day somebody returns a configured provider from here, which is
-   * exactly when a rights review needs to have happened -- and it fails loudly
-   * rather than letting the wiring land quietly beside other work.
+   * THIS SECTION USED TO BE THE OPPOSITE ASSERTION, AND THE CHANGE IS THE POINT.
+   * In round 44 it read "refuses by name, because no catalog provider has been
+   * licensed", and its comment said it would fail "the day somebody returns a
+   * configured provider, which is exactly when a rights review needs to have
+   * happened". That day arrived: on 2026-09-17 the human commander recorded a
+   * Licensing decision naming WIKIDATA as the initial catalog metadata source,
+   * on PL-0305 as `licensingDecision` and in `control/events.jsonl` as a
+   * `decision.licensing` event. The tripwire fired, the decision it was waiting
+   * for exists, and the assertion is inverted rather than deleted.
    *
-   * It is NOT a claim that the refusal is permanent. It is a tripwire on the one
-   * function that can change the answer.
+   * `resolveCatalogMetadataProvider` itself is now exercised in
+   * `wikidata.test.ts`, where the transport double it needs already lives. What
+   * stays here is the part that is about the PORT rather than about any adapter:
+   * which source names this repository has a decision for.
    */
-  it("refuses by name, because no catalog provider has been licensed", () => {
-    expect(resolveCatalogMetadataProvider()).toEqual({
-      status: "not-configured",
-      reason: "no_catalog_provider_licensed"
-    });
+  it("names exactly the source the licensing decision named", () => {
+    expect([...LICENSED_CATALOG_SOURCE_IDS]).toEqual(["wikidata"]);
   });
 
   /*
-   * WHAT THIS CATCHES: a credential or a source name being introduced through
-   * configuration. The resolver declares no parameter, so there is no value an
-   * operator could set that changes what this build's catalog is -- and a later
-   * edit that added one would change this arity.
+   * WHAT THIS CATCHES: a credentialed source being added to the list without the
+   * Credentials escalation that `control/policies.json` reserves to the human
+   * commander. The Wikidata decision says so explicitly -- "TMDB and anything
+   * else requiring an API key remains a separate Credentials escalation" -- so
+   * this is the live tripwire now, in place of the one that fired.
    */
-  it("takes no configuration, so nothing about the catalog is settable at runtime", () => {
-    expect(resolveCatalogMetadataProvider).toHaveLength(0);
+  it("licenses no keyed source", () => {
+    for (const keyed of ["tmdb", "omdb", "trakt", "tvdb", "justwatch"]) {
+      expect(isLicensedCatalogSourceId(keyed)).toBe(false);
+    }
+  });
+
+  /*
+   * WHAT THIS CATCHES: the list being mutated at runtime. It is frozen for the
+   * reason `packages/contracts/src/shared/runtime.ts` gives about its own
+   * allowlist: a consumer that could append to it would be granting a licence
+   * without editing the file a reviewer reads. A module is always strict, so the
+   * write throws rather than failing silently.
+   */
+  it("cannot be widened by a consumer at runtime", () => {
+    const mutable = LICENSED_CATALOG_SOURCE_IDS as string[];
+    expect(() => mutable.push("tmdb")).toThrow();
+    expect(isLicensedCatalogSourceId("tmdb")).toBe(false);
   });
 });
 

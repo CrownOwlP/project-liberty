@@ -98,11 +98,14 @@ export {
   type UnstatedAvailability
 } from "./project";
 export {
+  LICENSED_CATALOG_SOURCE_IDS,
+  isLicensedCatalogSourceId,
   requireProviderSideSearch,
   resolveCatalogMetadataProvider,
   type AcceptedWork,
   type CatalogMetadataProvider,
   type CatalogMetadataProviderResolution,
+  type CatalogProviderRuntime,
   type CatalogProviderUnavailableReason,
   type ProviderCapabilities,
   type ProviderFetchFailure,
@@ -152,3 +155,35 @@ export {
   type CatalogDocumentOptions,
   type CatalogDocumentResult
 } from "./transport";
+export {
+  WIKIDATA_CAPABILITIES,
+  createWikidataProvider,
+  noRightsBasisEstablished,
+  type WikidataConfigRefusal,
+  type WikidataProviderConfig,
+  type WikidataProviderCreation,
+  type WikidataRightsObservation,
+  type WikidataRightsRegister,
+  type WikidataSelection
+} from "./wikidata";
+export {
+  CC0_ENTITY_ID_PATTERN,
+  CC0_ITEM_ID_PATTERN,
+  WIKIDATA_ACTION_API_ENDPOINT,
+  WIKIDATA_CC0_HOSTS,
+  WIKIDATA_PROPERTIES,
+  WIKIDATA_SOURCE_ID,
+  WIKIDATA_SPARQL_ENDPOINT,
+  buildHydrationRequestUrl,
+  buildPageQuery,
+  buildPageRequestUrl,
+  buildSearchRequestUrl,
+  checkWikidataUserAgent,
+  containsServiceClause,
+  isWikidataCc0Host,
+  requireCc0EntityId,
+  type Cc0EntityIdRefusal,
+  type QueryBuild,
+  type QueryBuildRefusal,
+  type UserAgentRefusal
+} from "./wikidata-query";

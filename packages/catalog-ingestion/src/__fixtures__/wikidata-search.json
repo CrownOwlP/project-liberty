@@ -1,0 +1,84 @@
+{
+  "searchinfo": {
+    "search": "the matrix"
+  },
+  "search": [
+    {
+      "id": "Q2715974",
+      "title": "Q2715974",
+      "pageid": 2610841,
+      "concepturi": "http://www.wikidata.org/entity/Q2715974",
+      "repository": "wikidata",
+      "url": "//www.wikidata.org/wiki/Q2715974",
+      "display": {
+        "label": {
+          "value": "The Matrix",
+          "language": "en"
+        },
+        "description": {
+          "value": "album by The Matrix",
+          "language": "en"
+        }
+      },
+      "label": "The Matrix",
+      "description": "album by The Matrix",
+      "match": {
+        "type": "label",
+        "language": "en",
+        "text": "The Matrix"
+      }
+    },
+    {
+      "id": "Q83495",
+      "title": "Q83495",
+      "pageid": 85884,
+      "concepturi": "http://www.wikidata.org/entity/Q83495",
+      "repository": "wikidata",
+      "url": "//www.wikidata.org/wiki/Q83495",
+      "display": {
+        "label": {
+          "value": "The Matrix",
+          "language": "en"
+        },
+        "description": {
+          "value": "1999 American science fiction action thriller film",
+          "language": "en"
+        }
+      },
+      "label": "The Matrix",
+      "description": "1999 American science fiction action thriller film",
+      "match": {
+        "type": "label",
+        "language": "en",
+        "text": "The Matrix"
+      }
+    },
+    {
+      "id": "Q13014087",
+      "title": "Q13014087",
+      "pageid": 14520015,
+      "concepturi": "http://www.wikidata.org/entity/Q13014087",
+      "repository": "wikidata",
+      "url": "//www.wikidata.org/wiki/Q13014087",
+      "display": {
+        "label": {
+          "value": "The Matrix",
+          "language": "en"
+        },
+        "description": {
+          "value": "science fiction action media franchise",
+          "language": "en"
+        }
+      },
+      "label": "The Matrix",
+      "description": "science fiction action media franchise",
+      "match": {
+        "type": "label",
+        "language": "en",
+        "text": "The Matrix"
+      }
+    }
+  ],
+  "search-continue": 3,
+  "success": 1
+}

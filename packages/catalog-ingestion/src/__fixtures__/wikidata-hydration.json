@@ -1,0 +1,61 @@
+{
+  "head": {
+    "vars": [
+      "item",
+      "n",
+      "titles",
+      "synopses",
+      "genres",
+      "releaseYear",
+      "runtimeMinutes",
+      "episodeCount",
+      "imdbIds",
+      "copyrightStatuses"
+    ]
+  },
+  "results": {
+    "bindings": [
+      {
+        "item": {
+          "type": "uri",
+          "value": "http://www.wikidata.org/entity/Q83495"
+        },
+        "n": {
+          "datatype": "http://www.w3.org/2001/XMLSchema#integer",
+          "type": "literal",
+          "value": "83495"
+        },
+        "titles": {
+          "type": "literal",
+          "value": "fr\u001eMatrix\u001fen\u001eThe Matrix"
+        },
+        "synopses": {
+          "type": "literal",
+          "value": "fr\u001efilm de science-fiction sorti en 1999\u001fen\u001e1999 American science fiction action thriller film"
+        },
+        "genres": {
+          "type": "literal",
+          "value": "en\u001edystopian film\u001ffr\u001ethriller d'action\u001fen\u001eaction thriller\u001ffr\u001efilm dystopique\u001ffr\u001ethriller\u001fen\u001ethriller film\u001ffr\u001efilm de super-héros\u001fen\u001eaction film\u001fen\u001esuperhero film\u001ffr\u001efilm ou téléfilm post-apocalyptique\u001fen\u001epost-apocalyptic film\u001ffr\u001ecinéma de science-fiction\u001ffr\u001ecyberpunk\u001fen\u001ecyberpunk\u001ffr\u001efilm noir\u001fen\u001efilm noir\u001fen\u001escience fiction film\u001ffr\u001efilm et téléfilm d'action"
+        },
+        "releaseYear": {
+          "datatype": "http://www.w3.org/2001/XMLSchema#integer",
+          "type": "literal",
+          "value": "1999"
+        },
+        "runtimeMinutes": {
+          "datatype": "http://www.w3.org/2001/XMLSchema#decimal",
+          "type": "literal",
+          "value": "136"
+        },
+        "imdbIds": {
+          "type": "literal",
+          "value": "tt0133093"
+        },
+        "copyrightStatuses": {
+          "type": "literal",
+          "value": ""
+        }
+      }
+    ]
+  }
+}
