@@ -1,38 +1,107 @@
 # Catalog metadata source
 
-**There is no catalog metadata source. This document describes a seam, not a
-solution.**
+**A metadata source now stands behind the ingestion port, and it is Wikidata.
+It does not yet stand behind the application's port. Read the scope section
+before reading anything else in this document as wider than it is.**
 
 `docs/PRODUCT_SPEC.md` step 2 of the initial user journey is "browse/search
-normalized metadata". Nothing in this repository ingests metadata. Every
-discovery surface — the home rails, the search results, the title detail page —
-is backed by `apps/web/src/lib/demo-catalog.ts`, a hardcoded array of six
-fictional works. Each of the three used to import that array directly; all three
-now go through the port below, so no shipped module reaches the fixtures without
-passing the environment gate. That is a change in *plumbing*. It does not make
-the fixtures a catalog, and nothing here ingests one.
+normalized metadata". Until PL-0305r nothing in this repository ingested any:
+every discovery surface — the home rails, the search results, the title detail
+page — was backed by `apps/web/src/lib/demo-catalog.ts`, a hardcoded array of six
+fictional works. All three surfaces reach the fixtures through the port below, so
+no shipped module gets to them without passing the environment gate.
 
 PL-0301 and PL-0302 do not close this. They supply **stream candidates**: what a
 title plays from, resolved at playback time by an authorized provider. A catalog
-is the other half — what exists, what it is called, what it is about — and no
-task in the current plan produces one.
+is the other half — what exists, what it is called, what it is about.
 
-What has been added is the interface a real metadata provider would implement,
-and the wiring that lets one be dropped in without rewriting the surfaces. That
-is all it is.
-
-**PL-0305 added the other half of the design and still did not add a provider.**
-`packages/catalog-ingestion` now holds the ingestion machinery -- identity and
-dedupe, refresh and staleness, tombstones, paging, provider-side search as a
+**What exists now, stated precisely so neither half is overclaimed.**
+`packages/catalog-ingestion` holds the ingestion machinery — identity and dedupe,
+refresh and staleness, tombstones, cursor paging, provider-side search as a
 declared capability, locale tags, availability windows, artwork with its own
-licence, and the egress-bound transport -- driven by a `CatalogMetadataProvider`
-port with nothing behind it. `resolveCatalogMetadataProvider()` answers
-`not-configured` unconditionally, because choosing a source is a **Licensing**
-decision and keying it is a **Credentials** one, and `control/policies.json`
-reserves both to the human commander. Two sections at the foot of this document
-are the record: [the ingestion package](#pl-0305-the-ingestion-package) and
-[the rights position](#the-rights-position-on-a-real-source), the second of
-which is the evidence the commander would decide from.
+licence, and the egress-bound transport — and `resolveCatalogMetadataProvider()`
+now returns a real **Wikidata** provider behind the unchanged
+`CatalogMetadataProvider` port. `apps/web` still does not consume it:
+`resolveCatalogMetadataSource` still answers `no_metadata_source_configured`,
+because the dependency edit that would connect them is in
+`apps/web/package.json`, outside PL-0305's `allowedPaths`. So the ingestion side
+is real and the browse side is unchanged, and
+[the remaining edits](#what-has-happened-and-what-has-not) are named rather than
+implied.
+
+## The licensing decision, and exactly what it covers
+
+**Decided by the human commander on 2026-09-17.** Recorded on PL-0305 as
+`licensingDecision` and in `control/events.jsonl` as a `decision.licensing`
+event. `control/policies.json` lists `Licensing` under `escalation.humanOnly`, so
+this was not an engineering decision and was not self-certified by the
+implementing agent.
+
+> **Wikidata is the initial catalog metadata source**, because it requires no
+> credential and keeps the provider seam replaceable.
+
+**Transport of the decision, stated because it bears on how much weight it can
+carry:** it was relayed by the commander in chat, inside `gpt-architect`'s
+round-45 review text, and transcribed by `claude-lead`. It is authentic but **not
+machine-attested**.
+
+### What the decision does NOT cover
+
+These are limits on the decision, not caveats about it. A reader of this document
+alone must not come away with a wider reading than the commander gave.
+
+1. **It is an initial source choice, not an exclusive or permanent source
+   mandate** — in those words, at the reviewer's insistence. Nothing may assume
+   Wikidata is the only source or bake its shape into the port. The code is built
+   to that: `resolveCatalogMetadataProvider` is a registry over a frozen list of
+   *licensed source names* that currently has one entry, the
+   `CatalogMetadataProvider` port is byte-for-byte what it was before the adapter
+   existed, and no module in the package other than the adapter itself mentions
+   Wikidata.
+2. **No credentialed source is authorized.** TMDB and anything else needing an
+   API key remains a separate **Credentials** escalation. No key, no placeholder
+   and no environment variable for one has been added — see
+   [what has happened](#what-has-happened-and-what-has-not). Asking the resolver
+   for `tmdb` answers `no_catalog_provider_licensed` by name, and a test asserts
+   it: that is the tripwire that replaces the round-44 one.
+3. **Nothing is decided about the EU/UK sui generis database right.** Whether
+   bulk ingestion of a third party's catalog engages it is a question for
+   counsel. It applies to Wikidata exactly as much as to any other candidate, and
+   CC0 on the individual records does not answer it, because the database right
+   is a right in the compilation rather than in its contents. **This is the
+   largest open rights question on this path.**
+4. **Only Wikidata's CC0 position on structured data in the main, property and
+   lexeme namespaces was evidenced.** Text elsewhere is CC BY-SA. Nothing was
+   evidenced about Commons, about MediaInfo entities, or about any other
+   Wikimedia project.
+
+### The obligation that follows: User-Agent
+
+Wikidata's structured data is CC0, but **access is not unconditional**. The
+Wikimedia User-Agent policy requires an informative agent string carrying contact
+information, and forbids a client presenting a browser's string; a client that
+ignores it may be **IP-blocked without notice**, and the block lands on the
+operator's address rather than on a request.
+
+`CatalogDocumentOptions.userAgent` is therefore **required with no default, and
+must stay that way**. A default would be a string this package chose on an
+operator's behalf, attached to their contact reputation. On top of that,
+`createWikidataProvider` refuses to build at all over an agent string that
+carries no contact token or that contains a browser token — two separate named
+refusals, because the remedies are different — so a misconfigured deployment gets
+*no provider* instead of an IP block.
+
+### How the CC0 / CC BY-SA line is enforced rather than described
+
+Four mechanical controls, all in
+`packages/catalog-ingestion/src/wikidata-query.ts`, each with a test:
+
+| Control | What it stops |
+| --- | --- |
+| `WIKIDATA_CC0_HOSTS`, a frozen two-host set, and a construction refusal when the operator's `EgressPolicy.allowedHosts` names **anything else** | A deployment whose catalog egress policy also reached `en.wikipedia.org` would be one query edit away from ingesting CC BY-SA article text. The provider refuses to exist over such a policy. |
+| `CC0_ENTITY_ID_PATTERN`, admitting `Q`, `P` and `L` and nothing else | An `M`-id (Commons MediaInfo) reaching a query. MediaInfo captions are CC0 but the **files** they describe are separately licensed, and the decision evidenced neither. |
+| No `SERVICE` clause in any built query, asserted by `containsServiceClause` | A SPARQL federated call reaching an endpoint whose licence is whatever that endpoint says. `wikibase:label` is the convenient one; labels are read with plain `rdfs:label` triples instead. |
+| No request for `P18`, `P154`, `P3383`, sitelinks or article extracts | A Commons file or a Wikipedia extract entering a catalog record. Artwork in `record.ts` requires an **opaque asset reference and its own stated rights basis**, neither of which this adapter can mint, so it emits none. |
 
 ## The port
 
@@ -408,7 +477,10 @@ Named so nobody reads a port as a product.
   untagged string for each, which is correct for a card and is why the choice
   happens at projection time with the reader's preferences in hand.
 - **Availability windows and territory. MODELLED IN THE PACKAGE; the empty
-  state's phrase still has nothing behind it in a running build.**
+  state's phrase still has nothing behind it in a running build — and the
+  selected source does not supply one.** Wikidata models no distribution window,
+  so every record it produces carries `availability: []` and the fail-closed
+  reading refuses all of them.
   `AvailabilityWindow` carries an ISO 3166-1 territory (or `WW`), and open-ended
   start and end dates where `null` means OPEN and NO WINDOW AT ALL means
   unstated -- two different facts that a nullable-both-ends window would
@@ -457,8 +529,11 @@ Named so nobody reads a port as a product.
 
 `packages/catalog-ingestion` (`@liberty/catalog-ingestion`) is the half of a
 real catalog source that needed no external access, built so the half that does
-is a wiring change rather than a redesign. **It configures no provider**, which
-is the subject of the next section.
+is a wiring change rather than a redesign. **It configured no provider when it
+was written; PL-0305r wired one** — see
+[the Wikidata provider](#pl-0305r-the-wikidata-provider). Everything in this
+section is about the source-independent machinery, and none of it changed to
+accommodate the adapter.
 
 It is a package rather than a folder in `apps/web` for the reason
 `@liberty/media-inspection` is: this is scheduled cross-provider I/O against
@@ -478,7 +553,9 @@ refused.
 | `record.ts` | The ingestion vocabulary: locale-tagged text, availability windows, artwork with its own basis, tombstones, provenance. Zod schemas, because this is the parse boundary for untrusted I/O. |
 | `identity.ts` | Id derivation and dedupe. The three decisions, and what each one rejected. |
 | `freshness.ts` | `observedAt`, a two-bound staleness policy, and capped backoff. |
-| `provider.ts` | The `CatalogMetadataProvider` port, its declared capabilities, and `resolveCatalogMetadataProvider()` -- which answers `not-configured`. |
+| `provider.ts` | The `CatalogMetadataProvider` port, its declared capabilities, the frozen list of licensed source names, and `resolveCatalogMetadataProvider()`. |
+| `wikidata-query.ts` | Every request the Wikidata adapter may make, and the CC0 rules bounding them. |
+| `wikidata.ts` | The Wikidata adapter: the only module in the package that names a source. |
 | `safety.ts` | `findMediaAddresses` and `checkRightsBasis`. The two checks that make this a rights boundary. |
 | `ingest.ts` | One pass: paging, backfill, per-record refusals, and the tombstone rule. |
 | `project.ts` | Collapse to `CatalogItem` for one reader: locale, territory, and the age of the answer. |
@@ -539,7 +616,9 @@ string this package chose on an operator's behalf.
 
 ### What PL-0305 did NOT do, and why
 
-- **No provider is configured.** See the next section. This is the whole point.
+- **No provider was configured** *at the time that section was written*. That is
+  no longer true: PL-0305r wired the Wikidata adapter below, on the strength of
+  the commander's Licensing decision. Everything else in this list still stands.
 - **`apps/web` does not import this package, and cannot yet.** Declaring the
   dependency means editing `apps/web/package.json`, which is outside PL-0305's
   `allowedPaths`; and adding any new workspace package needs two entries in
@@ -566,12 +645,175 @@ string this package chose on an operator's behalf.
   anything that gates; the deeper fix is still a `packages/contracts` change with
   its own review.
 
+## PL-0305r: the Wikidata provider
+
+Two modules, both in `packages/catalog-ingestion/src`:
+
+| File | Role |
+| --- | --- |
+| `wikidata-query.ts` | Every request the adapter can make, and the rules that bound them: the frozen CC0 host set, the entity-id namespace pattern, the User-Agent checks, and the SPARQL template. Nothing here fetches. |
+| `wikidata.ts` | Reading the two responses, projecting a row into a provider record, and the provider itself. |
+
+### What it does
+
+- **Enumerates the instances of one declared Wikidata class**, keyset-paged on
+  the numeric part of the item id. The cursor is `?n > watermark ORDER BY ?n`,
+  never an `OFFSET`: Wikidata is edited continuously, and an offset walk over a
+  changing collection skips and repeats records. A QID's numeric part is
+  immutable and monotonic, so an item created mid-pass sorts after everything
+  already read.
+- **One request per page.** The query packs the multi-valued, language-tagged
+  columns with `GROUP_CONCAT` so a page is one row per work rather than one row
+  per (work × genre × release date), and the client unpacks them. Separators are
+  ASCII `US`/`RS` control characters, which cannot occur in a Wikidata label —
+  `|` and `;` both do.
+- **Searches through `wbsearchentities`**, then hydrates the returned ids through
+  *the same* query the enumeration uses. Relevance order is the source's and is
+  preserved exactly; the class constraint in the hydration query is what filters
+  out non-films, which is not hypothetical — `wbsearchentities` ranks an **album**
+  called "The Matrix" above the film.
+- **Carries cross-references** as `{authority, id}` pairs: the Wikidata QID and
+  any IMDb id (`P345`). `identity.ts` merges two sources' records only on a
+  shared authority id, so those are what a second source would ever merge on.
+
+### What it honestly cannot do
+
+| Declared | Value | Why |
+| --- | --- | --- |
+| `providerSideSearch` | `true` | `wbsearchentities`, offset-continued, relevance-ordered by the source. Narrower than it sounds: it searches labels and aliases, not synopses. |
+| `incrementalSince` | **`false`** | The Query Service's default graph does not expose a modification time — `schema:version` and `schema:dateModified` against the entity IRI bind nothing there (tried; empty result). They are on the Action API's `wbgetentities`, at a measured **~206 KB per entity**, so 50 entities is ~10 MB against a 4 MB body cap. The adapter does not pay that and does not claim the capability, so it must and does **ignore `changedSince` entirely**. |
+| `reportsDeletions` | **`false`** | Deletions are visible through `list=logevents` — a different API, a different pagination model. `withdrawn` is always empty. |
+| `maxPageSize` | `50` | The number the source itself uses (the Action API's anonymous batch limit); ~1.5 KB per row measured, so ~75 KB a page. |
+| `sourceRevision` | **always `null`** | Same reason as `incrementalSince`. A consumer therefore cannot tell whether a record changed between passes. This is a real gap and it is the price of one cheap request per page. |
+
+Two more it cannot do, and they matter more than the table:
+
+- **It states no availability and no territory.** Wikidata does not model a
+  distribution window, so every record carries `availability: []`. With
+  `project.ts`'s fail-closed `unstatedAvailability: "refuse"`, that means **every
+  record is refused at projection**. The home page's "in your region" still has
+  nothing behind it.
+- **It states no rights basis.** See below.
+
+### Rights: a Wikidata record establishes none, and the default publishes nothing
+
+A Wikidata item states that a film **exists**. It does not state that this
+operator may show it. Those are different facts, and only the operator's own
+rights register holds the second — so `rights` on every record the adapter builds
+comes from an **injected register** and from nowhere else.
+
+`WikidataRightsRegister` is **required with no default**, on exactly the argument
+`userAgent` is: a default would be a rights position this package chose on an
+operator's behalf. `noRightsBasisEstablished` is that position, available by
+name, and it answers `null` for every work — at which point `checkRightsBasis` in
+`safety.ts` refuses every record with `rights_basis_not_declared`.
+
+**So a default composition of this provider against real Wikidata publishes
+nothing, and that is the correct outcome rather than a bug.** The rights
+machinery is in the path, applied to real records, and it fails closed on all of
+them. A test asserts exactly that over three recorded real films.
+
+`P6216` (copyright status) **is read and is not interpreted.** The register
+receives the raw QIDs as opaque tokens; `Q19652` is never mapped to
+`public-domain` here, because turning a crowd-edited statement into a rights
+basis is a rights decision and the licensing decision does not cover it. An
+operator who wants to rely on it writes that mapping in their own register, where
+a rights reviewer can see it. In practice the property is **absent from all four
+real films recorded as fixtures**.
+
+### Why the pre-parse media-address scan finally earns its keep
+
+`acceptRecord` in `ingest.ts` scans the raw payload with `findMediaAddresses`
+*before* zod parses it, because zod strips unknown keys and a schema-first
+pipeline would silently discard a `streamUrl`. Against fixtures that ordering is
+a precaution. Against Wikidata it is a live control: **a label, description or
+genre name is a field any logged-in person on the internet can edit.** A
+vandalised title reading `https://cdn.example.test/x.m3u8` is an ordinary
+non-empty string as far as `localizedTextSchema` is concerned and would be
+published as a work's name. The scan refuses the record by name instead. This is
+the first path in this repository where that scan has an untrusted writer behind
+it, and there is a test built from a real response with one label replaced.
+
+A related finding, kept because it is the kind of thing that is easy to get
+backwards: an operator register answering with a rights reference that contains a
+contract URL is refused as `media_address_in_catalog_payload`, **not** as
+`rights_basis_reference_not_opaque` — the address scan runs first. Both refusals
+are correct; the ordering is now pinned by a test rather than discovered.
+
+### What real queries established, measured on 2026-09-17
+
+Every number here came from a live request, not from documentation.
+
+- **`Q11424` (film) has 349,426 instances.** Enumerating them is the real
+  workload, and the shape of the query decides whether it is possible at all.
+- **CirrusSearch cannot enumerate the class.** `list=search` with
+  `haswbstatement:P31=Q11424` answers fast (0.9 s) but refuses beyond offset
+  10,000: `cirrussearch-offset-too-large`, "Up to 10000 search results are
+  supported". That rules it out as the enumeration mechanism and is why the
+  adapter uses WDQS.
+- **Ordered SPARQL enumeration cost depends on how far in the watermark sits.**
+  32.8 s at watermark 0 over the whole class; 6.0 s at watermark 100,000,000;
+  2.3 s for the adapter's actual page query at watermark 83,000; 0.6 s for a
+  small class. The first page of a large class is the expensive one and it gets
+  cheaper as the pass progresses. **`CATALOG_DOCUMENT_LIMITS.timeoutMs` of 10 s
+  is not enough for the first page of a large class** — an operator must raise it
+  for the enumeration, and WDQS's own ceiling is 60 s.
+- **Rate limiting is real and not rare.** Researching this adapter drew HTTP 429
+  from `www.wikidata.org` **twice within a few minutes** from a single address.
+  The 429 body is **plain text, not JSON**, so a client that parsed before
+  checking the status would report the source as malformed.
+- **A hydration query for three searched ids returned one row**, because two of
+  the three hits were not instances of the class. That is the filter working, and
+  it is what the recorded fixture shows.
+- **`GROUP_CONCAT` order is not stable.** The same item's genres came back in two
+  different orders in two responses on the same day, which is why the adapter
+  sorts the unpacked entries — two passes over an unchanged item must produce the
+  same record or a diff between runs means nothing.
+
+### What was committed as a fixture, and what was not
+
+`packages/catalog-ingestion/src/__fixtures__/` holds **three JSON files, ~8.5 KB
+total**, recorded from the live endpoints on 2026-09-17 using the URLs this
+package's own builders produce. Their header module states every reduction:
+
+- `wikidata-page.json` — one of four returned rows dropped; nothing inside the
+  survivors touched.
+- `wikidata-search.json` — five hits cut to three, `search-continue` adjusted to
+  match. **Every field of each surviving hit kept, including `url` and
+  `concepturi`** — the media-address-shaped fields — so a test can prove the
+  adapter ignores them.
+- `wikidata-hydration.json` — unchanged, one row.
+
+**No bulk dataset was committed.** The class has 349,426 items and none of them
+is in this repository. Three rows is what it takes to exercise the packing, the
+deduplication, the class filter and the ordering.
+
+### The live suite, and how it is kept out of the gate
+
+`src/wikidata.live.test.ts` runs the shipped queries against the real service. It
+is excluded from the default run by `packages/catalog-ingestion/vitest.config.ts`
+and reachable only through `npm run test:live` in that package, which passes
+`--mode live`. A positional path is **not** enough — vitest applies `exclude`
+before a filter narrows the list, which was found by trying it.
+
+It is out of the gate for two independent reasons: a CI fleet running it on every
+push is a way to get an operator **IP-blocked**, which the User-Agent policy says
+happens without notice; and a shared public endpoint is allowed to be slow, so a
+gate that goes red because Wikidata is busy teaches a reader to ignore the gate.
+It asserts **shape, not content** — that the query still parses, the columns still
+come back named as expected, and a live record still carries no media address and
+no rights basis — because how many genres `Q83495` has is whatever the last
+editor decided.
+
 ## The rights position on a real source
 
-**No metadata source has been selected, and selecting one is not an engineering
-decision.** `control/policies.json` puts `Licensing` and `Credentials` under
-`escalation.humanOnly`. PL-0305's own task record says the same. What follows is
-the evidence a commander would decide from, and what was and was not verified.
+**This section is the evidence the commander decided from, kept as it stood.**
+The decision itself, and its scope limits, are at the top of this document under
+[the licensing decision](#the-licensing-decision-and-exactly-what-it-covers);
+this is the material that preceded it, retained rather than rewritten so a
+reviewer can see what was and was not in front of the decision-maker. Wikidata
+was selected on 2026-09-17. **TMDB and the other keyed candidates below were
+not**, and `Credentials` remains under `escalation.humanOnly`.
 
 ### How this evidence was gathered, and its limits
 
@@ -608,18 +850,27 @@ not. CC0 imposes no attribution condition. Coverage of film and television is
 broad but uneven, and it is community-maintained rather than editorial, so
 quality is a product question rather than a rights one.
 
-Access is unauthenticated, but not unconditional. The Wikimedia User-Agent
-policy applies:
+**This is the selected source.** Access is unauthenticated, but not
+unconditional. The Wikimedia User-Agent policy applies:
 
 > "Scripts should use an informative User-Agent string with contact information,
 > or they may be IP-blocked without notice."
 > -- <https://meta.wikimedia.org/wiki/User-Agent_policy>
 
 The same policy forbids a bot presenting a browser's User-Agent. This is why
-`CatalogDocumentOptions.userAgent` is required with no default. Rate limits and
-query timeouts on the public SPARQL endpoint were **not** verified here -- the
-Wikidata Query Service documentation was not retrievable from this environment
--- and should be read before any pass is scheduled against it.
+`CatalogDocumentOptions.userAgent` is required with no default, and why
+`createWikidataProvider` refuses to build over an agent string that lacks contact
+information or carries a browser token.
+
+**Rate limits and query timeouts were unverified when this paragraph was
+written. They have since been measured rather than read**, and the numbers are in
+[what real queries established](#what-real-queries-established-measured-on-2026-09-17):
+HTTP 429 from the Action API twice within a few minutes from one address, a
+CirrusSearch hard cap at 10,000 results, and SPARQL enumeration between 0.6 s and
+32.8 s depending on the query shape and the watermark. The Wikidata Query Service
+*documentation* is still not retrievable from this environment, so the published
+policy limits remain unread; what is recorded is observed behaviour, which is
+weaker evidence about the policy and stronger evidence about the service.
 
 **TMDB** -- the richest film/TV metadata source, and the one that needs both
 escalation categories.
@@ -645,27 +896,60 @@ second and separate reason artwork is modelled but not delivered.
 assessed**. They are named here so their absence is legible as "not researched"
 rather than "ruled out".
 
-### What would have to happen
+### What has happened, and what has not
 
-1. A commander decision under **Licensing**, naming the source and recording
-   what its terms permit for this product's actual commercial posture, and
-   whether counsel has been asked about database rights on bulk ingestion.
-2. If the source is keyed, a **Credentials** escalation. No environment variable
-   has been introduced for one and no placeholder exists anywhere in this
-   package: a stub that looks like a real key makes an unconfigured build look
-   configured. Note that `apps/web` reads dotenv from `apps/web/`, **not** the
-   repository root -- `docs/DEVELOPMENT.md` records this and it has cost
-   debugging rounds before.
-3. A separate decision for **artwork**, if images are wanted. Image rights are
-   not the work's rights, and `ArtworkRef` keeps them apart on purpose.
-4. An adapter implementing `CatalogMetadataProvider`, constructed over
-   `transport.ts`, plus an entry in the operator's `EgressPolicy.allowedHosts`
-   -- without which it fetches nothing, by design.
-5. The `apps/web` dependency and the registry adapter described above.
+1. **Done — a commander decision under `Licensing`.** 2026-09-17, naming
+   Wikidata, with its scope limits recorded verbatim at the top of this document.
+   **Counsel has *not* been asked about database rights on bulk ingestion**, and
+   the decision says so explicitly. That question is open and is not an
+   engineering one.
+2. **Not needed, and not authorized.** Wikidata needs no credential, so no
+   `Credentials` escalation was taken and none is implied. No environment
+   variable has been introduced for a key and no placeholder exists anywhere in
+   the package: a stub that looks like a real key makes an unconfigured build
+   look configured. If a keyed source is ever wanted, note that `apps/web` reads
+   dotenv from `apps/web/`, **not** the repository root — `docs/DEVELOPMENT.md`
+   records this and it has cost debugging rounds before.
+3. **Not done, and structurally impossible from this source — artwork.** Image
+   rights are not the work's rights, `ArtworkRef` keeps them apart on purpose,
+   and a Wikidata image is a Commons **file** with its own licence, routinely not
+   free at all for a film poster. The adapter emits no artwork and cannot: an
+   `ArtworkRef` needs an opaque asset reference from the operator's own store and
+   a stated basis, and this adapter can mint neither.
+4. **Done — an adapter implementing `CatalogMetadataProvider`**, constructed over
+   `transport.ts` (the PL-0304 egress boundary, not a second fetcher). It refuses
+   to build unless the operator's `EgressPolicy.allowedHosts` is exactly the two
+   Wikidata endpoints.
+5. **Not done — the `apps/web` dependency and the registry adapter.** This is the
+   one remaining edit between an ingestion package with a real source and a
+   browse surface with a real catalog, and it is two manifest lines plus a few
+   lines in `catalog-source-registry.ts`. `apps/web/package.json` is outside
+   PL-0305's `allowedPaths`, so it was not made. `ProjectedCatalogRecord` is
+   deliberately structurally identical to the port's `CatalogMetadataRecord`, so
+   the adapter is an assignment rather than a mapping when it can be written —
+   and it will produce the compile error the registry already predicts, because a
+   provider that does I/O is not assignable to
+   `SynchronousCatalogMetadataSource`.
+6. **Not done — a rights register.** Without one, the provider publishes nothing.
+   That is the fail-closed outcome, not a defect, but it means "a real source is
+   wired" and "a real catalog is servable" are still two different statements.
+7. **Not done — a scheduler.** `planNextPassAt` says when the next pass is due;
+   no process calls it, and nothing persists `AcceptedWork` or tombstones.
+8. **Not done — `provider_rate_limited` is unreachable from this adapter.**
+   `fetchManifestText` reports a non-2xx as `http_status` with the number only
+   inside a human-readable detail string, so 429 cannot be distinguished from any
+   other status without parsing English. The fix is upstream — the transport
+   should carry the status as a field — and
+   `packages/media-inspection` is outside PL-0305's `allowedPaths`. The safety
+   consequence is nil (`ingest.ts` withholds tombstones on any page failure); the
+   diagnostic consequence is that an operator cannot tell "slow down" from "your
+   request is wrong".
 
-Until (1), `resolveCatalogMetadataProvider()` answers `not-configured` with the
-reason `no_catalog_provider_licensed`, and
-`packages/catalog-ingestion/src/provider.test.ts` asserts it does. That test is a
-tripwire, not a claim that the refusal is permanent: it fails the day somebody
-returns a configured provider, which is exactly when a rights review needs to
-have happened.
+The round-44 tripwire in `packages/catalog-ingestion/src/provider.test.ts` —
+which asserted the resolver refused, and whose comment said it would fail "the
+day somebody returns a configured provider, which is exactly when a rights review
+needs to have happened" — **fired, and was inverted rather than deleted.** What
+stands in its place is the tripwire that matters now: the licensed-source list is
+frozen, contains only `wikidata`, cannot be widened at runtime, and licenses no
+keyed source. That test fails the day somebody adds one, which is exactly when a
+`Credentials` escalation must have happened.

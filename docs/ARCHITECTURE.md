@@ -51,11 +51,13 @@ Still outstanding: `scheduling.ts` value-imports `PLAYBACK_FAILURE_KINDS` from `
 Where the catalog comes from: identity and dedupe, refresh and staleness,
 tombstones, cursor paging, locale-tagged records, availability windows, artwork
 with its own rights basis, and one ingestion pass over a
-`CatalogMetadataProvider`. **No provider is configured**, and that is a
-`Licensing`/`Credentials` decision reserved to the human commander rather than
-an unfinished edit -- `resolveCatalogMetadataProvider()` answers
-`not-configured` with a named reason. `docs/CATALOG_SOURCE.md` carries the
-evidenced shortlist and the whole boundary statement.
+`CatalogMetadataProvider`. **One provider is configured: Wikidata**, on a human
+commander `Licensing` decision dated 2026-09-17 that is recorded as an INITIAL
+SOURCE CHOICE AND NOT AN EXCLUSIVE MANDATE. No credentialed source is
+authorised, and `resolveCatalogMetadataProvider()` answers
+`no_catalog_provider_licensed` by name for anything else.
+`docs/CATALOG_SOURCE.md` carries the decision's scope limits, the CC0/CC BY-SA
+enforcement and the whole boundary statement.
 
 Three things about it are architectural rather than incidental:
 
@@ -77,8 +79,19 @@ Three things about it are architectural rather than incidental:
   browse surface cannot afford to pull into a page bundle and a server-side
   ingestion package can.
 
+- **The source is one adapter, not the architecture.** The port did not change
+  shape when Wikidata landed behind it: `wikidata.ts` imports FROM `provider.ts`
+  and nothing in the port imports back, and `ingest.ts`, `project.ts`,
+  `identity.ts`, `freshness.ts` and `safety.ts` do not mention the source at
+  all. The resolver is a registry over a frozen list of licensed source names
+  with one entry. A second source joins or replaces the first without any of
+  those types moving.
+
 It is a library. Nothing schedules it in a process yet, which is why the
-extraction candidate below still stands.
+extraction candidate below still stands, and **`apps/web` does not consume it**
+-- that needs a dependency in `apps/web/package.json`, which was outside
+PL-0305's declared surface, so the browse surfaces still read the fixtures
+behind the environment gate.
 
 ### `@liberty/observability`
 

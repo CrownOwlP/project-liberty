@@ -1,0 +1,143 @@
+{
+  "head": {
+    "vars": [
+      "item",
+      "n",
+      "titles",
+      "synopses",
+      "genres",
+      "releaseYear",
+      "runtimeMinutes",
+      "episodeCount",
+      "imdbIds",
+      "copyrightStatuses"
+    ]
+  },
+  "results": {
+    "bindings": [
+      {
+        "item": {
+          "type": "uri",
+          "value": "http://www.wikidata.org/entity/Q83005"
+        },
+        "n": {
+          "datatype": "http://www.w3.org/2001/XMLSchema#integer",
+          "type": "literal",
+          "value": "83005"
+        },
+        "titles": {
+          "type": "literal",
+          "value": "fr\u001eLa Croisade maudite\u001fen\u001eGates to Paradise"
+        },
+        "synopses": {
+          "type": "literal",
+          "value": "fr\u001efilm sorti en 1968\u001fen\u001e1968 film by Andrzej Wajda"
+        },
+        "genres": {
+          "type": "literal",
+          "value": "en\u001eLGBTQ-related film\u001ffr\u001efilm LGBT\u001fen\u001edrama film\u001ffr\u001edrame"
+        },
+        "releaseYear": {
+          "datatype": "http://www.w3.org/2001/XMLSchema#integer",
+          "type": "literal",
+          "value": "1968"
+        },
+        "runtimeMinutes": {
+          "datatype": "http://www.w3.org/2001/XMLSchema#decimal",
+          "type": "literal",
+          "value": "77"
+        },
+        "imdbIds": {
+          "type": "literal",
+          "value": "tt0062461"
+        },
+        "copyrightStatuses": {
+          "type": "literal",
+          "value": ""
+        }
+      },
+      {
+        "item": {
+          "type": "uri",
+          "value": "http://www.wikidata.org/entity/Q83495"
+        },
+        "n": {
+          "datatype": "http://www.w3.org/2001/XMLSchema#integer",
+          "type": "literal",
+          "value": "83495"
+        },
+        "titles": {
+          "type": "literal",
+          "value": "en\u001eThe Matrix\u001ffr\u001eMatrix"
+        },
+        "synopses": {
+          "type": "literal",
+          "value": "fr\u001efilm de science-fiction sorti en 1999\u001fen\u001e1999 American science fiction action thriller film"
+        },
+        "genres": {
+          "type": "literal",
+          "value": "fr\u001efilm dystopique\u001fen\u001edystopian film\u001ffr\u001ethriller\u001fen\u001ethriller film\u001ffr\u001efilm de super-héros\u001fen\u001esuperhero film\u001ffr\u001efilm ou téléfilm post-apocalyptique\u001fen\u001epost-apocalyptic film\u001fen\u001eaction film\u001ffr\u001efilm noir\u001fen\u001efilm noir\u001ffr\u001ecyberpunk\u001fen\u001ecyberpunk\u001ffr\u001ecinéma de science-fiction\u001fen\u001escience fiction film\u001ffr\u001efilm et téléfilm d'action\u001ffr\u001ethriller d'action\u001fen\u001eaction thriller"
+        },
+        "releaseYear": {
+          "datatype": "http://www.w3.org/2001/XMLSchema#integer",
+          "type": "literal",
+          "value": "1999"
+        },
+        "runtimeMinutes": {
+          "datatype": "http://www.w3.org/2001/XMLSchema#decimal",
+          "type": "literal",
+          "value": "136"
+        },
+        "imdbIds": {
+          "type": "literal",
+          "value": "tt0133093"
+        },
+        "copyrightStatuses": {
+          "type": "literal",
+          "value": ""
+        }
+      },
+      {
+        "item": {
+          "type": "uri",
+          "value": "http://www.wikidata.org/entity/Q83505"
+        },
+        "n": {
+          "datatype": "http://www.w3.org/2001/XMLSchema#integer",
+          "type": "literal",
+          "value": "83505"
+        },
+        "titles": {
+          "type": "literal",
+          "value": "en\u001eKhosla Ka Ghosla"
+        },
+        "synopses": {
+          "type": "literal",
+          "value": "fr\u001efilm indien\u001fen\u001e2006 film directed by Dibakar Banerjee"
+        },
+        "genres": {
+          "type": "literal",
+          "value": "en\u001ecomedy drama\u001ffr\u001ecomédie dramatique"
+        },
+        "releaseYear": {
+          "datatype": "http://www.w3.org/2001/XMLSchema#integer",
+          "type": "literal",
+          "value": "2006"
+        },
+        "runtimeMinutes": {
+          "datatype": "http://www.w3.org/2001/XMLSchema#decimal",
+          "type": "literal",
+          "value": "135"
+        },
+        "imdbIds": {
+          "type": "literal",
+          "value": "tt0466460"
+        },
+        "copyrightStatuses": {
+          "type": "literal",
+          "value": ""
+        }
+      }
+    ]
+  }
+}
