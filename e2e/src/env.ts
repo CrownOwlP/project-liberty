@@ -1,3 +1,6 @@
+import { join } from "node:path";
+import { ensureStubCertificate } from "./tls";
+
 /* -------------------------------------------------------------------------
  * What this harness is pointed at, and what it is allowed to assume
  *
@@ -288,3 +291,105 @@ export const UNKNOWN_CATALOG_SKIP_REASON =
   "Testing an external deployment whose build mode this harness was not told, so neither " +
   "the demo catalog's presence nor its absence is the right expectation. Point the harness " +
   "at a server it starts to assert either.";
+
+/* -------------------------------------------------------------------------
+ * THE SECOND AXIS: BUILD TARGET (PL-0501, round 45, correction 4)
+ *
+ * WRITTEN BY PL-0501 INSIDE PL-0701's DECLARED SURFACE -- see `tls.ts` for the
+ * provenance note. PL-0701 inherits it.
+ *
+ * Until this round this harness had ONE axis, `WEB_MODE`, and
+ * `playwright.config.ts` never set `LIBERTY_BUILD_TARGET`, so every e2e result
+ * this project had ever recorded was evidence about the WEB target only.
+ * PL-0501's own round-44 integration gate said so in as many words and the
+ * reviewer took it up:
+ *
+ *   "Add desktop-target E2E and cross-target contract-equivalence coverage.
+ *    Minimum: run the playback-session request table against both WEB and
+ *    DESKTOP build targets; the desktop target uses a stub/authenticated
+ *    backend boundary; compare response shape, status and reason semantics
+ *    across targets where they are supposed to be identical; assert desktop
+ *    forwarding actually reaches the backend stub."
+ *
+ * THE SHAPE OF THE SECOND AXIS. A third server joins the harness: the
+ * DESKTOP-target build of the same application, on its own port, pointed at a
+ * loopback HTTPS STUB BACKEND (`backend-stub.mjs`) that by default relays to
+ * the WEB-target server. That relay is what makes equivalence meaningful --
+ * both targets then answer from ONE decision, so a difference between them is a
+ * difference in the envelope rather than in what a resolver happened to find.
+ *
+ * IT IS ON BY DEFAULT. A coverage axis that has to be switched on is a coverage
+ * axis that is off, and this repository has been bitten twice by a gate that
+ * never fired. `LIBERTY_E2E_DESKTOP=off` turns it back off for a run that only
+ * wants the web path, and the reason is printed rather than implied.
+ * ---------------------------------------------------------------------- */
+
+/**
+ * The desktop-target server's port, and the stub backend's.
+ *
+ * Derived from `PORT` rather than given their own defaults, so moving the
+ * harness off 3100 moves all three together and a partially-moved run cannot
+ * half-adopt somebody else's server.
+ */
+export const DESKTOP_PORT = Number(read("LIBERTY_E2E_DESKTOP_PORT") ?? String(PORT + 1));
+export const BACKEND_STUB_PORT = Number(read("LIBERTY_E2E_BACKEND_STUB_PORT") ?? String(PORT + 2));
+
+export const DESKTOP_BASE_URL = `http://127.0.0.1:${DESKTOP_PORT}`;
+
+/**
+ * Where the desktop build is told its authenticated backend is.
+ *
+ * `https`, because `playback-session-implementation.desktop.ts` refuses
+ * anything else and DELIBERATELY does not carve out loopback -- see `tls.ts`
+ * for why that refusal is respected here rather than relaxed.
+ */
+export const BACKEND_STUB_ORIGIN = `https://127.0.0.1:${BACKEND_STUB_PORT}`;
+
+/** Where `ensureStubCertificate` writes. Ignored by `e2e/.gitignore`. */
+export const TLS_DIRECTORY = join(__dirname, "..", ".tls");
+
+/**
+ * Whether a desktop axis was asked for at all.
+ *
+ * It needs a server this harness started: the target is a property of the BUILD,
+ * so there is no way to ask an external deployment to be a desktop one, and
+ * pointing the desktop specs at a URL somebody else runs would produce a result
+ * about an unknown build.
+ */
+const DESKTOP_REQUESTED = MANAGES_SERVER && read("LIBERTY_E2E_DESKTOP") !== "off";
+
+/**
+ * The certificate the stub serves and the desktop server trusts, or `null`.
+ *
+ * MINTED HERE, ONCE, for the same reason every other knob in this file is read
+ * once: `playwright.config.ts` has to hand the paths to two processes and the
+ * specs have to know whether there is a desktop target to talk to, and those
+ * two answers must be the same answer.
+ */
+export const STUB_CERTIFICATE = DESKTOP_REQUESTED ? ensureStubCertificate(TLS_DIRECTORY) : null;
+
+export const DESKTOP_ENABLED = STUB_CERTIFICATE !== null;
+
+/**
+ * Why the desktop-target suite is skipped, or `null` when it may run.
+ *
+ * A SENTENCE RATHER THAN A BOOLEAN, following `MEDIA_RIG_SKIP_REASON`: a suite
+ * that quietly does not run is indistinguishable from one that passed, and the
+ * desktop target is the half of this round the reviewer asked for. The two
+ * reasons are kept apart because they have different remedies -- one is a
+ * deliberate choice and the other is a missing binary.
+ */
+export const DESKTOP_SKIP_REASON: string | null = DESKTOP_ENABLED
+  ? null
+  : !MANAGES_SERVER
+    ? "Testing an external deployment, whose build target this harness did not choose and cannot " +
+      "observe. The desktop split is a property of the build, so point the harness at a server it " +
+      "starts to exercise it."
+    : read("LIBERTY_E2E_DESKTOP") === "off"
+      ? "LIBERTY_E2E_DESKTOP=off. The desktop build target, its stub backend and the cross-target " +
+        "equivalence comparison were all skipped by request; this run is evidence about the WEB " +
+        "target only."
+      : "No `openssl` on PATH, so the loopback stub backend has no certificate to serve. The " +
+        "desktop forwarder accepts an https origin only and deliberately does not carve out " +
+        "loopback (docs/DESKTOP_PLAYBACK.md section 8), so there is no plaintext fallback that " +
+        "would not be a weakened security property. Install openssl to run this axis.";

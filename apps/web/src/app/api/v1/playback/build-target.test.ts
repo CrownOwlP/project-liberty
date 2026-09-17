@@ -1,8 +1,14 @@
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { BUILD_TARGET_ENV_VAR, nextConfigFor } from "../../../../../next.config";
+import {
+  applyDesktopModuleResolution,
+  desktopResolveExtensionsFrom,
+  DESKTOP_DIST_DIR,
+  distDirFor
+} from "./build-target";
 import {
   buildTargetFrom,
   DEFAULT_BUILD_TARGET,
@@ -164,6 +170,49 @@ function extensionsOf(target: BuildTarget): readonly string[] {
 const DESKTOP = walk(ROUTE, extensionsOf("desktop"));
 const WEB = walk(ROUTE, extensionsOf("web"));
 
+/**
+ * A webpack `resolve.extensions` list of the shape Next hands the hook.
+ *
+ * NEXT'S OWN SERVER LIST, restated rather than imported: reaching into
+ * `next/dist/build/webpack-config.js` for it would make this suite depend on an
+ * internal module path, and the derivation under test does not care WHICH list
+ * it is given -- `desktopResolveExtensionsFrom` derives the override forms from
+ * whatever it receives, which is the property asserted directly further down.
+ * The list is here so the graph walk below runs under a realistic one.
+ */
+const WEBPACK_INCOMING_EXTENSIONS: readonly string[] = [
+  ".js",
+  ".mjs",
+  ".tsx",
+  ".ts",
+  ".jsx",
+  ".json",
+  ".wasm"
+];
+
+/**
+ * What the `webpack` hook in `next.config.ts` ACTUALLY produces for the desktop
+ * target, obtained by invoking it rather than by restating its rules.
+ *
+ * This is the same discipline `extensionsOf` follows for Turbopack: a config
+ * that stopped applying the rules fails here rather than leaving the suite
+ * asserting a table nothing consumes.
+ */
+function webpackExtensionsOf(target: BuildTarget): readonly string[] {
+  const hook = nextConfigFor(target).webpack;
+  if (hook === undefined || hook === null) return WEBPACK_INCOMING_EXTENSIONS;
+  const configured = hook(
+    { resolve: { extensions: [...WEBPACK_INCOMING_EXTENSIONS] } },
+    /* The hook under test reads only `config`; the context is supplied because
+     * Next's type requires it. */
+    {} as never
+  ) as { resolve: { extensions: string[] } };
+  return configured.resolve.extensions;
+}
+
+const WEBPACK_DESKTOP_EXTENSIONS = webpackExtensionsOf("desktop");
+const DESKTOP_VIA_WEBPACK = walk(ROUTE, WEBPACK_DESKTOP_EXTENSIONS);
+
 describe("the desktop build contains no provider-resolution implementation", () => {
   it("reaches the forwarder and not the resolver", () => {
     expect(DESKTOP.modules).toContain(
@@ -237,7 +286,7 @@ describe("the desktop build contains no provider-resolution implementation", () 
   });
 });
 
-describe("what the desktop build still resolves on-device, enumerated", () => {
+describe("every entry point Next compiles, under the desktop target", () => {
   /**
    * Every entry point Next compiles a server bundle for.
    */
@@ -256,46 +305,378 @@ describe("what the desktop build still resolves on-device, enumerated", () => {
   }
 
   /**
-   * THIS IS A LEDGER, NOT A PASS. §8's ruling is about
-   * `/api/v1/playback/*`, and that surface is clean -- but the property it
-   * states in the general form ("the desktop bundle contains no
-   * provider-resolution implementation at all") is NOT yet true of the whole
-   * application, and the honest way to record that is a test that names the
-   * remaining entry points rather than a sentence in a document.
+   * The offender list, as a function of where it looks and what rules it looks
+   * under.
    *
-   * WHAT IS ON THE LIST TODAY AND WHY. `app/watch/[contentId]/page.tsx`
-   * server-renders through `app/watch/watch-session.ts`, which imports
-   * `resolveAuthorizedCandidates` directly instead of calling the session API
-   * -- it runs the rights gate, the ranker and `checkUrl` in the page. A real
-   * `next build` with `LIBERTY_BUILD_TARGET=desktop` confirms it: the fixture
-   * provider's strings appear in that page's server chunk and in no other, and
-   * the session route's chunk carries the forwarder instead. That page is
-   * outside PL-0501's write surface, so this task cannot give it a `.desktop`
-   * half; it is reported as a follow-up.
-   *
-   * THE LIST MAY ONLY SHRINK. A new entry point that reaches the resolver fails
-   * here on the day it is written, which is the day it is cheap to fix; and the
-   * task that finally moves the watch page onto the session API deletes a line
-   * here and gets a green suite as its evidence.
+   * FACTORED OUT SO IT CAN BE POINTED AT SOMETHING THAT IS KNOWN TO OFFEND. An
+   * empty list is only evidence if the thing producing it can produce a
+   * non-empty one, and the test below proves that by making an offender exist
+   * for the duration of one assertion. `docs/DESKTOP_PLAYBACK.md` §8's whole
+   * argument is that absence is the property worth testing for -- and an
+   * absence nothing could have contradicted is the cheapest possible pass.
    */
-  const KNOWN_ON_DEVICE_RESOLVERS: readonly string[] = ["src/app/watch/[contentId]/page.tsx"];
-
-  it("is the watch page and nothing else", () => {
-    const extensions = extensionsOf("desktop");
-    const offenders = entryPoints(join(SRC, "app"))
+  function offendingEntryPoints(root: string, extensions: readonly string[]): string[] {
+    return entryPoints(root)
       .filter((entry) => {
         const graph = walk(entry, extensions);
         return RESOLVER_MODULES.some((moduleId) => graph.modules.includes(moduleId));
       })
       .map((entry) => relative(APP_WEB, entry).split("\\").join("/"))
       .sort();
+  }
 
-    expect(offenders).toEqual([...KNOWN_ON_DEVICE_RESOLVERS].sort());
+  /** The same scan, for the package rather than for the modules. */
+  function providerSdkEntryPoints(root: string, extensions: readonly string[]): string[] {
+    return entryPoints(root)
+      .filter((entry) =>
+        walk(entry, extensions).packages.some(
+          (specifier) =>
+            specifier === "@liberty/provider-sdk" ||
+            specifier.startsWith("@liberty/provider-sdk/")
+        )
+      )
+      .map((entry) => relative(APP_WEB, entry).split("\\").join("/"))
+      .sort();
+  }
+
+  /* -------------------------------------------------------------------------
+   * THIS USED TO BE A LEDGER WITH ONE KNOWN OFFENDER ON IT, AND THE REVIEWER
+   * REFUSED THAT.
+   *
+   * Round 44 listed `src/app/watch/[contentId]/page.tsx` in a
+   * `KNOWN_ON_DEVICE_RESOLVERS` constant, on the argument that §8's ruling
+   * names `/api/v1/playback/*` and that surface was clean. `gpt-architect`'s
+   * round-45 CHANGES_REQUESTED rejected both halves:
+   *
+   *   "The PL-0901 ruling is a security/trust-boundary property, not merely an
+   *    /api directory naming rule. Desktop builds must not execute
+   *    provider-resolution logic or hold provider credentials through the watch
+   *    path either. [...] The existing ledger test is useful but it must end at
+   *    an EMPTY offender list before approval, not preserve one known
+   *    offender."
+   *
+   * So the list is gone and the assertion is against the empty array directly.
+   * The scan that produced it is kept -- deleting the scan would have made the
+   * emptiness free -- and it is now paired with a test that MAKES AN OFFENDER
+   * and requires it to be found.
+   * ---------------------------------------------------------------------- */
+
+  it("reaches no on-device provider resolver from anywhere in the app", () => {
+    expect(offendingEntryPoints(join(SRC, "app"), extensionsOf("desktop"))).toEqual([]);
+  });
+
+  it("reaches no on-device provider resolver under the webpack rules either", () => {
+    /* The same scan under the extension list the `webpack` hook produces, so
+     * the emptiness is a property of the application and not of one bundler's
+     * configuration. See `the webpack and Rspack half of the split` below. */
+    expect(offendingEntryPoints(join(SRC, "app"), WEBPACK_DESKTOP_EXTENSIONS)).toEqual([]);
+  });
+
+  it("reaches @liberty/provider-sdk from nowhere in the app", () => {
+    /*
+     * The package half of the same property, and a strictly stronger statement
+     * than the module list above: `RESOLVER_MODULES` names the three files that
+     * are the resolver TODAY, while this names the dependency that would have
+     * to be present for any new one to exist. §8: the desktop build "never
+     * receives a provider credential, and [...] never ships one", and the
+     * provider adapters are what would carry one.
+     *
+     * `@liberty/media-engine` is deliberately NOT asserted here, and the reason
+     * is worth stating rather than leaving as an omission. Two entry points
+     * still reach it under the desktop target and neither is provider
+     * resolution:
+     *
+     *   - `src/app/watch/[contentId]/page.tsx` reaches
+     *     `@liberty/media-engine/scheduling`, through `<PlayerSurface>`, for
+     *     `scheduleAttempts` -- the CLIENT-side failover scheduler. §7 requires
+     *     that nothing in the shell ranks; scheduling what to retry from a list
+     *     the server already ordered is not ranking, and `playback-machine.ts`
+     *     imports the subpath rather than the barrel expressly so the ranker
+     *     does not come with it;
+     *   - `src/app/api/v1/playback/resolve/route.ts` reaches the barrel, which
+     *     does carry `rankStreamCandidates`. That route is the testing-only
+     *     scaffold that accepts caller-supplied candidates; it resolves no
+     *     provider, holds no credential, and answers 404 on every production
+     *     build -- which every desktop sidecar is. It is named here rather than
+     *     put on a new ledger, because a second list of known exceptions is the
+     *     shape this round was told to stop using. If it should not be in a
+     *     desktop build at all, that is a decision about the scaffold and not
+     *     about this mechanism.
+     */
+    expect(providerSdkEntryPoints(join(SRC, "app"), extensionsOf("desktop"))).toEqual([]);
+  });
+
+  it("finds an offender the moment one exists", () => {
+    /*
+     * THE NON-VACUITY PROOF, AND IT IS MECHANICAL RATHER THAN ARGUED.
+     *
+     * An empty offender list is worth exactly as much as the scan's ability to
+     * produce a non-empty one. So an entry point that reaches the on-device
+     * resolver is WRITTEN into the app tree, the same scan is run against the
+     * same directory under the same rules, and it must name it. The file is
+     * removed in a `finally`, and the scan is run once more afterwards to prove
+     * the directory is back to empty -- so a failure here cannot leave a
+     * dirty tree behind without also saying so.
+     *
+     * Deliberately inside `src/app` rather than in a temporary directory
+     * somewhere else: the property under test is that THIS enumerator, walking
+     * THIS root, notices. A probe in `os.tmpdir()` would prove the filter works
+     * and leave the root unproven, which is the half that actually rots.
+     */
+    const probeDirectory = join(SRC, "app", "__build-target-probe__");
+    const probe = join(probeDirectory, "page.tsx");
+    const relativeProbe = "src/app/__build-target-probe__/page.tsx";
+
+    try {
+      mkdirSync(probeDirectory, { recursive: true });
+      writeFileSync(
+        probe,
+        [
+          "/* Written and deleted by build-target.test.ts. If you are reading this in",
+          "   a committed tree, a test run was interrupted -- delete it. */",
+          'import { resolveAuthorizedCandidates } from "../api/v1/playback/session/authorized-candidates";',
+          "export default function Probe() {",
+          "  return String(typeof resolveAuthorizedCandidates);",
+          "}",
+          ""
+        ].join("\n"),
+        "utf8"
+      );
+
+      expect(offendingEntryPoints(join(SRC, "app"), extensionsOf("desktop"))).toEqual([
+        relativeProbe
+      ]);
+      expect(providerSdkEntryPoints(join(SRC, "app"), extensionsOf("desktop"))).toEqual([
+        relativeProbe
+      ]);
+    } finally {
+      rmSync(probeDirectory, { recursive: true, force: true });
+    }
+
+    expect(existsFile(probe)).toBe(false);
+    expect(offendingEntryPoints(join(SRC, "app"), extensionsOf("desktop"))).toEqual([]);
   });
 
   it("does not include the route this task owns", () => {
-    /* Stated separately so the line that matters cannot be lost in a list. */
-    expect(KNOWN_ON_DEVICE_RESOLVERS).not.toContain("src/app/api/v1/playback/session/route.ts");
+    /* Stated separately so the line that matters cannot be lost in a list: the
+     * session route is the one §8 rules about by name. */
+    const graph = walk(ROUTE, extensionsOf("desktop"));
+    for (const moduleId of RESOLVER_MODULES) expect(graph.modules).not.toContain(moduleId);
+  });
+});
+
+describe("the webpack and Rspack half of the split", () => {
+  /* -------------------------------------------------------------------------
+   * CORRECTION 2 OF THE ROUND-45 REVIEW.
+   *
+   *   "Make the build-target split fail closed under all supported production
+   *    build commands. Turbopack-only is not acceptable: `next build --webpack`
+   *    can silently resolve the on-device implementation. [...] Do not leave a
+   *    production command that builds successfully with the wrong trust
+   *    boundary."
+   *
+   * The branch taken is the reviewer's SECOND option -- equivalent fail-closed
+   * target resolution for webpack -- so `.github/workflows/ci.yml` is not
+   * edited by this task. The argument is in `next.config.ts`; what is checked
+   * here is that the hook exists, that it produces resolution equivalent to
+   * Turbopack's, that the whole module-graph property holds under it, and that
+   * it refuses rather than passes through when it cannot do its job.
+   * ---------------------------------------------------------------------- */
+
+  it("declares a webpack hook for the desktop target and none for the web one", () => {
+    expect(typeof nextConfigFor("desktop").webpack).toBe("function");
+    /* Not "a hook that does nothing" -- absent. The hosted build's resolution
+     * stays framework default, exactly as its Turbopack half does. */
+    expect(nextConfigFor("web").webpack ?? undefined).toBeUndefined();
+  });
+
+  it("produces the same preference order Turbopack is given", () => {
+    const infixed = WEBPACK_DESKTOP_EXTENSIONS.filter((extension) =>
+      extension.startsWith(DESKTOP_MODULE_INFIX)
+    );
+    const plain = WEBPACK_DESKTOP_EXTENSIONS.filter(
+      (extension) => !extension.startsWith(DESKTOP_MODULE_INFIX)
+    );
+
+    /* Every desktop-infixed form first, then the incoming list untouched. */
+    expect(WEBPACK_DESKTOP_EXTENSIONS).toEqual([...infixed, ...plain]);
+    expect(plain).toEqual(WEBPACK_INCOMING_EXTENSIONS);
+    expect(infixed).toEqual(
+      WEBPACK_INCOMING_EXTENSIONS.map((extension) => `${DESKTOP_MODULE_INFIX}${extension}`)
+    );
+  });
+
+  it("derives overrides from the bundler's own list rather than from a copy", () => {
+    /*
+     * THE PROPERTY THAT SURVIVES A NEXT UPGRADE. A hand-written list would
+     * leave any extension this repository has not heard of resolving to its
+     * on-device module -- an open failure, and a silent one. Asserted with an
+     * extension nothing in this repository uses.
+     */
+    expect(desktopResolveExtensionsFrom([".ts", ".liberty"])).toEqual([
+      ".desktop.ts",
+      ".desktop.liberty",
+      ".ts",
+      ".liberty"
+    ]);
+  });
+
+  it("is idempotent, because Next evaluates a config more than once per command", () => {
+    const once = desktopResolveExtensionsFrom(WEBPACK_INCOMING_EXTENSIONS);
+    expect(desktopResolveExtensionsFrom(once)).toEqual(once);
+  });
+
+  it("refuses a configuration it cannot redirect instead of passing it through", () => {
+    /*
+     * THE FAIL-CLOSED HALF, AND THE WHOLE REASON THIS BRANCH WAS CHOSEN OVER A
+     * REFUSAL OF `--webpack`. A bundler configuration this module no longer
+     * recognises is one whose resolution it cannot redirect, and returning it
+     * unchanged would produce a SUCCESSFUL desktop build containing the
+     * on-device resolver -- the outcome the correction names. A thrown error
+     * fails the build instead.
+     */
+    expect(() => desktopResolveExtensionsFrom(undefined)).toThrow(/cannot be applied/);
+    expect(() => desktopResolveExtensionsFrom([])).toThrow(/cannot be applied/);
+    expect(() => desktopResolveExtensionsFrom(["ts"])).toThrow(/not extensions/);
+    expect(() => applyDesktopModuleResolution({})).toThrow(/no `resolve` section/);
+    expect(() => applyDesktopModuleResolution({ resolve: {} })).toThrow(/cannot be applied/);
+  });
+
+  it("puts the forwarder and not the resolver in the graph, under webpack's rules", () => {
+    /*
+     * THE SAME ASSERTIONS THE TURBOPACK GRAPH GETS, against the extension list
+     * the hook produced. This is what makes "equivalent" a measured claim
+     * rather than a design intention.
+     */
+    expect(DESKTOP_VIA_WEBPACK.modules).toContain(
+      "src/app/api/v1/playback/session/playback-session-implementation.desktop.ts"
+    );
+    for (const moduleId of RESOLVER_MODULES) {
+      expect(DESKTOP_VIA_WEBPACK.modules, `webpack desktop graph reaches ${moduleId}`).not.toContain(
+        moduleId
+      );
+    }
+
+    const reached = DESKTOP_VIA_WEBPACK.packages.filter((specifier) =>
+      RESOLUTION_PACKAGES.some((name) => specifier === name || specifier.startsWith(`${name}/`))
+    );
+    expect(reached).toEqual([]);
+
+    /* Paired against the web graph, for the reason every absence here is
+     * paired: a walk that resolved nothing must go red rather than green. */
+    for (const moduleId of RESOLVER_MODULES) expect(WEB.modules).toContain(moduleId);
+  });
+
+  it("selects the same modules as Turbopack does", () => {
+    /*
+     * THE TWO BUNDLERS MUST NOT DISAGREE, stated as set equality rather than as
+     * two independent absence checks. A desktop build that contained different
+     * code depending on which bundler produced it would satisfy every
+     * assertion above and still be two products.
+     */
+    expect([...DESKTOP_VIA_WEBPACK.modules].sort()).toEqual([...DESKTOP.modules].sort());
+  });
+});
+
+describe("a web build cannot satisfy a desktop build", () => {
+  /* -------------------------------------------------------------------------
+   * CORRECTION 3 OF THE ROUND-45 REVIEW, in the reviewer's own terms: the build
+   * target is in `globalEnv` or an equivalent cache-key input, package scripts
+   * expose an intentional desktop build path, and TESTS PROVE web and desktop
+   * caches and configuration cannot be confused.
+   *
+   * There are four separations and they are independent, which is the point --
+   * losing any one of them still leaves the others standing:
+   *
+   *   1. the build target is a turbo GLOBAL ENV input, so any task's hash
+   *      changes with it;
+   *   2. the desktop build is a DIFFERENT TASK NAME, so its cache entry is a
+   *      different entry whatever the environment says;
+   *   3. the two tasks declare DISJOINT OUTPUTS, so restoring one cannot
+   *      overwrite the other's artifacts;
+   *   4. the two targets write to DIFFERENT DIRECTORIES, so an artifact on disk
+   *      is identifiable without asking what produced it.
+   * ---------------------------------------------------------------------- */
+
+  const REPO_ROOT = resolve(APP_WEB, "../..");
+
+  function readJson(path: string): Record<string, unknown> {
+    return JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
+  }
+
+  const turbo = readJson(join(REPO_ROOT, "turbo.json"));
+  const webPackageJson = readJson(join(APP_WEB, "package.json"));
+
+  const globalEnv = (turbo["globalEnv"] ?? []) as string[];
+  const tasks = (turbo["tasks"] ?? {}) as Record<string, { outputs?: string[] }>;
+  const scripts = (webPackageJson["scripts"] ?? {}) as Record<string, string>;
+
+  it("hashes the build target into every turbo cache key", () => {
+    /*
+     * THE NAME IS TAKEN FROM `next.config.ts` rather than written out again, so
+     * renaming the variable there without updating `turbo.json` fails here
+     * instead of silently producing one cache for two targets.
+     */
+    expect(globalEnv).toContain(BUILD_TARGET_ENV_VAR);
+  });
+
+  it("exposes an intentional desktop build path rather than an ad-hoc invocation", () => {
+    expect(Object.keys(tasks)).toContain("build:desktop");
+    expect(scripts["build:desktop"]).toBeDefined();
+
+    /* It sets the target, and the WEB build says nothing about it -- so the
+     * default build cannot accidentally become a desktop one and vice versa. */
+    expect(scripts["build:desktop"]).toContain(`${BUILD_TARGET_ENV_VAR}:'desktop'`);
+    expect(scripts["build"]).not.toContain(BUILD_TARGET_ENV_VAR);
+  });
+
+  it("gives the two builds disjoint outputs", () => {
+    const webOutputs = tasks["build"]?.outputs ?? [];
+    const desktopOutputs = tasks["build:desktop"]?.outputs ?? [];
+
+    expect(desktopOutputs).toContain(`${DESKTOP_DIST_DIR}/**`);
+
+    /*
+     * `build` declares `dist/**` and the desktop target writes under `dist/`,
+     * so without the negation a WEB build would capture the desktop build's
+     * artifacts as its own output -- and restoring that cache would plant a
+     * web-resolved bundle where a desktop one is expected. That is precisely
+     * "a web build satisfying a cached desktop build", arriving through the
+     * output list rather than through the hash.
+     */
+    expect(webOutputs).toContain(`!${DESKTOP_DIST_DIR}/**`);
+    expect(webOutputs).not.toContain(`${DESKTOP_DIST_DIR}/**`);
+
+    /* Nothing either task claims is claimed positively by the other. */
+    const positive = (outputs: string[]) => outputs.filter((entry) => !entry.startsWith("!"));
+    for (const entry of positive(desktopOutputs)) {
+      expect(positive(webOutputs), `both builds claim ${entry}`).not.toContain(entry);
+    }
+  });
+
+  it("writes the two builds to different directories", () => {
+    expect(distDirFor("web")).toBeNull();
+    expect(nextConfigFor("web").distDir).toBeUndefined();
+    expect(distDirFor("desktop")).toBe(DESKTOP_DIST_DIR);
+    expect(nextConfigFor("desktop").distDir).toBe(DESKTOP_DIST_DIR);
+  });
+
+  it("produces configurations that differ in every dimension that decides a bundle", () => {
+    /*
+     * The summary assertion, so that a future edit which accidentally made the
+     * two targets equivalent fails on one line rather than on four. Three
+     * dimensions decide what a build contains: which extensions resolve first,
+     * whether the webpack hook redirects, and where the artifact lands.
+     */
+    const web = nextConfigFor("web");
+    const desktop = nextConfigFor("desktop");
+
+    expect(web.turbopack?.resolveExtensions).toBeUndefined();
+    expect(desktop.turbopack?.resolveExtensions).toEqual(DESKTOP_RESOLVE_EXTENSIONS);
+    expect(web.webpack ?? undefined).toBeUndefined();
+    expect(typeof desktop.webpack).toBe("function");
+    expect(web.distDir).toBeUndefined();
+    expect(desktop.distDir).toBe(DESKTOP_DIST_DIR);
   });
 });
 
@@ -446,13 +827,26 @@ describe("the resolution rules themselves", () => {
  * WHAT THIS SUITE DOES NOT PROVE, NAMED RATHER THAN IMPLIED
  *
  *   1. IT DOES NOT READ A BUNDLE. It asserts reachability under the resolution
- *      rules `next.config.ts` publishes. Producing and inspecting a real
- *      desktop bundle requires a full `next build`, which is not a unit test;
- *      that check belongs in CI beside the build itself, and PL-0501's report
- *      records the manual run and its result.
- *   2. IT CANNOT SEE WHICH BUNDLER RAN. `next build --webpack` reads a
- *      different resolver configuration, which this app does not set, so a
- *      desktop build produced with that flag would resolve the on-device
- *      resolver and this suite would still be green. `next.config.ts` states
- *      that the desktop target is Turbopack-only; nothing here enforces it.
+ *      rules `next.config.ts` publishes, for both bundler configurations.
+ *      Producing and inspecting a real desktop bundle requires a full
+ *      `next build`, which is not a unit test; PL-0501's round-45 report
+ *      records the executed builds and what was grepped out of them.
+ *
+ *   2. ITEM 2 USED TO SAY "IT CANNOT SEE WHICH BUNDLER RAN", and that is no
+ *      longer the gap it was. `next.config.ts` now configures BOTH resolution
+ *      mechanisms for the desktop target, and this suite walks the graph under
+ *      each and requires the two to select the same modules. What remains is
+ *      narrower and is stated rather than implied: the suite reads
+ *      CONFIGURATION, so it would not notice a bundler that ignored both keys.
+ *      Next 16.3.1 has three bundlers and no fourth
+ *      (`next/dist/lib/bundler.js`), Rspack goes through the webpack hook, and
+ *      `desktopResolveExtensionsFrom` throws rather than passing through a
+ *      configuration it cannot redirect -- so the residual case is a future
+ *      Next introducing a bundler with a third mechanism, which would arrive as
+ *      a framework upgrade rather than as a silent change.
+ *
+ *   3. IT SAYS NOTHING ABOUT THE DESKTOP FORWARDER ACTUALLY REACHING A BACKEND.
+ *      That is `e2e/tests/playback-session.desktop.api.spec.ts` and
+ *      `e2e/tests/playback-session.cross-target.api.spec.ts`, which run against
+ *      a real desktop-target server and a stub backend.
  * ---------------------------------------------------------------------- */

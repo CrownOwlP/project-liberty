@@ -6,3 +6,10 @@ playwright-report/
 blob-report/
 test-results/
 .playwright/
+
+# The throwaway loopback certificate the desktop-target stub backend serves
+# (PL-0501, round 45). Minted per run by `src/tls.ts`; never committed. The
+# repository root also ignores `*.pem` and `*.key` by pattern, so this entry is
+# belt and braces rather than the only thing standing between a private key and
+# version control.
+.tls/

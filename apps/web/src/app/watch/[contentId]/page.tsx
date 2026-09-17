@@ -1,3 +1,4 @@
+import { headers } from "next/headers";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
@@ -93,7 +94,26 @@ function PlaybackLoading() {
  * `notFound()`.
  */
 async function PlaybackBody({ contentId }: { contentId: string }) {
-  const result = await loadPlaybackSession(contentId);
+  /*
+   * THE INBOUND HEADERS ARE HANDED DOWN, AND THIS IS THE ONLY REASON THEY ARE
+   * READ HERE (PL-0501, round 45).
+   *
+   * `loadPlaybackSession` now calls the playback-session route contract instead
+   * of resolving providers in this page — see `../watch-session.ts` for why, and
+   * `docs/DESKTOP_PLAYBACK.md` §8 for the ruling that requires it. Under the
+   * DESKTOP build target that route forwards to an authenticated backend, and
+   * §8 says the proxy "forwards an authenticated caller identity — the session
+   * or profile identity the request already carries". The request that carries
+   * one on this route is the browser's request for THIS page, so the page is the
+   * only place it can be picked up.
+   *
+   * NOTHING HERE READS A HEADER. The whole bag is passed through, and the
+   * forwarder's own ALLOWLIST decides what leaves the machine; a page that
+   * selected headers itself would be a second, quieter allowlist that the
+   * security test does not cover. `headers()` also marks this subtree dynamic,
+   * which it already is — `revalidate = 0` above says the same thing.
+   */
+  const result = await loadPlaybackSession(contentId, { headers: await headers() });
 
   if (result.status === "error") {
     return (

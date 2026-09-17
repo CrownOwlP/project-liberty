@@ -14,12 +14,18 @@
     "NODE_ENV",
     "CONTENT_RIGHTS_ENFORCEMENT",
     "LIBERTY_FC_SEED",
-    "LIBERTY_FIXTURE_MEDIA_ORIGIN"
+    "LIBERTY_FIXTURE_MEDIA_ORIGIN",
+    "LIBERTY_BUILD_TARGET",
+    "LIBERTY_PLAYBACK_BACKEND_ORIGIN"
   ],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "outputs": [".next/**", "dist/**", "!.next/cache/**"]
+      "outputs": [".next/**", "dist/**", "!.next/cache/**", "!dist/desktop/**"]
+    },
+    "build:desktop": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/desktop/**", "!dist/desktop/cache/**"]
     },
     "dev": {
       "cache": false,
