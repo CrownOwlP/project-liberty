@@ -1,127 +1,40 @@
 {
-  "generatedAt": "2026-09-17T16:07:52.714Z",
+  "generatedAt": "2026-09-17T16:51:43.403Z",
   "agent": "gpt-architect",
   "executionAvailable": false,
   "assigned": [],
   "review": [
     {
-      "id": "PL-0501",
+      "id": "PL-0702",
       "priority": "P0",
-      "lane": "Player",
+      "lane": "Security",
       "status": "REVIEW",
-      "title": "Playback session API",
+      "title": "Provider and URL security review",
       "dependencies": [
-        "PL-0201",
-        "PL-0301"
+        "PL-0301",
+        "PL-0501"
       ],
       "allowedPaths": [
-        "apps/web/src/app/api/v1/playback/**",
-        "apps/web/next.config.ts",
-        "apps/web/package.json",
-        "apps/web/src/app/watch/**",
-        "turbo.json",
-        "e2e/**"
+        "packages/provider-sdk/**",
+        "apps/web/src/app/api/**",
+        "docs/SECURITY.md",
+        "docs/SECURITY_REVIEW_PROVIDER_URL.md"
       ],
-      "preferredAgent": "claude-media",
+      "preferredAgent": "claude-security",
       "reviewAgent": "gpt-architect",
       "qualityGates": [
-        "typecheck",
-        "unit",
-        "integration",
         "security-review",
         "rights-review"
       ],
-      "acceptance": "Server resolves authorized provider candidates and clients cannot submit arbitrary media URLs; the session response is a discriminated union on outcome (granted, denied, unavailable) with reasons present on every branch rather than as an optional field, because a denial with no reason trail violates the reason-trail invariant exactly as much as a grant with none",
-      "owner": "claude-media",
-      "gateResults": {
-        "typecheck": {
-          "status": "pass",
-          "at": "2026-09-17T04:17:29.661Z",
-          "by": "claude-media",
-          "commitSha": "645e58562dc0e2376f7395da19d0991a9899e972",
-          "evidence": "npx turbo run typecheck --force at integrated head 645e58562dc0e2376f7395da19d0991a9899e972, exit 0, 10 of 10 tasks and 0 cached, against a tree installed by npm ci exit 0. Also npx turbo run lint --force exit 0, 10 of 10."
-        },
-        "unit": {
-          "status": "pass",
-          "at": "2026-09-17T04:17:29.857Z",
-          "by": "claude-media",
-          "commitSha": "645e58562dc0e2376f7395da19d0991a9899e972",
-          "evidence": "npx turbo run test --force at integrated head 645e58562dc0e2376f7395da19d0991a9899e972, exit 0, 17 of 17 and 0 cached, 2318 passed 1 skipped. EVIDENCE FOR CORRECTION 1, ZERO DESKTOP ON-DEVICE RESOLVER ENTRY POINTS. watch-session.ts no longer imports resolveAuthorizedCandidates, rankStreamCandidates, checkUrl, DEFAULT_FAILOVER_POLICY or isLocalDeployment; it builds a Request for /api/v1/playback/session and calls handlePlaybackSessionRequest, the module IN FRONT OF the build-target seam, then parses with playbackSessionResponseSchema. An in-process call rather than an HTTP fetch to our own origin, because a server component has no trustworthy absolute base URL -- it would be built from a caller-influenced Host -- while the trust-boundary property depends on which module is compiled in behind the seam, which an in-process call crosses identically. THE LEDGER IS EMPTY AND STILL ABLE TO FIND AN OFFENDER, which is the part that matters: three assertions now return the empty list, including one over @liberty/provider-sdk reachability that is strictly stronger than the three-module list because it names the dependency any FUTURE resolver would need; and a separate case WRITES apps/web/src/app/__build-target-probe__/page.tsx importing resolveAuthorizedCandidates, re-runs the same enumerator over the same root under the same rules, requires both scans to name exactly that file, removes it in a finally, asserts it is gone and asserts the scans are empty again. The probe sits inside src/app rather than a temp directory on purpose, because the half that rots is the root the enumerator walks, not the filter. EVIDENCE FOR CORRECTION 2, WEBPACK FAIL-CLOSED. The reviewer's second branch was taken -- equivalent fail-closed resolution -- and .github/workflows/ci.yml was NOT edited, so its conditional surface entry has been withdrawn. build-target.ts gains desktopResolveExtensionsFrom and applyDesktopModuleResolution; next.config.ts declares a webpack hook for the desktop target only; the override forms are derived from THE BUNDLER'S OWN resolve.extensions rather than a copied list, so an extension a future Next adds gets an override automatically, and the function is idempotent because Next calls the hook three times per command. It REFUSES rather than passing through: throws on undefined, on an empty list, on a non-extension entry, on a config with no resolve and on a resolve with no extensions, and never returns the input unmodified. next/dist/lib/bundler.js in 16.3.1 enumerates exactly three bundlers, Turbopack, Webpack and Rspack, and Rspack reuses the webpack config path, so two keys cover the enumeration -- that is the argument rather than a belief about which command people use. Round 44's stated objection about a Turbopack warning was checked and does not apply: turbopack-warning.js errors only when TURBOPACK is auto AND a webpack config exists AND no turbo config does, and the desktop target sets both. Graph tests assert the webpack rules select the same module set as Turbopack. EVIDENCE FOR CORRECTION 3, CACHE SEPARATION, MEASURED WITH turbo --dry=json: @liberty/web#build hashes 579e83e189d99cdc with the variable unset and 705d269a48810064 with it set to desktop, and @liberty/web#build:desktop hashes aea70103625c2361 with outputs dist/desktop/**. Three distinct keys. FOUR separations, not one: LIBERTY_BUILD_TARGET and LIBERTY_PLAYBACK_BACKEND_ORIGIN in globalEnv; build:desktop as its own turbo task; build's outputs gained a negation of dist/desktop/** -- without it a WEB build would have captured the desktop artifacts as its own output, which is a web build satisfying a cached desktop build arriving through the output list rather than the hash; and distDir dist/desktop for the desktop target. The test reads the globalEnv name FROM next.config.ts's own constant rather than restating it, so renaming it there without updating turbo.json fails."
-        },
-        "integration": {
-          "status": "pass",
-          "at": "2026-09-17T04:17:30.051Z",
-          "by": "claude-media",
-          "commitSha": "645e58562dc0e2376f7395da19d0991a9899e972",
-          "evidence": "EVIDENCE FOR CORRECTION 4, DESKTOP-TARGET E2E AND CROSS-TARGET EQUIVALENCE, EXECUTED at integrated head 645e58562dc0e2376f7395da19d0991a9899e972 on the PINNED browser revision 1234, from e2e/ after npm ci there, with env -u PLAYWRIGHT_BROWSERS_PATH -u PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD. Development exit 0, 67 passed 3 skipped; production exit 0, 58 passed 12 skipped. THE HARNESS GREW A SECOND AXIS, on by default: a desktop-target server on PORT+1 built and served with LIBERTY_BUILD_TARGET=desktop, and an HTTPS stub backend on PORT+2 with a throwaway loopback certificate minted per run. REAL TLS WAS USED RATHER THAN RELAXING THE FORWARDER'S HTTPS-ONLY RULE: the forwarder states in terms that loopback is not carved out, and weakening that to make a test pass is the one thing this round may not do; NODE_EXTRA_CA_CERTS is used rather than NODE_TLS_REJECT_UNAUTHORIZED=0, so the server under test really verifies the certificate. THE STUB RELAYS TO THE WEB-TARGET SERVER for every content id except four reserved ones, which is what makes equivalence non-circular: both targets answer from ONE decision taken by the real resolving implementation, so any difference is a difference in the envelope -- exactly what section 8 says must be identical and exactly what the two targets compile separately. FORWARDING REACHES THE BACKEND, asserted and observed passing in this run: 'a forwarded request actually reaches the backend stub' shows the stub ledger holding exactly one POST to /api/v1/playback/session with a body byte-identical to what was sent, proving relay rather than reparse and proving the path is a constant rather than the inbound pathname; 'the backend's decision wins over anything this machine could have resolved' has the stub deny while the web target answers differently and REQUIRES them to differ, which under a development build is the runtime counterpart of the module-graph proof because a local resolver would have granted; 'only the identity headers leave the machine' shows the four allowlisted headers arriving and two credential-shaped ones not; 'a redirect from the backend is refused rather than followed' leaves the ledger at one entry. EQUIVALENCE: one 14-row request table driven against BOTH targets comparing status, outcome, the ORDERED reason-code list, no-store on both, and the whole body minus sessionId and expiresAt, each exclusion argued; plus a case proving the table is not vacuously passing on refusals alone -- under development both must be granted with DEEPLY EQUAL candidate lists including ids, order, URIs, compatibility and protection. ONE HONEST QUALIFICATION RATHER THAN A SECOND LEDGER: under the desktop target @liberty/media-engine/scheduling is still reachable from the watch page as client-side scheduleAttempts imported by subpath so the ranker does not come with it, and the media-engine barrel is reachable from the resolve route, the testing-only scaffold that resolves no provider, holds no credential and answers 404 on every production build. Whether that scaffold belongs in a desktop build at all is a decision about the scaffold. AND WHAT THIS IS STILL NOT: the full five-project suite exits 1 in this container because only chromium-1234 is installed and webkit and firefox builds are absent -- browserType.launch: Executable doesn't exist -- so the two projects CI actually runs are what is recorded green here, and no claim is made about WebKit or about the CI job itself."
-        }
-      },
-      "reviewDependencies": [
-        "packages/media-engine/src/ranking.ts",
-        "packages/media-engine/src/failover.ts",
-        "packages/media-engine/src/scheduling.ts",
-        "packages/media-engine/src/index.ts",
-        "packages/provider-sdk/src/fixture/provider.ts",
-        "packages/provider-sdk/src/stremio/url-policy.ts",
-        "packages/provider-sdk/src/index.ts",
-        "packages/contracts/src/domains/playback.ts",
-        "packages/contracts/src/shared/drm.ts",
-        "packages/contracts/src/domains/failover.ts",
-        "packages/contracts/src/shared/ids.ts",
-        "packages/contracts/src/shared/rights.ts",
-        "packages/contracts/src/shared/runtime.ts",
-        "apps/web/src/app/api/deployment-environment.ts",
-        "apps/web/src/components/player/playback-session.ts",
-        "docs/DESKTOP_PLAYBACK.md",
-        "docs/API_CONTRACTS.md",
-        "docs/CONTENT_RIGHTS.md",
-        "docs/SECURITY.md"
-      ],
-      "surfaceNarrowedAtClaim": "NARROWED 2026-09-16 by claude-lead in the same edit that claimed the task, on the PL-0205 precedent and the PL-0301 worked example the reviewer approved this round. THREE PACKAGE-WIDE WILDCARDS WERE READS DECLARED AS WRITES, and each was checked against the implementation rather than assumed. packages/media-engine: issue-session.ts imports DEFAULT_FAILOVER_POLICY, PLAYABLE_RIGHTS, rankStreamCandidates and RejectionReason, and its own header states there is ONE allowlist consulted at two points rather than two that can drift -- the engine is consumed, not changed. The apparent counter-example resolves the right way: commit 34c16c9 is titled PL-0204/PL-0501 and rewrote failover.ts, but scheduling.ts says in its own header that the scheduling half is PL-0204's, and PL-0204 is DONE. packages/provider-sdk: authorized-candidates.ts states that it is A SHAPE ADAPTER AND NOT A SECOND PROVIDER, renaming three fields and forwarding the candidate unchanged, and PL-0301's own narrowing settled that the fixture and stremio trees are PL-0301's. packages/contracts: PL-0902 published StatesContentProtection<Shape> EXPRESSLY so this task would not need a contracts write -- its API_CONTRACTS section 'What PL-0501 has to do' lists three steps, two of which are inside this task's own route directory, and the third, an index.ts barrel re-export, is provably unnecessary because every contracts import in the session tree already uses the authoritative subpath. Keeping the wildcard would ALSO have collided with PL-0902, which is actively editing those files, rather than only with PL-0206. TWO ENTRIES WERE ADDED AND BOTH ARE FLAGGED RATHER THAN PRESENTED AS PRESCRIBED. apps/web/next.config.ts is a PREDICTION, not a diff: DESKTOP_PLAYBACK section 8 requires the desktop split to be by BUILD TARGET and not runtime configuration -- no environment variable, no config key, no feature flag -- and says the property to test for is that the desktop bundle contains no provider-resolution implementation at all. That needs build-time module resolution, and next.config.ts is the only place in this app that configures resolution. A search for buildTarget, BUILD_TARGET, LIBERTY_TARGET and desktop across apps/web/src, packages, scripts and next.config.ts returns zero hits and there is no apps/desktop, so nothing for this exists yet. It is the entry to drop first if the implementer finds a config-free mechanism. apps/web/src/app/watch/watch-session.test.ts CONSTRUCTS an AuthorizedCandidate, so if this task moves that type to PL-0902's ResolvedStreamCandidate with its required protection field, that constructor stops typechecking and the repair is outside the playback tree. watch-session.ts itself only READS the produced type and is therefore not declared. THE RISK OF BEING WRONG IS STATED RATHER THAN ASSUMED AWAY. The load-bearing removal is packages/media-engine: if rankStreamCandidates must change signature to accept a resolved candidate, or a sixth RejectionReason is required, this task stops at the compile-time engineReasonCode link in contract.ts and must re-widen at claim time -- costing one round and a collision with PL-0206 that it would have had anyway. The confidence rests on PL-0902, the task actually adding the field, having deliberately left streamCandidateSchema byte-for-byte unchanged so the engine need not move. For provider-sdk the cost of being wrong is smaller and is a follow-up rather than a blocked round, and it has a named open question: the honest protection value for a clear dev fixture is state clear, which only the provider may state, while this task can only supply PROTECTION_NOT_STATED. That is safe by construction, since unknown requires a CDM, so the failure mode is a fixture routed to the EME adapter unnecessarily rather than a breach -- but it sits in tension with the shape-adapter rule quoted above and appears to be UNOWNED BY ANY TASK. Flagged for the reviewer rather than absorbed here. DISJOINTNESS CHECKED IN BOTH DIRECTIONS against every active task. Every proposed prefix begins apps/; every PL-0206 and PL-0902 prefix begins packages/, except PL-0902's docs/API_CONTRACTS.md, which shares no prefix with any apps/ entry -- which is also why that document is a reviewDependency here and not a write, since PL-0902 is updating its session section and two editors in one file is the collision the field exists to avoid. PL-0305, PL-0903 and PL-0904 hold apps/web/src/lib and apps/web/src/components/player; these are apps/web/src/app and the app-root config file. No proposed prefix is a prefix of any of theirs.",
-      "implementationAgent": "claude-media",
-      "updatedAt": "2026-09-17T04:17:54.207Z",
-      "implementationBaseSha": "cb622345f12611585771e2f1af808034bd5aa042",
-      "implementationBaseProvenance": {
-        "kind": "reconciled-existing-implementation",
-        "baseSha": "cb622345f12611585771e2f1af808034bd5aa042",
-        "reconciledAt": "2026-09-16T01:23:54.543Z",
-        "reconciledBy": "claude-media",
-        "implementationAgent": "claude-media",
-        "headAtReconciliation": "a074b986e899ba8b91d018c4bb71f8c12089b608",
-        "reviewSurface": "allowedPaths + reviewDependencies",
-        "surfaceCommitCount": 24,
-        "oldestSurfaceCommit": "4ca4313f2642f4666ab6dda0084c25fcb2fbf3d5",
-        "newestSurfaceCommit": "a074b986e899ba8b91d018c4bb71f8c12089b608",
-        "surfaceCommits": [
-          "5b7aba7685b10b2311c625287be0dd8670665b28",
-          "7079aed9d792dbedcf779ed5ac3c2c170ca6eabb",
-          "1ee833d2f7834729b871f868a2bcd6c7cc8d1981",
-          "916fc101a3dfa8d066a50f5b34d3c5db5f4e1eeb",
-          "a4209a4fcf0b232e5de92f2af09dd8fb3d266909",
-          "b74b0d3c4befa226109fc1ce623b5addd46a9490",
-          "eecca6b621a2fccaab09ab3ec15d3bc93936df3b",
-          "ba9521b2c3998ae05210240827c0a773596819c9",
-          "719d2d7c31465901f3dbee1e936a180e87c3d44f",
-          "8b1172b2190d3ddfecb5afd28ea73a293e17def1",
-          "3c92942bc7eee0a7aab4440e254d8e11d3a849a9",
-          "754a786625499ae7e436f93758edd11ef7487ff4",
-          "9933a55dd177ccc08b20b1fe3e49f479c8a7de1f",
-          "b0b1dcf5a4826b763aa72d6375dd93e95a3aff33",
-          "6358abc8a8c9b6183e561ca795a4d29ae7fd2881",
-          "c3bb856f3d8c122acd46d5331067fac3a0266f2b",
-          "34c16c97c9ae0a1dec5b708f4f81ed62ecb94afb",
-          "bbe68ed8d16f864c87309ceb1c089495deb89766",
-          "ba2bf4756175e84aab07ec36f9e7c3d6e324d350",
-          "4ca4313f2642f4666ab6dda0084c25fcb2fbf3d5"
-        ],
-        "surfaceCommitsTruncated": true,
-        "changedFileCount": 31,
-        "baseCommitSurfaceTouchCount": 0,
-        "baseCommitSurfaceTouches": [],
-        "baseCommitSurfaceTouchesTruncated": false,
-        "reason": "The base is cb622345f12611585771e2f1af808034bd5aa042, the parent of 4ca4313, the earliest commit that names PL-0501, and it is proven against the TREE rather than against filenames or commit messages. At cb622345, git ls-tree -r over apps/web/src/app/api/v1/playback returns exactly ONE path, resolve/route.ts: the entire session/ subtree -- contract.ts, issue-session.ts, authorized-candidates.ts, handler.ts, route.ts and their four suites, 2671 lines -- does not exist. So the behaviour is absent and not merely the files, which is the PL-0205 standard: that failure came from a witness file created by a later refactor that only MOVED declarations, and nothing can have been moved into a directory that does not exist. THE IMPLEMENTATION PREDATES THE CLAIM BY DESIGN, NOT BY OVERSIGHT: coordination/IMPLEMENTATION_RECOVERY.md lists this task among the implemented-but-unreviewed lanes, and the record carried owner null with no gate results and no base. Checked against the acceptance clause by clause: the server resolves and the client names, with authorized-candidates.ts stating that a resolver is a function of a normalized content id so there is no parameter through which a caller could suggest a stream; playbackSessionRequestSchema is strict at both levels with only contentId and capabilities; the response is a discriminatedUnion on outcome with granted, denied and unavailable; and reasons is a nonempty array shared by all three branches with three factory functions each taking the primary reason as a required positional argument, so a branch with no reasons is not constructible. THE WINDOW IS HONEST BUT NOT EXCLUSIVE, AND THAT IS PUBLISHED RATHER THAN LEFT TO BE DISCOVERED: commits inside cb622345..HEAD that touch this surface include work attributed to other tasks -- 9933a55 is PL-0301's rights repair to the watch page, bbe68ed is PL-0702's, and the engine half of 34c16c9 is PL-0204's. A review range cannot open in the middle of a commit and this repository commits across lanes, which is the same shape the reviewer accepted for PL-0706 and PL-0704. WHAT REMAINS IS NOT COVERED BY THIS BASE AND IS NOT CLAIMED TO BE: the desktop target-selected implementation required by DESKTOP_PLAYBACK section 8 does not exist in any form -- zero hits for buildTarget, BUILD_TARGET, LIBERTY_TARGET or desktop across apps/web/src, packages, scripts and next.config.ts, and no apps/desktop -- and carrying PL-0902's protection field onto the session candidate has not happened because drm.ts only landed in this same round. Both are this round's work and will sit inside the window above."
-      },
-      "surfaceWidenedOnReview": "WIDENED 2026-09-17, round 45, BY THE REVIEWER'S OWN CHANGES_REQUESTED, item by item, and recorded rather than performed quietly. gpt-architect refused PL-0501 at 27d3a03 with four blocking corrections, and each one names a path this task did not hold. The narrowing recorded in surfaceNarrowedAtClaim was correct for what the task then contained and is NOT being retracted: three package-wide wildcards really were reads declared as writes, and none of them is coming back. What is being added is the surface the reviewer's corrections require. apps/web/src/app/watch/** -- correction 1. The reviewer's ruling is worth quoting because it corrects this lead's reading as much as the implementation: 'The PL-0901 ruling is a security/trust-boundary property, not merely an /api directory naming rule.' Round 44 treated the clean /api/v1/playback surface as satisfying section 8 and carried the on-device watch path as a ledger entry with a follow-up. The reviewer rejected that framing outright -- 'the existing ledger test is useful but it must end at an EMPTY offender list before approval, not preserve one known offender' -- so the watch page moves onto the session API in this task rather than in a successor. This overlaps PL-0502, which is BACKLOG and unowned, so there is no active conflict; PL-0502 must be told that its declared surface has been written by another task before it starts. turbo.json and apps/web/package.json -- correction 3, and the reviewer's required outcome names both: the build target in globalEnv or an equivalent cache-key input, and a package script exposing an intentional desktop build path. Round 44 flagged exactly this hazard and could not fix it from its surface. .github/workflows/ci.yml -- correction 2, and only on one of the two branches the reviewer offers. If webpack is made explicitly unsupported it has to be refused in build configuration AND CI; if equivalent fail-closed resolution is implemented for webpack instead, this entry is unnecessary. The implementer chooses and reports which, and the entry comes back out if it goes unused. No active task owns this file; PL-0704 did and is DONE. e2e/** -- correction 4, and this one is a DELIBERATE OVERLAP THE REVIEWER AUTHORISED IN ADVANCE: 'PL-0701 may be used to implement the E2E surface needed to close PL-0501 if the control plane allows that dependency-safe review support.' The control plane does not allow it -- PL-0701 is BACKLOG behind PL-0501, PL-0502 and PL-0403, so it cannot be claimed, and claiming it would require repointing dependencies onto a task it exists to test. Declaring the surface on PL-0501 is the reading that needs no graph edit. PL-0701 is unowned so there is no active conflict, and when it is claimed it inherits an e2e tree this task wrote, which its own record should say. WHAT THIS DOES NOT LICENSE. The widening is scoped to the four corrections and nothing else. It does not reopen packages/media-engine, packages/provider-sdk or packages/contracts, all of which stay reviewDependencies, and the load-bearing claim of the original narrowing -- that the engine needs no change -- still held through round 44 and is not being revisited. DISJOINTNESS RE-CHECKED IN BOTH DIRECTIONS against every active task: PL-0305 holds packages/catalog-ingestion, apps/web/src/lib leaves, two docs and package-lock.json; PL-0206 holds packages/media-engine and three contracts leaves; PL-0902 holds four contracts leaves and docs/API_CONTRACTS.md; PL-0903 and PL-0904 hold disjoint files under apps/web/src/components/player. None of the seven entries above equals, prefixes, or is prefixed by any of those -- note apps/web/package.json against package-lock.json, and apps/web/src/app/watch against apps/web/src/lib, both of which are disjoint under prefix arithmetic. ENTRY REMOVED AGAIN, 2026-09-17, AS THE RECORD SAID IT WOULD BE. .github/workflows/ci.yml was declared conditionally -- only on the branch where webpack is made explicitly unsupported and refused in build configuration AND CI. The implementer took the other branch the reviewer offered and implemented equivalent fail-closed resolution for webpack instead, so the file was never written: git diff --name-only over it across the whole round is empty. A declaration that was not used is a declaration that pads a review range, which is the PL-0205 rule, so it is withdrawn rather than left standing as a surface this task never needed. The reasoning for the branch chosen belongs to the implementer and is in the gate evidence: a refusal protects only the command someone remembered to name, and the failure mode of a missed name is a SUCCESSFUL build with the resolver in it, which is exactly what the reviewer refused; correct resolution fails the other way, and it holds wherever the build runs rather than only where CI runs -- which is also what lets the e2e harness start a real desktop-target server."
+      "acceptance": "A findings register exists at docs/SECURITY_REVIEW_PROVIDER_URL.md enumerating every finding across the five named classes -- SSRF, secret exposure, redirect handling, allowlist enforcement, and rights bypass -- each with a disposition of RESOLVED (with the commit and the test that now fails without the fix) or ACCEPTED (with the reason, the residual risk, and who accepted it). AN EMPTY REGISTER IS NOT A PASS. The register must state, per class, what was examined and by what method, so that 'no finding' is distinguishable from 'not looked for'; a class examined by reading alone must say so rather than implying a test covered it. Every RESOLVED entry needs a regression that fails against the pre-fix tree, because a security fix without a test that would have caught the bug is indistinguishable from a refactor. Every ACCEPTED entry that touches credentials, licensing or an irreversible production change is an escalation under control/policies.json escalation.humanOnly and may NOT be accepted by an agent; it is recorded as OPEN-ESCALATED and named in the handoff. Out of scope and to be listed as such rather than silently skipped: anything requiring a real licensed provider or live credentials (PL-0302, PL-0602), and the desktop sidecar trust boundary already ruled on in PL-0901 and reviewed under PL-0501.",
+      "owner": "claude-security",
+      "gateResults": {},
+      "acceptanceSupersededAtClaim": "SSRF, secret exposure, redirect, allowlist, and rights-bypass findings are resolved or explicitly accepted",
+      "acceptanceAmendedBeforeClaim": "AMENDED 2026-09-17 BY claude-lead, BEFORE THE CLAIM, AND NOT AT A REVIEWER'S REQUEST -- flagged to gpt-architect for confirmation rather than treated as settled. The original clause, preserved verbatim in acceptanceSupersededAtClaim, was: 'SSRF, secret exposure, redirect, allowlist, and rights-bypass findings are resolved or explicitly accepted'. That sentence is satisfied by an agent reporting that it found nothing, which under invariant 8 is the shape of a fabricated gate rather than a passed one: the only two gates on this task are security-review and rights-review, both judgement gates, and neither has a command whose exit code can contradict a wrong answer. The amendment does not lower the bar or narrow the scope -- the same five classes, the same surface -- it makes the existing bar falsifiable, by requiring the method to be published alongside the conclusion and by refusing an empty register as evidence. If the reviewer considers a pre-claim acceptance amendment by the implementing lead improper even in the stricter direction, this is the record to point at, and the original clause is recoverable from the field above.",
+      "implementationAgent": "claude-security",
+      "updatedAt": "2026-09-17T16:51:43.386Z",
+      "implementationBaseSha": "97011e71008fe69445845debb879534895cdc754",
+      "surfaceWidenedAtStart": "WIDENED 2026-09-17 by claude-lead at the start of the round, before any code was written, and recorded rather than performed quietly. The amended acceptance requires a findings register at docs/SECURITY_REVIEW_PROVIDER_URL.md and the task's surface did not contain that path, so the task as declared could not satisfy the task as accepted. One new file, created by this task, owned by no other task. This widening adds a deliverable's own path; it does not reopen any reviewed code surface."
     },
     {
       "id": "PL-0305",

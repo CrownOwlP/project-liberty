@@ -109,6 +109,59 @@ describe("classifyHost", () => {
     expect(classifyHost("[fe80::1]")).toBe("private");
     expect(classifyHost("[::1]")).toBe("loopback");
   });
+
+  /* ---------------------------------------------------------------------
+   * PL-0702 F7. The DNS root label.
+   *
+   * `new URL()` keeps a trailing dot on a DOMAIN and strips it from an IP
+   * literal, so every numeric case above was already canonical and none of them
+   * could have caught this. Each name below is the same name as its
+   * dotless spelling to every resolver, and each one classified "public" before
+   * the root label was stripped ahead of the comparisons.
+   * ------------------------------------------------------------------- */
+  it("classifies a fully qualified name the same as its dotless spelling", () => {
+    expect(classifyHost("metadata.google.internal.")).toBe("private");
+    expect(classifyHost("nas.local.")).toBe("private");
+    expect(classifyHost("vault.corp.")).toBe("private");
+    expect(classifyHost("host.lan.")).toBe("private");
+    expect(classifyHost("router.home.arpa.")).toBe("private");
+    expect(classifyHost("localhost.")).toBe("loopback");
+    expect(classifyHost("addon.localhost.")).toBe("loopback");
+    // Still narrowing only: an ordinary public name is unaffected either way.
+    expect(classifyHost("example.com.")).toBe("public");
+  });
+
+  it("refuses an empty label rather than collapsing it into a name", () => {
+    // The root on its own names no host, and a zero-length label is not a name
+    // any resolver accepts. Repairing either would invent a name for a caller.
+    expect(classifyHost(".")).toBe("unparseable");
+    expect(classifyHost("nas.local..")).toBe("unparseable");
+  });
+
+  /* ---------------------------------------------------------------------
+   * PL-0702 F8. IPv6 prefixes that CARRY an IPv4 address without the zero
+   * prefix that `::ffff:a00:1` has. Each of these was "public" while naming
+   * 10.0.0.1, because it matched neither the mapped/compatible branch nor any
+   * of the fc00/fe80/ff00 masks.
+   * ------------------------------------------------------------------- */
+  it("sees the IPv4 address inside a translation prefix", () => {
+    expect(classifyHost("[64:ff9b::a00:1]")).toBe("private"); // NAT64 well-known, 10.0.0.1.
+    expect(classifyHost("[64:ff9b::a9fe:a9fe]")).toBe("private"); // NAT64, 169.254.169.254.
+    expect(classifyHost("[64:ff9b::7f00:1]")).toBe("loopback"); // NAT64, 127.0.0.1.
+    expect(classifyHost("[2002:a00:1::]")).toBe("private"); // 6to4, 10.0.0.1.
+    expect(classifyHost("[2002:a9fe:a9fe::1]")).toBe("private"); // 6to4, 169.254.169.254.
+    expect(classifyHost("[::ffff:0:a00:1]")).toBe("private"); // IPv4-translated, 10.0.0.1.
+  });
+
+  it("does not over-reach: a translation prefix wrapping a public address stays public", () => {
+    // The point is that the embedded address is CLASSIFIED, not that the prefix
+    // is banned. 8.8.8.8 is public however it is spelled.
+    expect(classifyHost("[64:ff9b::808:808]")).toBe("public");
+    expect(classifyHost("[2002:808:808::]")).toBe("public");
+    // And an ordinary global-unicast address that merely starts with 0x2001 is
+    // not 6to4 and is not reinterpreted as one.
+    expect(classifyHost("[2001:db8::1]")).toBe("public");
+  });
 });
 
 describe("checkUrl scheme policy", () => {
@@ -270,6 +323,64 @@ describe("checkUrl redirect targets", () => {
 
   it("applies the same policy to a redirect target as to the original", () => {
     const result = checkUrl("http://169.254.169.254/", remote, "https://addon.example.com/manifest.json");
+    expect(result.ok).toBe(false);
+    expect(!result.ok && result.reason).toBe("url_private_address");
+  });
+
+  /* ---------------------------------------------------------------------
+   * PL-0702 F7, at the GATE rather than at the classifier, and on the two paths
+   * a third party actually controls: a stream URL an addon returns, and a
+   * `Location:` header it sends. A classifier unit test would have gone green
+   * on the fix without proving that `checkUrl` refuses; these assert the
+   * refusal, and the reason each one is refused FOR.
+   * ------------------------------------------------------------------- */
+  it("refuses a fully qualified private name as an outbound target", () => {
+    expect(outcome("https://metadata.google.internal./computeMetadata/v1/", remote)).toBe(
+      "url_private_address"
+    );
+    expect(outcome("https://vault.corp./v1/secret", remote)).toBe("url_private_address");
+    expect(outcome("https://nas.local./media.mp4", remote)).toBe("url_private_address");
+  });
+
+  it("makes a fully qualified loopback name ASK for both permissions", () => {
+    /*
+     * The sharp edge of F7. Classified "public", `localhost.` never reached the
+     * loopback branch at all, so neither the source opt-in nor the deployment
+     * check was consulted and a hosted instance accepted a URL aimed at itself.
+     * The four options objects below are the same four the rest of this suite
+     * uses, and the dotted spelling must now answer exactly as `localhost` does.
+     */
+    expect(outcome("https://localhost.:9200/_search", remote)).toBe("url_loopback_not_permitted");
+    expect(outcome("https://localhost.:9200/_search", optedInButHosted)).toBe(
+      "url_loopback_not_local_deployment"
+    );
+    expect(outcome("https://localhost.:9200/_search", localWithoutOptIn)).toBe(
+      "url_loopback_not_permitted"
+    );
+    expect(outcome("https://localhost.:9200/_search", local)).toBe("ok");
+    // http to a loopback name is the documented exemption, and it still is.
+    expect(outcome("http://addon.localhost./manifest.json", local)).toBe("ok");
+    expect(outcome("http://addon.localhost./manifest.json", remote)).toBe(
+      "url_loopback_not_permitted"
+    );
+  });
+
+  it("refuses a redirect into a fully qualified private name", () => {
+    const result = checkUrl(
+      "https://metadata.google.internal./computeMetadata/v1/",
+      remote,
+      "https://addon.example.com/manifest.json"
+    );
+    expect(result.ok).toBe(false);
+    expect(!result.ok && result.reason).toBe("url_private_address");
+  });
+
+  it("refuses a redirect into an IPv4 address wearing a translation prefix", () => {
+    const result = checkUrl(
+      "https://[64:ff9b::a9fe:a9fe]/latest/meta-data/",
+      remote,
+      "https://addon.example.com/manifest.json"
+    );
     expect(result.ok).toBe(false);
     expect(!result.ok && result.reason).toBe("url_private_address");
   });

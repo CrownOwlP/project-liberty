@@ -30,7 +30,66 @@ Changes to auth, authorization, provider resolution, URL fetching, secrets, admi
 
 ## Review record — PL-0702, provider and URL security
 
-### Scope examined
+**The findings register for this task is `docs/SECURITY_REVIEW_PROVIDER_URL.md`.**
+It is organised by the five named classes and states, per class, what was examined
+and by what method. This section is the summary that lives beside the controls; the
+register is the evidence.
+
+### Round two (2026-09-17) — what the second pass found and executed
+
+The first pass, recorded below, states that nothing was executed. The second pass
+ran a differential probe over 29 hostile host spellings, a `fetchJson` redirect
+probe, a request-reflection measurement, a Zod issue-serialisation probe and a
+resolve-scaffold smuggling probe, then kept 11 of those as regressions. It found
+three defects that a reading pass had missed twice, all three in code the first
+pass had read and passed:
+
+**F7 — a fully qualified hostname bypassed the private-host allowlist AND the
+loopback gate. High. Fixed.** `new URL()` strips a trailing dot from an IP literal
+and KEEPS it on a domain, so `metadata.google.internal.`, `vault.corp.`,
+`nas.local.` and `localhost.` matched no comparison in `classifyHost` and came out
+`public`. The loopback case is the worse half: classified `public`, a loopback name
+never reaches the branch that demands a source opt-in and a local deployment, so
+*both* permissions went unasked. Driven through the real session boundary in the
+hosted configuration, all four were published to the client as playable
+`session.candidates[].uri`. Fixed by stripping the DNS root label ahead of every
+comparison; an empty label is refused rather than repaired.
+
+**F8 — IPv6 translation prefixes carrying a private IPv4 address classified as
+public. Medium. Fixed.** `classifyIPv6` detects IPv4-mapped and IPv4-compatible
+addresses by testing that the first five groups are zero. `64:ff9b::/96` (NAT64
+well-known), `2002::/16` (6to4) and `::ffff:0:0/96` (IPv4-translated) embed an IPv4
+address without that zero prefix, so `[64:ff9b::a9fe:a9fe]` — the cloud metadata
+address — classified `public`. Fixed by decoding the embedded address and asking
+`classifyIPv4` about it, which is strictly correct rather than merely stricter: the
+same prefixes wrapping 8.8.8.8 still classify `public`, and a test says so.
+
+**F9 — refused request-field names were reflected verbatim and unbounded into the
+reason trail. Low. Fixed.** The session request schema is `.strict()`, and the
+`unrecognized_keys` detail was every client-chosen key name at full length. Measured:
+a 100 KiB property name produced a 100,060-character `detail`, returned in the 400
+body and carried into logs. The same class F5 fixed on the outbound side; the
+inbound side had no equivalent. Capped at 64 characters per name and 8 names, with
+the withheld count stated. It caps rather than redacts because an unrecognised key
+is a rights event and the field name is the diagnosis.
+
+**Still open, and outside this task's `allowedPaths` — see the register for file,
+line and owner.** **F10:** the production-reachable session route reads an unbounded
+request body while the development-only resolve scaffold beside it caps one; fixing
+it needs a reason code that does not exist and therefore a change to
+`docs/API_CONTRACTS.md`, so it needs a task owning both paths at once. **F11:** R5
+below, now measured — a 1,000,000-character candidate `id` produced a 2,002,555-byte
+response; the bound belongs in `packages/contracts`. **F12:** `hostOnAllowlist` in
+`packages/media-inspection` does not fold the root label either, which fails *closed*
+and so is not a bypass, but is the same inconsistency seen from the other side.
+
+**A1 below is now a weaker acceptance than when it was written.** F1, F7 and F8 are
+three defects of one shape — host-*string* comparison getting a spelling wrong — in
+one function. That is evidence about the approach. R1's resolve-and-pin adoption is
+the remedy and still has no owner; it is the most important open item on this
+surface.
+
+### Round one — scope examined
 
 - `packages/provider-sdk/**` — `url-policy.ts`, `http.ts`, `client.ts`, `mapping.ts`, `source.ts`, `protocol.ts`.
 - `apps/web/src/app/api/**` — `health`, `v1/catalog/home`, `v1/playback/resolve`, `v1/playback/session`.

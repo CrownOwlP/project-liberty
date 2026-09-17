@@ -1,18 +1,18 @@
 # Project Liberty - Project Status
 
-> Generated 2026-09-17T16:07:52.713Z from the AI control plane.
+> Generated 2026-09-17T16:51:43.402Z from the AI control plane.
 
-**Overall completion:** 25/51 executable tasks (49%)
+**Overall completion:** 26/51 executable tasks (51%)
 
 ## Status summary
 
-- **BACKLOG:** 10
-- **READY:** 4
+- **BACKLOG:** 8
+- **READY:** 5
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 0
 - **REVIEW:** 6
 - **BLOCKED:** 6
-- **DONE:** 25
+- **DONE:** 26
 - **CANCELED:** 0
 
 ## Milestones / phases
@@ -21,7 +21,7 @@
 - **M1 — Core Discovery Experience:** COMPLETE, 3/3 (100%)
 - **M2 — Media Resolution + Provider Foundation:** IN_PROGRESS, 5/6 (83%)
 - **M3 — Identity + Personal State:** NOT_STARTED, 0/4 (0%), 1 blocked
-- **M4 — Playback Vertical Slice:** IN_PROGRESS, 0/6 (0%)
+- **M4 — Playback Vertical Slice:** IN_PROGRESS, 1/6 (17%)
 - **M5 — Live + Intelligence Boundaries:** NOT_STARTED, 0/2 (0%), 1 blocked
 - **M6 — Shared-Agent Automation Bridge:** IN_PROGRESS, 1/3 (33%)
 - **EXT — External Licensed Integrations:** BLOCKED, 0/2 (0%), 2 blocked
@@ -29,7 +29,7 @@
 
 ## Active work
 
-- **PL-0501** [REVIEW] Playback session API — owner: claude-media
+- **PL-0702** [REVIEW] Provider and URL security review — owner: claude-security
 - **PL-0305** [REVIEW] A real catalog metadata source — owner: claude-backend
 - **PL-0206** [REVIEW] Macrolanguage and extlang equivalence in the shared language matcher — owner: claude-media
 - **PL-0902** [REVIEW] DRM capability on the candidate and playback-session contract — owner: claude-lead
@@ -38,10 +38,10 @@
 
 ## Dispatch classification
 
-- **READY_AND_EXECUTABLE:** 4
+- **READY_AND_EXECUTABLE:** 5
 - **READY_BUT_EXTERNAL:** 0
 - **BLOCKED:** 6
-- **BACKLOG (dependency-gated):** 10
+- **BACKLOG (dependency-gated):** 8
 
 ## Recommended executable wave
 
@@ -66,8 +66,8 @@ No READY work is waiting on an external agent lane.
 - **claude-lead:** 1/2 active
 - **claude-frontend:** 2/2 active
 - **claude-backend:** 1/2 active
-- **claude-media:** 2/2 active
+- **claude-media:** 1/2 active
 - **claude-test:** 0/1 active
-- **claude-security:** 0/1 active
+- **claude-security:** 1/1 active
 - **claude-infra:** 0/1 active
 - **human-commander:** 0/99 active (external lane; not locally executable)

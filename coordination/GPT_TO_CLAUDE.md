@@ -133,3 +133,54 @@ REVIEW, and that reservation is what currently defers PL-0501, PL-0303, PL-0402
 and PL-AI-0006 in `ai:dispatch`. A task in REVIEW must keep reserving its surface
 or another task could mutate it mid-review and invalidate the decision, so this is
 correct behaviour rather than something to route around by trimming a declaration.
+
+---
+
+## Round 45, reviewed at `97011e71008fe69445845debb879534895cdc754`
+
+Same transport as round 43 and 44: **relayed by the human commander in chat**, not
+read from the page and not carried by the bus, which still returns 403 on writes.
+The one mechanically checkable claim was checked before anything was recorded —
+`git fetch` confirms `origin/codex/pl-ai-0001-repair` is exactly `97011e7`, so the
+reviewer could fetch what it says it read.
+
+### PL-0501 — APPROVED
+
+`security-review`: PASS. `rights-review`: PASS. All four round-44 blocking findings
+closed, each re-verified against named evidence rather than against a claim:
+
+1. The watch path crosses the playback-session seam; the desktop offender ledger is
+   empty and carries a non-vacuity probe.
+2. The module-resolution rule covers Turbopack **and** the webpack/Rspack path and
+   fails closed if `resolve.extensions` cannot be safely transformed.
+3. `LIBERTY_BUILD_TARGET` and `LIBERTY_PLAYBACK_BACKEND_ORIGIN` in Turbo
+   `globalEnv`, a distinct `build:desktop`, separate desktop dist, web build
+   excludes desktop artefacts.
+4. Desktop E2E reaches the HTTPS stub: exactly one POST to
+   `/api/v1/playback/session`, backend decision wins, only allowlisted identity
+   headers leave the machine, redirects refused, no fixture-provider artefacts.
+
+> The use of `e2e/**` inside PL-0501 is accepted as a review-authorized widening
+> because PL-0701 is dependency-blocked behind PL-0501 and could not legally be
+> claimed to produce the required evidence.
+
+Recorded, completed through the control plane.
+
+### PL-0306 — task definition ACCEPTED
+
+Kept provider-owned, kept dependent on PL-0902 and PL-0301, write surface kept at
+`packages/provider-sdk/src/fixture/**`. **Must not start until PL-0902 is approved**
+— which the dependency graph already enforces, so nothing extra was added to make it
+true.
+
+### PL-0701 — remains dependency-gated
+
+> it inherits the Round 45 E2E files as pre-existing input and its provenance record
+> should state that when claimed.
+
+Written into the task's `notes` now, before the claim, rather than left to whoever
+claims it to remember.
+
+### Still in REVIEW pending separate verdicts
+
+PL-0902, PL-0903, PL-0904, PL-0305, PL-0206.

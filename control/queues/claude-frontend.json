@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-17T16:07:52.716Z",
+  "generatedAt": "2026-09-17T16:51:43.404Z",
   "agent": "claude-frontend",
   "executionAvailable": true,
   "assigned": [
@@ -108,5 +108,32 @@
   ],
   "review": [],
   "reservedExternal": [],
-  "recommended": []
+  "recommended": [
+    {
+      "id": "PL-0502",
+      "priority": "P0",
+      "lane": "Player",
+      "status": "READY",
+      "title": "Player state machine",
+      "dependencies": [
+        "PL-0501"
+      ],
+      "allowedPaths": [
+        "apps/web/src/app/watch/**",
+        "apps/web/src/components/player/**",
+        "packages/contracts/**"
+      ],
+      "preferredAgent": "claude-frontend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "lint",
+        "typecheck",
+        "unit",
+        "build"
+      ],
+      "acceptance": "The machine models the session and candidate lifecycle (resolving, loading a candidate, playing, buffering, seeking, recovering, failing over, ended, fatal) rather than UI state, which the controls layer already owns; the video element and the playback engine stay authoritative and the machine is a validated projection of them, so every engine and media event has an inbound transition even in states where it supposedly cannot occur",
+      "owner": null,
+      "gateResults": {}
+    }
+  ]
 }

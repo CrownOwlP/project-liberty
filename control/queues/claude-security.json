@@ -1,8 +1,41 @@
 {
-  "generatedAt": "2026-09-17T16:07:52.717Z",
+  "generatedAt": "2026-09-17T16:51:43.405Z",
   "agent": "claude-security",
   "executionAvailable": true,
-  "assigned": [],
+  "assigned": [
+    {
+      "id": "PL-0702",
+      "priority": "P0",
+      "lane": "Security",
+      "status": "REVIEW",
+      "title": "Provider and URL security review",
+      "dependencies": [
+        "PL-0301",
+        "PL-0501"
+      ],
+      "allowedPaths": [
+        "packages/provider-sdk/**",
+        "apps/web/src/app/api/**",
+        "docs/SECURITY.md",
+        "docs/SECURITY_REVIEW_PROVIDER_URL.md"
+      ],
+      "preferredAgent": "claude-security",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "security-review",
+        "rights-review"
+      ],
+      "acceptance": "A findings register exists at docs/SECURITY_REVIEW_PROVIDER_URL.md enumerating every finding across the five named classes -- SSRF, secret exposure, redirect handling, allowlist enforcement, and rights bypass -- each with a disposition of RESOLVED (with the commit and the test that now fails without the fix) or ACCEPTED (with the reason, the residual risk, and who accepted it). AN EMPTY REGISTER IS NOT A PASS. The register must state, per class, what was examined and by what method, so that 'no finding' is distinguishable from 'not looked for'; a class examined by reading alone must say so rather than implying a test covered it. Every RESOLVED entry needs a regression that fails against the pre-fix tree, because a security fix without a test that would have caught the bug is indistinguishable from a refactor. Every ACCEPTED entry that touches credentials, licensing or an irreversible production change is an escalation under control/policies.json escalation.humanOnly and may NOT be accepted by an agent; it is recorded as OPEN-ESCALATED and named in the handoff. Out of scope and to be listed as such rather than silently skipped: anything requiring a real licensed provider or live credentials (PL-0302, PL-0602), and the desktop sidecar trust boundary already ruled on in PL-0901 and reviewed under PL-0501.",
+      "owner": "claude-security",
+      "gateResults": {},
+      "acceptanceSupersededAtClaim": "SSRF, secret exposure, redirect, allowlist, and rights-bypass findings are resolved or explicitly accepted",
+      "acceptanceAmendedBeforeClaim": "AMENDED 2026-09-17 BY claude-lead, BEFORE THE CLAIM, AND NOT AT A REVIEWER'S REQUEST -- flagged to gpt-architect for confirmation rather than treated as settled. The original clause, preserved verbatim in acceptanceSupersededAtClaim, was: 'SSRF, secret exposure, redirect, allowlist, and rights-bypass findings are resolved or explicitly accepted'. That sentence is satisfied by an agent reporting that it found nothing, which under invariant 8 is the shape of a fabricated gate rather than a passed one: the only two gates on this task are security-review and rights-review, both judgement gates, and neither has a command whose exit code can contradict a wrong answer. The amendment does not lower the bar or narrow the scope -- the same five classes, the same surface -- it makes the existing bar falsifiable, by requiring the method to be published alongside the conclusion and by refusing an empty register as evidence. If the reviewer considers a pre-claim acceptance amendment by the implementing lead improper even in the stricter direction, this is the record to point at, and the original clause is recoverable from the field above.",
+      "implementationAgent": "claude-security",
+      "updatedAt": "2026-09-17T16:51:43.386Z",
+      "implementationBaseSha": "97011e71008fe69445845debb879534895cdc754",
+      "surfaceWidenedAtStart": "WIDENED 2026-09-17 by claude-lead at the start of the round, before any code was written, and recorded rather than performed quietly. The amended acceptance requires a findings register at docs/SECURITY_REVIEW_PROVIDER_URL.md and the task's surface did not contain that path, so the task as declared could not satisfy the task as accepted. One new file, created by this task, owned by no other task. This widening adds a deliverable's own path; it does not reopen any reviewed code surface."
+    }
+  ],
   "review": [],
   "reservedExternal": [],
   "recommended": []

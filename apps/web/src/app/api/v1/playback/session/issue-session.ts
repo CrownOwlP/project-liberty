@@ -137,7 +137,7 @@ function issueReason(issue: z.ZodIssue): PlaybackSessionReason {
   if (issue.code === "unrecognized_keys") {
     /* Sorted so the message is a function of the SET of extra keys rather than
      * of the order the client happened to serialise them in. */
-    const keys = [...issue.keys].sort(compareCodePoint).join(", ");
+    const keys = describeRefusedKeys(issue.keys);
     const where = issue.path.length === 0 ? "the request" : issue.path.join(".");
     return playbackReason(
       "request_field_not_permitted",
@@ -147,6 +147,60 @@ function issueReason(issue: z.ZodIssue): PlaybackSessionReason {
 
   const where = issue.path.length === 0 ? "request" : issue.path.join(".");
   return playbackReason("request_malformed", `${where}: ${issue.message}`);
+}
+
+/**
+ * The longest a single refused key is reproduced, and the most that are named.
+ *
+ * 64 characters matches what `@liberty/provider-sdk`'s `checkUrl` caps a
+ * hostile HOSTNAME to in the reason trail, and for the same reason: a name is
+ * identifiable to a human long before it is complete, and the remainder was
+ * never diagnostic. Eight keys is past the point where a list is still a
+ * diagnosis rather than a dump -- a client with eight unexpected fields is
+ * sending the wrong request, not a nearly-right one.
+ */
+const REFUSED_KEY_CHARS = 64;
+const REFUSED_KEYS_NAMED = 8;
+
+/**
+ * The refused keys, named but BOUNDED.
+ *
+ * PL-0702 F9. `issue.keys` is a list of property names a CLIENT chose, and this
+ * string is copied verbatim into a `PlaybackSessionReason.detail` -- which is
+ * returned in the 400 body and carried into the structured reason trail, and
+ * from there into logs and dashboards. Unbounded, it is a 1:1 amplifier a
+ * client can aim at our own log storage with one request: a body carrying a
+ * single 100 KiB property name measured a 100 KiB `detail`, and neither this
+ * endpoint nor the envelope in front of it caps the request body.
+ *
+ * Exactly the class the provider SDK already fixed on the outbound side, where
+ * an addon-chosen hostname is capped at 64 characters before it reaches the
+ * same trail. The inbound side had no equivalent, which is the asymmetry rather
+ * than a new threat: the two boundaries that copy a hostile string into a
+ * reason now agree about how much of one they repeat.
+ *
+ * It caps rather than redacts, because the name is the diagnosis -- a client
+ * sending `uri` or `playbackUrl` to this endpoint is the RIGHTS event the
+ * `request_field_not_permitted` code exists to make visible, and a reason that
+ * refused to say which field would make that event unreadable. What is dropped
+ * is the tail of an over-long name and the count of a long list, and the count
+ * is stated rather than silently discarded so the message never understates
+ * what the request contained.
+ *
+ * The truncation marker is deliberately not a character a JSON key can end in
+ * by coincidence being ambiguous with one: `...` after exactly 64 characters is
+ * readable as "this was cut" by a human, and no consumer parses this field.
+ */
+function describeRefusedKeys(keys: readonly string[]): string {
+  const sorted = [...keys].sort(compareCodePoint);
+  const named = sorted
+    .slice(0, REFUSED_KEYS_NAMED)
+    .map((key) =>
+      key.length <= REFUSED_KEY_CHARS ? key : `${key.slice(0, REFUSED_KEY_CHARS)}...`
+    )
+    .join(", ");
+  const withheld = sorted.length - REFUSED_KEYS_NAMED;
+  return withheld > 0 ? `${named} (and ${String(withheld)} more)` : named;
 }
 
 /**

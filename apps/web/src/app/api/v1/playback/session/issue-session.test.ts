@@ -165,6 +165,54 @@ describe("what the endpoint will not accept", () => {
     expect(response.reasons[0].detail).toContain("manifestUri");
   });
 
+  it("names a refused field without reproducing an unbounded one", async () => {
+    /*
+     * PL-0702 F9. `issue.keys` is a list of property names the CLIENT chose,
+     * and the detail built from it is returned in the 400 body and carried into
+     * the structured reason trail -- so, uncapped, it was a 1:1 amplifier
+     * pointed at our own log storage. Measured before the fix: a body carrying
+     * one 100 KiB property name produced a 100,060-character `detail`, and
+     * neither this endpoint nor the envelope in front of it caps the body.
+     *
+     * The assertion is deliberately two-sided. An upper bound alone would be
+     * satisfied by dropping the names entirely, and the name is the DIAGNOSIS:
+     * a client sending `playbackUrl` to this endpoint is the rights event the
+     * `request_field_not_permitted` code exists to make visible.
+     */
+    const huge = "X".repeat(100_000);
+    const response = await issuePlaybackSession(
+      { contentId: CONTENT_ID, capabilities: CAPABILITIES, [huge]: 1, playbackUrl: "https://evil.test/x.m3u8" },
+      FIXED
+    );
+
+    expect(response.outcome).toBe("denied");
+    expect(response.reasons[0].code).toBe("request_field_not_permitted");
+    const detail = response.reasons[0].detail;
+    // Bounded: two keys, each capped, plus the surrounding sentence.
+    expect(detail.length).toBeLessThan(300);
+    expect(detail).not.toContain(huge);
+    // Still diagnostic: the field a client would most like to smuggle is named.
+    expect(detail).toContain("playbackUrl");
+    // And the over-long one is named as far as it is reproduced, then marked.
+    expect(detail).toContain("XXXXXXXX");
+    expect(detail).toContain("...");
+  });
+
+  it("states how many refused fields it did not name, rather than dropping them silently", async () => {
+    const body: Record<string, unknown> = { contentId: CONTENT_ID, capabilities: CAPABILITIES };
+    for (let index = 0; index < 20; index++) body[`extra${String(index).padStart(2, "0")}`] = index;
+
+    const response = await issuePlaybackSession(body, FIXED);
+
+    expect(response.reasons[0].code).toBe("request_field_not_permitted");
+    const detail = response.reasons[0].detail;
+    expect(detail).toContain("extra00");
+    expect(detail).toContain("extra07");
+    // The ninth onwards are counted, not listed -- and the count is the truth.
+    expect(detail).not.toContain("extra08");
+    expect(detail).toContain("(and 12 more)");
+  });
+
   it("answers malformed input with a well-formed denial instead of throwing", async () => {
     /* Every one of these is something a real client has sent to a real API. A
      * throw here would be a 500 with no reason trail, which invariant 4 forbids
@@ -445,6 +493,45 @@ describe("outcomes", () => {
     expect(codesFor(response, "plaintext")).toEqual(["url_plaintext_http_not_loopback"]);
     expect(codesFor(response, "internal")).toEqual(["url_private_address"]);
     expect(codesFor(response, "magnet")).toEqual(["url_scheme_not_http"]);
+  });
+
+  it("drops a candidate whose source is a FULLY QUALIFIED private or loopback name", async () => {
+    /*
+     * PL-0702 F7, asserted where it was reachable rather than only where it was
+     * caused. The defect was in `classifyHost`, and `packages/provider-sdk`'s
+     * own suite pins it there -- but a classifier returning the wrong class is
+     * only a bug because of what this boundary does with it, and that is the
+     * claim worth a test of its own: this is the last gate before a URI becomes
+     * a `session.candidates[].uri` that a player fetches.
+     *
+     * Every name below is the same name as its dotless spelling to a resolver.
+     * `new URL()` keeps the trailing root dot on a domain, so each one missed
+     * every string comparison in the policy, classified `public`, and was
+     * PUBLISHED. `localhost.` is the sharp one: classified `public` it never
+     * reached the loopback branch, so neither the source opt-in nor
+     * `localDeployment: false` above was consulted -- a hosted deployment
+     * handed a client a URL aimed at the Liberty server's own ports.
+     *
+     * Asserted as a `granted` response with `good` alone rather than as an
+     * `unavailable`, because "the bad ones are dropped AND the good one still
+     * ships" is the property; a gate that refused everything would also make an
+     * assertion about absence pass.
+     */
+    const response = await issue([
+      authorized({ id: "fqdn-metadata", uri: "https://metadata.google.internal./v1/token" }),
+      authorized({ id: "fqdn-corp", uri: "https://vault.corp./v1/secret/data.mpd" }),
+      authorized({ id: "fqdn-loopback", uri: "https://localhost.:9200/internal.mpd" }),
+      authorized({ id: "nat64", uri: "https://[64:ff9b::a9fe:a9fe]/latest/meta-data.mpd" }),
+      GOOD
+    ]);
+
+    expect(response.outcome).toBe("granted");
+    if (response.outcome !== "granted") return;
+    expect(response.session.candidates.map((entry) => entry.id)).toEqual(["good"]);
+    expect(codesFor(response, "fqdn-metadata")).toEqual(["url_private_address"]);
+    expect(codesFor(response, "fqdn-corp")).toEqual(["url_private_address"]);
+    expect(codesFor(response, "fqdn-loopback")).toEqual(["url_loopback_not_permitted"]);
+    expect(codesFor(response, "nat64")).toEqual(["url_private_address"]);
   });
 
   it("drops every candidate sharing an id, so a reported failure is always attributable", async () => {
