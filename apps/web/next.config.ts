@@ -1,7 +1,10 @@
 import type { NextConfig } from "next";
 import {
+  applyDesktopModuleResolution,
   buildTargetFrom,
+  distDirFor,
   extensionsFor,
+  type BundlerResolveConfiguration,
   type BuildTarget
 } from "./src/app/api/v1/playback/build-target";
 
@@ -35,6 +38,7 @@ export const BUILD_TARGET_ENV_VAR = "LIBERTY_BUILD_TARGET";
  */
 export function nextConfigFor(target: BuildTarget): NextConfig {
   const resolveExtensions = extensionsFor(target);
+  const distDir = distDirFor(target);
 
   return {
     /*
@@ -88,24 +92,88 @@ export function nextConfigFor(target: BuildTarget): NextConfig {
      * module resolution is untouched framework default and this change cannot
      * regress it.
      */
-    ...(resolveExtensions === null ? {} : { turbopack: { resolveExtensions: [...resolveExtensions] } })
+    ...(resolveExtensions === null ? {} : { turbopack: { resolveExtensions: [...resolveExtensions] } }),
+
+    /*
+     * THE SAME SPLIT FOR WEBPACK AND RSPACK (PL-0501, round 45, correction 2).
+     *
+     * Next 16.3.1 can build this application with exactly three bundlers --
+     * `next/dist/lib/bundler.js` enumerates `Turbopack`, `Webpack` and `Rspack`
+     * and `parseBundlerArgs` selects between them. Turbopack reads the key
+     * above. Webpack and Rspack both arrive through THIS hook, because Next's
+     * Rspack integration reuses the webpack configuration path. Between the two
+     * keys, every production build command this application supports resolves
+     * the desktop override.
+     *
+     * WHY THIS BRANCH RATHER THAN REFUSING WEBPACK. The reviewer offered both:
+     * make webpack explicitly unsupported and refuse it in build configuration
+     * and CI, or implement equivalent fail-closed resolution for it. This is the
+     * second.
+     *
+     *   - A refusal protects the build commands somebody remembered to refuse.
+     *     It would have to name `--webpack`, and `NEXT_RSPACK` beside it, and
+     *     the next selector Next adds after that -- and the failure mode of a
+     *     missed name is a SUCCESSFUL build with the on-device resolver in it,
+     *     which is the outcome the correction exists to prevent. Correct
+     *     resolution has the opposite failure mode: `desktopResolveExtensionsFrom`
+     *     throws when it is handed a configuration it cannot redirect, so an
+     *     unrecognised bundler configuration fails the build instead of shipping.
+     *   - A refusal splits enforcement across this file and `.github/workflows/ci.yml`,
+     *     so the property holds only where CI runs. This holds wherever the build
+     *     runs, including on a developer's machine and inside the e2e harness --
+     *     which is what lets `e2e/` start a real desktop-target server and
+     *     compare it against the web one.
+     *   - It is testable at unit cost. `build-target.test.ts` walks the module
+     *     graph a second time using the extension list THIS HOOK produces from a
+     *     realistic webpack config, and asserts the same absences it asserts for
+     *     Turbopack. A refusal can only be tested by asserting that a build
+     *     failed.
+     *
+     * `.github/workflows/ci.yml` is therefore NOT edited by this task, and the
+     * record says the entry comes back out of `allowedPaths` if unused. It is
+     * unused.
+     *
+     * NO TURBOPACK WARNING IS PRODUCED BY DECLARING THIS, which was round 44's
+     * stated objection and is checkable rather than a matter of opinion:
+     * `next/dist/lib/turbopack-warning.js` errors only when
+     * `process.env.TURBOPACK === 'auto' && hasWebpackConfig && !hasTurboConfig`.
+     * This key is present only for the desktop target, which also sets
+     * `turbopack`, so `hasTurboConfig` is true. The web target declares neither.
+     *
+     * THE KEY IS OMITTED ENTIRELY FOR THE WEB TARGET, for the reason the
+     * Turbopack key is: the hosted build's resolution stays framework default
+     * and this mechanism cannot regress it.
+     */
+    ...(target !== "desktop"
+      ? {}
+      : {
+          webpack: (config: BundlerResolveConfiguration) => applyDesktopModuleResolution(config)
+        }),
+
+    /*
+     * A SEPARATE OUTPUT DIRECTORY FOR THE DESKTOP TARGET. See `distDirFor` in
+     * `src/app/api/v1/playback/build-target.ts` for why this is a boundary
+     * property and not housekeeping. Omitted for the web target so `.next` is
+     * untouched.
+     */
+    ...(distDir === null ? {} : { distDir })
   };
 }
 
 /**
- * Turbopack is this app's bundler (Next 16 default) and the config above is
- * what selects the implementation for it. `next build --webpack` is still a
- * supported escape hatch, and it reads a different resolver configuration
- * entirely -- so a desktop build produced that way would silently resolve
- * `playback-session-implementation.ts` and ship the on-device resolver.
+ * THE PARAGRAPH THIS REPLACES SAID THE DESKTOP TARGET WAS TURBOPACK-ONLY, AND
+ * THAT DISPOSITION WAS REFUSED ON REVIEW.
  *
- * DECLARING A `webpack` FUNCTION HERE IS NOT A FREE FIX: Next warns when a
- * webpack config is present under Turbopack, and it would add a second, untested
- * bundler path to the one place in this application where getting resolution
- * wrong is a rights exposure. The honest disposition is that THE DESKTOP TARGET
- * IS TURBOPACK-ONLY and that `--webpack` must not be used to build it; the
- * assertion in `build-target.test.ts` checks the rules this file publishes, not
- * which bundler consumed them, and it cannot see that difference.
+ * It read: "`next build --webpack` is still a supported escape hatch [...] so a
+ * desktop build produced that way would silently resolve
+ * `playback-session-implementation.ts` and ship the on-device resolver [...]
+ * the honest disposition is that THE DESKTOP TARGET IS TURBOPACK-ONLY". A
+ * statement in a comment is not a disposition, it is a hope; `gpt-architect`'s
+ * round-45 review said "do not leave a production command that builds
+ * successfully with the wrong trust boundary", and the `webpack` hook in
+ * `nextConfigFor` above is the answer. Both keys are now set for the desktop
+ * target, they cover all three bundlers Next 16.3.1 can select, and
+ * `build-target.test.ts` walks the module graph under each of them.
  */
 const nextConfig: NextConfig = nextConfigFor(buildTargetFrom(process.env[BUILD_TARGET_ENV_VAR]));
 

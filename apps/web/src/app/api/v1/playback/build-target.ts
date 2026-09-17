@@ -149,3 +149,214 @@ export function buildTargetFrom(value: string | undefined): BuildTarget {
   }
   return target;
 }
+
+/* -------------------------------------------------------------------------
+ * THE SECOND AND THIRD BUNDLERS (PL-0501, round 45)
+ *
+ * ROUND 44 LEFT A HOLE AND SAID SO IN A COMMENT; THE REVIEWER REFUSED THE
+ * COMMENT. `next.config.ts` used to state that "the desktop target is
+ * Turbopack-only" and that `next build --webpack` "must not be used to build
+ * it", which is a rule with nothing enforcing it:
+ *
+ *   "Make the build-target split fail closed under all supported production
+ *    build commands. Turbopack-only is not acceptable: `next build --webpack`
+ *    can silently resolve the on-device implementation. [...] Do not leave a
+ *    production command that builds successfully with the wrong trust
+ *    boundary."
+ *
+ * THE BRANCH TAKEN IS THE SECOND ONE THE REVIEWER OFFERED: equivalent
+ * fail-closed target resolution for webpack, rather than making webpack
+ * unsupported and refusing it in build configuration and CI. The reasoning is
+ * in `apps/web/next.config.ts` beside the hook that applies it.
+ *
+ * HOW MANY BUNDLERS THERE ARE, READ OFF NEXT'S OWN SELECTOR RATHER THAN
+ * ASSUMED. `next/dist/lib/bundler.js` (16.3.1) enumerates exactly three --
+ * `Bundler.Turbopack`, `Bundler.Webpack`, `Bundler.Rspack` -- and
+ * `parseBundlerArgs` selects between them from `--turbopack`/`--turbo`,
+ * `--webpack`, `NEXT_RSPACK`/`NEXT_TEST_USE_RSPACK` and the `TURBOPACK`
+ * environment variable, defaulting to Turbopack when nothing is set. Turbopack
+ * reads `turbopack.resolveExtensions`; webpack and Rspack both go through the
+ * `webpack` config hook, because Next's Rspack integration reuses that path. So
+ * the two mechanisms below cover the whole enumeration, and the enumeration is
+ * the argument -- not a belief about which command people use.
+ *
+ * THE INCOMING LIST IS THE GROUND TRUTH, NOT `WEB_RESOLVE_EXTENSIONS`. The
+ * desktop forms are derived from whatever extensions the bundler was already
+ * configured with, so an extension a future Next version adds gets a desktop
+ * override form automatically. Prepending a hand-written list instead would
+ * leave any unknown extension resolving to its on-device module -- the failure
+ * that is silent and open, which is the one shape this whole mechanism exists
+ * to avoid.
+ * ---------------------------------------------------------------------- */
+
+/**
+ * The part of a webpack/Rspack configuration this module touches.
+ *
+ * Structural and minimal, so nothing here depends on webpack's types -- which
+ * `apps/web` does not install and must not, since `next.config.ts` is compiled
+ * by whatever is present.
+ */
+export interface BundlerResolveConfiguration {
+  resolve?: { extensions?: string[] | undefined } | undefined;
+}
+
+/**
+ * The desktop list, derived from a bundler's own extension list.
+ *
+ * IT THROWS RATHER THAN RETURNING THE INPUT when the input is not a usable
+ * extension list. That is the fail-closed half: a bundler whose configuration
+ * this module no longer recognises is a bundler whose resolution it cannot
+ * redirect, and silently returning an unmodified list there would produce a
+ * desktop build containing the on-device resolver -- a successful build with
+ * the wrong trust boundary, which is the exact outcome the reviewer refused.
+ * A failed build is recoverable; a shipped one is not.
+ */
+export function desktopResolveExtensionsFrom(incoming: readonly string[] | undefined): string[] {
+  if (!Array.isArray(incoming) || incoming.length === 0) {
+    throw new Error(
+      "the desktop build target cannot be applied: the bundler supplied no resolve.extensions list " +
+        "to derive `.desktop` overrides from, so module resolution could not be redirected and the " +
+        "build would have contained the on-device provider resolver"
+    );
+  }
+
+  const malformed = incoming.filter(
+    (extension) => typeof extension !== "string" || !extension.startsWith(".")
+  );
+  if (malformed.length > 0) {
+    throw new Error(
+      `the desktop build target cannot be applied: resolve.extensions contains ${JSON.stringify(
+        malformed
+      )}, which are not extensions this module can derive a \`.desktop\` form for`
+    );
+  }
+
+  /* Already applied. Idempotent because Next can evaluate a config more than
+   * once in a single command (server, edge and client compilers each get one),
+   * and a second prepend would produce `.desktop.desktop.ts`. */
+  const alreadyApplied = incoming.filter((extension) =>
+    extension.startsWith(DESKTOP_MODULE_INFIX)
+  );
+  if (alreadyApplied.length > 0) return [...incoming];
+
+  return [...incoming.map((extension) => `${DESKTOP_MODULE_INFIX}${extension}`), ...incoming];
+}
+
+/**
+ * Applies the desktop target's resolution to a webpack or Rspack config.
+ *
+ * Returns the same object Next handed us, mutated in place, because that is the
+ * contract of the `webpack` hook -- a caller is entitled to have its own
+ * references to the config still be the config.
+ */
+export function applyDesktopModuleResolution<Configuration extends BundlerResolveConfiguration>(
+  config: Configuration
+): Configuration {
+  if (config === null || typeof config !== "object") {
+    throw new Error(
+      "the desktop build target cannot be applied: the bundler supplied no configuration object"
+    );
+  }
+  const resolve = config.resolve;
+  if (resolve === undefined || resolve === null || typeof resolve !== "object") {
+    throw new Error(
+      "the desktop build target cannot be applied: the bundler configuration has no `resolve` " +
+        "section, so module resolution could not be redirected"
+    );
+  }
+
+  resolve.extensions = desktopResolveExtensionsFrom(resolve.extensions);
+  return config;
+}
+
+/**
+ * Where a build target writes its artifacts.
+ *
+ * `null` for `web` means "leave `distDir` unset", which keeps the hosted build
+ * writing `.next` exactly as it always has.
+ *
+ * THE DESKTOP TARGET GETS ITS OWN DIRECTORY, and that is a trust-boundary
+ * property rather than housekeeping. Two builds of the same application with
+ * different resolution rules, writing to one directory, means the artifact on
+ * disk is whichever ran last and nothing on it says which. `next start` would
+ * then serve a web-resolved bundle out of a desktop shell, and every test that
+ * looked at `.next` would be measuring a build it did not identify. Correction 3
+ * of the round-45 review asks for exactly this in the cache dimension ("a web
+ * build must never satisfy a cached desktop build"); a shared output directory
+ * is the same confusion one layer down, and it is also what makes the two
+ * targets servable side by side, which `e2e/` needs in order to compare them.
+ *
+ * `dist/desktop` rather than `.next-desktop` for one mechanical reason: the
+ * repository's `.gitignore` ignores `.next/` and `dist/` by name, and
+ * `.gitignore` is not on this task's write surface -- so a sibling of `.next`
+ * would leave a build artifact showing up as untracked.
+ */
+export const DESKTOP_DIST_DIR = "dist/desktop";
+
+export function distDirFor(target: BuildTarget): string | null {
+  return target === "desktop" ? DESKTOP_DIST_DIR : null;
+}
+
+/* -------------------------------------------------------------------------
+ * THE DESKTOP SCRIPTS IN `apps/web/package.json`, EXPLAINED HERE BECAUSE JSON
+ * CANNOT CARRY A COMMENT
+ *
+ * `dev:desktop`, `build:desktop` and `start:desktop` all run the same five-line
+ * `node -e` program, and it does exactly two things that the plain scripts do
+ * not.
+ *
+ * 1. IT SETS `LIBERTY_BUILD_TARGET=desktop` IN THE CHILD'S ENVIRONMENT, rather
+ *    than with a `VAR=value command` prefix. That prefix is shell syntax that
+ *    Windows `cmd.exe` -- npm's default script shell there -- does not
+ *    understand, and this repository takes Windows seriously enough to have
+ *    `scripts/with-root-env.mjs` exist for a closely related reason. A
+ *    `cross-env` dependency would have done it in one word and was not added
+ *    for one script; if a second lane ever needs the same thing, adding it is
+ *    the right move and this program is the thing to delete.
+ *
+ * 2. IT RESTORES `apps/web/next-env.d.ts`. Next REGENERATES that file on every
+ *    `build` and `dev`, and the generated content names the active `distDir` --
+ *    `import "./.next/types/routes.d.ts"` for the web target and
+ *    `import "./dist/desktop/types/routes.d.ts"` for this one (see
+ *    `next/dist/lib/typescript/writeAppTypeDeclarations.js`, which offers no way
+ *    to turn it off). The file is TRACKED, so without this a desktop build would
+ *    leave a modified file behind that no task declared as a write surface, and
+ *    two developers on the two targets would flip it back and forth in every
+ *    commit. Restoring it is safe rather than merely tidy: `apps/web`'s
+ *    `tsconfig.json` sets `skipLibCheck`, so an import of a declaration file the
+ *    current build did not emit is not an error, and the web target's spelling
+ *    is the one the repository has always committed.
+ *
+ *    THE RESTORE COVERS A BUILD AND NOT A KILLED DEV SERVER, and that limit is
+ *    measured rather than assumed: the wrapper restores after the child exits
+ *    normally, and a `next dev` that Playwright's harness tears down with a
+ *    signal leaves the file rewritten to `dist/desktop/dev/...`. That is a
+ *    residue rather than a regression, because THE WEB DEV SERVER ALREADY DOES
+ *    THE SAME THING and did before this change: a development-mode e2e run with
+ *    the desktop axis switched off leaves `next-env.d.ts` pointing at
+ *    `.next/dev/...`, which is not what the repository has committed either.
+ *    `git checkout apps/web/next-env.d.ts` is the whole remedy for both, and
+ *    the durable fix -- untracking a file Next regenerates on every build -- is
+ *    a decision about `.gitignore` and `next-env.d.ts`, neither of which is on
+ *    this task's write surface.
+ * ---------------------------------------------------------------------- */
+
+/* -------------------------------------------------------------------------
+ * ONE MORE CONSEQUENCE OF `dist/desktop`, RECORDED WHERE THE DIRECTORY IS
+ * CHOSEN
+ *
+ * `apps/web/eslint.config.mjs` ignores `.next/**` and `node_modules/**` and
+ * nothing else, so once a desktop build exists `npm run lint` starts linting
+ * the EMITTED BUNDLE -- hundreds of `require()` and unused-`exports` errors
+ * about generated JavaScript. CI does not hit it today (the `validate` job
+ * lints before it builds, and never builds the desktop target at all), which is
+ * exactly the kind of "green because of the order the steps happen to run in"
+ * that this repository has been bitten by before.
+ *
+ * The fix is `--ignore-pattern "dist/**"` on `apps/web`'s `lint` script, which
+ * is inside this task's write surface. THE BETTER HOME IS `globalIgnores` IN
+ * `eslint.config.mjs`, beside the `.next/**` entry it belongs next to, and that
+ * file is NOT on this task's surface -- so the script carries it and this
+ * paragraph says where it should move. Moving it is a one-line change for
+ * whoever next holds that file.
+ * ---------------------------------------------------------------------- */
