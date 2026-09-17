@@ -251,3 +251,60 @@ pass without narrowing the class.
 `wikidata.live.test.ts` hits the real service, is excluded by the package's vitest
 config, is reachable only through a separate script, and was run deliberately — 3
 passed, 20.4 s — but is not what the `unit` gate rests on.
+
+---
+
+# Round 45.1 — the non-blocking finding, filed
+
+Round 45 addressed the four blocking corrections on PL-0501 and did **not** action
+the non-blocking one. That is now corrected, and it is a task rather than a code
+change on purpose, because the reviewer placed the fact with the provider:
+
+> Create a provider-owned task for the fixture provider protection fact. The
+> fixture adapter, not PL-0501, should emit `{ state: "clear" }` when that fact is
+> genuinely known. PL-0501 may keep `PROTECTION_NOT_STATED` as the conservative
+> fallback until that provider task lands.
+
+**PL-0306** — *Fixture provider states the protection fact it actually knows*.
+BACKLOG, lane Provider, `claude-backend` preferred, gated
+`typecheck`/`unit`/`rights-review`. Surface is exactly
+`packages/provider-sdk/src/fixture/**`; the two contracts files are
+`reviewDependencies`, not writes. It depends on **PL-0902** as well as PL-0301,
+because the field it populates is defined in a contract that is still in REVIEW,
+and a fixture that sets a field whose shape may still move would have to be
+rewritten.
+
+The acceptance clause names four ways the task could be done wrongly, because each
+is a plausible shortcut: PL-0501 special-casing the fixture provider id instead
+(that is provider-specific logic outside `@liberty/provider-sdk`, which invariant 3
+forbids); shipping `clear` without observing `requiresContentDecryptionModule`
+return false (an untested `clear` is indistinguishable from an untested `unknown`);
+deleting the `PROTECTION_NOT_STATED` fallback once its only current user stops
+needing it (that fails open for the next adapter); and giving any *other* adapter a
+protection fact (for a real provider the honest value is `unknown`, and asserting
+`clear` would be a rights misstatement rather than a defaulting decision).
+
+`PROTECTION_NOT_STATED` stays in PL-0501 exactly as you permitted.
+
+## Two things about `ai:validate` output that are not requests for your time
+
+**Removed, because the widening made them false.** PL-0501 carried
+`e2e/tests/playback-session.api.spec.ts` and `e2e/src/contract.ts` as
+`reviewDependencies`. Round 45 moved `e2e/**` into `allowedPaths`, which makes both
+entries redundant — `allowedPaths` is always part of the reviewed surface — and
+`ai:validate` had been saying so on every run. They are gone. The reviewed surface
+is unchanged by this; only the declaration is.
+
+**Left standing, deliberately.** `ai:validate` reports that PL-0501's
+`implementationBaseProvenance` claims 24 commits and 31 changed files in its window
+while recomputing over the current surface finds 30 and 52. That warning is
+**true and should stay true**. The published window describes the surface as it was
+at reconciliation; round 45 widened the surface afterwards, on your corrections. The
+only way to make the warning go away is to hand-edit a published provenance figure,
+which is the move PL-0703 was blocked for. The figures are stale by a mechanism the
+control plane is correctly reporting, and the window's endpoints — which are what a
+review range actually binds to — have not moved.
+
+Board after this change: 51 tasks. `ai:validate`, `ai:sync`, `repo:validate` and
+`ai:status` all pass. Nothing moved state; PL-0501, PL-0902, PL-0903, PL-0904,
+PL-0305 and PL-0206 are all still in REVIEW awaiting you.

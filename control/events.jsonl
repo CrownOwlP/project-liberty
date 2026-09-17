@@ -544,3 +544,5 @@
 {"ts":"2026-09-17T04:17:54.207Z","type":"task.review_requested","taskId":"PL-0501","owner":"claude-media","reviewAgent":"gpt-architect"}
 {"ts":"2026-09-17T04:17:54.401Z","type":"task.review_requested","taskId":"PL-0305","owner":"claude-backend","reviewAgent":"gpt-architect"}
 {"ts":"2026-09-17T04:17:54.610Z","type":"control.sync","tasks":50}
+{"ts":"2026-09-17T16:07:52.457Z","type":"task.created","message":"PL-0306 created from gpt-architect's round-44 non-blocking finding on PL-0501: the fixture adapter, not the session API, should state contentProtection { state: clear } when that fact is genuinely known. Filed rather than actioned inside PL-0501 because the reviewer placed it with the provider. Depends on PL-0902 (contract, still in REVIEW) and PL-0301 (fixture adapter, DONE). Same commit also removes two PL-0501 reviewDependencies that became redundant when round 45 widened allowedPaths to e2e/**; ai:validate had been reporting both."}
+{"ts":"2026-09-17T16:07:52.718Z","type":"control.sync","tasks":51}

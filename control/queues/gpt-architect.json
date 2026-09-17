@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-17T04:17:54.608Z",
+  "generatedAt": "2026-09-17T16:07:52.714Z",
   "agent": "gpt-architect",
   "executionAvailable": false,
   "assigned": [],
@@ -72,8 +72,6 @@
         "packages/contracts/src/shared/runtime.ts",
         "apps/web/src/app/api/deployment-environment.ts",
         "apps/web/src/components/player/playback-session.ts",
-        "e2e/tests/playback-session.api.spec.ts",
-        "e2e/src/contract.ts",
         "docs/DESKTOP_PLAYBACK.md",
         "docs/API_CONTRACTS.md",
         "docs/CONTENT_RIGHTS.md",

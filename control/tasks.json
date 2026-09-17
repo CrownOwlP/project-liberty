@@ -1800,8 +1800,6 @@
         "packages/contracts/src/shared/runtime.ts",
         "apps/web/src/app/api/deployment-environment.ts",
         "apps/web/src/components/player/playback-session.ts",
-        "e2e/tests/playback-session.api.spec.ts",
-        "e2e/src/contract.ts",
         "docs/DESKTOP_PLAYBACK.md",
         "docs/API_CONTRACTS.md",
         "docs/CONTENT_RIGHTS.md",
@@ -3034,6 +3032,35 @@
         ],
         "obligationsThatFollow": "Wikidata's structured data is CC0, but access is not unconditional: the Wikimedia User-Agent policy requires an informative User-Agent with contact information or the client may be IP-blocked without notice, and browser-impersonating agents are forbidden. That is why CatalogDocumentOptions.userAgent is required with no default, and it must stay that way. Text outside the main, property and lexeme namespaces is CC BY-SA rather than CC0, so the distinction has to survive into whatever is ingested."
       }
+    },
+    {
+      "id": "PL-0306",
+      "priority": "P1",
+      "lane": "Provider",
+      "status": "BACKLOG",
+      "title": "Fixture provider states the protection fact it actually knows",
+      "dependencies": [
+        "PL-0902",
+        "PL-0301"
+      ],
+      "allowedPaths": [
+        "packages/provider-sdk/src/fixture/**"
+      ],
+      "reviewDependencies": [
+        "packages/contracts/src/shared/drm.ts",
+        "packages/contracts/src/domains/playback.ts"
+      ],
+      "preferredAgent": "claude-backend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "rights-review"
+      ],
+      "acceptance": "The fixture provider adapter emits contentProtection { state: \"clear\" } for its own candidates, because for a fixture the absence of DRM is a fact the adapter genuinely knows rather than something it is guessing. Created from gpt-architect's round-44 non-blocking finding on PL-0501, in the reviewer's own words: \"Create a provider-owned task for the fixture provider protection fact. The fixture adapter, not PL-0501, should emit { state: \\\"clear\\\" } when that fact is genuinely known. PL-0501 may keep PROTECTION_NOT_STATED as the conservative fallback until that provider task lands.\" So the deliverable is a narrowing of where the fact is asserted, not a behaviour change in routing: PROTECTION_NOT_STATED stays in PL-0501 as the fallback for every adapter that has not stated a protection fact, and this task removes the fixture from the set that needs it. Required, and each is a way this task could be done wrongly: the fixture must set the field itself rather than PL-0501 special-casing the fixture provider id, because a consumer branching on a provider identity is exactly the provider-specific logic outside @liberty/provider-sdk that invariant 3 forbids; requiresContentDecryptionModule must be observed returning false for a fixture candidate and the observation recorded, since state !== \"clear\" is the whole point of the encoding and an untested clear is indistinguishable from an untested unknown; the fallback path in PL-0501 must be left in place and a test must still cover an adapter that states nothing, because deleting the fallback once its only current user stops needing it would fail open for the next adapter; and no other adapter may be given a protection fact here, because for a real provider the honest value is unknown and asserting clear for one would be a rights misstatement rather than a defaulting decision. Out of scope: any change to contract shape (PL-0902 owns it), to ranking (@liberty/media-engine), or to capability routing.",
+      "notes": "Provenance: gpt-architect CHANGES_REQUESTED on PL-0501, reviewed at 27d3a03389781256451c5e52d72520132cfa76c1, non-blocking/follow-up section. Filed as a task rather than actioned inside PL-0501 on the reviewer's explicit instruction that the fact belongs to the provider, not to the session API. Depends on PL-0902 because the field this task populates is defined there and PL-0902 is still in REVIEW; a fixture that sets a field whose contract is not yet approved would have to be rewritten if the contract moves.",
+      "owner": null,
+      "gateResults": {}
     },
     {
       "id": "PL-0706",
