@@ -207,3 +207,36 @@ omits the licence URL so a signed endpoint cannot reach a reason trail.
 
 PL-0902 was named in round 43 as the gate on native-vs-DRM player routing. That gate
 is open.
+
+---
+
+## Round 48, reviewed at `38bd7fa1f071e16bc8f64c7090957b0ed033afc6`
+
+Relayed by the human commander. Origin confirmed at that sha before recording, and
+every named symbol located in `apps/web/src/components/player` first.
+
+### PL-0903 — APPROVED · `architecture-review` PASS
+
+Engine unavailability is a **lifecycle** fact, not a libmpv-specific union member:
+`engine_load_failed` covers both the web engine failing to start and libmpv failing
+to load. Engine identity sits *beside* the reason in `EngineUnavailableDetail`, whose
+`code` is a namespaced string-or-null rather than a Shaka-number-shaped field, so a
+native numeric failure cannot be assigned into the Shaka fields through this route.
+Per-source refusal stays separate: availability is a session decision, `canPlay`
+refusal is per candidate. Engine unavailability never enters the failover scheduler
+as retryable.
+
+### PL-0904 — APPROVED · `architecture-review` PASS
+
+`PlaybackError` is engine-discriminated; the native variant's `code`, `category` and
+`categoryName` are **literal null**, not a widened `number | null`, so reading a fault
+requires narrowing by engine. Native diagnostics live in `NativeFault`. The approved
+discipline is the honest null: native failures stay **unclassified** when no honest
+mapping to `PlaybackFailureKind` exists, and no plausible classification is fabricated
+to avoid one. `END_FILE`, redirect, EOF and quit are control flow, not candidate
+failures. `packages/media-engine` still learns neither engine's numbers.
+
+### Mandatory PL-0502 cleanup
+
+Five items, recorded on PL-0502's acceptance rather than reopening either task, which
+the reviewer stated explicitly. See `acceptanceAmendedBeforeClaim`.

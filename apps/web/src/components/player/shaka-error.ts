@@ -67,17 +67,22 @@ export type PlaybackErrorOrigin =
  * when an engine is added. A union that moves for both reasons answers neither
  * question.
  *
- * Against PL-0903's `PlaybackEngineId`: ONE axis, spelled twice only because
- * PL-0903 and PL-0904 were implemented in parallel branches that could not
- * import each other. They denote the same fact and their members are identical
- * on purpose. THE MERGE IS ONE-DIRECTIONAL: `PlaybackEngineId` should become
- * `export type PlaybackEngineId = PlaybackErrorEngine`, not the reverse,
- * because this module imports nothing and `playback-controller.ts` already
- * imports it — aliasing the other way would pull the Shaka-injection port in
- * `engine.ts` into the error vocabulary's import graph, which is the
- * dependency direction `docs/DESKTOP_PLAYBACK.md` §3 exists to forbid. Nothing
- * mechanical asserts the two agree yet, because the other declaration does not
- * exist on this branch; the assertion belongs to whichever task lands second.
+ * Against PL-0903's `PlaybackEngineId`: ONE axis, and since PL-0502 ONE
+ * DECLARATION. The two were spelled twice only because PL-0903 and PL-0904 were
+ * implemented on parallel branches that could not import each other, and they
+ * always denoted the same fact. The merge landed in the direction this comment
+ * called for and for the reason it gave: `engine.ts` now says
+ * `export type PlaybackEngineId = PlaybackErrorEngine`, not the reverse, because
+ * this module imports nothing while `engine.ts` is the Shaka-injection port —
+ * aliasing the other way would pull that port into the error vocabulary's import
+ * graph, which is the dependency direction `docs/DESKTOP_PLAYBACK.md` §3 exists
+ * to forbid.
+ *
+ * Nothing mechanical asserts the two agree any more BECAUSE THERE IS NOTHING
+ * LEFT TO ASSERT: an alias cannot disagree with the thing it aliases, which is
+ * strictly stronger than a test that two hand-written unions still match. THIS
+ * IS THE ONE PLACE AN ENGINE IS ADDED. Adding a member here adds it to
+ * `PlaybackEngineId` and to `EngineUnavailableDetail` in the same edit.
  */
 export type PlaybackErrorEngine = "web-shaka" | "native-mpv";
 

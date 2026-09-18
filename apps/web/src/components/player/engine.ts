@@ -20,6 +20,14 @@
  * They are pinned to Shaka 5.2.x; see `shaka-engine.ts` for the adapter.
  * ---------------------------------------------------------------------- */
 
+/*
+ * TYPE-ONLY, AND THE ONLY IMPORT IN THIS FILE. `shaka-error.ts` imports nothing
+ * at all, so this edge adds no module to anyone's graph and cannot cycle, and
+ * `import type` is erased entirely at emit. See `PlaybackEngineId` for why the
+ * alias runs in this direction rather than the other.
+ */
+import type { PlaybackErrorEngine } from "./shaka-error";
+
 /**
  * A Shaka player configuration fragment, passed through untouched.
  *
@@ -99,6 +107,7 @@ export interface ShakaEngine {
  */
 export type EngineLoader = () => Promise<ShakaEngine>;
 
+
 /* -------------------------------------------------------------------------
  * The engine-NEUTRAL half (PL-0903)
  *
@@ -127,15 +136,29 @@ export type EngineLoader = () => Promise<ShakaEngine>;
  * An IDENTITY FOR THE REASON TRAIL, NEVER A SWITCH. Nothing may branch on this
  * to choose behaviour; §3's rule is that which engine is playing is a fact about
  * the build target, not a fact the application reasons over.
+ *
+ * AN ALIAS, NOT A SECOND LITERAL UNION, SINCE PL-0502. It was written out here
+ * as its own two-member literal union only because PL-0903 and PL-0904 were
+ * implemented on parallel branches that could not import each other, which left
+ * two independently editable declarations of one engine identity — the kind of
+ * pair where the one nothing reads is the one that drifts.
+ *
+ * THE DIRECTION IS THE ONE `shaka-error.ts` ALREADY IDENTIFIED and it is not a
+ * coin toss: that module imports nothing, while this one is the Shaka-injection
+ * port. Aliasing the other way would pull `ShakaPlayerHandle` and `EngineLoader`
+ * into the error vocabulary's import graph, which is the dependency direction
+ * `docs/DESKTOP_PLAYBACK.md` §3 exists to forbid. So `PlaybackErrorEngine` is
+ * the declaration and this is the name the port layer knows it by. Adding an
+ * engine means editing one union, in one file.
  */
-export type PlaybackEngineId = "web-shaka" | "native-mpv";
+export type PlaybackEngineId = PlaybackErrorEngine;
 
 /**
  * Why an engine is not usable, in terms of WHAT FAILED rather than of WHO.
  *
  * THE MEMBER NAMES THE FAILURE; THE ENGINE IS CARRIED BESIDE IT. This is the
  * whole decision PL-0903 exists to take, and the alternative it rejects is worth
- * stating: a `libmpv_unavailable` member added next to `browser_unsupported`
+ * stating: a `libmpv_unavailable` member added next to `host_unsupported`
  * would leave one union naming one engine's failure modes and one library's, so
  * every later engine would add its own member and the consumers would grow a
  * switch over engines that §3 forbids one layer up. The engine's identity and
@@ -154,24 +177,24 @@ export type PlaybackEngineId = "web-shaka" | "native-mpv";
  *       failed. THIS IS THE MEMBER A NATIVE ENGINE REPORTS WHEN THE LIBRARY IS
  *       MISSING, and it names no engine, no library and no browser.
  *
- *   - `browser_unsupported` — THE ENGINE RAN AND THE HOST CANNOT SUPPORT IT.
+ *   - `host_unsupported` — THE ENGINE RAN AND THE HOST CANNOT SUPPORT IT.
  *     A capability answer, not a fault.
  *       web: `isBrowserSupported()` is false — no Media Source Extensions, or no
  *       EME where the content needs it.
  *       native: `mpv_initialize()` failed, or no usable video output exists on
  *       this machine.
- *     THE SPELLING IS A KNOWN WART AND IT IS NOT RENAMED HERE. The neutral name
- *     for this class is "the host cannot run this engine"; `browser_unsupported`
- *     says "browser" and is therefore a misnomer the moment the engine is a
- *     native library. It is kept because `playback-machine.test.ts` constructs
- *     this literal in a fixture, that file is outside PL-0903's `allowedPaths`,
- *     and a rename would fail `tsc` in a file this task may not repair — which
- *     would also break the requirement that the existing web reasons keep their
- *     present tests. A SECOND, NEUTRALLY SPELLED MEMBER WAS NOT ADDED FOR IT:
- *     two names for one class is the coupling above, not a fix for it. The
- *     rename belongs to PL-0502, whose `allowedPaths` is
- *     `apps/web/src/components/player/**` and therefore covers both this file
- *     and the fixture, and it is a pure rename with no behaviour in it.
+ *     THE MEMBER IS SPELLED FOR THE HOST, NOT FOR ONE KIND OF HOST. PL-0903 had
+ *     to leave it spelled for a browser — the fixture in
+ *     `playback-machine.test.ts` that constructs the literal was outside that
+ *     task's `allowedPaths`, so the spelling could not be changed without
+ *     failing `tsc` in a file it could not repair. PL-0502 owns
+ *     `apps/web/src/components/player/**` and completed the migration in one
+ *     change: the type, the controller, the machine, the tests, the reason trail
+ *     and the comments. NO ALIAS AND NO SECOND SPELLING WAS KEPT — one lifecycle
+ *     fact gets one name, and two names for one class is the coupling above
+ *     rather than a fix for it. The BEHAVIOUR IS UNCHANGED: this still means the
+ *     engine loaded and ran far enough to determine that the current host cannot
+ *     support it.
  *
  *   - `attach_failed` — THE ENGINE RAN ON THIS HOST AND COULD NOT BE BOUND TO
  *     ITS OUTPUT SURFACE.
@@ -194,7 +217,7 @@ export type PlaybackEngineId = "web-shaka" | "native-mpv";
  */
 export const ENGINE_UNAVAILABLE_REASONS = [
   "engine_load_failed",
-  "browser_unsupported",
+  "host_unsupported",
   "attach_failed"
 ] as const;
 

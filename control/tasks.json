@@ -1948,7 +1948,7 @@
       "id": "PL-0502",
       "priority": "P0",
       "lane": "Player",
-      "status": "READY",
+      "status": "REVIEW",
       "title": "Player state machine",
       "dependencies": [
         "PL-0501"
@@ -1956,7 +1956,8 @@
       "allowedPaths": [
         "apps/web/src/app/watch/**",
         "apps/web/src/components/player/**",
-        "packages/contracts/**"
+        "packages/contracts/**",
+        "docs/DESKTOP_PLAYBACK.md"
       ],
       "preferredAgent": "claude-frontend",
       "reviewAgent": "gpt-architect",
@@ -1966,9 +1967,44 @@
         "unit",
         "build"
       ],
-      "acceptance": "The machine models the session and candidate lifecycle (resolving, loading a candidate, playing, buffering, seeking, recovering, failing over, ended, fatal) rather than UI state, which the controls layer already owns; the video element and the playback engine stay authoritative and the machine is a validated projection of them, so every engine and media event has an inbound transition even in states where it supposedly cannot occur",
-      "owner": null,
-      "gateResults": {}
+      "acceptance": "The machine models the session and candidate lifecycle (resolving, loading a candidate, playing, buffering, seeking, recovering, failing over, ended, fatal) rather than UI state, which the controls layer already owns; the video element and the playback engine stay authoritative and the machine is a validated projection of them, so every engine and media event has an inbound transition even in states where it supposedly cannot occur. MANDATORY CONSOLIDATION, added 2026-09-18 by gpt-architect's round-48 direction when it approved PL-0903 and PL-0904. The reviewer was explicit that these are NOT reasons to reopen either of those tasks: PL-0502 owns the whole player surface and finishes the consolidation while implementing the machine. (1) RENAME browser_unsupported to an engine-neutral lifecycle reason, host_unsupported, as a COMPLETE migration -- type member, controller, machine, tests, reason trail, docs and comments -- with NO alias kept. One lifecycle fact gets one name. Behaviour is unchanged: the engine loaded and ran far enough to determine that the current host cannot support it. (2) TIGHTEN EngineState's unavailable variant from `detail?: EngineUnavailableDetail` to `detail: EngineUnavailableDetail | null`. Every producer must state whether detail was established; omission must not be the unknown representation. This is the same required-and-nullable discipline the contracts already apply to licenseUrl and to media facts. (3) UNIFY the duplicate engine-id vocabularies. PlaybackEngineId and PlaybackErrorEngine describe the same two values. Make one authoritative and derive or alias the other in the dependency-safe direction the code comments already identify. Two independently editable literal unions for one engine identity must not remain. (4) DO NOT WEAKEN PL-0904 while integrating: never make native code/category `number | null`; do not flatten mpvError into Shaka-numbered fields; do not invent a native failure classification without evidence; keep aborted engine control flow out of candidate failure accounting. (5) PRESERVE the existing no-clock/deterministic state-machine discipline and the bounded failover policy already present in playback-machine.ts.",
+      "owner": "claude-frontend",
+      "gateResults": {
+        "typecheck": {
+          "status": "pass",
+          "at": "2026-09-18T22:17:08.654Z",
+          "by": "claude-frontend",
+          "commitSha": "38bd7fa1f071e16bc8f64c7090957b0ed033afc6",
+          "evidence": "npx turbo run typecheck --force at the integrated tree, exit 0, 10 of 10 tasks and 0 cached. Forced because a cached pass proves a previous tree. The typecheck is load-bearing for two of the reviewer's three consolidations rather than incidental: PlaybackEngineId is now 'export type PlaybackEngineId = PlaybackErrorEngine' so the two vocabularies cannot drift without a compile error, and PLAYBACK_PHASES and PLAYBACK_EVENT_TYPES are pinned exhaustive against their types by Record<..., true>, so adding a phase or an event without extending the totality matrix is a tsc failure rather than a silently uncovered pair."
+        },
+        "lint": {
+          "status": "pass",
+          "at": "2026-09-18T22:17:08.737Z",
+          "by": "claude-frontend",
+          "commitSha": "38bd7fa1f071e16bc8f64c7090957b0ed033afc6",
+          "evidence": "npx turbo run lint --force, exit 0, 10 of 10 and 0 cached."
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-09-18T22:17:08.824Z",
+          "by": "claude-frontend",
+          "commitSha": "38bd7fa1f071e16bc8f64c7090957b0ed033afc6",
+          "evidence": "npx turbo run test --force, exit 0, 17 of 17 and 0 cached, 2332 passed 1 skipped, against 2331 at the base -- net +1, being 3 new tests less the 2 this task replaced. Player suite 16 files, 257 tests, from 254. Also npm run test:scripts exit 0 (38+67+16+35) and npm run repo:validate exit 0. RED-THEN-GREEN RE-RUN BY THE LEAD rather than quoted from the implementer, on the assertion that matters most: the original acceptance requires every engine and media event to have an inbound transition in every state, and the test that previously covered it only checked that send() did not throw, so it would have passed with the wildcard deleted. The replacement drives all 210 phase x event pairs and requires each to be either ROUTED or COUNTED, with the 77 counted pairs written down per phase in UNROUTED_BY_PHASE so unreachability is recorded rather than assumed. Deleting the session region's '*': { actions: 'noteUnroutedEvent' } makes it fail with 'expected { idle: [], resolving: [], ...(8) } to deeply equal { idle: [ ...(14) ], ...(9) }' -- all 77 collapsing to empty -- plus a second failure; restoring it returns 42 passed. The one phase excluded from the matrix, failingOver, is eventless, and its exclusion is itself a test: a 252-event storm must never leave the machine resting there."
+        },
+        "build": {
+          "status": "pass",
+          "at": "2026-09-18T22:17:08.910Z",
+          "by": "claude-frontend",
+          "commitSha": "38bd7fa1f071e16bc8f64c7090957b0ed033afc6",
+          "evidence": "npx turbo run build --force, exit 0, 10 of 10 and 0 cached."
+        }
+      },
+      "acceptanceOriginal": "The machine models the session and candidate lifecycle (resolving, loading a candidate, playing, buffering, seeking, recovering, failing over, ended, fatal) rather than UI state, which the controls layer already owns; the video element and the playback engine stay authoritative and the machine is a validated projection of them, so every engine and media event has an inbound transition even in states where it supposedly cannot occur",
+      "acceptanceAmendedBeforeClaim": "AMENDED 2026-09-18 AT THE REVIEWER'S EXPLICIT DIRECTION, before the claim, under the heading 'MANDATORY PL-0502 CLEANUP' in gpt-architect's round-48 verdict at 38bd7fa1f071e16bc8f64c7090957b0ed033afc6. This is unlike the PL-0702 amendment, which this lead made on its own initiative and flagged for confirmation: here the five items are the reviewer's own words and the amendment records them where the implementer will read them. The original clause is preserved verbatim in acceptanceOriginal. Nothing was removed from it; the consolidation is additive.",
+      "implementationAgent": "claude-frontend",
+      "updatedAt": "2026-09-18T22:17:09.002Z",
+      "implementationBaseSha": "38bd7fa1f071e16bc8f64c7090957b0ed033afc6",
+      "surfaceWidenedDuringImplementation": "WIDENED 2026-09-18 by claude-lead during implementation, one path: docs/DESKTOP_PLAYBACK.md. THE TASK AS DECLARED COULD NOT SATISFY THE TASK AS ACCEPTED. gpt-architect's cleanup item 1 names the migration's extent explicitly -- 'type/member, controller, machine, tests, reason trail, docs and comments' -- and docs/DESKTOP_PLAYBACK.md is the document that carries the reason trail's vocabulary. Its line 872 asserted the union is '\"engine_load_failed\" | \"browser_unsupported\" | \"attach_failed\" in playback-controller.ts', which after this task is wrong twice over: the member is now host_unsupported, and PL-0903 had already moved the union to engine.ts. The implementer stopped at the surface boundary and reported the stale lines rather than reaching outside, which is the behaviour the path rules exist to produce; the lead widened and made the edit. No active task reserves this file -- PL-0901, which declares it, is DONE. WHAT THE EDIT DELIBERATELY DOES NOT DO: lines 873 and 1326 are HISTORICAL framing that explain why PL-0903 existed, and the old name is part of that explanation. Deleting it would destroy the reasoning; leaving it unmarked would leave a second live spelling. Both are rewritten to name the old member as history and the new one as current, so the record survives and only one name is authoritative."
     },
     {
       "id": "PL-0503",
@@ -4333,7 +4369,7 @@
     },
     {
       "reviewAgent": "gpt-architect",
-      "owner": "claude-frontend",
+      "owner": null,
       "gateResults": {
         "typecheck": {
           "status": "pass",
@@ -4348,12 +4384,19 @@
           "by": "claude-frontend",
           "commitSha": "a074b986e899ba8b91d018c4bb71f8c12089b608",
           "evidence": "npx turbo run test --force at integrated head a074b986e899ba8b91d018c4bb71f8c12089b608, exit 0, 15 of 15 and 0 cached, 2172 passed. THE FINDING IS THAT TWO OF THE THREE MEMBERS WERE ALREADY ENGINE-NEUTRAL AND NOBODY HAD NOTICED: engine_load_failed is exactly 'libmpv did not load' and names no engine, no library and no host. The gap was never a missing member; it was that the union was DOCUMENTED as three observed browser situations, so a native adapter author would reasonably conclude none applied and invent one. So this is a re-specification plus the missing detail channel, not a new member -- and adding libmpv_unavailable beside browser_unsupported was refused, because that would leave the union naming one engine's failure modes and one library's, which is the coupling the task exists to remove. 'The engine loaded and refused this source' was also refused: unavailability is decided once before any source, while a per-source refusal is per-candidate and feeds failover, and DESKTOP_PLAYBACK section 3 already owns it as PlayerRefusalCode on canPlay. That refusal is what satisfies the no-retryable constraint BY CONSTRUCTION rather than by a guard. CONSTRAINT PROVEN IN THREE LAYERS: the reason set and the failure-kind set are disjoint and neither contains network_transient; the live route was traced -- an unavailability does reach classifyPlaybackFailure as ENGINE_ERROR and returns null because describePlaybackError of a non-shaka error yields category null and code null -- and the detail's code is a namespaced STRING precisely so an mpv number cannot be assigned where the classifier reads Shaka's scale; and the unavailability state path terminates at fatal without touching the scheduler. Five mutations were each confirmed to fail, including collapsing the missing-engine case onto browser_unsupported and building the error from a Shaka timeout."
+        },
+        "architecture-review": {
+          "status": "pass",
+          "at": "2026-09-18T21:41:33.331Z",
+          "by": "gpt-architect",
+          "commitSha": "38bd7fa1f071e16bc8f64c7090957b0ed033afc6",
+          "evidence": "gpt-architect APPROVED at remote head 38bd7fa1f071e16bc8f64c7090957b0ed033afc6, confirmed on origin by git fetch and every named symbol located in apps/web/src/components/player before recording. architecture-review PASS. Engine unavailability is represented in LIFECYCLE terms rather than by adding a libmpv-specific union member, so engine_load_failed covers both failing to obtain or start the web engine and libmpv failing to load. Engine identity is carried BESIDE the reason in EngineUnavailableDetail rather than encoded into the reason member, and EngineUnavailableDetail.code is a namespaced string-or-null rather than a Shaka-number-shaped field, so a native engine's own numeric failure cannot be assigned to the Shaka code/category fields through this route. Per-source refusal stays separate from engine unavailability: engine availability is a session/startup decision while canPlay refusal is per candidate and participates in routing and failover. Engine unavailability does not enter the failover scheduler as network_transient or otherwise become retryable, which is the property that keeps a missing engine from being retried as though it were a flaky network. Existing web behaviour is intact. TRANSCRIBED BY CLAUDE from the review relayed by the human commander; the gpt-architect GitHub connector still returns 403 on repository writes."
         }
       },
       "id": "PL-0903",
       "priority": "P1",
       "lane": "Player",
-      "status": "REVIEW",
+      "status": "DONE",
       "title": "An engine-unavailable reason that can say libmpv did not load",
       "description": "EngineUnavailableReason in apps/web/src/components/player/playback-controller.ts is Shaka-shaped. Its members describe a browser that cannot run the web engine, and browser_unsupported is a misnomer the moment the engine is a native library in a desktop shell rather than a script in a page. There is no member that means the native player failed to load. A NativePlayerAdapter would have to report a false reason or invent one locally, and either makes the failure less debuggable than the web path it sits beside.",
       "notes": "THE VOCABULARY, NOT A NEW MEMBER. Adding a libmpv_unavailable member beside browser_unsupported would leave the union naming one engine's failure modes and one library's, which is the same coupling one layer up. The question for the reviewer is whether the reason should describe WHAT FAILED in engine-neutral terms -- the engine could not be loaded, the platform cannot run this engine, the engine loaded and refused this source -- with the engine's own detail carried beside it rather than encoded in the member name. COUPLED TO PL-0904 AND DELIBERATELY SEPARATE. Both are the same observation in two places: the player's error vocabulary assumes Shaka. They are separate tasks because they have different consumers -- unavailability is a startup decision the controller makes before any source is loaded, while a playback error is a per-attempt outcome the failover scheduler classifies -- and because merging them would put one review range across two behaviours. Whoever takes the second should read the first's verdict. DO NOT BREAK THE FAILOVER CLASSIFICATION. packages/media-engine consumes playback failures and treats network_transient as the only retryable class; an unavailability reason that leaks into that path as retryable would make the player retry a library that is not installed.",
@@ -4378,12 +4421,57 @@
       ],
       "acceptance": "The engine-unavailable vocabulary can represent a native engine failing to load without naming Shaka, a browser or libmpv in the member itself, and the existing web reasons keep their present meaning and their present tests. An engine's own detail is carried beside the reason rather than encoded in it. No unavailability reason reaches the failover scheduler as retryable. The rename or widening is proven by a regression that fails if browser_unsupported is reintroduced as the only way to say an engine is missing.",
       "implementationAgent": "claude-frontend",
-      "updatedAt": "2026-09-16T01:22:43.556Z",
-      "implementationBaseSha": "a3e7d13323cda0479aa5352efb7bdb5dea973125"
+      "updatedAt": "2026-09-18T21:41:33.571Z",
+      "implementationBaseSha": "a3e7d13323cda0479aa5352efb7bdb5dea973125",
+      "review": {
+        "taskId": "PL-0903",
+        "implementationAgent": "claude-frontend",
+        "implementationOwner": "claude-frontend",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "38bd7fa1f071e16bc8f64c7090957b0ed033afc6",
+        "reviewedBaseSha": "a3e7d13323cda0479aa5352efb7bdb5dea973125",
+        "reviewedTreeHash": "27d9c2a1aab647754b1d44842ff9b431039dbda549d58d1dc9fc10af474cb288",
+        "reviewedFileCount": 6,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [
+          "docs/DESKTOP_PLAYBACK.md",
+          "apps/web/src/components/player/shaka-engine.ts",
+          "apps/web/src/components/player/playback-machine.ts"
+        ],
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-09-18T21:41:33.473Z",
+        "evidence": "APPROVED at 38bd7fa1f071e16bc8f64c7090957b0ed033afc6, architecture-review PASS. The approval turns on keeping two different questions apart: whether an engine exists at all, and whether a given candidate can be played by it. Recorded with the reviewer's mandatory PL-0502 cleanup attached to PL-0502 rather than reopening this task -- the reviewer was explicit that the cleanup items are NOT reasons to reopen PL-0903 or PL-0904. TRANSCRIBED BY CLAUDE from the relayed review."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PL-0903",
+          "implementationAgent": "claude-frontend",
+          "implementationOwner": "claude-frontend",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "38bd7fa1f071e16bc8f64c7090957b0ed033afc6",
+          "reviewedBaseSha": "a3e7d13323cda0479aa5352efb7bdb5dea973125",
+          "reviewedTreeHash": "27d9c2a1aab647754b1d44842ff9b431039dbda549d58d1dc9fc10af474cb288",
+          "reviewedFileCount": 6,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "docs/DESKTOP_PLAYBACK.md",
+            "apps/web/src/components/player/shaka-engine.ts",
+            "apps/web/src/components/player/playback-machine.ts"
+          ],
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-09-18T21:41:33.473Z",
+          "evidence": "APPROVED at 38bd7fa1f071e16bc8f64c7090957b0ed033afc6, architecture-review PASS. The approval turns on keeping two different questions apart: whether an engine exists at all, and whether a given candidate can be played by it. Recorded with the reviewer's mandatory PL-0502 cleanup attached to PL-0502 rather than reopening this task -- the reviewer was explicit that the cleanup items are NOT reasons to reopen PL-0903 or PL-0904. TRANSCRIBED BY CLAUDE from the relayed review."
+        }
+      ],
+      "completedAt": "2026-09-18T21:41:33.571Z"
     },
     {
       "reviewAgent": "gpt-architect",
-      "owner": "claude-frontend",
+      "owner": null,
       "gateResults": {
         "typecheck": {
           "status": "pass",
@@ -4398,12 +4486,19 @@
           "by": "claude-frontend",
           "commitSha": "a074b986e899ba8b91d018c4bb71f8c12089b608",
           "evidence": "npx turbo run test --force at integrated head a074b986e899ba8b91d018c4bb71f8c12089b608, exit 0, 15 of 15 and 0 cached, 2172 passed; 16 new cases, web suite 759 to 775 in its own worktree. THE ENGINE-SPECIFIC CODE IS NOT A FIELD BESIDE A TAG, IT IS INSIDE A VARIANT THE TAG UNLOCKS: a tag alone leaves error.code readable without anyone consulting it, while a discriminated union makes the narrow mandatory and the wrong read a build failure. Three independent barriers keep an mpv number off the classified fields -- code is typed as the literal null on the native variant, fault is a union so an unnarrowed read does not compile, and dispatch narrows on engine so the Shaka classifier cannot receive a native error. Mutation M4 is the one worth reading: it takes TWO simultaneous mutations to make an mpv 6 come back as rights_unverifiable, and the first barrier catches it alone. THE NATIVE BRANCH CLASSIFIES NOTHING AND THAT IS THE ANSWER RATHER THAN A STUB: stop and redirect are taken by aborted a branch up, what remains is an mpv error with no honest table, and the http-status branch was deliberately NOT written even though it would be engine-neutral, because mpv surfaces no HTTP status and the only way to produce one is parsing FFmpeg's English error text, which the failover contract forbids. PL-0204's approval turned on the budget being honest about what it could not classify. BOTH TEST FILES ARE APPEND-ONLY: git diff shows 149 and 90 insertions and ZERO deleted lines, so every pre-existing Shaka regression passes unmodified."
+        },
+        "architecture-review": {
+          "status": "pass",
+          "at": "2026-09-18T21:41:33.652Z",
+          "by": "gpt-architect",
+          "commitSha": "38bd7fa1f071e16bc8f64c7090957b0ed033afc6",
+          "evidence": "gpt-architect APPROVED at 38bd7fa1f071e16bc8f64c7090957b0ed033afc6, verified on origin and in the tree before recording. architecture-review PASS. PlaybackError is engine-discriminated: the Shaka variant carries Shaka 5.2.x numbering and the native-mpv variant does NOT borrow those numbers -- code, category and categoryName are literal null, not a widened number-or-null -- so reading an engine-specific fault requires narrowing by engine. Native mpv diagnostics are preserved in NativeFault rather than discarded. THE HONEST-NULL DISCIPLINE IS THE APPROVED PART: native failures remain UNCLASSIFIED when no honest mapping to the engine-neutral PlaybackFailureKind exists, and no plausible network, decode or rights classification is fabricated merely to avoid a null. Native END_FILE stop and redirect are treated as control flow and aborted operations rather than candidate failures, and native EOF and quit cannot be constructed as playback failures through NativeFailureReason, so ordinary end-of-stream cannot be accounted against a candidate. Existing Shaka classification behaviour is unchanged, and packages/media-engine continues to consume only engine-neutral failure kinds and does not learn either engine's numeric vocabulary. TRANSCRIBED BY CLAUDE from the relayed review."
         }
       },
       "id": "PL-0904",
       "priority": "P1",
       "lane": "Player",
-      "status": "REVIEW",
+      "status": "DONE",
       "title": "Playback errors carry an origin, so a native failure is not a Shaka number",
       "description": "PlaybackError in apps/web/src/components/player/shaka-error.ts carries code and category pinned to Shaka 5.2.x numbering. A native adapter has no such numbers: libmpv reports MPV_EVENT_END_FILE with a reason and an error field, on an entirely different scale. Today a NativePlayerAdapter must either report null in both fields, which discards the only diagnostic it has, or borrow a Shaka number that means something else, which is worse. PL-0901 requires the adapter boundary to expose recoverable and fatal errors without leaking an engine type, and this is where that leaks.",
       "notes": "AN ORIGIN, SO THE NUMBER MEANS SOMETHING. The proposal the desktop document records is that an error names the engine that produced it, and that its engine-specific code is read only in that origin's terms. The reviewer should also rule on whether the classification the failover scheduler consumes -- rights, decode, source_unavailable, network_transient -- stays engine-neutral and is derived per origin, which is the shape that keeps packages/media-engine from learning about either engine. AN HONEST CONSEQUENCE, RECORDED BEFORE IT IS DISCOVERED. mpv's END_FILE error is coarser than Shaka's code pairs, so a native origin will legitimately classify to unknown more often. The scheduler already handles that: an unclassified charged attempt cannot silently reset the budget, and attemptsByCandidate and attempt_failed_unclassified exist for exactly this. Do not manufacture a false classification to avoid the unknown branch -- PL-0204's approval turned on the budget being honest about what it could not classify. COUPLED TO PL-0903, SEPARATE FOR THE REASON RECORDED THERE.",
@@ -4430,8 +4525,55 @@
       ],
       "acceptance": "A playback error names the origin that produced it, and an engine-specific code is interpretable only against that origin rather than being read on one engine's numbering. A native error can be represented without borrowing a Shaka code and without discarding the detail the engine did supply. The classification packages/media-engine consumes stays engine-neutral, derived per origin, and unchanged in meaning for every existing Shaka case, proven by the existing shaka-error regressions continuing to pass unmodified. An error that cannot be classified stays unclassified rather than being assigned a plausible class.",
       "implementationAgent": "claude-frontend",
-      "updatedAt": "2026-09-16T01:22:43.756Z",
-      "implementationBaseSha": "a3e7d13323cda0479aa5352efb7bdb5dea973125"
+      "updatedAt": "2026-09-18T21:41:33.839Z",
+      "implementationBaseSha": "a3e7d13323cda0479aa5352efb7bdb5dea973125",
+      "review": {
+        "taskId": "PL-0904",
+        "implementationAgent": "claude-frontend",
+        "implementationOwner": "claude-frontend",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "38bd7fa1f071e16bc8f64c7090957b0ed033afc6",
+        "reviewedBaseSha": "a3e7d13323cda0479aa5352efb7bdb5dea973125",
+        "reviewedTreeHash": "d48e1d8c2c602af35509d5ce562e282d27d19132035f1267d3cd170bcb2fc276",
+        "reviewedFileCount": 8,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [
+          "docs/DESKTOP_PLAYBACK.md",
+          "packages/media-engine/src/failover.ts",
+          "packages/contracts/src/domains/failover.ts",
+          "apps/web/src/components/player/playback-machine.ts"
+        ],
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-09-18T21:41:33.749Z",
+        "evidence": "APPROVED at 38bd7fa1f071e16bc8f64c7090957b0ed033afc6, architecture-review PASS. The approval turns on refusing to fabricate a classification to avoid a null, and on keeping media-engine ignorant of both engines' numeric vocabularies. The reviewer attached four DO-NOT-WEAKEN constraints to PL-0502 rather than reopening this task: never make native code/category number-or-null, do not flatten mpvError into Shaka-numbered fields, do not invent a native classification without evidence, and keep aborted engine control flow out of candidate failure accounting. Those are recorded on PL-0502. TRANSCRIBED BY CLAUDE from the relayed review."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PL-0904",
+          "implementationAgent": "claude-frontend",
+          "implementationOwner": "claude-frontend",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "38bd7fa1f071e16bc8f64c7090957b0ed033afc6",
+          "reviewedBaseSha": "a3e7d13323cda0479aa5352efb7bdb5dea973125",
+          "reviewedTreeHash": "d48e1d8c2c602af35509d5ce562e282d27d19132035f1267d3cd170bcb2fc276",
+          "reviewedFileCount": 8,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "docs/DESKTOP_PLAYBACK.md",
+            "packages/media-engine/src/failover.ts",
+            "packages/contracts/src/domains/failover.ts",
+            "apps/web/src/components/player/playback-machine.ts"
+          ],
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-09-18T21:41:33.749Z",
+          "evidence": "APPROVED at 38bd7fa1f071e16bc8f64c7090957b0ed033afc6, architecture-review PASS. The approval turns on refusing to fabricate a classification to avoid a null, and on keeping media-engine ignorant of both engines' numeric vocabularies. The reviewer attached four DO-NOT-WEAKEN constraints to PL-0502 rather than reopening this task: never make native code/category number-or-null, do not flatten mpvError into Shaka-numbered fields, do not invent a native classification without evidence, and keep aborted engine control flow out of candidate failure accounting. Those are recorded on PL-0502. TRANSCRIBED BY CLAUDE from the relayed review."
+        }
+      ],
+      "completedAt": "2026-09-18T21:41:33.839Z"
     }
   ]
 }

@@ -126,19 +126,32 @@ export type PlaybackPhase =
   | "ended"
   | "fatal";
 
-const PLAYBACK_PHASES: readonly string[] = [
-  "idle",
-  "resolving",
-  "engineLoading",
-  "loading",
-  "playing",
-  "buffering",
-  "seeking",
-  "recovering",
-  "failingOver",
-  "ended",
-  "fatal"
-];
+/**
+ * The same eleven, as a value. EXPORTED since PL-0502, because the totality rule
+ * this machine is judged on is a claim about phases BY events (see
+ * `PLAYBACK_EVENT_TYPES`) and a test cannot walk a type.
+ *
+ * Exhaustive in both directions by the same `Record` trick the event list uses:
+ * a phase missing here, or a key that is not a phase, is a `tsc` error rather
+ * than a matrix that quietly stopped covering a state.
+ */
+const PHASE_TOTALITY: Readonly<Record<PlaybackPhase, true>> = {
+  idle: true,
+  resolving: true,
+  engineLoading: true,
+  loading: true,
+  playing: true,
+  buffering: true,
+  seeking: true,
+  recovering: true,
+  failingOver: true,
+  ended: true,
+  fatal: true
+};
+
+export const PLAYBACK_PHASES: readonly PlaybackPhase[] = Object.keys(
+  PHASE_TOTALITY
+) as PlaybackPhase[];
 
 /**
  * Why the session stopped, when it stopped without playing to the end.
@@ -284,6 +297,55 @@ export type PlaybackEvent =
   | { readonly type: "MEDIA_ERROR"; readonly mediaErrorCode: number | null };
 
 export type PlaybackEventType = PlaybackEvent["type"];
+
+/**
+ * Every event type, as a VALUE, so the totality rule can be checked instead of
+ * believed.
+ *
+ * The acceptance criterion for this machine is that every engine and media event
+ * has an inbound transition in every state, INCLUDING the states where it
+ * supposedly cannot occur. That is a claim about a matrix — eleven phases by
+ * every member of `PlaybackEvent` — and a claim about a matrix cannot be checked
+ * by reading a statechart. `playback-machine.test.ts` walks this list against
+ * every phase and records, for each pair, whether the session region routed the
+ * event or the wildcard counted it. A pair that is unreachable is therefore
+ * WRITTEN SOMEWHERE AND CHECKED, rather than assumed by whoever last read the
+ * chart.
+ *
+ * DERIVED FROM THE UNION BY THE COMPILER, not maintained beside it. A
+ * `Record<PlaybackEventType, true>` is exhaustive in both directions: a member
+ * of `PlaybackEvent` missing from this object is a `tsc` error, and a key here
+ * that is not a member is also a `tsc` error. A hand-written array would be a
+ * second list, and the one that drifts is always the one nothing reads — the
+ * same argument `ENGINE_UNAVAILABLE_REASONS` makes in `engine.ts`.
+ */
+const EVENT_TYPE_TOTALITY: Readonly<Record<PlaybackEventType, true>> = {
+  START: true,
+  SESSION_RESOLVED: true,
+  SESSION_UNAVAILABLE: true,
+  RETRY: true,
+  ENGINE_STATE: true,
+  ENGINE_ERROR: true,
+  MEDIA_LOAD_START: true,
+  MEDIA_LOADED_METADATA: true,
+  MEDIA_CAN_PLAY: true,
+  MEDIA_PLAYING: true,
+  MEDIA_WAITING: true,
+  MEDIA_STALLED: true,
+  MEDIA_SEEKING: true,
+  MEDIA_SEEKED: true,
+  MEDIA_TIME_UPDATE: true,
+  MEDIA_DURATION_CHANGE: true,
+  MEDIA_PLAY: true,
+  MEDIA_PAUSE: true,
+  MEDIA_ENDED: true,
+  MEDIA_EMPTIED: true,
+  MEDIA_ERROR: true
+};
+
+export const PLAYBACK_EVENT_TYPES: readonly PlaybackEventType[] = Object.keys(
+  EVENT_TYPE_TOTALITY
+) as PlaybackEventType[];
 
 /* -------------------------------------------------------------------------
  * Context
@@ -781,6 +843,46 @@ function stopReasonFor(schedule: AttemptSchedule): PlaybackStopReason {
  * earlier. A non-fatal error is therefore here for exactly one reason. A fatal
  * one was never subject to the bound and says nothing about it.
  */
+/**
+ * The engine-unavailable line of the reason trail (product invariant 4).
+ *
+ * THIS IS WHERE `detail: EngineUnavailableDetail | null` STOPS BEING A TYPE AND
+ * STARTS BEING AN OBSERVATION. `EngineState`'s unavailable variant carries a
+ * required-and-nullable `detail`, so a producer either names the engine and its
+ * own code or WRITES `null` to say it established neither. Both readings have to
+ * reach a support engineer differently, or the discipline buys nothing: a trail
+ * that printed the reason alone read identically whichever the producer meant.
+ *
+ * `null` is reported as "no engine detail was established" rather than omitted,
+ * for exactly the reason the field is not optional — a missing clause and a
+ * clause saying nothing was learned are different claims about the producer.
+ *
+ * The detail's `code` is a NAMESPACED STRING and it is printed as one. It is
+ * never parsed, never compared to a Shaka number and never handed to
+ * `classifyPlaybackFailure`; see `EngineUnavailableDetail` for why that is a
+ * type-level guarantee rather than a habit.
+ */
+function describeEngineUnavailability(engine: EngineState): string {
+  if (engine.status !== "unavailable") {
+    /* UNREACHABLE TODAY AND CARRIED ANYWAY, the same way `engineLoading`'s last
+     * eventless branch is. All three callers of `stopWithEngineUnavailable` have
+     * already established the status — two run `mirrorEngineState` ahead of it in
+     * the same transition, and the third is guarded on the context it reads. The
+     * narrowing is still required by the compiler, and a branch that NAMES the
+     * status it actually saw turns a future routing mistake into a trail line a
+     * support engineer can read, rather than into a cast or a thrown assertion in
+     * a machine whose whole premise is that nothing it is told is an error. */
+    return `playback engine unavailable (engine reported ${engine.status})`;
+  }
+  const detail = engine.detail;
+  if (detail === null) {
+    return `playback engine unavailable: ${engine.reason}; no engine detail was established`;
+  }
+  return `playback engine unavailable: ${engine.reason}; ${detail.engine} reported ${
+    detail.code ?? "no code"
+  }`;
+}
+
 function describeCandidateFailure(
   context: PlaybackMachineContext,
   summary: PlaybackErrorSummary
@@ -1062,13 +1164,7 @@ export const playbackMachine = setup({
       stopReason: "engine_unavailable" as const,
       ...appendTrail(
         context,
-        trailEntry(
-          context,
-          "stopped",
-          context.engine.status === "unavailable"
-            ? `playback engine unavailable: ${context.engine.reason}`
-            : "playback engine unavailable"
-        )
+        trailEntry(context, "stopped", describeEngineUnavailability(context.engine))
       )
     })),
 
@@ -1931,7 +2027,9 @@ export type PlaybackActor = ReturnType<typeof createPlaybackActor>;
 export type PlaybackSnapshot = ReturnType<PlaybackActor["getSnapshot"]>;
 
 function asPhase(value: unknown): PlaybackPhase | null {
-  return typeof value === "string" && PLAYBACK_PHASES.includes(value) ? (value as PlaybackPhase) : null;
+  return typeof value === "string" && (PLAYBACK_PHASES as readonly string[]).includes(value)
+    ? (value as PlaybackPhase)
+    : null;
 }
 
 /**

@@ -70,20 +70,23 @@ export type EngineState =
        * WHOSE failure this is, and the engine's own code for it. Beside the
        * reason, never encoded in it — see `EngineUnavailableDetail`.
        *
-       * OPTIONAL, AND IT SHOULD NOT BE. This repository's stated discipline for
-       * a fact that may be unknown is required-and-nullable (PL-0207, cited
-       * again in PL-0902's notes), because an omitted field and a field that
-       * says "not established" read identically at the consumer. It is optional
-       * here for one mechanical reason: `playback-machine.test.ts` builds an
-       * `EngineState` literal without it, that file is outside PL-0903's
-       * `allowedPaths`, and a required member — even a nullable one — would fail
-       * `tsc` there. PL-0502 owns `apps/web/src/components/player/**` and can
-       * tighten this to `readonly detail: EngineUnavailableDetail | null` in the
-       * same change that renames `browser_unsupported`.
+       * REQUIRED AND NULLABLE SINCE PL-0502, which is this repository's stated
+       * discipline for a fact that may be unknown — the same shape
+       * `licenseUrl` has in `packages/contracts/src/shared/drm.ts`, and for the
+       * same reason. An OMITTED field and a field that says "not established"
+       * read identically at the consumer, so omission must not be how "unknown"
+       * is spelled: a producer that never learned whose failure this was has to
+       * WRITE `null` and thereby state it.
        *
-       * Every unavailability this controller reports carries one.
+       * It was optional under PL-0903 for one mechanical reason —
+       * `playback-machine.test.ts` built an `EngineState` literal without it and
+       * that file was outside PL-0903's `allowedPaths`. PL-0502 owns
+       * `apps/web/src/components/player/**`, so the declaration and every
+       * producer of it moved together.
+       *
+       * Every unavailability this controller reports carries a non-null one.
        */
-      readonly detail?: EngineUnavailableDetail;
+      readonly detail: EngineUnavailableDetail | null;
       readonly error: PlaybackError;
     }
   | { readonly status: "destroyed" };
@@ -120,7 +123,13 @@ export const BASELINE_ENGINE_CONFIG: EngineConfig = {
   }
 };
 
-const BROWSER_UNSUPPORTED_MESSAGE =
+/*
+ * The message for THIS engine's `host_unsupported`, and it says "browser"
+ * because this controller is the web engine and the host it ran on is a browser.
+ * The REASON is engine-neutral; a message a viewer reads does not have to be,
+ * and a native adapter writes its own.
+ */
+const WEB_SHAKA_UNSUPPORTED_MESSAGE =
   "This browser does not support the media APIs playback requires.";
 
 /** This controller is one engine, and it is always the same one. */
@@ -133,7 +142,7 @@ const WEB_SHAKA: PlaybackEngineId = "web-shaka";
  * They are finer-grained than the reason on purpose, and that is the immediate
  * payoff of carrying detail beside the reason rather than widening the reason:
  * `engine_load_failed` covers both a rejected import and a constructor that
- * threw, and `browser_unsupported` covers both "the probe said no" and "the
+ * threw, and `host_unsupported` covers both "the probe said no" and "the
  * probe itself threw". Those were indistinguishable in a bug report before this,
  * and they have completely different remedies.
  */
@@ -363,14 +372,14 @@ export class PlaybackController {
     try {
       supported = engine.isBrowserSupported();
     } catch (cause) {
-      this.#fail("browser_unsupported", "web-shaka.support_probe_threw", cause);
+      this.#fail("host_unsupported", "web-shaka.support_probe_threw", cause);
       return null;
     }
     if (!supported) {
       this.#fail(
-        "browser_unsupported",
+        "host_unsupported",
         "web-shaka.unsupported_platform",
-        new Error(BROWSER_UNSUPPORTED_MESSAGE)
+        new Error(WEB_SHAKA_UNSUPPORTED_MESSAGE)
       );
       return null;
     }

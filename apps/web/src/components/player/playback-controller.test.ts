@@ -5,6 +5,7 @@ import type {
   EngineConfig,
   EngineLoader,
   EngineUnavailableReason,
+  PlaybackEngineId,
   RawEngineStats,
   ShakaEngine,
   ShakaPlayerHandle
@@ -15,7 +16,11 @@ import {
   type EngineState,
   type PlaybackControllerEvent
 } from "./playback-controller";
-import { describePlaybackError, type PlaybackError } from "./shaka-error";
+import {
+  describePlaybackError,
+  type PlaybackError,
+  type PlaybackErrorEngine
+} from "./shaka-error";
 
 /*
  * The engine is injected, so none of this needs a browser, a DOM or an 88 MB
@@ -143,14 +148,14 @@ describe("engine loading", () => {
     expect(events.filter((event) => event.type === "error")).toHaveLength(1);
   });
 
-  it("reports an unsupported browser as a capability answer, not an error from the import", async () => {
+  it("reports a host that cannot run the engine as a capability answer, not an import error", async () => {
     const controller = new PlaybackController({ loadEngine: loaderFor(new FakePlayer(), false) });
     await controller.attach(MEDIA);
 
     const state = controller.getEngineState();
     expect(state.status).toBe("unavailable");
     if (state.status !== "unavailable") return;
-    expect(state.reason).toBe("browser_unsupported");
+    expect(state.reason).toBe("host_unsupported");
   });
 
   it("retries on the next attach instead of staying permanently dead", async () => {
@@ -421,15 +426,21 @@ describe("stats seam", () => {
 const ENGINE_PRODUCT_NOUNS = ["shaka", "mpv", "libmpv", "hls", "tauri", "electron", "dll"];
 
 /**
- * The above plus the HOST nouns. Applied to the member that means "the engine
- * could not be loaded", which is the one a native adapter needs and the one this
- * task is judged on — it must name neither an engine nor the kind of host it
- * happens to be running in.
+ * The above plus the KIND-OF-HOST nouns. EVERY member of the vocabulary is held
+ * to this list as of PL-0502, and that is the enforcement half of the rename.
  *
- * `browser_unsupported` is deliberately NOT held to this list. It contains a
- * host noun and is a known misnomer; its spelling is preserved because
- * `playback-machine.test.ts` builds it in a fixture and that file is outside
- * this task's write surface. See the union's comment in `engine.ts`.
+ * It used to exempt the capability member, which was spelled for a browser and
+ * was a known misnomer the moment the engine is a native library. PL-0502
+ * renamed it to `host_unsupported` across the type, the controller, the machine
+ * and these tests, with no alias left behind, so the exemption is gone with it:
+ * a member may name neither an engine nor the kind of host it happens to be
+ * running in.
+ *
+ * "host" itself is deliberately absent from the list. The union's subject IS the
+ * host — "this host cannot support the engine that ran" — and a word that names
+ * the subject of every member is not the coupling being tested for. What is
+ * tested for is a member that only ONE host kind, or only one engine, could ever
+ * report.
  */
 const ENGINE_AND_HOST_NOUNS = [...ENGINE_PRODUCT_NOUNS, "browser", "web", "native", "page"];
 
@@ -506,10 +517,10 @@ const NATIVE_LIBRARY_MISSING: EngineState = {
 describe("the engine-unavailable vocabulary is engine-neutral (PL-0903)", () => {
   it("says an engine is missing without naming an engine or a host", async () => {
     /*
-     * THE REGRESSION THE TASK ASKS FOR. It fails if `browser_unsupported` is
-     * ever again the only way to say an engine is missing: collapse the two
-     * cases onto that member, or rename the missing-engine member to anything
-     * that names a browser, an engine or a library, and one of these fails.
+     * THE REGRESSION THE TASK ASKS FOR. It fails if `host_unsupported` is ever
+     * again the only way to say an engine is missing: collapse the two cases
+     * onto that member, or rename the missing-engine member to anything that
+     * names a browser, an engine or a library, and one of these fails.
      *
      * This is the same path a native adapter takes for "libmpv-2.dll is not
      * loadable": the engine was never obtained, so nothing about the host or the
@@ -525,7 +536,7 @@ describe("the engine-unavailable vocabulary is engine-neutral (PL-0903)", () => 
     if (state.status !== "unavailable") return;
 
     expect(state.reason).toBe("engine_load_failed");
-    expect(state.reason).not.toBe("browser_unsupported");
+    expect(state.reason).not.toBe("host_unsupported");
     expect(namesSomething(state.reason, ENGINE_AND_HOST_NOUNS)).toEqual([]);
   });
 
@@ -554,9 +565,16 @@ describe("the engine-unavailable vocabulary is engine-neutral (PL-0903)", () => 
     expect(a.reason).not.toBe(b.reason);
   });
 
-  it("names no engine in any member of the vocabulary", () => {
+  it("names no engine and no kind of host in any member of the vocabulary", () => {
+    /*
+     * THE RENAME'S REGRESSION (PL-0502). Every member, not just the
+     * missing-engine one. Restoring the browser-spelled member — or adding any
+     * second member that names a browser, a page, the web or a native library —
+     * fails here rather than in a review.
+     */
     for (const reason of ENGINE_UNAVAILABLE_REASONS) {
       expect(namesSomething(reason, ENGINE_PRODUCT_NOUNS), reason).toEqual([]);
+      expect(namesSomething(reason, ENGINE_AND_HOST_NOUNS), reason).toEqual([]);
     }
   });
 
@@ -583,6 +601,16 @@ describe("the engine-unavailable vocabulary is engine-neutral (PL-0903)", () => 
     expect(states).toHaveLength(5);
 
     for (const { case: name, state } of states) {
+      /*
+       * REQUIRED-AND-NULLABLE (PL-0502 item 2). `detail` is not optional any
+       * more, so a producer that established nothing has to write `null` and
+       * say so. The property test below is the runtime shadow of that: an
+       * omitted member and a `null` one are indistinguishable at a consumer,
+       * and `in` is the one operator that can still tell them apart.
+       */
+      expect(Object.hasOwn(state, "detail"), name).toBe(true);
+      /* This controller always establishes one, so it is never null here. */
+      expect(state.detail, name).not.toBeNull();
       expect(state.detail?.engine, name).toBe("web-shaka");
       /* Namespaced, so a code read out of context still says whose it is. */
       expect(state.detail?.code ?? "", name).toMatch(/^web-shaka\./);
@@ -601,6 +629,37 @@ describe("the engine-unavailable vocabulary is engine-neutral (PL-0903)", () => 
     const states = await reachableUnavailableStates();
     const reasons = new Set(states.map(({ state }) => state.reason));
     expect([...reasons].sort()).toEqual([...ENGINE_UNAVAILABLE_REASONS].sort());
+  });
+});
+
+describe("one engine identity, one declaration (PL-0502 item 3)", () => {
+  /*
+   * `PlaybackEngineId` and `PlaybackErrorEngine` used to be two hand-written
+   * literal unions for one fact, spelled twice because PL-0903 and PL-0904 were
+   * built on branches that could not import each other. `engine.ts` now declares
+   * `PlaybackEngineId` as an alias of `PlaybackErrorEngine`, in the direction
+   * `shaka-error.ts`'s own comment identified: that module imports nothing, so
+   * aliasing the other way would pull the Shaka-injection port into the error
+   * vocabulary's import graph.
+   *
+   * These two declarations are the guard. Re-splitting the alias into a second
+   * literal union compiles ONLY while the two lists happen to agree; the moment
+   * one gains a member the other has not, `tsc` fails here. That is a weaker
+   * statement than "there is one union" — which a grep proves and a type cannot
+   * — and it is the strongest one a test can make.
+   */
+  const idAsErrorEngine: PlaybackErrorEngine = "native-mpv" satisfies PlaybackEngineId;
+  const errorEngineAsId: PlaybackEngineId = "web-shaka" satisfies PlaybackErrorEngine;
+
+  it("uses one vocabulary for the engine that produced a report", () => {
+    expect(idAsErrorEngine).toBe("native-mpv");
+    expect(errorEngineAsId).toBe("web-shaka");
+
+    /* The detail on an `EngineState` and the tag on a `PlaybackError` name the
+     * same engine with the same spelling, which is the point of the merge. */
+    if (NATIVE_LIBRARY_MISSING.status !== "unavailable") throw new Error("unreachable");
+    const fromDetail: PlaybackErrorEngine | undefined = NATIVE_LIBRARY_MISSING.detail?.engine;
+    expect(fromDetail).toBe("native-mpv");
   });
 });
 

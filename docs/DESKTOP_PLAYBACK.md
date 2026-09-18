@@ -869,10 +869,16 @@ authoritative in the native build exactly as the `<video>` element and Shaka are
 ### Two contract seams this mapping exposes, both now carrying task numbers
 
 1. **`EngineUnavailableReason` has no native member — [PL-0903](#12-what-this-task-did-not-do).** It is
-   `"engine_load_failed" | "browser_unsupported" | "attach_failed"` in `playback-controller.ts`, and
-   on desktop `browser_unsupported` is a misnomer while "libmpv could not be loaded" has no member at
-   all. The honest reading is that the union is Shaka-shaped, and it needs either a native member or
-   engine-neutral spelling before a native adapter can report truthfully through it.
+   `"engine_load_failed" | "host_unsupported" | "attach_failed"` in `engine.ts`, and the honest
+   reading was that the union was Shaka-shaped: it needed either a native member or engine-neutral
+   spelling before a native adapter could report truthfully through it.
+
+   **Both halves are now closed, and this paragraph is kept because the reasoning still explains the
+   shape.** PL-0903 moved the union to `engine.ts` and made `engine_load_failed` cover a native engine
+   failing to load as well as a web one, rather than adding a libmpv-specific member. PL-0502 then
+   renamed the member that was called `browser_unsupported` — a misnomer on desktop — to
+   `host_unsupported`, as a complete migration with no alias. `host_unsupported` is the only spelling;
+   the old name appears in this document only where it is describing this history.
 2. **`PlaybackError` is engine-neutral in shape but Shaka-numbered in content —
    [PL-0904](#12-what-this-task-did-not-do).** `code`, `category`
    and `categoryName` are documented as pinned to Shaka 5.2.x, and `PlaybackErrorOrigin` is
@@ -1323,7 +1329,7 @@ The commander ordered them as tasks, and this document points at them:
 | Task | What it changes | Why it exists |
 | --- | --- | --- |
 | **PL-0902** | DRM capability and requirements on the stream-candidate or playback-session contract | Today `packages/contracts/src` contains **no `drm` at all**. **This gates the capability routing in §4**: `canPlay` cannot make a reasoned DRM decision from a contract that carries no DRM field, so until it lands, §4 specifies a decision with nothing to read |
-| **PL-0903** | A generic engine-unavailable reason that can represent libmpv failing to load | `EngineUnavailableReason` in `playback-controller.ts` is Shaka-shaped — `browser_unsupported` is a misnomer on desktop and "libmpv could not be loaded" has no member at all (§6) |
+| **PL-0903** | A generic engine-unavailable reason that can represent libmpv failing to load | `EngineUnavailableReason` was Shaka-shaped — the member then called `browser_unsupported` was a misnomer on desktop and "libmpv could not be loaded" had no member at all (§6). Closed: PL-0903 generalised `engine_load_failed` and moved the union to `engine.ts`; PL-0502 renamed that member to `host_unsupported` |
 | **PL-0904** | A playback error origin and type for native failures | So mpv errors are not forced into Shaka 5.2.x numeric codes in `shaka-error.ts`, producing a trail that reads as a Shaka error category and is not one (§6) |
 
 ### Still open, and explicitly so

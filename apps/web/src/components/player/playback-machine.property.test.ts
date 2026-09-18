@@ -46,6 +46,29 @@ const ENGINE_READY: EngineState = { status: "ready" };
 const ENGINE_LOADING: EngineState = { status: "loading" };
 const ENGINE_DESTROYED: EngineState = { status: "destroyed" };
 
+/**
+ * The two readings of the unavailable variant's required-and-nullable `detail`
+ * (PL-0502 item 2), both in the storm rather than only in the example suite.
+ *
+ * `detail: null` is a producer stating that it established neither the engine
+ * nor a code; the other is one that established both. They must be equally
+ * survivable — an unavailability that ends the session must end it the same way
+ * whichever the producer could say — and the storm is where "equally" is
+ * actually tested, because the event can arrive in any phase and in any order.
+ */
+const ENGINE_UNAVAILABLE_BARE: EngineState = {
+  status: "unavailable",
+  reason: "host_unsupported",
+  detail: null,
+  error: describePlaybackError(new Error("no media source extensions"), "engine-load")
+};
+const ENGINE_UNAVAILABLE_DETAILED: EngineState = {
+  status: "unavailable",
+  reason: "engine_load_failed",
+  detail: { engine: "web-shaka", code: "web-shaka.import_rejected" },
+  error: describePlaybackError(new Error("blocked by client"), "engine-load")
+};
+
 function shakaError(init: { severity: number; category: number; code: number }) {
   return describePlaybackError(
     { severity: init.severity, category: init.category, code: init.code, data: [], handled: false },
@@ -109,6 +132,8 @@ function eventPool(candidates: readonly PlaybackCandidate[]): readonly PlaybackE
     { type: "ENGINE_STATE", state: ENGINE_LOADING },
     { type: "ENGINE_STATE", state: ENGINE_READY },
     { type: "ENGINE_STATE", state: ENGINE_DESTROYED },
+    { type: "ENGINE_STATE", state: ENGINE_UNAVAILABLE_BARE },
+    { type: "ENGINE_STATE", state: ENGINE_UNAVAILABLE_DETAILED },
     { type: "ENGINE_ERROR", error: terminalFailure() },
     { type: "ENGINE_ERROR", error: recoverableFailure() },
     { type: "ENGINE_ERROR", error: abortedFailure() },

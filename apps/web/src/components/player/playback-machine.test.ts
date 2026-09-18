@@ -4,10 +4,13 @@ import type { EngineState } from "./playback-controller";
 import { recordPlaybackEffects, type RecordedPlaybackEffects } from "./playback-effects";
 import {
   MAX_STREAMING_RECOVERIES_PER_CANDIDATE,
+  PLAYBACK_EVENT_TYPES,
+  PLAYBACK_PHASES,
   createPlaybackActor,
   playbackPhase,
   type PlaybackActor,
   type PlaybackEvent,
+  type PlaybackEventType,
   type PlaybackPhase,
   type PlaybackTrailEntry
 } from "./playback-machine";
@@ -103,9 +106,31 @@ const recoverableLegalRefusal = () =>
 const ENGINE_READY: EngineState = { status: "ready" };
 const ENGINE_LOADING: EngineState = { status: "loading" };
 const ENGINE_DESTROYED: EngineState = { status: "destroyed" };
+/**
+ * THE PRODUCER THAT USED TO OMIT `detail`, NOW STATING `null`.
+ *
+ * This literal is why `detail` was optional at all: PL-0903 could not reach this
+ * file, so it could not make the member required. PL-0502 did, and the fixture
+ * had to answer the question rather than skip it. It answers `null` on purpose —
+ * it models an engine that reported an unavailability WITHOUT naming itself or
+ * its own code, which is the case the nullable member exists for and the case a
+ * native adapter will produce first.
+ *
+ * The difference is observable in the reason trail, not just in `tsc`: see
+ * "the engine-unavailable line states whether a detail was established".
+ */
 const ENGINE_UNAVAILABLE: EngineState = {
   status: "unavailable",
-  reason: "browser_unsupported",
+  reason: "host_unsupported",
+  detail: null,
+  error: shakaError({ severity: 2, category: 7, code: 7002 })
+};
+
+/** The same unavailability, WITH the engine and its own code established. */
+const ENGINE_UNAVAILABLE_WITH_DETAIL: EngineState = {
+  status: "unavailable",
+  reason: "host_unsupported",
+  detail: { engine: "web-shaka", code: "web-shaka.unsupported_platform" },
   error: shakaError({ severity: 2, category: 7, code: 7002 })
 };
 
@@ -191,6 +216,49 @@ describe("engine readiness", () => {
     expect(h.actor.getSnapshot().context.stopReason).toBe("engine_unavailable");
     expect(h.effects.loads).toHaveLength(0);
     expect(h.effects.stops).toHaveLength(1);
+  });
+
+  it("states in the trail whether an engine detail was established (PL-0502 item 2)", () => {
+    /*
+     * WHY `detail` IS REQUIRED-AND-NULLABLE AND NOT OPTIONAL, made observable.
+     *
+     * `EngineState`'s unavailable variant used to let a producer OMIT `detail`,
+     * so "this engine did not tell us who it was" and "nobody taught this
+     * producer to say" arrived at the trail as the same silence. The member is
+     * now required and nullable — the shape `licenseUrl` has in
+     * `packages/contracts/src/shared/drm.ts` — and the two readings are two
+     * different lines in the reason trail rather than one.
+     *
+     * A type-only change would be satisfied by both fixtures compiling. This
+     * fails unless the trail actually distinguishes them.
+     */
+    const withDetail = harness();
+    withDetail.send({ type: "START" });
+    withDetail.send({ type: "SESSION_RESOLVED", session: sessionOf(["a"]) });
+    withDetail.send({ type: "ENGINE_STATE", state: ENGINE_UNAVAILABLE_WITH_DETAIL });
+
+    const stated = withDetail.trail().find((entry) => entry.kind === "stopped");
+    expect(stated?.detail).toContain("host_unsupported");
+    expect(stated?.detail).toContain("web-shaka");
+    expect(stated?.detail).toContain("web-shaka.unsupported_platform");
+
+    /* The producer that established nothing SAYS SO, rather than saying less. */
+    const withoutDetail = harness();
+    withoutDetail.send({ type: "START" });
+    withoutDetail.send({ type: "SESSION_RESOLVED", session: sessionOf(["a"]) });
+    withoutDetail.send({ type: "ENGINE_STATE", state: ENGINE_UNAVAILABLE });
+
+    const unstated = withoutDetail.trail().find((entry) => entry.kind === "stopped");
+    expect(unstated?.detail).toContain("host_unsupported");
+    expect(unstated?.detail).toContain("no engine detail was established");
+
+    /* And the two accounts are not the same account. */
+    expect(unstated?.detail).not.toBe(stated?.detail);
+
+    /* The engine's own code is carried as the NAMESPACED STRING it is. Nothing
+     * here parses it, and PL-0904's guarantee that an engine number never
+     * reaches a Shaka-numbered field is untouched by printing one. */
+    expect(stated?.error).toBeNull();
   });
 
   it("reports a granted session that named no candidates as its own reason", () => {
@@ -905,63 +973,85 @@ describe("the machine is a mirror, so nothing it is told is an error", () => {
     expect(h.actor.getSnapshot().context.lastUnroutedEvent).toBe("MEDIA_PLAYING");
   });
 
-  it("accepts every event in every reachable phase", () => {
+  it("routes or counts every event in every resting phase, and drops none", () => {
     /*
-     * The acceptance criterion, asserted directly: every engine and media event
-     * has an inbound transition even in states where it supposedly cannot occur.
-     * `failingOver` is absent because it is eventless and leaves within the same
-     * step — there is no moment at which an event can be delivered to it.
+     * THE ACCEPTANCE CRITERION, AS A MATRIX RATHER THAN AS A CLAIM.
+     *
+     * "Every engine and media event has an inbound transition even in states
+     * where it supposedly cannot occur" is a statement about eleven phases by
+     * twenty-one event types, and reading the statechart is not a way to check
+     * one. Both axes are now DERIVED — `PLAYBACK_PHASES` and
+     * `PLAYBACK_EVENT_TYPES` are exhaustive against their own types by the
+     * compiler — so adding a phase or an event to the machine and forgetting it
+     * here is a failure rather than a gap in a hand-written list.
+     *
+     * Each pair must land in exactly one of two places, and the difference is
+     * what makes the rule real:
+     *
+     *   ROUTED — some state in the session region has a transition for it.
+     *   COUNTED — nothing did, so the region's wildcard recorded it in
+     *     `unroutedEvents` and named it in `lastUnroutedEvent`.
+     *
+     * NEITHER IS AN ERROR AND A THIRD OUTCOME IS. An event that is silently
+     * dropped — no transition, no count — is the desync this machine's mirror
+     * rule exists to prevent, and it is invisible to a test that only checks
+     * that `send` did not throw, which is all the version of this test before
+     * PL-0502 checked. Deleting the wildcard from the session region fails this
+     * one for 77 pairs; the single-pair test above it reports the same deletion
+     * for one.
+     *
+     * The COUNTED set is written down below per phase rather than derived,
+     * because that set IS the list of event/state pairs the chart treats as
+     * unreachable. Written down, a pair that stops being unreachable — or starts
+     * — has to be acknowledged here by whoever changed the chart.
      */
-    const phases: readonly PlaybackPhase[] = [
-      "idle",
-      "resolving",
-      "engineLoading",
-      "loading",
-      "playing",
-      "buffering",
-      "seeking",
-      "recovering",
-      "ended",
-      "fatal"
-    ];
+    const resting = PLAYBACK_PHASES.filter((phase) => phase !== "failingOver");
+    const counted: Record<string, PlaybackEventType[]> = {};
 
-    const everyEvent: readonly PlaybackEvent[] = [
-      { type: "START" },
-      { type: "SESSION_RESOLVED", session: sessionOf(["x", "y"]) },
-      { type: "SESSION_UNAVAILABLE", reasons: ["provider_unreachable"] },
-      { type: "RETRY" },
-      { type: "ENGINE_STATE", state: ENGINE_LOADING },
-      { type: "ENGINE_STATE", state: ENGINE_READY },
-      { type: "ENGINE_STATE", state: ENGINE_DESTROYED },
-      { type: "ENGINE_STATE", state: ENGINE_UNAVAILABLE },
-      { type: "ENGINE_ERROR", error: manifestFailure() },
-      { type: "ENGINE_ERROR", error: recoverableFailure() },
-      { type: "ENGINE_ERROR", error: interruptedFailure() },
-      { type: "MEDIA_LOAD_START" },
-      { type: "MEDIA_LOADED_METADATA", durationSeconds: 120 },
-      { type: "MEDIA_CAN_PLAY" },
-      { type: "MEDIA_PLAYING" },
-      { type: "MEDIA_WAITING" },
-      { type: "MEDIA_STALLED" },
-      { type: "MEDIA_SEEKING", positionSeconds: 5 },
-      { type: "MEDIA_SEEKED", positionSeconds: 5 },
-      { type: "MEDIA_TIME_UPDATE", positionSeconds: 6 },
-      { type: "MEDIA_DURATION_CHANGE", durationSeconds: null },
-      { type: "MEDIA_PLAY" },
-      { type: "MEDIA_PAUSE" },
-      { type: "MEDIA_ENDED" },
-      { type: "MEDIA_EMPTIED" },
-      { type: "MEDIA_ERROR", mediaErrorCode: 3 },
-      { type: "MEDIA_ERROR", mediaErrorCode: 1 },
-      { type: "MEDIA_ERROR", mediaErrorCode: null }
-    ];
-
-    for (const phase of phases) {
-      for (const event of everyEvent) {
+    for (const phase of resting) {
+      counted[phase] = [];
+      for (const type of PLAYBACK_EVENT_TYPES) {
         const h = actorAt(phase);
         expect(h.phase(), `${phase} should reach itself`).toBe(phase);
-        expect(() => h.send(event), `${event.type} in ${phase}`).not.toThrow();
-        expect(h.actor.getSnapshot().status, `${event.type} in ${phase}`).toBe("active");
+
+        const before = h.actor.getSnapshot().context.unroutedEvents;
+        expect(() => h.send(EVENT_SAMPLES[type]), `${type} in ${phase}`).not.toThrow();
+        const snapshot = h.actor.getSnapshot();
+
+        /* The actor never stops, and it never lands somewhere unnameable. */
+        expect(snapshot.status, `${type} in ${phase}`).toBe("active");
+        expect(PLAYBACK_PHASES, `${type} in ${phase}`).toContain(playbackPhase(snapshot));
+
+        const delta = snapshot.context.unroutedEvents - before;
+        expect(delta, `${type} in ${phase} counted more than once`).toBeLessThanOrEqual(1);
+        if (delta === 1) {
+          expect(snapshot.context.lastUnroutedEvent, `${type} in ${phase}`).toBe(type);
+          counted[phase]?.push(type);
+        }
+      }
+    }
+
+    expect(counted).toEqual(UNROUTED_BY_PHASE);
+  });
+
+  it("never rests in failingOver, which is why it is not in the matrix above", () => {
+    /*
+     * The one phase the matrix leaves out, CHECKED rather than excused in a
+     * comment. `failingOver` has only eventless transitions, so it is entered
+     * and left inside a single macrostep and there is no moment at which an
+     * event could be delivered to it. If it ever gained an `on` handler — or a
+     * guard that could leave all three eventless branches disabled — it would
+     * become observable, and the matrix above would be silently incomplete.
+     *
+     * Driven with the storm the machine is most likely to stall in: a budget
+     * that outlives the candidates, so every failure routes through
+     * `failingOver` and one of them finds no branch.
+     */
+    const h = playing(["a", "b"], { maxAttempts: 8, maxTransientRetriesPerCandidate: 0 });
+    for (let step = 0; step < 12; step += 1) {
+      for (const type of PLAYBACK_EVENT_TYPES) {
+        h.send(EVENT_SAMPLES[type]);
+        expect(h.phase(), `${type} at step ${step}`).not.toBe("failingOver");
       }
     }
   });
@@ -1049,6 +1139,142 @@ describe("purity", () => {
     expect(run()).toEqual(run());
   });
 });
+
+/* -------------------------------------------------------------------------
+ * The totality matrix's two axes.
+ * ---------------------------------------------------------------------- */
+
+/**
+ * One representative value for every member of `PlaybackEvent`.
+ *
+ * A `Record` over `PlaybackEventType`, so a member added to the union is a
+ * compile error here rather than a row quietly missing from the matrix. The
+ * representatives carry the payloads that make the event MEAN something —
+ * `MEDIA_ERROR` uses code 3 (MEDIA_ERR_DECODE, a real fault) rather than 1
+ * (MEDIA_ERR_ABORTED, which the machine deliberately ignores — the ignorable
+ * case has its own tests above).
+ */
+const EVENT_SAMPLES: Readonly<Record<PlaybackEventType, PlaybackEvent>> = {
+  START: { type: "START" },
+  SESSION_RESOLVED: { type: "SESSION_RESOLVED", session: sessionOf(["x", "y"]) },
+  SESSION_UNAVAILABLE: { type: "SESSION_UNAVAILABLE", reasons: ["provider_unreachable"] },
+  RETRY: { type: "RETRY" },
+  ENGINE_STATE: { type: "ENGINE_STATE", state: ENGINE_READY },
+  ENGINE_ERROR: { type: "ENGINE_ERROR", error: manifestFailure() },
+  MEDIA_LOAD_START: { type: "MEDIA_LOAD_START" },
+  MEDIA_LOADED_METADATA: { type: "MEDIA_LOADED_METADATA", durationSeconds: 120 },
+  MEDIA_CAN_PLAY: { type: "MEDIA_CAN_PLAY" },
+  MEDIA_PLAYING: { type: "MEDIA_PLAYING" },
+  MEDIA_WAITING: { type: "MEDIA_WAITING" },
+  MEDIA_STALLED: { type: "MEDIA_STALLED" },
+  MEDIA_SEEKING: { type: "MEDIA_SEEKING", positionSeconds: 5 },
+  MEDIA_SEEKED: { type: "MEDIA_SEEKED", positionSeconds: 5 },
+  MEDIA_TIME_UPDATE: { type: "MEDIA_TIME_UPDATE", positionSeconds: 6 },
+  MEDIA_DURATION_CHANGE: { type: "MEDIA_DURATION_CHANGE", durationSeconds: null },
+  MEDIA_PLAY: { type: "MEDIA_PLAY" },
+  MEDIA_PAUSE: { type: "MEDIA_PAUSE" },
+  MEDIA_ENDED: { type: "MEDIA_ENDED" },
+  MEDIA_EMPTIED: { type: "MEDIA_EMPTIED" },
+  MEDIA_ERROR: { type: "MEDIA_ERROR", mediaErrorCode: 3 }
+};
+
+/**
+ * The event/phase pairs the session region has NOTHING to do with, listed per
+ * phase in `PLAYBACK_EVENT_TYPES` order.
+ *
+ * This is the unreachability the acceptance criterion asks to be made
+ * observable. Every pair here reaches the region's wildcard and is COUNTED in
+ * `unroutedEvents`; every pair absent from it is routed by a transition. The
+ * list is deliberately verbatim rather than computed — a computed expectation
+ * would agree with whatever the chart does today, including a regression.
+ */
+const UNROUTED_BY_PHASE: Readonly<Record<string, readonly PlaybackEventType[]>> = {
+  /* Nothing has been started, so nothing about a session or a candidate applies.
+   * `START` routes; the five element mirrors and `ENGINE_STATE` route, because a
+   * viewer's clock and the engine's own state are facts whatever phase it is. */
+  idle: [
+    "SESSION_RESOLVED",
+    "SESSION_UNAVAILABLE",
+    "RETRY",
+    "ENGINE_ERROR",
+    "MEDIA_LOAD_START",
+    "MEDIA_CAN_PLAY",
+    "MEDIA_PLAYING",
+    "MEDIA_WAITING",
+    "MEDIA_STALLED",
+    "MEDIA_SEEKING",
+    "MEDIA_SEEKED",
+    "MEDIA_ENDED",
+    "MEDIA_EMPTIED",
+    "MEDIA_ERROR"
+  ],
+  /* Waiting on the session boundary. The two session answers route; a second
+   * `START` and every element fact about a candidate that does not exist yet do
+   * not. */
+  resolving: [
+    "START",
+    "RETRY",
+    "ENGINE_ERROR",
+    "MEDIA_LOAD_START",
+    "MEDIA_CAN_PLAY",
+    "MEDIA_PLAYING",
+    "MEDIA_WAITING",
+    "MEDIA_STALLED",
+    "MEDIA_SEEKING",
+    "MEDIA_SEEKED",
+    "MEDIA_ENDED",
+    "MEDIA_EMPTIED",
+    "MEDIA_ERROR"
+  ],
+  /* Inside `active`, and this is the shape the rule was written for: EVERY
+   * engine and media event routes in all six candidate phases, because `active`
+   * handles them once for all of its children. What is left is the four session
+   * events, which belong to a session already adopted. */
+  engineLoading: ["START", "SESSION_RESOLVED", "SESSION_UNAVAILABLE", "RETRY"],
+  loading: ["START", "SESSION_RESOLVED", "SESSION_UNAVAILABLE", "RETRY"],
+  playing: ["START", "SESSION_RESOLVED", "SESSION_UNAVAILABLE", "RETRY"],
+  buffering: ["START", "SESSION_RESOLVED", "SESSION_UNAVAILABLE", "RETRY"],
+  seeking: ["START", "SESSION_RESOLVED", "SESSION_UNAVAILABLE", "RETRY"],
+  recovering: ["START", "SESSION_RESOLVED", "SESSION_UNAVAILABLE", "RETRY"],
+  /* The media played to its end. `MEDIA_SEEKING` and `MEDIA_PLAYING` route,
+   * because scrubbing back out of the end is ordinary viewer behaviour, and
+   * `RETRY` routes. A failure arriving after a clean end is NOT attributed to a
+   * candidate — counting it would charge the attempt budget for a session that
+   * already succeeded — so `ENGINE_ERROR` and `MEDIA_ERROR` are counted here. */
+  ended: [
+    "START",
+    "SESSION_RESOLVED",
+    "SESSION_UNAVAILABLE",
+    "ENGINE_ERROR",
+    "MEDIA_LOAD_START",
+    "MEDIA_CAN_PLAY",
+    "MEDIA_WAITING",
+    "MEDIA_STALLED",
+    "MEDIA_SEEKED",
+    "MEDIA_ENDED",
+    "MEDIA_EMPTIED",
+    "MEDIA_ERROR"
+  ],
+  /* The session is over. Only `RETRY` and the mirrors route — the teardown
+   * events that keep arriving are recorded as facts and nothing is reopened by
+   * them, which is the whole reason `fatal` is not a final state. */
+  fatal: [
+    "START",
+    "SESSION_RESOLVED",
+    "SESSION_UNAVAILABLE",
+    "ENGINE_ERROR",
+    "MEDIA_LOAD_START",
+    "MEDIA_CAN_PLAY",
+    "MEDIA_PLAYING",
+    "MEDIA_WAITING",
+    "MEDIA_STALLED",
+    "MEDIA_SEEKING",
+    "MEDIA_SEEKED",
+    "MEDIA_ENDED",
+    "MEDIA_EMPTIED",
+    "MEDIA_ERROR"
+  ]
+};
 
 /* -------------------------------------------------------------------------
  * Phase builders, kept at the bottom because they are scaffolding.
