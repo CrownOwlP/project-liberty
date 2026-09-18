@@ -30,9 +30,9 @@ or changed them. This round's new findings continue the numbering at **F7**.
 | **F7** | SSRF · allowlist enforcement | **High** | **RESOLVED** (red→green recorded) |
 | **F8** | SSRF · allowlist enforcement | **Medium** | **RESOLVED** (red→green recorded) |
 | **F9** | Secret exposure (reflection/log amplification) | **Low** | **RESOLVED** (red→green recorded) |
-| **F10** | SSRF-adjacent · unbounded request body | Medium | **OPEN-OUT-OF-SURFACE** |
-| **F11** | Reflection (`R5`, now measured) | Low | **OPEN-OUT-OF-SURFACE** |
-| **F12** | Allowlist enforcement (fail-closed inconsistency) | Informational | **OPEN-OUT-OF-SURFACE** |
+| **F10** | SSRF-adjacent · unbounded request body | Medium | **ACCEPTED-FOLLOW-UP** → PL-0707 |
+| **F11** | Reflection (`R5`, now measured) | Low | **ACCEPTED-FOLLOW-UP** → PL-0708 |
+| **F12** | Allowlist enforcement (fail-closed inconsistency) | Informational | **ACCEPTED-FOLLOW-UP** → PL-0709 |
 | **A5** | SSRF (no port restriction) | Informational | **ACCEPTED** |
 | **A6** | SSRF (bodyless size cap) | Informational | **ACCEPTED** |
 | **A7** | SSRF (translation prefixes not exhaustive) | Low | **ACCEPTED** |
@@ -491,7 +491,7 @@ all six call sites are corrected at once and none of them can drift.
 
 ---
 
-#### F12 — `hostOnAllowlist` does not fold the root label. **Informational. OPEN-OUT-OF-SURFACE.**
+#### F12 — `hostOnAllowlist` does not fold the root label. **Informational. ACCEPTED-FOLLOW-UP → PL-0709.**
 
 `packages/media-inspection/src/egress.ts:387`. `hostOnAllowlist` case-folds and
 trims but compares the hostname as given, so `cdn.example.com.` does not match an
@@ -530,6 +530,21 @@ repository now folds the root label would be wrong.
 - A source configuration cannot grant itself `localDeployment`; `defineStremioSource`
   refuses the key loudly rather than ignoring it. *Method: reading, plus the
   existing suite.*
+
+
+- **Deferral accepted by `gpt-architect`**, round 46, at
+  `bbfaa5a997e6ee146271f26e5b2546b7e67e47d2`.
+  - **Follow-up task:** **PL-0709** — *Egress host classification folds the DNS root
+    label*. Surface `packages/media-inspection/**`.
+  - **Why not fixed here:** `packages/media-inspection` is outside PL-0702's surface,
+    and PL-0206 held that area in review while this work ran.
+  - **Residual risk until PL-0709 lands:** **none of the bypass kind.** This path fails
+    **closed** — the dotted spelling is refused, not admitted — so the exposure is a
+    legitimate host being rejected, not a hostile one being reached. The real risk is
+    second-order and is why it was filed at all: two classifiers that disagree about
+    what a host is will eventually be reconciled by someone copying the wrong one.
+    PL-0709 therefore requires a shared table of hostile spellings that both must
+    agree on, so the next divergence fails a test instead of waiting for a review.
 
 ---
 
@@ -600,7 +615,7 @@ answering `ok`.
 
 ---
 
-#### F11 — The resolve scaffold reflects caller-supplied candidate strings verbatim, unbounded. **Low. OPEN-OUT-OF-SURFACE.**
+#### F11 — The resolve scaffold reflects caller-supplied candidate strings verbatim, unbounded. **Low. ACCEPTED-FOLLOW-UP → PL-0708.**
 
 This is the previous round's **R5**, re-checked and now **measured** rather than
 inferred. `streamCandidateSchema.id` and `.providerId` are `z.string().min(1)` with
@@ -625,9 +640,26 @@ in both the ranked entry and the reason trail.
   control-plane task; the previous round recorded it as an open follow-up and
   nothing has picked it up.
 
+
+- **Deferral accepted by `gpt-architect`**, round 46, at
+  `bbfaa5a997e6ee146271f26e5b2546b7e67e47d2`.
+  - **Follow-up task:** **PL-0708** — *Stream candidate fields carry length bounds*.
+    Surface `packages/contracts/src/domains/playback.ts`.
+  - **Why not fixed here:** the bound belongs in `streamCandidateSchema`, in
+    `packages/contracts`, which PL-0702 does not own and which is reserved by tasks in
+    review. Capping at the route instead would have put the bound one route away from
+    being forgotten, and would have left the contract still accepting the value.
+  - **Residual risk until PL-0708 lands:** measured 2× amplification — a
+    1,000,000-character `id` produced a 2,002,555-byte response — reaching logs through
+    the reason trail. Bounded in practice today by F10's absence being the larger
+    quantity: whoever can send a huge candidate can already send a huge body, so
+    PL-0707 caps the outer envelope and PL-0708 caps the inner field. **Neither
+    substitutes for the other**, because a body under the envelope cap can still carry
+    one very long id.
+
 ---
 
-#### F10 — The production-reachable session route reads an unbounded request body. **Medium. OPEN-OUT-OF-SURFACE.**
+#### F10 — The production-reachable session route reads an unbounded request body. **Medium. ACCEPTED-FOLLOW-UP → PL-0707.**
 
 `decidePlaybackSession` calls `await request.json()` with no size check
 (`apps/web/src/app/api/v1/playback/session/playback-session-implementation.ts:76`),
@@ -665,6 +697,27 @@ bounds what is *reflected*, not what is *read*.
 - **Interim mitigation, stated so the gap is not overstated:** F9 bounds the
   largest *reflection* a big body can buy, and any deployment behind a proxy with
   a body limit is covered by that limit. Neither is a control this repository owns.
+
+
+- **Deferral accepted by `gpt-architect`**, round 46, reviewing PL-0702 at
+  `bbfaa5a997e6ee146271f26e5b2546b7e67e47d2`. The reviewer's direction was to create
+  the follow-up task rather than absorb the work into PL-0702, and explicitly *not*
+  to mark this RESOLVED.
+  - **Follow-up task:** **PL-0707** — *Playback session route refuses an oversized
+    request body*. Surface `apps/web/src/app/api/**` **and** `docs/API_CONTRACTS.md`,
+    which is the pairing PL-0702 could not hold and is the whole reason this is a
+    separate task.
+  - **Why not fixed here:** a size refusal needs a reason code the contract does not
+    have. Adding one changes API behaviour, and invariant 5 requires
+    `docs/API_CONTRACTS.md` to change with it; that path was outside PL-0702's
+    surface. Reusing `request_malformed` was rejected as worse than leaving it open —
+    it would report a size refusal as a shape refusal in the one trail that exists to
+    explain decisions accurately.
+  - **Residual risk until PL-0707 lands:** a hosted deployment will buffer an
+    arbitrarily large body on the production session route before any validation runs.
+    Memory, not confidentiality: no attacker-controlled value crosses a trust boundary
+    from this. It is reachable without authentication, so treat it as an availability
+    exposure and not a latent SSRF.
 
 ---
 
@@ -716,7 +769,13 @@ accepted rather than escalated:* the remedy (`authoriseFetchTarget` in
 `@liberty/media-inspection`, which resolves the name and classifies every answer)
 exists in this repository and is not adopted by this adapter, and adopting it is a
 change to `provider-sdk`'s dependency graph that is a task of its own, not a line
-in a review. **R1 in `docs/SECURITY.md` records that this work has no owner and
+in a review. **R1 now has an owner: `gpt-architect` directed in round 46 that
+resolve-and-pin adoption be filed as a dedicated P0 task and made a prerequisite of
+PL-0302, first production provider, on the ground that host-literal checking is not
+sufficient once real production provider and network access arrives. That task is
+**PL-0710** — *Provider outbound HTTP resolves, classifies and pins its destination*.
+It does not block PL-0502 or local fixture playback. The paragraph below is preserved
+as it was written, before the task existed.** R1 in `docs/SECURITY.md` records that this work has no owner and
 needs a control-plane task. That remains the single most important open item on
 this surface, and it is now more urgent than it was this morning.**
 

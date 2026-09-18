@@ -1,18 +1,18 @@
 # Project Liberty - Project Status
 
-> Generated 2026-09-17T16:51:43.402Z from the AI control plane.
+> Generated 2026-09-18T03:58:08.654Z from the AI control plane.
 
-**Overall completion:** 26/51 executable tasks (51%)
+**Overall completion:** 27/56 executable tasks (48%)
 
 ## Status summary
 
-- **BACKLOG:** 8
-- **READY:** 5
+- **BACKLOG:** 12
+- **READY:** 6
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 0
-- **REVIEW:** 6
+- **REVIEW:** 5
 - **BLOCKED:** 6
-- **DONE:** 26
+- **DONE:** 27
 - **CANCELED:** 0
 
 ## Milestones / phases
@@ -31,21 +31,20 @@
 
 - **PL-0702** [REVIEW] Provider and URL security review — owner: claude-security
 - **PL-0305** [REVIEW] A real catalog metadata source — owner: claude-backend
-- **PL-0206** [REVIEW] Macrolanguage and extlang equivalence in the shared language matcher — owner: claude-media
 - **PL-0902** [REVIEW] DRM capability on the candidate and playback-session contract — owner: claude-lead
 - **PL-0903** [REVIEW] An engine-unavailable reason that can say libmpv did not load — owner: claude-frontend
 - **PL-0904** [REVIEW] Playback errors carry an origin, so a native failure is not a Shaka number — owner: claude-frontend
 
 ## Dispatch classification
 
-- **READY_AND_EXECUTABLE:** 5
+- **READY_AND_EXECUTABLE:** 6
 - **READY_BUT_EXTERNAL:** 0
 - **BLOCKED:** 6
-- **BACKLOG (dependency-gated):** 8
+- **BACKLOG (dependency-gated):** 12
 
 ## Recommended executable wave
 
-No conflict-free executable tasks can be assigned with current agent capacity.
+- **PL-AI-0008** -> claude-lead (P1/Coordination) An agent instruction file has provenance, or it is not an instruction
 
 ## Queued for external agents
 
@@ -66,7 +65,7 @@ No READY work is waiting on an external agent lane.
 - **claude-lead:** 1/2 active
 - **claude-frontend:** 2/2 active
 - **claude-backend:** 1/2 active
-- **claude-media:** 1/2 active
+- **claude-media:** 0/2 active
 - **claude-test:** 0/1 active
 - **claude-security:** 1/1 active
 - **claude-infra:** 0/1 active

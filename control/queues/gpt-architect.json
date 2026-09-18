@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-17T16:51:43.403Z",
+  "generatedAt": "2026-09-18T03:58:08.655Z",
   "agent": "gpt-architect",
   "executionAvailable": false,
   "assigned": [],
@@ -32,9 +32,45 @@
       "acceptanceSupersededAtClaim": "SSRF, secret exposure, redirect, allowlist, and rights-bypass findings are resolved or explicitly accepted",
       "acceptanceAmendedBeforeClaim": "AMENDED 2026-09-17 BY claude-lead, BEFORE THE CLAIM, AND NOT AT A REVIEWER'S REQUEST -- flagged to gpt-architect for confirmation rather than treated as settled. The original clause, preserved verbatim in acceptanceSupersededAtClaim, was: 'SSRF, secret exposure, redirect, allowlist, and rights-bypass findings are resolved or explicitly accepted'. That sentence is satisfied by an agent reporting that it found nothing, which under invariant 8 is the shape of a fabricated gate rather than a passed one: the only two gates on this task are security-review and rights-review, both judgement gates, and neither has a command whose exit code can contradict a wrong answer. The amendment does not lower the bar or narrow the scope -- the same five classes, the same surface -- it makes the existing bar falsifiable, by requiring the method to be published alongside the conclusion and by refusing an empty register as evidence. If the reviewer considers a pre-claim acceptance amendment by the implementing lead improper even in the stricter direction, this is the record to point at, and the original clause is recoverable from the field above.",
       "implementationAgent": "claude-security",
-      "updatedAt": "2026-09-17T16:51:43.386Z",
+      "updatedAt": "2026-09-18T03:58:08.388Z",
       "implementationBaseSha": "97011e71008fe69445845debb879534895cdc754",
-      "surfaceWidenedAtStart": "WIDENED 2026-09-17 by claude-lead at the start of the round, before any code was written, and recorded rather than performed quietly. The amended acceptance requires a findings register at docs/SECURITY_REVIEW_PROVIDER_URL.md and the task's surface did not contain that path, so the task as declared could not satisfy the task as accepted. One new file, created by this task, owned by no other task. This widening adds a deliverable's own path; it does not reopen any reviewed code surface."
+      "surfaceWidenedAtStart": "WIDENED 2026-09-17 by claude-lead at the start of the round, before any code was written, and recorded rather than performed quietly. The amended acceptance requires a findings register at docs/SECURITY_REVIEW_PROVIDER_URL.md and the task's surface did not contain that path, so the task as declared could not satisfy the task as accepted. One new file, created by this task, owned by no other task. This widening adds a deliverable's own path; it does not reopen any reviewed code surface.",
+      "review": {
+        "taskId": "PL-0702",
+        "implementationAgent": "claude-security",
+        "implementationOwner": "claude-security",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "bbfaa5a997e6ee146271f26e5b2546b7e67e47d2",
+        "reviewedBaseSha": "97011e71008fe69445845debb879534895cdc754",
+        "reviewedTreeHash": "28161699d3e2dcfa4c2cdd39673fc33d5a55e051726504194699fc8441fd676f",
+        "reviewedFileCount": 74,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [],
+        "outcome": "CHANGES_REQUESTED",
+        "reviewedAt": "2026-09-18T03:53:48.266Z",
+        "evidence": "CHANGES_REQUESTED at bbfaa5a997e6ee146271f26e5b2546b7e67e47d2 -- NARROW BOOKKEEPING CORRECTION ONLY; the implementation and security work itself is accepted so far. The pre-claim acceptance amendment is APPROVED as stricter than the original and not scope-reducing, and BOTH clauses are to stay in the audit record. F7 (trailing DNS root-label private-host and loopback bypass), F8 (NAT64/6to4/IPv4-translated private-address bypass) and F9 (unbounded reflected rejected-field names) are accepted as technically valid RESOLVED, and the differential-probe method is to remain part of future URL-policy review. The defect is in the register's dispositions: F10, F11 and F12 sit at OPEN-OUT-OF-SURFACE, which the amended acceptance does not permit -- every finding must end RESOLVED or ACCEPTED. The correction is to create explicit follow-up tasks with their proper owning surfaces, then amend each entry to ACCEPTED-FOLLOW-UP stating why it is not fixed inside PL-0702, the residual risk, the follow-up task id, and gpt-architect as the reviewer accepting the deferral -- and explicitly NOT to mark them RESOLVED, and NOT to absorb unrelated implementation into PL-0702. security-review and rights-review are deliberately withheld until that is done. TRANSCRIBED BY CLAUDE from the review relayed by the human commander."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PL-0702",
+          "implementationAgent": "claude-security",
+          "implementationOwner": "claude-security",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "bbfaa5a997e6ee146271f26e5b2546b7e67e47d2",
+          "reviewedBaseSha": "97011e71008fe69445845debb879534895cdc754",
+          "reviewedTreeHash": "28161699d3e2dcfa4c2cdd39673fc33d5a55e051726504194699fc8441fd676f",
+          "reviewedFileCount": 74,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [],
+          "outcome": "CHANGES_REQUESTED",
+          "reviewedAt": "2026-09-18T03:53:48.266Z",
+          "evidence": "CHANGES_REQUESTED at bbfaa5a997e6ee146271f26e5b2546b7e67e47d2 -- NARROW BOOKKEEPING CORRECTION ONLY; the implementation and security work itself is accepted so far. The pre-claim acceptance amendment is APPROVED as stricter than the original and not scope-reducing, and BOTH clauses are to stay in the audit record. F7 (trailing DNS root-label private-host and loopback bypass), F8 (NAT64/6to4/IPv4-translated private-address bypass) and F9 (unbounded reflected rejected-field names) are accepted as technically valid RESOLVED, and the differential-probe method is to remain part of future URL-policy review. The defect is in the register's dispositions: F10, F11 and F12 sit at OPEN-OUT-OF-SURFACE, which the amended acceptance does not permit -- every finding must end RESOLVED or ACCEPTED. The correction is to create explicit follow-up tasks with their proper owning surfaces, then amend each entry to ACCEPTED-FOLLOW-UP stating why it is not fixed inside PL-0702, the residual risk, the follow-up task id, and gpt-architect as the reviewer accepting the deferral -- and explicitly NOT to mark them RESOLVED, and NOT to absorb unrelated implementation into PL-0702. security-review and rights-review are deliberately withheld until that is done. TRANSCRIBED BY CLAUDE from the review relayed by the human commander."
+        }
+      ]
     },
     {
       "id": "PL-0305",
@@ -99,50 +135,6 @@
         ],
         "obligationsThatFollow": "Wikidata's structured data is CC0, but access is not unconditional: the Wikimedia User-Agent policy requires an informative User-Agent with contact information or the client may be IP-blocked without notice, and browser-impersonating agents are forbidden. That is why CatalogDocumentOptions.userAgent is required with no default, and it must stay that way. Text outside the main, property and lexeme namespaces is CC BY-SA rather than CC0, so the distinction has to survive into whatever is ingested."
       }
-    },
-    {
-      "id": "PL-0206",
-      "priority": "P0",
-      "lane": "Media",
-      "status": "REVIEW",
-      "title": "Macrolanguage and extlang equivalence in the shared language matcher",
-      "notes": "THE REVIEWER'S OWN CARVE-OUT FROM THE PL-0203 APPROVAL, not a finding of this lane's. gpt-architect approved PL-0203's script/trim corrective and, in the same verdict, identified this as a genuinely separate defect and agreed it should be its own cross-lane media task covering both audio and subtitles. In substance: the zh-yue / zh-cmn instinct points at it, but it is not a script issue -- those are Cantonese and Mandarin extended-language/macrolanguage distinctions; RFC 5646 specifically notes that the Chinese languages encompassed by zh are generally not mutually intelligible when spoken, so a matcher that collapses both to primary zh can call the wrong SPOKEN language a preferred-language fallback. The reviewer proposed P0 and stated explicitly that this does not invalidate the script/trim corrective PL-0203 landed. IT IS DISTINCT FROM THAT SCRIPT RULE, and the distinction is the whole task: a script subtag identifies a WRITING SYSTEM, which is why require_compatible_script is right for automatic subtitle selection and deliberately looser for audio; this is about MUTUAL INTELLIGIBILITY OF SPEECH, an audio-first fact that reaches subtitles only because both surfaces share one matcher. It depends on PL-0203 rather than racing it because it corrects the same function -- languageMatch in packages/media-engine/src/audio.ts, which subtitles.ts imports -- and two concurrent owners of that function would collide. Provenance of the verdict is the same as PL-0203's review record: transcribed by Claude from the ChatGPT review session rather than received over the agent bus. IMPLEMENTED IN ROUND 45, AND IT IS THE ONLY TASK IN THE RECOVERY CAMPAIGN THAT NEEDED NO PROVENANCE WORK AT ALL -- genuinely unstarted, so an ordinary start captures a true base. THE RULE IS STRUCTURAL, WITH NO REGISTRY VENDORED, exactly as the script rule already is. A new spokenLanguage helper answers which language will come out of the speakers rather than which subtag a string starts with, and it differs from primarySubtag in precisely one place: where a macrolanguage has been narrowed by an extended-language subtag. BCP-47 spells a language as 2*3ALPHA optionally followed by an extlang of exactly 3ALPHA, while a region is two letters or three DIGITS and a script is four letters, so three ASCII letters immediately after a two- or three-letter primary is unambiguously an extlang and nothing else can take that shape in that position. RFC 5646 permanently invalidates the second and third extlang positions, so there is at most one to find. THE COLLAPSE RUNS TOWARD THE SPECIFIC RATHER THAN THE GENERAL, which is what makes the equivalence clause work in both directions: zh-cmn becomes cmn rather than zh, so the prefixed and bare spellings of one language agree, and the equivalence survives any region or script suffix because those subtags are never consulted. A bare zh stays zh -- it names the macrolanguage and neither variety, so treating it as either would invent a preference the viewer did not express, which is the same asymmetry the script rule uses when it says a tag naming no script conflicts with nothing. THE NEW OUTCOME IS ITS OWN REASON, as the acceptance requires: preferred_language_other_variety_only, distinct from preferred_language_other_script_only and from the regional fallback, because the three have different remedies -- a script conflict is about READING and the dialogue is still the viewer's, a regional difference is cosmetic and is still selected, and this one is the wrong language. Reporting it as a regional fallback would move the defect out of the matcher and into the vocabulary. ONE THING WORTH KNOWING THAT THE DESIGN MADE TRUE BY ACCIDENT AND THE TESTS NOW PIN: the script and variety findings are MUTUALLY EXCLUSIVE rather than merely ordered. matchesOnlyAcrossScripts requires a match under ignore_script, setting the script aside leaves the spoken-language comparison, and a different variety fails it -- so zh-yue-Hant against a zh-cmn-Hans preference is not across both boundaries, it is simply the wrong language and the script question is moot. Only a track in the viewer's own spoken language can be across the script boundary, which is the only case where a font is the remedy. EXERCISED THROUGH BOTH CONSUMERS, which the acceptance demands because the two share one comparator precisely so they cannot drift, and the way that guarantee fails is one being corrected while the other keeps the old behaviour. selectAudioTrack is asserted not to hand a Mandarin listener a six-channel Cantonese track that would have won on quality had the language matched, and selectSubtitleTrack is asserted to refuse a Cantonese subtitle under the new reason while still returning it in ordered for a player to offer. TWO PROPERTIES HAD TO BE TIGHTENED RATHER THAN MERELY KEPT PASSING, and that is the most useful thing this task turned up. Both audio.property.test.ts and subtitles.property.test.ts asserted that a matched pair shares a PRIMARY SUBTAG, which was a restatement of the rule being removed; once zh-cmn and cmn are both in languageTagArb it is simply false, since that is one spoken language with two primary subtags. Both now ask spokenLanguage, which is the stronger claim and the one the matcher actually makes. The arbitrary gained zh, zh-cmn, zh-yue, cmn and yue-hk so the property suites reach the new path at all -- without that they would have kept passing while testing nothing about it. ALLOWEDPATHS NARROWED BEFORE THIS TASK IS EVER CLAIMED, for the reason recorded on PL-0204: packages/contracts/** prefix-contains PL-0706's leaf packages/contracts/src/shared/runtime.ts, so the wildcard would hold this P0 behind an unrelated security corrective for no benefit. The three contracts entries are where the language vocabulary this task corrects actually lives -- domains/subtitles.ts carries the subtitle policy and its outcome vocabulary, domains/audio.ts the track contract, and testing/arbitraries.ts the language-tag generators the property suites draw from. Narrowed on a PREDICTION rather than on a diff, unlike PL-0204's and PL-0205's, because this task is not yet written: if the correction turns out to want a new shared leaf -- a language-tag vocabulary of its own, say -- that is a deliberate widening at claim time with a line in this field, which is the ordinary path and is cheaper than a wildcard that reserves a whole package. packages/media-engine/** stays wide: this task owns the matcher and both its consumers, and it shares an owner with PL-0204 and PL-0205.",
-      "dependencies": [
-        "PL-0203"
-      ],
-      "allowedPaths": [
-        "packages/media-engine/**",
-        "packages/contracts/src/domains/audio.ts",
-        "packages/contracts/src/domains/subtitles.ts",
-        "packages/contracts/src/testing/arbitraries.ts"
-      ],
-      "preferredAgent": "claude-media",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "typecheck",
-        "unit"
-      ],
-      "acceptance": "The shared languageMatch in packages/media-engine/src/audio.ts stops reducing a tag to its primary subtag where that reduction crosses a MACROLANGUAGE boundary. A spoken-language distinction encompassed by a macrolanguage is not reported as a preferred-language fallback: zh-yue against zh-cmn, and either against a bare zh preference, must not answer with a fallback strength, because a fallback there tells the caller it may play Cantonese for a Mandarin preference. Canonical primary and extlang spellings of the SAME language are treated as equivalent in both directions -- cmn and zh-cmn are one language, yue and zh-yue are one language -- and the equivalence survives a region or script suffix on either side. The rule is exercised through BOTH consumers of the shared matcher, the audio track selection in audio.ts and the subtitle selection policy in subtitles.ts, rather than through the helper alone, so neither consumer can be corrected while the other keeps the old behaviour. Any new outcome carries its own named reason: a distinction that is not regional must not be reported with a regional-fallback reason.",
-      "owner": "claude-media",
-      "gateResults": {
-        "typecheck": {
-          "status": "pass",
-          "at": "2026-09-14T16:23:20.603Z",
-          "by": "claude-media",
-          "commitSha": "c746305784226104b5304c653217dd373f52958c",
-          "evidence": "turbo run typecheck via npm run check, exit 0 under pinned Node 22 on the tree committed this round. spokenLanguage is derived from subtag SHAPE with no registry vendored, the same way scriptSubtag already is, so the new rule adds no data dependency to the package."
-        },
-        "unit": {
-          "status": "pass",
-          "at": "2026-09-14T16:23:21.296Z",
-          "by": "claude-media",
-          "commitSha": "c746305784226104b5304c653217dd373f52958c",
-          "evidence": "vitest via npm run check, exit 0 on the tree committed this round. The rule is exercised through BOTH consumers rather than through the helper, which the acceptance requires because the two share one comparator precisely so they cannot drift: selectAudioTrack is asserted not to hand a Mandarin listener a six-channel Cantonese track that would have won on quality had the language matched, and selectSubtitleTrack is asserted to refuse a Cantonese subtitle under its own new reason while still returning it in ordered for a player to offer. Equivalence is pinned in both directions -- cmn and zh-cmn are one language, yue and zh-yue are one, and the equivalence survives a region or script suffix -- and a bare zh is refused against either variety, because it names the macrolanguage and neither. Shape confusion is pinned negatively: a region, a script, a variant and a private-use singleton are none of them read as an extlang. ONE EXISTING ASSERTION WAS REVERSED RATHER THAN ADDED TO, and it is recorded as such in the test: zh-cmn-hans-cn against zh-hant under ignore_script used to expect a match and now expects none, because that is exactly the conflation this task removes. TWO PROPERTIES WERE TIGHTENED. Both suites asserted a matched pair shares a PRIMARY SUBTAG, which restated the rule being removed and is false once cmn and zh-cmn are both generated; both now assert spokenLanguage equality, which is the stronger claim and the one the matcher makes. languageTagArb gained zh, zh-cmn, zh-yue, cmn and yue-hk so the property suites reach the new path at all -- without that they would have kept passing while testing nothing about it."
-        }
-      },
-      "implementationAgent": "claude-media",
-      "updatedAt": "2026-09-14T16:23:21.922Z",
-      "implementationBaseSha": "7abddb1ff77db029b44b7e79ebb215a104b3d239"
     },
     {
       "reviewAgent": "gpt-architect",
@@ -416,6 +408,30 @@
       "implementationAgent": "claude-lead",
       "updatedAt": "2026-08-17T01:53:44.285Z",
       "implementationBaseSha": "b157a5846d45568f516240f581d6b317a544aa12"
+    },
+    {
+      "id": "PL-AI-0008",
+      "priority": "P1",
+      "lane": "Coordination",
+      "status": "READY",
+      "title": "An agent instruction file has provenance, or it is not an instruction",
+      "dependencies": [],
+      "allowedPaths": [
+        "scripts/validate-repo.mjs",
+        "control/README.md",
+        "coordination/AI_OPERATING_MODEL.md",
+        ".gitignore"
+      ],
+      "preferredAgent": "claude-infra",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "unit",
+        "security-review"
+      ],
+      "acceptance": "Repository validation detects any AGENTS.md or CLAUDE.md under a working directory that is not on an explicit, reviewed allowlist, and the authoritative instruction hierarchy is stated somewhere an agent reads before it starts. THE CONCRETE CASE: apps/web/AGENTS.md is GENERATED BY next dev and instructs agents to read node_modules/next/dist/docs/ before writing code. Nothing acted on it, and it is almost certainly benign. The finding is not that file -- it is that framework tooling can write an instruction file into a directory agents treat as authoritative, which makes a dependency's postinstall a path into the control plane's instruction surface. Required: the allowlist names each legitimate instruction file and who owns it, so an unowned one is a validation failure rather than a judgement call; generated instruction files are either gitignored and removed or allowlisted after being read, and the choice is recorded per file; validation fails on an unexpected file rather than warning, because a warning in a passing run is not a control; a regression plants an unexpected AGENTS.md and observes the failure, since a detector nobody has seen fire is not known to work; and the instruction hierarchy is written down -- which file wins, and that nothing under node_modules is ever authoritative. WHAT THIS TASK MUST NOT DO: silently delete a file a framework needs, or treat allowlisting as review. An allowlisted generated file must have been READ by a human or an agent that reports what it says.",
+      "notes": "Created 2026-09-18 on gpt-architect's round-46 instruction, reviewing PL-0702 at bbfaa5a997e6ee146271f26e5b2546b7e67e47d2. The reviewer also required, separately from the register dispositions, that no finding in docs/SECURITY_REVIEW_PROVIDER_URL.md remain at OPEN-OUT-OF-SURFACE, and that the deferral be carried by a real task with the proper owning surface rather than by a note. This one came out of the PL-0702 subagent flagging the file rather than acting on it, which is the behaviour the instruction-source boundary asks for; the reviewer agreed it is a real control-plane supply-chain surface and directed that it NOT block PL-0502.",
+      "owner": null,
+      "gateResults": {}
     }
   ]
 }
