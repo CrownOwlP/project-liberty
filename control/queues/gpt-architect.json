@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-18T04:36:42.209Z",
+  "generatedAt": "2026-09-18T21:15:58.758Z",
   "agent": "gpt-architect",
   "executionAvailable": false,
   "assigned": [],
@@ -174,60 +174,6 @@
       "updatedAt": "2026-09-18T04:36:41.924Z",
       "implementationBaseSha": "2ef2a3ec6a241d1620fd603a505c2f1dd8953dff",
       "surfaceWidenedDuringImplementation": "WIDENED 2026-09-18 by claude-lead, mid-implementation, on the implementer's request rather than by the implementer's own hand: the subagent stopped and asked instead of relocating its test to fit the declared surface, which is the behaviour the path rules exist to produce. Three paths, each with its own reason. scripts/test-validate-repo.mjs -- the test's only natural home. The precedent is exact: scripts/test-validate-env.mjs tests scripts/validate-env.mjs, both plain node with node:assert, because turbo run test only visits workspaces and scripts/ is not one. Writing the test anywhere else would have been fitting the evidence to the declaration. package.json -- one edit, adding the new suite to the test:scripts chain, because a regression that no gate runs is not a control. .env.example -- AND THIS ONE IS NOT COSMETIC. Adding the suite to test:scripts revealed that the chain ALREADY EXITS 1 at its first link: scripts/test-validate-env.mjs fails because LIBERTY_BUILD_TARGET is in turbo.json globalEnv and undeclared in .env.example. Verified pre-existing by stashing every change and running it against a clean HEAD -- it fails there too. It was introduced by PL-0501's round-45 globalEnv addition, and PL-0501 was reviewed and approved with that test never run, because test:scripts is not in the gate set this lead had been running. Leaving it would have made the new detector unreachable behind an unrelated red test, which is the same defect one level up. .env.example is reserved by no active task; PL-0003, which declares it, is DONE."
-    },
-    {
-      "reviewAgent": "gpt-architect",
-      "owner": "claude-lead",
-      "gateResults": {
-        "typecheck": {
-          "status": "pass",
-          "at": "2026-09-16T01:22:42.081Z",
-          "by": "claude-lead",
-          "commitSha": "a074b986e899ba8b91d018c4bb71f8c12089b608",
-          "evidence": "npx turbo run typecheck --force at integrated head a074b986e899ba8b91d018c4bb71f8c12089b608, exit 0, 9 of 9 tasks and 0 cached; also forced in the task worktree at 8a78bb0, exit 0. Includes two compile-time pins that are part of the deliverable rather than incidental: StatesContentProtection<Shape> resolves to never for a shape lacking the field, so PL-0501 can declare the obligation and fail the build if it drops it, and two type-level declarations exercise it in both directions."
-        },
-        "unit": {
-          "status": "pass",
-          "at": "2026-09-16T01:22:42.271Z",
-          "by": "claude-lead",
-          "commitSha": "a074b986e899ba8b91d018c4bb71f8c12089b608",
-          "evidence": "npx turbo run test --force at integrated head a074b986e899ba8b91d018c4bb71f8c12089b608, exit 0, 15 of 15 and 0 cached, 2172 passed 1 skipped. PL-0902 adds 58 cases across stream-candidate.test.ts and stream-candidate.property.test.ts. THE DESIGN WAS MEASURED BEFORE IT WAS CHOSEN: adding the field to streamCandidateSchema directly was tried and breaks typecheck in 11 files across 4 packages, none of them in this task's surface; that experiment was reverted before anything was written and is corroboration rather than the reason. The architectural reason is that streamCandidateSchema is the RANKER's input and DESKTOP_PLAYBACK section 4 rules that ranking may prefer a candidate only one adapter can play, so a score component discounting protected candidates would be a second opinion about routing living in the one component that must not hold one. Hence resolvedStreamCandidateSchema extends it and streamCandidateSchema is byte-for-byte unchanged. MUTATION-CHECKED FOUR WAYS, each caught and then restored: requiresContentDecryptionModule narrowed to === protected (3 failures), protection given a .default of clear (4), .strict() removed from the protected variant (2), and the licence URL allowed over http (2). Unknown is a MEMBER OF THE UNION rather than null or an absent field, deliberately -- null is the right spelling of unknown for a media fact, but every reader's reflex for a null DRM field is 'there is no DRM', and requiresContentDecryptionModule is written as state !== clear so a fourth state added later defaults to requiring a CDM rather than to a silent attempt. packages/contracts/src/testing/arbitraries.ts was NOT touched because PL-0206 is editing it; the generators are local to the property file and composed from the shared streamCandidateArb, with the follow-up named in the file."
-        }
-      },
-      "id": "PL-0902",
-      "priority": "P0",
-      "lane": "Architecture",
-      "status": "REVIEW",
-      "title": "DRM capability on the candidate and playback-session contract",
-      "description": "packages/contracts/src contains no occurrence of drm, widevine, playready or eme -- verified by grep across the whole source tree on 2026-09-15. So a resolved candidate carries no statement about whether it is encrypted, under which system, or against which license server. PL-0901 makes that a blocking gap rather than a cosmetic one: the desktop build routes between an mpv adapter that has no CDM and cannot be given one, and a Shaka/EME adapter that has one, and PlayerAdapter.canPlay is required to return a REASON on both branches rather than a boolean guess. A reasoned decision cannot be made from a contract that carries no field to reason about, so this gates the capability routing in PL-0901 section 4.",
-      "notes": "THE SHAPE IS A CAPABILITY DESCRIPTOR, NOT A BOOLEAN. An isDrm flag would answer the routing question and nothing else; the adapter also has to say WHY it refused, and a reason trail that says drm_required with no system named is not debuggable, which is invariant 4. The reviewer should expect at minimum the protection system and, where the boundary knows it, the license acquisition endpoint -- and should rule on whether an UNKNOWN encryption state is representable, because absent is not the same as none. A candidate whose encryption state was never established must not read as clear; that is the same required-and-nullable discipline PL-0207 established for media facts, and the precedent is deliberate. WHERE IT LIVES IS PART OF THE QUESTION. The descriptor could sit on streamCandidate, on the playback-session response, or on both with one deriving from the other. The candidate is what the ranker scores and the session is what the player is handed, and PL-0301's implementation already argues at packages/provider-sdk/src/fixture/provider.ts that the playable address belongs on the session rather than the candidate, for a reason that may or may not extend to the key system. Settle it before writing it. NOTHING HERE MAY WEAKEN A PROTECTION. This task describes encryption so the correct player is chosen and so a refusal is explainable. It adds no decryption, no key handling and no fallback that would attempt a protected source with an engine that has no CDM -- invariant 2 -- and the mpv adapter's refusal must stay a refusal rather than becoming a degraded attempt. SEQUENCING: overlaps PL-0206 and PL-AI-0006 on packages/contracts and must be sequenced after whichever is active. It should land before PL-0501 writes the session response, because retrofitting a discriminated field into a shipped contract is the change PL-0501's own acceptance warns about.",
-      "dependencies": [
-        "PL-0901"
-      ],
-      "allowedPaths": [
-        "packages/contracts/src/domains/playback.ts",
-        "packages/contracts/src/shared/drm.ts",
-        "packages/contracts/src/stream-candidate.test.ts",
-        "packages/contracts/src/stream-candidate.property.test.ts",
-        "docs/API_CONTRACTS.md"
-      ],
-      "reviewDependencies": [
-        "docs/DESKTOP_PLAYBACK.md",
-        "packages/contracts/src/shared/media-facts.ts",
-        "packages/contracts/src/shared/rights.ts",
-        "packages/provider-sdk/src/fixture/provider.ts"
-      ],
-      "preferredAgent": "claude-lead",
-      "qualityGates": [
-        "typecheck",
-        "unit",
-        "architecture-review",
-        "rights-review"
-      ],
-      "acceptance": "A resolved stream candidate, or the playback session that carries it, states its content-protection requirement explicitly: the protection system where one applies, an unencrypted state that is asserted rather than inferred from an absent field, and an UNKNOWN state that is representable and does not read as unencrypted. PlayerAdapter.canPlay can decide routing from the contract alone, without inspecting a URL, a manifest or a provider-specific field, and can name the protection system in its refusal reason. Adding the field changes no existing candidate's meaning by accident: a candidate that omits it is refused by the schema rather than defaulted to clear. Provider-specific spellings stay inside @liberty/provider-sdk and are normalized before they reach the contract. No decryption, key handling or protection bypass is added.",
-      "implementationAgent": "claude-lead",
-      "updatedAt": "2026-09-16T01:22:43.348Z",
-      "implementationBaseSha": "a3e7d13323cda0479aa5352efb7bdb5dea973125"
     },
     {
       "reviewAgent": "gpt-architect",
@@ -447,6 +393,35 @@
       "implementationAgent": "claude-lead",
       "updatedAt": "2026-08-17T01:53:44.285Z",
       "implementationBaseSha": "b157a5846d45568f516240f581d6b317a544aa12"
+    },
+    {
+      "id": "PL-0306",
+      "priority": "P1",
+      "lane": "Provider",
+      "status": "READY",
+      "title": "Fixture provider states the protection fact it actually knows",
+      "dependencies": [
+        "PL-0902",
+        "PL-0301"
+      ],
+      "allowedPaths": [
+        "packages/provider-sdk/src/fixture/**"
+      ],
+      "reviewDependencies": [
+        "packages/contracts/src/shared/drm.ts",
+        "packages/contracts/src/domains/playback.ts"
+      ],
+      "preferredAgent": "claude-backend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "rights-review"
+      ],
+      "acceptance": "The fixture provider adapter emits contentProtection { state: \"clear\" } for its own candidates, because for a fixture the absence of DRM is a fact the adapter genuinely knows rather than something it is guessing. Created from gpt-architect's round-44 non-blocking finding on PL-0501, in the reviewer's own words: \"Create a provider-owned task for the fixture provider protection fact. The fixture adapter, not PL-0501, should emit { state: \\\"clear\\\" } when that fact is genuinely known. PL-0501 may keep PROTECTION_NOT_STATED as the conservative fallback until that provider task lands.\" So the deliverable is a narrowing of where the fact is asserted, not a behaviour change in routing: PROTECTION_NOT_STATED stays in PL-0501 as the fallback for every adapter that has not stated a protection fact, and this task removes the fixture from the set that needs it. Required, and each is a way this task could be done wrongly: the fixture must set the field itself rather than PL-0501 special-casing the fixture provider id, because a consumer branching on a provider identity is exactly the provider-specific logic outside @liberty/provider-sdk that invariant 3 forbids; requiresContentDecryptionModule must be observed returning false for a fixture candidate and the observation recorded, since state !== \"clear\" is the whole point of the encoding and an untested clear is indistinguishable from an untested unknown; the fallback path in PL-0501 must be left in place and a test must still cover an adapter that states nothing, because deleting the fallback once its only current user stops needing it would fail open for the next adapter; and no other adapter may be given a protection fact here, because for a real provider the honest value is unknown and asserting clear for one would be a rights misstatement rather than a defaulting decision. Out of scope: any change to contract shape (PL-0902 owns it), to ranking (@liberty/media-engine), or to capability routing.",
+      "notes": "Provenance: gpt-architect CHANGES_REQUESTED on PL-0501, reviewed at 27d3a03389781256451c5e52d72520132cfa76c1, non-blocking/follow-up section. Filed as a task rather than actioned inside PL-0501 on the reviewer's explicit instruction that the fact belongs to the provider, not to the session API. Depends on PL-0902 because the field this task populates is defined there and PL-0902 is still in REVIEW; a fixture that sets a field whose contract is not yet approved would have to be rewritten if the contract moves.",
+      "owner": null,
+      "gateResults": {}
     }
   ]
 }

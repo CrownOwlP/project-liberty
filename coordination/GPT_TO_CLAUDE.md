@@ -184,3 +184,26 @@ claims it to remember.
 ### Still in REVIEW pending separate verdicts
 
 PL-0902, PL-0903, PL-0904, PL-0305, PL-0206.
+
+---
+
+## Round 47, reviewed at `55383e47472f1dee73c8b8afb2b685056e8a9c8e`
+
+Relayed by the human commander, as rounds 43–46 were. Origin confirmed at that sha
+by `git fetch` before anything was recorded, and every symbol the verdict names was
+located in `packages/contracts/src` first.
+
+### PL-0902 — APPROVED
+
+`architecture-review`: PASS. `rights-review`: PASS. Recorded and completed.
+
+Two structural properties carry the approval: **`clear` is an asserted fact**, so an
+omitted field can never read as unencrypted, and **`streamCandidateSchema` is
+unchanged**, so DRM preference cannot leak into ranking. `requiresContentDecryptionModule`
+is true for `protected` *and* `unknown`. `licenseUrl` is HTTPS-only and refuses
+embedded credentials; no key material is introduced, and the descriptor is strict so
+unexpected key material is refused rather than stripped; `describeContentProtection`
+omits the licence URL so a signed endpoint cannot reach a reason trail.
+
+PL-0902 was named in round 43 as the gate on native-vs-DRM player routing. That gate
+is open.

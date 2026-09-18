@@ -3174,7 +3174,7 @@
       "id": "PL-0306",
       "priority": "P1",
       "lane": "Provider",
-      "status": "BACKLOG",
+      "status": "READY",
       "title": "Fixture provider states the protection fact it actually knows",
       "dependencies": [
         "PL-0902",
@@ -4218,7 +4218,7 @@
     },
     {
       "reviewAgent": "gpt-architect",
-      "owner": "claude-lead",
+      "owner": null,
       "gateResults": {
         "typecheck": {
           "status": "pass",
@@ -4233,12 +4233,26 @@
           "by": "claude-lead",
           "commitSha": "a074b986e899ba8b91d018c4bb71f8c12089b608",
           "evidence": "npx turbo run test --force at integrated head a074b986e899ba8b91d018c4bb71f8c12089b608, exit 0, 15 of 15 and 0 cached, 2172 passed 1 skipped. PL-0902 adds 58 cases across stream-candidate.test.ts and stream-candidate.property.test.ts. THE DESIGN WAS MEASURED BEFORE IT WAS CHOSEN: adding the field to streamCandidateSchema directly was tried and breaks typecheck in 11 files across 4 packages, none of them in this task's surface; that experiment was reverted before anything was written and is corroboration rather than the reason. The architectural reason is that streamCandidateSchema is the RANKER's input and DESKTOP_PLAYBACK section 4 rules that ranking may prefer a candidate only one adapter can play, so a score component discounting protected candidates would be a second opinion about routing living in the one component that must not hold one. Hence resolvedStreamCandidateSchema extends it and streamCandidateSchema is byte-for-byte unchanged. MUTATION-CHECKED FOUR WAYS, each caught and then restored: requiresContentDecryptionModule narrowed to === protected (3 failures), protection given a .default of clear (4), .strict() removed from the protected variant (2), and the licence URL allowed over http (2). Unknown is a MEMBER OF THE UNION rather than null or an absent field, deliberately -- null is the right spelling of unknown for a media fact, but every reader's reflex for a null DRM field is 'there is no DRM', and requiresContentDecryptionModule is written as state !== clear so a fourth state added later defaults to requiring a CDM rather than to a silent attempt. packages/contracts/src/testing/arbitraries.ts was NOT touched because PL-0206 is editing it; the generators are local to the property file and composed from the shared streamCandidateArb, with the follow-up named in the file."
+        },
+        "architecture-review": {
+          "status": "pass",
+          "at": "2026-09-18T21:15:47.980Z",
+          "by": "gpt-architect",
+          "commitSha": "55383e47472f1dee73c8b8afb2b685056e8a9c8e",
+          "evidence": "gpt-architect APPROVED at remote head 55383e47472f1dee73c8b8afb2b685056e8a9c8e, verified on origin/codex/pl-ai-0001-repair by git fetch before recording, and every named symbol located in packages/contracts/src before this record was written. architecture-review PASS. Content protection is an explicit discriminated union of clear, unknown and protected; clear is an ASSERTED FACT and never the result of an omitted field; unknown is representable explicitly and must not be treated as unencrypted; requiresContentDecryptionModule returns true for both protected and unknown and false only for asserted clear; protected names a closed normalized key-system vocabulary of widevine, playready, fairplay and clearkey, so provider-native spellings such as com.widevine.alpha do not parse at the shared boundary and must be normalized inside @liberty/provider-sdk; PROTECTION_NOT_STATED resolves to state unknown with why provider_did_not_state. THE SEPARATION IS THE APPROVED PART: streamCandidateSchema remains the RANKER's input and is intentionally unchanged, resolvedStreamCandidateSchema is the player-facing shape and carries protection, so the ranker cannot accidentally incorporate DRM or player-routing preference into candidate scoring, and StatesContentProtection supplies a compile-time obligation for playback-session candidates to carry the protection state without forcing ranking-only fields onto the wire. TRANSCRIBED BY CLAUDE from the review relayed by the human commander; the gpt-architect GitHub connector still returns 403 on repository writes."
+        },
+        "rights-review": {
+          "status": "pass",
+          "at": "2026-09-18T21:15:48.141Z",
+          "by": "gpt-architect",
+          "commitSha": "55383e47472f1dee73c8b8afb2b685056e8a9c8e",
+          "evidence": "gpt-architect APPROVED at 55383e47472f1dee73c8b8afb2b685056e8a9c8e. rights-review PASS. licenseUrl is required-and-nullable on protected candidates, HTTPS-only, and refuses embedded credentials. NO KEY MATERIAL IS INTRODUCED BY THIS TASK -- no key, key id, PSSH, certificate or challenge body -- and the protection descriptor is strict, so unexpected key material is REFUSED rather than silently stripped, which is the difference between a contract that declines to carry secrets and one that carries them invisibly. describeContentProtection deliberately omits the licence URL, so a signed or query-bearing endpoint cannot leak into a reason trail; invariant 4 requires the trail to explain candidate selection, not to reproduce the credentials that would play it. Nothing here bypasses DRM: the contract's purpose is to let the player REFUSE a protected candidate it cannot lawfully decrypt, which is why unknown counts as requiring a CDM. TRANSCRIBED BY CLAUDE from the relayed review."
         }
       },
       "id": "PL-0902",
       "priority": "P0",
       "lane": "Architecture",
-      "status": "REVIEW",
+      "status": "DONE",
       "title": "DRM capability on the candidate and playback-session contract",
       "description": "packages/contracts/src contains no occurrence of drm, widevine, playready or eme -- verified by grep across the whole source tree on 2026-09-15. So a resolved candidate carries no statement about whether it is encrypted, under which system, or against which license server. PL-0901 makes that a blocking gap rather than a cosmetic one: the desktop build routes between an mpv adapter that has no CDM and cannot be given one, and a Shaka/EME adapter that has one, and PlayerAdapter.canPlay is required to return a REASON on both branches rather than a boolean guess. A reasoned decision cannot be made from a contract that carries no field to reason about, so this gates the capability routing in PL-0901 section 4.",
       "notes": "THE SHAPE IS A CAPABILITY DESCRIPTOR, NOT A BOOLEAN. An isDrm flag would answer the routing question and nothing else; the adapter also has to say WHY it refused, and a reason trail that says drm_required with no system named is not debuggable, which is invariant 4. The reviewer should expect at minimum the protection system and, where the boundary knows it, the license acquisition endpoint -- and should rule on whether an UNKNOWN encryption state is representable, because absent is not the same as none. A candidate whose encryption state was never established must not read as clear; that is the same required-and-nullable discipline PL-0207 established for media facts, and the precedent is deliberate. WHERE IT LIVES IS PART OF THE QUESTION. The descriptor could sit on streamCandidate, on the playback-session response, or on both with one deriving from the other. The candidate is what the ranker scores and the session is what the player is handed, and PL-0301's implementation already argues at packages/provider-sdk/src/fixture/provider.ts that the playable address belongs on the session rather than the candidate, for a reason that may or may not extend to the key system. Settle it before writing it. NOTHING HERE MAY WEAKEN A PROTECTION. This task describes encryption so the correct player is chosen and so a refusal is explainable. It adds no decryption, no key handling and no fallback that would attempt a protected source with an engine that has no CDM -- invariant 2 -- and the mpv adapter's refusal must stay a refusal rather than becoming a degraded attempt. SEQUENCING: overlaps PL-0206 and PL-AI-0006 on packages/contracts and must be sequenced after whichever is active. It should land before PL-0501 writes the session response, because retrofitting a discriminated field into a shipped contract is the change PL-0501's own acceptance warns about.",
@@ -4267,8 +4281,55 @@
       ],
       "acceptance": "A resolved stream candidate, or the playback session that carries it, states its content-protection requirement explicitly: the protection system where one applies, an unencrypted state that is asserted rather than inferred from an absent field, and an UNKNOWN state that is representable and does not read as unencrypted. PlayerAdapter.canPlay can decide routing from the contract alone, without inspecting a URL, a manifest or a provider-specific field, and can name the protection system in its refusal reason. Adding the field changes no existing candidate's meaning by accident: a candidate that omits it is refused by the schema rather than defaulted to clear. Provider-specific spellings stay inside @liberty/provider-sdk and are normalized before they reach the contract. No decryption, key handling or protection bypass is added.",
       "implementationAgent": "claude-lead",
-      "updatedAt": "2026-09-16T01:22:43.348Z",
-      "implementationBaseSha": "a3e7d13323cda0479aa5352efb7bdb5dea973125"
+      "updatedAt": "2026-09-18T21:15:48.518Z",
+      "implementationBaseSha": "a3e7d13323cda0479aa5352efb7bdb5dea973125",
+      "review": {
+        "taskId": "PL-0902",
+        "implementationAgent": "claude-lead",
+        "implementationOwner": "claude-lead",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "55383e47472f1dee73c8b8afb2b685056e8a9c8e",
+        "reviewedBaseSha": "a3e7d13323cda0479aa5352efb7bdb5dea973125",
+        "reviewedTreeHash": "ae143aeef240a0637a66dd4bcb482973ef13abc276c98c925e3b54aa1c175fd0",
+        "reviewedFileCount": 9,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [
+          "docs/DESKTOP_PLAYBACK.md",
+          "packages/contracts/src/shared/media-facts.ts",
+          "packages/contracts/src/shared/rights.ts",
+          "packages/provider-sdk/src/fixture/provider.ts"
+        ],
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-09-18T21:15:48.250Z",
+        "evidence": "APPROVED at 55383e47472f1dee73c8b8afb2b685056e8a9c8e, with architecture-review and rights-review both PASS. The reviewer's approval turns on two properties that are structural rather than stylistic: clear is an asserted fact so an omitted field can never read as unencrypted, and the ranker's input shape is unchanged so DRM preference cannot leak into scoring. PL-0902 was named in round 43 as the gate on native-vs-DRM player routing; that gate is now open. Confirmed present on origin before recording. TRANSCRIBED BY CLAUDE from the review relayed by the human commander in chat; no durable agent-bus record exists, the connector still returns 403."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PL-0902",
+          "implementationAgent": "claude-lead",
+          "implementationOwner": "claude-lead",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "55383e47472f1dee73c8b8afb2b685056e8a9c8e",
+          "reviewedBaseSha": "a3e7d13323cda0479aa5352efb7bdb5dea973125",
+          "reviewedTreeHash": "ae143aeef240a0637a66dd4bcb482973ef13abc276c98c925e3b54aa1c175fd0",
+          "reviewedFileCount": 9,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "docs/DESKTOP_PLAYBACK.md",
+            "packages/contracts/src/shared/media-facts.ts",
+            "packages/contracts/src/shared/rights.ts",
+            "packages/provider-sdk/src/fixture/provider.ts"
+          ],
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-09-18T21:15:48.250Z",
+          "evidence": "APPROVED at 55383e47472f1dee73c8b8afb2b685056e8a9c8e, with architecture-review and rights-review both PASS. The reviewer's approval turns on two properties that are structural rather than stylistic: clear is an asserted fact so an omitted field can never read as unencrypted, and the ranker's input shape is unchanged so DRM preference cannot leak into scoring. PL-0902 was named in round 43 as the gate on native-vs-DRM player routing; that gate is now open. Confirmed present on origin before recording. TRANSCRIBED BY CLAUDE from the review relayed by the human commander in chat; no durable agent-bus record exists, the connector still returns 403."
+        }
+      ],
+      "completedAt": "2026-09-18T21:15:48.518Z"
     },
     {
       "reviewAgent": "gpt-architect",
