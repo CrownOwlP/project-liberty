@@ -31,3 +31,12 @@ coverage/
 # Generated for the cloud worker's model step to read with Read, because it has
 # no command execution. Regenerated every run; never an implementation artifact.
 .liberty-task-briefing.md
+
+# NOT ignored, deliberately: apps/web/AGENTS.md and apps/web/CLAUDE.md.
+# `next dev` generates both (node_modules/next/dist/server/lib/generate-agent-files.js)
+# and agents read them as instruction. Ignoring them would hide a file that
+# steers agents behind a rule nobody diffs, and deleting one only makes the
+# generator write its block into the other. They are tracked, and pinned by
+# content hash in INSTRUCTION_FILE_ALLOWLIST in scripts/validate-repo.mjs, so a
+# change to either fails `npm run repo:validate` until someone reads it. Do not
+# add an AGENTS.md/CLAUDE.md pattern here to silence that check.

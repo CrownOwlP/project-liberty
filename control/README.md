@@ -430,6 +430,66 @@ implementation round under one owner; leaving it behind would let the next
 claimant inherit passes for work that no longer exists. `ai:done` also nulls the
 owner but keeps the results — there they are the completion record.
 
+## The agent instruction surface
+
+`AGENTS.md` and `CLAUDE.md` are read as instruction, not as documentation. That
+makes every one of them in the working tree part of the control plane's input,
+and it makes *anything that can write one* a way to address the agents. Framework
+tooling can: `next dev` calls
+`node_modules/next/dist/server/lib/generate-agent-files.js`, which creates or
+upserts `apps/web/AGENTS.md` and `apps/web/CLAUDE.md` whenever it detects an AI
+coding agent. Nothing malicious happened here — the block Next.js writes is
+version guidance — but a dependency's tooling reaching the instruction surface is
+a supply-chain path onto the control plane, and "we read it once and it looked
+fine" is not a control.
+
+So the surface is enumerated. `scripts/validate-repo.mjs` holds
+`INSTRUCTION_FILE_ALLOWLIST`: one entry per legitimate instruction file, each
+naming the file's **owner** — the party accountable for its content. Repository
+validation **fails** on an instruction file with no entry. It does not warn. A
+warning inside a run that exits 0 is a note, and notes do not stop anything;
+this check is meant to stop something.
+
+**The allowlist is in code, not in a data file.** A sibling JSON file would be a
+second thing deciding which instructions are legitimate, cheaper to edit than the
+validator that reads it, and with no provenance of its own — the same problem one
+level down. Adding an entry is a change to a gate-bearing script, reviewed as
+one.
+
+**The scan skips `node_modules` and `.git`,** plus build outputs (`.next`,
+`.turbo`, `.vercel`, `dist`, `build`, `coverage`). Cost is the smaller reason.
+The real one: a dependency shipping its own `AGENTS.md` is not a finding, and a
+scanner that offered those files for allowlisting would be implying they could
+become authoritative. They cannot. The rule, stated in
+`coordination/AI_OPERATING_MODEL.md`, is that nothing under `node_modules` is
+ever authoritative — so those files are out of scope rather than out of budget.
+The scan also does not follow symlinks, so a link cannot redirect it.
+
+**Generated files are allowlisted only after being read, and the entry records
+what they say.** Each generated entry carries `generator`, a `summary` of the
+actual content written by whoever read it, a `disposition` explaining why it was
+kept rather than removed, and `pinnedSha256` — the hash of the exact bytes
+reviewed, normalised to LF because the generator emits CRLF on Windows
+checkouts. If a future version of the generator writes different text, the pin
+stops matching and validation fails until someone reads the new content and
+re-pins it. That is the difference between an allowlist and an exemption: the
+entry records a review of specific bytes, not a standing permission for a path.
+A missing allowlisted file is also an error, so an entry cannot outlive the file
+it describes.
+
+**Why `apps/web/AGENTS.md` was kept rather than gitignored and deleted.**
+Deleting it does not remove the instruction surface, it relocates it:
+`writeAgentFiles()` falls through to `apps/web/CLAUDE.md` when `AGENTS.md` is
+absent, and writes the managed block there instead. `next dev` recreates one or
+the other on the next run regardless. A tracked file with a pinned hash is
+strictly more visible than an ignored file nobody diffs, so both files are
+tracked, pinned, and their content is recorded in the allowlist entry.
+
+`scripts/test-validate-repo.mjs` plants an unexpected `AGENTS.md` in the
+repository, asserts that validation exits 1 and names the path, removes it, and
+asserts the pass returns. A detector nobody has watched fire is not known to
+work.
+
 ## Reuse in a new project
 
 From this repository:
