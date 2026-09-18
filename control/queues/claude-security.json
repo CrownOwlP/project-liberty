@@ -1,78 +1,85 @@
 {
-  "generatedAt": "2026-09-18T22:17:09.016Z",
+  "generatedAt": "2026-09-18T23:16:09.995Z",
   "agent": "claude-security",
   "executionAvailable": true,
   "assigned": [
     {
-      "id": "PL-0702",
-      "priority": "P0",
+      "id": "PL-0707",
+      "priority": "P1",
       "lane": "Security",
       "status": "REVIEW",
-      "title": "Provider and URL security review",
+      "title": "Playback session route refuses an oversized request body",
       "dependencies": [
-        "PL-0301",
-        "PL-0501"
+        "PL-0702"
       ],
       "allowedPaths": [
-        "packages/provider-sdk/**",
         "apps/web/src/app/api/**",
-        "docs/SECURITY.md",
-        "docs/SECURITY_REVIEW_PROVIDER_URL.md"
+        "docs/API_CONTRACTS.md"
       ],
       "preferredAgent": "claude-security",
       "reviewAgent": "gpt-architect",
       "qualityGates": [
-        "security-review",
-        "rights-review"
+        "typecheck",
+        "unit",
+        "security-review"
       ],
-      "acceptance": "A findings register exists at docs/SECURITY_REVIEW_PROVIDER_URL.md enumerating every finding across the five named classes -- SSRF, secret exposure, redirect handling, allowlist enforcement, and rights bypass -- each with a disposition of RESOLVED (with the commit and the test that now fails without the fix) or ACCEPTED (with the reason, the residual risk, and who accepted it). AN EMPTY REGISTER IS NOT A PASS. The register must state, per class, what was examined and by what method, so that 'no finding' is distinguishable from 'not looked for'; a class examined by reading alone must say so rather than implying a test covered it. Every RESOLVED entry needs a regression that fails against the pre-fix tree, because a security fix without a test that would have caught the bug is indistinguishable from a refactor. Every ACCEPTED entry that touches credentials, licensing or an irreversible production change is an escalation under control/policies.json escalation.humanOnly and may NOT be accepted by an agent; it is recorded as OPEN-ESCALATED and named in the handoff. Out of scope and to be listed as such rather than silently skipped: anything requiring a real licensed provider or live credentials (PL-0302, PL-0602), and the desktop sidecar trust boundary already ruled on in PL-0901 and reviewed under PL-0501.",
+      "acceptance": "The production playback-session route refuses a request body above a declared bound before parsing it, and the refusal carries a reason code that exists in the contract. TODAY IT READS AN UNBOUNDED BODY: apps/web/src/app/api/v1/playback/session/playback-session-implementation.ts reads the body with no cap while the development-only resolve scaffold beside it caps one, so the production path is the weaker of the two. This is a task rather than a line in PL-0702 because the fix cannot be made honestly inside that task's surface: there is no reason code for an oversized body, adding one changes API behaviour, and invariant 5 requires docs/API_CONTRACTS.md to change first or deliberately alongside. Required: the bound is a named constant with the reason for its value, not a magic number; the reason code is added to the contract and to docs/API_CONTRACTS.md in the same change; the refusal happens BEFORE the body is buffered, because a cap enforced after reading the whole body does not bound memory; a regression drives a body over the bound through the real route and observes the refusal, and a second drives one just under it and observes normal handling, since a cap that refuses everything is indistinguishable from an outage. Out of scope: the candidate-id bound, which is PL-0708, and any change to what a well-formed request means.",
+      "notes": "Created 2026-09-18 on gpt-architect's round-46 instruction, reviewing PL-0702 at bbfaa5a997e6ee146271f26e5b2546b7e67e47d2. The reviewer required that no finding in docs/SECURITY_REVIEW_PROVIDER_URL.md remain at OPEN-OUT-OF-SURFACE, and that the deferral be carried by a real task with the proper owning surface rather than by a note. Register entry F10.",
       "owner": "claude-security",
-      "gateResults": {},
-      "acceptanceSupersededAtClaim": "SSRF, secret exposure, redirect, allowlist, and rights-bypass findings are resolved or explicitly accepted",
-      "acceptanceAmendedBeforeClaim": "AMENDED 2026-09-17 BY claude-lead, BEFORE THE CLAIM, AND NOT AT A REVIEWER'S REQUEST -- flagged to gpt-architect for confirmation rather than treated as settled. The original clause, preserved verbatim in acceptanceSupersededAtClaim, was: 'SSRF, secret exposure, redirect, allowlist, and rights-bypass findings are resolved or explicitly accepted'. That sentence is satisfied by an agent reporting that it found nothing, which under invariant 8 is the shape of a fabricated gate rather than a passed one: the only two gates on this task are security-review and rights-review, both judgement gates, and neither has a command whose exit code can contradict a wrong answer. The amendment does not lower the bar or narrow the scope -- the same five classes, the same surface -- it makes the existing bar falsifiable, by requiring the method to be published alongside the conclusion and by refusing an empty register as evidence. If the reviewer considers a pre-claim acceptance amendment by the implementing lead improper even in the stricter direction, this is the record to point at, and the original clause is recoverable from the field above.",
-      "implementationAgent": "claude-security",
-      "updatedAt": "2026-09-18T03:58:08.388Z",
-      "implementationBaseSha": "97011e71008fe69445845debb879534895cdc754",
-      "surfaceWidenedAtStart": "WIDENED 2026-09-17 by claude-lead at the start of the round, before any code was written, and recorded rather than performed quietly. The amended acceptance requires a findings register at docs/SECURITY_REVIEW_PROVIDER_URL.md and the task's surface did not contain that path, so the task as declared could not satisfy the task as accepted. One new file, created by this task, owned by no other task. This widening adds a deliverable's own path; it does not reopen any reviewed code surface.",
-      "review": {
-        "taskId": "PL-0702",
-        "implementationAgent": "claude-security",
-        "implementationOwner": "claude-security",
-        "reviewerAgent": "gpt-architect",
-        "reviewerClass": "external-reasoning",
-        "reviewerProvider": "openai",
-        "reviewedCommitSha": "bbfaa5a997e6ee146271f26e5b2546b7e67e47d2",
-        "reviewedBaseSha": "97011e71008fe69445845debb879534895cdc754",
-        "reviewedTreeHash": "28161699d3e2dcfa4c2cdd39673fc33d5a55e051726504194699fc8441fd676f",
-        "reviewedFileCount": 74,
-        "reviewedFingerprintSource": "git-object",
-        "reviewedDependencies": [],
-        "outcome": "CHANGES_REQUESTED",
-        "reviewedAt": "2026-09-18T03:53:48.266Z",
-        "evidence": "CHANGES_REQUESTED at bbfaa5a997e6ee146271f26e5b2546b7e67e47d2 -- NARROW BOOKKEEPING CORRECTION ONLY; the implementation and security work itself is accepted so far. The pre-claim acceptance amendment is APPROVED as stricter than the original and not scope-reducing, and BOTH clauses are to stay in the audit record. F7 (trailing DNS root-label private-host and loopback bypass), F8 (NAT64/6to4/IPv4-translated private-address bypass) and F9 (unbounded reflected rejected-field names) are accepted as technically valid RESOLVED, and the differential-probe method is to remain part of future URL-policy review. The defect is in the register's dispositions: F10, F11 and F12 sit at OPEN-OUT-OF-SURFACE, which the amended acceptance does not permit -- every finding must end RESOLVED or ACCEPTED. The correction is to create explicit follow-up tasks with their proper owning surfaces, then amend each entry to ACCEPTED-FOLLOW-UP stating why it is not fixed inside PL-0702, the residual risk, the follow-up task id, and gpt-architect as the reviewer accepting the deferral -- and explicitly NOT to mark them RESOLVED, and NOT to absorb unrelated implementation into PL-0702. security-review and rights-review are deliberately withheld until that is done. TRANSCRIBED BY CLAUDE from the review relayed by the human commander."
-      },
-      "reviewHistory": [
-        {
-          "taskId": "PL-0702",
-          "implementationAgent": "claude-security",
-          "implementationOwner": "claude-security",
-          "reviewerAgent": "gpt-architect",
-          "reviewerClass": "external-reasoning",
-          "reviewerProvider": "openai",
-          "reviewedCommitSha": "bbfaa5a997e6ee146271f26e5b2546b7e67e47d2",
-          "reviewedBaseSha": "97011e71008fe69445845debb879534895cdc754",
-          "reviewedTreeHash": "28161699d3e2dcfa4c2cdd39673fc33d5a55e051726504194699fc8441fd676f",
-          "reviewedFileCount": 74,
-          "reviewedFingerprintSource": "git-object",
-          "reviewedDependencies": [],
-          "outcome": "CHANGES_REQUESTED",
-          "reviewedAt": "2026-09-18T03:53:48.266Z",
-          "evidence": "CHANGES_REQUESTED at bbfaa5a997e6ee146271f26e5b2546b7e67e47d2 -- NARROW BOOKKEEPING CORRECTION ONLY; the implementation and security work itself is accepted so far. The pre-claim acceptance amendment is APPROVED as stricter than the original and not scope-reducing, and BOTH clauses are to stay in the audit record. F7 (trailing DNS root-label private-host and loopback bypass), F8 (NAT64/6to4/IPv4-translated private-address bypass) and F9 (unbounded reflected rejected-field names) are accepted as technically valid RESOLVED, and the differential-probe method is to remain part of future URL-policy review. The defect is in the register's dispositions: F10, F11 and F12 sit at OPEN-OUT-OF-SURFACE, which the amended acceptance does not permit -- every finding must end RESOLVED or ACCEPTED. The correction is to create explicit follow-up tasks with their proper owning surfaces, then amend each entry to ACCEPTED-FOLLOW-UP stating why it is not fixed inside PL-0702, the residual risk, the follow-up task id, and gpt-architect as the reviewer accepting the deferral -- and explicitly NOT to mark them RESOLVED, and NOT to absorb unrelated implementation into PL-0702. security-review and rights-review are deliberately withheld until that is done. TRANSCRIBED BY CLAUDE from the review relayed by the human commander."
+      "gateResults": {
+        "typecheck": {
+          "status": "pass",
+          "at": "2026-09-18T23:16:09.160Z",
+          "by": "claude-security",
+          "commitSha": "fd859bb05dbdef886bbc9bcc5aee35a7a148d390",
+          "evidence": "npx turbo run typecheck --force, exit 0, 10 of 10, 0 cached."
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-09-18T23:16:09.258Z",
+          "by": "claude-security",
+          "commitSha": "fd859bb05dbdef886bbc9bcc5aee35a7a148d390",
+          "evidence": "npx turbo run test --force, exit 0, 17 of 17, 0 cached, 2409 passed across the wave. RED, with handler.ts and contract.ts restored to HEAD and the new tests kept: 5 failed 9 passed, 'expected undefined to be 16384' (no named bound exists), 'expected 200 to be 413' three times -- a 16 KiB body granted, a LYING content-length of 42 granted, and a streamed body with NO content-length granted -- and 'expected 503 to be 413' where the implementation was reached. Desktop suite: 4 failed 17 passed, 'boundRequestBody is not a function'. GREEN: 5 files, 127 passed. THE HEADER IS NOT THE BOUND, which is the part worth reading: chunked encoding carries no content-length and the header is trivially forged, so content-length is consulted only to refuse EARLIER, and the actual control is a metered read of request.body that stops the instant the running total exceeds the cap and cancels the reader on every exit path -- peak memory is the bound plus one chunk whatever the header claimed. The gate consumes the stream and replays the bounded bytes as a new Request so the seam keeps its shape; a test asserts the replay is byte-for-byte. The outage guard -- a body just under the bound returning 200 granted -- PASSED at HEAD, correctly, because it is not a defect probe. Fixtures are sized from a local literal rather than from the constant under test, because a fixture sized from MAX_REQUEST_BODY_BYTES degenerates to a tiny body on a tree where the constant does not exist, which would have made the red observation dishonest; a separate test ties the literal to the exported constant. Both build targets are covered by one cap in handler.ts, and the desktop test asserts 413 with remote.calls EMPTY, so an oversized body is never relayed to our own backend."
         }
-      ]
+      },
+      "implementationAgent": "claude-security",
+      "updatedAt": "2026-09-18T23:16:09.792Z",
+      "implementationBaseSha": "fd859bb05dbdef886bbc9bcc5aee35a7a148d390"
     }
   ],
   "review": [],
   "reservedExternal": [],
-  "recommended": []
+  "recommended": [
+    {
+      "id": "PL-0710",
+      "priority": "P0",
+      "lane": "Security",
+      "status": "READY",
+      "title": "Provider outbound HTTP resolves, classifies and pins its destination",
+      "dependencies": [
+        "PL-0702"
+      ],
+      "allowedPaths": [
+        "packages/provider-sdk/**",
+        "docs/SECURITY.md"
+      ],
+      "reviewDependencies": [
+        "packages/media-inspection/src/node/pinned-fetch.ts",
+        "packages/media-inspection/src/http.ts",
+        "packages/media-inspection/src/index.ts"
+      ],
+      "preferredAgent": "claude-security",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "security-review",
+        "rights-review"
+      ],
+      "acceptance": "Provider outbound HTTP adopts the existing @liberty/media-inspection resolve-and-pin control (authoriseFetchTarget / nodePinnedFetch) instead of classifying host literals. Required, and each clause is a separate way host-literal checking fails: DNS resolution happens BEFORE the outbound connection; EVERY resolved address is classified, not just the first; the request is refused if ANY resolved address is private, loopback, link-local or reserved, unless an explicitly permitted local-only path applies; the connection is PINNED to the approved resolved address, so DNS rebinding cannot change the destination between the check and the connect; redirects repeat resolution, classification and pinning PER HOP; and TLS hostname verification and SNI are not regressed -- pinning to an address must still present and verify the name. Tests are required for public-name-to-private-IP, DNS rebinding, mixed public/private answer sets, and translation-prefix cases. WHY THIS IS P0 AND WHY IT IS FILED NOW: F1, F7 and F8 are three defects of ONE SHAPE in one function -- a host spelling the string comparisons did not anticipate, each reading as public, none findable by reading. A check that compares a string against literals is only ever as complete as the list of spellings whoever wrote it thought of. Resolve-and-pin classifies the address a resolver returned, which has one spelling.",
+      "notes": "Created 2026-09-18 on gpt-architect's round-46 instruction, reviewing PL-0702 at bbfaa5a997e6ee146271f26e5b2546b7e67e47d2. The reviewer required that no finding in docs/SECURITY_REVIEW_PROVIDER_URL.md remain at OPEN-OUT-OF-SURFACE, and that the deferral be carried by a real task with the proper owning surface rather than by a note. Register entry R1. gpt-architect required this to be a PREREQUISITE OF PL-0302 (first production provider), in its words: host-literal checking is not sufficient once real production provider/network access arrives. PL-0302's dependencies were amended accordingly in the same change. The reviewer was equally explicit that it does NOT block PL-0502 or local fixture playback, so nothing else was gated behind it.",
+      "owner": null,
+      "gateResults": {}
+    }
+  ]
 }

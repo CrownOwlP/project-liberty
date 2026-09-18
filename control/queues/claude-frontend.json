@@ -1,72 +1,36 @@
 {
-  "generatedAt": "2026-09-18T22:17:09.015Z",
+  "generatedAt": "2026-09-18T23:16:09.995Z",
   "agent": "claude-frontend",
   "executionAvailable": true,
-  "assigned": [
-    {
-      "id": "PL-0502",
-      "priority": "P0",
-      "lane": "Player",
-      "status": "REVIEW",
-      "title": "Player state machine",
-      "dependencies": [
-        "PL-0501"
-      ],
-      "allowedPaths": [
-        "apps/web/src/app/watch/**",
-        "apps/web/src/components/player/**",
-        "packages/contracts/**",
-        "docs/DESKTOP_PLAYBACK.md"
-      ],
-      "preferredAgent": "claude-frontend",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "lint",
-        "typecheck",
-        "unit",
-        "build"
-      ],
-      "acceptance": "The machine models the session and candidate lifecycle (resolving, loading a candidate, playing, buffering, seeking, recovering, failing over, ended, fatal) rather than UI state, which the controls layer already owns; the video element and the playback engine stay authoritative and the machine is a validated projection of them, so every engine and media event has an inbound transition even in states where it supposedly cannot occur. MANDATORY CONSOLIDATION, added 2026-09-18 by gpt-architect's round-48 direction when it approved PL-0903 and PL-0904. The reviewer was explicit that these are NOT reasons to reopen either of those tasks: PL-0502 owns the whole player surface and finishes the consolidation while implementing the machine. (1) RENAME browser_unsupported to an engine-neutral lifecycle reason, host_unsupported, as a COMPLETE migration -- type member, controller, machine, tests, reason trail, docs and comments -- with NO alias kept. One lifecycle fact gets one name. Behaviour is unchanged: the engine loaded and ran far enough to determine that the current host cannot support it. (2) TIGHTEN EngineState's unavailable variant from `detail?: EngineUnavailableDetail` to `detail: EngineUnavailableDetail | null`. Every producer must state whether detail was established; omission must not be the unknown representation. This is the same required-and-nullable discipline the contracts already apply to licenseUrl and to media facts. (3) UNIFY the duplicate engine-id vocabularies. PlaybackEngineId and PlaybackErrorEngine describe the same two values. Make one authoritative and derive or alias the other in the dependency-safe direction the code comments already identify. Two independently editable literal unions for one engine identity must not remain. (4) DO NOT WEAKEN PL-0904 while integrating: never make native code/category `number | null`; do not flatten mpvError into Shaka-numbered fields; do not invent a native failure classification without evidence; keep aborted engine control flow out of candidate failure accounting. (5) PRESERVE the existing no-clock/deterministic state-machine discipline and the bounded failover policy already present in playback-machine.ts.",
-      "owner": "claude-frontend",
-      "gateResults": {
-        "typecheck": {
-          "status": "pass",
-          "at": "2026-09-18T22:17:08.654Z",
-          "by": "claude-frontend",
-          "commitSha": "38bd7fa1f071e16bc8f64c7090957b0ed033afc6",
-          "evidence": "npx turbo run typecheck --force at the integrated tree, exit 0, 10 of 10 tasks and 0 cached. Forced because a cached pass proves a previous tree. The typecheck is load-bearing for two of the reviewer's three consolidations rather than incidental: PlaybackEngineId is now 'export type PlaybackEngineId = PlaybackErrorEngine' so the two vocabularies cannot drift without a compile error, and PLAYBACK_PHASES and PLAYBACK_EVENT_TYPES are pinned exhaustive against their types by Record<..., true>, so adding a phase or an event without extending the totality matrix is a tsc failure rather than a silently uncovered pair."
-        },
-        "lint": {
-          "status": "pass",
-          "at": "2026-09-18T22:17:08.737Z",
-          "by": "claude-frontend",
-          "commitSha": "38bd7fa1f071e16bc8f64c7090957b0ed033afc6",
-          "evidence": "npx turbo run lint --force, exit 0, 10 of 10 and 0 cached."
-        },
-        "unit": {
-          "status": "pass",
-          "at": "2026-09-18T22:17:08.824Z",
-          "by": "claude-frontend",
-          "commitSha": "38bd7fa1f071e16bc8f64c7090957b0ed033afc6",
-          "evidence": "npx turbo run test --force, exit 0, 17 of 17 and 0 cached, 2332 passed 1 skipped, against 2331 at the base -- net +1, being 3 new tests less the 2 this task replaced. Player suite 16 files, 257 tests, from 254. Also npm run test:scripts exit 0 (38+67+16+35) and npm run repo:validate exit 0. RED-THEN-GREEN RE-RUN BY THE LEAD rather than quoted from the implementer, on the assertion that matters most: the original acceptance requires every engine and media event to have an inbound transition in every state, and the test that previously covered it only checked that send() did not throw, so it would have passed with the wildcard deleted. The replacement drives all 210 phase x event pairs and requires each to be either ROUTED or COUNTED, with the 77 counted pairs written down per phase in UNROUTED_BY_PHASE so unreachability is recorded rather than assumed. Deleting the session region's '*': { actions: 'noteUnroutedEvent' } makes it fail with 'expected { idle: [], resolving: [], ...(8) } to deeply equal { idle: [ ...(14) ], ...(9) }' -- all 77 collapsing to empty -- plus a second failure; restoring it returns 42 passed. The one phase excluded from the matrix, failingOver, is eventless, and its exclusion is itself a test: a 252-event storm must never leave the machine resting there."
-        },
-        "build": {
-          "status": "pass",
-          "at": "2026-09-18T22:17:08.910Z",
-          "by": "claude-frontend",
-          "commitSha": "38bd7fa1f071e16bc8f64c7090957b0ed033afc6",
-          "evidence": "npx turbo run build --force, exit 0, 10 of 10 and 0 cached."
-        }
-      },
-      "acceptanceOriginal": "The machine models the session and candidate lifecycle (resolving, loading a candidate, playing, buffering, seeking, recovering, failing over, ended, fatal) rather than UI state, which the controls layer already owns; the video element and the playback engine stay authoritative and the machine is a validated projection of them, so every engine and media event has an inbound transition even in states where it supposedly cannot occur",
-      "acceptanceAmendedBeforeClaim": "AMENDED 2026-09-18 AT THE REVIEWER'S EXPLICIT DIRECTION, before the claim, under the heading 'MANDATORY PL-0502 CLEANUP' in gpt-architect's round-48 verdict at 38bd7fa1f071e16bc8f64c7090957b0ed033afc6. This is unlike the PL-0702 amendment, which this lead made on its own initiative and flagged for confirmation: here the five items are the reviewer's own words and the amendment records them where the implementer will read them. The original clause is preserved verbatim in acceptanceOriginal. Nothing was removed from it; the consolidation is additive.",
-      "implementationAgent": "claude-frontend",
-      "updatedAt": "2026-09-18T22:17:09.002Z",
-      "implementationBaseSha": "38bd7fa1f071e16bc8f64c7090957b0ed033afc6",
-      "surfaceWidenedDuringImplementation": "WIDENED 2026-09-18 by claude-lead during implementation, one path: docs/DESKTOP_PLAYBACK.md. THE TASK AS DECLARED COULD NOT SATISFY THE TASK AS ACCEPTED. gpt-architect's cleanup item 1 names the migration's extent explicitly -- 'type/member, controller, machine, tests, reason trail, docs and comments' -- and docs/DESKTOP_PLAYBACK.md is the document that carries the reason trail's vocabulary. Its line 872 asserted the union is '\"engine_load_failed\" | \"browser_unsupported\" | \"attach_failed\" in playback-controller.ts', which after this task is wrong twice over: the member is now host_unsupported, and PL-0903 had already moved the union to engine.ts. The implementer stopped at the surface boundary and reported the stale lines rather than reaching outside, which is the behaviour the path rules exist to produce; the lead widened and made the edit. No active task reserves this file -- PL-0901, which declares it, is DONE. WHAT THE EDIT DELIBERATELY DOES NOT DO: lines 873 and 1326 are HISTORICAL framing that explain why PL-0903 existed, and the old name is part of that explanation. Deleting it would destroy the reasoning; leaving it unmarked would leave a second live spelling. Both are rewritten to name the old member as history and the new one as current, so the record survives and only one name is authoritative."
-    }
-  ],
+  "assigned": [],
   "review": [],
   "reservedExternal": [],
-  "recommended": []
+  "recommended": [
+    {
+      "id": "PL-0503",
+      "priority": "P1",
+      "lane": "Player",
+      "status": "READY",
+      "title": "Playback telemetry",
+      "dependencies": [
+        "PL-0501",
+        "PL-0502"
+      ],
+      "allowedPaths": [
+        "apps/web/src/**",
+        "packages/observability/**",
+        "packages/contracts/**"
+      ],
+      "preferredAgent": "claude-media",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "security-review"
+      ],
+      "acceptance": "Startup, rebuffer, quality switch, and failure events are observable with privacy redaction",
+      "owner": null,
+      "gateResults": {}
+    }
+  ]
 }

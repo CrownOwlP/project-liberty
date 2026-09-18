@@ -89,7 +89,8 @@ exist.
 - **`granted`** — a session exists and these are its candidates. HTTP 200.
 - **`denied`** — we refuse. Either the request is not one we accept, or no
   candidate carries a rights basis we may play from. Retrying changes nothing.
-  HTTP **400** when the primary reason is `request_malformed` or
+  HTTP **413** when the primary reason is `request_body_too_large` (see *The
+  request body is bounded* below), **400** when it is `request_malformed` or
   `request_field_not_permitted`, **403** otherwise.
 - **`unavailable`** — we would have, and could not: nothing registered under that
   id, no provider configured, the provider could not answer, or nothing survived
@@ -128,6 +129,66 @@ never parsed — the code is what anything decides on. The vocabulary is closed
 `engineReasonCode` and `urlReasonCode` are identity functions that exist so that
 adding a reason to either package fails the build here rather than producing an
 unlisted code at runtime.
+
+### The request body is bounded
+
+The route reads at most **16,384 bytes (16 KiB)** of request body. A larger body
+is refused with
+
+```json
+{
+  "outcome": "denied",
+  "reasons": [
+    {
+      "code": "request_body_too_large",
+      "candidateId": null,
+      "detail": "the request body exceeds the 16384 byte cap"
+    }
+  ]
+}
+```
+
+at HTTP **413**, with `cache-control: no-store` like every other answer from this
+route. `detail` states the cap and, when the refusal came from an over-declared
+`content-length`, the declared size; it never echoes any part of the body.
+
+**Why its own code rather than `request_malformed`.** A body that is merely too
+big is not malformed — the one below is a request this route would have granted
+had it been shorter — and reporting a size refusal as a shape refusal would make
+the reason trail lie about which limit was hit, in the one place that exists to
+explain decisions accurately. It is `denied` rather than `unavailable` because
+retrying the same body changes nothing: the caller must send a smaller one.
+
+**Why 16 KiB.** `playbackSessionRequestSchema` is `.strict()` at both levels, so
+the largest body it can legitimately accept is computable: a generous
+`contentId`, both codec enums in full, and a hundred BCP-47 tags in
+`preferredAudioLanguages` — far more than any real device profile lists — come to
+roughly 4.2 KiB. The bound is about four times that, and it is also the figure
+Node already applies to the other half of a request
+(`--max-http-header-size`). The constant is `MAX_REQUEST_BODY_BYTES` in
+`apps/web/src/app/api/v1/playback/session/handler.ts`, where the arithmetic is
+written out. It is deliberately far below `/playback/resolve`'s 1 MiB: that route
+accepts a client-supplied candidate array, this one accepts two fields of fixed
+shape, and a bound should be the size of the thing it bounds.
+
+**The bound is enforced by a metered read, not by `content-length`.** A declared
+length is a claim: it is absent entirely under chunked transfer encoding and it
+is trivially forged otherwise, so a route that trusted it would have a limit the
+caller opts into. The header is consulted first and only ever to refuse *earlier*
+— an honest over-declaration is turned away without a byte being read — and the
+bytes are then counted as they arrive, with the read stopped the moment the
+running total exceeds the cap. Peak memory is therefore the bound plus one chunk
+regardless of what the header said or how much the sender goes on to send. A body
+that cannot be read at all (a stream that fails mid-request) is
+`request_malformed` at 400, not a size refusal.
+
+The check runs in `handler.ts`, in front of the build-target seam, so the hosted
+build and the desktop build get the same bound from the same code, and the
+refusal short-circuits before either implementation is handed the body.
+
+This bound is on the **envelope**. It is not a substitute for the per-field bounds
+on `streamCandidateSchema` in `@liberty/contracts`, nor they for it: a body
+comfortably under 16 KiB can still carry one very long field.
 
 ### The granted session
 

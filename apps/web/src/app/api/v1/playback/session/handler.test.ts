@@ -4,7 +4,7 @@ import type { ContentRights } from "@liberty/contracts/shared/rights";
 import { describe, expect, it } from "vitest";
 import type { AuthorizedCandidate, AuthorizedCandidateResolver } from "./authorized-candidates";
 import { playbackSessionResponseSchema, type PlaybackSessionResponse } from "./contract";
-import { handlePlaybackSessionRequest } from "./handler";
+import { handlePlaybackSessionRequest, MAX_REQUEST_BODY_BYTES } from "./handler";
 import type { IssueSessionOptions } from "./issue-session";
 import { POST } from "./route";
 
@@ -221,5 +221,224 @@ describe("the route module Next actually deploys", () => {
     expect(body.outcome).toBe("unavailable");
     expect(response.status).toBe(503);
     expect(body.reasons[0].code).toBe("provider_not_configured");
+  });
+});
+
+/* -------------------------------------------------------------------------
+ * The request body bound (PL-0707, register entry F10 in
+ * docs/SECURITY_REVIEW_PROVIDER_URL.md)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * The bound these tests were written against, restated as a literal.
+ *
+ * NOT `MAX_REQUEST_BODY_BYTES`, deliberately. A test that sizes its own fixture
+ * from the constant under test can only ever assert that the code agrees with
+ * itself: run against a tree where the constant does not exist, the padding
+ * loop degenerates and the "oversized" body is not oversized at all, so the
+ * refusal it fails to observe was never actually provoked. Sizing from a literal
+ * keeps the red observation honest -- the body really is over 16 KiB whatever
+ * the source tree says -- and the one assertion below ties the literal back to
+ * the exported constant, so the two cannot drift apart silently.
+ */
+const DECLARED_BOUND = 16 * 1024;
+
+/**
+ * A body whose only defect is its size.
+ *
+ * DELIBERATELY SCHEMA-VALID. Padding with an unrecognised key would have been
+ * easier, but then a refusal would prove nothing: `.strict()` already refuses
+ * that body, for an unrelated reason, at a different status. Growing
+ * `preferredAudioLanguages` -- `z.array(z.string())`, bounded neither in length
+ * nor in element size -- produces a request that every schema in the contract
+ * accepts and that only the cap can turn away. Before this task, the largest of
+ * these was answered `200 granted`.
+ */
+function bodyOfAtLeast(bytes: number): string {
+  const languages: string[] = [];
+  const encoder = new TextEncoder();
+  let json = "";
+
+  do {
+    /* 20 characters, so each entry adds a predictable 23 bytes of JSON and the
+     * loop terminates in a bounded number of steps rather than one per byte. */
+    languages.push(`en-gb-${String(languages.length).padStart(14, "0")}`);
+    json = JSON.stringify({
+      contentId: "aurora-fall",
+      capabilities: { ...CAPABILITIES, preferredAudioLanguages: languages }
+    });
+  } while (encoder.encode(json).length < bytes);
+
+  return json;
+}
+
+function byteLength(text: string): number {
+  return new TextEncoder().encode(text).length;
+}
+
+/** A body sent as a stream, which is what `Transfer-Encoding: chunked` looks
+ * like on this side: there is no `content-length` header to consult at all. */
+function postStreamed(body: string): Request {
+  const encoded = new TextEncoder().encode(body);
+  return new Request("https://liberty.test/api/v1/playback/session", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: new ReadableStream<Uint8Array>({
+      start(controller) {
+        /* In pieces, so the metered read has to stop part-way through rather
+         * than be handed the whole thing in one chunk. */
+        for (let at = 0; at < encoded.length; at += 4096) {
+          controller.enqueue(encoded.slice(at, at + 4096));
+        }
+        controller.close();
+      }
+    }),
+    /* Required by undici for a streaming request body. */
+    duplex: "half"
+  } as RequestInit & { duplex: "half" });
+}
+
+describe("the request body is bounded before it is buffered", () => {
+  it("states the bound as a named constant, at the value these tests assume", () => {
+    /*
+     * The acceptance asks for a named constant with its reason written down,
+     * not a magic number. The reason lives in the doc comment on the constant
+     * itself; what a test can check is that the name exists, is exported, and
+     * carries the value every fixture below is sized against.
+     */
+    expect(MAX_REQUEST_BODY_BYTES).toBe(DECLARED_BOUND);
+  });
+
+  it("refuses a body over the bound with 413 and a size reason, not a shape one", async () => {
+    const oversized = bodyOfAtLeast(DECLARED_BOUND + 1);
+    expect(byteLength(oversized)).toBeGreaterThan(DECLARED_BOUND);
+
+    const response = await handlePlaybackSessionRequest(post(oversized), {
+      ...FIXED,
+      resolve: resolving([authorizedWith("owned")])
+    });
+
+    /*
+     * 413 and not 400. `request_malformed` was available and was rejected in
+     * review: it would report a size refusal as a shape refusal, in the one
+     * trail that exists to explain decisions accurately. A body this route
+     * would have granted if it were smaller is not malformed.
+     */
+    expect(response.status).toBe(413);
+    const body = await decision(response);
+    expect(body.outcome).toBe("denied");
+    expect(body.reasons[0].code).toBe("request_body_too_large");
+    expect(body.reasons[0].detail).toContain(String(MAX_REQUEST_BODY_BYTES));
+    expect(response.headers.get("cache-control")).toBe("no-store");
+  });
+
+  it("handles a body just under the bound normally", async () => {
+    /*
+     * A cap that refuses everything is indistinguishable from an outage, and a
+     * cap tested only from above would be satisfied by one. This body is within
+     * a few hundred bytes of the limit and must be GRANTED -- so a later edit
+     * that tightens the bound by an order of magnitude fails here rather than in
+     * production.
+     */
+    const justUnder = bodyOfAtLeast(DECLARED_BOUND - 500);
+    expect(byteLength(justUnder)).toBeLessThan(DECLARED_BOUND);
+    expect(byteLength(justUnder)).toBeGreaterThan(DECLARED_BOUND - 600);
+
+    const response = await handlePlaybackSessionRequest(post(justUnder), {
+      ...FIXED,
+      resolve: resolving([authorizedWith("owned")])
+    });
+
+    expect(response.status).toBe(200);
+    const body = await decision(response);
+    expect(body.outcome).toBe("granted");
+    if (body.outcome !== "granted") return;
+    expect(body.session.candidates.map((entry) => entry.id)).toEqual(["aurora-fall-dash"]);
+  });
+
+  it("refuses an oversized body that DECLARES a small content-length", async () => {
+    /*
+     * THE HEADER IS NOT THE BOUND. A declared length is a claim, and a caller
+     * that wanted to defeat a header check would simply lie -- so a route whose
+     * only control was `content-length` would have a limit an attacker opts
+     * into. The metered read is what actually bounds memory; the header only
+     * ever lets an honest over-declaration be refused sooner.
+     */
+    const oversized = bodyOfAtLeast(DECLARED_BOUND + 1);
+    const lying = new Request("https://liberty.test/api/v1/playback/session", {
+      method: "POST",
+      headers: { "content-type": "application/json", "content-length": "42" },
+      body: oversized
+    });
+    expect(lying.headers.get("content-length")).toBe("42");
+
+    const response = await handlePlaybackSessionRequest(lying, {
+      ...FIXED,
+      resolve: resolving([authorizedWith("owned")])
+    });
+
+    expect(response.status).toBe(413);
+    expect((await decision(response)).reasons[0].code).toBe("request_body_too_large");
+  });
+
+  it("refuses an oversized body sent with NO content-length at all", async () => {
+    /* Chunked transfer encoding declares nothing. If the header were the bound,
+     * this request would have no bound. */
+    const streamed = postStreamed(bodyOfAtLeast(DECLARED_BOUND + 1));
+    expect(streamed.headers.get("content-length")).toBeNull();
+
+    const response = await handlePlaybackSessionRequest(streamed, {
+      ...FIXED,
+      resolve: resolving([authorizedWith("owned")])
+    });
+
+    expect(response.status).toBe(413);
+    expect((await decision(response)).reasons[0].code).toBe("request_body_too_large");
+  });
+
+  it("refuses without running the implementation at all", async () => {
+    /*
+     * THIS IS WHAT MAKES THE CAP TARGET-INDEPENDENT. `handler.ts` is the whole
+     * of what sits in front of the build-target seam, and the gate runs before
+     * `decidePlaybackSession` is called -- so the resolver below is never
+     * reached, and neither is the desktop forwarder that replaces it in the
+     * other build. A cap written inside either implementation could not make
+     * this assertion.
+     */
+    const response = await handlePlaybackSessionRequest(
+      post(bodyOfAtLeast(DECLARED_BOUND + 1)),
+      {
+        ...FIXED,
+        resolve: () => {
+          throw new Error("the implementation must not be reached for an oversized body");
+        }
+      }
+    );
+
+    expect(response.status).toBe(413);
+  });
+
+  it("answers a body it could not read as malformed rather than as too large", async () => {
+    /*
+     * The inverse of the mistake above, and just as misleading: a socket that
+     * died mid-body is a shape event, not a size event. Pinned so that the two
+     * failure modes of the same read never collapse into one code.
+     */
+    const broken = new Request("https://liberty.test/api/v1/playback/session", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.error(new Error("connection reset"));
+        }
+      }),
+      duplex: "half"
+    } as RequestInit & { duplex: "half" });
+
+    const response = await handlePlaybackSessionRequest(broken, FIXED);
+
+    expect(response.status).toBe(400);
+    const body = await decision(response);
+    expect(body.reasons[0].code).toBe("request_malformed");
   });
 });

@@ -4,13 +4,22 @@ import {
   NON_DEPLOYMENT_ENVIRONMENTS,
   type ClassifiedRuntime
 } from "@liberty/contracts/shared/runtime";
+import {
+  contentProtectionSchema,
+  describeContentProtection,
+  protectionKeySystem,
+  PROTECTION_NOT_STATED,
+  requiresContentDecryptionModule
+} from "@liberty/contracts/shared/drm";
 import type { CatalogItemRef, ProviderContext } from "../provider";
+import type { MappedStream } from "../stremio/mapping";
 import { describe, expect, it } from "vitest";
 import { NonProductionRuntime } from "./environment";
 import { FIXTURE_RIGHTS_REFERENCE, isOpaqueRightsReference } from "./rights";
 import {
   createFixtureProvider,
   fixtureCatalogItemRegistry,
+  FIXTURE_VARIANTS,
   type FixtureProvider,
   type FixtureProviderOptions
 } from "./provider";
@@ -101,6 +110,19 @@ function refusalReason(
 function itemFor(overrides: Partial<CatalogItemRef> = {}): CatalogItemRef {
   return { providerId: "fixture", externalId: CONTENT_ID, rights: "owned", ...overrides };
 }
+
+/**
+ * `true` only while the Stremio adapter states no protection fact.
+ *
+ * A compile-time guard rather than an assertion, for the reason above: the
+ * claim is about a field's ABSENCE from `MappedStream`, and absence is not
+ * something a runtime check can tell apart from a misspelling. PL-0306 gave the
+ * protection fact to the fixture provider ONLY -- an addon-sourced stream is
+ * something nobody here has looked at, so `unknown` is its honest value and the
+ * session route's `PROTECTION_NOT_STATED` is where it comes from.
+ */
+type StremioStatesNoProtection = "protection" extends keyof MappedStream ? never : true;
+const STREMIO_STATES_NO_PROTECTION: StremioStatesNoProtection = true;
 
 describe("the runtime witness", () => {
   /*
@@ -336,6 +358,82 @@ describe("resolution", () => {
       expect(entry.candidate.bitrateKbps).toBeNull();
       expect(entry.unknownFacts).toEqual(["videoCodec", "audioCodec", "height", "bitrateKbps"]);
     }
+  });
+
+  /*
+   * THE ONE FACT THIS ADAPTER GENUINELY KNOWS (PL-0306).
+   *
+   * Every other assertion in this suite is about something the fixture must NOT
+   * say. This one is the opposite, and the difference is the whole point:
+   * `height` is unstated because nothing opened the file, but the absence of
+   * DRM is not unstated for that reason -- this adapter COMPOSED these three
+   * addresses, against an origin it was configured with, serving three files
+   * this rig packages in the clear. There is no manifest to inspect and no
+   * licence server to ask, because there is no encryption to describe. `clear`
+   * here is an observation about media this boundary owns, not an optimistic
+   * default, which is the only condition under which the contract's
+   * deliberately-expensive spelling may be typed at all.
+   *
+   * IT IS STATED HERE AND NOT BY A CONSUMER. A session route that wrote
+   * `{ state: "clear" }` because the provider id happened to read `fixture`
+   * would be provider-specific behaviour outside `@liberty/provider-sdk`, which
+   * product invariant 3 forbids -- and it would be asserting something about
+   * bytes it has never addressed. `PROTECTION_NOT_STATED` remains the right
+   * answer for every adapter that has not stated one; see the pair of
+   * assertions below it.
+   *
+   * `requiresContentDecryptionModule` IS CALLED RATHER THAN REASONED ABOUT.
+   * `shared/drm.ts` encodes the routing question as `state !== "clear"`, so
+   * `clear` is the single value in the union that changes what that function
+   * returns -- and an untested `clear` is indistinguishable from an untested
+   * `unknown` right up until a player refuses a fixture under
+   * `drm_required_no_cdm`. The observation is the deliverable.
+   */
+  it("states the protection fact it knows: clear, and no CDM is required to play it", () => {
+    const mapped = build(BASE_OPTIONS).resolve(itemFor(), CONTEXT).mapped;
+
+    expect(mapped).toHaveLength(FIXTURE_VARIANTS.length);
+    for (const entry of mapped) {
+      /* The exact descriptor, not merely `state === "clear"`: the `clear`
+       * variant is `.strict()` and carries no other key, so a key system or a
+       * licence endpoint appearing beside it is a parse failure rather than a
+       * silently stripped field. */
+      expect(entry.protection).toEqual({ state: "clear" });
+      expect(contentProtectionSchema.safeParse(entry.protection).success).toBe(true);
+
+      /* THE OBSERVATION. Recorded against the contract's own function, on a
+       * candidate this provider actually produced. */
+      expect(requiresContentDecryptionModule(entry.protection)).toBe(false);
+
+      /* There is no system to name and nothing for a refusal to report, which
+       * is what distinguishes this from `unknown`. */
+      expect(protectionKeySystem(entry.protection)).toBeNull();
+      expect(describeContentProtection(entry.protection)).toBe("clear");
+    }
+  });
+
+  /*
+   * THE FALLBACK IS STILL LOAD-BEARING, AND THIS PACKAGE STILL NEEDS IT.
+   *
+   * Removing `PROTECTION_NOT_STATED` from the session route once the fixture
+   * stopped needing it would fail open for the next adapter to arrive, so this
+   * pins both halves of the reason it stays: the constant still routes to the
+   * adapter that HAS a CDM, and the OTHER adapter in this package -- the
+   * Stremio one -- still states no protection fact, so its candidates are
+   * exactly the ones the fallback is for.
+   *
+   * `MappedStream` is pinned at the type level rather than by constructing one,
+   * because the fact worth guarding is that the field is ABSENT: a runtime
+   * `toBeUndefined()` passes just as happily on a typo. Giving the Stremio
+   * adapter `{ state: "clear" }` would be a rights misstatement -- a real
+   * provider's honest value is `unknown` -- and this stops compiling the moment
+   * anybody adds one there, whether as `clear` or otherwise.
+   */
+  it("leaves PROTECTION_NOT_STATED as the answer for an adapter that states nothing", () => {
+    expect(PROTECTION_NOT_STATED).toEqual({ state: "unknown", why: "provider_did_not_state" });
+    expect(requiresContentDecryptionModule(PROTECTION_NOT_STATED)).toBe(true);
+    expect(describeContentProtection(PROTECTION_NOT_STATED)).toBe("unknown:provider_did_not_state");
+    expect(STREMIO_STATES_NO_PROTECTION).toBe(true);
   });
 
   it("charges the full latency penalty and ranks on a prior, never a measurement", () => {

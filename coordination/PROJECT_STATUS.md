@@ -1,18 +1,18 @@
 # Project Liberty - Project Status
 
-> Generated 2026-09-18T22:17:09.014Z from the AI control plane.
+> Generated 2026-09-18T23:16:09.993Z from the AI control plane.
 
-**Overall completion:** 30/56 executable tasks (54%)
+**Overall completion:** 32/56 executable tasks (57%)
 
 ## Status summary
 
-- **BACKLOG:** 11
-- **READY:** 5
+- **BACKLOG:** 6
+- **READY:** 6
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 0
-- **REVIEW:** 4
+- **REVIEW:** 6
 - **BLOCKED:** 6
-- **DONE:** 30
+- **DONE:** 32
 - **CANCELED:** 0
 
 ## Milestones / phases
@@ -21,7 +21,7 @@
 - **M1 — Core Discovery Experience:** COMPLETE, 3/3 (100%)
 - **M2 — Media Resolution + Provider Foundation:** IN_PROGRESS, 5/6 (83%)
 - **M3 — Identity + Personal State:** NOT_STARTED, 0/4 (0%), 1 blocked
-- **M4 — Playback Vertical Slice:** IN_PROGRESS, 1/6 (17%)
+- **M4 — Playback Vertical Slice:** IN_PROGRESS, 3/6 (50%)
 - **M5 — Live + Intelligence Boundaries:** NOT_STARTED, 0/2 (0%), 1 blocked
 - **M6 — Shared-Agent Automation Bridge:** IN_PROGRESS, 1/3 (33%)
 - **EXT — External Licensed Integrations:** BLOCKED, 0/2 (0%), 2 blocked
@@ -29,17 +29,19 @@
 
 ## Active work
 
-- **PL-0502** [REVIEW] Player state machine — owner: claude-frontend
-- **PL-0702** [REVIEW] Provider and URL security review — owner: claude-security
 - **PL-0305** [REVIEW] A real catalog metadata source — owner: claude-backend
+- **PL-0306** [REVIEW] Fixture provider states the protection fact it actually knows — owner: claude-backend
+- **PL-0707** [REVIEW] Playback session route refuses an oversized request body — owner: claude-security
+- **PL-0708** [REVIEW] Stream candidate fields carry length bounds — owner: claude-media
+- **PL-0709** [REVIEW] Egress host classification folds the DNS root label — owner: claude-media
 - **PL-AI-0008** [REVIEW] An agent instruction file has provenance, or it is not an instruction — owner: claude-lead
 
 ## Dispatch classification
 
-- **READY_AND_EXECUTABLE:** 5
+- **READY_AND_EXECUTABLE:** 6
 - **READY_BUT_EXTERNAL:** 0
 - **BLOCKED:** 6
-- **BACKLOG (dependency-gated):** 11
+- **BACKLOG (dependency-gated):** 6
 
 ## Recommended executable wave
 
@@ -62,9 +64,9 @@ No READY work is waiting on an external agent lane.
 
 - **gpt-architect:** 0/6 active (external lane; not locally executable)
 - **claude-lead:** 1/2 active
-- **claude-frontend:** 1/2 active
-- **claude-backend:** 1/2 active
-- **claude-media:** 0/2 active
+- **claude-frontend:** 0/2 active
+- **claude-backend:** 2/2 active
+- **claude-media:** 2/2 active
 - **claude-test:** 0/1 active
 - **claude-security:** 1/1 active
 - **claude-infra:** 0/1 active

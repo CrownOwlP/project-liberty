@@ -112,6 +112,7 @@ export const playbackSessionReasonCodeSchema = z.enum([
   /* Request-level. Nothing about a specific candidate. */
   "request_malformed",
   "request_field_not_permitted",
+  "request_body_too_large",
   "content_not_found",
   "provider_not_configured",
   "provider_unavailable",
@@ -445,6 +446,28 @@ const REQUEST_LEVEL_DENIALS: readonly PlaybackSessionReasonCode[] = [
 ];
 
 /**
+ * The one denial that is neither 400 nor 403, and why it is neither (PL-0707).
+ *
+ * `request_body_too_large` says the envelope was refused BEFORE anything looked
+ * at what it said -- see `MAX_REQUEST_BODY_BYTES` in `handler.ts`. 413 is the
+ * status HTTP already has for exactly that statement, and the three candidates
+ * it is being chosen over are each wrong in a way that costs somebody real time:
+ *
+ *   - **400** would put a size refusal in the same bucket as a typo'd field, so
+ *     an operator watching request-level denials could not tell a client sending
+ *     nonsense from a client -- or a proxy -- sending too much. The remedies are
+ *     different: one is a client bug, the other is a limit somebody has to raise
+ *     deliberately or a caller that has to chunk its work.
+ *   - **403** would read as a rights signal, which is the one thing this is not.
+ *   - **500** would blame this service for a decision it took correctly.
+ *
+ * It is still `denied` and not `unavailable`, because retrying the same body
+ * changes nothing: the caller must send a smaller one. That is the remedy test
+ * the union is built around.
+ */
+const OVERSIZED_BODY_DENIAL: PlaybackSessionReasonCode = "request_body_too_large";
+
+/**
  * The HTTP status for a decision.
  *
  * Derived from the response rather than chosen at each return site, so the wire
@@ -457,6 +480,7 @@ export function playbackSessionHttpStatus(response: PlaybackSessionResponse): nu
     case "granted":
       return 200;
     case "denied":
+      if (response.reasons[0].code === OVERSIZED_BODY_DENIAL) return 413;
       return REQUEST_LEVEL_DENIALS.includes(response.reasons[0].code) ? 400 : 403;
     case "unavailable":
       /* 404 only for "nothing is registered under this id". Everything else

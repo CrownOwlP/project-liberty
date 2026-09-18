@@ -383,12 +383,53 @@ function describeUnparseable(raw: string): string {
  * Case folded on both sides. Entries are trimmed and empty entries skipped, so a
  * trailing comma in a configuration file cannot become an entry that matches the
  * empty suffix.
+ *
+ * THE DNS ROOT LABEL IS FOLDED AWAY BEFORE ANYTHING IS COMPARED, on the hostname
+ * AND on every entry. PL-0709, register entry F12 in
+ * `docs/SECURITY_REVIEW_PROVIDER_URL.md`.
+ *
+ * `cdn.example.test.` and `cdn.example.test` are the same name to every
+ * resolver -- the trailing dot is the root label, the ordinary way to say "this
+ * is fully qualified, do not append a search domain" -- and the WHATWG URL
+ * parser keeps it on a domain while normalising it away on an IP literal, which
+ * is why every numeric case in the suite was already canonical and this went
+ * unnoticed. Without folding, this function answered one thing for a name and
+ * another thing for the same name written out in full: `=== entry` was false and
+ * `.endsWith(".example.test")` was false as well, so a suffix entry did not save
+ * it either.
+ *
+ * WHAT THIS IS AND IS NOT. The disagreement FAILED CLOSED: the dotted spelling
+ * was refused, never admitted, so this was an inconsistency between two
+ * classifiers and not a bypass. `classifyHost` already folds (PL-0702, F7), so
+ * the two functions in front of every outbound request disagreed about what a
+ * host is -- and the observable damage was a refusal with the WRONG REASON:
+ * `metadata.google.internal.` is private, and being told it was "not on the
+ * allowlist" invites an operator to put it there. It is fixed because a
+ * disagreement about what a host is gets reconciled eventually by somebody
+ * copying one of the two, and the copy that goes the other way is F7 again.
+ *
+ * FOLDING HERE ADMITS EXACTLY ONE THING THAT WAS REFUSED BEFORE: another
+ * spelling of a name the operator already wrote down. It grants no host that was
+ * not already named, it is applied after `classifyHost` has already had its say
+ * (private and unparseable hosts are refused before this function is reached),
+ * and the loopback two-key rule still runs after it. `egress.root-label.test.ts`
+ * asserts each of those, because "make it agree with the other one" is a change
+ * that could very easily have been paid for by making it permissive.
+ *
+ * AN EMPTY LABEL IS REFUSED, NEVER REPAIRED, which is the same choice
+ * `url-policy.ts` makes and for the same reason. `"."` is the root and names no
+ * host; `cdn.example.test..` has a zero-length label no resolver accepts.
+ * Folding those until something matched would be inventing a name on the
+ * caller's behalf. As a HOSTNAME they match nothing; as an ENTRY they are
+ * skipped, which matters more than it looks -- an entry repaired down to `""` or
+ * `"."` is the empty suffix, and the empty suffix is every host there is.
  */
 export function hostOnAllowlist(hostname: string, allowedHosts: readonly string[]): boolean {
-  const host = hostname.toLowerCase();
+  const host = withoutRootLabel(hostname.toLowerCase());
+  if (host === null || host === "") return false;
   for (const raw of allowedHosts) {
-    const entry = raw.trim().toLowerCase();
-    if (entry === "" || entry === ".") continue;
+    const entry = withoutRootLabel(raw.trim().toLowerCase());
+    if (entry === null || entry === "") continue;
     if (entry.startsWith(".")) {
       if (host.endsWith(entry)) return true;
       continue;
@@ -396,6 +437,38 @@ export function hostOnAllowlist(hostname: string, allowedHosts: readonly string[
     if (host === entry) return true;
   }
   return false;
+}
+
+/**
+ * A hostname with the DNS root label removed, or `null` when what is left is not
+ * a name.
+ *
+ * SEMANTICALLY IDENTICAL TO `withoutRootLabel` IN
+ * `@liberty/provider-sdk/src/stremio/url-policy.ts`, deliberately and with the
+ * duplication named rather than hidden. Three things make that the right call
+ * here and not an invitation to copy more:
+ *
+ *   - It is a CANONICALISER, not a classifier. The file header explains at
+ *     length why the address-range classifier is an injected port with no local
+ *     copy: two SSRF classifiers drift and the stale one becomes the hole. That
+ *     argument applies in full to a judgement about ranges and in miniature to
+ *     four lines of string handling -- so this copy is pinned by a test that
+ *     runs BOTH implementations over one shared table
+ *     (`testing/host-spellings.ts`), which is what stops it drifting.
+ *   - The other one is not importable. `url-policy.ts` keeps its copy private,
+ *     `@liberty/provider-sdk` exports only its index, and that index does not
+ *     re-export `classifyHost` -- so there is no production import path to reuse
+ *     without editing that package.
+ *   - The direction of the eventual dependency is already decided and it is not
+ *     this one. PL-0710 has provider-sdk adopting THIS package's
+ *     `authoriseFetchTarget`; a dependency from here onto provider-sdk would be
+ *     half of a cycle the day that lands. Merging the two is explicitly out of
+ *     PL-0709's scope and is PL-0710's question.
+ */
+function withoutRootLabel(host: string): string | null {
+  if (!host.endsWith(".")) return host;
+  const stripped = host.slice(0, -1);
+  return stripped === "" || stripped.endsWith(".") ? null : stripped;
 }
 
 /**

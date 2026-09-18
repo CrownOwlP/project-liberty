@@ -1,8 +1,11 @@
-import fc from "fast-check";
+import fc, { type Arbitrary } from "fast-check";
 import { describe, expect, it } from "vitest";
 import { audioTrackSchema } from "./domains/audio";
 import { PLAYBACK_FAILURE_KINDS, playbackFailureKindSchema } from "./domains/failover";
 import {
+  MAX_STREAM_CANDIDATE_ID_CHARS,
+  MAX_STREAM_CANDIDATE_JSON_BYTES,
+  MAX_STREAM_CANDIDATE_PROVIDER_ID_CHARS,
   resolvedStreamCandidateSchema,
   streamCandidateSchema,
   unknownMediaFacts,
@@ -23,14 +26,18 @@ import {
 import { MEDIA_FACTS, type MediaFact } from "./shared/media-facts";
 import { contentRightsSchema, PLAYABLE_CONTENT_RIGHTS } from "./shared/rights";
 import {
+  audioCodecArb,
   audioTrackArb,
+  contentRightsArb,
   languageTagArb,
   mediaFactsArb,
   nonVocabularyStringArb,
   permutationKeysArb,
   permute,
+  protocolArb,
   streamCandidateArb,
-  subtitleTrackArb
+  subtitleTrackArb,
+  videoCodecArb
 } from "./testing/arbitraries";
 
 /**
@@ -572,6 +579,237 @@ describe("the ranker's candidate is unchanged by this task", () => {
         expect(parsed).toEqual(candidate);
         expect("protection" in parsed).toBe(false);
       })
+    );
+  });
+});
+
+/* -------------------------------------------------------------------------
+ * The response budget (PL-0708 / register F11)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * No candidate the schema ACCEPTS can exceed the response budget.
+ *
+ * This is the property the example beside it is an instance of. F11 measured
+ * one amplifier (a 1,000,000-character `id`); this states the invariant that
+ * amplifier was an instance OF, so the next unbounded field is caught by
+ * machine rather than by somebody happening to send a large string.
+ *
+ * WHY THE BUDGET IS PER-CANDIDATE AND NOT PER-RESPONSE, here.
+ * `rankStreamCandidates` lives in `@liberty/media-engine`, which this package
+ * must not import -- `packages/contracts/package.json` depends on `zod` alone
+ * and `module-boundary.test.ts` governs the source graph. So the bound this
+ * package can state and enforce is the one every consumer multiplies: the
+ * serialized size of a single accepted candidate. The route and the engine
+ * DERIVE their budget from `MAX_STREAM_CANDIDATE_JSON_BYTES` rather than
+ * restating a number, which is the whole point of exporting it.
+ *
+ * THE MULTIPLIER, CORRECTED. F11 reports the 2x as the id appearing "in both
+ * the ranked entry and the reason trail". The mechanism is slightly different
+ * and the accurate version matters for sizing: `packages/media-engine/src/ranking.ts`
+ * returns `{ selected, ranked, rejected }` where `selected = ranked[0] ?? null`
+ * is the SAME object serialized a second time. So an ELIGIBLE candidate costs
+ * 2x (`ranked[i].candidate` plus, for the winner, `selected.candidate`) and an
+ * INELIGIBLE one costs 1x (`rejected[i].candidateId` only -- an id, not a
+ * candidate). F11's measurement is right; 2x is the ceiling either way.
+ */
+describe("no candidate the schema accepts can exceed the response budget", () => {
+  /*
+   * A pool chosen for JSON cost, not for readability.
+   *
+   * `\u0000` and a lone surrogate are the worst case at 6 UTF-8 bytes per
+   * UTF-16 unit once escaped; `"` and `\` cost 2; an astral character costs 2
+   * per unit; ASCII costs 1. A generator of readable ids would never reach the
+   * budget and this property would pass without ever testing it.
+   */
+  const costlyCharArb = fc.constantFrom("\u0000", "\u001f", "\ud800", '"', "\\", "\u{1f642}", "a", "é");
+
+  /*
+   * Two branches, and the second one is load-bearing.
+   *
+   * A uniformly-mixed generator explores the boundary but never gets near the
+   * budget: fast-check biases toward short arrays and most of the pool costs 1
+   * or 2 bytes per unit, so the largest ACCEPTED candidate it produced was 325
+   * bytes against a 1,489-byte budget -- a property that passes without ever
+   * exercising the thing it claims to bound. The second branch deliberately
+   * builds strings clustered at the limit out of a single repeated character,
+   * so the worst case is reached often rather than never. The non-vacuity test
+   * below is what enforces that this stays true.
+   */
+  const costlyStringArb = (maxLength: number): Arbitrary<string> =>
+    fc.oneof(
+      fc.array(costlyCharArb, { minLength: 0, maxLength }).map((parts) => parts.join("")),
+      fc
+        .tuple(fc.integer({ min: Math.max(1, maxLength - 25), max: maxLength }), costlyCharArb)
+        .map(([count, unit]) => unit.repeat(count))
+    );
+
+  /**
+   * Candidates built to be EXPENSIVE, over string lengths that straddle the
+   * bound so both outcomes are generated. Numbers are drawn at their costliest
+   * renderings for the same reason.
+   */
+  const costlyCandidateArb = fc.record(
+    {
+      // Deliberately overshoots the bound: the property is an implication, and
+      // a generator that could not produce a rejected candidate would leave the
+      // bound itself untested.
+      id: costlyStringArb(MAX_STREAM_CANDIDATE_ID_CHARS + 20),
+      providerId: costlyStringArb(MAX_STREAM_CANDIDATE_PROVIDER_ID_CHARS + 20),
+      rights: contentRightsArb,
+      protocol: protocolArb,
+      height: fc.constantFrom(1, 1080, Number.MAX_SAFE_INTEGER),
+      bitrateKbps: fc.constantFrom(1, 8100.5, 0.0000034017905570227214, 1.7976931348623157e308),
+      estimatedLatencyMs: fc.constantFrom(0, 240, 0.0000034017905570227214),
+      healthScore: fc.constantFrom(0, 1, 0.0000034017905570227214),
+      videoCodec: fc.option(videoCodecArb, { nil: null }),
+      audioCodec: fc.option(audioCodecArb, { nil: null })
+    },
+    { noNullPrototype: true }
+  );
+
+  it("holds for every accepted candidate, however expensive its characters", () => {
+    fc.assert(
+      fc.property(costlyCandidateArb, (candidate) => {
+        const parsed = streamCandidateSchema.safeParse(candidate);
+        if (!parsed.success) return; // the implication's antecedent is false
+        expect(Buffer.byteLength(JSON.stringify(parsed.data))).toBeLessThanOrEqual(
+          MAX_STREAM_CANDIDATE_JSON_BYTES
+        );
+      }),
+      { numRuns: 2000 }
+    );
+  });
+
+  /*
+   * NON-VACUITY. The property above is an implication, so it would pass
+   * trivially against a schema that rejected everything AND against one whose
+   * bound was so wide the generator never reached it. This asserts the
+   * generator actually produces both outcomes, and that at least one accepted
+   * candidate lands within a factor of two of the budget -- i.e. the budget is
+   * a real ceiling rather than a number nothing approaches.
+   */
+  it("actually generates candidates on both sides of the bound", () => {
+    let accepted = 0;
+    let refused = 0;
+    let largestAccepted = 0;
+
+    fc.assert(
+      fc.property(costlyCandidateArb, (candidate) => {
+        const parsed = streamCandidateSchema.safeParse(candidate);
+        if (parsed.success) {
+          accepted += 1;
+          largestAccepted = Math.max(
+            largestAccepted,
+            Buffer.byteLength(JSON.stringify(parsed.data))
+          );
+        } else {
+          refused += 1;
+        }
+      }),
+      { numRuns: 2000 }
+    );
+
+    expect(accepted).toBeGreaterThan(0);
+    expect(refused).toBeGreaterThan(0);
+    expect(largestAccepted).toBeGreaterThan(MAX_STREAM_CANDIDATE_JSON_BYTES / 2);
+  });
+
+  /*
+   * THE 2x CEILING, STATED OVER GENERATED INPUT.
+   *
+   * What a resolve response costs per candidate: the candidate itself in
+   * `ranked`, plus one more copy if it is `selected`. An ineligible candidate
+   * contributes only its id via `rejected[].candidateId`, which is strictly
+   * smaller. So `2 * MAX_STREAM_CANDIDATE_JSON_BYTES` bounds any single
+   * candidate's contribution, and a route multiplies that by its own candidate
+   * cap rather than inventing a second bound.
+   */
+  it("bounds a single candidate's whole contribution to a decision at 2x", () => {
+    fc.assert(
+      fc.property(costlyCandidateArb, (candidate) => {
+        const parsed = streamCandidateSchema.safeParse(candidate);
+        if (!parsed.success) return;
+        const rankedThenSelected = Buffer.byteLength(JSON.stringify(parsed.data)) * 2;
+        const rejectedTrailOnly = Buffer.byteLength(JSON.stringify(parsed.data.id));
+        expect(rejectedTrailOnly).toBeLessThanOrEqual(rankedThenSelected);
+        expect(rankedThenSelected).toBeLessThanOrEqual(2 * MAX_STREAM_CANDIDATE_JSON_BYTES);
+      }),
+      { numRuns: 500 }
+    );
+  });
+});
+
+/**
+ * The bound is above every id this repository's producers can mint.
+ *
+ * The example suite pins the specific real ids; this states the GRAMMAR those
+ * producers are documented to emit and asserts the bound clears all of it. A
+ * bound that rejects a legitimate upstream id is an outage, not a fix, and the
+ * two shapes below are exactly the ones that would produce that outage.
+ */
+describe("the bound cannot refuse an id a producer can mint", () => {
+  /** Everything except the two bounded fields, which each case supplies. */
+  const baseCandidate = {
+    rights: "public-domain",
+    protocol: "hls",
+    height: null,
+    bitrateKbps: null,
+    estimatedLatencyMs: 240,
+    healthScore: 1,
+    videoCodec: null,
+    audioCodec: null
+  } as const;
+
+  /** `SOURCE_ID_PATTERN` / `FIXTURE_ID_PATTERN`: `/^[a-z0-9][a-z0-9._-]{0,63}$/i`. */
+  const sourceIdArb: Arbitrary<string> = fc
+    .tuple(
+      fc.constantFrom(..."abcdefghijklmnopqrstuvwxyz0123456789".split("")),
+      fc.array(fc.constantFrom(..."abcdefghijklmnopqrstuvwxyz0123456789._-".split("")), {
+        minLength: 0,
+        maxLength: 63
+      })
+    )
+    .map(([head, rest]) => head + rest.join(""));
+
+  /** `catalog-ingestion/src/identity.ts:141` -- `${source}-${native}`, both normalized. */
+  const normalizedSegmentArb: Arbitrary<string> = fc
+    .array(fc.constantFrom(..."abcdefghijklmnopqrstuvwxyz0123456789".split("")), {
+      minLength: 1,
+      maxLength: 64
+    })
+    .map((parts) => parts.join(""));
+
+  /** `stableStreamKey`: FNV-1a 32-bit, `toString(16).padStart(8, "0")`. */
+  const streamKeyArb: Arbitrary<string> = fc
+    .array(fc.constantFrom(..."0123456789abcdef".split("")), { minLength: 8, maxLength: 8 })
+    .map((parts) => parts.join(""));
+
+  it("accepts every stremio candidate id: `${sourceId}:${8 hex}`", () => {
+    fc.assert(
+      fc.property(sourceIdArb, streamKeyArb, (sourceId, key) => {
+        const candidate = { ...baseCandidate, id: `${sourceId}:${key}`, providerId: sourceId };
+        expect(streamCandidateSchema.safeParse(candidate).success).toBe(true);
+      })
+    );
+  });
+
+  it("accepts every fixture candidate id: `${source}-${native}-${variantKey}`", () => {
+    fc.assert(
+      fc.property(
+        normalizedSegmentArb,
+        normalizedSegmentArb,
+        fc.constantFrom("progressive", "hls", "dash"),
+        sourceIdArb,
+        (source, native, variantKey, providerId) => {
+          const candidate = {
+            ...baseCandidate,
+            id: `${source}-${native}-${variantKey}`,
+            providerId
+          };
+          expect(streamCandidateSchema.safeParse(candidate).success).toBe(true);
+        }
+      )
     );
   });
 });

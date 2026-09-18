@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-18T22:17:09.016Z",
+  "generatedAt": "2026-09-18T23:16:09.995Z",
   "agent": "claude-backend",
   "executionAvailable": true,
   "assigned": [
@@ -66,6 +66,53 @@
         ],
         "obligationsThatFollow": "Wikidata's structured data is CC0, but access is not unconditional: the Wikimedia User-Agent policy requires an informative User-Agent with contact information or the client may be IP-blocked without notice, and browser-impersonating agents are forbidden. That is why CatalogDocumentOptions.userAgent is required with no default, and it must stay that way. Text outside the main, property and lexeme namespaces is CC BY-SA rather than CC0, so the distinction has to survive into whatever is ingested."
       }
+    },
+    {
+      "id": "PL-0306",
+      "priority": "P1",
+      "lane": "Provider",
+      "status": "REVIEW",
+      "title": "Fixture provider states the protection fact it actually knows",
+      "dependencies": [
+        "PL-0902",
+        "PL-0301"
+      ],
+      "allowedPaths": [
+        "packages/provider-sdk/src/fixture/**"
+      ],
+      "reviewDependencies": [
+        "packages/contracts/src/shared/drm.ts",
+        "packages/contracts/src/domains/playback.ts"
+      ],
+      "preferredAgent": "claude-backend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "rights-review"
+      ],
+      "acceptance": "The fixture provider adapter emits contentProtection { state: \"clear\" } for its own candidates, because for a fixture the absence of DRM is a fact the adapter genuinely knows rather than something it is guessing. Created from gpt-architect's round-44 non-blocking finding on PL-0501, in the reviewer's own words: \"Create a provider-owned task for the fixture provider protection fact. The fixture adapter, not PL-0501, should emit { state: \\\"clear\\\" } when that fact is genuinely known. PL-0501 may keep PROTECTION_NOT_STATED as the conservative fallback until that provider task lands.\" So the deliverable is a narrowing of where the fact is asserted, not a behaviour change in routing: PROTECTION_NOT_STATED stays in PL-0501 as the fallback for every adapter that has not stated a protection fact, and this task removes the fixture from the set that needs it. Required, and each is a way this task could be done wrongly: the fixture must set the field itself rather than PL-0501 special-casing the fixture provider id, because a consumer branching on a provider identity is exactly the provider-specific logic outside @liberty/provider-sdk that invariant 3 forbids; requiresContentDecryptionModule must be observed returning false for a fixture candidate and the observation recorded, since state !== \"clear\" is the whole point of the encoding and an untested clear is indistinguishable from an untested unknown; the fallback path in PL-0501 must be left in place and a test must still cover an adapter that states nothing, because deleting the fallback once its only current user stops needing it would fail open for the next adapter; and no other adapter may be given a protection fact here, because for a real provider the honest value is unknown and asserting clear for one would be a rights misstatement rather than a defaulting decision. Out of scope: any change to contract shape (PL-0902 owns it), to ranking (@liberty/media-engine), or to capability routing.",
+      "notes": "Provenance: gpt-architect CHANGES_REQUESTED on PL-0501, reviewed at 27d3a03389781256451c5e52d72520132cfa76c1, non-blocking/follow-up section. Filed as a task rather than actioned inside PL-0501 on the reviewer's explicit instruction that the fact belongs to the provider, not to the session API. Depends on PL-0902 because the field this task populates is defined there and PL-0902 is still in REVIEW; a fixture that sets a field whose contract is not yet approved would have to be rewritten if the contract moves.",
+      "owner": "claude-backend",
+      "gateResults": {
+        "typecheck": {
+          "status": "pass",
+          "at": "2026-09-18T23:16:08.970Z",
+          "by": "claude-backend",
+          "commitSha": "fd859bb05dbdef886bbc9bcc5aee35a7a148d390",
+          "evidence": "npx turbo run typecheck --force at the integrated four-task head, exit 0, 10 of 10, 0 cached. The compile-time guard is part of the deliverable rather than incidental: type StremioStatesNoProtection = \"protection\" extends keyof MappedStream ? never : true stops compiling the moment anyone gives the Stremio adapter a protection fact, which is acceptance clause 4 -- no other adapter may assert one, because for a real provider the honest value is unknown."
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-09-18T23:16:09.062Z",
+          "by": "claude-backend",
+          "commitSha": "fd859bb05dbdef886bbc9bcc5aee35a7a148d390",
+          "evidence": "npx turbo run test --force at the integrated head, exit 0, 17 of 17, 0 cached, 2409 passed across the wave (base 2332). Package-level: 8 files, 223 passed in provider-sdk. RED-THEN-GREEN, test written before the implementation: npx vitest run src/fixture/provider.test.ts --root packages/provider-sdk exit 1, 1 failed 24 passed, 'AssertionError: expected undefined to deeply equal { state: \"clear\" }' at provider.test.ts:401; after the change, 25 passed. CLAUSE 2 OBSERVED RATHER THAN ASSUMED: over each of the three real resolve().mapped entries the test asserts requiresContentDecryptionModule(entry.protection) === false, protectionKeySystem null, describeContentProtection 'clear', and contentProtectionSchema.safeParse success -- an untested clear is indistinguishable from an untested unknown. CLAUSE 3, the fallback is intact and still covered: apps/web was not written to, and its two existing tests pinning PROTECTION_NOT_STATED still pass unmodified (2 files, 87 passed), plus new in-package coverage of the stating-nothing case. CLAUSE 1: no consumer special-cases the provider id; authorized-candidates.ts still contains no comparison against 'fixture'. Note the contract field is spelled 'protection' on resolvedStreamCandidateSchema, not 'contentProtection'; the adapter uses the contract's spelling with the specified { state: 'clear' } value."
+        }
+      },
+      "implementationAgent": "claude-backend",
+      "updatedAt": "2026-09-18T23:16:09.715Z",
+      "implementationBaseSha": "fd859bb05dbdef886bbc9bcc5aee35a7a148d390"
     }
   ],
   "review": [],
@@ -131,35 +178,6 @@
           "evidence": "turbo run test --filter @liberty/provider-sdk exit 0 under pinned Node 22: zero observations yielding unknown with a null observed rate and a zero sample count, a prior labelled rather than presented as measurement at the same ranking number as a measured value, the degraded band held distinct from up and down, purity over observations plus an explicit policy version with Date.now replaced by a thrower to prove no wall clock is read, whole-report permutation invariance under generated policies, monotonicity in each count, and a compile-time guard that no health type can carry entitlement."
         }
       }
-    },
-    {
-      "id": "PL-0306",
-      "priority": "P1",
-      "lane": "Provider",
-      "status": "READY",
-      "title": "Fixture provider states the protection fact it actually knows",
-      "dependencies": [
-        "PL-0902",
-        "PL-0301"
-      ],
-      "allowedPaths": [
-        "packages/provider-sdk/src/fixture/**"
-      ],
-      "reviewDependencies": [
-        "packages/contracts/src/shared/drm.ts",
-        "packages/contracts/src/domains/playback.ts"
-      ],
-      "preferredAgent": "claude-backend",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "typecheck",
-        "unit",
-        "rights-review"
-      ],
-      "acceptance": "The fixture provider adapter emits contentProtection { state: \"clear\" } for its own candidates, because for a fixture the absence of DRM is a fact the adapter genuinely knows rather than something it is guessing. Created from gpt-architect's round-44 non-blocking finding on PL-0501, in the reviewer's own words: \"Create a provider-owned task for the fixture provider protection fact. The fixture adapter, not PL-0501, should emit { state: \\\"clear\\\" } when that fact is genuinely known. PL-0501 may keep PROTECTION_NOT_STATED as the conservative fallback until that provider task lands.\" So the deliverable is a narrowing of where the fact is asserted, not a behaviour change in routing: PROTECTION_NOT_STATED stays in PL-0501 as the fallback for every adapter that has not stated a protection fact, and this task removes the fixture from the set that needs it. Required, and each is a way this task could be done wrongly: the fixture must set the field itself rather than PL-0501 special-casing the fixture provider id, because a consumer branching on a provider identity is exactly the provider-specific logic outside @liberty/provider-sdk that invariant 3 forbids; requiresContentDecryptionModule must be observed returning false for a fixture candidate and the observation recorded, since state !== \"clear\" is the whole point of the encoding and an untested clear is indistinguishable from an untested unknown; the fallback path in PL-0501 must be left in place and a test must still cover an adapter that states nothing, because deleting the fallback once its only current user stops needing it would fail open for the next adapter; and no other adapter may be given a protection fact here, because for a real provider the honest value is unknown and asserting clear for one would be a rights misstatement rather than a defaulting decision. Out of scope: any change to contract shape (PL-0902 owns it), to ranking (@liberty/media-engine), or to capability routing.",
-      "notes": "Provenance: gpt-architect CHANGES_REQUESTED on PL-0501, reviewed at 27d3a03389781256451c5e52d72520132cfa76c1, non-blocking/follow-up section. Filed as a task rather than actioned inside PL-0501 on the reviewer's explicit instruction that the fact belongs to the provider, not to the session API. Depends on PL-0902 because the field this task populates is defined there and PL-0902 is still in REVIEW; a fixture that sets a field whose contract is not yet approved would have to be rewritten if the contract moves.",
-      "owner": null,
-      "gateResults": {}
     }
   ]
 }

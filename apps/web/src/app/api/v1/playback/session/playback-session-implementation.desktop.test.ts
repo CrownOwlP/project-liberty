@@ -5,7 +5,7 @@ import {
   playbackSessionResponseSchema,
   type PlaybackSessionResponse
 } from "./contract";
-import { playbackSessionResponse } from "./handler";
+import { boundRequestBody, MAX_REQUEST_BODY_BYTES, playbackSessionResponse } from "./handler";
 import {
   decidePlaybackSession,
   IDENTITY_HEADERS,
@@ -452,5 +452,109 @@ describe("a backend that cannot answer produces an honest unavailable", () => {
       /* Every branch is a member of the published union, validated. */
       expect(() => playbackSessionResponseSchema.parse(result)).not.toThrow();
     }
+  });
+});
+
+/* -------------------------------------------------------------------------
+ * The request body bound, under THIS target (PL-0707, register entry F10)
+ * ---------------------------------------------------------------------- */
+
+describe("the oversized-body refusal reaches the forwarding target too", () => {
+  /**
+   * The composition the desktop build runs, written out by hand.
+   *
+   * A vitest run resolves `playback-session-implementation.ts`, so
+   * `handlePlaybackSessionRequest` cannot be called here and be the desktop
+   * one. What CAN be called is each piece of the shared envelope -- the gate,
+   * this target's `decidePlaybackSession`, and `playbackSessionResponse` -- in
+   * the order `handler.ts` calls them, which is what the desktop build compiles.
+   * The suite above already uses the same technique for the status derivation.
+   */
+  async function throughDesktopEnvelope(
+    request: Request,
+    options: { readonly fetch: typeof globalThis.fetch }
+  ): Promise<Response> {
+    const bounded = await boundRequestBody(request);
+    if (!bounded.ok) return bounded.response;
+    return playbackSessionResponse(
+      await decidePlaybackSession(bounded.request, { ...options, backendOrigin: BACKEND })
+    );
+  }
+
+  /** The bound, as a literal, for the reason the web suite gives at length: a
+   * fixture sized from the constant under test cannot produce an honest red. */
+  const DECLARED_BOUND = 16 * 1024;
+
+  /** Schema-valid in every respect except size. See the web suite for why the
+   * padding goes into `preferredAudioLanguages` rather than an unknown key. */
+  function bodyOfAtLeast(bytes: number): string {
+    const languages: string[] = [];
+    const encoder = new TextEncoder();
+    let json = "";
+    do {
+      languages.push(`en-gb-${String(languages.length).padStart(14, "0")}`);
+      json = JSON.stringify({
+        contentId: "aurora-fall",
+        capabilities: { ...CAPABILITIES, preferredAudioLanguages: languages }
+      });
+    } while (encoder.encode(json).length < bytes);
+    return json;
+  }
+
+  it("uses the same named bound the shared envelope exports", () => {
+    expect(MAX_REQUEST_BODY_BYTES).toBe(DECLARED_BOUND);
+  });
+
+  it("refuses an oversized body WITHOUT forwarding it to the backend", async () => {
+    /*
+     * The finding this closes is that `request.text()` on line 254 of the
+     * forwarder was as unbounded as `request.json()` was on the web side. The
+     * assertion that matters is not only the 413: it is `calls` being EMPTY.
+     * A cap that refused after forwarding would have relayed the whole body to
+     * the backend first, turning this process into an amplifier pointed at our
+     * own infrastructure instead of merely at its own heap.
+     */
+    const remote = backend(answering(GRANTED));
+    const response = await throughDesktopEnvelope(
+      post(bodyOfAtLeast(DECLARED_BOUND + 1)),
+      { fetch: remote.fetch }
+    );
+
+    expect(response.status).toBe(413);
+    expect(remote.calls).toHaveLength(0);
+
+    const body = await decision(response);
+    expect(body.outcome).toBe("denied");
+    expect(body.reasons[0].code).toBe("request_body_too_large");
+  });
+
+  it("forwards a body just under the bound, byte for byte", async () => {
+    /*
+     * Two things at once. The outage guard -- a body near the limit is handled
+     * normally -- and the regression that the gate's REPLAY is faithful: the
+     * envelope now hands the implementation a reconstructed Request rather than
+     * the original one, and the forwarder's byte-for-byte promise would be
+     * quietly broken by a gate that re-serialised or truncated anything.
+     */
+    const justUnder = bodyOfAtLeast(DECLARED_BOUND - 500);
+    const remote = backend(answering(GRANTED));
+    const response = await throughDesktopEnvelope(post(justUnder), { fetch: remote.fetch });
+
+    expect(response.status).toBe(200);
+    expect(remote.calls).toHaveLength(1);
+    expect(remote.calls[0]?.body).toBe(justUnder);
+  });
+
+  it("still forwards the identity headers the gate copied across", async () => {
+    /* The replayed Request carries the original headers, so the allowlist the
+     * forwarder applies sees exactly what the caller sent. */
+    const remote = backend(answering(GRANTED));
+    await throughDesktopEnvelope(
+      post(REQUEST_BODY, { cookie: "liberty_session=abc", "x-liberty-development-account": "dev" }),
+      { fetch: remote.fetch }
+    );
+
+    expect(remote.calls[0]?.headers["cookie"]).toBe("liberty_session=abc");
+    expect(remote.calls[0]?.headers["x-liberty-development-account"]).toBe("dev");
   });
 });

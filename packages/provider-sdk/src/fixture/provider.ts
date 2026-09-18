@@ -1,4 +1,5 @@
 import { unknownMediaFacts, type StreamCandidate } from "@liberty/contracts/domains/playback";
+import { describeContentProtection, type ContentProtection } from "@liberty/contracts/shared/drm";
 import { normalizedContentIdSchema } from "@liberty/contracts/shared/ids";
 import type { MediaFact } from "@liberty/contracts/shared/media-facts";
 import type { ContentRights } from "@liberty/contracts/shared/rights";
@@ -133,6 +134,58 @@ export const FIXTURE_VARIANTS: readonly FixtureVariant[] = [
 ];
 
 /**
+ * WHAT THIS ADAPTER STATES ABOUT CONTENT PROTECTION, AND WHY IT IS ALLOWED TO
+ * STATE ANYTHING AT ALL (PL-0306).
+ *
+ * `{ state: "clear" }` is an ASSERTION ABOUT THE BYTES -- `shared/drm.ts` makes
+ * it the one value in the union that has to be typed deliberately, and exports
+ * `PROTECTION_NOT_STATED` so that "I do not know" is the cheaper spelling. This
+ * provider is entitled to type it because for a fixture the absence of DRM is a
+ * fact it genuinely holds rather than one it is guessing at: it composed these
+ * three addresses itself, against an origin it was handed, naming three files
+ * the development rig packages in the clear. There is no manifest to inspect,
+ * no initialisation data to parse and no licence server to ask, because there
+ * is nothing encrypted to describe.
+ *
+ * NOTE WHAT THIS IS NOT. It is NOT the same kind of claim as `height` or
+ * `videoCodec`, which this module refuses to state one screen below: those are
+ * facts about bytes nothing has opened, and a guess at either would make a
+ * fixture pass capability eligibility it never earned. Encryption is a property
+ * of how the rig PACKAGES the file, which is configuration this boundary owns,
+ * not a measurement of the file's contents. "Nobody opened it" is the reason
+ * the media facts are `null`; it is not a reason to call an unencrypted file's
+ * encryption state unknown.
+ *
+ * WHY THE FIXTURE AND NOT ITS CONSUMER. The session route could have written
+ * this value by testing the provider id against `"fixture"` -- and that is a
+ * consumer branching on a provider identity, which is precisely the
+ * provider-specific behaviour product invariant 3 requires to live inside
+ * `@liberty/provider-sdk`. It would also be a route asserting something about
+ * bytes it has never addressed. `PROTECTION_NOT_STATED` stays in that route as
+ * the conservative fallback for every adapter that has not stated a fact --
+ * this change removes the fixture from that set and nothing else from it. The
+ * Stremio adapter in this package is deliberately NOT given one: an
+ * addon-sourced stream is something nobody here has looked at, so `unknown` is
+ * its honest value, and asserting `clear` for a real provider would be a rights
+ * misstatement rather than a defaulting decision.
+ *
+ * WHAT IT CHANGES, MECHANICALLY. `requiresContentDecryptionModule` is written
+ * as `state !== "clear"`, so this is the single value that lets a fixture reach
+ * the mpv adapter, which has no Content Decryption Module and cannot be given
+ * one. That is the whole effect, it is the reason the value is worth stating,
+ * and `provider.test.ts` OBSERVES that function returning `false` on a
+ * candidate this provider produced rather than asserting the literal alone: an
+ * untested `clear` is indistinguishable from an untested `unknown` until a
+ * player refuses a fixture under `drm_required_no_cdm`.
+ *
+ * NO KEY MATERIAL IS INVOLVED, in either direction. The `clear` variant is
+ * `.strict()` and carries no other key: no key system, no licence endpoint, no
+ * token. This module still contains no key, no licence URL and nothing that
+ * could be mistaken for one.
+ */
+const FIXTURE_PROTECTION: ContentProtection = { state: "clear" };
+
+/**
  * A candidate plus the address it refers to.
  *
  * SEPARATE FROM THE `StreamCandidate` RATHER THAN FLATTENED INTO IT, because the
@@ -157,6 +210,27 @@ export interface FixtureCandidate {
    * is a separate, separately-owned fact. See `stremio/url-policy.ts`.
    */
   readonly allowLoopback: boolean;
+  /**
+   * What this adapter states about content protection: always
+   * `FIXTURE_PROTECTION`, which is `{ state: "clear" }`.
+   *
+   * IT SITS BESIDE `uri` RATHER THAN ON `candidate` for the reason `uri` does,
+   * and `domains/playback.ts` states it directly: a protection descriptor is
+   * PLAYER input, and `StreamCandidate` is the RANKER's input.
+   * `@liberty/media-engine` has no use for a key system, and the first score
+   * component that discounted a protected candidate would be a second opinion
+   * about routing living in the one component `docs/DESKTOP_PLAYBACK.md` §4
+   * says must not hold one. `FixtureCandidate` is therefore this package's
+   * `ResolvedStreamCandidate` -- the scored candidate plus the two things only
+   * a player needs -- exactly as the session route's `AuthorizedCandidate` is
+   * the same shape in that route's vocabulary.
+   *
+   * REQUIRED, never optional. `domains/playback.ts` refuses `.optional()` on
+   * this field because an absent descriptor and a producer that predates the
+   * field are indistinguishable, and the reading an absent one invites is
+   * "there is no DRM".
+   */
+  readonly protection: ContentProtection;
   /**
    * The contract facts this candidate never stated, in `MEDIA_FACTS` order.
    *
@@ -608,6 +682,10 @@ export function createFixtureProvider(
         uri: fixtureUri(origin, contentId, variant.file),
         mimeType: variant.mimeType,
         allowLoopback,
+        /* Shared across all three, for the same reason `unmeasured` is: a
+         * future edit must not be able to make one fixture quietly claim
+         * something its siblings do not. */
+        protection: FIXTURE_PROTECTION,
         unknownFacts: unknownMediaFacts(candidate)
       };
     });
@@ -628,7 +706,14 @@ export function createFixtureProvider(
       detail:
         `${mapped.length} fixture candidates, ` +
         `${mapped.filter((entry) => entry.unknownFacts.length > 0).length} with unstated media ` +
-        `facts; authorized as ${describeRightsBasis(rightsBasis)}`,
+        /* The protection state is in the trail for the reason the unverified
+         * count is: it decides which player adapter a candidate can reach, so a
+         * trail that omits it cannot explain the routing that follows
+         * (invariant 4). Spelled with the contract's own
+         * `describeContentProtection` rather than formatted here, so this trail
+         * and a refusal's trail use one token for one state. */
+        `facts, protection ${describeContentProtection(FIXTURE_PROTECTION)}; ` +
+        `authorized as ${describeRightsBasis(rightsBasis)}`,
       requestId: context.requestId
     };
   }

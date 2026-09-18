@@ -240,3 +240,43 @@ failures. `packages/media-engine` still learns neither engine's numbers.
 
 Five items, recorded on PL-0502's acceptance rather than reopening either task, which
 the reviewer stated explicitly. See `acceptanceAmendedBeforeClaim`.
+
+---
+
+## Round 49, reviewed at `fd859bb05dbdef886bbc9bcc5aee35a7a148d390`
+
+Relayed by the human commander. Origin confirmed at that sha before recording.
+
+### PL-0502 — APPROVED
+
+All seven points PASS. The two historical `browser_unsupported` occurrences in
+`docs/DESKTOP_PLAYBACK.md` are ruled **not an alias** and are to be **kept**. The
+`docs/DESKTOP_PLAYBACK.md` widening is approved as *necessary* to satisfy the
+reviewer's own migration requirement, and recording it rather than editing silently
+is called out approvingly. **Do not reopen PL-0904.**
+
+### PL-0702 — APPROVED
+
+`security-review` and `rights-review` PASS. The **stricter pre-claim acceptance
+amendment is accepted** — the one this lead made on its own initiative and flagged
+for confirmation. F7/F8/F9 RESOLVED with red-then-green; F10/F11/F12
+ACCEPTED-FOLLOW-UP. The PL-0707 / PL-0708 distinction is singled out as important:
+the outer envelope bound and the inner field bound protect different amplification
+paths and neither substitutes for the other. PL-0710 is the accepted owner of the
+host-literal / DNS-rebinding class; **PL-0302's dependency on it is not to be
+broadened** to fixture playback or PL-0502.
+
+### STANDING ACCEPTANCE REQUIREMENT — the task that first implements `PlayerAdapter`
+
+Recorded here, in required reading, because the reviewer directed it be recorded now
+so it cannot be forgotten, and directed that **no separate task be created** for it:
+the ADR's `PlayerAdapterId = "web-shaka" | "native-mpv"` is documentation for a
+boundary that does not exist in code yet, not a second runtime type today.
+
+**Whoever creates or claims the task that first implements `PlayerAdapter` must put
+these on its acceptance:**
+
+1. `PlayerAdapterId` **MUST** derive from or alias the existing authoritative engine
+   identity (`PlaybackErrorEngine`, in `apps/web/src/components/player/shaka-error.ts`).
+2. It must **NOT** introduce a third independently editable literal union.
+3. A **compile-time test** pinning their equivalence.

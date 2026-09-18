@@ -42,9 +42,146 @@ import { contentRightsSchema } from "../shared/rights";
  * "does not apply" and "was not sent" are different claims and the resolver
  * needs to tell them apart.
  */
+/* -------------------------------------------------------------------------
+ * Length bounds on the candidate's identifiers (PL-0708, register entry F11)
+ *
+ * MEASURED, not hypothesised. `docs/SECURITY_REVIEW_PROVIDER_URL.md` F11: a
+ * request carrying one candidate with a 1,000,000-character `id` produced a
+ * 2,002,555-byte response. Both fields were `z.string().min(1)` with no upper
+ * bound and no charset restriction.
+ *
+ * WHY THE BOUND IS HERE AND NOT AT A ROUTE. Every consumer of a candidate
+ * inherits it from the contract; a per-route cap is one route away from being
+ * forgotten, and it would leave the contract still ACCEPTING the value. The
+ * defect that argument describes is real and currently live one layer up --
+ * `apps/web`'s `playbackSessionCandidateSchema` restates `id` and `providerId`
+ * as `z.string().min(1)` of its own rather than deriving them -- which is why
+ * the limits below are EXPORTED. A consumer computes its budget from them. A
+ * consumer that retypes the number is the same defect wearing a second schema.
+ *
+ * WHERE THE AMPLIFICATION COMES FROM, corrected against F11's wording. F11
+ * attributes the 2x to the id appearing "in both the ranked entry and the
+ * reason trail". The mechanism is slightly different, and the accurate version
+ * is what sizes a budget: `packages/media-engine/src/ranking.ts` returns
+ * `{ selected, ranked, rejected }` where `selected = ranked[0] ?? null` is the
+ * SAME object serialized a second time. So an ELIGIBLE candidate costs 2x --
+ * `ranked[i].candidate`, plus `selected.candidate` for the winner -- while an
+ * INELIGIBLE one costs 1x, contributing only `rejected[i].candidateId`, an id
+ * rather than a candidate. F11's measurement stands; 2x is the ceiling.
+ *
+ * A REJECTED CANDIDATE IS NEVER A SILENT DROP, which is the risk this task was
+ * told to carry and not to introduce. Every point that enforces this schema
+ * already names the field and the limit:
+ *
+ *   - `provider-sdk/src/stremio/mapping.ts` `safeParse`s each mapped candidate
+ *     and turns a failure into `candidate_failed_contract` carrying the
+ *     formatted issues, so the reason trail says which field and which limit.
+ *   - `apps/web/.../playback/resolve/handler.ts` returns HTTP 400
+ *     `{ error: "invalid_request", issues }`, naming `candidates.<i>.id`.
+ *   - `provider-sdk/src/fixture/provider.ts` builds typed literals and never
+ *     parses, so a bound cannot drop a fixture candidate at all.
+ *
+ * And the refusal does not itself amplify: Zod's `too_big` issue carries the
+ * LIMIT and the path, never the received value, so the 1,000,000-character id
+ * above yields a 180-byte refusal. That is asserted in the example suite rather
+ * than assumed, because it is a property of a dependency this package does not
+ * own.
+ * ---------------------------------------------------------------------- */
+
+/**
+ * The longest `providerId` a candidate may carry: **64 characters**.
+ *
+ * Not a round number chosen for comfort -- it is the bound this repository's
+ * two producers of the value ALREADY enforce, adopted so the contract cannot
+ * refuse an id either of them can mint:
+ *
+ *   - `provider-sdk/src/stremio/source.ts`  `SOURCE_ID_PATTERN  = /^[a-z0-9][a-z0-9._-]{0,63}$/i`
+ *   - `provider-sdk/src/fixture/provider.ts` `FIXTURE_ID_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}$/i`
+ *
+ * Both are one leading character plus 63, and `providerId` is exactly these
+ * values: the Stremio mapper assigns `providerId: context.sourceId` and the
+ * fixture provider assigns its configured id.
+ *
+ * What the longest LEGITIMATE value actually looks like, measured in this tree:
+ * `"public-domain-archive"` (21), `"local-library"` (13), `"stremio-a"` (9),
+ * `"wikidata"` (8), `"fixture"` (7). So 64 is roughly three times the longest
+ * real one and is still the figure a producer would refuse above.
+ */
+export const MAX_STREAM_CANDIDATE_PROVIDER_ID_CHARS = 64;
+
+/**
+ * The longest candidate `id`: **141 characters**, and every term is derived.
+ *
+ * A candidate id is composed, never free-form, and there are exactly two
+ * producers. The bound is the larger composition, computed from the segment
+ * bounds that already exist rather than picked:
+ *
+ *   STREMIO -- `provider-sdk/src/stremio/mapping.ts`: `${sourceId}:${stableStreamKey(url)}`
+ *     where `stableStreamKey` is FNV-1a 32-bit rendered `padStart(8, "0")`.
+ *       64 (source id, above) + 1 (":") + 8 (hex key)                    =  73
+ *
+ *   FIXTURE -- `provider-sdk/src/fixture/provider.ts`: `${contentId}-${variant.key}`
+ *     where `contentId` is a normalized content id, minted only by
+ *     `catalog-ingestion/src/identity.ts` as `${source}-${native}`, and the
+ *     variant keys are `progressive` / `hls` / `dash`.
+ *       64 (source segment -- the same source id, normalized)
+ *     +  1 ("-")
+ *     + 64 (provider-native segment: a third-party-issued identifier such as a
+ *           Wikidata QID. Given the same allowance as the source id, because
+ *           there is no principled reason to hold an id issued BY an authority
+ *           tighter than the id OF the authority, and `normalizedContentIdSchema`
+ *           in `../shared/ids` states no length rule of its own -- it is the one
+ *           unbounded term in the chain and this is where it gets bounded.)
+ *     +  1 ("-")
+ *     + 11 ("progressive", the longest variant key)                      = 141
+ *
+ * 141 = max(73, 141). What the longest legitimate value actually looks like,
+ * measured in this tree: `"big-buck-bunny-progressive"` (26),
+ * `"wikidata-q83495-progressive"` (27, from the real QID in
+ * `catalog-ingestion/src/wikidata.ts`), `"aurora-fall-progressive"` (23). So the
+ * bound is about five times the longest id this platform has ever emitted, and
+ * still cannot refuse one either adapter is capable of emitting -- including a
+ * ten-digit QID, which Wikidata has not reached.
+ */
+export const MAX_STREAM_CANDIDATE_ID_CHARS = 141;
+
+/**
+ * The most bytes one schema-accepted candidate can serialize to: **1489**.
+ *
+ * THE RESPONSE BUDGET, stated where every consumer can derive from it instead
+ * of guessing. A route multiplies this by its own candidate cap (the resolve
+ * scaffold's is 100) and by the 2x above; it does not invent a second number.
+ *
+ * Exact, and reconstructed by the example suite so the literal cannot drift
+ * from the arithmetic. Worst case, in UTF-8 bytes of `JSON.stringify`:
+ *
+ *     171  structure: braces, the ten keys, quotes, commas, and the longest
+ *          member of each vocabulary ("public-domain", "https", "hevc", "eac3")
+ *     846  id          141 units x 6
+ *     384  providerId   64 units x 6
+ *      16  height       Number.MAX_SAFE_INTEGER, the ceiling of `.int()`
+ *      72  the three remaining numbers, 24 each
+ *    ----
+ *    1489
+ *
+ * The 6 is not padding: a UTF-16 unit costs at most 6 UTF-8 bytes once
+ * JSON-escaped -- a control character or a lone surrogate becomes `\u0000`,
+ * six ASCII bytes -- and Zod's `.max()` counts UTF-16 units, so a 141-unit id
+ * of control characters is accepted and serializes to 846 bytes. An ASCII id
+ * costs 1 byte per unit; bounding against the readable case would understate
+ * the budget six-fold. The 24 is the longest `JSON.stringify` rendering of a
+ * finite double (e.g. `0.0000034017905570227214`).
+ *
+ * Scoped to `streamCandidateSchema`. `resolvedStreamCandidateSchema` adds
+ * `protection` on top of this and is not covered by the figure.
+ */
+export const MAX_STREAM_CANDIDATE_JSON_BYTES = 1489;
+
 export const streamCandidateSchema = z.object({
-  id: z.string().min(1),
-  providerId: z.string().min(1),
+  /** Bounded: see `MAX_STREAM_CANDIDATE_ID_CHARS` for what 141 is computed from. */
+  id: z.string().min(1).max(MAX_STREAM_CANDIDATE_ID_CHARS),
+  /** Bounded: see `MAX_STREAM_CANDIDATE_PROVIDER_ID_CHARS`. */
+  providerId: z.string().min(1).max(MAX_STREAM_CANDIDATE_PROVIDER_ID_CHARS),
   rights: contentRightsSchema,
   protocol: z.enum(["https", "hls", "dash"]),
   /** `null` = no resolution was stated. Never a guess, never a placeholder. */

@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  MAX_STREAM_CANDIDATE_ID_CHARS,
+  MAX_STREAM_CANDIDATE_JSON_BYTES,
+  MAX_STREAM_CANDIDATE_PROVIDER_ID_CHARS,
   playbackResolveRequestSchema,
   resolvedStreamCandidateSchema,
   streamCandidateSchema,
@@ -391,5 +394,194 @@ describe("the session's obligation is a compile error, not a doc note", () => {
   it("accepts the resolved candidate and rejects the ranker's candidate", () => {
     expect(resolvedStates).toBe(true);
     expect(rankerCandidateIsNotGuarded).toBe(true);
+  });
+});
+
+/* -------------------------------------------------------------------------
+ * Length bounds on the candidate's string fields (PL-0708 / register F11)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * The measurement this task exists to answer, pinned as a test.
+ *
+ * `docs/SECURITY_REVIEW_PROVIDER_URL.md` F11 measured a candidate carrying a
+ * 1,000,000-character `id` producing a 2,002,555-byte response. Before this
+ * task `streamCandidateSchema.id` was `z.string().min(1)`, so the contract
+ * ACCEPTED that candidate and every consumer inherited it.
+ *
+ * These assert the three things a bound has to get right, in the order they can
+ * go wrong: it refuses the amplifier, its refusal does not itself amplify, and
+ * it does not refuse anything a real producer can mint.
+ */
+describe("a candidate cannot amplify a response (F11)", () => {
+  const F11_ID_CHARS = 1_000_000;
+
+  it("refuses the 1,000,000-character id that F11 measured", () => {
+    const result = streamCandidateSchema.safeParse({ ...described, id: "a".repeat(F11_ID_CHARS) });
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    const issue = result.error.issues.find((candidateIssue) => candidateIssue.path[0] === "id");
+    expect(issue?.code).toBe("too_big");
+  });
+
+  it("refuses an unbounded providerId on the same grounds", () => {
+    const result = streamCandidateSchema.safeParse({
+      ...described,
+      providerId: "a".repeat(F11_ID_CHARS)
+    });
+    expect(result.success).toBe(false);
+  });
+
+  /*
+   * THE REFUSAL MUST NOT BE THE AMPLIFIER.
+   *
+   * `apps/web/src/app/api/v1/playback/resolve/handler.ts` returns
+   * `{ error: "invalid_request", issues: parsed.error.issues }` verbatim on a
+   * parse failure, so a validator that echoed the rejected value would turn the
+   * bound into the very reflection F11 filed. Zod's `too_big` issue carries the
+   * LIMIT and the path, never the received value -- asserted here rather than
+   * trusted, because it is a property of a dependency this package does not own.
+   *
+   * Written against zod 4 (`too_big` carries `origin`/`maximum`), which is what
+   * resolves here; the declared range in package.json is a separate decision.
+   */
+  it("does not echo the rejected value in the issue a route would return", () => {
+    const payload = "a".repeat(F11_ID_CHARS);
+    const result = streamCandidateSchema.safeParse({ ...described, id: payload });
+    expect(result.success).toBe(false);
+    if (result.success) return;
+
+    const body = JSON.stringify({ error: "invalid_request", issues: result.error.issues });
+    expect(body).not.toContain(payload);
+    // F11 measured 2,002,555 bytes for this input. The refusal is three orders
+    // of magnitude smaller and is a function of the LIMIT, not of the input.
+    expect(Buffer.byteLength(body)).toBeLessThan(1_000);
+  });
+});
+
+/**
+ * A bound that rejects a legitimate upstream id is an outage, not a fix.
+ *
+ * Every value below is one this repository can actually mint today, so this is
+ * the regression that fires if a later round tightens a bound past a producer.
+ * The two id grammars are restated here deliberately: `@liberty/contracts` must
+ * not depend on `@liberty/provider-sdk`, so the check is against the SHAPE those
+ * producers are documented to emit rather than against an import.
+ */
+describe("the bounds refuse nothing a real producer can mint", () => {
+  /** `packages/provider-sdk/src/fixture/provider.ts:674` -- `${contentId}-${variant.key}`. */
+  const fixtureIds = [
+    "aurora-fall-hls",
+    "aurora-fall-dash",
+    "aurora-fall-progressive",
+    "big-buck-bunny-hls",
+    "big-buck-bunny-dash",
+    "big-buck-bunny-progressive",
+    // Derived from Wikidata by `catalog-ingestion/src/identity.ts:141`:
+    // `${normalize("wikidata")}-${normalize("Q83495")}` then the variant key.
+    "wikidata-q83495-progressive",
+    // A ten-digit QID, which Wikidata has not reached and would still fit.
+    "wikidata-q1342177280-progressive"
+  ];
+
+  /** `packages/provider-sdk/src/stremio/mapping.ts:496` -- `${sourceId}:${8 hex}`. */
+  const stremioIds = [
+    "stremio-a:1a2b3c4d",
+    "public-domain-archive:00000000",
+    // A source id at the full 64 characters `SOURCE_ID_PATTERN` allows.
+    `${"s".repeat(64)}:deadbeef`
+  ];
+
+  const providerIds = [
+    "fixture",
+    "wikidata",
+    "stremio-a",
+    "local-library",
+    "public-domain-archive",
+    // The longest `SOURCE_ID_PATTERN` / `FIXTURE_ID_PATTERN` value: 64 chars.
+    `s${"o".repeat(63)}`
+  ];
+
+  it.each(fixtureIds)("accepts the fixture candidate id %s", (id) => {
+    expect(streamCandidateSchema.safeParse({ ...described, id }).success).toBe(true);
+  });
+
+  it.each(stremioIds)("accepts the stremio candidate id %s", (id) => {
+    expect(streamCandidateSchema.safeParse({ ...described, id }).success).toBe(true);
+  });
+
+  it.each(providerIds)("accepts the provider id %s", (providerId) => {
+    expect(streamCandidateSchema.safeParse({ ...described, providerId }).success).toBe(true);
+  });
+});
+
+describe("the bounds are exactly where the derivation puts them", () => {
+  it("accepts an id at the limit and refuses one character more", () => {
+    expect(
+      streamCandidateSchema.safeParse({ ...described, id: "a".repeat(MAX_STREAM_CANDIDATE_ID_CHARS) })
+        .success
+    ).toBe(true);
+    expect(
+      streamCandidateSchema.safeParse({
+        ...described,
+        id: "a".repeat(MAX_STREAM_CANDIDATE_ID_CHARS + 1)
+      }).success
+    ).toBe(false);
+  });
+
+  it("accepts a providerId at the limit and refuses one character more", () => {
+    expect(
+      streamCandidateSchema.safeParse({
+        ...described,
+        providerId: "a".repeat(MAX_STREAM_CANDIDATE_PROVIDER_ID_CHARS)
+      }).success
+    ).toBe(true);
+    expect(
+      streamCandidateSchema.safeParse({
+        ...described,
+        providerId: "a".repeat(MAX_STREAM_CANDIDATE_PROVIDER_ID_CHARS + 1)
+      }).success
+    ).toBe(false);
+  });
+
+  it("still requires a non-empty id and providerId", () => {
+    expect(streamCandidateSchema.safeParse({ ...described, id: "" }).success).toBe(false);
+    expect(streamCandidateSchema.safeParse({ ...described, providerId: "" }).success).toBe(false);
+  });
+
+  /*
+   * THE CONSTANT IS THE ARITHMETIC, NOT A GUESS ABOUT IT.
+   *
+   * `MAX_STREAM_CANDIDATE_JSON_BYTES` is a hand-written literal, so this
+   * reconstructs the worst case it claims to describe and asserts the two agree
+   * EXACTLY. A later round that widens `id` and forgets the budget fails here
+   * rather than shipping a constant that no longer bounds anything.
+   *
+   * Worst case per field: a UTF-16 unit costs at most 6 UTF-8 bytes once
+   * JSON-escaped (`\u0000`, or a lone surrogate), the longest enum member of
+   * each vocabulary, `Number.MAX_SAFE_INTEGER` for the `.int()` field and the
+   * longest `JSON.stringify` rendering of a finite double for the other three.
+   */
+  it("equals the worst case a schema-accepted candidate can serialize to", () => {
+    const longestDouble = 0.0000034017905570227214; // 24 chars -- the JS maximum
+    const worstCase = {
+      id: "\u0000".repeat(MAX_STREAM_CANDIDATE_ID_CHARS),
+      providerId: "\u0000".repeat(MAX_STREAM_CANDIDATE_PROVIDER_ID_CHARS),
+      rights: "public-domain",
+      protocol: "https",
+      height: Number.MAX_SAFE_INTEGER,
+      bitrateKbps: longestDouble,
+      estimatedLatencyMs: longestDouble,
+      healthScore: longestDouble,
+      videoCodec: "hevc",
+      audioCodec: "eac3"
+    };
+
+    const parsed = streamCandidateSchema.safeParse(worstCase);
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+
+    expect(Buffer.byteLength(JSON.stringify(parsed.data))).toBe(MAX_STREAM_CANDIDATE_JSON_BYTES);
+    expect(JSON.stringify(longestDouble)).toHaveLength(24);
   });
 });
