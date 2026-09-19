@@ -407,6 +407,47 @@ export function fixtureProvider(
 }
 
 /**
+ * What a producer STATED about content protection, or the safe answer when it
+ * stated nothing.
+ *
+ * ONE FUNCTION, NO BRANCH ON WHO IS SPEAKING. It takes the descriptor and not
+ * the entry, and certainly not the provider, so there is no parameter through
+ * which a provider id could reach it: every adapter behind this seam is
+ * forwarded by the identical code path, which is what invariant 3 requires of a
+ * consumer of `@liberty/provider-sdk`.
+ *
+ * THE ABSENT CASE IS DELIBERATE, AND IS NOT REACHABLE FROM TYPED CODE TODAY.
+ * `FixtureCandidate.protection` is required, so every entry this module maps
+ * currently carries one. The parameter admits `null` and `undefined` anyway,
+ * because the fallback IS the safety property of the forwarding and a property
+ * that holds only while a type holds is a property nothing can test: what sits
+ * behind this seam is adapters, adapters are the things most likely to be
+ * replaced, and an adapter written before PL-0306 -- or reached through a
+ * `resolve` that satisfies the interface at compile time and omits the field at
+ * run time -- states nothing while typechecking cleanly. Making that case
+ * explicit is the difference between a guarantee and an accident.
+ *
+ * THE FALLBACK IS `PROTECTION_NOT_STATED` AND MUST NEVER BE `{ state: "clear" }`.
+ * A forwarder that read an absent field as `clear` would fail OPEN for every
+ * adapter that has not been updated: it would publish an assertion that bytes
+ * nobody looked at are unencrypted, which is the one-word invariant-2 mistake
+ * `docs/DESKTOP_PLAYBACK.md` §4 names, and it would do so silently for exactly
+ * the producers that know least. `{ state: "unknown", why: "provider_did_not_state" }`
+ * is instead a TRUE OBSERVATION ABOUT THE PRODUCER -- the only kind of
+ * statement a shape adapter is in a position to make -- and
+ * `requiresContentDecryptionModule` is `true` for it, so the worst it costs is
+ * a candidate routed to the adapter that HAS a CDM.
+ *
+ * IT IS NOT A VALIDATOR AND MUST NOT BECOME ONE. A stated descriptor is
+ * returned by reference, unparsed: re-deriving it here would be the second
+ * opinion `contract.ts` forbids, and a malformed one is caught by the response
+ * schema in `handler.ts` before anything is published.
+ */
+export function statedProtection(stated: ContentProtection | null | undefined): ContentProtection {
+  return stated ?? PROTECTION_NOT_STATED;
+}
+
+/**
  * The SDK provider's resolution, in this route's shape.
  *
  * The content id reaches the provider through its own `registry.lookup`, which
@@ -420,49 +461,62 @@ export function fixtureProvider(
  * lookup.
  *
  * -------------------------------------------------------------------------
- * WHY EVERY FIXTURE CANDIDATE LEAVES HERE AS `PROTECTION_NOT_STATED`, AND WHY
- * THAT IS NOT THIS SHAPE ADAPTER STATING A MEDIA FACT.
+ * WHAT THIS MAPPING STATES ABOUT PROTECTION: WHATEVER THE PROVIDER STATED, AND
+ * NOTHING ELSE (PL-0307).
  *
- * The open question, recorded rather than absorbed. `FixtureCandidate` in
- * `@liberty/provider-sdk` carries `candidate`, `uri`, `mimeType`,
- * `allowLoopback` and `unknownFacts` -- and nothing about encryption. The
- * honest descriptor for a clear development fixture is `{ state: "clear" }`,
- * because somebody would have had to look and nothing is encrypted; but
- * `{ state: "clear" }` is an ASSERTION ABOUT THE BYTES, and product invariant 3
- * says only a provider adapter may make one. `provider-sdk` is not this task's
- * surface, so this file cannot make the fixture provider say it.
+ * WHAT USED TO BE HERE, because the defect is worth naming precisely. This
+ * mapping hardcoded `PROTECTION_NOT_STATED`, under a comment arguing that
+ * `@liberty/provider-sdk`'s `FixtureCandidate` carried no protection field, and
+ * that a `{ state: "clear" }` invented HERE would be an ASSERTION ABOUT THE
+ * BYTES -- which product invariant 3 reserves to a provider adapter. That
+ * argument was right, and its own remedy has since landed: PL-0306 added
+ * `FixtureCandidate.protection`, stated once, inside the adapter that is the
+ * boundary that knows those three fixture files are unencrypted.
  *
- * `PROTECTION_NOT_STATED` is `{ state: "unknown", why: "provider_did_not_state" }`,
- * and that is the distinction this file turns on: it is not a claim about the
- * media at all, it is a TRUE OBSERVATION ABOUT THE PRODUCER -- this provider
- * did not state one -- which is exactly the fact a shape adapter is in a
- * position to report. The rule this module states about itself ("declares no
- * rights, composes no URL, invents no id and states no media fact") is
- * therefore kept rather than bent: the alternative reading, in which supplying
- * any value at all is a media fact, would make the field unfillable from here
- * and would leave the session publishing candidates with no protection
- * descriptor, which the wire contract no longer permits.
+ * At that point the hardcode became the thing it was guarding against, pointing
+ * the other way: the adapter STATED the fact and this mapping DISCARDED it, so
+ * the session went on publishing `unknown` for a candidate a provider had
+ * asserted was `clear`. That direction is conservative and breaks nothing --
+ * `requiresContentDecryptionModule` is `true` for `unknown`, so the cost was a
+ * clear fixture routed to the adapter that has a CDM -- which is exactly why it
+ * could sit unnoticed, and exactly why it is named here rather than quietly
+ * deleted.
  *
- * IT IS SAFE BY CONSTRUCTION AND THE FAILURE MODE IS NAMED.
- * `requiresContentDecryptionModule` returns `true` for `unknown` as well as for
- * `protected`, so the worst this costs is a clear development fixture routed to
- * the EME adapter that has a CDM it does not need, and refused by the mpv
- * adapter under `drm_required_no_cdm` with a reason that says the state was
- * UNSTATED rather than positive. It is not a rights breach and it cannot become
- * one: there is no direction in which "unknown" is read as "clear".
+ * FORWARDED UNCHANGED, AND UNIFORMLY. `statedProtection` reads the field and
+ * nothing else. It does not look at `providerId`, does not ask whether the
+ * provider it is mapping is the fixture one, and contains no branch that could
+ * tell one adapter from another -- because a consumer branching on provider
+ * IDENTITY is provider-specific logic living outside `@liberty/provider-sdk`,
+ * which is the arrangement invariant 3 exists to prevent. The descriptor is
+ * carried by reference, unparsed and unrewritten: `contract.ts` states that the
+ * published `protection` is a COPY AND NOT A SECOND OPINION, and `handler.ts`
+ * re-validates the whole response against `playbackSessionResponseSchema`
+ * before it leaves the server, so a malformed descriptor surfaces there as a
+ * refusal rather than being repaired here by a boundary with no standing to
+ * repair it.
  *
- * THE GAP IS IN `provider-sdk` AND IS UNOWNED. The fixture provider is the
- * boundary that knows these three files are unencrypted, so
- * `FixtureCandidate.protection` -- stated once, in the adapter, as
- * `{ state: "clear" }` -- is where the right answer belongs, and this mapping
- * would then forward it unchanged like every other field. That is a
- * `packages/provider-sdk` write, it is nobody's task at the time of writing,
- * and it is flagged for the reviewer here and in this task's report rather than
- * performed quietly from outside the package that owns it. Until it exists,
- * ANY fixture routed by protection is routed conservatively, which is the
- * reversible direction.
+ * IT STILL GOES BESIDE `source` AND NOT ONTO `candidate`. `AuthorizedCandidate`
+ * is this route's `ResolvedStreamCandidate`, and `domains/playback.ts` keeps
+ * `protection` off `streamCandidateSchema` on purpose: that schema is the
+ * RANKER's input, and the first score component that discounted a protected
+ * candidate would be a second opinion about routing living in the one component
+ * `docs/DESKTOP_PLAYBACK.md` §4 says must not hold one. Forwarding a fact does
+ * not move it.
+ *
+ * NO DECRYPTION AND NO KEY BEHAVIOUR IS INTRODUCED. This copies a descriptor
+ * from one record onto another. It reads no key system in order to act on one,
+ * requests no licence, holds no key, no key id and no initialisation data, and
+ * the `clear` variant the fixtures now carry is `.strict()` and carries nothing
+ * besides its own tag.
+ *
+ * EXPORTED, though `fixtureProvider` below is its only caller in this module.
+ * The unstated branch of `statedProtection` is reachable only through a provider
+ * whose entries genuinely omit the field, and `createFixtureProvider` cannot
+ * produce one -- it always states `clear`. Exporting the mapping is what makes
+ * "an adapter that states nothing still arrives as unknown" a property a test
+ * can drive, instead of an argument about a `??`.
  * ---------------------------------------------------------------------- */
-function toCandidateSource(provider: SdkFixtureProvider): FixtureProvider {
+export function toCandidateSource(provider: SdkFixtureProvider): FixtureProvider {
   return {
     environment: provider.runtime,
     rightsBasis: provider.rightsBasis,
@@ -477,10 +531,10 @@ function toCandidateSource(provider: SdkFixtureProvider): FixtureProvider {
           mimeType: entry.mimeType,
           allowLoopback: entry.allowLoopback
         },
-        /* See the block comment above. The SDK states nothing, so what is
-         * reported is that the SDK stated nothing -- not a guess at what it
-         * would have said. */
-        protection: PROTECTION_NOT_STATED
+        /* Forwarded, not decided. See the block comment above, and
+         * `statedProtection` for what an absent descriptor means and why the
+         * fallback points where it does. */
+        protection: statedProtection(entry.protection)
       }));
     }
   };

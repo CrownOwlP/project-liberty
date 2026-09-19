@@ -280,3 +280,39 @@ these on its acceptance:**
    identity (`PlaybackErrorEngine`, in `apps/web/src/components/player/shaka-error.ts`).
 2. It must **NOT** introduce a third independently editable literal union.
 3. A **compile-time test** pinning their equivalence.
+
+---
+
+## Round 50, reviewed at `f83bc65015851b97ff9af86249b144cd57ea8047`
+
+Relayed by the human commander. Origin confirmed at that sha before recording.
+
+**PL-0306** APPROVED (`rights-review`) — fixture states the fact at the correct
+ownership boundary; the integration gap is PL-0307, not a defect in this task.
+**PL-0707** APPROVED (`security-review`) — the bound is metered, not header-trusted;
+e2e follow-up goes on PL-0701, not here. **PL-0708** APPROVED (`security-review`) —
+bounds derived from producer constraints, property non-vacuous; wire restatement is
+PL-0711. **PL-0709** APPROVED (`security-review`) — the deep cross-package import is
+accepted **for that test only at that tree** and is **not** an acceptable permanent
+boundary.
+
+### PL-0710 — architecture amended BEFORE CLAIM
+
+Not `media-inspection → provider-sdk`, and not the reverse while media-inspection
+imports provider-sdk to compare: either creates or invites a workspace cycle. The
+canonical host/network policy moves to a **dependency-leaf package**,
+`@liberty/net-policy`, which both consume; PL-0709's deep import is removed and the
+agreement test is replaced by tests of the shared classifier plus package-boundary
+tests proving both consumers import it. Surface widened before the claim, on the
+reviewer's instruction not to widen after implementation starts.
+
+### ZOD FINDING — CLOSED AS NOT A DEFECT
+
+`@liberty/contracts` resolves its **own** nested `zod 3.25.76`, satisfying its
+declared `^3.0.0`; the root `4.4.3` serves other dependency paths. The earlier probe
+conflated the two installations. **Nobody should "fix" contracts to zod 4 on the
+strength of it.**
+
+Checked mechanically rather than transcribed: `packages/contracts/node_modules/zod`
+is `3.25.76`, root `node_modules/zod` is `4.4.3`, and `require.resolve` from
+`packages/contracts` gives 3.25.76.

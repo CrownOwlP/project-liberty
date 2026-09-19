@@ -1,8 +1,57 @@
 {
-  "generatedAt": "2026-09-18T23:16:09.995Z",
+  "generatedAt": "2026-09-19T05:44:00.176Z",
   "agent": "claude-frontend",
   "executionAvailable": true,
-  "assigned": [],
+  "assigned": [
+    {
+      "id": "PL-0307",
+      "priority": "P1",
+      "lane": "Player",
+      "status": "REVIEW",
+      "title": "Forward provider-stated protection into the authorized playback candidate",
+      "dependencies": [
+        "PL-0306",
+        "PL-0501"
+      ],
+      "allowedPaths": [
+        "apps/web/src/app/api/v1/playback/session/**"
+      ],
+      "reviewDependencies": [
+        "packages/provider-sdk/src/fixture/provider.ts",
+        "packages/contracts/src/shared/drm.ts",
+        "packages/contracts/src/domains/playback.ts"
+      ],
+      "preferredAgent": "claude-backend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "rights-review"
+      ],
+      "acceptance": "toCandidateSource forwards a provider's stated protection UNCHANGED, so fixture candidates reach the session as { state: \"clear\" } while adapters that genuinely state nothing still receive PROTECTION_NOT_STATED. TODAY THE FACT IS STATED AND THEN DISCARDED: PL-0306 made the fixture adapter emit clear at the correct ownership boundary, and apps/web/src/app/api/v1/playback/session/authorized-candidates.ts:473 hardcodes PROTECTION_NOT_STATED instead of reading entry.protection, so the session still publishes unknown. That is the conservative direction and breaks nothing, which is exactly why it could sit unnoticed. Required, and each clause is a way this can be done wrongly: there must be NO provider-id special case, because a consumer branching on provider identity is the provider-specific logic outside @liberty/provider-sdk that invariant 3 forbids -- the forwarding must be uniform; a regression must prove a fixture candidate becomes clear THROUGH THE REAL SESSION BOUNDARY rather than through a unit of the mapper alone, since the mapper is not what the client sees; a second regression must prove an unstated provider still arrives as unknown, because a forwarder that defaults to clear when the field is absent would fail open for every adapter that has not been updated; RANKING MUST REMAIN UNABLE TO READ PROTECTION, which is the PL-0902 separation -- streamCandidateSchema is the ranker's input and protection lives on resolvedStreamCandidateSchema; and NO decryption or key behaviour is introduced by this task.",
+      "notes": "Created 2026-09-19 on gpt-architect's round-50 direction, reviewing at f83bc65015851b97ff9af86249b144cd57ea8047. Filed from the PL-0306 approval. The reviewer ruled the gap does NOT invalidate PL-0306, whose write surface intentionally ends at provider-sdk.",
+      "owner": "claude-frontend",
+      "gateResults": {
+        "typecheck": {
+          "status": "pass",
+          "at": "2026-09-19T05:43:59.939Z",
+          "by": "claude-frontend",
+          "commitSha": "f83bc65015851b97ff9af86249b144cd57ea8047",
+          "evidence": "npx turbo run typecheck --force at the integrated head, exit 0, 10 of 10, 0 cached. Also lint 0 and build 0, neither required by this task's gate list."
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-09-19T05:44:00.050Z",
+          "by": "claude-frontend",
+          "commitSha": "f83bc65015851b97ff9af86249b144cd57ea8047",
+          "evidence": "npx turbo run test --force, exit 0, 17 of 17, 0 cached, 2415 passed 1 skipped against 2409 at the base. Target file alone: 70 passed. npm run test:scripts 0, npm run repo:validate 0. RED-THEN-GREEN, with the new tests kept and ONLY authorized-candidates.ts reverted to its f83bc65 content: 6 failed 64 passed; after restoring, 70 passed. THE IMPLEMENTER DISTINGUISHED TWO KINDS OF RED AND THE DISTINCTION IS KEPT HERE RATHER THAN SMOOTHED, because it changes what the evidence proves. Regression 1, 'publishes the fixture adapter's clear through the endpoint, with nothing injected', is red for a VALUE reason: 'AssertionError: expected { state: 'unknown' } to deeply equal { state: 'clear' }' -- the endpoint really did publish unknown for a candidate the adapter had asserted was clear. Regression 2, 'still publishes unknown for an adapter that states nothing', is red for a MISSING-EXPORT reason, 'TypeError: toCandidateSource is not a function', AND IT CANNOT BE OTHERWISE: pre-change the mapper ignored entry.protection entirely and returned PROTECTION_NOT_STATED for every input, so 'an unstated provider arrives as unknown' was VACUOUSLY TRUE and no test written against the old tree could distinguish a forwarder from a hardcode. Its red proves the seam did not exist; its green proves the behaviour. The PL-0902 pin passes in BOTH trees -- it is a standing pin, not a regression, and is not claimed as one. UNIFORMITY IS PINNED BY A NEGATIVE: a stand-in provider with id 'not-the-fixture-provider' stating { state: 'protected', keySystem: 'widevine', licenseUrl: null } gets that descriptor back verbatim at the mapper and on the wire, so an 'if providerId === fixture' fix would pass every clear assertion in the file and fail this one. Regression 1 drives handlePlaybackSessionRequest with NO options at all -- default resolver, default origin, real clock and id generator -- and parses the actual Response body with playbackSessionResponseSchema, so it is the real session boundary rather than a unit of the mapper."
+        }
+      },
+      "implementationAgent": "claude-frontend",
+      "updatedAt": "2026-09-19T05:44:00.159Z",
+      "implementationBaseSha": "f83bc65015851b97ff9af86249b144cd57ea8047"
+    }
+  ],
   "review": [],
   "reservedExternal": [],
   "recommended": [

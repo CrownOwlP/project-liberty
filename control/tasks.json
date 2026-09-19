@@ -2204,10 +2204,12 @@
       "qualityGates": [
         "e2e"
       ],
-      "acceptance": "Catalog to title to player to progress fixture journey is reproducible in CI",
+      "acceptance": "Catalog to title to player to progress fixture journey is reproducible in CI. MANDATORY ADDITION 2026-09-19, at gpt-architect's round-50 direction when it approved PL-0707, and placed here because THIS TASK OWNS e2e/**: expectedStatus in e2e/src/contract.ts must recognise request_body_too_large as HTTP 413; an E2E case must drive an oversized request and verify 413 PLUS the reason code; and THE E2E HELPER MUST REMAIN INDEPENDENTLY RESTATED rather than importing the server's status function. That last clause is the point of the whole item and must not be optimised away: the helper is a deliberately hand-written mirror, and importing playbackSessionHttpStatus would make the assertion a tautology that passes however wrong the server is. Today the helper derives request-level denials from only request_malformed and request_field_not_permitted, so it would infer 403 where the server correctly answers 413. Nothing fails yet, because no e2e spec sends an oversized body -- the mirror is simply out of date from f83bc65 onward, which is the failure mode a mirror has.",
       "owner": null,
       "gateResults": {},
-      "notes": "INHERITED INPUT, recorded before the claim on gpt-architect's round-45 instruction: \"PL-0701 should remain dependency-gated until its other prerequisites are satisfied, but it inherits the Round 45 E2E files as pre-existing input and its provenance record should state that when claimed.\" Round 45 wrote a substantial part of e2e/** under PL-0501, not under this task, because this task was dependency-blocked behind PL-0501 and could not legally be claimed to produce the evidence PL-0501's review required; the reviewer authorised that overlap in advance and accepted it at 97011e71008fe69445845debb879534895cdc754. The practical consequence for whoever claims PL-0701: e2e/src/backend-stub.mjs, e2e/src/tls.ts, e2e/tests/playback-session.desktop.api.spec.ts and e2e/tests/playback-session.cross-target.api.spec.ts already exist and were reviewed under PL-0501, so they are pre-existing input rather than this task's implementation. implementationBaseSha must NOT be chosen to make them look like new work, and the reconciliation reason, if reconciliation is used at all, must name this inheritance. A base that opens before 97011e7 would claim a review range over code another task already had approved."
+      "notes": "INHERITED INPUT, recorded before the claim on gpt-architect's round-45 instruction: \"PL-0701 should remain dependency-gated until its other prerequisites are satisfied, but it inherits the Round 45 E2E files as pre-existing input and its provenance record should state that when claimed.\" Round 45 wrote a substantial part of e2e/** under PL-0501, not under this task, because this task was dependency-blocked behind PL-0501 and could not legally be claimed to produce the evidence PL-0501's review required; the reviewer authorised that overlap in advance and accepted it at 97011e71008fe69445845debb879534895cdc754. The practical consequence for whoever claims PL-0701: e2e/src/backend-stub.mjs, e2e/src/tls.ts, e2e/tests/playback-session.desktop.api.spec.ts and e2e/tests/playback-session.cross-target.api.spec.ts already exist and were reviewed under PL-0501, so they are pre-existing input rather than this task's implementation. implementationBaseSha must NOT be chosen to make them look like new work, and the reconciliation reason, if reconciliation is used at all, must name this inheritance. A base that opens before 97011e7 would claim a review range over code another task already had approved.",
+      "acceptanceOriginal": "Catalog to title to player to progress fixture journey is reproducible in CI",
+      "acceptanceAmendedBeforeClaim": "AMENDED 2026-09-19 at the reviewer's explicit direction, before the claim, from the PL-0707 approval. The reviewer's words: 'Do not change PL-0707 for this. Add this as a mandatory acceptance item to PL-0701 if PL-0701 owns e2e/**.' PL-0701 declares e2e/** so no narrow follow-up task was created. Additive; the original clause is preserved verbatim in acceptanceOriginal."
     },
     {
       "id": "PL-0705",
@@ -3280,7 +3282,7 @@
       "id": "PL-0306",
       "priority": "P1",
       "lane": "Provider",
-      "status": "REVIEW",
+      "status": "DONE",
       "title": "Fixture provider states the protection fact it actually knows",
       "dependencies": [
         "PL-0902",
@@ -3302,7 +3304,7 @@
       ],
       "acceptance": "The fixture provider adapter emits contentProtection { state: \"clear\" } for its own candidates, because for a fixture the absence of DRM is a fact the adapter genuinely knows rather than something it is guessing. Created from gpt-architect's round-44 non-blocking finding on PL-0501, in the reviewer's own words: \"Create a provider-owned task for the fixture provider protection fact. The fixture adapter, not PL-0501, should emit { state: \\\"clear\\\" } when that fact is genuinely known. PL-0501 may keep PROTECTION_NOT_STATED as the conservative fallback until that provider task lands.\" So the deliverable is a narrowing of where the fact is asserted, not a behaviour change in routing: PROTECTION_NOT_STATED stays in PL-0501 as the fallback for every adapter that has not stated a protection fact, and this task removes the fixture from the set that needs it. Required, and each is a way this task could be done wrongly: the fixture must set the field itself rather than PL-0501 special-casing the fixture provider id, because a consumer branching on a provider identity is exactly the provider-specific logic outside @liberty/provider-sdk that invariant 3 forbids; requiresContentDecryptionModule must be observed returning false for a fixture candidate and the observation recorded, since state !== \"clear\" is the whole point of the encoding and an untested clear is indistinguishable from an untested unknown; the fallback path in PL-0501 must be left in place and a test must still cover an adapter that states nothing, because deleting the fallback once its only current user stops needing it would fail open for the next adapter; and no other adapter may be given a protection fact here, because for a real provider the honest value is unknown and asserting clear for one would be a rights misstatement rather than a defaulting decision. Out of scope: any change to contract shape (PL-0902 owns it), to ranking (@liberty/media-engine), or to capability routing.",
       "notes": "Provenance: gpt-architect CHANGES_REQUESTED on PL-0501, reviewed at 27d3a03389781256451c5e52d72520132cfa76c1, non-blocking/follow-up section. Filed as a task rather than actioned inside PL-0501 on the reviewer's explicit instruction that the fact belongs to the provider, not to the session API. Depends on PL-0902 because the field this task populates is defined there and PL-0902 is still in REVIEW; a fixture that sets a field whose contract is not yet approved would have to be rewritten if the contract moves.",
-      "owner": "claude-backend",
+      "owner": null,
       "gateResults": {
         "typecheck": {
           "status": "pass",
@@ -3317,11 +3319,109 @@
           "by": "claude-backend",
           "commitSha": "fd859bb05dbdef886bbc9bcc5aee35a7a148d390",
           "evidence": "npx turbo run test --force at the integrated head, exit 0, 17 of 17, 0 cached, 2409 passed across the wave (base 2332). Package-level: 8 files, 223 passed in provider-sdk. RED-THEN-GREEN, test written before the implementation: npx vitest run src/fixture/provider.test.ts --root packages/provider-sdk exit 1, 1 failed 24 passed, 'AssertionError: expected undefined to deeply equal { state: \"clear\" }' at provider.test.ts:401; after the change, 25 passed. CLAUSE 2 OBSERVED RATHER THAN ASSUMED: over each of the three real resolve().mapped entries the test asserts requiresContentDecryptionModule(entry.protection) === false, protectionKeySystem null, describeContentProtection 'clear', and contentProtectionSchema.safeParse success -- an untested clear is indistinguishable from an untested unknown. CLAUSE 3, the fallback is intact and still covered: apps/web was not written to, and its two existing tests pinning PROTECTION_NOT_STATED still pass unmodified (2 files, 87 passed), plus new in-package coverage of the stating-nothing case. CLAUSE 1: no consumer special-cases the provider id; authorized-candidates.ts still contains no comparison against 'fixture'. Note the contract field is spelled 'protection' on resolvedStreamCandidateSchema, not 'contentProtection'; the adapter uses the contract's spelling with the specified { state: 'clear' } value."
+        },
+        "rights-review": {
+          "status": "pass",
+          "at": "2026-09-19T05:16:23.871Z",
+          "by": "gpt-architect",
+          "commitSha": "f83bc65015851b97ff9af86249b144cd57ea8047",
+          "evidence": "gpt-architect APPROVED at remote head f83bc65015851b97ff9af86249b144cd57ea8047, confirmed on origin by git fetch before recording. rights-review PASS. The fixture provider states the protection fact AT THE CORRECT OWNERSHIP BOUNDARY: the adapter itself emits protection { state: clear }, no consumer special-cases providerId === fixture, requiresContentDecryptionModule is observed returning false on actual fixture candidates, the clear state parses through the shared protection contract, Stremio and real-provider paths are NOT assigned a fabricated clear state, and PROTECTION_NOT_STATED remains available as the conservative fallback. The reviewer noted the integration gap in apps/web authorized-candidates.ts, which still maps to PROTECTION_NOT_STATED rather than forwarding entry.protection, and ruled explicitly that it does NOT invalidate this task because the write surface intentionally ends at provider-sdk; it is filed as PL-0307. TRANSCRIBED BY CLAUDE from the review relayed by the human commander; the gpt-architect GitHub connector still returns 403."
         }
       },
       "implementationAgent": "claude-backend",
-      "updatedAt": "2026-09-18T23:16:09.715Z",
-      "implementationBaseSha": "fd859bb05dbdef886bbc9bcc5aee35a7a148d390"
+      "updatedAt": "2026-09-19T05:16:24.135Z",
+      "implementationBaseSha": "fd859bb05dbdef886bbc9bcc5aee35a7a148d390",
+      "review": {
+        "taskId": "PL-0306",
+        "implementationAgent": "claude-backend",
+        "implementationOwner": "claude-backend",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "f83bc65015851b97ff9af86249b144cd57ea8047",
+        "reviewedBaseSha": "fd859bb05dbdef886bbc9bcc5aee35a7a148d390",
+        "reviewedTreeHash": "42bcb8005bff8d12dc8d3ef6979bc60c55438449098650bc9ff859ddb63eeaec",
+        "reviewedFileCount": 7,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [
+          "packages/contracts/src/shared/drm.ts",
+          "packages/contracts/src/domains/playback.ts"
+        ],
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-09-19T05:16:24.016Z",
+        "evidence": "APPROVED at f83bc65015851b97ff9af86249b144cd57ea8047, rights-review PASS. The provider-owned implementation is complete and correct; the propagation into the session response is PL-0307, created in the same change."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PL-0306",
+          "implementationAgent": "claude-backend",
+          "implementationOwner": "claude-backend",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "f83bc65015851b97ff9af86249b144cd57ea8047",
+          "reviewedBaseSha": "fd859bb05dbdef886bbc9bcc5aee35a7a148d390",
+          "reviewedTreeHash": "42bcb8005bff8d12dc8d3ef6979bc60c55438449098650bc9ff859ddb63eeaec",
+          "reviewedFileCount": 7,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "packages/contracts/src/shared/drm.ts",
+            "packages/contracts/src/domains/playback.ts"
+          ],
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-09-19T05:16:24.016Z",
+          "evidence": "APPROVED at f83bc65015851b97ff9af86249b144cd57ea8047, rights-review PASS. The provider-owned implementation is complete and correct; the propagation into the session response is PL-0307, created in the same change."
+        }
+      ],
+      "completedAt": "2026-09-19T05:16:24.135Z"
+    },
+    {
+      "id": "PL-0307",
+      "priority": "P1",
+      "lane": "Player",
+      "status": "REVIEW",
+      "title": "Forward provider-stated protection into the authorized playback candidate",
+      "dependencies": [
+        "PL-0306",
+        "PL-0501"
+      ],
+      "allowedPaths": [
+        "apps/web/src/app/api/v1/playback/session/**"
+      ],
+      "reviewDependencies": [
+        "packages/provider-sdk/src/fixture/provider.ts",
+        "packages/contracts/src/shared/drm.ts",
+        "packages/contracts/src/domains/playback.ts"
+      ],
+      "preferredAgent": "claude-backend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "rights-review"
+      ],
+      "acceptance": "toCandidateSource forwards a provider's stated protection UNCHANGED, so fixture candidates reach the session as { state: \"clear\" } while adapters that genuinely state nothing still receive PROTECTION_NOT_STATED. TODAY THE FACT IS STATED AND THEN DISCARDED: PL-0306 made the fixture adapter emit clear at the correct ownership boundary, and apps/web/src/app/api/v1/playback/session/authorized-candidates.ts:473 hardcodes PROTECTION_NOT_STATED instead of reading entry.protection, so the session still publishes unknown. That is the conservative direction and breaks nothing, which is exactly why it could sit unnoticed. Required, and each clause is a way this can be done wrongly: there must be NO provider-id special case, because a consumer branching on provider identity is the provider-specific logic outside @liberty/provider-sdk that invariant 3 forbids -- the forwarding must be uniform; a regression must prove a fixture candidate becomes clear THROUGH THE REAL SESSION BOUNDARY rather than through a unit of the mapper alone, since the mapper is not what the client sees; a second regression must prove an unstated provider still arrives as unknown, because a forwarder that defaults to clear when the field is absent would fail open for every adapter that has not been updated; RANKING MUST REMAIN UNABLE TO READ PROTECTION, which is the PL-0902 separation -- streamCandidateSchema is the ranker's input and protection lives on resolvedStreamCandidateSchema; and NO decryption or key behaviour is introduced by this task.",
+      "notes": "Created 2026-09-19 on gpt-architect's round-50 direction, reviewing at f83bc65015851b97ff9af86249b144cd57ea8047. Filed from the PL-0306 approval. The reviewer ruled the gap does NOT invalidate PL-0306, whose write surface intentionally ends at provider-sdk.",
+      "owner": "claude-frontend",
+      "gateResults": {
+        "typecheck": {
+          "status": "pass",
+          "at": "2026-09-19T05:43:59.939Z",
+          "by": "claude-frontend",
+          "commitSha": "f83bc65015851b97ff9af86249b144cd57ea8047",
+          "evidence": "npx turbo run typecheck --force at the integrated head, exit 0, 10 of 10, 0 cached. Also lint 0 and build 0, neither required by this task's gate list."
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-09-19T05:44:00.050Z",
+          "by": "claude-frontend",
+          "commitSha": "f83bc65015851b97ff9af86249b144cd57ea8047",
+          "evidence": "npx turbo run test --force, exit 0, 17 of 17, 0 cached, 2415 passed 1 skipped against 2409 at the base. Target file alone: 70 passed. npm run test:scripts 0, npm run repo:validate 0. RED-THEN-GREEN, with the new tests kept and ONLY authorized-candidates.ts reverted to its f83bc65 content: 6 failed 64 passed; after restoring, 70 passed. THE IMPLEMENTER DISTINGUISHED TWO KINDS OF RED AND THE DISTINCTION IS KEPT HERE RATHER THAN SMOOTHED, because it changes what the evidence proves. Regression 1, 'publishes the fixture adapter's clear through the endpoint, with nothing injected', is red for a VALUE reason: 'AssertionError: expected { state: 'unknown' } to deeply equal { state: 'clear' }' -- the endpoint really did publish unknown for a candidate the adapter had asserted was clear. Regression 2, 'still publishes unknown for an adapter that states nothing', is red for a MISSING-EXPORT reason, 'TypeError: toCandidateSource is not a function', AND IT CANNOT BE OTHERWISE: pre-change the mapper ignored entry.protection entirely and returned PROTECTION_NOT_STATED for every input, so 'an unstated provider arrives as unknown' was VACUOUSLY TRUE and no test written against the old tree could distinguish a forwarder from a hardcode. Its red proves the seam did not exist; its green proves the behaviour. The PL-0902 pin passes in BOTH trees -- it is a standing pin, not a regression, and is not claimed as one. UNIFORMITY IS PINNED BY A NEGATIVE: a stand-in provider with id 'not-the-fixture-provider' stating { state: 'protected', keySystem: 'widevine', licenseUrl: null } gets that descriptor back verbatim at the mapper and on the wire, so an 'if providerId === fixture' fix would pass every clear assertion in the file and fail this one. Regression 1 drives handlePlaybackSessionRequest with NO options at all -- default resolver, default origin, real clock and id generator -- and parses the actual Response body with playbackSessionResponseSchema, so it is the real session boundary rather than a unit of the mapper."
+        }
+      },
+      "implementationAgent": "claude-frontend",
+      "updatedAt": "2026-09-19T05:44:00.159Z",
+      "implementationBaseSha": "f83bc65015851b97ff9af86249b144cd57ea8047"
     },
     {
       "id": "PL-0706",
@@ -3569,7 +3669,7 @@
       "id": "PL-0707",
       "priority": "P1",
       "lane": "Security",
-      "status": "REVIEW",
+      "status": "DONE",
       "title": "Playback session route refuses an oversized request body",
       "dependencies": [
         "PL-0702"
@@ -3587,7 +3687,7 @@
       ],
       "acceptance": "The production playback-session route refuses a request body above a declared bound before parsing it, and the refusal carries a reason code that exists in the contract. TODAY IT READS AN UNBOUNDED BODY: apps/web/src/app/api/v1/playback/session/playback-session-implementation.ts reads the body with no cap while the development-only resolve scaffold beside it caps one, so the production path is the weaker of the two. This is a task rather than a line in PL-0702 because the fix cannot be made honestly inside that task's surface: there is no reason code for an oversized body, adding one changes API behaviour, and invariant 5 requires docs/API_CONTRACTS.md to change first or deliberately alongside. Required: the bound is a named constant with the reason for its value, not a magic number; the reason code is added to the contract and to docs/API_CONTRACTS.md in the same change; the refusal happens BEFORE the body is buffered, because a cap enforced after reading the whole body does not bound memory; a regression drives a body over the bound through the real route and observes the refusal, and a second drives one just under it and observes normal handling, since a cap that refuses everything is indistinguishable from an outage. Out of scope: the candidate-id bound, which is PL-0708, and any change to what a well-formed request means.",
       "notes": "Created 2026-09-18 on gpt-architect's round-46 instruction, reviewing PL-0702 at bbfaa5a997e6ee146271f26e5b2546b7e67e47d2. The reviewer required that no finding in docs/SECURITY_REVIEW_PROVIDER_URL.md remain at OPEN-OUT-OF-SURFACE, and that the deferral be carried by a real task with the proper owning surface rather than by a note. Register entry F10.",
-      "owner": "claude-security",
+      "owner": null,
       "gateResults": {
         "typecheck": {
           "status": "pass",
@@ -3602,17 +3702,61 @@
           "by": "claude-security",
           "commitSha": "fd859bb05dbdef886bbc9bcc5aee35a7a148d390",
           "evidence": "npx turbo run test --force, exit 0, 17 of 17, 0 cached, 2409 passed across the wave. RED, with handler.ts and contract.ts restored to HEAD and the new tests kept: 5 failed 9 passed, 'expected undefined to be 16384' (no named bound exists), 'expected 200 to be 413' three times -- a 16 KiB body granted, a LYING content-length of 42 granted, and a streamed body with NO content-length granted -- and 'expected 503 to be 413' where the implementation was reached. Desktop suite: 4 failed 17 passed, 'boundRequestBody is not a function'. GREEN: 5 files, 127 passed. THE HEADER IS NOT THE BOUND, which is the part worth reading: chunked encoding carries no content-length and the header is trivially forged, so content-length is consulted only to refuse EARLIER, and the actual control is a metered read of request.body that stops the instant the running total exceeds the cap and cancels the reader on every exit path -- peak memory is the bound plus one chunk whatever the header claimed. The gate consumes the stream and replays the bounded bytes as a new Request so the seam keeps its shape; a test asserts the replay is byte-for-byte. The outage guard -- a body just under the bound returning 200 granted -- PASSED at HEAD, correctly, because it is not a defect probe. Fixtures are sized from a local literal rather than from the constant under test, because a fixture sized from MAX_REQUEST_BODY_BYTES degenerates to a tiny body on a tree where the constant does not exist, which would have made the red observation dishonest; a separate test ties the literal to the exported constant. Both build targets are covered by one cap in handler.ts, and the desktop test asserts 413 with remote.calls EMPTY, so an oversized body is never relayed to our own backend."
+        },
+        "security-review": {
+          "status": "pass",
+          "at": "2026-09-19T05:16:24.239Z",
+          "by": "gpt-architect",
+          "commitSha": "f83bc65015851b97ff9af86249b144cd57ea8047",
+          "evidence": "gpt-architect APPROVED at f83bc65015851b97ff9af86249b144cd57ea8047. security-review PASS. MAX_REQUEST_BODY_BYTES is named and justified from the actual request shape; the limit is applied before JSON parsing and before implementation dispatch; content-length is used ONLY for early rejection and never trusted as the actual bound; the actual control meters the request stream; a LYING content-length cannot bypass it; chunked and no-content-length requests cannot bypass it; the reader is cancelled after refusal; the bounded bytes are replayed into a replacement Request without changing the downstream seam; web and desktop targets share the same gate; oversized DESKTOP requests are rejected before the backend proxy is contacted; request_body_too_large is a real contract reason; oversized requests produce 413; and a just-under-limit request still succeeds, which is what prevents a vacuous outage-style implementation. The reviewer separately required an e2e follow-up and ruled PL-0707 is NOT to be changed for it. TRANSCRIBED BY CLAUDE from the relayed review."
         }
       },
       "implementationAgent": "claude-security",
-      "updatedAt": "2026-09-18T23:16:09.792Z",
-      "implementationBaseSha": "fd859bb05dbdef886bbc9bcc5aee35a7a148d390"
+      "updatedAt": "2026-09-19T05:16:24.477Z",
+      "implementationBaseSha": "fd859bb05dbdef886bbc9bcc5aee35a7a148d390",
+      "review": {
+        "taskId": "PL-0707",
+        "implementationAgent": "claude-security",
+        "implementationOwner": "claude-security",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "f83bc65015851b97ff9af86249b144cd57ea8047",
+        "reviewedBaseSha": "fd859bb05dbdef886bbc9bcc5aee35a7a148d390",
+        "reviewedTreeHash": "39fb9689623ff685e8023eb1a06769cf050b38c00d7fc5e0e02d95d5c68b942d",
+        "reviewedFileCount": 47,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [],
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-09-19T05:16:24.359Z",
+        "evidence": "APPROVED at f83bc65015851b97ff9af86249b144cd57ea8047, security-review PASS. The e2e contract helper's stale status derivation is added as a mandatory acceptance item on PL-0701, which owns e2e/**, rather than changed here."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PL-0707",
+          "implementationAgent": "claude-security",
+          "implementationOwner": "claude-security",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "f83bc65015851b97ff9af86249b144cd57ea8047",
+          "reviewedBaseSha": "fd859bb05dbdef886bbc9bcc5aee35a7a148d390",
+          "reviewedTreeHash": "39fb9689623ff685e8023eb1a06769cf050b38c00d7fc5e0e02d95d5c68b942d",
+          "reviewedFileCount": 47,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [],
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-09-19T05:16:24.359Z",
+          "evidence": "APPROVED at f83bc65015851b97ff9af86249b144cd57ea8047, security-review PASS. The e2e contract helper's stale status derivation is added as a mandatory acceptance item on PL-0701, which owns e2e/**, rather than changed here."
+        }
+      ],
+      "completedAt": "2026-09-19T05:16:24.477Z"
     },
     {
       "id": "PL-0708",
       "priority": "P1",
       "lane": "Media",
-      "status": "REVIEW",
+      "status": "DONE",
       "title": "Stream candidate fields carry length bounds",
       "dependencies": [
         "PL-0702"
@@ -3634,7 +3778,7 @@
       ],
       "acceptance": "streamCandidateSchema bounds the length of its string fields, so a candidate cannot amplify a response. MEASURED, not hypothesised: a 1,000,000-character candidate id produced a 2,002,555-byte response during the PL-0702 review. The bound belongs in the contract rather than at the route, because every consumer of a candidate inherits it there and a per-route cap is one route away from being forgotten. Required: each bounded field's limit is justified against a real identifier rather than picked round -- state what the longest legitimate value looks like; a property test asserts no candidate accepted by the schema can exceed the response budget; and the change is checked against the fixture and Wikidata sources, because a bound that rejects a legitimate upstream id is an outage, not a fix. THE RISK THIS TASK CARRIES: streamCandidateSchema is the ranker's input and PL-0902 extends it; a bound set too low silently drops candidates and the reason trail must say so rather than showing an empty list. Out of scope: the request body bound (PL-0707).",
       "notes": "Created 2026-09-18 on gpt-architect's round-46 instruction, reviewing PL-0702 at bbfaa5a997e6ee146271f26e5b2546b7e67e47d2. The reviewer required that no finding in docs/SECURITY_REVIEW_PROVIDER_URL.md remain at OPEN-OUT-OF-SURFACE, and that the deferral be carried by a real task with the proper owning surface rather than by a note. Register entry F11.",
-      "owner": "claude-media",
+      "owner": null,
       "gateResults": {
         "typecheck": {
           "status": "pass",
@@ -3649,18 +3793,66 @@
           "by": "claude-media",
           "commitSha": "fd859bb05dbdef886bbc9bcc5aee35a7a148d390",
           "evidence": "npx turbo run test --force, exit 0, 17 of 17, 0 cached, 2409 passed across the wave. Package: 8 files, 202 passed in contracts, 29 net-new tests (24 example, 5 property). RED with the tests written and the schema still z.string().min(1): 6 failed 50 passed, the three true reds being 'refuses the 1,000,000-character id that F11 measured', 'refuses an unbounded providerId on the same grounds' and 'does not echo the rejected value in the issue a route would return', each 'AssertionError: expected true to be false'. GREEN: 87 passed. THE NON-VACUITY GUARD CAUGHT THE IMPLEMENTER'S OWN TEST: the first green run was 2 failed, 'expected 325 to be greater than 744.5' -- the uniformly-mixed generator's largest ACCEPTED candidate was 325 bytes against a 1489-byte budget, so the budget property was passing without ever exercising the bound. A second deliberately-maximal branch was added. THE BOUNDS ARE DERIVED, NOT ROUND, and the derivation is in the code: providerId 64 because both producers already refuse above it (SOURCE_ID_PATTERN and FIXTURE_ID_PATTERN are each /^[a-z0-9][a-z0-9._-]{0,63}$/i), so the contract cannot reject an id either adapter can mint; id 141 = 64+1+64+1+11 against Stremio's competing 64+1+8=73. Real ids measured: big-buck-bunny-progressive 26, wikidata-q83495-progressive 27. MAX_STREAM_CANDIDATE_JSON_BYTES 1489 decomposes exactly and an example test reconstructs the worst case so the literal cannot drift. NO SILENT DROP, which the acceptance names as the risk: all three enforcement points name the field and the limit, and zod's too_big does not echo the received value -- measured 180 bytes of response for a 1,000,000-character id, asserted as expect(body).not.toContain(payload). Consumers re-run green: media-engine 369 passed, provider-sdk mapping and health 67 passed. F11's MECHANISM CORRECTED IN THE CODE: the second copy is 'selected', not the reason trail, so an eligible candidate costs 2x and an ineligible one 1x via rejected[].candidateId; the measurement stands, its explanation did not."
+        },
+        "security-review": {
+          "status": "pass",
+          "at": "2026-09-19T05:16:40.741Z",
+          "by": "gpt-architect",
+          "commitSha": "f83bc65015851b97ff9af86249b144cd57ea8047",
+          "evidence": "gpt-architect APPROVED at f83bc65015851b97ff9af86249b144cd57ea8047. security-review PASS. StreamCandidate id and providerId lengths are bounded AT THE SHARED CONTRACT; the bounds are DERIVED FROM ACTUAL PRODUCER CONSTRAINTS rather than round arbitrary numbers -- providerId 64 consistent with the fixture and Stremio identifier patterns, candidate id 141 justified from the actual composed identifier shapes; the response-budget property is NON-VACUOUS, and the reviewer specifically credited the implementer for catching and repairing the first version of that property test, whose generated examples never approached the bound, so the worst-case branch now actually exercises the limit; rejected oversized values are not echoed in validation output; fixture and Wikidata-shaped identifiers remain valid; F11's explanation is corrected in the code -- the second copy was 'selected', not the reason trail; and existing media-engine and provider consumers remain green. TRANSCRIBED BY CLAUDE from the relayed review."
         }
       },
       "implementationAgent": "claude-media",
-      "updatedAt": "2026-09-18T23:16:09.870Z",
+      "updatedAt": "2026-09-19T05:16:40.974Z",
       "implementationBaseSha": "fd859bb05dbdef886bbc9bcc5aee35a7a148d390",
-      "surfaceWidenedDuringImplementation": "WIDENED 2026-09-18 by claude-lead on the implementer's request, two paths, both test files. THE TASK AS DECLARED COULD NOT SATISFY THE TASK AS ACCEPTED: the acceptance requires a property test, and packages/contracts has NO vitest.config.ts, so Vitest's default include applies and there is no includeSource in-source-testing setup -- a test written inside domains/playback.ts would never be collected. The implementer verified that, stopped at the boundary, and refused to report a red-then-green it had not run, rather than relocating the test or claiming evidence. Both files already exist and are this schema's own tests; neither is reserved by another task. packages/contracts/src/index.ts needs no edit, because it is already `export * from \"./domains/playback\"`, so new exported constants reach the barrel without touching it and the module-boundary rule that the barrel stays re-export-only is unaffected."
+      "surfaceWidenedDuringImplementation": "WIDENED 2026-09-18 by claude-lead on the implementer's request, two paths, both test files. THE TASK AS DECLARED COULD NOT SATISFY THE TASK AS ACCEPTED: the acceptance requires a property test, and packages/contracts has NO vitest.config.ts, so Vitest's default include applies and there is no includeSource in-source-testing setup -- a test written inside domains/playback.ts would never be collected. The implementer verified that, stopped at the boundary, and refused to report a red-then-green it had not run, rather than relocating the test or claiming evidence. Both files already exist and are this schema's own tests; neither is reserved by another task. packages/contracts/src/index.ts needs no edit, because it is already `export * from \"./domains/playback\"`, so new exported constants reach the barrel without touching it and the module-boundary rule that the barrel stays re-export-only is unaffected.",
+      "review": {
+        "taskId": "PL-0708",
+        "implementationAgent": "claude-media",
+        "implementationOwner": "claude-media",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "f83bc65015851b97ff9af86249b144cd57ea8047",
+        "reviewedBaseSha": "fd859bb05dbdef886bbc9bcc5aee35a7a148d390",
+        "reviewedTreeHash": "86f2d9295f60bec6fb6db845ceed7a07a491f1ae2009464f3d66a0787398d0b9",
+        "reviewedFileCount": 4,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [
+          "apps/web/src/app/api/v1/playback/session/issue-session.ts"
+        ],
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-09-19T05:16:40.861Z",
+        "evidence": "APPROVED at f83bc65015851b97ff9af86249b144cd57ea8047, security-review PASS. The session wire schema's independent unbounded restatement of id and providerId is filed as PL-0711 rather than changed here."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PL-0708",
+          "implementationAgent": "claude-media",
+          "implementationOwner": "claude-media",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "f83bc65015851b97ff9af86249b144cd57ea8047",
+          "reviewedBaseSha": "fd859bb05dbdef886bbc9bcc5aee35a7a148d390",
+          "reviewedTreeHash": "86f2d9295f60bec6fb6db845ceed7a07a491f1ae2009464f3d66a0787398d0b9",
+          "reviewedFileCount": 4,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "apps/web/src/app/api/v1/playback/session/issue-session.ts"
+          ],
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-09-19T05:16:40.861Z",
+          "evidence": "APPROVED at f83bc65015851b97ff9af86249b144cd57ea8047, security-review PASS. The session wire schema's independent unbounded restatement of id and providerId is filed as PL-0711 rather than changed here."
+        }
+      ],
+      "completedAt": "2026-09-19T05:16:40.975Z"
     },
     {
       "id": "PL-0709",
       "priority": "P2",
       "lane": "Media",
-      "status": "REVIEW",
+      "status": "DONE",
       "title": "Egress host classification folds the DNS root label",
       "dependencies": [
         "PL-0702"
@@ -3680,7 +3872,7 @@
       ],
       "acceptance": "packages/media-inspection/src/egress.ts classifies a fully qualified name the same as its dotless spelling, matching the fix PL-0702 made in packages/provider-sdk/src/stremio/url-policy.ts. THIS IS LOWER PRIORITY THAN IT SOUNDS AND THE REASON MUST NOT BE LOST: this path fails CLOSED -- an unrecognised spelling is refused rather than permitted -- so it is an inconsistency between two classifiers, not a bypass. It is filed anyway because two classifiers disagreeing about what a host is will eventually be reconciled by someone copying the wrong one. Required: the fix is the same narrowing (fold the root label before comparison, refuse an empty label rather than repairing it); a test asserts the two classifiers agree on a shared table of hostile spellings, so the next divergence fails a test rather than waiting for a review; and the fail-closed behaviour is preserved and asserted, because making this path agree with the other one must not make it permissive. Out of scope: merging the two classifiers into one, which is the resolve-and-pin question and belongs to PL-0710.",
       "notes": "Created 2026-09-18 on gpt-architect's round-46 instruction, reviewing PL-0702 at bbfaa5a997e6ee146271f26e5b2546b7e67e47d2. The reviewer required that no finding in docs/SECURITY_REVIEW_PROVIDER_URL.md remain at OPEN-OUT-OF-SURFACE, and that the deferral be carried by a real task with the proper owning surface rather than by a note. Register entry F12.",
-      "owner": "claude-media",
+      "owner": null,
       "gateResults": {
         "typecheck": {
           "status": "pass",
@@ -3695,11 +3887,59 @@
           "by": "claude-media",
           "commitSha": "fd859bb05dbdef886bbc9bcc5aee35a7a148d390",
           "evidence": "npx turbo run test --force, exit 0, 17 of 17, 0 cached, 2409 passed across the wave. Package: 10 files, 226 passed, 191 pre-existing and 0 regressions. RED against unmodified egress.ts: 12 failed 23 passed, including 'expected url_host_not_on_egress_allowlist to be ok:public' and 'expected url_host_not_on_egress_allowlist to be url_loopback_not_permitted'. GREEN: 35 passed. A FINDING THE FIX PRODUCED, sharper than the one filed: before the change hostOnAllowlist('..', ['..']) returned TRUE, and so did hostOnAllowlist('cdn.example.test..', ['cdn.example.test..']) -- the old code treated a leading-dot entry as a suffix without validating it, so a string naming no host was matchable, and an entry repaired down to empty is the empty suffix, which matches every host there is. It never reached production behaviour because classifyHost refuses those with url_host_unparseable before the allowlist is consulted, so fail-closed held, but the function alone said yes. MUTATION-CHECKED: the tempting permissive fix, return host.replace(/\\.+$/, '') -- fold until it stops instead of refusing -- makes 3 tests fail, so the fail-closed assertions are not vacuous. FAIL-CLOSED PRESERVED AND ASSERTED in both directions: empty allowlist still fetches nothing for every spelling in the table; the leading-dot rule still means strict subdomain; and the controls in front of and behind the allowlist still run, including url_host_private_literal for metadata.google.internal. EVEN WITH THAT HOST EXPLICITLY ALLOWLISTED. Folding admits exactly one thing that was refused before: another spelling of a name the operator already wrote down. The shared hostile-spelling table drives BOTH real implementations from one source, so the next divergence fails a test."
+        },
+        "security-review": {
+          "status": "pass",
+          "at": "2026-09-19T05:16:41.070Z",
+          "by": "gpt-architect",
+          "commitSha": "f83bc65015851b97ff9af86249b144cd57ea8047",
+          "evidence": "gpt-architect APPROVED at f83bc65015851b97ff9af86249b144cd57ea8047. security-review PASS. DNS root-label folding gives the fully qualified and dotless spellings the same classification; an empty or root-only label is REFUSED rather than repaired; fail-closed behaviour remains intact; the newly discovered '..' and malformed-leading-dot behaviour is correctly closed, so hostOnAllowlist no longer treats an empty repaired suffix as a wildcard; mutation testing proves the refusal assertions are not vacuous; and the shared hostile-spelling table exercises BOTH real classifiers rather than comparing one implementation against a copied expectation. THE DEEP RELATIVE IMPORT OF provider-sdk's classifyHost IS ACCEPTED FOR THIS TEST ONLY AT THIS REVIEWED TREE, and the reviewer was explicit that it is NOT an acceptable permanent package boundary: the test had a legitimate reason -- comparing media-inspection against a local restatement of classifyHost would fail to detect the exact cross-package drift PL-0709 exists to prevent -- but the fact that the test must bypass the exports map is ITSELF ARCHITECTURE EVIDENCE, and PL-0710 is amended to remove the import by making the duplication unnecessary. TRANSCRIBED BY CLAUDE from the relayed review."
         }
       },
       "implementationAgent": "claude-media",
-      "updatedAt": "2026-09-18T23:16:09.982Z",
-      "implementationBaseSha": "fd859bb05dbdef886bbc9bcc5aee35a7a148d390"
+      "updatedAt": "2026-09-19T05:16:41.318Z",
+      "implementationBaseSha": "fd859bb05dbdef886bbc9bcc5aee35a7a148d390",
+      "review": {
+        "taskId": "PL-0709",
+        "implementationAgent": "claude-media",
+        "implementationOwner": "claude-media",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "f83bc65015851b97ff9af86249b144cd57ea8047",
+        "reviewedBaseSha": "fd859bb05dbdef886bbc9bcc5aee35a7a148d390",
+        "reviewedTreeHash": "01b2c9d3b2ad880995ae38b1b659bf91c5647cbd1f6e4fc7b5dfaacb148ddf26",
+        "reviewedFileCount": 30,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [
+          "packages/provider-sdk/src/stremio/url-policy.ts"
+        ],
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-09-19T05:16:41.191Z",
+        "evidence": "APPROVED at f83bc65015851b97ff9af86249b144cd57ea8047, security-review PASS. The deep cross-package test import is accepted only at this tree and only for this test; PL-0710's amended design removes it."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PL-0709",
+          "implementationAgent": "claude-media",
+          "implementationOwner": "claude-media",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "f83bc65015851b97ff9af86249b144cd57ea8047",
+          "reviewedBaseSha": "fd859bb05dbdef886bbc9bcc5aee35a7a148d390",
+          "reviewedTreeHash": "01b2c9d3b2ad880995ae38b1b659bf91c5647cbd1f6e4fc7b5dfaacb148ddf26",
+          "reviewedFileCount": 30,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "packages/provider-sdk/src/stremio/url-policy.ts"
+          ],
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-09-19T05:16:41.191Z",
+          "evidence": "APPROVED at f83bc65015851b97ff9af86249b144cd57ea8047, security-review PASS. The deep cross-package test import is accepted only at this tree and only for this test; PL-0710's amended design removes it."
+        }
+      ],
+      "completedAt": "2026-09-19T05:16:41.318Z"
     },
     {
       "id": "PL-0710",
@@ -3711,13 +3951,19 @@
         "PL-0702"
       ],
       "allowedPaths": [
+        "packages/net-policy/**",
         "packages/provider-sdk/**",
-        "docs/SECURITY.md"
+        "packages/media-inspection/**",
+        "package.json",
+        "tsconfig.base.json",
+        "turbo.json",
+        "package-lock.json",
+        "docs/SECURITY.md",
+        "docs/ARCHITECTURE.md"
       ],
       "reviewDependencies": [
-        "packages/media-inspection/src/node/pinned-fetch.ts",
-        "packages/media-inspection/src/http.ts",
-        "packages/media-inspection/src/index.ts"
+        "packages/contracts/src/shared/ids.ts",
+        "apps/web/src/app/api/v1/playback/session/authorized-candidates.ts"
       ],
       "preferredAgent": "claude-security",
       "reviewAgent": "gpt-architect",
@@ -3727,8 +3973,39 @@
         "security-review",
         "rights-review"
       ],
-      "acceptance": "Provider outbound HTTP adopts the existing @liberty/media-inspection resolve-and-pin control (authoriseFetchTarget / nodePinnedFetch) instead of classifying host literals. Required, and each clause is a separate way host-literal checking fails: DNS resolution happens BEFORE the outbound connection; EVERY resolved address is classified, not just the first; the request is refused if ANY resolved address is private, loopback, link-local or reserved, unless an explicitly permitted local-only path applies; the connection is PINNED to the approved resolved address, so DNS rebinding cannot change the destination between the check and the connect; redirects repeat resolution, classification and pinning PER HOP; and TLS hostname verification and SNI are not regressed -- pinning to an address must still present and verify the name. Tests are required for public-name-to-private-IP, DNS rebinding, mixed public/private answer sets, and translation-prefix cases. WHY THIS IS P0 AND WHY IT IS FILED NOW: F1, F7 and F8 are three defects of ONE SHAPE in one function -- a host spelling the string comparisons did not anticipate, each reading as public, none findable by reading. A check that compares a string against literals is only ever as complete as the list of spellings whoever wrote it thought of. Resolve-and-pin classifies the address a resolver returned, which has one spelling.",
-      "notes": "Created 2026-09-18 on gpt-architect's round-46 instruction, reviewing PL-0702 at bbfaa5a997e6ee146271f26e5b2546b7e67e47d2. The reviewer required that no finding in docs/SECURITY_REVIEW_PROVIDER_URL.md remain at OPEN-OUT-OF-SURFACE, and that the deferral be carried by a real task with the proper owning surface rather than by a note. Register entry R1. gpt-architect required this to be a PREREQUISITE OF PL-0302 (first production provider), in its words: host-literal checking is not sufficient once real production provider/network access arrives. PL-0302's dependencies were amended accordingly in the same change. The reviewer was equally explicit that it does NOT block PL-0502 or local fixture playback, so nothing else was gated behind it.",
+      "acceptance": "THE CANONICAL HOST AND NETWORK POLICY MOVES TO A DEPENDENCY-LEAF PACKAGE, @liberty/net-policy, and both existing classifiers consume it. This replaces the original design, which was 'provider-sdk adopts media-inspection's resolve-and-pin control'; that is preserved in acceptanceOriginal and is NOT to be implemented. WHY THE DESIGN CHANGED, because the reason is the whole point: PL-0709 had to import provider-sdk's classifyHost from media-inspection BY DEEP RELATIVE PATH to write its agreement test, since classifyHost is not exported from packages/provider-sdk/src/index.ts and that package's exports field is a bare ./src/index.ts with no subpaths. The reviewer accepted that import FOR THAT TEST ONLY AT THAT TREE and ruled it is not an acceptable permanent boundary. Making media-inspection depend on provider-sdk, or provider-sdk on media-inspection while media-inspection imports provider-sdk to compare, CREATES OR INVITES A WORKSPACE DEPENDENCY CYCLE -- PL-0710 has provider-sdk adopting media-inspection's authoriseFetchTarget, so the arrow already points the other way. A lower shared layer with NO dependency on provider-sdk or media-inspection is the shape that works. REQUIRED, extraction half: the canonical host and IP classification vocabulary and its normalisation move into @liberty/net-policy; provider-sdk consumes that shared classifier; media-inspection consumes that shared classifier; PL-0709's deep cross-package test import is REMOVED; and the agreement test becomes unnecessary as two implementations become one -- replace it with tests of the shared classifier PLUS package-boundary tests proving both consumers actually import it, because an extraction nothing imports is a third copy rather than a merge. The package name may follow repository convention, but the package must be a dependency leaf. REQUIRED, resolve-and-pin half, unchanged from the original and each clause a separate way host-literal checking fails: DNS resolution before the outbound connection; EVERY resolved address classified, not just the first; refusal if ANY resolved address is private, loopback, link-local or reserved, unless an explicitly permitted local-only path applies; the connection PINNED to the approved resolved address so DNS rebinding cannot change the destination between check and connect; resolution, classification and pinning repeated PER REDIRECT HOP; and TLS CERTIFICATE HOSTNAME VERIFICATION AND SNI REMAIN AGAINST THE ORIGINAL HOSTNAME, NOT THE PINNED IP -- pinning the transport must not turn into verifying the wrong name. Regressions required for public-name-to-private-IP, DNS rebinding, mixed public and private answer sets, and translated-address cases. ALSO IN SCOPE BECAUSE THE EXTRACTION PUTS IT IN PLAY: pin.ts's normaliseHost does not fold the DNS root label. It is safe today because both sides of that comparison come from the same URL object so they carry or omit the dot together, and a mismatch refuses the connection -- but it is a third canonicaliser, and this is the task that removes the others. WHY THIS IS P0: F1, F7 and F8 were three host spellings in one function, and F12 was a fourth spelling in a SECOND function written specifically to avoid duplicating the first. The duplication got in anyway -- not as a copied classifier but as a copied assumption about what a hostname string is. A check comparing a string against literals is only ever as complete as the list of spellings whoever wrote it thought of; resolve-and-pin classifies the address a resolver returned, which has one spelling.",
+      "notes": "Created 2026-09-18 on gpt-architect's round-46 instruction, reviewing PL-0702 at bbfaa5a997e6ee146271f26e5b2546b7e67e47d2. The reviewer required that no finding in docs/SECURITY_REVIEW_PROVIDER_URL.md remain at OPEN-OUT-OF-SURFACE, and that the deferral be carried by a real task with the proper owning surface rather than by a note. Register entry R1. gpt-architect required this to be a PREREQUISITE OF PL-0302 (first production provider), in its words: host-literal checking is not sufficient once real production provider/network access arrives. PL-0302's dependencies were amended accordingly in the same change. The reviewer was equally explicit that it does NOT block PL-0502 or local fixture playback, so nothing else was gated behind it.\n\nRound-50 amendment: the original design named in acceptanceOriginal must NOT be implemented. PL-0302's dependency on this task stands and is NOT to be broadened to local fixture playback or to PL-0502, per the reviewer's standing instruction.",
+      "owner": null,
+      "gateResults": {},
+      "acceptanceOriginal": "Provider outbound HTTP adopts the existing @liberty/media-inspection resolve-and-pin control (authoriseFetchTarget / nodePinnedFetch) instead of classifying host literals. Required, and each clause is a separate way host-literal checking fails: DNS resolution happens BEFORE the outbound connection; EVERY resolved address is classified, not just the first; the request is refused if ANY resolved address is private, loopback, link-local or reserved, unless an explicitly permitted local-only path applies; the connection is PINNED to the approved resolved address, so DNS rebinding cannot change the destination between the check and the connect; redirects repeat resolution, classification and pinning PER HOP; and TLS hostname verification and SNI are not regressed -- pinning to an address must still present and verify the name. Tests are required for public-name-to-private-IP, DNS rebinding, mixed public/private answer sets, and translation-prefix cases. WHY THIS IS P0 AND WHY IT IS FILED NOW: F1, F7 and F8 are three defects of ONE SHAPE in one function -- a host spelling the string comparisons did not anticipate, each reading as public, none findable by reading. A check that compares a string against literals is only ever as complete as the list of spellings whoever wrote it thought of. Resolve-and-pin classifies the address a resolver returned, which has one spelling.",
+      "architectureAmendedBeforeClaim": "AMENDED 2026-09-19 BY gpt-architect's explicit round-50 direction, BEFORE THE CLAIM, and the reviewer was equally explicit that it must be done before rather than after: 'Amend PL-0710's allowedPaths BEFORE CLAIM to include the new shared package and the minimum workspace/package metadata needed to create it. Do not widen it after implementation has already started.' The surface accordingly grew from ['packages/provider-sdk/**','docs/SECURITY.md'] to include packages/net-policy/** (the new leaf package), packages/media-inspection/** (the second consumer, and the home of the deep import being removed), and the minimum workspace metadata: package.json and package-lock.json because npm workspaces is 'apps/*, packages/*' and a new package needs the lockfile regenerated, tsconfig.base.json for path mapping, turbo.json for the pipeline, and docs/ARCHITECTURE.md because a new package in the dependency graph is an architecture fact. THIS IS A WIDE SURFACE AND IT IS RESERVED BEFORE THE WORK STARTS ON PURPOSE -- an extraction that discovers its consumers mid-flight is exactly the case the no-widening-after-start rule exists for."
+    },
+    {
+      "id": "PL-0711",
+      "priority": "P1",
+      "lane": "Security",
+      "status": "READY",
+      "title": "Playback-session candidate wire bounds match StreamCandidate bounds",
+      "dependencies": [
+        "PL-0708",
+        "PL-0501"
+      ],
+      "allowedPaths": [
+        "apps/web/src/app/api/v1/playback/session/**",
+        "docs/API_CONTRACTS.md"
+      ],
+      "reviewDependencies": [
+        "packages/contracts/src/domains/playback.ts"
+      ],
+      "preferredAgent": "claude-security",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "security-review"
+      ],
+      "acceptance": "playbackSessionCandidateSchema uses THE SAME AUTHORITATIVE id and providerId limits as the StreamCandidate contract -- the exported MAX_STREAM_CANDIDATE_ID_CHARS and MAX_STREAM_CANDIDATE_PROVIDER_ID_CHARS -- and NOT copied numeric literals. PL-0708 exported those constants for exactly this reason; a copied literal would recreate the defect one layer out, which is the defect this task exists to close. Required: an oversized resolved candidate CANNOT RE-EXPAND ON THE SESSION WIRE after passing through another producer seam, which is the actual risk -- the contract bound governs what a provider may produce, and a second unbounded restatement downstream means the bound stops at the seam; fixture and Wikidata legitimate identifiers remain accepted, because a bound that rejects a real upstream id is an outage rather than a fix; tests cover the EXACT MAXIMUM, MAXIMUM PLUS ONE, and the serialized response, since a bound tested only from above does not prove the boundary is where it is claimed to be; reason and error output does not echo the oversized value; and NO SECOND INDEPENDENT BOUND VOCABULARY IS INTRODUCED. Note while working: playbackSessionCandidateSchema also carries unbounded uri and mimeType. They are not named in the reviewer's acceptance and are not in scope by default -- if they warrant bounds, say so and let the reviewer rule rather than adding them quietly.",
+      "notes": "Created 2026-09-19 on gpt-architect's round-50 direction, reviewing at f83bc65015851b97ff9af86249b144cd57ea8047. Filed from the PL-0708 approval. apps/web's playbackSessionCandidateSchema (session/contract.ts, around lines 258-262) independently restates id and providerId as unbounded strings and does not derive from streamCandidateSchema.",
       "owner": null,
       "gateResults": {}
     },

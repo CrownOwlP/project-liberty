@@ -1,19 +1,23 @@
-import { unknownMediaFacts } from "@liberty/contracts/domains/playback";
+import { streamCandidateSchema, unknownMediaFacts } from "@liberty/contracts/domains/playback";
 import {
   PROTECTION_NOT_STATED,
-  requiresContentDecryptionModule
+  requiresContentDecryptionModule,
+  type ContentProtection
 } from "@liberty/contracts/shared/drm";
 import { MEDIA_FACTS } from "@liberty/contracts/shared/media-facts";
 import { PLAYABLE_CONTENT_RIGHTS } from "@liberty/contracts/shared/rights";
 import { LATENCY_CEILING_MS, PROVIDER_HEALTH_FLOOR } from "@liberty/media-engine";
 import {
   checkUrl,
+  createFixtureProvider,
   DEFAULT_PROVIDER_HEALTH_POLICY,
   FIXTURE_RIGHTS_REFERENCE,
   healthPriorScore,
   isOpaqueRightsReference,
   MAX_RIGHTS_REFERENCE_LENGTH,
-  RIGHTS_BASES_FOR_RIGHTS
+  RIGHTS_BASES_FOR_RIGHTS,
+  type FixtureCandidate,
+  type FixtureProvider as SdkFixtureProvider
 } from "@liberty/provider-sdk";
 import { afterEach, describe, expect, it } from "vitest";
 import {
@@ -24,11 +28,15 @@ import {
 import {
   fixtureProvider,
   resolveAuthorizedCandidates,
+  statedProtection,
+  toCandidateSource,
+  type AuthorizedCandidate,
   type AuthorizedCandidateResolver,
   type FixtureProvider,
   type ResolverContext
 } from "./authorized-candidates";
-import type { PlaybackSessionResponse } from "./contract";
+import { playbackSessionResponseSchema, type PlaybackSessionResponse } from "./contract";
+import { handlePlaybackSessionRequest } from "./handler";
 import { issuePlaybackSession } from "./issue-session";
 
 /*
@@ -353,37 +361,56 @@ describe("what the fixtures state about the media", () => {
     }
   });
 
-  it("states that the provider did not state a protection status, and never that it is clear", () => {
+  it("forwards the provider's stated protection, and never invents one here", () => {
     /*
-     * THE OPEN QUESTION THIS TASK DECIDED, pinned so the decision is visible if
-     * it is ever changed. `@liberty/provider-sdk`'s `FixtureCandidate` carries
-     * no protection field, so this shape adapter has nothing to forward. The
-     * honest descriptor for a clear development fixture is `{ state: "clear" }`
-     * -- and that is an ASSERTION ABOUT THE BYTES, which product invariant 3
-     * reserves to a provider adapter. What this module may state, because it is
-     * a true observation about the producer rather than about the media, is
-     * that the provider stated nothing.
+     * PL-0307. WHAT THIS ASSERTION USED TO SAY, because the change of direction
+     * is the point. It used to require `PROTECTION_NOT_STATED` on every fixture
+     * candidate, under the argument that `@liberty/provider-sdk`'s
+     * `FixtureCandidate` carried no protection field, so the only thing this
+     * shape adapter could honestly report was that the provider had stated
+     * nothing -- a true observation about the PRODUCER rather than an assertion
+     * about the bytes, which product invariant 3 reserves to a provider adapter.
+     * That test even named the condition under which it would become wrong: "if
+     * the SDK starts stating `clear` here, this route will forward it and this
+     * test becomes wrong in the right direction."
      *
-     * The value is safe by construction, and that is the reason it is
-     * acceptable rather than merely convenient:
-     * `requiresContentDecryptionModule` is `true` for `unknown`, so the failure
-     * mode is a clear fixture routed to the adapter that HAS a CDM, refused by
-     * the mpv adapter under `drm_required_no_cdm` with a reason that says the
-     * state was unstated. It is never a candidate attempted without the CDM it
-     * needs.
+     * PL-0306 made the SDK state it. `FixtureCandidate.protection` now exists
+     * and the fixture adapter -- the boundary that knows those three files are
+     * unencrypted -- sets it to `{ state: "clear" }`. So the hardcode that
+     * replaced it here stopped being conservative and started being LOSSY: the
+     * provider stated a fact and this mapping threw it away, and the session
+     * published `unknown` for media a provider had asserted was clear.
      *
-     * `not: clear` is asserted separately from the equality. The equality could
-     * be relaxed one day -- if the SDK starts stating `clear` here, this route
-     * will forward it and this test becomes wrong in the right direction -- but
-     * a fixture reaching a router as `clear` FROM THIS FILE, which has looked at
-     * nothing, is the invariant-2 reading §4 names, and that must never become
-     * true no matter who edits the mapping.
+     * What is pinned now is the forwarding, and the two halves matter
+     * separately: the value is the SDK's own constant rather than a literal
+     * agreed twice, and it is `clear` rather than something this file decided.
      */
     for (const entry of candidates()) {
-      expect(entry.protection).toEqual(PROTECTION_NOT_STATED);
-      expect(entry.protection).toEqual({ state: "unknown", why: "provider_did_not_state" });
-      expect(entry.protection.state).not.toBe("clear");
-      expect(requiresContentDecryptionModule(entry.protection)).toBe(true);
+      expect(entry.protection).toEqual({ state: "clear" });
+      expect(requiresContentDecryptionModule(entry.protection)).toBe(false);
+    }
+  });
+
+  it("does not put protection where a ranker could read it (PL-0902)", () => {
+    /*
+     * The separation PL-0902 drew, asserted at the one boundary that could
+     * quietly undo it by "tidying" the two records into one.
+     * `streamCandidateSchema` is the RANKER's input and states no protection;
+     * the descriptor lives on the resolved candidate, beside the address.
+     * Forwarding a fact is not moving it.
+     *
+     * The second assertion is the one that would survive a careless edit: the
+     * schema is not `.strict()`, so a candidate that grew a `protection` key
+     * would still parse -- and the key would be STRIPPED, which is the property
+     * worth pinning. A ranker cannot read what the schema does not carry.
+     */
+    for (const entry of candidates()) {
+      expect(Object.keys(entry.candidate)).not.toContain("protection");
+      const ranked = streamCandidateSchema.parse({
+        ...entry.candidate,
+        protection: { state: "clear" }
+      });
+      expect(Object.keys(ranked)).not.toContain("protection");
     }
   });
 
@@ -439,6 +466,237 @@ describe("what the fixtures state about the media", () => {
       expect(entry.compatibility).toBe("unverified");
     }
     expect(response.reasons[0].code).toBe("session_issued_unverified_compatibility");
+  });
+});
+
+/* -------------------------------------------------------------------------
+ * PL-0307: THE PROVIDER STATES IT, THE SESSION FORWARDS IT.
+ *
+ * What these pin is one property with two directions, and both directions have
+ * to be checked because a forwarder that gets either one wrong is silent. A
+ * candidate an adapter asserted is `clear` must reach the CLIENT as `clear` --
+ * not as `unknown`, which is what discarding the field produced -- and an
+ * adapter that states nothing must still reach the client as `unknown`, because
+ * a forwarder that defaulted the absent case to `clear` would fail open for
+ * every adapter not yet updated.
+ *
+ * THEY GO THROUGH THE ENDPOINT, not through the mapper alone. The mapper is not
+ * what a client sees: between it and the wire sit `issue-session.ts`'s
+ * projection onto `PlaybackSessionCandidate` and `handler.ts`'s re-validation
+ * against `playbackSessionResponseSchema`, and either could drop or rewrite the
+ * descriptor without the mapper's own tests noticing.
+ * ---------------------------------------------------------------------- */
+
+/** The endpoint's real answer, as a client would parse it off the wire. */
+async function throughTheEndpoint(
+  entries: readonly AuthorizedCandidate[]
+): Promise<PlaybackSessionResponse> {
+  const response = await handlePlaybackSessionRequest(
+    new Request("https://liberty.test/api/v1/playback/session", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ contentId: CONTENT_ID, capabilities: CAPABILITIES })
+    }),
+    {
+      resolve: () => ({ status: "resolved", candidates: entries }),
+      now: () => new Date("2026-08-20T09:00:00.000Z"),
+      newId: () => "fixed-id",
+      localDeployment: false
+    }
+  );
+
+  expect(response.status).toBe(200);
+  /* Parsed with the published schema rather than cast, so what is asserted on
+   * is the shape a client is entitled to and not this file's belief about it. */
+  return playbackSessionResponseSchema.parse(await response.json());
+}
+
+/**
+ * The real fixture provider with its mapped entries rewritten -- a stand-in for
+ * an adapter that is not this one.
+ *
+ * REAL EXCEPT FOR THE ONE FIELD UNDER TEST. Everything a candidate carries
+ * still comes from `@liberty/provider-sdk`: the ids, the composed URLs, the
+ * rights basis, the untimed latency, the health prior. Only `protection` is
+ * rewritten, so what these tests exercise is the mapping's treatment of that
+ * field and not a second fixture provider living in a test file -- which is the
+ * duplication the corrective behind this whole module removed.
+ */
+function standInProvider(
+  rewrite: (entry: FixtureCandidate) => FixtureCandidate,
+  id?: string
+): SdkFixtureProvider {
+  const created = createFixtureProvider(TEST_RUNTIME, {
+    mediaOrigin: PINNED_ORIGIN,
+    unmeasuredLatencyMs: LATENCY_CEILING_MS,
+    ...(id === undefined ? {} : { id })
+  });
+  if (!created.ok) {
+    throw new Error(`the fixture provider refused ${created.reason}: ${created.detail}`);
+  }
+  const real = created.provider;
+
+  return {
+    ...real,
+    resolve(item, context) {
+      const resolution = real.resolve(item, context);
+      return { ...resolution, mapped: resolution.mapped.map(rewrite) };
+    }
+  };
+}
+
+/**
+ * An adapter that states NOTHING: the field is deleted at run time, which is
+ * the state a producer written before PL-0306 is in.
+ *
+ * THE CAST IS THE POINT AND NOT A SHORTCUT. `FixtureCandidate.protection` is
+ * required, so TypeScript cannot express "an adapter that satisfies this
+ * interface at compile time and omits the field at run time" -- and that is
+ * exactly the producer the fallback in `statedProtection` exists for: a
+ * JavaScript adapter, a stale build, a stub behind the same seam. A property
+ * that can only be argued from a type is a property nothing tests, so the type
+ * is stepped around HERE, in one named helper, in order to reach the run-time
+ * state and assert what happens in it.
+ */
+function statingNothing(entry: FixtureCandidate): FixtureCandidate {
+  const stripped: Record<string, unknown> = { ...entry };
+  delete stripped["protection"];
+  return stripped as unknown as FixtureCandidate;
+}
+
+describe("the protection a provider stated reaches the client (PL-0307)", () => {
+  it("publishes the fixture adapter's `clear` through the endpoint, with nothing injected", async () => {
+    /*
+     * THE REGRESSION THIS TASK EXISTS FOR, driven with NO injection at all: the
+     * default resolver, the default origin, the process's own clock and id
+     * generator. Before the fix this same request answered
+     * `{ state: "unknown", why: "provider_did_not_state" }` for every candidate,
+     * because the mapping hardcoded it -- so a client asking the real endpoint
+     * for a real fixture was told nobody had established the encryption state of
+     * media the provider had asserted was clear.
+     *
+     * The origin is the module default (`https://fixtures.invalid`, the value CI
+     * also pins), which the outbound URL policy admits, so this resolves on any
+     * machine that has not pointed `LIBERTY_FIXTURE_MEDIA_ORIGIN` at something
+     * the policy refuses. The pinned-origin twin below is the machine-independent
+     * one; this one is the one with no seam in it.
+     */
+    const response = await handlePlaybackSessionRequest(
+      new Request("https://liberty.test/api/v1/playback/session", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ contentId: CONTENT_ID, capabilities: CAPABILITIES })
+      })
+    );
+
+    expect(response.status).toBe(200);
+    const body = playbackSessionResponseSchema.parse(await response.json());
+    expect(body.outcome).toBe("granted");
+    if (body.outcome !== "granted") return;
+
+    expect(body.session.candidates).toHaveLength(3);
+    for (const published of body.session.candidates) {
+      expect(published.protection).toEqual({ state: "clear" });
+      expect(requiresContentDecryptionModule(published.protection)).toBe(false);
+    }
+  });
+
+  it("publishes `clear` for a pinned origin too, so the property does not depend on the operator", async () => {
+    const body = await throughTheEndpoint(candidates(PINNED_ORIGIN));
+
+    expect(body.outcome).toBe("granted");
+    if (body.outcome !== "granted") return;
+    expect(body.session.candidates).toHaveLength(3);
+    for (const published of body.session.candidates) {
+      expect(published.protection).toEqual({ state: "clear" });
+    }
+  });
+
+  it("still publishes unknown for an adapter that states nothing", async () => {
+    /*
+     * THE OTHER DIRECTION, and the one a forwarder gets wrong by being helpful.
+     * `entry.protection ?? { state: "clear" }` would pass every assertion above
+     * and would publish, for every adapter that predates PL-0306, an assertion
+     * that bytes nobody has looked at are unencrypted. The fallback points the
+     * other way, and `requiresContentDecryptionModule` is `true` for what it
+     * produces, so such a candidate routes to the adapter that HAS a CDM.
+     *
+     * Asserted at the mapping AND on the wire: the value has to survive the
+     * projection in `issue-session.ts` and the response re-validation in
+     * `handler.ts`, because those are what stand between the mapping and a
+     * router.
+     */
+    const entries = toCandidateSource(standInProvider(statingNothing)).candidates(
+      CONTENT_ID,
+      CONTEXT
+    );
+
+    expect(entries).toHaveLength(3);
+    for (const entry of entries) {
+      expect(entry.protection).toEqual(PROTECTION_NOT_STATED);
+      expect(entry.protection).toEqual({ state: "unknown", why: "provider_did_not_state" });
+      expect(entry.protection.state).not.toBe("clear");
+      expect(requiresContentDecryptionModule(entry.protection)).toBe(true);
+    }
+
+    const body = await throughTheEndpoint(entries);
+    expect(body.outcome).toBe("granted");
+    if (body.outcome !== "granted") return;
+    for (const published of body.session.candidates) {
+      expect(published.protection).toEqual({ state: "unknown", why: "provider_did_not_state" });
+      expect(published.protection.state).not.toBe("clear");
+    }
+  });
+
+  it("names the absent case rather than leaving it to a type", () => {
+    /* The fallback, stated directly, because the branch above reaches it
+     * through a provider and this reaches it through the function. Both spell
+     * the same rule: absence is `unknown`, never `clear`. */
+    expect(statedProtection(undefined)).toEqual(PROTECTION_NOT_STATED);
+    expect(statedProtection(null)).toEqual(PROTECTION_NOT_STATED);
+    expect(statedProtection(undefined).state).not.toBe("clear");
+  });
+
+  it("forwards what any provider states, without reading who stated it", async () => {
+    /*
+     * NO PROVIDER-ID SPECIAL CASE (invariant 3). A consumer that branched on
+     * provider identity would be provider-specific logic living outside
+     * `@liberty/provider-sdk`, and it is the shape a forwarding fix is most
+     * likely to arrive in -- `if (providerId === "fixture") return { state:
+     * "clear" }` passes every `clear` assertion in this file.
+     *
+     * So this drives a provider whose id is NOT the fixture one, stating a
+     * descriptor the fixtures never state, and requires it back verbatim. A
+     * mapping that recognised the fixture provider would answer `clear` here; a
+     * mapping that distrusted an unfamiliar provider would flatten it to
+     * `unknown`. Both are wrong, and the same single code path forbids both.
+     *
+     * NO KEY BEHAVIOUR IS INVOLVED. `protected` names a key SYSTEM so a player
+     * without a CDM can refuse; `licenseUrl` is `null` here, nothing requests a
+     * licence, and no key, key id or initialisation data appears in this suite.
+     */
+    const stated: ContentProtection = {
+      state: "protected",
+      keySystem: "widevine",
+      licenseUrl: null
+    };
+    const entries = toCandidateSource(
+      standInProvider((entry) => ({ ...entry, protection: stated }), "not-the-fixture-provider")
+    ).candidates(CONTENT_ID, CONTEXT);
+
+    expect(entries).toHaveLength(3);
+    for (const entry of entries) {
+      expect(entry.candidate.providerId).toBe("not-the-fixture-provider");
+      expect(entry.protection).toEqual(stated);
+      expect(requiresContentDecryptionModule(entry.protection)).toBe(true);
+    }
+
+    const body = await throughTheEndpoint(entries);
+    expect(body.outcome).toBe("granted");
+    if (body.outcome !== "granted") return;
+    for (const published of body.session.candidates) {
+      expect(published.protection).toEqual(stated);
+    }
   });
 });
 
