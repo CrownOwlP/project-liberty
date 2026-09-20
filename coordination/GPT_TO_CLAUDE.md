@@ -338,3 +338,24 @@ PL-0303.
 **Stale zod comment** — documentation follow-up for the next legitimate owner of
 `packages/contracts/src/stream-candidate.test.ts`; do not reopen PL-0708, do not edit
 its reviewed file silently, and do not let it block PL-0305 or PL-0710.
+
+---
+
+## Round 52, reviewed at `33195d593695618b779ab6c97a50817a2694e8df`
+
+**PL-0305 APPROVED** — `architecture-review`, `security-review`, `rights-review` all
+PASS, twelve points assessed, round-51 finding closed. Rulings carried onto the gates:
+the deployment-configuration gap is **not** a failure of the source seam and PL-0305
+is not to be held open for it; PL-0305 is **not** to be described as having delivered
+a deployed ingestion worker; the `item.rights` near-miss regression is to be kept;
+a synchronous wrapper around network-backed catalog data must **not** be restored;
+and the unreproduced property-test failure stays recorded as such, never rewritten as
+resolved without a counterexample.
+
+Four follow-ups given explicit task ownership rather than left as prose:
+**PL-0308** (production composition registers the runtime), **PL-0309** (scheduled and
+stored ingestion instead of a pass per query), **PL-0310** (`catalog.ts` preserving
+`no_records_usable` vs `catalog_empty`). The fourth — the missing
+`@liberty/media-inspection` `./http` subpath export and its triple-slash workaround —
+was folded into **PL-0710**, which already owns both packages and the packaging
+metadata and is fixing the identical omission in `provider-sdk`.

@@ -1,120 +1,8 @@
 {
-  "generatedAt": "2026-09-20T04:23:01.839Z",
+  "generatedAt": "2026-09-20T12:39:54.747Z",
   "agent": "claude-backend",
   "executionAvailable": true,
-  "assigned": [
-    {
-      "id": "PL-0305",
-      "priority": "P1",
-      "lane": "Provider",
-      "status": "REVIEW",
-      "title": "A real catalog metadata source",
-      "notes": "The discovery layer has no metadata source. PL-0105 landed a seam, and docs/CATALOG_SOURCE.md says so in its first line; this task is the thing that belongs behind it, tracked so the gap stays visible instead of being hidden by a port that looks finished. docs/PRODUCT_SPEC.md step 2 of the initial user journey is browse/search normalized metadata, and nothing in this repository ingests any: every surface reads six fictional works. PL-0301 and PL-0302 do not close it - they supply stream candidates, which is what a title plays from, not what a catalog is made of. PARTLY BLOCKED, and the split is deliberate rather than a hedge. The design half - identity and dedupe, refresh and staleness, tombstones, paging, provider-side search, the locale-tagged contract, and the undeclared-rights state that catalogItemSchema cannot currently express - needs no external access and can begin now. Connecting an actual metadata provider, and carrying artwork, cannot: both need an agreement and credentials, which control/policies.json escalates to human-only under Licensing and Credentials - the same categories that block PL-0302. It is a DIFFERENT agreement from PL-0302's, covering catalog metadata and image rights rather than stream rights, so this is not merely waiting on that task; the honest status is BACKLOG with the ceiling named, not BLOCKED on someone else's licence.",
-      "dependencies": [
-        "PL-0105"
-      ],
-      "allowedPaths": [
-        "packages/catalog-ingestion/**",
-        "apps/web/package.json",
-        "apps/web/src/lib/catalog-source.ts",
-        "apps/web/src/lib/catalog-source.test.ts",
-        "apps/web/src/lib/catalog-source-registry.ts",
-        "apps/web/src/lib/catalog-source-registry.test.ts",
-        "apps/web/src/lib/catalog-ingestion-source.ts",
-        "apps/web/src/lib/catalog-ingestion-source.test.ts",
-        "apps/web/src/app/title/demo-title-details.ts",
-        "apps/web/src/app/title/demo-title-details.test.ts",
-        "docs/CATALOG_SOURCE.md",
-        "docs/ARCHITECTURE.md",
-        "package-lock.json",
-        "apps/web/src/app/title/title-detail.ts",
-        "apps/web/src/app/title/title-detail.test.ts"
-      ],
-      "preferredAgent": "claude-backend",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "architecture-review",
-        "security-review",
-        "rights-review",
-        "typecheck",
-        "unit"
-      ],
-      "acceptance": "A metadata source stands behind resolveCatalogMetadataSource and answers what the port deliberately does not. Ingestion: something fetches, schedules and backfills, rather than an array being maintained by hand. Refresh: an answer carries its age and a stated staleness policy, so nobody has to guess how old a rail is. Identity and dedupe: how a provider's native id becomes a normalizedContentId, and what happens when two sources describe the same work, is settled as a design decision before it is coded - this is the largest missing piece and it is not a coding question. Deletion: a work that disappears from a source produces a tombstone, so it stays distinguishable from a fetch that failed. Paging and provider-side search: listRecords returning everything is a shape only six fixtures can use, and who owns ranking and paging is part of the contract rather than an accident of in-memory filtering. Artwork: images arrive with their own licensing, tracked separately from the work's, or they do not arrive. Localization and availability: title, genre and synopsis are locale-tagged and a work can be offered in more than one language, and availability windows and territory exist, so the empty state's claim about a region is backed by something. Every record declares a rights basis whose category agrees with its item and whose reference is an opaque internal identifier or null, and the ingestion path is treated as untrusted third-party I/O - allowlisted egress, bounded bodies, redirects revalidated, and no media address anywhere in a catalog payload.",
-      "owner": "claude-backend",
-      "gateResults": {
-        "typecheck": {
-          "status": "pass",
-          "at": "2026-09-20T04:23:01.586Z",
-          "by": "claude-backend",
-          "commitSha": "1cf62791683ef41d49f9b389e86e61fab7d7c591",
-          "evidence": "npx turbo run typecheck --force at the corrected head, exit 0, 10 of 10, 0 cached. npm ci --dry-run exit 0, so manifests and lock agree after apps/web gained @liberty/catalog-ingestion; the implementer also ran a full npm ci in a pristine tar copy with node_modules absent and package-lock.json was byte-identical afterwards. The typecheck is load-bearing for the deletion in item 9 rather than incidental: PUBLISHED_REASON is a total Record over the registry's reason union, so removing metadata_source_requires_awaiting and catalog_source_requires_async_caller was compiler-checked exactly as an addition would be."
-        },
-        "unit": {
-          "status": "pass",
-          "at": "2026-09-20T04:23:01.704Z",
-          "by": "claude-backend",
-          "commitSha": "1cf62791683ef41d49f9b389e86e61fab7d7c591",
-          "evidence": "npx turbo run test --force, exit 0, 18 of 18 and 0 cached, 2441 passed 1 skipped across 120 files, against 2415 at the base. 18 tasks rather than 17 because apps/web now depends on @liberty/catalog-ingestion and the graph gained an edge. Also lint 0, build 0, test:scripts 0 (38+67+16+35), repo:validate 0. A COUNT CORRECTION IS PART OF THIS RECORD: the implementer first reported 2247, which was an arithmetic slip -- its own per-package figures summed to 2447 at that stage. The lead re-ran turbo independently and got 2447 then, and 2441 after the item-9 deletion; web went 868 to 862 because two synchronous-accessor suites and one now-impossible title test collapsed into three broader assertions, and no other package moved. RED-THEN-GREEN was run against three trees, each restored byte-identically and cmp-verified. Value reds include 'reason: title_source_unavailable' expected where the stage-1 tree produced 'catalog_source_requires_async_caller', and a refused runtime being indistinguishable from a valid one on the stage-1 surface because it refused the caller BEFORE evaluating the runtime. The deletion was proved in the other direction too -- final production against stage-1 tests gives TS2724 'has no exported member named resolveSynchronousCatalogMetadataSource' plus 15 of 15 runtime failures. WHERE A VALUE-RED WAS IMPOSSIBLE IT IS SAID SO RATHER THAN DRESSED UP, per the reviewer's round-51 ruling: title-detail.test.ts's eight edits only add await at call sites and are red neither at runtime nor at compile time, so they are the mechanical consequence of a signature change and are not offered as evidence; and the test that the surviving accessor produces only the two still-possible reasons PASSES against stage 1 and cannot be made to fail there, because a removal has no value-red by construction -- its red is the compile red and its ongoing job is to catch the string coming back."
-        }
-      },
-      "implementationAgent": "claude-backend",
-      "updatedAt": "2026-09-20T04:23:01.819Z",
-      "implementationBaseSha": "a3e7d13323cda0479aa5352efb7bdb5dea973125",
-      "surfaceWidenedAtClaim": "WIDENED 2026-09-16 by claude-lead to include package-lock.json, and FLAGGED TO THE REVIEWER AS OURS RATHER THAN PRESCRIBED, on exactly the precedent PL-0405 set and had approved this round. This task creates a new workspace package, packages/catalog-ingestion, and the root lockfile does not know it: npm ci fails with 'Missing: @liberty/catalog-ingestion@0.1.0 from lock file', and .github/workflows/ci.yml runs npm ci, so CI is red until the lockfile lands. A package that cannot be installed reproducibly is not a completed package, so the lockfile is part of adding one rather than a separate concern. The delta was computed with npm install --package-lock-only and is ADDITIONS ONLY, 28 lines, three entries: the workspace link, the package manifest, and its nested zod 3.25.76 -- which exists because root node_modules carries zod 4.4.3 as a transitive dependency of something else and every workspace declaring zod ^3.0.0 gets a nested 3.25.76. Nothing else in the file changed. The implementer stopped and reported rather than editing it, which was correct; this is the lead recording the widening instead of it being discovered in a red CI run. If the reviewer would rather see the lockfile as its own change, it is one entry to remove.",
-      "licensingDecision": {
-        "decidedBy": "human-commander",
-        "decidedOn": "2026-09-17",
-        "decision": "Wikidata is the initial catalog metadata source.",
-        "rationale": "It requires no credential and keeps the provider seam replaceable.",
-        "scope": "INITIAL SOURCE CHOICE, NOT AN EXCLUSIVE OR PERMANENT SOURCE MANDATE. Recorded in those words at the reviewer's insistence, so a later reader cannot mistake a first pick for a standard.",
-        "transport": "Relayed by the commander in chat, inside gpt-architect's round-45 review text, and transcribed by claude-lead. Not machine-attested. Recorded as a human-commander decision rather than self-certified by the implementing agent, which is what control/policies.json requires: escalation.humanOnly lists Licensing, and selecting a catalog source is exactly that.",
-        "notCoveredByThisDecision": [
-          "Any credentialed source. TMDB and anything else requiring an API key remains a separate Credentials escalation and is untouched by this.",
-          "Whether bulk ingestion engages the EU/UK sui generis database right. That question applies to Wikidata as much as to any other candidate and is for counsel, not for this record.",
-          "Commercial use terms for any future source. Only Wikidata's CC0 position on structured data was evidenced."
-        ],
-        "obligationsThatFollow": "Wikidata's structured data is CC0, but access is not unconditional: the Wikimedia User-Agent policy requires an informative User-Agent with contact information or the client may be IP-blocked without notice, and browser-impersonating agents are forbidden. That is why CatalogDocumentOptions.userAgent is required with no default, and it must stay that way. Text outside the main, property and lexeme namespaces is CC BY-SA rather than CC0, so the distinction has to survive into whatever is ingested."
-      },
-      "review": {
-        "taskId": "PL-0305",
-        "implementationAgent": "claude-backend",
-        "implementationOwner": "claude-backend",
-        "reviewerAgent": "gpt-architect",
-        "reviewerClass": "external-reasoning",
-        "reviewerProvider": "openai",
-        "reviewedCommitSha": "1cf62791683ef41d49f9b389e86e61fab7d7c591",
-        "reviewedBaseSha": "a3e7d13323cda0479aa5352efb7bdb5dea973125",
-        "reviewedTreeHash": "6603d153e36dae24deead44d00d32982fc1b8a215018b9183aa603f88931c126",
-        "reviewedFileCount": 32,
-        "reviewedFingerprintSource": "git-object",
-        "reviewedDependencies": [],
-        "outcome": "CHANGES_REQUESTED",
-        "reviewedAt": "2026-09-20T03:11:42.291Z",
-        "evidence": "CHANGES_REQUESTED at 1cf62791683ef41d49f9b389e86e61fab7d7c591. The ingestion and provider implementation is substantial and directionally sound, and this is NOT a request to redo ingestion, Wikidata, identity, paging, tombstones, freshness, transport or source selection. THE FIRST ACCEPTANCE CLAUSE IS NOT SATISFIED. The clause says a metadata source stands behind resolveCatalogMetadataSource. The reviewed tree instead has @liberty/catalog-ingestion's resolveCatalogMetadataProvider backed by Wikidata, while apps/web/src/lib/catalog-source-registry.ts's resolveCatalogMetadataSource still returns demoCatalogSource for a valid non-deployment capability and no_metadata_source_configured in deployment. THE REPOSITORY'S OWN DOCS STATE THIS ACCURATELY -- the Wikidata source exists on the INGESTION side and does not yet stand behind the application's catalog-source port -- which is why this is a wiring gap rather than a disputed claim. The corrective is to wire the approved Wikidata-backed path behind the application's async catalog metadata source, with reviewer-authorized widening for the minimum necessary files and an explicit refusal to widen to apps/web/src/** generally. Twelve required behaviours are recorded on the task's amended acceptance, including that the synchronous title path must not fake async data synchronously -- resolveSynchronousCatalogMetadataSource cannot honestly return a network-backed provider and that must be resolved explicitly rather than by buffering network data behind a synchronous API or returning stale or demo data to satisfy the type. TRANSCRIBED BY CLAUDE from the review relayed by the human commander."
-      },
-      "reviewHistory": [
-        {
-          "taskId": "PL-0305",
-          "implementationAgent": "claude-backend",
-          "implementationOwner": "claude-backend",
-          "reviewerAgent": "gpt-architect",
-          "reviewerClass": "external-reasoning",
-          "reviewerProvider": "openai",
-          "reviewedCommitSha": "1cf62791683ef41d49f9b389e86e61fab7d7c591",
-          "reviewedBaseSha": "a3e7d13323cda0479aa5352efb7bdb5dea973125",
-          "reviewedTreeHash": "6603d153e36dae24deead44d00d32982fc1b8a215018b9183aa603f88931c126",
-          "reviewedFileCount": 32,
-          "reviewedFingerprintSource": "git-object",
-          "reviewedDependencies": [],
-          "outcome": "CHANGES_REQUESTED",
-          "reviewedAt": "2026-09-20T03:11:42.291Z",
-          "evidence": "CHANGES_REQUESTED at 1cf62791683ef41d49f9b389e86e61fab7d7c591. The ingestion and provider implementation is substantial and directionally sound, and this is NOT a request to redo ingestion, Wikidata, identity, paging, tombstones, freshness, transport or source selection. THE FIRST ACCEPTANCE CLAUSE IS NOT SATISFIED. The clause says a metadata source stands behind resolveCatalogMetadataSource. The reviewed tree instead has @liberty/catalog-ingestion's resolveCatalogMetadataProvider backed by Wikidata, while apps/web/src/lib/catalog-source-registry.ts's resolveCatalogMetadataSource still returns demoCatalogSource for a valid non-deployment capability and no_metadata_source_configured in deployment. THE REPOSITORY'S OWN DOCS STATE THIS ACCURATELY -- the Wikidata source exists on the INGESTION side and does not yet stand behind the application's catalog-source port -- which is why this is a wiring gap rather than a disputed claim. The corrective is to wire the approved Wikidata-backed path behind the application's async catalog metadata source, with reviewer-authorized widening for the minimum necessary files and an explicit refusal to widen to apps/web/src/** generally. Twelve required behaviours are recorded on the task's amended acceptance, including that the synchronous title path must not fake async data synchronously -- resolveSynchronousCatalogMetadataSource cannot honestly return a network-backed provider and that must be resolved explicitly rather than by buffering network data behind a synchronous API or returning stale or demo data to satisfy the type. TRANSCRIBED BY CLAUDE from the review relayed by the human commander."
-        }
-      ],
-      "surfaceWidenedOnReview": "WIDENED 2026-09-20 BY THE REVIEWER'S OWN CHANGES_REQUESTED, which granted it explicitly: 'Because the missing edit genuinely requires surfaces outside PL-0305's present declaration, reviewer-authorized widening is granted for the minimum necessary files.' The reviewer named apps/web/package.json, catalog-source-registry.ts and 'the minimum adapter/composition file(s) required to project @liberty/catalog-ingestion into CatalogMetadataSource', and refused a general widening: 'Do NOT widen to apps/web/src/** generally.' This declaration names files, never a tree under apps/web/src. apps/web/package.json -- apps/web does not currently depend on @liberty/catalog-ingestion at all, so the dependency has to be added before anything can import it. catalog-ingestion-source.ts and its test -- the adapter that projects the package's public API into CatalogMetadataSource; the name is fixed HERE rather than left to the implementer, because a declared surface cannot reserve a path whose name is chosen later. catalog-source-registry.test.ts, catalog-source.test.ts -- the tests for files already in the surface, which the corrective's item 10 requires regressions in and which were missing from the original declaration. apps/web/src/app/title/demo-title-details.ts and its test -- required by item 9 and by nothing else: it is the ONLY production consumer of resolveSynchronousCatalogMetadataSource, so 'remove or narrow the synchronous-only accessor once it no longer has a legitimate production consumer' cannot be done without it. Verified by grep rather than assumed. No other apps/web path is added, and the two title files are named individually rather than as apps/web/src/app/title/**. SECOND WIDENING, same round, two more named files: apps/web/src/app/title/title-detail.ts and its test. The implementer narrowed the synchronous accessor rather than removing it, because removing it requires making getTitleDetail async and that function lives in title-detail.ts, which was not on the surface -- and it stopped and asked instead of writing there. Granted because item 9 names the migration as the REVIEWER'S PREFERRED DIRECTION and the change is small: loadTitleDetail already awaits its source and TitleDetailSource already admits a promise, so it is `async function getTitleDetail` plus one await. Taking the second-best remedy when the preferred one costs twenty lines and two named files would be settling. Still named files; still not apps/web/src/** and still not apps/web/src/app/title/**.",
-      "acceptanceRound51Corrective": "CORRECTIVE REQUIRED by gpt-architect at 1cf62791683ef41d49f9b389e86e61fab7d7c591. Wire the approved Wikidata-backed ingestion path behind the application's async catalog metadata source. NOT a request to redo ingestion, Wikidata, identity, paging, tombstones, freshness, transport or source selection -- those are accepted. Twelve required behaviours, in the reviewer's terms: (1) resolveCatalogMetadataSource must be CAPABLE OF RETURNING THE REAL CONFIGURED METADATA SOURCE, not merely the demo source. (2) The source-selection and licensing decision is unchanged: Wikidata is the INITIAL source, not a permanent or exclusive one. (3) The application must NOT gain a hidden credentialed source or an ambient API key. (4) Real metadata I/O stays behind @liberty/catalog-ingestion's provider and transport boundaries. Do NOT move Wikidata query or fetch logic into apps/web. (5) RIGHTS REMAIN FAIL CLOSED. Wikidata knowing that a work exists is not itself authorization to surface that work. Records with no established operator rights basis remain refused. (6) AVAILABILITY REMAINS HONEST. Do not fabricate availability windows merely to make a rail populate. (7) A deployment with a selected provider but no usable rights or availability data must be DISTINGUISHABLE from: no provider configured, provider or network failure, and a truly empty catalog. Four states, four answers. (8) Preserve the provider seam: apps/web depends on the catalog-ingestion package's PUBLIC API and does not import Wikidata-specific modules. (9) DO NOT MAKE THE SYNCHRONOUS TITLE PATH FAKE ASYNC DATA SYNCHRONOUSLY. The code already predicts this: resolveSynchronousCatalogMetadataSource cannot honestly return a network-backed provider. Resolve it explicitly. Preferred direction: keep resolveCatalogMetadataSource as the general async-capable source, migrate the title-detail path to it if necessary, and remove or narrow the synchronous-only accessor once it has no legitimate production consumer. Do NOT buffer network data behind a synchronous API, and do NOT return stale or demo data merely to satisfy the type. (10) REGRESSIONS showing: a deployment configured with the real source no longer returns no_metadata_source_configured merely because only the demo implementation was wired; an unconfigured deployment still refuses BY NAME; demo fixtures remain unavailable in deployment; a real record without an established rights basis is not surfaced; and provider failure is not reported as an empty catalog. (11) docs/CATALOG_SOURCE.md's opening statement currently says, correctly, that a metadata source stands behind the ingestion port but does not yet stand behind the application's port. THAT SENTENCE MAY ONLY CHANGE AFTER THE WIRING ACTUALLY EXISTS. (12) Re-run lock verification plus typecheck, test, lint, build, test:scripts, repo:validate and ai:validate, then re-request review. PL-0305 is NOT to be marked complete before this correction."
-    }
-  ],
+  "assigned": [],
   "review": [],
   "reservedExternal": [],
   "recommended": [
@@ -178,6 +66,40 @@
           "evidence": "turbo run test --filter @liberty/provider-sdk exit 0 under pinned Node 22: zero observations yielding unknown with a null observed rate and a zero sample count, a prior labelled rather than presented as measurement at the same ranking number as a measured value, the degraded band held distinct from up and down, purity over observations plus an explicit policy version with Date.now replaced by a thrower to prove no wall clock is read, whole-report permutation invariance under generated policies, monotonicity in each count, and a compile-time guard that no health type can carry entitlement."
         }
       }
+    },
+    {
+      "id": "PL-0308",
+      "priority": "P1",
+      "lane": "Backend",
+      "status": "READY",
+      "title": "Production composition registers the catalog ingestion runtime",
+      "dependencies": [
+        "PL-0305"
+      ],
+      "allowedPaths": [
+        "apps/web/src/lib/catalog-source-registry.ts",
+        "apps/web/src/lib/server-bootstrap.ts",
+        "apps/web/src/instrumentation.ts",
+        "docs/CATALOG_SOURCE.md",
+        "docs/DEPLOYMENT.md"
+      ],
+      "reviewDependencies": [
+        "apps/web/src/lib/catalog-ingestion-source.ts",
+        "packages/catalog-ingestion/src/index.ts",
+        "packages/media-inspection/src/node/pinned-fetch.ts"
+      ],
+      "preferredAgent": "claude-backend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "security-review",
+        "rights-review"
+      ],
+      "acceptance": "A hosted deployment that is configured for a real catalog source actually gets one: something in the production composition root calls registerCatalogIngestionRuntime with a runtime built next to the Node pinned-fetch construction. PL-0305 made the application CAPABLE of hosting the real source and the reviewer accepted that as complete; what remains is that NOTHING CALLS THE REGISTRATION, so a hosted deployment still answers no_metadata_source_configured -- a true statement about the deployment rather than about the registry, and the exact gap this task owns. Required: the runtime is built from the existing pinned-fetch transport rather than a second fetch path; NO CREDENTIAL OR API KEY IS INTRODUCED, since the initial source needs none and an ambient key would be the hidden credentialed source PL-0305's review forbade; an unconfigured deployment must STILL refuse by name rather than silently acquiring a default; and a regression must drive the composition root and observe a configured resolution, because a registration nobody has watched fire is not known to work. OUT OF SCOPE: persistent scheduling and storage, which is PL-0309, and the rights register, which is not a coding task. NOTE BEFORE CLAIMING: the exact composition-root file may not exist yet; the declared surface names the likely homes and must be corrected before the claim rather than widened after, on the PL-0710 precedent.",
+      "notes": "Created 2026-09-20 on gpt-architect's round-52 direction when it approved PL-0305: 'Make sure the existing handoff has explicit ownership for ... If any is currently only prose with no task, create a narrow task before it can be forgotten.' PL-0305 is NOT to be reopened for any of these. Follow-up 1 of 4. Point 3 of the round-52 verdict.",
+      "owner": null,
+      "gateResults": {}
     }
   ]
 }

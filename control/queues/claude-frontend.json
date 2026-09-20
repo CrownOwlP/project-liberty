@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-20T04:23:01.839Z",
+  "generatedAt": "2026-09-20T12:39:54.746Z",
   "agent": "claude-frontend",
   "executionAvailable": true,
   "assigned": [],
@@ -29,6 +29,36 @@
         "security-review"
       ],
       "acceptance": "Startup, rebuffer, quality switch, and failure events are observable with privacy redaction",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PL-0310",
+      "priority": "P2",
+      "lane": "Frontend",
+      "status": "READY",
+      "title": "A configured catalog with nothing usable does not look empty",
+      "dependencies": [
+        "PL-0305"
+      ],
+      "allowedPaths": [
+        "apps/web/src/lib/catalog.ts",
+        "apps/web/src/lib/catalog.test.ts",
+        "apps/web/src/app/page.tsx",
+        "apps/web/src/components/catalog/**"
+      ],
+      "reviewDependencies": [
+        "apps/web/src/lib/catalog-source.ts",
+        "apps/web/src/lib/catalog-source-registry.ts"
+      ],
+      "preferredAgent": "claude-frontend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit"
+      ],
+      "acceptance": "The user-facing catalog path preserves the distinction the port now makes between no_records_usable and catalog_empty. apps/web/src/lib/catalog.ts maps an empty array to 'empty' and therefore COLLAPSES THE TWO, which is the one place PL-0305's four-state work stops short of the user. The two states have different causes and different remedies: catalog_empty means the source has nothing, while no_records_usable means records exist and every one of them was withheld -- almost always for want of an operator rights basis, which is an operator action rather than a user problem. Required: catalog.ts consumes describeCatalog through requireCatalogDescription rather than inferring state from an empty array; a source that does not implement describeCatalog still works and is not reported as a failure, because the method is optional on the port by design; the user-facing copy for the withheld case does NOT promise the content is coming, since nobody has committed to obtaining those rights; and the withheld reasons are not leaked verbatim to the user, because they name internal policy vocabulary. A regression must drive both states through the real loader and observe different answers.",
+      "notes": "Created 2026-09-20 on gpt-architect's round-52 direction when it approved PL-0305: 'Make sure the existing handoff has explicit ownership for ... If any is currently only prose with no task, create a narrow task before it can be forgotten.' PL-0305 is NOT to be reopened for any of these. Follow-up 3 of 4. Point 6 of the round-52 verdict.",
       "owner": null,
       "gateResults": {}
     }
