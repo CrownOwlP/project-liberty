@@ -70,7 +70,8 @@
  * one module has to depend on the other and it must not be both.
  */
 
-import { bareAddress, isAuthorisedTarget, type PinnedTarget } from "./egress";
+import { bareAddress, canonicalHost } from "@liberty/net-policy/host";
+import { isAuthorisedTarget, type PinnedTarget } from "./egress";
 
 /**
  * Re-exported so a transport can name the type it is handed without reaching
@@ -156,9 +157,44 @@ export type PinnedLookup = (
   callback: PinnedLookupCallback
 ) => void;
 
-/** Case folding plus bracket stripping, so the two spellings of a host compare equal. */
-function normaliseHost(hostname: string): string {
-  return bareAddress(hostname.trim()).toLowerCase();
+/**
+ * The spelling two hostnames are compared in, or `null` when the string names no
+ * host at all.
+ *
+ * WHAT THIS USED TO BE, AND WHY IT CHANGED (PL-0710). It was
+ * `bareAddress(hostname.trim()).toLowerCase()` -- case folding plus bracket
+ * stripping, and NO DNS root-label fold. That was safe and it was still the
+ * third canonicaliser in the repository.
+ *
+ * Safe, because both sides of the one comparison it feeds come from the same
+ * `URL` object: `target.hostname` is the pin's, the socket layer asks with the
+ * hostname it built from the same URL, so the two carry or omit the trailing dot
+ * together, and a mismatch REFUSES the connection rather than allowing one. The
+ * failure direction was closed.
+ *
+ * Still wrong, because that is a property of where the inputs happen to come
+ * from and not of the function, and because `classifyHost` (PL-0702, F7) and
+ * `hostOnAllowlist` (PL-0709, F12) had both already been taught to fold the root
+ * label. Two gates in front of a request agreed about what a host is and the
+ * third, the one that actually decides which address a socket opens to,
+ * disagreed. A pin minted for `https://cdn.example.test./m` -- a spelling the
+ * other two accept and normalise -- refused a lookup for `cdn.example.test`,
+ * which is the same host to every resolver and the host those addresses were
+ * authorised for.
+ *
+ * `canonicalHost` is now `@liberty/net-policy`'s and is the same function the
+ * other two call. `bareAddress` is applied first and `trim` before that, so an
+ * IPv6 literal is unwrapped before the fold ever sees it and the bracket and
+ * case behaviour is exactly what it was.
+ *
+ * THE `null` IS LOAD BEARING. `canonicalHost` answers `null` for `"."`, `".."`,
+ * `"host.."` and `""` -- strings that name no host -- and `null === null` is
+ * true in JavaScript. A comparison written without guarding it would make "names
+ * no host" match "names no host" and hand the authorised address set to a lookup
+ * for the DNS root. `createPinnedLookup` guards both sides.
+ */
+function normaliseHost(hostname: string): string | null {
+  return canonicalHost(bareAddress(hostname.trim()));
 }
 
 /**
@@ -254,7 +290,29 @@ export function createPinnedLookup(target: PinnedTarget): PinnedLookup {
 
   return (hostname, options, callback) => {
     const answer = (): void => {
-      if (normaliseHost(hostname) !== pinnedHost) {
+      /*
+       * BOTH NULL CHECKS ARE PART OF THE COMPARISON, not noise in front of it.
+       *
+       * `pinnedHost === null` is unreachable by construction -- a pin is minted
+       * only by `authoriseFetchTarget`, whose static gate already refused every
+       * hostname that `classifyHost` calls unparseable, which is exactly the set
+       * `canonicalHost` answers `null` for. It is written out anyway because the
+       * alternative is a comparison whose correctness depends on a fact
+       * established in another module, and because `null === null` would make
+       * this branch hand over the address set rather than refuse.
+       *
+       * `requested === null` IS reachable -- the hostname is whatever the socket
+       * layer asks for -- but on its own it changes no outcome, because a
+       * non-null `pinnedHost` already fails the third clause. So NO TEST KILLS
+       * THESE TWO CLAUSES, and that is recorded rather than papered over: PL-0710
+       * mutation-tested the guard by deleting both, and the suite stayed green.
+       * They are kept because the only state they exclude is the one where both
+       * sides name no host and `null === null` hands over the address set, and
+       * an unreachable state's guard costs nothing while the reasoning that
+       * makes it unreachable lives in another module.
+       */
+      const requested = normaliseHost(hostname);
+      if (pinnedHost === null || requested === null || requested !== pinnedHost) {
         // Named without the address set, which is ours and not worth printing,
         // and without any URL. `http.ts` reports an error by name and code only.
         callback(lookupError("ENOTFOUND", "host does not match the authorised target"), []);

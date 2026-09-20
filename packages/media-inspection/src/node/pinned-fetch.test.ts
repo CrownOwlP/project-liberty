@@ -1,9 +1,12 @@
+import { readFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import {
   createServer as createTcpServer,
   type Server as TcpServer,
   type Socket
 } from "node:net";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { authoriseFetchTarget, type EgressPolicy, type PinnedTarget } from "../egress";
 import type { PinnedRequestInit } from "../pin";
@@ -459,5 +462,56 @@ describe("TLS is offered the hostname, never the pinned address", () => {
      * bearing for the exit code, and this comment no longer claims it is.
      */
     await new Promise((settle) => setTimeout(settle, 250));
+  });
+});
+
+/* -------------------------------------------------------------------------
+ * THE TLS OPTIONS THEMSELVES, ASSERTED ON THE SOURCE.
+ *
+ * WHY A SOURCE-LEVEL TEST EARNS ITS PLACE BESIDE TWO SOCKET-LEVEL ONES. The
+ * ClientHello test above proves SNI carries the NAME. What it cannot show,
+ * because no certificate is presented, is the two settings that turn that name
+ * into an identity CHECK: `rejectUnauthorized` staying true against an
+ * environment that can switch it off process-wide, and `checkServerIdentity`
+ * staying Node's own. PL-0710 added a completed-handshake proof of exactly that
+ * in `@liberty/provider-sdk`'s `pinned-transport.test.ts` -- a certificate whose
+ * only SAN is `DNS:localhost`, verified, with the connect-by-address
+ * counterfactual failing `ERR_TLS_CERT_ALTNAME_INVALID` beside it -- but that
+ * test needs the `openssl` binary to make the certificate and SKIPS without it.
+ *
+ * This is the assertion that does not skip. It is deliberately about the three
+ * lines that decide the property, not about the file's prose:
+ *
+ *   - `servername` is `url.hostname`, so SNI and the identity check are the NAME;
+ *   - `rejectUnauthorized: true` is stated rather than inherited, so
+ *     `NODE_TLS_REJECT_UNAUTHORIZED=0` in the environment cannot disable it;
+ *   - `checkServerIdentity` is never supplied, so Node's own runs.
+ *
+ * A pin is the transport's only reason to know an address at all, so the last
+ * check is that `addresses` never reaches the request options -- it reaches the
+ * lookup and nothing else.
+ * ---------------------------------------------------------------------- */
+describe("the transport never turns a pinned address into a TLS identity", () => {
+  const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "pinned-fetch.ts"), "utf8");
+  const code = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+
+  it("derives SNI from the URL hostname", () => {
+    expect(code).toContain("servername: url.hostname");
+  });
+
+  it("states certificate validation rather than inheriting it from the environment", () => {
+    expect(code).toContain("rejectUnauthorized: true");
+    expect(code).not.toContain("rejectUnauthorized: false");
+  });
+
+  it("never replaces Node's own certificate identity check", () => {
+    expect(code).not.toContain("checkServerIdentity");
+  });
+
+  it("never reads the authorised addresses into the request options", () => {
+    // `target.addresses` belongs to `createPinnedLookup` and to nothing else in
+    // this file. An address in `hostname` or `servername` is the rejected design.
+    expect(code).not.toContain("target.addresses");
+    expect(code).toContain("hostname: host");
   });
 });

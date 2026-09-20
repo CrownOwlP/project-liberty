@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   ALLOWED_PROTOCOLS,
   authoriseFetchTarget,
+  authoriseResolvedTarget,
   checkUrlStatically,
   hostOnAllowlist,
   type EgressPolicy
@@ -303,5 +304,105 @@ describe("refusal details never carry a URL's query string", () => {
       expect(verdict.detail).not.toContain("SUPERSECRET");
       expect(verdict.detail).toContain("(no scheme)");
     }
+  });
+});
+
+/* -------------------------------------------------------------------------
+ * THE RESOLVE-AND-PIN HALF, REACHED ON ITS OWN (PL-0710).
+ *
+ * `authoriseFetchTarget` is now `checkUrlStatically` followed by
+ * `authoriseResolvedTarget`, and the second half is exported because
+ * `@liberty/provider-sdk` has its own static gate and must not grow its own
+ * resolve-and-pin beside this one. These tests pin the two things that split
+ * created: that the halves still compose into the whole, and that the exported
+ * half cannot be used to skip the first one.
+ *
+ * ON THE PROVENANCE OF THESE TESTS, because the reviewer has ruled that such
+ * history is not to be smoothed: they were written AFTER the extraction, not
+ * before it. A red-first version could only have failed with "authoriseResolvedTarget
+ * is not exported" -- there is no value a non-existent function returns wrongly
+ * -- so their non-vacuity is established by mutation instead, and the mutants
+ * are recorded in the round report. The behavioural reds for this change are in
+ * `@liberty/provider-sdk`, where the function being called is what turned an
+ * accepted fetch into a refusal.
+ * ---------------------------------------------------------------------- */
+describe("authoriseResolvedTarget is the shared half, and only the half", () => {
+  const deps = (answers: Readonly<Record<string, readonly string[]>>) => ({
+    classifyHost: testClassifyHost,
+    resolveHost: testResolver(answers)
+  });
+
+  it("produces exactly what the whole gate produces for the same URL", async () => {
+    const answers = { "cdn.example.test": ["93.184.216.34"] };
+    const whole = await authoriseFetchTarget(
+      "https://cdn.example.test/master.m3u8",
+      permissiveEgress,
+      deps(answers)
+    );
+    const half = await authoriseResolvedTarget(
+      new URL("https://cdn.example.test/master.m3u8"),
+      deps(answers)
+    );
+
+    expect(whole.ok).toBe(true);
+    expect(half.ok).toBe(true);
+    if (!whole.ok || !half.ok) return;
+    // Two different pin OBJECTS -- each authorisation mints its own, which is
+    // what makes a redirect hop's pin its own -- carrying identical content.
+    expect(half.pin).not.toBe(whole.pin);
+    expect(half.pin.url).toBe(whole.pin.url);
+    expect(half.pin.hostname).toBe(whole.pin.hostname);
+    expect(half.pin.addresses).toEqual(whole.pin.addresses);
+    expect(half.hostClass).toBe(whole.hostClass);
+  });
+
+  it("classifies the host itself rather than believing a caller about it", async () => {
+    /*
+     * THE PARAMETER THAT IS NOT THERE. An earlier shape took the `hostClass` the
+     * caller's static gate computed, which would have let a caller claim
+     * `"loopback"` about a public name and so inherit the loopback exemption --
+     * turning the shared half into a way to reach 127.0.0.1 through any name at
+     * all. The class is recomputed from the injected classifier, so the only
+     * host that gets the exemption is a host that really is loopback.
+     */
+    const verdict = await authoriseResolvedTarget(
+      new URL("https://cdn.example.test/master.m3u8"),
+      deps({ "cdn.example.test": ["127.0.0.1"] })
+    );
+    expect(verdict.ok).toBe(false);
+    if (!verdict.ok) expect(verdict.reason).toBe("dns_resolved_private_address");
+  });
+
+  it("gives a loopback NAME its exemption, so the two-key path still works", async () => {
+    const verdict = await authoriseResolvedTarget(
+      new URL("http://localhost:8096/library/master.m3u8"),
+      deps({ localhost: ["127.0.0.1"] })
+    );
+    expect(verdict.ok).toBe(true);
+    if (verdict.ok) expect(verdict.pin.addresses).toEqual(["127.0.0.1"]);
+  });
+
+  it.each([
+    ["https://10.0.0.5/master.m3u8"],
+    ["https://[fd00::1]/master.m3u8"],
+    ["https://vault.internal/token"]
+  ])("throws rather than answering for %s, which a static gate must already have refused", async (raw) => {
+    /*
+     * Thrown, not returned as a refusal verdict, and the choice matches
+     * `createPinnedLookup`'s. A `private` or `unparseable` host arriving here is
+     * not a network condition to report in a reason trail -- it is a caller whose
+     * static gate did not run or ran fail-open, and handing it a tidy refusal
+     * would let it carry on believing it has a gate. Unreachable from either
+     * caller in this repository: both return before this point on these classes.
+     */
+    /*
+     * `private` only. The precondition also excludes `unparseable`, and there is
+     * no case for it here because there is no way to BUILD one honestly: this
+     * function takes a `URL`, `new URL()` refuses every string the classifier
+     * calls unparseable except the empty host, and `checkUrlStatically` refuses
+     * that before this point. Writing the case would mean fabricating a URL
+     * object, which is a test of a cast rather than of the guard.
+     */
+    await expect(authoriseResolvedTarget(new URL(raw), deps({}))).rejects.toThrow(TypeError);
   });
 });

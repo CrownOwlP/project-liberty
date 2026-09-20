@@ -1,3 +1,4 @@
+import type { HostResolver } from "@liberty/media-inspection/egress";
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_PROVIDER_HEALTH_POLICY,
@@ -6,7 +7,7 @@ import {
 } from "../health";
 import type { CatalogItemRef, ProviderContext } from "../provider";
 import { createStremioProvider, declaredStreamTypes, parseStremioItemId } from "./client";
-import type { FetchLike } from "./http";
+import type { PinnedFetch } from "./http";
 import { stableStreamKey } from "./mapping";
 import {
   defineStremioSource,
@@ -69,27 +70,61 @@ function json(value: unknown, init: ResponseInit = {}): Response {
   });
 }
 
+/**
+ * THE TWO PORTS THIS ADAPTER NOW TAKES (PL-0710).
+ *
+ * `fetch` is a `PinnedFetch`, not a `fetch`: it receives the `PinnedTarget` the
+ * authorisation produced rather than a URL string, so a transport cannot resolve
+ * the name a second time and reach an address nothing classified.
+ * `resolveHost` is the ONE resolution a request performs, and its answers are
+ * what become the pin.
+ *
+ * `PUBLIC_TEST_ADDRESS` is what every name in this file resolves to. It is a
+ * public address, so it changes no verdict any of these tests were written to
+ * make -- they are about manifests, candidates, health and redirect policy, and
+ * the resolve-and-pin behaviour itself is exercised in
+ * `resolve-and-pin.test.ts` and `pinned-transport.test.ts`. What it is NOT is
+ * decoration: had it been a private address, every fetch in this file would be
+ * refused, which is what makes the value load bearing rather than filler.
+ */
+const PUBLIC_TEST_ADDRESS = "93.184.216.34";
+
+interface StubDeps {
+  readonly fetch: PinnedFetch;
+  readonly resolveHost: HostResolver;
+}
+
 interface Stub {
-  readonly fetch: FetchLike;
+  readonly deps: StubDeps;
   readonly calls: Array<{ url: string; headers: Record<string, string> }>;
 }
 
 /** Routes by exact URL; anything unrouted answers 404, as a stranger would. */
 function stubFetch(routes: Record<string, () => Response | Promise<Response>>): Stub {
   const calls: Array<{ url: string; headers: Record<string, string> }> = [];
-  const fetchImpl: FetchLike = async (input, init) => {
-    const url = String(input);
-    const headers: Record<string, string> = {};
-    const raw = init?.headers;
-    if (raw && typeof raw === "object" && !Array.isArray(raw)) {
-      for (const [key, value] of Object.entries(raw as Record<string, string>)) headers[key] = value;
-    }
+  const fetchImpl: PinnedFetch = async (target, init) => {
+    const url = target.url;
+    const headers: Record<string, string> = { ...init.headers };
     calls.push({ url, headers });
     const route = routes[url];
     return route ? route() : new Response("no such route", { status: 404 });
   };
-  return { fetch: fetchImpl, calls };
+  return { deps: { fetch: fetchImpl, resolveHost: async () => [PUBLIC_TEST_ADDRESS] }, calls };
 }
+
+/**
+ * Ports for a test that must NOT reach the network -- the construction-time
+ * refusals below. Both throw, so a provider that made a request on the way to
+ * being refused would fail loudly rather than pass quietly.
+ */
+const inertDeps: StubDeps = {
+  fetch: () => {
+    throw new Error("this test must not reach the transport");
+  },
+  resolveHost: () => {
+    throw new Error("this test must not reach the resolver");
+  }
+};
 
 const frozenClock = (): (() => number) => () => 1_700_000_000_000;
 
@@ -119,7 +154,7 @@ describe("resolving candidates end to end", () => {
         })
     });
 
-    const provider = createStremioProvider(makeSource(), { fetch: stub.fetch, now: frozenClock() });
+    const provider = createStremioProvider(makeSource(), { ...stub.deps, now: frozenClock() });
     const resolution = await provider.resolve(item, requestContext);
 
     expect(resolution.reason).toBe("resolved");
@@ -180,7 +215,7 @@ describe("resolving candidates end to end", () => {
         [MANIFEST_URL]: () => json(manifestBody),
         [STREAM_URL]: () => json({ streams: order })
       });
-      const provider = createStremioProvider(makeSource(), { fetch: stub.fetch, now: frozenClock() });
+      const provider = createStremioProvider(makeSource(), { ...stub.deps, now: frozenClock() });
       return provider.resolve(item, requestContext);
     };
 
@@ -199,8 +234,8 @@ describe("resolving candidates end to end", () => {
       [STREAM_URL]: () => json({ streams: [{ url: "https://cdn.example.com/film.mp4" }] })
     });
 
-    const frozen = createStremioProvider(makeSource(), { fetch: stub.fetch, now: frozenClock() });
-    const moving = createStremioProvider(makeSource(), { fetch: stub.fetch, now: steppingClock(50) });
+    const frozen = createStremioProvider(makeSource(), { ...stub.deps, now: frozenClock() });
+    const moving = createStremioProvider(makeSource(), { ...stub.deps, now: steppingClock(50) });
 
     const stopped = await frozen.resolve(item, requestContext);
     const running = await moving.resolve(item, requestContext);
@@ -220,7 +255,7 @@ describe("resolving candidates end to end", () => {
       [STREAM_URL]: () => json({ streams: [] })
     });
 
-    const provider = createStremioProvider(makeSource(), { fetch: stub.fetch, now: frozenClock() });
+    const provider = createStremioProvider(makeSource(), { ...stub.deps, now: frozenClock() });
     await provider.resolve(item, requestContext);
 
     const serialised = JSON.stringify(stub.calls);
@@ -235,7 +270,7 @@ describe("resolving candidates end to end", () => {
       [STREAM_URL]: () => json({ streams: [{ url: "https://cdn.example.com/film.mp4" }] })
     });
 
-    const provider = createStremioProvider(makeSource(), { fetch: stub.fetch, now: frozenClock() });
+    const provider = createStremioProvider(makeSource(), { ...stub.deps, now: frozenClock() });
     await provider.resolve(item, requestContext);
     await provider.resolve(item, requestContext);
 
@@ -245,7 +280,7 @@ describe("resolving candidates end to end", () => {
 
   it("reports a health probe from a fresh manifest fetch, never from cache", async () => {
     const stub = stubFetch({ [MANIFEST_URL]: () => json(manifestBody) });
-    const provider = createStremioProvider(makeSource(), { fetch: stub.fetch, now: steppingClock(5) });
+    const provider = createStremioProvider(makeSource(), { ...stub.deps, now: steppingClock(5) });
 
     expect(await provider.health()).toEqual({ ok: true, latencyMs: expect.any(Number) });
     await provider.health();
@@ -268,7 +303,7 @@ describe("nothing indirect is ever fetched", () => {
         })
     });
 
-    const provider = createStremioProvider(makeSource(), { fetch: stub.fetch, now: frozenClock() });
+    const provider = createStremioProvider(makeSource(), { ...stub.deps, now: frozenClock() });
     const resolution = await provider.resolve(item, requestContext);
 
     expect(resolution.candidates).toEqual([]);
@@ -298,7 +333,7 @@ describe("nothing indirect is ever fetched", () => {
       [STREAM_URL]: () => json({ streams: [] })
     });
 
-    const provider = createStremioProvider(makeSource(), { fetch: stub.fetch, now: frozenClock() });
+    const provider = createStremioProvider(makeSource(), { ...stub.deps, now: frozenClock() });
     expect((await provider.resolve(item, requestContext)).reason).toBe("no_streams_offered");
   });
 });
@@ -306,7 +341,7 @@ describe("nothing indirect is ever fetched", () => {
 describe("malformed and hostile responses are handled, never thrown", () => {
   it("handles a manifest that does not match the protocol", async () => {
     const stub = stubFetch({ [MANIFEST_URL]: () => json({ id: 5, version: null }) });
-    const provider = createStremioProvider(makeSource(), { fetch: stub.fetch, now: frozenClock() });
+    const provider = createStremioProvider(makeSource(), { ...stub.deps, now: frozenClock() });
 
     const resolution = await provider.resolve(item, requestContext);
     expect(resolution.reason).toBe("manifest_unavailable");
@@ -318,7 +353,7 @@ describe("malformed and hostile responses are handled, never thrown", () => {
     const stub = stubFetch({
       [MANIFEST_URL]: () => new Response("<html>upstream proxy error</html>", { status: 200 })
     });
-    const provider = createStremioProvider(makeSource(), { fetch: stub.fetch, now: frozenClock() });
+    const provider = createStremioProvider(makeSource(), { ...stub.deps, now: frozenClock() });
 
     const resolution = await provider.resolve(item, requestContext);
     expect(resolution.reason).toBe("manifest_unavailable");
@@ -330,7 +365,7 @@ describe("malformed and hostile responses are handled, never thrown", () => {
       [MANIFEST_URL]: () => json(manifestBody),
       [STREAM_URL]: () => json({ streams: { url: "https://cdn.example.com/film.mp4" } })
     });
-    const provider = createStremioProvider(makeSource(), { fetch: stub.fetch, now: frozenClock() });
+    const provider = createStremioProvider(makeSource(), { ...stub.deps, now: frozenClock() });
 
     const resolution = await provider.resolve(item, requestContext);
     expect(resolution.reason).toBe("stream_request_failed");
@@ -342,7 +377,7 @@ describe("malformed and hostile responses are handled, never thrown", () => {
       [MANIFEST_URL]: () => json(manifestBody),
       [STREAM_URL]: () => new Response("nope", { status: 503 })
     });
-    const provider = createStremioProvider(makeSource(), { fetch: stub.fetch, now: frozenClock() });
+    const provider = createStremioProvider(makeSource(), { ...stub.deps, now: frozenClock() });
 
     const resolution = await provider.resolve(item, requestContext);
     expect(resolution.reason).toBe("stream_request_failed");
@@ -350,14 +385,18 @@ describe("malformed and hostile responses are handled, never thrown", () => {
   });
 
   it("gives up on an addon that never answers", async () => {
-    const hanging: FetchLike = (_input, init) =>
+    const hanging: PinnedFetch = (_target, init) =>
       new Promise<Response>((_resolve, reject) => {
-        init?.signal?.addEventListener("abort", () => {
+        init.signal.addEventListener("abort", () => {
           reject(Object.assign(new Error("The operation was aborted"), { name: "AbortError" }));
         });
       });
 
-    const provider = createStremioProvider(makeSource(), { fetch: hanging, timeoutMs: 20 });
+    const provider = createStremioProvider(makeSource(), {
+      fetch: hanging,
+      resolveHost: async () => [PUBLIC_TEST_ADDRESS],
+      timeoutMs: 20
+    });
     const resolution = await provider.resolve(item, requestContext);
 
     expect(resolution.reason).toBe("manifest_unavailable");
@@ -367,7 +406,7 @@ describe("malformed and hostile responses are handled, never thrown", () => {
   it("abandons a response that exceeds the size cap", async () => {
     const stub = stubFetch({ [MANIFEST_URL]: () => json(manifestBody) });
     const provider = createStremioProvider(makeSource(), {
-      fetch: stub.fetch,
+      ...stub.deps,
       maxResponseBytes: 16,
       now: frozenClock()
     });
@@ -384,7 +423,7 @@ describe("redirects are re-validated, not followed blindly", () => {
       [MANIFEST_URL]: () =>
         new Response(null, { status: 302, headers: { location: "http://169.254.169.254/manifest.json" } })
     });
-    const provider = createStremioProvider(makeSource(), { fetch: stub.fetch, now: frozenClock() });
+    const provider = createStremioProvider(makeSource(), { ...stub.deps, now: frozenClock() });
 
     const resolution = await provider.resolve(item, requestContext);
     expect(resolution.reason).toBe("manifest_unavailable");
@@ -400,7 +439,7 @@ describe("redirects are re-validated, not followed blindly", () => {
       [moved]: () => json(manifestBody),
       [STREAM_URL]: () => json({ streams: [{ url: "https://cdn.example.com/film.mp4" }] })
     });
-    const provider = createStremioProvider(makeSource(), { fetch: stub.fetch, now: frozenClock() });
+    const provider = createStremioProvider(makeSource(), { ...stub.deps, now: frozenClock() });
 
     const resolution = await provider.resolve(item, requestContext);
     // The redirect was followed, the addon answered, and the stream it offered
@@ -419,7 +458,7 @@ describe("redirects are re-validated, not followed blindly", () => {
         new Response(null, { status: 302, headers: { location: "http://127.0.0.1:9200/manifest.json" } })
     });
     const provider = createStremioProvider(makeSource({ allowLoopback: true }), {
-      fetch: stub.fetch,
+      ...stub.deps,
       now: frozenClock()
     });
 
@@ -438,7 +477,7 @@ describe("redirects are re-validated, not followed blindly", () => {
     });
     const provider = createStremioProvider(
       makeSource({ allowLoopback: true }, { localDeployment: true }),
-      { fetch: stub.fetch, now: frozenClock() }
+      { ...stub.deps, now: frozenClock() }
     );
 
     expect((await provider.health()).ok).toBe(true);
@@ -450,7 +489,7 @@ describe("redirects are re-validated, not followed blindly", () => {
       [MANIFEST_URL]: () => new Response(null, { status: 302, headers: { location: MANIFEST_URL } })
     });
     const provider = createStremioProvider(makeSource(), {
-      fetch: stub.fetch,
+      ...stub.deps,
       maxRedirects: 2,
       now: frozenClock()
     });
@@ -464,7 +503,7 @@ describe("redirects are re-validated, not followed blindly", () => {
 describe("the item and the source must agree", () => {
   it("refuses an item routed to another provider", async () => {
     const stub = stubFetch({ [MANIFEST_URL]: () => json(manifestBody) });
-    const provider = createStremioProvider(makeSource(), { fetch: stub.fetch, now: frozenClock() });
+    const provider = createStremioProvider(makeSource(), { ...stub.deps, now: frozenClock() });
 
     const resolution = await provider.resolve({ ...item, providerId: "somewhere-else" }, requestContext);
     expect(resolution.reason).toBe("item_provider_mismatch");
@@ -473,7 +512,7 @@ describe("the item and the source must agree", () => {
 
   it("refuses to choose between two disagreeing rights claims", async () => {
     const stub = stubFetch({ [MANIFEST_URL]: () => json(manifestBody) });
-    const provider = createStremioProvider(makeSource(), { fetch: stub.fetch, now: frozenClock() });
+    const provider = createStremioProvider(makeSource(), { ...stub.deps, now: frozenClock() });
 
     const resolution = await provider.resolve({ ...item, rights: "licensed" }, requestContext);
     expect(resolution.reason).toBe("item_rights_conflict");
@@ -484,7 +523,7 @@ describe("the item and the source must agree", () => {
 
   it("skips a request the manifest says the addon cannot answer", async () => {
     const stub = stubFetch({ [MANIFEST_URL]: () => json(manifestBody) });
-    const provider = createStremioProvider(makeSource(), { fetch: stub.fetch, now: frozenClock() });
+    const provider = createStremioProvider(makeSource(), { ...stub.deps, now: frozenClock() });
 
     const resolution = await provider.resolve({ ...item, externalId: "series/tt1254207:1:1" }, requestContext);
     expect(resolution.reason).toBe("item_not_served_by_source");
@@ -496,7 +535,7 @@ describe("the item and the source must agree", () => {
       [MANIFEST_URL]: () => json({ ...manifestBody, types: ["movie", "series"] })
     });
     const ambiguousProvider = createStremioProvider(makeSource(), {
-      fetch: ambiguous.fetch,
+      ...ambiguous.deps,
       now: frozenClock()
     });
     const unresolved = await ambiguousProvider.resolve({ ...item, externalId: "tt0111161" }, requestContext);
@@ -510,7 +549,7 @@ describe("the item and the source must agree", () => {
       [MANIFEST_URL]: () => json(manifestBody),
       [STREAM_URL]: () => json({ streams: [{ url: "https://cdn.example.com/film.mp4" }] })
     });
-    const singleProvider = createStremioProvider(makeSource(), { fetch: single.fetch, now: frozenClock() });
+    const singleProvider = createStremioProvider(makeSource(), { ...single.deps, now: frozenClock() });
     const resolved = await singleProvider.resolve({ ...item, externalId: "tt0111161" }, requestContext);
     // The inference succeeded: the unqualified id was addressed as a movie, the
     // addon was asked, and what came back resolved.
@@ -566,13 +605,13 @@ describe("a forged source is refused before a provider exists", () => {
     ({ ...makeSource(), ...over }) as unknown as AuthorizedStremioSource;
 
   it("refuses rights outside the playable allowlist", () => {
-    expect(() => createStremioProvider(forge({ rights: "pirated" }))).toThrow(/playable allowlist/);
+    expect(() => createStremioProvider(forge({ rights: "pirated" }), inertDeps)).toThrow(/playable allowlist/);
   });
 
   it("refuses a source that carries no evidence at all", () => {
-    expect(() => createStremioProvider(forge({ rightsBasis: undefined }))).toThrow(/rightsBasis/);
+    expect(() => createStremioProvider(forge({ rightsBasis: undefined }), inertDeps)).toThrow(/rightsBasis/);
     // Free text is what the structured basis replaced; a cast reintroduces it.
-    expect(() => createStremioProvider(forge({ rightsBasis: "we are allowed, honestly" }))).toThrow(
+    expect(() => createStremioProvider(forge({ rightsBasis: "we are allowed, honestly" }), inertDeps)).toThrow(
       /rightsBasis/
     );
   });
@@ -580,7 +619,8 @@ describe("a forged source is refused before a provider exists", () => {
   it("refuses evidence that classifies itself differently from the source", () => {
     expect(() =>
       createStremioProvider(
-        forge({ rightsBasis: { rights: "licensed", basis: "direct-license", reference: "LIC-1" } })
+        forge({ rightsBasis: { rights: "licensed", basis: "direct-license", reference: "LIC-1" } }),
+        inertDeps
       )
     ).toThrow(/refusing to choose between them/);
   });
@@ -590,7 +630,8 @@ describe("a forged source is refused before a provider exists", () => {
       createStremioProvider(
         forge({
           rightsBasis: { rights: "public-domain", basis: "direct-license", reference: "LIC-1" }
-        })
+        }),
+        inertDeps
       )
     ).toThrow(/cannot rest on/);
   });
@@ -604,7 +645,8 @@ describe("a forged source is refused before a provider exists", () => {
             basis: "public-domain-determination",
             reference: "   "
           }
-        })
+        }),
+        inertDeps
       )
     ).toThrow(/reference is empty/);
   });
@@ -617,7 +659,7 @@ describe("a forged source is refused before a provider exists", () => {
 
     expect(() =>
       createStremioProvider(forge({ rightsBasis: undefined }), {
-        fetch: stub.fetch,
+        ...stub.deps,
         now: frozenClock()
       })
     ).toThrow();
@@ -625,7 +667,7 @@ describe("a forged source is refused before a provider exists", () => {
   });
 
   it("still builds a provider from a source the gate actually produced", () => {
-    expect(() => createStremioProvider(makeSource())).not.toThrow();
+    expect(() => createStremioProvider(makeSource(), inertDeps)).not.toThrow();
   });
 });
 
@@ -642,7 +684,7 @@ describe("resolveAuthorizedCandidates", () => {
         })
     });
 
-    const provider = createStremioProvider(makeSource(), { fetch: stub.fetch, now: frozenClock() });
+    const provider = createStremioProvider(makeSource(), { ...stub.deps, now: frozenClock() });
     const candidates = await provider.resolveAuthorizedCandidates(item, requestContext);
     const resolution = await provider.resolve(item, requestContext);
 
@@ -677,7 +719,7 @@ describe("what this provider object has observed (PL-0303)", () => {
      * configured addon.
      */
     const stub = stubFetch({ [MANIFEST_URL]: () => json(manifestBody) });
-    const provider = createStremioProvider(makeSource(), { fetch: stub.fetch, now: frozenClock() });
+    const provider = createStremioProvider(makeSource(), { ...stub.deps, now: frozenClock() });
 
     const verdict = provider.providerHealthReport();
 
@@ -713,7 +755,7 @@ describe("what this provider object has observed (PL-0303)", () => {
      * "observed" and says `fail` rather than saying nothing.
      */
     const stub = stubFetch({});
-    const provider = createStremioProvider(makeSource(), { fetch: stub.fetch, now: frozenClock() });
+    const provider = createStremioProvider(makeSource(), { ...stub.deps, now: frozenClock() });
 
     expect((await provider.resolve(item, requestContext)).reason).toBe("manifest_unavailable");
 
@@ -739,7 +781,7 @@ describe("what this provider object has observed (PL-0303)", () => {
       [MANIFEST_URL]: () => json(manifestBody),
       [STREAM_URL]: () => json({ streams: [{ url: "https://cdn.example.com/film.mp4" }] })
     });
-    const provider = createStremioProvider(makeSource(), { fetch: stub.fetch, now: frozenClock() });
+    const provider = createStremioProvider(makeSource(), { ...stub.deps, now: frozenClock() });
 
     const resolution = await provider.resolve(item, requestContext);
     const verdict = provider.providerHealthReport();
@@ -789,8 +831,8 @@ describe("what this provider object has observed (PL-0303)", () => {
       [STREAM_URL]: () => json({ streams: [{ url: "https://cdn.example.com/film.mp4" }] })
     });
 
-    const loudProvider = createStremioProvider(makeSource(), { fetch: loud.fetch, now: frozenClock() });
-    const quietProvider = createStremioProvider(makeSource(), { fetch: quiet.fetch, now: frozenClock() });
+    const loudProvider = createStremioProvider(makeSource(), { ...loud.deps, now: frozenClock() });
+    const quietProvider = createStremioProvider(makeSource(), { ...quiet.deps, now: frozenClock() });
 
     const loudResolution = await loudProvider.resolve(item, requestContext);
     await quietProvider.resolve(item, requestContext);
@@ -820,11 +862,11 @@ describe("what this provider object has observed (PL-0303)", () => {
     const shippedStub = stubFetch(routes);
     const lenientStub = stubFetch(routes);
     const shipped = createStremioProvider(makeSource(), {
-      fetch: shippedStub.fetch,
+      ...shippedStub.deps,
       now: frozenClock()
     });
     const relaxed = createStremioProvider(makeSource(), {
-      fetch: lenientStub.fetch,
+      ...lenientStub.deps,
       now: frozenClock(),
       healthPolicy: lenient
     });
@@ -862,7 +904,7 @@ describe("what this provider object has observed (PL-0303)", () => {
 
     expect(() =>
       createStremioProvider(makeSource(), {
-        fetch: stub.fetch,
+        ...stub.deps,
         now: frozenClock(),
         healthPolicy: windowed
       })

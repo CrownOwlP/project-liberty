@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-20T12:39:54.746Z",
+  "generatedAt": "2026-09-20T14:39:58.489Z",
   "agent": "claude-lead",
   "executionAvailable": true,
   "assigned": [
@@ -41,6 +41,42 @@
       "updatedAt": "2026-09-18T04:36:41.924Z",
       "implementationBaseSha": "2ef2a3ec6a241d1620fd603a505c2f1dd8953dff",
       "surfaceWidenedDuringImplementation": "WIDENED 2026-09-18 by claude-lead, mid-implementation, on the implementer's request rather than by the implementer's own hand: the subagent stopped and asked instead of relocating its test to fit the declared surface, which is the behaviour the path rules exist to produce. Three paths, each with its own reason. scripts/test-validate-repo.mjs -- the test's only natural home. The precedent is exact: scripts/test-validate-env.mjs tests scripts/validate-env.mjs, both plain node with node:assert, because turbo run test only visits workspaces and scripts/ is not one. Writing the test anywhere else would have been fitting the evidence to the declaration. package.json -- one edit, adding the new suite to the test:scripts chain, because a regression that no gate runs is not a control. .env.example -- AND THIS ONE IS NOT COSMETIC. Adding the suite to test:scripts revealed that the chain ALREADY EXITS 1 at its first link: scripts/test-validate-env.mjs fails because LIBERTY_BUILD_TARGET is in turbo.json globalEnv and undeclared in .env.example. Verified pre-existing by stashing every change and running it against a clean HEAD -- it fails there too. It was introduced by PL-0501's round-45 globalEnv addition, and PL-0501 was reviewed and approved with that test never run, because test:scripts is not in the gate set this lead had been running. Leaving it would have made the new detector unreachable behind an unrelated red test, which is the same defect one level up. .env.example is reserved by no active task; PL-0003, which declares it, is DONE."
+    },
+    {
+      "id": "PL-AI-0010",
+      "priority": "P1",
+      "lane": "Coordination",
+      "status": "REVIEW",
+      "title": "A property suite gets a timeout of its own, not vitest's default",
+      "dependencies": [],
+      "allowedPaths": [
+        "packages/contracts/vitest.config.ts"
+      ],
+      "reviewDependencies": [
+        "packages/contracts/src/stream-candidate.property.test.ts",
+        "packages/media-engine/vitest.config.ts",
+        "turbo.json"
+      ],
+      "preferredAgent": "claude-lead",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "unit"
+      ],
+      "acceptance": "packages/contracts declares its own vitest testTimeout, with the reason for the value written down, so its fast-check property suite is not running against a default it can exhaust under load. THIS CLOSES AN OPEN ITEM RATHER THAN OPENING ONE. Round 52 recorded a single observed-but-unreproduced failure in stream-candidate.property.test.ts and the lead could not reproduce it across ten seeds; the PL-0710 part-A work reproduced it deterministically and it was never seed-dependent. It is CONCURRENCY-dependent: the box has 2 cores, turbo's default concurrency is 10, the new @liberty/net-policy package takes the graph from 18 test tasks to 20, and 'refuses a licence endpoint that is not https, whatever else it is' -- which runs in 1.73s standalone -- measured 5.4s and 7.4s under that graph against vitest's 5000ms default. Characterised rather than re-rolled: the same tree at --concurrency=4 passes, and the same tree filtered to 19 tasks at default concurrency passes. Required: the timeout is justified against the suite's measured standalone cost and the headroom a loaded machine needs, not picked round; the config explains that a property suite's cost is a function of run count and machine load rather than of the code under test, so a default sized for unit tests is the wrong instrument; and NOTHING ABOUT THE PROPERTY ITSELF IS WEAKENED -- not the run count, not the generators, not an assertion. Raising a timeout to hide a genuinely slow property would be the same mistake one level out, so if the suite is slow for a reason the code should answer for, say so instead. Out of scope: a turbo concurrency cap, which is a CLI flag rather than a turbo.json key and is a CI decision.",
+      "notes": "Found 2026-09-20 during PL-0710 part A. The failing command is npx turbo run test --force at turbo's default concurrency, reproduced 2 of 2. packages/contracts has no vitest.config.ts at all today. packages/media-engine/vitest.config.ts is the house precedent for a package-local config that exists to keep a machine-dependent assertion out of the incidental run, and its header states the reasoning this task should follow.",
+      "owner": "claude-lead",
+      "gateResults": {
+        "unit": {
+          "status": "pass",
+          "at": "2026-09-20T13:45:34.715Z",
+          "by": "claude-lead",
+          "commitSha": "20edec3aa3f33dbd58aa405d1210f56ce54c207f",
+          "evidence": "npx turbo run test --force AT TURBO'S DEFAULT CONCURRENCY, exit 0, 20 of 20 tasks and 0 cached, 2565 passed 1 skipped. That is the command that matters, because it is the one that was failing. npx vitest run --root packages/contracts alone: 8 files, 202 passed. THE RED IS THE SUBAGENT'S, NOT MINE, AND THE RECORD SAYS SO. The agent that found this reproduced the failure two times out of two at default concurrency -- 'Test timed out in 5000ms' on 'refuses a licence endpoint that is not https, whatever else it is' -- and characterised it rather than re-rolling: 2 cores, turbo default concurrency 10, the new net-policy package taking the graph from 18 test tasks to 20, that test measured at 5.4s and 7.4s under the graph against a 1.76s standalone cost for the whole 31-test file. The same tree passed at --concurrency=4 and passed at default concurrency filtered to 19 tasks. I THEN RAN THE RED DIRECTION MYSELF AND IT DID NOT REPRODUCE: with this file removed, the same command on the same tree exited 0. So this is NOT a demonstrated red-to-green repair, and the config comment now says that in terms. It is headroom for a suite measured to be running at roughly a third of the budget it was held to, with no margin, which is a latent fragility whether or not it fires on a given afternoon. Round 52's single unexplained failure in this same suite is BEST EXPLAINED by this and is not thereby proven to be it; that item stays open rather than being closed on a hypothesis. Nothing about the property was weakened -- run count, generators and assertions are untouched, and the only file changed is a new packages/contracts/vitest.config.ts."
+        }
+      },
+      "implementationAgent": "claude-lead",
+      "updatedAt": "2026-09-20T13:45:34.835Z",
+      "implementationBaseSha": "20edec3aa3f33dbd58aa405d1210f56ce54c207f"
     }
   ],
   "review": [],
@@ -98,6 +134,28 @@
       "implementationAgent": "claude-lead",
       "updatedAt": "2026-08-17T01:53:44.285Z",
       "implementationBaseSha": "b157a5846d45568f516240f581d6b317a544aa12"
+    },
+    {
+      "id": "PL-AI-0009",
+      "priority": "P1",
+      "lane": "Coordination",
+      "status": "READY",
+      "title": "release clears the implementation base, or a re-claim inherits a stale one",
+      "dependencies": [],
+      "allowedPaths": [
+        "scripts/ai-control-plane.mjs",
+        "scripts/test-ai-control-plane.mjs",
+        "control/README.md"
+      ],
+      "preferredAgent": "claude-lead",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "unit"
+      ],
+      "acceptance": "ai:release clears implementationBaseSha, so a task returned to an unowned queue and later re-claimed records the base of the round that actually implements it. OBSERVED, not hypothesised: PL-0710 was claimed and started at 33195d593695618b779ab6c97a50817a2694e8df, released with nothing written when its implementing agent was terminated, and re-claimed at HEAD 20edec3aa3f33dbd58aa405d1210f56ce54c207f -- and start reported 'started from 33195d593695', preserving the stale base rather than capturing HEAD. CLAUDE.md says implementationBaseSha is the exact lower bound of the first review range and that the range validator refuses a base that is either wider or narrower, so a preserved base makes the published window wider than the implementation. The rule release already follows is the argument: it discards gate results because 'evidence belongs to one implementation round under one owner', and a base is evidence of where that round began. Required: release clears the base, and ai:unblock is checked for the same defect and fixed if it has it; a scenario in scripts/test-ai-control-plane.mjs claims, releases, re-claims at a different HEAD and asserts the second base is the second HEAD, because this defect is invisible until exactly that sequence occurs; and the fix must NOT let start overwrite a base on an ordinary re-start of a task that was never released, since that is the falsification --reconcile-existing exists to prevent. Do NOT hand-edit any existing task's recorded base as part of this work; PL-0703 was blocked for that move and the historical records stay as they are.",
+      "notes": "Found 2026-09-20 by the lead while re-claiming PL-0710. The harm in that instance was bounded and is recorded rather than repaired: 20edec3 touches only control/ and coordination/ and NOTHING under PL-0710's allowedPaths, so base..HEAD is one commit wider in count but identical in reviewed-surface content. The record is imprecise, not false about what changed.",
+      "owner": null,
+      "gateResults": {}
     }
   ]
 }

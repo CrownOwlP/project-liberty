@@ -427,11 +427,37 @@ describe("the pin holds for any address set and any way of asking (fast-check)",
   });
 
   it("never answers for a hostname other than the pinned one", async () => {
+    /*
+     * `"cdn.example.test."` USED TO BE IN THIS LIST AND WAS REMOVED BY PL-0710,
+     * deliberately, and the removal is the behaviour change rather than a test
+     * being bent to fit.
+     *
+     * The fully qualified spelling is NOT another hostname. It is the same name
+     * to every resolver, and `classifyHost` and `hostOnAllowlist` had both folded
+     * the DNS root label since PL-0702 and PL-0709 respectively -- this
+     * comparison was the last one in the repository that did not, and it refused
+     * a connection to the host its own addresses had been authorised for. It is
+     * now asserted as a MATCH, from both directions, in "the pinned lookup folds
+     * the DNS root label, like every other gate" below.
+     *
+     * What replaced it here is the pair that must still be refused and that the
+     * fold could plausibly have swallowed: a zero-length label, which names no
+     * host and which `canonicalHost` answers `null` for, and a name that merely
+     * has the pinned one as a PREFIX.
+     */
     await fc.assert(
       fc.asyncProperty(
         fc.uniqueArray(addressArb, { minLength: 1, maxLength: 4 }),
         optionsArb,
-        fc.constantFrom("other.example.test", "evil.test", "", "cdn.example.test.", "cdn.example.tes"),
+        fc.constantFrom(
+          "other.example.test",
+          "evil.test",
+          "",
+          ".",
+          "cdn.example.test..",
+          "cdn.example.test.evil.test",
+          "cdn.example.tes"
+        ),
         async (addresses, options, hostname) => {
           const lookup = createPinnedLookup(
             await pinFor("https://cdn.example.test/master.m3u8", async () => addresses)
@@ -471,3 +497,104 @@ describe("the resolver is consulted exactly once per hop", () => {
     expect(resolutions).toBe(2);
   });
 });
+
+/* -------------------------------------------------------------------------
+ * PL-0710: THE PIN COMPARISON USES THE REPOSITORY'S ONE CANONICALISER.
+ *
+ * `normaliseHost` case folded and stripped brackets and did NOT fold the DNS
+ * root label. That was SAFE and it was still wrong. Safe, because both sides of
+ * its one comparison came from the same `URL` object, so they carried or omitted
+ * the trailing dot together and a mismatch refuses the connection. Wrong,
+ * because "safe given where its inputs happen to come from" is a property of the
+ * call sites rather than of the function, and it was a THIRD answer to the
+ * question `classifyHost` and `hostOnAllowlist` had already been made to answer
+ * the same way -- in a task whose whole point is that one question gets one
+ * answer.
+ *
+ * WHAT CHANGES OBSERVABLY. A pin minted for `https://cdn.example.test./m` --
+ * the fully qualified spelling, which the WHATWG parser preserves on a name and
+ * which `hostOnAllowlist` and `classifyHost` both already fold -- used to refuse
+ * a socket layer asking to connect to `cdn.example.test`. The two strings name
+ * the same host to every resolver, and the addresses in that pin were authorised
+ * for that host. Refusing was not a control, it was the last function in the
+ * chain disagreeing with the first two.
+ *
+ * WHAT DOES NOT CHANGE, and is asserted below rather than assumed: a DIFFERENT
+ * host is still refused, and a string that names no host is still refused. The
+ * fold admits exactly one thing -- another spelling of the name already pinned.
+ * ---------------------------------------------------------------------- */
+
+describe("the pinned lookup folds the DNS root label, like every other gate", () => {
+  it("answers for the dotless spelling of a fully qualified pinned host", async () => {
+    const pin = await pinFor("https://cdn.example.test./master.m3u8", async () => [PUBLIC_ADDRESS]);
+    expect(pin.hostname).toBe("cdn.example.test.");
+
+    await expect(askLookup(lookupFor(pin), "cdn.example.test")).resolves.toEqual({
+      code: null,
+      addresses: [PUBLIC_ADDRESS]
+    });
+  });
+
+  it("answers for the fully qualified spelling of a dotless pinned host", async () => {
+    const pin = await pinFor("https://cdn.example.test/master.m3u8", async () => [PUBLIC_ADDRESS]);
+    expect(pin.hostname).toBe("cdn.example.test");
+
+    await expect(askLookup(lookupFor(pin), "cdn.example.test.")).resolves.toEqual({
+      code: null,
+      addresses: [PUBLIC_ADDRESS]
+    });
+  });
+
+  it("still refuses a different host, which is the control for both cases above", async () => {
+    const pin = await pinFor("https://cdn.example.test./master.m3u8", async () => [PUBLIC_ADDRESS]);
+    const lookup = lookupFor(pin);
+
+    for (const other of ["other.example.test", "other.example.test.", "evilcdn.example.test"]) {
+      const answer = await askLookup(lookup, other);
+      expect(answer.code, other).toBe("ENOTFOUND");
+      expect(answer.addresses, other).toEqual([]);
+    }
+  });
+
+  it("refuses a requested name that names no host rather than folding it until it matches", async () => {
+    // `.` is the root and `cdn.example.test..` has a zero-length label. The
+    // canonicaliser answers `null` for both, and `null === null` is true in
+    // JavaScript -- so a comparison written without a null guard would make
+    // "names no host" match "names no host" and hand over the address set.
+    const pin = await pinFor("https://cdn.example.test/master.m3u8", async () => [PUBLIC_ADDRESS]);
+    const lookup = lookupFor(pin);
+
+    for (const nonHost of [".", "..", "cdn.example.test..", ""]) {
+      const answer = await askLookup(lookup, nonHost);
+      expect(answer.code, JSON.stringify(nonHost)).toBe("ENOTFOUND");
+      expect(answer.addresses, JSON.stringify(nonHost)).toEqual([]);
+    }
+  });
+
+  it("leaves the bracket and case handling exactly as it was", async () => {
+    const local: EgressPolicy = { allowedHosts: ["[::1]"], allowLoopback: true, localDeployment: true };
+    const verdict = await authoriseFetchTarget("http://[::1]:8096/library/m.m3u8", local, {
+      classifyHost: testClassifyHost,
+      resolveHost: async () => {
+        throw new Error("a literal must not be resolved");
+      }
+    });
+    expect(verdict.ok).toBe(true);
+    if (!verdict.ok) return;
+
+    const lookup = lookupFor(verdict.pin);
+    await expect(askLookup(lookup, "[::1]")).resolves.toEqual({ code: null, addresses: ["::1"] });
+    await expect(askLookup(lookup, "::1")).resolves.toEqual({ code: null, addresses: ["::1"] });
+
+    const named = createPinnedLookup(await pinFor("https://cdn.example.test/m", async () => [PUBLIC_ADDRESS]));
+    await expect(askLookup(named, "CDN.Example.Test")).resolves.toEqual({
+      code: null,
+      addresses: [PUBLIC_ADDRESS]
+    });
+  });
+});
+
+/** `createPinnedLookup`, named so the assertions above read as one line each. */
+function lookupFor(pin: PinnedTarget): PinnedLookup {
+  return createPinnedLookup(pin);
+}

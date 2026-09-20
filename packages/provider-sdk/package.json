@@ -13,6 +13,8 @@
   },
   "dependencies": {
     "@liberty/contracts": "0.1.0",
+    "@liberty/media-inspection": "0.1.0",
+    "@liberty/net-policy": "0.1.0",
     "zod": "^3.0.0"
   },
   "devDependencies": {

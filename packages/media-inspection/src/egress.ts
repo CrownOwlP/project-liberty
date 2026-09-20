@@ -21,15 +21,19 @@
  *      configuration is an outage rather than an open proxy.
  *
  *   3. HOSTNAMES ARE RESOLVED AND PRIVATE RANGES REJECTED BEFORE THE FETCH.
- *      This is the control that `@liberty/provider-sdk`'s url-policy explicitly
- *      does NOT implement and records as an accepted residual risk: it validates
- *      the host LITERAL, so `cdn.example.test` with an A record of 10.0.0.5
- *      passes there. That acceptance is recorded under "Residual risks, open" in
- *      `docs/SECURITY.md` by the PL-0702 review and is NOT tracked by a task
- *      number; an earlier version of this file cited PL-0701 for it, which is
- *      the critical end-to-end harness and has never covered any of this. Here
- *      the control must exist, so resolution is a required dependency and every
- *      returned address is classified before a socket is opened.
+ *      Resolution is a required dependency and every returned address is
+ *      classified before a socket is opened.
+ *
+ *      THIS USED TO BE THE CONTROL `@liberty/provider-sdk`'s url-policy did NOT
+ *      implement, recorded as an accepted residual risk because it validated the
+ *      host LITERAL and so let `cdn.example.test` with an A record of 10.0.0.5
+ *      through. PL-0710 closed that: `authoriseResolvedTarget` below is now
+ *      exported and that package's `http.ts` calls it after its own static gate,
+ *      so there is ONE resolve-and-pin implementation in the repository with two
+ *      callers rather than one implementation and one hole. What that package
+ *      does not share is its static gate -- it has no operator allowlist and its
+ *      own `url_` reason vocabulary -- which is exactly the split the export
+ *      makes.
  *
  *   4. THE CONNECTION IS PINNED TO AN ADDRESS THAT WAS CLASSIFIED. Resolving and
  *      then connecting by NAME would let the runtime resolve a second time, so
@@ -48,18 +52,34 @@
  *      first-hop-only check completely.
  *
  * WHAT THIS FILE DELIBERATELY DOES NOT CONTAIN, and why that is not an
- * oversight: the address-range classifier itself. `@liberty/provider-sdk`
- * already has one -- `classifyHost` in `src/stremio/url-policy.ts` -- and it is
- * a careful piece of work (IPv4-mapped IPv6, CGNAT, TEST-NET, the exotic
- * spellings the WHATWG parser normalises). Copying it here would produce two
- * SSRF classifiers that can drift, and a drift between two SSRF controls is
- * strictly worse than the wiring cost of injecting one: the copy that is not
+ * oversight: the address-range classifier itself. Copying one here would produce
+ * two SSRF classifiers that can drift, and a drift between two SSRF controls is
+ * strictly worse than the wiring cost of injecting one -- the copy that is not
  * updated becomes the hole, and nothing fails when they disagree. So the
- * classifier is a REQUIRED port with no default. The composition root supplies
- * `classifyHost` from provider-sdk today, and supplies it from a shared
- * `@liberty/net-policy` package on the day that extraction happens, without this
- * package changing. There is no permissive fallback: a caller that does not
- * provide one cannot construct the dependencies.
+ * classifier is a REQUIRED port with no default and no permissive fallback: a
+ * caller that does not provide one cannot construct the dependencies.
+ *
+ * THE EXTRACTION THIS FILE ANTICIPATED HAS HAPPENED (PL-0710). The paragraph
+ * above used to end "the composition root supplies `classifyHost` from
+ * provider-sdk today, and supplies it from a shared `@liberty/net-policy`
+ * package on the day that extraction happens, without this package changing."
+ * That day is here. `@liberty/net-policy` is a dependency leaf -- it imports
+ * neither this package nor `@liberty/provider-sdk`, so it cannot be half of a
+ * cycle -- and the classifier a composition root injects now comes from there,
+ * reached through `@liberty/provider-sdk`'s unchanged re-export or directly.
+ *
+ * AND THE PORT STAYED A PORT, which is worth saying because the extraction
+ * removes its original justification. The reason to keep it is no longer "there
+ * is nowhere shared to import from"; it is that `EgressDependencies` is
+ * constructed by composition roots outside this package -- `apps/web`,
+ * `@liberty/catalog-ingestion` -- and a port they already fill correctly is not
+ * improved by being replaced with a hard import plus a breaking change. What DID
+ * change is that this file no longer carries its own copies of the vocabulary
+ * around the port: the `HostClass` values, the DNS root-label fold, the bracket
+ * handling that the classifier's precondition demands. Those are
+ * `@liberty/net-policy`'s now, imported below, and `net-policy-boundary.test.ts`
+ * asserts by reference identity that this package uses them rather than
+ * restating them.
  *
  * NO URL IN THIS FILE IS EVER REPRODUCED WHOLE IN A `detail` STRING. Manifest
  * URLs are signed; the research records that credential leakage through error
@@ -67,16 +87,30 @@
  * an origin or a hostname and nothing after it.
  */
 
-export type HostClass = "public" | "loopback" | "private" | "unparseable";
+import type { HostClass } from "@liberty/net-policy/classify";
+import { bareAddress, bracketedLiteral, canonicalHost } from "@liberty/net-policy/host";
+
+/*
+ * THE VOCABULARY IS IMPORTED, NOT RESTATED.
+ *
+ * `HostClass` used to be declared here, character for character identical to the
+ * declaration in `@liberty/provider-sdk/src/stremio/url-policy.ts`, under a
+ * comment saying the two must not be "improved" independently. Two declarations
+ * that must not diverge are one declaration with a manual step in front of it,
+ * and the manual step is the part that gets skipped. Re-exported so that every
+ * consumer's import path -- the barrel, `@liberty/catalog-ingestion`, the
+ * `apps/web` composition roots -- is unchanged.
+ */
+export type { HostClass };
 
 /**
  * The injected host classifier. See the file header.
  *
- * The four values are exactly `HostClass` in
- * `@liberty/provider-sdk/src/stremio/url-policy.ts`, so that module's exported
- * `classifyHost` satisfies this type verbatim with no adapter. That is
- * intentional and the vocabulary must not be "improved" here without changing
- * it there first.
+ * The four values are exactly `HostClass` in `@liberty/net-policy/classify`, and
+ * are now the SAME type rather than a matching one, so that package's exported
+ * `classifyHost` satisfies this type verbatim with no adapter. A composition
+ * root reaching it through `@liberty/provider-sdk`'s re-export gets the same
+ * function object.
  */
 export type HostClassifier = (hostname: string) => HostClass;
 
@@ -129,7 +163,10 @@ export const ALLOWED_PROTOCOLS: readonly string[] = ["https:", "http:"];
  * established. A reason that is rewritten on the way out eventually stops
  * matching what the code did.
  */
-export type EgressRejectionReason =
+export type EgressRejectionReason = EgressUrlRejectionReason | DnsRejectionReason;
+
+/** Everything `checkUrlStatically` can decide, without a resolver. */
+export type EgressUrlRejectionReason =
   | "url_unparseable"
   | "url_scheme_not_allowed"
   | "url_credentials_present"
@@ -139,7 +176,21 @@ export type EgressRejectionReason =
   | "url_host_not_on_egress_allowlist"
   | "url_plaintext_http_not_loopback"
   | "url_loopback_not_permitted"
-  | "url_loopback_not_local_deployment"
+  | "url_loopback_not_local_deployment";
+
+/**
+ * Everything the RESOLUTION half can decide, named as its own union because a
+ * second package now consumes that half on its own (PL-0710).
+ *
+ * `@liberty/provider-sdk` runs its own static gate -- a different allowlist
+ * story, a different reason vocabulary, the same two-key loopback rule -- and
+ * then calls `authoriseResolvedTarget` for the part that must not be written
+ * twice. It therefore has to be able to NAME these three outcomes without
+ * importing the ten `url_` reasons that belong to this package's static gate.
+ * The `dns_` prefix is unchanged and both packages surface these verbatim, so a
+ * reason trail says the same thing whichever gate produced it.
+ */
+export type DnsRejectionReason =
   | "dns_resolution_failed"
   | "dns_resolved_no_addresses"
   | "dns_resolved_private_address";
@@ -253,24 +304,27 @@ export type StaticUrlVerdict =
  * keeps it unwritable, rather than exporting the value.
  * ---------------------------------------------------------------------- */
 
-/**
- * Strips the brackets a URL parser puts around an IPv6 literal.
+/*
+ * `bareAddress` strips the brackets a URL parser puts around an IPv6 literal,
+ * and is RE-EXPORTED from `@liberty/net-policy/host` rather than declared here.
  *
  * The brackets belong to the URL grammar, not to the address. A socket layer
  * given `[::1]` does not recognise it as an IP literal and tries to RESOLVE it,
- * which is both a failure and -- worse -- a name lookup we did not intend to
- * perform.
+ * which is both a failure and -- worse -- a name lookup nobody intended.
  *
- * It lives in this file rather than in `pin.ts`, where it used to, so that the
- * dependency between the two modules points ONE WAY. `pin.ts` has to ask this
- * module whether a target was authorised; if this module also had to ask
- * `pin.ts` for a string helper, the two would import each other at runtime. A
- * cycle would work today and is a trap tomorrow, and the helper is the cheaper
- * thing to move.
+ * It was declared in this file rather than in `pin.ts`, where it started, so
+ * that the dependency between those two modules pointed ONE WAY: `pin.ts` has to
+ * ask this module whether a target was authorised, and if this module also had
+ * to ask `pin.ts` for a string helper the two would import each other at
+ * runtime. A leaf package that neither of them can import back is a stronger
+ * version of the same guarantee, and it also gives `pin.ts` somewhere to get
+ * `canonicalHost` from without reaching back here for it.
+ *
+ * The re-export is what keeps `@liberty/media-inspection`'s public surface
+ * unchanged; the barrel still publishes it and `@liberty/catalog-ingestion`
+ * still imports it from there.
  */
-export function bareAddress(address: string): string {
-  return address.startsWith("[") && address.endsWith("]") ? address.slice(1, -1) : address;
-}
+export { bareAddress };
 
 /**
  * The brand. Deliberately not exported -- see "the authorisation token" above.
@@ -354,6 +408,20 @@ export type FetchTargetVerdict =
   | { readonly ok: true; readonly url: URL; readonly hostClass: HostClass; readonly pin: PinnedTarget }
   | { readonly ok: false; readonly reason: EgressRejectionReason; readonly detail: string };
 
+/**
+ * What `authoriseResolvedTarget` answers: the same `ok` branch, and a failure
+ * narrowed to the three outcomes RESOLUTION can produce.
+ *
+ * Narrowed rather than reused, so a consumer with its own static gate gets a
+ * union it can exhaustively handle without also having to name ten `url_`
+ * reasons that its gate never produces. The `ok` branch is identical because the
+ * product is identical -- there is one `PinnedTarget` type and one function that
+ * mints one.
+ */
+export type ResolvedTargetVerdict =
+  | { readonly ok: true; readonly url: URL; readonly hostClass: HostClass; readonly pin: PinnedTarget }
+  | { readonly ok: false; readonly reason: DnsRejectionReason; readonly detail: string };
+
 /** Keeps a hostile URL from turning an error message into a wall. */
 export function truncate(value: string, max = 120): string {
   return value.length <= max ? value : `${value.slice(0, max)}...`;
@@ -425,11 +493,24 @@ function describeUnparseable(raw: string): string {
  * `"."` is the empty suffix, and the empty suffix is every host there is.
  */
 export function hostOnAllowlist(hostname: string, allowedHosts: readonly string[]): boolean {
-  const host = withoutRootLabel(hostname.toLowerCase());
-  if (host === null || host === "") return false;
+  /*
+   * THE HOSTNAME IS NOT TRIMMED AND EVERY ENTRY IS, and the asymmetry is
+   * deliberate rather than an oversight surviving the extraction.
+   *
+   * An ENTRY is typed by an operator into a configuration file, where a stray
+   * space is a typo and refusing over it would be unhelpful. A HOSTNAME comes
+   * out of `new URL()`, which never produces leading or trailing whitespace, so
+   * trimming it could only ever admit a string no parser produces. PL-0710 moved
+   * the fold into `@liberty/net-policy` WITHOUT folding the two call sites
+   * together for exactly this reason; `canonicalHost` therefore case folds and
+   * root-label folds and does not trim, and the trim stays here where it means
+   * something.
+   */
+  const host = canonicalHost(hostname);
+  if (host === null) return false;
   for (const raw of allowedHosts) {
-    const entry = withoutRootLabel(raw.trim().toLowerCase());
-    if (entry === null || entry === "") continue;
+    const entry = canonicalHost(raw.trim());
+    if (entry === null) continue;
     if (entry.startsWith(".")) {
       if (host.endsWith(entry)) return true;
       continue;
@@ -439,37 +520,26 @@ export function hostOnAllowlist(hostname: string, allowedHosts: readonly string[
   return false;
 }
 
-/**
- * A hostname with the DNS root label removed, or `null` when what is left is not
- * a name.
+/*
+ * THE SECOND OF THE THREE CANONICALISERS USED TO BE DECLARED HERE.
  *
- * SEMANTICALLY IDENTICAL TO `withoutRootLabel` IN
- * `@liberty/provider-sdk/src/stremio/url-policy.ts`, deliberately and with the
- * duplication named rather than hidden. Three things make that the right call
- * here and not an invitation to copy more:
+ * PL-0709 wrote a `withoutRootLabel` in this file that was character for
+ * character the one in `@liberty/provider-sdk/src/stremio/url-policy.ts`, named
+ * the duplication in a comment rather than hiding it, and pinned it with an
+ * agreement test driven from a shared table -- because the other copy was not
+ * importable (that package publishes one bare entry point), and because a
+ * dependency from here onto provider-sdk would have been half of a cycle the day
+ * PL-0710's second half landed.
  *
- *   - It is a CANONICALISER, not a classifier. The file header explains at
- *     length why the address-range classifier is an injected port with no local
- *     copy: two SSRF classifiers drift and the stale one becomes the hole. That
- *     argument applies in full to a judgement about ranges and in miniature to
- *     four lines of string handling -- so this copy is pinned by a test that
- *     runs BOTH implementations over one shared table
- *     (`testing/host-spellings.ts`), which is what stops it drifting.
- *   - The other one is not importable. `url-policy.ts` keeps its copy private,
- *     `@liberty/provider-sdk` exports only its index, and that index does not
- *     re-export `classifyHost` -- so there is no production import path to reuse
- *     without editing that package.
- *   - The direction of the eventual dependency is already decided and it is not
- *     this one. PL-0710 has provider-sdk adopting THIS package's
- *     `authoriseFetchTarget`; a dependency from here onto provider-sdk would be
- *     half of a cycle the day that lands. Merging the two is explicitly out of
- *     PL-0709's scope and is PL-0710's question.
+ * All three of those reasons were real and all three are now gone. There is one
+ * fold, it is `@liberty/net-policy`'s, and it is imported at the top of this
+ * file. The agreement test it justified has been replaced: an agreement test
+ * between two implementations asserts nothing once there is one implementation.
+ * What replaced it is `classify.test.ts` and `host.test.ts` in the leaf package,
+ * plus `net-policy-boundary.test.ts` here and in provider-sdk -- because an
+ * extraction nothing imports is a third copy rather than a merge, and only a
+ * boundary test can tell those apart.
  */
-function withoutRootLabel(host: string): string | null {
-  if (!host.endsWith(".")) return host;
-  const stripped = host.slice(0, -1);
-  return stripped === "" || stripped.endsWith(".") ? null : stripped;
-}
 
 /**
  * True for a host the URL parser produced as an IP literal.
@@ -497,8 +567,7 @@ function isIpLiteral(hostname: string): boolean {
  * itself, which refuses to interpret one; that is the correct failure direction.
  */
 function classifyResolvedAddress(address: string, classifyHost: HostClassifier): HostClass {
-  const literal = address.includes(":") && !address.startsWith("[") ? `[${address}]` : address;
-  return classifyHost(literal);
+  return classifyHost(bracketedLiteral(address));
 }
 
 /**
@@ -643,7 +712,55 @@ export async function authoriseFetchTarget(
   const statically = checkUrlStatically(raw, policy, deps.classifyHost, base);
   if (!statically.ok) return statically;
 
-  const { url, hostClass } = statically;
+  return authoriseResolvedTarget(statically.url, deps);
+}
+
+/**
+ * THE RESOLVE-AND-PIN HALF, ON ITS OWN, because a second package needs exactly
+ * this half and must not grow its own (PL-0710).
+ *
+ * `authoriseFetchTarget` above is now literally `checkUrlStatically` followed by
+ * this function, and nothing moved in the process: the resolution, the
+ * per-address classification and the minting below are the same lines that used
+ * to be inline there, byte for byte. The split exists so that
+ * `@liberty/provider-sdk`'s Stremio adapter -- which has its OWN static gate,
+ * with its own reason vocabulary and no operator allowlist -- can reach the part
+ * that must exist once in the repository without inheriting the part that must
+ * not.
+ *
+ * WHAT THE CALLER MUST HAVE DONE, and what happens when it has not. The
+ * precondition is that the URL has been through a static gate: scheme,
+ * credentials, host presence, host class, and -- for a loopback host -- BOTH
+ * loopback keys. This function does not re-decide any of that, because a second
+ * copy of the two-key rule is the second copy of an SSRF control that this whole
+ * task exists to remove.
+ *
+ * It does, however, re-derive the HOST CLASS from the injected classifier rather
+ * than accepting one from the caller, and it THROWS when that class is anything
+ * but `public` or `loopback`. Those two facts are one decision. Accepting a
+ * caller-supplied class would let a caller say `"loopback"` about a public name
+ * and thereby turn the loopback exemption below into a way to reach 127.0.0.1
+ * through any name it liked -- the exact rebinding shape this function refuses.
+ * Recomputing costs one pure call and removes the parameter that could lie.
+ *
+ * The throw is deliberate and matches `createPinnedLookup`'s: a `private` or
+ * `unparseable` host arriving here is not a network condition to report in a
+ * reason trail, it is a caller whose static gate did not run or ran fail-open,
+ * and a refusal verdict would let that caller carry on believing it has a gate.
+ * It is unreachable from either of the two callers in this repository, both of
+ * which return before this point on exactly those classes.
+ */
+export async function authoriseResolvedTarget(
+  url: URL,
+  deps: EgressDependencies
+): Promise<ResolvedTargetVerdict> {
+  const hostClass = deps.classifyHost(url.hostname);
+  if (hostClass !== "public" && hostClass !== "loopback") {
+    throw new TypeError(
+      `authoriseResolvedTarget requires a host a static gate has already admitted; ` +
+        `this one classifies ${hostClass}`
+    );
+  }
 
   // An IP literal has nothing to resolve; the classifier has already judged the
   // address itself. Sending it to a resolver would either echo it back or fail,

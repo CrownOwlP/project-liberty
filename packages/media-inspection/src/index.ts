@@ -53,17 +53,21 @@ export { detectManifestFormat } from "./detect";
 export {
   ALLOWED_PROTOCOLS,
   authoriseFetchTarget,
+  authoriseResolvedTarget,
   bareAddress,
   checkUrlStatically,
   hostOnAllowlist,
+  type DnsRejectionReason,
   type EgressDependencies,
   type EgressPolicy,
   type EgressRejectionReason,
+  type EgressUrlRejectionReason,
   type FetchTargetVerdict,
   type HostClass,
   type HostClassifier,
   type HostResolver,
   type PinnedTarget,
+  type ResolvedTargetVerdict,
   type StaticUrlVerdict
 } from "./egress";
 export { parseHlsLadder } from "./hls";

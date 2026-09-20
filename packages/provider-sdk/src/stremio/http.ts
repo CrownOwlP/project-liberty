@@ -1,7 +1,14 @@
+import {
+  authoriseResolvedTarget,
+  type DnsRejectionReason,
+  type HostResolver
+} from "@liberty/media-inspection/egress";
+import type { PinnedFetch } from "@liberty/media-inspection/pin";
+import { classifyHost } from "@liberty/net-policy/classify";
 import { checkUrl, truncate, type UrlRejectionReason } from "./url-policy";
 
 /**
- * The only place this package touches the network (PL-0301).
+ * The only place this package touches the network (PL-0301, PL-0710).
  *
  * Everything here exists because a provider adapter is a piece of code that
  * blocks a viewer's playback request while it waits for a third party. The
@@ -21,15 +28,86 @@ import { checkUrl, truncate, type UrlRejectionReason } from "./url-policy";
  *   - A REDIRECT into the private network. `fetch` follows redirects by default,
  *     so validating the configured URL and then letting the addon 302 us to
  *     169.254.169.254 would be a complete bypass of the SSRF policy. Redirects
- *     are handled manually and every hop is re-validated.
+ *     are handled manually and every hop is re-validated -- resolution,
+ *     classification and pinning included.
+ *
+ *   - A NAME THAT ANSWERS DIFFERENTLY THE SECOND TIME. This is PL-0710, and it
+ *     is the one that changed the shape of this file. See below.
  *
  * No result here throws. A third party being broken, slow, hostile or absent is
  * an expected outcome with a reason attached, not an exception; an adapter that
  * throws on a bad response makes every caller's error handling responsible for
  * distinguishing "the addon 404'd" from "we have a bug".
+ *
+ * ONE QUALIFICATION ON THAT, stated rather than left for a reader to find.
+ * `authoriseResolvedTarget` THROWS when it is handed a host whose class is not
+ * `public` or `loopback` -- a caller whose static gate did not run. That is a
+ * programming error rather than a third party misbehaving, which is why it is a
+ * throw and not a reason, and it is unreachable from here: `checkUrl` returns
+ * `ok` only for those two classes, and this function calls the second half only
+ * on the `ok` branch. If that ever stops being true, this file should stop
+ * catching the difference rather than start.
+ *
+ * ---------------------------------------------------------------------------
+ * WHY THIS FILE NO LONGER TAKES A `fetch` (PL-0710)
+ *
+ * It used to check `checkUrl` -- a HOST LITERAL check -- and then hand the
+ * HOSTNAME to a `fetch`-shaped port. The runtime then resolved that name AGAIN
+ * when it opened the socket, so the address the policy judged and the address
+ * the socket reached were two independent answers to the same question. A
+ * publisher who controls the authoritative resolver chooses both: 93.184.216.34
+ * for our check and 169.254.169.254 for the connect. That is DNS rebinding, and
+ * against it `checkUrl` was decorative -- every check visibly passing while the
+ * connection landed somewhere else.
+ *
+ * `url-policy.ts` recorded exactly this as an accepted residual risk and said
+ * host-literal checking had to stop being the control before a production
+ * provider shipped. This is that change. What replaces it:
+ *
+ *   - the name is RESOLVED before the connection, through an injected
+ *     `HostResolver`;
+ *   - EVERY returned address is classified, not just the first;
+ *   - any private, loopback, link-local or reserved answer refuses the target,
+ *     unless the two-key loopback path already admitted the NAME;
+ *   - the approved addresses travel to the transport inside an unforgeable
+ *     `PinnedTarget`, so no second resolution can choose the destination;
+ *   - every redirect hop repeats all of it and gets its own pin.
+ *
+ * THE CONTROL IS BORROWED, NOT REBUILT. `authoriseResolvedTarget` is
+ * `@liberty/media-inspection`'s, and it is the same function
+ * `authoriseFetchTarget` calls -- the same resolution, the same per-address
+ * classification, the same `pinFor`, the same brand, the same registry. This
+ * package supplies the half that is genuinely its own (a static gate with no
+ * operator allowlist and its own `url_` reason vocabulary) and imports the half
+ * that must exist once in the repository. Writing a second resolve-and-pin here
+ * would be the two-SSRF-classifiers defect one layer up, which is the defect
+ * PL-0710's first half spent an entire package removing.
+ *
+ * THE DEPENDENCY DIRECTION IS DELIBERATE AND IS NOT A CYCLE.
+ * `@liberty/media-inspection` does not depend on this package -- PL-0710's first
+ * half replaced the `classifyHost` port that used to point this way with
+ * `@liberty/net-policy`, a leaf both packages import. Both halves of that are
+ * asserted mechanically in `net-policy-boundary.test.ts`, here and there.
+ *
+ * `classifyHost` IS IMPORTED, NOT INJECTED, and that is a deliberate difference
+ * from `@liberty/media-inspection`'s `EgressDependencies`. That package keeps a
+ * port because its composition roots are outside it; here the classifier this
+ * package already re-exports IS the shared one, so injecting it would only
+ * create a seam through which a caller could supply a different answer to "what
+ * is a private address" than the one this package publishes.
  */
 
-export type FetchLike = typeof globalThis.fetch;
+/**
+ * The transport. NOT `typeof fetch`, and the difference is the whole of PL-0710.
+ *
+ * A transport handed only a URL has no way to learn which addresses were
+ * authorised, so it must resolve the name itself -- and then it is connecting to
+ * a resolution nobody checked. A `PinnedFetch` receives the `PinnedTarget`, so a
+ * transport that ignores the authorised addresses cannot type-check.
+ * `@liberty/media-inspection/node/pinned-fetch` is the implementation for a Node
+ * deployment; the composition root names the runtime it is composing for.
+ */
+export type { PinnedFetch };
 
 export type HttpFailureReason =
   | "timeout"
@@ -39,10 +117,24 @@ export type HttpFailureReason =
   | "redirect_without_location"
   | "http_status"
   | "malformed_json"
-  | UrlRejectionReason;
+  | UrlRejectionReason
+  | DnsRejectionReason;
 
 export interface HttpOptions {
-  readonly fetchImpl: FetchLike;
+  readonly fetchImpl: PinnedFetch;
+  /**
+   * Resolves a hostname to the addresses a connection would actually use.
+   *
+   * A port with NO DEFAULT, for the same reason `@liberty/media-inspection` has
+   * one: this package must stay runtime agnostic, and a default would be a
+   * `node:dns` import in a package that has none. A composition root supplies
+   * `dns.promises.lookup(hostname, { all: true, verbatim: true })` mapped to
+   * `address` strings.
+   *
+   * THIS IS THE ONLY RESOLUTION THAT HAPPENS for a request. Its answers become
+   * the pin, and the transport connects to one of them or to nothing.
+   */
+  readonly resolveHost: HostResolver;
   /** Deadline for the entire operation, including redirects and body read. */
   readonly timeoutMs: number;
   readonly maxResponseBytes: number;
@@ -155,33 +247,71 @@ export async function fetchJson(rawUrl: string, options: HttpOptions): Promise<H
 
   try {
     let target = rawUrl;
+    let base: string | undefined;
 
     for (let hop = 0; hop <= options.maxRedirects; hop++) {
-      const checked = checkUrl(target, {
-        allowLoopback: options.allowLoopback,
-        localDeployment: options.localDeployment
-      });
+      /*
+       * THE WHOLE GATE, PER HOP, IN TWO HALVES.
+       *
+       * `checkUrl` is this package's: scheme, embedded credentials, host class,
+       * plaintext, and the two-key loopback rule. It is pure and it decides
+       * everything that can be decided without a resolver -- including, for a
+       * loopback NAME, whether this source and this deployment have BOTH said
+       * yes. `authoriseResolvedTarget` is `@liberty/media-inspection`'s and does
+       * the rest: one resolution, every answer classified, refusal on any answer
+       * that is not permitted, and the surviving addresses minted into a pin.
+       *
+       * `base` makes a relative `Location` resolve against the hop that issued
+       * it, so a redirect goes through exactly the same two halves as the
+       * original rather than being misread as a bare hostname. Validating only
+       * the first URL of a chain is the classic way an SSRF filter is bypassed,
+       * and the second half is where "and then it resolved somewhere else" is
+       * caught.
+       */
+      const checked = checkUrl(
+        target,
+        { allowLoopback: options.allowLoopback, localDeployment: options.localDeployment },
+        base
+      );
       if (!checked.ok) {
         return fail(
           checked.reason,
           hop === 0 ? checked.detail : `redirect hop ${hop}: ${checked.detail}`
         );
       }
-      const current = checked.url.toString();
+
+      const authorised = await authoriseResolvedTarget(checked.url, {
+        classifyHost,
+        resolveHost: options.resolveHost
+      });
+      if (!authorised.ok) {
+        return fail(
+          authorised.reason,
+          hop === 0 ? authorised.detail : `redirect hop ${hop}: ${authorised.detail}`
+        );
+      }
+
+      // The pin, not the URL string, is what the transport is given. `current` is
+      // the same URL and is kept for the reason trail, the redirect base and the
+      // reported `url` -- all of which are text, none of which opens a socket.
+      const current = authorised.pin.url;
 
       let response: Response;
       try {
-        response = await options.fetchImpl(current, {
+        /*
+         * `redirect`, `credentials` and `body` are absent because
+         * `PinnedRequestInit` has no such fields. A transport that cannot be
+         * asked to follow a redirect, attach an ambient credential or send a
+         * body cannot be made to do any of them by forgetting an option -- and
+         * the reasoning that used to sit on `credentials: "omit"` here now lives
+         * on the type, where it constrains every implementation rather than this
+         * one call. An addon is an unrelated third party; a request carrying our
+         * credentials would make its URL a CSRF-shaped hole into whatever origin
+         * those credentials belong to.
+         */
+        response = await options.fetchImpl(authorised.pin, {
           method: "GET",
-          redirect: "manual",
           signal: controller.signal,
-          /*
-           * No cookies, no client certificates, no ambient credentials of any
-           * kind. An addon is an unrelated third party; if a request to one
-           * carried our credentials, the addon's URL would be a CSRF-shaped
-           * hole into whatever origin those credentials belong to.
-           */
-          credentials: "omit",
           headers: {
             accept: "application/json",
             "user-agent": options.userAgent
@@ -198,17 +328,13 @@ export async function fetchJson(rawUrl: string, options: HttpOptions): Promise<H
         if (location === null || location.trim() === "") {
           return fail("redirect_without_location", `status ${response.status} with no location header`);
         }
-        // Resolved against the URL that issued it, so a relative redirect cannot
-        // be misread as a bare hostname, then re-validated on the next pass.
-        const resolved = checkUrl(
-          location,
-          { allowLoopback: options.allowLoopback, localDeployment: options.localDeployment },
-          current
-        );
-        if (!resolved.ok) {
-          return fail(resolved.reason, `redirect target rejected: ${resolved.detail}`);
-        }
-        target = resolved.url.toString();
+        // The next pass revalidates it in full -- scheme, host class, loopback
+        // keys, a FRESH resolution and a FRESH pin -- with `base` set so a
+        // relative `Location` resolves against the hop that issued it. Hop N+1 is
+        // never connected on hop N's addresses, because hop N's pin is never
+        // handed to it.
+        target = location;
+        base = current;
         continue;
       }
 

@@ -15,9 +15,11 @@ import type { PinnedFetch } from "../pin";
 /**
  * A HOST CLASSIFIER FOR TESTS ONLY, and deliberately a crude one.
  *
- * The real classifier is `classifyHost` in
- * `@liberty/provider-sdk/src/stremio/url-policy.ts`, which handles IPv4-mapped
- * IPv6, CGNAT, TEST-NET, and the octal and decimal spellings of an address.
+ * The real classifier is `classifyHost` in `@liberty/net-policy/classify`,
+ * which handles IPv4-mapped IPv6, the NAT64/6to4/IPv4-translated prefixes,
+ * CGNAT, TEST-NET, the DNS root label, and the octal and decimal spellings of an
+ * address. (It lived in `@liberty/provider-sdk/src/stremio/url-policy.ts` until
+ * PL-0710 extracted it; that package re-exports it unchanged.)
  * This is NOT a second implementation of it and must never become one -- see the
  * header of `egress.ts` on why two SSRF classifiers is a worse outcome than one
  * injected port. It exists so that this package's tests can exercise the

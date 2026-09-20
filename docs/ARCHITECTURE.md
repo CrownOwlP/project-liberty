@@ -15,6 +15,8 @@ shared contracts + domain policies
         |
 provider SDK ---- media engine ---- observability
         |
+   net policy  (leaf: host and address classification)
+        |
 PostgreSQL / Redis / authorized provider APIs
 ```
 
@@ -24,9 +26,130 @@ PostgreSQL / Redis / authorized provider APIs
 
 Stable transport/domain shapes. Contract changes should be intentional and reviewed.
 
+### `@liberty/net-policy`
+
+**What a host is, and how it is spelled.** One address-range classifier
+(`classifyHost`, `classifyResolvedAddress`) and one set of host-spelling rules
+(`withoutRootLabel`, `canonicalHost`, `bareAddress`, `bracketedLiteral`) for the
+whole repository. Published as `./classify` and `./host` subpaths, plus
+`./testing/*` for the shared table of hostile spellings both consumers' suites
+are driven from.
+
+**It is a dependency leaf, and that is the design rather than a property it
+happens to have.** It imports nothing — no `@liberty/*` package, no third-party
+library, no Node built-in — which is what makes an edge onto it safe from either
+direction:
+
+```text
+        @liberty/net-policy
+            ^          ^
+            |          |
+@liberty/provider-sdk  @liberty/media-inspection
+            |                    ^
+            +--------------------+
+```
+
+The second edge is PL-0710's second half: `@liberty/provider-sdk` reaches
+`@liberty/media-inspection`'s resolve-and-pin control rather than growing its own.
+It is not half of a cycle — `@liberty/media-inspection` does not depend back, and
+the `classifyHost` port that used to point that way became the leaf above — and
+both directions are asserted mechanically in `net-policy-boundary.test.ts` in each
+package rather than left to a reading of this diagram.
+
+**Why it was extracted (PL-0710).** `@liberty/media-inspection` reached
+`classifyHost` in `@liberty/provider-sdk` as an INJECTED PORT, specifically so
+that there would be one SSRF classifier and not two — two copies drift, the stale
+one becomes the hole, and nothing fails when they disagree. The port worked for
+production and failed for verification: PL-0709 needed a test that held both real
+implementations at once, and the only way to reach `classifyHost` from the other
+package was a deep relative import past the package boundary, because
+`@liberty/provider-sdk` publishes a bare `./src/index.ts` exports field with no
+subpaths. The reviewer accepted that import for one test at one tree and ruled it
+was not an acceptable permanent boundary. `@liberty/media-inspection` cannot
+depend on `@liberty/provider-sdk` — PL-0710's second half points that arrow the
+other way, with provider-sdk adopting media-inspection's resolve-and-pin — so a
+lower shared layer that neither can import back is the shape that works for the
+VOCABULARY. The control itself travels the ordinary acyclic edge instead.
+
+**Three canonicalisers became one.** `withoutRootLabel` in provider-sdk's
+`url-policy.ts` (PL-0702, F7), a character-for-character copy of it in
+media-inspection's `egress.ts` (PL-0709, F12), and `normaliseHost` in
+media-inspection's `pin.ts`, which did not fold the DNS root label at all and was
+safe only because both sides of its one comparison came from the same `URL`
+object. All three now call the same function.
+
+**The port stayed a port.** `EgressDependencies.classifyHost` is still injected,
+because composition roots outside `@liberty/media-inspection` construct it and a
+port they already fill correctly is not improved by a breaking change. What the
+extraction removed is the vocabulary each package carried around the port.
+
+**Both consumers are held to importing it, not merely to agreeing with it.**
+`net-policy-boundary.test.ts` in each package asserts REFERENCE IDENTITY between
+what the package re-exports and what the leaf declares, because two faithful
+copies pass every behavioural test anybody writes and are still two objects. An
+extraction nothing imports is a third copy rather than a merge.
+
 ### `@liberty/provider-sdk`
 
 The only boundary through which content-provider-specific behavior enters core application logic. Adapters must return normalized, authorized candidates.
+
+Its host classifier now lives in `@liberty/net-policy` and is re-exported from
+`stremio/url-policy.ts`, so `classifyHost` and `HostClass` are still published
+from this package's root and every consumer import path is unchanged.
+
+**Its outbound HTTP resolves, classifies and pins (PL-0710).** `stremio/http.ts`
+— the only place this package opens a connection — runs its own pure static gate
+(`checkUrl`: scheme, embedded credentials, host class, plaintext, and the two-key
+loopback rule) and then `@liberty/media-inspection`'s `authoriseResolvedTarget`
+for the half that must exist once in the repository: one resolution before the
+connection, every returned address classified, refusal on any disallowed answer,
+and the survivors minted into an unforgeable `PinnedTarget`. Every redirect hop
+repeats both halves and gets its own pin.
+
+The transport and the resolver are REQUIRED options with no defaults.
+`StremioProviderOptions.fetch` is a `PinnedFetch`, not a `fetch`, so a transport
+that ignores the authorised addresses does not type-check and the
+`globalThis.fetch` that used to be the default — which resolves the name a second
+time at connect and is the DNS-rebinding hole — is no longer expressible. A Node
+composition root supplies `nodePinnedFetch` from
+`@liberty/media-inspection/node/pinned-fetch` and a `dns.promises.lookup`-backed
+resolver.
+
+Pinning replaces the RESOLVER, never the host: the request keeps the publisher's
+name, so the `Host` header, SNI and `tls.checkServerIdentity` are all computed
+from exactly what they were before. Rewriting the URL to the approved IP would
+make TLS verify an address, which no ordinary certificate carries, and the usual
+"fix" for that is disabling certificate validation.
+
+### `@liberty/media-inspection`
+
+What a publisher DECLARED, and who said so, plus the outbound egress boundary
+every fetch in this repository goes through: protocol allowlist, host allowlist,
+pre-socket classification of every resolved address, a pinned connection, and
+per-hop redirect re-authorisation.
+
+`authoriseFetchTarget` is the whole gate and is what this package and
+`@liberty/catalog-ingestion` use. `authoriseResolvedTarget` is its second half,
+exported as of PL-0710 so that `@liberty/provider-sdk` — which has its own static
+gate, its own reason vocabulary and no operator allowlist — can reach the
+resolve-classify-pin step without a second implementation of it. There is one
+`pinFor`, one brand and one registry of issued pins; `createPinnedLookup` refuses
+anything that registry did not issue, whichever package asked.
+
+**It publishes subpaths, as of PL-0710, and the reason is a boundary fact rather
+than convenience.** It used to publish `.` and `./node/*` only, and the barrel
+re-exports `./hls`, whose first line imports `m3u8-parser` — a package that ships
+no types. So ANY program reaching this package's public API pulled the HLS parser
+into its program and failed with TS7016 on a file it never called, which
+`@liberty/catalog-ingestion` works around with a triple-slash reference to this
+package's ambient shim. `./egress`, `./http` and `./pin` are now published, none
+of them can reach `m3u8-parser`, and a test walks the real import graph to prove
+it. **That is the same defect shape PL-0710 exists for**: `@liberty/provider-sdk`'s
+classifier was unreachable from outside its package for exactly this reason, which
+is why PL-0709 had to reach in by relative path. A package that publishes one
+entry point does not have a smaller API surface; it has the same surface and a
+worse way in. Removing the workaround itself is a change inside
+`@liberty/catalog-ingestion` and was outside PL-0710's write surface.
 
 ### `@liberty/media-engine`
 

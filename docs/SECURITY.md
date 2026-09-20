@@ -82,12 +82,20 @@ below, now measured — a 1,000,000-character candidate `id` produced a 2,002,55
 response; the bound belongs in `packages/contracts`. **F12:** `hostOnAllowlist` in
 `packages/media-inspection` does not fold the root label either, which fails *closed*
 and so is not a bypass, but is the same inconsistency seen from the other side.
+*(F7 and F12 are both closed, and PL-0710 part A removed the condition that produced
+them: the fold is now one function in `@liberty/net-policy` that all three gates —
+`classifyHost`, `hostOnAllowlist` and the pinned lookup's hostname comparison —
+call. The third of those did not fold at all and was safe only because both sides
+of its comparison came from the same `URL` object.)*
 
-**A1 below is now a weaker acceptance than when it was written.** F1, F7 and F8 are
-three defects of one shape — host-*string* comparison getting a spelling wrong — in
-one function. That is evidence about the approach. R1's resolve-and-pin adoption is
-the remedy and still has no owner; it is the most important open item on this
-surface.
+**A1 below has since been RETIRED, and the reason it had to be is the finding
+itself.** F1, F7 and F8 are three defects of one shape — host-*string* comparison
+getting a spelling wrong — in one function. That is evidence about the approach
+rather than about any one branch: a check that compares a string against literals
+is only ever as complete as the list of spellings whoever wrote it thought of.
+R1's resolve-and-pin adoption was the remedy, it is now done in both halves
+(PL-0710), and it classifies the address a resolver returned — which has one
+spelling. A1 and R1 below record what changed and what it does not cover.
 
 ### Round one — scope examined
 
@@ -119,7 +127,13 @@ A cached 200 reports the liveness of a process that may have died minutes ago.
 
 ### Accepted risks
 
-**A1 — the outbound URL policy validates the host LITERAL, not the resolved address.** A public name with a private A record, and a name that answers differently between check and connect (DNS rebinding), both pass. Accepted only while the Stremio adapter is what it is today: operator-fixed endpoints, reviewable at configuration time. `packages/provider-sdk/src/stremio/url-policy.ts` states the condition under which acceptance expires — the day this becomes the general client for arbitrary operator- or user-configured addons, host-string checks stop being a control at all, because the attacker chooses the name. See "Residual risks" for why this is now weaker than a plain acceptance.
+**A1 — the outbound URL policy validates the host LITERAL, not the resolved address. RETIRED by PL-0710 part B; the original acceptance is kept below because a retired acceptance is a record, not a deletion.**
+
+*As accepted:* a public name with a private A record, and a name that answers differently between check and connect (DNS rebinding), both passed. Accepted only while the Stremio adapter was what it was: operator-fixed endpoints, reviewable at configuration time. `packages/provider-sdk/src/stremio/url-policy.ts` stated the condition under which the acceptance expired — the day this became the general client for arbitrary operator- or user-configured addons, host-string checks stop being a control at all, because the attacker chooses the name. PL-0710 part A moved the classifier into `@liberty/net-policy` and did NOT change this: a classifier of the host literal is still a classifier of the host literal.
+
+*What retires it:* PL-0710 part B. `packages/provider-sdk/src/stremio/http.ts` — the only place the package opens a connection — now runs `checkUrl` AND `@liberty/media-inspection`'s `authoriseResolvedTarget`. The name is resolved before the connection; every returned address is classified; any private, loopback, link-local or reserved answer refuses the target; the surviving addresses travel to the transport inside an unforgeable `PinnedTarget`, so no second resolution can choose the destination; and every redirect hop repeats all of it and gets its own pin. `StremioProviderOptions.fetch` is a `PinnedFetch` with no default, so the unpinned `globalThis.fetch` that used to be the fallback is not expressible.
+
+*What A1's retirement does NOT claim.* `checkUrl` itself is unchanged and is still a host-literal gate — deliberately, because a gate that resolved would be a second resolution and a second SSRF control. It is now the first of two halves rather than the last word. And the adapter still has no operator host ALLOWLIST, which `@liberty/media-inspection` does have; see R6.
 
 **A2 — the Stremio `/stream` array has no element-count bound.** Bounded transitively by `DEFAULT_MAX_RESPONSE_BYTES` (1 MiB), which is enforced by a metered streaming read rather than a `Content-Length` claim. Accepted: the byte cap is the binding constraint and duplicating it as a count would be a second number to keep in agreement.
 
@@ -144,11 +158,36 @@ A cached 200 reports the liveness of a process that may have died minutes ago.
 
 ### Residual risks, open
 
-- **R1 — resolve-and-pin has no owner.** A1's remedy now exists in this repository: `@liberty/media-inspection`'s `authoriseFetchTarget` resolves the name, classifies every answer, and refuses on any private result. The Stremio adapter does not use it. That changes the deferral from "nobody has built this" to "this adapter has not adopted it", which is a weaker acceptance. `url-policy.ts` previously tracked the work as PL-0701; PL-0701 is the end-to-end harness and never covered it, so the work is currently tracked nowhere. **Needs a control-plane task.**
+- **R1 — resolve-and-pin is owned, and BOTH halves have landed. Closed.** A1's remedy is now applied where A1 lived. The work is **PL-0710**.
+
+  **Part A** extracted the canonical host vocabulary into `@liberty/net-policy`, a dependency leaf that imports neither `@liberty/provider-sdk` nor `@liberty/media-inspection`; both packages consume it, and the three separate canonicalisers described under F7 and F12 are one.
+
+  **Part B** is the half that retires A1, and each clause is a separate way host-literal checking fails:
+
+  | clause | where it is enforced | where it is proved |
+  | --- | --- | --- |
+  | DNS resolution before the connection | `authoriseResolvedTarget` in `packages/media-inspection/src/egress.ts`, called from `packages/provider-sdk/src/stremio/http.ts` | `resolve-and-pin.test.ts` clause 1 |
+  | every resolved address classified | the loop over `addresses`, not `addresses[0]` | `resolve-and-pin.test.ts` clause 2/3, driven from `HOSTILE_ADDRESS_SPELLINGS` |
+  | any disallowed answer refuses, mixed sets included | `dns_resolved_private_address` | same, both orderings of a mixed set |
+  | the transport connects only to an authorised address | the `PinnedTarget` and `createPinnedLookup` in `packages/media-inspection/src/pin.ts` | `pinned-transport.test.ts`: a server on 127.0.0.1, a pin on 127.0.0.2, and no request arrives |
+  | per redirect hop | the loop in `http.ts` re-authorises and therefore re-pins | `resolve-and-pin.test.ts` clause 5 |
+  | loopback only via the two-key path | `checkUrl` (source opt-in AND local deployment) | `resolve-and-pin.test.ts` clause 6, including a public name that resolves to 127.0.0.1 being refused with both keys set |
+  | Host, SNI and certificate identity stay the ORIGINAL hostname | the resolver is substituted, not the host: `packages/media-inspection/src/node/pinned-fetch.ts` keeps `hostname` and `servername` as `url.hostname` | `pinned-transport.test.ts`: Host header over plaintext, SNI read off the ClientHello, and a completed handshake against a certificate whose only SAN is `DNS:localhost` — with the rejected connect-by-address design failing `ERR_TLS_CERT_ALTNAME_INVALID` beside it as the counterfactual |
+
+  **The mechanism is shared, not duplicated.** `authoriseResolvedTarget` is the second half of `@liberty/media-inspection`'s own `authoriseFetchTarget`: the same resolution, the same per-address classification, the same `pinFor`, the same brand and the same registry, now exported so a package with its own static gate can reach it. A second resolve-and-pin written beside the first would be the two-classifiers defect one layer up. `net-policy-boundary.test.ts` in `@liberty/provider-sdk` asserts the edge exists, that it uses the narrow `./egress` and `./pin` subpaths rather than the barrel, and that `@liberty/media-inspection` does not depend back — so the arrangement is acyclic by assertion rather than by reading.
+
+  Why the design changed, because the reason is the control-plane record rather than a preference: PL-0709 had to import `classifyHost` from `@liberty/provider-sdk` by DEEP RELATIVE PATH to write its agreement test, since that package published a bare `./src/index.ts` exports field with no subpaths. The reviewer accepted that import for that one test at that one tree and ruled it was not an acceptable permanent boundary. Making `@liberty/media-inspection` depend on `@liberty/provider-sdk` creates a cycle, because part B points the arrow the other way. A lower shared layer that neither package can import back is the shape that works for the vocabulary; the resolve-and-pin control itself is reached by an ordinary acyclic edge onto the package that owns it.
+
+  **What part A bought, stated as a control and not as tidying.** F1, F7 and F8 were three defects of one shape in one function, and F12 was a fourth spelling in a SECOND function written specifically to avoid duplicating the first. The duplication arrived anyway — not as a copied classifier but as a copied assumption about what a hostname string is. There is now one root-label fold, one address classifier and one bracket convention, in one package, and both consumers are held to importing them by reference-identity assertions rather than by convention (`net-policy-boundary.test.ts` in each). The deep cross-package import is gone and a scan refuses its return.
 - **R2 — no rate limits exist on any route.** "Add rate limits for auth, search, and playback resolution" is a control listed above and is unimplemented. The natural home is request middleware, outside this task's `allowedPaths`. F3's cap bounds per-request work, not request rate.
 - **R3 — the resolve scaffold still exists.** Gating closes the hosted exposure; the route remains reachable in development and remains the only endpoint that accepts client-supplied rights. Removal is the correct end state.
 - **R4 — no authentication or authorization exists on any API route yet.** Every finding above is scoped to a system with no identity layer. When one lands, each route needs revisiting; nothing in the current code should be read as a decision that these routes are safe to leave anonymous.
 - **R5 — the resolve scaffold reflects caller-supplied candidate strings back verbatim.** Found on re-reading F2's fix rather than during the original pass, and recorded rather than fixed because the fix does not belong in this task's paths. `streamCandidateSchema.id` and `.providerId` are `z.string().min(1)` with no upper bound and no charset restriction, and `rankStreamCandidates` copies the whole candidate into `ranked[].candidate` and the id into `rejected[].candidateId`, so whatever a caller puts in those two fields comes back out. Same class as F5 — an unbounded attacker-chosen string landing in a reason trail, and from there in logs and dashboards — and weaker than F5 only because this route is unreachable in production and confers no rights. Note that it also under-cuts a claim made elsewhere: `e2e/tests/rights-boundary.api.spec.ts`'s "never accepts, acts on or returns a candidate URL" smuggles its URL into an extra key, which Zod strips, so the test passes without exercising the field that would actually echo one. `playbackResolveRequestSchema` is a plain `z.object`, not `.strict()` like the session contract, so an unknown key is dropped silently rather than refused. The bound belongs on the schema in `packages/contracts`, next to F3's `.max()`.
+- **R6 — the Stremio adapter has no operator host allowlist, and its transport and resolver are injected.** Two residuals that R1's closure does not cover, recorded together because both are about what is outside the gate rather than inside it.
+
+  `@liberty/media-inspection`'s `EgressPolicy` confines egress to hosts an operator named, and refuses everything when the list is empty. `@liberty/provider-sdk` has no equivalent: a Stremio source's endpoint is the operator's configuration, and a redirect may legitimately leave it, so the adapter admits any host that survives scheme, class, plaintext and the resolve-and-pin gate. Adding an allowlist is a product decision about how sources are configured, not an implementation detail, and PL-0710 deliberately did not invent one.
+
+  `StremioProviderOptions.fetch` and `.resolveHost` are required with no defaults, which is what stops an unpinned `globalThis.fetch` being the path of least resistance — but they are still ports. A composition root that supplied a `PinnedFetch` which read `target.url` and ignored `target.addresses` would defeat the pin. Two things narrow that: the transport cannot obtain a socket from the pin except through `createPinnedLookup`, which refuses any target `authoriseFetchTarget` did not issue, and the only transport in the repository is `nodePinnedFetch`. Nothing prevents a future second one from being written badly. No composition root wires the Stremio adapter yet; PL-0302 is the task that will.
 
 ### Follow-ups
 
@@ -161,4 +200,4 @@ a closed follow-up from one nobody ever picked up.
 - **Done** — `docs/API_CONTRACTS.md`. The resolve section now leads with "Not part of a hosted deployment", states the 404 and why it is 404 and not 403, names `handler.ts` as the thing that enforces the scaffold status, and documents both 413 refusals and the 400 on a non-JSON body.
 - **Done** — `docs/E2E.md`. The stale "500 on a non-JSON body" note is gone; the coverage table now carries a "Resolve gate" row, and the not-covered section explains why the body limits are unit-tested rather than asserted through the harness.
 - **Open** — `packages/contracts`. `.max()` on `playbackResolveRequestSchema.candidates` is still the better home for F3's bound than a route-level pre-check, and R5 wants an upper bound on `streamCandidateSchema.id` and `.providerId` in the same place. The route-level check stays either way: it runs before `safeParse`, which is the property F3 was about.
-- **Open** — `control/tasks.json`. A task for R1, and one that owns every file naming this route at once if R3's removal is ever taken (`apps/web/src/app/api/v1/playback/resolve/**`, `docs/API_CONTRACTS.md`, `docs/E2E.md`, `e2e/**`). No application code calls the route — grepping `api/v1/playback` across the repo finds only the session route's own callers — so removal is a docs-and-tests change, not a client migration.
+- **Done** — `control/tasks.json`. PL-0710 owns R1, with `packages/net-policy/**`, both consumer packages and the packaging metadata reserved before the claim. Both halves have landed and A1 is retired; R6 records what they did not cover. **Still open** — a task that owns every file naming this route at once if R3's removal is ever taken (`apps/web/src/app/api/v1/playback/resolve/**`, `docs/API_CONTRACTS.md`, `docs/E2E.md`, `e2e/**`). No application code calls the route — grepping `api/v1/playback` across the repo finds only the session route's own callers — so removal is a docs-and-tests change, not a client migration.

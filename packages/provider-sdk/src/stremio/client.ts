@@ -1,5 +1,6 @@
 import type { StreamCandidate } from "@liberty/contracts/domains/playback";
 import { PLAYABLE_CONTENT_RIGHTS, type ContentRights } from "@liberty/contracts/shared/rights";
+import type { HostResolver } from "@liberty/media-inspection/egress";
 import {
   DEFAULT_PROVIDER_HEALTH_POLICY,
   evaluateProviderHealth,
@@ -8,7 +9,7 @@ import {
   type ProviderHealthReport
 } from "../health";
 import type { AuthorizedMediaProvider, CatalogItemRef, ProviderContext } from "../provider";
-import { fetchJson, type FetchLike, type HttpFailureReason, type HttpOptions } from "./http";
+import { fetchJson, type HttpFailureReason, type HttpOptions, type PinnedFetch } from "./http";
 import {
   mapStremioStreams,
   type MappedStream,
@@ -82,8 +83,33 @@ export const DEFAULT_MANIFEST_TTL_MS = 900_000;
 export const DEFAULT_USER_AGENT = "ProjectLiberty/0.1 (+@liberty/provider-sdk)";
 
 export interface StremioProviderOptions {
-  /** Injected for tests; every network path in this file goes through it. */
-  readonly fetch?: FetchLike | undefined;
+  /**
+   * The pinned transport. REQUIRED, and there is no default (PL-0710).
+   *
+   * This used to be `fetch?: FetchLike`, defaulting to `globalThis.fetch`. Both
+   * halves of that were the defect: a `fetch` receives a URL, so it resolves the
+   * hostname itself at connect time, and the address this adapter's policy judged
+   * was never the address the socket reached. A `PinnedFetch` receives the
+   * `PinnedTarget` the authorisation produced and connects to one of its
+   * addresses or to nothing.
+   *
+   * NO DEFAULT, AT THE TYPE LEVEL, and that is the point rather than an
+   * inconvenience. The only safe default would be a transport that pins, every
+   * such transport is runtime-specific, and this package imports no runtime. A
+   * defaulted `globalThis.fetch` would be the unpinned transport this task
+   * removed, reintroduced as the path of least resistance. A Node composition
+   * root supplies `nodePinnedFetch` from
+   * `@liberty/media-inspection/node/pinned-fetch`.
+   */
+  readonly fetch: PinnedFetch;
+  /**
+   * Resolves a hostname to the addresses a connection would actually use.
+   * REQUIRED, and likewise defaultless: a default would be a `node:dns` import
+   * in a runtime-agnostic package. A Node composition root supplies
+   * `dns.promises.lookup(hostname, { all: true, verbatim: true })` mapped to
+   * `address` strings.
+   */
+  readonly resolveHost: HostResolver;
   readonly timeoutMs?: number | undefined;
   readonly maxResponseBytes?: number | undefined;
   readonly maxRedirects?: number | undefined;
@@ -362,7 +388,7 @@ function assertHealthPolicyIsApplicable(
 
 export function createStremioProvider(
   source: AuthorizedStremioSource,
-  options: StremioProviderOptions = {}
+  options: StremioProviderOptions
 ): StremioProvider {
   // Before the clock, the fetch wrapper or anything that could make a request:
   // an unauthorized source must not reach a state where it has an adapter.
@@ -374,14 +400,14 @@ export function createStremioProvider(
   assertHealthPolicyIsApplicable(source, healthPolicy);
 
   const now = options.now ?? (() => Date.now());
-  const fetchImpl: FetchLike =
-    options.fetch ??
-    // Wrapped rather than passed by reference: an unbound `fetch` throws in some
-    // hosts, and capturing it now would also freeze a test's later stubbing.
-    ((input, init) => globalThis.fetch(input, init));
 
   const http = (): HttpOptions => ({
-    fetchImpl,
+    // Taken from the options rather than defaulted. There is no `??` here and
+    // there must not be one: the fallback that used to live on this line was
+    // `globalThis.fetch`, which resolves the hostname a second time at connect
+    // and is exactly what PL-0710 removed.
+    fetchImpl: options.fetch,
+    resolveHost: options.resolveHost,
     timeoutMs: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
     maxResponseBytes: options.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES,
     maxRedirects: options.maxRedirects ?? DEFAULT_MAX_REDIRECTS,

@@ -8,6 +8,18 @@
       "types": "./src/index.ts",
       "default": "./src/index.ts"
     },
+    "./egress": {
+      "types": "./src/egress.ts",
+      "default": "./src/egress.ts"
+    },
+    "./http": {
+      "types": "./src/http.ts",
+      "default": "./src/http.ts"
+    },
+    "./pin": {
+      "types": "./src/pin.ts",
+      "default": "./src/pin.ts"
+    },
     "./node/*": {
       "types": "./src/node/*.ts",
       "default": "./src/node/*.ts"
@@ -24,6 +36,7 @@
   },
   "dependencies": {
     "@liberty/contracts": "0.1.0",
+    "@liberty/net-policy": "0.1.0",
     "@xmldom/xmldom": "0.9.12",
     "m3u8-parser": "7.2.0"
   },

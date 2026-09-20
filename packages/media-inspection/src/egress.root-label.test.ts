@@ -1,82 +1,73 @@
+import { canonicalHost } from "@liberty/net-policy/host";
+import { classifyHost } from "@liberty/net-policy/classify";
+import { HOSTILE_HOST_SPELLINGS } from "@liberty/net-policy/testing/host-spellings";
 import { describe, expect, it } from "vitest";
-/*
- * THE REAL PROVIDER-SDK CLASSIFIER, IMPORTED HERE ON PURPOSE, AND ONLY HERE.
- *
- * This is the one file in `@liberty/media-inspection` that reaches outside the
- * package, and the reach is the point: PL-0709 asks for a test that FAILS when
- * the two classifiers diverge, and a test that compares `hostOnAllowlist`
- * against a local restatement of what `classifyHost` does would go green on the
- * day somebody edits the real one. Divergence is only observable by holding both
- * real implementations at once.
- *
- * It is a TEST-ONLY, TYPE-LEVEL-AND-RUNTIME import of a single self-contained
- * module (`url-policy.ts` imports nothing at all), and it deliberately does NOT
- * become a package dependency:
- *
- *   - No entry is added to `package.json`. `@liberty/provider-sdk` is not a
- *     dependency of this package and MUST NOT BECOME ONE: PL-0710 has provider-sdk
- *     adopting THIS package's `authoriseFetchTarget`, so a declared edge in this
- *     direction would be half of a workspace cycle the moment that lands.
- *   - Nothing under `src/` outside this file imports it, so the production graph
- *     is unchanged and the injected-`HostClassifier`-port design in `egress.ts`
- *     is untouched. `testing/fixtures.ts` keeps its crude `testClassifyHost` for
- *     every other suite, for the reason stated there.
- *
- * `url-policy.ts` is declared as PL-0709's `reviewDependency` in
- * `control/tasks.json` -- read, fingerprinted for review, never written.
- */
-import { classifyHost, type HostClass } from "../../provider-sdk/src/stremio/url-policy";
 import { checkUrlStatically, hostOnAllowlist, type EgressPolicy } from "./egress";
-import { HOSTILE_HOST_SPELLINGS } from "./testing/host-spellings";
+
+/* -------------------------------------------------------------------------
+ * WHAT THIS FILE USED TO BE, AND WHY IT IS NOT THAT ANY MORE.
+ *
+ * PL-0709 wrote this suite as an AGREEMENT TEST between two implementations.
+ * `classifyHost` lived in `@liberty/provider-sdk` and folded the DNS root label
+ * (PL-0702, F7); `hostOnAllowlist` lived in `./egress.ts` and did not (F12). The
+ * only way to observe a divergence between them was to hold both real functions
+ * at once, and the only way to reach the real `classifyHost` from this package
+ * was a DEEP RELATIVE IMPORT past a package boundary:
+ *
+ *     import { classifyHost } from "../../provider-sdk/src/stremio/url-policy";
+ *
+ * The reviewer accepted that import FOR THAT TEST ONLY AT THAT TREE and ruled it
+ * was not an acceptable permanent boundary. It is gone. PL-0710 extracted the
+ * canonicaliser and the classifier into `@liberty/net-policy`, a dependency leaf
+ * that imports neither consumer, and both packages now call the same functions.
+ *
+ * AN AGREEMENT TEST BETWEEN TWO IMPLEMENTATIONS ASSERTS NOTHING ONCE THERE IS
+ * ONE IMPLEMENTATION, so the half of this file that compared `classifyHost`
+ * against the table is gone too -- it now lives in
+ * `@liberty/net-policy/src/classify.test.ts`, driven from the same table, where
+ * it tests the function rather than a coincidence. What is left here is the part
+ * that was never about agreement:
+ *
+ *   1. `hostOnAllowlist` folds the root label. Still this package's function,
+ *      still this package's behaviour to assert; it now folds by CALLING the
+ *      shared canonicaliser, and this suite checks the outcome rather than the
+ *      wiring. (`net-policy-boundary.test.ts` checks the wiring.)
+ *   2. THE COMPOSITION. `checkUrlStatically` asks the classifier first and the
+ *      allowlist second, and the two disagreeing produced a refusal with the
+ *      WRONG REASON -- `metadata.google.internal.` is private, and being told it
+ *      was "not on the allowlist" invites an operator to add it. The reason is
+ *      this package's, so it is asserted here, against the real classifier.
+ *   3. THE TWO WAYS AGREEMENT COULD HAVE BEEN BOUGHT TOO CHEAPLY: by repairing a
+ *      name that names nothing, or by admitting a host nobody put on the list.
+ *      PL-0709's acceptance called the second one out by name -- "making this
+ *      path agree with the other one must not make it permissive" -- and it
+ *      remains the thing to watch, because the merge PL-0710 performed is
+ *      exactly the "somebody copies one of the two" event those assertions were
+ *      written to survive.
+ *
+ * Every assertion below is a REFUSAL except where marked, so each group carries
+ * a positive control: something that must still be ADMITTED. A permissiveness
+ * suite that passes against a function returning `false` for everything is
+ * worthless, and `hostOnAllowlist` returning `false` for everything is a
+ * plausible way to break it.
+ * ---------------------------------------------------------------------- */
 
 /**
- * PL-0709 / register entry F12 in `docs/SECURITY_REVIEW_PROVIDER_URL.md`.
- *
- * "packages/media-inspection/src/egress.ts classifies a fully qualified name the
- * same as its dotless spelling, matching the fix PL-0702 made in
- * packages/provider-sdk/src/stremio/url-policy.ts ... a test asserts the two
- * classifiers agree on a shared table of hostile spellings, so the next
- * divergence fails a test rather than waiting for a review; and the fail-closed
- * behaviour is preserved and asserted, because making this path agree with the
- * other one must not make it permissive."
- *
- * Three groups below, in that order: agreement, and then the two directions in
- * which agreement could have been bought too cheaply -- by repairing a name that
- * names nothing, or by admitting a host nobody put on the list.
+ * The policy every group below is driven against. `classifyHost` is the REAL
+ * one, imported from the leaf package rather than approximated -- which is the
+ * whole reason PL-0709 needed a deep import and the whole reason this file no
+ * longer does.
  */
-
 const REAL_CLASSIFIER_POLICY: EgressPolicy = {
   allowedHosts: ["cdn.example.test", ".cdn.example.test", "metadata.google.internal", "localhost"],
   allowLoopback: false,
   localDeployment: false
 };
 
-describe("the two classifiers agree on what a host is", () => {
+describe("this package's gate answers the shared table the same way", () => {
   /*
-   * The provider-sdk half. This is PL-0702's F7 fix restated against the SHARED
-   * table rather than against a list private to that package's suite, so that
-   * adding a spelling here obliges both functions to answer for it.
-   */
-  describe("classifyHost folds the root label", () => {
-    it.each(HOSTILE_HOST_SPELLINGS.filter((entry) => entry.canonical !== null))(
-      "classifies $spelling exactly as $canonical",
-      ({ spelling, canonical }) => {
-        const canonicalClass: HostClass = classifyHost(canonical as string);
-        expect(classifyHost(spelling)).toBe(canonicalClass);
-        expect(canonicalClass).not.toBe("unparseable");
-      }
-    );
-
-    it.each(HOSTILE_HOST_SPELLINGS.filter((entry) => entry.canonical === null))(
-      "refuses $spelling rather than repairing it",
-      ({ spelling }) => {
-        expect(classifyHost(spelling)).toBe("unparseable");
-      }
-    );
-  });
-
-  /*
-   * The media-inspection half, and the defect PL-0709 exists to close.
+   * The defect PL-0709 exists to close, now asserted as this package's own
+   * behaviour rather than as a comparison with another package's function.
    *
    * Each case is asserted from BOTH sides -- the hostile spelling against a
    * canonical entry, and the canonical spelling against a hostile entry -- because
@@ -93,10 +84,32 @@ describe("the two classifiers agree on what a host is", () => {
         expect(hostOnAllowlist(spelling, [spelling])).toBe(true);
       }
     );
+
+    it("matches EXACTLY the spellings the shared canonicaliser calls a host", () => {
+      /*
+       * The replacement for the agreement test, and a stronger statement than
+       * the one it replaces. The old version asserted that two functions gave
+       * the same answer; this asserts that this package's allowlist admits a
+       * spelling if and only if `@liberty/net-policy` says the spelling names a
+       * host -- an iff, so it fails in BOTH directions. A `hostOnAllowlist` that
+       * started refusing everything fails the first half; one that started
+       * repairing `cdn.example.test..` fails the second.
+       */
+      for (const { spelling, canonical } of HOSTILE_HOST_SPELLINGS) {
+        const namesAHost = canonicalHost(spelling) !== null;
+        expect(namesAHost, spelling).toBe(canonical !== null);
+        expect(hostOnAllowlist(spelling, [spelling]), spelling).toBe(namesAHost);
+      }
+    });
+
+    it("still admits a plain listed host, which is the control for the iff above", () => {
+      expect(hostOnAllowlist("cdn.example.test", ["cdn.example.test"])).toBe(true);
+      expect(hostOnAllowlist("edge.cdn.example.test", [".cdn.example.test"])).toBe(true);
+    });
   });
 
   /*
-   * Agreement where it is actually consumed. `checkUrlStatically` asks the
+   * The composition, where the disagreement was actually consumed. `checkUrlStatically` asks the
    * classifier first and the allowlist second, so a host the two disagreed about
    * got a refusal whose REASON was wrong -- `metadata.google.internal.` is
    * private, not "unlisted", and an operator reading the second reason would add

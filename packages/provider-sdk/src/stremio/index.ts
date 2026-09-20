@@ -95,4 +95,4 @@ export { checkUrl, classifyHost } from "./url-policy";
 export type { HostClass, UrlCheckResult, UrlPolicyOptions, UrlRejectionReason } from "./url-policy";
 
 export { fetchJson } from "./http";
-export type { FetchLike, HttpFailureReason, HttpJsonResult, HttpOptions } from "./http";
+export type { HttpFailureReason, HttpJsonResult, HttpOptions, PinnedFetch } from "./http";
