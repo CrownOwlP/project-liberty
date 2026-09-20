@@ -48,14 +48,27 @@ import { demoCatalogSource } from "./demo-catalog";
  * existence. A registration is a call some composition root makes on purpose,
  * with a value it constructed, and it is visible in a stack trace.
  *
- * NOTHING CALLS IT YET, AND THAT IS STATED RATHER THAN IMPLIED. The call belongs
- * in this app's server bootstrap, next to whatever constructs the Node pinned
- * fetch from `@liberty/media-inspection/node/pinned-fetch` -- and that file is
- * outside round 51's write surface, so this round wired the seam and did not
- * write the bootstrap. Until it is written, a hosted deployment answers
- * `no_metadata_source_configured`, which is TRUE of it: no runtime has been
- * registered, so no source is configured. What has changed is that this is now a
- * statement about the deployment rather than about this file.
+ * IT HAS A CALLER NOW. `lib/server-bootstrap.ts` is the server composition root:
+ * it constructs the Node pinned fetch -- the only construction of it in
+ * `apps/web` -- reads the operator's stated declaration of which licensed source
+ * this deployment wants, builds a runtime beside that transport, and calls the
+ * registrar. `server-bootstrap.test.ts` drives it and then asks the accessor
+ * below, with no runtime argument, for the answer a request would get.
+ *
+ * WHAT IS STILL MISSING, STATED RATHER THAN IMPLIED: the framework entry point
+ * that runs the bootstrap in a server process. Next 16.3.1 discovers
+ * `instrumentation.ts` beside the `app` directory -- which in this application
+ * means `apps/web/src/instrumentation.ts`, a path outside PL-0308's write
+ * surface, checked against Next's own discovery code rather than assumed. Until
+ * that file exists, a hosted deployment answers `no_metadata_source_configured`,
+ * which is TRUE of it: nothing ran the bootstrap, so no runtime was registered,
+ * so no source is configured. That is a statement about the deployment and not
+ * about this file.
+ *
+ * AN UNCONFIGURED DEPLOYMENT WILL STILL ANSWER IT AFTERWARDS. The bootstrap
+ * registers nothing unless an operator names a source, so the refusal below is
+ * what an unconfigured deployment keeps getting rather than something the wiring
+ * takes away.
  *
  * ==========================================================================
  * FOUR STATES, FOUR ANSWERS
@@ -85,11 +98,14 @@ import { demoCatalogSource } from "./demo-catalog";
  * knowing here is that `listRecords()` answers `[]` for BOTH 2 and 4 -- because
  * both genuinely have no records -- so a caller that needs them apart calls
  * `describeCatalog` through `requireCatalogDescription`. `loadHomeCatalog` in
- * `lib/catalog.ts` does not yet: it maps a refusal to
- * `catalog_source_not_configured`, a throw to `catalog_source_unavailable` and
- * `[]` to `empty`, so today it collapses 2 into 4. That file is outside round
- * 51's write surface; the distinction exists at the port and the remaining edit
- * is named rather than hidden.
+ * `lib/catalog.ts` NOW DOES (PL-0310): it reads the description through that
+ * accessor and carries a cause beside the payload, so 2 and 4 reach the page as
+ * different answers with different copy. The paragraph this replaces said the
+ * opposite and was true when it was written -- round 51 could not edit that file
+ * -- which is exactly why it is corrected here rather than left to be read as
+ * current. A source that implements no `describeCatalog` is still served: the
+ * accessor answers null and the caller falls back to `listRecords()` with the
+ * cause unstated, which is honest rather than a failure.
  *
  * ==========================================================================
  * THERE IS ONE ACCESSOR. THE SYNCHRONOUS ONE IS DELETED.

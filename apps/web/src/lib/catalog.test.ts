@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type {
+  CatalogHomeResponse,
+  CatalogItem,
   EpisodeCatalogItem,
   MovieCatalogItem,
   SeriesCatalogItem
@@ -10,9 +12,20 @@ import {
   formatCatalogMeta,
   formatRuntime,
   isSurfaceable,
-  loadHomeCatalog
+  loadHomeCatalog,
+  readHomeCatalogFrom,
+  type CatalogEmptyCause,
+  type CatalogSource
 } from "./catalog";
-import { resolveCatalogMetadataSource } from "./catalog-source-registry";
+import type {
+  CatalogAnswer,
+  CatalogAnswerState,
+  CatalogMetadataRecord
+} from "./catalog-source";
+import {
+  resolveCatalogMetadataSource,
+  type CatalogMetadataSourceResolution
+} from "./catalog-source-registry";
 import { demoCatalog } from "./demo-catalog";
 
 /*
@@ -22,6 +35,19 @@ import { demoCatalog } from "./demo-catalog";
  * to convert one is gone.
  */
 const ISO = "2026-08-14T00:00:00.000Z";
+
+/*
+ * A `CatalogSource` over an already-built response.
+ *
+ * The seam carries a CAUSE beside the payload as of PL-0310, because a
+ * `CatalogHomeResponse` has one way to say "nothing" and there are two facts
+ * that need saying. Tests that are not about the empty states pass
+ * `cause_not_stated` by default rather than asserting a cause they do not
+ * exercise; the ones that ARE about them name it.
+ */
+const answering =
+  (payload: CatalogHomeResponse, cause: CatalogEmptyCause = "cause_not_stated"): CatalogSource =>
+  () => ({ payload, cause });
 
 /*
  * One builder per kind rather than one builder plus overrides.
@@ -185,7 +211,7 @@ describe("buildHomeCatalog", () => {
  */
 describe("loadHomeCatalog", () => {
   it("returns ok with validated rails for the demo fixtures", async () => {
-    const result = await loadHomeCatalog(() => buildHomeCatalog(demoCatalog, ISO));
+    const result = await loadHomeCatalog(answering(buildHomeCatalog(demoCatalog, ISO)));
     expect(result.status).toBe("ok");
     if (result.status !== "ok") return;
     expect(result.response.rails.length).toBeGreaterThan(0);
@@ -217,7 +243,7 @@ describe("loadHomeCatalog", () => {
   });
 
   it("distinguishes empty from error", async () => {
-    const result = await loadHomeCatalog(() => buildHomeCatalog([], ISO));
+    const result = await loadHomeCatalog(answering(buildHomeCatalog([], ISO), "catalog_empty"));
     expect(result.status).toBe("empty");
     if (result.status !== "empty") return;
     expect(result.generatedAt).toBe(ISO);
@@ -225,8 +251,8 @@ describe("loadHomeCatalog", () => {
 
   it("reports a validation failure as an error state, not an empty one", async () => {
     // Empty title violates the published contract.
-    const result = await loadHomeCatalog(() =>
-      buildHomeCatalog([movie({ id: "broken", title: "" })], ISO)
+    const result = await loadHomeCatalog(
+      answering(buildHomeCatalog([movie({ id: "broken", title: "" })], ISO))
     );
     expect(result.status).toBe("error");
     if (result.status !== "error") return;
@@ -263,7 +289,7 @@ describe("loadHomeCatalog", () => {
   });
 
   it("surfaces exactly the fixtures eligible for a home rail", async () => {
-    const result = await loadHomeCatalog(() => buildHomeCatalog(demoCatalog, ISO));
+    const result = await loadHomeCatalog(answering(buildHomeCatalog(demoCatalog, ISO)));
     if (result.status !== "ok") throw new Error("expected fixtures to load");
 
     const surfaced = result.response.rails.flatMap((rail) => rail.items);
@@ -285,7 +311,234 @@ describe("loadHomeCatalog", () => {
     const standalone = episode({ id: "ep-1" });
     expect(appearsOnHome(standalone)).toBe(false);
 
-    const result = await loadHomeCatalog(() => buildHomeCatalog([standalone], ISO));
+    const result = await loadHomeCatalog(answering(buildHomeCatalog([standalone], ISO)));
     expect(result.status).toBe("empty");
+  });
+});
+
+/* -------------------------------------------------------------------------
+ * PL-0310: AN EMPTY HOME SURFACE SAYS WHICH EMPTY IT IS
+ *
+ * `listRecords()` legitimately answers `[]` for two different facts, so a loader
+ * that reads the length of an array can only ever produce one answer for both.
+ * These drive the REAL composition -- `readHomeCatalogFrom`, which is what
+ * `defaultHomeCatalogSource` calls, through `requireCatalogDescription`,
+ * `selectDeclaredItems` and `buildHomeCatalog` in the shipped order -- over a
+ * source the test controls, rather than restating that sequence here.
+ * ---------------------------------------------------------------------- */
+
+describe("loadHomeCatalog states which empty it is", () => {
+  const answerOf = (
+    over: { state: CatalogAnswerState } & Partial<Omit<CatalogAnswer, "state">>
+  ): CatalogAnswer => ({
+    records: [],
+    withheld: [],
+    observedAt: ISO,
+    complete: true,
+    ...over
+  });
+
+  /** A source that implements the optional description capability. */
+  const describing = (answer: CatalogAnswer): CatalogMetadataSourceResolution => ({
+    status: "configured",
+    source: {
+      sourceId: "describing",
+      listRecords: () => answer.records,
+      findRecord: () => null,
+      describeCatalog: () => answer
+    }
+  });
+
+  /**
+   * A source that does NOT implement it. Legal: the method is optional on the
+   * port, and the in-process fixture source is exactly this shape.
+   */
+  const silent = (
+    records: readonly CatalogMetadataRecord[]
+  ): CatalogMetadataSourceResolution => ({
+    status: "configured",
+    source: {
+      sourceId: "silent",
+      listRecords: () => records,
+      findRecord: () => null
+    }
+  });
+
+  const declared = (item: CatalogItem): CatalogMetadataRecord => ({
+    item,
+    rights: { category: item.rights, reference: null }
+  });
+
+  /** A record the source knows of and has declared no rights basis for. */
+  const undeclared = (item: CatalogItem): CatalogMetadataRecord => ({ item, rights: null });
+
+  const loadFrom = (resolution: CatalogMetadataSourceResolution) =>
+    loadHomeCatalog(() => readHomeCatalogFrom(resolution));
+
+  /*
+   * THE REGRESSION THIS TASK IS FOR. Both states go through the real loader and
+   * it answers differently. Before this change both arrived as
+   * `{ status: "empty", generatedAt }` and nothing downstream could tell them
+   * apart -- which is the one place PL-0305's four-state work stopped short of
+   * the user.
+   */
+  it("distinguishes a catalog whose every record was withheld from an empty one", async () => {
+    const withheld = await loadFrom(
+      describing(
+        answerOf({
+          state: "no_records_usable",
+          withheld: [{ recordId: "q1", reason: "rights_basis_not_declared" }]
+        })
+      )
+    );
+    const bare = await loadFrom(describing(answerOf({ state: "catalog_empty" })));
+
+    expect(withheld.status).toBe("empty");
+    expect(bare.status).toBe("empty");
+    if (withheld.status !== "empty" || bare.status !== "empty") return;
+
+    expect(withheld.cause).toBe("no_records_usable");
+    expect(bare.cause).toBe("catalog_empty");
+    expect(withheld.cause).not.toBe(bare.cause);
+  });
+
+  /*
+   * A source that listed records and lost every one of them to
+   * `selectDeclaredItems` is in the withheld state too, whatever it called its
+   * own. It said `records_available` and there are still no rails, so "the
+   * source has nothing" would be false.
+   */
+  it("reports records refused for want of a declared basis as withheld, not as empty", async () => {
+    const result = await loadFrom(
+      describing(
+        answerOf({
+          state: "records_available",
+          records: [undeclared(movie({ id: "m1" })), undeclared(series({ id: "s1" }))]
+        })
+      )
+    );
+
+    expect(result.status).toBe("empty");
+    if (result.status !== "empty") return;
+    expect(result.cause).toBe("no_records_usable");
+  });
+
+  /*
+   * `describeCatalog` IS OPTIONAL ON THE PORT. A source without it must still
+   * load, and must not be reported as a failure of any kind -- it is a source
+   * that cannot tell the two states apart, which is a gap in what is KNOWN and
+   * not a fault in the source.
+   */
+  it("loads a source that does not implement describeCatalog", async () => {
+    const result = await loadFrom(silent([declared(movie({ id: "m1" }))]));
+
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") return;
+    expect(result.response.rails.flatMap((rail) => rail.items).map((item) => item.id)).toEqual([
+      "m1"
+    ]);
+  });
+
+  it("calls a source with no describeCatalog empty without a cause, never an error", async () => {
+    const result = await loadFrom(silent([]));
+
+    expect(result.status).not.toBe("error");
+    expect(result.status).toBe("empty");
+    if (result.status !== "empty") return;
+    expect(result.cause).toBe("cause_not_stated");
+  });
+
+  /*
+   * A bound stopped the read, so the absences are absences from a PREFIX of the
+   * source. `catalog_empty` is not a claim a prefix can support, and the port
+   * says so; a source that asserts it anyway is not repeated.
+   */
+  it("does not repeat catalog_empty from a read the source says was incomplete", async () => {
+    const result = await loadFrom(
+      describing(answerOf({ state: "catalog_empty", complete: false }))
+    );
+
+    expect(result.status).toBe("empty");
+    if (result.status !== "empty") return;
+    expect(result.cause).toBe("cause_not_stated");
+  });
+
+  /*
+   * THE WITHHELD REASONS NAME INTERNAL POLICY VOCABULARY and are operator
+   * diagnostics. What survives to the caller -- and therefore to whatever
+   * renders it -- is the CAUSE. This fails the day somebody plumbs
+   * `answer.withheld` into the result union "so the panel can be more helpful".
+   */
+  it("carries no withheld reason, and no record id, out of the loader", async () => {
+    const result = await loadFrom(
+      describing(
+        answerOf({
+          state: "no_records_usable",
+          withheld: [
+            { recordId: "Q42", reason: "rights_basis_not_declared" },
+            { recordId: "Q7", reason: "availability_not_stated" }
+          ]
+        })
+      )
+    );
+
+    const published = JSON.stringify(result);
+    expect(published).not.toContain("rights_basis_not_declared");
+    expect(published).not.toContain("availability_not_stated");
+    expect(published).not.toContain("Q42");
+    expect(published).not.toContain("Q7");
+  });
+
+  /*
+   * Every empty result states a cause. The compiler already requires it --
+   * `loadHomeCatalog` returns `CatalogLoadOutcome`, where the field is mandatory
+   * -- and this asserts it of the values, over every empty-producing source in
+   * this file, so the guarantee survives a future widening of the type.
+   */
+  it("never produces an empty result without a cause", async () => {
+    const results = await Promise.all([
+      loadFrom(describing(answerOf({ state: "catalog_empty" }))),
+      loadFrom(describing(answerOf({ state: "no_records_usable" }))),
+      loadFrom(describing(answerOf({ state: "catalog_empty", complete: false }))),
+      loadFrom(silent([])),
+      loadHomeCatalog(answering(buildHomeCatalog([], ISO), "catalog_empty"))
+    ]);
+
+    for (const result of results) {
+      expect(result.status).toBe("empty");
+      if (result.status !== "empty") continue;
+      expect(["catalog_empty", "no_records_usable", "cause_not_stated"]).toContain(result.cause);
+    }
+  });
+
+  /*
+   * The states the registry answers are unchanged by any of this: a deployment
+   * with no source is still a named refusal and never an empty catalog, and a
+   * source that cannot answer still throws its way to `unavailable`.
+   */
+  it("still reports an unconfigured deployment as a refusal rather than an empty catalog", async () => {
+    const result = await loadFrom({
+      status: "not-configured",
+      reason: "no_metadata_source_configured",
+      detail: null
+    });
+
+    expect(result).toEqual({ status: "error", reason: "catalog_source_not_configured" });
+  });
+
+  it("still reports a describeCatalog that throws as unavailable", async () => {
+    const result = await loadFrom({
+      status: "configured",
+      source: {
+        sourceId: "broken",
+        listRecords: () => [],
+        findRecord: () => null,
+        describeCatalog: () => {
+          throw new Error("provider unreachable");
+        }
+      }
+    });
+
+    expect(result).toEqual({ status: "error", reason: "catalog_source_unavailable" });
   });
 });

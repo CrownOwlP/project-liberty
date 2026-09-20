@@ -1,16 +1,16 @@
 # Project Liberty - Project Status
 
-> Generated 2026-09-20T14:39:58.487Z from the AI control plane.
+> Generated 2026-09-20T15:23:15.337Z from the AI control plane.
 
-**Overall completion:** 38/63 executable tasks (60%)
+**Overall completion:** 38/64 executable tasks (59%)
 
 ## Status summary
 
-- **BACKLOG:** 7
-- **READY:** 8
+- **BACKLOG:** 8
+- **READY:** 6
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 1
-- **REVIEW:** 3
+- **REVIEW:** 5
 - **BLOCKED:** 6
 - **DONE:** 38
 - **CANCELED:** 0
@@ -29,6 +29,8 @@
 
 ## Active work
 
+- **PL-0308** [REVIEW] Production composition registers the catalog ingestion runtime — owner: claude-backend
+- **PL-0310** [REVIEW] A configured catalog with nothing usable does not look empty — owner: claude-frontend
 - **PL-0710** [REVIEW] Provider outbound HTTP resolves, classifies and pins its destination — owner: claude-security
 - **PL-0711** [IN_PROGRESS] Playback-session candidate wire bounds match StreamCandidate bounds — owner: gpt-architect
 - **PL-AI-0008** [REVIEW] An agent instruction file has provenance, or it is not an instruction — owner: claude-lead
@@ -36,15 +38,14 @@
 
 ## Dispatch classification
 
-- **READY_AND_EXECUTABLE:** 8
+- **READY_AND_EXECUTABLE:** 6
 - **READY_BUT_EXTERNAL:** 0
 - **BLOCKED:** 6
-- **BACKLOG (dependency-gated):** 7
+- **BACKLOG (dependency-gated):** 8
 
 ## Recommended executable wave
 
-- **PL-0308** -> claude-backend (P1/Backend) Production composition registers the catalog ingestion runtime
-- **PL-0310** -> claude-frontend (P2/Frontend) A configured catalog with nothing usable does not look empty
+No conflict-free executable tasks can be assigned with current agent capacity.
 
 ## Queued for external agents
 
@@ -63,8 +64,8 @@ No READY work is waiting on an external agent lane.
 
 - **gpt-architect:** 1/6 active (external lane; not locally executable)
 - **claude-lead:** 2/2 active
-- **claude-frontend:** 0/2 active
-- **claude-backend:** 0/2 active
+- **claude-frontend:** 1/2 active
+- **claude-backend:** 1/2 active
 - **claude-media:** 0/2 active
 - **claude-test:** 0/1 active
 - **claude-security:** 1/1 active

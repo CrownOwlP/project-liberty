@@ -1,8 +1,65 @@
 {
-  "generatedAt": "2026-09-20T14:39:58.490Z",
+  "generatedAt": "2026-09-20T15:23:15.339Z",
   "agent": "claude-backend",
   "executionAvailable": true,
-  "assigned": [],
+  "assigned": [
+    {
+      "id": "PL-0308",
+      "priority": "P1",
+      "lane": "Backend",
+      "status": "REVIEW",
+      "title": "Production composition registers the catalog ingestion runtime",
+      "dependencies": [
+        "PL-0305"
+      ],
+      "allowedPaths": [
+        "apps/web/src/lib/catalog-source-registry.ts",
+        "apps/web/src/lib/catalog-source-registry.test.ts",
+        "apps/web/src/lib/server-bootstrap.ts",
+        "apps/web/src/lib/server-bootstrap.test.ts",
+        "apps/web/src/instrumentation.ts",
+        "apps/web/package.json",
+        "docs/CATALOG_SOURCE.md"
+      ],
+      "reviewDependencies": [
+        "apps/web/src/lib/catalog-ingestion-source.ts",
+        "packages/catalog-ingestion/src/index.ts",
+        "packages/media-inspection/src/node/pinned-fetch.ts"
+      ],
+      "preferredAgent": "claude-backend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "security-review",
+        "rights-review"
+      ],
+      "acceptance": "A hosted deployment that is configured for a real catalog source actually gets one: something in the production composition root calls registerCatalogIngestionRuntime with a runtime built next to the Node pinned-fetch construction. PL-0305 made the application CAPABLE of hosting the real source and the reviewer accepted that as complete; what remains is that NOTHING CALLS THE REGISTRATION, so a hosted deployment still answers no_metadata_source_configured -- a true statement about the deployment rather than about the registry, and the exact gap this task owns. Required: the runtime is built from the existing pinned-fetch transport rather than a second fetch path; NO CREDENTIAL OR API KEY IS INTRODUCED, since the initial source needs none and an ambient key would be the hidden credentialed source PL-0305's review forbade; an unconfigured deployment must STILL refuse by name rather than silently acquiring a default; and a regression must drive the composition root and observe a configured resolution, because a registration nobody has watched fire is not known to work. OUT OF SCOPE: persistent scheduling and storage, which is PL-0309, and the rights register, which is not a coding task. NOTE BEFORE CLAIMING: the exact composition-root file may not exist yet; the declared surface names the likely homes and must be corrected before the claim rather than widened after, on the PL-0710 precedent.",
+      "notes": "Created 2026-09-20 on gpt-architect's round-52 direction when it approved PL-0305: 'Make sure the existing handoff has explicit ownership for ... If any is currently only prose with no task, create a narrow task before it can be forgotten.' PL-0305 is NOT to be reopened for any of these. Follow-up 1 of 4. Point 3 of the round-52 verdict.",
+      "owner": "claude-backend",
+      "gateResults": {
+        "typecheck": {
+          "status": "pass",
+          "at": "2026-09-20T15:23:14.746Z",
+          "by": "claude-backend",
+          "commitSha": "f932ebe66c99cbb4fdf15f631d1464b16115aadc",
+          "evidence": "npx turbo run typecheck --force at the integrated head, exit 0, 11 of 11. Also lint 0 and build 0. npm ci --dry-run exit 0."
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-09-20T15:23:14.858Z",
+          "by": "claude-backend",
+          "commitSha": "f932ebe66c99cbb4fdf15f631d1464b16115aadc",
+          "evidence": "npx turbo run test --force, exit 0, 20 of 20, 0 cached, 2642 passed 1 skipped (2617 before this wave). server-bootstrap.test.ts 16 passed; apps/web src/lib plus the entry point 162 passed. THE ENTRY POINT WAS PROVED, NOT ASSUMED, AND IT CORRECTED THIS LEAD. My pre-claim surface correction moved instrumentation.ts to apps/web/ on the belief Next reads it from the app root; the implementer replayed Next 16.3.1's own findPagesDir and getFilesInDir and showed rootDir = path.join(pagesDir || appDir, '..') resolves to apps/web/src for a src/app project, so a file at the app root is NEVER LOADED -- and it REFUSED TO WRITE THE FILE AT MY DECLARED PATH rather than produce something Next never loads sitting where the wiring appears to be. The surface was corrected on that evidence and the probe now resolves instrumentationHookFilePath to /src/instrumentation.ts against the real tree, with a root-placed fixture resolving nothing as the control. VALUE-RED on the entry point: flipping the runtime guard from nodejs to node gives 2 failed 14 passed, 'runs the bootstrap in the Node runtime and the registry then resolves configured' and 'says so at startup when nothing is configured'. The ORIGINAL red for the composition root could only be module-resolution -- 'Cannot find module ./server-bootstrap', no tests collected -- because the gap this task owns is the ABSENCE OF A CALLER: there was no root to hand a wrong value, and the behaviour a value-red would assert already passed. Stated rather than smoothed. THE CREDENTIAL ASSERTION EARNED ITS KEEP IMMEDIATELY: it is checked in two halves, every declared name against /KEY|SECRET|TOKEN|PASSWORD|CRED|AUTH/i and the module's own source text against the declared set so a second undeclared read cannot hide, and it failed on the first green run because a comment named LIBERTY_BUILD_TARGET -- 'expected [LIBERTY_BUILD_TARGET, ...(8)] to deeply equal [...(7)]'. The pinned transport is asserted by REFERENCE IDENTITY, expect(runtime.provider.transport.fetchImpl).toBe(nodePinnedFetch), because a second fetch path that happened to work would satisfy any behavioural check. rightsRegister is noRightsBasisEstablished by reference, so a configured deployment publishes nothing and says per record why."
+        }
+      },
+      "surfaceCorrectedBeforeClaim": "CORRECTED 2026-09-20 BEFORE THE CLAIM, which is what this task's own notes said must happen: the round-52 declaration named likely homes rather than verified ones. Verified against the tree now. REMOVED: apps/web/src/instrumentation.ts -- Next reads instrumentation.ts from the APP ROOT, not from src/, and neither path exists today; apps/web/instrumentation.ts is the correct home and replaces it. ADDED: catalog-source-registry.test.ts and server-bootstrap.test.ts, because acceptance clause 4 requires a regression that drives the composition root and the declaration carried no test file at all -- a task that cannot write a test cannot satisfy its own acceptance, which is the same defect PL-0708 and PL-0305 each hit once. ADDED apps/web/next.config.ts, because Next may require instrumentationHook to be enabled for the instrumentation entry point to run on this version and the implementer must be able to check rather than assume. docs/DEPLOYMENT.md does not exist and is KEPT as a create-if-needed path rather than dropped: a deployment that must register a runtime is a deployment fact, and if the implementer judges the operator note belongs in docs/CATALOG_SOURCE.md instead, the unused entry comes back out at review as PL-0501's unused CI entry did.",
+      "implementationAgent": "claude-backend",
+      "updatedAt": "2026-09-20T15:23:14.976Z",
+      "implementationBaseSha": "f932ebe66c99cbb4fdf15f631d1464b16115aadc",
+      "surfaceCorrectedTwiceBeforeCompletion": "SECOND CORRECTION 2026-09-20, mid-implementation, AND IT REVERSES THE FIRST ONE. My pre-claim correction moved instrumentation.ts from apps/web/src/ to apps/web/ on the belief that Next reads it from the app root. THAT WAS WRONG AND THE IMPLEMENTER PROVED IT rather than asserting it: Next 16.3.1 discovers the file in exactly one directory, non-recursively, at rootDir = path.join(pagesDir || appDir, '..'), so for an app with src/app and no pages/ the directory is apps/web/src and a file at apps/web/instrumentation.ts is NEVER LOADED. It replayed Next's own findPagesDir and getFilesInDir over this tree and over two throwaway fixtures differing only in the file's location, and the fixture with the file at the app root produced no instrumentationHookFilePath at all. It then REFUSED TO WRITE THE FILE AT THE DECLARED PATH, on the ground that a file Next never loads, sitting where the wiring appears to be, is worse than no file. That is the right call and the surface is corrected to match the evidence, which is exactly the bar the human commander set this round for touching a removed path. REMOVED as proved unnecessary: apps/web/instrumentation.ts (the wrong path); apps/web/next.config.ts (Next 16.3.1 needs no opt-in -- next/dist/server/config.js deprecates experimental.instrumentationHook with 'instrumentation.js is available by default', so the file earned no edit); docs/DEPLOYMENT.md (the operator note is a fact about this source and belongs in docs/CATALOG_SOURCE.md, which already carries the licensing decision and the rights position, and the repo has no other deployment-runbook content for a new file to sit beside). ADDED: apps/web/package.json, because the app now imports @liberty/media-inspection for nodePinnedFetch and does not declare it -- the import resolves through the root workspace symlink so tsc and vitest are green and NO GATE CATCHES IT, which is precisely why the manifest must say what the app imports."
+    }
+  ],
   "review": [],
   "reservedExternal": [],
   "recommended": [
@@ -66,40 +123,6 @@
           "evidence": "turbo run test --filter @liberty/provider-sdk exit 0 under pinned Node 22: zero observations yielding unknown with a null observed rate and a zero sample count, a prior labelled rather than presented as measurement at the same ranking number as a measured value, the degraded band held distinct from up and down, purity over observations plus an explicit policy version with Date.now replaced by a thrower to prove no wall clock is read, whole-report permutation invariance under generated policies, monotonicity in each count, and a compile-time guard that no health type can carry entitlement."
         }
       }
-    },
-    {
-      "id": "PL-0308",
-      "priority": "P1",
-      "lane": "Backend",
-      "status": "READY",
-      "title": "Production composition registers the catalog ingestion runtime",
-      "dependencies": [
-        "PL-0305"
-      ],
-      "allowedPaths": [
-        "apps/web/src/lib/catalog-source-registry.ts",
-        "apps/web/src/lib/server-bootstrap.ts",
-        "apps/web/src/instrumentation.ts",
-        "docs/CATALOG_SOURCE.md",
-        "docs/DEPLOYMENT.md"
-      ],
-      "reviewDependencies": [
-        "apps/web/src/lib/catalog-ingestion-source.ts",
-        "packages/catalog-ingestion/src/index.ts",
-        "packages/media-inspection/src/node/pinned-fetch.ts"
-      ],
-      "preferredAgent": "claude-backend",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "typecheck",
-        "unit",
-        "security-review",
-        "rights-review"
-      ],
-      "acceptance": "A hosted deployment that is configured for a real catalog source actually gets one: something in the production composition root calls registerCatalogIngestionRuntime with a runtime built next to the Node pinned-fetch construction. PL-0305 made the application CAPABLE of hosting the real source and the reviewer accepted that as complete; what remains is that NOTHING CALLS THE REGISTRATION, so a hosted deployment still answers no_metadata_source_configured -- a true statement about the deployment rather than about the registry, and the exact gap this task owns. Required: the runtime is built from the existing pinned-fetch transport rather than a second fetch path; NO CREDENTIAL OR API KEY IS INTRODUCED, since the initial source needs none and an ambient key would be the hidden credentialed source PL-0305's review forbade; an unconfigured deployment must STILL refuse by name rather than silently acquiring a default; and a regression must drive the composition root and observe a configured resolution, because a registration nobody has watched fire is not known to work. OUT OF SCOPE: persistent scheduling and storage, which is PL-0309, and the rights register, which is not a coding task. NOTE BEFORE CLAIMING: the exact composition-root file may not exist yet; the declared surface names the likely homes and must be corrected before the claim rather than widened after, on the PL-0710 precedent.",
-      "notes": "Created 2026-09-20 on gpt-architect's round-52 direction when it approved PL-0305: 'Make sure the existing handoff has explicit ownership for ... If any is currently only prose with no task, create a narrow task before it can be forgotten.' PL-0305 is NOT to be reopened for any of these. Follow-up 1 of 4. Point 3 of the round-52 verdict.",
-      "owner": null,
-      "gateResults": {}
     }
   ]
 }

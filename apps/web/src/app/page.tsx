@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Suspense } from "react";
 import { CatalogRail } from "../components/catalog-rail";
-import { loadHomeCatalog } from "../lib/catalog";
+import { loadHomeCatalog, type CatalogEmptyCause } from "../lib/catalog";
 
 /**
  * Rendered per request rather than prerendered at build time. The catalog is
@@ -62,15 +62,80 @@ function CatalogUnavailable({ reason }: { reason: string }) {
   );
 }
 
-function CatalogEmpty() {
+/* -------------------------------------------------------------------------
+ * THE EMPTY PANEL IS THREE PANELS, BECAUSE EMPTY IS THREE THINGS
+ *
+ * This used to be one component reading "No titles are currently available in
+ * your region. New titles appear here as soon as they are licensed." Both
+ * sentences were wrong, and in the two ways this task is about.
+ *
+ * THE FIRST SENTENCE ASSERTED A CAUSE NOTHING HAD ESTABLISHED. Nothing in this
+ * application evaluates a reader's region on the home path, so "in your region"
+ * was a guess rendered as a fact, and it is exactly the sentence
+ * `lib/catalog-source-registry.ts` names as the failure mode of collapsing the
+ * four states — the line that ends up on screen when nothing has ever been
+ * ingested.
+ *
+ * THE SECOND SENTENCE MADE A PROMISE NOBODY HAD MADE. "New titles appear here as
+ * soon as they are licensed" commits this operator to obtaining rights. In the
+ * state this task is really about — records exist and every one of them was
+ * withheld for want of a rights basis — that is the single most misleading thing
+ * the page could say, because it reads as "coming soon" for works no one has
+ * undertaken to license, or ever will. Nothing in the repository backs it, so
+ * nothing on the page says it, for any of the three causes.
+ *
+ * WHAT THE COPY IS ALLOWED TO SAY. What is true of the catalog, what is not the
+ * reader's fault, and nothing about the future. And NOT the withheld reasons:
+ * `rights_basis_not_declared` and its siblings are `@liberty/catalog-ingestion`'s
+ * internal policy vocabulary, meaningful to an operator reading a log and to
+ * nobody else. They never leave `lib/catalog.ts` — the loader carries a cause,
+ * not a reason list — so there is nothing here to leak even by accident.
+ * ---------------------------------------------------------------------- */
+
+const EMPTY_PANELS: Readonly<Record<CatalogEmptyCause, { heading: string; body: string }>> = {
+  /*
+   * The source listed nothing. A fact with no remedy, so the panel states it and
+   * stops — no region, no timeline, no undertaking.
+   */
+  catalog_empty: {
+    heading: "There is nothing in this catalog yet",
+    body:
+      "The catalog behind this service has no titles in it. Nothing is wrong with your account."
+  },
+  /*
+   * Records exist and not one of them may be shown here. The reader is told that
+   * much, told it is not about them, and told — plainly — that nobody can say
+   * whether it changes. "We cannot say whether any of them will become
+   * available" is the whole point of this panel: it is the honest answer, and
+   * every softer phrasing of it ("yet", "for now", "check back") smuggles the
+   * promise back in.
+   */
+  no_records_usable: {
+    heading: "Nothing here can be shown right now",
+    body:
+      "This catalog has titles in it, but none of them can be shown on this service. " +
+      "Nothing is wrong with your account and there is nothing for you to do. " +
+      "We cannot say whether any of them will become available."
+  },
+  /*
+   * The source cannot tell the two apart, so the panel claims neither. It does
+   * not guess, and it does not describe the gap in the source to a reader who
+   * has no use for it.
+   */
+  cause_not_stated: {
+    heading: "Nothing to watch yet",
+    body: "There are no titles to show right now. Nothing is wrong with your account."
+  }
+};
+
+function CatalogEmpty({ cause }: { cause: CatalogEmptyCause }) {
+  const panel = EMPTY_PANELS[cause];
+
   return (
     <section className="section">
       <div className="state-panel">
-        <h2>Nothing to watch yet</h2>
-        <p>
-          No titles are currently available in your region. New titles appear here as soon as
-          they are licensed.
-        </p>
+        <h2>{panel.heading}</h2>
+        <p>{panel.body}</p>
       </div>
     </section>
   );
@@ -125,7 +190,7 @@ async function Catalog() {
   return (
     <>
       {result.status === "error" && <CatalogUnavailable reason={result.reason} />}
-      {result.status === "empty" && <CatalogEmpty />}
+      {result.status === "empty" && <CatalogEmpty cause={result.cause} />}
       {result.status === "ok" &&
         result.response.rails.map((rail) => <CatalogRail key={rail.id} rail={rail} />)}
     </>

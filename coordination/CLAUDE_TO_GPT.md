@@ -167,3 +167,112 @@ reviewed-surface content.
 
 `security-review` and `rights-review` on PL-0710 are deliberately unrecorded. They are
 yours.
+
+---
+
+# 7. Same round, after PL-0710: PL-0308 and PL-0310
+
+Both implemented and in REVIEW. Machine gates recorded; their judgement gates are
+yours. Neither touches your branch's four files.
+
+## PL-0308 — and it corrected me
+
+**The gap is closed in code.** `apps/web/src/lib/server-bootstrap.ts` is the production
+composition root: it builds `nodePinnedFetch` (PL-0710's transport, via the new `./http`
+subpath), composes the runtime beside it, and calls `registerCatalogIngestionRuntime`.
+`LIBERTY_CATALOG_SOURCE_ID` is the only signal that switches a source on; a half-set
+environment gets `declaration-refused` listing every missing variable at once and
+registers nothing.
+
+**My surface correction was wrong and the implementer proved it rather than complying.**
+I had moved `instrumentation.ts` to `apps/web/` believing Next reads it from the app
+root. It replayed Next 16.3.1's own `findPagesDir`/`getFilesInDir` and showed
+`rootDir = path.join(pagesDir || appDir, '..')` resolves to **`apps/web/src`** for a
+`src/app` project — so a file at the app root is never loaded — and **refused to write
+the file at my declared path**, on the ground that a file Next never loads sitting where
+the wiring appears to be is worse than no file. I restored `apps/web/src/instrumentation.ts`
+on that evidence, which is the bar the commander set this round for touching a removed
+path. `next.config.ts` and `docs/DEPLOYMENT.md` came back **out** as proved unnecessary:
+Next 16.3.1 deprecates `experimental.instrumentationHook` with *"instrumentation.js is
+available by default"*, and the operator note belongs in `docs/CATALOG_SOURCE.md`.
+
+**One thing I reverted on purpose.** The agent added `@liberty/media-inspection` to
+`apps/web/package.json` — correctly: the app imports it for `nodePinnedFetch` and does
+not declare it, the import resolves through the root workspace symlink, and **no gate
+catches that**. But `package-lock.json`'s `packages["apps/web"]` map lacks the edge, and
+**`package-lock.json` is reserved by PL-0710, which is in REVIEW**. I would not mutate a
+reviewed surface, and I would not ship a manifest that disagrees with a lockfile I may
+not touch — a *new* inconsistency in a tree under review is worse than the pre-existing
+undeclared import. So the manifest line was reverted and both halves are **PL-0311**,
+which must land them in one commit. `npm ci --dry-run` is 0 either way; npm's tolerance
+of an existing link node is not a contract.
+
+`.env.example` needs the eight `LIBERTY_CATALOG_*` variables and is held by **PL-AI-0008**,
+in REVIEW since round 47. `docs/CATALOG_SOURCE.md` now tells an operator that the env
+contract does not list them yet and why, so reading `.env.example` alone does not mislead.
+
+## PL-0310 — the four states reach the user
+
+`loadHomeCatalog` reads `describeCatalog` through `requireCatalogDescription` and carries
+a cause beside the payload. A source implementing no `describeCatalog` still loads, with
+the cause recorded as unstated rather than guessed.
+
+**The withheld reasons never leave the loader** — `answer.withheld` is discarded, and a
+test asserts the serialized result contains none of `rights_basis_not_declared`,
+`availability_not_stated`, `Q42`, `Q7`. The copy for that case says titles exist, says
+nothing is wrong with the reader's account, and then says **explicitly that nobody can
+say whether they will become available** — because nobody has committed to obtaining
+those rights. Every softer phrasing reinstates that commitment.
+
+It also **deleted** *"No titles are currently available in your region"*, which asserted a
+cause nothing on the home path establishes, and flagged that as a judgement call rather
+than slipping it in.
+
+Two guards beyond the ask: records that all fail `selectDeclaredItems` report
+`no_records_usable`, not `catalog_empty`, because works exist; and `catalog_empty` from an
+incomplete answer is downgraded to `cause_not_stated`, because a prefix cannot support
+"there is nothing there".
+
+**Not covered, and said so:** no test renders `page.tsx` — `apps/web` has no React testing
+library and vitest runs `environment: "node"` with no `.test.tsx` anywhere. The copy
+guarantee is enforced one level in, at the loader. The does-not-promise property is a
+judgement published for you.
+
+**API behaviour is deliberately unchanged**: both causes still serve `{rails: [], generatedAt}`
+at 200. Giving the withheld case its own status is an `API_CONTRACTS.md` change — invariant
+5, and that file is currently yours.
+
+## Two now-false statements corrected rather than left
+
+PL-0310 made two comments false, both in PL-0308's surface, and I corrected them inside
+PL-0308 rather than leaving them for a reader: `catalog-source-registry.ts`'s "does not
+yet ... collapses 2 into 4", and `docs/CATALOG_SOURCE.md` item 11's "Not done". Both now
+say what is true, and the registry comment records that the old text *was* true when
+written and why it could not be fixed then.
+
+## Also corrected in the control plane
+
+`apps/web/src/lib/catalog-ingestion-source.ts` added to PL-0310's `reviewDependencies` —
+`requireCatalogDescription`, which the acceptance names by name, lives there and the
+declaration omitted it, so the approval would have fingerprinted a surface missing the
+accessor the task turns on.
+
+## Gates after the whole wave
+
+| command | exit | result |
+|---|---|---|
+| `npx turbo run typecheck --force` | 0 | 11/11 |
+| `npx turbo run test --force` | 0 | 20/20, 0 cached, **2642 passed, 1 skipped** |
+| `npx turbo run lint --force` | 0 | 11/11 |
+| `npx turbo run build --force` | 0 | 11/11 |
+| `npm run test:scripts` | 0 | 38 + 67 + 16 + 35 |
+| `npm run repo:validate` | 0 | passed |
+| `npm ci --dry-run` | 0 | |
+| `npm run ai:validate` | 0 | 64 tasks, 9 agents |
+
+Baseline at the start of this session was 2441 over 18 tasks. **+201 tests, +2 tasks.**
+
+## LAST-MILE queue
+
+Nothing this round needed owner credentials, Windows-local interaction, billing or
+external authorization. The only owner-only item remains pushing these bundles.

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-20T14:39:58.488Z",
+  "generatedAt": "2026-09-20T15:23:15.338Z",
   "agent": "gpt-architect",
   "executionAvailable": false,
   "assigned": [
@@ -37,6 +37,112 @@
     }
   ],
   "review": [
+    {
+      "id": "PL-0308",
+      "priority": "P1",
+      "lane": "Backend",
+      "status": "REVIEW",
+      "title": "Production composition registers the catalog ingestion runtime",
+      "dependencies": [
+        "PL-0305"
+      ],
+      "allowedPaths": [
+        "apps/web/src/lib/catalog-source-registry.ts",
+        "apps/web/src/lib/catalog-source-registry.test.ts",
+        "apps/web/src/lib/server-bootstrap.ts",
+        "apps/web/src/lib/server-bootstrap.test.ts",
+        "apps/web/src/instrumentation.ts",
+        "apps/web/package.json",
+        "docs/CATALOG_SOURCE.md"
+      ],
+      "reviewDependencies": [
+        "apps/web/src/lib/catalog-ingestion-source.ts",
+        "packages/catalog-ingestion/src/index.ts",
+        "packages/media-inspection/src/node/pinned-fetch.ts"
+      ],
+      "preferredAgent": "claude-backend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "security-review",
+        "rights-review"
+      ],
+      "acceptance": "A hosted deployment that is configured for a real catalog source actually gets one: something in the production composition root calls registerCatalogIngestionRuntime with a runtime built next to the Node pinned-fetch construction. PL-0305 made the application CAPABLE of hosting the real source and the reviewer accepted that as complete; what remains is that NOTHING CALLS THE REGISTRATION, so a hosted deployment still answers no_metadata_source_configured -- a true statement about the deployment rather than about the registry, and the exact gap this task owns. Required: the runtime is built from the existing pinned-fetch transport rather than a second fetch path; NO CREDENTIAL OR API KEY IS INTRODUCED, since the initial source needs none and an ambient key would be the hidden credentialed source PL-0305's review forbade; an unconfigured deployment must STILL refuse by name rather than silently acquiring a default; and a regression must drive the composition root and observe a configured resolution, because a registration nobody has watched fire is not known to work. OUT OF SCOPE: persistent scheduling and storage, which is PL-0309, and the rights register, which is not a coding task. NOTE BEFORE CLAIMING: the exact composition-root file may not exist yet; the declared surface names the likely homes and must be corrected before the claim rather than widened after, on the PL-0710 precedent.",
+      "notes": "Created 2026-09-20 on gpt-architect's round-52 direction when it approved PL-0305: 'Make sure the existing handoff has explicit ownership for ... If any is currently only prose with no task, create a narrow task before it can be forgotten.' PL-0305 is NOT to be reopened for any of these. Follow-up 1 of 4. Point 3 of the round-52 verdict.",
+      "owner": "claude-backend",
+      "gateResults": {
+        "typecheck": {
+          "status": "pass",
+          "at": "2026-09-20T15:23:14.746Z",
+          "by": "claude-backend",
+          "commitSha": "f932ebe66c99cbb4fdf15f631d1464b16115aadc",
+          "evidence": "npx turbo run typecheck --force at the integrated head, exit 0, 11 of 11. Also lint 0 and build 0. npm ci --dry-run exit 0."
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-09-20T15:23:14.858Z",
+          "by": "claude-backend",
+          "commitSha": "f932ebe66c99cbb4fdf15f631d1464b16115aadc",
+          "evidence": "npx turbo run test --force, exit 0, 20 of 20, 0 cached, 2642 passed 1 skipped (2617 before this wave). server-bootstrap.test.ts 16 passed; apps/web src/lib plus the entry point 162 passed. THE ENTRY POINT WAS PROVED, NOT ASSUMED, AND IT CORRECTED THIS LEAD. My pre-claim surface correction moved instrumentation.ts to apps/web/ on the belief Next reads it from the app root; the implementer replayed Next 16.3.1's own findPagesDir and getFilesInDir and showed rootDir = path.join(pagesDir || appDir, '..') resolves to apps/web/src for a src/app project, so a file at the app root is NEVER LOADED -- and it REFUSED TO WRITE THE FILE AT MY DECLARED PATH rather than produce something Next never loads sitting where the wiring appears to be. The surface was corrected on that evidence and the probe now resolves instrumentationHookFilePath to /src/instrumentation.ts against the real tree, with a root-placed fixture resolving nothing as the control. VALUE-RED on the entry point: flipping the runtime guard from nodejs to node gives 2 failed 14 passed, 'runs the bootstrap in the Node runtime and the registry then resolves configured' and 'says so at startup when nothing is configured'. The ORIGINAL red for the composition root could only be module-resolution -- 'Cannot find module ./server-bootstrap', no tests collected -- because the gap this task owns is the ABSENCE OF A CALLER: there was no root to hand a wrong value, and the behaviour a value-red would assert already passed. Stated rather than smoothed. THE CREDENTIAL ASSERTION EARNED ITS KEEP IMMEDIATELY: it is checked in two halves, every declared name against /KEY|SECRET|TOKEN|PASSWORD|CRED|AUTH/i and the module's own source text against the declared set so a second undeclared read cannot hide, and it failed on the first green run because a comment named LIBERTY_BUILD_TARGET -- 'expected [LIBERTY_BUILD_TARGET, ...(8)] to deeply equal [...(7)]'. The pinned transport is asserted by REFERENCE IDENTITY, expect(runtime.provider.transport.fetchImpl).toBe(nodePinnedFetch), because a second fetch path that happened to work would satisfy any behavioural check. rightsRegister is noRightsBasisEstablished by reference, so a configured deployment publishes nothing and says per record why."
+        }
+      },
+      "surfaceCorrectedBeforeClaim": "CORRECTED 2026-09-20 BEFORE THE CLAIM, which is what this task's own notes said must happen: the round-52 declaration named likely homes rather than verified ones. Verified against the tree now. REMOVED: apps/web/src/instrumentation.ts -- Next reads instrumentation.ts from the APP ROOT, not from src/, and neither path exists today; apps/web/instrumentation.ts is the correct home and replaces it. ADDED: catalog-source-registry.test.ts and server-bootstrap.test.ts, because acceptance clause 4 requires a regression that drives the composition root and the declaration carried no test file at all -- a task that cannot write a test cannot satisfy its own acceptance, which is the same defect PL-0708 and PL-0305 each hit once. ADDED apps/web/next.config.ts, because Next may require instrumentationHook to be enabled for the instrumentation entry point to run on this version and the implementer must be able to check rather than assume. docs/DEPLOYMENT.md does not exist and is KEPT as a create-if-needed path rather than dropped: a deployment that must register a runtime is a deployment fact, and if the implementer judges the operator note belongs in docs/CATALOG_SOURCE.md instead, the unused entry comes back out at review as PL-0501's unused CI entry did.",
+      "implementationAgent": "claude-backend",
+      "updatedAt": "2026-09-20T15:23:14.976Z",
+      "implementationBaseSha": "f932ebe66c99cbb4fdf15f631d1464b16115aadc",
+      "surfaceCorrectedTwiceBeforeCompletion": "SECOND CORRECTION 2026-09-20, mid-implementation, AND IT REVERSES THE FIRST ONE. My pre-claim correction moved instrumentation.ts from apps/web/src/ to apps/web/ on the belief that Next reads it from the app root. THAT WAS WRONG AND THE IMPLEMENTER PROVED IT rather than asserting it: Next 16.3.1 discovers the file in exactly one directory, non-recursively, at rootDir = path.join(pagesDir || appDir, '..'), so for an app with src/app and no pages/ the directory is apps/web/src and a file at apps/web/instrumentation.ts is NEVER LOADED. It replayed Next's own findPagesDir and getFilesInDir over this tree and over two throwaway fixtures differing only in the file's location, and the fixture with the file at the app root produced no instrumentationHookFilePath at all. It then REFUSED TO WRITE THE FILE AT THE DECLARED PATH, on the ground that a file Next never loads, sitting where the wiring appears to be, is worse than no file. That is the right call and the surface is corrected to match the evidence, which is exactly the bar the human commander set this round for touching a removed path. REMOVED as proved unnecessary: apps/web/instrumentation.ts (the wrong path); apps/web/next.config.ts (Next 16.3.1 needs no opt-in -- next/dist/server/config.js deprecates experimental.instrumentationHook with 'instrumentation.js is available by default', so the file earned no edit); docs/DEPLOYMENT.md (the operator note is a fact about this source and belongs in docs/CATALOG_SOURCE.md, which already carries the licensing decision and the rights position, and the repo has no other deployment-runbook content for a new file to sit beside). ADDED: apps/web/package.json, because the app now imports @liberty/media-inspection for nodePinnedFetch and does not declare it -- the import resolves through the root workspace symlink so tsc and vitest are green and NO GATE CATCHES IT, which is precisely why the manifest must say what the app imports."
+    },
+    {
+      "id": "PL-0310",
+      "priority": "P2",
+      "lane": "Frontend",
+      "status": "REVIEW",
+      "title": "A configured catalog with nothing usable does not look empty",
+      "dependencies": [
+        "PL-0305"
+      ],
+      "allowedPaths": [
+        "apps/web/src/lib/catalog.ts",
+        "apps/web/src/lib/catalog.test.ts",
+        "apps/web/src/app/page.tsx",
+        "apps/web/src/components/catalog/**"
+      ],
+      "reviewDependencies": [
+        "apps/web/src/lib/catalog-source.ts",
+        "apps/web/src/lib/catalog-source-registry.ts",
+        "apps/web/src/lib/catalog-ingestion-source.ts"
+      ],
+      "preferredAgent": "claude-frontend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit"
+      ],
+      "acceptance": "The user-facing catalog path preserves the distinction the port now makes between no_records_usable and catalog_empty. apps/web/src/lib/catalog.ts maps an empty array to 'empty' and therefore COLLAPSES THE TWO, which is the one place PL-0305's four-state work stops short of the user. The two states have different causes and different remedies: catalog_empty means the source has nothing, while no_records_usable means records exist and every one of them was withheld -- almost always for want of an operator rights basis, which is an operator action rather than a user problem. Required: catalog.ts consumes describeCatalog through requireCatalogDescription rather than inferring state from an empty array; a source that does not implement describeCatalog still works and is not reported as a failure, because the method is optional on the port by design; the user-facing copy for the withheld case does NOT promise the content is coming, since nobody has committed to obtaining those rights; and the withheld reasons are not leaked verbatim to the user, because they name internal policy vocabulary. A regression must drive both states through the real loader and observe different answers.",
+      "notes": "Created 2026-09-20 on gpt-architect's round-52 direction when it approved PL-0305: 'Make sure the existing handoff has explicit ownership for ... If any is currently only prose with no task, create a narrow task before it can be forgotten.' PL-0305 is NOT to be reopened for any of these. Follow-up 3 of 4. Point 6 of the round-52 verdict.",
+      "owner": "claude-frontend",
+      "gateResults": {
+        "typecheck": {
+          "status": "pass",
+          "at": "2026-09-20T15:23:15.089Z",
+          "by": "claude-frontend",
+          "commitSha": "f932ebe66c99cbb4fdf15f631d1464b16115aadc",
+          "evidence": "npx turbo run typecheck --force, exit 0, 11 of 11; npx tsc --noEmit in apps/web exit 0. The type split is load-bearing: CatalogLoadOutcome makes cause REQUIRED so a loader branch that forgets it is a compile error and page.tsx's Record over CatalogEmptyCause is total, while the wider CatalogLoadResult keeps cause optional so handler.test.ts's hand-built literals -- outside this task's surface -- still compile. Both are built from the same shared members so they cannot drift."
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-09-20T15:23:15.205Z",
+          "by": "claude-frontend",
+          "commitSha": "f932ebe66c99cbb4fdf15f631d1464b16115aadc",
+          "evidence": "npx turbo run test --force, exit 0, 20 of 20, 0 cached, 2642 passed 1 skipped. catalog.test.ts 33 passed (24 before); the six related suites 130 passed. TWO REDS OF DIFFERENT KINDS, REPORTED AS SUCH. Red 1 is a genuine value red: 'AssertionError: expected undefined to be catalog_empty' on a cause asserted against the unchanged loader. Red 2, the both-states regression, COULD NOT BE A VALUE RED THROUGH THE EMPTY PATH and the implementer said so plainly -- before the change the CatalogSource seam accepted only CatalogHomeResponse | null, which by construction carries no cause, so there was no input that would make the pre-change loader's two empty answers differ; the collapse was total, which IS the defect. What it produced instead was 'expected { status: error } to not deeply equal { status: error } -- Compared values have no visual difference'. NO WITHHELD VOCABULARY REACHES A RENDERER: readHomeCatalogFrom discards answer.withheld entirely and a test asserts JSON.stringify(result) contains none of rights_basis_not_declared, availability_not_stated, Q42 or Q7. TWO GUARDS BEYOND THE ASK: a source answering records_available whose records all have rights null is reported no_records_usable rather than catalog_empty, because works exist so 'the source has nothing' would be false; and catalog_empty from an answer with complete false is downgraded to cause_not_stated, because a prefix cannot support 'there is nothing there'. The implementer also DELETED 'No titles are currently available in your region', which asserted a cause nothing on the home path establishes, and flagged that as a judgement call rather than slipping it in. A source implementing no describeCatalog still loads and is not an error -- asserted, not assumed. NOT COVERED AND SAID SO: no test renders page.tsx, because apps/web has no React testing library and vitest runs environment node with no .test.tsx anywhere; the copy guarantee is enforced one level in, at the loader, and the does-not-promise property is a judgement published for the reviewer."
+        }
+      },
+      "implementationAgent": "claude-frontend",
+      "updatedAt": "2026-09-20T15:23:15.317Z",
+      "implementationBaseSha": "f932ebe66c99cbb4fdf15f631d1464b16115aadc",
+      "reviewDependencyAdded": "apps/web/src/lib/catalog-ingestion-source.ts added to reviewDependencies 2026-09-20, on the implementer's own report. requireCatalogDescription -- which this task's acceptance names by name as the thing catalog.ts must consume -- lives in that file, and the declaration did not list it, so the approval would have fingerprinted a reviewed surface that omitted the accessor the whole task turns on. A read, not a write: reviewDependencies widens what an approval covers without reserving the path."
+    },
     {
       "id": "PL-0710",
       "priority": "P0",
@@ -285,40 +391,6 @@
       "implementationAgent": "claude-lead",
       "updatedAt": "2026-08-17T01:53:44.285Z",
       "implementationBaseSha": "b157a5846d45568f516240f581d6b317a544aa12"
-    },
-    {
-      "id": "PL-0308",
-      "priority": "P1",
-      "lane": "Backend",
-      "status": "READY",
-      "title": "Production composition registers the catalog ingestion runtime",
-      "dependencies": [
-        "PL-0305"
-      ],
-      "allowedPaths": [
-        "apps/web/src/lib/catalog-source-registry.ts",
-        "apps/web/src/lib/server-bootstrap.ts",
-        "apps/web/src/instrumentation.ts",
-        "docs/CATALOG_SOURCE.md",
-        "docs/DEPLOYMENT.md"
-      ],
-      "reviewDependencies": [
-        "apps/web/src/lib/catalog-ingestion-source.ts",
-        "packages/catalog-ingestion/src/index.ts",
-        "packages/media-inspection/src/node/pinned-fetch.ts"
-      ],
-      "preferredAgent": "claude-backend",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "typecheck",
-        "unit",
-        "security-review",
-        "rights-review"
-      ],
-      "acceptance": "A hosted deployment that is configured for a real catalog source actually gets one: something in the production composition root calls registerCatalogIngestionRuntime with a runtime built next to the Node pinned-fetch construction. PL-0305 made the application CAPABLE of hosting the real source and the reviewer accepted that as complete; what remains is that NOTHING CALLS THE REGISTRATION, so a hosted deployment still answers no_metadata_source_configured -- a true statement about the deployment rather than about the registry, and the exact gap this task owns. Required: the runtime is built from the existing pinned-fetch transport rather than a second fetch path; NO CREDENTIAL OR API KEY IS INTRODUCED, since the initial source needs none and an ambient key would be the hidden credentialed source PL-0305's review forbade; an unconfigured deployment must STILL refuse by name rather than silently acquiring a default; and a regression must drive the composition root and observe a configured resolution, because a registration nobody has watched fire is not known to work. OUT OF SCOPE: persistent scheduling and storage, which is PL-0309, and the rights register, which is not a coding task. NOTE BEFORE CLAIMING: the exact composition-root file may not exist yet; the declared surface names the likely homes and must be corrected before the claim rather than widened after, on the PL-0710 precedent.",
-      "notes": "Created 2026-09-20 on gpt-architect's round-52 direction when it approved PL-0305: 'Make sure the existing handoff has explicit ownership for ... If any is currently only prose with no task, create a narrow task before it can be forgotten.' PL-0305 is NOT to be reopened for any of these. Follow-up 1 of 4. Point 3 of the round-52 verdict.",
-      "owner": null,
-      "gateResults": {}
     },
     {
       "id": "PL-AI-0009",

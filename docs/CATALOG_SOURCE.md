@@ -341,6 +341,156 @@ hosted build states them, to a reader, as the product's content.
 - `next dev` and vitest are unaffected: `development` and `test` are both on the
   allowlist.
 
+## Deploying a configured catalog source (PL-0308)
+
+**This section is the operator note, and it is here rather than in a
+`docs/DEPLOYMENT.md`.** PL-0308 declared that path as create-if-needed. It did
+not earn a file: everything below is a fact about *this* source — the variables
+that name it, the states it can be in, what it publishes and why — and every
+other half of the story (the licensing decision, the User-Agent obligation, the
+four states, the rights position) is already in this document. A second file
+would have held one section that only makes sense read next to those, and the
+repository has no other deployment-runbook content for it to sit beside. The
+declared path was therefore removed from the task's surface as proved
+unnecessary rather than merely unused.
+
+### The composition root
+
+`apps/web/src/lib/server-bootstrap.ts` is the server composition root. It is the
+only module in `apps/web` that constructs the Node pinned fetch
+(`nodePinnedFetch` from `@liberty/media-inspection/node/pinned-fetch`, used
+unmodified and never wrapped), it builds the runtime beside that transport, and
+it calls `registerCatalogIngestionRuntime`. Before it existed, nothing called
+the registrar and a hosted deployment answered `no_metadata_source_configured`
+however it was configured.
+
+**It runs once, in a server process, and is on no request path.** Reading the
+environment *there* is not the environment read `catalog-source-registry.ts`
+refuses: that argument is about the resolution path every request reaches, and
+the distinction it draws is between an ambient read and a registration "some
+composition root makes on purpose, with a value it constructed". This is that
+composition root.
+
+### What an operator sets
+
+Nothing is defaulted. `LIBERTY_CATALOG_SOURCE_ID` is the **signal**: with it
+unset the bootstrap registers nothing and the deployment is refused by name;
+with it set, every other variable below is required, and a deployment that sets
+some of them gets a refusal naming *all* the rest at once rather than a runtime
+built half out of the application's opinions.
+
+| Variable | What it states |
+| --- | --- |
+| `LIBERTY_CATALOG_SOURCE_ID` | Which licensed source. `wikidata` is the only name the package's frozen licensed-source list carries. |
+| `LIBERTY_CATALOG_USER_AGENT` | How this deployment identifies itself, with contact information. See "The obligation that follows: User-Agent" above — a bad one is an IP block that arrives without notice and applies to the whole operator, so it is checked at construction. |
+| `LIBERTY_CATALOG_CLASS_QID` | The class whose instances are enumerated, e.g. `Q11424` (film). |
+| `LIBERTY_CATALOG_WORK_KIND` | `movie`, `series` or `episode`. Declared, never derived from the class: the kind decides which quantity is carried. |
+| `LIBERTY_CATALOG_LOCALES` | Comma-separated locales, most preferred first, at least one. Requested from the source *and* served to readers. |
+| `LIBERTY_CATALOG_TERRITORY` | The territory availability is evaluated for: an ISO 3166-1 alpha-2 code, or `WW`. |
+| `LIBERTY_CATALOG_UNSTATED_AVAILABILITY` | `refuse` or `treat_as_worldwide`. Neither synthesises a window; `treat_as_worldwide` is an operator assertion about their own position, recorded as theirs. |
+| `LIBERTY_CATALOG_MAX_PAGES` | How many pages one query reads. A bound — and, with nothing persisted between passes, also the size of the catalog a reader sees. |
+
+**`.env.example` does not list these variables yet, and that is a routing
+constraint rather than a statement about them.** The repository's env contract
+is `.env.example`, which `scripts/validate-env.mjs` parses; it is held by
+another task in review and could not be edited in the round that wired this up.
+The table above is the contract until that lands. An operator reading
+`.env.example` alone will not find these names and should not conclude they do
+not exist. Nothing breaks in the meantime: that validator warns only about
+variables set in a `.env` file without a declaration, and skips `process.env`
+entirely.
+
+**There is no variable for a credential, and no field to put one in.** The
+initial licensed source needs none; a keyed source is a `Credentials`
+escalation that has not been taken. `server-bootstrap.test.ts` asserts this
+mechanically rather than in prose: no declared name is credential-shaped, and
+the module mentions no `LIBERTY_` name it has not declared, so a second,
+undeclared read cannot hide in the file.
+
+### What an operator cannot set, and why
+
+- **The egress allowlist.** Derived from the source name. An allowlist a
+  deployment could widen is not an allowlist, and the package refuses a Wikidata
+  provider whose policy names anything outside the CC0 hosts anyway. An unknown
+  source name gets an *empty* allowlist, which can only cause a refusal.
+- **`localDeployment`.** Asked of the running process. On a hosted instance
+  `127.0.0.1` is Liberty's own admin surface, so a source claiming to be local
+  must not be able to reach it by saying so. `allowLoopback` is withheld
+  outright: a licensed metadata source is on the public internet.
+- **The rights register.** `noRightsBasisEstablished` is passed by name, so a
+  configured deployment **publishes nothing** and says per record why. That is
+  item 6 below, it is the fail-closed outcome, and wiring the source up did not
+  and must not quietly supply one.
+- **Page size and the document limits.** The source's own anonymous batch limit
+  and the package's published `CATALOG_DOCUMENT_LIMITS`. Cited, not invented.
+
+### What a deployment answers, per state
+
+- **Nothing set** → `not-configured` / `no_metadata_source_configured`. Remedy:
+  set the variables above.
+- **Set, but incompletely or with a malformed value** → nothing is registered,
+  so the surfaces still answer `no_metadata_source_configured`, and the server
+  log carries one line naming *every* defect. The bootstrap deliberately does
+  **not** throw: this runs at process start, and a catalog misconfiguration that
+  takes playback and search down with it is a worse outcome than a named refusal
+  on the browse surfaces plus the defect list in the log.
+- **Set, and the package refuses the runtime** (an unlicensed source name, a
+  User-Agent the provider will not accept) → `not-configured` /
+  `catalog_metadata_source_configuration_refused`, carrying the package's own
+  detail. A different remedy from the first, which is why it is a different
+  reason: telling an operator who configured a source to configure a source
+  sends them the wrong way.
+- **Set, accepted, and no rights register** → `describeCatalog()` answers
+  `no_records_usable` and lists `rights_basis_not_declared` per record. This is
+  where a correctly configured deployment stands today.
+
+### The entry point that runs it
+
+`apps/web/src/instrumentation.ts` is the file Next loads once per server
+process, before any request. It holds no logic: it guards on the runtime and
+calls the bootstrap.
+
+```ts
+export async function register(): Promise<void> {
+  if (process.env.NEXT_RUNTIME !== "nodejs") return;
+  const { bootstrapCatalogMetadataSource, describeCatalogBootstrapOutcome } = await import(
+    "./lib/server-bootstrap"
+  );
+  console.info(describeCatalogBootstrapOutcome(bootstrapCatalogMetadataSource()));
+}
+```
+
+**The import is dynamic and inside the guard, deliberately.** Next compiles an
+instrumentation entry for the edge runtime as well as the Node one, and
+`server-bootstrap.ts` imports `node:dns/promises` and the Node pinned fetch. A
+static import would pull both into an edge bundle that cannot hold them, and it
+would do so at *build* time, where a runtime check cannot help — a guard does
+not remove a module from a bundle. So the guard decides whether the module is
+loaded at all.
+
+**It is at `src/instrumentation.ts`, not the app root, and that was established
+rather than assumed.** Next 16.3.1 discovers the file by scanning exactly one
+directory, non-recursively: `path.join(pagesDir || appDir, "..")` in
+`next/dist/build/index.js`. This application has `src/app` and no `pages`, so
+that directory is `apps/web/src` and a file at `apps/web/instrumentation.ts` is
+never seen. Replaying Next's own discovery — `findPagesDir`, `getFilesInDir`,
+its constants and its `isAtConventionLevel` test — over this tree and over two
+throwaway fixtures that differ only in where the file sits gives:
+
+```
+real apps/web                          {"appDir":"./src/app","rootDir":"./src",
+                                        "instrumentationHookFilePath":"/src/instrumentation.ts"}
+fixture instrumentation at <root>      {"appDir":"./src/app","rootDir":"./src"}
+fixture instrumentation at <root>/src  {"appDir":"./src/app","rootDir":"./src",
+                                        "instrumentationHookFilePath":"/src/instrumentation.ts"}
+```
+
+The root fixture resolves no path at all. **No configuration opts this in**: on
+this version `experimental.instrumentationHook` is deprecated with the message
+that "`instrumentation.js` is available by default"
+(`next/dist/server/config.js`), so `apps/web/next.config.ts` needed no edit and
+did not get one.
+
 ## Follow-ups: what landed, and what has not
 
 The first three items on the original list are **done**. They are recorded here
@@ -994,16 +1144,32 @@ rather than "ruled out".
    diagnostic consequence is that an operator cannot tell "slow down" from "your
    request is wrong".
 
-9. **Not done — nothing registers a runtime.** `registerCatalogIngestionRuntime`
-   in `apps/web/src/lib/catalog-source-registry.ts` is how a deployment hands
-   this process a `CatalogProviderRuntime`, read options and a clock. It is a
+9. **Done, except its entry point — something registers a runtime.**
+   `registerCatalogIngestionRuntime` in
+   `apps/web/src/lib/catalog-source-registry.ts` is how a deployment hands this
+   process a `CatalogProviderRuntime`, read options and a clock. It is a
    registration rather than an environment read, deliberately: a runtime carries
    an egress policy and a rights register, and a hosted process that could
    describe its own catalog configuration into existence is the same class of
-   defect as one that could name the environment it wished to be treated as. The
-   call belongs in this app's server bootstrap, next to whatever constructs the
-   Node pinned fetch from `@liberty/media-inspection/node/pinned-fetch`, and that
-   file was outside round 51's write surface.
+   defect as one that could name the environment it wished to be treated as.
+
+   **PL-0308 wrote the caller.** `apps/web/src/lib/server-bootstrap.ts` is the
+   server composition root: it constructs the Node pinned fetch from
+   `@liberty/media-inspection/node/pinned-fetch` — the only construction of it
+   in `apps/web` — builds the runtime beside that transport out of the
+   operator's stated declaration, and calls the registrar.
+   `server-bootstrap.test.ts` drives it and then asks
+   `resolveCatalogMetadataSource(null)`, with no runtime argument, for the
+   answer a request would get: `configured`, over the licensed source, and not
+   the fixtures. See "Deploying a configured catalog source" above.
+
+   **And the framework entry point exists**: `apps/web/src/instrumentation.ts`,
+   which Next loads once per server process. The path was corrected mid-task —
+   the declared surface put it at the app root, and Next's own discovery code,
+   replayed over this tree, showed that a `src/app` project scans `src` alone.
+   `apps/web/package.json` now also declares `@liberty/media-inspection`, which
+   the bootstrap imports for the pinned transport; it had been resolving through
+   the root workspace symlink undeclared.
 
 10. **Done — the synchronous title path is migrated and the accessor is
     deleted.** The compile error this document and the registry both predicted
@@ -1056,17 +1222,37 @@ rather than "ruled out".
     a function that reads whatever source is configured; renaming it reaches the
     module's own filename, which the write surface fixes.
 
-11. **Not done — `lib/catalog.ts` does not consume the four-state distinction.**
+11. **Done (PL-0310) — `lib/catalog.ts` consumes the four-state distinction.**
     `CatalogMetadataSource.describeCatalog` tells "a source listed works and none
-    may be surfaced" apart from "a source listed nothing". `loadHomeCatalog` maps
-    a refusal to `catalog_source_not_configured`, a throw to
-    `catalog_source_unavailable` and an empty record list to `empty`, so it still
-    collapses the first pair into `empty`. The distinction exists at the port;
-    consuming it is an edit to `apps/web/src/lib/catalog.ts`, outside round 51's
-    write surface.
+    may be surfaced" apart from "a source listed nothing". `loadHomeCatalog` now
+    reads it through `requireCatalogDescription` and carries a cause beside the
+    payload, so those two reach the page as different answers with different
+    copy — the withheld case says titles exist, says nothing is wrong with the
+    reader's account, and says explicitly that nobody can say whether they will
+    become available, because nobody has committed to obtaining those rights. A
+    source that implements no `describeCatalog` still loads: the accessor answers
+    null, the caller falls back to `listRecords()`, and the cause is recorded as
+    unstated rather than guessed. The withheld reasons themselves never leave the
+    loader — they name internal policy vocabulary, and a test asserts the
+    serialized result contains none of them.
 
-12. **Not done — `@liberty/media-inspection` publishes no `./http` subpath.**
-    That package's single entry point re-exports `./hls`, whose first line
+    What is deliberately unchanged: the HTTP answer. Both empty causes still
+    serve `{ rails: [], generatedAt }` at 200. Giving the withheld case its own
+    status would be an `API_CONTRACTS.md` change, which invariant 5 requires be
+    made intentionally rather than as a side effect of a copy fix.
+12. **Done upstream, by PL-0710 — `@liberty/media-inspection` publishes `./http`
+    and `./pin`.** The paragraph below records the problem and the interim fix,
+    because the triple-slash reference it describes is still in
+    `packages/catalog-ingestion/src/index.ts` and a reader should know why.
+    The manifest now exports `./http`, `./pin` and `./node/*`, so an import of
+    the bounded fetch or the pinned transport no longer drags the HLS parser in
+    with it; `apps/web/src/lib/server-bootstrap.ts` reaches `nodePinnedFetch`
+    through `./node/pinned-fetch`. (The barrel still re-exports `./hls`, so a
+    program that also imports `@liberty/catalog-ingestion`'s root — as that
+    module does — still needs the shim, which is why the interim fix stays.)
+
+    **The entry as it stood**: that package's single entry point re-exports
+    `./hls`, whose first line
     imports the untyped `m3u8-parser`, so every program that reaches
     `@liberty/catalog-ingestion` pulls the HLS parser in and fails TS7016 on a
     file it never calls. `packages/catalog-ingestion/tsconfig.json` solved this
