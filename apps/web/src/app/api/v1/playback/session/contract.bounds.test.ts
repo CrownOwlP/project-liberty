@@ -104,6 +104,11 @@ describe("playback session candidate identifier bounds", () => {
       }
     });
 
+    expect(parsed.outcome).toBe("granted");
+    if (parsed.outcome !== "granted") {
+      throw new Error("the granted-session fixture did not parse as granted");
+    }
+
     const wire = JSON.stringify(parsed);
     expect(wire).toContain(id);
     expect(wire).toContain(providerId);
