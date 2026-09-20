@@ -775,22 +775,22 @@ describe("describeTitleMetadata", () => {
 });
 
 describe("demo fixtures", () => {
-  it("resolves every browsable catalog item against the published contract", () => {
+  it("resolves every browsable catalog item against the published contract", async () => {
     const browsable = demoCatalog.filter((item) => item.kind !== "episode");
     expect(browsable.length).toBeGreaterThan(0);
 
     for (const item of browsable) {
-      const response = getTitleDetail(item.id, NOW);
+      const response = await getTitleDetail(item.id, NOW);
       expect(response, `no detail for ${item.id}`).not.toBeNull();
       expect(titleDetailResponseSchema.safeParse(response).success).toBe(true);
     }
   });
 
-  it("lists exactly as many episodes as the catalog card advertises", () => {
+  it("lists exactly as many episodes as the catalog card advertises", async () => {
     for (const item of demoCatalog) {
       if (item.kind !== "series") continue;
 
-      const response = getTitleDetail(item.id, NOW);
+      const response = await getTitleDetail(item.id, NOW);
       if (response === null || response.detail.kind !== "series") {
         throw new Error(`expected a series detail for ${item.id}`);
       }
@@ -811,8 +811,8 @@ describe("demo fixtures", () => {
     expect(detail.episodeNumber).toBe(3);
   });
 
-  it("withholds play from the one fixture episode with no declared rights", () => {
-    const response = getTitleDetail("harbor-lights", NOW);
+  it("withholds play from the one fixture episode with no declared rights", async () => {
+    const response = await getTitleDetail("harbor-lights", NOW);
     if (response === null || response.detail.kind !== "series") {
       throw new Error("expected a series detail for harbor-lights");
     }
@@ -833,8 +833,8 @@ describe("demo fixtures", () => {
     });
   });
 
-  it("reports nothing technical for an episode rather than inheriting its series", () => {
-    const response = getTitleDetail("northstar-s1e1", NOW);
+  it("reports nothing technical for an episode rather than inheriting its series", async () => {
+    const response = await getTitleDetail("northstar-s1e1", NOW);
     if (response === null) throw new Error("expected an episode detail for northstar-s1e1");
 
     expect(response.detail.technical).toEqual({

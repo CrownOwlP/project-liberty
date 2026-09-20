@@ -87,11 +87,41 @@ Three things about it are architectural rather than incidental:
   with one entry. A second source joins or replaces the first without any of
   those types moving.
 
-It is a library. Nothing schedules it in a process yet, which is why the
-extraction candidate below still stands, and **`apps/web` does not consume it**
--- that needs a dependency in `apps/web/package.json`, which was outside
-PL-0305's declared surface, so the browse surfaces still read the fixtures
-behind the environment gate.
+It is a library, and **`apps/web` consumes it as of round 51.** The application
+declares the dependency and `apps/web/src/lib/catalog-ingestion-source.ts`
+projects this package's PUBLIC API into the application's
+`CatalogMetadataSource`; `resolveCatalogMetadataSource` returns that source when
+a deployment supplies a runtime, and the demo fixtures are what an UNCONFIGURED
+non-deployment gets. The adapter is the only module in `apps/web` that names the
+package, it names no Wikidata module and no Wikidata type, and it holds no
+query, no fetch, no URL and no credential -- all of which stay behind the
+package's provider and transport boundaries.
+
+Three consequences are architectural rather than incidental:
+
+- **Rights still fail closed across the boundary.** A source that can enumerate
+  a catalogue has authorised nothing. A record whose rights basis nobody
+  established is refused by the pass, never projected, and never surfaced; the
+  item's own `rights` field -- which the published contract forces to hold one of
+  three values whether or not anybody checked -- is not read as a substitute. An
+  operator with no rights register therefore has a real source and an empty
+  catalog, which is the correct outcome.
+- **An empty rail has four answers, not one.** No source configured (a named
+  refusal from the registry); a source that listed works of which none may be
+  surfaced (`describeCatalog()` answers `no_records_usable` with a reason per
+  record); a provider or network failure (the source THROWS); and a truly empty
+  catalog (`catalog_empty`). `describeCatalog` is optional on the port because
+  the in-process fixture source cannot honestly answer it.
+- **Every discovery surface reads one accessor.** The home rails, the search
+  index and the title detail all take their source from
+  `resolveCatalogMetadataSource`. The registry briefly carried a second,
+  synchronous accessor for the title surface, which could not await; that
+  surface is asynchronous now and the accessor is deleted, so a deployment
+  cannot be told different stories about its own catalog by different pages.
+- **Nothing schedules a pass in a process yet**, which is why the extraction
+  candidate below still stands. The application's adapter runs one full pass per
+  query and persists nothing, so a rail costs a pass. That is honest and it is
+  not an ingestion worker.
 
 ### `@liberty/observability`
 

@@ -1,3 +1,29 @@
+/// <reference path="../../media-inspection/src/m3u8-parser.d.ts" />
+/*
+ * THE SHIM THIS PACKAGE'S OWN tsconfig ALREADY NAMES, NAMED AGAIN FOR ITS
+ * CONSUMERS.
+ *
+ * `@liberty/media-inspection` publishes ONE entry point, and that barrel
+ * re-exports `./hls`, whose first line is `import { Parser } from "m3u8-parser"`
+ * -- a package that ships no types. The ambient declaration that supplies them
+ * lives in the media-inspection source tree, where only that package's own
+ * tsconfig includes it. So ANY program that reaches this package's public API
+ * pulls `hls.ts` in and fails with TS7016 on a file it never calls, and
+ * `apps/web` is now such a program.
+ *
+ * `packages/catalog-ingestion/tsconfig.json` already solves this for THIS
+ * package by naming the shim in its `include`. That cannot help a consumer: an
+ * `include` is per-project. A triple-slash reference travels with the source, so
+ * the fix arrives wherever this file does -- which is the only mechanism
+ * available from inside this package.
+ *
+ * THE RIGHT FIX IS STILL A SUBPATH EXPORT -- `./http` on
+ * `@liberty/media-inspection`, so a consumer that wants the bounded fetch does
+ * not pull the HLS parser into its program at all. That is an edit to that
+ * package's manifest, outside PL-0305's `allowedPaths`, and
+ * `docs/CATALOG_SOURCE.md` carries it as an open item. This is the smallest
+ * honest fix available from here, not the fix.
+ */
 /**
  * `@liberty/catalog-ingestion` -- what a catalog is made of, and where it would
  * come from.
@@ -13,19 +39,39 @@
  * publishes one root entry point and a browse surface would pull the whole of it
  * into the bundle of every page that renders a card.
  *
- * ===========================================================
- * THERE IS NO CONFIGURED PROVIDER, AND THAT IS THE HONEST STATE
- * ===========================================================
+ * =============================================================
+ * THERE IS A CONFIGURED PROVIDER, AND apps/web NOW STANDS ON IT
+ * =============================================================
  *
- * `resolveCatalogMetadataProvider()` answers `not-configured` with the reason
- * `no_catalog_provider_licensed`, unconditionally. Choosing where a product's
- * catalog comes from is a LICENSING decision and attaching a key to it is a
- * CREDENTIALS decision; `control/policies.json` reserves both to the human
- * commander. `docs/CATALOG_SOURCE.md` carries the evidenced shortlist that
- * decision would be made from. Nothing in this package reads an environment
- * variable, and no placeholder credential exists anywhere in it -- a stub that
- * looks like a real key makes an unconfigured build look configured, which is
- * worse than an absence.
+ * This header said the opposite until round 51, and both halves of the change
+ * are worth stating rather than quietly deleting.
+ *
+ * `resolveCatalogMetadataProvider(runtime)` returns a WIKIDATA provider for the
+ * one licensed source name, on the human-commander Licensing decision of
+ * 2026-09-17, recorded as an INITIAL SOURCE CHOICE AND NOT AN EXCLUSIVE OR
+ * PERMANENT MANDATE. A source name that is not licensed is still refused by
+ * name with `no_catalog_provider_licensed`, and that refusal is the one a keyed
+ * source gets: attaching a credential to a catalog is a separate CREDENTIALS
+ * escalation and it has not been taken. Nothing in this package reads an
+ * environment variable, and no placeholder credential exists anywhere in it --
+ * a stub that looks like a real key makes an unconfigured build look
+ * configured, which is worse than an absence.
+ *
+ * AND THE APPLICATION CONSUMES IT NOW. `apps/web/src/lib/catalog-ingestion-
+ * source.ts` projects this package's PUBLIC API into the application's
+ * `CatalogMetadataSource` port, and `resolveCatalogMetadataSource` in
+ * `apps/web/src/lib/catalog-source-registry.ts` returns that source when a
+ * deployment supplies a runtime. `apps/web` imports THIS MODULE and no other
+ * file of this package -- in particular it names no Wikidata module -- so the
+ * source seam stays where it is. The transport and egress types below are
+ * re-exported for exactly that reason: a composition root has to be able to
+ * SPELL a runtime without taking a second dependency on
+ * `@liberty/media-inspection`.
+ *
+ * WHAT A WIRED SOURCE STILL IS NOT: a servable catalog. This adapter states no
+ * rights basis and no availability window, so an operator with no rights
+ * register publishes nothing, by name, per record. That is the fail-closed
+ * outcome and not a defect. See `docs/CATALOG_SOURCE.md`.
  *
  * WHAT IS BUILT AND TESTED WITHOUT ONE: identity and dedupe (`identity.ts`),
  * refresh and staleness (`freshness.ts`), the provider port with paging,
@@ -49,6 +95,42 @@
  *      sync.
  */
 
+/*
+ * THE TRANSPORT AND EGRESS TYPES, RE-EXPORTED RATHER THAN RE-DECLARED.
+ *
+ * A composition root has to name a `CatalogProviderRuntime`, and two of its
+ * fields are `@liberty/media-inspection` types: the egress policy inside
+ * `CatalogDocumentOptions` and the injected transport. Re-exporting them here
+ * is what lets `apps/web` depend on THIS package alone rather than also taking
+ * a dependency on the inspection package in order to spell a type.
+ *
+ * TYPE-ONLY, DELIBERATELY. `export type` is erased, so this adds nothing to any
+ * consumer's RUNTIME graph and cannot drag `node:https` anywhere -- the reason
+ * the inspection package keeps its Node pinned-fetch behind a separate subpath
+ * in the first place. A consumer that needs the Node TRANSPORT still imports
+ * that subpath itself, which is what keeps "which runtime am I composing for" a
+ * statement the composition root makes.
+ *
+ * IT DOES NOT MAKE THE TYPECHECK CHEAPER, and that is worth saying because the
+ * sentence above could be read as claiming it does. `provider.ts` and
+ * `transport.ts` already import from `@liberty/media-inspection`, so that
+ * package's source is in the program of anything that reaches this module
+ * whether or not these names are re-exported -- which is exactly why the
+ * triple-slash reference above exists. What the re-export buys is that a
+ * composition root does not need a SECOND declared dependency in order to spell
+ * a type it is already compiling.
+ */
+export type {
+  EgressPolicy,
+  HostClass,
+  HostClassifier,
+  HostResolver,
+  ManifestFetchDependencies,
+  ManifestFetchFailure,
+  PinnedFetch,
+  PinnedRequestInit,
+  PinnedTarget
+} from "@liberty/media-inspection";
 export {
   assessFreshness,
   planNextPassAt,

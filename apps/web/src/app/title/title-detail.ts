@@ -21,6 +21,13 @@ import {
  * as routes, so a plain module here is not routable. It should join
  * `lib/catalog.ts` when PL-0301 replaces the fixtures with a provider adapter
  * and the two loaders start sharing a source.
+ *
+ * THE TWO LOADERS NOW DO SHARE A SOURCE, as of round 51: this one and
+ * `loadHomeCatalog` both read `resolveCatalogMetadataSource`, and the second
+ * accessor that existed only for this file's synchrony is gone. The move itself
+ * has not happened, because `apps/web/src/lib/` was not on that round's write
+ * surface -- so the condition in the paragraph above is met and the relocation
+ * is now the only part outstanding.
  */
 
 /**
@@ -52,12 +59,34 @@ export type TitleDetailSource = (
   contentId: string
 ) => TitleDetailResponse | null | Promise<TitleDetailResponse | null>;
 
-/** In-process fixture source. Injectable `now` so tests are not time-dependent. */
-export function getTitleDetail(
+/**
+ * The default title-detail source: the catalog metadata port, dated.
+ *
+ * ASYNCHRONOUS AS OF ROUND 51, AND THAT IS THE POINT OF THE CHANGE RATHER THAN
+ * A CONSEQUENCE OF IT. This function was synchronous, so `findDemoTitleDetail`
+ * had to be, so the title surface could only ever be served by a source that
+ * answers without awaiting -- which meant the in-process fixtures, and only the
+ * fixtures, however real the catalog behind the registry became. The registry
+ * carried a second, narrowed accessor for exactly this caller and
+ * `docs/CATALOG_SOURCE.md` carried the migration as outstanding.
+ *
+ * The migration is done and it cost three lines. `loadTitleDetail` below already
+ * AWAITED its source and `TitleDetailSource` already ADMITTED a promise -- both
+ * written that way on purpose, for a real provider that does I/O -- so nothing
+ * above this function had to change, and the narrowed accessor was deleted
+ * rather than left as a refusal path with no caller.
+ *
+ * The comment this replaces called it an "in-process fixture source". It is not
+ * one any more: what it reads is whatever `resolveCatalogMetadataSource` has,
+ * which is the fixtures only for an unconfigured non-deployment.
+ *
+ * Injectable `now` so tests are not time-dependent.
+ */
+export async function getTitleDetail(
   contentId: string,
   now: Date = new Date()
-): TitleDetailResponse | null {
-  const detail = findDemoTitleDetail(contentId);
+): Promise<TitleDetailResponse | null> {
+  const detail = await findDemoTitleDetail(contentId);
   return detail === null ? null : { detail, generatedAt: now.toISOString() };
 }
 

@@ -1,8 +1,10 @@
 # Catalog metadata source
 
-**A metadata source now stands behind the ingestion port, and it is Wikidata.
-It does not yet stand behind the application's port. Read the scope section
-before reading anything else in this document as wider than it is.**
+**A metadata source now stands behind the ingestion port AND behind the
+application's port, and it is Wikidata. A wired source is still not a servable
+catalog: without an operator rights register it publishes nothing, by name, per
+record. Read the scope section before reading anything else in this document as
+wider than it is.**
 
 `docs/PRODUCT_SPEC.md` step 2 of the initial user journey is "browse/search
 normalized metadata". Until PL-0305r nothing in this repository ingested any:
@@ -20,13 +22,30 @@ is the other half — what exists, what it is called, what it is about.
 refresh and staleness, tombstones, cursor paging, provider-side search as a
 declared capability, locale tags, availability windows, artwork with its own
 licence, and the egress-bound transport — and `resolveCatalogMetadataProvider()`
-now returns a real **Wikidata** provider behind the unchanged
-`CatalogMetadataProvider` port. `apps/web` still does not consume it:
-`resolveCatalogMetadataSource` still answers `no_metadata_source_configured`,
-because the dependency edit that would connect them is in
-`apps/web/package.json`, outside PL-0305's `allowedPaths`. So the ingestion side
-is real and the browse side is unchanged, and
-[the remaining edits](#what-has-happened-and-what-has-not) are named rather than
+returns a real **Wikidata** provider behind the unchanged
+`CatalogMetadataProvider` port.
+
+**And `apps/web` consumes it as of round 51.** `apps/web/package.json` declares
+the dependency, `apps/web/src/lib/catalog-ingestion-source.ts` projects the
+package's public API into the application's `CatalogMetadataSource`, and
+`resolveCatalogMetadataSource` returns that source when a deployment supplies a
+runtime. The previous version of this paragraph said the browse side was
+unchanged and named the manifest edit as the one thing missing; that edit has
+been made. The sentence it was replaced with is deliberately narrower than "the
+product has a catalog", because two things remain true:
+
+1. **No runtime is registered by anything yet.** `registerCatalogIngestionRuntime`
+   in the registry is how a deployment supplies one, and the bootstrap that
+   should call it — alongside whatever constructs the Node pinned fetch from
+   `@liberty/media-inspection/node/pinned-fetch` — was outside round 51's write
+   surface. Until it exists a hosted deployment still answers
+   `no_metadata_source_configured`, which is a true statement about that
+   deployment rather than about the registry.
+2. **A wired source with no rights register publishes nothing.** That is the
+   fail-closed outcome and it is covered in full
+   [below](#rights-a-wikidata-record-establishes-none-and-the-default-publishes-nothing).
+
+[The remaining edits](#what-has-happened-and-what-has-not) are named rather than
 implied.
 
 ## The licensing decision, and exactly what it covers
@@ -111,17 +130,25 @@ Four mechanical controls, all in
 | `apps/web/src/lib/demo-catalog.ts` | One implementation: the development fixtures, gated. |
 | `apps/web/src/lib/catalog-source-registry.ts` | The only module that knows both. A real source lands here. |
 
-The registry has two accessors and one composition. `resolveCatalogMetadataSource`
-answers the port as published — `listRecords` and `findRecord` may return a
-promise, which is what a real provider needs.
-`resolveSynchronousCatalogMetadataSource` answers the same question for a caller
-that cannot await, returning a `SynchronousCatalogMetadataSource` or the same
-named refusal; the first delegates to the second, so the environment gate is
-classified once. Its one caller is the title surface (follow-up 5 below). It is
-**not** a return to the deleted `readFixtureCatalogItems`: that function returned
-`readonly CatalogItem[]` and answered `[]` on a deployment, collapsing "refused"
-into "empty"; both accessors return a tagged resolution, and neither can answer
-anything a caller could mistake for an empty catalog.
+The registry has **one** accessor. `resolveCatalogMetadataSource` answers the
+port as published — `listRecords` and `findRecord` may return a promise, which is
+what a real provider needs — and all three discovery surfaces read it: the home
+rails, the search index and the title detail.
+
+It had a second, `resolveSynchronousCatalogMetadataSource`, for a caller that
+could not await. That caller was the title surface, and it is asynchronous as of
+round 51, so the accessor had no legitimate production consumer and was deleted
+rather than left as a refusal path nothing calls. The TYPE
+`SynchronousCatalogMetadataSource` survives it, because
+`DemoCatalogMetadataSource` extends it and an in-process fixture array really
+does answer without awaiting — what went is the resolution that PROMISED one to a
+caller.
+
+Neither the accessor nor its predecessor is a return to the deleted
+`readFixtureCatalogItems`: that function returned `readonly CatalogItem[]` and
+answered `[]` on a deployment, collapsing "refused" into "empty". The accessor
+returns a tagged resolution and cannot answer anything a caller could mistake for
+an empty catalog.
 
 ```ts
 interface CatalogMetadataSource {
@@ -206,8 +233,8 @@ contracts module:
   module can reach and would otherwise be a second door onto the same answer.
 
 **Nothing on this path takes an environment name.**
-`resolveCatalogMetadataSource` and `resolveSynchronousCatalogMetadataSource` each
-take a `NonDeploymentEnvironment | null`, defaulting to `classify()`; so does
+`resolveCatalogMetadataSource` takes a `NonDeploymentEnvironment | null`,
+defaulting to `classify()`; so does
 `getSearchResults`'s third parameter, and `findDemoTitleDetail`'s second. Every
 one of them used to take a `nodeEnv` string and forward it to the mint, which
 meant a hosted process could call any of them with `test` and be issued a
@@ -325,7 +352,8 @@ rather than deleted, because each one is why a surface looks the way it does now
    so `loadSearchResults` can report a reason rather than "nothing matched".
 2. **Done — `apps/web/src/app/title/demo-title-details.ts`.** Its lookup goes
    through `findRecord` and its episode scan through `listRecords`, both obtained
-   from `resolveSynchronousCatalogMetadataSource`. Because the module already
+   from `resolveCatalogMetadataSource` (from the synchronous accessor until round
+   51, which deleted it; see follow-up 5). Because the module already
    spends `null` on not-found, a process with no source **throws**
    `CatalogMetadataSourceNotConfiguredError`, which `title-detail.ts` maps by
    `instanceof`. It imports no implementation and classifies no environment: the
@@ -355,22 +383,27 @@ lane read the way they do.
    walk past the witness without a compile error. Removing it means giving those
    four suites another way to name the fixture set; the export's own comment
    states the trade rather than declaring it harmless.
-5. **The title surface is still synchronous.** `findDemoTitleDetail` and
-   `getTitleDetail` answer without awaiting, so a real provider — which does
-   I/O — cannot land behind them. It lands in the registry, and this surface has
-   to become asynchronous along with the loader above it, the same edit the home
-   path has already made. `SynchronousCatalogMetadataSource` and
-   `resolveSynchronousCatalogMetadataSource` exist for exactly this caller and are
-   what disappear when the edit lands.
+5. **Done — the title surface is asynchronous and the narrow accessor is gone.**
+   `findDemoTitleDetail` and `getTitleDetail` were synchronous, so a real
+   provider — which does I/O — could not stand behind them, and the registry
+   carried a second accessor for exactly that caller.
 
-   The narrow accessor does not postpone that edit; it is what forces it into
-   view. A source that does I/O is not assignable to
-   `SynchronousCatalogMetadataSource`, so the day one is configured the compile
-   error is in the registry, in the one file that composes sources. Whoever makes
-   that edit then chooses on purpose between finishing the async migration and
-   giving the refusal a second reason — a source is configured, and it cannot
-   answer without awaiting. Neither is written today, because neither is true
-   today.
+   The narrow accessor did not postpone the edit; it forced it into view exactly
+   as this paragraph used to predict. The compile error arrived in the registry,
+   in the one file that composes sources, and both remedies it named were
+   written, in that order. Round 51 first NARROWED the accessor — it refused a
+   configured deployment with `metadata_source_requires_awaiting`, which
+   `demo-title-details.ts` published as `catalog_source_requires_async_caller` —
+   because `apps/web/src/app/title/title-detail.ts` was outside that round's
+   write surface. The surface was then widened to include it, and the preferred
+   remedy was taken: both functions are `async`, the title path reads
+   `resolveCatalogMetadataSource`, and the accessor, its resolution type, the
+   `metadata_source_requires_awaiting` reason and the
+   `catalog_source_requires_async_caller` reason are all deleted. A published
+   reason code for a state that can no longer occur is worse than no code: it
+   sends whoever meets it in a log looking for a migration that has already
+   happened. See item 10 of
+   [what has happened](#what-has-happened-and-what-has-not).
 6. **Done — `docs/E2E.md` and the e2e harness have caught up.** This item
    recorded four surfaces outside this lane that still described the
    pre-migration behaviour. All four have since been corrected, checked one at a
@@ -619,15 +652,18 @@ string this package chose on an operator's behalf.
 - **No provider was configured** *at the time that section was written*. That is
   no longer true: PL-0305r wired the Wikidata adapter below, on the strength of
   the commander's Licensing decision. Everything else in this list still stands.
-- **`apps/web` does not import this package, and cannot yet.** Declaring the
-  dependency means editing `apps/web/package.json`, which is outside PL-0305's
-  `allowedPaths`; and adding any new workspace package needs two entries in
-  `package-lock.json`, which is outside it too. So the adapter that turns
-  projected records into a `CatalogMetadataSource` -- a few lines in
-  `catalog-source-registry.ts` -- is not written. `ProjectedCatalogRecord` is
-  deliberately **structurally identical** to the port's `CatalogMetadataRecord`,
-  both spelled in published contract types and neither importing the other, so
-  that adapter is an assignment rather than a mapping when it can be written.
+- **`apps/web` did not import this package** *at the time that section was
+  written*. That is no longer true either: round 51 declared the dependency in
+  `apps/web/package.json` and added
+  `apps/web/src/lib/catalog-ingestion-source.ts`, which projects this package's
+  public API into the application's `CatalogMetadataSource`.
+  `ProjectedCatalogRecord` was deliberately **structurally identical** to the
+  port's `CatalogMetadataRecord`, both spelled in published contract types and
+  neither importing the other, and the projection is an assignment rather than a
+  mapping as predicted. The adapter ended up its own file rather than a few lines
+  in `catalog-source-registry.ts`, because the registry's job is deciding WHICH
+  source this process has and projecting a pass into records is a different job
+  with its own failure vocabulary.
 - **Nothing schedules a pass.** `planNextPassAt` says when the next one is due;
   no process calls it. There is no worker, no queue and no store -- ingestion
   produces `AcceptedWork` and tombstones and hands them back, and where they are
@@ -920,19 +956,32 @@ rather than "ruled out".
    `transport.ts` (the PL-0304 egress boundary, not a second fetcher). It refuses
    to build unless the operator's `EgressPolicy.allowedHosts` is exactly the two
    Wikidata endpoints.
-5. **Not done — the `apps/web` dependency and the registry adapter.** This is the
-   one remaining edit between an ingestion package with a real source and a
-   browse surface with a real catalog, and it is two manifest lines plus a few
-   lines in `catalog-source-registry.ts`. `apps/web/package.json` is outside
-   PL-0305's `allowedPaths`, so it was not made. `ProjectedCatalogRecord` is
-   deliberately structurally identical to the port's `CatalogMetadataRecord`, so
-   the adapter is an assignment rather than a mapping when it can be written —
-   and it will produce the compile error the registry already predicts, because a
-   provider that does I/O is not assignable to
-   `SynchronousCatalogMetadataSource`.
+5. **Done — the `apps/web` dependency and the registry adapter.** This entry
+   read "not done" until round 51 and described the edit as the one thing
+   between an ingestion package with a real source and a browse surface with a
+   real catalog. It has been made: `apps/web/package.json` declares
+   `@liberty/catalog-ingestion`, `apps/web/src/lib/catalog-ingestion-source.ts`
+   is the one module in the app that consumes it, and
+   `resolveCatalogMetadataSource` returns an ingestion-backed source when a
+   runtime is supplied. `ProjectedCatalogRecord` really was structurally
+   identical to the port's `CatalogMetadataRecord`, so the projection is an
+   assignment rather than a mapping. The predicted compile error also arrived:
+   see item 10.
+
+   **What the adapter does and does not contain.** It contains no query, no
+   fetch, no URL and no source name; it imports the package's ROOT entry point
+   and names no Wikidata module and no Wikidata type. It reads no environment
+   variable, holds no credential, and defaults no part of a runtime. It runs one
+   full ingestion pass per query and persists nothing (see item 7), so a rail
+   costs a pass and `findRecord` costs a pass — honest, and not what a catalog of
+   real size wants.
 6. **Not done — a rights register.** Without one, the provider publishes nothing.
    That is the fail-closed outcome, not a defect, but it means "a real source is
-   wired" and "a real catalog is servable" are still two different statements.
+   wired" and "a real catalog is servable" are still two different statements —
+   and now that the source IS wired, that sentence is the whole of the remaining
+   gap rather than a caveat on a gap. A deployment in this state is
+   distinguishable from an empty catalog: `describeCatalog()` answers
+   `no_records_usable` and lists `rights_basis_not_declared` per record.
 7. **Not done — a scheduler.** `planNextPassAt` says when the next pass is due;
    no process calls it, and nothing persists `AcceptedWork` or tombstones.
 8. **Not done — `provider_rate_limited` is unreachable from this adapter.**
@@ -944,6 +993,89 @@ rather than "ruled out".
    consequence is nil (`ingest.ts` withholds tombstones on any page failure); the
    diagnostic consequence is that an operator cannot tell "slow down" from "your
    request is wrong".
+
+9. **Not done — nothing registers a runtime.** `registerCatalogIngestionRuntime`
+   in `apps/web/src/lib/catalog-source-registry.ts` is how a deployment hands
+   this process a `CatalogProviderRuntime`, read options and a clock. It is a
+   registration rather than an environment read, deliberately: a runtime carries
+   an egress policy and a rights register, and a hosted process that could
+   describe its own catalog configuration into existence is the same class of
+   defect as one that could name the environment it wished to be treated as. The
+   call belongs in this app's server bootstrap, next to whatever constructs the
+   Node pinned fetch from `@liberty/media-inspection/node/pinned-fetch`, and that
+   file was outside round 51's write surface.
+
+10. **Done — the synchronous title path is migrated and the accessor is
+    deleted.** The compile error this document and the registry both predicted
+    arrived exactly where they said it would: a provider that does I/O is not
+    assignable to `SynchronousCatalogMetadataSource`. Two remedies were
+    available, and BOTH were written, in that order — which is recorded here
+    rather than smoothed over, because the intermediate state shipped for a
+    round and a reader of the history should be able to see why.
+
+    - **Written first, then removed:** `resolveSynchronousCatalogMetadataSource`
+      was NARROWED to the in-process fixture source, refusing a configured
+      runtime by name with `metadata_source_requires_awaiting`, which
+      `app/title/demo-title-details.ts` published as
+      `catalog_source_requires_async_caller`. It was an honest description of an
+      unfinished migration, taken because `apps/web/src/app/title/title-detail.ts`
+      was outside that round's write surface.
+    - **Written second, and preferred:** `getTitleDetail` and
+      `findDemoTitleDetail` are `async`, the title path reads
+      `resolveCatalogMetadataSource` like every other discovery surface, and
+      `resolveSynchronousCatalogMetadataSource`,
+      `SynchronousCatalogMetadataSourceResolution`,
+      `metadata_source_requires_awaiting` and
+      `catalog_source_requires_async_caller` are all gone. `loadTitleDetail`
+      already awaited its source and `TitleDetailSource` already admitted a
+      promise, so the migration cost three lines above the registry.
+
+    **Why the intermediate state did not survive.** A refusal path with no caller
+    is dead code wearing a safety label, and a published reason code for a state
+    that can no longer occur sends whoever meets it in a log looking for a
+    migration that has already happened. Both went with the condition.
+
+    **What the TYPE `SynchronousCatalogMetadataSource` is still for.**
+    `DemoCatalogMetadataSource` in `lib/demo-catalog.ts` extends it, and an
+    in-process fixture array really does answer without awaiting; a test that
+    calls `.map` on `listRecords()` with no `await` checks that at compile time.
+    It is a true statement an implementation makes about itself, not a promise
+    made to a caller, and only the second had to go.
+
+    **What was refused outright throughout**, because each would have made the
+    type check and each is a lie: buffering a pass behind a synchronous API (a
+    synchronous answer extracted from a promise is a stale answer or a deadlock),
+    returning the demo fixtures to a process that has a real source configured,
+    and returning an empty source (indistinguishable from an empty catalog).
+
+    **Two things this leaves.** `e2e/src/env.ts` still describes the title route
+    as needing a synchronous source and names the deleted accessor in a comment;
+    that file is outside round 51's write surface, and the behaviour it asserts —
+    `catalog_source_not_configured` on a deployment with nothing registered — is
+    unchanged and still passes. And `findDemoTitleDetail` is now a poor name for
+    a function that reads whatever source is configured; renaming it reaches the
+    module's own filename, which the write surface fixes.
+
+11. **Not done — `lib/catalog.ts` does not consume the four-state distinction.**
+    `CatalogMetadataSource.describeCatalog` tells "a source listed works and none
+    may be surfaced" apart from "a source listed nothing". `loadHomeCatalog` maps
+    a refusal to `catalog_source_not_configured`, a throw to
+    `catalog_source_unavailable` and an empty record list to `empty`, so it still
+    collapses the first pair into `empty`. The distinction exists at the port;
+    consuming it is an edit to `apps/web/src/lib/catalog.ts`, outside round 51's
+    write surface.
+
+12. **Not done — `@liberty/media-inspection` publishes no `./http` subpath.**
+    That package's single entry point re-exports `./hls`, whose first line
+    imports the untyped `m3u8-parser`, so every program that reaches
+    `@liberty/catalog-ingestion` pulls the HLS parser in and fails TS7016 on a
+    file it never calls. `packages/catalog-ingestion/tsconfig.json` solved this
+    for that package by naming the shim in its `include`; an `include` is
+    per-project, so round 51 added a triple-slash reference to the same shim from
+    `packages/catalog-ingestion/src/index.ts`, which travels with the source and
+    therefore reaches `apps/web`. That is the smallest honest fix available from
+    inside the package, not the fix. The fix is a subpath export on the
+    inspection package's manifest.
 
 The round-44 tripwire in `packages/catalog-ingestion/src/provider.test.ts` —
 which asserted the resolver refused, and whose comment said it would fail "the

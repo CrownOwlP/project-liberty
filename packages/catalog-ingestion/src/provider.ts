@@ -346,14 +346,18 @@ export type CatalogMetadataProviderResolution =
  * consult a default, or hold a credential. A deployment that passes no runtime
  * gets no provider, and there is no ambient configuration that could supply one.
  *
- * WHAT IS STILL NOT WIRED, STATED HERE RATHER THAN IMPLIED: `apps/web` does not
- * consume this. `resolveCatalogMetadataSource` in
- * `apps/web/src/lib/catalog-source-registry.ts` still answers
- * `no_metadata_source_configured`, because the adapter that would sit there
- * needs `apps/web/package.json` to declare a dependency on this package and that
- * file is outside PL-0305's `allowedPaths`. The ingestion side is real; the
- * application side is one manifest edit away and that edit is not this task's to
- * make. `docs/CATALOG_SOURCE.md` records it.
+ * IT IS WIRED NOW, AND THIS PARAGRAPH USED TO SAY IT WAS NOT. `apps/web`
+ * declares a dependency on this package, `apps/web/src/lib/catalog-ingestion-
+ * source.ts` projects the answer of a pass over this provider into the
+ * application's `CatalogMetadataSource`, and `resolveCatalogMetadataSource`
+ * returns that source when a deployment supplies a runtime. The consumer
+ * imports the package's PUBLIC API and never `wikidata.ts`, so this seam did not
+ * move in order to be consumed.
+ *
+ * WHAT IS STILL NOT WIRED: nothing calls this on a schedule, and nothing
+ * persists what a pass accepts. The application's adapter runs a pass per query,
+ * which is honest but is not an ingestion worker; `docs/CATALOG_SOURCE.md`
+ * records both as outstanding.
  */
 export function resolveCatalogMetadataProvider(
   runtime: CatalogProviderRuntime

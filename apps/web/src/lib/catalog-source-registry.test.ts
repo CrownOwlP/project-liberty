@@ -1,13 +1,22 @@
 import { describe, expect, it } from "vitest";
 import {
+  LICENSED_CATALOG_SOURCE_IDS,
+  WIKIDATA_CC0_HOSTS,
+  noRightsBasisEstablished,
+  type CatalogProviderRuntime,
+  type HostClass
+} from "@liberty/catalog-ingestion";
+import type { CatalogIngestionReadOptions, CatalogIngestionRuntime } from "./catalog-ingestion-source";
+import {
   NON_DEPLOYMENT_ENVIRONMENTS,
   NonDeploymentEnvironment,
   isNonDeploymentEnvironmentName
 } from "../app/api/deployment-environment";
 import type { CatalogMetadataRecord } from "./catalog-source";
 import {
+  registerCatalogIngestionRuntime,
+  registeredCatalogIngestionRuntime,
   resolveCatalogMetadataSource,
-  resolveSynchronousCatalogMetadataSource,
   type CatalogMetadataSourceResolution,
   type CatalogSourceUnavailableReason
 } from "./catalog-source-registry";
@@ -192,9 +201,10 @@ describe("resolveCatalogMetadataSource", () => {
    * deployment takes rather than a simulation of it.
    */
   it("configures nothing on a deployment, with a stated reason", () => {
-    expect(resolveCatalogMetadataSource(null)).toEqual({
+    expect(resolveCatalogMetadataSource(null, null)).toEqual({
       status: "not-configured",
-      reason: "no_metadata_source_configured"
+      reason: "no_metadata_source_configured",
+      detail: null
     });
   });
 
@@ -228,84 +238,33 @@ describe("resolveCatalogMetadataSource", () => {
   });
 });
 
-describe("resolveSynchronousCatalogMetadataSource", () => {
-  /*
-   * WHAT THIS ACCESSOR IS FOR, asserted rather than described.
-   *
-   * `findDemoTitleDetail` in `app/title/demo-title-details.ts` is synchronous
-   * because `getTitleDetail` is, so it cannot consume a resolution whose source
-   * may answer with a promise. Before this existed, that surface obtained the
-   * fixture source itself and classified `NODE_ENV` itself -- a second module
-   * that knew both the port and an implementation, which is precisely what the
-   * registry exists to be the only one of.
-   *
-   * THE ASSERTION IS PARTLY A COMPILE-TIME ONE, deliberately. `.map` is called on
-   * the result of `listRecords()` with no `await`, which only type-checks if the
-   * accessor really returns a `SynchronousCatalogMetadataSource`; if it ever
-   * widens to the async-capable port this line stops compiling rather than
-   * starting to compare a promise against an array at runtime.
-   */
-  it("answers a source a synchronous caller can use without awaiting", () => {
-    const resolution = resolveSynchronousCatalogMetadataSource(TEST_RUNTIME);
-
-    expect(resolution.status).toBe("configured");
-    if (resolution.status !== "configured") return;
-
-    expect(resolution.source.sourceId).toBe("demo-fixtures");
-    expect(resolution.source.listRecords().map((entry) => entry.item.id)).toEqual(
-      demoCatalog.map((item) => item.id)
-    );
-    expect(resolution.source.findRecord("northstar")?.item.id).toBe("northstar");
-    expect(resolution.source.findRecord("no-such-title")).toBeNull();
-  });
-
-  /*
-   * THE ONE THAT MATTERS, and it is the reason this accessor is not the deleted
-   * `readFixtureCatalogItems` under a new name. That function answered `[]` on a
-   * deployment, which a caller cannot tell apart from a catalog that genuinely
-   * contains nothing. This one answers a REFUSAL WITH A NAME, and the assertion
-   * is written as a whole-value comparison so that an implementation which
-   * started returning an empty source -- one with a `sourceId` and no records --
-   * fails here rather than passing a status check.
-   */
-  it("refuses on a deployment with a named reason, never an empty catalog", () => {
-    expect(resolveSynchronousCatalogMetadataSource(null)).toEqual({
-      status: "not-configured",
-      reason: "no_metadata_source_configured"
-    });
-  });
-
-  /*
-   * ONE ENVIRONMENT GATE, NOT TWO. The two accessors are two views of a single
-   * composition, and the failure this guards against is the one the title
-   * surface actually had: a second place that decided for itself whether this
-   * process may see fixtures. Compared on observable facts for the reason
-   * `observe` gives -- a configured resolution carries closures, and two calls
-   * build two of them.
-   */
-  it("gates on the same classification as the async-capable accessor", async () => {
-    const cases: readonly (NonDeploymentEnvironment | null)[] = [TEST_RUNTIME, null];
-
-    for (const environment of cases) {
-      expect(
-        await observe(resolveSynchronousCatalogMetadataSource(environment)),
-        environment === null ? "deployment" : "classified process"
-      ).toEqual(await observe(resolveCatalogMetadataSource(environment)));
-    }
-  });
-
-  /*
-   * The default argument classifies the process at CALL time and does not freeze
-   * a verdict at module scope -- the same property the async-capable accessor is
-   * asserted for above, and it has to hold on both or the title surface and the
-   * search surface can disagree about one process.
-   */
-  it("classifies the process when given no argument", async () => {
-    expect(await observe(resolveSynchronousCatalogMetadataSource())).toEqual(
-      await observe(resolveSynchronousCatalogMetadataSource(NonDeploymentEnvironment.classify()))
-    );
-  });
-});
+/*
+ * THERE IS NO `resolveSynchronousCatalogMetadataSource` SUITE ANY MORE.
+ *
+ * WHAT STOOD HERE. A suite asserting the registry's second accessor -- the one
+ * that answered a `SynchronousCatalogMetadataSource` for a caller that could not
+ * await, whose one production caller was `findDemoTitleDetail` in
+ * `app/title/demo-title-details.ts`. It asserted that the accessor really was
+ * synchronous (by calling `.map` on `listRecords()` with no `await`, a
+ * compile-time assertion), that it refused a deployment by name rather than
+ * answering an empty catalog, and that it gated on the same classification as
+ * the accessor above.
+ *
+ * WHY IT IS GONE. The title surface is asynchronous, so the accessor had no
+ * legitimate production consumer and was deleted rather than left as a refusal
+ * path nothing calls. For one round it existed in a NARROWED form that refused a
+ * configured deployment with `metadata_source_requires_awaiting`; that was an
+ * honest description of an unfinished migration and it stopped being one when
+ * the migration finished, so the reason and its suite went with the condition.
+ *
+ * NOTHING IT PROVED HAS BEEN LOST. Both directions of the environment gate are
+ * asserted of the one remaining accessor above, against the same two values
+ * anything can hand it -- a classification this process was really issued, and
+ * `null`. The synchrony of the FIXTURE SOURCE, which is a true fact about an
+ * in-process array rather than a promise the registry makes to anybody, is still
+ * asserted at compile time in "the demo metadata source" below, which calls
+ * `.map` on `listRecords()` with no `await` against `demoCatalogSource` directly.
+ */
 
 /*
  * THERE IS NO `readFixtureCatalogItems` SUITE ANY MORE.
@@ -468,5 +427,257 @@ describe("a classification the contracts module never issued", () => {
           "@liberty/contracts/shared/runtime"
       );
     }
+  });
+});
+
+/* -------------------------------------------------------------------------
+ * The real source, standing behind the application's port
+ *
+ * WHAT THESE SUITES EXIST TO PROVE, and it is one sentence: a deployment that
+ * has been given a real catalog metadata runtime no longer answers
+ * `no_metadata_source_configured`, because the only implementation this registry
+ * could reach was the demo one. That was true of every previous version of this
+ * file and it is what round 51 was sent back to fix.
+ *
+ * THE RUNTIME IS THE REAL LICENSED ONE, not a fake. What this registry decides
+ * is WHICH source this process has, and the whole disputed claim is that the
+ * answer can now be something other than the demo implementation -- which a fake
+ * provider would not settle. What the source then ANSWERS is a different
+ * subject and belongs to `catalog-ingestion-source.test.ts`, where a
+ * hand-written provider drives the rights, availability and failure paths
+ * without any source-specific knowledge in `apps/web`.
+ *
+ * SO ONLY RESOLUTIONS ARE ASSERTED HERE, never a page. The runtime's transport
+ * throws if anything asks it, which is how these suites prove they opened
+ * nothing: composition happens before a fetch, and a registry that started a
+ * pass would fail rather than pass.
+ *
+ * THE SOURCE NAME IS READ OUT OF THE PACKAGE'S FROZEN LICENSED LIST rather than
+ * written as a literal. The licensing decision is an INITIAL SOURCE CHOICE AND
+ * NOT AN EXCLUSIVE MANDATE, and a test hardcoding `"wikidata"` would need
+ * editing the day a second source is licensed -- which is a day these
+ * assertions should survive untouched.
+ * ---------------------------------------------------------------------- */
+
+const NOW_MS = Date.parse("2026-09-20T12:00:00.000Z");
+
+const READ: CatalogIngestionReadOptions = {
+  locales: ["en"],
+  territory: "GB",
+  unstatedAvailability: "refuse",
+  pageSize: 10,
+  maxPages: 2
+};
+
+const classifyHost = (hostname: string): HostClass => {
+  const host = hostname.toLowerCase();
+  if (host === "") return "unparseable";
+  if (host === "localhost" || host.startsWith("127.")) return "loopback";
+  return "public";
+};
+
+const licensedRuntime = (
+  over: Partial<CatalogProviderRuntime> = {}
+): CatalogIngestionRuntime => ({
+  provider: {
+    sourceId: LICENSED_CATALOG_SOURCE_IDS[0] ?? "",
+    selection: { classQid: "Q11424", kind: "movie", locales: ["en"] },
+    document: {
+      egress: {
+        allowedHosts: [...WIKIDATA_CC0_HOSTS],
+        allowLoopback: false,
+        localDeployment: false
+      },
+      timeoutMs: 10_000,
+      maxResponseBytes: 4_000_000,
+      maxRedirects: 3,
+      userAgent: "LibertyCatalog/0.1 (https://liberty.example.test; ops@example.test)"
+    },
+    transport: {
+      fetchImpl: () => {
+        throw new Error("no test in this file may reach the network");
+      },
+      classifyHost,
+      resolveHost: () => Promise.resolve(["198.51.100.10"]),
+      now: () => NOW_MS
+    },
+    rightsRegister: noRightsBasisEstablished,
+    ...over
+  },
+  read: READ,
+  now: () => NOW_MS
+});
+
+describe("a deployment with a real source configured", () => {
+  /*
+   * THE REGRESSION THE ROUND-51 CORRECTIVE NAMES FIRST. Before this, every
+   * argument to this function produced either the demo fixtures or
+   * `no_metadata_source_configured`, because those were the only two things the
+   * registry could reach. `null` for the environment is the deployment, obtained
+   * the way a deployment obtains it -- it is exactly what `classify()` answers in
+   * a hosted process -- and the answer is now a CONFIGURED resolution over the
+   * real source.
+   */
+  it("no longer answers no_metadata_source_configured", () => {
+    const resolution = resolveCatalogMetadataSource(null, licensedRuntime());
+
+    expect(resolution.status).toBe("configured");
+    if (resolution.status !== "configured") return;
+    expect(resolution.source.sourceId).toBe(LICENSED_CATALOG_SOURCE_IDS[0]);
+  });
+
+  /*
+   * AND IT IS NOT THE FIXTURES. Asserted separately and negatively, because
+   * "configured" passing while `demo-fixtures` came back would be the worst
+   * possible outcome of this change: a hosted deployment serving six invented
+   * films as though they were the catalog, which is the exact thing the
+   * environment gate was built to prevent.
+   */
+  it("is never served the demo fixtures", () => {
+    const resolution = resolveCatalogMetadataSource(null, licensedRuntime());
+
+    expect(resolution.status).toBe("configured");
+    if (resolution.status !== "configured") return;
+    expect(resolution.source.sourceId).not.toBe("demo-fixtures");
+  });
+
+  /*
+   * A CONFIGURED RUNTIME OUTRANKS THE FIXTURES OUTSIDE A DEPLOYMENT TOO. A
+   * developer who configures a real source locally and silently gets six
+   * invented films back has been lied to in the least useful possible way.
+   */
+  it("outranks the fixtures in a classified process as well", () => {
+    const resolution = resolveCatalogMetadataSource(TEST_RUNTIME, licensedRuntime());
+
+    expect(resolution.status).toBe("configured");
+    if (resolution.status !== "configured") return;
+    expect(resolution.source.sourceId).not.toBe("demo-fixtures");
+  });
+
+  /*
+   * A SUPPLIED RUNTIME THE PACKAGE REFUSES IS ITS OWN REASON. Telling an
+   * operator to "configure a metadata source" when they configured one and got
+   * the name wrong sends them looking for the wrong thing, so the reason and the
+   * package's own detail are both published.
+   */
+  it("refuses a runtime naming an unlicensed source, and says which failure it was", () => {
+    const resolution = resolveCatalogMetadataSource(
+      null,
+      licensedRuntime({ sourceId: "tmdb" })
+    );
+
+    expect(resolution.status).toBe("not-configured");
+    if (resolution.status !== "not-configured") return;
+    expect(resolution.reason).toBe("catalog_metadata_source_configuration_refused");
+    expect(resolution.detail).toContain("no_catalog_provider_licensed");
+  });
+
+  /*
+   * AND IT STILL DOES NOT FALL BACK. A refused runtime in a classified process
+   * is a refusal, not a quiet return to the fixtures -- which would hide a
+   * misconfiguration from the one environment where somebody is watching.
+   */
+  it("does not fall back to the fixtures when a supplied runtime is refused", () => {
+    const resolution = resolveCatalogMetadataSource(
+      TEST_RUNTIME,
+      licensedRuntime({ sourceId: "tmdb" })
+    );
+
+    expect(resolution.status).toBe("not-configured");
+  });
+});
+
+describe("registerCatalogIngestionRuntime", () => {
+  /*
+   * THE DEFAULT ARGUMENT READS THE REGISTRATION, which is what makes the real
+   * source reachable from `loadHomeCatalog` and `getSearchResults` -- neither of
+   * which passes a runtime, and neither of which is going to grow a parameter
+   * for one.
+   *
+   * REGISTERED AND CLEARED IN A `finally`, because this is module state and a
+   * suite that leaked it would configure every later test in this file.
+   */
+  it("is what a parameterless call resolves against", () => {
+    const previous = registeredCatalogIngestionRuntime();
+    try {
+      expect(previous).toBeNull();
+      registerCatalogIngestionRuntime(licensedRuntime());
+
+      const resolution = resolveCatalogMetadataSource(null);
+      expect(resolution.status).toBe("configured");
+      if (resolution.status !== "configured") return;
+      expect(resolution.source.sourceId).toBe(LICENSED_CATALOG_SOURCE_IDS[0]);
+    } finally {
+      registerCatalogIngestionRuntime(previous);
+    }
+  });
+
+  /*
+   * NOTHING AMBIENT SUPPLIES ONE. There is no environment variable, no file and
+   * no default behind this: an unregistered process has no runtime, which is why
+   * a hosted deployment still refuses by name today.
+   */
+  it("holds nothing until something registers something", () => {
+    expect(registeredCatalogIngestionRuntime()).toBeNull();
+    expect(resolveCatalogMetadataSource(null).status).toBe("not-configured");
+  });
+});
+
+describe("the accessor the title surface was migrated onto", () => {
+  /*
+   * ITEM 9, FROM THE REGISTRY'S SIDE. There is ONE accessor now. The synchronous
+   * one existed because `findDemoTitleDetail` could not await; both it and
+   * `getTitleDetail` are asynchronous, so it had no production caller left and
+   * was deleted rather than kept as a refusal path nothing calls.
+   *
+   * THE PROPERTY WORTH ASSERTING IS THAT THE SAME CALL SERVES ALL THREE
+   * SURFACES. The home rails, the search index and the title detail now take the
+   * same resolution from the same function, so a deployment cannot be told three
+   * different stories about its own catalog. Asserted as identity of answer
+   * across the two inputs anything can hand it.
+   */
+  it("answers one resolution, whoever is asking", async () => {
+    const cases: readonly (NonDeploymentEnvironment | null)[] = [TEST_RUNTIME, null];
+
+    for (const environment of cases) {
+      expect(
+        await observe(resolveCatalogMetadataSource(environment, null)),
+        environment === null ? "deployment" : "classified process"
+      ).toEqual(await observe(resolveCatalogMetadataSource(environment, null)));
+    }
+  });
+
+  /*
+   * THE REFUSAL VOCABULARY IS EXACTLY TWO, AND `metadata_source_requires_awaiting`
+   * IS NOT ONE OF THEM. Asserted at runtime over every reason the registry can
+   * actually produce, because a deleted union member is otherwise only caught by
+   * the compiler -- and the compiler cannot see a string that a log, a dashboard
+   * or a runbook still expects.
+   */
+  it("produces only the two configuration reasons that can still occur", () => {
+    const observed = new Set<string>();
+
+    const unconfigured = resolveCatalogMetadataSource(null, null);
+    if (unconfigured.status === "not-configured") observed.add(unconfigured.reason);
+
+    const refused = resolveCatalogMetadataSource(null, licensedRuntime({ sourceId: "tmdb" }));
+    if (refused.status === "not-configured") observed.add(refused.reason);
+
+    expect([...observed].sort()).toEqual([
+      "catalog_metadata_source_configuration_refused",
+      "no_metadata_source_configured"
+    ]);
+    expect(observed.has("metadata_source_requires_awaiting")).toBe(false);
+  });
+
+  /*
+   * IT COMPOSES NOTHING IT IS ABOUT TO REFUSE. The transport in the runtime
+   * throws on use, so a resolution that built a provider and started a pass on
+   * behalf of a caller it was about to turn away would surface here. Resolution
+   * is a synchronous decision; the I/O belongs to the source it hands back.
+   */
+  it("builds no provider and opens nothing while resolving", () => {
+    expect(() => resolveCatalogMetadataSource(null, licensedRuntime({ sourceId: "tmdb" }))).not.toThrow();
+    expect(() => resolveCatalogMetadataSource(null, licensedRuntime())).not.toThrow();
   });
 });

@@ -14,12 +14,13 @@ import type { ContentRights } from "@liberty/contracts/shared/rights";
  * CANDIDATES, which is what a title plays from, not what a catalog is made of.
  *
  * EVERY DISCOVERY SURFACE NOW READS THROUGH THIS PORT, and none of them names an
- * implementation any more. All three reach it through
- * `lib/catalog-source-registry.ts`: the home rails via `loadHomeCatalog` in
- * `lib/catalog.ts` and `app/search/search.ts` via `resolveCatalogMetadataSource`,
- * `app/title/demo-title-details.ts` via `resolveSynchronousCatalogMetadataSource`
- * because that surface cannot await. `lib/demo-catalog.ts` still exports the raw
- * `demoCatalog` array, but its only remaining readers are test files, so the
+ * implementation any more. All three reach it through ONE accessor,
+ * `resolveCatalogMetadataSource` in `lib/catalog-source-registry.ts`: the home
+ * rails via `loadHomeCatalog` in `lib/catalog.ts`, `app/search/search.ts`, and
+ * `app/title/demo-title-details.ts`. The title surface used to need a second,
+ * synchronous accessor because it could not await; it is asynchronous as of
+ * round 51 and that accessor is deleted. `lib/demo-catalog.ts` still exports the
+ * raw `demoCatalog` array, but its only remaining readers are test files, so the
  * environment gate in front of the fixtures is no longer bypassable from shipped
  * code.
  *
@@ -36,15 +37,22 @@ import type { ContentRights } from "@liberty/contracts/shared/rights";
  * `CatalogMetadataProvider` port, on a human-commander Licensing decision dated
  * 2026-09-17.
  *
- * THE PORT BELOW IS UNCHANGED BY EITHER, and that is a constraint rather than a
- * preference. A record here still carries no age, `listRecords` still returns
- * everything, and there is still no way to say a work was withdrawn -- because
- * expressing any of those means importing the package's vocabulary, `apps/web`
- * cannot declare that dependency inside PL-0305's `allowedPaths`, and a second
+ * AND `apps/web` NOW DEPENDS ON THAT PACKAGE. The paragraph here used to say it
+ * could not: the manifest edit was outside PL-0305's `allowedPaths`, so the port
+ * could carry nothing the package expressed. `apps/web/package.json` declares
+ * the dependency as of round 51, and `lib/catalog-ingestion-source.ts` is the
+ * ONE module that consumes it -- through the package's root entry point, naming
+ * no Wikidata module and no Wikidata type.
+ *
+ * THE PORT IS STILL ALMOST UNCHANGED, AND THE RESTRAINT IS STILL DELIBERATE. A
+ * record here carries no age and there is still no way to say a work was
+ * withdrawn, because expressing either means importing the package's vocabulary
+ * into the module graph of every surface that renders a card, and a second
  * spelling of a freshness or tombstone rule inside `apps/web` is exactly the
- * drift this file argues against elsewhere. `catalog-source-registry.ts` names
- * the manifest edit that unblocks it, and names the two reasons a real source
- * still does not mean a populated rail.
+ * drift this file argues against elsewhere. ONE thing was added:
+ * `describeCatalog`, optional, below -- and it adds no vocabulary either, its
+ * withheld reasons being plain strings that nothing in this application
+ * branches on.
  *
  * IT IS EXPRESSED IN THE PUBLISHED CONTRACTS AND ADDS NO VOCABULARY OF ITS OWN.
  * The work is a `CatalogItem` from `@liberty/contracts/domains/catalog` and the
@@ -181,27 +189,104 @@ export interface CatalogMetadataSource {
   findRecord(
     contentId: string
   ): CatalogMetadataRecord | null | Promise<CatalogMetadataRecord | null>;
+  /**
+   * The same answer, plus why it is as short as it is.
+   *
+   * WHY THIS EXISTS AT ALL. `listRecords()` answers `[]` for two completely
+   * different facts -- "this source listed works and not one of them may be
+   * surfaced" and "this source listed nothing" -- and those have opposite
+   * remedies. The first is an operator's rights register or availability data;
+   * the second has no remedy because nothing is wrong. Handing a caller `[]`
+   * for both is the collapse `CatalogLoadResult` and this whole port were built
+   * to stop, one level further in.
+   *
+   * OPTIONAL, AND THAT IS NOT A HEDGE. It is optional for the same reason
+   * `searchWorks` is optional on `CatalogMetadataProvider`: the in-process
+   * fixture source has no pass behind it, refuses nothing, and could only
+   * answer this by inventing one of the two states. A source that cannot tell
+   * them apart says so by not implementing the method, and
+   * `requireCatalogDescription` in `lib/catalog-ingestion-source.ts` is the
+   * guard -- returning the method rather than a boolean, so a caller that got
+   * past the check holds something callable.
+   *
+   * IT DOES NOT REPLACE THE THROW. A source that could not answer at all still
+   * THROWS from this method exactly as it does from the other two. Three states
+   * are reachable through this method and the fourth -- no source configured --
+   * is answered by the registry before a source exists to ask.
+   */
+  describeCatalog?(): CatalogAnswer | Promise<CatalogAnswer>;
+}
+
+/**
+ * What an answer is, beyond the records in it.
+ *
+ * `records_available` -- at least one record survived.
+ * `no_records_usable` -- the source listed records and every one was withheld.
+ * `catalog_empty` -- the source listed nothing. Not a failure and not a rights
+ * problem: there was nothing there.
+ */
+export type CatalogAnswerState = "records_available" | "no_records_usable" | "catalog_empty";
+
+/**
+ * One record the source listed and the answer does not carry.
+ *
+ * `reason` IS A PLAIN STRING AND THIS PORT DEFINES NO VOCABULARY FOR IT, which
+ * is the same restraint the rest of this file keeps. The reasons a real source
+ * produces are `@liberty/catalog-ingestion`'s own -- `rights_basis_not_declared`,
+ * `availability_not_stated`, `not_available_in_territory` and the rest -- and
+ * they are carried through unchanged rather than translated, because an operator
+ * debugging an empty rail needs the string the code actually produced. Nothing
+ * in this application branches on one; a union here would be a second copy of
+ * the package's vocabulary to keep in agreement with the first.
+ */
+export interface CatalogRecordWithheld {
+  /** The provider's own id, or the derived content id, whichever the source had. */
+  readonly recordId: string;
+  readonly reason: string;
+}
+
+export interface CatalogAnswer {
+  readonly state: CatalogAnswerState;
+  readonly records: readonly CatalogMetadataRecord[];
+  readonly withheld: readonly CatalogRecordWithheld[];
+  /** When the source read what it is reporting. */
+  readonly observedAt: string;
+  /**
+   * Whether the source was read in full.
+   *
+   * `false` means a bound stopped the read, so the absences in this answer are
+   * absences from a prefix of the source and `catalog_empty` is not reachable.
+   */
+  readonly complete: boolean;
 }
 
 /**
  * A source that answers without awaiting.
  *
- * Narrower than the port and assignable to it. THE CALLER IT EXISTS FOR IS THE
- * TITLE SURFACE, and the module that hands the source over is the registry:
- * `resolveSynchronousCatalogMetadataSource` in `lib/catalog-source-registry.ts`
- * returns this type or a named refusal, and `configuredSource` in
- * `app/title/demo-title-details.ts` is the one caller, because
- * `findDemoTitleDetail` is synchronous -- `getTitleDetail` in
- * `app/title/title-detail.ts` is -- and a synchronous caller can only be served
- * by a source that answers synchronously. `DemoCatalogMetadataSource` in
- * `lib/demo-catalog.ts` is the one implementation, and the registry is the only
+ * Narrower than the port and assignable to it. `DemoCatalogMetadataSource` in
+ * `lib/demo-catalog.ts` is the one implementation and the registry is the only
  * module that names it.
  *
- * THAT NARROW ACCESSOR IS WHAT KEEPS THE MIGRATION HONEST rather than what
- * postpones it. A real provider is not assignable to this interface, so the day
- * one lands the compile error is in the registry -- the file whose job is
+ * THE PREDICTION THIS INTERFACE CARRIED HAS NOW COME TRUE, and the shape of the
+ * thing it predicted is worth recording rather than deleting. A real provider
+ * does I/O and is therefore NOT assignable to this interface, so the day one
+ * landed the compile error was in the registry -- the file whose job is
  * composing sources -- instead of the title surface quietly keeping a private
- * route to the fixtures, which is what it had before.
+ * route to the fixtures, which is what it had before the narrowing existed.
+ *
+ * WHAT THE REGISTRY DID WITH THAT ERROR: it deleted the accessor. The title
+ * surface became asynchronous, `resolveSynchronousCatalogMetadataSource` lost
+ * its only production caller, and a refusal path with no caller is dead code
+ * wearing a safety label. Nothing was buffered to satisfy this type and nothing
+ * returned fixtures to a deployment to satisfy it either.
+ *
+ * SO WHY DOES THE INTERFACE SURVIVE THE ACCESSOR? Because it is a TRUE
+ * STATEMENT ABOUT AN IMPLEMENTATION, which is a different thing from a promise
+ * made to a caller. `DemoCatalogMetadataSource` in `lib/demo-catalog.ts` extends
+ * it, and an in-process fixture array really does answer without awaiting; a
+ * test that calls `.map` on `listRecords()` with no `await` is checking that
+ * fact at compile time. What was removed is the RESOLUTION that handed one of
+ * these to a caller who could not cope with anything else.
  *
  * THE HOME ROUTE IS NO LONGER ONE OF ITS CALLERS, and the comment here used to
  * name it as the only one. `app/api/v1/catalog/home/route.ts` called a
@@ -210,11 +295,13 @@ export interface CatalogMetadataSource {
  * The route awaits `loadHomeCatalog` instead, so nothing on the home path needs
  * this narrowing.
  *
- * AN IN-PROCESS FIXTURE SATISFIES THIS AND A REAL PROVIDER WILL NOT, because a
- * provider does I/O. That asymmetry is not hidden -- it is exactly why the title
- * surface has to become asynchronous before a real source can land behind it,
- * and `docs/CATALOG_SOURCE.md` records that as an outstanding edit rather than
- * leaving it to be discovered.
+ * AN IN-PROCESS FIXTURE SATISFIES THIS AND A REAL PROVIDER DOES NOT, because a
+ * provider does I/O. That asymmetry was exactly why the title surface had to
+ * become asynchronous before a real source could stand behind it, and
+ * `docs/CATALOG_SOURCE.md` recorded the migration as outstanding for several
+ * rounds. It is done. Nothing in this repository now takes this type as the
+ * shape of a source it was HANDED; it is only ever the shape a fixture
+ * implementation DECLARES.
  */
 export interface SynchronousCatalogMetadataSource extends CatalogMetadataSource {
   listRecords(): readonly CatalogMetadataRecord[];

@@ -6,9 +6,12 @@ import type {
 } from "@liberty/contracts/domains/title";
 import {
   selectDeclaredItems,
-  type SynchronousCatalogMetadataSource
+  type CatalogMetadataSource
 } from "../../lib/catalog-source";
-import { resolveSynchronousCatalogMetadataSource } from "../../lib/catalog-source-registry";
+import {
+  resolveCatalogMetadataSource,
+  type CatalogSourceUnavailableReason
+} from "../../lib/catalog-source-registry";
 import { NonDeploymentEnvironment } from "../api/deployment-environment";
 
 /**
@@ -27,8 +30,17 @@ import { NonDeploymentEnvironment } from "../api/deployment-environment";
  * incoherent. The fix for that reached `demoCatalogSource` instead — gated, but
  * still an implementation named here and an environment classified here, which
  * made this a second module that knew both halves. Neither is imported now: the
- * lookups below take a `SynchronousCatalogMetadataSource` from
+ * lookups below take a `CatalogMetadataSource` from
  * `lib/catalog-source-registry.ts`, the one composition root.
+ *
+ * AND IT IS ASYNCHRONOUS NOW, WHICH IS THE WHOLE OF THE MIGRATION THIS MODULE
+ * SPENT SEVERAL ROUNDS PREDICTING. `findDemoTitleDetail` used to be synchronous
+ * because `getTitleDetail` in `title-detail.ts` was, which meant it could only
+ * be served by a source that answers without awaiting -- which meant the
+ * fixtures, and only the fixtures, forever. Both are `async` as of round 51,
+ * this surface reads `resolveCatalogMetadataSource` like every other discovery
+ * surface, and `resolveSynchronousCatalogMetadataSource` has been DELETED
+ * because this was its only production caller.
  *
  * A DEPLOYMENT DOES NOT REACH THE FIXTURES THROUGH THIS MODULE, and the reason is
  * structural rather than a check a later edit could quietly drop: the registry
@@ -251,31 +263,81 @@ function buildCatalogItemDetail(item: CatalogItem): TitleDetail | null {
  * `not-found`: that would assert no title has this id, when in fact no id was
  * looked up.
  */
-export class CatalogMetadataSourceNotConfiguredError extends Error {
-  /** The reason code the home rails and the search surface already publish. */
-  readonly reason = "catalog_source_not_configured";
+export type TitleCatalogSourceRefusalReason =
+  | "catalog_source_not_configured"
+  | "catalog_source_configuration_refused";
 
-  constructor() {
-    super("no catalog metadata source is configured for this process");
+export class CatalogMetadataSourceNotConfiguredError extends Error {
+  /**
+   * What the page publishes. One of three now, and a FIELD SET AT CONSTRUCTION
+   * rather than a literal on the class.
+   *
+   * `catalog_source_not_configured` is unchanged and is still what an
+   * unconfigured deployment gets -- the home rails and the search surface
+   * publish the same string, `[titleId]/page.tsx` renders it, and `e2e` asserts
+   * it. `catalog_source_configuration_refused` arrived with the real source: a
+   * runtime WAS supplied and the package refused to build a provider over it.
+   * The two are not folded together because the remedies are opposite -- one
+   * needs a configuration, the other needs a correction -- and telling an
+   * operator to configure a source they already configured sends them the wrong
+   * way.
+   *
+   * THERE WAS BRIEFLY A THIRD, `catalog_source_requires_async_caller`, and it is
+   * gone. It named the state where a source was configured and this surface
+   * could not reach it because it did not await. That state no longer exists:
+   * this module is asynchronous and reads the general accessor. A published
+   * reason code for a state that cannot occur is worse than no code at all --
+   * whoever met it in a log would go looking for a migration that has already
+   * happened -- so it was deleted with the condition rather than left behind.
+   *
+   * THE CLASS NAME FITS BOTH SURVIVORS reasonably: "not configured" and
+   * "configuration refused" are both statements about this process's catalog
+   * configuration. It was a poor fit for the third, which is one more reason
+   * that one is gone. A rename would still reach `[titleId]/page.tsx`, which
+   * imports this class by name for `CatalogMetadataSourceNotConfiguredError
+   * ["reason"]`, and that file is outside round 51's write surface.
+   */
+  readonly reason: TitleCatalogSourceRefusalReason;
+
+  constructor(reason: TitleCatalogSourceRefusalReason, message: string) {
+    super(message);
     this.name = "CatalogMetadataSourceNotConfiguredError";
+    this.reason = reason;
   }
 }
 
 /**
+ * The registry's vocabulary, mapped onto the page's.
+ *
+ * TOTAL AND EXHAUSTIVE, AND THE TYPE ENFORCES BOTH. It is a `Record` over
+ * `CatalogSourceUnavailableReason`, so the day the registry names a fourth
+ * reason this object fails to compile and somebody has to decide what a reader
+ * is told -- which is exactly what the previous version of this module said had
+ * to happen and could not make happen, because it published one literal for
+ * every refusal there was.
+ *
+ * THE TWO VOCABULARIES ARE NOT THE SAME FACT ANY MORE. They were while there was
+ * one reason on each side. The registry now distinguishes "nothing was supplied"
+ * from "something was supplied and the package refused it", and collapsing those
+ * into `catalog_source_not_configured` would tell an operator to configure a
+ * source they had already configured.
+ */
+const PUBLISHED_REASON: Record<CatalogSourceUnavailableReason, TitleCatalogSourceRefusalReason> = {
+  no_metadata_source_configured: "catalog_source_not_configured",
+  catalog_metadata_source_configuration_refused: "catalog_source_configuration_refused"
+};
+
+/**
  * The metadata source for this process, or a refusal.
  *
- * IT ASKS THE REGISTRY AND NAMES NO IMPLEMENTATION.
- * `resolveSynchronousCatalogMetadataSource` is the registry's accessor for a
- * caller that cannot await, and that is what this surface is:
- * `findDemoTitleDetail` is synchronous because `getTitleDetail` in
- * `title-detail.ts` is. This function used to classify `NODE_ENV` itself and
- * construct `demoCatalogSource` itself, because the registry's only accessor
- * carried a `CatalogMetadataSource` whose `listRecords` and `findRecord` may
- * answer with a promise — correct for a real provider and unusable from here.
- * The narrowing now lives in the registry, so the choice of implementation and
- * the environment gate are made in one file for every discovery surface, and
- * this one only translates the outcome into the vocabulary the title page
- * publishes.
+ * IT ASKS THE REGISTRY AND NAMES NO IMPLEMENTATION. `resolveCatalogMetadataSource`
+ * is THE accessor -- there is no longer a second one -- and this surface reads it
+ * exactly as `loadHomeCatalog` and `getSearchResults` do. This function used to
+ * classify `NODE_ENV` itself and construct `demoCatalogSource` itself; then it
+ * read a synchronous narrowing of the registry, because `findDemoTitleDetail`
+ * could not await. Both of those are gone. The choice of implementation and the
+ * environment gate are made in one file for every discovery surface, and this
+ * one only translates the outcome into the vocabulary the title page publishes.
  *
  * IT IS NOT THE OLD `readFixtureCatalogItems`. That accessor returned
  * `readonly CatalogItem[]` and answered `[]` on a deployment, which is exactly
@@ -284,23 +346,23 @@ export class CatalogMetadataSourceNotConfiguredError extends Error {
  * now is a tagged resolution, so the refusal below is a branch on a named status
  * rather than a guess about what an empty list meant.
  *
- * A REAL PROVIDER STILL DOES NOT LAND BEHIND THIS FUNCTION, and the reason is
- * unchanged — it does I/O, and this call site cannot await. What has changed is
- * where that shows up: a provider that cannot answer synchronously is not
- * assignable to `SynchronousCatalogMetadataSource`, so it is the REGISTRY that
- * fails to compile, in the one file that composes sources, rather than this
- * surface silently keeping a private route to the fixtures. The migration is the
- * same one `docs/CATALOG_SOURCE.md` records: this function and the loader above
- * it become asynchronous, and the narrow accessor disappears with them.
+ * A REAL PROVIDER DOES LAND BEHIND THIS FUNCTION NOW, and every previous version
+ * of this paragraph said it could not. The obstacle was real and it was this
+ * surface's own synchrony: a provider does I/O, and a synchronous caller can
+ * only be served by a source that answers without awaiting. The obstacle was
+ * removed rather than worked around -- `getTitleDetail` in `title-detail.ts` is
+ * `async`, this function is `async`, `loadTitleDetail` already awaited its
+ * source, and `TitleDetailSource` already admitted a promise. Nothing is
+ * buffered, nothing is cached, and no stale or demo answer is returned to
+ * satisfy a type.
  *
- * THE REGISTRY'S REASON IS NOT REPUBLISHED VERBATIM. It refuses with
- * `no_metadata_source_configured`; the page's vocabulary is
- * `catalog_source_not_configured`, which is what the home rails and the search
- * surface already publish and what `[titleId]/page.tsx` renders. The two are the
- * same fact under two vocabularies today, so the mapping is total. If the
- * registry ever names a second reason — a source that exists but cannot answer
- * without awaiting — this branch has to choose what a reader is told rather than
- * continuing to publish this one.
+ * THE REGISTRY'S REASON IS NOT REPUBLISHED VERBATIM, and the mapping is TOTAL
+ * BY TYPE. `PUBLISHED_REASON` above is a `Record` over the registry's whole
+ * union, so a reason added there fails to compile here until somebody decides
+ * what a reader is told. A previous version of this comment said that decision
+ * "has to happen" one day; it has happened twice since, once to add
+ * `catalog_source_configuration_refused` and once to delete a third reason when
+ * this migration removed the state behind it.
  *
  * `environment` IS A PARAMETER SO THE REFUSAL IS REACHABLE FROM A TEST, the same
  * arrangement the registry and `getSearchResults` use: a suite reaches the
@@ -326,10 +388,13 @@ export class CatalogMetadataSourceNotConfiguredError extends Error {
  */
 function configuredSource(
   environment: NonDeploymentEnvironment | null = NonDeploymentEnvironment.classify()
-): SynchronousCatalogMetadataSource {
-  const resolution = resolveSynchronousCatalogMetadataSource(environment);
+): CatalogMetadataSource {
+  const resolution = resolveCatalogMetadataSource(environment);
   if (resolution.status === "not-configured") {
-    throw new CatalogMetadataSourceNotConfiguredError();
+    throw new CatalogMetadataSourceNotConfiguredError(
+      PUBLISHED_REASON[resolution.reason],
+      resolution.detail ?? "no catalog metadata source is configured for this process"
+    );
   }
 
   return resolution.source;
@@ -338,30 +403,46 @@ function configuredSource(
 /**
  * Metadata source: resolve a normalized content id to a title detail.
  *
+ * ASYNCHRONOUS, WHICH IS WHAT LETS A REAL SOURCE ANSWER IT. The port's
+ * `listRecords` and `findRecord` may return a promise, because a provider does
+ * I/O; awaiting them is the only honest way to consume that port and it is what
+ * this function does. Nothing here holds a buffered pass, a cache, or a fixture
+ * fallback.
+ *
  * Returns `null` for an id nothing knows about. `null` means not-found and only
- * not-found — a source failure throws, so the loader can keep the two apart, and
- * a process with no configured source is the first such failure this actually
- * raises (`CatalogMetadataSourceNotConfiguredError`, from `configuredSource`).
+ * not-found — a source failure throws, so the loader can keep the two apart.
+ * Two such failures are reachable now: a process with no configured source
+ * (`CatalogMetadataSourceNotConfiguredError`, from `configuredSource`) and a
+ * provider that could not be reached (`CatalogMetadataSourceUnavailableError`,
+ * thrown by the ingestion-backed source itself and converted by
+ * `loadTitleDetail` into `title_source_unavailable`, which is the correct
+ * "retry" advice for it).
  *
  * The direct lookup goes through `findRecord` and the episode scan through
  * `listRecords`, which are the port's two questions. Episodes are not catalog
  * entities here — they are generated from a series' `episodeCount` — so the
  * second question is the only way to reach one.
  *
+ * THE EPISODE SCAN IS A SECOND QUESTION AND THEREFORE, AGAINST A REAL SOURCE, A
+ * SECOND PASS. That is the adapter's documented cost rather than something this
+ * surface can fix, and it is only paid for an id `findRecord` did not answer.
+ * When a store lands behind the adapter it becomes a lookup; recorded in
+ * `docs/CATALOG_SOURCE.md` rather than worked around with a cache here.
+ *
  * `environment` is forwarded to `configuredSource`, whose comment carries the
  * whole argument for it: it is the capability or `null` rather than a runtime
  * name, it exists so a test can reach the deployment refusal by passing `null`
  * without mutating `process.env`, and it is never a request input.
- * `getTitleDetail` in `title-detail.ts` calls this with one argument and
+ * `getTitleDetail` in `title-detail.ts` awaits this with one argument and
  * therefore gets the process default, which is the production path.
  */
-export function findDemoTitleDetail(
+export async function findDemoTitleDetail(
   contentId: string,
   environment: NonDeploymentEnvironment | null = NonDeploymentEnvironment.classify()
-): TitleDetail | null {
+): Promise<TitleDetail | null> {
   const source = configuredSource(environment);
 
-  const record = source.findRecord(contentId);
+  const record = await source.findRecord(contentId);
   if (record !== null) {
     /*
      * One record, through the same gate the rails and the search index apply.
@@ -403,7 +484,7 @@ export function findDemoTitleDetail(
   // Episode ids are not catalog ids; they are owned by the series that
   // generated them, so the only place to look is inside each series the source
   // publishes.
-  for (const item of selectDeclaredItems(source.listRecords()).items) {
+  for (const item of selectDeclaredItems(await source.listRecords()).items) {
     if (item.kind !== "series") continue;
 
     const episode = demoEpisodes(item).find((candidate) => candidate.id === contentId);

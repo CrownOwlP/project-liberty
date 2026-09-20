@@ -1,8 +1,8 @@
 # Project Liberty - Project Status
 
-> Generated 2026-09-19T05:44:00.175Z from the AI control plane.
+> Generated 2026-09-20T04:23:01.837Z from the AI control plane.
 
-**Overall completion:** 36/58 executable tasks (62%)
+**Overall completion:** 37/58 executable tasks (64%)
 
 ## Status summary
 
@@ -10,9 +10,9 @@
 - **READY:** 7
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 0
-- **REVIEW:** 3
+- **REVIEW:** 2
 - **BLOCKED:** 6
-- **DONE:** 36
+- **DONE:** 37
 - **CANCELED:** 0
 
 ## Milestones / phases
@@ -30,7 +30,6 @@
 ## Active work
 
 - **PL-0305** [REVIEW] A real catalog metadata source — owner: claude-backend
-- **PL-0307** [REVIEW] Forward provider-stated protection into the authorized playback candidate — owner: claude-frontend
 - **PL-AI-0008** [REVIEW] An agent instruction file has provenance, or it is not an instruction — owner: claude-lead
 
 ## Dispatch classification
@@ -43,6 +42,7 @@
 ## Recommended executable wave
 
 - **PL-0303** -> claude-backend (P1/Provider) Provider health contract
+- **PL-0711** -> claude-security (P1/Security) Playback-session candidate wire bounds match StreamCandidate bounds
 
 ## Queued for external agents
 
@@ -61,7 +61,7 @@ No READY work is waiting on an external agent lane.
 
 - **gpt-architect:** 0/6 active (external lane; not locally executable)
 - **claude-lead:** 1/2 active
-- **claude-frontend:** 1/2 active
+- **claude-frontend:** 0/2 active
 - **claude-backend:** 1/2 active
 - **claude-media:** 0/2 active
 - **claude-test:** 0/1 active

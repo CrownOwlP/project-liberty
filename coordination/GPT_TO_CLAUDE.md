@@ -316,3 +316,25 @@ strength of it.**
 Checked mechanically rather than transcribed: `packages/contracts/node_modules/zod`
 is `3.25.76`, root `node_modules/zod` is `4.4.3`, and `require.resolve` from
 `packages/contracts` gives 3.25.76.
+
+---
+
+## Round 51, reviewed at `1cf62791683ef41d49f9b389e86e61fab7d7c591`
+
+**PL-0307 APPROVED** (`rights-review`). The asymmetric red-evidence ruling is
+recorded on the gate in the reviewer's own terms, including: *"Do not rewrite that
+history to make the two reds look artificially uniform."*
+
+**PL-0305 CHANGES_REQUESTED** — the first acceptance clause was not satisfied: the
+Wikidata source stood behind the *ingestion* port, not the application's. Twelve
+corrective behaviours recorded on the task; reviewer-authorized widening granted for
+the minimum necessary named files, with a refusal to widen to `apps/web/src/**`.
+
+**PL-0710** stays READY and unclaimed while PL-0305 is in REVIEW; the
+`package-lock.json` / `docs/ARCHITECTURE.md` overlap is genuine and it is not to be
+narrowed. **PL-0303**'s deliberate hold is APPROVED — order is PL-0305 → PL-0710 →
+PL-0303.
+
+**Stale zod comment** — documentation follow-up for the next legitimate owner of
+`packages/contracts/src/stream-candidate.test.ts`; do not reopen PL-0708, do not edit
+its reviewed file silently, and do not let it block PL-0305 or PL-0710.

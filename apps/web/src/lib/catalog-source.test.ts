@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { CatalogItem, MovieCatalogItem } from "@liberty/contracts/domains/catalog";
-import type { CatalogMetadataRecord, CatalogRightsBasis } from "./catalog-source";
+import type {
+  CatalogAnswer,
+  CatalogMetadataRecord,
+  CatalogMetadataSource,
+  CatalogRightsBasis
+} from "./catalog-source";
 import { selectDeclaredItems } from "./catalog-source";
 import { isSurfaceable } from "./catalog";
 
@@ -150,5 +155,61 @@ describe("selectDeclaredItems", () => {
     selectDeclaredItems(records);
 
     expect(JSON.stringify(records)).toBe(before);
+  });
+});
+
+/* -------------------------------------------------------------------------
+ * The port's answer, and why an empty list is not one fact
+ * ---------------------------------------------------------------------- */
+
+describe("CatalogAnswer", () => {
+  /*
+   * THE PAIR THE PORT EXISTS TO KEEP APART, at the level of the port itself.
+   * "this source listed works and not one of them may be surfaced" and "this
+   * source listed nothing" both have no records, so `listRecords()` answers `[]`
+   * for both and always will. What distinguishes them is `state` plus the
+   * per-record `withheld` list, and this asserts that a caller holding only the
+   * PORT type -- not the ingestion adapter -- can tell them apart.
+   *
+   * The two answers are compared field by field rather than by status alone, so
+   * an implementation that started reporting no withholdings, and therefore
+   * started calling a fully-refused catalog an empty one, fails here.
+   */
+  it("tells a fully-withheld catalog apart from an empty one", () => {
+    const nothingUsable: CatalogAnswer = {
+      state: "no_records_usable",
+      records: [],
+      withheld: [{ recordId: "q1", reason: "rights_basis_not_declared" }],
+      observedAt: "2026-09-20T12:00:00.000Z",
+      complete: true
+    };
+    const nothingThere: CatalogAnswer = {
+      state: "catalog_empty",
+      records: [],
+      withheld: [],
+      observedAt: "2026-09-20T12:00:00.000Z",
+      complete: true
+    };
+
+    expect(nothingUsable.records).toEqual(nothingThere.records);
+    expect(nothingUsable.state).not.toBe(nothingThere.state);
+    expect(nothingUsable.withheld).not.toEqual(nothingThere.withheld);
+  });
+
+  /*
+   * IT IS OPTIONAL ON THE PORT, which is the whole reason the fixture source did
+   * not have to grow a fake one. A source that cannot tell the two states apart
+   * says so by not implementing the method; `requireCatalogDescription` in
+   * `lib/catalog-ingestion-source.ts` is the guard, and it answers `null` rather
+   * than a guessed `CatalogAnswer`.
+   */
+  it("is something a source may not be able to answer", () => {
+    const withoutDescription: CatalogMetadataSource = {
+      sourceId: "no-description",
+      listRecords: () => [],
+      findRecord: () => null
+    };
+
+    expect(withoutDescription.describeCatalog).toBeUndefined();
   });
 });
