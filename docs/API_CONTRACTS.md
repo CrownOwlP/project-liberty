@@ -394,6 +394,29 @@ the third state exists to prevent. `PROTECTION_NOT_STATED` is exported as the
 safe default so that "I do not know" is a one-token import and `{ state: "clear" }`
 is the thing somebody has to type deliberately.
 
+### Playback-session candidate identifier bounds
+
+The session wire does not define a second identifier budget. Its candidate `id` and
+`providerId` are bounded by the exported
+`MAX_STREAM_CANDIDATE_ID_CHARS` and
+`MAX_STREAM_CANDIDATE_PROVIDER_ID_CHARS` constants from
+`@liberty/contracts/domains/playback`, the same authority used by
+`streamCandidateSchema`.
+
+That coupling is intentional: resolution may cross another producer seam before a
+candidate is serialized into a playback session, and an unbounded downstream
+restatement would allow an identifier that was bounded at the provider contract to
+re-expand on the session wire. The session schema imports the constants rather than
+copying their numeric values, so changing the authoritative contract cannot silently
+leave a different wire limit behind.
+
+The current bounds are tested at the exact maximum and maximum plus one, on the
+serialized granted-session response, and against legitimate fixture and
+Wikidata-shaped identifiers. Validation issues identify the failing field and limit
+without echoing the oversized value. `uri` and `mimeType` remain outside this
+specific identifier-bound decision; bounding those fields requires its own measured
+budget and review rather than an unrelated literal added here.
+
 ## `POST /api/v1/playback/resolve`
 
 Purpose: rank already-authorized candidates for the requesting device.
