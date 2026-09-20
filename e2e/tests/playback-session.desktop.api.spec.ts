@@ -237,8 +237,19 @@ test("only the identity headers leave the machine", async () => {
   });
 
   const seen = await ledger();
-  expect(seen).toHaveLength(1);
-  const headers = (seen[0] as StubRequest).headers;
+  /*
+   * The stub ledger is shared by the fully-parallel API project. Other
+   * playback-session tests may legitimately reach the same stub between this
+   * test's reset and read, so isolate THIS request by the identity value only
+   * this test sends. Requiring exactly one matching request preserves the
+   * original no-retry/no-fan-out assertion without making unrelated parallel
+   * traffic an order dependency.
+   */
+  const matching = seen.filter(
+    (entry) => entry.headers["x-liberty-development-session"] === "e2e-desktop-session"
+  );
+  expect(matching).toHaveLength(1);
+  const headers = (matching[0] as StubRequest).headers;
 
   expect(headers["cookie"]).toBe("liberty_session=e2e");
   expect(headers["authorization"]).toBe("Bearer e2e-token");
