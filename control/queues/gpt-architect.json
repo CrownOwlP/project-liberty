@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-21T14:13:53.049Z",
+  "generatedAt": "2026-09-21T14:28:09.552Z",
   "agent": "gpt-architect",
   "executionAvailable": false,
   "assigned": [
@@ -99,19 +99,20 @@
         "reviewerAgent": "gpt-architect",
         "reviewerClass": "external-reasoning",
         "reviewerProvider": "openai",
-        "reviewedCommitSha": "e5dd8893a5600e6272575e9116e1f434559ac532",
+        "reviewedCommitSha": "f6dba611346ac53d72901f661a2b21cc12e80eac",
         "reviewedBaseSha": "f932ebe66c99cbb4fdf15f631d1464b16115aadc",
-        "reviewedTreeHash": "0b161196e5517f8107807483dfdc7468dcacbfcac46d508adf6d49391d198df0",
+        "reviewedTreeHash": "4a59bd2ec177637ca72a2c6a879ac557078599c5e92b89decaf73bbbc7e5a3aa",
         "reviewedFileCount": 10,
         "reviewedFingerprintSource": "git-object",
         "reviewedDependencies": [
           "apps/web/src/lib/catalog-ingestion-source.ts",
           "packages/catalog-ingestion/src/index.ts",
-          "packages/media-inspection/src/node/pinned-fetch.ts"
+          "packages/media-inspection/src/node/pinned-fetch.ts",
+          "apps/web/package.json"
         ],
-        "outcome": "CHANGES_REQUESTED",
-        "reviewedAt": "2026-09-21T14:05:12.905Z",
-        "evidence": "CHANGES_REQUESTED by gpt-architect, narrow packaging corrective, reviewed against origin e5dd8893a5600e6272575e9116e1f434559ac532. THE MECHANISM IS ACCEPTED AND MUST NOT BE REDESIGNED: the real composition root calls registerCatalogIngestionRuntime; the runtime is composed beside and with the existing Node pinned transport; no credential or API-key path was introduced; an unconfigured deployment still registers nothing and remains a named refusal; configuration is driven through the actual Next server instrumentation entry point; and the tests exercise the real bootstrap path and assert pinned-fetch reference identity. ONE BLOCKER, AND IT IS THE ONLY ONE. apps/web/src/lib/server-bootstrap.ts imports @liberty/media-inspection/node/pinned-fetch directly while apps/web/package.json does not declare @liberty/media-inspection in dependencies. The build succeeds only because the monorepo workspace makes the package resolvable; the app package's manifest does not describe a dependency it actually imports, which is not acceptable for a production composition root. This is the same defect already recorded as PL-0311 and the implementation must NOT be duplicated across two tasks. PREFERRED RESOLUTION, in the reviewer's order: keep PL-0308 in CHANGES_REQUESTED; take PL-0311 now that PL-0710 is DONE and its package-lock reservation is gone; land the apps/web/package.json and package-lock.json dependency edge together as PL-0311 requires; rerun PL-0308's relevant typecheck, build and manifest gates against that integrated tree; and return PL-0308 to REVIEW for final approval. Do not redesign server-bootstrap or its runtime wiring. PROVENANCE: TRANSCRIBED BY CLAUDE from the ChatGPT review session and relayed by the human commander; the GitHub review-write integration returns 403."
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-09-21T14:27:32.653Z",
+        "evidence": "APPROVED by gpt-architect, reviewed against origin f6dba611346ac53d72901f661a2b21cc12e80eac. The sole blocker from the previous CHANGES_REQUESTED has been corrected by PL-0311. Verified: apps/web/package.json now declares @liberty/media-inspection at 0.1.0, so PL-0308's direct import of @liberty/media-inspection/node/pinned-fetch is described by the owning app manifest; the runtime registration mechanism itself is unchanged and remains accepted; the Node pinned transport is still the transport the catalog runtime uses; no credential or API-key path was introduced; unconfigured deployments still remain explicitly unconfigured; the real server instrumentation and bootstrap path is exercised; and PL-0308's typecheck, lint, build and unit gates were re-run against the integrated PL-0311 tree and pass. PROVENANCE: TRANSCRIBED BY CLAUDE from the ChatGPT review session and relayed by the human commander; the GitHub review-write integration returns 403."
       },
       "reviewHistory": [
         {
@@ -134,53 +135,30 @@
           "outcome": "CHANGES_REQUESTED",
           "reviewedAt": "2026-09-21T14:05:12.905Z",
           "evidence": "CHANGES_REQUESTED by gpt-architect, narrow packaging corrective, reviewed against origin e5dd8893a5600e6272575e9116e1f434559ac532. THE MECHANISM IS ACCEPTED AND MUST NOT BE REDESIGNED: the real composition root calls registerCatalogIngestionRuntime; the runtime is composed beside and with the existing Node pinned transport; no credential or API-key path was introduced; an unconfigured deployment still registers nothing and remains a named refusal; configuration is driven through the actual Next server instrumentation entry point; and the tests exercise the real bootstrap path and assert pinned-fetch reference identity. ONE BLOCKER, AND IT IS THE ONLY ONE. apps/web/src/lib/server-bootstrap.ts imports @liberty/media-inspection/node/pinned-fetch directly while apps/web/package.json does not declare @liberty/media-inspection in dependencies. The build succeeds only because the monorepo workspace makes the package resolvable; the app package's manifest does not describe a dependency it actually imports, which is not acceptable for a production composition root. This is the same defect already recorded as PL-0311 and the implementation must NOT be duplicated across two tasks. PREFERRED RESOLUTION, in the reviewer's order: keep PL-0308 in CHANGES_REQUESTED; take PL-0311 now that PL-0710 is DONE and its package-lock reservation is gone; land the apps/web/package.json and package-lock.json dependency edge together as PL-0311 requires; rerun PL-0308's relevant typecheck, build and manifest gates against that integrated tree; and return PL-0308 to REVIEW for final approval. Do not redesign server-bootstrap or its runtime wiring. PROVENANCE: TRANSCRIBED BY CLAUDE from the ChatGPT review session and relayed by the human commander; the GitHub review-write integration returns 403."
+        },
+        {
+          "taskId": "PL-0308",
+          "implementationAgent": "claude-backend",
+          "implementationOwner": "claude-backend",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "f6dba611346ac53d72901f661a2b21cc12e80eac",
+          "reviewedBaseSha": "f932ebe66c99cbb4fdf15f631d1464b16115aadc",
+          "reviewedTreeHash": "4a59bd2ec177637ca72a2c6a879ac557078599c5e92b89decaf73bbbc7e5a3aa",
+          "reviewedFileCount": 10,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "apps/web/src/lib/catalog-ingestion-source.ts",
+            "packages/catalog-ingestion/src/index.ts",
+            "packages/media-inspection/src/node/pinned-fetch.ts",
+            "apps/web/package.json"
+          ],
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-09-21T14:27:32.653Z",
+          "evidence": "APPROVED by gpt-architect, reviewed against origin f6dba611346ac53d72901f661a2b21cc12e80eac. The sole blocker from the previous CHANGES_REQUESTED has been corrected by PL-0311. Verified: apps/web/package.json now declares @liberty/media-inspection at 0.1.0, so PL-0308's direct import of @liberty/media-inspection/node/pinned-fetch is described by the owning app manifest; the runtime registration mechanism itself is unchanged and remains accepted; the Node pinned transport is still the transport the catalog runtime uses; no credential or API-key path was introduced; unconfigured deployments still remain explicitly unconfigured; the real server instrumentation and bootstrap path is exercised; and PL-0308's typecheck, lint, build and unit gates were re-run against the integrated PL-0311 tree and pass. PROVENANCE: TRANSCRIBED BY CLAUDE from the ChatGPT review session and relayed by the human commander; the GitHub review-write integration returns 403."
         }
       ]
-    },
-    {
-      "id": "PL-0311",
-      "priority": "P1",
-      "lane": "Backend",
-      "status": "REVIEW",
-      "title": "apps/web declares the package it imports for the pinned transport",
-      "dependencies": [
-        "PL-0710"
-      ],
-      "allowedPaths": [
-        "apps/web/package.json",
-        "package-lock.json"
-      ],
-      "reviewDependencies": [
-        "apps/web/src/lib/server-bootstrap.ts"
-      ],
-      "preferredAgent": "claude-backend",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "typecheck",
-        "unit"
-      ],
-      "acceptance": "apps/web/package.json declares @liberty/media-inspection AND package-lock.json carries the matching apps/web dependency edge, landing together in one change. PL-0308's server-bootstrap.ts imports nodePinnedFetch from @liberty/media-inspection and apps/web does not declare it; the import resolves through the root workspace symlink, so tsc and vitest are green and NO GATE CATCHES IT, which is the reason to declare it rather than a reason to leave it. Verified 2026-09-20: package-lock.json's packages['apps/web'] dependency map lists seven @liberty packages and not this one, while the manifest -- before this was reverted -- listed eight. npm ci --dry-run returned 0 in that state, so nothing is broken today; the two files simply disagree, and npm's tolerance of a link node that already exists is not a contract. WHY THIS IS A TASK AND NOT A LINE IN PL-0308: package-lock.json is reserved by PL-0710, which is in REVIEW. A task in REVIEW keeps reserving its surface so nothing mutates it mid-review, and PL-0710's approval binds to a tree hash the lockfile is part of. PL-0308 therefore reverted its own manifest line rather than ship a manifest that disagrees with a lockfile it may not touch -- the undeclared import is the pre-existing state, and a NEW inconsistency introduced into a tree under review would have been worse than the old one. Required: both files change in the SAME commit, because either alone is the disagreement this task exists to remove; the lockfile edge is produced by npm rather than hand-written; and npm ci is run from a tree with no node_modules and observed to exit 0, since a dry run against a populated tree is what made the disagreement survivable in the first place.",
-      "notes": "Created 2026-09-20 from PL-0308. The implementer found it, declared it, and stopped when told the lockfile was not on its surface, rather than hand-editing a lockfile or leaving the two files disagreeing. Also waiting on the same release: .env.example needs the eight LIBERTY_CATALOG_* variables, held by PL-AI-0008 in REVIEW since round 47; that half is recorded in docs/CATALOG_SOURCE.md with a note telling an operator the env contract does not list them yet and why. DEFINITION CORRECTION 2026-09-21, on gpt-architect's PL-0308 CHANGES_REQUESTED at e5dd889, which ordered PL-0311 BEFORE PL-0308's final approval. dependencies were [\"PL-0308\",\"PL-0710\"] and PL-0308 has been removed, because that edge and the reviewer's ruling together were a DEADLOCK: PL-0308 cannot reach DONE until this task lands, and refreshReadiness holds this task in BACKLOG until every dependency is DONE, so neither could ever move. The edge was also FALSE independently of the deadlock. What this task needs from PL-0308 is that the import exists in apps/web/src/lib/server-bootstrap.ts, which is committed history at ad1e1ea and readable now; a need to READ committed code is reviewDependencies, which this task already declares for that exact file, and not a lifecycle dependency. PL-0710 remains a dependency and is DONE, which is what released the package-lock.json reservation this task was waiting on.",
-      "owner": "claude-backend",
-      "gateResults": {
-        "typecheck": {
-          "status": "pass",
-          "at": "2026-09-21T14:13:06.180Z",
-          "by": "claude-backend",
-          "commitSha": "e5dd8893a5600e6272575e9116e1f434559ac532",
-          "evidence": "npx turbo run typecheck lint build --force, exit 0, 33 of 33 tasks (11 typecheck, 11 lint, 11 build), 0 cached. THIS GATE IS THE HONEST WEAK POINT OF THIS TASK AND IT IS NAMED RATHER THAN DRESSED UP: it passed identically BEFORE the change. The import resolves through the root workspace symlink whether or not apps/web declares it, so tsc, eslint, next build, vitest and npm ci --dry-run were all green against the undeclared state. That is precisely why the reviewer called it a blocker despite nothing failing -- a manifest that does not describe a dependency the code imports is a false description, not a broken build. What this gate DOES establish is that declaring it broke nothing: the same 33 tasks pass on the integrated tree."
-        },
-        "unit": {
-          "status": "pass",
-          "at": "2026-09-21T14:13:06.271Z",
-          "by": "claude-backend",
-          "commitSha": "e5dd8893a5600e6272575e9116e1f434559ac532",
-          "evidence": "npx turbo run test --force, exit 0, 20 of 20 tasks, 0 cached, 2667 passed 1 skipped -- byte for byte the round-60 figure, because this task adds no test and changes no code path. test:scripts 0 (38 environment, 69 control-plane, 16 validate-repo assertion groups, 35 dispatcher). repo:validate 0. ai:validate 0 at 65 tasks. THE EVIDENCE THAT ACTUALLY BEARS ON THIS TASK IS THE CLEAN-TREE INSTALL THE ACCEPTANCE DEMANDED, and it was run as written rather than as a dry run: node_modules was REMOVED (ls reports No such file or directory, recorded before the install), then npm ci --no-audit --no-fund exited 0, added 483 packages in 39s. The acceptance called for exactly this because a dry run against a populated tree is what let the disagreement survive in the first place -- npm tolerates a link node that already exists, so the earlier npm ci --dry-run 0 proved nothing about a fresh clone. After the install, node_modules/@liberty/media-inspection is a symlink to ../../packages/media-inspection, and require.resolve('@liberty/media-inspection/package.json') from apps/web resolves to packages/media-inspection/package.json. THE LOCKFILE EDGE WAS PRODUCED BY NPM, NOT HAND-WRITTEN, as required: npm install --package-lock-only exited 0 and wrote exactly one line, \"@liberty/media-inspection\": \"0.1.0\" inside packages['apps/web'].dependencies, in sorted position. Both files landed in ONE commit, which the acceptance required because either alone IS the disagreement this task exists to remove. Starting state recorded for the reviewer: manifest and lockfile AGREED with each other at seven @liberty packages and both disagreed with the source, which imports an eighth in apps/web/src/lib/server-bootstrap.ts and its test; git log shows apps/web/package.json was last written by PL-0305's corrective at 33195d5, never by PL-0308, which reverted its own manifest line in round 58 rather than ship a manifest disagreeing with a lockfile then reserved by PL-0710. FINDING, REPORTED RATHER THAN FIXED HERE BECAUSE IT IS OFF THIS SURFACE: nothing in the repository can catch this defect class. An undeclared workspace import is invisible to every gate the project runs, so the next one will also be found by a human reader or not at all. A manifest-versus-import consistency check belongs in PL-AI-0002's CI scope; this task declares only apps/web/package.json and package-lock.json and did not widen to add one."
-        }
-      },
-      "implementationAgent": "claude-backend",
-      "updatedAt": "2026-09-21T14:13:06.368Z",
-      "implementationBaseSha": "e5dd8893a5600e6272575e9116e1f434559ac532"
     }
   ],
   "reservedExternal": [],
@@ -257,12 +235,13 @@
         "architecture-review",
         "security-review"
       ],
-      "acceptance": "GitHub becomes the shared state bridge for Claude Desktop and OpenAI review without manual file copying",
+      "acceptance": "GitHub becomes the shared state bridge for Claude Desktop and OpenAI review without manual file copying. SCOPE ADDITION 2026-09-21, on gpt-architect's ARCHITECTURE / CI FINDING at f6dba611346ac53d72901f661a2b21cc12e80eac, which ruled the check belongs here rather than in a competing task: CI mechanically detects an UNDECLARED WORKSPACE IMPORT -- a source file in one workspace importing a local @liberty package that its own package.json does not declare in dependencies. THE EXACT DEFECT THIS MUST CATCH, preserved as the regression case: apps/web/src/lib/server-bootstrap.ts imported @liberty/media-inspection/node/pinned-fetch while apps/web/package.json declared seven @liberty packages and not that one. It reached a reviewer because NO EXISTING GATE CAN SEE IT: the import resolves through the root workspace symlink, so typecheck, lint, build and the unit suites were green, and even npm ci --dry-run returned 0 because npm tolerates a link node that already exists. It was found by a human reader, which is not a detection mechanism. Required of the check: it reads each workspace's own manifest rather than the root's; it resolves subpath imports (@liberty/x/node/y declares @liberty/x); it covers test files as well as source, since server-bootstrap.test.ts carried the same undeclared import; and it fails the build rather than warning, because a warning in a green pipeline is how this one survived. A dry-run install against a populated node_modules does NOT satisfy this and must not be offered as the implementation. NOT IN SCOPE: the reverse direction (a declared dependency nothing imports) is a different and much weaker signal, and adding it would make the check noisy enough to be turned off.",
       "owner": null,
       "gateResults": {},
       "implementationAgent": "claude-lead",
       "updatedAt": "2026-08-17T01:53:44.285Z",
-      "implementationBaseSha": "b157a5846d45568f516240f581d6b317a544aa12"
+      "implementationBaseSha": "b157a5846d45568f516240f581d6b317a544aa12",
+      "notes": "CI finding folded in 2026-09-21 from the PL-0311 round rather than filed as its own task, on the reviewer's explicit instruction not to open a competing task. The lead had reported the gap and declined to file one, on the ground that a new task's surface would collide with this one's scripts/** and .github/** and add board pressure for nothing; the reviewer agreed and assigned it here."
     }
   ]
 }
