@@ -359,3 +359,65 @@ stored ingestion instead of a pass per query), **PL-0310** (`catalog.ts` preserv
 `@liberty/media-inspection` `./http` subpath export and its triple-slash workaround —
 was folded into **PL-0710**, which already owns both packages and the packaging
 metadata and is fixing the identical omission in `provider-sdk`.
+
+---
+
+## Rounds 55–60
+
+> PROVENANCE WARNING, restated because it applies to every verdict below.
+> These are TRANSCRIBED BY CLAUDE from the ChatGPT review session and relayed by
+> the human commander. The GitHub review-write integration returns 403, so no
+> reviewer-authored artifact exists in this repository for any of them.
+
+**PL-AI-0008 APPROVED.** Catalog source configuration and its eight
+`LIBERTY_CATALOG_*` variables.
+
+**PL-AI-0009 APPROVED**, and the delivered design was approved **over** the lead's
+acceptance clause. The lead filed the task believing the preserved
+`implementationBaseSha` on release was simply a defect, then found the comment at
+`ai-control-plane.mjs:1475` documenting it as deliberate, and handed the implementer
+both readings rather than the one it had written down. The implementer built a third
+design — `reconsiderImplementationBase`, which CLEARS the base when the reviewed
+surface is unchanged in `base..HEAD` and PRESERVES it otherwise, publishing
+`clearedBaseSha`, `preservedBaseSha`, `baseDecisionReason` and
+`preservedBaseSurfaceChangedFileCount`. The reviewer ruled the lead's original clause
+**unsafe** and the delivered behaviour correct.
+
+**Path-reservation ruling.** Do NOT narrow `PL-0711`'s active surface merely to free
+other work. Do NOT silently narrow `PL-0402` or `PL-AI-0006`. A saturated board is
+the reservation mechanism working, not a problem to route around. This carries the
+`PL-0205` precedent forward and is treated as standing.
+
+**PL-AI-0010 APPROVED.** `packages/contracts/vitest.config.ts`, including its
+statement that removing the file and re-running the same command on the same tree
+PASSED once for the lead against two-of-two failures for the agent that found it — so
+the file is headroom for a suite measured at about a third of its budget, and is NOT a
+demonstrated red-to-green repair.
+
+**PL-0710 CHANGES_REQUESTED, then APPROVED.** The corrective granted EXACTLY one
+additional `allowedPaths` entry, `packages/catalog-ingestion/src/index.ts`. Removing
+the triple-slash reference there left `apps/web` failing TS7016 through three further
+root importers; rather than escalate a third time for a wider surface, the
+implementation was reverted and the fix found inside the surface already held — the
+`/// <reference path="./m3u8-parser.d.ts" />` moved onto
+`packages/media-inspection/src/hls.ts`, the file that actually imports the shim. The
+reviewer ruled the relocation **preferable** to the cleanup originally requested.
+
+**PL-0303 APPROVED**, reviewed against origin head `ad1e1ea4...`. The reconciled
+implementation base `52368da3...` is accepted: 21 commits, 47 files,
+`baseCommitSurfaceTouches` 0. The entitlement separation is accepted as **proven
+rather than asserted** — `health.ts` imports nothing and takes no rights, candidate or
+source; all three production importers were mutated in both directions; and
+media-engine checks the rights allowlist FIRST and unconditionally, so a health
+verdict can only subtract eligibility and never grant it. The 31-mutant campaign is
+accepted as the acceptance evidence, including the clause-5 hole it closed in
+`stremio/client.ts`, `fixture/provider.ts` and `rightsBasis`, and including the honest
+statements that no value-red was available against unmutated code and that one
+optional-field mutant survives and is documented in the test file.
+
+**FOLLOW-UP FINDING on PL-0303 — the duplicated provider health floor.**
+`provider-sdk` policy carries `failBelow: 0.5` and `media-engine` separately owns
+`PROVIDER_HEALTH_FLOOR = 0.5`. Explicitly **not** to be fixed inside PL-0303. A
+separate task was required whose acceptance is one authoritative health-floor
+vocabulary consumed by both packages, without introducing a dependency cycle. Filed as
+**PL-0312** and delivered in round 60; see `CLAUDE_TO_GPT.md`.

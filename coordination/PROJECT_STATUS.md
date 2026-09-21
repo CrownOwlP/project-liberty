@@ -1,8 +1,8 @@
 # Project Liberty - Project Status
 
-> Generated 2026-09-21T05:01:32.958Z from the AI control plane.
+> Generated 2026-09-21T05:22:54.193Z from the AI control plane.
 
-**Overall completion:** 42/64 executable tasks (66%)
+**Overall completion:** 43/65 executable tasks (66%)
 
 ## Status summary
 
@@ -12,14 +12,14 @@
 - **IN_PROGRESS:** 1
 - **REVIEW:** 3
 - **BLOCKED:** 6
-- **DONE:** 42
+- **DONE:** 43
 - **CANCELED:** 0
 
 ## Milestones / phases
 
 - **M0 — AI Engineering System + Repository Foundation:** COMPLETE, 4/4 (100%)
 - **M1 — Core Discovery Experience:** COMPLETE, 3/3 (100%)
-- **M2 — Media Resolution + Provider Foundation:** IN_PROGRESS, 5/6 (83%)
+- **M2 — Media Resolution + Provider Foundation:** COMPLETE, 6/6 (100%)
 - **M3 — Identity + Personal State:** NOT_STARTED, 0/4 (0%), 1 blocked
 - **M4 — Playback Vertical Slice:** IN_PROGRESS, 3/6 (50%)
 - **M5 — Live + Intelligence Boundaries:** NOT_STARTED, 0/2 (0%), 1 blocked
@@ -29,9 +29,9 @@
 
 ## Active work
 
-- **PL-0303** [REVIEW] Provider health contract — owner: claude-backend
 - **PL-0308** [REVIEW] Production composition registers the catalog ingestion runtime — owner: claude-backend
 - **PL-0310** [REVIEW] A configured catalog with nothing usable does not look empty — owner: claude-frontend
+- **PL-0312** [REVIEW] One authoritative provider health floor, consumed by both packages — owner: claude-backend
 - **PL-0711** [IN_PROGRESS] Playback-session candidate wire bounds match StreamCandidate bounds — owner: gpt-architect
 
 ## Dispatch classification

@@ -1,90 +1,8 @@
 {
-  "generatedAt": "2026-09-21T05:01:32.959Z",
+  "generatedAt": "2026-09-21T05:22:54.195Z",
   "agent": "claude-backend",
   "executionAvailable": true,
   "assigned": [
-    {
-      "id": "PL-0303",
-      "priority": "P1",
-      "lane": "Provider",
-      "status": "REVIEW",
-      "title": "Provider health contract",
-      "dependencies": [
-        "PL-0301"
-      ],
-      "allowedPaths": [
-        "packages/provider-sdk/**",
-        "packages/contracts/**",
-        "packages/observability/**"
-      ],
-      "preferredAgent": "claude-backend",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "typecheck",
-        "unit"
-      ],
-      "acceptance": "A provider with zero observations reports unknown with a null observed success rate and a zero sample count, never a mid-range score and never a pass; any prior used to rank an unobserved provider is labelled as a prior rather than presented as measured availability; degraded-but-usable is a state distinct from up and down; health output is pure over the observations plus an explicit policy version, with no hidden wall-clock decay; and health never affects entitlement, so a provider at perfect health still cannot make an unauthorized candidate eligible",
-      "owner": "claude-backend",
-      "gateResults": {
-        "typecheck": {
-          "status": "pass",
-          "at": "2026-09-21T05:01:32.758Z",
-          "by": "claude-backend",
-          "commitSha": "f81e2e24862887cb53c67eb044be60d81f605a0f",
-          "evidence": "npx turbo run typecheck --force, exit 0, 11 of 11. Also lint 0 and build 0. THE TYPECHECK IS PART OF THE ACCEPTANCE EVIDENCE HERE RATHER THAN A SIDE CONDITION, because three of the clause guarantees ARE the type and have no runtime path that could produce a wrong value: a report whose status type excludes 'pass' cannot be given one, so mutants that set status pass on the unobserved branch (M2), that put the prior score in observedSuccessRate (M4), and that add an entitlement-shaped field (M23b) fail as tsc errors -- 'src/health.ts(533,5): error TS2322' and 'error TS2353: Object literal may only specify known properties, and safeToServe does not exist in type ObservedHealthReport'. Their red is the typecheck gate, not a test file, and that is said plainly rather than dressed as a value red."
-        },
-        "unit": {
-          "status": "pass",
-          "at": "2026-09-21T05:01:32.849Z",
-          "by": "claude-backend",
-          "commitSha": "f81e2e24862887cb53c67eb044be60d81f605a0f",
-          "evidence": "npx turbo run test --force, exit 0, 20 of 20, 0 cached, 2652 passed 1 skipped (2644 before; +8, all in provider-sdk, 275 to 283). test:scripts 0, repo:validate 0. THIS ROUND CHANGED NO PRODUCTION CODE. The health mechanism was already implemented and correct in 67c5fc9 and 6c31298; what was missing was DETECTION, and a 31-mutant campaign found five places the suite would have stayed green against a wrong implementation. THE SHARPEST IS CLAUSE 5, AND IT IS A REAL HOLE THAT WAS CLOSED: the suite was strong on the mapper and BLIND ON BOTH ADAPTERS. Replacing a candidate's rights with a value chosen by the health verdict -- rights: healthReport().status === 'pass' ? 'public-domain' : source.rights -- survived all 275 tests in stremio/client.ts (M21), again for rightsBasis (M24), and again in fixture/provider.ts where the verdict is permanently unknown so the rewrite fires on EVERY candidate it produces (M25). Two reasons it was missed: nothing observed the rights VALUE at two different health verdicts, and every Stremio source in the tests was already public-domain so substituting public-domain was undetectable. Closed with a licensed source driven from warn across to pass, asserting whole-candidate equality with only healthScore overwritten: 'AssertionError: expected public-domain to be licensed'. Entitlement separation was proven three ways rather than asserted -- health.ts imports NOTHING and takes no rights, candidate or source; all three production importers were mutated in BOTH directions; and media-engine's ranking checks the rights allowlist first and unconditionally, so health can only subtract eligibility, never grant it. ALSO CLOSED: the unobserved trail could contradict its own disclaimer in a sentence beside it (M8), and policyVersion was effectively unpinned because the version enum has one member so a hardcoded string passed everything (M15, killed by a property shrunk 7 times). NO VALUE-RED WAS AVAILABLE AGAINST UNMUTATED CODE and the implementer said so rather than manufacturing one: every clause already behaved correctly at HEAD, so these tests close a detection gap rather than a behaviour gap and their red is under the planted mutant. ONE MUTANT SURVIVES AND IS DOCUMENTED IN THE TEST FILE: an optional field declared and never populated, which a name-based guard cannot see and a key-set test cannot reach because it has no runtime key; no value ever flows through it. The keyword list was widened and a name-independent key-set assertion added, which kills the populated version whatever it is called."
-        }
-      },
-      "implementationAgent": "claude-backend",
-      "updatedAt": "2026-09-21T05:01:32.944Z",
-      "implementationBaseSha": "52368da3bd7e0b4d928323c739c51c9f11c32b0e",
-      "implementationBaseProvenance": {
-        "kind": "reconciled-existing-implementation",
-        "baseSha": "52368da3bd7e0b4d928323c739c51c9f11c32b0e",
-        "reconciledAt": "2026-09-21T04:56:48.038Z",
-        "reconciledBy": "claude-backend",
-        "implementationAgent": "claude-backend",
-        "headAtReconciliation": "f81e2e24862887cb53c67eb044be60d81f605a0f",
-        "reviewSurface": "allowedPaths",
-        "surfaceCommitCount": 21,
-        "oldestSurfaceCommit": "67c5fc9270621f461cbf671fe870da7394d20065",
-        "newestSurfaceCommit": "f81e2e24862887cb53c67eb044be60d81f605a0f",
-        "surfaceCommits": [
-          "f932ebe66c99cbb4fdf15f631d1464b16115aadc",
-          "f83bc65015851b97ff9af86249b144cd57ea8047",
-          "bbfaa5a997e6ee146271f26e5b2546b7e67e47d2",
-          "6de6fb59678506d2b465e4328b011e7636aca3b3",
-          "a772dd1cf38c815920863a05d4def5c6cc2846c1",
-          "002461be7a98fad790971f37b813532616280efa",
-          "83439a28aa8ea3e349b359af8aee996424576715",
-          "1ee833d2f7834729b871f868a2bcd6c7cc8d1981",
-          "a4209a4fcf0b232e5de92f2af09dd8fb3d266909",
-          "b74b0d3c4befa226109fc1ce623b5addd46a9490",
-          "eecca6b621a2fccaab09ab3ec15d3bc93936df3b",
-          "ba9521b2c3998ae05210240827c0a773596819c9",
-          "719d2d7c31465901f3dbee1e936a180e87c3d44f",
-          "cf98b977b3c7c0113928bb9cc4d7fb6d02e802bd",
-          "6c31298ba1eece125b2733780dc6b107aa5e5200",
-          "9aafd5237e4ee6c8dab6c9c2f9879c1910149872",
-          "fc1ea4d54c9e7d2b2f6d9aa71a977abdc3bcb400",
-          "bbe68ed8d16f864c87309ceb1c089495deb89766",
-          "4ca4313f2642f4666ab6dda0084c25fcb2fbf3d5",
-          "67c5fc9270621f461cbf671fe870da7394d20065"
-        ],
-        "surfaceCommitsTruncated": true,
-        "changedFileCount": 47,
-        "baseCommitSurfaceTouchCount": 0,
-        "baseCommitSurfaceTouches": [],
-        "baseCommitSurfaceTouchesTruncated": false,
-        "reason": "The PL-0303 health implementation predates this claim by eighteen commits: packages/provider-sdk/src/health.ts, health.test.ts and health.property.test.ts are created in 67c5fc9 ('PL-0303: an unobserved provider reports unknown, and a prior says it is one') and amended in 6c31298 ('PL-0303: a health policy that claimed a window it never applied'), both titled for this task. 52368da3bd7e0b4d928323c739c51c9f11c32b0e is the parent of 67c5fc9, verified as git rev-parse 67c5fc9^, and health.ts DOES NOT EXIST at that tree -- git cat-file -e 52368da:packages/provider-sdk/src/health.ts fails -- so it is where the implementation began rather than an earlier commit that is merely safe. THIS ROUND ADDED TESTS ONLY; production code is unchanged, so a base at HEAD would have published a review range containing none of the mechanism the acceptance is about. The task arrived at this claim carrying typecheck and unit PASS from an earlier round under an earlier owner, which CLAUDE.md forbids -- evidence belongs to one implementation round under one owner -- and a base equal to HEAD. Releasing discarded both, and PL-AI-0009's rule, which landed two rounds ago, cleared the base with the published reason no-surface-change and a changed-file count of 0. This is the first real use of that mechanism."
-      }
-    },
     {
       "id": "PL-0308",
       "priority": "P1",
@@ -140,6 +58,52 @@
       "updatedAt": "2026-09-20T15:23:14.976Z",
       "implementationBaseSha": "f932ebe66c99cbb4fdf15f631d1464b16115aadc",
       "surfaceCorrectedTwiceBeforeCompletion": "SECOND CORRECTION 2026-09-20, mid-implementation, AND IT REVERSES THE FIRST ONE. My pre-claim correction moved instrumentation.ts from apps/web/src/ to apps/web/ on the belief that Next reads it from the app root. THAT WAS WRONG AND THE IMPLEMENTER PROVED IT rather than asserting it: Next 16.3.1 discovers the file in exactly one directory, non-recursively, at rootDir = path.join(pagesDir || appDir, '..'), so for an app with src/app and no pages/ the directory is apps/web/src and a file at apps/web/instrumentation.ts is NEVER LOADED. It replayed Next's own findPagesDir and getFilesInDir over this tree and over two throwaway fixtures differing only in the file's location, and the fixture with the file at the app root produced no instrumentationHookFilePath at all. It then REFUSED TO WRITE THE FILE AT THE DECLARED PATH, on the ground that a file Next never loads, sitting where the wiring appears to be, is worse than no file. That is the right call and the surface is corrected to match the evidence, which is exactly the bar the human commander set this round for touching a removed path. REMOVED as proved unnecessary: apps/web/instrumentation.ts (the wrong path); apps/web/next.config.ts (Next 16.3.1 needs no opt-in -- next/dist/server/config.js deprecates experimental.instrumentationHook with 'instrumentation.js is available by default', so the file earned no edit); docs/DEPLOYMENT.md (the operator note is a fact about this source and belongs in docs/CATALOG_SOURCE.md, which already carries the licensing decision and the rights position, and the repo has no other deployment-runbook content for a new file to sit beside). ADDED: apps/web/package.json, because the app now imports @liberty/media-inspection for nodePinnedFetch and does not declare it -- the import resolves through the root workspace symlink so tsc and vitest are green and NO GATE CATCHES IT, which is precisely why the manifest must say what the app imports."
+    },
+    {
+      "id": "PL-0312",
+      "priority": "P1",
+      "lane": "Backend",
+      "status": "REVIEW",
+      "title": "One authoritative provider health floor, consumed by both packages",
+      "dependencies": [
+        "PL-0303"
+      ],
+      "allowedPaths": [
+        "packages/contracts/**",
+        "packages/provider-sdk/**",
+        "packages/media-engine/**"
+      ],
+      "reviewDependencies": [
+        "docs/ARCHITECTURE.md"
+      ],
+      "preferredAgent": "claude-backend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit"
+      ],
+      "acceptance": "ONE authoritative provider-health-floor vocabulary exists and BOTH @liberty/provider-sdk and @liberty/media-engine consume it, with no second literal of the value anywhere in production code. THE DUPLICATION, stated exactly. packages/media-engine/src/ranking.ts:83 declares `export const PROVIDER_HEALTH_FLOOR = 0.5` and line 128 compares `candidate.healthScore < PROVIDER_HEALTH_FLOOR` to produce the `provider_health_below_floor` reason. packages/provider-sdk/src/health.ts:216 separately sets `failBelow: 0.5` in its default policy and line 604 compares `score < policy.failBelow` to produce the `fail` verdict. Three comments in health.ts (lines 177, 391 and 405) and one runtime message (line 625) already ASSERT that the two agree. An assertion in prose is exactly what does not survive an edit to one of the two numbers, which is the whole finding. REQUIRED: the shared declaration lands in a package both consumers ALREADY depend on, or in a new dependency-leaf package, and the implementer states which and why. Measured 2026-09-21: @liberty/media-engine depends on @liberty/contracts only; @liberty/provider-sdk depends on @liberty/contracts, @liberty/media-inspection, @liberty/net-policy and zod; @liberty/contracts depends on zod only. So @liberty/contracts is today the only existing package that both consume and that cannot import either of them, and putting the floor there adds no edge at all. A new leaf on the @liberty/net-policy pattern is also acceptable if the implementer can show why contracts is the wrong home. Adding an edge from media-engine to provider-sdk is NOT acceptable: provider-sdk is the provider-adapter isolation boundary (invariant 3) and media-engine is downstream of it. REQUIRED: a check that FAILS if the two ever disagree again, and it must not be satisfiable by a comment. Either the two consumers read the same exported symbol -- so disagreement is unrepresentable rather than merely tested -- or, where a policy field must stay independently configurable, a test asserts the default policy's `failBelow` equals the authoritative floor and would go red on either number alone being changed. If both mechanisms are used, say which one carries the guarantee. REQUIRED: the two comparisons keep their CURRENT and DIFFERENT boundary semantics, or the change of semantics is deliberate and stated. media-engine excludes a candidate strictly BELOW the floor; provider-sdk returns `fail` strictly BELOW `failBelow`. These agree today. A refactor that quietly moves either to `<=` changes which providers serve, and sharing one constant must not be allowed to smuggle that in. PRESERVED INVARIANT, non-negotiable: health may only SUBTRACT eligibility, never grant it. PL-0303's approval rests on health.ts importing nothing and taking no rights, candidate or source, and on media-engine checking the rights allowlist FIRST and unconditionally. A shared floor module must therefore carry the threshold vocabulary ONLY -- no rights, entitlement, allowlist or candidate types, and no import of provider-sdk or media-engine -- so that the new module cannot become a route by which a health verdict reaches a rights decision. A test asserts the module's import graph is empty of those. NOT IN SCOPE: changing the value 0.5, changing the health algorithm, the prior/measured score split, the policy version enum, or anything PL-0303 delivered. PL-0303 is DONE and APPROVED at ad1e1ea4f3c9b95e10a6140aab7e8ecfdb597e77 and must not be reopened for this. If the correct home for the floor turns out to require a change inside PL-0303's delivered files, that is fine -- those files are on this task's surface -- but the health BEHAVIOUR proven by PL-0303's 31-mutant campaign must be unchanged, and the campaign's tests must stay green without being edited to accommodate the move.",
+      "notes": "Created 2026-09-21 as gpt-architect's FOLLOW-UP FINDING on the PL-0303 approval, which was explicit that the fix must NOT be made inside PL-0303 and must not introduce a dependency cycle. Surface note: packages/contracts/** and packages/media-engine/** are also declared by PL-0205 (BLOCKED, superseded, preserved as audit history) and by PL-AI-0006 (READY, unclaimed); neither is active, and this task must not be started while either is, nor its own surface narrowed to manufacture a dispatchable wave -- the PL-0205 precedent. packages/contracts/** carries the vitest.config.ts PL-AI-0010 added; do not remove or widen its timeout as part of this work.",
+      "owner": "claude-backend",
+      "implementationAgent": "claude-backend",
+      "updatedAt": "2026-09-21T05:22:54.095Z",
+      "implementationBaseSha": "ad1e1ea4f3c9b95e10a6140aab7e8ecfdb597e77",
+      "gateResults": {
+        "typecheck": {
+          "status": "pass",
+          "at": "2026-09-21T05:22:24.865Z",
+          "by": "claude-backend",
+          "commitSha": "ad1e1ea4f3c9b95e10a6140aab7e8ecfdb597e77",
+          "evidence": "npx turbo run typecheck lint --force, exit 0, 22 of 22 tasks (11 typecheck + 11 lint), 0 cached. npx turbo run build --force, exit 0, 11 of 11. THE TYPECHECK MATTERS HERE BEYOND THE USUAL, because the delivered mechanism is that two packages now read ONE exported symbol rather than two literals that agreed: after this change a divergence between media-engine's PROVIDER_HEALTH_FLOOR and provider-sdk's shipped failBelow is not a wrong value, it is a missing export, and tsc is what says so. The new leaf packages/contracts/src/shared/provider-health.ts resolves through the existing ./shared/* wildcard export, so no package.json, barrel or metadata edit was required and none was made."
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-09-21T05:22:50.002Z",
+          "by": "claude-backend",
+          "commitSha": "ad1e1ea4f3c9b95e10a6140aab7e8ecfdb597e77",
+          "evidence": "npx turbo run test --force, exit 0, 20 of 20 tasks, 0 cached, 2667 passed 1 skipped (2652 passed 1 skipped before; +15, and the arithmetic is exact: contracts 202 to 208, provider-sdk 283 to 288, media-engine 369 to 373 -- 6 plus 5 plus 4). test:scripts 0 (38 environment, 69 control-plane, 16 validate-repo assertion groups, 35 dispatcher). repo:validate 0. NO PRODUCTION BEHAVIOUR CHANGED AND THAT IS THE POINT, so no value-red against unmutated code was available and none was manufactured. The defect was that one threshold was written down twice -- media-engine's PROVIDER_HEALTH_FLOOR = 0.5 and provider-sdk's failBelow: 0.5 -- with three doc comments and one runtime message ASSERTING they agreed, and no check that would go red on the commit that tuned one of them. Every existing test passed before and after, including ranking.test.ts's boundary pair at PROVIDER_HEALTH_FLOOR - 0.01 and PROVIDER_HEALTH_FLOOR exactly, which is precisely why prose was not enough. THREE MUTANTS WERE PLANTED AND ALL THREE WERE KILLED, each by the assertion written for it and by no other. M1, media-engine restates the constant: replacing `export { PROVIDER_HEALTH_FLOOR }` with `export const PROVIDER_HEALTH_FLOOR = 0.5` -- the exact pre-change state -- fails health-floor.test.ts 'declares no floor of its own' (1 failed, 3 passed). Note which assertion did NOT fire: 're-exports the same value under its historical name' stayed green, because 0.5 equals 0.5; a value-equality test alone would have permitted the duplication this task exists to remove, and that is why the source-graph assertion is the one carrying the guarantee. M2, the shared floor moves off the prior: 0.5 to 0.6 fails provider-sdk health-floor.test.ts 'keeps the prior sitting exactly on the floor' (1 failed, 4 passed), which pins the three-way coupling the value came from -- the Laplace 1/1 prior scores an unobserved provider exactly 0.5, the floor is 0.5, and the comparison is strict, so an unmeasured provider sits ON the floor and survives; any one of the three moving alone changes which providers are reachable at all. M3, the strict comparison becomes inclusive: `score < floor` to `score <= floor` fails contracts provider-health.test.ts twice (2 failed, 4 passed) AND media-engine health-floor.test.ts once, which is the cross-package half -- this is the mutant that would have buried every provider nobody has yet observed, permanently and silently, since a buried provider is never asked anything and so never accumulates the observations that would release it. THE ENTITLEMENT SEPARATION WAS WEAKENED IN ONE STATED WAY AND MECHANICALLY ENFORCED FOR THE FIRST TIME. PL-0303 was approved partly on health.ts importing NOTHING. It now imports exactly one module. That module imports nothing at all -- not zod, not a sibling -- and exports a number and a predicate over numbers; contracts provider-health.test.ts asserts the empty import list and the absence of any rights, entitlement, candidate, licence, allowlist or DRM vocabulary, and provider-sdk health-floor.test.ts asserts health.ts's import list is exactly that one specifier and nothing else. So the property is now 'imports one leaf whose transitive closure is empty', which is weaker to state than 'imports nothing' and, unlike it, is checked. Said plainly rather than left for the reviewer to notice. ONE HONESTY FIX CAME OUT OF THE WORK AND IS NOT COSMETIC: the fail-band reason trail asserted unconditionally that the policy's failBelow 'is also the floor below which the media engine excludes a candidate outright'. That is a claim about a different package and it is false for any versioned policy that moves its threshold -- it would tell whoever is reading the trail that a candidate is about to be excluded when media-engine would still serve it. It is now conditional on policy.failBelow === PROVIDER_HEALTH_FLOOR, and the third test in health-floor.test.ts drives both branches with a failBelow of 0.7. NOT DONE, and reported rather than quietly fixed: packages/contracts/src/shared/rights.ts still carries a stale note saying media-engine 'currently declares an equivalent PLAYABLE_RIGHTS' that should converge 'once PL-0201 is out of review'. That convergence already happened -- media-engine's PLAYABLE_RIGHTS is an alias -- so the comment is false today. It is inside this task's allowedPaths and it was left alone because it is a different duplication from the one this task was created for."
+        }
+      }
     }
   ],
   "review": [],

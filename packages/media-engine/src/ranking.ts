@@ -5,6 +5,10 @@ import {
   type StreamCandidate
 } from "@liberty/contracts/domains/playback";
 import type { MediaFact } from "@liberty/contracts/shared/media-facts";
+import {
+  PROVIDER_HEALTH_FLOOR,
+  isBelowHealthFloor
+} from "@liberty/contracts/shared/provider-health";
 import { PLAYABLE_CONTENT_RIGHTS, type ContentRights } from "@liberty/contracts/shared/rights";
 import { type CandidateScore, explainScore, scoreCandidate } from "./scoring";
 
@@ -79,8 +83,24 @@ export interface PlaybackDecision {
  */
 export const PLAYABLE_RIGHTS: readonly ContentRights[] = PLAYABLE_CONTENT_RIGHTS;
 
-/** Providers below this health floor are excluded regardless of quality. */
-export const PROVIDER_HEALTH_FLOOR = 0.5;
+/**
+ * Providers below this health floor are excluded regardless of quality.
+ *
+ * AN ALIAS, NOT A SECOND CONSTANT, for the same reason `PLAYABLE_RIGHTS` above
+ * is one. The value lives in `@liberty/contracts/shared/provider-health`, where
+ * `@liberty/provider-sdk` also reads it as its shipped policy's `failBelow`.
+ * This module used to declare its own `0.5` and provider-sdk declared another,
+ * with three comments asserting that the two agreed -- an agreement by
+ * coincidence between the code that DECIDES a provider is failing and the code
+ * that EXCLUDES its candidates, which would have survived right up until
+ * somebody tuned one of the two numbers.
+ *
+ * Re-exported under the engine's historical name so existing consumers and
+ * `@liberty/media-engine`'s barrel are unchanged, and imported as a binding
+ * rather than written `export ... from` because `firstRejectionReason` below
+ * reads it.
+ */
+export { PROVIDER_HEALTH_FLOOR };
 
 export type RejectionReason =
   | "rights_not_playable"
@@ -125,7 +145,7 @@ function firstRejectionReason(
   if (candidate.height !== null && candidate.height > capabilities.maxHeight) {
     return "resolution_exceeds_capability";
   }
-  if (candidate.healthScore < PROVIDER_HEALTH_FLOOR) return "provider_health_below_floor";
+  if (isBelowHealthFloor(candidate.healthScore)) return "provider_health_below_floor";
   return null;
 }
 

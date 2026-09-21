@@ -95,7 +95,28 @@
  *     drives the score to exactly 0, so the "never permanently condemned"
  *     property of Laplace's rule stops holding at that scale. Recorded in
  *     `mapping.property.test.ts`; not fixed here.
+ *
+ * THE ONE IMPORT, AND WHY IT DOES NOT COST THE SEPARATION. This file used to
+ * import nothing, and that was cited as part of the proof that a health verdict
+ * cannot reach a rights decision: no rights value, candidate or source is
+ * reachable from here, so health can only subtract eligibility and never grant
+ * it. PL-0312 adds exactly one edge, to
+ * `@liberty/contracts/shared/provider-health`, which holds the floor and the
+ * comparison that this file and media-engine must agree on. That module imports
+ * NOTHING AT ALL -- not zod, not a sibling -- and exports a number and a
+ * predicate over numbers. Its own test asserts the empty import list and the
+ * absence of any rights, entitlement or candidate vocabulary, and
+ * `health-floor.test.ts` asserts that this file's import list is that module
+ * and nothing else. So the property is no longer "imports nothing", which was
+ * true and unchecked; it is "imports one leaf whose transitive closure is
+ * empty", which is weaker to state and, for the first time, mechanically
+ * enforced.
  */
+
+import {
+  PROVIDER_HEALTH_FLOOR,
+  isBelowHealthFloor
+} from "@liberty/contracts/shared/provider-health";
 
 export const PROVIDER_HEALTH_STATUSES = ["unknown", "pass", "warn", "fail"] as const;
 
@@ -174,12 +195,21 @@ export interface ProviderHealthPolicy {
   /**
    * Below this the provider is `fail`.
    *
-   * MUST agree with media-engine's `PROVIDER_HEALTH_FLOOR`, which excludes a
-   * candidate outright at `healthScore < 0.5`. They are two constants that have
-   * to hold one value, and provider-sdk cannot import media-engine -- so the
-   * agreement is asserted in a comment here and reported as a contracts finding
-   * rather than pretended away. If they ever diverge, `fail` stops meaning
-   * "media-engine will drop this" and starts meaning nothing in particular.
+   * THE SHIPPED POLICY READS THE SHARED FLOOR (PL-0312), so this field and
+   * media-engine's `PROVIDER_HEALTH_FLOOR` are no longer two constants that
+   * have to hold one value by agreement: both are
+   * `@liberty/contracts/shared/provider-health`'s `PROVIDER_HEALTH_FLOOR`, and
+   * the comparison is that module's `isBelowHealthFloor` in both places. The
+   * previous wording asked the reader to keep two numbers in step and reported
+   * the duplication as a contracts finding; that finding is what created the
+   * shared vocabulary.
+   *
+   * It stays a POLICY FIELD rather than becoming the constant directly, because
+   * a policy is versioned and a future version may legitimately move its fail
+   * threshold. What a future version may not do is move it silently: below the
+   * shared floor, `fail` stops meaning "media-engine will drop this", and above
+   * it, a provider media-engine still serves is being reported as failing.
+   * `health-floor.test.ts` pins the shipped policy to the shared value.
    */
   readonly failBelow: number;
   /**
@@ -213,7 +243,7 @@ export const DEFAULT_PROVIDER_HEALTH_POLICY: ProviderHealthPolicy = {
   version: "provider-health/2026-08-20.laplace-v1",
   priorSuccesses: 1,
   priorFailures: 1,
-  failBelow: 0.5,
+  failBelow: PROVIDER_HEALTH_FLOOR,
   passAtOrAbove: 0.85,
   windowMs: null,
   precision: 4
@@ -387,9 +417,9 @@ export function smoothedSuccessRate(
  * score?" has two wrong answers and the shipped policy avoids both on purpose
  * rather than by luck:
  *
- *   - BELOW `failBelow` BURIES EVERY NEW PROVIDER, and does it silently.
- *     `failBelow` is media-engine's `PROVIDER_HEALTH_FLOOR`, which excludes a
- *     candidate outright -- so a prior under it means a source nobody has ever
+ *   - BELOW `failBelow` BURIES EVERY NEW PROVIDER, and does it silently. Under
+ *     the shipped policy `failBelow` IS `PROVIDER_HEALTH_FLOOR`, the shared
+ *     value media-engine excludes on -- so a prior under it means a source nobody has ever
  *     observed produces no eligible candidates, is therefore never asked
  *     anything, and therefore never accumulates the observations that would let
  *     it out. Absence of evidence would be read as evidence of failure, and the
@@ -402,13 +432,16 @@ export function smoothedSuccessRate(
  *     being reported healthy.
  *
  * So the honest placement is inside the degraded band, and under the shipped 1/1
- * prior it is exactly `failBelow` -- 0.5 against a floor media-engine compares
- * with a STRICT `<`, so an unobserved provider sits ON the floor and survives it
- * rather than clearing it by any margin. The thinness is deliberate: it is the
+ * prior it is exactly `failBelow` -- 0.5 against a floor compared with a STRICT
+ * `<`, so an unobserved provider sits ON the floor and survives it rather than
+ * clearing it by any margin. Since PL-0312 that strictness is written once, in
+ * `isBelowHealthFloor`, which both this file and media-engine call; it used to
+ * be two hand-written comparisons, and a refactor moving either one to `<=`
+ * would have buried every unobserved provider with nothing going red. The thinness is deliberate: it is the
  * weakest position that is still not an exclusion, which is what "we have no
  * idea" deserves. It also means the strictness of media-engine's comparison is
  * load-bearing rather than incidental, and that the prior and the floor are one
- * decision expressed as two constants. `health.test.ts` pins both relationships,
+ * decision expressed as one constant and one prior. `health.test.ts` pins both relationships,
  * including the fact that a plausible alternative prior violates the first --
  * a coupling like this survives right up until somebody tunes one constant alone.
  *
@@ -601,7 +634,7 @@ function statusFor(
   score: number,
   policy: ProviderHealthPolicy
 ): Exclude<ProviderHealthStatus, "unknown"> {
-  if (score < policy.failBelow) return "fail";
+  if (isBelowHealthFloor(score, policy.failBelow)) return "fail";
   if (score >= policy.passAtOrAbove) return "pass";
   return "warn";
 }
@@ -618,12 +651,22 @@ function statusFor(
 function bandReason(score: number, policy: ProviderHealthPolicy): ProviderHealthReason {
   const status = statusFor(score, policy);
   if (status === "fail") {
+    /*
+     * The second clause is CONDITIONAL because it is a claim about a different
+     * package. It holds for the shipped policy, whose `failBelow` is the shared
+     * `PROVIDER_HEALTH_FLOOR`; it does not hold for a versioned policy that has
+     * moved its threshold, and a reason trail asserting it anyway would tell
+     * whoever reads it that a candidate is about to be excluded when it is not.
+     */
+    const alsoTheEngineFloor = policy.failBelow === PROVIDER_HEALTH_FLOOR;
     return {
       code: "score_below_fail_threshold",
       detail:
         `ranking score ${String(score)} is below the fail threshold ` +
-        `${String(policy.failBelow)}, which is also the floor below which the media engine ` +
-        "excludes a candidate outright"
+        String(policy.failBelow) +
+        (alsoTheEngineFloor
+          ? ", which is also the floor below which the media engine excludes a candidate outright"
+          : `, which this policy sets apart from the shared media-engine floor ${String(PROVIDER_HEALTH_FLOOR)}`)
     };
   }
   if (status === "pass") {
