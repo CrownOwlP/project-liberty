@@ -1,3 +1,4 @@
+/// <reference path="./m3u8-parser.d.ts" />
 import { Parser } from "m3u8-parser";
 import { readDeclaredCodecs } from "./codecs";
 import { checkUrlStatically } from "./egress";

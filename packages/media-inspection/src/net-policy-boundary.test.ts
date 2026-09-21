@@ -363,3 +363,48 @@ describe("the subpaths a consumer of the bounded fetch needs are published", () 
     expect([...reachableBareSpecifiers(join(SRC_DIR, "index.ts"))]).toContain("m3u8-parser");
   });
 });
+
+/*
+ * WHERE THE AMBIENT DECLARATION LIVES, AND WHY IT IS NOT A CONSUMER'S PROBLEM.
+ *
+ * `hls.ts` imports `m3u8-parser`, which ships no types. The declaration that
+ * supplies them, `m3u8-parser.d.ts`, sits in this package's source tree, and a
+ * tsconfig `include` is per-project -- so for a long time every downstream
+ * program that reached `hls.ts` failed `TS7016` on a file it never calls, and
+ * `packages/catalog-ingestion/src/index.ts` carried a triple-slash reference to
+ * our shim purely so that its own consumers would compile.
+ *
+ * That was a workaround in the wrong package. A triple-slash reference travels
+ * with the source it is written in, so the honest home for it is the file that
+ * performs the untyped import -- one reference beside one import, rather than
+ * one per downstream barrel that happens to re-export through it, each added by
+ * whoever discovered the breakage next.
+ *
+ * These two assertions are the guard. The first is the property: the reference
+ * is on `hls.ts`. The second is the consequence the property exists for: no
+ * source file anywhere in the repository points at our shim from outside this
+ * package. Delete the first and `apps/web` fails `TS7016` again; satisfy the
+ * first by re-adding a downstream reference and the second fails instead.
+ */
+describe("the m3u8-parser shim is referenced from the file that imports it", () => {
+  it("names the declaration in hls.ts, where the untyped import is", () => {
+    const hls = readFileSync(join(SRC_DIR, "hls.ts"), "utf8");
+    const first = hls.split("\n")[0]?.trim() ?? "";
+    expect(first).toBe('/// <reference path="./m3u8-parser.d.ts" />');
+  });
+
+  it("is not restated by any file outside this package", () => {
+    const repoRoot = dirname(dirname(PACKAGE_ROOT));
+    const offenders: string[] = [];
+    for (const workspace of ["packages", "apps"]) {
+      const root = join(repoRoot, workspace);
+      if (!existsSync(root)) continue;
+      for (const file of listSourceFiles(root)) {
+        if (file.startsWith(PACKAGE_ROOT + sep)) continue;
+        if (/<reference\s+path=["'][^"']*m3u8-parser\.d\.ts["']/.test(readFileSync(file, "utf8")))
+          offenders.push(relative(repoRoot, file).split(sep).join("/"));
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+});

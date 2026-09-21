@@ -1,28 +1,28 @@
-/// <reference path="../../media-inspection/src/m3u8-parser.d.ts" />
 /*
- * THE SHIM THIS PACKAGE'S OWN tsconfig ALREADY NAMES, NAMED AGAIN FOR ITS
- * CONSUMERS.
+ * THE SHIM THAT USED TO BE NAMED HERE NOW TRAVELS WITH THE FILE THAT NEEDS IT.
  *
- * `@liberty/media-inspection` publishes ONE entry point, and that barrel
- * re-exports `./hls`, whose first line is `import { Parser } from "m3u8-parser"`
- * -- a package that ships no types. The ambient declaration that supplies them
- * lives in the media-inspection source tree, where only that package's own
- * tsconfig includes it. So ANY program that reaches this package's public API
- * pulls `hls.ts` in and fails with TS7016 on a file it never calls, and
- * `apps/web` is now such a program.
+ * This file began with a triple-slash reference to
+ * `../../media-inspection/src/m3u8-parser.d.ts`, and the reasoning was sound at
+ * the time: `@liberty/media-inspection` published ONE entry point, that barrel
+ * re-exports `./hls`, whose first line imports `m3u8-parser` -- a package that
+ * ships no types -- and the ambient declaration supplying them lived where only
+ * media-inspection's own tsconfig included it. Any program reaching this
+ * package's public API therefore failed TS7016 on a file it never calls, and
+ * `apps/web` became such a program. A reference travels with the source, so
+ * naming it here was the only mechanism available from inside this package.
  *
- * `packages/catalog-ingestion/tsconfig.json` already solves this for THIS
- * package by naming the shim in its `include`. That cannot help a consumer: an
- * `include` is per-project. A triple-slash reference travels with the source, so
- * the fix arrives wherever this file does -- which is the only mechanism
- * available from inside this package.
+ * PL-0710 removed the need for it, twice over. `@liberty/media-inspection` now
+ * publishes `./egress`, `./http`, `./pin` and `./node/*`, so a consumer that
+ * wants the bounded fetch need not pull the HLS parser into its program at all.
+ * And the reference itself moved to `media-inspection/src/hls.ts`, which is the
+ * file that actually imports the untyped package: it now travels with that
+ * import to every program that includes it, rather than being restated by each
+ * downstream barrel that happens to re-export through it.
  *
- * THE RIGHT FIX IS STILL A SUBPATH EXPORT -- `./http` on
- * `@liberty/media-inspection`, so a consumer that wants the bounded fetch does
- * not pull the HLS parser into its program at all. That is an edit to that
- * package's manifest, outside PL-0305's `allowedPaths`, and
- * `docs/CATALOG_SOURCE.md` carries it as an open item. This is the smallest
- * honest fix available from here, not the fix.
+ * DO NOT REINTRODUCE A REFERENCE HERE. If a consumer sees TS7016 on
+ * `m3u8-parser` again, the declaration has come loose from `hls.ts`, and that is
+ * where it belongs -- one reference next to one import, rather than one per
+ * consumer who discovers the problem.
  */
 /**
  * `@liberty/catalog-ingestion` -- what a catalog is made of, and where it would
@@ -125,12 +125,13 @@ export type {
   HostClass,
   HostClassifier,
   HostResolver,
-  ManifestFetchDependencies,
-  ManifestFetchFailure,
-  PinnedFetch,
-  PinnedRequestInit,
   PinnedTarget
-} from "@liberty/media-inspection";
+} from "@liberty/media-inspection/egress";
+export type {
+  ManifestFetchDependencies,
+  ManifestFetchFailure
+} from "@liberty/media-inspection/http";
+export type { PinnedFetch, PinnedRequestInit } from "@liberty/media-inspection/pin";
 export {
   assessFreshness,
   planNextPassAt,

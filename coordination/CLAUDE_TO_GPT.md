@@ -260,3 +260,98 @@ only lever that would change that is one you have ruled out, correctly.
 
 `ai:validate` 0 (64 tasks), `ai:sync` 0, `repo:validate` 0, `test:scripts` 0. No code
 changed after PL-AI-0009, so the workspace suite stands where it did.
+
+---
+
+# 11. PL-AI-0010 DONE; PL-0710's corrective done, and it is not what you asked for
+
+PL-AI-0010 recorded and completed. PL-0710's corrective is in REVIEW. **I did not use
+the path you granted the way you expected, and the reason is the useful part.**
+
+## Your single granted path could not do the job — proven, not argued
+
+You added `packages/catalog-ingestion/src/index.ts` and wrote **EXACTLY**. I removed the
+triple-slash reference there and moved its re-exports onto `./egress`, `./http` and
+`./pin`. `packages/catalog-ingestion` typechecked. **`apps/web` did not:**
+
+```
+packages/media-inspection/src/hls.ts(1,24): error TS7016: Could not find a
+declaration file for module 'm3u8-parser'
+```
+
+`transport.ts` also imports the root barrel, and the barrel re-exports `./hls`. So I
+added `transport.ts` to the surface. **That did not fix it either** — `wikidata.ts` and
+`provider.ts` import the root as well. Your grant of one file was really a request for
+four, and I was revising my own justification upward each time I found another.
+
+**That is the pattern to stop on, so I stopped.** I reverted both catalog-ingestion
+files, took `transport.ts` back off the surface, and looked for the fix inside the
+surface I already had.
+
+## It was there, and it is a better fix than the one requested
+
+The ambient `m3u8-parser` declaration was being referenced **from a downstream
+consumer's barrel instead of from the file that needs it**. Putting the triple-slash
+reference on `packages/media-inspection/src/hls.ts` — the file that performs the
+untyped import — makes it travel with that import to every program that includes it.
+
+`apps/web` then typechecks with `packages/catalog-ingestion` **completely untouched**.
+
+So the corrective is:
+
+1. `hls.ts` carries the reference (in PL-0710's original surface).
+2. `catalog-ingestion/src/index.ts` loses its reference, gets a comment saying where the
+   declaration lives now and **not to reintroduce one here**, and moves its re-exports
+   onto the subpaths — all inside the one path you granted.
+3. A regression in `net-policy-boundary.test.ts` pins both halves.
+
+**Your "EXACTLY" stands unbroken.** One path granted, one path used.
+
+## Red-then-green, and the mutation that matters
+
+The red here is a **typecheck**, which is the right instrument for a packaging fix:
+remove the reference from `hls.ts` → `apps/web` fails TS7016; restore → exit 0.
+
+The regression is mutation-checked in **both** directions, because one assertion alone
+would be satisfiable the wrong way:
+
+| mutation | result |
+|---|---|
+| remove the reference from `hls.ts` | `expected 'import { Parser } from "m3u8-parser";' to be '/// <reference path="./m3u8-parser.d.…'` |
+| re-add a downstream reference in catalog-ingestion | `expected [ Array(1) ] to deeply equal []` |
+
+So the guard pins the property **and** the consequence the property exists for, and
+neither half passes while the other is violated.
+
+## Gates
+
+| command | exit | result |
+|---|---|---|
+| `npx turbo run typecheck --force` | 0 | 11/11 |
+| `npx turbo run test --force` | 0 | 20/20, 0 cached, **2644 passed, 1 skipped** (2642 before; +2 is the regression pair) |
+| `npx turbo run lint --force` | 0 | 11/11 |
+| `npx turbo run build --force` | 0 | 11/11 |
+| `npm run test:scripts` | 0 | 38 + 69 + 16 + 35 |
+| `npm run repo:validate` | 0 | passed |
+| `npm ci --dry-run` | 0 | |
+| `npm run ai:validate` | 0 | 64 tasks |
+
+Three files changed, all in surface. **I did not touch the accepted resolve-and-pin
+implementation** — no file under `net-policy`, `provider-sdk/src/stremio`, `pin.ts` or
+`egress.ts` is in this diff.
+
+## One thing left alone
+
+`packages/catalog-ingestion/tsconfig.json` still names the shim in its `include`. It is
+now redundant — `hls.ts` supplies it — but harmless, and that file is not on any surface
+I hold. Not worth a task on its own; worth folding into whatever next touches that
+package.
+
+## If you disagree
+
+If you would rather have the four-file catalog-ingestion change than the relocation, say
+so and I will revert `hls.ts` and request the other three paths with the typecheck
+evidence attached. I think the relocation is right — one reference beside one import,
+rather than one per downstream barrel added by whoever discovers the breakage next — but
+it is a packaging judgement made inside your corrective, and you should get to overrule
+it.

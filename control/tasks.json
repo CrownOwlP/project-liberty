@@ -4260,7 +4260,8 @@
         "turbo.json",
         "package-lock.json",
         "docs/SECURITY.md",
-        "docs/ARCHITECTURE.md"
+        "docs/ARCHITECTURE.md",
+        "packages/catalog-ingestion/src/index.ts"
       ],
       "reviewDependencies": [
         "packages/contracts/src/shared/ids.ts",
@@ -4280,25 +4281,68 @@
       "gateResults": {
         "typecheck": {
           "status": "pass",
-          "at": "2026-09-20T14:39:58.237Z",
+          "at": "2026-09-21T04:21:19.707Z",
           "by": "claude-security",
-          "commitSha": "20edec3aa3f33dbd58aa405d1210f56ce54c207f",
-          "evidence": "npx turbo run typecheck --force at the integrated head, exit 0, 11 of 11 tasks (10 before; @liberty/net-policy adds one). Also lint 0 (11/11) and build 0 (11/11), neither required by this task's gate list, and npm ci --dry-run exit 0 so manifests and lock agree after a workspace package was added and two consumers gained a dependency. THE DEPENDENCY SHAPE IS THE POINT AND IT IS MECHANICALLY TRUE, read out of the manifests rather than off a diagram: @liberty/net-policy declares dependencies {} -- an actual leaf, no @liberty, no third-party, no node:*; @liberty/media-inspection declares contracts, net-policy, xmldom and m3u8-parser and does NOT declare provider-sdk; @liberty/provider-sdk declares contracts, media-inspection and net-policy. The provider-sdk -> media-inspection edge exists and is acyclic because media-inspection does not depend back, which is exactly what part A's extraction made possible. Root package.json was never needed and was never touched, confirming the round-53 surface correction."
+          "commitSha": "07a718d24ffc74dc76d858c5e9026147fb90d3ce",
+          "evidence": "npx turbo run typecheck --force at the corrective head, exit 0, 11 of 11. Also lint 0 and build 0, and npm ci --dry-run 0. THE TYPECHECK IS THE DELIVERABLE HERE RATHER THAN A SIDE CONDITION, and the red-then-green is a typecheck: with the relocated reference removed from packages/media-inspection/src/hls.ts, apps/web fails as 'hls.ts(1,24): error TS7016: Could not find a declaration file for module m3u8-parser'; restored, apps/web exits 0. packages/catalog-ingestion also exits 0 with its own triple-slash reference gone."
         },
         "unit": {
           "status": "pass",
-          "at": "2026-09-20T14:39:58.354Z",
+          "at": "2026-09-21T04:21:19.798Z",
           "by": "claude-security",
-          "commitSha": "20edec3aa3f33dbd58aa405d1210f56ce54c207f",
-          "evidence": "npx turbo run test --force, exit 0, 20 of 20 tasks and 0 cached, 2617 passed 1 skipped, AT TURBO'S DEFAULT CONCURRENCY. Baseline 2441 over 18 tasks; +176 across both halves -- part A +124 (net-policy 100 new, media-inspection 226 to 240, provider-sdk 223 to 233) and part B +52 (provider-sdk 233 to 275, media-inspection 240 to 250). Two test tasks were added because turbo's test dependsOn ^build, so a new package contributes both. npm run test:scripts 0 (38+67+16+35) and repo:validate 0. PART B'S VALUE-RED IS THE WHOLE CASE FOR THE TASK: resolve-and-pin.test.ts against the unmodified provider-sdk gives 33 failed 2 passed, and the headline assertion is 'refuses a public name whose only answer is private' failing as 'expected false to be dns_resolved_private_address' -- the fetch SUCCEEDED against a name resolving only to 10.0.0.5. The hole was demonstrated, not described. The 2 that passed red are the static loopback refusals, pre-existing correct behaviour part B must not change. After implementation 35 passed. CLAUSE 7 WAS PROVED RATHER THAN ASSERTED, with a real handshake: a self-signed certificate whose ONLY SAN is DNS:localhost and which carries NO IP SAN, trusted for the file's lifetime, driven through fetchJson and nodePinnedFetch pinned to 127.0.0.1 -- 200, server-observed servername localhost, Host localhost:port -- and beside it the counterfactual RUNS FOR REAL, the rejected hostname:127.0.0.1 design against the same server and certificate asserting ERR_TLS_CERT_ALTNAME_INVALID. Without that second assertion the first would also pass against a transport verifying nothing. That block is describe.skipIf(!opensslAvailable) and it RAN here rather than skipping, and an unconditional source-invariant test in pinned-fetch.test.ts backs it up when openssl is absent. MUTATION: eight mutants, seven killed at both levels. M5 -- the rejected design, hostname set to the pinned address with servername dropped -- killed 7 tests including the real handshake and both ClientHello captures. TWO SURVIVORS REPORTED STRAIGHT rather than smoothed: M8 (pinned lookup answers any hostname) is killed by media-inspection's 4 tests but survives the entire 275-test provider-sdk suite, judged defended-rather-than-covered because the only route to a mismatch is handing hop N's pin to hop N+1, which is M3 and dies at the provider level; and part A's recorded survivor in createPinnedLookup's null guards is NOT re-closed by M8 and its comment saying so was left intact."
+          "commitSha": "07a718d24ffc74dc76d858c5e9026147fb90d3ce",
+          "evidence": "npx turbo run test --force, exit 0, 20 of 20, 0 cached, 2644 passed 1 skipped (2642 before this corrective; +2 is the new regression pair). npm run test:scripts 0, npm run repo:validate 0. THE REGRESSION IS MUTATION-CHECKED IN BOTH DIRECTIONS, which is what it is for: removing the reference from hls.ts fails with 'expected import { Parser } from \"m3u8-parser\"; to be /// <reference path=\"./m3u8-parser.d.ts\" />'; re-adding a downstream reference in catalog-ingestion instead fails the other assertion with 'expected [ Array(1) ] to deeply equal []'. So the guard pins the property AND the consequence the property exists for, and neither half passes while the other is violated."
         }
       },
       "acceptanceOriginal": "Provider outbound HTTP adopts the existing @liberty/media-inspection resolve-and-pin control (authoriseFetchTarget / nodePinnedFetch) instead of classifying host literals. Required, and each clause is a separate way host-literal checking fails: DNS resolution happens BEFORE the outbound connection; EVERY resolved address is classified, not just the first; the request is refused if ANY resolved address is private, loopback, link-local or reserved, unless an explicitly permitted local-only path applies; the connection is PINNED to the approved resolved address, so DNS rebinding cannot change the destination between the check and the connect; redirects repeat resolution, classification and pinning PER HOP; and TLS hostname verification and SNI are not regressed -- pinning to an address must still present and verify the name. Tests are required for public-name-to-private-IP, DNS rebinding, mixed public/private answer sets, and translation-prefix cases. WHY THIS IS P0 AND WHY IT IS FILED NOW: F1, F7 and F8 are three defects of ONE SHAPE in one function -- a host spelling the string comparisons did not anticipate, each reading as public, none findable by reading. A check that compares a string against literals is only ever as complete as the list of spellings whoever wrote it thought of. Resolve-and-pin classifies the address a resolver returned, which has one spelling.",
       "architectureAmendedBeforeClaim": "AMENDED 2026-09-19 BY gpt-architect's explicit round-50 direction, BEFORE THE CLAIM, and the reviewer was equally explicit that it must be done before rather than after: 'Amend PL-0710's allowedPaths BEFORE CLAIM to include the new shared package and the minimum workspace/package metadata needed to create it. Do not widen it after implementation has already started.' The surface accordingly grew from ['packages/provider-sdk/**','docs/SECURITY.md'] to include packages/net-policy/** (the new leaf package), packages/media-inspection/** (the second consumer, and the home of the deep import being removed), and the minimum workspace metadata: package.json and package-lock.json because npm workspaces is 'apps/*, packages/*' and a new package needs the lockfile regenerated, tsconfig.base.json for path mapping, turbo.json for the pipeline, and docs/ARCHITECTURE.md because a new package in the dependency graph is an architecture fact. THIS IS A WIDE SURFACE AND IT IS RESERVED BEFORE THE WORK STARTS ON PURPOSE -- an extraction that discovers its consumers mid-flight is exactly the case the no-widening-after-start rule exists for.",
       "surfaceCorrectedBeforeClaim": "CORRECTED 2026-09-20, BEFORE THE CLAIM: root package.json REMOVED from allowedPaths. I declared it in the round-50 amendment as 'the minimum workspace metadata needed to create the package', and that was a guess rather than a finding. THE EVIDENCE SAYS IT IS NOT NEEDED: root package.json declares workspaces as the pure globs ['apps/*','packages/*'], so packages/net-policy is picked up with no edit; it has no script naming any package path and no @liberty dependency; and tsconfig.base.json carries NO compilerOptions.paths at all, so there is no path map to extend either -- packages resolve through the workspace links. package-lock.json, which genuinely must be regenerated, stays. BOTH FACTS ARE TRUE AND BOTH ARE STATED, because only one of them is a good reason: the entry was unnecessary, AND it was the single path blocking this P0, because PL-AI-0008 has declared root package.json since round 47 and has sat in REVIEW without a verdict since. Removing a needed path to dodge a reservation is the move this project does not make; removing an unneeded one I declared speculatively is correcting my own over-declaration, and the right time to do it is before the claim rather than after. FLAGGED TO THE REVIEWER RATHER THAN TREATED AS SETTLED -- if gpt-architect reads this as manufacturing readiness, the entry goes back and PL-0710 waits for PL-AI-0008. THE IMPLEMENTER IS INSTRUCTED THAT IF ROOT package.json TURNS OUT TO BE NEEDED, IT MUST STOP AND SAY SO rather than reach for it, because a widening after implementation starts is what the round-50 amendment forbade.",
       "implementationAgent": "claude-security",
-      "updatedAt": "2026-09-20T14:39:58.468Z",
-      "implementationBaseSha": "33195d593695618b779ab6c97a50817a2694e8df"
+      "updatedAt": "2026-09-21T04:21:19.887Z",
+      "implementationBaseSha": "33195d593695618b779ab6c97a50817a2694e8df",
+      "review": {
+        "taskId": "PL-0710",
+        "implementationAgent": "claude-security",
+        "implementationOwner": "claude-security",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "07a718d24ffc74dc76d858c5e9026147fb90d3ce",
+        "reviewedBaseSha": "33195d593695618b779ab6c97a50817a2694e8df",
+        "reviewedTreeHash": "52df90d7058a603d9ce7cf4c1d294c798f27174048df5a5b9e0fd1f1a91268d9",
+        "reviewedFileCount": 74,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [
+          "packages/contracts/src/shared/ids.ts",
+          "apps/web/src/app/api/v1/playback/session/authorized-candidates.ts"
+        ],
+        "outcome": "CHANGES_REQUESTED",
+        "reviewedAt": "2026-09-21T04:10:32.769Z",
+        "evidence": "CHANGES_REQUESTED, NARROW CORRECTIVE ONLY. security-review PASS and rights-review PASS: the substantive security architecture is ACCEPTED -- @liberty/net-policy is the shared lower-layer host and address vocabulary rather than another copy in either consumer; provider-sdk and media-inspection both consume it; the provider path resolves before connect and classifies EVERY returned address; private, loopback, link-local and reserved answers fail according to the established local-only policy; authorised addresses travel into the pinned transport rather than being re-resolved at connect; redirects repeat validation, resolution and pinning per hop; the transport preserves the ORIGINAL HOSTNAME for Host, SNI and certificate identity rather than verifying the pinned IP; the old unpinned global fetch fallback is no longer the provider transport shape; media-inspection publishes the required ./http subpath; and the reported surviving mutants do not invalidate the accepted security property because they were EXPLICITLY RECORDED RATHER THAN HIDDEN. BLOCKING ACCEPTANCE MISS: packages/catalog-ingestion/src/index.ts still begins with the triple-slash reference to ../../media-inspection/src/m3u8-parser.d.ts, and PL-0710's folded acceptance explicitly requires removing that workaround once @liberty/media-inspection/http is available. The comment immediately following it is now stale too -- it says media-inspection publishes one entry point and that ./http is still the future fix, which PL-0710 itself has already made false. DO NOT REDESIGN THE ACCEPTED RESOLVE-AND-PIN IMPLEMENTATION; the corrective is packaging-boundary cleanup only. TRANSCRIBED BY CLAUDE from the review relayed by the human commander."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PL-0710",
+          "implementationAgent": "claude-security",
+          "implementationOwner": "claude-security",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "07a718d24ffc74dc76d858c5e9026147fb90d3ce",
+          "reviewedBaseSha": "33195d593695618b779ab6c97a50817a2694e8df",
+          "reviewedTreeHash": "52df90d7058a603d9ce7cf4c1d294c798f27174048df5a5b9e0fd1f1a91268d9",
+          "reviewedFileCount": 74,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "packages/contracts/src/shared/ids.ts",
+            "apps/web/src/app/api/v1/playback/session/authorized-candidates.ts"
+          ],
+          "outcome": "CHANGES_REQUESTED",
+          "reviewedAt": "2026-09-21T04:10:32.769Z",
+          "evidence": "CHANGES_REQUESTED, NARROW CORRECTIVE ONLY. security-review PASS and rights-review PASS: the substantive security architecture is ACCEPTED -- @liberty/net-policy is the shared lower-layer host and address vocabulary rather than another copy in either consumer; provider-sdk and media-inspection both consume it; the provider path resolves before connect and classifies EVERY returned address; private, loopback, link-local and reserved answers fail according to the established local-only policy; authorised addresses travel into the pinned transport rather than being re-resolved at connect; redirects repeat validation, resolution and pinning per hop; the transport preserves the ORIGINAL HOSTNAME for Host, SNI and certificate identity rather than verifying the pinned IP; the old unpinned global fetch fallback is no longer the provider transport shape; media-inspection publishes the required ./http subpath; and the reported surviving mutants do not invalidate the accepted security property because they were EXPLICITLY RECORDED RATHER THAN HIDDEN. BLOCKING ACCEPTANCE MISS: packages/catalog-ingestion/src/index.ts still begins with the triple-slash reference to ../../media-inspection/src/m3u8-parser.d.ts, and PL-0710's folded acceptance explicitly requires removing that workaround once @liberty/media-inspection/http is available. The comment immediately following it is now stale too -- it says media-inspection publishes one entry point and that ./http is still the future fix, which PL-0710 itself has already made false. DO NOT REDESIGN THE ACCEPTED RESOLVE-AND-PIN IMPLEMENTATION; the corrective is packaging-boundary cleanup only. TRANSCRIBED BY CLAUDE from the review relayed by the human commander."
+        }
+      ],
+      "surfaceWidenedOnReview": "WIDENED 2026-09-21 BY THE REVIEWER'S CHANGES_REQUESTED, which granted EXACTLY ONE PATH and said why it is not speculative: 'PL-0710's acceptance requires this corrective but its current allowedPaths omitted packages/catalog-ingestion/src/index.ts. Amend PL-0710's allowedPaths by adding EXACTLY packages/catalog-ingestion/src/index.ts. This is reviewer-authorized because it is the file explicitly named by the pre-existing folded acceptance. It is not a speculative surface expansion.' One path, named by the reviewer, added verbatim -- not the package, not a glob, not the tsconfig. THE MISS IS MINE TO OWN: the ./http subpath item was folded into this task's acceptance in round 52 precisely BECAUSE the triple-slash workaround lives in that file, and I then declared a surface that could not reach it. The part-A implementer did the media-inspection half, stopped at the boundary and said in its report that removing the reference needed a path it did not have; I recorded that as an out-of-surface note in the handoff instead of correcting the declaration, which is how an acceptance clause survived two gate runs unsatisfied. I BRIEFLY ADDED A SECOND PATH AND THEN TOOK IT BACK OUT, AND THE REASON IS WORTH MORE THAN THE EDIT. Removing the reference from index.ts alone left apps/web failing with 'hls.ts(1,24): error TS7016: Could not find a declaration file for module m3u8-parser', because transport.ts ALSO imports the root barrel and the barrel re-exports ./hls. So I added transport.ts. That did not fix it either -- wikidata.ts and provider.ts import the root as well, so the grant of one file was really a request for four, and I was revising my own justification upward each time I found another. THAT IS THE PATTERN TO STOP ON, so I reverted both catalog-ingestion files and looked for the fix inside the surface I already had. IT WAS THERE. The ambient m3u8-parser declaration was being referenced from a DOWNSTREAM CONSUMER'S BARREL instead of from the file that needs it; putting the triple-slash reference on packages/media-inspection/src/hls.ts itself makes it travel with the import it supplies types for, and apps/web then typechecks with catalog-ingestion COMPLETELY UNTOUCHED. Verified: apps/web tsc exit 0. The granted single path is now sufficient for what it was granted for, and the reviewer's 'EXACTLY' stands unbroken."
     },
     {
       "id": "PL-0711",
@@ -4490,7 +4534,7 @@
       "id": "PL-AI-0010",
       "priority": "P1",
       "lane": "Coordination",
-      "status": "REVIEW",
+      "status": "DONE",
       "title": "A property suite gets a timeout of its own, not vitest's default",
       "dependencies": [],
       "allowedPaths": [
@@ -4508,7 +4552,7 @@
       ],
       "acceptance": "packages/contracts declares its own vitest testTimeout, with the reason for the value written down, so its fast-check property suite is not running against a default it can exhaust under load. THIS CLOSES AN OPEN ITEM RATHER THAN OPENING ONE. Round 52 recorded a single observed-but-unreproduced failure in stream-candidate.property.test.ts and the lead could not reproduce it across ten seeds; the PL-0710 part-A work reproduced it deterministically and it was never seed-dependent. It is CONCURRENCY-dependent: the box has 2 cores, turbo's default concurrency is 10, the new @liberty/net-policy package takes the graph from 18 test tasks to 20, and 'refuses a licence endpoint that is not https, whatever else it is' -- which runs in 1.73s standalone -- measured 5.4s and 7.4s under that graph against vitest's 5000ms default. Characterised rather than re-rolled: the same tree at --concurrency=4 passes, and the same tree filtered to 19 tasks at default concurrency passes. Required: the timeout is justified against the suite's measured standalone cost and the headroom a loaded machine needs, not picked round; the config explains that a property suite's cost is a function of run count and machine load rather than of the code under test, so a default sized for unit tests is the wrong instrument; and NOTHING ABOUT THE PROPERTY ITSELF IS WEAKENED -- not the run count, not the generators, not an assertion. Raising a timeout to hide a genuinely slow property would be the same mistake one level out, so if the suite is slow for a reason the code should answer for, say so instead. Out of scope: a turbo concurrency cap, which is a CLI flag rather than a turbo.json key and is a CI decision.",
       "notes": "Found 2026-09-20 during PL-0710 part A. The failing command is npx turbo run test --force at turbo's default concurrency, reproduced 2 of 2. packages/contracts has no vitest.config.ts at all today. packages/media-engine/vitest.config.ts is the house precedent for a package-local config that exists to keep a machine-dependent assertion out of the incidental run, and its header states the reasoning this task should follow.",
-      "owner": "claude-lead",
+      "owner": null,
       "gateResults": {
         "unit": {
           "status": "pass",
@@ -4519,8 +4563,53 @@
         }
       },
       "implementationAgent": "claude-lead",
-      "updatedAt": "2026-09-20T13:45:34.835Z",
-      "implementationBaseSha": "20edec3aa3f33dbd58aa405d1210f56ce54c207f"
+      "updatedAt": "2026-09-21T04:10:32.678Z",
+      "implementationBaseSha": "20edec3aa3f33dbd58aa405d1210f56ce54c207f",
+      "review": {
+        "taskId": "PL-AI-0010",
+        "implementationAgent": "claude-lead",
+        "implementationOwner": "claude-lead",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "07a718d24ffc74dc76d858c5e9026147fb90d3ce",
+        "reviewedBaseSha": "20edec3aa3f33dbd58aa405d1210f56ce54c207f",
+        "reviewedTreeHash": "709e1292da246ed00e1fcb8dc0163c3c8d9fd6f3b6ca0a56920f4871b1a511c3",
+        "reviewedFileCount": 4,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [
+          "packages/contracts/src/stream-candidate.property.test.ts",
+          "packages/media-engine/vitest.config.ts",
+          "turbo.json"
+        ],
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-09-21T04:10:32.416Z",
+        "evidence": "APPROVED. The unit evidence is sufficient. packages/contracts/vitest.config.ts gives the property suite explicit 30s headroom justified against the MEASURED standalone and loaded costs rather than a round number. The implementation does not weaken fast-check run count, generators or assertions; DOES NOT CLAIM THE CONCURRENCY HYPOTHESIS IS PROVEN BEYOND THE EVIDENCE -- the lead's own red-direction run did not reproduce, and the config says so in terms rather than presenting headroom as a demonstrated repair; and correctly leaves turbo concurrency out of scope as a CLI flag and a CI decision. TRANSCRIBED BY CLAUDE from the review relayed by the human commander."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PL-AI-0010",
+          "implementationAgent": "claude-lead",
+          "implementationOwner": "claude-lead",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "07a718d24ffc74dc76d858c5e9026147fb90d3ce",
+          "reviewedBaseSha": "20edec3aa3f33dbd58aa405d1210f56ce54c207f",
+          "reviewedTreeHash": "709e1292da246ed00e1fcb8dc0163c3c8d9fd6f3b6ca0a56920f4871b1a511c3",
+          "reviewedFileCount": 4,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "packages/contracts/src/stream-candidate.property.test.ts",
+            "packages/media-engine/vitest.config.ts",
+            "turbo.json"
+          ],
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-09-21T04:10:32.416Z",
+          "evidence": "APPROVED. The unit evidence is sufficient. packages/contracts/vitest.config.ts gives the property suite explicit 30s headroom justified against the MEASURED standalone and loaded costs rather than a round number. The implementation does not weaken fast-check run count, generators or assertions; DOES NOT CLAIM THE CONCURRENCY HYPOTHESIS IS PROVEN BEYOND THE EVIDENCE -- the lead's own red-direction run did not reproduce, and the config says so in terms rather than presenting headroom as a demonstrated repair; and correctly leaves turbo concurrency out of scope as a CLI flag and a CI decision. TRANSCRIBED BY CLAUDE from the review relayed by the human commander."
+        }
+      ],
+      "completedAt": "2026-09-21T04:10:32.678Z"
     },
     {
       "id": "PL-0206",
