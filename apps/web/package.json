@@ -18,6 +18,7 @@
     "@liberty/catalog-ingestion": "0.1.0",
     "@liberty/contracts": "0.1.0",
     "@liberty/media-engine": "0.1.0",
+    "@liberty/media-inspection": "0.1.0",
     "@liberty/observability": "0.1.0",
     "@liberty/persistence": "0.1.0",
     "@liberty/provider-sdk": "0.1.0",

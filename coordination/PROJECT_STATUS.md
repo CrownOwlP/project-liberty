@@ -1,18 +1,18 @@
 # Project Liberty - Project Status
 
-> Generated 2026-09-21T05:22:54.193Z from the AI control plane.
+> Generated 2026-09-21T14:13:06.382Z from the AI control plane.
 
-**Overall completion:** 43/65 executable tasks (66%)
+**Overall completion:** 45/65 executable tasks (69%)
 
 ## Status summary
 
-- **BACKLOG:** 8
+- **BACKLOG:** 7
 - **READY:** 4
 - **CLAIMED:** 0
-- **IN_PROGRESS:** 1
-- **REVIEW:** 3
+- **IN_PROGRESS:** 2
+- **REVIEW:** 1
 - **BLOCKED:** 6
-- **DONE:** 43
+- **DONE:** 45
 - **CANCELED:** 0
 
 ## Milestones / phases
@@ -29,9 +29,8 @@
 
 ## Active work
 
-- **PL-0308** [REVIEW] Production composition registers the catalog ingestion runtime — owner: claude-backend
-- **PL-0310** [REVIEW] A configured catalog with nothing usable does not look empty — owner: claude-frontend
-- **PL-0312** [REVIEW] One authoritative provider health floor, consumed by both packages — owner: claude-backend
+- **PL-0308** [IN_PROGRESS] Production composition registers the catalog ingestion runtime — owner: claude-backend
+- **PL-0311** [REVIEW] apps/web declares the package it imports for the pinned transport — owner: claude-backend
 - **PL-0711** [IN_PROGRESS] Playback-session candidate wire bounds match StreamCandidate bounds — owner: gpt-architect
 
 ## Dispatch classification
@@ -39,7 +38,7 @@
 - **READY_AND_EXECUTABLE:** 4
 - **READY_BUT_EXTERNAL:** 0
 - **BLOCKED:** 6
-- **BACKLOG (dependency-gated):** 8
+- **BACKLOG (dependency-gated):** 7
 
 ## Recommended executable wave
 
@@ -62,7 +61,7 @@ No READY work is waiting on an external agent lane.
 
 - **gpt-architect:** 1/6 active (external lane; not locally executable)
 - **claude-lead:** 0/2 active
-- **claude-frontend:** 1/2 active
+- **claude-frontend:** 0/2 active
 - **claude-backend:** 2/2 active
 - **claude-media:** 0/2 active
 - **claude-test:** 0/1 active

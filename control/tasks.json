@@ -3649,7 +3649,7 @@
       "id": "PL-0308",
       "priority": "P1",
       "lane": "Backend",
-      "status": "REVIEW",
+      "status": "IN_PROGRESS",
       "title": "Production composition registers the catalog ingestion runtime",
       "dependencies": [
         "PL-0305"
@@ -3660,13 +3660,13 @@
         "apps/web/src/lib/server-bootstrap.ts",
         "apps/web/src/lib/server-bootstrap.test.ts",
         "apps/web/src/instrumentation.ts",
-        "apps/web/package.json",
         "docs/CATALOG_SOURCE.md"
       ],
       "reviewDependencies": [
         "apps/web/src/lib/catalog-ingestion-source.ts",
         "packages/catalog-ingestion/src/index.ts",
-        "packages/media-inspection/src/node/pinned-fetch.ts"
+        "packages/media-inspection/src/node/pinned-fetch.ts",
+        "apps/web/package.json"
       ],
       "preferredAgent": "claude-backend",
       "reviewAgent": "gpt-architect",
@@ -3677,7 +3677,7 @@
         "rights-review"
       ],
       "acceptance": "A hosted deployment that is configured for a real catalog source actually gets one: something in the production composition root calls registerCatalogIngestionRuntime with a runtime built next to the Node pinned-fetch construction. PL-0305 made the application CAPABLE of hosting the real source and the reviewer accepted that as complete; what remains is that NOTHING CALLS THE REGISTRATION, so a hosted deployment still answers no_metadata_source_configured -- a true statement about the deployment rather than about the registry, and the exact gap this task owns. Required: the runtime is built from the existing pinned-fetch transport rather than a second fetch path; NO CREDENTIAL OR API KEY IS INTRODUCED, since the initial source needs none and an ambient key would be the hidden credentialed source PL-0305's review forbade; an unconfigured deployment must STILL refuse by name rather than silently acquiring a default; and a regression must drive the composition root and observe a configured resolution, because a registration nobody has watched fire is not known to work. OUT OF SCOPE: persistent scheduling and storage, which is PL-0309, and the rights register, which is not a coding task. NOTE BEFORE CLAIMING: the exact composition-root file may not exist yet; the declared surface names the likely homes and must be corrected before the claim rather than widened after, on the PL-0710 precedent.",
-      "notes": "Created 2026-09-20 on gpt-architect's round-52 direction when it approved PL-0305: 'Make sure the existing handoff has explicit ownership for ... If any is currently only prose with no task, create a narrow task before it can be forgotten.' PL-0305 is NOT to be reopened for any of these. Follow-up 1 of 4. Point 3 of the round-52 verdict.",
+      "notes": "Created 2026-09-20 on gpt-architect's round-52 direction when it approved PL-0305: 'Make sure the existing handoff has explicit ownership for ... If any is currently only prose with no task, create a narrow task before it can be forgotten.' PL-0305 is NOT to be reopened for any of these. Follow-up 1 of 4. Point 3 of the round-52 verdict. SURFACE CORRECTION 2026-09-21, same verdict. allowedPaths were [\"apps/web/src/lib/catalog-source-registry.ts\",\"apps/web/src/lib/catalog-source-registry.test.ts\",\"apps/web/src/lib/server-bootstrap.ts\",\"apps/web/src/lib/server-bootstrap.test.ts\",\"apps/web/src/instrumentation.ts\",\"apps/web/package.json\",\"docs/CATALOG_SOURCE.md\"] and apps/web/package.json has been moved from allowedPaths to reviewDependencies. STATED PLAINLY BECAUSE NARROWING AN ACTIVE SURFACE IS THE MOVE THE PL-0205 PRECEDENT REFUSES: this is not that. PL-0205 was an UNIMPLEMENTED task narrowed to dodge a collision. Here the implementation is complete and the reviewer has accepted the mechanism; PL-0308 has never written this file -- git log shows its last writer is PL-0305's corrective at 33195d5 -- and it affirmatively REVERTED its own manifest line in round 58 rather than ship a manifest disagreeing with a lockfile reserved by PL-0710. The reviewer has now assigned that edge to PL-0311 and said in terms not to duplicate the implementation across two tasks. So the declaration was reserving a surface this task has declined to write, and it was the only thing left preventing the ordering the reviewer required. It moves to reviewDependencies rather than disappearing, so PL-0308's final approval still fingerprints the manifest it depends on. PL-0308 records no implementationBaseProvenance -- it was an ordinary start, not a reconciliation -- so no published commit window is altered by this.",
       "owner": "claude-backend",
       "gateResults": {
         "typecheck": {
@@ -3697,9 +3697,53 @@
       },
       "surfaceCorrectedBeforeClaim": "CORRECTED 2026-09-20 BEFORE THE CLAIM, which is what this task's own notes said must happen: the round-52 declaration named likely homes rather than verified ones. Verified against the tree now. REMOVED: apps/web/src/instrumentation.ts -- Next reads instrumentation.ts from the APP ROOT, not from src/, and neither path exists today; apps/web/instrumentation.ts is the correct home and replaces it. ADDED: catalog-source-registry.test.ts and server-bootstrap.test.ts, because acceptance clause 4 requires a regression that drives the composition root and the declaration carried no test file at all -- a task that cannot write a test cannot satisfy its own acceptance, which is the same defect PL-0708 and PL-0305 each hit once. ADDED apps/web/next.config.ts, because Next may require instrumentationHook to be enabled for the instrumentation entry point to run on this version and the implementer must be able to check rather than assume. docs/DEPLOYMENT.md does not exist and is KEPT as a create-if-needed path rather than dropped: a deployment that must register a runtime is a deployment fact, and if the implementer judges the operator note belongs in docs/CATALOG_SOURCE.md instead, the unused entry comes back out at review as PL-0501's unused CI entry did.",
       "implementationAgent": "claude-backend",
-      "updatedAt": "2026-09-20T15:23:14.976Z",
+      "updatedAt": "2026-09-21T14:05:12.905Z",
       "implementationBaseSha": "f932ebe66c99cbb4fdf15f631d1464b16115aadc",
-      "surfaceCorrectedTwiceBeforeCompletion": "SECOND CORRECTION 2026-09-20, mid-implementation, AND IT REVERSES THE FIRST ONE. My pre-claim correction moved instrumentation.ts from apps/web/src/ to apps/web/ on the belief that Next reads it from the app root. THAT WAS WRONG AND THE IMPLEMENTER PROVED IT rather than asserting it: Next 16.3.1 discovers the file in exactly one directory, non-recursively, at rootDir = path.join(pagesDir || appDir, '..'), so for an app with src/app and no pages/ the directory is apps/web/src and a file at apps/web/instrumentation.ts is NEVER LOADED. It replayed Next's own findPagesDir and getFilesInDir over this tree and over two throwaway fixtures differing only in the file's location, and the fixture with the file at the app root produced no instrumentationHookFilePath at all. It then REFUSED TO WRITE THE FILE AT THE DECLARED PATH, on the ground that a file Next never loads, sitting where the wiring appears to be, is worse than no file. That is the right call and the surface is corrected to match the evidence, which is exactly the bar the human commander set this round for touching a removed path. REMOVED as proved unnecessary: apps/web/instrumentation.ts (the wrong path); apps/web/next.config.ts (Next 16.3.1 needs no opt-in -- next/dist/server/config.js deprecates experimental.instrumentationHook with 'instrumentation.js is available by default', so the file earned no edit); docs/DEPLOYMENT.md (the operator note is a fact about this source and belongs in docs/CATALOG_SOURCE.md, which already carries the licensing decision and the rights position, and the repo has no other deployment-runbook content for a new file to sit beside). ADDED: apps/web/package.json, because the app now imports @liberty/media-inspection for nodePinnedFetch and does not declare it -- the import resolves through the root workspace symlink so tsc and vitest are green and NO GATE CATCHES IT, which is precisely why the manifest must say what the app imports."
+      "surfaceCorrectedTwiceBeforeCompletion": "SECOND CORRECTION 2026-09-20, mid-implementation, AND IT REVERSES THE FIRST ONE. My pre-claim correction moved instrumentation.ts from apps/web/src/ to apps/web/ on the belief that Next reads it from the app root. THAT WAS WRONG AND THE IMPLEMENTER PROVED IT rather than asserting it: Next 16.3.1 discovers the file in exactly one directory, non-recursively, at rootDir = path.join(pagesDir || appDir, '..'), so for an app with src/app and no pages/ the directory is apps/web/src and a file at apps/web/instrumentation.ts is NEVER LOADED. It replayed Next's own findPagesDir and getFilesInDir over this tree and over two throwaway fixtures differing only in the file's location, and the fixture with the file at the app root produced no instrumentationHookFilePath at all. It then REFUSED TO WRITE THE FILE AT THE DECLARED PATH, on the ground that a file Next never loads, sitting where the wiring appears to be, is worse than no file. That is the right call and the surface is corrected to match the evidence, which is exactly the bar the human commander set this round for touching a removed path. REMOVED as proved unnecessary: apps/web/instrumentation.ts (the wrong path); apps/web/next.config.ts (Next 16.3.1 needs no opt-in -- next/dist/server/config.js deprecates experimental.instrumentationHook with 'instrumentation.js is available by default', so the file earned no edit); docs/DEPLOYMENT.md (the operator note is a fact about this source and belongs in docs/CATALOG_SOURCE.md, which already carries the licensing decision and the rights position, and the repo has no other deployment-runbook content for a new file to sit beside). ADDED: apps/web/package.json, because the app now imports @liberty/media-inspection for nodePinnedFetch and does not declare it -- the import resolves through the root workspace symlink so tsc and vitest are green and NO GATE CATCHES IT, which is precisely why the manifest must say what the app imports.",
+      "review": {
+        "taskId": "PL-0308",
+        "implementationAgent": "claude-backend",
+        "implementationOwner": "claude-backend",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "e5dd8893a5600e6272575e9116e1f434559ac532",
+        "reviewedBaseSha": "f932ebe66c99cbb4fdf15f631d1464b16115aadc",
+        "reviewedTreeHash": "0b161196e5517f8107807483dfdc7468dcacbfcac46d508adf6d49391d198df0",
+        "reviewedFileCount": 10,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [
+          "apps/web/src/lib/catalog-ingestion-source.ts",
+          "packages/catalog-ingestion/src/index.ts",
+          "packages/media-inspection/src/node/pinned-fetch.ts"
+        ],
+        "outcome": "CHANGES_REQUESTED",
+        "reviewedAt": "2026-09-21T14:05:12.905Z",
+        "evidence": "CHANGES_REQUESTED by gpt-architect, narrow packaging corrective, reviewed against origin e5dd8893a5600e6272575e9116e1f434559ac532. THE MECHANISM IS ACCEPTED AND MUST NOT BE REDESIGNED: the real composition root calls registerCatalogIngestionRuntime; the runtime is composed beside and with the existing Node pinned transport; no credential or API-key path was introduced; an unconfigured deployment still registers nothing and remains a named refusal; configuration is driven through the actual Next server instrumentation entry point; and the tests exercise the real bootstrap path and assert pinned-fetch reference identity. ONE BLOCKER, AND IT IS THE ONLY ONE. apps/web/src/lib/server-bootstrap.ts imports @liberty/media-inspection/node/pinned-fetch directly while apps/web/package.json does not declare @liberty/media-inspection in dependencies. The build succeeds only because the monorepo workspace makes the package resolvable; the app package's manifest does not describe a dependency it actually imports, which is not acceptable for a production composition root. This is the same defect already recorded as PL-0311 and the implementation must NOT be duplicated across two tasks. PREFERRED RESOLUTION, in the reviewer's order: keep PL-0308 in CHANGES_REQUESTED; take PL-0311 now that PL-0710 is DONE and its package-lock reservation is gone; land the apps/web/package.json and package-lock.json dependency edge together as PL-0311 requires; rerun PL-0308's relevant typecheck, build and manifest gates against that integrated tree; and return PL-0308 to REVIEW for final approval. Do not redesign server-bootstrap or its runtime wiring. PROVENANCE: TRANSCRIBED BY CLAUDE from the ChatGPT review session and relayed by the human commander; the GitHub review-write integration returns 403."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PL-0308",
+          "implementationAgent": "claude-backend",
+          "implementationOwner": "claude-backend",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "e5dd8893a5600e6272575e9116e1f434559ac532",
+          "reviewedBaseSha": "f932ebe66c99cbb4fdf15f631d1464b16115aadc",
+          "reviewedTreeHash": "0b161196e5517f8107807483dfdc7468dcacbfcac46d508adf6d49391d198df0",
+          "reviewedFileCount": 10,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "apps/web/src/lib/catalog-ingestion-source.ts",
+            "packages/catalog-ingestion/src/index.ts",
+            "packages/media-inspection/src/node/pinned-fetch.ts"
+          ],
+          "outcome": "CHANGES_REQUESTED",
+          "reviewedAt": "2026-09-21T14:05:12.905Z",
+          "evidence": "CHANGES_REQUESTED by gpt-architect, narrow packaging corrective, reviewed against origin e5dd8893a5600e6272575e9116e1f434559ac532. THE MECHANISM IS ACCEPTED AND MUST NOT BE REDESIGNED: the real composition root calls registerCatalogIngestionRuntime; the runtime is composed beside and with the existing Node pinned transport; no credential or API-key path was introduced; an unconfigured deployment still registers nothing and remains a named refusal; configuration is driven through the actual Next server instrumentation entry point; and the tests exercise the real bootstrap path and assert pinned-fetch reference identity. ONE BLOCKER, AND IT IS THE ONLY ONE. apps/web/src/lib/server-bootstrap.ts imports @liberty/media-inspection/node/pinned-fetch directly while apps/web/package.json does not declare @liberty/media-inspection in dependencies. The build succeeds only because the monorepo workspace makes the package resolvable; the app package's manifest does not describe a dependency it actually imports, which is not acceptable for a production composition root. This is the same defect already recorded as PL-0311 and the implementation must NOT be duplicated across two tasks. PREFERRED RESOLUTION, in the reviewer's order: keep PL-0308 in CHANGES_REQUESTED; take PL-0311 now that PL-0710 is DONE and its package-lock reservation is gone; land the apps/web/package.json and package-lock.json dependency edge together as PL-0311 requires; rerun PL-0308's relevant typecheck, build and manifest gates against that integrated tree; and return PL-0308 to REVIEW for final approval. Do not redesign server-bootstrap or its runtime wiring. PROVENANCE: TRANSCRIBED BY CLAUDE from the ChatGPT review session and relayed by the human commander; the GitHub review-write integration returns 403."
+        }
+      ]
     },
     {
       "id": "PL-0309",
@@ -3735,7 +3779,7 @@
       "id": "PL-0310",
       "priority": "P2",
       "lane": "Frontend",
-      "status": "REVIEW",
+      "status": "DONE",
       "title": "A configured catalog with nothing usable does not look empty",
       "dependencies": [
         "PL-0305"
@@ -3759,7 +3803,7 @@
       ],
       "acceptance": "The user-facing catalog path preserves the distinction the port now makes between no_records_usable and catalog_empty. apps/web/src/lib/catalog.ts maps an empty array to 'empty' and therefore COLLAPSES THE TWO, which is the one place PL-0305's four-state work stops short of the user. The two states have different causes and different remedies: catalog_empty means the source has nothing, while no_records_usable means records exist and every one of them was withheld -- almost always for want of an operator rights basis, which is an operator action rather than a user problem. Required: catalog.ts consumes describeCatalog through requireCatalogDescription rather than inferring state from an empty array; a source that does not implement describeCatalog still works and is not reported as a failure, because the method is optional on the port by design; the user-facing copy for the withheld case does NOT promise the content is coming, since nobody has committed to obtaining those rights; and the withheld reasons are not leaked verbatim to the user, because they name internal policy vocabulary. A regression must drive both states through the real loader and observe different answers.",
       "notes": "Created 2026-09-20 on gpt-architect's round-52 direction when it approved PL-0305: 'Make sure the existing handoff has explicit ownership for ... If any is currently only prose with no task, create a narrow task before it can be forgotten.' PL-0305 is NOT to be reopened for any of these. Follow-up 3 of 4. Point 6 of the round-52 verdict.",
-      "owner": "claude-frontend",
+      "owner": null,
       "gateResults": {
         "typecheck": {
           "status": "pass",
@@ -3777,18 +3821,62 @@
         }
       },
       "implementationAgent": "claude-frontend",
-      "updatedAt": "2026-09-20T15:23:15.317Z",
+      "updatedAt": "2026-09-21T14:05:02.065Z",
       "implementationBaseSha": "f932ebe66c99cbb4fdf15f631d1464b16115aadc",
-      "reviewDependencyAdded": "apps/web/src/lib/catalog-ingestion-source.ts added to reviewDependencies 2026-09-20, on the implementer's own report. requireCatalogDescription -- which this task's acceptance names by name as the thing catalog.ts must consume -- lives in that file, and the declaration did not list it, so the approval would have fingerprinted a reviewed surface that omitted the accessor the whole task turns on. A read, not a write: reviewDependencies widens what an approval covers without reserving the path."
+      "reviewDependencyAdded": "apps/web/src/lib/catalog-ingestion-source.ts added to reviewDependencies 2026-09-20, on the implementer's own report. requireCatalogDescription -- which this task's acceptance names by name as the thing catalog.ts must consume -- lives in that file, and the declaration did not list it, so the approval would have fingerprinted a reviewed surface that omitted the accessor the whole task turns on. A read, not a write: reviewDependencies widens what an approval covers without reserving the path.",
+      "review": {
+        "taskId": "PL-0310",
+        "implementationAgent": "claude-frontend",
+        "implementationOwner": "claude-frontend",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "e5dd8893a5600e6272575e9116e1f434559ac532",
+        "reviewedBaseSha": "f932ebe66c99cbb4fdf15f631d1464b16115aadc",
+        "reviewedTreeHash": "963eaa32e388cfd2fb88047bbdce0c89bc43be96e0366f9a32475348c1db35ce",
+        "reviewedFileCount": 6,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [
+          "apps/web/src/lib/catalog-source.ts",
+          "apps/web/src/lib/catalog-source-registry.ts",
+          "apps/web/src/lib/catalog-ingestion-source.ts"
+        ],
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-09-21T14:05:01.950Z",
+        "evidence": "APPROVED by gpt-architect, reviewed against origin e5dd8893a5600e6272575e9116e1f434559ac532. The user-facing catalog path preserves the distinction between catalog_empty and no_records_usable. Accepted properties: the real loader consumes the catalog description rather than inferring state from array length alone; a source without an optional describeCatalog still loads and is not treated as failed; every empty result carries an explicit cause; records_available with all records withheld is represented as no_records_usable rather than falsely as an empty source; an incomplete read cannot assert catalog_empty; internal withheld reason codes and record IDs do not escape the loader; the page carries different user-facing copy per cause; the withheld case makes no promise that content is coming later and exposes no internal policy vocabulary; and the previous unsupported \"in your region\" claim was correctly removed. PROVENANCE: TRANSCRIBED BY CLAUDE from the ChatGPT review session and relayed by the human commander; the GitHub review-write integration returns 403."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PL-0310",
+          "implementationAgent": "claude-frontend",
+          "implementationOwner": "claude-frontend",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "e5dd8893a5600e6272575e9116e1f434559ac532",
+          "reviewedBaseSha": "f932ebe66c99cbb4fdf15f631d1464b16115aadc",
+          "reviewedTreeHash": "963eaa32e388cfd2fb88047bbdce0c89bc43be96e0366f9a32475348c1db35ce",
+          "reviewedFileCount": 6,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "apps/web/src/lib/catalog-source.ts",
+            "apps/web/src/lib/catalog-source-registry.ts",
+            "apps/web/src/lib/catalog-ingestion-source.ts"
+          ],
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-09-21T14:05:01.950Z",
+          "evidence": "APPROVED by gpt-architect, reviewed against origin e5dd8893a5600e6272575e9116e1f434559ac532. The user-facing catalog path preserves the distinction between catalog_empty and no_records_usable. Accepted properties: the real loader consumes the catalog description rather than inferring state from array length alone; a source without an optional describeCatalog still loads and is not treated as failed; every empty result carries an explicit cause; records_available with all records withheld is represented as no_records_usable rather than falsely as an empty source; an incomplete read cannot assert catalog_empty; internal withheld reason codes and record IDs do not escape the loader; the page carries different user-facing copy per cause; the withheld case makes no promise that content is coming later and exposes no internal policy vocabulary; and the previous unsupported \"in your region\" claim was correctly removed. PROVENANCE: TRANSCRIBED BY CLAUDE from the ChatGPT review session and relayed by the human commander; the GitHub review-write integration returns 403."
+        }
+      ],
+      "completedAt": "2026-09-21T14:05:02.065Z"
     },
     {
       "id": "PL-0311",
       "priority": "P1",
       "lane": "Backend",
-      "status": "BACKLOG",
+      "status": "REVIEW",
       "title": "apps/web declares the package it imports for the pinned transport",
       "dependencies": [
-        "PL-0308",
         "PL-0710"
       ],
       "allowedPaths": [
@@ -3805,15 +3893,33 @@
         "unit"
       ],
       "acceptance": "apps/web/package.json declares @liberty/media-inspection AND package-lock.json carries the matching apps/web dependency edge, landing together in one change. PL-0308's server-bootstrap.ts imports nodePinnedFetch from @liberty/media-inspection and apps/web does not declare it; the import resolves through the root workspace symlink, so tsc and vitest are green and NO GATE CATCHES IT, which is the reason to declare it rather than a reason to leave it. Verified 2026-09-20: package-lock.json's packages['apps/web'] dependency map lists seven @liberty packages and not this one, while the manifest -- before this was reverted -- listed eight. npm ci --dry-run returned 0 in that state, so nothing is broken today; the two files simply disagree, and npm's tolerance of a link node that already exists is not a contract. WHY THIS IS A TASK AND NOT A LINE IN PL-0308: package-lock.json is reserved by PL-0710, which is in REVIEW. A task in REVIEW keeps reserving its surface so nothing mutates it mid-review, and PL-0710's approval binds to a tree hash the lockfile is part of. PL-0308 therefore reverted its own manifest line rather than ship a manifest that disagrees with a lockfile it may not touch -- the undeclared import is the pre-existing state, and a NEW inconsistency introduced into a tree under review would have been worse than the old one. Required: both files change in the SAME commit, because either alone is the disagreement this task exists to remove; the lockfile edge is produced by npm rather than hand-written; and npm ci is run from a tree with no node_modules and observed to exit 0, since a dry run against a populated tree is what made the disagreement survivable in the first place.",
-      "notes": "Created 2026-09-20 from PL-0308. The implementer found it, declared it, and stopped when told the lockfile was not on its surface, rather than hand-editing a lockfile or leaving the two files disagreeing. Also waiting on the same release: .env.example needs the eight LIBERTY_CATALOG_* variables, held by PL-AI-0008 in REVIEW since round 47; that half is recorded in docs/CATALOG_SOURCE.md with a note telling an operator the env contract does not list them yet and why.",
-      "owner": null,
-      "gateResults": {}
+      "notes": "Created 2026-09-20 from PL-0308. The implementer found it, declared it, and stopped when told the lockfile was not on its surface, rather than hand-editing a lockfile or leaving the two files disagreeing. Also waiting on the same release: .env.example needs the eight LIBERTY_CATALOG_* variables, held by PL-AI-0008 in REVIEW since round 47; that half is recorded in docs/CATALOG_SOURCE.md with a note telling an operator the env contract does not list them yet and why. DEFINITION CORRECTION 2026-09-21, on gpt-architect's PL-0308 CHANGES_REQUESTED at e5dd889, which ordered PL-0311 BEFORE PL-0308's final approval. dependencies were [\"PL-0308\",\"PL-0710\"] and PL-0308 has been removed, because that edge and the reviewer's ruling together were a DEADLOCK: PL-0308 cannot reach DONE until this task lands, and refreshReadiness holds this task in BACKLOG until every dependency is DONE, so neither could ever move. The edge was also FALSE independently of the deadlock. What this task needs from PL-0308 is that the import exists in apps/web/src/lib/server-bootstrap.ts, which is committed history at ad1e1ea and readable now; a need to READ committed code is reviewDependencies, which this task already declares for that exact file, and not a lifecycle dependency. PL-0710 remains a dependency and is DONE, which is what released the package-lock.json reservation this task was waiting on.",
+      "owner": "claude-backend",
+      "gateResults": {
+        "typecheck": {
+          "status": "pass",
+          "at": "2026-09-21T14:13:06.180Z",
+          "by": "claude-backend",
+          "commitSha": "e5dd8893a5600e6272575e9116e1f434559ac532",
+          "evidence": "npx turbo run typecheck lint build --force, exit 0, 33 of 33 tasks (11 typecheck, 11 lint, 11 build), 0 cached. THIS GATE IS THE HONEST WEAK POINT OF THIS TASK AND IT IS NAMED RATHER THAN DRESSED UP: it passed identically BEFORE the change. The import resolves through the root workspace symlink whether or not apps/web declares it, so tsc, eslint, next build, vitest and npm ci --dry-run were all green against the undeclared state. That is precisely why the reviewer called it a blocker despite nothing failing -- a manifest that does not describe a dependency the code imports is a false description, not a broken build. What this gate DOES establish is that declaring it broke nothing: the same 33 tasks pass on the integrated tree."
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-09-21T14:13:06.271Z",
+          "by": "claude-backend",
+          "commitSha": "e5dd8893a5600e6272575e9116e1f434559ac532",
+          "evidence": "npx turbo run test --force, exit 0, 20 of 20 tasks, 0 cached, 2667 passed 1 skipped -- byte for byte the round-60 figure, because this task adds no test and changes no code path. test:scripts 0 (38 environment, 69 control-plane, 16 validate-repo assertion groups, 35 dispatcher). repo:validate 0. ai:validate 0 at 65 tasks. THE EVIDENCE THAT ACTUALLY BEARS ON THIS TASK IS THE CLEAN-TREE INSTALL THE ACCEPTANCE DEMANDED, and it was run as written rather than as a dry run: node_modules was REMOVED (ls reports No such file or directory, recorded before the install), then npm ci --no-audit --no-fund exited 0, added 483 packages in 39s. The acceptance called for exactly this because a dry run against a populated tree is what let the disagreement survive in the first place -- npm tolerates a link node that already exists, so the earlier npm ci --dry-run 0 proved nothing about a fresh clone. After the install, node_modules/@liberty/media-inspection is a symlink to ../../packages/media-inspection, and require.resolve('@liberty/media-inspection/package.json') from apps/web resolves to packages/media-inspection/package.json. THE LOCKFILE EDGE WAS PRODUCED BY NPM, NOT HAND-WRITTEN, as required: npm install --package-lock-only exited 0 and wrote exactly one line, \"@liberty/media-inspection\": \"0.1.0\" inside packages['apps/web'].dependencies, in sorted position. Both files landed in ONE commit, which the acceptance required because either alone IS the disagreement this task exists to remove. Starting state recorded for the reviewer: manifest and lockfile AGREED with each other at seven @liberty packages and both disagreed with the source, which imports an eighth in apps/web/src/lib/server-bootstrap.ts and its test; git log shows apps/web/package.json was last written by PL-0305's corrective at 33195d5, never by PL-0308, which reverted its own manifest line in round 58 rather than ship a manifest disagreeing with a lockfile then reserved by PL-0710. FINDING, REPORTED RATHER THAN FIXED HERE BECAUSE IT IS OFF THIS SURFACE: nothing in the repository can catch this defect class. An undeclared workspace import is invisible to every gate the project runs, so the next one will also be found by a human reader or not at all. A manifest-versus-import consistency check belongs in PL-AI-0002's CI scope; this task declares only apps/web/package.json and package-lock.json and did not widen to add one."
+        }
+      },
+      "implementationAgent": "claude-backend",
+      "updatedAt": "2026-09-21T14:13:06.368Z",
+      "implementationBaseSha": "e5dd8893a5600e6272575e9116e1f434559ac532"
     },
     {
       "id": "PL-0312",
       "priority": "P1",
       "lane": "Backend",
-      "status": "REVIEW",
+      "status": "DONE",
       "title": "One authoritative provider health floor, consumed by both packages",
       "dependencies": [
         "PL-0303"
@@ -3834,9 +3940,9 @@
       ],
       "acceptance": "ONE authoritative provider-health-floor vocabulary exists and BOTH @liberty/provider-sdk and @liberty/media-engine consume it, with no second literal of the value anywhere in production code. THE DUPLICATION, stated exactly. packages/media-engine/src/ranking.ts:83 declares `export const PROVIDER_HEALTH_FLOOR = 0.5` and line 128 compares `candidate.healthScore < PROVIDER_HEALTH_FLOOR` to produce the `provider_health_below_floor` reason. packages/provider-sdk/src/health.ts:216 separately sets `failBelow: 0.5` in its default policy and line 604 compares `score < policy.failBelow` to produce the `fail` verdict. Three comments in health.ts (lines 177, 391 and 405) and one runtime message (line 625) already ASSERT that the two agree. An assertion in prose is exactly what does not survive an edit to one of the two numbers, which is the whole finding. REQUIRED: the shared declaration lands in a package both consumers ALREADY depend on, or in a new dependency-leaf package, and the implementer states which and why. Measured 2026-09-21: @liberty/media-engine depends on @liberty/contracts only; @liberty/provider-sdk depends on @liberty/contracts, @liberty/media-inspection, @liberty/net-policy and zod; @liberty/contracts depends on zod only. So @liberty/contracts is today the only existing package that both consume and that cannot import either of them, and putting the floor there adds no edge at all. A new leaf on the @liberty/net-policy pattern is also acceptable if the implementer can show why contracts is the wrong home. Adding an edge from media-engine to provider-sdk is NOT acceptable: provider-sdk is the provider-adapter isolation boundary (invariant 3) and media-engine is downstream of it. REQUIRED: a check that FAILS if the two ever disagree again, and it must not be satisfiable by a comment. Either the two consumers read the same exported symbol -- so disagreement is unrepresentable rather than merely tested -- or, where a policy field must stay independently configurable, a test asserts the default policy's `failBelow` equals the authoritative floor and would go red on either number alone being changed. If both mechanisms are used, say which one carries the guarantee. REQUIRED: the two comparisons keep their CURRENT and DIFFERENT boundary semantics, or the change of semantics is deliberate and stated. media-engine excludes a candidate strictly BELOW the floor; provider-sdk returns `fail` strictly BELOW `failBelow`. These agree today. A refactor that quietly moves either to `<=` changes which providers serve, and sharing one constant must not be allowed to smuggle that in. PRESERVED INVARIANT, non-negotiable: health may only SUBTRACT eligibility, never grant it. PL-0303's approval rests on health.ts importing nothing and taking no rights, candidate or source, and on media-engine checking the rights allowlist FIRST and unconditionally. A shared floor module must therefore carry the threshold vocabulary ONLY -- no rights, entitlement, allowlist or candidate types, and no import of provider-sdk or media-engine -- so that the new module cannot become a route by which a health verdict reaches a rights decision. A test asserts the module's import graph is empty of those. NOT IN SCOPE: changing the value 0.5, changing the health algorithm, the prior/measured score split, the policy version enum, or anything PL-0303 delivered. PL-0303 is DONE and APPROVED at ad1e1ea4f3c9b95e10a6140aab7e8ecfdb597e77 and must not be reopened for this. If the correct home for the floor turns out to require a change inside PL-0303's delivered files, that is fine -- those files are on this task's surface -- but the health BEHAVIOUR proven by PL-0303's 31-mutant campaign must be unchanged, and the campaign's tests must stay green without being edited to accommodate the move.",
       "notes": "Created 2026-09-21 as gpt-architect's FOLLOW-UP FINDING on the PL-0303 approval, which was explicit that the fix must NOT be made inside PL-0303 and must not introduce a dependency cycle. Surface note: packages/contracts/** and packages/media-engine/** are also declared by PL-0205 (BLOCKED, superseded, preserved as audit history) and by PL-AI-0006 (READY, unclaimed); neither is active, and this task must not be started while either is, nor its own surface narrowed to manufacture a dispatchable wave -- the PL-0205 precedent. packages/contracts/** carries the vitest.config.ts PL-AI-0010 added; do not remove or widen its timeout as part of this work.",
-      "owner": "claude-backend",
+      "owner": null,
       "implementationAgent": "claude-backend",
-      "updatedAt": "2026-09-21T05:22:54.095Z",
+      "updatedAt": "2026-09-21T14:05:01.634Z",
       "implementationBaseSha": "ad1e1ea4f3c9b95e10a6140aab7e8ecfdb597e77",
       "gateResults": {
         "typecheck": {
@@ -3853,7 +3959,48 @@
           "commitSha": "ad1e1ea4f3c9b95e10a6140aab7e8ecfdb597e77",
           "evidence": "npx turbo run test --force, exit 0, 20 of 20 tasks, 0 cached, 2667 passed 1 skipped (2652 passed 1 skipped before; +15, and the arithmetic is exact: contracts 202 to 208, provider-sdk 283 to 288, media-engine 369 to 373 -- 6 plus 5 plus 4). test:scripts 0 (38 environment, 69 control-plane, 16 validate-repo assertion groups, 35 dispatcher). repo:validate 0. NO PRODUCTION BEHAVIOUR CHANGED AND THAT IS THE POINT, so no value-red against unmutated code was available and none was manufactured. The defect was that one threshold was written down twice -- media-engine's PROVIDER_HEALTH_FLOOR = 0.5 and provider-sdk's failBelow: 0.5 -- with three doc comments and one runtime message ASSERTING they agreed, and no check that would go red on the commit that tuned one of them. Every existing test passed before and after, including ranking.test.ts's boundary pair at PROVIDER_HEALTH_FLOOR - 0.01 and PROVIDER_HEALTH_FLOOR exactly, which is precisely why prose was not enough. THREE MUTANTS WERE PLANTED AND ALL THREE WERE KILLED, each by the assertion written for it and by no other. M1, media-engine restates the constant: replacing `export { PROVIDER_HEALTH_FLOOR }` with `export const PROVIDER_HEALTH_FLOOR = 0.5` -- the exact pre-change state -- fails health-floor.test.ts 'declares no floor of its own' (1 failed, 3 passed). Note which assertion did NOT fire: 're-exports the same value under its historical name' stayed green, because 0.5 equals 0.5; a value-equality test alone would have permitted the duplication this task exists to remove, and that is why the source-graph assertion is the one carrying the guarantee. M2, the shared floor moves off the prior: 0.5 to 0.6 fails provider-sdk health-floor.test.ts 'keeps the prior sitting exactly on the floor' (1 failed, 4 passed), which pins the three-way coupling the value came from -- the Laplace 1/1 prior scores an unobserved provider exactly 0.5, the floor is 0.5, and the comparison is strict, so an unmeasured provider sits ON the floor and survives; any one of the three moving alone changes which providers are reachable at all. M3, the strict comparison becomes inclusive: `score < floor` to `score <= floor` fails contracts provider-health.test.ts twice (2 failed, 4 passed) AND media-engine health-floor.test.ts once, which is the cross-package half -- this is the mutant that would have buried every provider nobody has yet observed, permanently and silently, since a buried provider is never asked anything and so never accumulates the observations that would release it. THE ENTITLEMENT SEPARATION WAS WEAKENED IN ONE STATED WAY AND MECHANICALLY ENFORCED FOR THE FIRST TIME. PL-0303 was approved partly on health.ts importing NOTHING. It now imports exactly one module. That module imports nothing at all -- not zod, not a sibling -- and exports a number and a predicate over numbers; contracts provider-health.test.ts asserts the empty import list and the absence of any rights, entitlement, candidate, licence, allowlist or DRM vocabulary, and provider-sdk health-floor.test.ts asserts health.ts's import list is exactly that one specifier and nothing else. So the property is now 'imports one leaf whose transitive closure is empty', which is weaker to state than 'imports nothing' and, unlike it, is checked. Said plainly rather than left for the reviewer to notice. ONE HONESTY FIX CAME OUT OF THE WORK AND IS NOT COSMETIC: the fail-band reason trail asserted unconditionally that the policy's failBelow 'is also the floor below which the media engine excludes a candidate outright'. That is a claim about a different package and it is false for any versioned policy that moves its threshold -- it would tell whoever is reading the trail that a candidate is about to be excluded when media-engine would still serve it. It is now conditional on policy.failBelow === PROVIDER_HEALTH_FLOOR, and the third test in health-floor.test.ts drives both branches with a failBelow of 0.7. NOT DONE, and reported rather than quietly fixed: packages/contracts/src/shared/rights.ts still carries a stale note saying media-engine 'currently declares an equivalent PLAYABLE_RIGHTS' that should converge 'once PL-0201 is out of review'. That convergence already happened -- media-engine's PLAYABLE_RIGHTS is an alias -- so the comment is false today. It is inside this task's allowedPaths and it was left alone because it is a different duplication from the one this task was created for."
         }
-      }
+      },
+      "review": {
+        "taskId": "PL-0312",
+        "implementationAgent": "claude-backend",
+        "implementationOwner": "claude-backend",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "e5dd8893a5600e6272575e9116e1f434559ac532",
+        "reviewedBaseSha": "ad1e1ea4f3c9b95e10a6140aab7e8ecfdb597e77",
+        "reviewedTreeHash": "1c4730924e37957a95220f287aebe9eb145cfaa7a103a3f0356c049d72269808",
+        "reviewedFileCount": 83,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [
+          "docs/ARCHITECTURE.md"
+        ],
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-09-21T14:05:01.491Z",
+        "evidence": "APPROVED by gpt-architect, reviewed against origin e5dd8893a5600e6272575e9116e1f434559ac532. The acceptance is satisfied on every clause: one authoritative declaration in @liberty/contracts/shared/provider-health consumed by both @liberty/provider-sdk and @liberty/media-engine; the strict < comparison moved with the threshold into isBelowHealthFloor, which prevents the SEMANTIC half of the duplication from returning rather than only the numeric half; provider-sdk's versioned failBelow stays configurable while the shipped policy reads the shared value; media-engine re-exports the shared symbol under its historical name instead of restating the literal; the shared module imports nothing and carries no rights, entitlement or candidate vocabulary; the health mechanism imports exactly that empty leaf and nothing else; and the moved-policy reason trail is now honest when a future version's failBelow differs from the engine floor. The mutation tests are accepted as the evidence that matters here: they prove a numeric-equality assertion ALONE would not have stopped the duplication from returning, which is why the source-graph assertion carries the guarantee. PROVENANCE: TRANSCRIBED BY CLAUDE from the ChatGPT review session and relayed by the human commander; the GitHub review-write integration returns 403, so no reviewer-authored artifact exists in this repository for this verdict."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PL-0312",
+          "implementationAgent": "claude-backend",
+          "implementationOwner": "claude-backend",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "e5dd8893a5600e6272575e9116e1f434559ac532",
+          "reviewedBaseSha": "ad1e1ea4f3c9b95e10a6140aab7e8ecfdb597e77",
+          "reviewedTreeHash": "1c4730924e37957a95220f287aebe9eb145cfaa7a103a3f0356c049d72269808",
+          "reviewedFileCount": 83,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "docs/ARCHITECTURE.md"
+          ],
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-09-21T14:05:01.491Z",
+          "evidence": "APPROVED by gpt-architect, reviewed against origin e5dd8893a5600e6272575e9116e1f434559ac532. The acceptance is satisfied on every clause: one authoritative declaration in @liberty/contracts/shared/provider-health consumed by both @liberty/provider-sdk and @liberty/media-engine; the strict < comparison moved with the threshold into isBelowHealthFloor, which prevents the SEMANTIC half of the duplication from returning rather than only the numeric half; provider-sdk's versioned failBelow stays configurable while the shipped policy reads the shared value; media-engine re-exports the shared symbol under its historical name instead of restating the literal; the shared module imports nothing and carries no rights, entitlement or candidate vocabulary; the health mechanism imports exactly that empty leaf and nothing else; and the moved-policy reason trail is now honest when a future version's failBelow differs from the engine floor. The mutation tests are accepted as the evidence that matters here: they prove a numeric-equality assertion ALONE would not have stopped the duplication from returning, which is why the source-graph assertion carries the guarantee. PROVENANCE: TRANSCRIBED BY CLAUDE from the ChatGPT review session and relayed by the human commander; the GitHub review-write integration returns 403, so no reviewer-authored artifact exists in this repository for this verdict."
+        }
+      ],
+      "completedAt": "2026-09-21T14:05:01.634Z"
     },
     {
       "id": "PL-0706",
