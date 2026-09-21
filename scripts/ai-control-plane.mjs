@@ -1472,10 +1472,13 @@ function reconciliationProvenanceProblems(task, amap, surfaceUsable) {
         `${id}: implementationBaseProvenance.${field} names unknown agent ${value}`,
       );
   }
-  // Deliberately NOT required to equal task.implementationAgent: `release` keeps
-  // the base and its provenance, so a later claimant legitimately becomes the
-  // task's implementationAgent while this record still names who wrote the
-  // pre-existing code. The record describes one moment, not the current state.
+  // Deliberately NOT required to equal task.implementationAgent. A reconciled
+  // base always has committed work behind it -- assertReconcilableBase refuses
+  // one that changes nothing under the reviewed surface -- so
+  // `reconsiderImplementationBase` keeps it, and its provenance, across a release or
+  // an unblock. A later claimant then legitimately becomes the task's
+  // implementationAgent while this record still names who wrote the pre-existing
+  // code. The record describes one moment, not the current state.
   const LABELS = ["allowedPaths", "allowedPaths + reviewDependencies"];
   if (!LABELS.includes(p.reviewSurface))
     errors.push(
@@ -2433,6 +2436,112 @@ function dropGateResults(task) {
   task.gateResults = {};
   return dropped;
 }
+/**
+ * Decide what happens to `implementationBaseSha` when a task stops having an
+ * owner, applying the decision to `task` and returning it so the caller can
+ * audit it instead of assuming it.
+ *
+ * WHAT WENT WRONG. PL-0710 was claimed and started at 33195d5, released with
+ * NOTHING written when its implementing agent was terminated, and re-claimed at
+ * HEAD 20edec3 -- and `start` reported "started from 33195d5", because the base
+ * had survived the release and the capture below is guarded by
+ * `!task.implementationBaseSha`. `implementationBaseSha` is not descriptive
+ * metadata: `expectedReviewBase()` uses it as the EXACT lower bound of the first
+ * review range and `validateReviewRange()` refuses a base either wider or
+ * narrower, so the second round published a window wider than the work it
+ * covered, with nothing anywhere recording that it had been widened.
+ *
+ * TWO SIMPLE RULES, BOTH WRONG, and the reason this one is not simple:
+ *
+ *   keep it always    the previous behaviour. Correct whenever the abandoned
+ *       round left committed work behind, and silently false whenever it did
+ *       not. `start --reconcile-existing` exists precisely because a base
+ *       asserted for pre-existing work must publish a window, a changed-file
+ *       count and a written reason; preservation reached the same end state
+ *       with none of them. An unreconciled reconciliation is exactly what it
+ *       was.
+ *   clear it always   what the defect report asked for. It repairs PL-0710 and
+ *       breaks the case PL-0710 was not: a release mid-implementation, with
+ *       work genuinely committed, would hand the next round a base at the new
+ *       HEAD -- a first review range that begins AFTER committed code and never
+ *       shows it to anyone. That trades a wide base, which a reviewer can see
+ *       and interrogate, for a narrow one, which nobody can. Narrow is the
+ *       direction that lets unreviewed work reach DONE.
+ *
+ * THE RULE. Keep the base exactly while `base..HEAD` still changes something
+ * under the task's REVIEWED surface -- the same predicate `assertReconcilableBase`
+ * uses to decide whether a claimed base has any implementation behind it at all.
+ * When it changes nothing, the base describes nothing and is dropped, and the
+ * next `start` records where that round actually begins. When it changes
+ * something, the base is kept AND the count that justified keeping it goes into
+ * the audit event, so the preservation is a published finding rather than a
+ * silence.
+ *
+ * FAIL TOWARDS KEEPING. If git is absent, HEAD will not resolve, the base is not
+ * in this checkout, or the diff fails, the question is unanswerable -- and
+ * dropping a published base on an unverified guess is the same class of move
+ * this whole area exists to refuse. Keeping errs wide, which is visible; the
+ * reason is recorded either way, so "could not check" never reads as "checked".
+ *
+ * `realHeadSha()` rather than `currentCommitSha()`, for the reason stated on
+ * that function: LIBERTY_COMMIT_SHA must not be able to decide whether a
+ * published provenance field is discarded.
+ *
+ * The provenance record goes with the base when the base goes. It exists to
+ * explain one value of `implementationBaseSha`; left behind it would explain
+ * nothing, and `validate` already errors on a record with no base to describe.
+ *
+ * `implementationAgent` deliberately does NOT travel with it. It is re-set
+ * unconditionally by `claim`, so clearing it here would only open a window in
+ * which an unowned task records no implementer at all, and `assertReviewAllowed`
+ * reads that absence as a hard failure much later.
+ *
+ * Deliberately NOT called from `done`: there the base is part of the completion
+ * record, like the gate results beside it.
+ */
+function reconsiderImplementationBase(task) {
+  const baseSha = task.implementationBaseSha ?? null;
+  if (!baseSha) return { baseSha: null, cleared: false, reason: "no-base", changedFileCount: null };
+
+  const keep = (reason) => ({ baseSha, cleared: false, reason, changedFileCount: null });
+
+  const pathspecs = reviewPathspecs(task);
+  // No reviewable surface means no predicate. `validate` only warns about this,
+  // so it is reachable, and a task in that state has no review range to protect
+  // either way -- keeping is the conservative half of a question with no answer.
+  if (!pathspecs.length) return keep("no-review-surface");
+  if (!gitAvailable()) return keep("no-git");
+  const head = realHeadSha();
+  if (!head) return keep("no-head");
+  if (!commitResolves(baseSha)) return keep("base-not-in-checkout");
+
+  const changed = surfaceFilesChangedBetween(baseSha, head, pathspecs);
+  if (changed === null) return keep("diff-failed");
+  if (changed.length)
+    return { baseSha, cleared: false, reason: "surface-changed", changedFileCount: changed.length };
+
+  delete task.implementationBaseSha;
+  delete task.implementationBaseProvenance;
+  return { baseSha, cleared: true, reason: "no-surface-change", changedFileCount: 0 };
+}
+/** The audit fields and the operator sentence for one `reconsiderImplementationBase` outcome. */
+function baseReturnAudit(outcome) {
+  return {
+    clearedBaseSha: outcome.cleared ? outcome.baseSha : null,
+    preservedBaseSha: outcome.cleared ? null : outcome.baseSha,
+    baseDecisionReason: outcome.baseSha ? outcome.reason : null,
+    preservedBaseSurfaceChangedFileCount: outcome.changedFileCount,
+  };
+}
+function baseReturnNote(outcome) {
+  if (!outcome.baseSha) return "";
+  const short = outcome.baseSha.slice(0, 12);
+  if (outcome.cleared)
+    return ` (cleared implementation base ${short}: nothing under the reviewed surface changed since it)`;
+  if (outcome.reason === "surface-changed")
+    return ` (kept implementation base ${short}: ${outcome.changedFileCount} file(s) under the reviewed surface changed since it)`;
+  return ` (kept implementation base ${short}: could not check what it covers here [${outcome.reason}])`;
+}
 function validateState(d) {
   const {
     taskDoc,
@@ -3285,9 +3394,13 @@ try {
       /*
        * An existing base is a claim the control plane already published --
        * possibly to a reviewer. Overwriting it here would be the silent hand-edit
-       * in command form. `release` (which also discards gate results) is the
-       * supported way to abandon a round; the base deliberately survives it,
-       * because the implementation it points at survives it too.
+       * in command form. `release` and `unblock` (which also discard gate
+       * results) are the supported way to abandon a round, and the base survives
+       * them exactly when the implementation it points at survives too: see
+       * `reconsiderImplementationBase`. So a task returned to a queue with committed
+       * work behind its base still reaches this refusal, while one whose base
+       * described nothing arrives here with no base at all and may legitimately
+       * be reconciled by the round that follows.
        */
       if (task.implementationBaseSha)
         throw new Error(
@@ -3412,6 +3525,12 @@ try {
       // overwritten within an implementation round: a task returned to
       // IN_PROGRESS by changes_requested keeps its original base, and re-reviews
       // use the previously reviewed commit anyway.
+      //
+      // That guard is why the base has to be reconsidered at the point ownership
+      // ENDS rather than here. `release`/`unblock` decide whether the base still
+      // describes anything (`reconsiderImplementationBase`); this line only ever fills
+      // an empty field, so an ordinary re-start of a task that was never released
+      // still cannot falsify a published range.
       const startedFrom = currentCommitSha();
       if (startedFrom) task.implementationBaseSha = startedFrom;
     }
@@ -3812,12 +3931,23 @@ try {
     task.owner = null;
     delete task.blocker;
     const dropped = dropGateResults(task);
+    // Same rule as `release`, because this is the same event: the task stops
+    // having an owner and goes back to a queue. Treating the two differently
+    // would make which command was used decide what the next round's review
+    // range is.
+    const base = reconsiderImplementationBase(task);
     const next = depsDone(task, taskMap(d.taskDoc.tasks)) ? "READY" : "BACKLOG";
     transition(task, next, d.policies);
-    event("task.unblocked", { taskId, status: next, clearedGates: dropped });
+    event("task.unblocked", {
+      taskId,
+      status: next,
+      clearedGates: dropped,
+      ...baseReturnAudit(base),
+    });
     syncAll(d, false);
     console.log(
-      `${taskId} -> ${next}${dropped.length ? ` (cleared gate results: ${dropped.join(", ")})` : ""}.`,
+      `${taskId} -> ${next}${dropped.length ? ` (cleared gate results: ${dropped.join(", ")})` : ""}` +
+        `${baseReturnNote(base)}.`,
     );
   } else if (command === "release") {
     const [taskId, agentId] = args;
@@ -3835,10 +3965,17 @@ try {
     const owner = task.owner;
     task.owner = null;
     const dropped = dropGateResults(task);
-    event("task.released", { taskId, owner, clearedGates: dropped });
+    const base = reconsiderImplementationBase(task);
+    event("task.released", {
+      taskId,
+      owner,
+      clearedGates: dropped,
+      ...baseReturnAudit(base),
+    });
     syncAll(d, false);
     console.log(
-      `${taskId} released${dropped.length ? ` (cleared gate results: ${dropped.join(", ")})` : ""}.`,
+      `${taskId} released${dropped.length ? ` (cleared gate results: ${dropped.join(", ")})` : ""}` +
+        `${baseReturnNote(base)}.`,
     );
   } else if (command === "handoff") {
     const from = flagValue(args, "--from");

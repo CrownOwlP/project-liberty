@@ -331,9 +331,14 @@ owner approve their own work, while saying nothing left them correctly blocked.
 Naming the task's own `reviewAgent` is still refused, because it would make the
 task permanently unapprovable under that rule.
 
-`release` and `unblock` discard gate results but deliberately keep the base and
-its provenance: the implementation they point at survives the round that was
-abandoned, and the next `start` reuses it rather than recapturing HEAD.
+`release` and `unblock` discard gate results, and keep the base and its
+provenance **exactly while the implementation they point at survives with them** —
+see [Returning a task to a queue](#returning-a-task-to-a-queue). A reconciled base
+always does: `assertReconcilableBase` refuses one that changes nothing under the
+reviewed surface, so it is never the base that gets dropped, and
+`implementationBaseProvenance.implementationAgent` therefore stays legitimately
+different from `implementationAgent` after a re-claim. The record describes the
+moment the base was established, not who owns the task now.
 
 ## Path declarations, and why the root is refused
 
@@ -429,6 +434,64 @@ project a stalled milestone — not a proof of anything.
 implementation round under one owner; leaving it behind would let the next
 claimant inherit passes for work that no longer exists. `ai:done` also nulls the
 owner but keeps the results — there they are the completion record.
+
+### The base is reconsidered, not automatically kept or automatically dropped
+
+`implementationBaseSha` is evidence of where a round *began*, so the same question
+applies to it — but the answer is not the same in both directions, because the two
+ways of being wrong are not symmetric.
+
+PL-0710 is the case that forced this. It was started at `33195d5`, released with
+**nothing written** when its implementing agent was terminated, and re-claimed at
+HEAD `20edec3` — and `start` reported *"started from 33195d5"*, because the base
+had survived and `start` only ever fills an empty field. The second round's
+published review window was a commit wider than the work it covered, with nothing
+recording that it had been widened. That is an unreconciled reconciliation:
+`start --reconcile-existing` exists precisely because declaring a base for
+pre-existing work requires a published window, a changed-file count and a written
+reason, and preservation reached the same end state with none of them.
+
+Always clearing is not the repair. A release **mid-implementation**, with work
+genuinely committed, would hand the next round a base at the new HEAD — a first
+review range that begins *after* committed code and never shows it to a reviewer.
+A wide base is visible and can be interrogated; a narrow one cannot, and narrow is
+the direction that lets unreviewed work reach `DONE`.
+
+So the base is kept exactly while `base..HEAD` still changes something under the
+task's **reviewed** surface — the same predicate `assertReconcilableBase` uses to
+decide whether a claimed base has any implementation behind it:
+
+| `base..HEAD` under the reviewed surface | what happens |
+| --- | --- |
+| changes one or more files | base and provenance kept; the release event publishes the count that justified keeping them |
+| changes nothing | base **and** its provenance dropped; the next `start` records the head that round actually begins from |
+| cannot be determined | base kept, and the event and the console line name the reason |
+
+`implementationBaseProvenance` always travels **with** the base. It explains one
+value of `implementationBaseSha`; left behind it would explain nothing, and
+`validate` already errors on a record with no base to describe.
+`implementationAgent` deliberately does **not** travel with it: `claim` re-sets it
+unconditionally, so clearing it here would only open a window in which an
+unowned task records no implementer at all.
+
+**"Cannot check" never reads as "checked."** If git is absent, HEAD will not
+resolve, the base is not in this checkout, or the diff fails, the base is kept and
+`task.released` / `task.unblocked` carry `baseDecisionReason` (`no-git`,
+`no-head`, `base-not-in-checkout`, `diff-failed`, `no-review-surface`) alongside
+`clearedBaseSha`, `preservedBaseSha` and
+`preservedBaseSurfaceChangedFileCount`. The decision reads the real commit graph
+rather than `LIBERTY_COMMIT_SHA`, for the same reason reconciliation does: an
+environment variable that can redefine HEAD is an environment variable that can
+discard a published provenance field.
+
+None of this reaches `start`. An ordinary re-start still only ever fills an
+**empty** `implementationBaseSha`, so a task pulled back out of `REVIEW` by
+`request-changes` keeps the lower bound its reviewer was given. The base is
+reconsidered at the point ownership *ends*, never at the point it resumes — that
+separation is what keeps this from becoming the falsification
+`--reconcile-existing` exists to prevent. One consequence is deliberate: a task
+whose base was dropped has no base, so the round that follows may legitimately
+reconcile one, under every check that path already applies.
 
 ## The agent instruction surface
 

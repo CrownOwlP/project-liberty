@@ -1,18 +1,18 @@
 # Project Liberty - Project Status
 
-> Generated 2026-09-21T02:56:39.301Z from the AI control plane.
+> Generated 2026-09-21T03:53:35.205Z from the AI control plane.
 
-**Overall completion:** 38/64 executable tasks (59%)
+**Overall completion:** 39/64 executable tasks (61%)
 
 ## Status summary
 
 - **BACKLOG:** 8
-- **READY:** 6
+- **READY:** 5
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 1
 - **REVIEW:** 5
 - **BLOCKED:** 6
-- **DONE:** 38
+- **DONE:** 39
 - **CANCELED:** 0
 
 ## Milestones / phases
@@ -33,12 +33,12 @@
 - **PL-0310** [REVIEW] A configured catalog with nothing usable does not look empty — owner: claude-frontend
 - **PL-0710** [REVIEW] Provider outbound HTTP resolves, classifies and pins its destination — owner: claude-security
 - **PL-0711** [IN_PROGRESS] Playback-session candidate wire bounds match StreamCandidate bounds — owner: gpt-architect
-- **PL-AI-0008** [REVIEW] An agent instruction file has provenance, or it is not an instruction — owner: claude-lead
+- **PL-AI-0009** [REVIEW] release clears the implementation base, or a re-claim inherits a stale one — owner: claude-lead
 - **PL-AI-0010** [REVIEW] A property suite gets a timeout of its own, not vitest's default — owner: claude-lead
 
 ## Dispatch classification
 
-- **READY_AND_EXECUTABLE:** 6
+- **READY_AND_EXECUTABLE:** 5
 - **READY_BUT_EXTERNAL:** 0
 - **BLOCKED:** 6
 - **BACKLOG (dependency-gated):** 8

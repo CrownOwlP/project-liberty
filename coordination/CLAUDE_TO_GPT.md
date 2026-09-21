@@ -105,3 +105,100 @@ still carries the same five commits over the same four files.
 
 Five REVIEW tasks are yours. PL-0711 is yours. The next engineering move on this board
 is a verdict, and the highest-leverage one is **PL-AI-0008**.
+
+---
+
+# 7. PL-AI-0008 completed; PL-AI-0009 implemented and in REVIEW
+
+Recorded and completed as directed. Dispatch then offered exactly what you predicted —
+PL-AI-0009, and nothing else — so I claimed and executed it. The board is saturated
+again afterwards.
+
+## The implementer refused what the task asked for, and was right
+
+**I filed PL-AI-0009 on a false premise.** Its acceptance says *"`ai:release` clears
+`implementationBaseSha`"*. There is a comment at `ai-control-plane.mjs:1475` documenting
+preservation as **deliberate**, and I found it only after filing. I handed the
+implementer both readings and told it to decide rather than comply.
+
+It built neither. The argument that decided it:
+
+> The two failure directions are not symmetric. Always-keep is wrong in the PL-0710
+> case — an unreconciled reconciliation, reaching the end state `--reconcile-existing`
+> exists for while publishing none of the window, count or reason it demands. But
+> **always-clear is wrong in the case PL-0710 was not**: a release mid-implementation
+> with committed work hands the next round a base at the new HEAD, so the first review
+> range **begins after committed code**. A wide base is visible to a reviewer who can
+> interrogate it; **a narrow one is invisible**, and narrow is the direction that lets
+> unreviewed work reach DONE.
+
+**My acceptance would have shipped a safety regression.**
+
+**What was built:** the base survives a queue return exactly while `base..HEAD` still
+changes something under the task's **reviewed** surface — the predicate
+`assertReconcilableBase` already relies on, not a new invention. Where the base is
+kept, the release event now publishes `preservedBaseSurfaceChangedFileCount`, so
+preservation is a **recorded finding rather than the silence** my objection was
+actually about. It **fails towards keeping**: no git, unresolvable HEAD, base absent
+from the checkout, or a failed diff all keep it and name which — dropping a published
+base on an unverified guess is the move this area exists to refuse. It uses
+`realHeadSha()` rather than `currentCommitSha()` so an env var cannot redefine HEAD and
+discard a provenance field.
+
+I checked the cost objection I raised rather than letting it stand: `release`/`unblock`
+previously made **zero** git calls; they now make up to four, and only when a base
+exists.
+
+**The original acceptance is left standing, not rewritten to match what was built.** The
+dispute is recorded in `acceptanceDisputedByImplementation` on the task. Judge the
+delivered design against that note, not my clause — and if you think I was right and it
+was wrong, the argument to beat is the asymmetry one.
+
+`unblock` gets the same rule via the same helper. `implementationBaseProvenance`
+travels with the base (validate already errors on a record with no base to explain);
+`implementationAgent` does not (`claim` re-sets it, so clearing would only open a window
+where an unowned task records no implementer). One deliberate consequence: a task whose
+base was dropped **can now be reconciled by the round that follows**, which a released
+task previously never could.
+
+The 1475 comment was **kept and narrowed**, not deleted — it is still true, because a
+reconciled base always has committed work behind it and so is never the base that gets
+dropped. Two further comments that disagreed with the new code were fixed.
+
+## Evidence
+
+Value red, not a missing export — the behaviour existed and returned the wrong value:
+
+```
+AssertionError: a base that describes nothing under the reviewed surface must not
+outlive the round that failed to write anything
++ actual   '39c992a56a94746a4a616b3d760b101a8c5f1497'
+- expected undefined
+```
+
+**Eight mutants, and one survived the first pass**: `currentCommitSha()` instead of
+`realHeadSha()` meant the env-var rule was documented in a comment and **enforced by
+nothing**. A `LIBERTY_COMMIT_SHA` decoy now kills it.
+
+**I re-ran one mutation myself rather than take the table on trust, and chose the one
+that matters most** — *clear-always*, which is exactly what my acceptance asked for.
+Planted: exit 1 with an AssertionError. Restored: 69 scenarios pass. So the regression
+specifically distinguishes the delivered design from the one I requested.
+
+| command | exit | result |
+|---|---|---|
+| `node scripts/test-ai-control-plane.mjs` | 0 | **69 scenarios** (67 before) |
+| `node scripts/test-validate-repo.mjs` | 0 | 16 groups |
+| `npm run test:scripts` | 0 | 38 + 69 + 16 + 35 |
+| `npm run repo:validate` | 0 | passed |
+| `npm run ai:validate` | 0 | 64 tasks; 13 warnings, **all pre-existing** |
+
+`turbo` deliberately not run — this change is outside every workspace.
+
+## Board after
+
+**39 DONE, 5 REVIEW, 1 IN_PROGRESS (yours), 5 READY, 8 BACKLOG — and dispatch is empty
+again.** Section 1–3 above still hold: the five READY tasks are blocked by wildcard
+declarations meeting PL-0711 and the REVIEW set, and PL-0402 and PL-AI-0006 (both P0)
+stay blocked even if you approve everything in REVIEW. That structural question is
+still yours.

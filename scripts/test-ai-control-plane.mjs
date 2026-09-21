@@ -7710,6 +7710,407 @@ try {
   }
 
   /* ---------------------------------------------------------------------
+   * 9bd. A base survives a release only while the implementation it names
+   *      survives with it.
+   *
+   *      OBSERVED, not hypothesised. PL-0710 was claimed and started at
+   *      33195d5, released with NOTHING written when its implementing agent
+   *      was terminated, and re-claimed at HEAD 20edec3 -- and `start`
+   *      reported "started from 33195d5". `implementationBaseSha` is the exact
+   *      lower bound of the first review range, so the second round published
+   *      a window one commit wider than the work it covers, with no record
+   *      anywhere that it had been widened.
+   *
+   *      Two wrong repairs, and why neither is the rule:
+   *
+   *        keep it always    the status quo. When the abandoned round wrote
+   *            nothing, the base names a commit no longer related to anything,
+   *            and the widening is SILENT -- `start --reconcile-existing`
+   *            exists precisely to stop a base being declared without a
+   *            published window, a count and a reason, and preservation
+   *            achieves the same outcome with none of them.
+   *        clear it always   what this task originally asked for. A release
+   *            mid-implementation, with work genuinely committed, would then
+   *            hand the next round a base at the NEW head -- a range that
+   *            starts AFTER committed code and never shows it to a reviewer.
+   *            That trades a visible-wide base for a silent-narrow one, and
+   *            narrow is the direction that lets unreviewed work reach DONE.
+   *
+   *      So the base is kept exactly when `base..HEAD` still changes something
+   *      under the task's REVIEWED surface, and dropped when it describes
+   *      nothing. Where it is kept, the release event publishes the count that
+   *      justified keeping it, so the preservation is recorded rather than
+   *      assumed.
+   * ------------------------------------------------------------------- */
+  {
+    /* ---- A. the observed case: an abandoned round that wrote nothing ---- */
+    const repo = freshRepo();
+    addFixtureTasks(
+      repo,
+      fixtureTask("PL-RB-0001", {
+        title: "PL-RB-0001 released before anything was written",
+        allowedPaths: ["fixtures/relbase/a/**"],
+        acceptance: "fixture task used by the release-base scenarios",
+      }),
+    );
+    const { commit } = gitFixture(repo);
+    writeFixtureFile(repo, "fixtures/relbase/a/keep.ts", "export const keep = 0;\n");
+    const A0 = commit("baseline");
+
+    run(repo, CLI, ["claim", "PL-RB-0001", "claude-frontend"]);
+    run(repo, CLI, ["start", "PL-RB-0001", "claude-frontend"]);
+    assert.equal(taskOf(repo, "PL-RB-0001").implementationBaseSha, A0);
+
+    // The round ends having written nothing under its own surface. HEAD moves
+    // anyway -- control/ and coordination/ churn on every command, which is
+    // exactly what happened between 33195d5 and 20edec3.
+    writeFixtureFile(repo, "docs/SCRATCH-RELBASE-A.md", "another lane\n");
+    const A1 = commit("unrelated work while PL-RB-0001 sat idle");
+    assert.notEqual(A1, A0);
+
+    /*
+     * LIBERTY_COMMIT_SHA names a commit that does not exist here. It must have
+     * NO effect: the decision reads the real commit graph, because an
+     * environment variable able to redefine HEAD would be an environment
+     * variable able to decide whether a published provenance field is kept.
+     * Read as HEAD, this value would make the diff fail and the base survive.
+     */
+    run(repo, CLI, ["release", "PL-RB-0001", "claude-frontend"], {
+      LIBERTY_COMMIT_SHA: "c".repeat(40),
+    });
+    assert.equal(
+      taskOf(repo, "PL-RB-0001").implementationBaseSha,
+      undefined,
+      "a base that describes nothing under the reviewed surface must not " +
+        "outlive the round that failed to write anything",
+    );
+    const releaseEvent = eventsOf(repo).filter((e) => e.type === "task.released").at(-1);
+    assert.equal(releaseEvent.clearedBaseSha, A0, "the discarded base must be named in the audit trail");
+    assert.equal(releaseEvent.preservedBaseSha, null);
+    assert.equal(releaseEvent.baseDecisionReason, "no-surface-change");
+
+    // The next round records where IT began.
+    run(repo, CLI, ["claim", "PL-RB-0001", "claude-frontend"]);
+    const restarted = run(repo, CLI, ["start", "PL-RB-0001", "claude-frontend"]);
+    assert.equal(
+      taskOf(repo, "PL-RB-0001").implementationBaseSha,
+      A1,
+      "the re-claimed round's base must be the head it actually started from",
+    );
+    assert.match(restarted, new RegExp(A1.slice(0, 12)));
+    // claude-frontend's maxParallel is 2 and every arm below claims as it.
+    run(repo, CLI, ["release", "PL-RB-0001", "claude-frontend"]);
+
+    /* ---- B. a release mid-implementation keeps the base it still needs ---- */
+    addFixtureTasks(
+      repo,
+      fixtureTask("PL-RB-0002", {
+        title: "PL-RB-0002 released with committed work already in the range",
+        allowedPaths: ["fixtures/relbase/b/**"],
+        acceptance: "fixture task used by the release-base scenarios",
+      }),
+    );
+    writeFixtureFile(repo, "fixtures/relbase/b/keep.ts", "export const keep = 0;\n");
+    const B0 = commit("PL-RB-0002 baseline");
+
+    run(repo, CLI, ["claim", "PL-RB-0002", "claude-frontend"]);
+    run(repo, CLI, ["start", "PL-RB-0002", "claude-frontend"]);
+    assert.equal(taskOf(repo, "PL-RB-0002").implementationBaseSha, B0);
+
+    // THIS round wrote and committed real work under its own surface.
+    writeFixtureFile(repo, "fixtures/relbase/b/impl.ts", "export const impl = 1;\n");
+    const B1 = commit("PL-RB-0002 half an implementation");
+
+    run(repo, CLI, ["release", "PL-RB-0002", "claude-frontend"]);
+    assert.equal(
+      taskOf(repo, "PL-RB-0002").implementationBaseSha,
+      B0,
+      "committed work inside base..HEAD must keep the base that covers it; " +
+        "recapturing HEAD would hide that commit from the first review",
+    );
+    const keptEvent = eventsOf(repo).filter((e) => e.type === "task.released").at(-1);
+    assert.equal(keptEvent.clearedBaseSha, null);
+    assert.equal(keptEvent.preservedBaseSha, B0);
+    assert.equal(
+      keptEvent.preservedBaseSurfaceChangedFileCount,
+      1,
+      "the preservation must publish the evidence that justified it, not merely happen",
+    );
+
+    run(repo, CLI, ["claim", "PL-RB-0002", "claude-frontend"]);
+    run(repo, CLI, ["start", "PL-RB-0002", "claude-frontend"]);
+    assert.equal(
+      taskOf(repo, "PL-RB-0002").implementationBaseSha,
+      B0,
+      "the second round inherits the range that still contains the first round's commits",
+    );
+    assert.notEqual(B1, B0);
+    run(repo, CLI, ["release", "PL-RB-0002", "claude-frontend"]);
+
+    /* ---- C. unblock is the same operation and gets the same rule ---- */
+    addFixtureTasks(
+      repo,
+      fixtureTask("PL-RB-0003", {
+        title: "PL-RB-0003 blocked and unblocked without writing anything",
+        allowedPaths: ["fixtures/relbase/c/**"],
+        acceptance: "fixture task used by the release-base scenarios",
+      }),
+    );
+    writeFixtureFile(repo, "fixtures/relbase/c/keep.ts", "export const keep = 0;\n");
+    const C0 = commit("PL-RB-0003 baseline");
+
+    run(repo, CLI, ["claim", "PL-RB-0003", "claude-frontend"]);
+    run(repo, CLI, ["start", "PL-RB-0003", "claude-frontend"]);
+    assert.equal(taskOf(repo, "PL-RB-0003").implementationBaseSha, C0);
+    run(repo, CLI, ["block", "PL-RB-0003", "awaiting a licensing decision"]);
+    writeFixtureFile(repo, "docs/SCRATCH-RELBASE-C.md", "another lane again\n");
+    const C1 = commit("unrelated work while PL-RB-0003 was blocked");
+    run(repo, CLI, ["unblock", "PL-RB-0003"]);
+    assert.equal(
+      taskOf(repo, "PL-RB-0003").implementationBaseSha,
+      undefined,
+      "unblock returns the task to an unowned queue exactly as release does, " +
+        "so it cannot keep a base release would have dropped",
+    );
+    assert.equal(
+      eventsOf(repo).filter((e) => e.type === "task.unblocked").at(-1).clearedBaseSha,
+      C0,
+    );
+    run(repo, CLI, ["claim", "PL-RB-0003", "claude-frontend"]);
+    run(repo, CLI, ["start", "PL-RB-0003", "claude-frontend"]);
+    assert.equal(taskOf(repo, "PL-RB-0003").implementationBaseSha, C1);
+    run(repo, CLI, ["release", "PL-RB-0003", "claude-frontend"]);
+
+    // ...and unblock keeps a base whose work is committed, for the same reason
+    // release does.
+    addFixtureTasks(
+      repo,
+      fixtureTask("PL-RB-0004", {
+        title: "PL-RB-0004 blocked after committing real work",
+        allowedPaths: ["fixtures/relbase/d/**"],
+        acceptance: "fixture task used by the release-base scenarios",
+      }),
+    );
+    writeFixtureFile(repo, "fixtures/relbase/d/keep.ts", "export const keep = 0;\n");
+    const D0 = commit("PL-RB-0004 baseline");
+    run(repo, CLI, ["claim", "PL-RB-0004", "claude-frontend"]);
+    run(repo, CLI, ["start", "PL-RB-0004", "claude-frontend"]);
+    writeFixtureFile(repo, "fixtures/relbase/d/impl.ts", "export const impl = 1;\n");
+    commit("PL-RB-0004 half an implementation");
+    run(repo, CLI, ["block", "PL-RB-0004", "awaiting a decision"]);
+    run(repo, CLI, ["unblock", "PL-RB-0004"]);
+    assert.equal(taskOf(repo, "PL-RB-0004").implementationBaseSha, D0);
+
+    /* ---- D. an ordinary re-start still never overwrites a base ---- */
+    /*
+     * The falsification `--reconcile-existing` exists to prevent. A task sent
+     * back from REVIEW by changes_requested is the SAME round: its base is the
+     * lower bound the reviewer was given, and recapturing HEAD there would
+     * silently shrink the range to exclude everything already reviewed.
+     * Nothing in this scenario's rule may reach that path -- the base is only
+     * ever reconsidered when the task stops having an owner.
+     */
+    addFixtureTasks(
+      repo,
+      fixtureTask("PL-RB-0005", {
+        title: "PL-RB-0005 re-started without ever being released",
+        allowedPaths: ["fixtures/relbase/e/**"],
+        acceptance: "fixture task used by the release-base scenarios",
+      }),
+    );
+    writeFixtureFile(repo, "fixtures/relbase/e/keep.ts", "export const keep = 0;\n");
+    const E0 = commit("PL-RB-0005 baseline");
+    run(repo, CLI, ["claim", "PL-RB-0005", "claude-frontend"]);
+    run(repo, CLI, ["start", "PL-RB-0005", "claude-frontend"]);
+    run(repo, CLI, ["review", "PL-RB-0005", "claude-frontend"]);
+    writeFixtureFile(repo, "docs/SCRATCH-RELBASE-E.md", "head moves during review\n");
+    const E1 = commit("head moves while PL-RB-0005 is in review");
+    assert.notEqual(E1, E0);
+    run(repo, CLI, ["start", "PL-RB-0005", "claude-frontend"]);
+    assert.equal(
+      taskOf(repo, "PL-RB-0005").implementationBaseSha,
+      E0,
+      "a task pulled back out of review is the same round and keeps its base",
+    );
+    run(repo, CLI, ["release", "PL-RB-0005", "claude-frontend"]);
+
+    /* ---- E. a reconciled base and its provenance travel together ---- */
+    /*
+     * A reconciled base ALWAYS changes something under the reviewed surface --
+     * `assertReconcilableBase` refuses to record one that does not -- so the
+     * rule above can never drop it, and the provenance record explaining it
+     * stays valid. That is what makes `implementationBaseProvenance.
+     * implementationAgent` legitimately differ from `task.implementationAgent`
+     * after a re-claim: the record describes the moment the base was
+     * established, not who owns the task now.
+     */
+    addFixtureTasks(
+      repo,
+      fixtureTask("PL-RB-0006", {
+        title: "PL-RB-0006 reconciled, then released, then re-claimed elsewhere",
+        lane: "Player",
+        preferredAgent: "claude-media",
+        allowedPaths: ["fixtures/relbase/f/**"],
+        acceptance: "fixture task used by the release-base scenarios",
+      }),
+    );
+    writeFixtureFile(repo, "fixtures/relbase/f/keep.ts", "export const keep = 0;\n");
+    const F0 = commit("PL-RB-0006 baseline");
+    writeFixtureFile(repo, "fixtures/relbase/f/impl.ts", "export const impl = 1;\n");
+    commit("PL-RB-0006 preflight implementation");
+
+    run(repo, CLI, ["claim", "PL-RB-0006", "claude-media"]);
+    run(repo, CLI, [
+      "start", "PL-RB-0006", "claude-media", "--reconcile-existing",
+      "--base", F0, "--reason", "claude-media wrote this before the task existed",
+    ]);
+    run(repo, CLI, ["release", "PL-RB-0006", "claude-media"]);
+    const releasedRc = taskOf(repo, "PL-RB-0006");
+    assert.equal(releasedRc.implementationBaseSha, F0);
+    assert.equal(releasedRc.implementationBaseProvenance.baseSha, F0);
+
+    run(repo, CLI, ["claim", "PL-RB-0006", "claude-frontend"]);
+    run(repo, CLI, ["start", "PL-RB-0006", "claude-frontend"]);
+    const reclaimed = taskOf(repo, "PL-RB-0006");
+    assert.equal(reclaimed.implementationBaseSha, F0);
+    assert.equal(reclaimed.implementationAgent, "claude-frontend");
+    assert.equal(
+      reclaimed.implementationBaseProvenance.implementationAgent,
+      "claude-media",
+      "the provenance record names who wrote the pre-existing code, not who owns the task now",
+    );
+    run(repo, CLI, ["validate"]);
+
+    /* ---- F. a base and its provenance are never separated ---- */
+    /*
+     * `implementationBaseProvenance` explains ONE value of
+     * `implementationBaseSha`; `validate` errors on a record with no base to
+     * describe, and on one whose baseSha disagrees with the field. So whatever
+     * drops the base has to drop the record with it.
+     *
+     * Reaching the drop on a reconciled base takes a narrowed reviewed surface,
+     * because reconciliation refuses a base with nothing behind it and commits
+     * are immutable -- the window can only stop being non-empty if the surface
+     * it is measured over moves. That is a hand-edit here, and it is the point:
+     * the coupling must hold however the state was arrived at, not only along
+     * the paths the commands normally walk.
+     */
+    addFixtureTasks(
+      repo,
+      fixtureTask("PL-RB-0007", {
+        title: "PL-RB-0007 reconciled, then its reviewed surface moved away",
+        lane: "Player",
+        preferredAgent: "claude-media",
+        allowedPaths: ["fixtures/relbase/g/**"],
+        acceptance: "fixture task used by the release-base scenarios",
+      }),
+    );
+    writeFixtureFile(repo, "fixtures/relbase/g/keep.ts", "export const keep = 0;\n");
+    const G0 = commit("PL-RB-0007 baseline");
+    writeFixtureFile(repo, "fixtures/relbase/g/impl.ts", "export const impl = 1;\n");
+    commit("PL-RB-0007 preflight implementation");
+
+    run(repo, CLI, ["claim", "PL-RB-0007", "claude-media"]);
+    run(repo, CLI, [
+      "start", "PL-RB-0007", "claude-media", "--reconcile-existing",
+      "--base", G0, "--reason", "claude-media wrote this before the task existed",
+    ]);
+    assert.equal(taskOf(repo, "PL-RB-0007").implementationBaseProvenance.baseSha, G0);
+
+    const tasksFile = path.join(repo, "control", "tasks.json");
+    const moved = JSON.parse(fs.readFileSync(tasksFile, "utf8"));
+    moved.tasks.find((t) => t.id === "PL-RB-0007").allowedPaths = [
+      "fixtures/relbase/h/**",
+    ];
+    fs.writeFileSync(tasksFile, JSON.stringify(moved, null, 2) + "\n");
+
+    run(repo, CLI, ["release", "PL-RB-0007", "claude-media"]);
+    const stripped = taskOf(repo, "PL-RB-0007");
+    assert.equal(stripped.implementationBaseSha, undefined);
+    assert.equal(
+      stripped.implementationBaseProvenance,
+      undefined,
+      "a provenance record must never outlive the base it exists to explain",
+    );
+    run(repo, CLI, ["validate"]);
+
+    /* ---- G. "cannot check" must never read as "checked" ---- */
+    /*
+     * The decision is a claim about history, so where history cannot be read
+     * the base is KEPT and the reason is recorded. Dropping a published base on
+     * an unverified guess is the same move `assertReconcilableBase` refuses
+     * when it fails closed on a missing repository -- and keeping errs towards
+     * a WIDE range, which a reviewer can see, rather than a narrow one, which
+     * nobody can.
+     *
+     * A base whose commit is not in this checkout, reached the way the suite
+     * reaches every other unreachable-by-command state: by writing the state
+     * directly into the fixture. Nothing here touches an authored task.
+     */
+    const absentBase = "0".repeat(39) + "1";
+    const gone = JSON.parse(fs.readFileSync(tasksFile, "utf8"));
+    const goneTask = gone.tasks.find((t) => t.id === "PL-RB-0004");
+    goneTask.implementationBaseSha = absentBase;
+    fs.writeFileSync(tasksFile, JSON.stringify(gone, null, 2) + "\n");
+    run(repo, CLI, ["claim", "PL-RB-0004", "claude-frontend"]);
+    const unverifiable = runCombined(repo, CLI, ["release", "PL-RB-0004", "claude-frontend"]);
+    assert.equal(
+      taskOf(repo, "PL-RB-0004").implementationBaseSha,
+      absentBase,
+      "a base this checkout cannot resolve must be kept, not discarded on a guess",
+    );
+    assert.match(unverifiable, /could not check what it covers here \[base-not-in-checkout\]/);
+    assert.equal(
+      eventsOf(repo).filter((e) => e.type === "task.released").at(-1).baseDecisionReason,
+      "base-not-in-checkout",
+    );
+  }
+
+  /* ---------------------------------------------------------------------
+   * 9be. The same fail-towards-keeping rule where there is no git at all.
+   *
+   *      `freshRepo()` excludes `.git`, and the handoff-bus fixtures run the
+   *      whole control plane in exactly that shape with LIBERTY_COMMIT_SHA
+   *      standing in for HEAD. A release there cannot compute `base..HEAD`, so
+   *      it must keep the base and say why -- and it must NOT read the
+   *      environment variable as an answer, because an env var that could
+   *      decide whether a published provenance field is discarded is a way to
+   *      discard one.
+   * ------------------------------------------------------------------- */
+  {
+    const repo = freshRepo();
+    addFixtureTasks(
+      repo,
+      fixtureTask("PL-RB-0008", {
+        title: "PL-RB-0008 released in a checkout with no git",
+        allowedPaths: ["fixtures/relbase/i/**"],
+        acceptance: "fixture task used by the release-base scenarios",
+      }),
+    );
+    const FAKE_HEAD = "a".repeat(40);
+    run(repo, CLI, ["claim", "PL-RB-0008", "claude-frontend"]);
+    run(repo, CLI, ["start", "PL-RB-0008", "claude-frontend"], {
+      LIBERTY_COMMIT_SHA: FAKE_HEAD,
+    });
+    assert.equal(taskOf(repo, "PL-RB-0008").implementationBaseSha, FAKE_HEAD);
+
+    const out = runCombined(repo, CLI, ["release", "PL-RB-0008", "claude-frontend"], {
+      LIBERTY_COMMIT_SHA: "b".repeat(40),
+    });
+    assert.equal(
+      taskOf(repo, "PL-RB-0008").implementationBaseSha,
+      FAKE_HEAD,
+      "with no history to read, the base must survive rather than be dropped unverified",
+    );
+    assert.match(out, /could not check what it covers here \[no-git\]/);
+    assert.equal(
+      eventsOf(repo).filter((e) => e.type === "task.released").at(-1).baseDecisionReason,
+      "no-git",
+      "the audit trail must say the check could not run, not imply that it ran",
+    );
+  }
+
+  /* ---------------------------------------------------------------------
    * 10. Bootstrap into a new project still works.
    * ------------------------------------------------------------------- */
   {
@@ -7921,7 +8322,7 @@ try {
     "running the test suite must not mutate any live control/ or coordination/ file",
   );
 
-  console.log("AI control plane tests passed (67 scenarios).");
+  console.log("AI control plane tests passed (69 scenarios).");
 } finally {
   /*
    * Cleanup must never replace the result.
