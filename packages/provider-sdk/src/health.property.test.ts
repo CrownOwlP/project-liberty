@@ -18,6 +18,7 @@ import {
   type HealthObservation,
   type HealthObservationSummary,
   type HealthOutcome,
+  type HealthPolicyVersion,
   type ProviderHealthPolicy
 } from "./health";
 import { mapStremioStream, observedHealthScore, type StreamMappingContext } from "./stremio/mapping";
@@ -72,6 +73,27 @@ const observationsArb: Arbitrary<HealthObservation[]> = fc.array(observationArb,
   maxLength: MAX_LIST_LENGTH * 2
 });
 
+/**
+ * A policy version that may not be the one this contract has shipped.
+ *
+ * Reached by a cast, and the cast is the point -- the same device and the same
+ * reason as `unvettedRightsArb` in the shared arbitraries. `HEALTH_POLICY_VERSIONS`
+ * has exactly ONE member today, so a well-typed generator can only ever produce
+ * the shipped string, and `expect(report.policyVersion).toBe(policy.version)` is
+ * then an assertion that a constant equals itself. A mutation run confirmed it:
+ * hardcoding the shipped version inside the evaluator passed the entire suite.
+ *
+ * The strings below stand in for the second policy this contract will ship. The
+ * field exists so that two stored verdicts can be compared across a policy
+ * change; a version that is really a constant would label v2 reports as v1, and
+ * the mislabelling would be invisible exactly where it matters.
+ */
+const policyVersionArb: Arbitrary<HealthPolicyVersion> = fc.constantFrom(
+  DEFAULT_PROVIDER_HEALTH_POLICY.version,
+  "provider-health/2026-12-01.windowed-v2" as HealthPolicyVersion,
+  "provider-health/2027-03-01.decayed-v3" as HealthPolicyVersion
+);
+
 /** Counts as they reach the evaluator, including values no sane caller sends. */
 const summaryArb: Arbitrary<HealthObservationSummary> = fc.record(
   {
@@ -94,6 +116,7 @@ const summaryArb: Arbitrary<HealthObservationSummary> = fc.record(
 const policyArb: Arbitrary<ProviderHealthPolicy> = fc
   .record(
     {
+      version: policyVersionArb,
       priorSuccesses: fc.integer({ min: 1, max: 4 }),
       priorFailures: fc.integer({ min: 1, max: 4 }),
       thresholds: fc.tuple(fc.integer({ min: 0, max: 100 }), fc.integer({ min: 0, max: 100 })),
@@ -102,10 +125,10 @@ const policyArb: Arbitrary<ProviderHealthPolicy> = fc
     },
     { noNullPrototype: true }
   )
-  .map(({ priorSuccesses, priorFailures, thresholds, windowMs, precision }): ProviderHealthPolicy => {
+  .map(({ version, priorSuccesses, priorFailures, thresholds, windowMs, precision }): ProviderHealthPolicy => {
     const [left, right] = thresholds;
     return {
-      version: DEFAULT_PROVIDER_HEALTH_POLICY.version,
+      version,
       priorSuccesses,
       priorFailures,
       failBelow: Math.min(left, right) / 100,
@@ -343,6 +366,21 @@ describe("the score model's actual guarantees", () => {
 });
 
 describe("purity", () => {
+  it("stamps every report with the version of the policy it was given", () => {
+    /*
+     * Split out of the band property so the claim has a name, and generated over
+     * `policyVersionArb` so it is a claim about the POLICY's version rather than
+     * about a string that only ever had one possible value. This is the field a
+     * stored verdict is replayed against; if it is not the policy's own, nothing
+     * downstream can tell which rules produced the number beside it.
+     */
+    fc.assert(
+      fc.property(summaryArb, policyArb, (summary, policy) => {
+        expect(evaluateProviderHealth("archive", summary, policy).policyVersion).toBe(policy.version);
+      })
+    );
+  });
+
   it("returns an identical whole report for identical inputs", () => {
     fc.assert(
       fc.property(summaryArb, policyArb, (summary, policy) => {

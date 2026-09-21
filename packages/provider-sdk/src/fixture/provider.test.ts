@@ -450,6 +450,39 @@ describe("resolution", () => {
     }
   });
 
+  it("never lets its health verdict choose the rights its candidates carry", () => {
+    /*
+     * HEALTH IS NOT ENTITLEMENT, on the adapter where the two sit closest: this
+     * provider's `rights` and its `healthScore` are computed four lines apart in
+     * `provider.ts`, both as constants, and one of them is derived from a health
+     * report.
+     *
+     * Added because a mutation run found it unguarded. Replacing the candidate's
+     * `rights` with a value chosen from `healthReport().status` left all 282
+     * tests in this package green -- the suite pinned the rights BASIS the
+     * provider publishes and the rights on the ITEM it refuses to disagree with,
+     * but never the rights value that actually lands on a candidate and travels
+     * to the playback path. And this provider's verdict is permanently
+     * `unknown`, so a rewrite keyed on the verdict fires on every candidate it
+     * ever produces rather than on some rare band.
+     *
+     * Asserted twice on purpose: against the literal `owned`, so the test fails
+     * if the substituted value happens to equal the basis, and against
+     * `rightsBasis.rights`, so it fails if the two ever stop agreeing.
+     */
+    const provider = build(BASE_OPTIONS);
+    expect(provider.providerHealthReport().status).toBe("unknown");
+
+    const resolution = provider.resolve(itemFor(), CONTEXT);
+    expect(resolution.reason).toBe("resolved");
+    expect(resolution.rights).toBe("owned");
+    expect(resolution.candidates).not.toHaveLength(0);
+    for (const candidate of resolution.candidates) {
+      expect(candidate.rights).toBe("owned");
+      expect(candidate.rights).toBe(provider.rightsBasis.rights);
+    }
+  });
+
   it("composes addresses through URL, so a query, a fragment or a trailing slash cannot move them", () => {
     const provider = build({ ...BASE_OPTIONS, mediaOrigin: "https://rig.test/media/?v=2#top" });
 

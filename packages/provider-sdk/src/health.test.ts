@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_PROVIDER_HEALTH_POLICY,
+  HEALTH_POLICY_VERSIONS,
   evaluateProviderHealth,
   healthPriorScore,
   healthRankingScore,
@@ -9,6 +10,7 @@ import {
   summariseHealthObservations,
   type HealthObservation,
   type HealthObservationSummary,
+  type HealthPolicyVersion,
   type ObservedHealthReport,
   type ProviderHealthPolicy,
   type ProviderHealthReasonCode,
@@ -107,7 +109,23 @@ type EntitlementShapedKey =
   | "authorised"
   | "eligible"
   | "entitled"
-  | "playable";
+  | "playable"
+  // Added after a mutation run: a planted `canPlay` field survived the list
+  // above untouched, which is the guard's real shape -- it catches the NAMES it
+  // enumerates and nothing else. The names below are the ones a reviewer would
+  // most plausibly reach for next. The name-independent half of the guard is
+  // `publishes exactly these fields and no others` further down, which fails on
+  // a new field whatever it is called; this list is what additionally catches a
+  // field that is DECLARED on the type without ever being populated, which no
+  // runtime assertion can see.
+  | "allowed"
+  | "blocked"
+  | "canPlay"
+  | "denied"
+  | "drm"
+  | "grant"
+  | "licensed"
+  | "permitted";
 
 type CarriesNoEntitlement<T> = [Extract<keyof T, EntitlementShapedKey>] extends [never] ? true : never;
 
@@ -127,6 +145,54 @@ const observedCarriesNoEntitlement: CarriesNoEntitlement<ObservedHealthReport> =
 type GuardIsNotVacuous = CarriesNoEntitlement<{ readonly rights: string }> extends never ? true : false;
 
 const guardDetectsAnEntitlementField: GuardIsNotVacuous = true;
+
+type WidenedGuardIsNotVacuous = CarriesNoEntitlement<{ readonly canPlay: boolean }> extends never
+  ? true
+  : false;
+
+const guardDetectsTheWidenedNames: WidenedGuardIsNotVacuous = true;
+
+/**
+ * Every field the contract publishes, per branch, in sorted order.
+ *
+ * The NAME-INDEPENDENT half of the entitlement separation. `CarriesNoEntitlement`
+ * above enumerates names, so a field called something the list never thought of
+ * walks straight past it -- a planted `canPlay` did exactly that. This does not
+ * care what the field is called: a health report that grew ANY field a reader
+ * could mistake for an authorization is a health report whose key set changed,
+ * and changing it here is the deliberate act that adding one should be.
+ *
+ * It is not a substitute for the type-level guard and does not replace it: a
+ * field declared on the interface but never populated has no runtime key, so
+ * only the name list can see that one. The two halves cover different failures.
+ */
+const UNOBSERVED_REPORT_KEYS: readonly string[] = [
+  "excludedByWindow",
+  "failures",
+  "observedSuccessRate",
+  "policyVersion",
+  "priorScore",
+  "providerId",
+  "reasons",
+  "sampleCount",
+  "scoreBasis",
+  "status",
+  "successes"
+];
+
+const OBSERVED_REPORT_KEYS: readonly string[] = [
+  "excludedByWindow",
+  "failures",
+  "measuredScore",
+  "observedSuccessRate",
+  "policyVersion",
+  "providerId",
+  "reasons",
+  "sampleCount",
+  "scoreBasis",
+  "status",
+  "successes"
+];
 
 describe("zero observations is not fifty-percent health, and it is not a pass", () => {
   it("reports unknown, a null observed rate and a zero sample count", () => {
@@ -254,6 +320,31 @@ describe("a prior is labelled as a prior, never as measured availability", () =>
     const prior = verdict.reasons.find((reason) => reason.code === "prior_not_measurement");
     expect(prior?.detail).toContain("is the policy prior");
     expect(prior?.detail).toContain("not measured availability");
+  });
+
+  it("never claims measurement anywhere in the unobserved trail", () => {
+    /*
+     * `toContain("not measured availability")` on one reason is necessary and
+     * NOT sufficient, which a mutation run showed rather than an argument: a
+     * trail that carries the disclaimer and a sentence contradicting it beside
+     * it passes the substring assertion either way, and a reader who stops at
+     * the contradicting sentence has been told the prior was measured.
+     *
+     * So the claim is asserted over the WHOLE trail, sentence by sentence: on an
+     * unobserved report, a sentence that mentions measurement must also negate
+     * it. `\bnot\b` rather than `includes("not")`, because "nothing about
+     * whether this one works" is a sentence this trail really does contain and
+     * it negates nothing about measurement.
+     */
+    const verdict = report(0, 0);
+    const sentences = verdict.reasons.flatMap((reason) => reason.detail.split(/[;.]/));
+    const claims = sentences.filter(
+      (sentence) => /\bmeasure(d|ment)\b/.test(sentence) && !/\bnot\b/.test(sentence)
+    );
+
+    expect(claims).toEqual([]);
+    // And not vacuously: the trail does discuss measurement, in the negative.
+    expect(sentences.some((sentence) => /\bmeasured\b/.test(sentence))).toBe(true);
   });
 
   it("reports the raw measurement separately from the smoothed ranking signal", () => {
@@ -419,6 +510,31 @@ describe("purity: observations plus an explicit policy, and nothing else", () =>
     expect(report(5, 0).policyVersion).toBe("provider-health/2026-08-20.laplace-v1");
   });
 
+  it("echoes the POLICY's version rather than a constant of its own", () => {
+    /*
+     * The assertion above cannot tell those two apart, and a mutation run
+     * confirmed it: a report that hardcodes the shipped version string passes it
+     * on every branch. `HEALTH_POLICY_VERSIONS` has exactly one member today, so
+     * with only well-typed values the field is provably indistinguishable from a
+     * constant -- the same vacuity `unvettedRightsArb` exists for in the shared
+     * arbitraries, and answered the same way, with a documented cast that stands
+     * in for the second policy this contract will eventually ship.
+     *
+     * It matters because the field's whole job is to say which rules produced a
+     * stored verdict. A version that is really a constant would label every
+     * report under v2 as v1, and the mislabelling would be invisible precisely
+     * where it does the damage: in a comparison of two reports across a policy
+     * change.
+     */
+    const NEXT_VERSION = "provider-health/2026-12-01.windowed-v2" as HealthPolicyVersion;
+    const next: ProviderHealthPolicy = { ...POLICY, version: NEXT_VERSION };
+
+    expect(evaluateProviderHealth("archive", counts(0, 0), next).policyVersion).toBe(NEXT_VERSION);
+    expect(evaluateProviderHealth("archive", counts(5, 0), next).policyVersion).toBe(NEXT_VERSION);
+    // Not vacuous: the cast reaches a value the shipped vocabulary does not have.
+    expect(HEALTH_POLICY_VERSIONS).not.toContain(NEXT_VERSION);
+  });
+
   it("folds counts that arrived from outside TypeScript's view", () => {
     /*
      * Negative, fractional and non-finite counts. The first two preserve
@@ -492,6 +608,56 @@ describe("health never affects entitlement", () => {
     const archive = evaluateProviderHealth("archive", counts(3, 1), POLICY);
     const mirror = evaluateProviderHealth("licensed-mirror", counts(3, 1), POLICY);
     expect({ ...mirror, providerId: "archive" }).toEqual(archive);
+  });
+});
+
+describe("a health report publishes exactly these fields and no others", () => {
+  /*
+   * The name-independent half of "health is not entitlement". The compile-time
+   * guard above enumerates names, and a mutation run planted a `canPlay` that
+   * walked straight past it. This assertion does not read the name: a report
+   * that grew a field -- an authorization, a "safe to serve", anything a
+   * consumer could read as permission -- has a key set that no longer matches,
+   * and updating the list below is the deliberate act that adding one should be.
+   */
+
+  it("grows no field of any name on the unobserved branch", () => {
+    expect(Object.keys(report(0, 0)).sort()).toEqual(UNOBSERVED_REPORT_KEYS);
+  });
+
+  it("grows no field of any name on the measured branch", () => {
+    for (const verdict of [report(0, 1), report(3, 1), report(5, 0)]) {
+      expect(Object.keys(verdict).sort()).toEqual(OBSERVED_REPORT_KEYS);
+    }
+  });
+
+  it("publishes no field that is not on one of those two lists", () => {
+    /*
+     * Not vacuous, and not merely the two assertions above restated: the lists
+     * are only meaningful if neither of them silently contains an
+     * entitlement-shaped name already. Asserted against the same vocabulary the
+     * type-level guard uses, so the two halves cannot drift.
+     */
+    const entitlementShaped: readonly string[] = [
+      "allowed",
+      "authorised",
+      "authorized",
+      "blocked",
+      "canPlay",
+      "denied",
+      "drm",
+      "eligible",
+      "entitled",
+      "grant",
+      "licensed",
+      "permitted",
+      "playable",
+      "rights",
+      "rightsBasis"
+    ];
+    for (const key of [...UNOBSERVED_REPORT_KEYS, ...OBSERVED_REPORT_KEYS]) {
+      expect(entitlementShaped).not.toContain(key);
+    }
   });
 });
 

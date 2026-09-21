@@ -881,6 +881,84 @@ describe("what this provider object has observed (PL-0303)", () => {
     );
   });
 
+  it("never lets the health verdict reach the rights its candidates carry", async () => {
+    /*
+     * HEALTH IS NOT ENTITLEMENT, at the one line in this adapter where an
+     * availability signal sits beside an entitlement value -- the mapping
+     * context, which is handed `rights: source.rights` and
+     * `healthScore: healthRankingScore(healthReport())` two lines apart.
+     *
+     * Added because a mutation run found this unguarded. Replacing that rights
+     * line with `healthReport().status === "pass" ? "public-domain" : source.rights`
+     * -- a health verdict deciding what a candidate is authorized as -- left all
+     * 275 tests in this package green. `health.test.ts` proves the MAPPER
+     * refuses an unauthorized candidate at every score, which is the other
+     * direction; nothing observed the rights VALUE on a candidate at two
+     * different health verdicts, so nothing would have noticed health choosing
+     * it.
+     *
+     * The source is `licensed` on purpose. Every other source in this file is
+     * `public-domain`, and a source whose declared rights already equal whatever
+     * a substitution would put there cannot detect the substitution -- which is
+     * the second half of why the mutant survived.
+     *
+     * The provider is driven across the band boundary rather than asserted at
+     * one verdict: `warn` after its first resolution, then `pass` after four
+     * forced manifest refreshes, and the rights on the resolution, on the
+     * rights basis and on every candidate are the operator's declared value in
+     * both. What is allowed to differ is exactly one field, and it is the
+     * ranking signal.
+     */
+    const routes = {
+      [MANIFEST_URL]: () => json(manifestBody),
+      [STREAM_URL]: () => json({ streams: [{ url: "https://cdn.example.com/film.mp4" }] })
+    };
+    const stub = stubFetch(routes);
+    const licensedSource = makeSource({
+      rights: "licensed",
+      rightsBasis: {
+        rights: "licensed",
+        basis: "provider-contract",
+        reference: "contract-2026-014"
+      }
+    });
+    const licensedItem: CatalogItemRef = { ...item, rights: "licensed" };
+    const provider = createStremioProvider(licensedSource, { ...stub.deps, now: frozenClock() });
+
+    const degraded = await provider.resolve(licensedItem, requestContext);
+    expect(provider.providerHealthReport().status).toBe("warn");
+
+    // Four forced manifest refreshes -- `health()` never answers from cache --
+    // take the record from two clean requests to six, which is the short clean
+    // run the shipped policy charges for a pass.
+    for (let refresh = 0; refresh < 4; refresh++) await provider.health();
+    expect(provider.providerHealthReport().status).toBe("pass");
+
+    const healthy = await provider.resolve(licensedItem, requestContext);
+
+    for (const resolution of [degraded, healthy]) {
+      expect(resolution.reason).toBe("resolved");
+      expect(resolution.rights).toBe("licensed");
+      expect(resolution.rightsBasis).toEqual(licensedSource.rightsBasis);
+      expect(resolution.candidates).not.toHaveLength(0);
+      for (const candidate of resolution.candidates) expect(candidate.rights).toBe("licensed");
+    }
+
+    /*
+     * And the ONLY thing the verdict moved. Asserted as whole-candidate equality
+     * with the ranking signal overwritten, the same shape as the mapper-level
+     * property: "rights did not change" is weaker than "nothing except the score
+     * changed", and the weaker claim leaves room for the next entitlement-shaped
+     * field to be the one health decides.
+     */
+    const before = degraded.candidates[0];
+    const after = healthy.candidates[0];
+    expect(before).toBeDefined();
+    expect(after).toBeDefined();
+    expect(after?.healthScore).not.toBe(before?.healthScore);
+    expect({ ...after, healthScore: before?.healthScore }).toEqual(before);
+  });
+
   it("refuses a health policy it would have to ignore, before making a request", () => {
     /*
      * A windowed policy asks this adapter to discard observations older than the
