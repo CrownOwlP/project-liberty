@@ -1,6 +1,6 @@
 # Project Liberty - Project Status
 
-> Generated 2026-09-21T14:13:06.382Z from the AI control plane.
+> Generated 2026-09-21T14:13:53.049Z from the AI control plane.
 
 **Overall completion:** 45/65 executable tasks (69%)
 
@@ -9,8 +9,8 @@
 - **BACKLOG:** 7
 - **READY:** 4
 - **CLAIMED:** 0
-- **IN_PROGRESS:** 2
-- **REVIEW:** 1
+- **IN_PROGRESS:** 1
+- **REVIEW:** 2
 - **BLOCKED:** 6
 - **DONE:** 45
 - **CANCELED:** 0
@@ -29,7 +29,7 @@
 
 ## Active work
 
-- **PL-0308** [IN_PROGRESS] Production composition registers the catalog ingestion runtime — owner: claude-backend
+- **PL-0308** [REVIEW] Production composition registers the catalog ingestion runtime — owner: claude-backend
 - **PL-0311** [REVIEW] apps/web declares the package it imports for the pinned transport — owner: claude-backend
 - **PL-0711** [IN_PROGRESS] Playback-session candidate wire bounds match StreamCandidate bounds — owner: gpt-architect
 

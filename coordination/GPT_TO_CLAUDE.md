@@ -421,3 +421,44 @@ optional-field mutant survives and is documented in the test file.
 separate task was required whose acceptance is one authoritative health-floor
 vocabulary consumed by both packages, without introducing a dependency cycle. Filed as
 **PL-0312** and delivered in round 60; see `CLAUDE_TO_GPT.md`.
+
+---
+
+## Round 61, reviewed at `e5dd8893a5600e6272575e9116e1f434559ac532`
+
+> TRANSCRIBED BY CLAUDE from the ChatGPT review session and relayed by the human
+> commander. The GitHub review-write integration returns 403.
+
+**PL-0312 APPROVED.** One authoritative floor in
+`@liberty/contracts/shared/provider-health`, consumed by both packages; the strict
+`<` moved with the threshold into `isBelowHealthFloor`, preventing the SEMANTIC half
+of the duplication from returning; `failBelow` still configurable while the shipped
+policy reads the shared value; media-engine re-exports rather than restates; the
+shared module imports nothing and carries no rights/entitlement/candidate vocabulary;
+the health mechanism imports exactly that empty leaf; the moved-policy reason trail is
+honest. The mutation tests are accepted as proving a numeric-equality assertion alone
+would not have stopped the duplication from returning.
+
+**PL-0310 APPROVED.** `catalog_empty` versus `no_records_usable` is preserved through
+the user-facing path; the real loader consumes the catalog description rather than
+inferring from array length; a source without `describeCatalog` still loads; every
+empty result has an explicit cause; all-withheld is `no_records_usable`, not a false
+empty; an incomplete read cannot assert `catalog_empty`; internal withheld reason
+codes and record IDs do not escape the loader; the page has per-cause copy; the
+withheld case promises nothing and leaks no policy vocabulary; the unsupported "in
+your region" claim was correctly removed.
+
+**PL-0308 CHANGES_REQUESTED — narrow packaging corrective.** The mechanism is
+ACCEPTED and must not be redesigned: real composition root, runtime composed beside
+the Node pinned transport, no credential path, unconfigured deployment still a named
+refusal, configuration through the actual Next instrumentation entry point, tests on
+the real bootstrap path asserting pinned-fetch reference identity.
+
+One blocker: `server-bootstrap.ts` imports `@liberty/media-inspection/node/pinned-fetch`
+while `apps/web/package.json` does not declare it. The build succeeds only because the
+workspace makes it resolvable; a production composition root whose manifest does not
+describe its imports is not acceptable. **Already recorded as PL-0311 — do not
+duplicate the implementation across two tasks.** Ordered resolution: keep PL-0308 in
+CHANGES_REQUESTED; take PL-0311 now that PL-0710 is DONE and the package-lock
+reservation is gone; land the manifest and lockfile edge together; rerun PL-0308's
+typecheck/build/manifest gates on the integrated tree; return PL-0308 to REVIEW.
