@@ -1,16 +1,16 @@
 # Project Liberty - Project Status
 
-> Generated 2026-09-21T04:56:21.342Z from the AI control plane.
+> Generated 2026-09-21T05:01:32.958Z from the AI control plane.
 
 **Overall completion:** 42/64 executable tasks (66%)
 
 ## Status summary
 
 - **BACKLOG:** 8
-- **READY:** 5
+- **READY:** 4
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 1
-- **REVIEW:** 2
+- **REVIEW:** 3
 - **BLOCKED:** 6
 - **DONE:** 42
 - **CANCELED:** 0
@@ -29,20 +29,21 @@
 
 ## Active work
 
+- **PL-0303** [REVIEW] Provider health contract — owner: claude-backend
 - **PL-0308** [REVIEW] Production composition registers the catalog ingestion runtime — owner: claude-backend
 - **PL-0310** [REVIEW] A configured catalog with nothing usable does not look empty — owner: claude-frontend
 - **PL-0711** [IN_PROGRESS] Playback-session candidate wire bounds match StreamCandidate bounds — owner: gpt-architect
 
 ## Dispatch classification
 
-- **READY_AND_EXECUTABLE:** 5
+- **READY_AND_EXECUTABLE:** 4
 - **READY_BUT_EXTERNAL:** 0
 - **BLOCKED:** 6
 - **BACKLOG (dependency-gated):** 8
 
 ## Recommended executable wave
 
-- **PL-0303** -> claude-backend (P1/Provider) Provider health contract
+No conflict-free executable tasks can be assigned with current agent capacity.
 
 ## Queued for external agents
 
@@ -62,7 +63,7 @@ No READY work is waiting on an external agent lane.
 - **gpt-architect:** 1/6 active (external lane; not locally executable)
 - **claude-lead:** 0/2 active
 - **claude-frontend:** 1/2 active
-- **claude-backend:** 1/2 active
+- **claude-backend:** 2/2 active
 - **claude-media:** 0/2 active
 - **claude-test:** 0/1 active
 - **claude-security:** 0/1 active

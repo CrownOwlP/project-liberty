@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-21T04:56:21.342Z",
+  "generatedAt": "2026-09-21T05:01:32.958Z",
   "agent": "gpt-architect",
   "executionAvailable": false,
   "assigned": [
@@ -37,6 +37,88 @@
     }
   ],
   "review": [
+    {
+      "id": "PL-0303",
+      "priority": "P1",
+      "lane": "Provider",
+      "status": "REVIEW",
+      "title": "Provider health contract",
+      "dependencies": [
+        "PL-0301"
+      ],
+      "allowedPaths": [
+        "packages/provider-sdk/**",
+        "packages/contracts/**",
+        "packages/observability/**"
+      ],
+      "preferredAgent": "claude-backend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit"
+      ],
+      "acceptance": "A provider with zero observations reports unknown with a null observed success rate and a zero sample count, never a mid-range score and never a pass; any prior used to rank an unobserved provider is labelled as a prior rather than presented as measured availability; degraded-but-usable is a state distinct from up and down; health output is pure over the observations plus an explicit policy version, with no hidden wall-clock decay; and health never affects entitlement, so a provider at perfect health still cannot make an unauthorized candidate eligible",
+      "owner": "claude-backend",
+      "gateResults": {
+        "typecheck": {
+          "status": "pass",
+          "at": "2026-09-21T05:01:32.758Z",
+          "by": "claude-backend",
+          "commitSha": "f81e2e24862887cb53c67eb044be60d81f605a0f",
+          "evidence": "npx turbo run typecheck --force, exit 0, 11 of 11. Also lint 0 and build 0. THE TYPECHECK IS PART OF THE ACCEPTANCE EVIDENCE HERE RATHER THAN A SIDE CONDITION, because three of the clause guarantees ARE the type and have no runtime path that could produce a wrong value: a report whose status type excludes 'pass' cannot be given one, so mutants that set status pass on the unobserved branch (M2), that put the prior score in observedSuccessRate (M4), and that add an entitlement-shaped field (M23b) fail as tsc errors -- 'src/health.ts(533,5): error TS2322' and 'error TS2353: Object literal may only specify known properties, and safeToServe does not exist in type ObservedHealthReport'. Their red is the typecheck gate, not a test file, and that is said plainly rather than dressed as a value red."
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-09-21T05:01:32.849Z",
+          "by": "claude-backend",
+          "commitSha": "f81e2e24862887cb53c67eb044be60d81f605a0f",
+          "evidence": "npx turbo run test --force, exit 0, 20 of 20, 0 cached, 2652 passed 1 skipped (2644 before; +8, all in provider-sdk, 275 to 283). test:scripts 0, repo:validate 0. THIS ROUND CHANGED NO PRODUCTION CODE. The health mechanism was already implemented and correct in 67c5fc9 and 6c31298; what was missing was DETECTION, and a 31-mutant campaign found five places the suite would have stayed green against a wrong implementation. THE SHARPEST IS CLAUSE 5, AND IT IS A REAL HOLE THAT WAS CLOSED: the suite was strong on the mapper and BLIND ON BOTH ADAPTERS. Replacing a candidate's rights with a value chosen by the health verdict -- rights: healthReport().status === 'pass' ? 'public-domain' : source.rights -- survived all 275 tests in stremio/client.ts (M21), again for rightsBasis (M24), and again in fixture/provider.ts where the verdict is permanently unknown so the rewrite fires on EVERY candidate it produces (M25). Two reasons it was missed: nothing observed the rights VALUE at two different health verdicts, and every Stremio source in the tests was already public-domain so substituting public-domain was undetectable. Closed with a licensed source driven from warn across to pass, asserting whole-candidate equality with only healthScore overwritten: 'AssertionError: expected public-domain to be licensed'. Entitlement separation was proven three ways rather than asserted -- health.ts imports NOTHING and takes no rights, candidate or source; all three production importers were mutated in BOTH directions; and media-engine's ranking checks the rights allowlist first and unconditionally, so health can only subtract eligibility, never grant it. ALSO CLOSED: the unobserved trail could contradict its own disclaimer in a sentence beside it (M8), and policyVersion was effectively unpinned because the version enum has one member so a hardcoded string passed everything (M15, killed by a property shrunk 7 times). NO VALUE-RED WAS AVAILABLE AGAINST UNMUTATED CODE and the implementer said so rather than manufacturing one: every clause already behaved correctly at HEAD, so these tests close a detection gap rather than a behaviour gap and their red is under the planted mutant. ONE MUTANT SURVIVES AND IS DOCUMENTED IN THE TEST FILE: an optional field declared and never populated, which a name-based guard cannot see and a key-set test cannot reach because it has no runtime key; no value ever flows through it. The keyword list was widened and a name-independent key-set assertion added, which kills the populated version whatever it is called."
+        }
+      },
+      "implementationAgent": "claude-backend",
+      "updatedAt": "2026-09-21T05:01:32.944Z",
+      "implementationBaseSha": "52368da3bd7e0b4d928323c739c51c9f11c32b0e",
+      "implementationBaseProvenance": {
+        "kind": "reconciled-existing-implementation",
+        "baseSha": "52368da3bd7e0b4d928323c739c51c9f11c32b0e",
+        "reconciledAt": "2026-09-21T04:56:48.038Z",
+        "reconciledBy": "claude-backend",
+        "implementationAgent": "claude-backend",
+        "headAtReconciliation": "f81e2e24862887cb53c67eb044be60d81f605a0f",
+        "reviewSurface": "allowedPaths",
+        "surfaceCommitCount": 21,
+        "oldestSurfaceCommit": "67c5fc9270621f461cbf671fe870da7394d20065",
+        "newestSurfaceCommit": "f81e2e24862887cb53c67eb044be60d81f605a0f",
+        "surfaceCommits": [
+          "f932ebe66c99cbb4fdf15f631d1464b16115aadc",
+          "f83bc65015851b97ff9af86249b144cd57ea8047",
+          "bbfaa5a997e6ee146271f26e5b2546b7e67e47d2",
+          "6de6fb59678506d2b465e4328b011e7636aca3b3",
+          "a772dd1cf38c815920863a05d4def5c6cc2846c1",
+          "002461be7a98fad790971f37b813532616280efa",
+          "83439a28aa8ea3e349b359af8aee996424576715",
+          "1ee833d2f7834729b871f868a2bcd6c7cc8d1981",
+          "a4209a4fcf0b232e5de92f2af09dd8fb3d266909",
+          "b74b0d3c4befa226109fc1ce623b5addd46a9490",
+          "eecca6b621a2fccaab09ab3ec15d3bc93936df3b",
+          "ba9521b2c3998ae05210240827c0a773596819c9",
+          "719d2d7c31465901f3dbee1e936a180e87c3d44f",
+          "cf98b977b3c7c0113928bb9cc4d7fb6d02e802bd",
+          "6c31298ba1eece125b2733780dc6b107aa5e5200",
+          "9aafd5237e4ee6c8dab6c9c2f9879c1910149872",
+          "fc1ea4d54c9e7d2b2f6d9aa71a977abdc3bcb400",
+          "bbe68ed8d16f864c87309ceb1c089495deb89766",
+          "4ca4313f2642f4666ab6dda0084c25fcb2fbf3d5",
+          "67c5fc9270621f461cbf671fe870da7394d20065"
+        ],
+        "surfaceCommitsTruncated": true,
+        "changedFileCount": 47,
+        "baseCommitSurfaceTouchCount": 0,
+        "baseCommitSurfaceTouches": [],
+        "baseCommitSurfaceTouchesTruncated": false,
+        "reason": "The PL-0303 health implementation predates this claim by eighteen commits: packages/provider-sdk/src/health.ts, health.test.ts and health.property.test.ts are created in 67c5fc9 ('PL-0303: an unobserved provider reports unknown, and a prior says it is one') and amended in 6c31298 ('PL-0303: a health policy that claimed a window it never applied'), both titled for this task. 52368da3bd7e0b4d928323c739c51c9f11c32b0e is the parent of 67c5fc9, verified as git rev-parse 67c5fc9^, and health.ts DOES NOT EXIST at that tree -- git cat-file -e 52368da:packages/provider-sdk/src/health.ts fails -- so it is where the implementation began rather than an earlier commit that is merely safe. THIS ROUND ADDED TESTS ONLY; production code is unchanged, so a base at HEAD would have published a review range containing none of the mechanism the acceptance is about. The task arrived at this claim carrying typecheck and unit PASS from an earlier round under an earlier owner, which CLAUDE.md forbids -- evidence belongs to one implementation round under one owner -- and a base equal to HEAD. Releasing discarded both, and PL-AI-0009's rule, which landed two rounds ago, cleared the base with the published reason no-surface-change and a changed-file count of 0. This is the first real use of that mechanism."
+      }
+    },
     {
       "id": "PL-0308",
       "priority": "P1",
@@ -196,32 +278,6 @@
       "acceptance": "Profiles are modelled above authentication rather than inside the auth library, with the active profile carried alongside the session rather than inside the identity record; profile scoping is present in the first migration rather than retrofitted, because that is the part that is expensive to reverse; profiles can be created and selected with authorization tests",
       "owner": null,
       "gateResults": {}
-    },
-    {
-      "id": "PL-0303",
-      "priority": "P1",
-      "lane": "Provider",
-      "status": "READY",
-      "title": "Provider health contract",
-      "dependencies": [
-        "PL-0301"
-      ],
-      "allowedPaths": [
-        "packages/provider-sdk/**",
-        "packages/contracts/**",
-        "packages/observability/**"
-      ],
-      "preferredAgent": "claude-backend",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "typecheck",
-        "unit"
-      ],
-      "acceptance": "A provider with zero observations reports unknown with a null observed success rate and a zero sample count, never a mid-range score and never a pass; any prior used to rank an unobserved provider is labelled as a prior rather than presented as measured availability; degraded-but-usable is a state distinct from up and down; health output is pure over the observations plus an explicit policy version, with no hidden wall-clock decay; and health never affects entitlement, so a provider at perfect health still cannot make an unauthorized candidate eligible",
-      "owner": null,
-      "gateResults": {},
-      "implementationAgent": "claude-backend",
-      "updatedAt": "2026-09-21T04:56:21.313Z"
     },
     {
       "id": "PL-AI-0002",

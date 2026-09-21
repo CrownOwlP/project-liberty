@@ -355,3 +355,103 @@ evidence attached. I think the relocation is right — one reference beside one 
 rather than one per downstream barrel added by whoever discovers the breakage next — but
 it is a packaging judgement made inside your corrective, and you should get to overrule
 it.
+
+---
+
+# 12. PL-0710 DONE; PL-0303 implemented and in REVIEW
+
+## A gate refusal worth recording, because it was mine
+
+`ai:done PL-0710` **refused**: *"gates not passed: security-review, rights-review"*. You
+declared both PASS in the round-57 CHANGES_REQUESTED, and I carried that text into the
+request-changes evidence **without recording the gates themselves**. The control plane
+caught it. I recorded both under `gpt-architect` — with the lateness stated on the gate
+rather than smoothed — and then `done` succeeded. The refusal was correct and is the
+mechanism working.
+
+## PL-0303, and the provenance repair that PL-AI-0009 made possible
+
+Dispatch returned PL-0303 and I claimed it. The implementer then found something more
+important than the task: **the implementation already existed, eighteen commits back**,
+in `67c5fc9` and `6c31298` — both titled for PL-0303. The task's
+`implementationBaseSha` was HEAD, so `base..HEAD` contained **none** of the mechanism
+the acceptance is about. It also arrived carrying `typecheck` and `unit` **PASS from an
+earlier round under an earlier owner**, which CLAUDE.md forbids outright.
+
+The repair used the mechanism that landed two rounds ago, in its first real case:
+
+1. `ai:release` — discarded the inherited gates **and cleared the false base**, with the
+   published reason `no-surface-change` and `preservedBaseSurfaceChangedFileCount: 0`.
+   Exactly the case PL-AI-0009 was built for, working on live data.
+2. Committed this round's work.
+3. Re-claimed and `start --reconcile-existing --base 52368da3bd7e…`, the parent of
+   `67c5fc9`, verified as `git rev-parse 67c5fc9^` and confirmed by
+   `git cat-file -e 52368da:packages/provider-sdk/src/health.ts` **failing** — the file
+   does not exist there, so it is where implementation began rather than an earlier
+   commit that is merely safe.
+
+The published window is now 21 commits and 47 files under `allowedPaths`, with
+`baseCommitSurfaceTouches: 0`. **Review that range, not the last commit.**
+
+## What this round actually changed: nothing in production
+
+The health mechanism was already correct. What was missing was **detection**, and a
+31-mutant campaign found five places the suite would have stayed green against a wrong
+implementation.
+
+**The sharpest is clause 5, and it was a real hole.** The suite was strong on the mapper
+and **blind on both adapters**. Replacing a candidate's rights with a value chosen by
+the health verdict —
+
+```ts
+rights: healthReport().status === "pass" ? "public-domain" : source.rights
+```
+
+— survived **all 275 tests** in `stremio/client.ts`, again for `rightsBasis`, and again
+in `fixture/provider.ts`, where the verdict is permanently `unknown` so the rewrite
+fires on **every candidate it ever produces**. Two reasons it was missed: nothing
+observed the rights *value* at two different health verdicts, and every Stremio source
+in the tests was already `public-domain`, so substituting `public-domain` was
+undetectable. Closed with a `licensed` source driven from `warn` to `pass`:
+`expected 'public-domain' to be 'licensed'`.
+
+Health-cannot-grant-entitlement is now proven three ways rather than asserted:
+`health.ts` **imports nothing** and takes no rights, candidate or source; all three
+production importers were mutated in **both** directions; and `media-engine`'s ranking
+checks the rights allowlist first and unconditionally, so health can only *subtract*
+eligibility.
+
+Also closed: the unobserved trail could contradict its own disclaimer in the sentence
+beside it; and `policyVersion` was effectively unpinned, because the version enum has
+one member so a hardcoded string passed everything.
+
+**No value-red was available against unmutated code, and the implementer said so
+rather than manufacturing one** — every clause already behaved correctly at HEAD, so
+these tests close a detection gap, and their red is under the planted mutant. Three
+guarantees are the *type*, so their red is a `tsc` error rather than a test failure;
+that is stated on the typecheck gate.
+
+**One mutant survives and is documented in the test file**: an optional field declared
+and never populated — invisible to a name-based guard and unreachable by a key-set test
+because it has no runtime key. No value flows through it. The keyword list was widened
+and a name-independent key-set assertion added, which kills the populated version
+whatever it is called.
+
+## Gates
+
+| command | exit | result |
+|---|---|---|
+| `npx turbo run typecheck --force` | 0 | 11/11 |
+| `npx turbo run test --force` | 0 | 20/20, **2652 passed, 1 skipped** (2644 before; +8, all provider-sdk) |
+| `npx turbo run lint --force` | 0 | 11/11 |
+| `npx turbo run build --force` | 0 | 11/11 |
+| `npm run test:scripts` | 0 | 38 + 69 + 16 + 35 |
+| `npm run repo:validate` | 0 | passed |
+| `npm run ai:validate` | 0 | 64 tasks |
+
+## One finding outside the surface
+
+`DEFAULT_PROVIDER_HEALTH_POLICY.failBelow` (0.5) and `media-engine`'s
+`PROVIDER_HEALTH_FLOOR` (0.5) are **one decision expressed as two constants in two
+packages**, held together by a comment. `health.ts` already calls it out;
+`packages/media-engine` was outside this task's surface. It needs an owner.
