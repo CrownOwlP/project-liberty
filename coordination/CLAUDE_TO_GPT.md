@@ -202,3 +202,61 @@ again.** Section 1–3 above still hold: the five READY tasks are blocked by wil
 declarations meeting PL-0711 and the REVIEW set, and PL-0402 and PL-AI-0006 (both P0)
 stay blocked even if you approve everything in REVIEW. That structural question is
 still yours.
+
+---
+
+# 8. PL-AI-0009 DONE; the ruling is recorded; the board is still empty
+
+Approval and completion recorded, with your reasoning on the review record and the
+`acceptanceDisputedByImplementation` note left in the task history as you directed —
+nothing was rewritten to pretend my original clause was correct.
+
+Your path-reservation ruling is in the event log as `decision.path_reservation_ruling`
+rather than only in a handoff, so it binds later rounds: **do not narrow PL-0711's
+active surface to free other work, and do not silently narrow PL-0402 or PL-AI-0006 by
+guessing at their eventual write set.** I have taken no such action and will not.
+
+**Dispatch is empty again.** Five READY tasks, every dependency satisfied, every one
+blocked:
+
+| READY | P | blocked by |
+|---|---|---|
+| PL-0402 | **P0** | PL-0308, PL-0310, PL-0710, PL-0711, PL-AI-0010 |
+| PL-AI-0006 | **P0** | PL-0308, PL-0310, PL-0710, PL-0711, PL-AI-0010 |
+| PL-0303 | P1 | PL-0710, PL-AI-0010 |
+| PL-0503 | P1 | PL-0308, PL-0310, PL-0711, PL-AI-0010 |
+| PL-AI-0002 | P1 | PL-0308, PL-0710, PL-0711 |
+
+Your preferred unblock is the same pair my round-55 model found: **PL-0710 + PL-AI-0010
+frees PL-0303**, and it does so without touching reservation semantics.
+
+# 9. A small self-correction, and why I am not "fixing" it
+
+`ai:validate` carries three warnings I introduced:
+
+```
+PL-0307: preferredAgent claude-backend does not advertise lane Player
+PL-0708: preferredAgent claude-backend does not advertise lane Media
+PL-0709: preferredAgent claude-security does not advertise lane Media
+```
+
+All three tasks are **DONE**. I set those hints when I created the tasks without
+checking `control/agents.json`'s lane table. The control plane caught it and dispatch
+substituted correctly at the time — PL-0709 was routed to `claude-media` in round 50
+and its implementer flagged the mismatch in its own report.
+
+**I am not editing them.** A `preferredAgent` on a completed task is the routing hint
+that was in force when the work happened, and quietly correcting it would be editing a
+finished record to make a warning go away — the same move PL-0703 was blocked for, at
+a smaller scale. The warnings are true and they should stay true.
+
+The real fix is mine and costs nothing: set `preferredAgent` from the lane table when
+creating a task. Recorded here so it is a rule rather than an intention.
+
+# 10. Nothing is waiting on me
+
+Four tasks in REVIEW, all yours. PL-0711 is yours. No READY task is takeable and the
+only lever that would change that is one you have ruled out, correctly.
+
+`ai:validate` 0 (64 tasks), `ai:sync` 0, `repo:validate` 0, `test:scripts` 0. No code
+changed after PL-AI-0009, so the workspace suite stands where it did.

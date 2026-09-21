@@ -4419,7 +4419,7 @@
       "id": "PL-AI-0009",
       "priority": "P1",
       "lane": "Coordination",
-      "status": "REVIEW",
+      "status": "DONE",
       "title": "release clears the implementation base, or a re-claim inherits a stale one",
       "dependencies": [],
       "allowedPaths": [
@@ -4434,7 +4434,7 @@
       ],
       "acceptance": "ai:release clears implementationBaseSha, so a task returned to an unowned queue and later re-claimed records the base of the round that actually implements it. OBSERVED, not hypothesised: PL-0710 was claimed and started at 33195d593695618b779ab6c97a50817a2694e8df, released with nothing written when its implementing agent was terminated, and re-claimed at HEAD 20edec3aa3f33dbd58aa405d1210f56ce54c207f -- and start reported 'started from 33195d593695', preserving the stale base rather than capturing HEAD. CLAUDE.md says implementationBaseSha is the exact lower bound of the first review range and that the range validator refuses a base that is either wider or narrower, so a preserved base makes the published window wider than the implementation. The rule release already follows is the argument: it discards gate results because 'evidence belongs to one implementation round under one owner', and a base is evidence of where that round began. Required: release clears the base, and ai:unblock is checked for the same defect and fixed if it has it; a scenario in scripts/test-ai-control-plane.mjs claims, releases, re-claims at a different HEAD and asserts the second base is the second HEAD, because this defect is invisible until exactly that sequence occurs; and the fix must NOT let start overwrite a base on an ordinary re-start of a task that was never released, since that is the falsification --reconcile-existing exists to prevent. Do NOT hand-edit any existing task's recorded base as part of this work; PL-0703 was blocked for that move and the historical records stay as they are.",
       "notes": "Found 2026-09-20 by the lead while re-claiming PL-0710. The harm in that instance was bounded and is recorded rather than repaired: 20edec3 touches only control/ and coordination/ and NOTHING under PL-0710's allowedPaths, so base..HEAD is one commit wider in count but identical in reviewed-surface content. The record is imprecise, not false about what changed.",
-      "owner": "claude-lead",
+      "owner": null,
       "gateResults": {
         "unit": {
           "status": "pass",
@@ -4445,9 +4445,46 @@
         }
       },
       "implementationAgent": "claude-lead",
-      "updatedAt": "2026-09-21T03:53:20.980Z",
+      "updatedAt": "2026-09-21T03:58:14.345Z",
       "implementationBaseSha": "741d82f0df834cb6afc66147d63de7193c002155",
-      "acceptanceDisputedByImplementation": "THE ACCEPTANCE ASKED FOR SOMETHING THE IMPLEMENTATION REFUSED TO BUILD, AND THE ACCEPTANCE IS LEFT STANDING RATHER THAN REWRITTEN TO MATCH WHAT WAS BUILT. I wrote 'ai:release clears implementationBaseSha'. The implementer built something else and gave the argument: the two failure directions are NOT SYMMETRIC. Always keeping the base is wrong in the PL-0710 case -- it is an unreconciled reconciliation, reaching the end state --reconcile-existing exists for while publishing none of the window, count or reason it demands. But ALWAYS CLEARING is wrong in the case PL-0710 was not: a release mid-implementation with committed work hands the next round a base at the new HEAD, so the first review range BEGINS AFTER COMMITTED CODE. A wide base is visible to a reviewer who can interrogate it; A NARROW ONE IS INVISIBLE, and narrow is the direction that lets unreviewed work reach DONE. My acceptance would have shipped a safety regression. WHAT WAS BUILT: the base survives a queue return exactly while base..HEAD still changes something under the task's REVIEWED surface -- the predicate assertReconcilableBase already relies on, not a new idea -- and where the base is kept the release event publishes preservedBaseSurfaceChangedFileCount, so preservation becomes a RECORDED FINDING rather than the silence my objection was actually about. It fails towards keeping: no git, unresolvable HEAD, base absent from the checkout or a failed diff all keep the base and name which, because dropping a published base on an unverified guess is the move this area exists to refuse. Also unlike the original ask: a task whose base was dropped can now legitimately be reconciled by the round that follows, which a released task previously never could. I ALSO FILED THIS TASK ON A FALSE PREMISE and that is recorded too: the comment at ai-control-plane.mjs:1475 documented preservation as deliberate, and I found it only after filing. It was kept and narrowed rather than deleted -- it is still true, because a reconciled base always has committed work behind it and so is never the base that gets dropped. gpt-architect should judge the delivered design against this note, not against my original clause."
+      "acceptanceDisputedByImplementation": "THE ACCEPTANCE ASKED FOR SOMETHING THE IMPLEMENTATION REFUSED TO BUILD, AND THE ACCEPTANCE IS LEFT STANDING RATHER THAN REWRITTEN TO MATCH WHAT WAS BUILT. I wrote 'ai:release clears implementationBaseSha'. The implementer built something else and gave the argument: the two failure directions are NOT SYMMETRIC. Always keeping the base is wrong in the PL-0710 case -- it is an unreconciled reconciliation, reaching the end state --reconcile-existing exists for while publishing none of the window, count or reason it demands. But ALWAYS CLEARING is wrong in the case PL-0710 was not: a release mid-implementation with committed work hands the next round a base at the new HEAD, so the first review range BEGINS AFTER COMMITTED CODE. A wide base is visible to a reviewer who can interrogate it; A NARROW ONE IS INVISIBLE, and narrow is the direction that lets unreviewed work reach DONE. My acceptance would have shipped a safety regression. WHAT WAS BUILT: the base survives a queue return exactly while base..HEAD still changes something under the task's REVIEWED surface -- the predicate assertReconcilableBase already relies on, not a new idea -- and where the base is kept the release event publishes preservedBaseSurfaceChangedFileCount, so preservation becomes a RECORDED FINDING rather than the silence my objection was actually about. It fails towards keeping: no git, unresolvable HEAD, base absent from the checkout or a failed diff all keep the base and name which, because dropping a published base on an unverified guess is the move this area exists to refuse. Also unlike the original ask: a task whose base was dropped can now legitimately be reconciled by the round that follows, which a released task previously never could. I ALSO FILED THIS TASK ON A FALSE PREMISE and that is recorded too: the comment at ai-control-plane.mjs:1475 documented preservation as deliberate, and I found it only after filing. It was kept and narrowed rather than deleted -- it is still true, because a reconciled base always has committed work behind it and so is never the base that gets dropped. gpt-architect should judge the delivered design against this note, not against my original clause.",
+      "review": {
+        "taskId": "PL-AI-0009",
+        "implementationAgent": "claude-lead",
+        "implementationOwner": "claude-lead",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "727ea6b87f445adb63298dd121dbc34282e57fc2",
+        "reviewedBaseSha": "741d82f0df834cb6afc66147d63de7193c002155",
+        "reviewedTreeHash": "5f26ffdd4813cc0dec9b870bb32e83e9d387dcc08b6455bdd130bef3a9767cde",
+        "reviewedFileCount": 3,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [],
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-09-21T03:58:14.244Z",
+        "evidence": "APPROVED. THE IMPLEMENTATION IS APPROVED EVEN THOUGH IT INTENTIONALLY DOES NOT IMPLEMENT THE ORIGINAL CLAUSE, BECAUSE THE ORIGINAL ACCEPTANCE CRITERION WAS UNSAFE. The reviewer's reasoning, in its own terms: implementationBaseSha is the exact lower bound of the first review range, and clearing it unconditionally after a release is safe ONLY when the abandoned round left no committed changes under the task's reviewed surface. If committed implementation work exists and the base is always cleared, the next claimant starts at the newer HEAD and the first review range begins AFTER those committed changes -- THE MORE DANGEROUS FAILURE DIRECTION, in which committed implementation can fall outside review entirely. The delivered rule is accepted in full: preserve the base when base..HEAD still changes one or more files under the reviewed surface; clear the base AND its implementationBaseProvenance when that range changes nothing there; fail conservatively toward preserving when git or history cannot establish the answer; use realHeadSha() and not LIBERTY_COMMIT_SHA for the decision; publish the decision, its reason and the changed-file count in the release and unblock audit events; apply the same rule to both commands; preserve ordinary restart semantics so start does not overwrite an existing base; and keep implementationBaseProvenance attached only while the base it explains survives. THE acceptanceDisputedByImplementation RECORD IS VALID AND STAYS IN THE TASK HISTORY -- 'Do not rewrite history to pretend the original clause was correct.' The unit gate evidence is sufficient: the new scenarios directly cover no-work release, committed-work release, unblock parity, fail-towards-keeping, real HEAD versus LIBERTY_COMMIT_SHA, and the exact rejected clear-always mutation. No blocking defect found. TRANSCRIBED BY CLAUDE from the review relayed by the human commander; the gpt-architect GitHub connector still returns 403 on repository writes."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PL-AI-0009",
+          "implementationAgent": "claude-lead",
+          "implementationOwner": "claude-lead",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "727ea6b87f445adb63298dd121dbc34282e57fc2",
+          "reviewedBaseSha": "741d82f0df834cb6afc66147d63de7193c002155",
+          "reviewedTreeHash": "5f26ffdd4813cc0dec9b870bb32e83e9d387dcc08b6455bdd130bef3a9767cde",
+          "reviewedFileCount": 3,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [],
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-09-21T03:58:14.244Z",
+          "evidence": "APPROVED. THE IMPLEMENTATION IS APPROVED EVEN THOUGH IT INTENTIONALLY DOES NOT IMPLEMENT THE ORIGINAL CLAUSE, BECAUSE THE ORIGINAL ACCEPTANCE CRITERION WAS UNSAFE. The reviewer's reasoning, in its own terms: implementationBaseSha is the exact lower bound of the first review range, and clearing it unconditionally after a release is safe ONLY when the abandoned round left no committed changes under the task's reviewed surface. If committed implementation work exists and the base is always cleared, the next claimant starts at the newer HEAD and the first review range begins AFTER those committed changes -- THE MORE DANGEROUS FAILURE DIRECTION, in which committed implementation can fall outside review entirely. The delivered rule is accepted in full: preserve the base when base..HEAD still changes one or more files under the reviewed surface; clear the base AND its implementationBaseProvenance when that range changes nothing there; fail conservatively toward preserving when git or history cannot establish the answer; use realHeadSha() and not LIBERTY_COMMIT_SHA for the decision; publish the decision, its reason and the changed-file count in the release and unblock audit events; apply the same rule to both commands; preserve ordinary restart semantics so start does not overwrite an existing base; and keep implementationBaseProvenance attached only while the base it explains survives. THE acceptanceDisputedByImplementation RECORD IS VALID AND STAYS IN THE TASK HISTORY -- 'Do not rewrite history to pretend the original clause was correct.' The unit gate evidence is sufficient: the new scenarios directly cover no-work release, committed-work release, unblock parity, fail-towards-keeping, real HEAD versus LIBERTY_COMMIT_SHA, and the exact rejected clear-always mutation. No blocking defect found. TRANSCRIBED BY CLAUDE from the review relayed by the human commander; the gpt-architect GitHub connector still returns 403 on repository writes."
+        }
+      ],
+      "completedAt": "2026-09-21T03:58:14.346Z"
     },
     {
       "id": "PL-AI-0010",
