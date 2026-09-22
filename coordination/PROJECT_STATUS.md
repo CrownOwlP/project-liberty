@@ -1,18 +1,18 @@
 # Project Liberty - Project Status
 
-> Generated 2026-09-22T01:41:46.669Z from the AI control plane.
+> Generated 2026-09-22T02:07:36.708Z from the AI control plane.
 
-**Overall completion:** 47/66 executable tasks (71%)
+**Overall completion:** 48/66 executable tasks (73%)
 
 ## Status summary
 
-- **BACKLOG:** 7
+- **BACKLOG:** 6
 - **READY:** 4
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 1
 - **REVIEW:** 1
 - **BLOCKED:** 6
-- **DONE:** 47
+- **DONE:** 48
 - **CANCELED:** 0
 
 ## Milestones / phases
@@ -29,7 +29,7 @@
 
 ## Active work
 
-- **PL-0309** [REVIEW] Catalog ingestion is scheduled and stored, not re-run per query — owner: claude-backend
+- **PL-0313** [REVIEW] A resumed pass may not infer absence: fix what `complete` means — owner: claude-backend
 - **PL-0711** [IN_PROGRESS] Playback-session candidate wire bounds match StreamCandidate bounds — owner: gpt-architect
 
 ## Dispatch classification
@@ -37,7 +37,7 @@
 - **READY_AND_EXECUTABLE:** 4
 - **READY_BUT_EXTERNAL:** 0
 - **BLOCKED:** 6
-- **BACKLOG (dependency-gated):** 7
+- **BACKLOG (dependency-gated):** 6
 
 ## Recommended executable wave
 

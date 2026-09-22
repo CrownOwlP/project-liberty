@@ -388,7 +388,7 @@ built half out of the application's opinions.
 | `LIBERTY_CATALOG_LOCALES` | Comma-separated locales, most preferred first, at least one. Requested from the source *and* served to readers. |
 | `LIBERTY_CATALOG_TERRITORY` | The territory availability is evaluated for: an ISO 3166-1 alpha-2 code, or `WW`. |
 | `LIBERTY_CATALOG_UNSTATED_AVAILABILITY` | `refuse` or `treat_as_worldwide`. Neither synthesises a window; `treat_as_worldwide` is an operator assertion about their own position, recorded as theirs. |
-| `LIBERTY_CATALOG_MAX_PAGES` | How many pages one **pass** reads. A bound — and, because no pass resumes a cursor, also the size of the catalog a reader sees. |
+| `LIBERTY_CATALOG_MAX_PAGES` | How many pages one **pass** reads. A bound — and, because no pass resumes a cursor, also the size of the catalog a reader sees. Resume is now safe against `ingest.ts` (PL-0313) but is still not implemented. |
 | `LIBERTY_CATALOG_FRESH_FOR_MS` | Milliseconds below which a stored answer is current — **and** the interval at which a refresh pass becomes due. One number for both, deliberately: an interval and a freshness bound that can drift apart fail silently and totally. |
 | `LIBERTY_CATALOG_STALE_AFTER_MS` | Milliseconds at or beyond which a stored answer is too old to present as current. Must be at least the fresh bound; between the two, an answer is served *with its age attached* rather than withheld. |
 | `LIBERTY_CATALOG_MAX_BACKOFF_MS` | The cap on exponential backoff after consecutive failed passes. Required rather than optional: an uncapped exponential reaches next Tuesday after a morning of failures. |
@@ -1224,24 +1224,60 @@ fail-closed direction. The currently licensed provider declares
    longer omits one.
 4. **No backfill. Every pass starts at the beginning of the source**, and
    `LIBERTY_CATALOG_MAX_PAGES` therefore still bounds the size of the catalog a
-   reader sees. Resuming the cursor is the obvious fix and is **unsafe against
-   `ingest.ts` as it stands** — see the finding below.
+   reader sees. Resuming the cursor is the obvious fix. It is no longer *unsafe*
+   — PL-0313 closed the mass-deletion hazard below — but it is still not
+   *implemented*: a resumed pass now correctly declines to infer absence, which
+   is what makes enabling resume a scheduling change rather than a deletion risk.
 
-### A hazard found in `ingest.ts` and deliberately not fixed here
+### The resumed-pass hazard — CLOSED by PL-0313
 
-`IngestionPassResult.complete` is true when the enumeration **reached the end**,
-not when the pass read the **whole source**. Those differ for a resumed pass: one
-that starts from `resumeCursor` and runs off the end reports `complete: true`
-while having seen only a tail segment, and `reconcileTombstones` would then mint
-a tombstone for every known id on the pages it skipped. That is a mass deletion
-reachable from an ordinary backfill configuration.
+**What it was.** `IngestionPassResult.complete` was true when the enumeration
+**reached the end**, not when the pass read the **whole source**. Those differ for
+a resumed pass: one starting from `resumeCursor` runs off the end having seen only
+a tail segment, reported `complete: true`, and `reconcileTombstones` then minted a
+tombstone for every known id on the skipped pages. A mass deletion reachable from
+an ordinary backfill configuration — and not self-healing, because the store lifts
+a tombstone only when a later complete pass **accepts** the work again.
 
-`schedule.ts` therefore never passes a `resumeCursor`, which keeps the hazard
-unreachable from this path at the cost of re-reading the prefix each pass. The
-hazard itself is untouched: fixing it means changing what `complete` means, or
-adding a fourth `TombstoneWithholdReason` for a resumed pass, and that is a
-change to the rule `ingest.ts`'s header is built around. **It wants its own task
-and its own review**, and it should land before anything turns backfill on.
+**The fix.** `TombstoneWithholdReason` gained a fourth member, `resumed_pass`, and
+`options.resumeCursor !== null` now withholds tombstones exactly as a failure, an
+incremental pass or a page-limit truncation does. `complete` is derived from that
+one decision, so it now means *the whole source was observed* everywhere it is
+read.
+
+**Why a withhold reason and not a new field.** `nextCursor === null` already
+publishes "the enumeration ended"; a second field saying the same thing would need
+a rule about which one a caller should believe. What was missing is not a fact
+about the cursor — it is whether this pass is a basis for inferring absence, which
+is precisely what `tombstonesWithheld` already answers for the other three cases.
+A resumed pass is a fourth member of that set and nothing more.
+
+**`nextCursor: null` with `complete: false` is not a contradiction.** A resumed
+pass that ran to the end reports both. The cursor is exhausted; the pass is still
+not a basis for inferring absence. The two answer different questions and the
+separation is the point.
+
+**Reporting precedence.** A resumed pass that also ran out of page budget reports
+`resumed_pass` rather than `page_limit_reached`. Both are true; the resume is more
+fundamental, because the prefix was skipped **by choice** and raising `maxPages`
+would not fix it.
+
+**`seenContentIds` was considered and is NOT the mechanism, and not published.**
+`ingest.ts` already tracks seen-but-refused ids internally and already spares them
+from a tombstone — that half was never broken. Publishing the set would only
+matter to the STORE, which today releases a tombstone when a complete pass
+*accepts* a work, and could then release when a complete pass merely *saw* it.
+That is a change to the tombstone-release rule the reviewer accepted in PL-0309,
+it is out of PL-0313's scope, and shipping an unread field to enable a rule change
+nobody has approved would be the wrong order. If a later task wants the release
+rule loosened, this is the data it needs and this paragraph is the argument it
+should answer.
+
+**What this does NOT turn on.** Resume and backfill remain off.
+`schedule.ts` still passes `resumeCursor: null`, and
+`LIBERTY_CATALOG_MAX_PAGES` still bounds the catalog a reader sees. What changed
+is that turning resume on is no longer a mass-deletion hazard — a resumed pass now
+adds what it sees and deletes nothing.
 
 ## The rights position on a real source
 

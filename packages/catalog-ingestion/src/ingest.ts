@@ -70,7 +70,26 @@ export interface RecordRefusal {
   readonly detail: string;
 }
 
-export type TombstoneWithholdReason = "pass_failed" | "page_limit_reached" | "incremental_pass";
+/**
+ * Why a pass may not infer that a known work is gone.
+ *
+ * ABSENCE IS INFERRED FROM NOT SEEING SOMETHING, which is only evidence when
+ * the pass looked everywhere. Each member names a way it did not.
+ *
+ * `resumed_pass` is PL-0313 and was the gap. A pass started from a cursor
+ * reaches the end of the enumeration having deliberately never read the pages
+ * before it, so every known id on the skipped prefix is unseen for a reason
+ * that has nothing to do with the source. Before this member existed such a
+ * pass reported `complete: true` and `reconcileTombstones` took that as licence
+ * to tombstone the whole prefix -- a mass deletion reachable from ordinary
+ * resume behaviour, and not self-healing, because the store releases a
+ * tombstone only when a later COMPLETE pass accepts the work again.
+ */
+export type TombstoneWithholdReason =
+  | "pass_failed"
+  | "page_limit_reached"
+  | "incremental_pass"
+  | "resumed_pass";
 
 export interface IngestionPassOptions {
   readonly pageSize: number;
@@ -303,14 +322,28 @@ export async function runIngestionPass(
     }
   }
 
+  /*
+   * `complete` IS DERIVED FROM THIS, AND IT MEANS "THE WHOLE SOURCE WAS
+   * OBSERVED", not "this invocation reached the end of the enumeration". The
+   * two came apart at `resumeCursor` (PL-0313): a resumed pass can reach the
+   * end having skipped everything before the cursor.
+   *
+   * ORDER IS REPORTING PRECEDENCE, not logic -- any one member withholds
+   * tombstones on its own. A resumed pass that ALSO ran out of page budget has
+   * two reasons it cannot infer absence, and `resumed_pass` is reported because
+   * it is the more fundamental one: the prefix was skipped BY CHOICE, and
+   * raising `maxPages` would not fix it.
+   */
   const withheld: TombstoneWithholdReason | null =
     failure !== null
       ? "pass_failed"
       : options.changedSince !== null
         ? "incremental_pass"
-        : !reachedEnd
-          ? "page_limit_reached"
-          : null;
+        : options.resumeCursor !== null
+          ? "resumed_pass"
+          : !reachedEnd
+            ? "page_limit_reached"
+            : null;
 
   const inferred = reconcileTombstones(
     sourceId,
@@ -347,6 +380,12 @@ export async function runIngestionPass(
     accepted,
     refused,
     pagesFetched,
+    /*
+     * `nextCursor` AND `complete` ANSWER DIFFERENT QUESTIONS and a resumed pass
+     * that ran to the end reports `null` here and `false` below. That is not a
+     * contradiction: the cursor is exhausted, and this pass is still not a
+     * basis for inferring absence.
+     */
     nextCursor: reachedEnd ? null : cursor,
     complete: withheld === null,
     failure,

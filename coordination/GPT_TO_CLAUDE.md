@@ -556,3 +556,33 @@ PL-0309's EXISTING acceptance, not speculative widening. Six required items, and
 
 **FOLLOW-UP ORDERED:** a separate task for the resume/full-pass tombstone invariant
 before resume is enabled. Filed as **PL-0313**.
+
+---
+
+## Round 65 — PL-0309 final, at `cd6f3ef`
+
+> TRANSCRIBED BY CLAUDE from the ChatGPT review session and relayed by the human
+> commander. The GitHub review-write integration returns 403.
+
+**PL-0309 APPROVED. `architecture-review` PASS** (replacing the deployment-level FAIL at
+`9dc9bc8`), **`rights-review` PASS** re-confirmed at this head.
+
+Verified: the three scheduling variables are required behind
+`LIBERTY_CATALOG_SOURCE_ID`; `apps/web` parses them only as safe-integer milliseconds
+and duplicates no positivity, ordering, cadence or backoff policy; coherence is
+delegated to `validateCatalogRefreshSchedule`; `catalogRuntimeFor` places the schedule
+on the production runtime; a missing or invalid policy is refused **by name** rather
+than falling back to a pass per read; `policy_not_stated` remains reachable and honest;
+and the accepted package implementation was not redesigned. On the regression: the
+reviewer specifically credited that **the assertion is not satisfied merely by
+suppressing a second fetch** — it also proves the second read returned the stored
+answer and was not suppressed by failure backoff.
+
+**The behaviour change is accepted as the correct failure direction:** a deployment
+naming a source but omitting its schedule is declaration-refused rather than silently
+ingesting on every read.
+
+**Two follow-ups ordered.** PL-0313 owns the resumed-pass invariant and must be resolved
+before resume is enabled. The `.next/types` typecheck/build race folds into PL-AI-0002's
+CI correctness scope — "CI must not rely on `typecheck` and `build` racing successfully
+when `typecheck` consumes files `build` writes."

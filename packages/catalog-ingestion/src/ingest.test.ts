@@ -401,3 +401,103 @@ describe("runIngestionPass", () => {
     ]);
   });
 });
+
+/**
+ * PL-0313: a resumed pass may not infer absence.
+ *
+ * THE HAZARD THESE PIN, in one sentence: `complete` used to mean "this
+ * invocation reached the end of the enumeration", and a pass that STARTED from
+ * a cursor reaches that end having deliberately never looked at the pages
+ * before it -- so every known id living on a skipped page was unseen, was
+ * inferred withdrawn, and was tombstoned. Under the store's release rule a
+ * tombstone is lifted only by a later complete pass that accepts the work
+ * again, so the damage is not self-healing on the next pass.
+ *
+ * WHY THE FIX IS A WITHHOLD REASON AND NOT A NEW FIELD. `nextCursor === null`
+ * already publishes "the enumeration ended"; a second field saying the same
+ * thing would need a rule about which one a caller should believe. What was
+ * missing is not a fact about the cursor, it is whether this pass is a basis
+ * for inferring absence -- which is exactly what `tombstonesWithheld` already
+ * answers for a failed, incremental or truncated pass. A resumed pass is a
+ * fourth member of that set and nothing more.
+ *
+ * ORDERING: `resumed_pass` is reported ahead of `page_limit_reached` when both
+ * are true. A resumed pass that also ran out of page budget has two reasons it
+ * cannot infer absence, and the resume is the more fundamental one -- the
+ * prefix was skipped BY CHOICE rather than by budget, and raising the budget
+ * would not fix it.
+ */
+describe("a resumed pass is not a complete observation of the source", () => {
+  it("withholds tombstones when it started from a cursor, even reaching the end", async () => {
+    const { provider } = scriptedProvider({
+      pages: [{ ok: true, records: [record("b")], nextCursor: null, withdrawn: [] }]
+    });
+
+    const result = await runIngestionPass(
+      provider,
+      options({
+        resumeCursor: "page-2",
+        // `a` lives on the page this pass deliberately skipped. Before PL-0313
+        // it was tombstoned by a pass that never looked for it.
+        knownContentIds: [`${SOURCE}-a`, `${SOURCE}-b`]
+      }),
+      { now: () => NOW }
+    );
+
+    expect(result.tombstonesWithheld).toBe("resumed_pass");
+    expect(result.complete).toBe(false);
+    expect(result.tombstones).toEqual([]);
+  });
+
+  it("still reports the enumeration ended, because that is a different fact", async () => {
+    const { provider } = scriptedProvider({
+      pages: [{ ok: true, records: [record("b")], nextCursor: null, withdrawn: [] }]
+    });
+
+    const result = await runIngestionPass(
+      provider,
+      options({ resumeCursor: "page-2", knownContentIds: [] }),
+      { now: () => NOW }
+    );
+
+    // Not a contradiction, and the pair is the whole point: the cursor is
+    // exhausted, AND this pass is not a basis for inferring absence.
+    expect(result.nextCursor).toBeNull();
+    expect(result.complete).toBe(false);
+  });
+
+  it("names the resume rather than the page limit when both apply", async () => {
+    const { provider } = scriptedProvider({
+      pages: [{ ok: true, records: [record("b")], nextCursor: "page-3", withdrawn: [] }]
+    });
+
+    const result = await runIngestionPass(
+      provider,
+      options({ resumeCursor: "page-2", maxPages: 1, knownContentIds: [`${SOURCE}-a`] }),
+      { now: () => NOW }
+    );
+
+    expect(result.tombstonesWithheld).toBe("resumed_pass");
+    expect(result.tombstones).toEqual([]);
+  });
+
+  it("leaves an unresumed full pass able to infer absence, which is the point of the rule", async () => {
+    const { provider } = scriptedProvider({
+      pages: [{ ok: true, records: [record("b")], nextCursor: null, withdrawn: [] }]
+    });
+
+    const result = await runIngestionPass(
+      provider,
+      options({ resumeCursor: null, knownContentIds: [`${SOURCE}-a`, `${SOURCE}-b`] }),
+      { now: () => NOW }
+    );
+
+    // The guard must not be so wide that it stops absence inference entirely:
+    // a pass from the beginning that reached the end still tombstones `a`.
+    expect(result.tombstonesWithheld).toBeNull();
+    expect(result.complete).toBe(true);
+    expect(result.tombstones).toEqual([
+      { contentId: `${SOURCE}-a`, sourceId: SOURCE, observedAt: OBSERVED, reason: "absent_from_complete_sync" }
+    ]);
+  });
+});
