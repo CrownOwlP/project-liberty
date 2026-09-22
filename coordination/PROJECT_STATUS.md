@@ -1,18 +1,18 @@
 # Project Liberty - Project Status
 
-> Generated 2026-09-21T14:28:09.552Z from the AI control plane.
+> Generated 2026-09-22T00:57:39.893Z from the AI control plane.
 
-**Overall completion:** 46/65 executable tasks (71%)
+**Overall completion:** 47/65 executable tasks (72%)
 
 ## Status summary
 
-- **BACKLOG:** 7
+- **BACKLOG:** 6
 - **READY:** 4
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 1
 - **REVIEW:** 1
 - **BLOCKED:** 6
-- **DONE:** 46
+- **DONE:** 47
 - **CANCELED:** 0
 
 ## Milestones / phases
@@ -29,7 +29,7 @@
 
 ## Active work
 
-- **PL-0308** [REVIEW] Production composition registers the catalog ingestion runtime — owner: claude-backend
+- **PL-0309** [REVIEW] Catalog ingestion is scheduled and stored, not re-run per query — owner: claude-backend
 - **PL-0711** [IN_PROGRESS] Playback-session candidate wire bounds match StreamCandidate bounds — owner: gpt-architect
 
 ## Dispatch classification
@@ -37,7 +37,7 @@
 - **READY_AND_EXECUTABLE:** 4
 - **READY_BUT_EXTERNAL:** 0
 - **BLOCKED:** 6
-- **BACKLOG (dependency-gated):** 7
+- **BACKLOG (dependency-gated):** 6
 
 ## Recommended executable wave
 

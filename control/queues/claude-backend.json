@@ -1,130 +1,55 @@
 {
-  "generatedAt": "2026-09-21T14:28:09.553Z",
+  "generatedAt": "2026-09-22T00:57:39.895Z",
   "agent": "claude-backend",
   "executionAvailable": true,
   "assigned": [
     {
-      "id": "PL-0308",
+      "id": "PL-0309",
       "priority": "P1",
       "lane": "Backend",
       "status": "REVIEW",
-      "title": "Production composition registers the catalog ingestion runtime",
+      "title": "Catalog ingestion is scheduled and stored, not re-run per query",
       "dependencies": [
-        "PL-0305"
+        "PL-0305",
+        "PL-0308"
       ],
       "allowedPaths": [
-        "apps/web/src/lib/catalog-source-registry.ts",
-        "apps/web/src/lib/catalog-source-registry.test.ts",
-        "apps/web/src/lib/server-bootstrap.ts",
-        "apps/web/src/lib/server-bootstrap.test.ts",
-        "apps/web/src/instrumentation.ts",
-        "docs/CATALOG_SOURCE.md"
-      ],
-      "reviewDependencies": [
+        "packages/catalog-ingestion/**",
         "apps/web/src/lib/catalog-ingestion-source.ts",
-        "packages/catalog-ingestion/src/index.ts",
-        "packages/media-inspection/src/node/pinned-fetch.ts",
-        "apps/web/package.json"
+        "apps/web/src/lib/catalog-ingestion-source.test.ts",
+        "packages/persistence/**",
+        "docs/CATALOG_SOURCE.md"
       ],
       "preferredAgent": "claude-backend",
       "reviewAgent": "gpt-architect",
       "qualityGates": [
         "typecheck",
         "unit",
-        "security-review",
+        "architecture-review",
         "rights-review"
       ],
-      "acceptance": "A hosted deployment that is configured for a real catalog source actually gets one: something in the production composition root calls registerCatalogIngestionRuntime with a runtime built next to the Node pinned-fetch construction. PL-0305 made the application CAPABLE of hosting the real source and the reviewer accepted that as complete; what remains is that NOTHING CALLS THE REGISTRATION, so a hosted deployment still answers no_metadata_source_configured -- a true statement about the deployment rather than about the registry, and the exact gap this task owns. Required: the runtime is built from the existing pinned-fetch transport rather than a second fetch path; NO CREDENTIAL OR API KEY IS INTRODUCED, since the initial source needs none and an ambient key would be the hidden credentialed source PL-0305's review forbade; an unconfigured deployment must STILL refuse by name rather than silently acquiring a default; and a regression must drive the composition root and observe a configured resolution, because a registration nobody has watched fire is not known to work. OUT OF SCOPE: persistent scheduling and storage, which is PL-0309, and the rights register, which is not a coding task. NOTE BEFORE CLAIMING: the exact composition-root file may not exist yet; the declared surface names the likely homes and must be corrected before the claim rather than widened after, on the PL-0710 precedent.",
-      "notes": "Created 2026-09-20 on gpt-architect's round-52 direction when it approved PL-0305: 'Make sure the existing handoff has explicit ownership for ... If any is currently only prose with no task, create a narrow task before it can be forgotten.' PL-0305 is NOT to be reopened for any of these. Follow-up 1 of 4. Point 3 of the round-52 verdict. SURFACE CORRECTION 2026-09-21, same verdict. allowedPaths were [\"apps/web/src/lib/catalog-source-registry.ts\",\"apps/web/src/lib/catalog-source-registry.test.ts\",\"apps/web/src/lib/server-bootstrap.ts\",\"apps/web/src/lib/server-bootstrap.test.ts\",\"apps/web/src/instrumentation.ts\",\"apps/web/package.json\",\"docs/CATALOG_SOURCE.md\"] and apps/web/package.json has been moved from allowedPaths to reviewDependencies. STATED PLAINLY BECAUSE NARROWING AN ACTIVE SURFACE IS THE MOVE THE PL-0205 PRECEDENT REFUSES: this is not that. PL-0205 was an UNIMPLEMENTED task narrowed to dodge a collision. Here the implementation is complete and the reviewer has accepted the mechanism; PL-0308 has never written this file -- git log shows its last writer is PL-0305's corrective at 33195d5 -- and it affirmatively REVERTED its own manifest line in round 58 rather than ship a manifest disagreeing with a lockfile reserved by PL-0710. The reviewer has now assigned that edge to PL-0311 and said in terms not to duplicate the implementation across two tasks. So the declaration was reserving a surface this task has declined to write, and it was the only thing left preventing the ordering the reviewer required. It moves to reviewDependencies rather than disappearing, so PL-0308's final approval still fingerprints the manifest it depends on. PL-0308 records no implementationBaseProvenance -- it was an ordinary start, not a reconciliation -- so no published commit window is altered by this.",
+      "acceptance": "Catalog answers are served from stored ingested state refreshed on a schedule, rather than by running a full ingestion pass per query. TODAY THE ADAPTER RUNS ONE FULL runIngestionPass PER QUERY, which is correct for a seam and wrong for a deployment: it makes every page view an outbound crawl, ties response time to an upstream service, and scales the load on that service with this product's traffic. Required: the freshness and next-pass planning PL-0305 already built is what DRIVES the schedule rather than being recomputed alongside it; an answer still carries its age and stated staleness policy, so nothing becomes fresher by being cached; tombstones survive a refresh, because a work withdrawn upstream must not reappear from stored state; a refresh that fails leaves the previous state served AND SAYS SO, rather than emptying the catalog or silently serving stale data as current; and rights and availability are re-evaluated against stored records rather than trusted from the pass that stored them, since a rights basis can lapse. The reviewer noted that PL-0305 is NOT to be described as having delivered a deployed ingestion worker; this task is where that claim would become true.",
+      "notes": "Created 2026-09-20 on gpt-architect's round-52 direction when it approved PL-0305: 'Make sure the existing handoff has explicit ownership for ... If any is currently only prose with no task, create a narrow task before it can be forgotten.' PL-0305 is NOT to be reopened for any of these. Follow-up 2 of 4. Point 8 of the round-52 verdict.",
       "owner": "claude-backend",
       "gateResults": {
         "typecheck": {
           "status": "pass",
-          "at": "2026-09-21T14:13:52.741Z",
+          "at": "2026-09-22T00:57:19.977Z",
           "by": "claude-backend",
-          "commitSha": "24ed3c4e7598361e40f7b5280302f6c88377a7c0",
-          "evidence": "RE-RUN AGAINST THE INTEGRATED TREE at 24ed3c4, per gpt-architect's PL-0308 CHANGES_REQUESTED step 4. npx turbo run typecheck lint build --force, exit 0, 33 of 33 tasks, 0 cached. THE MANIFEST CHECK, which is the whole reason this gate was re-run: apps/web/package.json now declares @liberty/media-inspection at 0.1.0, package-lock.json carries the matching packages['apps/web'] dependency edge, and the two agree with each other AND with the source -- apps/web/src/lib/server-bootstrap.ts and its test import @liberty/media-inspection/node/pinned-fetch and the app package now describes that import. Verified beyond the manifest text: node_modules was removed, npm ci exited 0 on a clean tree, node_modules/@liberty/media-inspection is a symlink to ../../packages/media-inspection, and require.resolve from apps/web lands in packages/media-inspection. STATED PLAINLY: this gate passed at the previous head too, because the import always resolved through the workspace symlink. The re-run does not prove a repair that a red gate demanded; it establishes that PL-0308's composition root now sits on a tree whose manifest describes its imports, which is what the blocker was about. The implementation of the edge is PL-0311's and was NOT duplicated here, as the reviewer required -- PL-0308 wrote nothing this round and apps/web/package.json is no longer on its allowedPaths, having moved to reviewDependencies so this approval still fingerprints it."
+          "commitSha": "3e0d01accaf139c2232312644c62e9b76fdb8ad4",
+          "evidence": "npx turbo run typecheck lint build --force, exit 0, 33 of 33 tasks (11 typecheck, 11 lint, 11 build), 0 cached. Re-run by the lead independently of the implementer, not carried from its report. NEW MODULES: packages/catalog-ingestion/src/store.ts (the CatalogStore port, createInMemoryCatalogStore, and applyPassToSnapshot -- a PURE function holding the whole rule for what a pass does to stored state, so the in-memory store is a closure around it and a durable store would be a transaction around it) and packages/catalog-ingestion/src/schedule.ts (validateCatalogRefreshSchedule, catalogRefreshCadence, assessStoredFreshness, planCatalogRefresh, refreshCatalogIfDue). NO TIMER EXISTS IN THE PACKAGE: no setInterval, no setTimeout, no clock read; time is a parameter throughout, as freshness.ts requires. THE TYPE SYSTEM CARRIES ONE DELIBERATE COMPROMISE AND IT IS NAMED: CatalogIngestionRuntime.schedule is OPTIONAL rather than required, because apps/web/src/lib/server-bootstrap.ts line 390 returns the runtime as an object literal and is OFF THIS TASK'S SURFACE -- a required field would stop that file compiling and a deployment would then have no catalog at all. Verified at the line rather than assumed. An absent schedule is the package's named policy_not_stated, which refreshes on every read and publishes NO freshness verdict, rather than a defaulted policy: without an operator statement nothing may be described as fresh."
         },
         "unit": {
           "status": "pass",
-          "at": "2026-09-21T14:13:52.855Z",
+          "at": "2026-09-22T00:57:39.690Z",
           "by": "claude-backend",
-          "commitSha": "24ed3c4e7598361e40f7b5280302f6c88377a7c0",
-          "evidence": "RE-RUN AGAINST THE INTEGRATED TREE at 24ed3c4. npx turbo run test --force, exit 0, 20 of 20 tasks, 0 cached, 2667 passed 1 skipped, of which @liberty/web is 887. test:scripts 0, repo:validate 0, ai:validate 0 at 65 tasks. PL-0308's own tests are unchanged and still exercise the real bootstrap path and assert pinned-fetch reference identity, which the reviewer accepted; they pass on the integrated tree. No PL-0308 source file was touched this round: the reviewer's instruction was not to redesign server-bootstrap or its runtime wiring, and the only blocker was the undeclared direct dependency, which PL-0311 landed."
+          "commitSha": "3e0d01accaf139c2232312644c62e9b76fdb8ad4",
+          "evidence": "npx turbo run test --force, exit 0, 20 of 20 tasks, 0 cached, 2712 passed 1 skipped against a 2667/1 baseline: +45, and the arithmetic was recomputed by the lead from the per-package figures rather than taken from the implementer's table (100+67+68+47+208+252+373+260+288+148+901 = 2712). catalog-ingestion 117 to 148 (+31: store.test.ts 14, schedule.test.ts 17), web 887 to 901 (+14: the adapter suite 14 to 28). test:scripts 0, repo:validate 0, ai:validate 0. THE MUTATION EVIDENCE WAS RE-RUN BY THE LEAD, not accepted on report. Three mutants planted and observed independently. M1, delete the read-time checkRightsBasis block from the adapter: 2 adapter tests fail, 26 pass -- 'withholds a stored work whose rights basis is not established' and 'withholds a stored work whose rights reference is not an opaque identifier'. M2, release a tombstone on ANY pass by dropping result.complete from the guard at store.ts:355: 1 store test fails ('does not let a partial pass release a tombstone, even when it returns the work') AND 1 adapter test fails ('keeps a work a complete pass proved gone out of a later partial pass's answer'), which is the cross-layer half. M3 and the remaining mutants in the implementer's table were reported and are recorded here as REPORTED RATHER THAN RE-VERIFIED BY THE LEAD: wholesale tombstone replacement, failed pass emptying works, atMs taken from observedAt, and a fresh store per createCatalogIngestionSource call. THE RED-TO-GREEN FOR CLAUSE 6 IS AGAINST A MUTATION OF THE NEW CODE AND NOT AGAINST THE OLD ADAPTER, and that is stated rather than smoothed over: the old adapter ran a pass per query and held no stored state, so a lapsed rights basis was unreachable there. The rights_basis_not_declared case needs a SEEDED snapshot, because no pass would ever accept a null-basis work -- justified as the state a durable store genuinely produces (written by an older build, another process, or an operator) and the reason createInMemoryCatalogStore takes an initial snapshot. The availability-window case needs no seeding and exercises the same clause end to end. EVERY pass result in the package tests is a real runIngestionPass result against a scripted provider rather than a hand-built object, so no test can assert a complete/tombstonesWithheld combination the pass cannot produce. WHAT THE TESTS DO NOT PROVE, in the implementer's own words and kept: that anything is durable (it is not); that a hosted deployment now avoids a pass per read (it does not, until server-bootstrap.ts states a policy -- see the architecture-review request); that a background worker exists (it does not); and that LIBERTY_CATALOG_MAX_PAGES no longer bounds the visible catalog (it still does, since no pass resumes)."
         }
       },
-      "surfaceCorrectedBeforeClaim": "CORRECTED 2026-09-20 BEFORE THE CLAIM, which is what this task's own notes said must happen: the round-52 declaration named likely homes rather than verified ones. Verified against the tree now. REMOVED: apps/web/src/instrumentation.ts -- Next reads instrumentation.ts from the APP ROOT, not from src/, and neither path exists today; apps/web/instrumentation.ts is the correct home and replaces it. ADDED: catalog-source-registry.test.ts and server-bootstrap.test.ts, because acceptance clause 4 requires a regression that drives the composition root and the declaration carried no test file at all -- a task that cannot write a test cannot satisfy its own acceptance, which is the same defect PL-0708 and PL-0305 each hit once. ADDED apps/web/next.config.ts, because Next may require instrumentationHook to be enabled for the instrumentation entry point to run on this version and the implementer must be able to check rather than assume. docs/DEPLOYMENT.md does not exist and is KEPT as a create-if-needed path rather than dropped: a deployment that must register a runtime is a deployment fact, and if the implementer judges the operator note belongs in docs/CATALOG_SOURCE.md instead, the unused entry comes back out at review as PL-0501's unused CI entry did.",
       "implementationAgent": "claude-backend",
-      "updatedAt": "2026-09-21T14:13:52.947Z",
-      "implementationBaseSha": "f932ebe66c99cbb4fdf15f631d1464b16115aadc",
-      "surfaceCorrectedTwiceBeforeCompletion": "SECOND CORRECTION 2026-09-20, mid-implementation, AND IT REVERSES THE FIRST ONE. My pre-claim correction moved instrumentation.ts from apps/web/src/ to apps/web/ on the belief that Next reads it from the app root. THAT WAS WRONG AND THE IMPLEMENTER PROVED IT rather than asserting it: Next 16.3.1 discovers the file in exactly one directory, non-recursively, at rootDir = path.join(pagesDir || appDir, '..'), so for an app with src/app and no pages/ the directory is apps/web/src and a file at apps/web/instrumentation.ts is NEVER LOADED. It replayed Next's own findPagesDir and getFilesInDir over this tree and over two throwaway fixtures differing only in the file's location, and the fixture with the file at the app root produced no instrumentationHookFilePath at all. It then REFUSED TO WRITE THE FILE AT THE DECLARED PATH, on the ground that a file Next never loads, sitting where the wiring appears to be, is worse than no file. That is the right call and the surface is corrected to match the evidence, which is exactly the bar the human commander set this round for touching a removed path. REMOVED as proved unnecessary: apps/web/instrumentation.ts (the wrong path); apps/web/next.config.ts (Next 16.3.1 needs no opt-in -- next/dist/server/config.js deprecates experimental.instrumentationHook with 'instrumentation.js is available by default', so the file earned no edit); docs/DEPLOYMENT.md (the operator note is a fact about this source and belongs in docs/CATALOG_SOURCE.md, which already carries the licensing decision and the rights position, and the repo has no other deployment-runbook content for a new file to sit beside). ADDED: apps/web/package.json, because the app now imports @liberty/media-inspection for nodePinnedFetch and does not declare it -- the import resolves through the root workspace symlink so tsc and vitest are green and NO GATE CATCHES IT, which is precisely why the manifest must say what the app imports.",
-      "review": {
-        "taskId": "PL-0308",
-        "implementationAgent": "claude-backend",
-        "implementationOwner": "claude-backend",
-        "reviewerAgent": "gpt-architect",
-        "reviewerClass": "external-reasoning",
-        "reviewerProvider": "openai",
-        "reviewedCommitSha": "f6dba611346ac53d72901f661a2b21cc12e80eac",
-        "reviewedBaseSha": "f932ebe66c99cbb4fdf15f631d1464b16115aadc",
-        "reviewedTreeHash": "4a59bd2ec177637ca72a2c6a879ac557078599c5e92b89decaf73bbbc7e5a3aa",
-        "reviewedFileCount": 10,
-        "reviewedFingerprintSource": "git-object",
-        "reviewedDependencies": [
-          "apps/web/src/lib/catalog-ingestion-source.ts",
-          "packages/catalog-ingestion/src/index.ts",
-          "packages/media-inspection/src/node/pinned-fetch.ts",
-          "apps/web/package.json"
-        ],
-        "outcome": "APPROVED",
-        "reviewedAt": "2026-09-21T14:27:32.653Z",
-        "evidence": "APPROVED by gpt-architect, reviewed against origin f6dba611346ac53d72901f661a2b21cc12e80eac. The sole blocker from the previous CHANGES_REQUESTED has been corrected by PL-0311. Verified: apps/web/package.json now declares @liberty/media-inspection at 0.1.0, so PL-0308's direct import of @liberty/media-inspection/node/pinned-fetch is described by the owning app manifest; the runtime registration mechanism itself is unchanged and remains accepted; the Node pinned transport is still the transport the catalog runtime uses; no credential or API-key path was introduced; unconfigured deployments still remain explicitly unconfigured; the real server instrumentation and bootstrap path is exercised; and PL-0308's typecheck, lint, build and unit gates were re-run against the integrated PL-0311 tree and pass. PROVENANCE: TRANSCRIBED BY CLAUDE from the ChatGPT review session and relayed by the human commander; the GitHub review-write integration returns 403."
-      },
-      "reviewHistory": [
-        {
-          "taskId": "PL-0308",
-          "implementationAgent": "claude-backend",
-          "implementationOwner": "claude-backend",
-          "reviewerAgent": "gpt-architect",
-          "reviewerClass": "external-reasoning",
-          "reviewerProvider": "openai",
-          "reviewedCommitSha": "e5dd8893a5600e6272575e9116e1f434559ac532",
-          "reviewedBaseSha": "f932ebe66c99cbb4fdf15f631d1464b16115aadc",
-          "reviewedTreeHash": "0b161196e5517f8107807483dfdc7468dcacbfcac46d508adf6d49391d198df0",
-          "reviewedFileCount": 10,
-          "reviewedFingerprintSource": "git-object",
-          "reviewedDependencies": [
-            "apps/web/src/lib/catalog-ingestion-source.ts",
-            "packages/catalog-ingestion/src/index.ts",
-            "packages/media-inspection/src/node/pinned-fetch.ts"
-          ],
-          "outcome": "CHANGES_REQUESTED",
-          "reviewedAt": "2026-09-21T14:05:12.905Z",
-          "evidence": "CHANGES_REQUESTED by gpt-architect, narrow packaging corrective, reviewed against origin e5dd8893a5600e6272575e9116e1f434559ac532. THE MECHANISM IS ACCEPTED AND MUST NOT BE REDESIGNED: the real composition root calls registerCatalogIngestionRuntime; the runtime is composed beside and with the existing Node pinned transport; no credential or API-key path was introduced; an unconfigured deployment still registers nothing and remains a named refusal; configuration is driven through the actual Next server instrumentation entry point; and the tests exercise the real bootstrap path and assert pinned-fetch reference identity. ONE BLOCKER, AND IT IS THE ONLY ONE. apps/web/src/lib/server-bootstrap.ts imports @liberty/media-inspection/node/pinned-fetch directly while apps/web/package.json does not declare @liberty/media-inspection in dependencies. The build succeeds only because the monorepo workspace makes the package resolvable; the app package's manifest does not describe a dependency it actually imports, which is not acceptable for a production composition root. This is the same defect already recorded as PL-0311 and the implementation must NOT be duplicated across two tasks. PREFERRED RESOLUTION, in the reviewer's order: keep PL-0308 in CHANGES_REQUESTED; take PL-0311 now that PL-0710 is DONE and its package-lock reservation is gone; land the apps/web/package.json and package-lock.json dependency edge together as PL-0311 requires; rerun PL-0308's relevant typecheck, build and manifest gates against that integrated tree; and return PL-0308 to REVIEW for final approval. Do not redesign server-bootstrap or its runtime wiring. PROVENANCE: TRANSCRIBED BY CLAUDE from the ChatGPT review session and relayed by the human commander; the GitHub review-write integration returns 403."
-        },
-        {
-          "taskId": "PL-0308",
-          "implementationAgent": "claude-backend",
-          "implementationOwner": "claude-backend",
-          "reviewerAgent": "gpt-architect",
-          "reviewerClass": "external-reasoning",
-          "reviewerProvider": "openai",
-          "reviewedCommitSha": "f6dba611346ac53d72901f661a2b21cc12e80eac",
-          "reviewedBaseSha": "f932ebe66c99cbb4fdf15f631d1464b16115aadc",
-          "reviewedTreeHash": "4a59bd2ec177637ca72a2c6a879ac557078599c5e92b89decaf73bbbc7e5a3aa",
-          "reviewedFileCount": 10,
-          "reviewedFingerprintSource": "git-object",
-          "reviewedDependencies": [
-            "apps/web/src/lib/catalog-ingestion-source.ts",
-            "packages/catalog-ingestion/src/index.ts",
-            "packages/media-inspection/src/node/pinned-fetch.ts",
-            "apps/web/package.json"
-          ],
-          "outcome": "APPROVED",
-          "reviewedAt": "2026-09-21T14:27:32.653Z",
-          "evidence": "APPROVED by gpt-architect, reviewed against origin f6dba611346ac53d72901f661a2b21cc12e80eac. The sole blocker from the previous CHANGES_REQUESTED has been corrected by PL-0311. Verified: apps/web/package.json now declares @liberty/media-inspection at 0.1.0, so PL-0308's direct import of @liberty/media-inspection/node/pinned-fetch is described by the owning app manifest; the runtime registration mechanism itself is unchanged and remains accepted; the Node pinned transport is still the transport the catalog runtime uses; no credential or API-key path was introduced; unconfigured deployments still remain explicitly unconfigured; the real server instrumentation and bootstrap path is exercised; and PL-0308's typecheck, lint, build and unit gates were re-run against the integrated PL-0311 tree and pass. PROVENANCE: TRANSCRIBED BY CLAUDE from the ChatGPT review session and relayed by the human commander; the GitHub review-write integration returns 403."
-        }
-      ]
+      "updatedAt": "2026-09-22T00:57:39.801Z",
+      "implementationBaseSha": "3e0d01accaf139c2232312644c62e9b76fdb8ad4"
     }
   ],
   "review": [],

@@ -388,7 +388,14 @@ built half out of the application's opinions.
 | `LIBERTY_CATALOG_LOCALES` | Comma-separated locales, most preferred first, at least one. Requested from the source *and* served to readers. |
 | `LIBERTY_CATALOG_TERRITORY` | The territory availability is evaluated for: an ISO 3166-1 alpha-2 code, or `WW`. |
 | `LIBERTY_CATALOG_UNSTATED_AVAILABILITY` | `refuse` or `treat_as_worldwide`. Neither synthesises a window; `treat_as_worldwide` is an operator assertion about their own position, recorded as theirs. |
-| `LIBERTY_CATALOG_MAX_PAGES` | How many pages one query reads. A bound — and, with nothing persisted between passes, also the size of the catalog a reader sees. |
+| `LIBERTY_CATALOG_MAX_PAGES` | How many pages one **pass** reads. A bound — and, because no pass resumes a cursor, also the size of the catalog a reader sees. |
+
+**No staleness policy is among them yet, so a configured deployment still runs a
+pass per read.** PL-0309 gave the adapter a store and a schedule, but the field
+that carries the operator's policy (`CatalogIngestionRuntime.schedule`) is not
+set by this bootstrap, which was outside that task's write surface. The three
+variables it would need are named in
+[PL-0309](#what-is-not-closed).
 
 **`.env.example` does not list these variables yet, and that is a routing
 constraint rather than a statement about them.** The repository's env contract
@@ -584,16 +591,21 @@ lane read the way they do.
 
 Named so nobody reads a port as a product.
 
-- **Ingestion. PARTLY CLOSED BY PL-0305, and the remaining part is the
-  provider.** `packages/catalog-ingestion` has the pass: `runIngestionPass`
-  pages a provider by cursor, clamps to the provider's declared maximum page
-  size, resumes from a backfill cursor, bounds itself with `maxPages`, validates
-  every record and reports a named refusal for each one it drops.
-  `planNextPassAt` schedules the next pass with capped exponential backoff.
-  What none of it has is a provider to run against -- see the two sections
-  below. `docs/ARCHITECTURE.md` still lists "metadata ingestion worker" as an
-  extraction candidate: the package is a library, and nothing schedules it in a
-  process yet.
+- **Ingestion. PARTLY CLOSED BY PL-0305, THEN BY PL-0305r, THEN BY PL-0309 --
+  and what is left is a worker and durability.** `packages/catalog-ingestion`
+  has the pass: `runIngestionPass` pages a provider by cursor, clamps to the
+  provider's declared maximum page size, resumes from a backfill cursor, bounds
+  itself with `maxPages`, validates every record and reports a named refusal for
+  each one it drops. `planNextPassAt` schedules the next pass with capped
+  exponential backoff. PL-0305r wired a provider. **PL-0309 added the store and
+  the caller**: `store.ts` holds a pass's output between passes, `schedule.ts`
+  decides when the next one may run, and the `apps/web` adapter answers from
+  stored state instead of running a pass per query.
+  `docs/ARCHITECTURE.md` still lists "metadata ingestion worker" as an
+  extraction candidate and that is still accurate: **nothing refreshes while a
+  process is idle**, because a pass runs only when a read finds the state due.
+  See [PL-0309](#pl-0309-stored-state-and-a-schedule) for exactly what is and is
+  not closed.
 - **Refresh and staleness. CLOSED IN THE PACKAGE, NOT YET IN THE PORT.**
   Every ingested record carries an `observedAt`, `assessFreshness` grades it
   `fresh`/`stale`/`expired` against a two-bound `StalenessPolicy`, and
@@ -741,6 +753,8 @@ refused.
 | `wikidata.ts` | The Wikidata adapter: the only module in the package that names a source. |
 | `safety.ts` | `findMediaAddresses` and `checkRightsBasis`. The two checks that make this a rights boundary. |
 | `ingest.ts` | One pass: paging, backfill, per-record refusals, and the tombstone rule. |
+| `store.ts` | Where a pass's output lives between passes: the `CatalogStore` port, an in-memory implementation, and `applyPassToSnapshot` -- the one place that decides what a pass does to stored state. |
+| `schedule.ts` | When the next pass may run. Derives the cadence from the staleness policy and calls `planNextPassAt`; contains no timer. |
 | `project.ts` | Collapse to `CatalogItem` for one reader: locale, territory, and the age of the answer. |
 | `transport.ts` | The ONLY network path, and it is PL-0304's, not a new one. |
 
@@ -814,10 +828,15 @@ string this package chose on an operator's behalf.
   in `catalog-source-registry.ts`, because the registry's job is deciding WHICH
   source this process has and projecting a pass into records is a different job
   with its own failure vocabulary.
-- **Nothing schedules a pass.** `planNextPassAt` says when the next one is due;
-  no process calls it. There is no worker, no queue and no store -- ingestion
-  produces `AcceptedWork` and tombstones and hands them back, and where they are
-  persisted is the next task's question.
+- **Nothing schedules a pass.** *Partly closed by PL-0309, and the entry kept
+  because the half that remains is the half people assume is done.*
+  `planNextPassAt` now has a caller -- `planCatalogRefresh` in `schedule.ts` --
+  and there IS a store: `CatalogStore` with an in-memory implementation, holding
+  `AcceptedWork`, tombstones and the pass's refusals. **There is still no worker
+  and no queue.** A pass runs when a read arrives and finds the stored state due,
+  so a process nobody reads refreshes nothing, and the first read after an idle
+  period pays for the pass. **And nothing is durable**: a restart empties the
+  store.
 - **The port still has no age, no paging and no tombstone.** Those need the
   dependency above.
 - **`@liberty/media-inspection` has no `./http` subpath**, so importing its
@@ -991,6 +1010,168 @@ come back named as expected, and a live record still carries no media address an
 no rights basis — because how many genres `Q83495` has is whatever the last
 editor decided.
 
+## PL-0309: stored state and a schedule
+
+**Catalog answers are served from a stored snapshot that a schedule refreshes,
+instead of from one full ingestion pass per query.** Read the two paragraphs
+under "what is NOT closed" before reading this section as wider than it is: there
+is still no background worker, nothing is durable across a restart, and a hosted
+deployment does not yet state the policy that makes the schedule bite.
+
+### What the defect was
+
+`apps/web/src/lib/catalog-ingestion-source.ts` ran `runIngestionPass` on every
+call. That is correct for a seam and wrong for a deployment: every page view
+became an outbound crawl, every response time was tied to a third party, and the
+load on that third party scaled with this product's traffic. A rail cost a pass
+and `findRecord` cost a pass.
+
+### What landed
+
+| File | What it decides |
+| --- | --- |
+| `packages/catalog-ingestion/src/store.ts` | The `CatalogStore` port, an in-memory implementation, and `applyPassToSnapshot` — the single pure function that decides what a pass does to stored state. |
+| `packages/catalog-ingestion/src/schedule.ts` | Whether a pass is due, and the one function that runs it and commits it (`refreshCatalogIfDue`). No timer. |
+| `apps/web/src/lib/catalog-ingestion-source.ts` | Answers from the snapshot, re-evaluates rights and availability per read, and publishes the answer's age and the refresh outcome. |
+
+**The freshness policy drives the schedule; it is not a second set of numbers.**
+`catalogRefreshCadence` derives `RefreshCadence.intervalMs` **from**
+`StalenessPolicy.freshForMs` rather than letting an operator state both. Two
+numbers meaning "how long an answer may be trusted" can be configured out of
+step, and the failure is silent and total — an hour's interval against a
+five-minute fresh bound means every answer the deployment serves is stale by its
+own stated policy while the schedule reports itself as working. `planNextPassAt`
+still owns the backoff, including its cap; nothing re-implements it, and
+`assessStoredFreshness` is the one call site that grades a snapshot's age, used
+both for the schedule's reason and for the age an answer publishes.
+
+**The consecutive-failure count lives on the snapshot, not in the scheduler.** A
+scheduler holding a private count beside a store holding the pass state is two
+facts about one pass in two places. On the snapshot it also survives into any
+durable implementation, so a restarted process does not hammer a provider that is
+still down.
+
+**Rights and availability are re-decided at the read.** The store holds
+`AcceptedWork`, never a projected record. A projection answers "may this reader
+see this work, here, now", so storing one freezes the locale, the territory check
+and the clock at the instant of the pass. Instead, every read runs
+`checkRightsBasis` on the stored work and `projectToCatalogRecord` with
+`atMs = now()`, so a rights basis that lapsed and an availability window that
+closed both withhold the record. **A record is never served because a pass
+accepted it an hour ago.**
+
+**A failed refresh keeps serving the previous state and says so.** The records,
+the refusals and the age are left exactly as they were — emptying them would
+delete a catalog because a provider had a bad afternoon — and the answer carries
+`refresh.status: "failed"` with the package's own `ProviderFetchFailure`. It does
+not present the kept state as current: the age and the stated policy travel with
+the answer. A **cold start** whose first pass fails still throws, because there is
+no previous state and `[]` would be a lie; the next read inside the backoff throws
+the *remembered* failure without going out again.
+
+**The pass's per-record refusals are stored, not treated as a transient.** They
+are what keeps "a source listed works and none may be surfaced" distinguishable
+from "the source listed nothing". If they evaporated with the pass, the second
+page view on a deployment with no rights register would report an empty catalog —
+the four-state collapse, arriving through the back door of a cache.
+
+### The tombstone-release rule
+
+**A tombstone is released only by a COMPLETE pass that accepts the work again.**
+A partial pass, a failed pass and an incremental pass release nothing; tombstones
+are unioned across passes and never replaced wholesale, because a previously
+tombstoned id is deliberately not in the `knownContentIds` handed to the next
+pass, so a replacement would drop it and resurrect the work.
+
+The counter-argument was considered and rejected: seeing a work is *direct*
+positive evidence that the source still lists it, whereas not seeing one is
+evidence only when the read was complete, so the two directions are not
+symmetric. What decides it the other way is the asymmetry of the consequences.
+Releasing wrongly puts a withdrawn work back on a rail, and the reason a work is
+withdrawn upstream may be exactly that somebody lost the right to it; not
+releasing wrongly hides a work that came back, until the next complete pass. One
+is a rights exposure, the other is a delay. The trap is concrete rather than
+theoretical — a provider serving a page from a lagging replica, or re-listing an
+entity it has already reported as withdrawn, is ordinary infrastructure
+behaviour.
+
+**A narrowing that is a real limitation.** Release is tested on the pass's
+`accepted` set, not on what it *saw*. `ingest.ts` spares a work that was seen and
+then refused from being tombstoned, but `IngestionPassResult` does not publish the
+seen set — refusals carry a native id, not a derived content id — so a complete
+pass that saw a work and refused it cannot be told from one that never saw it,
+and the conservative reading is taken. Publishing `seenContentIds` on the pass
+result would make this exact; that is a change to `ingest.ts` with its own review.
+
+**One thing a failed pass may still apply: a withdrawal the source declared.**
+`ingest.ts` mints `withdrawn_by_source` whatever else it withholds, because it
+rests on the source's own statement. Applying it removes a work, which is the
+fail-closed direction. The currently licensed provider declares
+`reportsDeletions: false`, so in practice this list is always empty.
+
+### What is NOT closed
+
+1. **There is no background worker, and PL-0305 did not deliver one either.**
+   Nothing in this path has a timer. A pass runs when a read arrives and finds
+   the stored state due, so **a process nobody reads refreshes nothing**, and the
+   first read after an idle period waits for a full pass. Reads no longer cost a
+   pass each; passes are still driven by reads. A real worker needs a process
+   entry point — `apps/web/src/instrumentation.ts` or a separate process — which
+   is outside PL-0309's write surface.
+2. **Nothing is durable.** `createInMemoryCatalogStore` keeps the snapshot in a
+   closure. A restart empties it and the next read is a cold start again.
+   `@liberty/persistence` was deliberately not used: it is Drizzle over `pg`,
+   profile-scoped, with migrations and a writer-epoch discipline, and a catalog
+   snapshot is none of those. A durable table needs a migration plus an operator
+   decision about where catalog state lives and who may write it, and inventing
+   that schema as a side effect of a scheduling task is the wrong way to take it.
+   The port is the honest increment: a Postgres implementation is a new file, and
+   because every rule about what a pass does to state is in
+   `applyPassToSnapshot`, it inherits them rather than re-deciding them.
+3. **A hosted deployment does not state a staleness policy yet, so it still pays
+   a pass per read.** `CatalogIngestionRuntime.schedule` is optional, and absent
+   means `policy_not_stated` — no bound below which an answer is current,
+   therefore nothing may be reused. That is *not* a default chosen on an
+   operator's behalf; it is the absence of the statement that would let anything
+   be cached, and it reproduces the pre-PL-0309 behaviour exactly.
+
+   **The edit that turns it on is off-surface.**
+   `apps/web/src/lib/server-bootstrap.ts` is the composition root that builds a
+   runtime from the environment, and it was outside PL-0309's `allowedPaths`. It
+   needs two more variables and a `schedule` field on the runtime it constructs:
+
+   | Variable | What it would state |
+   | --- | --- |
+   | `LIBERTY_CATALOG_FRESH_FOR_MS` | Below this age an answer is current, **and** the interval at which a pass becomes due. One number, deliberately. |
+   | `LIBERTY_CATALOG_STALE_AFTER_MS` | At or beyond this age an answer is too old to present as current. |
+   | `LIBERTY_CATALOG_MAX_BACKOFF_MS` | The cap on exponential backoff after consecutive failures. Required by `planNextPassAt` rather than optional: an uncapped exponential reaches "next Tuesday" after a morning of failures. |
+
+   `validateCatalogRefreshSchedule` is exported for that caller, so a transposed
+   policy or a missing cap is refused at configuration time rather than marking
+   everything expired at runtime and presenting as a provider outage. Until the
+   bootstrap edit lands, a hosted deployment still gets the store, the tombstone
+   handling and the read-time re-evaluation — and still pays a pass per read.
+4. **No backfill. Every pass starts at the beginning of the source**, and
+   `LIBERTY_CATALOG_MAX_PAGES` therefore still bounds the size of the catalog a
+   reader sees. Resuming the cursor is the obvious fix and is **unsafe against
+   `ingest.ts` as it stands** — see the finding below.
+
+### A hazard found in `ingest.ts` and deliberately not fixed here
+
+`IngestionPassResult.complete` is true when the enumeration **reached the end**,
+not when the pass read the **whole source**. Those differ for a resumed pass: one
+that starts from `resumeCursor` and runs off the end reports `complete: true`
+while having seen only a tail segment, and `reconcileTombstones` would then mint
+a tombstone for every known id on the pages it skipped. That is a mass deletion
+reachable from an ordinary backfill configuration.
+
+`schedule.ts` therefore never passes a `resumeCursor`, which keeps the hazard
+unreachable from this path at the cost of re-reading the prefix each pass. The
+hazard itself is untouched: fixing it means changing what `complete` means, or
+adding a fourth `TombstoneWithholdReason` for a resumed pass, and that is a
+change to the rule `ingest.ts`'s header is built around. **It wants its own task
+and its own review**, and it should land before anything turns backfill on.
+
 ## The rights position on a real source
 
 **This section is the evidence the commander decided from, kept as it stood.**
@@ -1121,10 +1302,11 @@ rather than "ruled out".
    **What the adapter does and does not contain.** It contains no query, no
    fetch, no URL and no source name; it imports the package's ROOT entry point
    and names no Wikidata module and no Wikidata type. It reads no environment
-   variable, holds no credential, and defaults no part of a runtime. It runs one
-   full ingestion pass per query and persists nothing (see item 7), so a rail
-   costs a pass and `findRecord` costs a pass — honest, and not what a catalog of
-   real size wants.
+   variable, holds no credential, and defaults no part of a runtime. *It used to
+   run one full ingestion pass per query and persist nothing, so a rail cost a
+   pass and `findRecord` cost a pass.* PL-0309 closed that: it answers from a
+   stored snapshot, and asks the scheduler whether a pass is due before running
+   one. See item 7.
 6. **Not done — a rights register.** Without one, the provider publishes nothing.
    That is the fail-closed outcome, not a defect, but it means "a real source is
    wired" and "a real catalog is servable" are still two different statements —
@@ -1132,8 +1314,12 @@ rather than "ruled out".
    gap rather than a caveat on a gap. A deployment in this state is
    distinguishable from an empty catalog: `describeCatalog()` answers
    `no_records_usable` and lists `rights_basis_not_declared` per record.
-7. **Not done — a scheduler.** `planNextPassAt` says when the next pass is due;
-   no process calls it, and nothing persists `AcceptedWork` or tombstones.
+7. **Partly done (PL-0309) — stored state and a schedule; still no worker and
+   no durability.** `planNextPassAt` has a caller, and `AcceptedWork`, tombstones
+   and the pass's refusals are persisted for the life of the process. What is
+   closed, what is not, and the one off-surface edit that turns it on for a
+   hosted deployment are in
+   [PL-0309](#pl-0309-stored-state-and-a-schedule).
 8. **Not done — `provider_rate_limited` is unreachable from this adapter.**
    `fetchManifestText` reports a non-2xx as `http_status` with the number only
    inside a human-readable detail string, so 429 cannot be distinguished from any

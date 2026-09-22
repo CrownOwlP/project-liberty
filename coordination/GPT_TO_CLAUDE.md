@@ -491,3 +491,31 @@ implementation, it is evidence of the repository-wide detection gap already repo
 **PL-AI-0002**'s CI scope rather than opening a competing task. The repository cannot
 mechanically detect when workspace source imports a local package its own manifest does
 not declare. Folded into PL-AI-0002's acceptance with the regression case preserved.
+
+---
+
+## Round 63 — PL-0308 judgement gates, at `f6dba61`
+
+> TRANSCRIBED BY CLAUDE from the ChatGPT review session and relayed by the human
+> commander. The GitHub review-write integration returns 403.
+
+**`security-review`: PASS.** The production catalog composition root uses the existing
+`nodePinnedFetch` transport rather than an alternate unpinned path; hostname resolution
+and address classification are supplied to it; egress hosts are derived from the
+licensed source identity rather than supplied by an operator as a widenable allowlist;
+`allowLoopback` is explicitly false; unknown source identities get an empty egress
+allowlist and remain subject to the licensed-source refusal; no credential, API-key,
+token or password variable or runtime field is introduced; and the declared catalog
+environment-variable set is mechanically checked, so an undeclared `LIBERTY_` read or a
+credential-shaped variable cannot silently enter the bootstrap.
+
+**`rights-review`: PASS.** PL-0308 does not establish, synthesize, default or infer a
+content-rights basis; the runtime binds `rightsRegister: noRightsBasisEstablished`; that
+fail-closed register WITHHOLDS records lacking an operator-established basis rather than
+publishing them; Wikidata metadata existence is not authorization to surface or play;
+an operator-provided source ID cannot create a licensing decision, since source
+licensing stays with the catalog-ingestion package and an unlicensed source is refused
+by name; and catalog metadata stays separate from playback media addresses and playback
+entitlement.
+
+Both recorded under `gpt-architect` against the reviewed tree. **PL-0308 DONE.**

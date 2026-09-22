@@ -168,6 +168,36 @@ export {
   type TombstoneWithholdReason
 } from "./ingest";
 export {
+  assessStoredFreshness,
+  catalogRefreshCadence,
+  planCatalogRefresh,
+  refreshCatalogIfDue,
+  validateCatalogRefreshSchedule,
+  type CatalogRefreshDependencies,
+  type CatalogRefreshPassOptions,
+  type CatalogRefreshPlan,
+  type CatalogRefreshReason,
+  type CatalogRefreshRun,
+  type CatalogRefreshSchedule,
+  type CatalogScheduleRefusal
+} from "./schedule";
+export {
+  applyPassToSnapshot,
+  createInMemoryCatalogStore,
+  emptyCatalogSnapshot,
+  hasStoredCatalogState,
+  knownContentIdsOf,
+  partitionCatalogWorks,
+  type CatalogPassCommit,
+  type CatalogRefreshFailure,
+  type CatalogRefreshRecord,
+  type CatalogRefreshStatus,
+  type CatalogStore,
+  type CatalogStoreSnapshot,
+  type CatalogWorkPartition,
+  type TombstonedWork
+} from "./store";
+export {
   isAvailable,
   projectCatalogAnswer,
   projectToCatalogRecord,

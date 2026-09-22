@@ -1,14 +1,24 @@
 import {
+  checkRightsBasis,
+  createInMemoryCatalogStore,
+  partitionCatalogWorks,
   projectToCatalogRecord,
+  refreshCatalogIfDue,
   resolveCatalogMetadataProvider,
-  runIngestionPass,
   type CatalogMetadataProvider,
   type CatalogProviderRuntime,
+  type CatalogRefreshFailure,
+  type CatalogRefreshReason,
+  type CatalogRefreshSchedule,
+  type CatalogRefreshStatus,
+  type CatalogStore,
+  type FreshnessVerdict,
   type ProjectionRefusal,
   type ProviderFetchFailure,
   type RecordRefusalReason,
   type Territory,
-  type UnstatedAvailability
+  type UnstatedAvailability,
+  type WorkTombstone
 } from "@liberty/catalog-ingestion";
 import type {
   CatalogAnswer,
@@ -100,11 +110,42 @@ import type {
  *     any part of a runtime. A deployment that supplies no runtime gets no
  *     source, and there is no ambient configuration from which one could appear.
  *
- * WHAT IT IS NOT YET: an ingestion worker. Each query runs one pass and nothing
- * is persisted between them, so a rail costs a pass and `findRecord` costs a
- * pass. That is honest -- the answer really is as fresh as the pass that built
- * it -- and it is not what a catalog of real size wants. `docs/CATALOG_SOURCE.md`
- * carries the scheduler and the store as outstanding.
+ * ==========================================================================
+ * READ-TRIGGERED AND SCHEDULE-GATED. STILL NOT A WORKER, AND NOT DESCRIBED AS
+ * ONE
+ * ==========================================================================
+ *
+ * This section used to say "each query runs one pass and nothing is persisted
+ * between them", which was true and was the defect PL-0309 exists to close: it
+ * made every page view an outbound crawl, tied response time to a third party,
+ * and scaled the load on that third party with this product's traffic. What
+ * happens now:
+ *
+ *   - The source answers from STORED STATE, held behind the package's
+ *     `CatalogStore` port. A read asks `refreshCatalogIfDue` whether a pass is
+ *     due; when it is not, no request leaves the process.
+ *   - A COLD START STILL AWAITS A PASS. There is nothing stored on the first
+ *     read of a process, so that read pays a full pass and waits for it. That is
+ *     stated rather than hidden: it is the honest cost of having no worker and
+ *     no durable state.
+ *   - A FAILED REFRESH SERVES THE PREVIOUS STATE AND SAYS SO. The answer carries
+ *     `refresh.status: "failed"` with the package's own failure reason. What it
+ *     does NOT do is present the old state as current -- the age and the stated
+ *     policy travel with the answer, so nothing becomes fresher by being stored.
+ *     A cold start whose first pass fails still THROWS, because there is no
+ *     previous state to serve and an empty list would be a lie.
+ *
+ * WHAT THIS IS NOT, AND MUST NOT BE WRITTEN UP AS. It is not a background
+ * ingestion worker and PL-0305 did not deliver one either. NOTHING REFRESHES
+ * WHILE THIS PROCESS IS IDLE: there is no timer anywhere in this path, so a
+ * catalog that goes untouched for a day is refreshed by the first reader after
+ * that day, who waits for it. Reads no longer cost a pass each; passes are still
+ * driven by reads. A real worker needs a process entry point, which is outside
+ * this file.
+ *
+ * AND NOTHING IS DURABLE. The store behind this is in-memory, so a restart
+ * empties it and the next read is a cold start again. `docs/CATALOG_SOURCE.md`
+ * carries both gaps.
  * ---------------------------------------------------------------------- */
 
 /**
@@ -159,20 +200,59 @@ export interface CatalogIngestionRuntime {
    * reason.
    */
   readonly now: () => number;
+  /**
+   * How old an answer may be, and how far a failing provider is backed off.
+   *
+   * OPTIONAL, AND THAT IS A ROUTING CONSTRAINT RATHER THAN A DEFAULT. Nothing
+   * else on this interface has a default and this has none either: ABSENT MEANS
+   * NO POLICY WAS STATED, which the package spells `policy_not_stated` and which
+   * behaves exactly as this adapter did before it was scheduled -- every read
+   * refreshes, because nothing may be described as fresh against a policy nobody
+   * wrote. It is not "refresh every read" chosen on an operator's behalf; it is
+   * the absence of the statement that would let anything be reused.
+   *
+   * WHY IT IS NOT REQUIRED. `apps/web/src/lib/server-bootstrap.ts` is the
+   * composition root that constructs this value out of an operator's
+   * environment, and it is outside PL-0309's write surface. Making this field
+   * required would stop that file compiling, and a deployment would then have no
+   * catalog at all. The two variables it needs, and the three lines that read
+   * them, are recorded in `docs/CATALOG_SOURCE.md` as the edit that turns this
+   * on for a real deployment. Until that edit lands, a hosted process gets the
+   * store, the tombstone handling and the read-time re-evaluation, and still
+   * pays a pass per read.
+   */
+  readonly schedule?: CatalogRefreshSchedule | null;
+  /**
+   * Where stored state lives, if the composition root wants to say.
+   *
+   * ALSO OPTIONAL, AND THE DEFAULT IS NOT "A FRESH STORE PER CALL" -- that would
+   * be useless, see `createCatalogIngestionSource`. A supplied store is how a
+   * durable implementation of the package's `CatalogStore` gets in without this
+   * module knowing what it is made of.
+   */
+  readonly store?: CatalogStore;
 }
 
 /**
  * Why a record the source listed did not become a browsable record.
  *
- * TWO VOCABULARIES, NEITHER RESTATED. `RecordRefusalReason` is the ingestion
+ * THREE VOCABULARIES, NONE RESTATED. `RecordRefusalReason` is the ingestion
  * pass's -- a media address in a catalog payload, a schema failure, and the one
  * that matters here, `rights_basis_not_declared`. `ProjectionRefusal` is the
  * projection's -- no title in the requested locales, availability not stated,
- * not available in this territory. Both are the package's own names, carried
+ * not available in this territory. `WorkTombstone["reason"]` is the store's --
+ * `withdrawn_by_source` and `absent_from_complete_sync` -- and it joined the
+ * union when stored state arrived: a work that is in the store and under a
+ * tombstone must be withheld BY NAME rather than simply not be there, because a
+ * withdrawn work that quietly vanishes from a rail is indistinguishable from one
+ * that was never ingested. All three are the package's own names, carried
  * through unchanged, because an operator reading "availability_not_stated"
  * needs the string the code actually produced and not a translation of it.
  */
-export type CatalogRecordWithheldReason = RecordRefusalReason | ProjectionRefusal;
+export type CatalogRecordWithheldReason =
+  | RecordRefusalReason
+  | ProjectionRefusal
+  | WorkTombstone["reason"];
 
 /**
  * The port's withheld record, with the reason narrowed to the package's names.
@@ -194,9 +274,67 @@ export interface CatalogIngestionRecordWithheld extends CatalogRecordWithheld {
   readonly reason: CatalogRecordWithheldReason;
 }
 
-/** The port's answer, with this adapter's narrower withheld reasons. */
+/**
+ * What the most recent refresh did, and when the next one may run.
+ *
+ * WHY AN ANSWER CARRIES THIS AT ALL. Stored state introduces exactly one new way
+ * to lie: serving yesterday's catalog as though it were today's. The port's
+ * `observedAt` already says when the state was read, and this says whether the
+ * attempt to make it newer succeeded. The pair is what keeps "the provider is
+ * down and you are looking at an hour-old rail" distinguishable from "the
+ * provider is fine and the catalog really is like this" -- two facts that a
+ * cache without this field collapses into one.
+ *
+ * `status` IS THE MOST RECENT ATTEMPT EVER, NOT THIS READ'S. A read that found
+ * the state fresh made no attempt, and reporting `never_attempted` for it would
+ * erase the failure that happened five minutes ago and is the reason the state
+ * is as old as it is. `attempted` is the per-read fact and is separate.
+ */
+export interface CatalogAnswerRefresh {
+  /** Whether this read ran a pass. `false` means the schedule said nothing was due. */
+  readonly attempted: boolean;
+  readonly status: CatalogRefreshStatus;
+  /** The package's own named failure from the most recent failed attempt. */
+  readonly failure: CatalogRefreshFailure | null;
+  /**
+   * Whether the records in this answer come from state this read did not
+   * refresh -- either because no pass was due, or because the pass that ran
+   * failed and the previous state was kept.
+   */
+  readonly servedFromStoredState: boolean;
+  /** Why the schedule did or did not run a pass. The package's own reason. */
+  readonly scheduleReason: CatalogRefreshReason;
+  /** When a pass may next run. `null` when nothing has been attempted yet. */
+  readonly nextDueAtMs: number | null;
+  readonly consecutiveFailures: number;
+}
+
+/**
+ * The port's answer, with this adapter's narrower withheld reasons and the two
+ * signals stored state makes necessary.
+ *
+ * ADDITIVE ON THIS INTERFACE, NEVER ON THE PORT. `CatalogAnswer` lives in
+ * `catalog-source.ts` and deliberately carries no freshness vocabulary -- see
+ * that file on why expressing an age there would import the package's
+ * vocabulary into the module graph of every surface that renders a card.
+ * `freshness` and `refresh` are therefore declared here, on the adapter's own
+ * narrower answer, and are assignable to the port wherever the port is what a
+ * caller holds. NOTHING OUTSIDE THIS FILE READS THEM YET: `lib/catalog.ts`
+ * consumes `state`, `records` and `withheld`, and widening it to publish an age
+ * to a reader is a separate task with a copy decision in it.
+ */
 export interface CatalogIngestionAnswer extends CatalogAnswer {
   readonly withheld: readonly CatalogIngestionRecordWithheld[];
+  /**
+   * How old this answer is and the policy it is being described against.
+   *
+   * `null` WHEN NO POLICY WAS STATED, rather than a verdict computed against a
+   * policy this module chose. An operator who has not said how old a catalog may
+   * be gets no claim about how old this one is -- only `observedAt`, which is a
+   * fact rather than a judgement.
+   */
+  readonly freshness: FreshnessVerdict | null;
+  readonly refresh: CatalogAnswerRefresh;
 }
 
 /**
@@ -261,7 +399,25 @@ export type CatalogIngestionSourceCreation =
     };
 
 /**
- * Projects one ingestion pass into an answer.
+ * Where a source's state lives and how often it may be refreshed.
+ *
+ * BOTH FIELDS ARE REQUIRED HERE even though both are optional on
+ * `CatalogIngestionRuntime`, and the asymmetry is the point.
+ * `createCatalogIngestionSource` is the composition step that resolves an
+ * absent field into a stated one -- `null` for "no policy was stated", a
+ * process-lifetime store for "the caller did not supply one" -- so by the time
+ * this function is called the decision has been taken and is visible in the
+ * argument. A function that took `schedule?: ...` would let the decision be
+ * taken implicitly at a dozen call sites instead of once.
+ */
+export interface CatalogIngestionScheduling {
+  /** `null` means no staleness policy was stated, so every read refreshes. */
+  readonly schedule: CatalogRefreshSchedule | null;
+  readonly store: CatalogStore;
+}
+
+/**
+ * Where stored state is turned into an answer, and where a refresh is asked for.
  *
  * SEPARATED FROM THE PROVIDER RESOLUTION ABOVE IT so that this -- the part with
  * the rights and availability behaviour in it -- is testable against any
@@ -270,50 +426,107 @@ export type CatalogIngestionSourceCreation =
  * rights refusal by building a third party's response, which tests the response
  * fixture as much as the rule.
  *
- * EVERY WITHHELD RECORD IS COUNTED, from both refusal points, and the state is
- * derived from the counts rather than asserted. That is what makes
- * `no_records_usable` impossible to reach by accident and impossible to miss
- * when it is reached.
+ * EVERY WITHHELD RECORD IS COUNTED, from all three refusal points now -- the
+ * pass's own refusals as the store remembers them, the tombstones standing over
+ * stored works, and the re-evaluation below -- and the state is derived from the
+ * counts rather than asserted. That is what makes `no_records_usable` impossible
+ * to reach by accident and impossible to miss when it is reached.
+ *
+ * ==========================================================================
+ * RIGHTS AND AVAILABILITY ARE RE-EVALUATED HERE, AGAINST THE STORED RECORD
+ * ==========================================================================
+ *
+ * The pass that stored a work checked its rights basis and this read checks it
+ * AGAIN, on the stored record, before the work reaches an answer. That is not
+ * belt and braces, it is the difference between a catalog and a cache of
+ * decisions:
+ *
+ *   - A RIGHTS BASIS CAN LAPSE. The one the pass saw was the operator's register
+ *     answer at that moment. `checkRightsBasis` runs here on
+ *     `stored.work`, so a stored record whose basis is absent or whose reference
+ *     is not opaque is withheld at the read rather than served on the strength
+ *     of a pass that accepted it. It matters most for a store this process did
+ *     not fill: a durable implementation loads state written by an older build,
+ *     another process, or an operator, and the read path has to be correct over
+ *     all of those.
+ *   - AN AVAILABILITY WINDOW CAN CLOSE. `projectToCatalogRecord` is given
+ *     `atMs: now()`, the instant of THIS read, so a window that expired between
+ *     the pass and the read withholds the record with the package's
+ *     `not_available_in_territory`. This is why the store holds `AcceptedWork`
+ *     and not projected records: a projection is an answer to "may this reader
+ *     see this, here, now", and storing one freezes the "now".
+ *
+ * A RECORD IS NEVER SERVED BECAUSE A PASS ACCEPTED IT AN HOUR AGO.
  */
 export function catalogSourceOverProvider(
   provider: CatalogMetadataProvider,
   read: CatalogIngestionReadOptions,
-  now: () => number
+  now: () => number,
+  scheduling: CatalogIngestionScheduling
 ): DescribingCatalogMetadataSource {
   const describeCatalog = async (): Promise<CatalogIngestionAnswer> => {
-    const pass = await runIngestionPass(
+    const run = await refreshCatalogIfDue({
       provider,
-      {
-        pageSize: read.pageSize,
-        maxPages: read.maxPages,
-        resumeCursor: null,
-        /*
-         * A FULL READ, NEVER AN INCREMENTAL ONE. `changedSince` asks a provider
-         * for a SUBSET, and a subset is the wrong answer to "what is in the
-         * catalog" when nothing here persists the rest. `knownContentIds` is
-         * empty for the same reason: this adapter has no store, so it knows of
-         * no work that could have gone missing, and handing the pass an empty
-         * set is what makes `reconcileTombstones` mint nothing rather than
-         * mint wrongly.
-         */
-        changedSince: null,
-        knownContentIds: []
-      },
-      { now }
-    );
+      store: scheduling.store,
+      schedule: scheduling.schedule,
+      pass: { pageSize: read.pageSize, maxPages: read.maxPages },
+      now
+    });
 
-    if (pass.failure !== null) {
-      throw new CatalogMetadataSourceUnavailableError(pass.failure.reason, pass.failure.detail);
+    const snapshot = run.snapshot;
+    const servedFromStoredState = !run.refreshed || run.result?.failure !== null;
+
+    if (snapshot === null || snapshot.observedAt === null) {
+      /*
+       * NO STATE AT ALL, so there is nothing to serve and an empty list would be
+       * the exact lie the four-state design exists to stop. This is reachable in
+       * two ways and both throw: a cold start whose first pass failed, and a
+       * process still inside the backoff from such a failure -- the second one
+       * throws the REMEMBERED failure without going out again, which is the
+       * point of storing it.
+       */
+      const failure = snapshot?.lastRefresh.failure ?? run.result?.failure ?? null;
+      if (failure !== null) {
+        throw new CatalogMetadataSourceUnavailableError(failure.reason, failure.detail);
+      }
+      /*
+       * Unreachable by construction: a pass that did not fail records its
+       * observation instant, so a snapshot with no `observedAt` and no failure
+       * would mean a successful pass stored nothing at all. Stated rather than
+       * silently falling through to an empty answer, because falling through
+       * would publish "the catalog is empty" for a condition nobody understands.
+       */
+      throw new CatalogMetadataSourceUnavailableError(
+        "provider_response_malformed",
+        "the catalog store holds neither an observation nor a failure"
+      );
     }
 
-    const records: CatalogMetadataRecord[] = [];
-    const withheld: CatalogIngestionRecordWithheld[] = pass.refused.map((refusal) => ({
+    const { live, tombstoned } = partitionCatalogWorks(snapshot);
+
+    const withheld: CatalogIngestionRecordWithheld[] = snapshot.refused.map((refusal) => ({
       recordId: refusal.nativeId,
       reason: refusal.reason
     }));
+    /*
+     * A TOMBSTONE SURVIVES A REFRESH AND IS REPORTED, NOT JUST OBEYED. The work
+     * is in the store and is not in the answer, and the reason it is not is the
+     * source's own -- `withdrawn_by_source` or `absent_from_complete_sync`.
+     * `store.ts` holds the rule about what may release one; this only reads it.
+     */
+    for (const { work, tombstone } of tombstoned) {
+      withheld.push({ recordId: work.work.contentId, reason: tombstone.reason });
+    }
 
+    const records: CatalogMetadataRecord[] = [];
     const atMs = now();
-    for (const accepted of pass.accepted) {
+    for (const accepted of live) {
+      const rights = checkRightsBasis(accepted.work);
+      if (!rights.ok) {
+        withheld.push({ recordId: accepted.work.contentId, reason: rights.reason });
+        continue;
+      }
+
       const projection = projectToCatalogRecord(accepted, {
         locales: read.locales,
         territory: read.territory,
@@ -346,8 +559,18 @@ export function catalogSourceOverProvider(
       state,
       records,
       withheld,
-      observedAt: pass.observedAt,
-      complete: pass.complete
+      observedAt: snapshot.observedAt,
+      complete: snapshot.complete,
+      freshness: run.verdict,
+      refresh: {
+        attempted: run.refreshed,
+        status: snapshot.lastRefresh.status,
+        failure: snapshot.lastRefresh.failure,
+        servedFromStoredState,
+        scheduleReason: run.plan.reason,
+        nextDueAtMs: run.plan.dueAtMs,
+        consecutiveFailures: snapshot.lastRefresh.consecutiveFailures
+      }
     };
   };
 
@@ -356,19 +579,60 @@ export function catalogSourceOverProvider(
     describeCatalog,
     listRecords: async () => (await describeCatalog()).records,
     /*
-     * ONE PASS PER LOOKUP, and the cost is stated rather than hidden behind a
-     * cache. A cache here would be a store this adapter does not have and cannot
-     * invalidate, and the first thing it would do is hand a caller a record the
-     * source has since withdrawn -- which is precisely the state tombstones
-     * exist to express and which nothing in this application yet reads. When a
-     * real store lands, `findRecord` reads it; until then this is honest and
-     * slow rather than fast and stale.
+     * A LOOKUP NO LONGER COSTS A PASS, AND STILL DOES NOT READ A STALE RECORD.
+     * This used to run a full pass per lookup, and the comment here explained
+     * that a cache would be worse because it would hand a caller a record the
+     * source had since withdrawn. The store answers that objection rather than
+     * ignoring it: a withdrawn work is under a tombstone, `partitionCatalogWorks`
+     * keeps it out of `records`, and the rights and availability of everything
+     * else are re-decided above on every call. So this reads stored state, and
+     * what it reads has been re-evaluated for this reader at this instant.
      */
     findRecord: async (contentId) => {
       const answer = await describeCatalog();
       return answer.records.find((record) => record.item.id === contentId) ?? null;
     }
   };
+}
+
+/**
+ * One store per registered runtime, for as long as that runtime is registered.
+ *
+ * ==========================================================================
+ * WHY THIS EXISTS AT ALL, WHICH IS A PROPERTY OF THE REGISTRY AND NOT A
+ * PREFERENCE
+ * ==========================================================================
+ *
+ * `resolveCatalogMetadataSource` calls `createCatalogIngestionSource(runtime)`
+ * ON EVERY CALL -- it builds a source per request rather than holding one. So a
+ * store created inside that function would be discarded before anything could
+ * read it, every read would find an empty store, every read would therefore be
+ * due, and PL-0309 would have changed nothing about the defect it exists to fix:
+ * one full pass per query. The lifetime the store needs is the lifetime of the
+ * RUNTIME, which is the value a composition root constructs once and registers.
+ *
+ * KEYED ON THE RUNTIME OBJECT, NOT A MODULE SINGLETON. A single module-level
+ * store would be shared by every runtime this process ever composes, so a test's
+ * runtime and a deployment's runtime would read each other's catalog, and
+ * `registerCatalogIngestionRuntime(null)` -- which tests call in a `finally`
+ * precisely so one suite's configuration does not leak into the next -- would
+ * leave the state behind. A `WeakMap` keyed on the runtime makes the store's
+ * lifetime exactly the runtime's: drop the last reference to the runtime and the
+ * store goes with it.
+ *
+ * `runtime.store` WINS WHENEVER IT IS SUPPLIED, and that is the path a durable
+ * implementation takes. This fallback is for the composition root that has not
+ * been taught to construct one yet, which today is all of them.
+ */
+const storesByRuntime = new WeakMap<CatalogIngestionRuntime, CatalogStore>();
+
+function storeForRuntime(runtime: CatalogIngestionRuntime): CatalogStore {
+  if (runtime.store !== undefined) return runtime.store;
+  const existing = storesByRuntime.get(runtime);
+  if (existing !== undefined) return existing;
+  const created = createInMemoryCatalogStore();
+  storesByRuntime.set(runtime, created);
+  return created;
 }
 
 /**
@@ -381,6 +645,12 @@ export function catalogSourceOverProvider(
  * it cannot introduce one: there is no field on `CatalogProviderRuntime` a
  * caller could set to license something, and no value this function could return
  * for a name nobody licensed except the refusal.
+ *
+ * `schedule` RESOLVES TO `null` WHEN A RUNTIME DOES NOT STATE ONE, which the
+ * package reads as `policy_not_stated` and which refreshes on every read. That
+ * is the same behaviour this adapter had before it was scheduled, reached by a
+ * named absence rather than by a policy invented here -- see the field's comment
+ * on `CatalogIngestionRuntime` for the routing constraint behind it.
  */
 export function createCatalogIngestionSource(
   runtime: CatalogIngestionRuntime
@@ -392,7 +662,10 @@ export function createCatalogIngestionSource(
 
   return {
     ok: true,
-    source: catalogSourceOverProvider(resolution.provider, runtime.read, runtime.now)
+    source: catalogSourceOverProvider(resolution.provider, runtime.read, runtime.now, {
+      schedule: runtime.schedule ?? null,
+      store: storeForRuntime(runtime)
+    })
   };
 }
 
