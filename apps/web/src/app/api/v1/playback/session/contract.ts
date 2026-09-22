@@ -1,5 +1,7 @@
 import { failoverPolicySchema } from "@liberty/contracts/domains/failover";
 import {
+  MAX_STREAM_CANDIDATE_ID_CHARS,
+  MAX_STREAM_CANDIDATE_PROVIDER_ID_CHARS,
   compatibilityConfidenceSchema,
   playbackCapabilitiesSchema,
   type StatesContentProtection
@@ -255,9 +257,37 @@ export function playbackReason(
  * would be a second opinion about routing living in the one component §4 says
  * must not hold one.
  */
+/*
+ * THE BOUND IS IMPORTED, NEVER RESTATED (PL-0711).
+ *
+ * `id` and `providerId` carry THE SAME authoritative limits as the ranker's
+ * `StreamCandidate`, read from `@liberty/contracts/domains/playback` as
+ * `MAX_STREAM_CANDIDATE_ID_CHARS` and `MAX_STREAM_CANDIDATE_PROVIDER_ID_CHARS`.
+ * PL-0708 exported those constants for exactly this use.
+ *
+ * WHY A COPIED NUMBER WOULD BE THE DEFECT RATHER THAN A SHORTCUT. The contract
+ * bound governs what a PROVIDER may produce. This schema governs what the
+ * SESSION may publish. They are two seams on one value, and until now only the
+ * first was bounded -- so an oversized identifier that a provider adapter
+ * refused could still re-expand here, on the wire, after passing through
+ * another producer. A literal `141` written below would make the two agree by
+ * coincidence rather than by construction, and the day somebody tuned the
+ * contract the session would silently stop matching it. That is the defect one
+ * layer out, which is the thing this task exists to close.
+ *
+ * NO SECOND VOCABULARY IS INTRODUCED. There is no new constant here, no local
+ * alias and no derived figure -- the imported symbols are used at their use
+ * site, so `grep MAX_STREAM_CANDIDATE` finds one definition and its readers.
+ *
+ * `uri` AND `mimeType` REMAIN UNBOUNDED AND THAT IS DELIBERATE, NOT AN
+ * OVERSIGHT. They are not named in this task's acceptance, they have no
+ * authoritative constant to import, and inventing one here would be the very
+ * thing the paragraph above refuses. Raised for the reviewer in the handoff
+ * rather than fixed quietly.
+ */
 export const playbackSessionCandidateSchema = z.object({
-  id: z.string().min(1),
-  providerId: z.string().min(1),
+  id: z.string().min(1).max(MAX_STREAM_CANDIDATE_ID_CHARS),
+  providerId: z.string().min(1).max(MAX_STREAM_CANDIDATE_PROVIDER_ID_CHARS),
   uri: z.string().min(1),
   mimeType: z.string().min(1).nullable(),
   compatibility: compatibilityConfidenceSchema,

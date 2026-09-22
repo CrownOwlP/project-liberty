@@ -1,18 +1,18 @@
 # Project Liberty - Project Status
 
-> Generated 2026-09-22T03:39:38.672Z from the AI control plane.
+> Generated 2026-09-22T04:12:44.703Z from the AI control plane.
 
-**Overall completion:** 50/66 executable tasks (76%)
+**Overall completion:** 51/66 executable tasks (77%)
 
 ## Status summary
 
-- **BACKLOG:** 5
-- **READY:** 4
+- **BACKLOG:** 3
+- **READY:** 5
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 0
 - **REVIEW:** 1
 - **BLOCKED:** 6
-- **DONE:** 50
+- **DONE:** 51
 - **CANCELED:** 0
 
 ## Milestones / phases
@@ -20,7 +20,7 @@
 - **M0 — AI Engineering System + Repository Foundation:** COMPLETE, 4/4 (100%)
 - **M1 — Core Discovery Experience:** COMPLETE, 3/3 (100%)
 - **M2 — Media Resolution + Provider Foundation:** COMPLETE, 6/6 (100%)
-- **M3 — Identity + Personal State:** IN_PROGRESS, 0/4 (0%), 1 blocked
+- **M3 — Identity + Personal State:** IN_PROGRESS, 1/4 (25%), 1 blocked
 - **M4 — Playback Vertical Slice:** IN_PROGRESS, 3/6 (50%)
 - **M5 — Live + Intelligence Boundaries:** NOT_STARTED, 0/2 (0%), 1 blocked
 - **M6 — Shared-Agent Automation Bridge:** IN_PROGRESS, 2/3 (67%)
@@ -29,18 +29,18 @@
 
 ## Active work
 
-- **PL-0402** [REVIEW] Profile model — owner: claude-backend
+- **PL-0711** [REVIEW] Playback-session candidate wire bounds match StreamCandidate bounds — owner: claude-security
 
 ## Dispatch classification
 
-- **READY_AND_EXECUTABLE:** 3
+- **READY_AND_EXECUTABLE:** 4
 - **READY_BUT_EXTERNAL:** 1
 - **BLOCKED:** 6
-- **BACKLOG (dependency-gated):** 5
+- **BACKLOG (dependency-gated):** 3
 
 ## Recommended executable wave
 
-- **PL-0711** -> claude-security (P1/Security) Playback-session candidate wire bounds match StreamCandidate bounds
+No conflict-free executable tasks can be assigned with current agent capacity.
 
 ## Queued for external agents
 
@@ -60,9 +60,9 @@
 - **gpt-architect:** 0/6 active (external lane; not locally executable)
 - **claude-lead:** 0/2 active
 - **claude-frontend:** 0/2 active
-- **claude-backend:** 1/2 active
+- **claude-backend:** 0/2 active
 - **claude-media:** 0/2 active
 - **claude-test:** 0/1 active
-- **claude-security:** 0/1 active
+- **claude-security:** 1/1 active
 - **claude-infra:** 0/1 active
 - **human-commander:** 0/99 active (external lane; not locally executable)

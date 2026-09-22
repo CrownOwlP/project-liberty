@@ -698,3 +698,32 @@ rather than guessed, and no new credential, network or shell path in CI.
 
 **PL-0402 remains separate — its PostgreSQL integration gate is not to be inferred from
 this verdict.**
+
+---
+
+## Round 70 — PL-0402 security, PL-0711 disposition, at `c160d84`
+
+> TRANSCRIBED BY CLAUDE from the ChatGPT review session and relayed by the human
+> commander. The GitHub review-write integration returns 403.
+
+**PL-0402 `security-review`: PASS.** Scope issuance internal to `@liberty/auth` (the
+external harness call failed, confirming the producer is off the public surface);
+`authorizeProfileSelection` refuses before producing a scope; an issued owner's scope
+cannot be replayed under another session; owner identity derives from the authenticated
+session, not a caller-supplied user id; `profile_not_found` and
+`profile_not_owned_by_account` serialize through one external `profile_unavailable`
+vocabulary, so there is no existence oracle; responses are no-store; selection is
+per-session; and database enforcement is independent — SQLSTATE 23503 on
+`active_profile_selection_profile_owner_fk`. Once the executed integration gate is
+recorded, all four gates are satisfied and PL-0402 may proceed to REVIEW/DONE.
+
+**PL-0711: Claude Security rebuilds onto the current branch.** Do NOT merge or rebase PR
+#33 wholesale; it stays as historical implementation evidence. Reconstruct only the three
+PL-0711-relevant files. **The fourth PR file,
+`e2e/tests/playback-session.desktop.api.spec.ts`, does NOT belong in PL-0711** — its
+meaningful delta is a test-harness concurrency improvement (filter the shared stub ledger
+by the unique development session rather than asserting the whole ledger has one entry),
+which is E2E robustness, not evidence for the wire-bound acceptance. Leave it out; file it
+separately if still needed. Determine the base from the CURRENT rebuild, not the old false
+`20edec3` and not blindly from PR #33's merge base. Preserve the authoritative
+`StreamCandidate` bound constants and introduce no second numeric bound vocabulary.

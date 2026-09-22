@@ -200,6 +200,31 @@ candidate — `unverified` says the stream survived eligibility by not being
 disqualified rather than by being qualified, so a decode error on it is a
 foreseeable outcome rather than evidence the provider has gone bad.
 
+**`id` and `providerId` are bounded on the wire at the SAME limits the
+`StreamCandidate` contract enforces** — `MAX_STREAM_CANDIDATE_ID_CHARS` (141) and
+`MAX_STREAM_CANDIDATE_PROVIDER_ID_CHARS` (64), imported from
+`@liberty/contracts/domains/playback` rather than restated as numbers (PL-0711).
+
+The two are one value at two seams. The contract bound governs what a **provider
+may produce**; this bound governs what the **session may publish**. Until PL-0711
+only the first existed, so an oversized identifier refused upstream could
+re-expand downstream after passing through another producer — the bound stopped
+at the seam instead of travelling with the value. A copied literal here would
+have made the two agree by coincidence, and the day somebody tuned the contract
+the session would have silently stopped matching it; `contract.bounds.test.ts`
+asserts the imported symbols are used and that no numeric literal of either
+value appears in the module.
+
+A response whose candidate exceeds either bound does not reach a caller as a
+granted session: `handler.ts` validates every response against
+`playbackSessionResponseSchema` before it leaves, so the failure is a 500 naming
+a service that produced something it may not say. The failure output describes
+the violation **without reprinting the offending value**, which is also asserted.
+
+`uri` and `mimeType` remain unbounded. They have no authoritative constant to
+import, and inventing one for them here would be the second vocabulary PL-0711
+exists to prevent — raised as a follow-up rather than decided in passing.
+
 `startAtSeconds` is `null` rather than `0`: `null` means engine default, which is
 the beginning for VOD and the live edge for live. Nothing sets it today.
 
