@@ -211,15 +211,23 @@ export interface CatalogIngestionRuntime {
    * wrote. It is not "refresh every read" chosen on an operator's behalf; it is
    * the absence of the statement that would let anything be reused.
    *
-   * WHY IT IS NOT REQUIRED. `apps/web/src/lib/server-bootstrap.ts` is the
-   * composition root that constructs this value out of an operator's
-   * environment, and it is outside PL-0309's write surface. Making this field
-   * required would stop that file compiling, and a deployment would then have no
-   * catalog at all. The two variables it needs, and the three lines that read
-   * them, are recorded in `docs/CATALOG_SOURCE.md` as the edit that turns this
-   * on for a real deployment. Until that edit lands, a hosted process gets the
-   * store, the tombstone handling and the read-time re-evaluation, and still
-   * pays a pass per read.
+   * WHY IT IS STILL NOT REQUIRED, NOW THAT THE PRODUCTION COMPOSITION ROOT
+   * STATES ONE. `apps/web/src/lib/server-bootstrap.ts` builds this value out of
+   * an operator's environment and, since PL-0309's corrective, REFUSES a
+   * deployment that named a source without naming a schedule -- so no hosted
+   * process reaches the unstated path by accident any more. The field stayed
+   * optional all the same, because the two questions are different: "must a
+   * hosted deployment state a policy" is answered by the composition root, and
+   * it answers yes; "may a runtime exist that states none" is answered here, and
+   * the answer has to stay yes or `policy_not_stated` becomes unreachable and
+   * the honest reading of an unstated policy disappears with it. A worker
+   * running a single manual pass, a harness, and an embedder that reads once and
+   * exits all legitimately omit it.
+   *
+   * REQUIRING IT HERE WOULD ALSO CHANGE WHAT ABSENCE MEANS RATHER THAN REMOVING
+   * IT: a caller forced to supply a value would supply one this module or that
+   * caller invented, which is precisely the default nobody is allowed to choose
+   * on an operator's behalf.
    */
   readonly schedule?: CatalogRefreshSchedule | null;
   /**

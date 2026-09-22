@@ -10,7 +10,10 @@ import {
   languageTagSchema,
   noRightsBasisEstablished,
   territorySchema,
+  validateCatalogRefreshSchedule,
   type CatalogProviderRuntime,
+  type CatalogRefreshSchedule,
+  type CatalogScheduleRefusal,
   type EgressPolicy,
   type HostResolver,
   type ManifestFetchDependencies,
@@ -65,7 +68,8 @@ import { registerCatalogIngestionRuntime } from "./catalog-source-registry";
  * CAN: which licensed source, the User-Agent this deployment identifies itself
  * with, which slice of that source to read, which locales to serve, which
  * territory availability is evaluated for, how an unstated availability is to be
- * read, and how many pages one query may pull.
+ * read, how many pages one query may pull, and -- since PL-0309's corrective --
+ * HOW OLD AN ANSWER MAY BE AND HOW FAR A FAILING PROVIDER IS BACKED OFF.
  *
  * CANNOT, and each absence is deliberate:
  *
@@ -94,6 +98,53 @@ import { registerCatalogIngestionRuntime } from "./catalog-source-registry";
  * file's opinions. The only numbers this module supplies are the package's own
  * published limits and the source's own page size -- neither is a product
  * decision, and both are cited rather than invented.
+ *
+ * ==========================================================================
+ * THE REFRESH SCHEDULE IS REQUIRED, AND THAT IS A DELIBERATE BEHAVIOUR CHANGE
+ * ==========================================================================
+ *
+ * PL-0309 gave the adapter a store and a scheduler and THIS FILE DID NOT STATE
+ * A POLICY, so the runtime it built carried no `schedule`, the package read that
+ * as `policy_not_stated`, and a hosted deployment refreshed on EVERY READ --
+ * exactly the behaviour PL-0309 exists to remove, reached through a field that
+ * was merely absent. An absence that silently reproduces the defect is not a
+ * safe absence, so the three variables below joined the required set.
+ *
+ * THE CONSEQUENCE IS STATED RATHER THAN SOFTENED. A deployment that today sets
+ * the source signal and none of the three schedule variables STOPS BEING
+ * REGISTERED: it becomes `declaration-refused`, the startup log names the three
+ * missing variables, and the browse surfaces answer
+ * `no_metadata_source_configured` until an operator adds them. That is a real
+ * regression for such a deployment and it is the intended one -- the behaviour
+ * it loses is one full ingestion pass against a third party per catalog read,
+ * which is the defect, not the service.
+ *
+ * WHY REQUIRED RATHER THAN OPTIONAL-WITH-A-WARNING. This file's doctrine is
+ * already written above and in the record below: the source id is the signal,
+ * and with it set every other variable becomes required. A refresh schedule is
+ * as much a deployment decision as the page bound or the territory -- it governs
+ * how hard this deployment leans on somebody else's service -- so making it the
+ * one variable that may be omitted would be an exception with no reason behind
+ * it. A warning, meanwhile, is a defect an operator reads once at startup and a
+ * behaviour they keep forever.
+ *
+ * `policy_not_stated` IS NOT DELETED AND MUST NOT BE. It remains the honest
+ * reading for a runtime that deliberately omits a policy, and
+ * `CatalogIngestionRuntime.schedule` stays optional for it: nothing may be
+ * described as fresh against a bound nobody wrote. What changed is narrower than
+ * that -- THE PRODUCTION COMPOSITION ROOT now always states one. The two claims
+ * are compatible because they are about different things: the package keeps an
+ * unstated path reachable by name, and this file, which composes a hosted
+ * deployment, declines to take it.
+ *
+ * THE CADENCE AND THE BACKOFF ARITHMETIC ARE NOT HERE. This module parses three
+ * integers out of three strings -- which is a reading of an environment, and its
+ * job -- and then asks `validateCatalogRefreshSchedule` whether what it read is
+ * a coherent policy. There is no interval derived here, no cap applied here and
+ * no comparison between the fresh bound and the stale bound written here: every
+ * one of those lives in `@liberty/catalog-ingestion`, and a copy of any of them
+ * in `apps/web` would be a second opinion that could drift from the one the
+ * scheduler actually uses.
  * ---------------------------------------------------------------------- */
 
 /**
@@ -126,7 +177,19 @@ export const CATALOG_SOURCE_ENV_VARS = Object.freeze({
   /** `refuse` or `treat_as_worldwide`. Never synthesises a window. */
   unstatedAvailability: "LIBERTY_CATALOG_UNSTATED_AVAILABILITY",
   /** How many pages one query reads. A bound, and with no store, a catalog size. */
-  maxPages: "LIBERTY_CATALOG_MAX_PAGES"
+  maxPages: "LIBERTY_CATALOG_MAX_PAGES",
+  /**
+   * Below this age an answer is current -- AND the interval at which a pass
+   * becomes due. One number for both, because the package derives the cadence
+   * from the policy rather than taking a second one; see
+   * `catalogRefreshCadence` on why two numbers that mean "how long an answer may
+   * be trusted" fail silently and totally when they drift apart.
+   */
+  freshForMs: "LIBERTY_CATALOG_FRESH_FOR_MS",
+  /** At or beyond this age an answer is too old to present as current. */
+  staleAfterMs: "LIBERTY_CATALOG_STALE_AFTER_MS",
+  /** The cap on exponential backoff after consecutive failures. */
+  maxBackoffMs: "LIBERTY_CATALOG_MAX_BACKOFF_MS"
 } as const);
 
 /**
@@ -165,6 +228,14 @@ export interface CatalogSourceDeclaration {
   readonly territory: string;
   readonly unstatedAvailability: UnstatedAvailability;
   readonly maxPages: number;
+  /**
+   * The operator's refresh policy, already checked by the package.
+   *
+   * THE PACKAGE'S OWN TYPE, CARRIED WHOLE, for the reason the provider runtime
+   * is carried whole: the moment this file declared its own two-number shape and
+   * mapped it across, there would be a place for the mapping to be wrong.
+   */
+  readonly schedule: CatalogRefreshSchedule;
 }
 
 export type CatalogSourceDeclarationRead =
@@ -177,6 +248,39 @@ const trimmed = (env: Readonly<Record<string, string | undefined>>, name: string
   if (raw === undefined) return null;
   const value = raw.trim();
   return value === "" ? null : value;
+};
+
+/**
+ * What a schedule refusal means in terms of the variables that caused it.
+ *
+ * THE PACKAGE DECIDES, THIS TRANSLATES. `validateCatalogRefreshSchedule` answers
+ * in its own vocabulary -- `policy_not_positive`, `policy_not_ordered`,
+ * `backoff_cap_not_positive` -- and an operator holding an environment file
+ * needs the variable names instead. So the RULE stays in the package and only
+ * the naming happens here; there is no condition in this function that could
+ * accept a policy the package refused, or refuse one it accepted.
+ *
+ * THE DEFAULT BRANCH IS NOT DEAD CODE DRESSED AS SAFETY. `CatalogScheduleRefusal`
+ * is `FreshnessRefusal` plus the cap, and `FreshnessRefusal` also carries
+ * `observed_at_unparseable` and `observed_in_the_future` -- reasons about a
+ * stored timestamp that configuration validation cannot produce today. Naming
+ * them individually here would be inventing an operator-facing sentence for a
+ * state this path cannot reach; carrying the package's own word for it, beside
+ * the three variables that make up a schedule, stays true if the vocabulary
+ * grows.
+ */
+const describeScheduleRefusal = (reason: CatalogScheduleRefusal): string => {
+  const { freshForMs, staleAfterMs, maxBackoffMs } = CATALOG_SOURCE_ENV_VARS;
+  switch (reason) {
+    case "policy_not_positive":
+      return `${freshForMs} and ${staleAfterMs} must both be greater than zero`;
+    case "policy_not_ordered":
+      return `${freshForMs} must not be greater than ${staleAfterMs}`;
+    case "backoff_cap_not_positive":
+      return `${maxBackoffMs} must be greater than zero`;
+    default:
+      return `${freshForMs}, ${staleAfterMs} and ${maxBackoffMs} were refused as a schedule: ${reason}`;
+  }
 };
 
 /**
@@ -259,6 +363,47 @@ export function readCatalogSourceDeclaration(
     defects.push(`${CATALOG_SOURCE_ENV_VARS.maxPages} must be a whole number of at least 1`);
   }
 
+  /*
+   * A DURATION IS READ, NOT JUDGED. This checks only that the string is a whole
+   * number of milliseconds a `number` can hold -- `Number("2m")` is `NaN` and
+   * `Number("1e400")` is `Infinity`, and neither is something to hand a
+   * scheduler. Whether the three durations make a COHERENT POLICY is the
+   * package's question and is asked below, once, through
+   * `validateCatalogRefreshSchedule`. Nothing here compares them.
+   */
+  const milliseconds = (name: string): number | null => {
+    const raw = required(name);
+    if (raw === null) return null;
+    const value = Number(raw);
+    if (!Number.isSafeInteger(value)) {
+      defects.push(`${name} must be a whole number of milliseconds`);
+      return null;
+    }
+    return value;
+  };
+
+  const freshForMs = milliseconds(CATALOG_SOURCE_ENV_VARS.freshForMs);
+  const staleAfterMs = milliseconds(CATALOG_SOURCE_ENV_VARS.staleAfterMs);
+  const maxBackoffMs = milliseconds(CATALOG_SOURCE_ENV_VARS.maxBackoffMs);
+
+  /*
+   * THE COHERENCE CHECK IS THE PACKAGE'S, AT CONFIGURATION TIME. Asking it here
+   * is the whole reason `validateCatalogRefreshSchedule` is exported: a
+   * transposed policy would otherwise mark every answer expired at runtime and
+   * present to an operator as a provider outage. It is asked only when all three
+   * durations were readable, because a schedule assembled out of nulls would
+   * produce a second, misleading defect on top of the three that already name
+   * the real problem.
+   */
+  const schedule: CatalogRefreshSchedule | null =
+    freshForMs === null || staleAfterMs === null || maxBackoffMs === null
+      ? null
+      : { policy: { freshForMs, staleAfterMs }, maxBackoffMs };
+  if (schedule !== null) {
+    const checked = validateCatalogRefreshSchedule(schedule);
+    if (!checked.ok) defects.push(describeScheduleRefusal(checked.reason));
+  }
+
   if (
     defects.length > 0 ||
     userAgent === null ||
@@ -268,7 +413,8 @@ export function readCatalogSourceDeclaration(
     territory === null ||
     !territory.success ||
     unstated === null ||
-    maxPages === null
+    maxPages === null ||
+    schedule === null
   ) {
     return { status: "refused", defects };
   }
@@ -283,7 +429,8 @@ export function readCatalogSourceDeclaration(
       locales,
       territory: territory.data,
       unstatedAvailability: unstated,
-      maxPages
+      maxPages,
+      schedule
     }
   };
 }
@@ -356,6 +503,20 @@ const egressFor = (sourceId: string): EgressPolicy => ({
  * THE CLOCK IS THE TRANSPORT'S. One injected clock for the pass, the projection
  * and the fetch deadline, so the three cannot be a millisecond apart for no
  * reason.
+ *
+ * `schedule` IS ALWAYS SET HERE, AND THAT IS THE LINE THE CORRECTIVE TURNS ON.
+ * Before it, this function returned a runtime with the field absent, the adapter
+ * resolved that to `null`, and the package refreshed on every read. The field is
+ * optional on `CatalogIngestionRuntime` and stays optional -- see the header on
+ * why `policy_not_stated` survives -- but a production composition that reached
+ * that path by forgetting to fill a field was not stating a policy, it was
+ * omitting one, and the two are indistinguishable from outside.
+ *
+ * `store` IS STILL NOT SET, and that is unchanged and still honest. The adapter
+ * gives each registered runtime an in-memory store that lives as long as the
+ * runtime does, which is what makes a schedule worth having inside one process;
+ * a durable store is a `CatalogStore` implementation nobody has written, and
+ * supplying nothing is how this file says so. A restart is still a cold start.
  */
 export function catalogRuntimeFor(
   declaration: CatalogSourceDeclaration,
@@ -387,7 +548,7 @@ export function catalogRuntimeFor(
     maxPages: declaration.maxPages
   };
 
-  return { provider, read, now: transport.now };
+  return { provider, read, now: transport.now, schedule: declaration.schedule };
 }
 
 /**

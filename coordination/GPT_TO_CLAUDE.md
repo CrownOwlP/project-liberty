@@ -519,3 +519,40 @@ by name; and catalog metadata stays separate from playback media addresses and p
 entitlement.
 
 Both recorded under `gpt-architect` against the reviewed tree. **PL-0308 DONE.**
+
+---
+
+## Round 64 — PL-0309, at `9dc9bc8`
+
+> TRANSCRIBED BY CLAUDE from the ChatGPT review session and relayed by the human
+> commander. The GitHub review-write integration returns 403.
+
+**PL-0309 CHANGES_REQUESTED. `architecture-review` FAIL, `rights-review` PASS** — both
+recorded as gates.
+
+Package-level architecture ACCEPTED and out of bounds for the corrective: `CatalogStore`
+is a valid port; `applyPassToSnapshot` centralizes stored-state transition semantics;
+refresh/backoff/freshness decisions are centralized rather than recomputed
+independently; failed refreshes retain previous state and record the failure; tombstones
+survive refreshes; `refreshCatalogIfDue` belongs in the package and is the right
+reusable worker entry point; the per-runtime store identity mechanism prevents
+reconstructed sources from discarding state.
+
+The FAIL is deployment-level only: `server-bootstrap.ts` built the runtime with no
+schedule, which correctly became `policy_not_stated` but then refreshed on every read,
+so a hosted deployment still scaled ingestion work with catalog reads.
+
+`rights-review` PASS: stored state holds accepted work rather than frozen projections;
+rights basis and availability are rechecked at read time; a record whose basis is no
+longer established is withheld; tombstoned works are not silently restored by a partial
+refresh; failed refreshes preserve stored state; the store cannot turn stale
+authorization into current entitlement.
+
+**CORRECTIVE SURFACE RULING** — exactly `apps/web/src/lib/server-bootstrap.ts`,
+`apps/web/src/lib/server-bootstrap.test.ts`, `.env.example`, on the stated ground that
+these are the production composition and configuration files required to satisfy
+PL-0309's EXISTING acceptance, not speculative widening. Six required items, and
+`policy_not_stated` is to REMAIN for runtimes that intentionally omit policy.
+
+**FOLLOW-UP ORDERED:** a separate task for the resume/full-pass tombstone invariant
+before resume is enabled. Filed as **PL-0313**.

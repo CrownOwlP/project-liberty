@@ -389,23 +389,23 @@ built half out of the application's opinions.
 | `LIBERTY_CATALOG_TERRITORY` | The territory availability is evaluated for: an ISO 3166-1 alpha-2 code, or `WW`. |
 | `LIBERTY_CATALOG_UNSTATED_AVAILABILITY` | `refuse` or `treat_as_worldwide`. Neither synthesises a window; `treat_as_worldwide` is an operator assertion about their own position, recorded as theirs. |
 | `LIBERTY_CATALOG_MAX_PAGES` | How many pages one **pass** reads. A bound — and, because no pass resumes a cursor, also the size of the catalog a reader sees. |
+| `LIBERTY_CATALOG_FRESH_FOR_MS` | Milliseconds below which a stored answer is current — **and** the interval at which a refresh pass becomes due. One number for both, deliberately: an interval and a freshness bound that can drift apart fail silently and totally. |
+| `LIBERTY_CATALOG_STALE_AFTER_MS` | Milliseconds at or beyond which a stored answer is too old to present as current. Must be at least the fresh bound; between the two, an answer is served *with its age attached* rather than withheld. |
+| `LIBERTY_CATALOG_MAX_BACKOFF_MS` | The cap on exponential backoff after consecutive failed passes. Required rather than optional: an uncapped exponential reaches next Tuesday after a morning of failures. |
 
-**No staleness policy is among them yet, so a configured deployment still runs a
-pass per read.** PL-0309 gave the adapter a store and a schedule, but the field
-that carries the operator's policy (`CatalogIngestionRuntime.schedule`) is not
-set by this bootstrap, which was outside that task's write surface. The three
-variables it would need are named in
-[PL-0309](#what-is-not-closed).
+**The last three are the schedule, and they are required like the rest.** This
+is a change from the round that first wired the bootstrap up, and it is a real
+behaviour change for an existing deployment — see
+[the schedule became required](#the-schedule-became-required-and-what-that-costs-an-existing-deployment)
+below. The composition root parses the three integers and then asks the
+package's own `validateCatalogRefreshSchedule` whether they form a coherent
+policy, so a transposed pair or a zero cap is refused at startup rather than
+marking every answer expired at runtime and presenting as a provider outage.
+No cadence or backoff arithmetic is written in `apps/web`.
 
-**`.env.example` does not list these variables yet, and that is a routing
-constraint rather than a statement about them.** The repository's env contract
-is `.env.example`, which `scripts/validate-env.mjs` parses; it is held by
-another task in review and could not be edited in the round that wired this up.
-The table above is the contract until that lands. An operator reading
-`.env.example` alone will not find these names and should not conclude they do
-not exist. Nothing breaks in the meantime: that validator warns only about
-variables set in a `.env` file without a declaration, and skips `process.env`
-entirely.
+**`.env.example` now declares all eleven**, with the same comments in longer
+form, so `cp .env.example .env.local` shows an operator the whole contract.
+That closes the routing constraint recorded here in the previous round.
 
 **There is no variable for a credential, and no field to put one in.** The
 initial licensed source needs none; a keyed source is a `Credentials`
@@ -413,6 +413,84 @@ escalation that has not been taken. `server-bootstrap.test.ts` asserts this
 mechanically rather than in prose: no declared name is credential-shaped, and
 the module mentions no `LIBERTY_` name it has not declared, so a second,
 undeclared read cannot hide in the file.
+
+### The schedule became required, and what that costs an existing deployment
+
+PL-0309 gave the adapter a store and a scheduler, and this bootstrap did not
+state a policy. The runtime it built carried no `schedule`, the package read
+that as `policy_not_stated`, and **a configured deployment therefore ran a full
+ingestion pass on every catalog read** — the exact behaviour PL-0309 exists to
+remove, reached through a field that was merely absent. Nothing was broken and
+nothing was logged.
+
+The three schedule variables joined the required set, which means:
+
+- **A deployment that sets `LIBERTY_CATALOG_SOURCE_ID` and none of the three
+  stops being registered.** It becomes a declaration refusal: the startup line
+  names the three missing variables, nothing is registered, and the browse
+  surfaces answer `no_metadata_source_configured` until an operator adds them.
+- **That is a regression for such a deployment, and it is the intended one.**
+  What it loses is one full ingestion pass against a third party per catalog
+  read. The remedy is three lines in the environment, it is named in the log at
+  startup, and the alternative — carrying on silently — is what this corrective
+  exists to stop.
+- **The upgrade is mechanical.** Add the three variables. Nothing else about an
+  existing configuration changes.
+
+**`policy_not_stated` was not deleted and must not be.**
+`CatalogIngestionRuntime.schedule` is still optional, and a runtime that omits
+it still refreshes on every read, because nothing may be described as fresh
+against a bound nobody wrote. The two statements are about different things: the
+*package* keeps an unstated path reachable by name, for a harness, a
+single-pass worker, or an embedder that reads once and exits; the *production
+composition root* declines to take it. A test in `server-bootstrap.test.ts`
+drives both and is what the claim below rests on.
+
+### What the regression measures
+
+`server-bootstrap.test.ts` drives the real `bootstrapCatalogMetadataSource`, the
+real registry, the real adapter, scheduler, store and ingestion pass, and
+substitutes only `fetchImpl` — through the transport parameter the composition
+root already takes. The egress gate, host classification and address pinning in
+front of that call are the real ones. One pass over the scripted source is
+exactly one `fetchImpl` call, so passes and fetches are the same number.
+
+| What is registered | Two reads, one second apart, fresh bound 60 s | `fetchImpl` calls |
+| --- | --- | --- |
+| The bootstrap's runtime, schedule stated | second read `scheduleReason: state_fresh`, `attempted: false`, `servedFromStoredState: true`, same `withheld` and same `observedAt` as the first | **1** |
+| The same runtime with `schedule` removed | both reads `scheduleReason: policy_not_stated`, `attempted: true`, no freshness verdict on either | **2** |
+
+The contrast is the evidence. A single test showing one fetch across two reads
+would also pass if the second read had thrown, been backed off, or never
+happened — so the second read's verdict is asserted to be `state_fresh` rather
+than `backing_off`, and the unscheduled half is asserted to fetch twice. The two
+rows differ in exactly one field.
+
+The second row cannot go through `bootstrapCatalogMetadataSource`, because there
+is no environment the bootstrap will now turn into an unscheduled runtime. It is
+built from the same `catalogRuntimeFor` output with the field removed and
+registered through the same registry.
+
+### What stating a schedule still does not deliver
+
+Precisely three things, each unchanged by this corrective and each still listed
+under [what is NOT closed](#what-is-not-closed):
+
+- **No durability across a restart.** The store behind a registered runtime is
+  `createInMemoryCatalogStore`, held in a `WeakMap` keyed on that runtime. A
+  restart empties it and the next read is a cold start that waits for a full
+  pass. `LIBERTY_CATALOG_FRESH_FOR_MS` governs how often a *running* process
+  goes back to the source; it says nothing about a process that has just
+  started. The bootstrap deliberately supplies no `store`, which is how it says
+  there is no durable implementation to supply.
+- **No background worker.** Nothing in this path has a timer. A pass runs when a
+  read arrives and finds the stored state due, so **a process nobody reads
+  refreshes nothing**, and the first read after an idle period waits. Reads no
+  longer cost a pass each; passes are still driven by reads.
+- **No resume, and therefore no backfill.** Every pass starts at the beginning
+  of the source, so `LIBERTY_CATALOG_MAX_PAGES` still bounds the size of the
+  catalog a reader sees. Resuming the cursor is unsafe against `ingest.ts` as it
+  stands — see the hazard recorded below.
 
 ### What an operator cannot set, and why
 
@@ -1128,29 +1206,22 @@ fail-closed direction. The currently licensed provider declares
    The port is the honest increment: a Postgres implementation is a new file, and
    because every rule about what a pass does to state is in
    `applyPassToSnapshot`, it inherits them rather than re-deciding them.
-3. **A hosted deployment does not state a staleness policy yet, so it still pays
-   a pass per read.** `CatalogIngestionRuntime.schedule` is optional, and absent
-   means `policy_not_stated` — no bound below which an answer is current,
-   therefore nothing may be reused. That is *not* a default chosen on an
-   operator's behalf; it is the absence of the statement that would let anything
-   be cached, and it reproduces the pre-PL-0309 behaviour exactly.
+3. ~~A hosted deployment does not state a staleness policy yet, so it still
+   pays a pass per read.~~ **CLOSED by PL-0309's corrective.**
+   `apps/web/src/lib/server-bootstrap.ts` now reads
+   `LIBERTY_CATALOG_FRESH_FOR_MS`, `LIBERTY_CATALOG_STALE_AFTER_MS` and
+   `LIBERTY_CATALOG_MAX_BACKOFF_MS`, requires all three whenever a source is
+   named, checks them through the package's own
+   `validateCatalogRefreshSchedule`, and states the result on the runtime it
+   registers. A configured deployment reading twice inside its fresh window asks
+   the source **once**; the measurement is in
+   [what the regression measures](#what-the-regression-measures), and the
+   behaviour change for an existing deployment is in
+   [the schedule became required](#the-schedule-became-required-and-what-that-costs-an-existing-deployment).
 
-   **The edit that turns it on is off-surface.**
-   `apps/web/src/lib/server-bootstrap.ts` is the composition root that builds a
-   runtime from the environment, and it was outside PL-0309's `allowedPaths`. It
-   needs two more variables and a `schedule` field on the runtime it constructs:
-
-   | Variable | What it would state |
-   | --- | --- |
-   | `LIBERTY_CATALOG_FRESH_FOR_MS` | Below this age an answer is current, **and** the interval at which a pass becomes due. One number, deliberately. |
-   | `LIBERTY_CATALOG_STALE_AFTER_MS` | At or beyond this age an answer is too old to present as current. |
-   | `LIBERTY_CATALOG_MAX_BACKOFF_MS` | The cap on exponential backoff after consecutive failures. Required by `planNextPassAt` rather than optional: an uncapped exponential reaches "next Tuesday" after a morning of failures. |
-
-   `validateCatalogRefreshSchedule` is exported for that caller, so a transposed
-   policy or a missing cap is refused at configuration time rather than marking
-   everything expired at runtime and presenting as a provider outage. Until the
-   bootstrap edit lands, a hosted deployment still gets the store, the tombstone
-   handling and the read-time re-evaluation — and still pays a pass per read.
+   `policy_not_stated` survives and is still the honest reading for a runtime
+   that omits a policy. What changed is that the production composition root no
+   longer omits one.
 4. **No backfill. Every pass starts at the beginning of the source**, and
    `LIBERTY_CATALOG_MAX_PAGES` therefore still bounds the size of the catalog a
    reader sees. Resuming the cursor is the obvious fix and is **unsafe against
