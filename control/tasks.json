@@ -1742,7 +1742,7 @@
       "id": "PL-0402",
       "priority": "P0",
       "lane": "Backend",
-      "status": "READY",
+      "status": "CLAIMED",
       "title": "Profile model",
       "dependencies": [
         "PL-0405"
@@ -1761,8 +1761,10 @@
         "security-review"
       ],
       "acceptance": "Profiles are modelled above authentication rather than inside the auth library, with the active profile carried alongside the session rather than inside the identity record; profile scoping is present in the first migration rather than retrofitted, because that is the part that is expensive to reverse; profiles can be created and selected with authorization tests",
-      "owner": null,
-      "gateResults": {}
+      "owner": "claude-backend",
+      "gateResults": {},
+      "implementationAgent": "claude-backend",
+      "updatedAt": "2026-09-22T02:22:31.637Z"
     },
     {
       "id": "PL-0403",
@@ -2761,7 +2763,7 @@
       "id": "PL-AI-0002",
       "priority": "P1",
       "lane": "Coordination",
-      "status": "READY",
+      "status": "CLAIMED",
       "title": "GitHub bridge for cross-agent review",
       "dependencies": [
         "PL-AI-0001"
@@ -2781,10 +2783,10 @@
         "security-review"
       ],
       "acceptance": "GitHub becomes the shared state bridge for Claude Desktop and OpenAI review without manual file copying. SCOPE ADDITION 2026-09-21, on gpt-architect's ARCHITECTURE / CI FINDING at f6dba611346ac53d72901f661a2b21cc12e80eac, which ruled the check belongs here rather than in a competing task: CI mechanically detects an UNDECLARED WORKSPACE IMPORT -- a source file in one workspace importing a local @liberty package that its own package.json does not declare in dependencies. THE EXACT DEFECT THIS MUST CATCH, preserved as the regression case: apps/web/src/lib/server-bootstrap.ts imported @liberty/media-inspection/node/pinned-fetch while apps/web/package.json declared seven @liberty packages and not that one. It reached a reviewer because NO EXISTING GATE CAN SEE IT: the import resolves through the root workspace symlink, so typecheck, lint, build and the unit suites were green, and even npm ci --dry-run returned 0 because npm tolerates a link node that already exists. It was found by a human reader, which is not a detection mechanism. Required of the check: it reads each workspace's own manifest rather than the root's; it resolves subpath imports (@liberty/x/node/y declares @liberty/x); it covers test files as well as source, since server-bootstrap.test.ts carried the same undeclared import; and it fails the build rather than warning, because a warning in a green pipeline is how this one survived. A dry-run install against a populated node_modules does NOT satisfy this and must not be offered as the implementation. NOT IN SCOPE: the reverse direction (a declared dependency nothing imports) is a different and much weaker signal, and adding it would make the check noisy enough to be turned off. SECOND SCOPE ADDITION 2026-09-22, on gpt-architect's ruling at cd6f3efd46a75a150206617a2fa6bf747a1c3a5b: 'CI must not rely on typecheck and build racing successfully when typecheck consumes files build writes.' THE DEFECT, verified structurally rather than inferred from a flake: apps/web/tsconfig.json line 15 includes .next/types/**/*.ts; turbo.json's build task declares .next/** as an output; and turbo.json's typecheck task declares dependsOn ['^typecheck'] with NO edge to build. So tsc and next build race on that directory whenever both run in one graph. HOW IT SURFACED, because the shape of the evidence matters: a single @liberty/web#typecheck exit 2 with NO 'error TS' line in the output, which passed on two re-runs of the identical tree. The command that produced it -- npx turbo run typecheck lint build --force -- had been this project's recorded gate invocation for several rounds and had passed every time, which is what a race looks like until it does not. The lead changed its own procedure to three separate invocations, which removes the race from the evidence but NOT from CI. Required: CI must not be able to run the two concurrently in a way that lets a typecheck read a partially written .next/types. The mechanism is the implementer's -- a dependsOn edge from typecheck to build, a separate tsconfig for the check that excludes generated types, or sequencing in the workflow -- but a green run is not evidence the race is gone, so whatever is chosen must be demonstrated by argument from the task graph rather than by re-running until it passes. NOT IN SCOPE: fixing the unrelated pre-existing env:validate warnings. SMALLER AND RELATED, folded in here rather than filed: turbo.json's globalEnv lists none of the LIBERTY_CATALOG_* variables, including the eight predating round 63. Harmless today because they are read at runtime by instrumentation.ts rather than at build time, so it affects only build-cache hashing -- but a variable that is read at build time later and still unlisted would let one cache entry serve builds that meant different values, which is the defect env:validate already warns about for LIBERTY_FIXTURE_MEDIA_ORIGIN.",
-      "owner": null,
+      "owner": "claude-lead",
       "gateResults": {},
       "implementationAgent": "claude-lead",
-      "updatedAt": "2026-08-17T01:53:44.285Z",
+      "updatedAt": "2026-09-22T02:22:31.701Z",
       "implementationBaseSha": "b157a5846d45568f516240f581d6b317a544aa12",
       "notes": "CI finding folded in 2026-09-21 from the PL-0311 round rather than filed as its own task, on the reviewer's explicit instruction not to open a competing task. The lead had reported the gap and declined to file one, on the ground that a new task's surface would collide with this one's scripts/** and .github/** and add board pressure for nothing; the reviewer agreed and assigned it here. CI race folded in 2026-09-22 on the reviewer's explicit ruling to put it here rather than open a competing task, the same disposition the undeclared-workspace-import check got. allowedPaths gained turbo.json and apps/web/tsconfig.json, which the race cannot be fixed without; every other entry is unchanged. Found by the PL-0309 corrective implementer and NOT written off as a flake -- the structural cause was checked at the three declaration sites before it was reported."
     },
@@ -4939,7 +4941,7 @@
       "id": "PL-0711",
       "priority": "P1",
       "lane": "Security",
-      "status": "IN_PROGRESS",
+      "status": "READY",
       "title": "Playback-session candidate wire bounds match StreamCandidate bounds",
       "dependencies": [
         "PL-0708",
@@ -4960,12 +4962,11 @@
         "security-review"
       ],
       "acceptance": "playbackSessionCandidateSchema uses THE SAME AUTHORITATIVE id and providerId limits as the StreamCandidate contract -- the exported MAX_STREAM_CANDIDATE_ID_CHARS and MAX_STREAM_CANDIDATE_PROVIDER_ID_CHARS -- and NOT copied numeric literals. PL-0708 exported those constants for exactly this reason; a copied literal would recreate the defect one layer out, which is the defect this task exists to close. Required: an oversized resolved candidate CANNOT RE-EXPAND ON THE SESSION WIRE after passing through another producer seam, which is the actual risk -- the contract bound governs what a provider may produce, and a second unbounded restatement downstream means the bound stops at the seam; fixture and Wikidata legitimate identifiers remain accepted, because a bound that rejects a real upstream id is an outage rather than a fix; tests cover the EXACT MAXIMUM, MAXIMUM PLUS ONE, and the serialized response, since a bound tested only from above does not prove the boundary is where it is claimed to be; reason and error output does not echo the oversized value; and NO SECOND INDEPENDENT BOUND VOCABULARY IS INTRODUCED. Note while working: playbackSessionCandidateSchema also carries unbounded uri and mimeType. They are not named in the reviewer's acceptance and are not in scope by default -- if they warrant bounds, say so and let the reviewer rule rather than adding them quietly.",
-      "notes": "Created 2026-09-19 on gpt-architect's round-50 direction, reviewing at f83bc65015851b97ff9af86249b144cd57ea8047. Filed from the PL-0708 approval. apps/web's playbackSessionCandidateSchema (session/contract.ts, around lines 258-262) independently restates id and providerId as unbounded strings and does not derive from streamCandidateSchema.",
-      "owner": "gpt-architect",
+      "notes": "Created 2026-09-19 on gpt-architect's round-50 direction, reviewing at f83bc65015851b97ff9af86249b144cd57ea8047. Filed from the PL-0708 approval. apps/web's playbackSessionCandidateSchema (session/contract.ts, around lines 258-262) independently restates id and providerId as unbounded strings and does not derive from streamCandidateSchema. RESERVATION RELEASED 2026-09-22 ON gpt-architect's EXPLICIT DISPOSITION, relayed by the human commander. THIS IS NOT AN APPROVAL OR A REJECTION OF PR #33 and the implementation is not abandoned: the reviewer compared the PR head against the integrated branch, found the histories diverged, and released the reservation specifically to restore parallel work while the isolated PR is reconciled. PR #33 stays open as the implementation artifact and is to be rebased or rebuilt against current HEAD, with its actual test surface reconciled against this task definition, before review. THE RELEASE CLEARED implementationBaseSha 20edec3aa3f33dbd58aa405d1210f56ce54c207f, with baseDecisionReason 'no-surface-change' and preservedBaseSurfaceChangedFileCount 0 -- PL-AI-0009's rule firing on its own terms, because nothing under the reviewed surface changed between that base and HEAD. A FURTHER FINDING, MEASURED BY THE LEAD AGAINST THE REAL PR HEAD RATHER THAN TAKEN ON RELAY. refs/pull/33/head was fetched (reads pass the proxy; only writes are refused) and resolves to 6d2fbd63db1e4a58f6b2a6311c3f9df243ee8e17. Every figure the reviewer gave is confirmed: 5 commits ahead, 16 behind e78a840, and exactly four changed files, of which e2e/tests/playback-session.desktop.api.spec.ts is outside this task's declared allowedPaths. THE MERGE BASE IS 33195d593695618b779ab6c97a50817a2694e8df, NOT 20edec3, AND 20edec3 IS NOT AN ANCESTOR OF THE PR AT ALL -- verified with merge-base --is-ancestor, which fails. So the base this task recorded at claim time was not merely narrow, it sat on a DIFFERENT LINE OF HISTORY from the work it claimed to cover: an ordinary start captured the integrated branch's HEAD while the implementation was being written on a branch that had left at 33195d5. That is the provenance defect class that invalidated PL-0205, PL-0401, PL-0601 and PL-0703, caught here BEFORE a verdict was ever bound to it rather than after. It is already harmless because the release cleared the field, and it is recorded so the reconciliation does not rediscover it: WHEN THIS TASK IS RE-CLAIMED, THE TRUE LOWER BOUND IS 33195d5, and if the PR is rebased onto current HEAD first then the base is whatever the rebase lands on -- either way it must be determined from history at that moment and not copied from here. The five PR commits are b480887, 5e17cf4, 968a8ee, 21f9ef9 and 6d2fbd6.",
+      "owner": null,
       "gateResults": {},
       "implementationAgent": "gpt-architect",
-      "updatedAt": "2026-09-20T12:55:49.924Z",
-      "implementationBaseSha": "20edec3aa3f33dbd58aa405d1210f56ce54c207f"
+      "updatedAt": "2026-09-22T02:19:55.897Z"
     },
     {
       "id": "PL-AI-0008",

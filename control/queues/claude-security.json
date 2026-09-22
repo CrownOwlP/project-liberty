@@ -1,9 +1,41 @@
 {
-  "generatedAt": "2026-09-22T02:14:47.152Z",
+  "generatedAt": "2026-09-22T02:22:31.715Z",
   "agent": "claude-security",
   "executionAvailable": true,
   "assigned": [],
   "review": [],
   "reservedExternal": [],
-  "recommended": []
+  "recommended": [
+    {
+      "id": "PL-0711",
+      "priority": "P1",
+      "lane": "Security",
+      "status": "READY",
+      "title": "Playback-session candidate wire bounds match StreamCandidate bounds",
+      "dependencies": [
+        "PL-0708",
+        "PL-0501"
+      ],
+      "allowedPaths": [
+        "apps/web/src/app/api/v1/playback/session/**",
+        "docs/API_CONTRACTS.md"
+      ],
+      "reviewDependencies": [
+        "packages/contracts/src/domains/playback.ts"
+      ],
+      "preferredAgent": "claude-security",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "security-review"
+      ],
+      "acceptance": "playbackSessionCandidateSchema uses THE SAME AUTHORITATIVE id and providerId limits as the StreamCandidate contract -- the exported MAX_STREAM_CANDIDATE_ID_CHARS and MAX_STREAM_CANDIDATE_PROVIDER_ID_CHARS -- and NOT copied numeric literals. PL-0708 exported those constants for exactly this reason; a copied literal would recreate the defect one layer out, which is the defect this task exists to close. Required: an oversized resolved candidate CANNOT RE-EXPAND ON THE SESSION WIRE after passing through another producer seam, which is the actual risk -- the contract bound governs what a provider may produce, and a second unbounded restatement downstream means the bound stops at the seam; fixture and Wikidata legitimate identifiers remain accepted, because a bound that rejects a real upstream id is an outage rather than a fix; tests cover the EXACT MAXIMUM, MAXIMUM PLUS ONE, and the serialized response, since a bound tested only from above does not prove the boundary is where it is claimed to be; reason and error output does not echo the oversized value; and NO SECOND INDEPENDENT BOUND VOCABULARY IS INTRODUCED. Note while working: playbackSessionCandidateSchema also carries unbounded uri and mimeType. They are not named in the reviewer's acceptance and are not in scope by default -- if they warrant bounds, say so and let the reviewer rule rather than adding them quietly.",
+      "notes": "Created 2026-09-19 on gpt-architect's round-50 direction, reviewing at f83bc65015851b97ff9af86249b144cd57ea8047. Filed from the PL-0708 approval. apps/web's playbackSessionCandidateSchema (session/contract.ts, around lines 258-262) independently restates id and providerId as unbounded strings and does not derive from streamCandidateSchema. RESERVATION RELEASED 2026-09-22 ON gpt-architect's EXPLICIT DISPOSITION, relayed by the human commander. THIS IS NOT AN APPROVAL OR A REJECTION OF PR #33 and the implementation is not abandoned: the reviewer compared the PR head against the integrated branch, found the histories diverged, and released the reservation specifically to restore parallel work while the isolated PR is reconciled. PR #33 stays open as the implementation artifact and is to be rebased or rebuilt against current HEAD, with its actual test surface reconciled against this task definition, before review. THE RELEASE CLEARED implementationBaseSha 20edec3aa3f33dbd58aa405d1210f56ce54c207f, with baseDecisionReason 'no-surface-change' and preservedBaseSurfaceChangedFileCount 0 -- PL-AI-0009's rule firing on its own terms, because nothing under the reviewed surface changed between that base and HEAD. A FURTHER FINDING, MEASURED BY THE LEAD AGAINST THE REAL PR HEAD RATHER THAN TAKEN ON RELAY. refs/pull/33/head was fetched (reads pass the proxy; only writes are refused) and resolves to 6d2fbd63db1e4a58f6b2a6311c3f9df243ee8e17. Every figure the reviewer gave is confirmed: 5 commits ahead, 16 behind e78a840, and exactly four changed files, of which e2e/tests/playback-session.desktop.api.spec.ts is outside this task's declared allowedPaths. THE MERGE BASE IS 33195d593695618b779ab6c97a50817a2694e8df, NOT 20edec3, AND 20edec3 IS NOT AN ANCESTOR OF THE PR AT ALL -- verified with merge-base --is-ancestor, which fails. So the base this task recorded at claim time was not merely narrow, it sat on a DIFFERENT LINE OF HISTORY from the work it claimed to cover: an ordinary start captured the integrated branch's HEAD while the implementation was being written on a branch that had left at 33195d5. That is the provenance defect class that invalidated PL-0205, PL-0401, PL-0601 and PL-0703, caught here BEFORE a verdict was ever bound to it rather than after. It is already harmless because the release cleared the field, and it is recorded so the reconciliation does not rediscover it: WHEN THIS TASK IS RE-CLAIMED, THE TRUE LOWER BOUND IS 33195d5, and if the PR is rebased onto current HEAD first then the base is whatever the rebase lands on -- either way it must be determined from history at that moment and not copied from here. The five PR commits are b480887, 5e17cf4, 968a8ee, 21f9ef9 and 6d2fbd6.",
+      "owner": null,
+      "gateResults": {},
+      "implementationAgent": "gpt-architect",
+      "updatedAt": "2026-09-22T02:19:55.897Z"
+    }
+  ]
 }

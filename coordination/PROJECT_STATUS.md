@@ -1,15 +1,15 @@
 # Project Liberty - Project Status
 
-> Generated 2026-09-22T02:14:47.151Z from the AI control plane.
+> Generated 2026-09-22T02:22:31.713Z from the AI control plane.
 
 **Overall completion:** 49/66 executable tasks (74%)
 
 ## Status summary
 
 - **BACKLOG:** 6
-- **READY:** 4
-- **CLAIMED:** 0
-- **IN_PROGRESS:** 1
+- **READY:** 3
+- **CLAIMED:** 2
+- **IN_PROGRESS:** 0
 - **REVIEW:** 0
 - **BLOCKED:** 6
 - **DONE:** 49
@@ -20,7 +20,7 @@
 - **M0 — AI Engineering System + Repository Foundation:** COMPLETE, 4/4 (100%)
 - **M1 — Core Discovery Experience:** COMPLETE, 3/3 (100%)
 - **M2 — Media Resolution + Provider Foundation:** COMPLETE, 6/6 (100%)
-- **M3 — Identity + Personal State:** NOT_STARTED, 0/4 (0%), 1 blocked
+- **M3 — Identity + Personal State:** IN_PROGRESS, 0/4 (0%), 1 blocked
 - **M4 — Playback Vertical Slice:** IN_PROGRESS, 3/6 (50%)
 - **M5 — Live + Intelligence Boundaries:** NOT_STARTED, 0/2 (0%), 1 blocked
 - **M6 — Shared-Agent Automation Bridge:** IN_PROGRESS, 1/3 (33%)
@@ -29,11 +29,12 @@
 
 ## Active work
 
-- **PL-0711** [IN_PROGRESS] Playback-session candidate wire bounds match StreamCandidate bounds — owner: gpt-architect
+- **PL-0402** [CLAIMED] Profile model — owner: claude-backend
+- **PL-AI-0002** [CLAIMED] GitHub bridge for cross-agent review — owner: claude-lead
 
 ## Dispatch classification
 
-- **READY_AND_EXECUTABLE:** 4
+- **READY_AND_EXECUTABLE:** 3
 - **READY_BUT_EXTERNAL:** 0
 - **BLOCKED:** 6
 - **BACKLOG (dependency-gated):** 6
@@ -57,10 +58,10 @@ No READY work is waiting on an external agent lane.
 
 ## Agent capacity
 
-- **gpt-architect:** 1/6 active (external lane; not locally executable)
-- **claude-lead:** 0/2 active
+- **gpt-architect:** 0/6 active (external lane; not locally executable)
+- **claude-lead:** 1/2 active
 - **claude-frontend:** 0/2 active
-- **claude-backend:** 0/2 active
+- **claude-backend:** 1/2 active
 - **claude-media:** 0/2 active
 - **claude-test:** 0/1 active
 - **claude-security:** 0/1 active

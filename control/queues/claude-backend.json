@@ -1,16 +1,13 @@
 {
-  "generatedAt": "2026-09-22T02:14:47.152Z",
+  "generatedAt": "2026-09-22T02:22:31.714Z",
   "agent": "claude-backend",
   "executionAvailable": true,
-  "assigned": [],
-  "review": [],
-  "reservedExternal": [],
-  "recommended": [
+  "assigned": [
     {
       "id": "PL-0402",
       "priority": "P0",
       "lane": "Backend",
-      "status": "READY",
+      "status": "CLAIMED",
       "title": "Profile model",
       "dependencies": [
         "PL-0405"
@@ -29,8 +26,13 @@
         "security-review"
       ],
       "acceptance": "Profiles are modelled above authentication rather than inside the auth library, with the active profile carried alongside the session rather than inside the identity record; profile scoping is present in the first migration rather than retrofitted, because that is the part that is expensive to reverse; profiles can be created and selected with authorization tests",
-      "owner": null,
-      "gateResults": {}
+      "owner": "claude-backend",
+      "gateResults": {},
+      "implementationAgent": "claude-backend",
+      "updatedAt": "2026-09-22T02:22:31.637Z"
     }
-  ]
+  ],
+  "review": [],
+  "reservedExternal": [],
+  "recommended": []
 }
