@@ -186,19 +186,30 @@ jobs:
           # that does not match the install about to run, and `npm ci` would
           # paper over it.
           cache-dependency-path: package-lock.json
-      # These five run before install: they depend only on Node builtins, so
+      # These six run before install: they depend only on Node builtins, so
       # a dependency problem cannot mask a control-plane, structure, env-validator
-      # or dispatcher failure.
+      # or dispatcher failure. That ordering is load-bearing for the structure
+      # step in particular, which now also checks that every workspace declares
+      # the packages it imports -- a check on the correctness of dependency
+      # DECLARATIONS must not need a successful dependency INSTALL in order to run.
       #
-      # The five are now a COMPLETE mirror of `npm run test:scripts` -- its three
-      # scripts -- plus the two validators, split into named steps rather than
-      # invoked through the npm alias. That split is on purpose: separate steps
-      # give independently readable red/green marks instead of one. It is also a
-      # drift surface, so, concretely: `test:scripts` is
-      # `test-validate-env.mjs && test-ai-control-plane.mjs &&
-      # cloud/test-dispatcher.mjs`, all three are below, and a FOURTH script added
+      # The four suites plus the two validators are a COMPLETE mirror of
+      # `npm run test:scripts`, split into named steps rather than invoked through
+      # the npm alias. That split is on purpose: separate steps give independently
+      # readable red/green marks instead of one. It is also a drift surface, so,
+      # concretely: `test:scripts` is `test-validate-env.mjs &&
+      # test-ai-control-plane.mjs && test-validate-repo.mjs &&
+      # cloud/test-dispatcher.mjs`, all four are below, and a FIFTH script added
       # to it must be added here too. Same rule as the @cache-key variables above,
       # same failure if forgotten.
+      #
+      # THE DRIFT THIS COMMENT WARNS ABOUT HAD ALREADY HAPPENED when PL-AI-0002
+      # read it. The alias listed four scripts, this block said three and called
+      # itself a complete mirror, and `scripts/test-validate-repo.mjs` -- the
+      # suite behind the agent-instruction-file control -- had no step here at
+      # all. It ran on somebody's laptop and nowhere else. The step is below now.
+      # Worth leaving on the record: the note that a list has to be kept in step
+      # by hand did not keep it in step, it only made the gap legible afterwards.
       #
       # This block used to end by saying the dispatcher suite was deliberately
       # NOT in the alias, so that the list did not read as a complete mirror when
@@ -209,8 +220,26 @@ jobs:
         run: node scripts/ai-control-plane.mjs validate
       - name: Test AI control plane
         run: node scripts/test-ai-control-plane.mjs
+      # Three checks, one step, and deliberately not three steps.
+      #
+      # `validate-repo.mjs` calls `validate-workspace-deps.mjs` (every workspace
+      # must declare the packages its own files import, test files included) and
+      # `validate-turbo-graph.mjs` (no task may read a directory another task in
+      # its package declares as an output without waiting for it). Both also run
+      # as standalone scripts and both print their own failure text, which names
+      # the workspace, the file, the specifier and the remedy -- so a separate
+      # step here would re-run the same check on the same runner in the same job
+      # and buy a step name. That is the trade this file already weighed and
+      # rejected for the transport suite further down, and the answer is the same.
       - name: Validate repository structure
         run: node scripts/validate-repo.mjs
+      # Runs the instruction-surface suite AND, delegated from its last block,
+      # the two suites for the checks named above -- the root `package.json` could
+      # not be edited in the round that wrote them, so `test-validate-repo.mjs` is
+      # what invokes them until `test:scripts` names them directly. See the block
+      # at the bottom of that file.
+      - name: Test repository structure validator
+        run: node scripts/test-validate-repo.mjs
       - name: Test environment validator
         run: node scripts/test-validate-env.mjs
       # Now part of `npm run test:scripts`. It was not, for a scope reason rather

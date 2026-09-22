@@ -282,7 +282,112 @@ test("planting an unexpected AGENTS.md fails validation, and removing it restore
   assert.match(green.stdout, /validation passed/);
 });
 
+// ---------------------------------------------------------------------------
+// The two build-configuration checks are wired INTO this validator, and a
+// reviewer has to be able to see that they fire through it rather than only in
+// their own suites. Same method as the test above: plant the defect in the real
+// tree, watch the real entry point go red, remove it, watch it go green.
+//
+// The fixture is a whole throwaway workspace rather than an edit to an existing
+// manifest, because an interrupted run must not be able to leave a tracked
+// package.json broken on disk. A stray directory is obvious and harmless; a
+// silently de-declared dependency is the defect this all exists for.
+// ---------------------------------------------------------------------------
+
+test("an undeclared workspace import fails `repo:validate`, in --quick too, and removing it restores the pass", () => {
+  const planted = path.join(REPO, "packages", "zz-validate-repo-fixture");
+  assert.ok(!fs.existsSync(planted), "fixture path must not already exist");
+
+  const before = runValidator();
+  assert.equal(before.status, 0, `baseline must be green, got:\n${before.stderr}`);
+
+  try {
+    fs.mkdirSync(path.join(planted, "src"), { recursive: true });
+    fs.writeFileSync(
+      path.join(planted, "package.json"),
+      JSON.stringify({ name: "@liberty/zz-validate-repo-fixture", version: "0.1.0", private: true }, null, 2),
+      "utf8"
+    );
+    fs.writeFileSync(
+      path.join(planted, "src", "index.ts"),
+      'import { nodePinnedFetch } from "@liberty/media-inspection/node/pinned-fetch";\nexport { nodePinnedFetch };\n',
+      "utf8"
+    );
+
+    const red = runValidator();
+    assert.equal(red.status, 1, "validation must FAIL, not warn, on an import no manifest declares");
+    assert.match(red.stderr, /undeclared dependency: @liberty\/zz-validate-repo-fixture imports "@liberty\/media-inspection"/);
+    assert.doesNotMatch(red.stdout, /validation passed/);
+
+    const redQuick = runValidator(["--quick"]);
+    assert.equal(redQuick.status, 1, "--quick is wired into a hook and is where a mid-session import gets caught");
+    assert.match(redQuick.stderr, /undeclared dependency/);
+  } finally {
+    fs.rmSync(planted, { recursive: true, force: true });
+  }
+
+  const green = runValidator();
+  assert.equal(green.status, 0, `removal must restore the pass, got:\n${green.stderr}`);
+});
+
+test("the turbo graph check fires through `repo:validate` as well", () => {
+  // Same wiring question, cheaper to ask: the check is a pure function of
+  // turbo.json and the tsconfigs, so removing the edge and running the real
+  // entry point is enough. turbo.json is restored from the bytes read here.
+  const turboPath = path.join(REPO, "turbo.json");
+  const original = fs.readFileSync(turboPath, "utf8");
+  try {
+    const turbo = JSON.parse(original);
+    delete turbo.tasks["@liberty/web#typecheck"];
+    fs.writeFileSync(turboPath, `${JSON.stringify(turbo, null, 2)}\n`, "utf8");
+
+    const red = runValidator();
+    assert.equal(red.status, 1, "removing the ordering edge must FAIL validation");
+    assert.match(red.stderr, /racing tasks: @liberty\/web#typecheck/);
+  } finally {
+    fs.writeFileSync(turboPath, original, "utf8");
+  }
+
+  const green = runValidator();
+  assert.equal(green.status, 0, `restoring turbo.json must restore the pass, got:\n${green.stderr}`);
+  assert.equal(fs.readFileSync(turboPath, "utf8"), original, "turbo.json must be byte-identical afterwards");
+});
+
 fs.rmSync(temp, { recursive: true, force: true });
+
+// ---------------------------------------------------------------------------
+// The sibling suites for the two checks `validate-repo.mjs` now calls.
+//
+// They are separate files because they are separate checks and a reviewer
+// should get a separate red mark for each. They are RUN FROM HERE because
+// `package.json` -- and therefore the `test:scripts` alias that would name them
+// -- was outside PL-AI-0002's allowedPaths, and a suite no entry point invokes
+// is the exact thing the comment at the top of this file warns about: written,
+// committed, and executed by nothing.
+//
+// This has happened before and the record is in `.github/workflows/ci.yml`:
+// `scripts/cloud/test-dispatcher.mjs` was written in a round that could not edit
+// `package.json` either, was carried by a CI step alone, and was folded into the
+// alias afterwards. Both suites also have their own CI steps, so this delegation
+// is not their only home -- it is what makes a LOCAL `npm run test:scripts`
+// cover them today.
+//
+// THE FOLLOW-UP, precisely, so it is not rediscovered: add
+// `&& node scripts/test-validate-workspace-deps.mjs && node
+// scripts/test-validate-turbo-graph.mjs` to `test:scripts` in package.json and
+// delete this block. Until then, leaving it out would be the quieter choice and
+// the wrong one.
+// ---------------------------------------------------------------------------
+
+for (const suite of ["scripts/test-validate-workspace-deps.mjs", "scripts/test-validate-turbo-graph.mjs"]) {
+  const result = spawnSync(process.execPath, [path.resolve(suite)], { cwd: REPO, encoding: "utf8" });
+  if (result.status === 0) {
+    process.stdout.write(result.stdout);
+    passed += 1;
+  } else {
+    failures.push(`${suite} exited ${result.status}:\n${result.stdout}${result.stderr}`);
+  }
+}
 
 if (failures.length) {
   console.error(`validate-repo tests FAILED (${passed} passed, ${failures.length} failed):`);

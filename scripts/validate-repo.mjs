@@ -2,6 +2,9 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
+import { checkWorkspaceDependencies, listWorkspaceDirectories } from "./validate-workspace-deps.mjs";
+import { checkTurboGraph } from "./validate-turbo-graph.mjs";
+
 const required = [
   "README.md",
   "AGENTS.md",
@@ -44,6 +47,14 @@ const required = [
   "scripts/validate-env.mjs",
   "scripts/test-validate-env.mjs",
   "scripts/test-validate-repo.mjs",
+  // The two build-configuration validators and their suites. Both are called
+  // from `main()` below, so deleting one is already a crash rather than a quiet
+  // pass; the suites are not imported from anywhere, which is exactly the state
+  // this list exists to make impossible.
+  "scripts/validate-workspace-deps.mjs",
+  "scripts/test-validate-workspace-deps.mjs",
+  "scripts/validate-turbo-graph.mjs",
+  "scripts/test-validate-turbo-graph.mjs",
   // The runtime half of the same contract. `apps/web`'s dev and start scripts
   // invoke it by path, so losing it does not degrade anything -- it breaks
   // `npm run dev` and `npm run start` outright, with a module-resolution error
@@ -258,6 +269,30 @@ function main() {
   // run into a hook; a control that only fires in the slow path would not see
   // the file until after the session that wrote it had finished using it.
   errors.push(...checkInstructionFiles(root));
+
+  /*
+   * The build configuration must describe the code it builds. Both of these run
+   * in --quick as well, for the same reason the instruction scan does: they
+   * catch something an agent introduces MID-SESSION -- an import added without
+   * the matching manifest line, a tsconfig pointed at a directory another task
+   * writes -- and a control that only fires in the slow path would not see it
+   * until after the session that wrote it had finished.
+   *
+   * Both cost together about a quarter of a second, and neither touches
+   * node_modules, so this stays ahead of `npm ci` in CI like everything above.
+   *
+   * They throw rather than return errors when the repository is shaped in a way
+   * they cannot read -- an unexpandable workspace glob, an unparseable tsconfig.
+   * That is deliberate on their side and must not be swallowed here: a validator
+   * that cannot see part of the tree has to say so, not report a pass over the
+   * part it could see.
+   */
+  try {
+    errors.push(...checkWorkspaceDependencies(root));
+    errors.push(...checkTurboGraph(root, listWorkspaceDirectories));
+  } catch (error) {
+    errors.push(`build configuration could not be validated: ${error.message}`);
+  }
 
   if (!quick) {
     const taskDoc = JSON.parse(fs.readFileSync(path.join(root, "control/tasks.json"), "utf8"));

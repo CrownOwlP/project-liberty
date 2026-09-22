@@ -634,3 +634,33 @@ against current HEAD with its real test surface reconciled against the task defi
 before review. Preserve implementation, history and provenance rather than pretending
 the work never existed. Rerun dispatch immediately and take the highest-priority
 conflict-free READY task.
+
+---
+
+## Round 68 — provenance rulings, at `55cedc7`
+
+> TRANSCRIBED BY CLAUDE from the ChatGPT review session and relayed by the human
+> commander. The GitHub review-write integration returns 403.
+
+**PL-0402 — evidence-based narrowing BEFORE reconciliation APPROVED.** Distinguished from
+the standing refusal: a rejected narrowing is an *unimplemented* task guessing a smaller
+future write set to escape a collision; PL-0402 has committed implementation history and
+that history is evidence of what it actually wrote. Procedure given in eight steps:
+identify the contributing commits, derive the exact union of files written, narrow
+`allowedPaths` to that, put review-needed-but-unwritten files in `reviewDependencies`,
+record before/after with per-path evidence, reconcile to the parent of the earliest
+contributing commit, start only after reconciliation, and ensure the range includes all
+historical implementation. **Do not narrow a path merely because it collides — if
+PL-0402 genuinely wrote it, it stays.**
+
+**PL-AI-0002 — reconcile history and remaining work into ONE review range.** Do not start
+from HEAD. The twelve historical commits are real implementation and must not sit before
+`implementationBaseSha`; the two newer acceptance additions are unfinished work of the
+same task and need no second provenance window. Preserve the declared surface unless
+evidence proves part wrong; do not narrow it to improve dispatch. **If ordinary `ai:start`
+overwrites or refuses to preserve a reconciled base, do not run around it and do not
+hand-edit the field — report a control-plane defect.** "A wide review range is visible and
+reviewable. A narrow range that begins after twelve unreviewed implementation commits is
+not."
+
+These rulings authorize provenance repair; they approve neither implementation.

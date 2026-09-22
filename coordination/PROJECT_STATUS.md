@@ -1,6 +1,6 @@
 # Project Liberty - Project Status
 
-> Generated 2026-09-22T02:22:31.713Z from the AI control plane.
+> Generated 2026-09-22T03:28:44.372Z from the AI control plane.
 
 **Overall completion:** 49/66 executable tasks (74%)
 
@@ -8,9 +8,9 @@
 
 - **BACKLOG:** 6
 - **READY:** 3
-- **CLAIMED:** 2
-- **IN_PROGRESS:** 0
-- **REVIEW:** 0
+- **CLAIMED:** 0
+- **IN_PROGRESS:** 1
+- **REVIEW:** 1
 - **BLOCKED:** 6
 - **DONE:** 49
 - **CANCELED:** 0
@@ -29,8 +29,8 @@
 
 ## Active work
 
-- **PL-0402** [CLAIMED] Profile model — owner: claude-backend
-- **PL-AI-0002** [CLAIMED] GitHub bridge for cross-agent review — owner: claude-lead
+- **PL-0402** [IN_PROGRESS] Profile model — owner: claude-backend
+- **PL-AI-0002** [REVIEW] GitHub bridge for cross-agent review — owner: claude-lead
 
 ## Dispatch classification
 

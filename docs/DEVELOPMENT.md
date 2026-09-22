@@ -607,8 +607,8 @@ to be added to the workflow too.
 | --- | --- |
 | `npm install` | `npm ci --no-audit --no-fund` — strictly from the lockfile, and it fails if the lockfile disagrees with `package.json` |
 | `npm run ai:validate` | same, before install (Node builtins only, so a dependency problem cannot mask it) |
-| `npm run test:scripts` | both halves, as separate steps: `test-validate-env.mjs` and `test-ai-control-plane.mjs` |
-| `npm run repo:validate` | same, before install |
+| `npm run test:scripts` | all four of its scripts, as separate steps: `test-validate-env.mjs`, `test-ai-control-plane.mjs`, `test-validate-repo.mjs` and `cloud/test-dispatcher.mjs` |
+| `npm run repo:validate` | same, before install — and it now carries the two build-configuration checks below |
 | `npm run env:validate` | **stricter**: `--scope ci`, which turns an unset `@cache-key` variable and a runtime newer than `.nvmrc` from warnings into failures |
 | `npm run lint` / `typecheck` / `test` / `build` | same |
 | `e2e` typecheck | its own job: `npm ci --ignore-scripts` in `e2e/`, then `npm run typecheck` |
@@ -625,6 +625,111 @@ Where CI still differs, deliberately:
 - **`e2e/package-lock.json` is not covered by Dependabot.** `.github/dependabot.yml`
   watches `/` only. Now that CI installs from that lockfile, a stale entry there
   is a CI input nothing updates.
+
+### The build configuration must describe the build
+
+Two checks run inside `npm run repo:validate`, which means they also run in the
+`.claude/settings.json` quick hook and in CI before `npm ci`. Both are structural
+— they read text files and nothing else — and together they cost about a quarter
+of a second.
+
+**`scripts/validate-workspace-deps.mjs` — every workspace declares what it
+imports.** `apps/web/src/lib/server-bootstrap.ts` imported
+`@liberty/media-inspection/node/pinned-fetch` while `apps/web/package.json`
+declared seven `@liberty` packages and not that one, and its test file carried
+the same import. Nothing went red. npm hoists every workspace into the root
+`node_modules` as a symlink, so the package is on the resolution path of every
+file in the repository whether or not the importing workspace asked for it:
+`tsc`, `eslint`, `next build` and both vitest suites all resolved it, and
+`npm ci --dry-run` returned 0 because npm tolerates a link node that already
+exists. A human reading a diff found it.
+
+The check reads **each workspace's own manifest**, never the root's — resolution
+through the root is the mechanism that hid the defect, so accepting a root
+declaration would encode the bug as the rule. It resolves subpath imports
+(`@liberty/x/node/y` needs `@liberty/x`), it scans **test files**, and it exits
+non-zero. A dry-run install is not an acceptable substitute and the script says
+why at length: the workspace link exists because the package is a workspace, not
+because anyone depends on it, so no install-shaped check can have an opinion
+here. The reverse direction — a declared dependency nothing imports — is
+deliberately not checked; it is a weak signal and a noisy check gets switched
+off, taking the direction that matters with it.
+
+**`scripts/validate-turbo-graph.mjs` — nothing reads what another task is
+writing.** `npx turbo run typecheck lint build --force` failed once with
+`@liberty/web#typecheck` exit 2 and **no `error TS` line**, then passed twice on
+the identical tree. Three static facts explain it: `apps/web/tsconfig.json`
+includes `.next/types/**/*.ts`, turbo's `build` declares `.next/**` as an output,
+and `typecheck` declared `dependsOn: ["^typecheck"]` with no edge to `build`. So
+`tsc` read a directory `next build` was concurrently emptying and refilling.
+
+`turbo.json` now carries a package-scoped `"@liberty/web#typecheck"` with
+`dependsOn: ["^typecheck", "build"]`. Package-scoped because exactly one
+workspace has the coupling; the other ten packages' typechecks are unchanged.
+The check generalises the rule rather than restating the edge: for every task
+whose command compiles against a tsconfig, and every other task in its package
+whose declared outputs contain a directory that tsconfig reads, the reader must
+depend on the writer.
+
+Two alternatives were rejected. Excluding `.next/types/**/*.ts` from the tsconfig
+does not survive: `writeConfigurationDefaults` in Next pushes its own type globs
+back into `include` and rewrites the file on every `next dev` and `next build`.
+The variant that keeps the glob in `include` and adds it to `exclude` does
+survive, and costs real coverage — `.next/types/validator.ts` is the only
+mechanical check that this app's page, layout and route-handler exports still
+match the router's contract, and both `tsc` and `next build` read the same
+tsconfig, so excluding it removes that check from both.
+
+The edge is not free. `@liberty/web#typecheck` now waits on
+`@liberty/web#build`. In CI that is close to free — Typecheck and Build are
+already separate steps in one job, so the work moves earlier and Build becomes a
+cache hit — and a warm local cache makes it a restore. The bill lands on
+`--force`, which rebuilds inside the typecheck invocation and again inside the
+build invocation. That is the right trade: this gate was wrong once already, and
+**a green run is not evidence a race is gone.** The two clean re-runs are the
+proof of that. The evidence is `npx turbo run typecheck lint build --dry=json`,
+where `@liberty/web#typecheck` now lists `@liberty/web#build` among its
+dependencies, and `scripts/test-validate-turbo-graph.mjs`, which fails if the
+edge is removed.
+
+### Why `LIBERTY_CATALOG_*` is not in `globalEnv`
+
+`turbo.json`'s `globalEnv` lists none of the eleven `LIBERTY_CATALOG_*`
+variables. That was examined and left alone, which is a decision rather than an
+oversight.
+
+They are read at **runtime**, by `apps/web/src/lib/server-bootstrap.ts` under
+`apps/web/src/instrumentation.ts`'s `NEXT_RUNTIME === "nodejs"` guard. Nothing
+in the build path reads them — `apps/web/next.config.ts` holds exactly one
+`process.env` read, `LIBERTY_BUILD_TARGET`, and that one **is** in `globalEnv`.
+So their absence affects only cache hashing, and today there is no build output
+for a cache entry to describe wrongly.
+
+Adding them is not the free correctness improvement it looks like:
+
+- `@cache-key` in `.env.example` means "listed in `globalEnv`", and
+  `scripts/validate-env.mjs` refuses `@cache-key` without `@default`. All eleven
+  are `@optional` with no default, so annotating them truthfully fails
+  validation, and adding them to `globalEnv` **without** the annotation leaves
+  two declarations of the same fact disagreeing with nothing to notice.
+- `validate-env.mjs --scope ci` fails on an unset `@cache-key` variable, so CI
+  would have to set all eleven in the job `env:`. `LIBERTY_CATALOG_SOURCE_ID` is
+  the on-switch — set it and every other variable in the section becomes
+  required at startup — so that is CI configuring a live licensed metadata
+  source in order to satisfy a cache annotation.
+- The gain today is negative: eleven more names in the global hash, invalidating
+  every cache entry whenever any of them changes, for variables no build reads.
+
+The residual risk is real and worth naming: if one of these is later read at
+build time and is still unlisted, one cache entry can serve builds that meant
+different values. That is the defect `env:validate` already warns about for
+`LIBERTY_FIXTURE_MEDIA_ORIGIN`. **The rule to apply is the one already written
+above this section:** a variable that becomes a build-time read needs a
+`@cache-key` annotation, a `@default`, a `globalEnv` entry and a line in the CI
+job `env:` — four edits, and `.env.example` is where the first two go. Nothing
+mechanically enforces that chain today; a check that did would have to decide
+what "read at build time" means, and the honest scope for it is
+`apps/web/next.config.ts` and its import graph.
 
 ### The transport suite
 
@@ -697,3 +802,9 @@ PL-0201 implement playback scoring baseline
 - Do not add two libraries that solve the same problem without an ADR.
 - After any dependency change, re-run `node scripts/validate-env.mjs`: a stale
   `node_modules` and a fresh lockfile is exactly the state it exists to catch.
+- Declare a new import in **the importing workspace's own** `package.json`, not
+  the root's. A workspace package resolves through the root `node_modules` link
+  whether or not you declare it, so nothing else will object;
+  `npm run repo:validate` will. Add the manifest line and regenerate the
+  lockfile with `npm install --package-lock-only` in the same change — the line
+  and the lockfile edge are one fact, and either alone is the disagreement.

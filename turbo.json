@@ -39,6 +39,10 @@
       "dependsOn": ["^typecheck"],
       "outputs": []
     },
+    "@liberty/web#typecheck": {
+      "dependsOn": ["^typecheck", "build"],
+      "outputs": []
+    },
     "test": {
       "dependsOn": ["^build"],
       "outputs": ["coverage/**"]
