@@ -1,16 +1,16 @@
 # Project Liberty - Project Status
 
-> Generated 2026-09-22T10:25:58.989Z from the AI control plane.
+> Generated 2026-09-22T22:30:05.791Z from the AI control plane.
 
-**Overall completion:** 56/67 executable tasks (84%)
+**Overall completion:** 56/68 executable tasks (82%)
 
 ## Status summary
 
 - **BACKLOG:** 0
-- **READY:** 5
+- **READY:** 4
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 0
-- **REVIEW:** 0
+- **REVIEW:** 2
 - **BLOCKED:** 6
 - **DONE:** 56
 - **CANCELED:** 0
@@ -29,18 +29,18 @@
 
 ## Active work
 
-No tasks are currently claimed, in progress, or in review.
+- **PL-0504** [REVIEW] A/V continuity diagnostics — owner: claude-media
+- **PL-0701** [REVIEW] Critical E2E harness — owner: claude-test
 
 ## Dispatch classification
 
-- **READY_AND_EXECUTABLE:** 3
+- **READY_AND_EXECUTABLE:** 2
 - **READY_BUT_EXTERNAL:** 2
 - **BLOCKED:** 6
 - **BACKLOG (dependency-gated):** 0
 
 ## Recommended executable wave
 
-- **PL-0504** -> claude-media (P1/Player) A/V continuity diagnostics
 - **PL-AI-0011** -> claude-lead (P1/Coordination) A superseded task needs a terminal state that is true
 
 ## Queued for external agents
@@ -63,8 +63,8 @@ No tasks are currently claimed, in progress, or in review.
 - **claude-lead:** 0/2 active
 - **claude-frontend:** 0/2 active
 - **claude-backend:** 0/2 active
-- **claude-media:** 0/2 active
-- **claude-test:** 0/1 active
+- **claude-media:** 1/2 active
+- **claude-test:** 1/1 active
 - **claude-security:** 0/1 active
 - **claude-infra:** 0/1 active
 - **human-commander:** 0/99 active (external lane; not locally executable)
