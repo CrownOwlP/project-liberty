@@ -22,6 +22,14 @@
  * The status mapping is reimplemented here for the same reason. Importing
  * `playbackSessionHttpStatus` would make "the status matches the outcome" a
  * tautology.
+ *
+ * THAT RULE IS WHY THE 413 BRANCH BELOW IS TYPED OUT AGAIN RATHER THAN IMPORTED
+ * (PL-0707, carried by PL-0701). The server decides `request_body_too_large ->
+ * 413` in `apps/web/src/app/api/v1/playback/session/contract.ts`, and the
+ * temptation when a new status appears is to import the one function so the two
+ * can never disagree. They must be ABLE to disagree: that disagreement is the
+ * only thing this file measures. A restatement that got the status wrong fails
+ * the suite loudly; an import that got it wrong agrees with production forever.
  * ---------------------------------------------------------------------- */
 
 export type PlaybackOutcome = "granted" | "denied" | "unavailable";
@@ -51,6 +59,23 @@ const REASON_CODE = /^[a-z0-9_]+$/;
 
 /** Denials that are the caller's problem (400) rather than a rights refusal (403). */
 const REQUEST_LEVEL_DENIALS: readonly string[] = ["request_malformed", "request_field_not_permitted"];
+
+/**
+ * The one denial that is neither 400 nor 403 (PL-0707).
+ *
+ * `request_body_too_large` is the envelope being refused BEFORE anything read
+ * what it said -- the route meters the body against a 16 KiB cap and stops. It
+ * is still a `denied` outcome, because resending the same body changes nothing,
+ * but its status has to be distinguishable from the other two denials or the
+ * remedy is unreadable: 400 would file a size refusal beside a typo'd field, so
+ * an operator could not tell a client sending nonsense from a client -- or a
+ * proxy -- sending too much, and 403 would publish it into the rights metrics a
+ * rights review reads, which is the one thing it is not.
+ *
+ * WRITTEN HERE AS A CODE STRING AND A NUMBER, not imported. See the header.
+ */
+const OVERSIZED_BODY_DENIAL = "request_body_too_large";
+const OVERSIZED_BODY_STATUS = 413;
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -201,12 +226,12 @@ function grantedSessionViolations(session: unknown): string[] {
 /**
  * The status a response of this shape must have arrived with.
  *
- * `denied` splits on the primary reason because the two codes mean different
- * things downstream: 400 tells a client to fix its request, 403 is a rights
- * signal that lands in the metrics a rights review reads. `unavailable` splits
- * for the mirror-image reason -- telling a client a title does not exist
- * because a provider timed out is how a viewer concludes their library lost
- * something.
+ * `denied` splits on the primary reason because the codes mean different things
+ * downstream: 413 says the envelope was refused unread, 400 tells a client to
+ * fix its request, 403 is a rights signal that lands in the metrics a rights
+ * review reads. `unavailable` splits for the mirror-image reason -- telling a
+ * client a title does not exist because a provider timed out is how a viewer
+ * concludes their library lost something.
  */
 export function expectedStatus(body: PlaybackSessionResponseShape): number {
   const primary = body.reasons[0];
@@ -214,6 +239,11 @@ export function expectedStatus(body: PlaybackSessionResponseShape): number {
     case "granted":
       return 200;
     case "denied":
+      /* Checked FIRST, and separately from the 400/403 split, because the size
+       * refusal is not a member of either bucket. Folding it into
+       * `REQUEST_LEVEL_DENIALS` would make it a 400 and lose exactly the
+       * distinction the code exists to carry. */
+      if (primary !== undefined && primary.code === OVERSIZED_BODY_DENIAL) return OVERSIZED_BODY_STATUS;
       return primary !== undefined && REQUEST_LEVEL_DENIALS.includes(primary.code) ? 400 : 403;
     case "unavailable":
       return primary !== undefined && primary.code === "content_not_found" ? 404 : 503;

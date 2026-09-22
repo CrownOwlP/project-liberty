@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { expect, test } from "@playwright/test";
 import type { APIResponse } from "@playwright/test";
 import {
@@ -406,6 +408,168 @@ test("a malformed body is a decision, never a stack trace", async ({ request }) 
     expect(shape.outcome).toBe("denied");
     expect(response.status()).toBe(400);
   }
+});
+
+/* -------------------------------------------------------------------------
+ * The 16 KiB envelope cap (PL-0707, carried by PL-0701)
+ *
+ * `handler.ts` meters the request body BEFORE the decision and refuses an
+ * oversized one with `request_body_too_large` / 413. Two things are asserted
+ * here and they are not the same thing:
+ *
+ *   - the STATUS, because 413 is the whole point of the code. A size refusal
+ *     that arrived as 400 would be indistinguishable on the wire from a typo'd
+ *     field, and the operator remedies differ;
+ *   - the CODE, because a 413 with some other reason in the trail would mean
+ *     the route refused the body for a reason it has not named.
+ *
+ * `decision()` already cross-checks the status against `expectedStatus` from
+ * `../src/contract`, which is an INDEPENDENT restatement of the server's
+ * mapping -- see that file's header. So this pair of tests is also what makes
+ * the restatement non-vacuous: before the 413 branch existed there, an
+ * oversized request would have failed `decision()` on the status cross-check.
+ * ---------------------------------------------------------------------- */
+
+/** The cap `handler.ts` applies, restated here for the same reason the status is. */
+const MAX_REQUEST_BODY_BYTES = 16 * 1024;
+
+/**
+ * A request that is OVER the cap while being otherwise WELL FORMED.
+ *
+ * Padded through `preferredAudioLanguages`, which the capabilities schema
+ * declares as an unbounded `z.array(z.string())`, rather than by adding a junk
+ * key or a giant `contentId`. Both of those would be refused by the schema as
+ * `request_field_not_permitted` or `request_malformed` whatever their size, and
+ * the test would then pass without the cap existing at all. This body has
+ * nothing wrong with it except its length, so a 413 can only have come from the
+ * envelope gate.
+ */
+function paddedSessionRequest(targetBytes: number) {
+  const languages: string[] = [];
+  let body = "";
+  for (;;) {
+    const candidate = {
+      contentId: DEMO.movie.id,
+      capabilities: { ...CAPABLE_DEVICE, preferredAudioLanguages: ["en", ...languages] }
+    };
+    body = JSON.stringify(candidate);
+    if (Buffer.byteLength(body, "utf8") >= targetBytes) return { payload: candidate, body };
+    /* 64 tags at a time: the loop is a size search, not a byte-exact
+     * construction, and stepping one at a time over 16 KiB is 2,000 JSON
+     * serializations for no gain. */
+    for (let index = 0; index < 64; index += 1) languages.push(`x-pad-${languages.length}`);
+  }
+}
+
+test("an oversized body is refused unread, with 413 and a size reason", async ({ request }) => {
+  const oversized = paddedSessionRequest(MAX_REQUEST_BODY_BYTES + 1);
+  expect(
+    Buffer.byteLength(oversized.body, "utf8"),
+    "the fixture did not actually exceed the cap"
+  ).toBeGreaterThan(MAX_REQUEST_BODY_BYTES);
+
+  const response = await request.post(ROUTE, {
+    headers: { "content-type": "application/json" },
+    data: oversized.body
+  });
+
+  /* Not a 500 and not a hang: a cap that crashes the route is a denial of
+   * service with extra steps. */
+  const shape = await decision(response);
+  expect(response.status()).toBe(413);
+  expect(shape.outcome).toBe("denied");
+  expect(reasonCodes(shape)).toContain("request_body_too_large");
+
+  /*
+   * REFUSED BEFORE THE DECISION, asserted rather than assumed. A refusal that
+   * had run the resolver first would have the resolver's codes in the trail
+   * too, and the memory the cap exists to protect would already have been
+   * spent. The size code is the PRIMARY reason, which is also what the status
+   * mapping reads.
+   */
+  expect(reasonCodes(shape)[0]).toBe("request_body_too_large");
+
+  /* Nothing the client sent comes back. A refusal that echoed 16 KiB of
+   * attacker-chosen strings is an amplifier. */
+  const echoed = collectStrings(shape).filter((value) => value.includes("x-pad-"));
+  expect(echoed, "the refusal echoed the padding it refused").toEqual([]);
+});
+
+test("a body just under the cap is not refused for its size", async ({ request }) => {
+  /*
+   * THE OTHER HALF OF THE PAIR, and what stops the test above from passing
+   * against a route that refuses everything. 1 KiB of headroom rather than
+   * exactly one byte: the cap is metered against the bytes on the socket, and
+   * this spec cannot control whether the client re-serializes with different
+   * whitespace. What is being proven is that a large-but-legal body is decided
+   * on its merits, not that the boundary is at one exact byte -- the unit
+   * suite owns the boundary.
+   */
+  const under = paddedSessionRequest(MAX_REQUEST_BODY_BYTES - 2048);
+  expect(Buffer.byteLength(under.body, "utf8")).toBeLessThan(MAX_REQUEST_BODY_BYTES);
+
+  const shape = await decision(
+    await request.post(ROUTE, {
+      headers: { "content-type": "application/json" },
+      data: under.body
+    })
+  );
+
+  /* Deliberately NOT an assertion about the outcome: what this deployment
+   * resolves is the subject of the tests above and differs by build mode. The
+   * subject here is only that the envelope gate did not fire. */
+  expect(reasonCodes(shape)).not.toContain("request_body_too_large");
+});
+
+test("the status mapping this suite checks against is not the server's own", async () => {
+  /*
+   * THE ASSERTION THAT KEEPS THE 413 ABOVE MEANINGFUL.
+   *
+   * `decision()` proves the wire status matches `expectedStatus`, which is only
+   * evidence while `expectedStatus` is written independently. The single edit
+   * that would silently destroy that -- and which looks like a tidy-up in a
+   * diff -- is importing the server's `playbackSessionHttpStatus` so the two
+   * "cannot disagree". They are supposed to be able to disagree.
+   *
+   * CHECKED AGAINST THE IMPORT STATEMENTS, NOT THE WHOLE FILE. A substring
+   * search over the source was the first spelling of this test and it failed on
+   * its own subject: `src/contract.ts`'s header NAMES the function it refuses to
+   * import, which is exactly the documentation this guard exists to keep
+   * truthful. A guard that forbids writing down what you are not doing teaches
+   * the next person to delete the explanation.
+   */
+  const source = await readFile(path.resolve(__dirname, "../src/contract.ts"), "utf8");
+
+  /* Every `import ... from "x"` and `require("x")`, module specifier captured. */
+  const specifiers = [
+    ...source.matchAll(/(?:^|\n)\s*import[\s\S]*?from\s+["']([^"']+)["']/g),
+    ...source.matchAll(/(?:^|\n)\s*import\s+["']([^"']+)["']/g),
+    ...source.matchAll(/require\(\s*["']([^"']+)["']\s*\)/g)
+  ].map((match) => match[1]);
+
+  /*
+   * NOTHING FROM THE APPLICATION, and nothing at all as it happens: the file is
+   * meant to be a standalone restatement. Listed as the specifiers found rather
+   * than as a boolean so a failure names what crept in.
+   */
+  expect(
+    specifiers.filter(
+      (specifier) =>
+        specifier !== undefined &&
+        (specifier.startsWith("@liberty") ||
+          specifier.includes("apps/web") ||
+          specifier.includes("/session/contract"))
+    ),
+    "the e2e contract now imports the application it is supposed to measure"
+  ).toEqual([]);
+
+  /* The function itself is never CALLED here, however it might be reached. */
+  expect(source).not.toMatch(/playbackSessionHttpStatus\s*\(/);
+
+  /* And the restatement is actually present, so this guard cannot pass against
+   * a file that simply deleted the branch it is guarding. */
+  expect(source).toContain("request_body_too_large");
+  expect(source).toContain("413");
 });
 
 test("the session route does not answer a GET with a session", async ({ request }) => {
