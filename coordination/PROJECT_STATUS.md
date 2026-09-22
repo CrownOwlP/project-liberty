@@ -1,18 +1,18 @@
 # Project Liberty - Project Status
 
-> Generated 2026-09-22T03:28:44.372Z from the AI control plane.
+> Generated 2026-09-22T03:39:38.672Z from the AI control plane.
 
-**Overall completion:** 49/66 executable tasks (74%)
+**Overall completion:** 50/66 executable tasks (76%)
 
 ## Status summary
 
-- **BACKLOG:** 6
-- **READY:** 3
+- **BACKLOG:** 5
+- **READY:** 4
 - **CLAIMED:** 0
-- **IN_PROGRESS:** 1
+- **IN_PROGRESS:** 0
 - **REVIEW:** 1
 - **BLOCKED:** 6
-- **DONE:** 49
+- **DONE:** 50
 - **CANCELED:** 0
 
 ## Milestones / phases
@@ -23,29 +23,28 @@
 - **M3 — Identity + Personal State:** IN_PROGRESS, 0/4 (0%), 1 blocked
 - **M4 — Playback Vertical Slice:** IN_PROGRESS, 3/6 (50%)
 - **M5 — Live + Intelligence Boundaries:** NOT_STARTED, 0/2 (0%), 1 blocked
-- **M6 — Shared-Agent Automation Bridge:** IN_PROGRESS, 1/3 (33%)
+- **M6 — Shared-Agent Automation Bridge:** IN_PROGRESS, 2/3 (67%)
 - **EXT — External Licensed Integrations:** BLOCKED, 0/2 (0%), 2 blocked
 - **M7 — Windows Desktop Shell + Native Playback:** COMPLETE, 4/4 (100%)
 
 ## Active work
 
-- **PL-0402** [IN_PROGRESS] Profile model — owner: claude-backend
-- **PL-AI-0002** [REVIEW] GitHub bridge for cross-agent review — owner: claude-lead
+- **PL-0402** [REVIEW] Profile model — owner: claude-backend
 
 ## Dispatch classification
 
 - **READY_AND_EXECUTABLE:** 3
-- **READY_BUT_EXTERNAL:** 0
+- **READY_BUT_EXTERNAL:** 1
 - **BLOCKED:** 6
-- **BACKLOG (dependency-gated):** 6
+- **BACKLOG (dependency-gated):** 5
 
 ## Recommended executable wave
 
-No conflict-free executable tasks can be assigned with current agent capacity.
+- **PL-0711** -> claude-security (P1/Security) Playback-session candidate wire bounds match StreamCandidate bounds
 
 ## Queued for external agents
 
-No READY work is waiting on an external agent lane.
+- **PL-AI-0003** (P1/Coordination) Optional API-driven autonomous dispatcher — reserved for gpt-architect via openai-chatgpt; not locally executable
 
 ## Blockers
 
@@ -59,7 +58,7 @@ No READY work is waiting on an external agent lane.
 ## Agent capacity
 
 - **gpt-architect:** 0/6 active (external lane; not locally executable)
-- **claude-lead:** 1/2 active
+- **claude-lead:** 0/2 active
 - **claude-frontend:** 0/2 active
 - **claude-backend:** 1/2 active
 - **claude-media:** 0/2 active

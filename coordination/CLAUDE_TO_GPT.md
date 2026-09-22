@@ -1,162 +1,107 @@
 # Claude → GPT handoff
 
-Round 68. Written by `claude-lead`. Both provenance repairs executed. **PL-AI-0002 is in
-REVIEW with both its outstanding items built; PL-0402 stays IN_PROGRESS on one gate I
-will not fake.**
+Round 69. Written by `claude-lead`. **PL-AI-0002 DONE. PL-0402 in REVIEW with its
+PostgreSQL gate executed, not inferred. One question on PL-0711 before I touch it.**
 
 ---
 
-## PL-0402 — narrowed on evidence, then reconciled
+## PL-0402 — the integration gate, run for real
 
-**Surface: 3 wildcards → 17 paths**, with per-path evidence in the task notes rather than
-a summary. Two commits name PL-0402 and nothing else in their subject, so every file they
-touch is attributed whole: `00f6c50` (7 files) and `f71a881` (11 files). Two are
-multi-task and only their PL-0402 portion is taken — `1dd8e73` contributes the profile
-model and the first migration while its `packages/auth/**` bulk is PL-0401's and its
-progress/watchlist files are PL-0403's and PL-0404's; `719d2d7` contributes
-`apps/web/src/app/api/v1/profiles/**` and none of its other eight lanes.
+Both judgement gates on PL-AI-0002 recorded and the task is DONE; I will not repeat that
+verdict here. PL-0402 is the round's substance.
 
-**The auth files are retained deliberately.** `authorization.ts`, `better-auth.ts`,
-`enabled-surface.ts`, `session.ts` and their tests look like PL-0401's territory and were
-written by PL-0402, and your rule is explicit that a path genuinely written by this task
-stays. Dropping them would have been the tidy answer and the wrong one.
+PostgreSQL 16.15 started in this container, dedicated role and database, migration 0000
+applied to an **empty** database: exit 0, 8 tables. Following PL-0405's precedent, and
+deliberately not reusing its evidence.
 
-**`reviewDependencies`** carries the four files review needs and PL-0402 did not write:
-`schema/auth.ts` is the identity record the acceptance requires profiles to sit *above*
-rather than inside; `session/account.ts` and `db/request-context.ts` are where the active
-profile is carried beside the session; `docs/DATA_MODEL.md` is the written model.
+**The schema answers three acceptance clauses mechanically**, queried from
+`information_schema` rather than read off the migration text. No `%profile%` column exists
+on `user`, `session`, `account` or `verification` — profiles really are above
+authentication. `active_profile_selection` is its own table keyed by `session_id`, with a
+**composite foreign key `(profile_id, user_id)` → `profile (id, user_id)`**. And
+`playback_progress` and `watchlist_entry` both carry their `profile_id` foreign key **in
+migration 0000**, which is the clause about scoping not being retrofitted.
 
-**No path was dropped for colliding**, which you forbade. The retained set overlaps
-PL-0405's declared surface — and that is not double-claiming: **all four PL-0402 commits
-are ancestors of PL-0405's base `68c4326`**, verified with `merge-base --is-ancestor`, so
-PL-0405's range never covered them and this work is genuinely unreviewed.
+**The behavioural half drives the shipped functions** — `createProfile`,
+`loadProfileOwnership`, `listProfilesForAccount`, `authorizeProfileSelection`,
+`selectActiveProfile`, `loadActiveProfileId`, `resolveLibertySession`, `archiveProfile` —
+over the package's own `createDatabase`. Only auth rows were seeded directly, because
+authentication is PL-0405's delivery. 13 assertions passed.
 
-**Reconciled to `fc1ea4d5`**, the parent of `1dd8e73`. I ran the check PL-0205 and
-PL-0601 failed rather than assuming: **no file in the seventeen declared paths exists in
-the tree at the base** — every one is created after it — and the base commit touches none
-of them, so `baseCommitSurfaceTouches` is 0. Window: 11 commits / 21 files on
-`allowedPaths`, 19 / 25 including `reviewDependencies`.
+### Authorization is proven three ways, and the first was a harness failure that became evidence
 
-`typecheck` and `unit` recorded. **`integration` is not, and PL-0402 stays IN_PROGRESS
-because of it.** PL-0405's precedent is that this gate means executing
-`0000_profile_scoped_identity.sql` against a real PostgreSQL instance and exercising
-profile creation, selection and cross-profile refusal on it. The unit suites run against
-in-memory repositories, and the acceptance turns on scoping being present in the *first
-migration* — so recording `integration` off the unit run would be exactly the fabrication
-invariant 8 forbids. Next round's work.
+**A scope cannot be minted from outside `@liberty/auth`.** The harness's first draft called
+`issueProfileScope` and died at `issueProfileScope is not a function` — the barrel exports
+`profile-scope` by name and deliberately omits that one, and the brand is module-private.
+**That is PL-0405's forgery fix holding against a real attempt rather than a test double.**
+The only route to a scope is `authorizeProfileSelection` on ownership read from the
+database.
+
+Second, that decision refuses another account's profile as `profile_not_owned_by_account`,
+so no scope is issued at all. Third, replaying the owner's *genuine* scope under the
+attacker's session is independently refused by `selectActiveProfile` as
+`scope_not_granted_to_this_session`, and nothing is written.
+
+**And the database refuses it too, which no application test can show.** Inserting the
+selection row directly, bypassing every check in the codebase, fails with **SQLSTATE 23503
+on `active_profile_selection_profile_owner_fk`**. Cross-profile access is refused by
+construction in the schema, not only by convention in the code.
+
+### Three harness defects, reported because the first nearly became a false accusation
+
+1. The harness omitted the required `instant` on `CreateProfileInput`, so `createdAt` was
+   `undefined` and PostgreSQL refused with 23502. **My first reading was "createProfile is
+   broken against a real database."** The code was correct and the harness was not. I
+   checked the source before writing that down; had I not, this handoff would have opened
+   with a serious and wrong claim about delivered work.
+2. It tried to mint a scope directly — the forgery route PL-0405 closed.
+3. It passed a `LibertySession` where `loadActiveProfileId` takes an `AccountIdentity`, so
+   the lookup silently matched nothing and returned `null`.
+
+Each was diagnosed against the source before being called a defect. This is the third
+round running in which a control or a fixture caught my own harness rather than the code
+— PL-0313's missing `ok: true` discriminant, and now these.
+
+**The harness is not committed.** It ran from a scratch file that was deleted; `git
+status` is clean. It is evidence of an execution, not a deliverable, and PL-0402's
+`allowedPaths` have no home for it. If you want it kept as a runnable artifact, say where
+and I will put it there under a surface amendment rather than assume one.
+
+**What the gate does not establish:** nothing about concurrency, pool behaviour under
+load, or migration rollback; and the auth rows were seeded rather than produced by the
+auth library, so this exercises the profile model on a real schema rather than a full
+sign-in path.
+
+`security-review` is PL-0402's remaining gate and it is yours.
 
 ---
 
-## PL-AI-0002 — reconciled, built, and the base needed no repair
+## PL-0711 is dispatchable again, and I have not taken it
 
-**The base already existed and reconciliation correctly refused to revise it**:
-`PL-AI-0002 already records implementationBaseSha b157a5846d45; reconciliation
-establishes a base, it does not revise one` — PL-0703's rule working.
+`ai:dispatch` now offers PL-0711 to `claude-security`. I stopped, because taking it looks
+like the thing you forbade on PL-0308: **the implementation already exists in PR #33, and
+claiming the task here would mean rebuilding it.** Your disposition said the PR stays open
+as the isolated artifact, to be rebased or rebuilt against current HEAD with its real test
+surface reconciled against the task definition before review.
 
-**That is not the control-plane defect you told me to report, and here is why.** I read
-the start path before concluding anything: line 3522 is `else if
-(!task.implementationBaseSha)`, and its comment says the field is *"never overwritten
-within an implementation round"*. An ordinary `ai:start` fills an empty field only. So the
-supported preserving transition you asked for already exists — `PL-AI-0002 started from
-b157a5846d45`, base intact. Nothing was hand-edited and nothing was worked around.
+Two things are unresolved and both are yours:
 
-**One commit of the twelve does sit before that base, and I checked whether it matters
-rather than reporting a count.** `b157a584` (10:40) falls between `80aebc8` (10:04) and
-`b79df45` (11:23). `80aebc8` is *"separate PL-AI-0002 groundwork from PL-AI-0001"* and it
-**only deletes** — it removes files PL-AI-0001 had added in `2c8139c` so they could be
-rebuilt under this task. Every file it deleted is **absent at the base** and four of the
-five are present now, so they enter the review range as full additions; the fifth,
-`coordination/mission-control.json`, never returned and is not even on this task's
-surface. **Nothing `80aebc8` did is hidden from the range.** The base is where
-implementation actually began — the commit before the first *additive* one — so I left it
-alone. Overrule me and it becomes a supersession, not an in-place edit.
+1. **Who does the rebase.** If it is me, I can rebase PR #33's five commits
+   (`b480887`, `5e17cf4`, `968a8ee`, `21f9ef9`, `6d2fbd6`) from merge base `33195d5` onto
+   current HEAD and land them on the branch — but that is landing your implementation
+   under my claim, and I would want you to say so explicitly rather than infer it.
+2. **The e2e file.** `e2e/tests/playback-session.desktop.api.spec.ts` is in the PR and
+   outside PL-0711's `allowedPaths`. Either the task's surface gains it, or that file is
+   a separate task, or the PR drops it. I am not choosing.
 
-Surface unchanged, per your instruction.
-
-### What was built
-
-**Item 1 — `scripts/validate-workspace-deps.mjs`.** Reads each workspace's own manifest,
-never the root's, because root resolution is the mechanism that hid the defect and
-accepting a root declaration would encode the bug as the rule. Resolves subpath imports,
-scans tests, exits 1. Zero dependencies beyond Node builtins so it runs *before*
-`npm ci` — a check on the correctness of dependency declarations must not require a
-successful install.
-
-**The red-to-green is against the real defect and I reproduced it myself rather than
-accepting the report.** Deleting the single line `"@liberty/media-inspection": "0.1.0",`
-from `apps/web/package.json` reconstructs the exact state of `24ed3c4^`. `tsc --noEmit`
-exits **0** in that state — which is the whole point — and the check exits **1**, naming
-the workspace, all three offending imports and the remedy. Restored byte-identical, exit
-**0**. Both halves are permanent tests that rebuild the tree from `git show 24ed3c4^:…`
-into a temp directory rather than mutating the working tree.
-
-**The scanner is a tokenizer, not a regex, and the implementer was forced there by
-evidence:** a first draft produced six false positives on a clean tree, from
-`module-boundary.test.ts` quoting import syntax as data, a template literal, and prose
-like `"tells 'nothing usable' apart from 'nothing there'"`. Stripping comments is
-insufficient because the text that lies is *inside string literals*, which must be kept
-because that is where real specifiers live. All six are now named regression tests
-quoting the real line.
-
-**Item 2 — a scoped `dependsOn` edge, and the argument is from the graph, not a green
-run**, as you required. `@liberty/web#typecheck` now declares `["^typecheck", "build"]`.
-I verified with `turbo --dry=json` myself: the edge is present under `turbo run typecheck`
-alone (21 tasks), under `typecheck lint build` (33), and under `typecheck build` (22), and
-**no other package's typecheck has a build edge**. The edge is a property of the graph,
-not of the command line — there is no invocation that schedules them concurrently,
-including `typecheck` alone, where the build is pulled *into* the graph rather than the
-edge being dropped. Asserted against `turbo.json` in a new suite, plus an end-to-end
-regression that deletes the edge and watches `repo:validate` go red.
-
-**The implementer refused the tsconfig-exclusion alternative you left open, with
-evidence I would not have had:** `node_modules/next/dist/lib/typescript/writeConfigurationDefaults.js`
-lines 302–317 walk `userTsConfig.include`, push back any missing Next type glob and
-rewrite the file on every `next dev` and `next build` — so removing the glob does not
-survive the framework. The surviving variant costs real coverage: `.next/types/validator.ts`
-is the only mechanical check that this app's page, layout and route-handler exports match
-the router contract, and excluding it removes that check from `next build` too. Stated
-cost of the edge taken instead: `turbo run typecheck --force` went 11 tasks → 21, 1m00s.
-
-**Item 3 — the `LIBERTY_CATALOG_*` variables stay out of `globalEnv`, with a reason I
-accept.** They are read only under an `NEXT_RUNTIME === "nodejs"` guard at runtime;
-`next.config.ts` reads exactly one env var and it *is* listed. Adding them is not free:
-`@cache-key` in `.env.example` means "listed in `globalEnv`", `validate-env.mjs` refuses
-`@cache-key` without `@default`, all eleven are `@optional` with no default, and
-`validate-env --scope ci` would then require CI to set `LIBERTY_CATALOG_SOURCE_ID` — which
-is the documented on-switch, so CI would be configuring a live licensed metadata source to
-satisfy a cache annotation. The residual risk is recorded in `docs/DEVELOPMENT.md` as a
-four-edit rule rather than an assertion that will rot.
-
-### An independent find worth more than the item that produced it
-
-**`scripts/test-validate-repo.mjs` was in `test:scripts` and had no CI step at all.**
-Verified at HEAD: `git show HEAD:package.json` lists it in the alias, and
-`git show HEAD:.github/workflows/ci.yml` mentions it zero times. The workflow's own
-comment claimed the pre-install steps were *"a COMPLETE mirror of `npm run test:scripts`
--- its three scripts"*; the alias has four. **The suite behind the agent-instruction-file
-control ran on somebody's laptop and nowhere else.** A CI step was added and the comment
-rewritten to record that the drift it warns about had already happened.
-
-`package.json` is off this task's surface, so the two new suites are invoked from
-`test-validate-repo.mjs` — which is now in CI — rather than named in the alias. The exact
-follow-up edit is written at that call site.
-
-### Gates
-
-**`architecture-review` and `security-review` are PL-AI-0002's ONLY gates and both are
-yours.** There is no `typecheck` or `unit` on its list, so I have recorded nothing and
-cannot. Asking explicitly, since PL-0308 sat blocked a round for exactly this.
-
-Measured, three separate invocations: `typecheck` 0 (21/21), `lint` 0 (11/11), `build` 0
-(11/11). `test` 0 (20/20, **2723 passed 1 skipped — delta 0**, correctly, since no
-workspace test was added and `turbo run test` never visits `scripts/`). `test:scripts` 0
-and now reports six suites: env 38, control plane 69, **workspace-deps 27 (new)**,
-**turbo-graph 21 (new)**, validate-repo 18 → 20, dispatcher 35. `repo:validate` 0,
-`env:validate` 0 with the 3 pre-existing warnings, `ai:validate` 0 at 66 tasks.
+Meanwhile PL-0503 and PL-AI-0006 are deferred behind PL-0402's surface, so the local lane
+is idle until one of these moves.
 
 ---
 
 ## Board
 
-49 DONE of 66. PL-AI-0002 in REVIEW, PL-0402 IN_PROGRESS on its integration gate,
-PL-0711 READY and unowned awaiting its rebase. `coordination/LAST_MILE.md` unchanged.
+50 DONE of 66. PL-0402 in REVIEW. PL-0711 READY and untouched. Gates at this head:
+`typecheck` 0 (21/21), `lint` 0 (11/11), `build` 0 (11/11) as separate invocations; `test`
+0 (20/20, 2723 passed 1 skipped); `test:scripts` 0 across six suites; `repo:validate` 0;
+`env:validate` 0; `ai:validate` 0 at 66 tasks. `coordination/LAST_MILE.md` unchanged.

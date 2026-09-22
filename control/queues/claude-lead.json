@@ -1,40 +1,8 @@
 {
-  "generatedAt": "2026-09-22T03:28:44.373Z",
+  "generatedAt": "2026-09-22T03:39:38.673Z",
   "agent": "claude-lead",
   "executionAvailable": true,
-  "assigned": [
-    {
-      "id": "PL-AI-0002",
-      "priority": "P1",
-      "lane": "Coordination",
-      "status": "REVIEW",
-      "title": "GitHub bridge for cross-agent review",
-      "dependencies": [
-        "PL-AI-0001"
-      ],
-      "allowedPaths": [
-        ".github/**",
-        "control/**",
-        "scripts/**",
-        "docs/**",
-        "turbo.json",
-        "apps/web/tsconfig.json"
-      ],
-      "preferredAgent": "claude-lead",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "architecture-review",
-        "security-review"
-      ],
-      "acceptance": "GitHub becomes the shared state bridge for Claude Desktop and OpenAI review without manual file copying. SCOPE ADDITION 2026-09-21, on gpt-architect's ARCHITECTURE / CI FINDING at f6dba611346ac53d72901f661a2b21cc12e80eac, which ruled the check belongs here rather than in a competing task: CI mechanically detects an UNDECLARED WORKSPACE IMPORT -- a source file in one workspace importing a local @liberty package that its own package.json does not declare in dependencies. THE EXACT DEFECT THIS MUST CATCH, preserved as the regression case: apps/web/src/lib/server-bootstrap.ts imported @liberty/media-inspection/node/pinned-fetch while apps/web/package.json declared seven @liberty packages and not that one. It reached a reviewer because NO EXISTING GATE CAN SEE IT: the import resolves through the root workspace symlink, so typecheck, lint, build and the unit suites were green, and even npm ci --dry-run returned 0 because npm tolerates a link node that already exists. It was found by a human reader, which is not a detection mechanism. Required of the check: it reads each workspace's own manifest rather than the root's; it resolves subpath imports (@liberty/x/node/y declares @liberty/x); it covers test files as well as source, since server-bootstrap.test.ts carried the same undeclared import; and it fails the build rather than warning, because a warning in a green pipeline is how this one survived. A dry-run install against a populated node_modules does NOT satisfy this and must not be offered as the implementation. NOT IN SCOPE: the reverse direction (a declared dependency nothing imports) is a different and much weaker signal, and adding it would make the check noisy enough to be turned off. SECOND SCOPE ADDITION 2026-09-22, on gpt-architect's ruling at cd6f3efd46a75a150206617a2fa6bf747a1c3a5b: 'CI must not rely on typecheck and build racing successfully when typecheck consumes files build writes.' THE DEFECT, verified structurally rather than inferred from a flake: apps/web/tsconfig.json line 15 includes .next/types/**/*.ts; turbo.json's build task declares .next/** as an output; and turbo.json's typecheck task declares dependsOn ['^typecheck'] with NO edge to build. So tsc and next build race on that directory whenever both run in one graph. HOW IT SURFACED, because the shape of the evidence matters: a single @liberty/web#typecheck exit 2 with NO 'error TS' line in the output, which passed on two re-runs of the identical tree. The command that produced it -- npx turbo run typecheck lint build --force -- had been this project's recorded gate invocation for several rounds and had passed every time, which is what a race looks like until it does not. The lead changed its own procedure to three separate invocations, which removes the race from the evidence but NOT from CI. Required: CI must not be able to run the two concurrently in a way that lets a typecheck read a partially written .next/types. The mechanism is the implementer's -- a dependsOn edge from typecheck to build, a separate tsconfig for the check that excludes generated types, or sequencing in the workflow -- but a green run is not evidence the race is gone, so whatever is chosen must be demonstrated by argument from the task graph rather than by re-running until it passes. NOT IN SCOPE: fixing the unrelated pre-existing env:validate warnings. SMALLER AND RELATED, folded in here rather than filed: turbo.json's globalEnv lists none of the LIBERTY_CATALOG_* variables, including the eight predating round 63. Harmless today because they are read at runtime by instrumentation.ts rather than at build time, so it affects only build-cache hashing -- but a variable that is read at build time later and still unlisted would let one cache entry serve builds that meant different values, which is the defect env:validate already warns about for LIBERTY_FIXTURE_MEDIA_ORIGIN.",
-      "owner": "claude-lead",
-      "gateResults": {},
-      "implementationAgent": "claude-lead",
-      "updatedAt": "2026-09-22T03:28:44.281Z",
-      "implementationBaseSha": "b157a5846d45568f516240f581d6b317a544aa12",
-      "notes": "CI finding folded in 2026-09-21 from the PL-0311 round rather than filed as its own task, on the reviewer's explicit instruction not to open a competing task. The lead had reported the gap and declined to file one, on the ground that a new task's surface would collide with this one's scripts/** and .github/** and add board pressure for nothing; the reviewer agreed and assigned it here. CI race folded in 2026-09-22 on the reviewer's explicit ruling to put it here rather than open a competing task, the same disposition the undeclared-workspace-import check got. allowedPaths gained turbo.json and apps/web/tsconfig.json, which the race cannot be fixed without; every other entry is unchanged. Found by the PL-0309 corrective implementer and NOT written off as a flake -- the structural cause was checked at the three declaration sites before it was reported."
-    }
-  ],
+  "assigned": [],
   "review": [],
   "reservedExternal": [],
   "recommended": [
@@ -60,6 +28,33 @@
         "unit"
       ],
       "acceptance": "Shared vocabularies live in their own leaf modules, domain contracts live in one module each, index.ts is a re-export-only compatibility barrel rather than the authoritative public surface, and a wildcard exports map lets a new domain contract be added without touching package metadata or the barrel; no cycle-driven z.lazy remains and structural regressions prove the boundary rather than merely reflecting it; no schema behaviour changes",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PL-AI-0003",
+      "priority": "P1",
+      "lane": "Coordination",
+      "status": "READY",
+      "title": "Optional API-driven autonomous dispatcher",
+      "dependencies": [
+        "PL-AI-0001",
+        "PL-AI-0002"
+      ],
+      "allowedPaths": [
+        "control/**",
+        "scripts/**",
+        "packages/**",
+        "docs/**"
+      ],
+      "preferredAgent": "gpt-architect",
+      "reviewAgent": "claude-lead",
+      "qualityGates": [
+        "architecture-review",
+        "security-review",
+        "unit"
+      ],
+      "acceptance": "Optional external agent runner can dispatch queued tasks to configured providers with budgets, audit logs, retries, and human approval gates",
       "owner": null,
       "gateResults": {}
     }

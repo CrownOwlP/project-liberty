@@ -1742,7 +1742,7 @@
       "id": "PL-0402",
       "priority": "P0",
       "lane": "Backend",
-      "status": "IN_PROGRESS",
+      "status": "REVIEW",
       "title": "Profile model",
       "dependencies": [
         "PL-0405"
@@ -1790,10 +1790,17 @@
           "by": "claude-backend",
           "commitSha": "55cedc79ab6a79338c7c75f379d566e3acb1be5b",
           "evidence": "npx turbo run test --force, exit 0, 20 of 20 tasks, 0 cached, 2723 passed 1 skipped -- unchanged from the previous head, because PL-0402 wrote no code this round. Sum recomputed by the lead from the per-package figures: 100+67+68+47+208+252+373+260+288+152+908 = 2723. THE SUITES THAT BEAR ON THIS TASK'S ACCEPTANCE ARE IN THAT TOTAL AND ARE NAMED RATHER THAN IMPLIED: packages/persistence/src/profile-scoping.test.ts, profile-creation.test.ts, profile-name-collision.test.ts, repository-scoping.test.ts and scope-forgery.test.ts, plus packages/auth/src/authorization.test.ts and enabled-surface.test.ts, and apps/web/src/app/api/v1/profiles/handler.test.ts. They cover profile creation and selection with authorization, which is the acceptance's last clause. test:scripts 0, repo:validate 0, ai:validate 0 at 66 tasks. WHAT THIS GATE DOES NOT ESTABLISH, stated because the acceptance turns on it: that profile scoping is present in the FIRST migration and behaves against a real database. The unit suites run against in-memory repositories. PL-0405's precedent is that this task's integration gate means executing packages/persistence/migrations/0000_profile_scoped_identity.sql against a real PostgreSQL instance and exercising profile creation, selection and cross-profile refusal on it. That gate is NOT recorded and the task stays IN_PROGRESS until it is."
+        },
+        "integration": {
+          "status": "pass",
+          "at": "2026-09-22T03:39:38.489Z",
+          "by": "claude-backend",
+          "commitSha": "343a77879d97f0e16ba0f66daef0bd02aacd9a71",
+          "evidence": "THE MODEL WAS EXERCISED AGAINST A REAL DATABASE, NOT RECONCILED OR INFERRED. PostgreSQL 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1), cluster 16/main started in this container; a dedicated role liberty_pl0402 and its own database were created rather than using the superuser, following PL-0405's precedent. psql -v ON_ERROR_STOP=1 -f packages/persistence/migrations/0000_profile_scoped_identity.sql against an EMPTY database, exit 0, 8 tables: account, active_profile_selection, playback_progress, profile, session, user, verification, watchlist_entry. THE SCHEMA ANSWERS THE FIRST THREE ACCEPTANCE CLAUSES MECHANICALLY, queried from information_schema rather than read off the migration text. Profiles are above authentication: no column matching %profile% exists on user, session, account or verification -- the identity record does not carry one. The active profile is beside the session: active_profile_selection is its own table whose PRIMARY KEY is session_id, with foreign keys to session.id and user.id AND a COMPOSITE foreign key (profile_id, user_id) to profile (id, user_id). Scoping is in the FIRST migration rather than retrofitted: this is 0000, and playback_progress and watchlist_entry both carry a profile_id foreign key to profile in it. THE BEHAVIOURAL HALF DRIVES THE SHIPPED FUNCTIONS, not a reimplementation: createProfile, loadProfileOwnership, listProfilesForAccount, authorizeProfileSelection, selectActiveProfile, loadActiveProfileId, resolveLibertySession and archiveProfile, over a drizzle handle from the package's own createDatabase. Only the auth rows were seeded directly, because authentication is PL-0405's delivery rather than this task's. 13 assertions passed. Creation: the row is readable back from PostgreSQL; listProfilesForAccount returns exactly the account's own profile; a duplicate display name is refused as display_name_already_used BY THE REAL UNIQUE CONSTRAINT rather than by a pre-check. Selection: the grant is accepted, loadActiveProfileId reads it back out of active_profile_selection, and resolveLibertySession carries it beside the session. Archive: accepted under the owner's own scope. AUTHORIZATION IS PROVEN THREE WAYS AND THE FIRST ONE WAS A HARNESS FAILURE THAT TURNED INTO EVIDENCE. A SCOPE CANNOT BE MINTED FROM OUTSIDE @liberty/auth: the harness's first draft called issueProfileScope and failed at runtime with 'issueProfileScope is not a function', because the barrel exports it by name and deliberately omits that one while the brand stays module-private. That is PL-0405's forgery fix holding against a real attempt rather than a test double. The only route to a scope is authorizeProfileSelection on ownership read from the database. Second, that decision REFUSES another account's profile as profile_not_owned_by_account, so no scope is issued at all. Third, when the owner's genuine scope is replayed under the attacker's session, selectActiveProfile independently refuses it as scope_not_granted_to_this_session and nothing is written for that session. AND THE DATABASE REFUSES IT TOO, WHICH IS THE PART AN APPLICATION TEST CANNOT SHOW: inserting the selection row directly, bypassing every application check, fails with SQLSTATE 23503 on active_profile_selection_profile_owner_fk -- the composite (profile_id, user_id) foreign key. Cross-profile access is therefore refused by construction in the schema, not only by convention in the code. THREE HARNESS DEFECTS WERE FOUND AND CORRECTED BEFORE ANY CONCLUSION WAS DRAWN, and they are reported because the first one nearly became a false accusation. (1) The harness omitted the required instant on CreateProfileInput, so createdAt was undefined and PostgreSQL refused the insert with 23502. The first reading was 'createProfile is broken against a real database'; the code was correct and the harness was not. (2) It tried to mint a scope directly, which is the forgery route PL-0405 closed. (3) It passed a LibertySession where loadActiveProfileId takes an AccountIdentity, so the lookup silently matched nothing and returned null. Each was diagnosed against the source before being called a defect. THE HARNESS IS NOT COMMITTED: it ran from a scratch file that was deleted, and git status is clean. It is evidence of an execution, not a deliverable, and PL-0402's allowedPaths do not include a home for it. WHAT THIS DOES NOT ESTABLISH: nothing about concurrency, connection-pool behaviour under load, or migration rollback; and the auth rows were seeded rather than produced by the auth library, so this exercises the profile model on a real schema rather than a full sign-in path."
         }
       },
       "implementationAgent": "claude-backend",
-      "updatedAt": "2026-09-22T02:54:43.752Z",
+      "updatedAt": "2026-09-22T03:39:38.575Z",
       "reviewDependencies": [
         "packages/persistence/src/schema/auth.ts",
         "apps/web/src/lib/session/account.ts",
@@ -2839,7 +2846,7 @@
       "id": "PL-AI-0002",
       "priority": "P1",
       "lane": "Coordination",
-      "status": "REVIEW",
+      "status": "DONE",
       "title": "GitHub bridge for cross-agent review",
       "dependencies": [
         "PL-AI-0001"
@@ -2859,18 +2866,70 @@
         "security-review"
       ],
       "acceptance": "GitHub becomes the shared state bridge for Claude Desktop and OpenAI review without manual file copying. SCOPE ADDITION 2026-09-21, on gpt-architect's ARCHITECTURE / CI FINDING at f6dba611346ac53d72901f661a2b21cc12e80eac, which ruled the check belongs here rather than in a competing task: CI mechanically detects an UNDECLARED WORKSPACE IMPORT -- a source file in one workspace importing a local @liberty package that its own package.json does not declare in dependencies. THE EXACT DEFECT THIS MUST CATCH, preserved as the regression case: apps/web/src/lib/server-bootstrap.ts imported @liberty/media-inspection/node/pinned-fetch while apps/web/package.json declared seven @liberty packages and not that one. It reached a reviewer because NO EXISTING GATE CAN SEE IT: the import resolves through the root workspace symlink, so typecheck, lint, build and the unit suites were green, and even npm ci --dry-run returned 0 because npm tolerates a link node that already exists. It was found by a human reader, which is not a detection mechanism. Required of the check: it reads each workspace's own manifest rather than the root's; it resolves subpath imports (@liberty/x/node/y declares @liberty/x); it covers test files as well as source, since server-bootstrap.test.ts carried the same undeclared import; and it fails the build rather than warning, because a warning in a green pipeline is how this one survived. A dry-run install against a populated node_modules does NOT satisfy this and must not be offered as the implementation. NOT IN SCOPE: the reverse direction (a declared dependency nothing imports) is a different and much weaker signal, and adding it would make the check noisy enough to be turned off. SECOND SCOPE ADDITION 2026-09-22, on gpt-architect's ruling at cd6f3efd46a75a150206617a2fa6bf747a1c3a5b: 'CI must not rely on typecheck and build racing successfully when typecheck consumes files build writes.' THE DEFECT, verified structurally rather than inferred from a flake: apps/web/tsconfig.json line 15 includes .next/types/**/*.ts; turbo.json's build task declares .next/** as an output; and turbo.json's typecheck task declares dependsOn ['^typecheck'] with NO edge to build. So tsc and next build race on that directory whenever both run in one graph. HOW IT SURFACED, because the shape of the evidence matters: a single @liberty/web#typecheck exit 2 with NO 'error TS' line in the output, which passed on two re-runs of the identical tree. The command that produced it -- npx turbo run typecheck lint build --force -- had been this project's recorded gate invocation for several rounds and had passed every time, which is what a race looks like until it does not. The lead changed its own procedure to three separate invocations, which removes the race from the evidence but NOT from CI. Required: CI must not be able to run the two concurrently in a way that lets a typecheck read a partially written .next/types. The mechanism is the implementer's -- a dependsOn edge from typecheck to build, a separate tsconfig for the check that excludes generated types, or sequencing in the workflow -- but a green run is not evidence the race is gone, so whatever is chosen must be demonstrated by argument from the task graph rather than by re-running until it passes. NOT IN SCOPE: fixing the unrelated pre-existing env:validate warnings. SMALLER AND RELATED, folded in here rather than filed: turbo.json's globalEnv lists none of the LIBERTY_CATALOG_* variables, including the eight predating round 63. Harmless today because they are read at runtime by instrumentation.ts rather than at build time, so it affects only build-cache hashing -- but a variable that is read at build time later and still unlisted would let one cache entry serve builds that meant different values, which is the defect env:validate already warns about for LIBERTY_FIXTURE_MEDIA_ORIGIN.",
-      "owner": "claude-lead",
-      "gateResults": {},
+      "owner": null,
+      "gateResults": {
+        "architecture-review": {
+          "status": "pass",
+          "at": "2026-09-22T03:35:14.996Z",
+          "by": "gpt-architect",
+          "commitSha": "343a77879d97f0e16ba0f66daef0bd02aacd9a71",
+          "evidence": "PASS, recorded by gpt-architect against origin 343a77879d97f0e16ba0f66daef0bd02aacd9a71. The implementation satisfies the current acceptance additions and preserves the original GitHub-bridge work inside ONE review window. UNDECLARED WORKSPACE IMPORT CONTROL: each workspace is checked against its OWN package.json; the root manifest is deliberately not accepted as a fallback; package subpaths collapse to their owning package, so @liberty/media-inspection/node/pinned-fetch requires a declaration of @liberty/media-inspection; test files are scanned as well as production source; the check covers static import and export, dynamic import with a static string, require, and test mocks with static specifiers; an undeclared import is a validation FAILURE rather than a warning; the validator requires no dependency install and runs before npm ci; the original PL-0311 defect is mechanically reproducible, with tsc left green while repository validation goes red; and reverse unused-dependency detection remains correctly out of scope. THE TOKENIZER IMPLEMENTATION IS ACCEPTED: a raw-regex implementation produced false positives from imports written inside string and regex literals, and the committed scanner tokenizes sufficiently to distinguish code from text without evaluating source. TYPECHECK/BUILD RACE: apps/web/tsconfig.json still includes .next/types/**; build still owns .next/**; @liberty/web#typecheck now carries a package-scoped dependency on its own build; the upstream ^typecheck dependency remains intact; no other workspace's typecheck is coupled to build; the validator checks the relationship structurally from the Turbo task graph; removing the scoped edge makes repository validation fail; THEREFORE THE RACE IS ELIMINATED BY ORDERING, NOT INFERRED AWAY FROM A GREEN RERUN. CI WIRING: scripts/test-validate-repo.mjs now has an explicit CI step; the previous workflow claim that the local script gate was fully mirrored in CI was FALSE and is corrected; the new dependency and Turbo graph suites are invoked through the repository-validator suite until package.json can name them directly; and repository validation also requires those scripts to exist, so deleting them cannot silently remove the check. PROVENANCE: TRANSCRIBED BY CLAUDE from the ChatGPT review session and relayed by the human commander; the GitHub review-write integration returns 403."
+        },
+        "security-review": {
+          "status": "pass",
+          "at": "2026-09-22T03:35:15.096Z",
+          "by": "gpt-architect",
+          "commitSha": "343a77879d97f0e16ba0f66daef0bd02aacd9a71",
+          "evidence": "PASS, recorded by gpt-architect against origin 343a77879d97f0e16ba0f66daef0bd02aacd9a71. Security evidence: the new validators use Node built-ins and inspect checkout files only; imported workspace source is never executed or evaluated; manifest values are not treated as commands; source traversal does not follow symbolic links; node_modules, .git, .next, dist, build, coverage and cache trees are excluded; unsupported workspace glob shapes cause a HARD validation failure rather than silently leaving a workspace unchecked; static package specifiers are extracted WITHOUT resolving through node_modules, so a compromised or stale install cannot influence the declaration check; dynamic template specifiers are ignored rather than executed or guessed; and the validator creates no new credential, network, shell-execution or external-input path in CI. No blocking security defect found. Worth keeping beside the pass: the check deliberately does not resolve through node_modules, which is the same reasoning that made it independent of npm ci -- a control over declarations must not depend on the installed tree it is meant to keep honest. PROVENANCE: TRANSCRIBED BY CLAUDE from the ChatGPT review session and relayed by the human commander; the GitHub review-write integration returns 403."
+        }
+      },
       "implementationAgent": "claude-lead",
-      "updatedAt": "2026-09-22T03:28:44.281Z",
+      "updatedAt": "2026-09-22T03:35:15.285Z",
       "implementationBaseSha": "b157a5846d45568f516240f581d6b317a544aa12",
-      "notes": "CI finding folded in 2026-09-21 from the PL-0311 round rather than filed as its own task, on the reviewer's explicit instruction not to open a competing task. The lead had reported the gap and declined to file one, on the ground that a new task's surface would collide with this one's scripts/** and .github/** and add board pressure for nothing; the reviewer agreed and assigned it here. CI race folded in 2026-09-22 on the reviewer's explicit ruling to put it here rather than open a competing task, the same disposition the undeclared-workspace-import check got. allowedPaths gained turbo.json and apps/web/tsconfig.json, which the race cannot be fixed without; every other entry is unchanged. Found by the PL-0309 corrective implementer and NOT written off as a flake -- the structural cause was checked at the three declaration sites before it was reported."
+      "notes": "CI finding folded in 2026-09-21 from the PL-0311 round rather than filed as its own task, on the reviewer's explicit instruction not to open a competing task. The lead had reported the gap and declined to file one, on the ground that a new task's surface would collide with this one's scripts/** and .github/** and add board pressure for nothing; the reviewer agreed and assigned it here. CI race folded in 2026-09-22 on the reviewer's explicit ruling to put it here rather than open a competing task, the same disposition the undeclared-workspace-import check got. allowedPaths gained turbo.json and apps/web/tsconfig.json, which the race cannot be fixed without; every other entry is unchanged. Found by the PL-0309 corrective implementer and NOT written off as a flake -- the structural cause was checked at the three declaration sites before it was reported.",
+      "review": {
+        "taskId": "PL-AI-0002",
+        "implementationAgent": "claude-lead",
+        "implementationOwner": "claude-lead",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "343a77879d97f0e16ba0f66daef0bd02aacd9a71",
+        "reviewedBaseSha": "b157a5846d45568f516240f581d6b317a544aa12",
+        "reviewedTreeHash": "a26fefd40eb80f5ed3fca2d3045d8ab722c2fde44fb11c80dba30cbdf298ba71",
+        "reviewedFileCount": 84,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [],
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-09-22T03:35:15.204Z",
+        "evidence": "APPROVED by gpt-architect at origin 343a77879d97f0e16ba0f66daef0bd02aacd9a71. architecture-review PASS and security-review PASS, both recorded as gates; they are the task's ONLY two gates. The reconciled window holds both the twelve historical GitHub-bridge commits and this round's two acceptance additions, which is what the round-68 ruling required of it. Three points the reviewer made in its own words and which are kept rather than paraphrased: the race is ELIMINATED BY ORDERING, NOT INFERRED AWAY FROM A GREEN RERUN; the previous workflow claim that the local script gate was fully mirrored in CI was FALSE and is corrected; and static specifiers are extracted without resolving through node_modules, so a compromised or stale install cannot influence the declaration check. PL-0402 REMAINS SEPARATE AND THIS VERDICT SAYS NOTHING ABOUT IT: its PostgreSQL integration gate is not to be inferred from here and still requires the real database execution already planned. PROVENANCE: TRANSCRIBED BY CLAUDE from the ChatGPT review session and relayed by the human commander; the GitHub review-write integration returns 403."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PL-AI-0002",
+          "implementationAgent": "claude-lead",
+          "implementationOwner": "claude-lead",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "343a77879d97f0e16ba0f66daef0bd02aacd9a71",
+          "reviewedBaseSha": "b157a5846d45568f516240f581d6b317a544aa12",
+          "reviewedTreeHash": "a26fefd40eb80f5ed3fca2d3045d8ab722c2fde44fb11c80dba30cbdf298ba71",
+          "reviewedFileCount": 84,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [],
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-09-22T03:35:15.204Z",
+          "evidence": "APPROVED by gpt-architect at origin 343a77879d97f0e16ba0f66daef0bd02aacd9a71. architecture-review PASS and security-review PASS, both recorded as gates; they are the task's ONLY two gates. The reconciled window holds both the twelve historical GitHub-bridge commits and this round's two acceptance additions, which is what the round-68 ruling required of it. Three points the reviewer made in its own words and which are kept rather than paraphrased: the race is ELIMINATED BY ORDERING, NOT INFERRED AWAY FROM A GREEN RERUN; the previous workflow claim that the local script gate was fully mirrored in CI was FALSE and is corrected; and static specifiers are extracted without resolving through node_modules, so a compromised or stale install cannot influence the declaration check. PL-0402 REMAINS SEPARATE AND THIS VERDICT SAYS NOTHING ABOUT IT: its PostgreSQL integration gate is not to be inferred from here and still requires the real database execution already planned. PROVENANCE: TRANSCRIBED BY CLAUDE from the ChatGPT review session and relayed by the human commander; the GitHub review-write integration returns 403."
+        }
+      ],
+      "completedAt": "2026-09-22T03:35:15.286Z"
     },
     {
       "id": "PL-AI-0003",
       "priority": "P1",
       "lane": "Coordination",
-      "status": "BACKLOG",
+      "status": "READY",
       "title": "Optional API-driven autonomous dispatcher",
       "dependencies": [
         "PL-AI-0001",

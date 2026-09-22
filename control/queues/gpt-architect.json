@@ -1,42 +1,130 @@
 {
-  "generatedAt": "2026-09-22T03:28:44.372Z",
+  "generatedAt": "2026-09-22T03:39:38.672Z",
   "agent": "gpt-architect",
   "executionAvailable": false,
   "assigned": [],
   "review": [
     {
-      "id": "PL-AI-0002",
-      "priority": "P1",
-      "lane": "Coordination",
+      "id": "PL-0402",
+      "priority": "P0",
+      "lane": "Backend",
       "status": "REVIEW",
-      "title": "GitHub bridge for cross-agent review",
+      "title": "Profile model",
       "dependencies": [
-        "PL-AI-0001"
+        "PL-0405"
       ],
       "allowedPaths": [
-        ".github/**",
-        "control/**",
-        "scripts/**",
-        "docs/**",
-        "turbo.json",
-        "apps/web/tsconfig.json"
+        "packages/persistence/src/schema/profiles.ts",
+        "packages/persistence/src/schema/index.ts",
+        "packages/persistence/src/profile-repository.ts",
+        "packages/persistence/src/profile-creation.ts",
+        "packages/persistence/src/profile-creation.test.ts",
+        "packages/persistence/src/profile-scoping.test.ts",
+        "packages/persistence/src/profile-name-collision.test.ts",
+        "packages/persistence/src/repository-scoping.test.ts",
+        "packages/persistence/src/index.ts",
+        "packages/persistence/migrations/0000_profile_scoped_identity.sql",
+        "packages/auth/src/authorization.ts",
+        "packages/auth/src/authorization.test.ts",
+        "packages/auth/src/better-auth.ts",
+        "packages/auth/src/enabled-surface.ts",
+        "packages/auth/src/enabled-surface.test.ts",
+        "packages/auth/src/session.ts",
+        "apps/web/src/app/api/v1/profiles/**"
       ],
-      "preferredAgent": "claude-lead",
+      "preferredAgent": "claude-backend",
       "reviewAgent": "gpt-architect",
       "qualityGates": [
-        "architecture-review",
+        "typecheck",
+        "unit",
+        "integration",
         "security-review"
       ],
-      "acceptance": "GitHub becomes the shared state bridge for Claude Desktop and OpenAI review without manual file copying. SCOPE ADDITION 2026-09-21, on gpt-architect's ARCHITECTURE / CI FINDING at f6dba611346ac53d72901f661a2b21cc12e80eac, which ruled the check belongs here rather than in a competing task: CI mechanically detects an UNDECLARED WORKSPACE IMPORT -- a source file in one workspace importing a local @liberty package that its own package.json does not declare in dependencies. THE EXACT DEFECT THIS MUST CATCH, preserved as the regression case: apps/web/src/lib/server-bootstrap.ts imported @liberty/media-inspection/node/pinned-fetch while apps/web/package.json declared seven @liberty packages and not that one. It reached a reviewer because NO EXISTING GATE CAN SEE IT: the import resolves through the root workspace symlink, so typecheck, lint, build and the unit suites were green, and even npm ci --dry-run returned 0 because npm tolerates a link node that already exists. It was found by a human reader, which is not a detection mechanism. Required of the check: it reads each workspace's own manifest rather than the root's; it resolves subpath imports (@liberty/x/node/y declares @liberty/x); it covers test files as well as source, since server-bootstrap.test.ts carried the same undeclared import; and it fails the build rather than warning, because a warning in a green pipeline is how this one survived. A dry-run install against a populated node_modules does NOT satisfy this and must not be offered as the implementation. NOT IN SCOPE: the reverse direction (a declared dependency nothing imports) is a different and much weaker signal, and adding it would make the check noisy enough to be turned off. SECOND SCOPE ADDITION 2026-09-22, on gpt-architect's ruling at cd6f3efd46a75a150206617a2fa6bf747a1c3a5b: 'CI must not rely on typecheck and build racing successfully when typecheck consumes files build writes.' THE DEFECT, verified structurally rather than inferred from a flake: apps/web/tsconfig.json line 15 includes .next/types/**/*.ts; turbo.json's build task declares .next/** as an output; and turbo.json's typecheck task declares dependsOn ['^typecheck'] with NO edge to build. So tsc and next build race on that directory whenever both run in one graph. HOW IT SURFACED, because the shape of the evidence matters: a single @liberty/web#typecheck exit 2 with NO 'error TS' line in the output, which passed on two re-runs of the identical tree. The command that produced it -- npx turbo run typecheck lint build --force -- had been this project's recorded gate invocation for several rounds and had passed every time, which is what a race looks like until it does not. The lead changed its own procedure to three separate invocations, which removes the race from the evidence but NOT from CI. Required: CI must not be able to run the two concurrently in a way that lets a typecheck read a partially written .next/types. The mechanism is the implementer's -- a dependsOn edge from typecheck to build, a separate tsconfig for the check that excludes generated types, or sequencing in the workflow -- but a green run is not evidence the race is gone, so whatever is chosen must be demonstrated by argument from the task graph rather than by re-running until it passes. NOT IN SCOPE: fixing the unrelated pre-existing env:validate warnings. SMALLER AND RELATED, folded in here rather than filed: turbo.json's globalEnv lists none of the LIBERTY_CATALOG_* variables, including the eight predating round 63. Harmless today because they are read at runtime by instrumentation.ts rather than at build time, so it affects only build-cache hashing -- but a variable that is read at build time later and still unlisted would let one cache entry serve builds that meant different values, which is the defect env:validate already warns about for LIBERTY_FIXTURE_MEDIA_ORIGIN.",
-      "owner": "claude-lead",
-      "gateResults": {},
-      "implementationAgent": "claude-lead",
-      "updatedAt": "2026-09-22T03:28:44.281Z",
-      "implementationBaseSha": "b157a5846d45568f516240f581d6b317a544aa12",
-      "notes": "CI finding folded in 2026-09-21 from the PL-0311 round rather than filed as its own task, on the reviewer's explicit instruction not to open a competing task. The lead had reported the gap and declined to file one, on the ground that a new task's surface would collide with this one's scripts/** and .github/** and add board pressure for nothing; the reviewer agreed and assigned it here. CI race folded in 2026-09-22 on the reviewer's explicit ruling to put it here rather than open a competing task, the same disposition the undeclared-workspace-import check got. allowedPaths gained turbo.json and apps/web/tsconfig.json, which the race cannot be fixed without; every other entry is unchanged. Found by the PL-0309 corrective implementer and NOT written off as a flake -- the structural cause was checked at the three declaration sites before it was reported."
+      "acceptance": "Profiles are modelled above authentication rather than inside the auth library, with the active profile carried alongside the session rather than inside the identity record; profile scoping is present in the first migration rather than retrofitted, because that is the part that is expensive to reverse; profiles can be created and selected with authorization tests",
+      "owner": "claude-backend",
+      "gateResults": {
+        "typecheck": {
+          "status": "pass",
+          "at": "2026-09-22T03:28:44.091Z",
+          "by": "claude-backend",
+          "commitSha": "55cedc79ab6a79338c7c75f379d566e3acb1be5b",
+          "evidence": "npx turbo run typecheck --force, exit 0, 21 of 21 tasks; lint --force, exit 0, 11 of 11; build --force, exit 0, 11 of 11. Three separate invocations. NOTE THE TASK COUNT CHANGE: typecheck is now 21 rather than 11, because PL-AI-0002's turbo.json edge pulls @liberty/web#build into the typecheck graph. That is the race fix landing in the same round, not a regression, and it is stated here so the figure is not read as drift. NO CODE WAS WRITTEN FOR PL-0402 THIS ROUND. Its implementation is in committed history -- 1dd8e73, 00f6c50, f71a881 and 719d2d7 -- and this round did the provenance repair the reviewer authorized: an evidence-based narrowing of allowedPaths from three wildcards to seventeen paths, then reconciliation to fc1ea4d5. The gate therefore records that the delivered implementation typechecks at the integrated head, not that anything was repaired today."
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-09-22T03:28:44.191Z",
+          "by": "claude-backend",
+          "commitSha": "55cedc79ab6a79338c7c75f379d566e3acb1be5b",
+          "evidence": "npx turbo run test --force, exit 0, 20 of 20 tasks, 0 cached, 2723 passed 1 skipped -- unchanged from the previous head, because PL-0402 wrote no code this round. Sum recomputed by the lead from the per-package figures: 100+67+68+47+208+252+373+260+288+152+908 = 2723. THE SUITES THAT BEAR ON THIS TASK'S ACCEPTANCE ARE IN THAT TOTAL AND ARE NAMED RATHER THAN IMPLIED: packages/persistence/src/profile-scoping.test.ts, profile-creation.test.ts, profile-name-collision.test.ts, repository-scoping.test.ts and scope-forgery.test.ts, plus packages/auth/src/authorization.test.ts and enabled-surface.test.ts, and apps/web/src/app/api/v1/profiles/handler.test.ts. They cover profile creation and selection with authorization, which is the acceptance's last clause. test:scripts 0, repo:validate 0, ai:validate 0 at 66 tasks. WHAT THIS GATE DOES NOT ESTABLISH, stated because the acceptance turns on it: that profile scoping is present in the FIRST migration and behaves against a real database. The unit suites run against in-memory repositories. PL-0405's precedent is that this task's integration gate means executing packages/persistence/migrations/0000_profile_scoped_identity.sql against a real PostgreSQL instance and exercising profile creation, selection and cross-profile refusal on it. That gate is NOT recorded and the task stays IN_PROGRESS until it is."
+        },
+        "integration": {
+          "status": "pass",
+          "at": "2026-09-22T03:39:38.489Z",
+          "by": "claude-backend",
+          "commitSha": "343a77879d97f0e16ba0f66daef0bd02aacd9a71",
+          "evidence": "THE MODEL WAS EXERCISED AGAINST A REAL DATABASE, NOT RECONCILED OR INFERRED. PostgreSQL 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1), cluster 16/main started in this container; a dedicated role liberty_pl0402 and its own database were created rather than using the superuser, following PL-0405's precedent. psql -v ON_ERROR_STOP=1 -f packages/persistence/migrations/0000_profile_scoped_identity.sql against an EMPTY database, exit 0, 8 tables: account, active_profile_selection, playback_progress, profile, session, user, verification, watchlist_entry. THE SCHEMA ANSWERS THE FIRST THREE ACCEPTANCE CLAUSES MECHANICALLY, queried from information_schema rather than read off the migration text. Profiles are above authentication: no column matching %profile% exists on user, session, account or verification -- the identity record does not carry one. The active profile is beside the session: active_profile_selection is its own table whose PRIMARY KEY is session_id, with foreign keys to session.id and user.id AND a COMPOSITE foreign key (profile_id, user_id) to profile (id, user_id). Scoping is in the FIRST migration rather than retrofitted: this is 0000, and playback_progress and watchlist_entry both carry a profile_id foreign key to profile in it. THE BEHAVIOURAL HALF DRIVES THE SHIPPED FUNCTIONS, not a reimplementation: createProfile, loadProfileOwnership, listProfilesForAccount, authorizeProfileSelection, selectActiveProfile, loadActiveProfileId, resolveLibertySession and archiveProfile, over a drizzle handle from the package's own createDatabase. Only the auth rows were seeded directly, because authentication is PL-0405's delivery rather than this task's. 13 assertions passed. Creation: the row is readable back from PostgreSQL; listProfilesForAccount returns exactly the account's own profile; a duplicate display name is refused as display_name_already_used BY THE REAL UNIQUE CONSTRAINT rather than by a pre-check. Selection: the grant is accepted, loadActiveProfileId reads it back out of active_profile_selection, and resolveLibertySession carries it beside the session. Archive: accepted under the owner's own scope. AUTHORIZATION IS PROVEN THREE WAYS AND THE FIRST ONE WAS A HARNESS FAILURE THAT TURNED INTO EVIDENCE. A SCOPE CANNOT BE MINTED FROM OUTSIDE @liberty/auth: the harness's first draft called issueProfileScope and failed at runtime with 'issueProfileScope is not a function', because the barrel exports it by name and deliberately omits that one while the brand stays module-private. That is PL-0405's forgery fix holding against a real attempt rather than a test double. The only route to a scope is authorizeProfileSelection on ownership read from the database. Second, that decision REFUSES another account's profile as profile_not_owned_by_account, so no scope is issued at all. Third, when the owner's genuine scope is replayed under the attacker's session, selectActiveProfile independently refuses it as scope_not_granted_to_this_session and nothing is written for that session. AND THE DATABASE REFUSES IT TOO, WHICH IS THE PART AN APPLICATION TEST CANNOT SHOW: inserting the selection row directly, bypassing every application check, fails with SQLSTATE 23503 on active_profile_selection_profile_owner_fk -- the composite (profile_id, user_id) foreign key. Cross-profile access is therefore refused by construction in the schema, not only by convention in the code. THREE HARNESS DEFECTS WERE FOUND AND CORRECTED BEFORE ANY CONCLUSION WAS DRAWN, and they are reported because the first one nearly became a false accusation. (1) The harness omitted the required instant on CreateProfileInput, so createdAt was undefined and PostgreSQL refused the insert with 23502. The first reading was 'createProfile is broken against a real database'; the code was correct and the harness was not. (2) It tried to mint a scope directly, which is the forgery route PL-0405 closed. (3) It passed a LibertySession where loadActiveProfileId takes an AccountIdentity, so the lookup silently matched nothing and returned null. Each was diagnosed against the source before being called a defect. THE HARNESS IS NOT COMMITTED: it ran from a scratch file that was deleted, and git status is clean. It is evidence of an execution, not a deliverable, and PL-0402's allowedPaths do not include a home for it. WHAT THIS DOES NOT ESTABLISH: nothing about concurrency, connection-pool behaviour under load, or migration rollback; and the auth rows were seeded rather than produced by the auth library, so this exercises the profile model on a real schema rather than a full sign-in path."
+        }
+      },
+      "implementationAgent": "claude-backend",
+      "updatedAt": "2026-09-22T03:39:38.575Z",
+      "reviewDependencies": [
+        "packages/persistence/src/schema/auth.ts",
+        "apps/web/src/lib/session/account.ts",
+        "apps/web/src/lib/db/request-context.ts",
+        "docs/DATA_MODEL.md"
+      ],
+      "notes": "EVIDENCE-BASED NARROWING 2026-09-22, AUTHORIZED BY gpt-architect at 55cedc79ab6a79338c7c75f379d566e3acb1be5b, which distinguished this from the narrowing it has twice refused: a rejected narrowing is an UNIMPLEMENTED task guessing a smaller future write set to escape a collision, whereas this task has committed implementation history and that history is evidence of what it actually wrote. allowedPaths were [\"apps/web/src/**\",\"packages/contracts/**\",\"packages/**\"] -- three wildcards so broad that the first commit touching a declared path is effectively the repository's first, which is why no honest lower bound was derivable from them. THE EVIDENCE, PER PATH GROUP. Two commits name PL-0402 and nothing else in their subject, so every file they touch is attributed whole: 00f6c50 'the session object nothing was allowed to build' (7 files) and f71a881 'close five advisory findings, including a unique constraint nothing could report' (11 files). Between them they wrote packages/auth/src/authorization.ts and its test, better-auth.ts, enabled-surface.ts and its test, session.ts, packages/persistence/src/index.ts, profile-creation.ts and its test, profile-repository.ts, repository-scoping.test.ts, profile-name-collision.test.ts and schema/profiles.ts. THE AUTH FILES ARE RETAINED DELIBERATELY: they look like PL-0401's territory and they were written by PL-0402, and the ruling is explicit that a path genuinely written as part of this task stays. Two further commits are multi-task and only their PL-0402 portion is attributed. 1dd8e73 'PL-0401 to PL-0404' contributes the profile model itself -- schema/profiles.ts, schema/index.ts, profile-repository.ts, profile-scoping.test.ts, src/index.ts and migrations/0000_profile_scoped_identity.sql, which is the acceptance's 'scoping in the first migration rather than retrofitted' -- while its packages/auth/** bulk is PL-0401's and its progress and watchlist files are PL-0403's and PL-0404's. 719d2d7 'Nine lanes' contributes apps/web/src/app/api/v1/profiles/** and nothing else; the other eight lanes in that commit are other tasks'. reviewDependencies carries the four files review needs and PL-0402 did not write: schema/auth.ts is the identity record the acceptance requires profiles to sit ABOVE rather than inside; session/account.ts and db/request-context.ts are where the active profile is carried beside the session; docs/DATA_MODEL.md is the written model. Per the ruling, those widen the approval fingerprint without reserving anything. NO PATH WAS DROPPED FOR COLLIDING WITH ANOTHER TASK, which the ruling forbids. The retained set overlaps PL-0405's declared surface at packages/auth/** and packages/persistence/src/**, and that is not double-claiming: all four PL-0402 commits are ANCESTORS of PL-0405's base 68c4326, verified with merge-base --is-ancestor, so PL-0405's review range never covered them and this work is genuinely unreviewed.",
+      "implementationBaseSha": "fc1ea4d54c9e7d2b2f6d9aa71a977abdc3bcb400",
+      "implementationBaseProvenance": {
+        "kind": "reconciled-existing-implementation",
+        "baseSha": "fc1ea4d54c9e7d2b2f6d9aa71a977abdc3bcb400",
+        "reconciledAt": "2026-09-22T02:54:43.742Z",
+        "reconciledBy": "claude-backend",
+        "implementationAgent": "claude-backend",
+        "headAtReconciliation": "55cedc79ab6a79338c7c75f379d566e3acb1be5b",
+        "reviewSurface": "allowedPaths + reviewDependencies",
+        "surfaceCommitCount": 19,
+        "oldestSurfaceCommit": "1dd8e73ee02ca931ab15bea677fff501913d235c",
+        "newestSurfaceCommit": "e097590ee79e112f26073b293a4ad7fbb2bd1fd6",
+        "surfaceCommits": [
+          "e097590ee79e112f26073b293a4ad7fbb2bd1fd6",
+          "a6035069da64ca511049359942b08f2a5709e33c",
+          "ca552bce148345d2cbf58fcf3a7059d5773e3d1f",
+          "0337663aa9cdf1572298492b5f49e37e48f6e0a2",
+          "3e93d0a94685872a0266dd9c936d95821d2135c1",
+          "6d158b0eb8d4393a7afe321b600d70ed19ffe9f7",
+          "fbbccf38a5ef0b761264277bc96a9409a510c503",
+          "4b3ae21e3e61b6f5a13b6862f794efb42c965bab",
+          "1662363992b9e56cb731e21fc4b401c34da9cb2a",
+          "0fd3f776e084c545c088207f57e5a4208c712add",
+          "b74b0d3c4befa226109fc1ce623b5addd46a9490",
+          "eecca6b621a2fccaab09ab3ec15d3bc93936df3b",
+          "719d2d7c31465901f3dbee1e936a180e87c3d44f",
+          "f71a88170193f6b4367b3eaafad9543a3dbe6328",
+          "00f6c5061e11a622999c535cfec9f27814e20034",
+          "b7bc31cb2799cf6838c5acdf5cefd906c5e699ca",
+          "9aafd5237e4ee6c8dab6c9c2f9879c1910149872",
+          "34c16c97c9ae0a1dec5b708f4f81ed62ecb94afb",
+          "1dd8e73ee02ca931ab15bea677fff501913d235c"
+        ],
+        "surfaceCommitsTruncated": false,
+        "changedFileCount": 25,
+        "baseCommitSurfaceTouchCount": 0,
+        "baseCommitSurfaceTouches": [],
+        "baseCommitSurfaceTouchesTruncated": false,
+        "reason": "PL-0402's implementation is in committed history and predates this claim by a month. Four commits contribute it: 1dd8e73 (2026-08-24, the profile model and the first migration, multi-task with PL-0401/0403/0404 and attributed by subject matter), 00f6c50 (2026-08-31, names PL-0402 alone), f71a881 (2026-09-01, names PL-0402 alone) and 719d2d7 (2026-09-05, the profiles HTTP surface, multi-task and attributed to the api/v1/profiles subtree only). The earliest is 1dd8e73, so the base is its parent fc1ea4d5. VERIFIED AGAINST THE CORRECTED SURFACE RATHER THAN ASSUMED, which is the check PL-0205 and PL-0601 failed: no file in the seventeen declared paths exists in the tree at fc1ea4d5 -- every one is created after it -- and the base commit itself touches none of them, so baseCommitSurfaceTouches is 0. Window is 11 commits and 21 files. Surface narrowing was authorized by gpt-architect at 55cedc7 and the per-path evidence is in the task notes."
+      }
     }
   ],
-  "reservedExternal": [],
+  "reservedExternal": [
+    {
+      "id": "PL-AI-0003",
+      "title": "Optional API-driven autonomous dispatcher",
+      "priority": "P1",
+      "lane": "Coordination",
+      "reason": "reserved for gpt-architect via openai-chatgpt; not locally executable"
+    }
+  ],
   "recommended": [
     {
       "id": "PL-AI-0006",
@@ -60,6 +148,33 @@
         "unit"
       ],
       "acceptance": "Shared vocabularies live in their own leaf modules, domain contracts live in one module each, index.ts is a re-export-only compatibility barrel rather than the authoritative public surface, and a wildcard exports map lets a new domain contract be added without touching package metadata or the barrel; no cycle-driven z.lazy remains and structural regressions prove the boundary rather than merely reflecting it; no schema behaviour changes",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PL-AI-0003",
+      "priority": "P1",
+      "lane": "Coordination",
+      "status": "READY",
+      "title": "Optional API-driven autonomous dispatcher",
+      "dependencies": [
+        "PL-AI-0001",
+        "PL-AI-0002"
+      ],
+      "allowedPaths": [
+        "control/**",
+        "scripts/**",
+        "packages/**",
+        "docs/**"
+      ],
+      "preferredAgent": "gpt-architect",
+      "reviewAgent": "claude-lead",
+      "qualityGates": [
+        "architecture-review",
+        "security-review",
+        "unit"
+      ],
+      "acceptance": "Optional external agent runner can dispatch queued tasks to configured providers with budgets, audit logs, retries, and human approval gates",
       "owner": null,
       "gateResults": {}
     },
