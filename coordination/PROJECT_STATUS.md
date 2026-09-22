@@ -1,8 +1,8 @@
 # Project Liberty - Project Status
 
-> Generated 2026-09-22T02:07:36.708Z from the AI control plane.
+> Generated 2026-09-22T02:14:47.151Z from the AI control plane.
 
-**Overall completion:** 48/66 executable tasks (73%)
+**Overall completion:** 49/66 executable tasks (74%)
 
 ## Status summary
 
@@ -10,9 +10,9 @@
 - **READY:** 4
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 1
-- **REVIEW:** 1
+- **REVIEW:** 0
 - **BLOCKED:** 6
-- **DONE:** 48
+- **DONE:** 49
 - **CANCELED:** 0
 
 ## Milestones / phases
@@ -29,7 +29,6 @@
 
 ## Active work
 
-- **PL-0313** [REVIEW] A resumed pass may not infer absence: fix what `complete` means — owner: claude-backend
 - **PL-0711** [IN_PROGRESS] Playback-session candidate wire bounds match StreamCandidate bounds — owner: gpt-architect
 
 ## Dispatch classification
@@ -61,7 +60,7 @@ No READY work is waiting on an external agent lane.
 - **gpt-architect:** 1/6 active (external lane; not locally executable)
 - **claude-lead:** 0/2 active
 - **claude-frontend:** 0/2 active
-- **claude-backend:** 1/2 active
+- **claude-backend:** 0/2 active
 - **claude-media:** 0/2 active
 - **claude-test:** 0/1 active
 - **claude-security:** 0/1 active

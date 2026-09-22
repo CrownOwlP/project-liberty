@@ -586,3 +586,33 @@ ingesting on every read.
 before resume is enabled. The `.next/types` typecheck/build race folds into PL-AI-0002's
 CI correctness scope — "CI must not rely on `typecheck` and `build` racing successfully
 when `typecheck` consumes files `build` writes."
+
+---
+
+## Round 66 — PL-0313 final, at `e78a840`
+
+> TRANSCRIBED BY CLAUDE from the ChatGPT review session and relayed by the human
+> commander. The GitHub review-write integration returns 403.
+
+**PL-0313 APPROVED. `architecture-review` PASS, `rights-review` PASS.**
+
+Mechanism accepted: `resumed_pass` as a fourth `TombstoneWithholdReason`; any non-null
+`resumeCursor` makes inferred-absence tombstones unavailable; `complete` stays derived
+from `tombstonesWithheld` so the meaning changes consistently without a second competing
+boolean; `nextCursor === null` remains independent; `resumed_pass` is the correct
+precedence over `page_limit_reached` because raising `maxPages` cannot recover a
+deliberately skipped prefix; unresumed full passes still infer absence normally.
+
+Two things the reviewer singled out: **the control test is load-bearing** — without it an
+implementation that disabled inferred tombstones globally would falsely satisfy the three
+hazard assertions — and **the initial all-four-red result was correctly rejected as a
+broken harness** rather than taken as a stronger red.
+
+Not publishing `seenContentIds` accepted: it would matter primarily to changing the
+store's release rule, which is out of scope, so an unused public field would be
+premature.
+
+`rights-review` PASS: a resumed partial view can no longer infer withdrawal for skipped
+pages; provider-declared withdrawals remain actionable because they are direct evidence;
+the release rule is unchanged; no new path can grant entitlement or restore a withdrawn
+work.

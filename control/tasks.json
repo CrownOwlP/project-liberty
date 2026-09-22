@@ -4177,7 +4177,7 @@
       "id": "PL-0313",
       "priority": "P1",
       "lane": "Backend",
-      "status": "REVIEW",
+      "status": "DONE",
       "title": "A resumed pass may not infer absence: fix what `complete` means",
       "dependencies": [
         "PL-0309"
@@ -4205,7 +4205,7 @@
       ],
       "acceptance": "`complete` means THE WHOLE SOURCE WAS OBSERVED, sufficient to infer absence -- not merely that this invocation reached end-of-enumeration. THE HAZARD, stated exactly. `IngestionPassResult.complete` is set when the provider's cursor runs out. A pass started from a non-null `resumeCursor` can reach that end having DELIBERATELY SKIPPED every page before the cursor, and it reports `complete: true`. `reconcileTombstones` takes `complete` as licence to infer absence, so every known content id living on a skipped page is unseen, is inferred withdrawn, and is mass-tombstoned. Under PL-0309's tombstone rule a tombstone is released only by a later complete pass that accepts the work again, so the damage is not self-healing on the next pass. WHY THIS IS NOT LIVE TODAY, and why that is not a reason to defer it: PL-0309's `schedule.ts` always passes `resumeCursor: null`, which keeps the hazard unreachable at the cost of re-reading the prefix every pass. The reviewer ruled it non-blocking for PL-0309 on exactly that ground and required this task BEFORE resume support is enabled. So the ordering constraint is the deliverable as much as the fix is: whoever adds resume must find this already closed. REQUIRED: absence inference is gated on a fact that a resumed pass cannot satisfy by accident. The implementer chooses the mechanism and states why -- a distinct field separating 'enumeration ended' from 'whole source observed', a fourth `TombstoneWithholdReason` for a resumed pass, or a `seenContentIds` set that makes the reconciliation exact rather than inferential. What is NOT acceptable is a comment telling a future caller not to resume, which is the state this task exists to replace. REQUIRED: a regression that fails against today's code. Start a pass from a `resumeCursor` positioned past a known id, let it run to the provider's end, and assert that id is NOT tombstoned. That test goes red on the current tree -- verify it does and say so -- which makes this a genuine red-to-green rather than a restatement. CONSIDER AND RULE ON, rather than silently skipping: `IngestionPassResult` publishes no seen set, and refusals carry native ids rather than derived content ids, so PL-0309 could not distinguish 'the complete pass saw this work and refused it' from 'never saw it' and took the conservative reading. If `seenContentIds` is the mechanism chosen here, say what it does to that narrowing. NOT IN SCOPE: enabling resume, backfill, or paging beyond `maxPages`; changing the tombstone-RELEASE rule PL-0309 delivered and the reviewer accepted; and redesigning `CatalogStore`, `applyPassToSnapshot` or `refreshCatalogIfDue`.",
       "notes": "Created 2026-09-22 on gpt-architect's FOLLOW-UP FINDING in the PL-0309 CHANGES_REQUESTED at 9dc9bc8, which ordered a separate task rather than a fix inside PL-0309. FOUND BY THE PL-0309 IMPLEMENTER IN A FILE ON ITS OWN SURFACE, AND DELIBERATELY NOT FIXED THERE: ingest.ts was writable to it, and it reported the hazard instead, on the ground that the fix changes what `complete` means or adds a fourth TombstoneWithholdReason -- a change to the rule that file's header is built around, and not something to fold into a task about scheduling. The reviewer agreed and ordered it separately. rights-review is on the gate list because a wrongly tombstoned work is a catalog that silently loses licensed content, and the release rule means it stays lost until a complete pass re-accepts it.",
-      "owner": "claude-backend",
+      "owner": null,
       "gateResults": {
         "typecheck": {
           "status": "pass",
@@ -4220,11 +4220,66 @@
           "by": "claude-backend",
           "commitSha": "cd6f3efd46a75a150206617a2fa6bf747a1c3a5b",
           "evidence": "npx turbo run test --force, exit 0, 20 of 20 tasks, 0 cached, 2723 passed 1 skipped against the 2719/1 baseline: +4, exactly the four tests added to ingest.test.ts, and the sum was recomputed from the per-package figures (100+67+68+47+208+252+373+260+288+152+908 = 2723). catalog-ingestion 148 to 152. test:scripts 0, repo:validate 0. THIS IS A GENUINE RED-TO-GREEN AND THE RED WAS OBSERVED ON THE UNMODIFIED TREE BEFORE THE FIX WAS WRITTEN, which the acceptance required rather than suggested: three of the four failed against cd6f3ef -- 'withholds tombstones when it started from a cursor, even reaching the end', 'still reports the enumeration ended, because that is a different fact', and 'names the resume rather than the page limit when both apply'. 3 failed, 17 passed. THE FOURTH TEST IS A CONTROL AND IT PASSED BEFORE THE FIX AS WELL AS AFTER: 'leaves an unresumed full pass able to infer absence, which is the point of the rule' asserts that a pass from the beginning that reaches the end still tombstones a known id it did not see. Without it a guard that simply withheld tombstones always would satisfy the other three, which would close the hazard by disabling the feature. AN HONEST NOTE ON THE FIRST RUN: all FOUR failed initially, because the page fixtures omitted the ok: true discriminant that ProviderPageResult requires and every existing test in the file supplies. The control test failing is what exposed it -- a regression suite where the control also goes red is measuring the harness, not the code -- so the fixtures were corrected and the red re-observed at three before a line of ingest.ts was touched. THE MECHANISM, and why not the alternatives: nextCursor === null already publishes 'the enumeration ended', so a second boolean field would need a rule about which one a caller believes. What was missing is not a fact about the cursor but whether this pass is a basis for inferring absence, which is exactly what tombstonesWithheld already answers for a failed, incremental or truncated pass. A resumed pass is a fourth member of that set. ORDERING IS REPORTING PRECEDENCE AND IS TESTED: a resumed pass that also ran out of page budget reports resumed_pass rather than page_limit_reached, because the prefix was skipped by choice and raising maxPages would not fix it. SEEN-CONTENT-IDS WAS CONSIDERED AND RULED AGAINST, which the acceptance asked for explicitly. ingest.ts already tracks seen-but-refused ids internally and already spares them from a tombstone, so that half was never broken. Publishing the set would matter only to the STORE, which today releases a tombstone when a complete pass ACCEPTS a work and could then release when a complete pass merely SAW it -- a change to the tombstone-release rule the reviewer accepted in PL-0309 and explicitly out of this task's scope. Shipping an unread field to enable a rule change nobody has approved is the wrong order; the argument a later task should answer is written into docs/CATALOG_SOURCE.md rather than left in a commit message. WHAT THIS DOES NOT TURN ON: resume and backfill remain off, schedule.ts still passes resumeCursor null, and LIBERTY_CATALOG_MAX_PAGES still bounds the catalog a reader sees. What changed is that enabling resume is now a scheduling decision rather than a mass-deletion risk."
+        },
+        "architecture-review": {
+          "status": "pass",
+          "at": "2026-09-22T02:14:46.771Z",
+          "by": "gpt-architect",
+          "commitSha": "e78a8406c1618b0293eacb9213b13f5f35cf923e",
+          "evidence": "PASS, recorded by gpt-architect against origin e78a8406c1618b0293eacb9213b13f5f35cf923e. The implementation satisfies the invariant that complete means the whole source was observed sufficiently to infer absence, not merely that this invocation reached end-of-enumeration. ACCEPTED MECHANISM: TombstoneWithholdReason gains resumed_pass; any non-null resumeCursor makes inferred-absence tombstones unavailable; complete remains DERIVED from tombstonesWithheld, so the meaning changes consistently everywhere without introducing a second competing boolean; nextCursor === null continues to mean the enumeration ended, intentionally independent of whether the pass observed the whole source; a resumed pass that reaches the end therefore correctly reports nextCursor null, complete false and tombstonesWithheld resumed_pass; when a pass is both resumed and page-limited, resumed_pass is the correct reporting precedence because raising maxPages cannot recover the deliberately skipped prefix; and unresumed full passes still infer absence and mint tombstones normally. THE REGRESSION EVIDENCE IS SUFFICIENT: the hazard tests were demonstrated RED against the unmodified tree before the fix; three hazard assertions failed on the pre-fix behaviour; the fourth is a control proving an ordinary full pass still infers absence; and the initial all-four-red result was CORRECTLY REJECTED as a broken harness when the page fixture lacked its ok: true discriminant, then corrected before the real red was recorded. THE CONTROL IS LOAD-BEARING: without it, an implementation that simply disabled inferred tombstones globally would falsely satisfy the hazard tests. THE DECISION NOT TO PUBLISH seenContentIds IS ACCEPTED: ingest.ts already uses its internal seen-content set to spare seen-but-refused records from inferred tombstones; publishing that set would matter primarily to changing the store's tombstone-release rule; and PL-0309's accepted release rule is out of PL-0313 scope, so adding an unused public field solely to enable a later semantic change would be premature. Resume and backfill remain disabled; this task only makes enabling resume later safe from the mass-deletion hazard. PROVENANCE: TRANSCRIBED BY CLAUDE from the ChatGPT review session and relayed by the human commander; the GitHub review-write integration returns 403."
+        },
+        "rights-review": {
+          "status": "pass",
+          "at": "2026-09-22T02:14:46.874Z",
+          "by": "gpt-architect",
+          "commitSha": "e78a8406c1618b0293eacb9213b13f5f35cf923e",
+          "evidence": "PASS, recorded by gpt-architect against origin e78a8406c1618b0293eacb9213b13f5f35cf923e. Evidence: a resumed partial view can no longer infer withdrawal for works on intentionally skipped pages; inferred absence still requires a full-source observation; explicit provider-declared withdrawals remain actionable even on incomplete passes, because they are DIRECT EVIDENCE rather than inferred absence; the existing conservative tombstone-release rule remains unchanged; and the fix therefore reduces the risk of wrongly hiding or withdrawing content while creating no new path that can grant entitlement or restore a withdrawn work. Invariant 1 is unaffected in both directions: nothing here can surface a work, and the change removes a way a licensed work could be silently lost. PROVENANCE: TRANSCRIBED BY CLAUDE from the ChatGPT review session and relayed by the human commander; the GitHub review-write integration returns 403."
         }
       },
       "implementationAgent": "claude-backend",
-      "updatedAt": "2026-09-22T02:07:36.616Z",
-      "implementationBaseSha": "cd6f3efd46a75a150206617a2fa6bf747a1c3a5b"
+      "updatedAt": "2026-09-22T02:14:47.064Z",
+      "implementationBaseSha": "cd6f3efd46a75a150206617a2fa6bf747a1c3a5b",
+      "review": {
+        "taskId": "PL-0313",
+        "implementationAgent": "claude-backend",
+        "implementationOwner": "claude-backend",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "e78a8406c1618b0293eacb9213b13f5f35cf923e",
+        "reviewedBaseSha": "cd6f3efd46a75a150206617a2fa6bf747a1c3a5b",
+        "reviewedTreeHash": "43e7db448abd68abcc0da5f65fef9ec5ae1b6e4f7e6af07d15ef5e2ab7cf53f1",
+        "reviewedFileCount": 9,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [
+          "apps/web/src/lib/catalog-ingestion-source.ts"
+        ],
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-09-22T02:14:46.974Z",
+        "evidence": "APPROVED by gpt-architect at origin e78a8406c1618b0293eacb9213b13f5f35cf923e. architecture-review PASS and rights-review PASS, both recorded as gates. The reviewer accepted the mechanism, the reporting precedence, the independence of nextCursor from complete, and the decision not to publish seenContentIds. Two points the reviewer singled out and which are kept here because they were the parts most at risk of being glossed: THE CONTROL TEST IS LOAD-BEARING -- without it an implementation that simply disabled inferred tombstones globally would falsely satisfy the three hazard assertions -- and THE INITIAL ALL-FOUR-RED RESULT WAS CORRECTLY REJECTED AS A BROKEN HARNESS rather than taken as a stronger red, when the page fixtures were found to lack the ok: true discriminant; the real red was recorded only after that was corrected. Resume and backfill remain disabled; this task makes enabling resume later safe from the mass-deletion hazard and does not enable it. PROVENANCE: TRANSCRIBED BY CLAUDE from the ChatGPT review session and relayed by the human commander; the GitHub review-write integration returns 403."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PL-0313",
+          "implementationAgent": "claude-backend",
+          "implementationOwner": "claude-backend",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "e78a8406c1618b0293eacb9213b13f5f35cf923e",
+          "reviewedBaseSha": "cd6f3efd46a75a150206617a2fa6bf747a1c3a5b",
+          "reviewedTreeHash": "43e7db448abd68abcc0da5f65fef9ec5ae1b6e4f7e6af07d15ef5e2ab7cf53f1",
+          "reviewedFileCount": 9,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "apps/web/src/lib/catalog-ingestion-source.ts"
+          ],
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-09-22T02:14:46.974Z",
+          "evidence": "APPROVED by gpt-architect at origin e78a8406c1618b0293eacb9213b13f5f35cf923e. architecture-review PASS and rights-review PASS, both recorded as gates. The reviewer accepted the mechanism, the reporting precedence, the independence of nextCursor from complete, and the decision not to publish seenContentIds. Two points the reviewer singled out and which are kept here because they were the parts most at risk of being glossed: THE CONTROL TEST IS LOAD-BEARING -- without it an implementation that simply disabled inferred tombstones globally would falsely satisfy the three hazard assertions -- and THE INITIAL ALL-FOUR-RED RESULT WAS CORRECTLY REJECTED AS A BROKEN HARNESS rather than taken as a stronger red, when the page fixtures were found to lack the ok: true discriminant; the real red was recorded only after that was corrected. Resume and backfill remain disabled; this task makes enabling resume later safe from the mass-deletion hazard and does not enable it. PROVENANCE: TRANSCRIBED BY CLAUDE from the ChatGPT review session and relayed by the human commander; the GitHub review-write integration returns 403."
+        }
+      ],
+      "completedAt": "2026-09-22T02:14:47.064Z"
     },
     {
       "id": "PL-0706",
