@@ -1,6 +1,8 @@
 import { failoverPolicySchema } from "@liberty/contracts/domains/failover";
 import {
   compatibilityConfidenceSchema,
+  MAX_STREAM_CANDIDATE_ID_CHARS,
+  MAX_STREAM_CANDIDATE_PROVIDER_ID_CHARS,
   playbackCapabilitiesSchema,
   type StatesContentProtection
 } from "@liberty/contracts/domains/playback";
@@ -256,8 +258,16 @@ export function playbackReason(
  * must not hold one.
  */
 export const playbackSessionCandidateSchema = z.object({
-  id: z.string().min(1),
-  providerId: z.string().min(1),
+  /*
+   * These are the StreamCandidate contract's limits, not route-local copies.
+   * A resolved candidate may cross another producer seam before it reaches the
+   * session wire; re-stating unbounded strings here would let a downstream
+   * producer re-expand identifiers the authoritative contract deliberately
+   * bounded. Importing the constants keeps this boundary mechanically coupled
+   * to the source contract and leaves one vocabulary for the limits.
+   */
+  id: z.string().min(1).max(MAX_STREAM_CANDIDATE_ID_CHARS),
+  providerId: z.string().min(1).max(MAX_STREAM_CANDIDATE_PROVIDER_ID_CHARS),
   uri: z.string().min(1),
   mimeType: z.string().min(1).nullable(),
   compatibility: compatibilityConfidenceSchema,
