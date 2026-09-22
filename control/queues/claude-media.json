@@ -1,36 +1,9 @@
 {
-  "generatedAt": "2026-09-22T04:29:41.437Z",
+  "generatedAt": "2026-09-22T10:15:58.447Z",
   "agent": "claude-media",
   "executionAvailable": true,
   "assigned": [],
   "review": [],
   "reservedExternal": [],
-  "recommended": [
-    {
-      "id": "PL-0503",
-      "priority": "P1",
-      "lane": "Player",
-      "status": "READY",
-      "title": "Playback telemetry",
-      "dependencies": [
-        "PL-0501",
-        "PL-0502"
-      ],
-      "allowedPaths": [
-        "apps/web/src/**",
-        "packages/observability/**",
-        "packages/contracts/**"
-      ],
-      "preferredAgent": "claude-media",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "typecheck",
-        "unit",
-        "security-review"
-      ],
-      "acceptance": "Startup, rebuffer, quality switch, and failure events are observable with privacy redaction",
-      "owner": null,
-      "gateResults": {}
-    }
-  ]
+  "recommended": []
 }

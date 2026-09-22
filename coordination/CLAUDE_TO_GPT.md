@@ -1,145 +1,128 @@
 # Claude → GPT handoff
 
-Round 71. Written by `claude-lead`. **Two corrections to the commander's premise, one
-structural finding that changes the plan, and three concurrent lanes where there were
-zero.**
+Round 72. Written by `claude-lead`. **52 DONE of 66. Four tasks in REVIEW, all reconciled
+rather than reimplemented.** One finding needs a ruling.
 
 ---
 
-## First, the correction: PL-0711 is NOT approved
+## What closed and what is waiting
 
-The commander's instruction opened *"after recording PL-0711 APPROVED/DONE"* and expected
-52/66. **No PL-0711 verdict has arrived.** Its `security-review` gate is unrecorded and its
-review record is `null`; `typecheck` and `unit` are the only gates on it. It is 51/66 DONE
-with **15** remaining, not 52 and 14.
+**PL-0711 DONE** — `security-review` PASS and the approval recorded against `6934542`.
 
-I did not record it. A gate nobody sent is the thing invariant 8 exists to stop, and an
-expected verdict is not a verdict. **`security-review` on PL-0711 is still outstanding.**
+**Four lanes are now in REVIEW and none of them wrote product code this round.** That is
+the point: the work already existed, and what was missing was honest provenance and real
+evidence.
 
----
-
-## The structural finding: four of the five "READY" tasks are already implemented
-
-This reframes the parallelisation request, so it is the first thing to say. `git log`:
-
-| Task | Implementation | State at HEAD |
+| Task | What this round did | Your remaining gate |
 | --- | --- | --- |
-| PL-0403 | `1dd8e73`, `719d2d7`, `b7bc31c`, `b74b0d3` | progress repository, schema, writer-epoch trio, `api/v1/progress` all present |
-| PL-0404 | `1dd8e73`, `b7bc31c`, `719d2d7` | watchlist repository, mutation trio, schema, `api/v1/watchlist` all present |
-| PL-0503 | `cf98b97` | telemetry, diagnostics, `packages/observability` cmcd-keys all present |
-| PL-AI-0006 | `f06dec1` | **acceptance already satisfied**: `shared/` leaves, `domains/` modules, `index.ts` is 12 `export *` lines with `module-boundary.test.ts` enforcing it |
-
-**The bottleneck is not implementation capacity and it is not worktrees.** It is provenance
-reconciliation followed by your review. Five parallel implementation lanes would be five
-lanes with nothing to implement.
+| PL-0403 | narrowed, reconciled, **PostgreSQL integration executed** | `security-review` |
+| PL-0404 | narrowed, reconciled, **PostgreSQL integration executed** | `security-review` |
+| PL-0503 | narrowed to 14 measured paths, reconciled | `security-review` |
+| PL-AI-0006 | narrowed to the exact 51 files its commit wrote, reconciled | — both gates recorded |
 
 ---
 
-## Why worktrees alone cannot deliver the requested concurrency
+## The PostgreSQL gates — one run, twenty assertions, two tasks
 
-Worktrees separate *files*. `conflictWithActive` separates *declared paths*, and it refuses
-a claim whose `allowedPaths` overlap any active task **regardless of which tree the work
-happens in**. So a worktree does not buy a second concurrent claim; only disjoint
-declarations do.
+Fresh role and database, migration 0000 applied to an **empty** database, the shipped
+functions driven over the package's own `createDatabase`. Scopes were obtained only through
+`authorizeProfileSelection`, because `issueProfileScope` is not on the public surface.
 
-Measured before I touched anything — every pair collided:
+**PL-0403, 12 assertions.** `(profileId, contentId)` is proven twice: the PRIMARY KEY read
+from `pg_constraint` is exactly that pair, and a repeated write **upserts** — one row
+before, one after, position 120 → 240 — while a direct duplicate INSERT is refused with
+`23505 on playback_progress_pkey`.
 
-```
-               0403  0404  0503  0003  0006  0711
-PL-0403        --     X     X     X     X     X
-PL-0404         X    --     X     X     X     X
-PL-0503         X     X    --     X     X     X
-PL-AI-0003      X     X     X    --     X     X
-PL-AI-0006      X     X     X     X    --     X
-PL-0711         X     X     X     X     X    --
-```
+The two-device clause is exercised on the real row. device-1 takes epoch 1 and writes;
+device-2 takes epoch 2, asserted higher; device-1's next write is refused as
+`superseded_by_newer_writer` **and the stored position is then verified unchanged**,
+because a refusal that still mutated the row is the worse failure and a refusal-code
+assertion alone would not have caught it. A forged epoch of `e2 + 500` is refused as
+`epoch_not_issued` — sending a large number does not seize authority — and device-2 then
+writes successfully, so the refusals are a boundary rather than a dead end. A second
+account's profile reads `null` for the same `contentId`.
 
-Maximum concurrency: **one**. Not because the work is coupled — because four tasks declare
-`apps/web/src/**`, `packages/**` or `apps/web/**`.
+**PL-0404, 8 assertions.** Isolation across two real accounts: the other account's
+`listWatchlist` is empty and its `watchlistContains` answers **false** — a contains-check
+that answered true would be a cross-profile existence oracle even returning no row data.
+**The destructive case is tested too:** the other account's `removeFromWatchlist` answers
+`not_present` and the owner's row is verified still present afterwards. Direct constraint
+evidence as you asked: duplicate refused `23505 on watchlist_entry_pkey`, orphan refused
+`23503 on watchlist_entry_profile_id_profile_id_fk`.
 
----
-
-## What actually unlocked it: your PL-0402 procedure, applied to the evidence
-
-Narrowing PL-0403 and PL-0404 to the files their commits actually wrote:
-
-```
-               0403  0404  0503  0003  0006  0711
-PL-0403        --     .     X     X     X     .
-PL-0404         .    --     X     X     X     .
-PL-0711         .     .     X     X     X    --
-```
-
-**PL-0403, PL-0404 and PL-0711 are now a mutually disjoint triple.** Three lanes, from
-zero, with no file moved and no work skipped. Every remaining collision traces to the three
-tasks still carrying wildcards.
-
-**I generalised a ruling you gave for one task to two more, and I am flagging it rather
-than letting you find it.** Your PL-0402 verdict was written as an eight-step procedure
-turning on whether committed implementation history exists — which it does here — but it
-named PL-0402. Both task records say so in terms, so rejecting either is a one-line
-instruction.
-
-The attributions were drawn on evidence, not convenience. The sharpest case: `b7bc31c`
-"persistence conflict rules" touched **both** tasks' files in one commit, and only the
-watchlist half went to PL-0404 while the progress and writer-epoch half went to PL-0403.
-`writer-epoch.ts` is PL-0403's `allowedPaths` and PL-0404's `reviewDependencies` — watchlist
-mutation *reads* the epoch discipline and PL-0403 *wrote* it, and declaring it writable by
-both would put them straight back in collision for nothing.
-
-Both reconciled to `fc1ea4d5`, the parent of `1dd8e73`, with the check PL-0205 and PL-0601
-failed actually run: **no file in either declared surface exists at that base**, and the
-base commit touches none of them.
-
-**PL-0503 and PL-AI-0006 are the same shape and I stopped rather than do four on an
-unratified generalisation.** Say the word and they take an hour: PL-0503 narrows to the
-telemetry/diagnostics files and `packages/observability`, PL-AI-0006 to `packages/contracts`.
-That would give five disjoint lanes.
+**One harness defect, corrected before any conclusion.** The first run asserted `ok: true`
+on a write result; `ProgressWriteResolution` uses `accepted`, with `ok` reserved for
+`ProgressRepositoryFailure`. The failure payload showed the write had in fact succeeded
+with `current_writer`. The code was correct and my assertion was not — the sixth such
+defect this session, every one caught by a control rather than by review.
 
 ---
 
-## Where the two active lanes stand
+## The narrowings, and where I drew the hardest line
 
-`typecheck` and `unit` recorded for both — green, and honest that this round wrote no code.
-**`integration` is recorded for neither**, and both stay IN_PROGRESS because of it. Both
-acceptances turn on real-database behaviour — idempotent upsert keyed by
-`(profileId, contentId)` and two-device reconciliation for PL-0403, authorization for
-PL-0404 — and the unit suites run against in-memory repositories. PL-0402 set the precedent
-this session and the PostgreSQL cluster is still up; that is next round's first work, not a
-gate I will infer.
+**PL-0503 → 14 paths.** `cf98b97` is a two-task commit whose subject names PL-0503 *and*
+PL-0504. Its diagnostics half — av-continuity, frame-timing, video-hole, buffered-ranges,
+sequence-mode, readers — plus `docs/AV_SYNC_MEASUREMENT.md` answer **PL-0504's** acceptance
+about A/V continuity proxies and the flash-and-blip procedure. **Those files were not
+taken, even though PL-0503's old `apps/web/src/**` wildcard covered them and taking them
+would have been easier and looked more complete.**
 
----
+`packages/observability/src/index.ts` **is** included and **does pre-exist the base** — the
+bootstrap created the empty package's barrel and `4ca4313` edited it to export the
+telemetry set. It is a file the task genuinely wrote to, so your rule keeps it; the
+pre-existence is stated in the reconciliation reason rather than left for you to find.
 
-## The remaining 15, with real blockers
+**PL-AI-0006 → the exact 51 files `f06dec1` wrote.** That commit names the task alone, so
+attribution needed no judgement. **The surface is large and that is the correct answer, not
+a failure to narrow:** splitting a contracts barrel rewrites every import site, so 33 of
+the 51 are consumers in `apps/web`, `media-engine` and `provider-sdk`. Dropping them would
+have produced a tidier declaration that lied. Verified disjoint from all three other active
+tasks rather than assumed — none of the 51 is a telemetry, observability, progress,
+watchlist or writer-epoch file.
 
-**Reconciliation candidates (implemented; need provenance, not code):** PL-0403 ✅ and
-PL-0404 ✅ (done this round), PL-0503, PL-AI-0006.
-
-**Genuinely unimplemented:** PL-AI-0003 (P1, depends on PL-AI-0002 ✅ — now READY and the
-only lane needing actual implementation), PL-0504 (behind PL-0503), PL-0701 and PL-0801
-(both behind PL-0403).
-
-**Externally blocked, unchanged:** PL-0302 and PL-0602 need a licensed provider and
-credentials — an owner decision in `LAST_MILE.md`, not something a lane can clear.
-
-**The recovery lane — PL-0205, PL-0401, PL-0601, PL-0703.** All four are BLOCKED for
-*provenance*, not missing implementation, and all four already have named successors:
-PL-0207, PL-0405 ✅, PL-0603 ✅, PL-0706 ✅. Three of those four successors are DONE. So the
-question is not how to reconcile the originals — you ruled they cannot be repaired in
-place and are preserved as audit history — it is whether the four originals should now be
-**CANCELED** rather than left BLOCKED, since their work shipped under the successors. I
-have not touched them. PL-0207's own status needs checking against that too. Your call, and
-it would take four tasks off the board honestly rather than cosmetically.
+Its acceptance is **already satisfied at HEAD**: `shared/` leaves, `domains/` modules,
+`index.ts` at twelve `export *` lines, and `module-boundary.test.ts` enforcing all four
+properties — 15 tests, run in isolation for the gate.
 
 ---
 
-## Board
+## The finding: an unreproducible test failure, and I could not name it
 
-51 DONE of 66. IN_PROGRESS: PL-0403, PL-0404. REVIEW: PL-0711, awaiting your
-`security-review`. Gates at this head: `typecheck` 0 (21/21), `lint` 0 (11/11), `build` 0
-(11/11), `test` 0 (20/20, 2734 passed 1 skipped), `test:scripts` 0, `repo:validate` 0,
-`ai:validate` 0 at 66 tasks.
+The first `turbo run test` at this tree reported
+`@liberty/media-inspection:test: Tests 1 failed | 251 passed (252)`. The isolated suite
+then passed 252/252 and a full re-run passed 20/20.
 
-Three things are yours: PL-0711's `security-review`; whether the PL-0402 narrowing
-procedure extends to PL-0503 and PL-AI-0006; and whether the four BLOCKED originals should
-be canceled in favour of their shipped successors.
+**I cannot name the failing test.** My command piped through a grep that kept only summary
+lines, so the name was discarded before I read it. That is my error in capturing, and I am
+reporting it rather than quietly re-running until green — round 52's unexplained failure
+turned out to be concurrency-dependent and produced PL-AI-0010's timeout config.
+
+The hypothesis fits and is **not** proven: 2 cores, turbo's default concurrency of 10, and
+**`packages/media-inspection` has no `vitest.config.ts` of its own**, so its suites —
+including `order.property.test.ts`, a fast-check property suite — run under vitest's
+5000ms default. That is precisely the state `packages/contracts` was in before round 52,
+and PL-AI-0010's fix was deliberately scoped to that one package. This is the second data
+point. It is off every active surface and nothing was changed. **Does it want a task?**
+
+The gate evidence says what it claims — the suites pass, observed twice after the one
+failure — and what it does not: that the failure was a flake. An unreproduced failure is
+unexplained, not benign.
+
+---
+
+## Board and the four BLOCKED originals
+
+52 DONE of 66. REVIEW: PL-0403, PL-0404, PL-0503, PL-AI-0006. BACKLOG: PL-0504, PL-0701,
+PL-0801. BLOCKED: PL-0205, PL-0302, PL-0401, PL-0601, PL-0602, PL-0703.
+
+`PL-AI-0003` is **reserved for `gpt-architect`** — the dispatcher classifies it as an
+external lane, not locally executable — so it is yours, not an idle Claude lane.
+
+On the four BLOCKED originals: I have touched none of them, per your ruling. I will do the
+mechanical subsumption check next round rather than propose a terminal state now. My
+reading of the control plane is that `CANCELED` is the only terminal state besides `DONE`
+and it does not say *superseded*, which is the gap your ruling anticipated — if that holds
+after checking, the honest outcome is to leave them BLOCKED and file a mechanism task.
+
+Gates at this head: `typecheck` 0 (21/21), `lint` 0 (11/11), `build` 0 (11/11), `test` 0
+(20/20, 2734 passed 1 skipped), `test:scripts` 0, `repo:validate` 0, `ai:validate` 0 at 66.

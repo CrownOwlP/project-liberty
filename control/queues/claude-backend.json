@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-22T04:29:41.437Z",
+  "generatedAt": "2026-09-22T10:15:58.447Z",
   "agent": "claude-backend",
   "executionAvailable": true,
   "assigned": [
@@ -7,7 +7,7 @@
       "id": "PL-0403",
       "priority": "P0",
       "lane": "Backend",
-      "status": "IN_PROGRESS",
+      "status": "REVIEW",
       "title": "Progress persistence",
       "dependencies": [
         "PL-0405",
@@ -45,6 +45,13 @@
           "by": "claude-backend",
           "commitSha": "69345420056ac1f8942beba80f07b81422a6320f",
           "evidence": "npx turbo run test --force, exit 0, 20 of 20, 2734 passed 1 skipped -- unchanged, because this round wrote no code. The suites bearing on this task are inside that total: for PL-0403, packages/persistence progress-repository and the writer-epoch trio (writer-epoch.test.ts and writer-epoch.property.test.ts) plus apps/web's api/v1/progress handler and route tests; for PL-0404, watchlist-mutation.test.ts, watchlist-mutation.property.test.ts and the api/v1/watchlist handler tests. WHAT THIS GATE DOES NOT ESTABLISH, and it is the same limit PL-0402 hit: these run against in-memory repositories, and both acceptances turn on behaviour against a real database -- idempotent upsert keyed by (profileId, contentId) and two-device reconciliation for PL-0403, authorization for PL-0404. The integration gate is NOT recorded and the task stays IN_PROGRESS until a real PostgreSQL execution is performed, following the precedent PL-0402 set this session."
+        },
+        "integration": {
+          "status": "pass",
+          "at": "2026-09-22T10:06:49.648Z",
+          "by": "claude-backend",
+          "commitSha": "b0344606887e4b91e1d832b7c082bb95059d151b",
+          "evidence": "EXECUTED AGAINST A REAL DATABASE, NOT INFERRED FROM THE IN-MEMORY SUITES. PostgreSQL 16.15, a dedicated role liberty_pl0403 and its own database, migration 0000 applied to an EMPTY database (8 tables), following the PL-0402 standard. The shipped functions were driven -- issueWriterLease, writeProgress, readProgress, listContinueWatching -- over the package's own createDatabase; profiles were created through the real createProfile and scopes obtained only through authorizeProfileSelection, because issueProfileScope is not on the public surface. 12 PL-0403 assertions passed. THE (profileId, contentId) CLAUSE IS PROVEN TWO WAYS. Structurally: the PRIMARY KEY is read from pg_constraint and is exactly (profile_id, content_id), not asserted from the migration text. Behaviourally: a second write for the same key UPSERTS -- one row before, one row after, position advanced 120 to 240 and readProgress returns 240 -- and a direct INSERT of a second row for that key is refused by PostgreSQL with 23505 on playback_progress_pkey, so idempotence is enforced by the schema rather than by the repository's good manners. THE TWO-DEVICE / WRITER-EPOCH CLAUSE IS PROVEN END TO END ON THE REAL ROW. device-1 takes the lease at epoch 1 and writes. device-2 then takes the lease at epoch 2, above device-1's, which the run asserts rather than assumes. device-1's NEXT write is refused as superseded_by_newer_writer -- the classic second-device case -- AND the stored position is verified unchanged afterwards, because a refusal that still mutated the row would be the worse failure and the count alone would not have caught it. A FORGED HIGHER EPOCH, e2 + 500, is refused as epoch_not_issued: seizing authority by sending a large number does not work, which is the anti-forgery property the epoch scheme exists for and it is exercised against the real stored epoch rather than a stub. device-2, holding the current lease, then writes successfully, so the refusals are not a dead end. PROFILE SCOPING IS PROVEN ACROSS TWO REAL ACCOUNTS: a second account's profile reads null for the same contentId, and listContinueWatching returns the owner's single row and zero for the other profile -- rows are scoped to a profile id rather than a user id, which is the acceptance's first clause. ONE HARNESS DEFECT, FOUND AND CORRECTED BEFORE ANY CONCLUSION: the first run asserted `ok: true` on a write result, but ProgressWriteResolution uses `accepted` with `ok` reserved for ProgressRepositoryFailure. The failure payload showed the write had in fact succeeded with reason current_writer and notes position_first_reported and runtime_restated, so the code was correct and the assertion was not. That is the sixth harness defect this session and the pattern is reported in the handoff rather than only its instances. WHAT THIS DOES NOT ESTABLISH: nothing about concurrency under real parallel connections -- the two devices are sequential here, which is what the epoch scheme is designed for but is not a race test -- nothing about pool behaviour under load, and nothing about migration rollback. Auth rows were seeded directly because authentication is PL-0405's delivery. THE HARNESS IS NOT COMMITTED: it ran from a scratch file that was deleted and git status is clean; PL-0403's allowedPaths have no home for it."
         }
       },
       "reviewDependencies": [
@@ -55,7 +62,7 @@
       ],
       "notes": "EVIDENCE-BASED NARROWING 2026-09-22, under the procedure gpt-architect authorized for PL-0402 at 55cedc79ab6a79338c7c75f379d566e3acb1be5b. THE LEAD IS GENERALISING A RULING GIVEN FOR ONE TASK AND SAYS SO: that ruling was written as an eight-step procedure turning on whether committed implementation history exists, and it does here, but it named PL-0402. If the reviewer intended it narrowly, this is the record to reject. allowedPaths were [\"apps/web/src/**\",\"packages/contracts/**\",\"packages/**\"] -- three wildcards, of which apps/web/src/** and packages/** are the two that make this task collide with every other actionable task on the board and make an honest base underivable. THE EVIDENCE, PER PATH. Four commits contribute progress persistence and none of them names PL-0403 alone in its subject, so every path is attributed by subject matter and the attribution is stated rather than asserted. 1dd8e73 'PL-0401 to PL-0404' created progress-repository.ts, schema/progress.ts and the writer-epoch trio; its packages/auth bulk is PL-0401's, its profile files are PL-0402's and its watchlist files are PL-0404's. 719d2d7 'Nine lanes' created the apps/web/src/app/api/v1/progress subtree, one of its nine. b7bc31c 'persistence conflict rules' edited progress-repository.ts, schema/progress.ts and the writer-epoch trio -- and also the watchlist files, which are NOT taken here because they are PL-0404's. b74b0d3 edited the progress handler test. THE WRITER-EPOCH TRIO IS RETAINED DELIBERATELY: it looks like generic persistence infrastructure and it is what implements this task's acceptance clause that two devices writing the same title are reconciled, so the ruling's rule applies -- a path genuinely written as part of the task stays, however it looks. reviewDependencies carries the four files review needs and PL-0403 did not write: the profile schema and repository that scoping is against, the request context that carries the active profile, and the written data model. NO PATH WAS DROPPED FOR COLLIDING. The retained set still overlaps PL-0404 at nothing and PL-0405 at packages/persistence/src/**, and the PL-0405 overlap is not double-claiming because all four contributing commits are ancestors of PL-0405's base 68c4326.",
       "implementationAgent": "claude-backend",
-      "updatedAt": "2026-09-22T04:26:06.697Z",
+      "updatedAt": "2026-09-22T10:06:49.744Z",
       "implementationBaseSha": "fc1ea4d54c9e7d2b2f6d9aa71a977abdc3bcb400",
       "implementationBaseProvenance": {
         "kind": "reconciled-existing-implementation",
@@ -96,7 +103,7 @@
       "id": "PL-0404",
       "priority": "P1",
       "lane": "Backend",
-      "status": "IN_PROGRESS",
+      "status": "REVIEW",
       "title": "Watchlist persistence",
       "dependencies": [
         "PL-0405",
@@ -134,6 +141,13 @@
           "by": "claude-backend",
           "commitSha": "69345420056ac1f8942beba80f07b81422a6320f",
           "evidence": "npx turbo run test --force, exit 0, 20 of 20, 2734 passed 1 skipped -- unchanged, because this round wrote no code. The suites bearing on this task are inside that total: for PL-0403, packages/persistence progress-repository and the writer-epoch trio (writer-epoch.test.ts and writer-epoch.property.test.ts) plus apps/web's api/v1/progress handler and route tests; for PL-0404, watchlist-mutation.test.ts, watchlist-mutation.property.test.ts and the api/v1/watchlist handler tests. WHAT THIS GATE DOES NOT ESTABLISH, and it is the same limit PL-0402 hit: these run against in-memory repositories, and both acceptances turn on behaviour against a real database -- idempotent upsert keyed by (profileId, contentId) and two-device reconciliation for PL-0403, authorization for PL-0404. The integration gate is NOT recorded and the task stays IN_PROGRESS until a real PostgreSQL execution is performed, following the precedent PL-0402 set this session."
+        },
+        "integration": {
+          "status": "pass",
+          "at": "2026-09-22T10:07:09.440Z",
+          "by": "claude-backend",
+          "commitSha": "b0344606887e4b91e1d832b7c082bb95059d151b",
+          "evidence": "EXECUTED AGAINST A REAL DATABASE, in the same PostgreSQL 16.15 run as PL-0403's gate: dedicated role, own database, migration 0000 applied to an empty database. The shipped functions were driven -- addToWatchlist, removeFromWatchlist, listWatchlist, watchlistContains -- over the package's own createDatabase, with two real accounts, two real profiles created through createProfile, and scopes obtained only through authorizeProfileSelection. 8 PL-0404 assertions passed. AUTHORIZATION AND ISOLATION ARE THE ACCEPTANCE AND THEY ARE PROVEN ACROSS TWO ACCOUNTS RATHER THAN ONE. listWatchlist returns the owner's single entry and ZERO for the other account. watchlistContains answers true for the owner and false for the other account, which is the one that matters for leakage: a contains-check that answered true across profiles would be a cross-profile existence oracle even though it returns no row data. THE DESTRUCTIVE CASE IS TESTED, NOT ONLY THE READS: the other account calling removeFromWatchlist on the SAME contentId is answered not_present, and the owner's row is then verified still present -- a remove that silently deleted another profile's entry would have returned a plausible-looking result and the read assertions alone would not have caught it. IDEMPOTENCE: a repeated add answers already_present and does not create a second row, verified by counting rows in the real table. DIRECT DATABASE CONSTRAINT EVIDENCE, as the commander asked for explicitly. Bypassing every application check: a duplicate (profile_id, content_id) INSERT is refused with 23505 on watchlist_entry_pkey, so the primary key is (profile_id, content_id) and one profile cannot hold the same title twice. An entry naming a profile that does not exist is refused with 23503 on watchlist_entry_profile_id_profile_id_fk, so an orphan entry attributable to no profile cannot be created. Isolation therefore rests on the schema and not only on the repository's filtering. THE OWNER'S OWN REMOVE SUCCEEDS with reason removed, so the refusals above are a boundary rather than a broken path. ONE HARNESS DEFECT SHARED WITH THE PL-0403 GATE AND CORRECTED BEFORE ANY CONCLUSION: the first run asserted an `ok`/`outcome` vocabulary that these functions do not use -- WatchlistMutationResolution is `accepted` plus `reason`. The code was correct and the assertions were not. WHAT THIS DOES NOT ESTABLISH: nothing about concurrent mutation from two connections at once, nothing about pagination beyond a single-entry list, and the HTTP layer in apps/web/src/app/api/v1/watchlist is covered by the unit gate rather than by this run. Auth rows were seeded directly because authentication is PL-0405's delivery. The harness is not committed; it ran from a scratch file that was deleted and git status is clean."
         }
       },
       "reviewDependencies": [
@@ -144,7 +158,7 @@
       ],
       "notes": "EVIDENCE-BASED NARROWING 2026-09-22, same generalisation of gpt-architect's PL-0402 procedure as PL-0403 and flagged the same way: the ruling was written as a procedure turning on committed implementation history, it names PL-0402, and the lead has applied it here. allowedPaths were [\"apps/web/src/**\",\"packages/contracts/**\",\"packages/**\"]. THE EVIDENCE: 1dd8e73 created watchlist-repository.ts and schema/watchlist.ts; b7bc31c 'persistence conflict rules' created the watchlist-mutation trio and edited the repository and schema; 719d2d7 'Nine lanes' created the apps/web/src/app/api/v1/watchlist subtree. The attribution boundary against PL-0403 is sharp and was drawn on it rather than on convenience: b7bc31c touched BOTH the watchlist files and the progress and writer-epoch files in one commit, and only the watchlist half is taken here while the other half is PL-0403's. packages/persistence/src/writer-epoch.ts is in reviewDependencies rather than allowedPaths for the same reason: watchlist mutation reads the epoch discipline, PL-0403 wrote it, and a file two tasks both declared as writable would put them back in collision for no gain.",
       "implementationAgent": "claude-backend",
-      "updatedAt": "2026-09-22T04:26:47.182Z",
+      "updatedAt": "2026-09-22T10:07:09.538Z",
       "implementationBaseSha": "fc1ea4d54c9e7d2b2f6d9aa71a977abdc3bcb400",
       "implementationBaseProvenance": {
         "kind": "reconciled-existing-implementation",

@@ -727,3 +727,34 @@ which is E2E robustness, not evidence for the wire-bound acceptance. Leave it ou
 separately if still needed. Determine the base from the CURRENT rebuild, not the old false
 `20edec3` and not blindly from PR #33's merge base. Preserve the authoritative
 `StreamCandidate` bound constants and introduce no second numeric bound vocabulary.
+
+---
+
+## Round 72 — PL-0711 final, narrowing ratified, at `69345420…` / `b034460…`
+
+> TRANSCRIBED BY CLAUDE from the ChatGPT review session and relayed by the human
+> commander. The GitHub review-write integration returns 403.
+
+**PL-0711 APPROVED, `security-review` PASS**, issued against the rebuilt implementation at
+`6934542`. Accepted: direct use of the authoritative constants, exact-max/max+1 coverage,
+response-bound enforcement, no oversized-value echo, and the source-graph regression
+killing a runtime-identical copied `.max(141)`. `uri`/`mimeType` unbounded do not block.
+
+**Evidence-based allowed-path narrowing is RATIFIED AS A GENERAL PROCEDURE** and extends to
+PL-0503 and PL-AI-0006 — but *not* as permission to choose narrow paths merely to remove
+collisions. For each task: reconstruct the actual implementation surface mechanically from
+history; include every file genuinely written; do not omit a written file because it
+collides; do not include untouched broad prefixes the pre-implementation declaration
+guessed; classify genuine read-only dependencies as `reviewDependencies`; verify the
+surface still covers every part of the acceptance; record the derivation in the audit
+trail.
+
+**Do NOT blanket-cancel PL-0205, PL-0401, PL-0601, PL-0703.** For each: identify the named
+successor, verify *mechanically* that the successor's acceptance and completed tree
+actually subsume the original's required behaviour, preserve the original audit history,
+and use a legitimate terminal transition only if one exists and accurately describes the
+relationship. **If the control plane has no truthful terminal representation for a
+superseded provenance-invalid task, leave it BLOCKED and improve the mechanism rather than
+falsifying history.** A successor being DONE is necessary evidence, not sufficient.
+
+**Continue the real PostgreSQL gates now**, to the PL-0402 standard, without waiting.

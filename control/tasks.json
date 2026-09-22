@@ -1907,7 +1907,7 @@
       "id": "PL-0403",
       "priority": "P0",
       "lane": "Backend",
-      "status": "IN_PROGRESS",
+      "status": "REVIEW",
       "title": "Progress persistence",
       "dependencies": [
         "PL-0405",
@@ -1945,6 +1945,13 @@
           "by": "claude-backend",
           "commitSha": "69345420056ac1f8942beba80f07b81422a6320f",
           "evidence": "npx turbo run test --force, exit 0, 20 of 20, 2734 passed 1 skipped -- unchanged, because this round wrote no code. The suites bearing on this task are inside that total: for PL-0403, packages/persistence progress-repository and the writer-epoch trio (writer-epoch.test.ts and writer-epoch.property.test.ts) plus apps/web's api/v1/progress handler and route tests; for PL-0404, watchlist-mutation.test.ts, watchlist-mutation.property.test.ts and the api/v1/watchlist handler tests. WHAT THIS GATE DOES NOT ESTABLISH, and it is the same limit PL-0402 hit: these run against in-memory repositories, and both acceptances turn on behaviour against a real database -- idempotent upsert keyed by (profileId, contentId) and two-device reconciliation for PL-0403, authorization for PL-0404. The integration gate is NOT recorded and the task stays IN_PROGRESS until a real PostgreSQL execution is performed, following the precedent PL-0402 set this session."
+        },
+        "integration": {
+          "status": "pass",
+          "at": "2026-09-22T10:06:49.648Z",
+          "by": "claude-backend",
+          "commitSha": "b0344606887e4b91e1d832b7c082bb95059d151b",
+          "evidence": "EXECUTED AGAINST A REAL DATABASE, NOT INFERRED FROM THE IN-MEMORY SUITES. PostgreSQL 16.15, a dedicated role liberty_pl0403 and its own database, migration 0000 applied to an EMPTY database (8 tables), following the PL-0402 standard. The shipped functions were driven -- issueWriterLease, writeProgress, readProgress, listContinueWatching -- over the package's own createDatabase; profiles were created through the real createProfile and scopes obtained only through authorizeProfileSelection, because issueProfileScope is not on the public surface. 12 PL-0403 assertions passed. THE (profileId, contentId) CLAUSE IS PROVEN TWO WAYS. Structurally: the PRIMARY KEY is read from pg_constraint and is exactly (profile_id, content_id), not asserted from the migration text. Behaviourally: a second write for the same key UPSERTS -- one row before, one row after, position advanced 120 to 240 and readProgress returns 240 -- and a direct INSERT of a second row for that key is refused by PostgreSQL with 23505 on playback_progress_pkey, so idempotence is enforced by the schema rather than by the repository's good manners. THE TWO-DEVICE / WRITER-EPOCH CLAUSE IS PROVEN END TO END ON THE REAL ROW. device-1 takes the lease at epoch 1 and writes. device-2 then takes the lease at epoch 2, above device-1's, which the run asserts rather than assumes. device-1's NEXT write is refused as superseded_by_newer_writer -- the classic second-device case -- AND the stored position is verified unchanged afterwards, because a refusal that still mutated the row would be the worse failure and the count alone would not have caught it. A FORGED HIGHER EPOCH, e2 + 500, is refused as epoch_not_issued: seizing authority by sending a large number does not work, which is the anti-forgery property the epoch scheme exists for and it is exercised against the real stored epoch rather than a stub. device-2, holding the current lease, then writes successfully, so the refusals are not a dead end. PROFILE SCOPING IS PROVEN ACROSS TWO REAL ACCOUNTS: a second account's profile reads null for the same contentId, and listContinueWatching returns the owner's single row and zero for the other profile -- rows are scoped to a profile id rather than a user id, which is the acceptance's first clause. ONE HARNESS DEFECT, FOUND AND CORRECTED BEFORE ANY CONCLUSION: the first run asserted `ok: true` on a write result, but ProgressWriteResolution uses `accepted` with `ok` reserved for ProgressRepositoryFailure. The failure payload showed the write had in fact succeeded with reason current_writer and notes position_first_reported and runtime_restated, so the code was correct and the assertion was not. That is the sixth harness defect this session and the pattern is reported in the handoff rather than only its instances. WHAT THIS DOES NOT ESTABLISH: nothing about concurrency under real parallel connections -- the two devices are sequential here, which is what the epoch scheme is designed for but is not a race test -- nothing about pool behaviour under load, and nothing about migration rollback. Auth rows were seeded directly because authentication is PL-0405's delivery. THE HARNESS IS NOT COMMITTED: it ran from a scratch file that was deleted and git status is clean; PL-0403's allowedPaths have no home for it."
         }
       },
       "reviewDependencies": [
@@ -1955,7 +1962,7 @@
       ],
       "notes": "EVIDENCE-BASED NARROWING 2026-09-22, under the procedure gpt-architect authorized for PL-0402 at 55cedc79ab6a79338c7c75f379d566e3acb1be5b. THE LEAD IS GENERALISING A RULING GIVEN FOR ONE TASK AND SAYS SO: that ruling was written as an eight-step procedure turning on whether committed implementation history exists, and it does here, but it named PL-0402. If the reviewer intended it narrowly, this is the record to reject. allowedPaths were [\"apps/web/src/**\",\"packages/contracts/**\",\"packages/**\"] -- three wildcards, of which apps/web/src/** and packages/** are the two that make this task collide with every other actionable task on the board and make an honest base underivable. THE EVIDENCE, PER PATH. Four commits contribute progress persistence and none of them names PL-0403 alone in its subject, so every path is attributed by subject matter and the attribution is stated rather than asserted. 1dd8e73 'PL-0401 to PL-0404' created progress-repository.ts, schema/progress.ts and the writer-epoch trio; its packages/auth bulk is PL-0401's, its profile files are PL-0402's and its watchlist files are PL-0404's. 719d2d7 'Nine lanes' created the apps/web/src/app/api/v1/progress subtree, one of its nine. b7bc31c 'persistence conflict rules' edited progress-repository.ts, schema/progress.ts and the writer-epoch trio -- and also the watchlist files, which are NOT taken here because they are PL-0404's. b74b0d3 edited the progress handler test. THE WRITER-EPOCH TRIO IS RETAINED DELIBERATELY: it looks like generic persistence infrastructure and it is what implements this task's acceptance clause that two devices writing the same title are reconciled, so the ruling's rule applies -- a path genuinely written as part of the task stays, however it looks. reviewDependencies carries the four files review needs and PL-0403 did not write: the profile schema and repository that scoping is against, the request context that carries the active profile, and the written data model. NO PATH WAS DROPPED FOR COLLIDING. The retained set still overlaps PL-0404 at nothing and PL-0405 at packages/persistence/src/**, and the PL-0405 overlap is not double-claiming because all four contributing commits are ancestors of PL-0405's base 68c4326.",
       "implementationAgent": "claude-backend",
-      "updatedAt": "2026-09-22T04:26:06.697Z",
+      "updatedAt": "2026-09-22T10:06:49.744Z",
       "implementationBaseSha": "fc1ea4d54c9e7d2b2f6d9aa71a977abdc3bcb400",
       "implementationBaseProvenance": {
         "kind": "reconciled-existing-implementation",
@@ -1996,7 +2003,7 @@
       "id": "PL-0404",
       "priority": "P1",
       "lane": "Backend",
-      "status": "IN_PROGRESS",
+      "status": "REVIEW",
       "title": "Watchlist persistence",
       "dependencies": [
         "PL-0405",
@@ -2034,6 +2041,13 @@
           "by": "claude-backend",
           "commitSha": "69345420056ac1f8942beba80f07b81422a6320f",
           "evidence": "npx turbo run test --force, exit 0, 20 of 20, 2734 passed 1 skipped -- unchanged, because this round wrote no code. The suites bearing on this task are inside that total: for PL-0403, packages/persistence progress-repository and the writer-epoch trio (writer-epoch.test.ts and writer-epoch.property.test.ts) plus apps/web's api/v1/progress handler and route tests; for PL-0404, watchlist-mutation.test.ts, watchlist-mutation.property.test.ts and the api/v1/watchlist handler tests. WHAT THIS GATE DOES NOT ESTABLISH, and it is the same limit PL-0402 hit: these run against in-memory repositories, and both acceptances turn on behaviour against a real database -- idempotent upsert keyed by (profileId, contentId) and two-device reconciliation for PL-0403, authorization for PL-0404. The integration gate is NOT recorded and the task stays IN_PROGRESS until a real PostgreSQL execution is performed, following the precedent PL-0402 set this session."
+        },
+        "integration": {
+          "status": "pass",
+          "at": "2026-09-22T10:07:09.440Z",
+          "by": "claude-backend",
+          "commitSha": "b0344606887e4b91e1d832b7c082bb95059d151b",
+          "evidence": "EXECUTED AGAINST A REAL DATABASE, in the same PostgreSQL 16.15 run as PL-0403's gate: dedicated role, own database, migration 0000 applied to an empty database. The shipped functions were driven -- addToWatchlist, removeFromWatchlist, listWatchlist, watchlistContains -- over the package's own createDatabase, with two real accounts, two real profiles created through createProfile, and scopes obtained only through authorizeProfileSelection. 8 PL-0404 assertions passed. AUTHORIZATION AND ISOLATION ARE THE ACCEPTANCE AND THEY ARE PROVEN ACROSS TWO ACCOUNTS RATHER THAN ONE. listWatchlist returns the owner's single entry and ZERO for the other account. watchlistContains answers true for the owner and false for the other account, which is the one that matters for leakage: a contains-check that answered true across profiles would be a cross-profile existence oracle even though it returns no row data. THE DESTRUCTIVE CASE IS TESTED, NOT ONLY THE READS: the other account calling removeFromWatchlist on the SAME contentId is answered not_present, and the owner's row is then verified still present -- a remove that silently deleted another profile's entry would have returned a plausible-looking result and the read assertions alone would not have caught it. IDEMPOTENCE: a repeated add answers already_present and does not create a second row, verified by counting rows in the real table. DIRECT DATABASE CONSTRAINT EVIDENCE, as the commander asked for explicitly. Bypassing every application check: a duplicate (profile_id, content_id) INSERT is refused with 23505 on watchlist_entry_pkey, so the primary key is (profile_id, content_id) and one profile cannot hold the same title twice. An entry naming a profile that does not exist is refused with 23503 on watchlist_entry_profile_id_profile_id_fk, so an orphan entry attributable to no profile cannot be created. Isolation therefore rests on the schema and not only on the repository's filtering. THE OWNER'S OWN REMOVE SUCCEEDS with reason removed, so the refusals above are a boundary rather than a broken path. ONE HARNESS DEFECT SHARED WITH THE PL-0403 GATE AND CORRECTED BEFORE ANY CONCLUSION: the first run asserted an `ok`/`outcome` vocabulary that these functions do not use -- WatchlistMutationResolution is `accepted` plus `reason`. The code was correct and the assertions were not. WHAT THIS DOES NOT ESTABLISH: nothing about concurrent mutation from two connections at once, nothing about pagination beyond a single-entry list, and the HTTP layer in apps/web/src/app/api/v1/watchlist is covered by the unit gate rather than by this run. Auth rows were seeded directly because authentication is PL-0405's delivery. The harness is not committed; it ran from a scratch file that was deleted and git status is clean."
         }
       },
       "reviewDependencies": [
@@ -2044,7 +2058,7 @@
       ],
       "notes": "EVIDENCE-BASED NARROWING 2026-09-22, same generalisation of gpt-architect's PL-0402 procedure as PL-0403 and flagged the same way: the ruling was written as a procedure turning on committed implementation history, it names PL-0402, and the lead has applied it here. allowedPaths were [\"apps/web/src/**\",\"packages/contracts/**\",\"packages/**\"]. THE EVIDENCE: 1dd8e73 created watchlist-repository.ts and schema/watchlist.ts; b7bc31c 'persistence conflict rules' created the watchlist-mutation trio and edited the repository and schema; 719d2d7 'Nine lanes' created the apps/web/src/app/api/v1/watchlist subtree. The attribution boundary against PL-0403 is sharp and was drawn on it rather than on convenience: b7bc31c touched BOTH the watchlist files and the progress and writer-epoch files in one commit, and only the watchlist half is taken here while the other half is PL-0403's. packages/persistence/src/writer-epoch.ts is in reviewDependencies rather than allowedPaths for the same reason: watchlist mutation reads the epoch discipline, PL-0403 wrote it, and a file two tasks both declared as writable would put them back in collision for no gain.",
       "implementationAgent": "claude-backend",
-      "updatedAt": "2026-09-22T04:26:47.182Z",
+      "updatedAt": "2026-09-22T10:07:09.538Z",
       "implementationBaseSha": "fc1ea4d54c9e7d2b2f6d9aa71a977abdc3bcb400",
       "implementationBaseProvenance": {
         "kind": "reconciled-existing-implementation",
@@ -2393,16 +2407,27 @@
       "id": "PL-0503",
       "priority": "P1",
       "lane": "Player",
-      "status": "READY",
+      "status": "REVIEW",
       "title": "Playback telemetry",
       "dependencies": [
         "PL-0501",
         "PL-0502"
       ],
       "allowedPaths": [
-        "apps/web/src/**",
-        "packages/observability/**",
-        "packages/contracts/**"
+        "apps/web/src/components/player/telemetry.ts",
+        "apps/web/src/components/player/telemetry.test.ts",
+        "apps/web/src/app/api/v1/telemetry/**",
+        "packages/observability/src/cmcd-keys.ts",
+        "packages/observability/src/cmcd-keys.test.ts",
+        "packages/observability/src/cmcd-collect.ts",
+        "packages/observability/src/cmcd-collect.test.ts",
+        "packages/observability/src/cmcd-collect.property.test.ts",
+        "packages/observability/src/cmcd-report.ts",
+        "packages/observability/src/cmcd-report.test.ts",
+        "packages/observability/src/redaction.ts",
+        "packages/observability/src/redaction.test.ts",
+        "packages/observability/src/log-event.ts",
+        "packages/observability/src/index.ts"
       ],
       "preferredAgent": "claude-media",
       "reviewAgent": "gpt-architect",
@@ -2412,8 +2437,64 @@
         "security-review"
       ],
       "acceptance": "Startup, rebuffer, quality switch, and failure events are observable with privacy redaction",
-      "owner": null,
-      "gateResults": {}
+      "owner": "claude-frontend",
+      "gateResults": {
+        "typecheck": {
+          "status": "pass",
+          "at": "2026-09-22T10:14:38.202Z",
+          "by": "claude-frontend",
+          "commitSha": "b0344606887e4b91e1d832b7c082bb95059d151b",
+          "evidence": "npx turbo run typecheck --force, exit 0, 21 of 21. NO CODE WAS WRITTEN FOR PL-0503 THIS ROUND. Its implementation is in committed history and this round performed the provenance repair the reviewer ratified: an evidence-based narrowing of allowedPaths from three wildcards to fourteen paths, then reconciliation to cb62234. The gate records that the delivered implementation typechecks at the integrated head."
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-09-22T10:14:38.303Z",
+          "by": "claude-frontend",
+          "commitSha": "b0344606887e4b91e1d832b7c082bb95059d151b",
+          "evidence": "npx turbo run test --force, exit 0, 20 of 20, 2734 passed 1 skipped -- unchanged, because this round wrote no code for this task. The suites bearing on the acceptance are inside that total and are named rather than implied: packages/observability's cmcd-collect.test.ts, cmcd-collect.property.test.ts, cmcd-report.test.ts, cmcd-keys.test.ts and redaction.test.ts (68 tests in that package), apps/web's player telemetry.test.ts, and the api/v1/telemetry/cmcd handler and cmcd-sfv tests. Redaction is the acceptance's own word and redaction.test.ts is where it is exercised. AN UNREPRODUCIBLE FAILURE OCCURRED ON THE FIRST RUN AT THIS TREE AND IS RECORDED RATHER THAN DISCARDED. That run reported '@liberty/media-inspection:test: Tests 1 failed | 251 passed (252)' with 12 of 17 tasks successful. The isolated suite then passed 252 of 252, and a second full turbo run passed 20 of 20 with media-inspection at 252. I CANNOT NAME THE FAILING TEST: my command piped the output through a grep that kept only the summary lines, so the name was discarded before I read it. That is my error in capturing, not an absence of evidence, and it is stated plainly because this project has been burned by an unexplained failure before -- round 52's, which turned out to be concurrency-dependent rather than seed-dependent and produced PL-AI-0010's timeout config. THE STANDING HYPOTHESIS FITS AND IS NOT PROVEN: this machine has 2 cores, turbo's default concurrency is 10, and packages/media-inspection has NO vitest.config.ts of its own, so its suites -- including order.property.test.ts, a fast-check property suite -- run under vitest's 5000ms default. PL-AI-0010 fixed exactly this shape for packages/contracts and its fix was deliberately scoped to that package. media-inspection is therefore in the state contracts was in before round 52, and this observation is the second data point. It is NOT this task's surface and nothing was changed about it; it is reported in the handoff for a ruling on whether it wants a task. WHAT THIS GATE CLAIMS: the suites pass at this tree, observed twice after the one failure. WHAT IT DOES NOT CLAIM: that the failure was a flake. An unreproduced failure is unexplained, not benign, and calling it a flake is the reading that would bury it."
+        }
+      },
+      "reviewDependencies": [
+        "apps/web/src/components/player/diagnostics/index.ts",
+        "docs/API_CONTRACTS.md"
+      ],
+      "notes": "EVIDENCE-BASED NARROWING 2026-09-22, under the procedure gpt-architect RATIFIED as general at b0344606887e4b91e1d832b7c082bb95059d151b, with its explicit caution that this is not permission to choose narrow paths merely to remove collisions. allowedPaths were [\"apps/web/src/**\",\"packages/observability/**\",\"packages/contracts/**\"]. THE SURFACE IS THE UNION OF WHAT THREE COMMITS WROTE, and none of them names PL-0503 alone, so every path is attributed by subject matter against the acceptance -- startup, rebuffer, quality switch and failure events observable WITH PRIVACY REDACTION. 4ca4313 'Preflight' created telemetry.ts and the observability telemetry set: cmcd-collect and its two tests, cmcd-keys, cmcd-report and its test, log-event, redaction and its test, and it edited index.ts. cf98b97 'PL-0503/PL-0504: the CMCD keys that reach the CDN' edited telemetry.ts and cmcd-keys and created their tests. 719d2d7 'Nine lanes' created apps/web/src/app/api/v1/telemetry/cmcd, the ingestion endpoint without which the events are not observable anywhere. THE SPLIT AGAINST PL-0504 IS THE DELICATE PART AND IT WAS DRAWN ON THE ACCEPTANCES, NOT ON CONVENIENCE. cf98b97 is a two-task commit -- its subject names both -- and its diagnostics half (av-continuity, frame-timing, video-hole, buffered-ranges, sequence-mode, readers) plus docs/AV_SYNC_MEASUREMENT.md answer PL-0504's acceptance about A/V continuity proxies and the flash-and-blip procedure, not this one. Those files are therefore NOT taken here even though PL-0503's old apps/web/src/** wildcard covered them and taking them would have been easier. packages/observability/src/index.ts IS INCLUDED AND PRE-EXISTS THE BASE: the bootstrap b484735 created the empty package with that barrel, and 4ca4313 edited it to export the telemetry set. It is a file this task genuinely wrote to, so the ruling says it stays, and the fact that it exists at the base is stated here rather than left for the reviewer to notice -- the base is where implementation began, not a point before every file's creation. reviewDependencies carries the diagnostics barrel that telemetry reads and the API contract document.",
+      "implementationAgent": "claude-frontend",
+      "updatedAt": "2026-09-22T10:14:38.403Z",
+      "implementationBaseSha": "cb622345f12611585771e2f1af808034bd5aa042",
+      "implementationBaseProvenance": {
+        "kind": "reconciled-existing-implementation",
+        "baseSha": "cb622345f12611585771e2f1af808034bd5aa042",
+        "reconciledAt": "2026-09-22T10:09:08.061Z",
+        "reconciledBy": "claude-frontend",
+        "implementationAgent": "claude-frontend",
+        "headAtReconciliation": "b0344606887e4b91e1d832b7c082bb95059d151b",
+        "reviewSurface": "allowedPaths + reviewDependencies",
+        "surfaceCommitCount": 13,
+        "oldestSurfaceCommit": "4ca4313f2642f4666ab6dda0084c25fcb2fbf3d5",
+        "newestSurfaceCommit": "69345420056ac1f8942beba80f07b81422a6320f",
+        "surfaceCommits": [
+          "69345420056ac1f8942beba80f07b81422a6320f",
+          "f83bc65015851b97ff9af86249b144cd57ea8047",
+          "6de6fb59678506d2b465e4328b011e7636aca3b3",
+          "a772dd1cf38c815920863a05d4def5c6cc2846c1",
+          "002461be7a98fad790971f37b813532616280efa",
+          "83439a28aa8ea3e349b359af8aee996424576715",
+          "a4209a4fcf0b232e5de92f2af09dd8fb3d266909",
+          "eecca6b621a2fccaab09ab3ec15d3bc93936df3b",
+          "719d2d7c31465901f3dbee1e936a180e87c3d44f",
+          "cf98b977b3c7c0113928bb9cc4d7fb6d02e802bd",
+          "34c16c97c9ae0a1dec5b708f4f81ed62ecb94afb",
+          "bbe68ed8d16f864c87309ceb1c089495deb89766",
+          "4ca4313f2642f4666ab6dda0084c25fcb2fbf3d5"
+        ],
+        "surfaceCommitsTruncated": false,
+        "changedFileCount": 21,
+        "baseCommitSurfaceTouchCount": 0,
+        "baseCommitSurfaceTouches": [],
+        "baseCommitSurfaceTouchesTruncated": false,
+        "reason": "PL-0503's implementation is in committed history and predates this claim by a month. Three commits contribute it, none naming PL-0503 alone: 4ca4313 'Preflight' created telemetry.ts and the observability telemetry set (cmcd-collect and its two tests, cmcd-keys, cmcd-report and its test, log-event, redaction and its test) and edited index.ts; cf98b97 'PL-0503/PL-0504' edited telemetry.ts and cmcd-keys and created their tests; 719d2d7 'Nine lanes' created the apps/web/src/app/api/v1/telemetry/cmcd ingestion endpoint. The earliest is 4ca4313, so the base is its parent cb62234. CHECKED AGAINST THE CORRECTED SURFACE AND ONE FILE DOES PRE-EXIST THE BASE, which is reported rather than hidden: packages/observability/src/index.ts was created by the bootstrap b484735 as an empty package's barrel and 4ca4313 edited it to export the telemetry set. It is a file this task genuinely wrote to, so the ratified procedure keeps it; the base is where implementation began rather than a point before every file's creation. No other declared path exists at cb62234. The split against PL-0504 was drawn on the two acceptances rather than on convenience: cf98b97 is a two-task commit and its diagnostics half plus docs/AV_SYNC_MEASUREMENT.md answer PL-0504's A/V continuity acceptance, so those files are not taken here even though the old apps/web/src/** wildcard covered them."
+      }
     },
     {
       "id": "PL-0504",
@@ -3363,16 +3444,63 @@
       "id": "PL-AI-0006",
       "priority": "P0",
       "lane": "Architecture",
-      "status": "READY",
+      "status": "REVIEW",
       "title": "Contract module boundaries",
       "dependencies": [
         "PL-AI-0004"
       ],
       "allowedPaths": [
-        "packages/contracts/**",
-        "packages/media-engine/**",
-        "packages/provider-sdk/**",
-        "apps/web/**"
+        "apps/web/src/app/api/v1/catalog/home/route.ts",
+        "apps/web/src/app/api/v1/playback/resolve/route.ts",
+        "apps/web/src/app/search/search.test.ts",
+        "apps/web/src/app/search/search.ts",
+        "apps/web/src/app/title/demo-title-details.ts",
+        "apps/web/src/app/title/title-detail.test.ts",
+        "apps/web/src/app/title/title-detail.ts",
+        "apps/web/src/app/watch/[contentId]/page.tsx",
+        "apps/web/src/components/catalog-card.tsx",
+        "apps/web/src/components/catalog-rail.tsx",
+        "apps/web/src/components/search/search-form.tsx",
+        "apps/web/src/components/search/search-results.tsx",
+        "apps/web/src/components/title/episode-list.tsx",
+        "apps/web/src/components/title/title-facts.tsx",
+        "apps/web/src/components/title/title-hero.tsx",
+        "apps/web/src/lib/catalog.test.ts",
+        "apps/web/src/lib/catalog.ts",
+        "apps/web/src/lib/demo-catalog.ts",
+        "packages/contracts/package.json",
+        "packages/contracts/src/catalog.test.ts",
+        "packages/contracts/src/domains/audio.ts",
+        "packages/contracts/src/domains/catalog.ts",
+        "packages/contracts/src/domains/failover.ts",
+        "packages/contracts/src/domains/playback.ts",
+        "packages/contracts/src/domains/search.ts",
+        "packages/contracts/src/domains/subtitles.ts",
+        "packages/contracts/src/domains/title.ts",
+        "packages/contracts/src/index.ts",
+        "packages/contracts/src/module-boundary.test.ts",
+        "packages/contracts/src/shared/codecs.ts",
+        "packages/contracts/src/shared/ids.ts",
+        "packages/contracts/src/shared/media-facts.ts",
+        "packages/contracts/src/shared/rights.ts",
+        "packages/contracts/src/stream-candidate.test.ts",
+        "packages/contracts/src/title.test.ts",
+        "packages/media-engine/src/audio.test.ts",
+        "packages/media-engine/src/audio.ts",
+        "packages/media-engine/src/failover.test.ts",
+        "packages/media-engine/src/failover.ts",
+        "packages/media-engine/src/ranking.test.ts",
+        "packages/media-engine/src/ranking.ts",
+        "packages/media-engine/src/scoring.ts",
+        "packages/media-engine/src/subtitles.test.ts",
+        "packages/media-engine/src/subtitles.ts",
+        "packages/media-engine/src/unknown-media.test.ts",
+        "packages/provider-sdk/src/provider.ts",
+        "packages/provider-sdk/src/stremio/client.ts",
+        "packages/provider-sdk/src/stremio/mapping.test.ts",
+        "packages/provider-sdk/src/stremio/mapping.ts",
+        "packages/provider-sdk/src/stremio/source.test.ts",
+        "packages/provider-sdk/src/stremio/source.ts"
       ],
       "preferredAgent": "claude-lead",
       "reviewAgent": "gpt-architect",
@@ -3381,8 +3509,70 @@
         "unit"
       ],
       "acceptance": "Shared vocabularies live in their own leaf modules, domain contracts live in one module each, index.ts is a re-export-only compatibility barrel rather than the authoritative public surface, and a wildcard exports map lets a new domain contract be added without touching package metadata or the barrel; no cycle-driven z.lazy remains and structural regressions prove the boundary rather than merely reflecting it; no schema behaviour changes",
-      "owner": null,
-      "gateResults": {}
+      "owner": "claude-lead",
+      "gateResults": {
+        "repo-validate": {
+          "status": "pass",
+          "at": "2026-09-22T10:15:58.124Z",
+          "by": "claude-lead",
+          "commitSha": "b0344606887e4b91e1d832b7c082bb95059d151b",
+          "evidence": "npm run repo:validate, exit 0, and node scripts/ai-control-plane.mjs validate 0 at 66 tasks. NO CODE WAS WRITTEN FOR PL-AI-0006 THIS ROUND: the acceptance is already satisfied at HEAD and this round performed the provenance repair -- a narrowing of allowedPaths from four wildcards to the exact 51 files f06dec1 wrote, then reconciliation to 18ce472. repo:validate is on this task's gate list rather than typecheck because the deliverable is a module boundary and the repository validator is what checks the shape of the tree. Also run and green at this head: turbo typecheck 0 (21/21), lint 0 (11/11), build 0 (11/11)."
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-09-22T10:15:58.227Z",
+          "by": "claude-lead",
+          "commitSha": "b0344606887e4b91e1d832b7c082bb95059d151b",
+          "evidence": "npx turbo run test --force, exit 0, 20 of 20, 2734 passed 1 skipped. THE SUITE THAT IS THIS TASK'S ACCEPTANCE IS packages/contracts/src/module-boundary.test.ts, run in isolation for this gate: 15 tests, all passing. It asserts the four properties the acceptance names, mechanically rather than by convention -- index.ts contains nothing but re-export statements and imports no zod, no package-internal module reaches the barrel, no shared/** module imports from domains/**, and every exported domain and shared subpath resolves to a real file. It also carries the z.lazy guard the split earned: z.lazy may only defer a schema declared in the SAME file, because using it to reach a symbol elsewhere means an initialisation cycle is being worked around rather than removed. That file exists BECAUSE the previous layout also 'currently happened to' work, which is the strongest evidence the boundary is enforced rather than described. The unreproducible media-inspection failure recorded on PL-0503's unit gate at this same tree applies to this run too and is not repeated here; see that gate for the full statement."
+        }
+      },
+      "reviewDependencies": [
+        "docs/ARCHITECTURE.md"
+      ],
+      "notes": "EVIDENCE-BASED NARROWING 2026-09-22, under the procedure gpt-architect ratified as general at b0344606887e4b91e1d832b7c082bb95059d151b. allowedPaths were [\"packages/contracts/**\",\"packages/media-engine/**\",\"packages/provider-sdk/**\",\"apps/web/**\"] and are now the EXACT 51 files commit f06dec1 wrote -- 'PL-AI-0006: split contracts into shared vocabularies and domain modules'. That commit names this task alone in its subject, so the whole of it is attributed without judgement calls; the only other commit mentioning the id, 6845e37, DEFINES the task and writes no implementation. THIS SURFACE IS LARGE AND THAT IS THE CORRECT ANSWER RATHER THAN A FAILURE TO NARROW. Splitting a contracts barrel rewrites every import site, so 33 of the 51 files are consumers in apps/web, media-engine and provider-sdk whose imports the split changed. The ruling is explicit that a file genuinely written to stays, and dropping the consumers would have produced a tidier declaration that lied about what the task did. The enforced surface is nonetheless disjoint from every other active task, verified rather than assumed: none of the 51 is a telemetry, observability, progress, watchlist or writer-epoch file, so PL-0403, PL-0404 and PL-0503 are untouched by it. THE ACCEPTANCE IS ALREADY SATISFIED AT HEAD and was checked before any of this: packages/contracts/src has shared/ leaf vocabularies and domains/ modules, index.ts is twelve export-star lines, and module-boundary.test.ts enforces the four properties mechanically. This task needs reconciliation and review, not implementation.",
+      "implementationAgent": "claude-lead",
+      "updatedAt": "2026-09-22T10:15:58.328Z",
+      "implementationBaseSha": "18ce47244b1da0c83fe092351f51e71892bd6c84",
+      "implementationBaseProvenance": {
+        "kind": "reconciled-existing-implementation",
+        "baseSha": "18ce47244b1da0c83fe092351f51e71892bd6c84",
+        "reconciledAt": "2026-09-22T10:15:33.068Z",
+        "reconciledBy": "claude-lead",
+        "implementationAgent": "claude-lead",
+        "headAtReconciliation": "b0344606887e4b91e1d832b7c082bb95059d151b",
+        "reviewSurface": "allowedPaths + reviewDependencies",
+        "surfaceCommitCount": 38,
+        "oldestSurfaceCommit": "f06dec1b21925bf1af8c676bc7e24bc4ecf3d002",
+        "newestSurfaceCommit": "e5dd8893a5600e6272575e9116e1f434559ac532",
+        "surfaceCommits": [
+          "916fc101a3dfa8d066a50f5b34d3c5db5f4e1eeb",
+          "b74b0d3c4befa226109fc1ce623b5addd46a9490",
+          "eecca6b621a2fccaab09ab3ec15d3bc93936df3b",
+          "ba9521b2c3998ae05210240827c0a773596819c9",
+          "719d2d7c31465901f3dbee1e936a180e87c3d44f",
+          "c469e92d5612528885e8fac21a284136b82b0e1a",
+          "8b1172b2190d3ddfecb5afd28ea73a293e17def1",
+          "9933a55dd177ccc08b20b1fe3e49f479c8a7de1f",
+          "6c31298ba1eece125b2733780dc6b107aa5e5200",
+          "6358abc8a8c9b6183e561ca795a4d29ae7fd2881",
+          "9f14c52ecc70e254a92f1ae5d12433c80e6aaa6b",
+          "b7bc31cb2799cf6838c5acdf5cefd906c5e699ca",
+          "9aafd5237e4ee6c8dab6c9c2f9879c1910149872",
+          "34c16c97c9ae0a1dec5b708f4f81ed62ecb94afb",
+          "fc1ea4d54c9e7d2b2f6d9aa71a977abdc3bcb400",
+          "bbe68ed8d16f864c87309ceb1c089495deb89766",
+          "4ca4313f2642f4666ab6dda0084c25fcb2fbf3d5",
+          "67c5fc9270621f461cbf671fe870da7394d20065",
+          "79a0e651bd06068d785b54dfd9080245d7b9280b",
+          "f06dec1b21925bf1af8c676bc7e24bc4ecf3d002"
+        ],
+        "surfaceCommitsTruncated": true,
+        "changedFileCount": 52,
+        "baseCommitSurfaceTouchCount": 0,
+        "baseCommitSurfaceTouches": [],
+        "baseCommitSurfaceTouchesTruncated": false,
+        "reason": "PL-AI-0006's implementation is in committed history and its acceptance is already satisfied at HEAD -- packages/contracts/src carries shared/ leaf vocabularies and domains/ modules, index.ts is twelve export-star lines, and module-boundary.test.ts enforces the four properties mechanically. ONE commit implements it: f06dec1 'PL-AI-0006: split contracts into shared vocabularies and domain modules', which names this task alone in its subject, so its 51 files are attributed whole without judgement calls. The only other commit mentioning the id, 6845e37, DEFINES the task and writes no implementation. The base is f06dec1's parent, 18ce472. The surface is large because splitting a contracts barrel rewrites every import site: 33 of the 51 files are consumers whose imports changed, and the ratified procedure keeps a file the task genuinely wrote rather than dropping it for tidiness. Verified disjoint from all three currently active tasks: none of the 51 is a telemetry, observability, progress, watchlist or writer-epoch file."
+      }
     },
     {
       "id": "PL-0105",
@@ -5253,7 +5443,7 @@
       "id": "PL-0711",
       "priority": "P1",
       "lane": "Security",
-      "status": "REVIEW",
+      "status": "DONE",
       "title": "Playback-session candidate wire bounds match StreamCandidate bounds",
       "dependencies": [
         "PL-0708",
@@ -5275,7 +5465,7 @@
       ],
       "acceptance": "playbackSessionCandidateSchema uses THE SAME AUTHORITATIVE id and providerId limits as the StreamCandidate contract -- the exported MAX_STREAM_CANDIDATE_ID_CHARS and MAX_STREAM_CANDIDATE_PROVIDER_ID_CHARS -- and NOT copied numeric literals. PL-0708 exported those constants for exactly this reason; a copied literal would recreate the defect one layer out, which is the defect this task exists to close. Required: an oversized resolved candidate CANNOT RE-EXPAND ON THE SESSION WIRE after passing through another producer seam, which is the actual risk -- the contract bound governs what a provider may produce, and a second unbounded restatement downstream means the bound stops at the seam; fixture and Wikidata legitimate identifiers remain accepted, because a bound that rejects a real upstream id is an outage rather than a fix; tests cover the EXACT MAXIMUM, MAXIMUM PLUS ONE, and the serialized response, since a bound tested only from above does not prove the boundary is where it is claimed to be; reason and error output does not echo the oversized value; and NO SECOND INDEPENDENT BOUND VOCABULARY IS INTRODUCED. Note while working: playbackSessionCandidateSchema also carries unbounded uri and mimeType. They are not named in the reviewer's acceptance and are not in scope by default -- if they warrant bounds, say so and let the reviewer rule rather than adding them quietly.",
       "notes": "Created 2026-09-19 on gpt-architect's round-50 direction, reviewing at f83bc65015851b97ff9af86249b144cd57ea8047. Filed from the PL-0708 approval. apps/web's playbackSessionCandidateSchema (session/contract.ts, around lines 258-262) independently restates id and providerId as unbounded strings and does not derive from streamCandidateSchema. RESERVATION RELEASED 2026-09-22 ON gpt-architect's EXPLICIT DISPOSITION, relayed by the human commander. THIS IS NOT AN APPROVAL OR A REJECTION OF PR #33 and the implementation is not abandoned: the reviewer compared the PR head against the integrated branch, found the histories diverged, and released the reservation specifically to restore parallel work while the isolated PR is reconciled. PR #33 stays open as the implementation artifact and is to be rebased or rebuilt against current HEAD, with its actual test surface reconciled against this task definition, before review. THE RELEASE CLEARED implementationBaseSha 20edec3aa3f33dbd58aa405d1210f56ce54c207f, with baseDecisionReason 'no-surface-change' and preservedBaseSurfaceChangedFileCount 0 -- PL-AI-0009's rule firing on its own terms, because nothing under the reviewed surface changed between that base and HEAD. A FURTHER FINDING, MEASURED BY THE LEAD AGAINST THE REAL PR HEAD RATHER THAN TAKEN ON RELAY. refs/pull/33/head was fetched (reads pass the proxy; only writes are refused) and resolves to 6d2fbd63db1e4a58f6b2a6311c3f9df243ee8e17. Every figure the reviewer gave is confirmed: 5 commits ahead, 16 behind e78a840, and exactly four changed files, of which e2e/tests/playback-session.desktop.api.spec.ts is outside this task's declared allowedPaths. THE MERGE BASE IS 33195d593695618b779ab6c97a50817a2694e8df, NOT 20edec3, AND 20edec3 IS NOT AN ANCESTOR OF THE PR AT ALL -- verified with merge-base --is-ancestor, which fails. So the base this task recorded at claim time was not merely narrow, it sat on a DIFFERENT LINE OF HISTORY from the work it claimed to cover: an ordinary start captured the integrated branch's HEAD while the implementation was being written on a branch that had left at 33195d5. That is the provenance defect class that invalidated PL-0205, PL-0401, PL-0601 and PL-0703, caught here BEFORE a verdict was ever bound to it rather than after. It is already harmless because the release cleared the field, and it is recorded so the reconciliation does not rediscover it: WHEN THIS TASK IS RE-CLAIMED, THE TRUE LOWER BOUND IS 33195d5, and if the PR is rebased onto current HEAD first then the base is whatever the rebase lands on -- either way it must be determined from history at that moment and not copied from here. The five PR commits are b480887, 5e17cf4, 968a8ee, 21f9ef9 and 6d2fbd6.",
-      "owner": "claude-security",
+      "owner": null,
       "gateResults": {
         "typecheck": {
           "status": "pass",
@@ -5290,11 +5480,59 @@
           "by": "claude-security",
           "commitSha": "c160d84afaa3dc4fd56ffc7c1a609531671ba37c",
           "evidence": "npx turbo run test --force, exit 0, 20 of 20 tasks, 0 cached, 2734 passed 1 skipped against the 2723/1 baseline: +11, the whole of contract.bounds.test.ts; @liberty/web 908 to 919. Sum recomputed by the lead from the per-package figures: 100+67+68+47+208+252+373+260+288+152+919 = 2734. test:scripts 0 across six suites, repo:validate 0, ai:validate 0 at 66 tasks. THE BOUND IS TESTED AT THE BOUNDARY, NOT FROM ABOVE: exact maximum accepted and maximum-plus-one refused, for id and for providerId separately, because .max(200) also rejects a thousand characters and a test only from above locates nothing. Legitimate fixture and Wikidata-shaped identifiers are asserted still accepted, since a bound that rejects a real upstream id is an outage rather than a fix. TWO MUTANTS PLANTED AND BOTH KILLED, and the second is the one that matters. Removing .max(MAX_STREAM_CANDIDATE_ID_CHARS) fails 4 of 11. Replacing it with the COPIED LITERAL .max(141) -- runtime-identical, and exactly the defect this task exists to close -- fails 1 of 11, and it is the source-graph assertion that fires while every value test stays green. A numeric-equality suite alone would have permitted the defect, which is the same finding PL-0312 recorded about the health floor. THE RE-EXPANSION CLAUSE IS TESTED END TO END: an oversized candidate is refused by playbackSessionResponseSchema, which handler.ts validates every response against before it leaves, and a run through the real handlePlaybackSessionRequest with a resolver stub confirms the value does not reach a caller inside a granted session. THE FAILURE OUTPUT DOES NOT ECHO THE OVERSIZED VALUE: the serialized zod issues are asserted not to contain it, nor any forty-character run of it, while still carrying too_big and the candidates path. A FOURTH HARNESS DEFECT IS REPORTED HERE BECAUSE OF HOW IT HID: the handler test first passed an option named resolveAuthorizedCandidates -- the real option is resolve -- under an `as never` cast, so the stub was ignored, an ordinary session was produced, and the 200 read as a missing bound. The cast silenced the check that would have named it. The test now passes a correctly typed options object with no cast, and the comment in it says so. A test cast past the type system measures the cast."
+        },
+        "security-review": {
+          "status": "pass",
+          "at": "2026-09-22T04:42:50.372Z",
+          "by": "gpt-architect",
+          "commitSha": "b0344606887e4b91e1d832b7c082bb95059d151b",
+          "evidence": "PASS, recorded by gpt-architect against origin 69345420056ac1f8942beba80f07b81422a6320f, the Round 70 head. Accepted properties: direct use of the authoritative MAX_STREAM_CANDIDATE_ID_CHARS and MAX_STREAM_CANDIDATE_PROVIDER_ID_CHARS constants rather than copied numerals; exact-maximum and maximum-plus-one coverage on both fields; response-bound enforcement, so an oversized candidate cannot leave the process inside a granted session; no echo of the oversized value in the failure output; and the SOURCE-GRAPH REGRESSION KILLING A RUNTIME-IDENTICAL COPIED .max(141) MUTATION, which the reviewer singled out -- a value-equality suite alone would have permitted the defect this task exists to close. uri and mimeType remaining unbounded DO NOT BLOCK APPROVAL. PROVENANCE: TRANSCRIBED BY CLAUDE from the ChatGPT review session and relayed by the human commander; the GitHub review-write integration returns 403. TIMING NOTE, recorded because the previous round turned on it: the commander's round-71 instruction assumed this verdict already existed and expected 52 of 66; it had not arrived, nothing was recorded on the assumption, and the board correctly read 51 of 66 with PL-0711 in REVIEW until this relay."
         }
       },
       "implementationAgent": "claude-security",
-      "updatedAt": "2026-09-22T04:12:44.620Z",
-      "implementationBaseSha": "c160d84afaa3dc4fd56ffc7c1a609531671ba37c"
+      "updatedAt": "2026-09-22T04:42:50.593Z",
+      "implementationBaseSha": "c160d84afaa3dc4fd56ffc7c1a609531671ba37c",
+      "review": {
+        "taskId": "PL-0711",
+        "implementationAgent": "claude-security",
+        "implementationOwner": "claude-security",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "b0344606887e4b91e1d832b7c082bb95059d151b",
+        "reviewedBaseSha": "c160d84afaa3dc4fd56ffc7c1a609531671ba37c",
+        "reviewedTreeHash": "09bb33dc11d9341d7a679a5df65a91c6d0f38b0018cf93c1ba14d10904518866",
+        "reviewedFileCount": 15,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [
+          "packages/contracts/src/domains/playback.ts"
+        ],
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-09-22T04:42:50.499Z",
+        "evidence": "APPROVED by gpt-architect at origin 69345420056ac1f8942beba80f07b81422a6320f. security-review PASS is recorded as a gate with the reviewer's own evidence. The rebuild -- not a merge or rebase of PR #33, which stays as historical implementation evidence -- is accepted: the bound is imported from the authoritative constants, the boundary is located at exact-max and max-plus-one rather than tested only from above, the response bound stops an oversized candidate leaving inside a granted session, the failure output does not echo the value, and the source-graph regression kills a runtime-identical copied .max(141). uri and mimeType remaining unbounded do not block approval. PROVENANCE: TRANSCRIBED BY CLAUDE from the ChatGPT review session and relayed by the human commander; the GitHub review-write integration returns 403."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PL-0711",
+          "implementationAgent": "claude-security",
+          "implementationOwner": "claude-security",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "b0344606887e4b91e1d832b7c082bb95059d151b",
+          "reviewedBaseSha": "c160d84afaa3dc4fd56ffc7c1a609531671ba37c",
+          "reviewedTreeHash": "09bb33dc11d9341d7a679a5df65a91c6d0f38b0018cf93c1ba14d10904518866",
+          "reviewedFileCount": 15,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "packages/contracts/src/domains/playback.ts"
+          ],
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-09-22T04:42:50.499Z",
+          "evidence": "APPROVED by gpt-architect at origin 69345420056ac1f8942beba80f07b81422a6320f. security-review PASS is recorded as a gate with the reviewer's own evidence. The rebuild -- not a merge or rebase of PR #33, which stays as historical implementation evidence -- is accepted: the bound is imported from the authoritative constants, the boundary is located at exact-max and max-plus-one rather than tested only from above, the response bound stops an oversized candidate leaving inside a granted session, the failure output does not echo the value, and the source-graph regression kills a runtime-identical copied .max(141). uri and mimeType remaining unbounded do not block approval. PROVENANCE: TRANSCRIBED BY CLAUDE from the ChatGPT review session and relayed by the human commander; the GitHub review-write integration returns 403."
+        }
+      ],
+      "completedAt": "2026-09-22T04:42:50.593Z"
     },
     {
       "id": "PL-AI-0008",
