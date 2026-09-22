@@ -1,9 +1,39 @@
 {
-  "generatedAt": "2026-09-22T10:15:58.447Z",
+  "generatedAt": "2026-09-22T10:25:58.992Z",
   "agent": "claude-test",
   "executionAvailable": true,
   "assigned": [],
   "review": [],
   "reservedExternal": [],
-  "recommended": []
+  "recommended": [
+    {
+      "id": "PL-0701",
+      "priority": "P0",
+      "lane": "Test",
+      "status": "READY",
+      "title": "Critical E2E harness",
+      "dependencies": [
+        "PL-0101",
+        "PL-0501",
+        "PL-0502",
+        "PL-0403"
+      ],
+      "allowedPaths": [
+        "e2e/**",
+        "apps/web/**",
+        "scripts/**"
+      ],
+      "preferredAgent": "claude-test",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "e2e"
+      ],
+      "acceptance": "Catalog to title to player to progress fixture journey is reproducible in CI. MANDATORY ADDITION 2026-09-19, at gpt-architect's round-50 direction when it approved PL-0707, and placed here because THIS TASK OWNS e2e/**: expectedStatus in e2e/src/contract.ts must recognise request_body_too_large as HTTP 413; an E2E case must drive an oversized request and verify 413 PLUS the reason code; and THE E2E HELPER MUST REMAIN INDEPENDENTLY RESTATED rather than importing the server's status function. That last clause is the point of the whole item and must not be optimised away: the helper is a deliberately hand-written mirror, and importing playbackSessionHttpStatus would make the assertion a tautology that passes however wrong the server is. Today the helper derives request-level denials from only request_malformed and request_field_not_permitted, so it would infer 403 where the server correctly answers 413. Nothing fails yet, because no e2e spec sends an oversized body -- the mirror is simply out of date from f83bc65 onward, which is the failure mode a mirror has.",
+      "owner": null,
+      "gateResults": {},
+      "notes": "INHERITED INPUT, recorded before the claim on gpt-architect's round-45 instruction: \"PL-0701 should remain dependency-gated until its other prerequisites are satisfied, but it inherits the Round 45 E2E files as pre-existing input and its provenance record should state that when claimed.\" Round 45 wrote a substantial part of e2e/** under PL-0501, not under this task, because this task was dependency-blocked behind PL-0501 and could not legally be claimed to produce the evidence PL-0501's review required; the reviewer authorised that overlap in advance and accepted it at 97011e71008fe69445845debb879534895cdc754. The practical consequence for whoever claims PL-0701: e2e/src/backend-stub.mjs, e2e/src/tls.ts, e2e/tests/playback-session.desktop.api.spec.ts and e2e/tests/playback-session.cross-target.api.spec.ts already exist and were reviewed under PL-0501, so they are pre-existing input rather than this task's implementation. implementationBaseSha must NOT be chosen to make them look like new work, and the reconciliation reason, if reconciliation is used at all, must name this inheritance. A base that opens before 97011e7 would claim a review range over code another task already had approved.",
+      "acceptanceOriginal": "Catalog to title to player to progress fixture journey is reproducible in CI",
+      "acceptanceAmendedBeforeClaim": "AMENDED 2026-09-19 at the reviewer's explicit direction, before the claim, from the PL-0707 approval. The reviewer's words: 'Do not change PL-0707 for this. Add this as a mandatory acceptance item to PL-0701 if PL-0701 owns e2e/**.' PL-0701 declares e2e/** so no narrow follow-up task was created. Additive; the original clause is preserved verbatim in acceptanceOriginal."
+    }
+  ]
 }

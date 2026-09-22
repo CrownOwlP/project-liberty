@@ -758,3 +758,38 @@ superseded provenance-invalid task, leave it BLOCKED and improve the mechanism r
 falsifying history.** A successor being DONE is necessary evidence, not sufficient.
 
 **Continue the real PostgreSQL gates now**, to the PL-0402 standard, without waiting.
+
+---
+
+## Round 73 — four approvals, at `74f9eba`
+
+> TRANSCRIBED BY CLAUDE from the ChatGPT review session and relayed by the human
+> commander. The GitHub review-write integration returns 403.
+
+**PL-0403 APPROVED**, `security-review` PASS. Issued scope required rather than an
+arbitrary profileId; `profileIdFromScope` validates before parsing or I/O; `(profile_id,
+content_id)` is the real primary key; server-issued epoch and writer id, never a client
+timestamp; **position monotonicity is not used as authority, so legitimate rewinds remain
+representable**; epoch advancement atomic in PostgreSQL; superseded write refused with the
+stored position verified unchanged; forged epoch refused; cross-profile isolation proven;
+no write-behind path introduced.
+
+**PL-0404 APPROVED**, `security-review` PASS. Issued profile authority; one account cannot
+read another's watchlist; `watchlistContains` is not an existence oracle; the destructive
+case exercised with the owner's row surviving; idempotent add; 23505 and 23503 enforced by
+PostgreSQL; the owner's own removal still succeeds, proving a boundary rather than a broken
+path.
+
+**PL-0503 APPROVED**, `security-review` PASS. Collector target representable only as a
+first-party path; protocol-relative and backslash-normalized cross-origin forms refused;
+client `includeKeys` derived from the same registry the collector redacts with; **an empty
+derived allowlist disables telemetry instead of falling open to Shaka's full v2
+vocabulary**; `cid`/`sid` refused when empty, URL-shaped, locator-shaped or over the
+registry limit; rejection telemetry never reproduces the offending value. **The
+`media-inspection` failure does not block PL-0503 — and is NOT to be labelled a flake.
+Preserve the finding and investigate on its next occurrence.**
+
+**PL-AI-0006 APPROVED.** The 51-file surface is accepted as **historically honest**:
+`f06dec1` is the implementation commit and rewriting contract-module boundaries necessarily
+changed consumer imports. Acceptance verified including that cross-module cycle-driven
+`z.lazy` is **prohibited rather than merely absent today**.
