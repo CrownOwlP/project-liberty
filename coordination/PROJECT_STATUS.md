@@ -1,15 +1,15 @@
 # Project Liberty - Project Status
 
-> Generated 2026-09-22T04:12:44.703Z from the AI control plane.
+> Generated 2026-09-22T04:29:41.435Z from the AI control plane.
 
 **Overall completion:** 51/66 executable tasks (77%)
 
 ## Status summary
 
 - **BACKLOG:** 3
-- **READY:** 5
+- **READY:** 3
 - **CLAIMED:** 0
-- **IN_PROGRESS:** 0
+- **IN_PROGRESS:** 2
 - **REVIEW:** 1
 - **BLOCKED:** 6
 - **DONE:** 51
@@ -29,11 +29,13 @@
 
 ## Active work
 
+- **PL-0403** [IN_PROGRESS] Progress persistence — owner: claude-backend
+- **PL-0404** [IN_PROGRESS] Watchlist persistence — owner: claude-backend
 - **PL-0711** [REVIEW] Playback-session candidate wire bounds match StreamCandidate bounds — owner: claude-security
 
 ## Dispatch classification
 
-- **READY_AND_EXECUTABLE:** 4
+- **READY_AND_EXECUTABLE:** 2
 - **READY_BUT_EXTERNAL:** 1
 - **BLOCKED:** 6
 - **BACKLOG (dependency-gated):** 3
@@ -60,7 +62,7 @@ No conflict-free executable tasks can be assigned with current agent capacity.
 - **gpt-architect:** 0/6 active (external lane; not locally executable)
 - **claude-lead:** 0/2 active
 - **claude-frontend:** 0/2 active
-- **claude-backend:** 0/2 active
+- **claude-backend:** 2/2 active
 - **claude-media:** 0/2 active
 - **claude-test:** 0/1 active
 - **claude-security:** 1/1 active

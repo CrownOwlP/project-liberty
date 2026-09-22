@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-22T04:12:44.704Z",
+  "generatedAt": "2026-09-22T04:29:41.436Z",
   "agent": "gpt-architect",
   "executionAvailable": false,
   "assigned": [],
@@ -88,33 +88,6 @@
       "gateResults": {}
     },
     {
-      "id": "PL-0403",
-      "priority": "P0",
-      "lane": "Backend",
-      "status": "READY",
-      "title": "Progress persistence",
-      "dependencies": [
-        "PL-0405",
-        "PL-0402"
-      ],
-      "allowedPaths": [
-        "apps/web/src/**",
-        "packages/contracts/**",
-        "packages/**"
-      ],
-      "preferredAgent": "claude-backend",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "typecheck",
-        "unit",
-        "integration",
-        "security-review"
-      ],
-      "acceptance": "Progress rows are scoped to a profile id rather than a user id and keyed by (profileId, contentId) so a repeated write upserts idempotently, with read and write authorized against the active profile; two devices writing the same title are resolved by a server-issued writer epoch rather than by client timestamps or by a monotonically-increasing-position rule, because client clocks are unreliable and a monotonic rule wrongly refuses a legitimate rewind; and writes go directly to PostgreSQL, with no Redis write-behind introduced until a PostgreSQL problem has actually been measured",
-      "owner": null,
-      "gateResults": {}
-    },
-    {
       "id": "PL-AI-0003",
       "priority": "P1",
       "lane": "Coordination",
@@ -138,33 +111,6 @@
         "unit"
       ],
       "acceptance": "Optional external agent runner can dispatch queued tasks to configured providers with budgets, audit logs, retries, and human approval gates",
-      "owner": null,
-      "gateResults": {}
-    },
-    {
-      "id": "PL-0404",
-      "priority": "P1",
-      "lane": "Backend",
-      "status": "READY",
-      "title": "Watchlist persistence",
-      "dependencies": [
-        "PL-0405",
-        "PL-0402"
-      ],
-      "allowedPaths": [
-        "apps/web/src/**",
-        "packages/contracts/**",
-        "packages/**"
-      ],
-      "preferredAgent": "claude-backend",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "typecheck",
-        "unit",
-        "integration",
-        "security-review"
-      ],
-      "acceptance": "Typed add, remove, and list APIs with authorization",
       "owner": null,
       "gateResults": {}
     }

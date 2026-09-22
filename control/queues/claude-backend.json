@@ -1,25 +1,25 @@
 {
-  "generatedAt": "2026-09-22T04:12:44.705Z",
+  "generatedAt": "2026-09-22T04:29:41.437Z",
   "agent": "claude-backend",
   "executionAvailable": true,
-  "assigned": [],
-  "review": [],
-  "reservedExternal": [],
-  "recommended": [
+  "assigned": [
     {
       "id": "PL-0403",
       "priority": "P0",
       "lane": "Backend",
-      "status": "READY",
+      "status": "IN_PROGRESS",
       "title": "Progress persistence",
       "dependencies": [
         "PL-0405",
         "PL-0402"
       ],
       "allowedPaths": [
-        "apps/web/src/**",
-        "packages/contracts/**",
-        "packages/**"
+        "packages/persistence/src/progress-repository.ts",
+        "packages/persistence/src/schema/progress.ts",
+        "packages/persistence/src/writer-epoch.ts",
+        "packages/persistence/src/writer-epoch.test.ts",
+        "packages/persistence/src/writer-epoch.property.test.ts",
+        "apps/web/src/app/api/v1/progress/**"
       ],
       "preferredAgent": "claude-backend",
       "reviewAgent": "gpt-architect",
@@ -30,23 +30,85 @@
         "security-review"
       ],
       "acceptance": "Progress rows are scoped to a profile id rather than a user id and keyed by (profileId, contentId) so a repeated write upserts idempotently, with read and write authorized against the active profile; two devices writing the same title are resolved by a server-issued writer epoch rather than by client timestamps or by a monotonically-increasing-position rule, because client clocks are unreliable and a monotonic rule wrongly refuses a legitimate rewind; and writes go directly to PostgreSQL, with no Redis write-behind introduced until a PostgreSQL problem has actually been measured",
-      "owner": null,
-      "gateResults": {}
+      "owner": "claude-backend",
+      "gateResults": {
+        "typecheck": {
+          "status": "pass",
+          "at": "2026-09-22T04:29:41.127Z",
+          "by": "claude-backend",
+          "commitSha": "69345420056ac1f8942beba80f07b81422a6320f",
+          "evidence": "npx turbo run typecheck --force, exit 0, 21 of 21. NO CODE WAS WRITTEN FOR PL-0403 THIS ROUND. Its implementation is in committed history and this round performed the provenance repair -- an evidence-based narrowing of allowedPaths from three wildcards to six paths, then reconciliation to fc1ea4d5. The gate records that the delivered implementation typechecks at the integrated head."
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-09-22T04:29:41.214Z",
+          "by": "claude-backend",
+          "commitSha": "69345420056ac1f8942beba80f07b81422a6320f",
+          "evidence": "npx turbo run test --force, exit 0, 20 of 20, 2734 passed 1 skipped -- unchanged, because this round wrote no code. The suites bearing on this task are inside that total: for PL-0403, packages/persistence progress-repository and the writer-epoch trio (writer-epoch.test.ts and writer-epoch.property.test.ts) plus apps/web's api/v1/progress handler and route tests; for PL-0404, watchlist-mutation.test.ts, watchlist-mutation.property.test.ts and the api/v1/watchlist handler tests. WHAT THIS GATE DOES NOT ESTABLISH, and it is the same limit PL-0402 hit: these run against in-memory repositories, and both acceptances turn on behaviour against a real database -- idempotent upsert keyed by (profileId, contentId) and two-device reconciliation for PL-0403, authorization for PL-0404. The integration gate is NOT recorded and the task stays IN_PROGRESS until a real PostgreSQL execution is performed, following the precedent PL-0402 set this session."
+        }
+      },
+      "reviewDependencies": [
+        "packages/persistence/src/schema/profiles.ts",
+        "packages/persistence/src/profile-repository.ts",
+        "apps/web/src/lib/db/request-context.ts",
+        "docs/DATA_MODEL.md"
+      ],
+      "notes": "EVIDENCE-BASED NARROWING 2026-09-22, under the procedure gpt-architect authorized for PL-0402 at 55cedc79ab6a79338c7c75f379d566e3acb1be5b. THE LEAD IS GENERALISING A RULING GIVEN FOR ONE TASK AND SAYS SO: that ruling was written as an eight-step procedure turning on whether committed implementation history exists, and it does here, but it named PL-0402. If the reviewer intended it narrowly, this is the record to reject. allowedPaths were [\"apps/web/src/**\",\"packages/contracts/**\",\"packages/**\"] -- three wildcards, of which apps/web/src/** and packages/** are the two that make this task collide with every other actionable task on the board and make an honest base underivable. THE EVIDENCE, PER PATH. Four commits contribute progress persistence and none of them names PL-0403 alone in its subject, so every path is attributed by subject matter and the attribution is stated rather than asserted. 1dd8e73 'PL-0401 to PL-0404' created progress-repository.ts, schema/progress.ts and the writer-epoch trio; its packages/auth bulk is PL-0401's, its profile files are PL-0402's and its watchlist files are PL-0404's. 719d2d7 'Nine lanes' created the apps/web/src/app/api/v1/progress subtree, one of its nine. b7bc31c 'persistence conflict rules' edited progress-repository.ts, schema/progress.ts and the writer-epoch trio -- and also the watchlist files, which are NOT taken here because they are PL-0404's. b74b0d3 edited the progress handler test. THE WRITER-EPOCH TRIO IS RETAINED DELIBERATELY: it looks like generic persistence infrastructure and it is what implements this task's acceptance clause that two devices writing the same title are reconciled, so the ruling's rule applies -- a path genuinely written as part of the task stays, however it looks. reviewDependencies carries the four files review needs and PL-0403 did not write: the profile schema and repository that scoping is against, the request context that carries the active profile, and the written data model. NO PATH WAS DROPPED FOR COLLIDING. The retained set still overlaps PL-0404 at nothing and PL-0405 at packages/persistence/src/**, and the PL-0405 overlap is not double-claiming because all four contributing commits are ancestors of PL-0405's base 68c4326.",
+      "implementationAgent": "claude-backend",
+      "updatedAt": "2026-09-22T04:26:06.697Z",
+      "implementationBaseSha": "fc1ea4d54c9e7d2b2f6d9aa71a977abdc3bcb400",
+      "implementationBaseProvenance": {
+        "kind": "reconciled-existing-implementation",
+        "baseSha": "fc1ea4d54c9e7d2b2f6d9aa71a977abdc3bcb400",
+        "reconciledAt": "2026-09-22T04:26:06.697Z",
+        "reconciledBy": "claude-backend",
+        "implementationAgent": "claude-backend",
+        "headAtReconciliation": "69345420056ac1f8942beba80f07b81422a6320f",
+        "reviewSurface": "allowedPaths + reviewDependencies",
+        "surfaceCommitCount": 14,
+        "oldestSurfaceCommit": "1dd8e73ee02ca931ab15bea677fff501913d235c",
+        "newestSurfaceCommit": "e097590ee79e112f26073b293a4ad7fbb2bd1fd6",
+        "surfaceCommits": [
+          "e097590ee79e112f26073b293a4ad7fbb2bd1fd6",
+          "a6035069da64ca511049359942b08f2a5709e33c",
+          "0337663aa9cdf1572298492b5f49e37e48f6e0a2",
+          "3e93d0a94685872a0266dd9c936d95821d2135c1",
+          "fbbccf38a5ef0b761264277bc96a9409a510c503",
+          "4b3ae21e3e61b6f5a13b6862f794efb42c965bab",
+          "b74b0d3c4befa226109fc1ce623b5addd46a9490",
+          "719d2d7c31465901f3dbee1e936a180e87c3d44f",
+          "f71a88170193f6b4367b3eaafad9543a3dbe6328",
+          "00f6c5061e11a622999c535cfec9f27814e20034",
+          "b7bc31cb2799cf6838c5acdf5cefd906c5e699ca",
+          "9aafd5237e4ee6c8dab6c9c2f9879c1910149872",
+          "34c16c97c9ae0a1dec5b708f4f81ed62ecb94afb",
+          "1dd8e73ee02ca931ab15bea677fff501913d235c"
+        ],
+        "surfaceCommitsTruncated": false,
+        "changedFileCount": 15,
+        "baseCommitSurfaceTouchCount": 0,
+        "baseCommitSurfaceTouches": [],
+        "baseCommitSurfaceTouchesTruncated": false,
+        "reason": "PL-0403's implementation is in committed history and predates this claim by a month. Four commits contribute it, none naming PL-0403 alone, so every path is attributed by subject matter and the attribution is published in the task notes: 1dd8e73 (2026-08-24, created progress-repository.ts, schema/progress.ts and the writer-epoch trio), 719d2d7 (2026-09-05, created the api/v1/progress subtree), b7bc31c (persistence conflict rules, edited the same progress and writer-epoch files), and b74b0d3 (the progress handler test). The earliest is 1dd8e73, so the base is its parent fc1ea4d5. VERIFIED AGAINST THE CORRECTED SURFACE RATHER THAN ASSUMED, which is the check PL-0205 and PL-0601 failed: no file in the six declared paths exists in the tree at fc1ea4d5, and the base commit itself touches none of them. The surface narrowing follows the procedure gpt-architect authorized for PL-0402 at 55cedc7, generalised by the lead to this task on the ground that the ruling turns on committed implementation history existing; that generalisation is flagged in the notes for the reviewer to reject if it was meant narrowly."
+      }
     },
     {
       "id": "PL-0404",
       "priority": "P1",
       "lane": "Backend",
-      "status": "READY",
+      "status": "IN_PROGRESS",
       "title": "Watchlist persistence",
       "dependencies": [
         "PL-0405",
         "PL-0402"
       ],
       "allowedPaths": [
-        "apps/web/src/**",
-        "packages/contracts/**",
-        "packages/**"
+        "packages/persistence/src/watchlist-repository.ts",
+        "packages/persistence/src/watchlist-mutation.ts",
+        "packages/persistence/src/watchlist-mutation.test.ts",
+        "packages/persistence/src/watchlist-mutation.property.test.ts",
+        "packages/persistence/src/schema/watchlist.ts",
+        "apps/web/src/app/api/v1/watchlist/**"
       ],
       "preferredAgent": "claude-backend",
       "reviewAgent": "gpt-architect",
@@ -57,8 +119,69 @@
         "security-review"
       ],
       "acceptance": "Typed add, remove, and list APIs with authorization",
-      "owner": null,
-      "gateResults": {}
+      "owner": "claude-backend",
+      "gateResults": {
+        "typecheck": {
+          "status": "pass",
+          "at": "2026-09-22T04:29:41.304Z",
+          "by": "claude-backend",
+          "commitSha": "69345420056ac1f8942beba80f07b81422a6320f",
+          "evidence": "npx turbo run typecheck --force, exit 0, 21 of 21. NO CODE WAS WRITTEN FOR PL-0404 THIS ROUND. Its implementation is in committed history and this round performed the provenance repair -- an evidence-based narrowing of allowedPaths from three wildcards to six paths, then reconciliation to fc1ea4d5. The gate records that the delivered implementation typechecks at the integrated head."
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-09-22T04:29:41.410Z",
+          "by": "claude-backend",
+          "commitSha": "69345420056ac1f8942beba80f07b81422a6320f",
+          "evidence": "npx turbo run test --force, exit 0, 20 of 20, 2734 passed 1 skipped -- unchanged, because this round wrote no code. The suites bearing on this task are inside that total: for PL-0403, packages/persistence progress-repository and the writer-epoch trio (writer-epoch.test.ts and writer-epoch.property.test.ts) plus apps/web's api/v1/progress handler and route tests; for PL-0404, watchlist-mutation.test.ts, watchlist-mutation.property.test.ts and the api/v1/watchlist handler tests. WHAT THIS GATE DOES NOT ESTABLISH, and it is the same limit PL-0402 hit: these run against in-memory repositories, and both acceptances turn on behaviour against a real database -- idempotent upsert keyed by (profileId, contentId) and two-device reconciliation for PL-0403, authorization for PL-0404. The integration gate is NOT recorded and the task stays IN_PROGRESS until a real PostgreSQL execution is performed, following the precedent PL-0402 set this session."
+        }
+      },
+      "reviewDependencies": [
+        "packages/persistence/src/schema/profiles.ts",
+        "packages/persistence/src/writer-epoch.ts",
+        "apps/web/src/lib/db/request-context.ts",
+        "docs/DATA_MODEL.md"
+      ],
+      "notes": "EVIDENCE-BASED NARROWING 2026-09-22, same generalisation of gpt-architect's PL-0402 procedure as PL-0403 and flagged the same way: the ruling was written as a procedure turning on committed implementation history, it names PL-0402, and the lead has applied it here. allowedPaths were [\"apps/web/src/**\",\"packages/contracts/**\",\"packages/**\"]. THE EVIDENCE: 1dd8e73 created watchlist-repository.ts and schema/watchlist.ts; b7bc31c 'persistence conflict rules' created the watchlist-mutation trio and edited the repository and schema; 719d2d7 'Nine lanes' created the apps/web/src/app/api/v1/watchlist subtree. The attribution boundary against PL-0403 is sharp and was drawn on it rather than on convenience: b7bc31c touched BOTH the watchlist files and the progress and writer-epoch files in one commit, and only the watchlist half is taken here while the other half is PL-0403's. packages/persistence/src/writer-epoch.ts is in reviewDependencies rather than allowedPaths for the same reason: watchlist mutation reads the epoch discipline, PL-0403 wrote it, and a file two tasks both declared as writable would put them back in collision for no gain.",
+      "implementationAgent": "claude-backend",
+      "updatedAt": "2026-09-22T04:26:47.182Z",
+      "implementationBaseSha": "fc1ea4d54c9e7d2b2f6d9aa71a977abdc3bcb400",
+      "implementationBaseProvenance": {
+        "kind": "reconciled-existing-implementation",
+        "baseSha": "fc1ea4d54c9e7d2b2f6d9aa71a977abdc3bcb400",
+        "reconciledAt": "2026-09-22T04:26:47.182Z",
+        "reconciledBy": "claude-backend",
+        "implementationAgent": "claude-backend",
+        "headAtReconciliation": "69345420056ac1f8942beba80f07b81422a6320f",
+        "reviewSurface": "allowedPaths + reviewDependencies",
+        "surfaceCommitCount": 13,
+        "oldestSurfaceCommit": "1dd8e73ee02ca931ab15bea677fff501913d235c",
+        "newestSurfaceCommit": "e097590ee79e112f26073b293a4ad7fbb2bd1fd6",
+        "surfaceCommits": [
+          "e097590ee79e112f26073b293a4ad7fbb2bd1fd6",
+          "a6035069da64ca511049359942b08f2a5709e33c",
+          "0337663aa9cdf1572298492b5f49e37e48f6e0a2",
+          "3e93d0a94685872a0266dd9c936d95821d2135c1",
+          "fbbccf38a5ef0b761264277bc96a9409a510c503",
+          "4b3ae21e3e61b6f5a13b6862f794efb42c965bab",
+          "b74b0d3c4befa226109fc1ce623b5addd46a9490",
+          "719d2d7c31465901f3dbee1e936a180e87c3d44f",
+          "f71a88170193f6b4367b3eaafad9543a3dbe6328",
+          "b7bc31cb2799cf6838c5acdf5cefd906c5e699ca",
+          "9aafd5237e4ee6c8dab6c9c2f9879c1910149872",
+          "34c16c97c9ae0a1dec5b708f4f81ed62ecb94afb",
+          "1dd8e73ee02ca931ab15bea677fff501913d235c"
+        ],
+        "surfaceCommitsTruncated": false,
+        "changedFileCount": 15,
+        "baseCommitSurfaceTouchCount": 0,
+        "baseCommitSurfaceTouches": [],
+        "baseCommitSurfaceTouchesTruncated": false,
+        "reason": "PL-0404's implementation is in committed history and predates this claim. Three commits contribute it, none naming PL-0404 alone: 1dd8e73 created watchlist-repository.ts and schema/watchlist.ts, b7bc31c created the watchlist-mutation trio, and 719d2d7 created the api/v1/watchlist subtree. The earliest is 1dd8e73, so the base is its parent fc1ea4d5. Verified against the corrected surface rather than assumed: no file in the six declared paths exists at fc1ea4d5 and the base commit touches none of them. The attribution boundary against PL-0403 was drawn on the evidence -- b7bc31c touched both tasks' files in one commit and only the watchlist half is taken here. Surface narrowing follows the PL-0402 procedure, generalised by the lead and flagged in the notes."
+      }
     }
-  ]
+  ],
+  "review": [],
+  "reservedExternal": [],
+  "recommended": []
 }
