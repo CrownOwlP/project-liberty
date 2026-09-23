@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-23T04:05:27.284Z",
+  "generatedAt": "2026-09-23T04:15:15.842Z",
   "agent": "claude-security",
   "executionAvailable": true,
   "assigned": [
@@ -7,7 +7,7 @@
       "id": "PW-0402",
       "priority": "P0",
       "lane": "Security",
-      "status": "IN_PROGRESS",
+      "status": "REVIEW",
       "title": "Routes authorize the caller, and a launch token is not a login",
       "dependencies": [],
       "allowedPaths": [
@@ -37,9 +37,31 @@
       "acceptance": "Sensitive application routes authorize WHO is calling them, and possession of the desktop launch token is never mistaken for that. THE R4 FINDING, QUOTED: docs/SECURITY.md records that 'no authentication or authorization exists on any API route yet' and that 'nothing in the current code should be read as a decision that these routes are safe to leave anonymous'. Acceptable for a web demo; not for a shipped desktop application with a loopback listener. THIS TASK IS DELIBERATELY NOT PW-0101 AND MUST NOT BE FOLDED INTO IT. PW-0101 owns the LISTENER boundary -- loopback-only bind, per-launch bearer, Host validation, CSP, the port handshake -- which answers 'may this process talk to the sidecar at all'. This task answers 'may this caller perform this operation', and the two are different questions with different failure modes. A single machine-wide token that satisfied both would mean every process on the user's PC, and every page the webview ever loads, holds full authority over every profile. REQUIRED, each proven mechanically rather than asserted: (1) a protected route requires an authenticated account/session context and refuses without one; (2) a profile-scoped route authorizes the ACTIVE OR OWNED profile and never trusts a profile id supplied by the caller -- PL-0405 recorded a forgeable ProfileScope as a cross-profile data-access bypass and this is the route-level half of that same defect; (3) a playback or session operation does not become authorized merely because the caller holds the desktop launch token, asserted by a test that presents a valid token and no account context and requires a refusal; (4) a refusal does not leak resource existence where an existing contract requires that property, so 'not yours' and 'not there' are indistinguishable on the wire; (5) loopback origin is NEVER treated as authentication -- a test must present a request from 127.0.0.1 with no credential and require a refusal, because 'it came from this machine' is the exact assumption that makes a local listener a privilege-escalation surface. REQUIRED: the authorization decision is made in ONE place and the routes call it, rather than each handler deciding -- a second opinion about who may read a profile is how the first one stops being enforced. USES THE EXISTING SEAM: packages/auth and the ProfileScope minted by PL-0405 are adopted and wrapped, not replaced.",
       "notes": "R4 OWNERSHIP, DECIDED AND REPORTED BEFORE THE WORK STARTS, as gpt-architect's round-80 ruling item 7 requires. No existing PW task owns the route-authorization seam cleanly: PW-0101 owns the listener and the ruling explicitly forbids broadening it into application auth merely because it already carries a security-review gate; PW-0401 owns authentication of the desktop forwarder's counterparty, which is a different service and a different caller; PW-0303 is a profiles UI and owns no route. So this is the 'one narrowly scoped PW security task' the ruling permits. It sits in Track 4 rather than in a seventh track, because the six tracks are approved and this is the same seam as PW-0401 seen from the other side -- who may call, rather than what the callee proves. The surface is the three profile-scoped handlers plus one authorization module, and it deliberately does not include the route.ts files or the contracts: if enforcement turns out to need them, that is a surface widening to state at review, not to pre-reserve. DEPENDENCY EDGE ON PW-0101 REMOVED, ROUND 82, AND THE REMOVAL IS THE POINT. It was written as a hard dependency to express \"the listener exists first\", and that is a READ relationship, not a build one: this task writes apps/web/src/lib/authorization and three handlers, none of which PW-0101 touches, and its negative proof -- a valid launch token with no account context is REFUSED -- needs only that the token concept exist to be refused, which it now does and is committed. requireAllDependenciesDone would have held this BACKLOG until PW-0101 cleared review, which is the PL-0311 deadlock shape: a false edge gating work that does not actually depend on it. apps/web/src/lib/sidecar stays in reviewDependencies, which is where the real relationship belongs.",
       "owner": "claude-security",
-      "gateResults": {},
+      "gateResults": {
+        "typecheck": {
+          "status": "pass",
+          "at": "2026-09-23T04:14:57.660Z",
+          "by": "claude-security",
+          "commitSha": "b07c535be66a858ecc078b466bcc5f665ca8cc82",
+          "evidence": "EXECUTED on b07c535. npm run typecheck at the root, own invocation, turbo 21/21, exit 0. Also npm run lint -> 11/11, zero problems."
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-09-23T04:14:57.764Z",
+          "by": "claude-security",
+          "commitSha": "b07c535be66a858ecc078b466bcc5f665ca8cc82",
+          "evidence": "EXECUTED on b07c535. npx vitest run src/lib/authorization -> 2 files, 27 tests, exit 0. Monorepo npx turbo run test --force -> 20/20, exit 0. THE FIVE PROOFS THE RULING REQUIRES, EACH AS A REFUSAL, because an authorization suite that mostly shows permitted callers being permitted proves the happy path and nothing about the boundary. (1) A protected route refuses with no account -- and a PROFILE route refuses on the account floor BEFORE the profile is examined, asserted by requiring the internal detail not to mention profile access, because evaluating the profile first would make \"no such profile\" observable to somebody who is not logged in. (2) The decision function takes NO profile id at all, asserted structurally against the source: there is no parameter a caller-supplied id could arrive through, which is the route-level form of the forgeable-ProfileScope bypass PL-0405 recorded. (3) THE LAUNCH TOKEN IS NOT A LOGIN, proven by the type signature rather than by a test that passes a header and checks it was ignored -- authorizeRoute is never given a Request, so it cannot consult the token even by accident, and the source is asserted to contain no bare `Request` type, no `headers`, and no `sidecar`. The behavioural half is there too: a caller that satisfied PW-0101's listener guard completely and carries no account is refused as unauthenticated. (4) All three not_permitted causes -- not owned, no ownership record, no active profile -- are BYTE-IDENTICAL on the wire, asserted as a one-element Set over wireDetail and over code, while STAYING DISTINCT in the internal detail, because hiding the difference from the operator too would make an authorization failure indistinguishable from a routing bug. 404 is refused for a profile the caller may not see, for the same reason. (5) LOOPBACK IS NEVER AUTHENTICATION: the source may not contain 127.0.0.1, ::1, localhost, x-forwarded-for or remoteAddress, with a non-vacuity assertion so the comment stripper is not eating the file. SECOND FILE, handler-authorization.test.ts, guards what the audit found ALREADY CORRECT across all three profile-scoped handlers: each resolves a request context; none reads a profile id by any of four spellings; the two data handlers authorize the ACTIVE profile via resolveActiveProfileScope; the external reason vocabulary cannot name a missing profile, asserted against the union declaration in packages/auth; and no handler mentions an address or the launch token. The profiles picker is exempt AND NAMED -- selection necessarily runs before any profile is active, which is why @liberty/auth publishes a separate selection decision. It opens with a non-vacuity check that every guarded file was actually read. TWO HARNESS DEFECTS FOUND AND REPORTED RATHER THAN WIDENED AWAY: an assertion forbidding the word Request matched RequestAccountResolution and was narrowed by removing the known identifiers first, not by dropping the check; and an assertion bounding the external reason union by a 300-character window reached into the narrowing switch below it, where profile_not_found legitimately appears as a case -- that is the mapping working, not the leak -- and is now bounded to the declaration itself."
+        },
+        "e2e": {
+          "status": "pass",
+          "at": "2026-09-23T04:14:57.862Z",
+          "by": "claude-security",
+          "commitSha": "b07c535be66a858ecc078b466bcc5f665ca8cc82",
+          "evidence": "EXECUTED on b07c535 in the CI job's configuration, pinned chromium 1234, retries 0: production 61 passed / 12 skipped, development 70 passed / 3 skipped, exit 0 both. UNCHANGED, which is the point for this task: the authorization audit found the profile-scoped handlers already correct and this change adds a decision point and two guards WITHOUT altering a single wire shape. A moved e2e count would have meant the contract changed, which would be an API_CONTRACTS.md change requiring its own review and is explicitly not in this task's surface. NOT CLAIMED: the e2e suite does not exercise an authenticated session, because there is no authenticated session provider yet -- that is the residual R4 now names precisely."
+        }
+      },
       "implementationAgent": "claude-security",
-      "updatedAt": "2026-09-23T04:05:27.256Z",
+      "updatedAt": "2026-09-23T04:14:57.966Z",
       "implementationBaseSha": "01d30760b24c4295640e6ec64e33b16e7bc090f1"
     }
   ],

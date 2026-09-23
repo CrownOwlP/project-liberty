@@ -47,8 +47,8 @@ would claim a person can use them.
   - evidence: `packages/media-engine/src (20 files)`
 - [x] **persistence** — Profiles, progress, watchlist repositories, profile-scoped
   - evidence: `packages/persistence/src (26 files)`
-- [~] **auth-seam** — Seam and profile scope exist; NO route is authenticated yet
-  - evidence: `packages/auth/src; docs/SECURITY.md residual risk R4`
+- [~] **auth-seam** — Profile AUTHORIZATION is enforced on every profile-scoped route and guarded mechanically; AUTHENTICATION is not -- the account comes from a development header in a non-deployment runtime and a deployment refuses outright. Still partial, for a narrower and sharper reason than before
+  - evidence: `apps/web/src/lib/authorization (PW-0402); docs/SECURITY.md R4, corrected`
 - [x] **http-api** — catalog/home, playback/session, profiles, progress, watchlist, telemetry
   - evidence: `apps/web/src/app/api/v1`
 - [x] **observability** — CMCD v2 vocabulary and playback reason trail

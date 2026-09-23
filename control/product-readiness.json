@@ -79,8 +79,8 @@
         {
           "id": "auth-seam",
           "state": "partial",
-          "note": "Seam and profile scope exist; NO route is authenticated yet",
-          "evidence": "packages/auth/src; docs/SECURITY.md residual risk R4"
+          "note": "Profile AUTHORIZATION is enforced on every profile-scoped route and guarded mechanically; AUTHENTICATION is not -- the account comes from a development header in a non-deployment runtime and a deployment refuses outright. Still partial, for a narrower and sharper reason than before",
+          "evidence": "apps/web/src/lib/authorization (PW-0402); docs/SECURITY.md R4, corrected"
         },
         {
           "id": "http-api",

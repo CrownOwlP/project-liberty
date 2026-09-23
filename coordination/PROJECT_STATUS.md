@@ -1,6 +1,6 @@
 # Project Liberty - Project Status
 
-> Generated 2026-09-23T04:05:27.281Z from the AI control plane.
+> Generated 2026-09-23T04:15:15.838Z from the AI control plane.
 
 **Overall completion:** 62/95 executable tasks (65%)
 
@@ -9,8 +9,8 @@
 - **BACKLOG:** 23
 - **READY:** 3
 - **CLAIMED:** 0
-- **IN_PROGRESS:** 1
-- **REVIEW:** 4
+- **IN_PROGRESS:** 0
+- **REVIEW:** 5
 - **BLOCKED:** 2
 - **DONE:** 62
 - **CANCELED:** 0
@@ -35,7 +35,7 @@
 - **PW-0201** [REVIEW] The PlayerAdapter boundary becomes a module instead of a specification — owner: claude-frontend
 - **PW-0301** [REVIEW] An application shell: one layout, one navigation model, one token layer — owner: claude-frontend
 - **PW-0601** [REVIEW] A real-device certification matrix that says who runs each test and why — owner: claude-test
-- **PW-0402** [IN_PROGRESS] Routes authorize the caller, and a launch token is not a login — owner: claude-security
+- **PW-0402** [REVIEW] Routes authorize the caller, and a launch token is not a login — owner: claude-security
 
 ## Dispatch classification
 
