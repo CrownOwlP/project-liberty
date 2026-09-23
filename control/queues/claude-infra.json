@@ -1,16 +1,13 @@
 {
-  "generatedAt": "2026-09-23T03:18:02.480Z",
+  "generatedAt": "2026-09-23T03:29:23.907Z",
   "agent": "claude-infra",
   "executionAvailable": true,
-  "assigned": [],
-  "review": [],
-  "reservedExternal": [],
-  "recommended": [
+  "assigned": [
     {
       "id": "PW-0101",
       "priority": "P0",
       "lane": "Infra",
-      "status": "READY",
+      "status": "IN_PROGRESS",
       "title": "The application serves itself on loopback, hardened, as a standalone sidecar",
       "dependencies": [],
       "allowedPaths": [
@@ -36,8 +33,14 @@
       ],
       "acceptance": "The desktop target builds a Next standalone server that a shell can spawn, and every control docs/DESKTOP_PLAYBACK.md section 7 names is implemented and tested. REQUIRED: output 'standalone' is set for the desktop target and only for it -- the document specifies it in two places and next.config.ts sets it in none, which is the single largest gap between the recorded design and the code. REQUIRED: the server binds 127.0.0.1 explicitly and never 0.0.0.0, asserted by a test rather than by configuration alone, because Next reads HOSTNAME from the environment and an inherited value would silently expose the listener to the LAN. REQUIRED: a per-launch 256-bit CSPRNG bearer token passed through the environment, required on every request, with a constant-time comparison and a refusal that does not state whether the token was absent or wrong. REQUIRED: Host header validation against the exact expected literal, because a bearer token does not stop DNS rebinding. REQUIRED: the application emits its own Content-Security-Policy, because Tauri's CSP injection stops applying the moment the frontend is a URL rather than bundled assets -- this is a real loss the document names and nothing currently replaces it. REQUIRED: the sidecar reports its actually-bound port on stdout rather than being told which port to use; a pick-then-bind handshake is a TOCTOU race and is refused. NOT IN SCOPE: the Rust shell, which is PW-0102.",
       "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. SURFACE NOTE: this task's allowedPaths name directories that do not exist yet. The evidence-based narrowing procedure applies to reconciling work already in history; for genuinely new work the surface is the smallest set of paths the acceptance can be satisfied within, and it is narrowed again from the diff before review if it turns out to be wider than what was written. ",
-      "owner": null,
-      "gateResults": {}
+      "owner": "claude-infra",
+      "gateResults": {},
+      "implementationAgent": "claude-infra",
+      "updatedAt": "2026-09-23T03:29:23.061Z",
+      "implementationBaseSha": "8b52ada26ac842b35c60cc0e64a0bef256edab0e"
     }
-  ]
+  ],
+  "review": [],
+  "reservedExternal": [],
+  "recommended": []
 }

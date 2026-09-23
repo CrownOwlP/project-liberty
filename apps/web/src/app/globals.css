@@ -1,5 +1,21 @@
+/* ---------------------------------------------------------------------------
+ * The token layer (PW-0301).
+ *
+ * WHAT WAS HERE: eight colour variables and nothing else. Every spacing, radius,
+ * font size and shadow in this file was a bare px literal, so "make the cards a
+ * little tighter" meant finding fourteen numbers and hoping.
+ *
+ * DARK ONLY, AND THAT IS A DECISION RATHER THAN AN OMISSION. This is a media
+ * player: a light theme behind a video is a design choice almost no product in
+ * this category makes, and shipping a half-considered one is worse than shipping
+ * none. The token layer is what makes adding it later a change to this block
+ * instead of a change to every rule, which is the actual cost of deferring it.
+ * `color-scheme: dark` stays so form controls and scrollbars agree.
+ * ------------------------------------------------------------------------- */
 :root {
   color-scheme: dark;
+
+  /* Colour */
   --bg: #06080d;
   --surface: #10141d;
   --surface-2: #171d29;
@@ -7,6 +23,79 @@
   --muted: #9aa5b5;
   --accent: #8cb4ff;
   --border: rgba(255, 255, 255, 0.09);
+  --danger: #ff9b9b;
+
+  /* Spacing. A 4px base, because Windows scaling steps are 25% and a 4px grid
+   * lands on whole device pixels at 100/125/150/200% where a 5px grid does not. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+
+  /* Type */
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-md: 1rem;
+  --text-lg: 1.25rem;
+  --text-xl: 1.75rem;
+  --text-2xl: 2.5rem;
+
+  /* Radius */
+  --radius-sm: 6px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
+  --radius-pill: 999px;
+
+  /* Elevation */
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-2: 0 8px 24px rgba(0, 0, 0, 0.4);
+
+  /* Focus. ONE definition, used everywhere. globals.css previously defined no
+   * focus indicator at all, so any control outside the two CSS modules fell back
+   * to whatever the UA drew -- which on a dark surface is frequently nothing. */
+  --focus-ring: 2px solid var(--accent);
+  --focus-offset: 2px;
+}
+
+/* ---------------------------------------------------------------------------
+ * The global focus indicator.
+ *
+ * `:focus-visible` rather than `:focus`, so a mouse click does not draw a ring,
+ * and applied to everything focusable rather than to a list of selectors that
+ * would go stale the first time a component adds a control.
+ * ------------------------------------------------------------------------- */
+:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-offset);
+  border-radius: var(--radius-sm);
+}
+
+/* The skip link. Off-screen until focused, then the first thing in the tab order. */
+.skip-link {
+  position: absolute;
+  left: var(--space-4);
+  top: calc(var(--space-4) * -4);
+  z-index: 100;
+  padding: var(--space-2) var(--space-4);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  transition: top 120ms ease;
+}
+.skip-link:focus {
+  top: var(--space-4);
+}
+
+/* A navigation entry with no destination yet. Legible, clearly not a link, and
+ * carrying its reason in a title attribute rather than pretending to work. */
+.nav-planned {
+  color: var(--muted);
+  cursor: default;
+  opacity: 0.6;
 }
 
 * { box-sizing: border-box; }
@@ -129,6 +218,13 @@ h1 { margin: 12px 0 14px; font-size: clamp(48px, 7vw, 84px); line-height: .93; l
   0% { background-position: 100% 50%; }
   100% { background-position: 0 50%; }
 }
+/* Windows display scaling. The shell has one breakpoint; at 150% and 200% a
+ * 1440px frame on a 1920px display is effectively a tablet, so the same rule
+ * that handles a narrow window handles a scaled one. */
+@media (max-width: 1200px) {
+  .shell { padding: 0 var(--space-5) var(--space-7); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .skeleton { animation: none; }
 }

@@ -7500,7 +7500,7 @@
         "typecheck",
         "unit"
       ],
-      "acceptance": "packages/media-inspection/src/net-policy-boundary.test.ts:396, the test named “is not restated by any file outside this package”, stops being a test whose result depends on machine load and on what is on disk, WITHOUT weakening the property it asserts. THE DEFECT, DIAGNOSED RATHER THAN NAMED. Its failure mode is 'Error: Test timed out in 5000ms', not an assertion failure -- the assertion has never reported a false offender; the test simply does not finish. Its listSourceFiles recurses into every directory under packages/ and apps/ with NO exclusions and reads every .ts file it finds: 3,680 files totalling 24.3 MB on the tree measured, of which 3,337 are under node_modules and the rest include build output. The set of files the property is actually about is 327, reachable in 1-2 ms once node_modules, .next, .turbo, dist and coverage are skipped. It is the only test in this repository whose runtime is a function of installed dependencies and build artifacts rather than of source, which is why it presents as intermittent: every other repo-walking guard here -- packages/net-policy/src/module-boundary.test.ts, packages/contracts/src/module-boundary.test.ts, packages/provider-sdk/src/stremio/net-policy-boundary.test.ts and apps/web/src/app/watch/route-loading-boundaries.test.ts -- is scoped to its own SRC_DIR or APP_DIRECTORY. THE REPRODUCTION GRADIENT, measured on 2026-09-22 at e24d51f on a 2-core container: the test body alone, idle with a warm page cache, 109 ms; the whole file in an isolated vitest run, 687 ms; the file under turbo run test --force with a warm cache, 849-995 ms; the same under turbo run test --force immediately after dropping the page cache, 3,048 ms. The observed failure happened on a run started immediately after the e2e suite had rewritten apps/web/.next and apps/web/dist/desktop -- thousands of freshly written files, a cold cache, background flushing, and up to nine other workspace vitest processes competing for two cores -- which is where that gradient crosses the 5,000 ms default testTimeout. REQUIRED: the walk must not descend into node_modules, .next, .turbo, dist or coverage, and the exclusion list must be stated with its reason rather than left as a magic array. REQUIRED: the property must not be narrowed to buy the speed -- it must still see every source file under packages/ and apps/ outside this package, and the implementer must show that a planted offender is still caught. A RAISED testTimeout IS NOT AN ACCEPTABLE FIX ON ITS OWN: it moves the ceiling without removing the dependence on disk state, and the next person to add a dependency moves the runtime again. SECOND DEFECT, FOUND WHILE DIAGNOSING AND IN SCOPE: build output ALREADY contains the string this test looks for. Seven files under apps/web/.next and apps/web/dist/desktop carry a reference-path fragment naming m3u8-parser.d.ts inside bundled chunks. They are .js today so the .ts filter misses them, which means the test is one bundler-output change away from naming a build artifact as an offender and failing for a reason that has nothing to do with any source file. The exclusion above fixes the correctness hazard and the performance one with the same edit, which is the argument for doing it that way rather than by raising a timeout.",
+      "acceptance": "packages/media-inspection/src/net-policy-boundary.test.ts:396, the test named \u201cis not restated by any file outside this package\u201d, stops being a test whose result depends on machine load and on what is on disk, WITHOUT weakening the property it asserts. THE DEFECT, DIAGNOSED RATHER THAN NAMED. Its failure mode is 'Error: Test timed out in 5000ms', not an assertion failure -- the assertion has never reported a false offender; the test simply does not finish. Its listSourceFiles recurses into every directory under packages/ and apps/ with NO exclusions and reads every .ts file it finds: 3,680 files totalling 24.3 MB on the tree measured, of which 3,337 are under node_modules and the rest include build output. The set of files the property is actually about is 327, reachable in 1-2 ms once node_modules, .next, .turbo, dist and coverage are skipped. It is the only test in this repository whose runtime is a function of installed dependencies and build artifacts rather than of source, which is why it presents as intermittent: every other repo-walking guard here -- packages/net-policy/src/module-boundary.test.ts, packages/contracts/src/module-boundary.test.ts, packages/provider-sdk/src/stremio/net-policy-boundary.test.ts and apps/web/src/app/watch/route-loading-boundaries.test.ts -- is scoped to its own SRC_DIR or APP_DIRECTORY. THE REPRODUCTION GRADIENT, measured on 2026-09-22 at e24d51f on a 2-core container: the test body alone, idle with a warm page cache, 109 ms; the whole file in an isolated vitest run, 687 ms; the file under turbo run test --force with a warm cache, 849-995 ms; the same under turbo run test --force immediately after dropping the page cache, 3,048 ms. The observed failure happened on a run started immediately after the e2e suite had rewritten apps/web/.next and apps/web/dist/desktop -- thousands of freshly written files, a cold cache, background flushing, and up to nine other workspace vitest processes competing for two cores -- which is where that gradient crosses the 5,000 ms default testTimeout. REQUIRED: the walk must not descend into node_modules, .next, .turbo, dist or coverage, and the exclusion list must be stated with its reason rather than left as a magic array. REQUIRED: the property must not be narrowed to buy the speed -- it must still see every source file under packages/ and apps/ outside this package, and the implementer must show that a planted offender is still caught. A RAISED testTimeout IS NOT AN ACCEPTABLE FIX ON ITS OWN: it moves the ceiling without removing the dependence on disk state, and the next person to add a dependency moves the runtime again. SECOND DEFECT, FOUND WHILE DIAGNOSING AND IN SCOPE: build output ALREADY contains the string this test looks for. Seven files under apps/web/.next and apps/web/dist/desktop carry a reference-path fragment naming m3u8-parser.d.ts inside bundled chunks. They are .js today so the .ts filter misses them, which means the test is one bundler-output change away from naming a build artifact as an offender and failing for a reason that has nothing to do with any source file. The exclusion above fixes the correctness hazard and the performance one with the same edit, which is the argument for doing it that way rather than by raising a timeout.",
       "notes": "Filed 2026-09-22 by claude-test while executing PL-0504's and PL-0701's gates. THIS IS THE FINDING gpt-architect ORDERED PRESERVED AND EXPLICITLY ORDERED NOT TO BE CALLED A FLAKE, at the round-73 verdict: 'Do not label that failure a flake. Preserve the finding and investigate on its next occurrence as previously directed.' This is that next occurrence, and the investigation is in the acceptance. The first occurrence, during PL-0503's gates, could not name the failing test because the capture grep discarded it; that was reported at the time as a capture error, not as a flake. This occurrence was captured in full: src/net-policy-boundary.test.ts > the m3u8-parser shim is referenced from the file that imports it > is not restated by any file outside this package. The earlier working hypothesis -- 2 cores, turbo concurrency 10, and this package having no vitest.config.ts unlike packages/contracts -- was partly right and insufficient. Contention is a necessary condition, not the cause. The cause is that the test reads 24.3 MB it has no reason to read, so its runtime tracks page-cache state and build-artifact volume, and contention only decides which side of the 5 s ceiling that lands on. Three full-monorepo runs on the same tree after the failure were green (252/252 in this package), which is exactly why a load-dependent test must not be judged by re-running it. packages/media-inspection/vitest.config.ts is in allowedPaths because the implementer may conclude the package needs one; that is a decision for the implementer and this task does not require it. apps/web/src/app/api/v1/playback/build-target.test.ts is in reviewDependencies rather than allowedPaths: it resolves a REPO_ROOT and walks directories too, so it is worth checking for the same shape, but nothing observed implicates it and widening this task to it would be a guess.",
       "owner": null,
       "gateResults": {
@@ -7572,7 +7572,7 @@
       "id": "PW-0101",
       "priority": "P0",
       "lane": "Infra",
-      "status": "READY",
+      "status": "IN_PROGRESS",
       "title": "The application serves itself on loopback, hardened, as a standalone sidecar",
       "dependencies": [],
       "allowedPaths": [
@@ -7598,8 +7598,11 @@
       ],
       "acceptance": "The desktop target builds a Next standalone server that a shell can spawn, and every control docs/DESKTOP_PLAYBACK.md section 7 names is implemented and tested. REQUIRED: output 'standalone' is set for the desktop target and only for it -- the document specifies it in two places and next.config.ts sets it in none, which is the single largest gap between the recorded design and the code. REQUIRED: the server binds 127.0.0.1 explicitly and never 0.0.0.0, asserted by a test rather than by configuration alone, because Next reads HOSTNAME from the environment and an inherited value would silently expose the listener to the LAN. REQUIRED: a per-launch 256-bit CSPRNG bearer token passed through the environment, required on every request, with a constant-time comparison and a refusal that does not state whether the token was absent or wrong. REQUIRED: Host header validation against the exact expected literal, because a bearer token does not stop DNS rebinding. REQUIRED: the application emits its own Content-Security-Policy, because Tauri's CSP injection stops applying the moment the frontend is a URL rather than bundled assets -- this is a real loss the document names and nothing currently replaces it. REQUIRED: the sidecar reports its actually-bound port on stdout rather than being told which port to use; a pick-then-bind handshake is a TOCTOU race and is refused. NOT IN SCOPE: the Rust shell, which is PW-0102.",
       "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. SURFACE NOTE: this task's allowedPaths name directories that do not exist yet. The evidence-based narrowing procedure applies to reconciling work already in history; for genuinely new work the surface is the smallest set of paths the acceptance can be satisfied within, and it is narrowed again from the diff before review if it turns out to be wider than what was written. ",
-      "owner": null,
-      "gateResults": {}
+      "owner": "claude-infra",
+      "gateResults": {},
+      "implementationAgent": "claude-infra",
+      "updatedAt": "2026-09-23T03:29:23.061Z",
+      "implementationBaseSha": "8b52ada26ac842b35c60cc0e64a0bef256edab0e"
     },
     {
       "id": "PW-0102",
@@ -7666,7 +7669,7 @@
       "id": "PW-0201",
       "priority": "P0",
       "lane": "Player",
-      "status": "READY",
+      "status": "IN_PROGRESS",
       "title": "The PlayerAdapter boundary becomes a module instead of a specification",
       "dependencies": [],
       "allowedPaths": [
@@ -7690,8 +7693,11 @@
       ],
       "acceptance": "The ~260 lines of TypeScript in docs/DESKTOP_PLAYBACK.md section 3 exist as a module, and the four rules that make it a boundary are enforced mechanically rather than stated. REQUIRED: PlayerAdapterId, the closed PlayerRefusalCode union, canPlay returning a reason on BOTH branches, PlayerLoadRequest taking a PlaybackSession plus a candidateId and never a URL, getTracks, readAvSyncTelemetry, subscribe, and an idempotent dispose. REQUIRED: no shaka-player, mpv/libmpv, @tauri-apps/* or electron type is reachable from this module or anything it imports, enforced by an import-graph test on the model of the existing PROHIBITED_AV_INSTRUMENTATION scan and of build-target.test.ts -- and that test must be proven non-vacuous by planting an offender, the way build-target.test.ts already does. REQUIRED: no `any` anywhere in the module; no engine-handle passthrough of any name; no opaque config bag -- EngineConfig from engine.ts must not be promoted onto the boundary. THE EXISTING ShakaPlayerHandle IN engine.ts IS NOT THIS and is not replaced: it is the seam INSIDE the web implementation, one layer below, and section 3 says so explicitly.",
       "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. ",
-      "owner": null,
-      "gateResults": {}
+      "owner": "claude-frontend",
+      "gateResults": {},
+      "implementationAgent": "claude-frontend",
+      "updatedAt": "2026-09-23T03:29:23.290Z",
+      "implementationBaseSha": "8b52ada26ac842b35c60cc0e64a0bef256edab0e"
     },
     {
       "id": "PW-0202",
@@ -7920,22 +7926,32 @@
       "id": "PW-0301",
       "priority": "P0",
       "lane": "Frontend",
-      "status": "READY",
+      "status": "IN_PROGRESS",
       "title": "An application shell: one layout, one navigation model, one token layer",
       "dependencies": [],
       "allowedPaths": [
         "apps/web/src/app/layout.tsx",
         "apps/web/src/app/globals.css",
-        "apps/web/src/components/shell/**",
         "apps/web/src/app/not-found.tsx",
-        "apps/web/src/app/global-error.tsx"
-      ],
-      "reviewDependencies": [
+        "apps/web/src/app/global-error.tsx",
+        "apps/web/src/app/error.tsx",
         "apps/web/src/app/page.tsx",
         "apps/web/src/app/search/page.tsx",
+        "apps/web/src/app/search/loading.tsx",
         "apps/web/src/app/title/[titleId]/page.tsx",
+        "apps/web/src/app/title/[titleId]/not-found.tsx",
         "apps/web/src/app/watch/[contentId]/page.tsx",
-        "apps/web/src/app/error.tsx"
+        "apps/web/src/app/watch/[contentId]/not-found.tsx",
+        "apps/web/src/components/shell/**",
+        "apps/web/src/components/title/title-styles.test.ts"
+      ],
+      "reviewDependencies": [
+        "apps/web/src/components/catalog-rail.tsx",
+        "apps/web/src/components/catalog-card.tsx",
+        "apps/web/src/components/search/search.module.css",
+        "apps/web/src/components/title/title.module.css",
+        "apps/web/src/app/watch/route-loading-boundaries.test.ts",
+        "docs/PRODUCT_SPEC.md"
       ],
       "preferredAgent": "claude-frontend",
       "reviewAgent": "gpt-architect",
@@ -7945,9 +7961,12 @@
         "e2e"
       ],
       "acceptance": "The application has a real shell, and the eight hand-copied topbars become one. MEASURED STARTING POINT: layout.tsx is sixteen lines -- html, body, children -- and the topbar is duplicated by hand in eight files, each with a slightly different status badge and a different or absent nav; the nav itself is four fragment anchors, and /search is reachable from no link anywhere in the application. REQUIRED: one persistent chrome in the root layout, with every route's copy deleted rather than left beside it. REQUIRED: a navigation model that reaches every screen that exists, including search; a dead link is worse than an absent one because it teaches a viewer the feature is broken. REQUIRED: a token layer -- spacing, type, radius, elevation, colour -- replacing eight dark-only variables and the px literals around them, and a light theme or an explicit recorded decision that this product is dark-only. REQUIRED: a skip link, a focus indicator defined globally rather than only inside two CSS modules, and Windows display scaling at 100/125/150/200 percent without clipping. NOT IN SCOPE: replacing any working server-side logic; this task is the shell the existing screens hang in.",
-      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. ",
-      "owner": null,
-      "gateResults": {}
+      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict.  SURFACE CORRECTED BEFORE CLAIM, round 81. The approved surface named layout.tsx, globals.css and components/shell/** and could not satisfy its own acceptance: the topbar is hand-copied into eight ROUTE files, and 'every route's copy deleted rather than left beside it' requires writing those files. They were in reviewDependencies, which is read-only. The eight are now allowedPaths and the widening is stated rather than worked around by leaving the duplicates in place. Checked pairwise against the other four first-wave tasks: no overlap with PW-0101 (next.config.ts, src/proxy.ts, src/lib/sidecar/**), PW-0201 (player modules), PW-0401 (apps/backend/**) or PW-0601 (docs). SECOND SURFACE WIDENING, DISCOVERED BY A RED TEST AND STATED RATHER THAN WORKED AROUND. apps/web/src/components/title/title-styles.test.ts enumerates the controls carrying `styles.focusRing` and one of them is 'the topbar Home link' in title/[titleId]/page.tsx -- a control this task's acceptance requires be DELETED, because the topbar moves into the shell. Three options existed and two were wrong: leaving the header in place fails the acceptance, and deleting the assertion without replacing it would quietly drop a guard. The file is added to allowedPaths and the call-site list is repointed at where that control now lives, with the guard STRENGTHENED rather than reduced -- globals.css now defines a global `:focus-visible`, which is what the deleted per-route class was standing in for.",
+      "owner": "claude-frontend",
+      "gateResults": {},
+      "implementationAgent": "claude-frontend",
+      "updatedAt": "2026-09-23T03:29:23.495Z",
+      "implementationBaseSha": "8b52ada26ac842b35c60cc0e64a0bef256edab0e"
     },
     {
       "id": "PW-0302",
@@ -8283,7 +8302,7 @@
       "id": "PW-0401",
       "priority": "P1",
       "lane": "Backend",
-      "status": "READY",
+      "status": "IN_PROGRESS",
       "title": "The authenticated backend the desktop build talks to",
       "dependencies": [],
       "allowedPaths": [
@@ -8308,8 +8327,11 @@
       ],
       "acceptance": "The counterparty the desktop forwarder already speaks to exists as a service instead of only as an e2e stub. docs/DESKTOP_PLAYBACK.md section 8 was ruled by the commander: provider resolution must not rely on the user-administered sidecar as its trust boundary, and the desktop build proxies to an authenticated backend. The FORWARDER is implemented and tested; the thing it forwards TO is e2e/src/backend-stub.mjs. REQUIRED: the same route contract, byte for byte -- the cross-target e2e suite already compares whole bodies between targets and must keep passing. REQUIRED: caller authentication, and a refusal that does not leak whether a content id exists. REQUIRED: provider credentials live only here, never in a desktop artifact, env var, config file or cached response; the build-target import-graph guard already proves the desktop bundle cannot reach @liberty/provider-sdk and this service is where that capability actually lives. REQUIRED: it is deployable and testable WITHOUT a licensed provider -- the resolution path must return an honest unavailable with provider_not_configured when none is wired, which is exactly what the web target already does. THIS TASK DOES NOT NEED CREDENTIALS and must not wait for them; PL-0302 remains the separate task that wires a real provider into it.",
       "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. SURFACE NOTE: this task's allowedPaths name directories that do not exist yet. The evidence-based narrowing procedure applies to reconciling work already in history; for genuinely new work the surface is the smallest set of paths the acceptance can be satisfied within, and it is narrowed again from the diff before review if it turns out to be wider than what was written. ",
-      "owner": null,
-      "gateResults": {}
+      "owner": "claude-backend",
+      "gateResults": {},
+      "implementationAgent": "claude-backend",
+      "updatedAt": "2026-09-23T03:29:23.687Z",
+      "implementationBaseSha": "8b52ada26ac842b35c60cc0e64a0bef256edab0e"
     },
     {
       "id": "PW-0501",
@@ -8379,7 +8401,7 @@
       "priority": "P1",
       "lane": "Test",
       "status": "BACKLOG",
-      "title": "Install, upgrade, uninstall, reinstall — tested, not assumed",
+      "title": "Install, upgrade, uninstall, reinstall \u2014 tested, not assumed",
       "dependencies": [
         "PW-0501"
       ],
@@ -8407,7 +8429,7 @@
       "id": "PW-0601",
       "priority": "P0",
       "lane": "Test",
-      "status": "READY",
+      "status": "IN_PROGRESS",
       "title": "A real-device certification matrix that says who runs each test and why",
       "dependencies": [],
       "allowedPaths": [
@@ -8428,8 +8450,11 @@
       ],
       "acceptance": "Every scenario the Windows product must survive is written down, with an explicit owner: automated, or the commander's machine. MEASURED STARTING POINT: docs/TEST_MATRIX.md has eight rows, every cell an automated tier, and no manual, real-device, HDR, hardware-decode or Windows row at all -- while two other documents already require real hardware, for the compositing experiment and for the flash-and-blip A/V rig. REQUIRED: the matrix covers cold start, restart, crash recovery, movie and episodic playback, seek, pause/resume, source switching, resume position, next episode, subtitles, multiple audio tracks, stereo and multichannel, lip-sync and A/V drift, long sessions, 1080p, 4K, HDR where the display supports it, hardware decoding, fullscreen and window transitions, sleep/wake, network interruption and recovery, backend unavailable, malformed or unavailable source, Live TV channel change, EPG behaviour, memory/CPU/GPU behaviour, clean install, upgrade, and uninstall/reinstall. REQUIRED: each row states its owner and, for a commander-machine row, exactly what to do and what a pass looks like -- a matrix that says 'manual' without a procedure is a wish. REQUIRED: rows that cannot be judged without hardware the commander may not have (an HDR display, a multichannel receiver) say so rather than being marked failed. NO ROW MAY BE MARKED PASSED FROM THIS SESSION; nothing here can observe a Windows machine.",
       "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. ",
-      "owner": null,
-      "gateResults": {}
+      "owner": "claude-test",
+      "gateResults": {},
+      "implementationAgent": "claude-test",
+      "updatedAt": "2026-09-23T03:29:23.881Z",
+      "implementationBaseSha": "8b52ada26ac842b35c60cc0e64a0bef256edab0e"
     },
     {
       "id": "PW-0602",
@@ -8487,6 +8512,44 @@
       ],
       "acceptance": "The commander can run the real-device half in one sitting and hand back evidence that is worth recording. REQUIRED: an ordered run sheet with a stated environment -- Windows build, GPU, driver, display, audio device -- because a pass on unrecorded hardware is not reproducible evidence. REQUIRED: for each row, the exact action, the expected result, and what to capture when it fails. REQUIRED: a defect report format that carries enough to reproduce: the reason trail the player already publishes, the log location PW-0501 establishes, and the version PW-0502 exposes. REQUIRED: the sheet is honest about how long it takes. THE RUN ITSELF IS A LAST_MILE ITEM and this task delivers the sheet, not the results; recording a pass nobody observed would be fabricating a gate result.",
       "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. SURFACE NOTE: this task's allowedPaths name directories that do not exist yet. The evidence-based narrowing procedure applies to reconciling work already in history; for genuinely new work the surface is the smallest set of paths the acceptance can be satisfied within, and it is narrowed again from the diff before review if it turns out to be wider than what was written. ",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PW-0402",
+      "priority": "P0",
+      "lane": "Security",
+      "status": "BACKLOG",
+      "title": "Routes authorize the caller, and a launch token is not a login",
+      "dependencies": [
+        "PW-0101"
+      ],
+      "allowedPaths": [
+        "apps/web/src/lib/authorization/**",
+        "apps/web/src/app/api/v1/profiles/handler.ts",
+        "apps/web/src/app/api/v1/progress/handler.ts",
+        "apps/web/src/app/api/v1/watchlist/handler.ts",
+        "docs/SECURITY.md"
+      ],
+      "reviewDependencies": [
+        "packages/auth/src",
+        "packages/persistence/src",
+        "apps/web/src/lib/session/account.ts",
+        "apps/web/src/app/api/v1/playback/session",
+        "apps/web/src/lib/sidecar",
+        "docs/API_CONTRACTS.md",
+        "docs/DESKTOP_PLAYBACK.md"
+      ],
+      "preferredAgent": "claude-security",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "e2e",
+        "security-review"
+      ],
+      "acceptance": "Sensitive application routes authorize WHO is calling them, and possession of the desktop launch token is never mistaken for that. THE R4 FINDING, QUOTED: docs/SECURITY.md records that 'no authentication or authorization exists on any API route yet' and that 'nothing in the current code should be read as a decision that these routes are safe to leave anonymous'. Acceptable for a web demo; not for a shipped desktop application with a loopback listener. THIS TASK IS DELIBERATELY NOT PW-0101 AND MUST NOT BE FOLDED INTO IT. PW-0101 owns the LISTENER boundary -- loopback-only bind, per-launch bearer, Host validation, CSP, the port handshake -- which answers 'may this process talk to the sidecar at all'. This task answers 'may this caller perform this operation', and the two are different questions with different failure modes. A single machine-wide token that satisfied both would mean every process on the user's PC, and every page the webview ever loads, holds full authority over every profile. REQUIRED, each proven mechanically rather than asserted: (1) a protected route requires an authenticated account/session context and refuses without one; (2) a profile-scoped route authorizes the ACTIVE OR OWNED profile and never trusts a profile id supplied by the caller -- PL-0405 recorded a forgeable ProfileScope as a cross-profile data-access bypass and this is the route-level half of that same defect; (3) a playback or session operation does not become authorized merely because the caller holds the desktop launch token, asserted by a test that presents a valid token and no account context and requires a refusal; (4) a refusal does not leak resource existence where an existing contract requires that property, so 'not yours' and 'not there' are indistinguishable on the wire; (5) loopback origin is NEVER treated as authentication -- a test must present a request from 127.0.0.1 with no credential and require a refusal, because 'it came from this machine' is the exact assumption that makes a local listener a privilege-escalation surface. REQUIRED: the authorization decision is made in ONE place and the routes call it, rather than each handler deciding -- a second opinion about who may read a profile is how the first one stops being enforced. USES THE EXISTING SEAM: packages/auth and the ProfileScope minted by PL-0405 are adopted and wrapped, not replaced.",
+      "notes": "R4 OWNERSHIP, DECIDED AND REPORTED BEFORE THE WORK STARTS, as gpt-architect's round-80 ruling item 7 requires. No existing PW task owns the route-authorization seam cleanly: PW-0101 owns the listener and the ruling explicitly forbids broadening it into application auth merely because it already carries a security-review gate; PW-0401 owns authentication of the desktop forwarder's counterparty, which is a different service and a different caller; PW-0303 is a profiles UI and owns no route. So this is the 'one narrowly scoped PW security task' the ruling permits. It sits in Track 4 rather than in a seventh track, because the six tracks are approved and this is the same seam as PW-0401 seen from the other side -- who may call, rather than what the callee proves. The surface is the three profile-scoped handlers plus one authorization module, and it deliberately does not include the route.ts files or the contracts: if enforcement turns out to need them, that is a surface widening to state at review, not to pre-reserve.",
       "owner": null,
       "gateResults": {}
     }

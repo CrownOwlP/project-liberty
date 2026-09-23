@@ -1,3 +1,4 @@
+import { AppShell } from "../../../components/shell/app-shell";
 import Link from "next/link";
 import styles from "../../../components/title/title.module.css";
 
@@ -37,13 +38,7 @@ import styles from "../../../components/title/title.module.css";
  */
 export default function TitleNotFound() {
   return (
-    <main className="shell">
-      <header className="topbar">
-        <div className="brand">
-          PROJECT <span>LIBERTY</span>
-        </div>
-        <div className="status">Title detail</div>
-      </header>
+    <AppShell pathname="/title" badge="Title detail">
 
       <section className="section">
         <div className="state-panel">
@@ -64,6 +59,6 @@ export default function TitleNotFound() {
           </div>
         </div>
       </section>
-    </main>
+    </AppShell>
   );
 }

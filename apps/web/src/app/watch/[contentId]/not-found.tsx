@@ -1,3 +1,4 @@
+import { AppShell } from "../../../components/shell/app-shell";
 import Link from "next/link";
 
 /**
@@ -27,13 +28,7 @@ import Link from "next/link";
  */
 export default function WatchNotFound() {
   return (
-    <main className="shell player-shell">
-      <header className="topbar">
-        <div className="brand">
-          PROJECT <span>LIBERTY</span>
-        </div>
-        <div className="status">Player</div>
-      </header>
+    <AppShell pathname="/watch" badge="Player" mainClassName="player-shell">
 
       <section className="section">
         <div className="state-panel">
@@ -49,6 +44,6 @@ export default function WatchNotFound() {
           </div>
         </div>
       </section>
-    </main>
+    </AppShell>
   );
 }

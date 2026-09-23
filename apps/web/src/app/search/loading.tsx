@@ -1,3 +1,4 @@
+import { AppShell } from "../../components/shell/app-shell";
 import styles from "../../components/search/search.module.css";
 
 /**
@@ -16,13 +17,7 @@ export default function SearchLoading() {
   const placeholders = Array.from({ length: 5 }, (_, index) => index);
 
   return (
-    <main className="shell" aria-busy="true">
-      <header className="topbar">
-        <div className="brand">
-          PROJECT <span>LIBERTY</span>
-        </div>
-        <div className="status">Loading…</div>
-      </header>
+    <AppShell pathname="/search" badge="Loading…" busy>
 
       <section className="section">
         <div className="section-head">
@@ -48,6 +43,6 @@ export default function SearchLoading() {
       <span className="visually-hidden" role="status">
         Loading search…
       </span>
-    </main>
+    </AppShell>
   );
 }

@@ -1,5 +1,5 @@
+import { AppShell } from "../../../components/shell/app-shell";
 import type { Metadata } from "next";
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { cache } from "react";
 import { EpisodeList } from "../../../components/title/episode-list";
@@ -184,19 +184,7 @@ export default async function TitlePage({ params }: TitlePageProps) {
   if (result.status === "not-found") notFound();
 
   return (
-    <main className="shell">
-      <header className="topbar">
-        <div className="brand">
-          PROJECT <span>LIBERTY</span>
-        </div>
-        <nav className="nav" aria-label="Primary navigation">
-          {/* Stated focus indicator; `globals.css` defines none. */}
-          <Link className={styles.focusRing} href="/">
-            Home
-          </Link>
-        </nav>
-        <div className="status">Title detail</div>
-      </header>
+    <AppShell pathname="/title" badge="Title detail">
 
       {result.status === "error" ? (
         <TitleUnavailable reason={result.reason} />
@@ -209,6 +197,6 @@ export default async function TitlePage({ params }: TitlePageProps) {
           ) : null}
         </>
       )}
-    </main>
+    </AppShell>
   );
 }

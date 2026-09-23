@@ -196,7 +196,6 @@ describe("the focus indicator", () => {
   const FOCUS_RING_CALL_SITES: ReadonlyArray<{ control: string; file: string }> = [
     { control: "the play CTA", file: "./play-cta.tsx" },
     { control: "the hero's series link", file: "./title-hero.tsx" },
-    { control: "the topbar Home link", file: "../../app/title/[titleId]/page.tsx" },
     {
       control: "the not-found page's only control",
       file: "../../app/title/[titleId]/not-found.tsx"
@@ -211,4 +210,33 @@ describe("the focus indicator", () => {
       expect(source).toContain("styles.focusRing");
     });
   }
+
+  /*
+   * THE TOPBAR HOME LINK USED TO BE THE FOURTH ENTRY ABOVE, AND IT IS GONE
+   * RATHER THAN DROPPED (PW-0301).
+   *
+   * That control was a per-route `<header className="topbar">` hand-copied into
+   * eight files, and this list checked the copy in `title/[titleId]/page.tsx`.
+   * PW-0301 deleted all eight in favour of one `<AppShell>`, so asserting the
+   * class at that call site would now assert that a deleted header still exists.
+   *
+   * Deleting the assertion outright would have quietly given up a guard, so it
+   * is REPLACED BY A STRONGER ONE. The reason `.focusRing` was applied per
+   * control in the first place was that `globals.css` defined no focus indicator
+   * at all -- the comment above this block says as much. It now defines a global
+   * `:focus-visible`, so every control in the shell is ringed by construction,
+   * including ones nobody has written yet. This asserts that global rule exists,
+   * which is the property the per-control class was standing in for.
+   */
+  it("is now global, which is why the topbar no longer needs a class for it", () => {
+    const globals = stripComments(read("../../app/globals.css"));
+
+    expect(globals).toContain(":focus-visible");
+    expect(globals).toContain("--focus-ring");
+    /* And the shell it applies to exists, so this is not passing over a page
+     * that simply lost its header. */
+    const shell = stripComments(read("../shell/app-shell.tsx"));
+    expect(shell).toContain("skip-link");
+    expect(shell).toContain('aria-label="Primary navigation"');
+  });
 });

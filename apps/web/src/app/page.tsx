@@ -1,3 +1,4 @@
+import { AppShell } from "../components/shell/app-shell";
 import Link from "next/link";
 import { Suspense } from "react";
 import { CatalogRail } from "../components/catalog-rail";
@@ -199,17 +200,7 @@ async function Catalog() {
 
 export default function HomePage() {
   return (
-    <main className="shell">
-      <header className="topbar">
-        <div className="brand">PROJECT <span>LIBERTY</span></div>
-        <nav className="nav" aria-label="Primary navigation">
-          <a href="#featured">Home</a>
-          <a href="#catalog">Movies</a>
-          <a href="#catalog">Series</a>
-          <a href="#catalog">Live</a>
-        </nav>
-        <div className="status">Foundation build</div>
-      </header>
+    <AppShell pathname="/" badge="Foundation build">
 
       <section className="hero" id="featured">
         <div className="hero-copy">
@@ -231,6 +222,6 @@ export default function HomePage() {
           <Catalog />
         </Suspense>
       </div>
-    </main>
+    </AppShell>
   );
 }

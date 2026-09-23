@@ -1,5 +1,6 @@
 "use client";
 
+import { AppShell } from "../components/shell/app-shell";
 import { useEffect } from "react";
 
 /**
@@ -21,10 +22,7 @@ export default function HomeError({
   }, [error]);
 
   return (
-    <main className="shell">
-      <header className="topbar">
-        <div className="brand">PROJECT <span>LIBERTY</span></div>
-      </header>
+    <AppShell pathname="/">
 
       <div className="state-panel" role="alert">
         <h2>Something went wrong</h2>
@@ -36,6 +34,6 @@ export default function HomeError({
           </button>
         </div>
       </div>
-    </main>
+    </AppShell>
   );
 }

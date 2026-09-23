@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { AppShell } from "../../components/shell/app-shell";
 import { SearchForm } from "../../components/search/search-form";
 import { SearchResultList } from "../../components/search/search-results";
 import styles from "../../components/search/search.module.css";
@@ -109,16 +109,7 @@ export default async function SearchPage({
   const result = await loadSearchResults(query);
 
   return (
-    <main className="shell">
-      <header className="topbar">
-        <div className="brand">
-          PROJECT <span>LIBERTY</span>
-        </div>
-        <nav className="nav" aria-label="Primary navigation">
-          <Link href="/">Home</Link>
-        </nav>
-        <div className="status">Search</div>
-      </header>
+    <AppShell pathname="/search" badge="Search">
 
       <section className="section" aria-labelledby="search-heading">
         <div className="section-head">
@@ -147,6 +138,6 @@ export default async function SearchPage({
       {result.status === "error" && <SearchUnavailable reason={result.reason} />}
       {result.status === "empty" && <SearchEmpty query={result.query} />}
       {result.status === "ok" && <SearchResultList response={result.response} />}
-    </main>
+    </AppShell>
   );
 }

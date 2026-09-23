@@ -1,42 +1,9 @@
 {
-  "generatedAt": "2026-09-23T03:18:02.478Z",
+  "generatedAt": "2026-09-23T03:29:23.903Z",
   "agent": "gpt-architect",
   "executionAvailable": false,
   "assigned": [],
   "review": [],
   "reservedExternal": [],
-  "recommended": [
-    {
-      "id": "PW-0401",
-      "priority": "P1",
-      "lane": "Backend",
-      "status": "READY",
-      "title": "The authenticated backend the desktop build talks to",
-      "dependencies": [],
-      "allowedPaths": [
-        "apps/backend/**"
-      ],
-      "reviewDependencies": [
-        "apps/web/src/app/api/v1/playback/session",
-        "packages/provider-sdk/src",
-        "packages/media-engine/src",
-        "e2e/src/backend-stub.mjs",
-        "docs/DESKTOP_PLAYBACK.md",
-        "docs/SECURITY.md"
-      ],
-      "preferredAgent": "claude-backend",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "typecheck",
-        "unit",
-        "e2e",
-        "architecture-review",
-        "security-review"
-      ],
-      "acceptance": "The counterparty the desktop forwarder already speaks to exists as a service instead of only as an e2e stub. docs/DESKTOP_PLAYBACK.md section 8 was ruled by the commander: provider resolution must not rely on the user-administered sidecar as its trust boundary, and the desktop build proxies to an authenticated backend. The FORWARDER is implemented and tested; the thing it forwards TO is e2e/src/backend-stub.mjs. REQUIRED: the same route contract, byte for byte -- the cross-target e2e suite already compares whole bodies between targets and must keep passing. REQUIRED: caller authentication, and a refusal that does not leak whether a content id exists. REQUIRED: provider credentials live only here, never in a desktop artifact, env var, config file or cached response; the build-target import-graph guard already proves the desktop bundle cannot reach @liberty/provider-sdk and this service is where that capability actually lives. REQUIRED: it is deployable and testable WITHOUT a licensed provider -- the resolution path must return an honest unavailable with provider_not_configured when none is wired, which is exactly what the web target already does. THIS TASK DOES NOT NEED CREDENTIALS and must not wait for them; PL-0302 remains the separate task that wires a real provider into it.",
-      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. SURFACE NOTE: this task's allowedPaths name directories that do not exist yet. The evidence-based narrowing procedure applies to reconciling work already in history; for genuinely new work the surface is the smallest set of paths the acceptance can be satisfied within, and it is narrowed again from the diff before review if it turns out to be wider than what was written. ",
-      "owner": null,
-      "gateResults": {}
-    }
-  ]
+  "recommended": []
 }

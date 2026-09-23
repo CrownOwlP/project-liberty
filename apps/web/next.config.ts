@@ -156,7 +156,30 @@ export function nextConfigFor(target: BuildTarget): NextConfig {
      * property and not housekeeping. Omitted for the web target so `.next` is
      * untouched.
      */
-    ...(distDir === null ? {} : { distDir })
+    ...(distDir === null ? {} : { distDir }),
+
+    /*
+     * THE SIDECAR OUTPUT (PW-0101), desktop target only.
+     *
+     * `docs/ARCHITECTURE.md` and `docs/DESKTOP_PLAYBACK.md` D2 both specify
+     * `output: "standalone"` as the desktop serving strategy, and until this
+     * line existed neither config set it -- the largest single gap between the
+     * recorded design and the code, found by the round-80 audit. A desktop
+     * build was an ordinary `next build` that only `next start` from a full
+     * checkout could serve, which is not something an installer can ship.
+     *
+     * WHAT IT BUYS, and why a static export was refused instead: standalone
+     * keeps dynamic Server Components, route handlers with a full `Request`,
+     * this file's sibling `proxy.ts`, `cookies()`, `headers()` and ISR. Every
+     * one of those is load-bearing here -- the desktop playback forwarder IS a
+     * route handler, and the listener guard IS `proxy.ts`.
+     *
+     * NOT SET FOR THE WEB TARGET. A hosted deployment has a platform that
+     * serves the application, and emitting a standalone tree there would ship a
+     * server nobody runs. Spread rather than assigned, on the same rule the
+     * distDir above follows: the key is ABSENT for web, not present-and-null.
+     */
+    ...(target === "desktop" ? { output: "standalone" as const } : {})
   };
 }
 

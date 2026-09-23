@@ -1,3 +1,4 @@
+import { AppShell } from "../../../components/shell/app-shell";
 import { headers } from "next/headers";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -252,16 +253,7 @@ export default async function WatchPage({ params }: { params: Promise<{ contentI
   if (!isWatchableContentId(contentId)) notFound();
 
   return (
-    <main className="shell player-shell">
-      <header className="topbar">
-        <div className="brand">
-          PROJECT <span>LIBERTY</span>
-        </div>
-        <nav className="nav" aria-label="Primary navigation">
-          <Link href="/">Home</Link>
-        </nav>
-        <div className="status">Player</div>
-      </header>
+    <AppShell pathname="/watch" badge="Player" mainClassName="player-shell">
 
       <Suspense fallback={<PlaybackLoading />}>
         <PlaybackBody contentId={contentId} />
@@ -270,6 +262,6 @@ export default async function WatchPage({ params }: { params: Promise<{ contentI
       <div className="player-meta">
         <Link href="/">Back to catalog</Link>
       </div>
-    </main>
+    </AppShell>
   );
 }
