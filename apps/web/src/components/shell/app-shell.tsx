@@ -14,6 +14,7 @@
  * ---------------------------------------------------------------------- */
 import type { ReactNode } from "react";
 
+import { ActiveProfileBadge } from "../profiles/active-profile-badge";
 import { PRIMARY_NAVIGATION, activeEntryId } from "./navigation";
 
 export interface AppShellProps {
@@ -92,7 +93,24 @@ export function AppShell({
             )
           )}
         </nav>
-        {badge === null ? null : <div className="status">{badge}</div>}
+        {/*
+          * THE IDENTITY CONTROL, ON EVERY SCREEN (PW-0303).
+          *
+          * Here rather than on `/profiles` alone, because every progress and
+          * watchlist row in this product is profile-scoped: a viewer who cannot
+          * see which profile is active cannot tell a missing row from somebody
+          * else's list. It is the ONE client boundary this server shell opens --
+          * it reads the session, and a server shell that did the same would make
+          * every route dynamic.
+          *
+          * Before the status badge and after the nav: it belongs with the
+          * viewer's own controls at the end of the bar, and it is not a sixth
+          * navigation destination.
+          */}
+        <div className="topbar-end">
+          <ActiveProfileBadge />
+          {badge === null ? null : <div className="status">{badge}</div>}
+        </div>
       </header>
       <main
         className={mainClassName === null ? "shell" : `shell ${mainClassName}`}

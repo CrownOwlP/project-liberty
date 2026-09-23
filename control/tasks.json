@@ -8269,20 +8269,23 @@
       "id": "PW-0303",
       "priority": "P0",
       "lane": "Frontend",
-      "status": "READY",
+      "status": "IN_PROGRESS",
       "title": "Profiles become usable: a picker, a switch, and a create",
       "dependencies": [
         "PW-0301"
       ],
       "allowedPaths": [
         "apps/web/src/app/profiles/**",
-        "apps/web/src/components/profiles/**"
+        "apps/web/src/components/profiles/**",
+        "apps/web/src/components/shell/app-shell.tsx",
+        "apps/web/src/app/globals.css"
       ],
       "reviewDependencies": [
         "apps/web/src/app/api/v1/profiles",
         "packages/persistence/src",
         "packages/auth/src",
-        "apps/web/src/lib/session/account.ts"
+        "apps/web/src/lib/session/account.ts",
+        "apps/web/src/components/shell/navigation.ts"
       ],
       "preferredAgent": "claude-frontend",
       "reviewAgent": "gpt-architect",
@@ -8294,8 +8297,11 @@
       ],
       "acceptance": "A person can see who they are watching as, switch, and create a profile. THE BACKEND IS COMPLETE AND REVIEWED AND NOTHING RENDERS IT: /api/v1/profiles and /api/v1/profiles/selection exist with handlers, contracts and tests, and there is no picker, no switch, no create and no avatar anywhere in the application. REQUIRED: the active profile is visible in the shell at all times, because every progress and watchlist row in this product is profile-scoped and a viewer who cannot see which profile is active cannot understand their own continue-watching list. REQUIRED: profile selection goes through the existing selection route and the existing ProfileScope, never through a client-held id -- PL-0405 recorded a forgeable-scope defect and this UI must not reintroduce it, which is why a security review is required. REQUIRED: switching profiles invalidates any cached profile-scoped view rather than leaving another profile's rows on screen.",
       "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. ",
-      "owner": null,
-      "gateResults": {}
+      "owner": "claude-frontend",
+      "gateResults": {},
+      "updatedAt": "2026-09-23T04:39:39.395Z",
+      "implementationAgent": "claude-frontend",
+      "implementationBaseSha": "8c5e08fd0315fa30bec5302564d1f29a76488c1e"
     },
     {
       "id": "PW-0304",

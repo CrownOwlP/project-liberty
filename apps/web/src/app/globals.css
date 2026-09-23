@@ -230,3 +230,137 @@ h1 { margin: 12px 0 14px; font-size: clamp(48px, 7vw, 84px); line-height: .93; l
 }
 
 @media (max-width: 900px) { .rail { grid-template-columns: repeat(2, 1fr); } .nav { display: none; } .hero { padding: 28px; } }
+
+/* -------------------------------------------------------------------------
+ * Profiles (PW-0303)
+ *
+ * HERE RATHER THAN IN A CSS MODULE, because the two controls this task adds are
+ * the identity badge in the topbar and the picker, and the badge is a sibling of
+ * `.status` inside chrome whose rules already live in this file. Splitting one
+ * topbar across two stylesheets is how the eight hand-copied headers PW-0301
+ * deleted came about.
+ *
+ * EVERY COLOUR AND EVERY GAP IS A TOKEN. The only raw number below is the
+ * per-profile hue, which is derived in `avatar.ts` and arrives as
+ * `--avatar-hue`; saturation and lightness are fixed here so that every tile has
+ * the same contrast against the same text whatever hue it draws.
+ * ---------------------------------------------------------------------- */
+
+.topbar-end { display: flex; align-items: center; gap: var(--space-3); }
+
+.profile-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3) var(--space-1) var(--space-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.04);
+  font-size: var(--text-xs);
+  color: var(--text);
+  /* The topbar is sticky and the badge resolves after first paint; a fixed
+   * minimum stops the bar reflowing when the name arrives. */
+  min-height: 34px;
+}
+
+.profile-badge-checking {
+  /* The same box, drawn empty. See `active-profile-badge.tsx`. */
+  width: 112px;
+  border-style: dashed;
+  opacity: 0.5;
+}
+
+.profile-badge-avatar,
+.profile-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  color: #080a0f;
+  background: hsl(var(--avatar-hue, 210) 62% 72%);
+}
+
+.profile-badge-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-pill);
+  font-size: var(--text-xs);
+}
+
+.profile-badge-avatar-empty { background: var(--surface-2); }
+
+.profile-badge-name { white-space: nowrap; }
+
+.profiles { max-width: 720px; margin: 0 auto; padding-top: var(--space-7); }
+.profiles h1 { font-size: var(--text-2xl); margin: 0 0 var(--space-6); }
+.profiles-note { color: var(--muted); margin: 0 0 var(--space-5); }
+
+.profiles-failure {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--danger);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  padding: var(--space-4) var(--space-5);
+  margin: 0 0 var(--space-5);
+}
+.profiles-failure h2 { font-size: var(--text-lg); margin: 0 0 var(--space-3); }
+.profiles-failure ul { margin: 0; padding-left: var(--space-5); color: var(--muted); font-size: var(--text-sm); }
+.profiles-failure li + li { margin-top: var(--space-1); }
+
+.profile-grid {
+  list-style: none;
+  margin: 0 0 var(--space-6);
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: var(--space-5);
+}
+
+.profile-tile {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--space-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius-lg);
+  background: none;
+  color: var(--text);
+  cursor: pointer;
+}
+.profile-tile:hover:not(:disabled) { background: var(--surface); }
+.profile-tile[aria-current="true"] { border-color: var(--accent); background: var(--surface); }
+.profile-tile:disabled { cursor: progress; opacity: 0.6; }
+
+.profile-avatar {
+  width: 88px;
+  height: 88px;
+  border-radius: var(--radius-lg);
+  font-size: var(--text-xl);
+}
+
+.profile-name { font-size: var(--text-sm); font-weight: 600; }
+.profile-active { font-size: var(--text-xs); color: var(--accent); }
+
+.profile-create {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-width: 360px;
+}
+.profile-create label { font-size: var(--text-sm); color: var(--muted); }
+.profile-create input {
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+}
+.profile-create-actions { display: flex; gap: var(--space-3); }
+
+/* A tile that cannot animate its hover has to still show state; the border and
+ * the "Watching as" label carry it, and neither depends on motion. */
+@media (prefers-reduced-motion: reduce) {
+  .profile-tile { transition: none; }
+}

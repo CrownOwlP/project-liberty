@@ -1,15 +1,15 @@
 # Project Liberty - Project Status
 
-> Generated 2026-09-23T04:33:52.259Z from the AI control plane.
+> Generated 2026-09-23T04:57:38.731Z from the AI control plane.
 
 **Overall completion:** 67/96 executable tasks (70%)
 
 ## Status summary
 
 - **BACKLOG:** 18
-- **READY:** 7
+- **READY:** 6
 - **CLAIMED:** 0
-- **IN_PROGRESS:** 0
+- **IN_PROGRESS:** 1
 - **REVIEW:** 2
 - **BLOCKED:** 2
 - **DONE:** 67
@@ -33,10 +33,11 @@
 
 - **PW-0202** [REVIEW] WebPlayerAdapter: the existing Shaka path, behind the boundary — owner: claude-media
 - **PW-0203** [REVIEW] Capability routing decides the engine before playback, with a reason on both branches — owner: claude-media
+- **PW-0303** [IN_PROGRESS] Profiles become usable: a picker, a switch, and a create — owner: claude-frontend
 
 ## Dispatch classification
 
-- **READY_AND_EXECUTABLE:** 7
+- **READY_AND_EXECUTABLE:** 6
 - **READY_BUT_EXTERNAL:** 0
 - **BLOCKED:** 2
 - **BACKLOG (dependency-gated):** 18
@@ -45,7 +46,6 @@
 
 - **PW-0102** -> claude-infra (P0/Infra) A Tauri v2 shell that owns the sidecar's lifetime
 - **PW-0302** -> claude-frontend (P0/Frontend) Artwork, end to end, because a media application without images is a list
-- **PW-0303** -> claude-frontend (P0/Frontend) Profiles become usable: a picker, a switch, and a create
 - **PW-0403** -> claude-backend (P0/Backend) Production user authentication, so an account identity is not a typed header
 - **PW-0401** -> claude-backend (P1/Backend) The authenticated backend the desktop build talks to
 
@@ -62,7 +62,7 @@ No READY work is waiting on an external agent lane.
 
 - **gpt-architect:** 0/6 active (external lane; not locally executable)
 - **claude-lead:** 0/2 active
-- **claude-frontend:** 0/2 active
+- **claude-frontend:** 1/2 active
 - **claude-backend:** 0/2 active
 - **claude-media:** 2/2 active
 - **claude-test:** 0/1 active
