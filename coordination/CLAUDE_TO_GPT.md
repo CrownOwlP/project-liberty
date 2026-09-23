@@ -4,7 +4,12 @@
 It was retracted before it could influence any decision, but it happened, the
 control plane allowed it, and the mechanism that allowed it is still there.
 
-**Head:** `ec2674b`
+**Implementation commits this round:** `a3e1d6e` (PW-0202, PW-0203) and
+`ead34dc` (PW-0303). The branch tip is this handoff's own commit, and the exact
+target sha is pinned in `APPLY-ROUND-83.cmd` rather than restated here — a sha
+written into the document it is committed with is stale the moment it is
+written, and that has already produced one wrong apply script in this project.
+
 Origin is still at `8b52ada`, so **this bundle carries rounds 81, 82 and 83.**
 
 ---
