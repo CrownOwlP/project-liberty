@@ -79,6 +79,62 @@ checks.
 discard its gate results. Evidence belongs to one implementation round under one
 owner; the next claimant re-records it.
 
+
+### A judgement gate is not a check the implementer runs
+
+`control/policies.json` names the **judgement gates** — `architecture-review`,
+`security-review`, `rights-review`. The distinction they draw is not about
+difficulty. An executable gate reports an exit code, and the owner records it.
+A judgement gate is somebody's verdict, and product invariant 7 makes every
+required gate a precondition of DONE — so an implementer who can record their
+own judgement gate can complete their own task without independent review,
+which `approve` refuses by name.
+
+`ai:gate` used to check only lifecycle, ownership and the `--agent` assertion.
+In round 83 the owner of PW-0203 ran
+
+```bash
+npm run ai:gate -- PW-0203 architecture-review pass --agent claude-media "PLACEHOLDER-NOT-RECORDED"
+```
+
+**expecting a refusal**, and the control plane wrote a passing gate whose entire
+evidence was that string. It was disclosed and retracted through `release`,
+which discards gate results — but retraction is audit *recovery*, and the only
+reason nothing was built on it is that the person who made the mistake noticed.
+PL-AI-0012 made it a refusal. On a judgement gate:
+
+- `--agent` is **required**. Without it the result falls back to `task.owner`,
+  so an omitted flag is a self-record with nobody having typed a name.
+- **Nobody on the implementation side may record it** — neither `owner` nor
+  `implementationAgent`, the same pair `approve`'s self-approval rule compares.
+- Only the task's `reviewAgent`, or an agent explicitly listed in
+  `gateAuthority.authorizedIndependentReviewers`, may. That list is empty:
+  `review.allowAutomaticReviewerSubstitution` is false, so a substitute reviewer
+  is a human decision, never a fallback.
+- The evidence must **name the commit it judged** — an abbreviated or full sha.
+  Inside a git checkout it must RESOLVE to a commit; outside one the naming
+  requirement still applies and the result records
+  `judgementCommitVerified: false`. A length floor is not a placeholder test,
+  because a long placeholder passes one; a verdict that cannot say what it
+  looked at is not a verdict.
+- Recording as an agent that cannot run this command requires
+  `--transcribed-by <agentId>`. This is the normal case here: the GitHub write
+  integration returns 403, so every judgement gate in this project is typed by
+  Claude from a ChatGPT review session. Transcription is **supported and
+  recorded**, not forbidden — forbidding it would stop the project, and leaving
+  it implicit is what let a self-recorded gate look identical to a transcribed
+  one.
+
+Every one of these refuses **before anything is written**. A judgement gate is
+therefore reachable only in `REVIEW`, which falls out of the older rule that a
+non-owner may not record during `IN_PROGRESS`.
+
+```bash
+npm run ai:gate -- <TASK_ID> architecture-review pass \
+  --agent gpt-architect --transcribed-by claude-lead \
+  "APPROVED at <sha>. <the verdict>"
+```
+
 ### An implementation that predates its own claim
 
 `ai:start` records `implementationBaseSha`, and that field is the exact lower
@@ -184,7 +240,7 @@ Escalate to the human commander only for the categories defined in `control/poli
 5. API behavior matches `docs/API_CONTRACTS.md` or the contract changes intentionally first.
 6. Security-sensitive work requires the configured security review gate.
 7. A task is not DONE until every required gate is recorded as `pass`.
-8. Never fabricate a gate result. Evidence must identify the command, review, benchmark, or test performed.
+8. Never fabricate a gate result. Evidence must identify the command, review, benchmark, or test performed. For a judgement gate this is enforced rather than trusted -- see *A judgement gate is not a check the implementer runs*.
 
 ## Completion loop
 

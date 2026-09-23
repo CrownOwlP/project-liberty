@@ -61,7 +61,11 @@
     "terminalStatus": "SUPERSEDED",
     "requireSuccessor": true,
     "requireSuccessorDone": true,
-    "reachableFrom": ["BACKLOG", "READY", "BLOCKED"],
+    "reachableFrom": [
+      "BACKLOG",
+      "READY",
+      "BLOCKED"
+    ],
     "satisfiesDependency": false,
     "countsAsCompleted": false,
     "countedInTotal": false,
@@ -78,7 +82,10 @@
     "allowSelfApproval": false,
     "allowAutomaticReviewerSubstitution": false,
     "invalidateApprovalOnImplementationChange": true,
-    "bindApprovalTo": ["reviewedCommitSha", "reviewedTreeHash"],
+    "bindApprovalTo": [
+      "reviewedCommitSha",
+      "reviewedTreeHash"
+    ],
     "requiredRecordFields": [
       "taskId",
       "implementationAgent",
@@ -91,9 +98,50 @@
       "reviewedAt",
       "evidence"
     ],
-    "outcomes": ["APPROVED", "CHANGES_REQUESTED"],
-    "blockingOutcomes": ["CHANGES_REQUESTED"],
+    "outcomes": [
+      "APPROVED",
+      "CHANGES_REQUESTED"
+    ],
+    "blockingOutcomes": [
+      "CHANGES_REQUESTED"
+    ],
     "notes": "A task whose reviewAgent is set cannot reach DONE without an APPROVED record from exactly that agent, bound to the current implementation fingerprint. Reviewer substitution requires an explicit human decision, not an automatic fallback."
+  },
+  "gateAuthority": {
+    "judgementGates": [
+      "architecture-review",
+      "security-review",
+      "rights-review"
+    ],
+    "allowImplementationSideToRecordJudgement": false,
+    "requireRecordingAgentForJudgement": true,
+    "authorizedIndependentReviewers": [],
+    "evidence": {
+      "requireResolvableCommit": true,
+      "minimumCommitAbbreviation": 7,
+      "minimumLength": 120,
+      "rejectedSubstrings": [
+        "placeholder",
+        "not-recorded",
+        "not recorded",
+        "todo",
+        "tbd",
+        "fixme",
+        "xxx",
+        "lorem ipsum",
+        "n/a",
+        "to be determined",
+        "pending review",
+        "fill in"
+      ],
+      "notes": "requireResolvableCommit has two strengths by environment, which is deliberate. Inside a git checkout the named sha must RESOLVE to a commit in the local object database, so a token that merely looks like a sha is refused. Outside one there is nothing to ask, so the naming requirement still applies and the resolution is recorded as not performed -- judgementCommitVerified: false on the result and on the audit event. Refusing outright in that environment was tried and rejected: it makes the control plane unusable from an export or a fixture in exchange for very little once a sha-shaped token is already mandatory. An unperformed check must not read as a passed one; it may be recorded as unperformed."
+    },
+    "transcription": {
+      "supported": true,
+      "flag": "--transcribed-by",
+      "requireWhenReviewerIsNotLocallyExecutable": true
+    },
+    "notes": "WHO MAY CONCLUDE A GATE, as opposed to who may run one. Added by PL-AI-0012 after a round-83 incident in which the implementation owner of PW-0203 recorded a passing architecture-review whose entire evidence was the string PLACEHOLDER-NOT-RECORDED. The command accepted it: ai:gate checked lifecycle, ownership and the --agent assertion, and never asked whether the recorder was entitled to reach the conclusion. Every judgement gate in this repository's history had in fact been transcribed from a gpt-architect verdict, which is a convention, and product invariant 8 was defended by discipline alone. judgementGates is a LIST rather than a predicate over quality-gates.json so that a gate added later is classified deliberately; the alternative -- inferring judgement from command: agent-review -- would make the authority rule a side effect of an evidence-format field, and a new gate would default to self-recordable, which is the wrong default for a safety rule. authorizedIndependentReviewers is the fallback hook the review policy already implies and is EMPTY on purpose: allowAutomaticReviewerSubstitution is false, so substitution is a human decision, and an empty list means today the reviewAgent is the only authority. evidence.requireResolvableCommit is the placeholder rule, and it is a rule about MEANING rather than length: a verdict about code must name the code it judged, as an abbreviated or full sha that resolves to a commit in local history. A length floor alone is not a placeholder test, because a long placeholder passes one. The floor and the substring list are kept as second and third nets, not as the rule. transcription.requireWhenReviewerIsNotLocallyExecutable exists because the GitHub write integration returns 403: every judgement gate in this project is physically typed by Claude on the reviewer's behalf. Making that explicit in the record is the honest alternative to either forbidding it -- which would stop the project -- or leaving it implicit, which is what let a self-recorded gate look exactly like a transcribed one."
   },
   "parallelism": {
     "forbidOverlappingWritePaths": true,

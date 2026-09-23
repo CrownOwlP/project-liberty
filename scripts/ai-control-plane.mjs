@@ -878,6 +878,34 @@ function commitResolves(sha) {
   }
 }
 
+/**
+ * Resolve an abbreviated or full commit-ish to its full sha, or `null`.
+ *
+ * SEPARATE FROM `commitResolves`, which deliberately insists on 40 hex
+ * characters because it guards `implementationBaseSha` -- a machine-readable
+ * field that must be exact. This one exists for PROSE: a reviewer writes
+ * "APPROVED at ebc8482", and refusing that would be refusing the way humans and
+ * reviewers actually name commits.
+ *
+ * `git rev-parse --verify <sha>^{commit}` is the right instrument rather than a
+ * pattern test: it resolves the abbreviation against this repository's own
+ * object database, refuses an ambiguous prefix with its own error, and refuses a
+ * sha that names a blob or a tree rather than a commit. A regex could do none of
+ * those, and "looks like hex" is exactly the property a placeholder can fake.
+ */
+function resolveCommitish(ref) {
+  if (!/^[0-9a-f]{7,40}$/.test(String(ref))) return null;
+  try {
+    return execFileSync("git", ["rev-parse", "--verify", `${ref}^{commit}`], {
+      cwd: root,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+  } catch {
+    return null;
+  }
+}
+
 /* ---------------------------------------------------------------------------
  * Provenance reconciliation: implementations that predate their own claim
  *
@@ -3838,9 +3866,21 @@ try {
      * somebody else's name.
      */
     const actingAgent = flagValue(args, "--agent");
+    /*
+     * WHO PHYSICALLY TYPED A TRANSCRIBED VERDICT (PL-AI-0012).
+     *
+     * `--agent` says whose judgement this is. `--transcribed-by` says who put it
+     * into the control plane on that agent's behalf, which in this project is
+     * almost always somebody other than the reviewer: the GitHub write
+     * integration returns 403, so every judgement gate here is typed by Claude
+     * from a ChatGPT review session. Leaving that implicit is what let a
+     * self-recorded gate look byte-identical to a transcribed one.
+     */
+    const transcribedBy = flagValue(args, "--transcribed-by");
+    const GATE_FLAGS = new Set(["--agent", "--transcribed-by"]);
     const positional = [];
     for (let i = 0; i < args.length; i++) {
-      if (args[i] === "--agent") {
+      if (GATE_FLAGS.has(args[i])) {
         i++;
         continue;
       }
@@ -3849,7 +3889,8 @@ try {
     const [taskId, gate, status, ...noteParts] = positional;
     if (!taskId || !gate || !status)
       throw new Error(
-        "Usage: gate <taskId> <gate> <pass|fail> [--agent <agentId>] <evidence>",
+        "Usage: gate <taskId> <gate> <pass|fail> [--agent <agentId>] " +
+          "[--transcribed-by <agentId>] <evidence>",
       );
     const task = requireTask(d.taskDoc, taskId);
     // Already enforced before this change, and kept: a gate name outside the
@@ -3947,6 +3988,266 @@ try {
         );
     }
 
+    /* -----------------------------------------------------------------
+     * WHO MAY CONCLUDE THIS GATE, as opposed to who may run it (PL-AI-0012).
+     *
+     * Everything above this point asks whether work is legitimately happening
+     * against the task and whether the caller is who they say they are. None of
+     * it asks whether the caller is entitled to reach the CONCLUSION the gate
+     * records, and for an executable gate that question does not arise: the
+     * owner runs `npm run typecheck` and the exit code is the verdict.
+     *
+     * For a judgement gate it is the only question. `architecture-review`,
+     * `security-review` and `rights-review` are somebody's opinion about work,
+     * and product invariant 7 makes them a precondition of DONE, so an
+     * implementer who can record their own is an implementer who can complete
+     * their own task without independent review -- while `approve` refuses
+     * exactly that, by name, three hundred lines below.
+     *
+     * THE INCIDENT THIS EXISTS FOR. On 2026-09-23 the implementation owner of
+     * PW-0203 ran
+     *
+     *     gate PW-0203 architecture-review pass --agent claude-media \
+     *       "PLACEHOLDER-NOT-RECORDED"
+     *
+     * expecting a refusal, and the control plane wrote a passing judgement gate
+     * whose entire evidence was that string. It was disclosed and retracted
+     * through `release`, which discards gate results -- but retraction is audit
+     * RECOVERY, and recovery is not enforcement. Nothing had prevented it, and
+     * the only reason no approval was built on it is that the same person who
+     * made the mistake noticed it.
+     *
+     * REFUSED BEFORE ANYTHING IS WRITTEN. Every check below throws, and the
+     * first mutation of `task.gateResults` is after this block: a refusal that
+     * wrote first and undid afterwards would be the retraction mechanism again,
+     * wearing the costume of a guard.
+     * ----------------------------------------------------------------- */
+    let judgementCommit = null;
+    let judgementCommitVerified = null;
+    let judgementTranscribedBy = null;
+    const authority = d.policies.gateAuthority ?? {};
+    if ((authority.judgementGates ?? []).includes(gate)) {
+      const evidencePolicy = authority.evidence ?? {};
+      /*
+       * `--agent` becomes REQUIRED, and that is not ceremony. Without it
+       * `recordedBy` falls back to `task.owner`, so an omitted flag is not an
+       * unspecified recorder -- it is a self-record with no one having typed a
+       * name. The incident command DID pass `--agent`, and passed the owner.
+       */
+      if (authority.requireRecordingAgentForJudgement !== false && !actingAgent)
+        throw new Error(
+          `${gate} is a judgement gate, so it must name the agent whose judgement it is: ` +
+            `pass --agent <agentId>. Without it the result would be attributed to ${taskId}'s ` +
+            `own owner (${task.owner}), which is the self-recording this rule refuses.`,
+        );
+
+      const claimedBy = actingAgent ?? task.owner;
+      /*
+       * NO CONFIGURED AUTHORITY AT ALL, checked FIRST because it is a defect in
+       * the task rather than in the caller. A task that requires a judgement
+       * gate and names nobody who may conclude it cannot reach DONE by any
+       * route, and saying "you are not authorized" to each agent in turn would
+       * send every one of them looking for a permission that does not exist.
+       */
+      const configuredReviewers = [
+        ...new Set(
+          [task.reviewAgent, ...(authority.authorizedIndependentReviewers ?? [])].filter(
+            Boolean,
+          ),
+        ),
+      ];
+      if (configuredReviewers.length === 0)
+        throw new Error(
+          `${taskId} requires the judgement gate ${gate} and has no reviewAgent, so no agent can ` +
+            `conclude a judgement gate on it -- set one. This is a defect in the task definition, ` +
+            `not in the caller.`,
+        );
+      /*
+       * BOTH identities on the implementation side, exactly as
+       * `assertReviewAllowed` compares them, and for the reason recorded there:
+       * asserting a third-party implementer must only ever ADD an identity, or
+       * declaring one honestly becomes the move that launders away the check.
+       */
+      const implementationSide = [
+        ...new Set([task.owner, task.implementationAgent].filter(Boolean)),
+      ];
+      if (
+        authority.allowImplementationSideToRecordJudgement !== true &&
+        implementationSide.includes(claimedBy)
+      )
+        throw new Error(
+          `${claimedBy} is on the implementation side of ${taskId} ` +
+            `(${implementationSide.join(", ")}) and may not record the judgement gate ${gate}. ` +
+            `A judgement gate is an independent verdict, not a check the implementer runs; ` +
+            `route it to ${task.reviewAgent ?? "an authorized independent reviewer"}. ` +
+            `If that verdict has already been given elsewhere, record it as that reviewer with ` +
+            `--agent <reviewer> --transcribed-by ${claimedBy}.`,
+        );
+
+      /*
+       * WHO IS LEFT. The task's own reviewAgent, plus anyone an operator has
+       * explicitly listed. The list is empty today and that is the intended
+       * state: `review.allowAutomaticReviewerSubstitution` is false, so a
+       * substitute reviewer is a human decision written into policy, never a
+       * fallback this command applies on its own.
+       */
+      /*
+       * DEFENCE IN DEPTH, and today it is exactly that: the ownership rule
+       * above already restricts recording to {owner, reviewAgent}, and this
+       * task's contribution is removing the OWNER from that set for a judgement
+       * gate. An unrelated agent is therefore refused before reaching here.
+       *
+       * This becomes the ANSWERING rule the moment
+       * `authorizedIndependentReviewers` is populated -- and whoever does that
+       * must widen the ownership rule above to match, or the new entry will be
+       * refused by a check that has never heard of it. Stated here because a
+       * silent coupling between two guards is how the second one quietly stops
+       * meaning anything.
+       */
+      if (!configuredReviewers.includes(claimedBy))
+        throw new Error(
+          `${taskId} requires ${gate} from ${configuredReviewers.join(" or ")}; ` +
+            `${claimedBy} is not authorized to conclude it, and ` +
+            `review.allowAutomaticReviewerSubstitution is false, so no substitution happens here`,
+        );
+
+      /*
+       * A PLACEHOLDER IS NOT A JUDGEMENT, and the rule is about MEANING rather
+       * than length. A verdict about code has to name the code it judged: an
+       * abbreviated or full sha somewhere in the evidence that resolves to a
+       * commit in THIS repository's object database. `PLACEHOLDER-NOT-RECORDED`
+       * fails it; so does a fluent, four-hundred-word review of nothing.
+       *
+       * A LENGTH FLOOR ALONE WOULD NOT BE A TEST, because a long placeholder
+       * passes one -- which is why the floor and the substring list below are
+       * kept as second and third nets and are not the rule.
+       *
+       * FAIL-CLOSED WITHOUT GIT. If the object database cannot be consulted the
+       * check cannot be performed, and an unperformed safety check must not read
+       * as a passed one.
+       */
+      if (evidencePolicy.requireResolvableCommit !== false) {
+        const minAbbrev = evidencePolicy.minimumCommitAbbreviation ?? 7;
+        const candidates = [
+          ...new Set(
+            (evidence.match(/\b[0-9a-f]{7,40}\b/g) ?? []).filter(
+              (token) => token.length >= minAbbrev,
+            ),
+          ),
+        ];
+        if (candidates.length === 0)
+          throw new Error(
+            `${gate} on ${taskId} is a judgement about code, so its evidence must NAME THE COMMIT ` +
+              `it judged -- an abbreviated (${String(minAbbrev)}+ hex) or full sha. There is no such ` +
+              `token in the evidence at all. This is the placeholder rule, and it is about meaning ` +
+              `rather than length: a verdict that cannot say what it looked at is not a verdict.`,
+          );
+        /*
+         * TWO ENVIRONMENTS, TOLD APART RATHER THAN COLLAPSED.
+         *
+         * INSIDE A GIT CHECKOUT the claim is fully checkable, so it is checked:
+         * the sha must resolve, against this repository's own object database,
+         * to a COMMIT. `git rev-parse --verify` refuses an ambiguous prefix and
+         * refuses a sha naming a blob or a tree, neither of which a pattern test
+         * could do -- and "looks like hex" is exactly what a placeholder fakes.
+         * A token-shaped non-commit is refused here.
+         *
+         * OUTSIDE ONE there is no object database to ask, and the honest options
+         * were to refuse every judgement gate in such an environment or to
+         * record that the naming requirement was met and the RESOLUTION was not
+         * performed. Refusing outright was tried first and is the wrong trade:
+         * it makes the control plane unusable wherever it is run from an export
+         * or a fixture, in exchange for a check whose remaining value is small
+         * once a sha-shaped token is already mandatory. So the weaker claim is
+         * recorded AS the weaker claim -- `judgementCommitVerified: false`, in
+         * the result and in the audit event -- rather than silently passing as
+         * the strong one. An unperformed check must not READ as a passed one;
+         * it may be recorded as unperformed.
+         */
+        if (gitAvailable()) {
+          let named = null;
+          for (const candidate of candidates) {
+            const full = resolveCommitish(candidate);
+            if (full) {
+              named = full;
+              break;
+            }
+          }
+          if (!named)
+            throw new Error(
+              `${gate} on ${taskId} must name the commit it judged, and none of ` +
+                `${candidates.join(", ")} resolves to a commit in this repository. A token that ` +
+                `merely looks like a sha is not evidence that anything was read.`,
+            );
+          judgementCommit = named;
+          judgementCommitVerified = true;
+        } else {
+          judgementCommit = candidates[0];
+          judgementCommitVerified = false;
+        }
+      }
+
+      const lowered = evidence.toLowerCase();
+      const offending = (evidencePolicy.rejectedSubstrings ?? []).find((needle) =>
+        lowered.includes(String(needle).toLowerCase()),
+      );
+      if (offending)
+        throw new Error(
+          `${gate} on ${taskId} has evidence containing ${JSON.stringify(offending)}, which is ` +
+            `placeholder text rather than a judgement. Record the verdict, or do not record the gate.`,
+        );
+
+      const floor = evidencePolicy.minimumLength ?? 0;
+      if (evidence.length < floor)
+        throw new Error(
+          `${gate} on ${taskId} has ${String(evidence.length)} characters of evidence and a judgement ` +
+            `gate requires at least ${String(floor)}. This is the weakest of the three evidence checks ` +
+            `and is deliberately not the rule; see the commit requirement above.`,
+        );
+
+      /*
+       * TRANSCRIPTION, MADE EXPLICIT RATHER THAN FORBIDDEN.
+       *
+       * `gpt-architect` cannot run this command: it is an external-reasoning
+       * lane with no local execution adapter, and the GitHub write integration
+       * returns 403. So every judgement gate in this project is physically typed
+       * by another agent on the reviewer's behalf. The honest options were to
+       * forbid that -- which would stop the project -- or to record it. This
+       * records it, and requires it, so the provenance of a transcribed verdict
+       * is in the machine-readable result instead of in prose somebody may or
+       * may not have written.
+       */
+      const reviewerAgent = requireAgent(d, claimedBy);
+      const reviewerRunsLocally = agentExecutable(reviewerAgent, d);
+      const transcription = authority.transcription ?? {};
+      if (
+        transcription.requireWhenReviewerIsNotLocallyExecutable !== false &&
+        !reviewerRunsLocally &&
+        !transcribedBy
+      )
+        throw new Error(
+          `${claimedBy} is not locally executable, so it cannot have typed this command; ` +
+            `a ${gate} recorded as ${claimedBy} is therefore a transcription and must say so: ` +
+            `pass --transcribed-by <agentId> naming who recorded it on ${claimedBy}'s behalf.`,
+        );
+      if (transcribedBy) {
+        requireAgent(d, transcribedBy);
+        judgementTranscribedBy = transcribedBy;
+      }
+    } else if (transcribedBy) {
+      /*
+       * Refused rather than ignored. `--transcribed-by` on an executable gate
+       * would be a claim that somebody else's `npm run typecheck` is being
+       * relayed, which is not a thing: an exit code is reproduced, not
+       * transcribed. Accepting it silently would let the flag become decoration
+       * that eventually appears on a judgement gate meaning nothing.
+       */
+      throw new Error(
+        `--transcribed-by applies to judgement gates only; ${gate} is an executable gate, ` +
+          `and an exit code is re-run rather than relayed`,
+      );
+    }
+
     const recordedBy = actingAgent ?? task.owner;
     task.gateResults ??= {};
     task.gateResults[gate] = {
@@ -3963,9 +4264,45 @@ try {
       // (a docs-only commit should not invalidate a build gate), and inventing
       // an answer here would silently change what completion means.
       commitSha: currentCommitSha(),
+      /*
+       * THE COMMIT THE VERDICT ITSELF NAMED (PL-AI-0012), which is not the same
+       * fact as `commitSha` above. That one is where HEAD happened to be when
+       * the command ran; this one was extracted from the evidence and resolved
+       * against the object database, so it is what the reviewer said they
+       * looked at. On a transcribed verdict those routinely differ -- the
+       * verdict is given against a sha and typed in later -- and collapsing
+       * them would lose exactly the discrepancy worth seeing.
+       *
+       * Absent on an executable gate, where there is no verdict to bind.
+       */
+      ...(judgementCommit
+        ? {
+            judgementCommitSha: judgementCommit,
+            judgementCommitVerified: judgementCommitVerified === true,
+          }
+        : {}),
+      /*
+       * WHO TYPED IT, when that is not who concluded it. Present only on a
+       * transcribed judgement; its absence on one means the reviewer recorded
+       * its own verdict directly.
+       */
+      ...(judgementTranscribedBy ? { transcribedBy: judgementTranscribedBy } : {}),
       evidence,
     };
-    event("task.gate", { taskId, gate, status, by: recordedBy, evidence });
+    event("task.gate", {
+      taskId,
+      gate,
+      status,
+      by: recordedBy,
+      ...(judgementCommit
+        ? {
+            judgementCommitSha: judgementCommit,
+            judgementCommitVerified: judgementCommitVerified === true,
+          }
+        : {}),
+      ...(judgementTranscribedBy ? { transcribedBy: judgementTranscribedBy } : {}),
+      evidence,
+    });
     saveTasks(d.taskDoc);
     syncAll(d, false);
     console.log(`${taskId} gate ${gate}: ${status} (recorded by ${recordedBy}).`);
@@ -4634,6 +4971,8 @@ try {
   request-changes <taskId> <reviewerAgent> <evidence>
   review-status <taskId>
   gate <taskId> <gate> <pass|fail> [--agent <agentId>] <evidence>
+  gate <taskId> <judgement-gate> <pass|fail> --agent <reviewerAgent>
+       [--transcribed-by <agentId>] <evidence naming the reviewed commit>
   done <taskId>
   supersede <taskId> --by <successorId> --reason "..."
                                 the successor must already be DONE
@@ -4646,6 +4985,23 @@ A gate result may only be recorded while a task is IN_PROGRESS or REVIEW, and it
 is attributed to the task's owner. The optional [agentId] / --agent arguments are
 assertions, not authentication: they exist so a caller that is wrong about who
 owns a task fails loudly instead of writing evidence under another agent's name.
+
+EXECUTABLE GATES AND JUDGEMENT GATES ARE NOT THE SAME KIND OF CLAIM.
+control/policies.json names the judgement gates -- architecture-review,
+security-review and rights-review. An executable gate reports an exit code and
+the owner records it. A judgement gate is somebody's verdict, and because
+product invariant 7 makes it a precondition of DONE, an implementer who could
+record their own would complete their own task without independent review --
+which the approve command refuses by name. So on a judgement gate --agent is
+REQUIRED, nobody on the implementation side (owner or implementationAgent) may
+record it, only the task's reviewAgent or an explicitly authorized independent
+reviewer may, and the evidence must NAME THE COMMIT IT JUDGED as an abbrev. or full
+sha that resolves here -- because a verdict that cannot say what it looked at is
+not a verdict. Recording as an agent that cannot run this command requires
+--transcribed-by, so a relayed verdict says it was relayed. Every one of these
+refuses BEFORE anything is written. Added by PL-AI-0012, after a round-83
+incident in which a task's own owner recorded a passing architecture-review
+whose entire evidence was the string PLACEHOLDER-NOT-RECORDED.
 
 start --reconcile-existing is for ONE case: an implementation that was written and
 COMMITTED BEFORE the task was claimed. implementationBaseSha is the exact lower bound

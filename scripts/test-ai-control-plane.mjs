@@ -572,6 +572,20 @@ function fixtureTask(id, overrides = {}) {
  *   PL-WV-0010  no preferredAgent, in a lane no locally executable agent
  *               advertises -- the other route into READY_BUT_EXTERNAL.
  *
+ *               ITS LANE IS SYNTHETIC, AND THAT IS THE FIX FOR A REAL RED
+ *               BUILD. It used to be "Recommendations", chosen because no local
+ *               agent advertised it -- a property of that day's
+ *               control/agents.json, not an invariant. Round 77 added
+ *               Recommendations to claude-lead on the reviewer's ruling, the
+ *               lane became locally staffed, PL-WV-0010 stopped appearing in
+ *               READY_BUT_EXTERNAL, and this scenario went red for a reason
+ *               that had nothing to do with dispatch. Exactly the failure this
+ *               file's header describes, arriving a fourth time. The tempting
+ *               fix was to swap in whichever lane is currently unstaffed, which
+ *               would buy the same failure again the next time the org grows.
+ *               FIXTURE_UNSTAFFED_LANE is a lane no agent can plausibly ever
+ *               advertise, and the guard below fails loudly if one does.
+ *
  * Three conflict-free waves of size 4 exist -- {PL-WV-0002, PL-WV-0003} plus any
  * two of the three Coordination tasks -- and all three carry the same priority
  * sum, so betterWave()'s lexicographic tie-break decides between them and picks
@@ -642,7 +656,7 @@ function waveFixtureTasks() {
     }),
     wave("PL-WV-0010", {
       priority: "P1",
-      lane: "Recommendations",
+      lane: FIXTURE_UNSTAFFED_LANE,
       preferredAgent: null,
       allowedPaths: ["fixtures/wave/recs/**"],
     }),
@@ -788,18 +802,211 @@ function seedSharedVocabulary(repo) {
  * all -- and the tempting fix would have been to type the new gate name in,
  * which is how expectations drift towards whatever the data currently says.
  */
+/**
+ * A lane nobody staffs, for the dispatch fixture that needs one.
+ *
+ * Synthetic rather than borrowed from the live roster: see the PL-WV-0010 note
+ * in `waveFixtureTasks`. The guard is the point -- if this ever becomes a real
+ * capability, the suite says so in one line instead of failing somewhere in the
+ * middle of a dispatch assertion about something else.
+ */
+const FIXTURE_UNSTAFFED_LANE = (() => {
+  const agents = JSON.parse(
+    fs.readFileSync(path.join(source, "control", "agents.json"), "utf8"),
+  ).agents;
+  /*
+   * An invented lane is not usable: `validate` errors on a READY task whose
+   * lane NO registered agent advertises, which is a different and entirely
+   * correct rule. What the fixture needs is a lane that is advertised and yet
+   * cannot be locally executed.
+   *
+   * An EXECUTIVE agent's exclusive lanes are the structurally stable answer.
+   * `agentExecutable` returns false for `kind: "executive"` unconditionally --
+   * before adapters, before capabilities -- so no amount of org growth can make
+   * such a lane locally executable without changing that rule, which would be a
+   * deliberate act with its own review. Contrast the old choice of
+   * "Recommendations", which was merely unstaffed on the day it was written.
+   */
+  const executiveOnly = agents
+    .filter((a) => a.kind === "executive")
+    .flatMap((a) => a.capabilities ?? [])
+    .filter(
+      (lane) =>
+        !agents.some(
+          (a) => a.kind !== "executive" && (a.capabilities ?? []).includes(lane),
+        ),
+    )
+    .sort();
+  assert.ok(
+    executiveOnly.length > 0,
+    "the dispatch fixture needs a lane that is advertised but not locally executable, " +
+      "and no executive-only lane exists in control/agents.json any more",
+  );
+  return executiveOnly[0];
+})();
+
+/**
+ * The judgement gates, READ FROM POLICY rather than written here.
+ *
+ * Same rule this file states at the top for gate names: typing the list would
+ * make every scenario built on these helpers depend on today's policy, and the
+ * tempting fix when policy changes would be to retype it -- which is how an
+ * expectation drifts to match whatever the data currently says.
+ */
+const JUDGEMENT_GATES =
+  JSON.parse(fs.readFileSync(path.join(source, "control", "policies.json"), "utf8"))
+    .gateAuthority?.judgementGates ?? [];
+
+/**
+ * Give a fixture repository a git baseline, idempotently, and return HEAD.
+ *
+ * `freshRepo()` excludes `.git`, so a copied fixture has no object database.
+ * That was fine while every command that needed one carried its own `git init`
+ * -- but PL-AI-0012 made a judgement gate's evidence resolve a sha against real
+ * history, and it fails CLOSED when git is unavailable, because an unperformed
+ * safety check must not read as a passed one. So the shared helper has to
+ * provide what the command now requires.
+ *
+ * Idempotent on purpose: several scenarios init their own repository, some
+ * before calling these helpers and some after, and a second `git init` on an
+ * existing one is a no-op. It commits only when there is no HEAD, so a scenario
+ * that has built its own history keeps it.
+ */
+function fixtureGit(repo) {
+  const gitEnv = {
+    GIT_AUTHOR_NAME: "fixture",
+    GIT_AUTHOR_EMAIL: "fixture@example.invalid",
+    GIT_COMMITTER_NAME: "fixture",
+    GIT_COMMITTER_EMAIL: "fixture@example.invalid",
+  };
+  return (...args) =>
+    execFileSync("git", args, {
+      cwd: repo,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+      env: { ...process.env, ...GIT_ISOLATION_ENV, ...gitEnv },
+    });
+}
+
+/**
+ * A sha a judgement gate's evidence can legitimately name in a fixture.
+ *
+ * HEAD when the fixture has a git repository -- several scenarios build one --
+ * because PL-AI-0012 resolves the named sha against the object database
+ * whenever there is one, and an invented token is refused there on purpose.
+ * A constant otherwise, where there is nothing to resolve against and the
+ * control plane records `judgementCommitVerified: false`.
+ */
+function fixtureVerdictSha(repo) {
+  try {
+    return fixtureGit(repo)("rev-parse", "HEAD").trim();
+  } catch {
+    return "a".repeat(40);
+  }
+}
+
+function ensureGitBaseline(repo) {
+  const gitEnv = {
+    GIT_AUTHOR_NAME: "fixture",
+    GIT_AUTHOR_EMAIL: "fixture@example.invalid",
+    GIT_COMMITTER_NAME: "fixture",
+    GIT_COMMITTER_EMAIL: "fixture@example.invalid",
+  };
+  const git = (...args) =>
+    execFileSync("git", args, {
+      cwd: repo,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+      env: { ...process.env, ...GIT_ISOLATION_ENV, ...gitEnv },
+    });
+  try {
+    return git("rev-parse", "HEAD").trim();
+  } catch {
+    /* no repository, or a repository with no commits yet. */
+  }
+  try {
+    git("rev-parse", "--git-dir");
+  } catch {
+    git("init", "-q", "-b", "main");
+  }
+  git("add", "-A");
+  git("commit", "-q", "-m", "fixture baseline");
+  return git("rev-parse", "HEAD").trim();
+}
+
+/**
+ * Move a task to REVIEW and record its judgement gates the way the control
+ * plane now requires (PL-AI-0012).
+ *
+ * The scenarios that use this are not about gate authority: they are about
+ * review ranges, bus provenance, fingerprints and completion. They used to
+ * record `architecture-review` as the implementer during IN_PROGRESS, which the
+ * control plane no longer permits -- and the fact that a dozen of them did is
+ * itself evidence for PL-AI-0012, because the suite that guards this system was
+ * written on top of the defect.
+ *
+ * Collapsed into one helper rather than edited into each scenario so that the
+ * NEXT change to judgement-gate mechanics is one edit, and so that none of these
+ * scenarios silently starts asserting something about authority.
+ */
+function reviewWithJudgement(repo, taskId, env = {}, reviewerArg = null) {
+  run(repo, CLI, reviewerArg ? ["review", taskId, reviewerArg] : ["review", taskId], env);
+  const task = taskOf(repo, taskId);
+  for (const gate of task.qualityGates ?? []) {
+    if (!JUDGEMENT_GATES.includes(gate)) continue;
+    if (task.gateResults?.[gate]?.status === "pass") continue;
+    run(
+      repo,
+      CLI,
+      [
+        "gate",
+        taskId,
+        gate,
+        "pass",
+        "--agent",
+        task.reviewAgent,
+        "--transcribed-by",
+        task.owner ?? "claude-lead",
+        `APPROVED at ${fixtureVerdictSha(repo)}. Fixture verdict for the ${gate} of ${taskId}, ` +
+          `recorded by the harness on the reviewer's behalf because the reviewer lane cannot run this ` +
+          `command; the scenario using it is about something other than gate authority.`,
+      ],
+      env,
+    );
+  }
+}
+
 function implementToInProgress(repo) {
   const implementer = "claude-lead";
   run(repo, CLI, ["claim", "PL-AI-0001", implementer]);
   run(repo, CLI, ["start", "PL-AI-0001", implementer]);
+  /*
+   * EXECUTABLE GATES ONLY, and the split is not cosmetic.
+   *
+   * This helper used to record EVERY gate in the task's list, including
+   * `architecture-review`, as the implementer, while the task was IN_PROGRESS.
+   * PL-AI-0012 refuses that -- and the fact that this helper was doing it is
+   * itself evidence for the task: the suite that guards the control plane was
+   * built on the defect the control plane had. It is fixed rather than exempted.
+   */
   for (const gate of taskOf(repo, "PL-AI-0001").qualityGates ?? []) {
+    if (JUDGEMENT_GATES.includes(gate)) continue;
     run(repo, CLI, ["gate", "PL-AI-0001", gate, "pass", "automated smoke"]);
   }
 }
-/** Drive PL-AI-0001 from READY up to (but not including) DONE. */
+/**
+ * Drive PL-AI-0001 from READY up to (but not including) DONE.
+ *
+ * The judgement gates are recorded HERE rather than above, because a judgement
+ * gate is only reachable in REVIEW: the pre-existing ownership rule refuses a
+ * non-owner during IN_PROGRESS, and PL-AI-0012 refuses the owner outright, so
+ * the two together leave exactly one window. They are recorded as the task's
+ * own `reviewAgent`, transcribed, which is the shape this project uses for
+ * real.
+ */
 function implementToReview(repo) {
   implementToInProgress(repo);
-  run(repo, CLI, ["review", "PL-AI-0001"]);
+  reviewWithJudgement(repo, "PL-AI-0001");
 }
 
 const liveTasksPath = path.join(source, "control", "tasks.json");
@@ -1149,7 +1356,7 @@ try {
       "CHANGES_REQUESTED",
     );
 
-    run(repo, CLI, ["review", "PL-AI-0001"]);
+    reviewWithJudgement(repo, "PL-AI-0001");
     runFail(
       repo,
       ["done", "PL-AI-0001"],
@@ -1191,6 +1398,13 @@ try {
         `npm run ${gate} exit 0`,
       ]);
     }
+    /*
+     * PLAIN `review` here, deliberately. This scenario exists to leave one gate
+     * unrecorded, and `reviewWithJudgement` would record it -- turning the
+     * assertion below into a statement about nothing. The withheld gate happens
+     * to be a judgement gate today; what is under test is that ANY unrecorded
+     * required gate blocks completion.
+     */
     run(repo, CLI, ["review", "PL-AI-0001"]);
     runFail(
       repo,
@@ -1297,7 +1511,9 @@ try {
     assert.match(externalBlock, /PL-WV-0008 \[gpt-architect\]/);
     assert.match(
       externalBlock,
-      /PL-WV-0010 \[unassigned\].*no locally executable agent advertises lane Recommendations/,
+      new RegExp(
+        `PL-WV-0010 \\[unassigned\\].*no locally executable agent advertises lane ${FIXTURE_UNSTAFFED_LANE}`,
+      ),
       `a lane with no local agent must be reported as external:\n${out}`,
     );
 
@@ -1489,6 +1705,26 @@ try {
       1,
       "re-processing must not duplicate the review",
     );
+
+    /*
+     * The judgement gate is recorded HERE rather than by `implementToInProgress`
+     * above, and the reason is PL-AI-0012: an implementation owner may no longer
+     * record `architecture-review` for itself, and the gate is reachable only in
+     * REVIEW, which the bus-delivered approval has just put this task in. It is
+     * recorded as the task's reviewAgent, transcribed -- the shape this project
+     * actually uses, because gpt-architect cannot run the CLI.
+     */
+    run(repo, CLI, [
+      "gate",
+      "PL-AI-0001",
+      "architecture-review",
+      "pass",
+      "--agent",
+      "gpt-architect",
+      "--transcribed-by",
+      "claude-lead",
+      `APPROVED at ${fixtureVerdictSha(repo)}; the verdict arrived over the handoff bus and is recorded against the task it names`,
+    ]);
 
     // The bus-delivered approval satisfies the real completion rules.
     run(repo, CLI, ["done", "PL-AI-0001"], { LIBERTY_COMMIT_SHA: SHA });
@@ -1724,7 +1960,7 @@ try {
     );
     assert.equal(task.review.outcome, "CHANGES_REQUESTED");
 
-    run(repo, CLI, ["review", "PL-AI-0001"]);
+    reviewWithJudgement(repo, "PL-AI-0001");
     runFail(
       repo,
       ["done", "PL-AI-0001"],
@@ -2813,10 +3049,7 @@ try {
     assert.equal(firstMsg.commitSha, HEAD1);
 
     // RE-review: --base auto resolves to the previously reviewed commit.
-    run(repo, CLI, ["gate", "PL-AI-0001", "architecture-review", "pass", "smoke"], {
-      LIBERTY_COMMIT_SHA: HEAD1,
-    });
-    run(repo, CLI, ["review", "PL-AI-0001"], { LIBERTY_COMMIT_SHA: HEAD1 });
+    reviewWithJudgement(repo, "PL-AI-0001", { LIBERTY_COMMIT_SHA: HEAD1 });
     run(
       repo,
       CLI,
@@ -2985,8 +3218,7 @@ try {
     run(repo, CLI, ["claim", "PL-AI-0001", "claude-lead"], { LIBERTY_COMMIT_SHA: START });
     run(repo, CLI, ["start", "PL-AI-0001", "claude-lead"], { LIBERTY_COMMIT_SHA: START });
     run(repo, CLI, ["gate", "PL-AI-0001", "repo-validate", "pass", "smoke"], { LIBERTY_COMMIT_SHA: HEAD });
-    run(repo, CLI, ["gate", "PL-AI-0001", "architecture-review", "pass", "smoke"], { LIBERTY_COMMIT_SHA: HEAD });
-    run(repo, CLI, ["review", "PL-AI-0001"], { LIBERTY_COMMIT_SHA: HEAD });
+    reviewWithJudgement(repo, "PL-AI-0001", { LIBERTY_COMMIT_SHA: HEAD });
 
     /** Hand-write a decision file the way an untrusted peer would. */
     const forge = (id, extra) => {
@@ -3115,8 +3347,7 @@ try {
     run(repo, CLI, ["claim", "PL-AI-0001", "claude-lead"], { LIBERTY_COMMIT_SHA: SHA });
     run(repo, CLI, ["start", "PL-AI-0001", "claude-lead"], { LIBERTY_COMMIT_SHA: SHA });
     run(repo, CLI, ["gate", "PL-AI-0001", "repo-validate", "pass", "smoke"], { LIBERTY_COMMIT_SHA: SHA });
-    run(repo, CLI, ["gate", "PL-AI-0001", "architecture-review", "pass", "smoke"], { LIBERTY_COMMIT_SHA: SHA });
-    run(repo, CLI, ["review", "PL-AI-0001"], { LIBERTY_COMMIT_SHA: SHA });
+    reviewWithJudgement(repo, "PL-AI-0001", { LIBERTY_COMMIT_SHA: SHA });
     run(repo, CLI, ["approve", "PL-AI-0001", "gpt-architect", "reviewed"], { LIBERTY_COMMIT_SHA: SHA });
     run(repo, CLI, ["done", "PL-AI-0001"], { LIBERTY_COMMIT_SHA: SHA });
     assert.equal(taskOf(repo, "PL-AI-0001").status, "DONE");
@@ -3144,9 +3375,7 @@ try {
     );
 
     // --- But Task B's own unreviewed state still blocks Task B ---
-    run(repo, CLI, ["gate", "PL-AI-0002", "architecture-review", "pass", "smoke"], { LIBERTY_COMMIT_SHA: SHA });
-    run(repo, CLI, ["gate", "PL-AI-0002", "security-review", "pass", "smoke"], { LIBERTY_COMMIT_SHA: SHA });
-    run(repo, CLI, ["review", "PL-AI-0002"], { LIBERTY_COMMIT_SHA: SHA });
+    reviewWithJudgement(repo, "PL-AI-0002", { LIBERTY_COMMIT_SHA: SHA });
     runFail(
       repo,
       ["done", "PL-AI-0002"],
@@ -3199,8 +3428,7 @@ try {
     run(repo, CLI, ["claim", "PL-AI-0001", "claude-lead"]);
     run(repo, CLI, ["start", "PL-AI-0001", "claude-lead"]);
     run(repo, CLI, ["gate", "PL-AI-0001", "repo-validate", "pass", "smoke"]);
-    run(repo, CLI, ["gate", "PL-AI-0001", "architecture-review", "pass", "smoke"]);
-    run(repo, CLI, ["review", "PL-AI-0001"]);
+    reviewWithJudgement(repo, "PL-AI-0001");
     run(repo, CLI, ["approve", "PL-AI-0001", "gpt-architect", "reviewed"]);
     run(repo, CLI, ["done", "PL-AI-0001"]);
 
@@ -3330,8 +3558,7 @@ try {
     run(repo, CLI, ["claim", "PL-AI-0001", "claude-lead"], { LIBERTY_COMMIT_SHA: START });
     run(repo, CLI, ["start", "PL-AI-0001", "claude-lead"], { LIBERTY_COMMIT_SHA: START });
     run(repo, CLI, ["gate", "PL-AI-0001", "repo-validate", "pass", "smoke"], { LIBERTY_COMMIT_SHA: HEAD });
-    run(repo, CLI, ["gate", "PL-AI-0001", "architecture-review", "pass", "smoke"], { LIBERTY_COMMIT_SHA: HEAD });
-    run(repo, CLI, ["review", "PL-AI-0001"], { LIBERTY_COMMIT_SHA: HEAD });
+    reviewWithJudgement(repo, "PL-AI-0001", { LIBERTY_COMMIT_SHA: HEAD });
 
     const forge = (id, baseSha) => {
       fs.writeFileSync(
@@ -3397,9 +3624,12 @@ try {
       run(repo, CLI, ["claim", id, "claude-lead"], { LIBERTY_COMMIT_SHA: SHA });
       run(repo, CLI, ["start", id, "claude-lead"], { LIBERTY_COMMIT_SHA: SHA });
       for (const g of taskOf(repo, id).qualityGates) {
+        // Executable gates only; the judgement gates are the reviewer's and are
+        // recorded by reviewWithJudgement once the task reaches REVIEW.
+        if (JUDGEMENT_GATES.includes(g)) continue;
         run(repo, CLI, ["gate", id, g, "pass", "smoke"], { LIBERTY_COMMIT_SHA: SHA });
       }
-      run(repo, CLI, ["review", id], { LIBERTY_COMMIT_SHA: SHA });
+      reviewWithJudgement(repo, id, { LIBERTY_COMMIT_SHA: SHA });
       run(repo, CLI, ["approve", id, "gpt-architect", "reviewed"], { LIBERTY_COMMIT_SHA: SHA });
       run(repo, CLI, ["done", id], { LIBERTY_COMMIT_SHA: SHA });
     };
@@ -3931,8 +4161,7 @@ try {
     run(repo, CLI, ["claim", "PL-AI-0001", "claude-lead"], { LIBERTY_COMMIT_SHA: SHA });
     run(repo, CLI, ["start", "PL-AI-0001", "claude-lead"], { LIBERTY_COMMIT_SHA: SHA });
     run(repo, CLI, ["gate", "PL-AI-0001", "repo-validate", "pass", "smoke"], { LIBERTY_COMMIT_SHA: SHA });
-    run(repo, CLI, ["gate", "PL-AI-0001", "architecture-review", "pass", "smoke"], { LIBERTY_COMMIT_SHA: SHA });
-    run(repo, CLI, ["review", "PL-AI-0001"], { LIBERTY_COMMIT_SHA: SHA });
+    reviewWithJudgement(repo, "PL-AI-0001", { LIBERTY_COMMIT_SHA: SHA });
 
     // A legacy decision with no baseSha, exactly as it sits on main today.
     const legacyId = "MSG-20260815T052113388Z-review_request-31445899";
@@ -5149,7 +5378,7 @@ try {
     ]) {
       run(repo, CLI, ["claim", id, agent]);
       run(repo, CLI, ["start", id, agent]);
-      run(repo, CLI, ["review", id]);
+      reviewWithJudgement(repo, id);
       run(repo, CLI, [
         "approve",
         id,
@@ -8546,6 +8775,393 @@ try {
   }
 
   /* ---------------------------------------------------------------------
+   * 10u. A judgement gate may only be recorded by the reviewer entitled to
+   *      reach it (PL-AI-0012).
+   *
+   *      THE INCIDENT THIS REPRODUCES, exactly. On 2026-09-23, round 83, the
+   *      implementation owner of PW-0203 ran
+   *
+   *          gate PW-0203 architecture-review pass --agent claude-media \
+   *            "PLACEHOLDER-NOT-RECORDED"
+   *
+   *      expecting the control plane to refuse a judgement gate recorded by the
+   *      task's own owner. It accepted it and wrote a passing gate whose entire
+   *      evidence was that string. The result was disclosed and retracted
+   *      through `release`, which discards gate results -- but retraction is
+   *      audit RECOVERY, and the only reason nothing was built on the fabricated
+   *      pass is that the person who made the mistake noticed it.
+   *
+   *      Product invariant 7 makes every required gate a precondition of DONE,
+   *      so an implementer who can record their own judgement gate can complete
+   *      their own task without independent review -- which `approve` refuses by
+   *      name, three hundred lines away, and which `gate` did not.
+   *
+   *      SEVEN PROPERTIES, each a distinct way this could ship as a fiction:
+   *
+   *        1. the exact round-83 command is REFUSED;
+   *        2. the refusal writes NOTHING -- gateResults is byte-identical after
+   *           it, so the guard is a guard and not a second retraction path;
+   *        3. omitting --agent is refused too, because without it recordedBy
+   *           silently falls back to task.owner and the self-record happens
+   *           with nobody having typed a name;
+   *        4. an agent who is neither the implementation side nor the
+   *           reviewAgent cannot substitute, matching
+   *           review.allowAutomaticReviewerSubstitution: false;
+   *        5. evidence that names no resolvable commit is refused, INCLUDING
+   *           long fluent evidence -- the placeholder rule is about meaning, not
+   *           length, and a length floor alone would pass a long placeholder;
+   *        6. a transcribed gpt-architect verdict still WORKS, which is the
+   *           load-bearing constraint: the GitHub write integration returns 403,
+   *           so every judgement gate in this project is typed by another agent
+   *           on the reviewer's behalf, and an enforcement that forbade that
+   *           would stop the project. It is recorded as a transcription;
+   *        7. executable gates are untouched -- the owner still records
+   *           typecheck with no ceremony, and --transcribed-by is refused there,
+   *           because an exit code is re-run rather than relayed.
+   *
+   *      A REAL GIT REPOSITORY, because the placeholder rule resolves shas
+   *      against an object database and a fixture that stubbed that would be
+   *      testing the stub. Fixture tasks, on this file's standing rule: the live
+   *      board's judgement gates are all already recorded, so a scenario reading
+   *      live data would pass by being inert.
+   * ------------------------------------------------------------------- */
+  {
+    const repo = freshRepo();
+    const tasksFile = path.join(repo, "control", "tasks.json");
+    const gitEnv = {
+      GIT_AUTHOR_NAME: "fixture",
+      GIT_AUTHOR_EMAIL: "fixture@example.invalid",
+      GIT_COMMITTER_NAME: "fixture",
+      GIT_COMMITTER_EMAIL: "fixture@example.invalid",
+    };
+    const git = (...args) =>
+      execFileSync("git", args, {
+        cwd: repo,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+        env: { ...process.env, ...GIT_ISOLATION_ENV, ...gitEnv },
+      });
+
+    const jg = (id, overrides = {}) =>
+      fixtureTask(id, {
+        lane: "Coordination",
+        preferredAgent: "claude-lead",
+        reviewAgent: "gpt-architect",
+        qualityGates: ["typecheck", "architecture-review"],
+        acceptance:
+          "fixture task used by the judgement-gate authority regressions (PL-AI-0012)",
+        ...overrides,
+      });
+
+    useFixtureTaskSet(
+      repo,
+      jg("PL-JG-0001", { title: "PL-JG-0001 the round-83 reproduction" }),
+      jg("PL-JG-0002", {
+        title: "PL-JG-0002 a task with no reviewer at all",
+        reviewAgent: null,
+      }),
+      jg("PL-JG-0003", {
+        title: "PL-JG-0003 the abbreviated-sha case, on its own task",
+        allowedPaths: ["fixtures/jg/three/**"],
+      }),
+    );
+
+    git("init", "-q", "-b", "main");
+    git("add", "-A");
+    git("commit", "-q", "-m", "baseline");
+    const head = git("rev-parse", "HEAD").trim();
+    const abbrev = head.slice(0, 7);
+
+    const gatesOf = (id) =>
+      JSON.parse(fs.readFileSync(tasksFile, "utf8")).tasks.find((t) => t.id === id)
+        .gateResults ?? {};
+
+    run(repo, CLI, ["claim", "PL-JG-0001", "claude-lead"]);
+    run(repo, CLI, ["start", "PL-JG-0001", "claude-lead"]);
+
+    /* 7. The ordinary loop is untouched: the owner records an executable gate
+     *    with no new arguments and no new ceremony. Asserted FIRST, so a version
+     *    of this feature that made the normal path harder fails here rather than
+     *    at the end. */
+    run(repo, CLI, [
+      "gate",
+      "PL-JG-0001",
+      "typecheck",
+      "pass",
+      "--agent",
+      "claude-lead",
+      "tsc --noEmit, exit 0",
+    ]);
+    assert.equal(gatesOf("PL-JG-0001").typecheck?.status, "pass");
+    assert.equal(
+      gatesOf("PL-JG-0001").typecheck?.judgementCommitSha,
+      undefined,
+      "an executable gate binds no verdict commit; there is no verdict",
+    );
+
+    /* ...and --transcribed-by is refused there rather than silently ignored. */
+    runFail(
+      repo,
+      [
+        "gate",
+        "PL-JG-0001",
+        "typecheck",
+        "pass",
+        "--agent",
+        "claude-lead",
+        "--transcribed-by",
+        "claude-media",
+        "tsc --noEmit, exit 0",
+      ],
+      /--transcribed-by applies to judgement gates only/,
+    );
+
+    /* 1 + 2. THE ROUND-83 COMMAND, verbatim in shape: the task's own owner
+     *        recording its reviewer's judgement gate with a placeholder. */
+    const before = JSON.stringify(gatesOf("PL-JG-0001"));
+    runFail(
+      repo,
+      [
+        "gate",
+        "PL-JG-0001",
+        "architecture-review",
+        "pass",
+        "--agent",
+        "claude-lead",
+        "PLACEHOLDER-NOT-RECORDED",
+      ],
+      /is on the implementation side of PL-JG-0001/,
+    );
+    assert.equal(
+      JSON.stringify(gatesOf("PL-JG-0001")),
+      before,
+      "a refused judgement gate must write NOTHING; retraction is recovery, not enforcement",
+    );
+
+    /* 3. No --agent at all: recordedBy would fall back to the owner. */
+    runFail(
+      repo,
+      [
+        "gate",
+        "PL-JG-0001",
+        "architecture-review",
+        "pass",
+        `reviewed at ${abbrev}, and this evidence is long enough to clear the floor several times over so that the refusal below cannot be attributed to length rather than to the missing agent argument it is actually about`,
+      ],
+      /must name the agent whose judgement it is/,
+    );
+
+    /* A task with no reviewAgent has NO ONE who can conclude a judgement gate,
+     * and that is reported as a defect in the task rather than as a permission
+     * the caller lacks -- otherwise every agent in turn is sent looking for an
+     * authority that does not exist. Checked before the implementation-side
+     * rule, so the owner gets this answer rather than the other one. */
+    run(repo, CLI, ["claim", "PL-JG-0002", "claude-lead"]);
+    run(repo, CLI, ["start", "PL-JG-0002", "claude-lead"]);
+    runFail(
+      repo,
+      [
+        "gate",
+        "PL-JG-0002",
+        "architecture-review",
+        "pass",
+        "--agent",
+        "claude-lead",
+        `reviewed at ${abbrev}; this task names no reviewAgent, so there is no configured authority and the command must say so rather than reporting a permission problem`,
+      ],
+      /has no reviewAgent, so no agent can conclude a judgement gate on it/,
+    );
+
+    /* A judgement gate is only reachable in REVIEW, which falls out of the
+     * pre-existing rule that a non-owner may not record during IN_PROGRESS.
+     * Asserted rather than assumed, because it is the interaction of two rules
+     * and either could move. */
+    runFail(
+      repo,
+      [
+        "gate",
+        "PL-JG-0001",
+        "architecture-review",
+        "pass",
+        "--agent",
+        "gpt-architect",
+        "--transcribed-by",
+        "claude-lead",
+        `reviewed at ${abbrev}; recorded while the task is still IN_PROGRESS, which is co-implementation rather than review and must be refused by the pre-existing ownership rule`,
+      ],
+      /is IN_PROGRESS and owned by claude-lead/,
+    );
+
+    run(repo, CLI, ["review", "PL-JG-0001", "claude-lead"]);
+
+    /* 4. A third party cannot substitute for the configured reviewer.
+     *
+     *    TWO RULES NOW GUARD THIS AND THE OLDER ONE ANSWERS FIRST, which is
+     *    worth stating rather than hiding behind a looser regex. The
+     *    pre-existing ownership rule already restricts recording to
+     *    {owner, reviewAgent}; PL-AI-0012's contribution is to remove the OWNER
+     *    from that set for a judgement gate. So a wholly unrelated agent is
+     *    refused by the outer rule, and the authority check behind it is
+     *    defence in depth -- it becomes the answering rule only if
+     *    gateAuthority.authorizedIndependentReviewers is ever populated, at
+     *    which point the ownership rule has to be widened to match or the new
+     *    entry will be refused before it is ever consulted. That coupling is
+     *    recorded here deliberately: it is the next person's trap. */
+    const substitution = runFail(
+      repo,
+      [
+        "gate",
+        "PL-JG-0001",
+        "architecture-review",
+        "pass",
+        "--agent",
+        "claude-security",
+        "--transcribed-by",
+        "claude-lead",
+        `reviewed at ${abbrev}; a security agent is not this task's configured reviewer and must not be able to stand in for one, because review.allowAutomaticReviewerSubstitution is false and substitution is a human decision`,
+      ],
+    );
+    assert.match(
+      substitution,
+      /claude-security may not record its gates/,
+      "an unrelated agent must be refused, by whichever of the two rules reaches it first",
+    );
+
+    /* 5. THE PLACEHOLDER RULE IS ABOUT MEANING. Long, fluent, entirely
+     *    plausible review prose that names no commit is refused -- which is the
+     *    case a length floor cannot catch, and the reason the floor is the third
+     *    net rather than the rule. */
+    runFail(
+      repo,
+      [
+        "gate",
+        "PL-JG-0001",
+        "architecture-review",
+        "pass",
+        "--agent",
+        "gpt-architect",
+        "--transcribed-by",
+        "claude-lead",
+        "APPROVED. The module boundaries are correct, the vocabulary is shared rather than duplicated, the failure modes are told apart by remedy, and the tests assert properties rather than examples. Nothing here names which commit was actually read, and that is the entire point of this case: it is several hundred characters of confident prose about no particular code.",
+      ],
+      /name the commit it judged/i,
+    );
+
+    /* ...a hex-looking token that resolves to nothing is not a commit either. */
+    runFail(
+      repo,
+      [
+        "gate",
+        "PL-JG-0001",
+        "architecture-review",
+        "pass",
+        "--agent",
+        "gpt-architect",
+        "--transcribed-by",
+        "claude-lead",
+        "APPROVED at deadbeefdeadbeefdeadbeefdeadbeefdeadbeef, which is forty hexadecimal characters and resolves to nothing in this object database, so a pattern test would have accepted it and rev-parse does not",
+      ],
+      /name the commit it judged/i,
+    );
+
+    /* ...and naming the real commit does not launder placeholder text beside
+     *    it. The substring net exists for exactly this shape. */
+    runFail(
+      repo,
+      [
+        "gate",
+        "PL-JG-0001",
+        "architecture-review",
+        "pass",
+        "--agent",
+        "gpt-architect",
+        "--transcribed-by",
+        "claude-lead",
+        `APPROVED at ${head}. Full rationale TBD, which is the case where a real sha sits beside text that says the judgement has not actually been made yet`,
+      ],
+      /placeholder text rather than a judgement/,
+    );
+
+    /* A reviewer that cannot run this command must say who typed it. */
+    runFail(
+      repo,
+      [
+        "gate",
+        "PL-JG-0001",
+        "architecture-review",
+        "pass",
+        "--agent",
+        "gpt-architect",
+        `APPROVED at ${head}. gpt-architect is an external-reasoning lane with no local execution adapter, so it did not type this command, and a record that does not say who did is a transcription pretending not to be one`,
+      ],
+      /cannot have typed this command/,
+    );
+
+    /* 6. THE LEGITIMATE PATH, which is the one this project actually uses. */
+    const verdict = `APPROVED at ${head}. The boundary is correct and no second authority is introduced. Transcribed from the ChatGPT review session because the GitHub write integration returns 403.`;
+    run(repo, CLI, [
+      "gate",
+      "PL-JG-0001",
+      "architecture-review",
+      "pass",
+      "--agent",
+      "gpt-architect",
+      "--transcribed-by",
+      "claude-lead",
+      verdict,
+    ]);
+    const recorded = gatesOf("PL-JG-0001")["architecture-review"];
+    assert.equal(recorded.status, "pass");
+    assert.equal(
+      recorded.by,
+      "gpt-architect",
+      "the verdict is attributed to whoever reached it",
+    );
+    assert.equal(
+      recorded.transcribedBy,
+      "claude-lead",
+      "and the record says who typed it, which is the fact that used to be invisible",
+    );
+    assert.equal(
+      recorded.judgementCommitSha,
+      head,
+      "the commit the verdict NAMED is resolved and stored, separately from where HEAD happened to be",
+    );
+
+    /* An abbreviated sha is accepted and resolved to the full one, because that
+     * is how reviewers actually write them. On its own task, because a recorded
+     * gate cannot be re-recorded from REVIEW without a release, and REVIEW is
+     * deliberately not releasable. */
+    // claude-lead's maxParallel is 2 and it is holding PL-JG-0001 in REVIEW and
+    // PL-JG-0002 in IN_PROGRESS; PL-JG-0002 has served its purpose.
+    run(repo, CLI, ["release", "PL-JG-0002", "claude-lead"]);
+    run(repo, CLI, ["claim", "PL-JG-0003", "claude-lead"]);
+    run(repo, CLI, ["start", "PL-JG-0003", "claude-lead"]);
+    run(repo, CLI, ["review", "PL-JG-0003", "claude-lead"]);
+    run(repo, CLI, [
+      "gate",
+      "PL-JG-0003",
+      "architecture-review",
+      "pass",
+      "--agent",
+      "gpt-architect",
+      "--transcribed-by",
+      "claude-lead",
+      `APPROVED at ${abbrev}. An abbreviated sha is how a reviewer writes one, and refusing it would refuse the way verdicts are actually given.`,
+    ]);
+    assert.equal(
+      gatesOf("PL-JG-0003")["architecture-review"].judgementCommitSha,
+      head,
+      "an abbreviation must resolve to the full sha rather than being stored as typed",
+    );
+    assert.equal(
+      gatesOf("PL-JG-0003")["architecture-review"].judgementCommitVerified,
+      true,
+      "inside a git repository the naming claim is CHECKED, and the record says so",
+    );
+  }
+
+  /* ---------------------------------------------------------------------
    * 11. The live repository state must be untouched by the whole run.
    *     This now also guards coordination/agent-bus, so a test that forgets
    *     freshRepo() cannot publish a real handoff message.
@@ -8563,7 +9179,7 @@ try {
     "running the test suite must not mutate any live control/ or coordination/ file",
   );
 
-  console.log("AI control plane tests passed (70 scenarios).");
+  console.log("AI control plane tests passed (71 scenarios).");
 } finally {
   /*
    * Cleanup must never replace the result.

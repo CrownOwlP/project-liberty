@@ -24,7 +24,15 @@ The one hard distinction is environmental: Claude Code Desktop can directly oper
 3. Dispatcher chooses a conflict-free wave and best available agents.
 4. Agents claim tasks before editing.
 5. Work moves through CLAIMED -> IN_PROGRESS -> REVIEW.
-6. Required gates record evidence.
+6. Required gates record evidence. **An executable gate is recorded by the
+   implementation owner; a judgement gate is not.** `architecture-review`,
+   `security-review` and `rights-review` are verdicts, and the control plane
+   refuses one recorded by anybody on the implementation side -- so they land in
+   REVIEW, from the task's `reviewAgent`, with evidence that names the commit
+   judged. Where the reviewer cannot run the CLI, `--transcribed-by` records who
+   typed it. See `control/README.md`; the rule exists because it once did not,
+   and a task's own owner recorded a passing architecture-review with a
+   placeholder for evidence.
 7. Reviewer approves or sends the task back to IN_PROGRESS.
 8. DONE unlocks dependent work automatically.
 9. Status and queues regenerate from the source of truth.

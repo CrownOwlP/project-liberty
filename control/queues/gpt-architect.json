@@ -1,42 +1,11 @@
 {
-  "generatedAt": "2026-09-23T09:46:51.707Z",
+  "generatedAt": "2026-09-23T13:06:29.842Z",
   "agent": "gpt-architect",
   "executionAvailable": false,
   "assigned": [],
   "review": [],
   "reservedExternal": [],
   "recommended": [
-    {
-      "id": "PL-AI-0012",
-      "priority": "P0",
-      "lane": "Coordination",
-      "status": "READY",
-      "title": "Enforce reviewer ownership of judgement gates",
-      "dependencies": [],
-      "allowedPaths": [
-        "control/policies.json",
-        "control/README.md",
-        "scripts/ai-control-plane.mjs",
-        "scripts/test-ai-control-plane.mjs",
-        "coordination/AI_OPERATING_MODEL.md",
-        "CLAUDE.md"
-      ],
-      "reviewDependencies": [
-        "control/tasks.json",
-        "control/agents.json",
-        "control/events.jsonl"
-      ],
-      "preferredAgent": "claude-lead",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "typecheck",
-        "unit",
-        "architecture-review",
-        "security-review"
-      ],
-      "acceptance": "Recording a judgement gate is mechanically restricted to the reviewer who is entitled to make it, so that the round-83 PW-0203 incident is REFUSED rather than merely retracted. THE DEFECT, MEASURED. ai:gate today checks three things: that the task is IN_PROGRESS or REVIEW, that it has an owner, and that any --agent assertion matches who the control plane believes is recording. It does not ask whether the gate being recorded is one the recorder is entitled to conclude. So on 2026-09-23 the implementation owner of PW-0203 ran `gate PW-0203 architecture-review pass --agent claude-media \"PLACEHOLDER-NOT-RECORDED\"` expecting a refusal, and the control plane wrote a passing judgement gate whose entire evidence was that placeholder string. Every judgement gate in this repository's history was in fact transcribed from a gpt-architect verdict, but that is a convention the machine does not enforce, and product invariant 8 is currently defended by discipline alone. REQUIRED: judgement gates are named as a class in configuration rather than hard-coded at the call site -- at minimum architecture-review, security-review and rights-review -- so a gate added later is classified deliberately rather than defaulting to self-recordable. REQUIRED: a judgement gate may be recorded only by the task's configured reviewAgent, or by another reviewer made explicitly authorized under an existing fallback policy; the implementation owner cannot self-record one, and the check must consider BOTH the owner and any asserted implementationAgent, on the same rule the self-approval check already applies. REQUIRED: executable implementation gates -- typecheck, unit, e2e, build, performance and their kin -- remain recordable by the implementation owner exactly as they are today, where policy permits. This task must not make the ordinary loop harder. REQUIRED: a placeholder evidence string does not become a valid judgement merely because the CLI syntax was accepted. State the rule the implementation adopts and defend it; a length floor alone is not it, since a long placeholder passes one. REQUIRED: an unauthorized attempt is refused BEFORE anything is written -- no task.gate entry, no gateResults mutation, no audit line that could later read as a recorded result. A refusal that writes first and retracts after is the mechanism this task exists to replace. REQUIRED: a regression in scripts/test-ai-control-plane.mjs reproduces the exact round-83 attempt -- the task's own owner recording architecture-review with a placeholder -- and asserts refusal plus an unchanged gateResults. REQUIRED: legitimate transcribed gpt-architect verdict recording REMAINS SUPPORTED. This is the load-bearing constraint, not an afterthought: the GitHub write integration returns 403, so every judgement gate in this project is presently recorded by Claude on the reviewer's behalf. An enforcement that makes transcription impossible stops the project. Make transcription explicit rather than implicit -- the implementer chooses the spelling; a flag that records the verdict's provenance is the obvious shape -- and say in the record that it was transcribed. REQUIRED: release and retraction remain available as audit-recovery mechanisms and are not the primary enforcement. REQUIRED: the round-83 incident history is NOT erased, rewritten or compacted. The gate.fabricated_result_retracted event, the release, the re-claim and the re-records stay exactly as they are; this task adds a refusal, it does not tidy a record.",
-      "notes": "Created on gpt-architect's round-83 ruling, following the self-reported fabricated gate result on PW-0203. The reviewer independently checked the PW-0203 event history, accepted the recovery, and ruled the underlying control-plane defect open. Prioritised P0 on the reviewer's instruction that further PW reviews depend on judgement-gate provenance being mechanically trustworthy."
-    },
     {
       "id": "PW-0403",
       "priority": "P0",

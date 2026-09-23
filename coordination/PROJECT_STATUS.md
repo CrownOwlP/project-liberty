@@ -1,15 +1,15 @@
 # Project Liberty - Project Status
 
-> Generated 2026-09-23T09:46:51.704Z from the AI control plane.
+> Generated 2026-09-23T13:06:29.839Z from the AI control plane.
 
 **Overall completion:** 70/97 executable tasks (72%)
 
 ## Status summary
 
 - **BACKLOG:** 16
-- **READY:** 9
+- **READY:** 8
 - **CLAIMED:** 0
-- **IN_PROGRESS:** 0
+- **IN_PROGRESS:** 1
 - **REVIEW:** 0
 - **BLOCKED:** 2
 - **DONE:** 70
@@ -31,18 +31,17 @@
 
 ## Active work
 
-No tasks are currently claimed, in progress, or in review.
+- **PL-AI-0012** [IN_PROGRESS] Enforce reviewer ownership of judgement gates — owner: claude-lead
 
 ## Dispatch classification
 
-- **READY_AND_EXECUTABLE:** 9
+- **READY_AND_EXECUTABLE:** 8
 - **READY_BUT_EXTERNAL:** 0
 - **BLOCKED:** 2
 - **BACKLOG (dependency-gated):** 16
 
 ## Recommended executable wave
 
-- **PL-AI-0012** -> claude-lead (P0/Coordination) Enforce reviewer ownership of judgement gates
 - **PW-0102** -> claude-infra (P0/Infra) A Tauri v2 shell that owns the sidecar's lifetime
 - **PW-0302** -> claude-frontend (P0/Frontend) Artwork, end to end, because a media application without images is a list
 - **PW-0305** -> claude-frontend (P0/Frontend) Continue watching: resume where the viewer left off
@@ -61,7 +60,7 @@ No READY work is waiting on an external agent lane.
 ## Agent capacity
 
 - **gpt-architect:** 0/6 active (external lane; not locally executable)
-- **claude-lead:** 0/2 active
+- **claude-lead:** 1/2 active
 - **claude-frontend:** 0/2 active
 - **claude-backend:** 0/2 active
 - **claude-media:** 0/2 active

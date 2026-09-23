@@ -55,9 +55,65 @@ owner. `READY`, `BACKLOG`, `CLAIMED`, `BLOCKED`, `DONE`, `CANCELED` and
 - `DONE` is refused: gate results are the completion evidence, and editing them
   afterwards would leave no transition in `events.jsonl` to notice.
 
-Each result records `by` (the owner the control plane granted) and the `commitSha`
-it was recorded at. `commitSha` is provenance, not yet an enforced staleness
-check.
+Each result records `by` (the agent the control plane holds accountable) and the
+`commitSha` it was recorded at. `commitSha` is provenance, not yet an enforced
+staleness check.
+
+### Executable gates and judgement gates (PL-AI-0012)
+
+`policies.json → gateAuthority.judgementGates` names the gates that are a
+**verdict** rather than an exit code: `architecture-review`, `security-review`,
+`rights-review`. The list is configuration rather than a predicate over
+`quality-gates.json`, so a gate added later is classified deliberately —
+inferring judgement from `command: "agent-review"` would make an authority rule a
+side effect of an evidence-format field, and a new gate would default to
+self-recordable, which is the wrong default for a safety rule.
+
+Product invariant 7 makes every required gate a precondition of `DONE`. So an
+implementer who can record their own judgement gate can complete their own task
+without independent review — which `approve` refuses by name. Until PL-AI-0012
+`ai:gate` did not, and on 2026-09-23 the owner of PW-0203 recorded a passing
+`architecture-review` whose entire evidence was the string
+`PLACEHOLDER-NOT-RECORDED`, having run the command expecting a refusal. It was
+disclosed and retracted through `release`; **retraction is audit recovery, not
+enforcement**, and the incident history is preserved rather than tidied away.
+
+On a judgement gate the command now requires, and refuses **before writing
+anything**:
+
+| rule | why |
+| --- | --- |
+| `--agent` is mandatory | without it the result is attributed to `task.owner`, so an omitted flag is a self-record with nobody having typed a name |
+| nobody on the implementation side may record it — neither `owner` nor `implementationAgent` | the same pair `assertReviewAllowed` compares, for the same reason: asserting a third-party implementer must only ever *add* an identity |
+| only `reviewAgent`, or an agent in `authorizedIndependentReviewers` | that list is empty, and `review.allowAutomaticReviewerSubstitution` is `false`, so substitution is a human decision |
+| the evidence must name the commit it judged | a verdict that cannot say what it looked at is not a verdict. Inside a git checkout the sha must **resolve** to a commit (`rev-parse --verify` also refuses an ambiguous prefix and a non-commit object); outside one the naming rule still applies and the result records `judgementCommitVerified: false` |
+| a rejected-substring list and a length floor | second and third nets only. A length floor alone is not a placeholder test, because a long placeholder passes one |
+| `--transcribed-by` when the reviewer cannot run the CLI | see below |
+
+A judgement gate is therefore reachable only in `REVIEW`. That is not a separate
+rule: the pre-existing ownership check refuses a non-owner during `IN_PROGRESS`,
+and this one refuses the owner, so the two together leave one window.
+
+**Transcription is supported, required and recorded.** `gpt-architect` is an
+external-reasoning lane with no local execution adapter, and the GitHub write
+integration returns 403, so every judgement gate in this repository is physically
+typed by another agent on the reviewer's behalf. The honest options were to
+forbid that — which would stop the project — or to record it. `--transcribed-by`
+records it, and is mandatory whenever the recording agent is not locally
+executable. Leaving it implicit is precisely what let a self-recorded gate look
+byte-identical to a transcribed one.
+
+Two coupled facts worth knowing before changing any of this:
+
+- `advance-completable.mjs` used to record review-backed gates with no `--agent`,
+  so the deterministic completion path was self-recording judgement gates under
+  the implementer's name on **every** task it completed. It now records them as
+  the reviewer with `--transcribed-by` naming the owner the job acts for. The
+  defect was not only reachable by hand.
+- populating `authorizedIndependentReviewers` also requires widening the
+  ownership check in `ai:gate`, which restricts recording to
+  `{owner, reviewAgent}` and answers first. Otherwise the new entry is refused by
+  a guard that has never heard of it.
 
 ## The review base, and reconciling one that predates the claim
 

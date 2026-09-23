@@ -120,8 +120,35 @@ for (const task of candidates) {
       }
       const evidence = `independent review by ${task.review.reviewerAgent} at ` +
         `${String(task.review.reviewedCommitSha).slice(0, 12)}: ${task.review.evidence}`;
-      cli("gate", task.id, gate, "pass", evidence.slice(0, 500));
-      console.log(`  ${gate}: pass (review-backed)`);
+      /*
+       * RECORDED AS THE REVIEWER, NOT AS THE OWNER (PL-AI-0012).
+       *
+       * This line used to omit `--agent`, and `ai:gate` attributes an
+       * unqualified result to `task.owner` -- so every completion this worker
+       * performed recorded the reviewer's judgement gates under the
+       * IMPLEMENTER's name. Not a hypothetical: it is what happened on every
+       * task that completed through this path, and it means the fabricated-gate
+       * defect PL-AI-0012 exists for was reachable automatically, not only by
+       * hand.
+       *
+       * The verdict belongs to whoever reached it, so that is what `--agent`
+       * says; `--transcribed-by` says the job typed it on the owner's behalf,
+       * which is true and is exactly the fact that used to be invisible. The
+       * evidence already cites the review record and its commit, which is also
+       * what satisfies the naming rule the control plane now applies.
+       */
+      cli(
+        "gate",
+        task.id,
+        gate,
+        "pass",
+        "--agent",
+        task.review.reviewerAgent,
+        "--transcribed-by",
+        task.owner,
+        evidence.slice(0, 500),
+      );
+      console.log(`  ${gate}: pass (review-backed, recorded as ${task.review.reviewerAgent})`);
       continue;
     }
 
