@@ -7572,7 +7572,7 @@
       "id": "PW-0101",
       "priority": "P0",
       "lane": "Infra",
-      "status": "REVIEW",
+      "status": "DONE",
       "title": "The application serves itself on loopback, hardened, as a standalone sidecar",
       "dependencies": [],
       "allowedPaths": [
@@ -7598,7 +7598,7 @@
       ],
       "acceptance": "The desktop target builds a Next standalone server that a shell can spawn, and every control docs/DESKTOP_PLAYBACK.md section 7 names is implemented and tested. REQUIRED: output 'standalone' is set for the desktop target and only for it -- the document specifies it in two places and next.config.ts sets it in none, which is the single largest gap between the recorded design and the code. REQUIRED: the server binds 127.0.0.1 explicitly and never 0.0.0.0, asserted by a test rather than by configuration alone, because Next reads HOSTNAME from the environment and an inherited value would silently expose the listener to the LAN. REQUIRED: a per-launch 256-bit CSPRNG bearer token passed through the environment, required on every request, with a constant-time comparison and a refusal that does not state whether the token was absent or wrong. REQUIRED: Host header validation against the exact expected literal, because a bearer token does not stop DNS rebinding. REQUIRED: the application emits its own Content-Security-Policy, because Tauri's CSP injection stops applying the moment the frontend is a URL rather than bundled assets -- this is a real loss the document names and nothing currently replaces it. REQUIRED: the sidecar reports its actually-bound port on stdout rather than being told which port to use; a pick-then-bind handshake is a TOCTOU race and is refused. NOT IN SCOPE: the Rust shell, which is PW-0102.",
       "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. SURFACE NOTE: this task's allowedPaths name directories that do not exist yet. The evidence-based narrowing procedure applies to reconciling work already in history; for genuinely new work the surface is the smallest set of paths the acceptance can be satisfied within, and it is narrowed again from the diff before review if it turns out to be wider than what was written. ",
-      "owner": "claude-infra",
+      "owner": null,
       "gateResults": {
         "typecheck": {
           "status": "pass",
@@ -7620,17 +7620,73 @@
           "by": "claude-infra",
           "commitSha": "7a8de45feb0d56ddf5039ceff26ed4ec9fa2e1a5",
           "evidence": "EXECUTED on 7a8de45. npm run build at the repository root, its own invocation: turbo 11/11, exit 0. This is the gate that matters for this task, because output:\"standalone\" changes what a build EMITS and a typecheck cannot see that. NOT CLAIMED: no Windows binary was produced and none can be from this session -- the container's Rust toolchain targets x86_64-unknown-linux-gnu only and the linked computer exposes a Linux VM. That a standalone tree actually SERVES the application when spawned by a shell is real-device evidence owed to PW-0102 and PW-0601 row A1, and it is recorded here as owed rather than inferred from a green build."
+        },
+        "security-review": {
+          "status": "pass",
+          "at": "2026-09-23T04:20:42.506Z",
+          "by": "gpt-architect",
+          "commitSha": "9451fd3668a4f2b2f2a39ed667928a314b96beec",
+          "evidence": "security-review: PASS at 9451fd3668a4f2b2f2a39ed667928a314b96beec, per gpt-architect. TRANSCRIBED BY CLAUDE; the GitHub write integration returns 403. Accepted findings: the desktop standalone output is now implemented; listener mode is explicit and fail-closed; an unsafe or unstated HOSTNAME refuses BEFORE serving; loopback is enforced; the launch token and Host validation are INDEPENDENT controls; request refusals are intentionally indistinguishable on the wire; the launch token remains distinct from application authentication; the replacement CSP is explicit and restrictive; and the PW-0101 / PW-0402 security boundary is STRUCTURAL rather than documentary."
         }
       },
       "implementationAgent": "claude-infra",
-      "updatedAt": "2026-09-23T03:48:36.962Z",
-      "implementationBaseSha": "8b52ada26ac842b35c60cc0e64a0bef256edab0e"
+      "updatedAt": "2026-09-23T04:20:42.777Z",
+      "implementationBaseSha": "8b52ada26ac842b35c60cc0e64a0bef256edab0e",
+      "review": {
+        "taskId": "PW-0101",
+        "implementationAgent": "claude-infra",
+        "implementationOwner": "claude-infra",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "9451fd3668a4f2b2f2a39ed667928a314b96beec",
+        "reviewedBaseSha": "8b52ada26ac842b35c60cc0e64a0bef256edab0e",
+        "reviewedTreeHash": "61f1c859cf4fb924ac773d6bde2a4cc4194724b92860f57192306f07b1574e0a",
+        "reviewedFileCount": 12,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [
+          "apps/web/package.json",
+          "package.json",
+          "turbo.json",
+          "apps/web/src/app/api/v1/playback/build-target.ts",
+          "docs/SECURITY.md"
+        ],
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-09-23T04:20:42.671Z",
+        "evidence": "APPROVED at 9451fd3668a4f2b2f2a39ed667928a314b96beec. TRANSCRIBED BY CLAUDE; the GitHub write integration returns 403. security-review PASS. The desktop standalone output is implemented, listener mode is explicit and fail-closed, an unsafe or unstated HOSTNAME refuses before serving, loopback is enforced, the launch token and Host validation are independent controls, request refusals are intentionally indistinguishable on the wire, the launch token remains distinct from application authentication, the replacement CSP is explicit and restrictive, and the PW-0101 / PW-0402 boundary is structural rather than documentary."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PW-0101",
+          "implementationAgent": "claude-infra",
+          "implementationOwner": "claude-infra",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "9451fd3668a4f2b2f2a39ed667928a314b96beec",
+          "reviewedBaseSha": "8b52ada26ac842b35c60cc0e64a0bef256edab0e",
+          "reviewedTreeHash": "61f1c859cf4fb924ac773d6bde2a4cc4194724b92860f57192306f07b1574e0a",
+          "reviewedFileCount": 12,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "apps/web/package.json",
+            "package.json",
+            "turbo.json",
+            "apps/web/src/app/api/v1/playback/build-target.ts",
+            "docs/SECURITY.md"
+          ],
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-09-23T04:20:42.671Z",
+          "evidence": "APPROVED at 9451fd3668a4f2b2f2a39ed667928a314b96beec. TRANSCRIBED BY CLAUDE; the GitHub write integration returns 403. security-review PASS. The desktop standalone output is implemented, listener mode is explicit and fail-closed, an unsafe or unstated HOSTNAME refuses before serving, loopback is enforced, the launch token and Host validation are independent controls, request refusals are intentionally indistinguishable on the wire, the launch token remains distinct from application authentication, the replacement CSP is explicit and restrictive, and the PW-0101 / PW-0402 boundary is structural rather than documentary."
+        }
+      ],
+      "completedAt": "2026-09-23T04:20:42.778Z"
     },
     {
       "id": "PW-0102",
       "priority": "P0",
       "lane": "Infra",
-      "status": "BACKLOG",
+      "status": "READY",
       "title": "A Tauri v2 shell that owns the sidecar's lifetime",
       "dependencies": [
         "PW-0101"
@@ -7691,7 +7747,7 @@
       "id": "PW-0201",
       "priority": "P0",
       "lane": "Player",
-      "status": "REVIEW",
+      "status": "DONE",
       "title": "The PlayerAdapter boundary becomes a module instead of a specification",
       "dependencies": [],
       "allowedPaths": [
@@ -7715,7 +7771,7 @@
       ],
       "acceptance": "The ~260 lines of TypeScript in docs/DESKTOP_PLAYBACK.md section 3 exist as a module, and the four rules that make it a boundary are enforced mechanically rather than stated. REQUIRED: PlayerAdapterId, the closed PlayerRefusalCode union, canPlay returning a reason on BOTH branches, PlayerLoadRequest taking a PlaybackSession plus a candidateId and never a URL, getTracks, readAvSyncTelemetry, subscribe, and an idempotent dispose. REQUIRED: no shaka-player, mpv/libmpv, @tauri-apps/* or electron type is reachable from this module or anything it imports, enforced by an import-graph test on the model of the existing PROHIBITED_AV_INSTRUMENTATION scan and of build-target.test.ts -- and that test must be proven non-vacuous by planting an offender, the way build-target.test.ts already does. REQUIRED: no `any` anywhere in the module; no engine-handle passthrough of any name; no opaque config bag -- EngineConfig from engine.ts must not be promoted onto the boundary. THE EXISTING ShakaPlayerHandle IN engine.ts IS NOT THIS and is not replaced: it is the seam INSIDE the web implementation, one layer below, and section 3 says so explicitly.",
       "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. ",
-      "owner": "claude-frontend",
+      "owner": null,
       "gateResults": {
         "typecheck": {
           "status": "pass",
@@ -7730,17 +7786,75 @@
           "by": "claude-frontend",
           "commitSha": "7a8de45feb0d56ddf5039ceff26ed4ec9fa2e1a5",
           "evidence": "EXECUTED on 7a8de45. npx vitest run src/components/player/player-adapter.test.ts -> 13 tests, exit 0; whole workspace 56 files / 964 tests, exit 0. THE GUARD WALKS THE ACTUAL IMPORT GRAPH and every assertion is paired with a planted offender, because a scan that resolved nothing would satisfy all of them. (1) No engine package -- shaka-player, mpv, libmpv, @tauri-apps, electron, custom-media-element -- is reachable from the boundary at any depth. (2) The walker is proven to resolve something: the graph must contain the entry and must reach @liberty/contracts/shared/drm. (3) A PLANTED shaka-player import one hop away is found, driven against a TEMP TREE rather than by writing into src/ -- build-target.test.ts plants its probe inside apps/web/src/app and its own banner admits an interrupted run leaves the file behind; PL-0712 fixed that shape of defect and this guard is built the other way from the start. (4) No `any`, over comment-stripped source. (5) No engine handle by any known name, including this repository's own existing escape hatches getEnginePlayer and getRawEngineStats, and no EngineConfig -- the opaque-config-bag rule. (6) @liberty/contracts is imported TYPE-ONLY, so zod does not reach the client bundle for two string unions, and the type-only detection is itself proven non-vacuous against a value import. The vocabularies are asserted total: 2 adapter ids, 8 refusal codes, 17 event types. ONE HARNESS DEFECT FOUND AND REPORTED: the first fixture built ContentProtection as {state:\"not-stated\"} with an `as` cast; vitest passed green and TYPECHECK CAUGHT IT -- the real union is clear/unknown/protected. The cast is removed rather than widened, because `as never` on a handler option is exactly how PL-0711 hid a wrong option name and made a missing bound read as a pass."
+        },
+        "architecture-review": {
+          "status": "pass",
+          "at": "2026-09-23T04:20:42.873Z",
+          "by": "gpt-architect",
+          "commitSha": "9451fd3668a4f2b2f2a39ed667928a314b96beec",
+          "evidence": "architecture-review: PASS at 9451fd3668a4f2b2f2a39ed667928a314b96beec, per gpt-architect. TRANSCRIBED BY CLAUDE. Accepted findings: PlayerAdapter exists as a real engine-neutral module; no Shaka, mpv, Tauri or Electron handle leaks through the boundary; the import-graph guard is NON-VACUOUS and tests planted offenders in a temporary tree; PlayerLoadRequest carries a PlaybackSession plus a candidateId and not an arbitrary URL; adapter refusal and acceptance reasoning is closed and typed; and THE ADAPTER-FACING CANDIDATE PROJECTION IS ACCEPTABLE because the older PlaybackCandidate predates PL-0902 and cannot express the protection information D4 requires. The candidate-projection reconciliation stays in PW-0203 as already ruled; PW-0209 is not to be created unless PW-0203 proves a wider contract change is required."
         }
       },
       "implementationAgent": "claude-frontend",
-      "updatedAt": "2026-09-23T03:48:37.062Z",
-      "implementationBaseSha": "8b52ada26ac842b35c60cc0e64a0bef256edab0e"
+      "updatedAt": "2026-09-23T04:20:43.101Z",
+      "implementationBaseSha": "8b52ada26ac842b35c60cc0e64a0bef256edab0e",
+      "review": {
+        "taskId": "PW-0201",
+        "implementationAgent": "claude-frontend",
+        "implementationOwner": "claude-frontend",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "9451fd3668a4f2b2f2a39ed667928a314b96beec",
+        "reviewedBaseSha": "8b52ada26ac842b35c60cc0e64a0bef256edab0e",
+        "reviewedTreeHash": "132eff46364a8bde7508e59f807985a8a8ca5115629b89501d24a1fab7d075c7",
+        "reviewedFileCount": 8,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [
+          "apps/web/src/components/player/engine.ts",
+          "apps/web/src/components/player/playback-machine.ts",
+          "apps/web/src/components/player/shaka-error.ts",
+          "packages/contracts/src/shared/drm.ts",
+          "docs/DESKTOP_PLAYBACK.md",
+          "docs/ARCHITECTURE.md"
+        ],
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-09-23T04:20:42.993Z",
+        "evidence": "APPROVED at 9451fd3668a4f2b2f2a39ed667928a314b96beec. TRANSCRIBED BY CLAUDE. architecture-review PASS. PlayerAdapter is a real engine-neutral module; no engine handle leaks; the import-graph guard is non-vacuous and plants offenders in a temp tree; PlayerLoadRequest carries a session plus a candidateId, never a URL; refusal and acceptance reasoning is closed and typed; and the adapter-facing candidate projection is ACCEPTED because the older PlaybackCandidate predates PL-0902 and cannot express the protection information D4 requires. Reconciliation stays in PW-0203; do not create PW-0209 unless PW-0203 proves a wider contract change is required."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PW-0201",
+          "implementationAgent": "claude-frontend",
+          "implementationOwner": "claude-frontend",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "9451fd3668a4f2b2f2a39ed667928a314b96beec",
+          "reviewedBaseSha": "8b52ada26ac842b35c60cc0e64a0bef256edab0e",
+          "reviewedTreeHash": "132eff46364a8bde7508e59f807985a8a8ca5115629b89501d24a1fab7d075c7",
+          "reviewedFileCount": 8,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "apps/web/src/components/player/engine.ts",
+            "apps/web/src/components/player/playback-machine.ts",
+            "apps/web/src/components/player/shaka-error.ts",
+            "packages/contracts/src/shared/drm.ts",
+            "docs/DESKTOP_PLAYBACK.md",
+            "docs/ARCHITECTURE.md"
+          ],
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-09-23T04:20:42.993Z",
+          "evidence": "APPROVED at 9451fd3668a4f2b2f2a39ed667928a314b96beec. TRANSCRIBED BY CLAUDE. architecture-review PASS. PlayerAdapter is a real engine-neutral module; no engine handle leaks; the import-graph guard is non-vacuous and plants offenders in a temp tree; PlayerLoadRequest carries a session plus a candidateId, never a URL; refusal and acceptance reasoning is closed and typed; and the adapter-facing candidate projection is ACCEPTED because the older PlaybackCandidate predates PL-0902 and cannot express the protection information D4 requires. Reconciliation stays in PW-0203; do not create PW-0209 unless PW-0203 proves a wider contract change is required."
+        }
+      ],
+      "completedAt": "2026-09-23T04:20:43.101Z"
     },
     {
       "id": "PW-0202",
       "priority": "P0",
       "lane": "Player",
-      "status": "BACKLOG",
+      "status": "IN_PROGRESS",
       "title": "WebPlayerAdapter: the existing Shaka path, behind the boundary",
       "dependencies": [
         "PW-0201"
@@ -7765,14 +7879,17 @@
       ],
       "acceptance": "The Shaka path that exists today satisfies PlayerAdapter without being rewritten. ADOPT, WRAP, ADAPT: PlaybackController, <liberty-video>, the XState machine and the failure classifier are working, reviewed code and are wrapped, not replaced. REQUIRED: canPlay answers for a DRM candidate with a reason on the accepting branch too, because this adapter is the DRM path on BOTH targets and 'it can play it' must be as legible as a refusal. REQUIRED: getTracks reports text and audio tracks from the Shaka player, which is the first time this repository reads them at all. REQUIRED: dispose is idempotent and releases the CDM session, a hazard three separate comments in the existing player already name. REQUIRED: no behaviour change observable at the existing e2e boundary -- the critical-journey and playback-session suites must pass unchanged, and that is the evidence that this was a wrap rather than a rewrite.",
       "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. ",
-      "owner": null,
-      "gateResults": {}
+      "owner": "claude-media",
+      "gateResults": {},
+      "implementationAgent": "claude-media",
+      "updatedAt": "2026-09-23T04:22:17.466Z",
+      "implementationBaseSha": "9451fd3668a4f2b2f2a39ed667928a314b96beec"
     },
     {
       "id": "PW-0203",
       "priority": "P0",
       "lane": "Player",
-      "status": "BACKLOG",
+      "status": "IN_PROGRESS",
       "title": "Capability routing decides the engine before playback, with a reason on both branches",
       "dependencies": [
         "PW-0201"
@@ -7799,8 +7916,11 @@
       ],
       "acceptance": "Which engine plays a candidate is decided before playback and recorded with a reason, satisfying the architecture invariant that already states this. REQUIRED: the routing function is PURE and deterministic -- no clocks, no I/O, no ambient state -- on the same rule ADR-003 and ADR-005 apply to ranking, so a routing decision can be reconstructed from a bug report. REQUIRED: a candidate whose contentProtection requires a CDM routes to the web adapter, always, and the native adapter REFUSES it with drm_required_no_cdm rather than falling back or degrading. mpv has no CDM; a native path that tried would be the DRM circumvention CONTENT_RIGHTS.md forbids, so this refusal is a rights property and not a capability detail -- which is why this task carries a rights-review gate. REQUIRED: the reason is recorded on the accepting branch as well, so 'why is this playing natively' is answerable. REQUIRED: routing consumes the protection state already on the session contract (PL-0902) rather than re-deriving it, because two opinions about a candidate's protection would eventually disagree. THE CANDIDATE-PROJECTION FINDING FROM PW-0201 IS THIS TASK'S, per gpt-architect's round-81 ruling, and no separate follow-up is filed unless this task proves one is needed. PW-0201 could not implement `canPlay(candidate: PlaybackCandidate)` as docs/DESKTOP_PLAYBACK.md §3 writes it: that client type is `{ id, providerId, source }`, it predates PL-0902, and it carries neither `protection` nor `compatibility` -- so an adapter handed one is STRUCTURALLY INCAPABLE of returning `drm_required_no_cdm`, which is the refusal this task exists to make. The boundary therefore declares a narrow adapter-facing projection, and that projection is ACCEPTED. REQUIRED HERE: routing consumes the protection state from the playback-session CONTRACT -- the `protection` field `playbackSessionCandidateSchema` already publishes, which PL-0902 put there -- and never re-derives it; the adapter capability input is that narrow projection and nothing wider; NO SECOND DRM OR PROTECTION DECISION IS INVENTED anywhere in the routing path, because two opinions about a candidate's protection would eventually disagree and the reason trail would then explain a decision nobody made; and the native refusal `drm_required_no_cdm` remains STRUCTURAL rather than conditional. DO NOT change the adapter back to the older type to match the §3 prose: the prose was written on 2026-09-15 and PL-0902 landed after it, so the listing is stale and the code is right. A cross-package contract change is only to be proposed if this task PROVES one is required, with the specific field and the specific decision that cannot be made without it.",
       "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict.  ROUND 82: absorbed PW-0201's candidate-projection finding on gpt-architect's ruling. PW-0209 was NOT filed; this task owns the reconciliation question and only escalates it if a cross-package contract change turns out to be genuinely required.",
-      "owner": null,
-      "gateResults": {}
+      "owner": "claude-media",
+      "gateResults": {},
+      "implementationAgent": "claude-media",
+      "updatedAt": "2026-09-23T04:22:17.665Z",
+      "implementationBaseSha": "9451fd3668a4f2b2f2a39ed667928a314b96beec"
     },
     {
       "id": "PW-0204",
@@ -7965,7 +8085,7 @@
       "id": "PW-0301",
       "priority": "P0",
       "lane": "Frontend",
-      "status": "REVIEW",
+      "status": "DONE",
       "title": "An application shell: one layout, one navigation model, one token layer",
       "dependencies": [],
       "allowedPaths": [
@@ -8001,7 +8121,7 @@
       ],
       "acceptance": "The application has a real shell, and the eight hand-copied topbars become one. MEASURED STARTING POINT: layout.tsx is sixteen lines -- html, body, children -- and the topbar is duplicated by hand in eight files, each with a slightly different status badge and a different or absent nav; the nav itself is four fragment anchors, and /search is reachable from no link anywhere in the application. REQUIRED: one persistent chrome in the root layout, with every route's copy deleted rather than left beside it. REQUIRED: a navigation model that reaches every screen that exists, including search; a dead link is worse than an absent one because it teaches a viewer the feature is broken. REQUIRED: a token layer -- spacing, type, radius, elevation, colour -- replacing eight dark-only variables and the px literals around them, and a light theme or an explicit recorded decision that this product is dark-only. REQUIRED: a skip link, a focus indicator defined globally rather than only inside two CSS modules, and Windows display scaling at 100/125/150/200 percent without clipping. NOT IN SCOPE: replacing any working server-side logic; this task is the shell the existing screens hang in.",
       "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict.  SURFACE CORRECTED BEFORE CLAIM, round 81. The approved surface named layout.tsx, globals.css and components/shell/** and could not satisfy its own acceptance: the topbar is hand-copied into eight ROUTE files, and 'every route's copy deleted rather than left beside it' requires writing those files. They were in reviewDependencies, which is read-only. The eight are now allowedPaths and the widening is stated rather than worked around by leaving the duplicates in place. Checked pairwise against the other four first-wave tasks: no overlap with PW-0101 (next.config.ts, src/proxy.ts, src/lib/sidecar/**), PW-0201 (player modules), PW-0401 (apps/backend/**) or PW-0601 (docs). SECOND SURFACE WIDENING, DISCOVERED BY A RED TEST AND STATED RATHER THAN WORKED AROUND. apps/web/src/components/title/title-styles.test.ts enumerates the controls carrying `styles.focusRing` and one of them is 'the topbar Home link' in title/[titleId]/page.tsx -- a control this task's acceptance requires be DELETED, because the topbar moves into the shell. Three options existed and two were wrong: leaving the header in place fails the acceptance, and deleting the assertion without replacing it would quietly drop a guard. The file is added to allowedPaths and the call-site list is repointed at where that control now lives, with the guard STRENGTHENED rather than reduced -- globals.css now defines a global `:focus-visible`, which is what the deleted per-route class was standing in for.",
-      "owner": "claude-frontend",
+      "owner": null,
       "gateResults": {
         "typecheck": {
           "status": "pass",
@@ -8026,8 +8146,59 @@
         }
       },
       "implementationAgent": "claude-frontend",
-      "updatedAt": "2026-09-23T03:48:37.163Z",
-      "implementationBaseSha": "8b52ada26ac842b35c60cc0e64a0bef256edab0e"
+      "updatedAt": "2026-09-23T04:20:43.333Z",
+      "implementationBaseSha": "8b52ada26ac842b35c60cc0e64a0bef256edab0e",
+      "review": {
+        "taskId": "PW-0301",
+        "implementationAgent": "claude-frontend",
+        "implementationOwner": "claude-frontend",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "9451fd3668a4f2b2f2a39ed667928a314b96beec",
+        "reviewedBaseSha": "8b52ada26ac842b35c60cc0e64a0bef256edab0e",
+        "reviewedTreeHash": "d29f4be8539d2b07a490307224d397ad00ddffc1efe16cfc740d906ecb7a95de",
+        "reviewedFileCount": 22,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [
+          "apps/web/src/components/catalog-rail.tsx",
+          "apps/web/src/components/catalog-card.tsx",
+          "apps/web/src/components/search/search.module.css",
+          "apps/web/src/components/title/title.module.css",
+          "apps/web/src/app/watch/route-loading-boundaries.test.ts",
+          "docs/PRODUCT_SPEC.md"
+        ],
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-09-23T04:20:43.213Z",
+        "evidence": "APPROVED at 9451fd3668a4f2b2f2a39ed667928a314b96beec. TRANSCRIBED BY CLAUDE. The application-shell implementation satisfies the task: duplicated per-route topbars are removed; one navigation model now exists; /search is reachable; a skip link and global focus handling exist; the token layer replaces the previous minimal dark-variable set; the old server-side behaviour is preserved; and production and development e2e counts remained UNCHANGED across the shell rewrite. THE TWO SURFACE WIDENINGS ARE ACCEPTED because they were required to delete the duplicated chrome and to preserve and strengthen the existing focus guard."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PW-0301",
+          "implementationAgent": "claude-frontend",
+          "implementationOwner": "claude-frontend",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "9451fd3668a4f2b2f2a39ed667928a314b96beec",
+          "reviewedBaseSha": "8b52ada26ac842b35c60cc0e64a0bef256edab0e",
+          "reviewedTreeHash": "d29f4be8539d2b07a490307224d397ad00ddffc1efe16cfc740d906ecb7a95de",
+          "reviewedFileCount": 22,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "apps/web/src/components/catalog-rail.tsx",
+            "apps/web/src/components/catalog-card.tsx",
+            "apps/web/src/components/search/search.module.css",
+            "apps/web/src/components/title/title.module.css",
+            "apps/web/src/app/watch/route-loading-boundaries.test.ts",
+            "docs/PRODUCT_SPEC.md"
+          ],
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-09-23T04:20:43.213Z",
+          "evidence": "APPROVED at 9451fd3668a4f2b2f2a39ed667928a314b96beec. TRANSCRIBED BY CLAUDE. The application-shell implementation satisfies the task: duplicated per-route topbars are removed; one navigation model now exists; /search is reachable; a skip link and global focus handling exist; the token layer replaces the previous minimal dark-variable set; the old server-side behaviour is preserved; and production and development e2e counts remained UNCHANGED across the shell rewrite. THE TWO SURFACE WIDENINGS ARE ACCEPTED because they were required to delete the duplicated chrome and to preserve and strengthen the existing focus guard."
+        }
+      ],
+      "completedAt": "2026-09-23T04:20:43.333Z"
     },
     {
       "id": "PW-0302",
@@ -8068,7 +8239,7 @@
       "id": "PW-0303",
       "priority": "P0",
       "lane": "Frontend",
-      "status": "BACKLOG",
+      "status": "READY",
       "title": "Profiles become usable: a picker, a switch, and a create",
       "dependencies": [
         "PW-0301"
@@ -8266,7 +8437,7 @@
       "id": "PW-0309",
       "priority": "P1",
       "lane": "Frontend",
-      "status": "BACKLOG",
+      "status": "READY",
       "title": "Offline, degraded and error states a desktop application needs",
       "dependencies": [
         "PW-0301"
@@ -8489,7 +8660,7 @@
       "id": "PW-0601",
       "priority": "P0",
       "lane": "Test",
-      "status": "REVIEW",
+      "status": "DONE",
       "title": "A real-device certification matrix that says who runs each test and why",
       "dependencies": [],
       "allowedPaths": [
@@ -8510,11 +8681,68 @@
       ],
       "acceptance": "Every scenario the Windows product must survive is written down, with an explicit owner: automated, or the commander's machine. MEASURED STARTING POINT: docs/TEST_MATRIX.md has eight rows, every cell an automated tier, and no manual, real-device, HDR, hardware-decode or Windows row at all -- while two other documents already require real hardware, for the compositing experiment and for the flash-and-blip A/V rig. REQUIRED: the matrix covers cold start, restart, crash recovery, movie and episodic playback, seek, pause/resume, source switching, resume position, next episode, subtitles, multiple audio tracks, stereo and multichannel, lip-sync and A/V drift, long sessions, 1080p, 4K, HDR where the display supports it, hardware decoding, fullscreen and window transitions, sleep/wake, network interruption and recovery, backend unavailable, malformed or unavailable source, Live TV channel change, EPG behaviour, memory/CPU/GPU behaviour, clean install, upgrade, and uninstall/reinstall. REQUIRED: each row states its owner and, for a commander-machine row, exactly what to do and what a pass looks like -- a matrix that says 'manual' without a procedure is a wish. REQUIRED: rows that cannot be judged without hardware the commander may not have (an HDR display, a multichannel receiver) say so rather than being marked failed. NO ROW MAY BE MARKED PASSED FROM THIS SESSION; nothing here can observe a Windows machine.",
       "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. ",
-      "owner": "claude-test",
-      "gateResults": {},
+      "owner": null,
+      "gateResults": {
+        "architecture-review": {
+          "status": "pass",
+          "at": "2026-09-23T04:21:02.067Z",
+          "by": "gpt-architect",
+          "commitSha": "9451fd3668a4f2b2f2a39ed667928a314b96beec",
+          "evidence": "architecture-review: PASS at 9451fd3668a4f2b2f2a39ed667928a314b96beec, per gpt-architect. TRANSCRIBED BY CLAUDE. The 41-row certification matrix is accepted. Key properties: AUTO / RIG / BLOCKED ownership is explicit; environment evidence is MANDATORY for real-device passes; Windows, HDR, hardware decoding, multichannel, the A/V rig, lifecycle, networking, installer and update scenarios are represented; blocked scenarios are LISTED RATHER THAN SILENTLY OMITTED; this session cannot mark a Windows or RIG row passed; and Experiment 1a remains a HARD ARCHITECTURE FACT GATE."
+        }
+      },
       "implementationAgent": "claude-test",
-      "updatedAt": "2026-09-23T03:48:37.264Z",
-      "implementationBaseSha": "8b52ada26ac842b35c60cc0e64a0bef256edab0e"
+      "updatedAt": "2026-09-23T04:21:02.322Z",
+      "implementationBaseSha": "8b52ada26ac842b35c60cc0e64a0bef256edab0e",
+      "review": {
+        "taskId": "PW-0601",
+        "implementationAgent": "claude-test",
+        "implementationOwner": "claude-test",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "9451fd3668a4f2b2f2a39ed667928a314b96beec",
+        "reviewedBaseSha": "8b52ada26ac842b35c60cc0e64a0bef256edab0e",
+        "reviewedTreeHash": "290a7f057ffd6901ff8d997f3734be1e696315594429ba96f63c3150d832803d",
+        "reviewedFileCount": 26,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [
+          "docs/RELEASE_CRITERIA.md",
+          "docs/DESKTOP_PLAYBACK.md",
+          "docs/AV_SYNC_MEASUREMENT.md",
+          "coordination/LAST_MILE.md",
+          "e2e"
+        ],
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-09-23T04:21:02.184Z",
+        "evidence": "APPROVED at 9451fd3668a4f2b2f2a39ed667928a314b96beec. TRANSCRIBED BY CLAUDE. architecture-review PASS. AUTO/RIG/BLOCKED ownership is explicit; environment evidence is mandatory for real-device passes; Windows, HDR, hardware decoding, multichannel, the A/V rig, lifecycle, networking, installer and update scenarios are represented; blocked scenarios are listed rather than silently omitted; this session cannot mark a Windows or RIG row passed; and Experiment 1a remains a hard architecture fact gate."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PW-0601",
+          "implementationAgent": "claude-test",
+          "implementationOwner": "claude-test",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "9451fd3668a4f2b2f2a39ed667928a314b96beec",
+          "reviewedBaseSha": "8b52ada26ac842b35c60cc0e64a0bef256edab0e",
+          "reviewedTreeHash": "290a7f057ffd6901ff8d997f3734be1e696315594429ba96f63c3150d832803d",
+          "reviewedFileCount": 26,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "docs/RELEASE_CRITERIA.md",
+            "docs/DESKTOP_PLAYBACK.md",
+            "docs/AV_SYNC_MEASUREMENT.md",
+            "coordination/LAST_MILE.md",
+            "e2e"
+          ],
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-09-23T04:21:02.184Z",
+          "evidence": "APPROVED at 9451fd3668a4f2b2f2a39ed667928a314b96beec. TRANSCRIBED BY CLAUDE. architecture-review PASS. AUTO/RIG/BLOCKED ownership is explicit; environment evidence is mandatory for real-device passes; Windows, HDR, hardware decoding, multichannel, the A/V rig, lifecycle, networking, installer and update scenarios are represented; blocked scenarios are listed rather than silently omitted; this session cannot mark a Windows or RIG row passed; and Experiment 1a remains a hard architecture fact gate."
+        }
+      ],
+      "completedAt": "2026-09-23T04:21:02.322Z"
     },
     {
       "id": "PW-0602",
@@ -8579,7 +8807,7 @@
       "id": "PW-0402",
       "priority": "P0",
       "lane": "Security",
-      "status": "REVIEW",
+      "status": "DONE",
       "title": "Routes authorize the caller, and a launch token is not a login",
       "dependencies": [],
       "allowedPaths": [
@@ -8608,7 +8836,7 @@
       ],
       "acceptance": "Sensitive application routes authorize WHO is calling them, and possession of the desktop launch token is never mistaken for that. THE R4 FINDING, QUOTED: docs/SECURITY.md records that 'no authentication or authorization exists on any API route yet' and that 'nothing in the current code should be read as a decision that these routes are safe to leave anonymous'. Acceptable for a web demo; not for a shipped desktop application with a loopback listener. THIS TASK IS DELIBERATELY NOT PW-0101 AND MUST NOT BE FOLDED INTO IT. PW-0101 owns the LISTENER boundary -- loopback-only bind, per-launch bearer, Host validation, CSP, the port handshake -- which answers 'may this process talk to the sidecar at all'. This task answers 'may this caller perform this operation', and the two are different questions with different failure modes. A single machine-wide token that satisfied both would mean every process on the user's PC, and every page the webview ever loads, holds full authority over every profile. REQUIRED, each proven mechanically rather than asserted: (1) a protected route requires an authenticated account/session context and refuses without one; (2) a profile-scoped route authorizes the ACTIVE OR OWNED profile and never trusts a profile id supplied by the caller -- PL-0405 recorded a forgeable ProfileScope as a cross-profile data-access bypass and this is the route-level half of that same defect; (3) a playback or session operation does not become authorized merely because the caller holds the desktop launch token, asserted by a test that presents a valid token and no account context and requires a refusal; (4) a refusal does not leak resource existence where an existing contract requires that property, so 'not yours' and 'not there' are indistinguishable on the wire; (5) loopback origin is NEVER treated as authentication -- a test must present a request from 127.0.0.1 with no credential and require a refusal, because 'it came from this machine' is the exact assumption that makes a local listener a privilege-escalation surface. REQUIRED: the authorization decision is made in ONE place and the routes call it, rather than each handler deciding -- a second opinion about who may read a profile is how the first one stops being enforced. USES THE EXISTING SEAM: packages/auth and the ProfileScope minted by PL-0405 are adopted and wrapped, not replaced.",
       "notes": "R4 OWNERSHIP, DECIDED AND REPORTED BEFORE THE WORK STARTS, as gpt-architect's round-80 ruling item 7 requires. No existing PW task owns the route-authorization seam cleanly: PW-0101 owns the listener and the ruling explicitly forbids broadening it into application auth merely because it already carries a security-review gate; PW-0401 owns authentication of the desktop forwarder's counterparty, which is a different service and a different caller; PW-0303 is a profiles UI and owns no route. So this is the 'one narrowly scoped PW security task' the ruling permits. It sits in Track 4 rather than in a seventh track, because the six tracks are approved and this is the same seam as PW-0401 seen from the other side -- who may call, rather than what the callee proves. The surface is the three profile-scoped handlers plus one authorization module, and it deliberately does not include the route.ts files or the contracts: if enforcement turns out to need them, that is a surface widening to state at review, not to pre-reserve. DEPENDENCY EDGE ON PW-0101 REMOVED, ROUND 82, AND THE REMOVAL IS THE POINT. It was written as a hard dependency to express \"the listener exists first\", and that is a READ relationship, not a build one: this task writes apps/web/src/lib/authorization and three handlers, none of which PW-0101 touches, and its negative proof -- a valid launch token with no account context is REFUSED -- needs only that the token concept exist to be refused, which it now does and is committed. requireAllDependenciesDone would have held this BACKLOG until PW-0101 cleared review, which is the PL-0311 deadlock shape: a false edge gating work that does not actually depend on it. apps/web/src/lib/sidecar stays in reviewDependencies, which is where the real relationship belongs.",
-      "owner": "claude-security",
+      "owner": null,
       "gateResults": {
         "typecheck": {
           "status": "pass",
@@ -8630,11 +8858,71 @@
           "by": "claude-security",
           "commitSha": "b07c535be66a858ecc078b466bcc5f665ca8cc82",
           "evidence": "EXECUTED on b07c535 in the CI job's configuration, pinned chromium 1234, retries 0: production 61 passed / 12 skipped, development 70 passed / 3 skipped, exit 0 both. UNCHANGED, which is the point for this task: the authorization audit found the profile-scoped handlers already correct and this change adds a decision point and two guards WITHOUT altering a single wire shape. A moved e2e count would have meant the contract changed, which would be an API_CONTRACTS.md change requiring its own review and is explicitly not in this task's surface. NOT CLAIMED: the e2e suite does not exercise an authenticated session, because there is no authenticated session provider yet -- that is the residual R4 now names precisely."
+        },
+        "security-review": {
+          "status": "pass",
+          "at": "2026-09-23T04:21:02.429Z",
+          "by": "gpt-architect",
+          "commitSha": "9451fd3668a4f2b2f2a39ed667928a314b96beec",
+          "evidence": "security-review: PASS at 9451fd3668a4f2b2f2a39ed667928a314b96beec, per gpt-architect. TRANSCRIBED BY CLAUDE. The task correctly refined SECURITY.md R4: AUTHORIZATION was already materially enforced by the existing profile seam, and AUTHENTICATION remains the actual production gap. Accepted security properties: authorization is centralized in one decision point; unauthenticated callers fail BEFORE profile evaluation; profile-scoped handlers do not trust caller-supplied profile ids; the existing ownership and ProfileScope enforcement is ADOPTED rather than replaced; not-owned, no-record and no-active-profile cases remain indistinguishable on the wire; internal operator details remain distinct; the desktop launch token CANNOT become application authentication because authorizeRoute receives no Request or header surface; loopback and local-origin information cannot influence authorization; and a caller that satisfies PW-0101 but lacks account identity is still refused. IMPORTANT RESIDUAL, RECORDED ON THE TASK RATHER THAN LEFT IN PROSE: PW-0402 does NOT establish production user authentication. The current account identity still derives from the development-header seam in a non-deployment runtime. That residual must stay visible and must be resolved before production-sensitive desktop routes are considered authenticated. It is owned by PW-0403, filed this round."
         }
       },
       "implementationAgent": "claude-security",
-      "updatedAt": "2026-09-23T04:14:57.966Z",
-      "implementationBaseSha": "01d30760b24c4295640e6ec64e33b16e7bc090f1"
+      "updatedAt": "2026-09-23T04:21:02.668Z",
+      "implementationBaseSha": "01d30760b24c4295640e6ec64e33b16e7bc090f1",
+      "review": {
+        "taskId": "PW-0402",
+        "implementationAgent": "claude-security",
+        "implementationOwner": "claude-security",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "9451fd3668a4f2b2f2a39ed667928a314b96beec",
+        "reviewedBaseSha": "01d30760b24c4295640e6ec64e33b16e7bc090f1",
+        "reviewedTreeHash": "b272290d599df7b841decd266e48f594c0da8d5584487b0a2490f8546fcb1da1",
+        "reviewedFileCount": 64,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [
+          "packages/auth/src",
+          "packages/persistence/src",
+          "apps/web/src/lib/session/account.ts",
+          "apps/web/src/app/api/v1/playback/session",
+          "apps/web/src/lib/sidecar",
+          "docs/API_CONTRACTS.md",
+          "docs/DESKTOP_PLAYBACK.md"
+        ],
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-09-23T04:21:02.549Z",
+        "evidence": "APPROVED at 9451fd3668a4f2b2f2a39ed667928a314b96beec. TRANSCRIBED BY CLAUDE. security-review PASS. The task correctly refined R4: authorization was already materially enforced by the existing profile seam; authentication remains the actual production gap. Authorization is centralized in one decision point; unauthenticated callers fail before profile evaluation; handlers do not trust caller-supplied profile ids; the existing ownership and ProfileScope enforcement is adopted rather than replaced; not-owned, no-record and no-active-profile stay indistinguishable on the wire while internal detail stays distinct; the launch token cannot become application authentication because authorizeRoute receives no Request or header surface; loopback cannot influence authorization; and a caller that satisfies PW-0101 without account identity is still refused. IMPORTANT RESIDUAL: this does NOT establish production user authentication -- account identity still derives from the development-header seam in a non-deployment runtime, and that must be resolved before production-sensitive desktop routes are considered authenticated. Owned by PW-0403."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PW-0402",
+          "implementationAgent": "claude-security",
+          "implementationOwner": "claude-security",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "9451fd3668a4f2b2f2a39ed667928a314b96beec",
+          "reviewedBaseSha": "01d30760b24c4295640e6ec64e33b16e7bc090f1",
+          "reviewedTreeHash": "b272290d599df7b841decd266e48f594c0da8d5584487b0a2490f8546fcb1da1",
+          "reviewedFileCount": 64,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "packages/auth/src",
+            "packages/persistence/src",
+            "apps/web/src/lib/session/account.ts",
+            "apps/web/src/app/api/v1/playback/session",
+            "apps/web/src/lib/sidecar",
+            "docs/API_CONTRACTS.md",
+            "docs/DESKTOP_PLAYBACK.md"
+          ],
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-09-23T04:21:02.549Z",
+          "evidence": "APPROVED at 9451fd3668a4f2b2f2a39ed667928a314b96beec. TRANSCRIBED BY CLAUDE. security-review PASS. The task correctly refined R4: authorization was already materially enforced by the existing profile seam; authentication remains the actual production gap. Authorization is centralized in one decision point; unauthenticated callers fail before profile evaluation; handlers do not trust caller-supplied profile ids; the existing ownership and ProfileScope enforcement is adopted rather than replaced; not-owned, no-record and no-active-profile stay indistinguishable on the wire while internal detail stays distinct; the launch token cannot become application authentication because authorizeRoute receives no Request or header surface; loopback cannot influence authorization; and a caller that satisfies PW-0101 without account identity is still refused. IMPORTANT RESIDUAL: this does NOT establish production user authentication -- account identity still derives from the development-header seam in a non-deployment runtime, and that must be resolved before production-sensitive desktop routes are considered authenticated. Owned by PW-0403."
+        }
+      ],
+      "completedAt": "2026-09-23T04:21:02.668Z"
     },
     {
       "id": "PW-0104",
@@ -8665,6 +8953,46 @@
       ],
       "acceptance": "A desktop build or dev server cannot leave apps/web/next-env.d.ts rewritten in the working tree, under ANY termination. THE DEFECT, OBSERVED RATHER THAN PREDICTED, in round 81: the file was committed pointing at ./dist/desktop/dev/types/routes.d.ts instead of ./.next/types/routes.d.ts. Next regenerates that TRACKED file to name whichever distDir last built; the three *:desktop scripts snapshot and restore it around the child; and build-target.ts:300-342 already records that the restore happens ONLY ON NORMAL EXIT. Playwright signal-kills `next dev` when the harness finishes, so the rewrite survived, was staged by a routine `git add -A`, and was caught only by reading the diff before delivery. It typechecked locally because dist/desktop/dev happened to exist; on a fresh clone it would not have. REQUIRED: a forced termination -- SIGTERM, SIGINT, SIGKILL of the child, and the parent being killed -- cannot leave the tracked file dirty. REQUIRED: THE SOLUTION MUST NOT DEPEND ON A NORMAL-EXIT CLEANUP HOOK ALONE. A second `process.on('exit')` handler is the same mechanism that already failed and would fail the same way under SIGKILL; the implementer must choose a design that is correct when no cleanup runs at all, and justify it. Two candidates, neither mandated: make the file untracked and generated (which changes what a fresh clone must do, and docs/DEVELOPMENT.md must then say so), or make the desktop distDir's type path stable so no rewrite occurs. REQUIRED: the regression is MECHANICALLY TESTED -- a test that starts a desktop invocation, kills it without letting it clean up, and fails if the tracked file differs from HEAD. A test that only exercises normal exit reproduces nothing, because normal exit already works. REQUIRED: the fix does not weaken the build-target split; build-target.test.ts must keep passing, including its assertion that no shipped module under apps/web/src names LIBERTY_BUILD_TARGET. NOT IN SCOPE: anything about product behaviour. This is a tooling defect and gpt-architect's ruling is explicit that it must not be folded into unrelated product work.",
       "notes": "Filed round 82 on gpt-architect's ruling item 4, which refused to let this stay a warning in a handoff. The scripts directory is named in allowedPaths because the three `node -e` wrappers inside apps/web/package.json are the thing that would move: JSON cannot carry a comment, which is why their reasoning currently lives in build-target.ts, and a real script file is the likeliest shape of the fix. It is not mandated -- the implementer chooses and justifies.",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PW-0403",
+      "priority": "P0",
+      "lane": "Backend",
+      "status": "READY",
+      "title": "Production user authentication, so an account identity is not a typed header",
+      "dependencies": [
+        "PW-0402"
+      ],
+      "allowedPaths": [
+        "apps/web/src/lib/session/**",
+        "apps/web/src/app/api/v1/auth/**",
+        "packages/auth/src/**",
+        "docs/DECISIONS.md",
+        "docs/SECURITY.md"
+      ],
+      "reviewDependencies": [
+        "apps/web/src/lib/authorization/route-authorization.ts",
+        "apps/web/src/lib/db/request-context.ts",
+        "apps/web/src/app/api/v1/profiles",
+        "apps/web/src/lib/sidecar/policy.ts",
+        "apps/web/src/app/api/deployment-environment.ts",
+        "docs/API_CONTRACTS.md",
+        "docs/DATA_MODEL.md",
+        "packages/persistence/src"
+      ],
+      "preferredAgent": "claude-backend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "e2e",
+        "security-review",
+        "architecture-review"
+      ],
+      "acceptance": "An account identity comes from an authenticated session, not from a header a caller typed. THE RESIDUAL THIS OWNS, IN gpt-architect's OWN WORDS FROM THE PW-0402 VERDICT: \"PW-0402 does NOT establish production user authentication. The current account identity still derives from the development-header seam in non-deployment runtime. Keep that residual visible and resolve it before production-sensitive desktop routes are considered authenticated.\" This task is where that resolves, and until it is DONE no route may be described as authenticated. WHY IT IS P0 AND NOT A TIDY-UP. Every authorization decision in this product is built on the account identity, and PW-0402 proved the decision layer above it is sound -- which makes the identity itself the load-bearing weakness rather than one of several. On a hosted deployment the exposure is nil, because resolveRequestAccount refuses outright with authentication_not_configured. On the DESKTOP it is not: the sidecar runs on the user's machine, the runtime may classify as non-deployment, and every process on that machine can reach the loopback port. PW-0101's launch token stops an unrelated process reaching the LISTENER; it is deliberately incapable of saying who the caller is, and PW-0402 made that incapacity structural. REQUIRED: a real session provider behind resolveRequestAccount, with sessions in PostgreSQL through the Drizzle adapter, per ADR-007 -- which is still recorded as *Proposed* and whose own text says nothing below it may be cited as settled until its governing task's gates pass. PL-0405 is now DONE, so that blocker is gone and ADR-007 should be moved to Accepted in the same change, or the reason it cannot be must be stated. REQUIRED: the development-header path is not deleted -- it is the thing that makes local development possible -- but it must be UNREACHABLE from a build that ships, by the same class of mechanism NonDeploymentEnvironment already uses, and a test must prove a desktop-shaped runtime cannot obtain an identity from it. THAT IS THE SHARPEST CLAUSE IN THIS TASK: today a desktop build classifying as non-deployment would make the header the identity layer, and nothing currently prevents that classification. REQUIRED: the exact Better Auth version is pinned exactly, on the rule this repository applies to Shaka, Playwright and Tauri; ADR-007 pinned 1.7.1 and the reviewer recorded that upstream had moved to 1.7.4, so the pin is reconciled against the version actually reviewed and the hand-written migration is checked against THAT version's schema before anything is generated. REQUIRED: a refusal on an unauthenticated request must not become an oracle, and must compose with PW-0402's route decision rather than adding a second one -- authorizeRoute already returns `unauthenticated` and that stays the single answer. NOT IN SCOPE: authorization, which PW-0402 owns and which the audit found already enforced; the listener boundary, which is PW-0101's; and any identity provider requiring a commercial account or credentials the commander has not supplied -- if one is needed, that is a LAST_MILE item, not a reason to ship a weaker seam.",
+      "notes": "Filed round 83 in answer to gpt-architect's request for explicit ownership of the production-authentication gap. No existing task owned it: PW-0402's own approved acceptance is authorization and its verdict names this as a residual; PW-0401 authenticates the desktop forwarder's COUNTERPARTY, which is a different service and a different caller; PW-0101 is the listener and the ruling forbids broadening it. Depends on PW-0402 because the route decision it must compose with has to exist and be reviewed first; that is a genuine build relationship and not the read relationship PW-0402's own edge on PW-0101 turned out to be. Surface includes docs/DECISIONS.md because ADR-007 is still Proposed and PL-0405, the task that blocked its promotion, is DONE.",
       "owner": null,
       "gateResults": {}
     }

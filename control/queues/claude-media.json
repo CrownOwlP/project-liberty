@@ -1,8 +1,81 @@
 {
-  "generatedAt": "2026-09-23T04:15:15.841Z",
+  "generatedAt": "2026-09-23T04:22:17.689Z",
   "agent": "claude-media",
   "executionAvailable": true,
-  "assigned": [],
+  "assigned": [
+    {
+      "id": "PW-0202",
+      "priority": "P0",
+      "lane": "Player",
+      "status": "IN_PROGRESS",
+      "title": "WebPlayerAdapter: the existing Shaka path, behind the boundary",
+      "dependencies": [
+        "PW-0201"
+      ],
+      "allowedPaths": [
+        "apps/web/src/components/player/web-player-adapter.ts",
+        "apps/web/src/components/player/web-player-adapter.test.ts"
+      ],
+      "reviewDependencies": [
+        "apps/web/src/components/player/player-adapter.ts",
+        "apps/web/src/components/player/playback-controller.ts",
+        "apps/web/src/components/player/liberty-video.ts",
+        "apps/web/src/components/player/engine.ts",
+        "apps/web/src/components/player/playback-failure.ts"
+      ],
+      "preferredAgent": "claude-frontend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "architecture-review"
+      ],
+      "acceptance": "The Shaka path that exists today satisfies PlayerAdapter without being rewritten. ADOPT, WRAP, ADAPT: PlaybackController, <liberty-video>, the XState machine and the failure classifier are working, reviewed code and are wrapped, not replaced. REQUIRED: canPlay answers for a DRM candidate with a reason on the accepting branch too, because this adapter is the DRM path on BOTH targets and 'it can play it' must be as legible as a refusal. REQUIRED: getTracks reports text and audio tracks from the Shaka player, which is the first time this repository reads them at all. REQUIRED: dispose is idempotent and releases the CDM session, a hazard three separate comments in the existing player already name. REQUIRED: no behaviour change observable at the existing e2e boundary -- the critical-journey and playback-session suites must pass unchanged, and that is the evidence that this was a wrap rather than a rewrite.",
+      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. ",
+      "owner": "claude-media",
+      "gateResults": {},
+      "implementationAgent": "claude-media",
+      "updatedAt": "2026-09-23T04:22:17.466Z",
+      "implementationBaseSha": "9451fd3668a4f2b2f2a39ed667928a314b96beec"
+    },
+    {
+      "id": "PW-0203",
+      "priority": "P0",
+      "lane": "Player",
+      "status": "IN_PROGRESS",
+      "title": "Capability routing decides the engine before playback, with a reason on both branches",
+      "dependencies": [
+        "PW-0201"
+      ],
+      "allowedPaths": [
+        "apps/web/src/components/player/adapter-routing.ts",
+        "apps/web/src/components/player/adapter-routing.test.ts"
+      ],
+      "reviewDependencies": [
+        "apps/web/src/components/player/player-adapter.ts",
+        "packages/contracts/src/shared/drm.ts",
+        "apps/web/src/app/api/v1/playback/session/contract.ts",
+        "docs/DESKTOP_PLAYBACK.md",
+        "apps/web/src/components/player/playback-session.ts",
+        "apps/web/src/components/player/web-player-adapter.ts"
+      ],
+      "preferredAgent": "claude-media",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "architecture-review",
+        "rights-review"
+      ],
+      "acceptance": "Which engine plays a candidate is decided before playback and recorded with a reason, satisfying the architecture invariant that already states this. REQUIRED: the routing function is PURE and deterministic -- no clocks, no I/O, no ambient state -- on the same rule ADR-003 and ADR-005 apply to ranking, so a routing decision can be reconstructed from a bug report. REQUIRED: a candidate whose contentProtection requires a CDM routes to the web adapter, always, and the native adapter REFUSES it with drm_required_no_cdm rather than falling back or degrading. mpv has no CDM; a native path that tried would be the DRM circumvention CONTENT_RIGHTS.md forbids, so this refusal is a rights property and not a capability detail -- which is why this task carries a rights-review gate. REQUIRED: the reason is recorded on the accepting branch as well, so 'why is this playing natively' is answerable. REQUIRED: routing consumes the protection state already on the session contract (PL-0902) rather than re-deriving it, because two opinions about a candidate's protection would eventually disagree. THE CANDIDATE-PROJECTION FINDING FROM PW-0201 IS THIS TASK'S, per gpt-architect's round-81 ruling, and no separate follow-up is filed unless this task proves one is needed. PW-0201 could not implement `canPlay(candidate: PlaybackCandidate)` as docs/DESKTOP_PLAYBACK.md §3 writes it: that client type is `{ id, providerId, source }`, it predates PL-0902, and it carries neither `protection` nor `compatibility` -- so an adapter handed one is STRUCTURALLY INCAPABLE of returning `drm_required_no_cdm`, which is the refusal this task exists to make. The boundary therefore declares a narrow adapter-facing projection, and that projection is ACCEPTED. REQUIRED HERE: routing consumes the protection state from the playback-session CONTRACT -- the `protection` field `playbackSessionCandidateSchema` already publishes, which PL-0902 put there -- and never re-derives it; the adapter capability input is that narrow projection and nothing wider; NO SECOND DRM OR PROTECTION DECISION IS INVENTED anywhere in the routing path, because two opinions about a candidate's protection would eventually disagree and the reason trail would then explain a decision nobody made; and the native refusal `drm_required_no_cdm` remains STRUCTURAL rather than conditional. DO NOT change the adapter back to the older type to match the §3 prose: the prose was written on 2026-09-15 and PL-0902 landed after it, so the listing is stale and the code is right. A cross-package contract change is only to be proposed if this task PROVES one is required, with the specific field and the specific decision that cannot be made without it.",
+      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict.  ROUND 82: absorbed PW-0201's candidate-projection finding on gpt-architect's ruling. PW-0209 was NOT filed; this task owns the reconciliation question and only escalates it if a cross-package contract change turns out to be genuinely required.",
+      "owner": "claude-media",
+      "gateResults": {},
+      "implementationAgent": "claude-media",
+      "updatedAt": "2026-09-23T04:22:17.665Z",
+      "implementationBaseSha": "9451fd3668a4f2b2f2a39ed667928a314b96beec"
+    }
+  ],
   "review": [],
   "reservedExternal": [],
   "recommended": []

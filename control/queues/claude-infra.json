@@ -1,27 +1,30 @@
 {
-  "generatedAt": "2026-09-23T04:15:15.842Z",
+  "generatedAt": "2026-09-23T04:22:17.690Z",
   "agent": "claude-infra",
   "executionAvailable": true,
-  "assigned": [
+  "assigned": [],
+  "review": [],
+  "reservedExternal": [],
+  "recommended": [
     {
-      "id": "PW-0101",
+      "id": "PW-0102",
       "priority": "P0",
       "lane": "Infra",
-      "status": "REVIEW",
-      "title": "The application serves itself on loopback, hardened, as a standalone sidecar",
-      "dependencies": [],
+      "status": "READY",
+      "title": "A Tauri v2 shell that owns the sidecar's lifetime",
+      "dependencies": [
+        "PW-0101"
+      ],
       "allowedPaths": [
-        "apps/web/next.config.ts",
-        "apps/web/src/proxy.ts",
-        "apps/web/src/lib/sidecar/**",
-        "docs/DESKTOP_PLAYBACK.md"
+        "apps/desktop/**"
       ],
       "reviewDependencies": [
+        "apps/web/next.config.ts",
         "apps/web/package.json",
-        "package.json",
         "turbo.json",
-        "apps/web/src/app/api/v1/playback/build-target.ts",
-        "docs/SECURITY.md"
+        "package.json",
+        "docs/DESKTOP_PLAYBACK.md",
+        "docs/ARCHITECTURE.md"
       ],
       "preferredAgent": "claude-infra",
       "reviewAgent": "gpt-architect",
@@ -29,42 +32,14 @@
         "typecheck",
         "unit",
         "build",
+        "architecture-review",
         "security-review"
       ],
-      "acceptance": "The desktop target builds a Next standalone server that a shell can spawn, and every control docs/DESKTOP_PLAYBACK.md section 7 names is implemented and tested. REQUIRED: output 'standalone' is set for the desktop target and only for it -- the document specifies it in two places and next.config.ts sets it in none, which is the single largest gap between the recorded design and the code. REQUIRED: the server binds 127.0.0.1 explicitly and never 0.0.0.0, asserted by a test rather than by configuration alone, because Next reads HOSTNAME from the environment and an inherited value would silently expose the listener to the LAN. REQUIRED: a per-launch 256-bit CSPRNG bearer token passed through the environment, required on every request, with a constant-time comparison and a refusal that does not state whether the token was absent or wrong. REQUIRED: Host header validation against the exact expected literal, because a bearer token does not stop DNS rebinding. REQUIRED: the application emits its own Content-Security-Policy, because Tauri's CSP injection stops applying the moment the frontend is a URL rather than bundled assets -- this is a real loss the document names and nothing currently replaces it. REQUIRED: the sidecar reports its actually-bound port on stdout rather than being told which port to use; a pick-then-bind handshake is a TOCTOU race and is refused. NOT IN SCOPE: the Rust shell, which is PW-0102.",
+      "acceptance": "A Tauri v2 application starts, spawns the PW-0101 sidecar, reads its bound port from stdout, points the webview at it, and cannot leave the sidecar running. REQUIRED: the Tauri version is pinned exactly, on the rule this repository already applies to Shaka and Playwright -- a caret range means the shell a gate was recorded against can change under a lockfile refresh. REQUIRED: the sidecar is packaged as node.exe plus the standalone tree under bundle.resources and spawned as a child process; pkg, Node SEA and Bun --compile are documented as unable to swallow a Next standalone server and must not be attempted as a shortcut. REQUIRED: a Win32 Job Object with JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, because Tauri provides no supervision and an orphaned node.exe holding a loopback port is the failure a user sees as 'it will not start the second time'. REQUIRED: supervision -- health check, restart with a bounded attempt budget, and an honest surfaced failure when the budget is spent, never a blank window. REQUIRED: the shell passes the bearer token to the sidecar through the environment and never on a command line, where it would be readable from the process list. STATED LIMITATION TO CARRY IN THE GATE EVIDENCE: no Windows binary can be produced or run from the cloud session, so this task's build gate is cargo check plus a windows-latest CI job, and 'it launches' is real-device evidence owed to PW-0601.",
       "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. SURFACE NOTE: this task's allowedPaths name directories that do not exist yet. The evidence-based narrowing procedure applies to reconciling work already in history; for genuinely new work the surface is the smallest set of paths the acceptance can be satisfied within, and it is narrowed again from the diff before review if it turns out to be wider than what was written. ",
-      "owner": "claude-infra",
-      "gateResults": {
-        "typecheck": {
-          "status": "pass",
-          "at": "2026-09-23T03:48:12.497Z",
-          "by": "claude-infra",
-          "commitSha": "7a8de45feb0d56ddf5039ceff26ed4ec9fa2e1a5",
-          "evidence": "EXECUTED on 7a8de45, range 8b52ada..HEAD. npm run typecheck at the repository root, its own invocation, never combined with lint or build: turbo 21/21, exit 0. Also run separately on the same tree: npm run lint -> 11/11, exit 0, ZERO warnings (two dead `Link` imports were left behind when the copied topbars were deleted and are removed rather than suppressed), and npm run build -> 11/11, exit 0, which is the first build of this repository with output:\"standalone\" set for the desktop target."
-        },
-        "unit": {
-          "status": "pass",
-          "at": "2026-09-23T03:48:12.609Z",
-          "by": "claude-infra",
-          "commitSha": "7a8de45feb0d56ddf5039ceff26ed4ec9fa2e1a5",
-          "evidence": "EXECUTED on 7a8de45. npx vitest run src/lib/sidecar in apps/web -> 2 files, 23 tests, exit 0. Whole workspace: npx vitest run in apps/web -> 56 files, 964 tests, exit 0. EVERY TEST IS A REFUSAL WITH ITS ACCEPTANCE AS A PAIR, because a guard whose suite only shows it admitting a good request proves nothing. Specifically: an absent token is refused (any local process can reach a loopback port -- there is no OS boundary between a game launcher and this server); a valid token on a rebound Host is refused (DNS rebinding makes the VICTIM'S browser issue the request, so it already holds the token and only the Host check fires); a Host differing only in port is refused (that is another listener); an EMPTY token still ARMS the guard rather than disarming it, because readSidecarEnvironment uses Object.hasOwn and not truthiness, and an empty string is a deliberate value elsewhere in this repository; and all three refusals are asserted to be BYTE-IDENTICAL, so the wire cannot be used as an oracle telling an attacker which control it had already satisfied. START-TIME REFUSALS: a token under 256 bits, an unstated Host, and -- the one that matters most -- an UNSET HOSTNAME, because Next binds 0.0.0.0 when it is unset and a sidecar that inherited a container environment would serve the whole network with a token the user's own browser holds. Defaulting it would have hidden exactly that, so it is refused with the string 0.0.0.0 in the detail. The CSP is asserted to carry no wildcard, no inline script, object-src none and frame-ancestors none, and NOT to widen when given no origins. The handshake parser refuses a non-loopback host, because the shell points a webview at whatever it reports. The build-target guard still passes (26 tests), so output:\"standalone\" did not disturb the desktop module-resolution split. ONE HARNESS DEFECT FOUND AND REPORTED: the first version of the no-runtime-switch test read the raw source and failed on this module's own COMMENT explaining why it does not read LIBERTY_BUILD_TARGET -- the same shape of defect PL-0701's restatement guard hit. It now strips comments, which is what build-target.test.ts already does, and carries a non-vacuity assertion so the stripper cannot be eating the file."
-        },
-        "build": {
-          "status": "pass",
-          "at": "2026-09-23T03:48:12.717Z",
-          "by": "claude-infra",
-          "commitSha": "7a8de45feb0d56ddf5039ceff26ed4ec9fa2e1a5",
-          "evidence": "EXECUTED on 7a8de45. npm run build at the repository root, its own invocation: turbo 11/11, exit 0. This is the gate that matters for this task, because output:\"standalone\" changes what a build EMITS and a typecheck cannot see that. NOT CLAIMED: no Windows binary was produced and none can be from this session -- the container's Rust toolchain targets x86_64-unknown-linux-gnu only and the linked computer exposes a Linux VM. That a standalone tree actually SERVES the application when spawned by a shell is real-device evidence owed to PW-0102 and PW-0601 row A1, and it is recorded here as owed rather than inferred from a green build."
-        }
-      },
-      "implementationAgent": "claude-infra",
-      "updatedAt": "2026-09-23T03:48:36.962Z",
-      "implementationBaseSha": "8b52ada26ac842b35c60cc0e64a0bef256edab0e"
-    }
-  ],
-  "review": [],
-  "reservedExternal": [],
-  "recommended": [
+      "owner": null,
+      "gateResults": {}
+    },
     {
       "id": "PW-0104",
       "priority": "P1",

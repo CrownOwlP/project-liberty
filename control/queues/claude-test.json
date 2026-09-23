@@ -1,40 +1,8 @@
 {
-  "generatedAt": "2026-09-23T04:15:15.841Z",
+  "generatedAt": "2026-09-23T04:22:17.689Z",
   "agent": "claude-test",
   "executionAvailable": true,
-  "assigned": [
-    {
-      "id": "PW-0601",
-      "priority": "P0",
-      "lane": "Test",
-      "status": "REVIEW",
-      "title": "A real-device certification matrix that says who runs each test and why",
-      "dependencies": [],
-      "allowedPaths": [
-        "docs/TEST_MATRIX.md",
-        "docs/WINDOWS_CERTIFICATION.md"
-      ],
-      "reviewDependencies": [
-        "docs/RELEASE_CRITERIA.md",
-        "docs/DESKTOP_PLAYBACK.md",
-        "docs/AV_SYNC_MEASUREMENT.md",
-        "coordination/LAST_MILE.md",
-        "e2e"
-      ],
-      "preferredAgent": "claude-test",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "architecture-review"
-      ],
-      "acceptance": "Every scenario the Windows product must survive is written down, with an explicit owner: automated, or the commander's machine. MEASURED STARTING POINT: docs/TEST_MATRIX.md has eight rows, every cell an automated tier, and no manual, real-device, HDR, hardware-decode or Windows row at all -- while two other documents already require real hardware, for the compositing experiment and for the flash-and-blip A/V rig. REQUIRED: the matrix covers cold start, restart, crash recovery, movie and episodic playback, seek, pause/resume, source switching, resume position, next episode, subtitles, multiple audio tracks, stereo and multichannel, lip-sync and A/V drift, long sessions, 1080p, 4K, HDR where the display supports it, hardware decoding, fullscreen and window transitions, sleep/wake, network interruption and recovery, backend unavailable, malformed or unavailable source, Live TV channel change, EPG behaviour, memory/CPU/GPU behaviour, clean install, upgrade, and uninstall/reinstall. REQUIRED: each row states its owner and, for a commander-machine row, exactly what to do and what a pass looks like -- a matrix that says 'manual' without a procedure is a wish. REQUIRED: rows that cannot be judged without hardware the commander may not have (an HDR display, a multichannel receiver) say so rather than being marked failed. NO ROW MAY BE MARKED PASSED FROM THIS SESSION; nothing here can observe a Windows machine.",
-      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. ",
-      "owner": "claude-test",
-      "gateResults": {},
-      "implementationAgent": "claude-test",
-      "updatedAt": "2026-09-23T03:48:37.264Z",
-      "implementationBaseSha": "8b52ada26ac842b35c60cc0e64a0bef256edab0e"
-    }
-  ],
+  "assigned": [],
   "review": [],
   "reservedExternal": [],
   "recommended": []

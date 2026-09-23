@@ -1,18 +1,18 @@
 # Project Liberty - Project Status
 
-> Generated 2026-09-23T04:15:15.838Z from the AI control plane.
+> Generated 2026-09-23T04:22:17.687Z from the AI control plane.
 
-**Overall completion:** 62/95 executable tasks (65%)
+**Overall completion:** 67/96 executable tasks (70%)
 
 ## Status summary
 
-- **BACKLOG:** 23
-- **READY:** 3
+- **BACKLOG:** 18
+- **READY:** 7
 - **CLAIMED:** 0
-- **IN_PROGRESS:** 0
-- **REVIEW:** 5
+- **IN_PROGRESS:** 2
+- **REVIEW:** 0
 - **BLOCKED:** 2
-- **DONE:** 62
+- **DONE:** 67
 - **CANCELED:** 0
 - **SUPERSEDED:** 4
 
@@ -27,25 +27,26 @@
 - **M6 — Shared-Agent Automation Bridge:** COMPLETE, 3/3 (100%)
 - **EXT — External Licensed Integrations:** BLOCKED, 0/2 (0%), 2 blocked
 - **M7 — Windows Desktop Shell + Native Playback:** COMPLETE, 4/4 (100%)
-- **PW — undefined:** IN_PROGRESS, 0/31 (0%)
+- **PW — undefined:** IN_PROGRESS, 5/32 (16%)
 
 ## Active work
 
-- **PW-0101** [REVIEW] The application serves itself on loopback, hardened, as a standalone sidecar — owner: claude-infra
-- **PW-0201** [REVIEW] The PlayerAdapter boundary becomes a module instead of a specification — owner: claude-frontend
-- **PW-0301** [REVIEW] An application shell: one layout, one navigation model, one token layer — owner: claude-frontend
-- **PW-0601** [REVIEW] A real-device certification matrix that says who runs each test and why — owner: claude-test
-- **PW-0402** [REVIEW] Routes authorize the caller, and a launch token is not a login — owner: claude-security
+- **PW-0202** [IN_PROGRESS] WebPlayerAdapter: the existing Shaka path, behind the boundary — owner: claude-media
+- **PW-0203** [IN_PROGRESS] Capability routing decides the engine before playback, with a reason on both branches — owner: claude-media
 
 ## Dispatch classification
 
-- **READY_AND_EXECUTABLE:** 3
+- **READY_AND_EXECUTABLE:** 7
 - **READY_BUT_EXTERNAL:** 0
 - **BLOCKED:** 2
-- **BACKLOG (dependency-gated):** 23
+- **BACKLOG (dependency-gated):** 18
 
 ## Recommended executable wave
 
+- **PW-0102** -> claude-infra (P0/Infra) A Tauri v2 shell that owns the sidecar's lifetime
+- **PW-0302** -> claude-frontend (P0/Frontend) Artwork, end to end, because a media application without images is a list
+- **PW-0303** -> claude-frontend (P0/Frontend) Profiles become usable: a picker, a switch, and a create
+- **PW-0403** -> claude-backend (P0/Backend) Production user authentication, so an account identity is not a typed header
 - **PW-0401** -> claude-backend (P1/Backend) The authenticated backend the desktop build talks to
 
 ## Queued for external agents
@@ -61,10 +62,10 @@ No READY work is waiting on an external agent lane.
 
 - **gpt-architect:** 0/6 active (external lane; not locally executable)
 - **claude-lead:** 0/2 active
-- **claude-frontend:** 2/2 active
+- **claude-frontend:** 0/2 active
 - **claude-backend:** 0/2 active
-- **claude-media:** 0/2 active
-- **claude-test:** 1/1 active
-- **claude-security:** 1/1 active
-- **claude-infra:** 1/1 active
+- **claude-media:** 2/2 active
+- **claude-test:** 0/1 active
+- **claude-security:** 0/1 active
+- **claude-infra:** 0/1 active
 - **human-commander:** 0/99 active (external lane; not locally executable)

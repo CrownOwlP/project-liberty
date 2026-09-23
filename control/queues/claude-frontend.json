@@ -1,126 +1,8 @@
 {
-  "generatedAt": "2026-09-23T04:15:15.840Z",
+  "generatedAt": "2026-09-23T04:22:17.689Z",
   "agent": "claude-frontend",
   "executionAvailable": true,
-  "assigned": [
-    {
-      "id": "PW-0201",
-      "priority": "P0",
-      "lane": "Player",
-      "status": "REVIEW",
-      "title": "The PlayerAdapter boundary becomes a module instead of a specification",
-      "dependencies": [],
-      "allowedPaths": [
-        "apps/web/src/components/player/player-adapter.ts",
-        "apps/web/src/components/player/player-adapter.test.ts"
-      ],
-      "reviewDependencies": [
-        "apps/web/src/components/player/engine.ts",
-        "apps/web/src/components/player/playback-machine.ts",
-        "apps/web/src/components/player/shaka-error.ts",
-        "packages/contracts/src/shared/drm.ts",
-        "docs/DESKTOP_PLAYBACK.md",
-        "docs/ARCHITECTURE.md"
-      ],
-      "preferredAgent": "claude-frontend",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "typecheck",
-        "unit",
-        "architecture-review"
-      ],
-      "acceptance": "The ~260 lines of TypeScript in docs/DESKTOP_PLAYBACK.md section 3 exist as a module, and the four rules that make it a boundary are enforced mechanically rather than stated. REQUIRED: PlayerAdapterId, the closed PlayerRefusalCode union, canPlay returning a reason on BOTH branches, PlayerLoadRequest taking a PlaybackSession plus a candidateId and never a URL, getTracks, readAvSyncTelemetry, subscribe, and an idempotent dispose. REQUIRED: no shaka-player, mpv/libmpv, @tauri-apps/* or electron type is reachable from this module or anything it imports, enforced by an import-graph test on the model of the existing PROHIBITED_AV_INSTRUMENTATION scan and of build-target.test.ts -- and that test must be proven non-vacuous by planting an offender, the way build-target.test.ts already does. REQUIRED: no `any` anywhere in the module; no engine-handle passthrough of any name; no opaque config bag -- EngineConfig from engine.ts must not be promoted onto the boundary. THE EXISTING ShakaPlayerHandle IN engine.ts IS NOT THIS and is not replaced: it is the seam INSIDE the web implementation, one layer below, and section 3 says so explicitly.",
-      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. ",
-      "owner": "claude-frontend",
-      "gateResults": {
-        "typecheck": {
-          "status": "pass",
-          "at": "2026-09-23T03:48:12.822Z",
-          "by": "claude-frontend",
-          "commitSha": "7a8de45feb0d56ddf5039ceff26ed4ec9fa2e1a5",
-          "evidence": "EXECUTED on 7a8de45. npm run typecheck at the root, own invocation, turbo 21/21, exit 0. The boundary module compiles with no `any`, which is one of the four §3 rules and is also asserted at runtime by the guard rather than left to the compiler alone."
-        },
-        "unit": {
-          "status": "pass",
-          "at": "2026-09-23T03:48:12.935Z",
-          "by": "claude-frontend",
-          "commitSha": "7a8de45feb0d56ddf5039ceff26ed4ec9fa2e1a5",
-          "evidence": "EXECUTED on 7a8de45. npx vitest run src/components/player/player-adapter.test.ts -> 13 tests, exit 0; whole workspace 56 files / 964 tests, exit 0. THE GUARD WALKS THE ACTUAL IMPORT GRAPH and every assertion is paired with a planted offender, because a scan that resolved nothing would satisfy all of them. (1) No engine package -- shaka-player, mpv, libmpv, @tauri-apps, electron, custom-media-element -- is reachable from the boundary at any depth. (2) The walker is proven to resolve something: the graph must contain the entry and must reach @liberty/contracts/shared/drm. (3) A PLANTED shaka-player import one hop away is found, driven against a TEMP TREE rather than by writing into src/ -- build-target.test.ts plants its probe inside apps/web/src/app and its own banner admits an interrupted run leaves the file behind; PL-0712 fixed that shape of defect and this guard is built the other way from the start. (4) No `any`, over comment-stripped source. (5) No engine handle by any known name, including this repository's own existing escape hatches getEnginePlayer and getRawEngineStats, and no EngineConfig -- the opaque-config-bag rule. (6) @liberty/contracts is imported TYPE-ONLY, so zod does not reach the client bundle for two string unions, and the type-only detection is itself proven non-vacuous against a value import. The vocabularies are asserted total: 2 adapter ids, 8 refusal codes, 17 event types. ONE HARNESS DEFECT FOUND AND REPORTED: the first fixture built ContentProtection as {state:\"not-stated\"} with an `as` cast; vitest passed green and TYPECHECK CAUGHT IT -- the real union is clear/unknown/protected. The cast is removed rather than widened, because `as never` on a handler option is exactly how PL-0711 hid a wrong option name and made a missing bound read as a pass."
-        }
-      },
-      "implementationAgent": "claude-frontend",
-      "updatedAt": "2026-09-23T03:48:37.062Z",
-      "implementationBaseSha": "8b52ada26ac842b35c60cc0e64a0bef256edab0e"
-    },
-    {
-      "id": "PW-0301",
-      "priority": "P0",
-      "lane": "Frontend",
-      "status": "REVIEW",
-      "title": "An application shell: one layout, one navigation model, one token layer",
-      "dependencies": [],
-      "allowedPaths": [
-        "apps/web/src/app/layout.tsx",
-        "apps/web/src/app/globals.css",
-        "apps/web/src/app/not-found.tsx",
-        "apps/web/src/app/global-error.tsx",
-        "apps/web/src/app/error.tsx",
-        "apps/web/src/app/page.tsx",
-        "apps/web/src/app/search/page.tsx",
-        "apps/web/src/app/search/loading.tsx",
-        "apps/web/src/app/title/[titleId]/page.tsx",
-        "apps/web/src/app/title/[titleId]/not-found.tsx",
-        "apps/web/src/app/watch/[contentId]/page.tsx",
-        "apps/web/src/app/watch/[contentId]/not-found.tsx",
-        "apps/web/src/components/shell/**",
-        "apps/web/src/components/title/title-styles.test.ts"
-      ],
-      "reviewDependencies": [
-        "apps/web/src/components/catalog-rail.tsx",
-        "apps/web/src/components/catalog-card.tsx",
-        "apps/web/src/components/search/search.module.css",
-        "apps/web/src/components/title/title.module.css",
-        "apps/web/src/app/watch/route-loading-boundaries.test.ts",
-        "docs/PRODUCT_SPEC.md"
-      ],
-      "preferredAgent": "claude-frontend",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "typecheck",
-        "unit",
-        "e2e"
-      ],
-      "acceptance": "The application has a real shell, and the eight hand-copied topbars become one. MEASURED STARTING POINT: layout.tsx is sixteen lines -- html, body, children -- and the topbar is duplicated by hand in eight files, each with a slightly different status badge and a different or absent nav; the nav itself is four fragment anchors, and /search is reachable from no link anywhere in the application. REQUIRED: one persistent chrome in the root layout, with every route's copy deleted rather than left beside it. REQUIRED: a navigation model that reaches every screen that exists, including search; a dead link is worse than an absent one because it teaches a viewer the feature is broken. REQUIRED: a token layer -- spacing, type, radius, elevation, colour -- replacing eight dark-only variables and the px literals around them, and a light theme or an explicit recorded decision that this product is dark-only. REQUIRED: a skip link, a focus indicator defined globally rather than only inside two CSS modules, and Windows display scaling at 100/125/150/200 percent without clipping. NOT IN SCOPE: replacing any working server-side logic; this task is the shell the existing screens hang in.",
-      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict.  SURFACE CORRECTED BEFORE CLAIM, round 81. The approved surface named layout.tsx, globals.css and components/shell/** and could not satisfy its own acceptance: the topbar is hand-copied into eight ROUTE files, and 'every route's copy deleted rather than left beside it' requires writing those files. They were in reviewDependencies, which is read-only. The eight are now allowedPaths and the widening is stated rather than worked around by leaving the duplicates in place. Checked pairwise against the other four first-wave tasks: no overlap with PW-0101 (next.config.ts, src/proxy.ts, src/lib/sidecar/**), PW-0201 (player modules), PW-0401 (apps/backend/**) or PW-0601 (docs). SECOND SURFACE WIDENING, DISCOVERED BY A RED TEST AND STATED RATHER THAN WORKED AROUND. apps/web/src/components/title/title-styles.test.ts enumerates the controls carrying `styles.focusRing` and one of them is 'the topbar Home link' in title/[titleId]/page.tsx -- a control this task's acceptance requires be DELETED, because the topbar moves into the shell. Three options existed and two were wrong: leaving the header in place fails the acceptance, and deleting the assertion without replacing it would quietly drop a guard. The file is added to allowedPaths and the call-site list is repointed at where that control now lives, with the guard STRENGTHENED rather than reduced -- globals.css now defines a global `:focus-visible`, which is what the deleted per-route class was standing in for.",
-      "owner": "claude-frontend",
-      "gateResults": {
-        "typecheck": {
-          "status": "pass",
-          "at": "2026-09-23T03:48:36.622Z",
-          "by": "claude-frontend",
-          "commitSha": "7a8de45feb0d56ddf5039ceff26ed4ec9fa2e1a5",
-          "evidence": "EXECUTED on 7a8de45. npm run typecheck at the root, own invocation, turbo 21/21, exit 0. Also npm run lint -> 11/11 with ZERO warnings: deleting the eight copied topbars orphaned two `Link` imports, and they are removed rather than suppressed."
-        },
-        "unit": {
-          "status": "pass",
-          "at": "2026-09-23T03:48:36.730Z",
-          "by": "claude-frontend",
-          "commitSha": "7a8de45feb0d56ddf5039ceff26ed4ec9fa2e1a5",
-          "evidence": "EXECUTED on 7a8de45. npx vitest run src/components/shell -> 9 tests, exit 0; whole workspace -> 56 files, 964 tests, exit 0 (was 55 files / 951 before this wave). THE GUARD IS MECHANICAL, NOT A ONE-OFF AUDIT, because the duplication it removes did not arrive deliberately -- each route added a header because the one beside it had one, and by the time anyone counted there were eight with drifting contents. shell-usage.test.ts walks every page/layout/not-found/error/loading/global-error file under src/app and asserts: no route contains className=\"topbar\"; no route hand-rolls <main className=\"shell\"; and every route that renders a frame renders <AppShell>. It carries a non-vacuity assertion first -- the walker must find more than six route files and must name page.tsx and watch/[contentId]/page.tsx -- because a walker that resolved nothing would satisfy all three. TWO EXEMPTIONS, NAMED RATHER THAN SILENT: layout.tsx does not render the shell, because a root layout is not re-rendered on navigation and is not given the pathname, so putting it there would force either usePathname (making the whole application a client boundary) or headers() (forcing every route dynamic); global-error.tsx cannot, because it replaces the whole document and must not import the stylesheet or the shell that may be what failed. THE NAVIGATION MODEL IS TESTED AS DATA: every entry either has a path starting with / or states why it is planned, there are no fragment anchors (it replaced four, three of which pointed at the same one and one of which pointed at an anchor unrelated to Live TV), /search is reachable for the first time in this product's history, and activeEntryId marks NOTHING for /watch and /title rather than letting / win by prefix -- highlighting a nav item for a full-screen player would be a lie about where the viewer is."
-        },
-        "e2e": {
-          "status": "pass",
-          "at": "2026-09-23T03:48:36.836Z",
-          "by": "claude-frontend",
-          "commitSha": "7a8de45feb0d56ddf5039ceff26ed4ec9fa2e1a5",
-          "evidence": "EXECUTED on 7a8de45 in the CI job's own configuration, from e2e/, pinned chromium 1234, CI=1, retries 0, with the three variables .github/workflows/ci.yml sets: production npm test -- --project=api --project=chromium -> 61 passed / 12 skipped / 0 failed, exit 0; development -> 70 passed / 3 skipped / 0 failed, exit 0. THE NUMBERS ARE THE EVIDENCE, AND THEY ARE THE EVIDENCE BECAUSE THEY DID NOT MOVE. Before this task: production 61/12, development 70/3. After rewriting the root layout, deleting the header from eight route files, replacing the topbar, adding a skip link and a global focus rule, and introducing a root not-found and a global-error: production 61/12, development 70/3. critical-journey.spec.ts drives home -> title -> play affordance -> watch -> player -> back to catalog through the new shell and asserts the same statuses and the same served-bytes properties it asserted through the old copied headers. An identical count across a change of this size is what distinguishes a WRAP from a REWRITE, which is the ADOPT-WRAP-ADAPT-BUILD rule this phase is run under. NOT CLAIMED: api and chromium only, on Linux. Nothing here says anything about Windows display scaling, which is PW-0601 row G2 and is owed to the rig."
-        }
-      },
-      "implementationAgent": "claude-frontend",
-      "updatedAt": "2026-09-23T03:48:37.163Z",
-      "implementationBaseSha": "8b52ada26ac842b35c60cc0e64a0bef256edab0e"
-    }
-  ],
+  "assigned": [],
   "review": [],
   "reservedExternal": [],
   "recommended": [
@@ -155,6 +37,71 @@
         "rights-review"
       ],
       "acceptance": "Titles have artwork, and getting it does not become a new way to fetch arbitrary URLs. MEASURED STARTING POINT: there are zero images in this product at any layer -- no next/image, no img tag, and no poster, artwork, backdrop or thumbnail key anywhere in packages/contracts/src. Posters are CSS gradients. REQUIRED: artwork is a contract change first, reviewed, with dimensions and a rights basis beside the URL rather than a bare string, because an image is content and CONTENT_RIGHTS.md does not exempt it. REQUIRED: the host allowlist and transport rules the rest of this repository already enforces apply to image origins too; SECURITY.md's 'never proxy arbitrary client-provided URLs' is not weakened for pictures, which is why this task carries a security review. REQUIRED: an absent image is a designed state, not a broken one -- the existing gradient placeholder stays as the fallback rather than a broken-image icon. REQUIRED: next/image remote patterns are pinned to the allowlist, not opened to a wildcard.",
+      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. ",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PW-0303",
+      "priority": "P0",
+      "lane": "Frontend",
+      "status": "READY",
+      "title": "Profiles become usable: a picker, a switch, and a create",
+      "dependencies": [
+        "PW-0301"
+      ],
+      "allowedPaths": [
+        "apps/web/src/app/profiles/**",
+        "apps/web/src/components/profiles/**"
+      ],
+      "reviewDependencies": [
+        "apps/web/src/app/api/v1/profiles",
+        "packages/persistence/src",
+        "packages/auth/src",
+        "apps/web/src/lib/session/account.ts"
+      ],
+      "preferredAgent": "claude-frontend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "e2e",
+        "security-review"
+      ],
+      "acceptance": "A person can see who they are watching as, switch, and create a profile. THE BACKEND IS COMPLETE AND REVIEWED AND NOTHING RENDERS IT: /api/v1/profiles and /api/v1/profiles/selection exist with handlers, contracts and tests, and there is no picker, no switch, no create and no avatar anywhere in the application. REQUIRED: the active profile is visible in the shell at all times, because every progress and watchlist row in this product is profile-scoped and a viewer who cannot see which profile is active cannot understand their own continue-watching list. REQUIRED: profile selection goes through the existing selection route and the existing ProfileScope, never through a client-held id -- PL-0405 recorded a forgeable-scope defect and this UI must not reintroduce it, which is why a security review is required. REQUIRED: switching profiles invalidates any cached profile-scoped view rather than leaving another profile's rows on screen.",
+      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. ",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PW-0309",
+      "priority": "P1",
+      "lane": "Frontend",
+      "status": "READY",
+      "title": "Offline, degraded and error states a desktop application needs",
+      "dependencies": [
+        "PW-0301"
+      ],
+      "allowedPaths": [
+        "apps/web/src/components/state/**",
+        "apps/web/src/lib/network-state.ts",
+        "apps/web/src/lib/network-state.test.ts"
+      ],
+      "reviewDependencies": [
+        "apps/web/src/app/error.tsx",
+        "apps/web/src/app/page.tsx",
+        "apps/web/src/app/watch/[contentId]/page.tsx",
+        "apps/web/src/components/player/playback-machine.ts",
+        "apps/web/src/lib/sidecar"
+      ],
+      "preferredAgent": "claude-frontend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "e2e"
+      ],
+      "acceptance": "The application behaves honestly when the network, the backend or the sidecar is unavailable. There is no offline handling of any kind today -- no navigator.onLine, no service worker, no offline banner, no retry-on-reconnect. THIS MATTERS MORE ON THE DESKTOP THAN IT DID ON THE WEB: docs/DESKTOP_PLAYBACK.md section 8 accepts that an offline desktop cannot resolve playback at all, and requires that failure be surfaced as an honest unavailable outcome rather than an empty candidate list -- so the UI half of that ruling is this task. REQUIRED: a network-state signal and a visible degraded mode that names what is unavailable. REQUIRED: recovery on reconnect without a manual reload. REQUIRED: the sidecar being down is a DISTINCT state from the backend being down and from the network being down, because the three have different remedies and collapsing them produces a support burden. REQUIRED: no state invents content; an offline home shows what it has and says so.",
       "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. ",
       "owner": null,
       "gateResults": {}

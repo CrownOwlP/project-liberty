@@ -1,11 +1,51 @@
 {
-  "generatedAt": "2026-09-23T04:15:15.840Z",
+  "generatedAt": "2026-09-23T04:22:17.689Z",
   "agent": "claude-backend",
   "executionAvailable": true,
   "assigned": [],
   "review": [],
   "reservedExternal": [],
   "recommended": [
+    {
+      "id": "PW-0403",
+      "priority": "P0",
+      "lane": "Backend",
+      "status": "READY",
+      "title": "Production user authentication, so an account identity is not a typed header",
+      "dependencies": [
+        "PW-0402"
+      ],
+      "allowedPaths": [
+        "apps/web/src/lib/session/**",
+        "apps/web/src/app/api/v1/auth/**",
+        "packages/auth/src/**",
+        "docs/DECISIONS.md",
+        "docs/SECURITY.md"
+      ],
+      "reviewDependencies": [
+        "apps/web/src/lib/authorization/route-authorization.ts",
+        "apps/web/src/lib/db/request-context.ts",
+        "apps/web/src/app/api/v1/profiles",
+        "apps/web/src/lib/sidecar/policy.ts",
+        "apps/web/src/app/api/deployment-environment.ts",
+        "docs/API_CONTRACTS.md",
+        "docs/DATA_MODEL.md",
+        "packages/persistence/src"
+      ],
+      "preferredAgent": "claude-backend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "e2e",
+        "security-review",
+        "architecture-review"
+      ],
+      "acceptance": "An account identity comes from an authenticated session, not from a header a caller typed. THE RESIDUAL THIS OWNS, IN gpt-architect's OWN WORDS FROM THE PW-0402 VERDICT: \"PW-0402 does NOT establish production user authentication. The current account identity still derives from the development-header seam in non-deployment runtime. Keep that residual visible and resolve it before production-sensitive desktop routes are considered authenticated.\" This task is where that resolves, and until it is DONE no route may be described as authenticated. WHY IT IS P0 AND NOT A TIDY-UP. Every authorization decision in this product is built on the account identity, and PW-0402 proved the decision layer above it is sound -- which makes the identity itself the load-bearing weakness rather than one of several. On a hosted deployment the exposure is nil, because resolveRequestAccount refuses outright with authentication_not_configured. On the DESKTOP it is not: the sidecar runs on the user's machine, the runtime may classify as non-deployment, and every process on that machine can reach the loopback port. PW-0101's launch token stops an unrelated process reaching the LISTENER; it is deliberately incapable of saying who the caller is, and PW-0402 made that incapacity structural. REQUIRED: a real session provider behind resolveRequestAccount, with sessions in PostgreSQL through the Drizzle adapter, per ADR-007 -- which is still recorded as *Proposed* and whose own text says nothing below it may be cited as settled until its governing task's gates pass. PL-0405 is now DONE, so that blocker is gone and ADR-007 should be moved to Accepted in the same change, or the reason it cannot be must be stated. REQUIRED: the development-header path is not deleted -- it is the thing that makes local development possible -- but it must be UNREACHABLE from a build that ships, by the same class of mechanism NonDeploymentEnvironment already uses, and a test must prove a desktop-shaped runtime cannot obtain an identity from it. THAT IS THE SHARPEST CLAUSE IN THIS TASK: today a desktop build classifying as non-deployment would make the header the identity layer, and nothing currently prevents that classification. REQUIRED: the exact Better Auth version is pinned exactly, on the rule this repository applies to Shaka, Playwright and Tauri; ADR-007 pinned 1.7.1 and the reviewer recorded that upstream had moved to 1.7.4, so the pin is reconciled against the version actually reviewed and the hand-written migration is checked against THAT version's schema before anything is generated. REQUIRED: a refusal on an unauthenticated request must not become an oracle, and must compose with PW-0402's route decision rather than adding a second one -- authorizeRoute already returns `unauthenticated` and that stays the single answer. NOT IN SCOPE: authorization, which PW-0402 owns and which the audit found already enforced; the listener boundary, which is PW-0101's; and any identity provider requiring a commercial account or credentials the commander has not supplied -- if one is needed, that is a LAST_MILE item, not a reason to ship a weaker seam.",
+      "notes": "Filed round 83 in answer to gpt-architect's request for explicit ownership of the production-authentication gap. No existing task owned it: PW-0402's own approved acceptance is authorization and its verdict names this as a residual; PW-0401 authenticates the desktop forwarder's COUNTERPARTY, which is a different service and a different caller; PW-0101 is the listener and the ruling forbids broadening it. Depends on PW-0402 because the route decision it must compose with has to exist and be reviewed first; that is a genuine build relationship and not the read relationship PW-0402's own edge on PW-0101 turned out to be. Surface includes docs/DECISIONS.md because ADR-007 is still Proposed and PL-0405, the task that blocked its promotion, is DONE.",
+      "owner": null,
+      "gateResults": {}
+    },
     {
       "id": "PW-0401",
       "priority": "P1",
