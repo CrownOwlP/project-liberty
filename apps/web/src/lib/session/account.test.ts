@@ -73,34 +73,65 @@ describe("a deployment gets an explanation, not an account", () => {
     }
   );
 
-  it("refuses when this process is a deployment", () => {
+  it("asks the deployment authenticator, and answers whatever it answers", async () => {
     /*
      * `null` is the classification a deployment receives, passed the way a
      * deployment receives it. `undefined` cannot be used, because passing it
      * explicitly triggers the parameter's default -- a read of `process.env` --
      * which in this worker is `test` and would assert the opposite of what the
      * case means.
+     *
+     * WHAT THIS CASE ASSERTED BEFORE PW-0403, and why it changed: it required
+     * the reason `authentication_not_configured` and the words
+     * `@liberty/auth/server`, because no auth instance existed anywhere in the
+     * application and "nobody is wired up" was the only true answer a deployment
+     * could give. There is one now. A deployment no longer refuses by
+     * definition; it ASKS, and the interesting property is that it delegates
+     * rather than deciding here.
      */
-    const resolved = resolveRequestAccount(request(), null);
-    expect(resolved.ok).toBe(false);
-    if (resolved.ok) return;
-    /*
-     * Not "unauthenticated", which would tell an operator to go and sign in,
-     * and not a credential prompt: this deployment has no way to issue one.
-     * The remedy is to wire the auth instance, and the reason names it.
-     */
-    expect(resolved.reason).toBe("authentication_not_configured");
-    expect(resolved.detail).toContain("@liberty/auth/server");
+    const asked: Request[] = [];
+    const resolved = await resolveRequestAccount(request(), null, async (received) => {
+      asked.push(received);
+      return { ok: true, account: { userId: "u1", sessionId: "s1" }, detail: "stub" };
+    });
+
+    expect(asked).toHaveLength(1);
+    expect(resolved.ok).toBe(true);
+    if (!resolved.ok) return;
+    expect(resolved.account).toEqual({ userId: "u1", sessionId: "s1" });
   });
 
-  it("cannot be talked into an account by a header", () => {
-    const resolved = resolveRequestAccount(
+  it("does not consult the session store outside a deployment", async () => {
+    /*
+     * The other direction, and it is the one that matters for safety: a
+     * classified process must never reach the deployment authenticator, so a
+     * stale or forged session cookie cannot identify anybody in `next dev`.
+     */
+    let asked = 0;
+    const resolved = await resolveRequestAccount(request(), classifiedProcess(), async () => {
+      asked += 1;
+      return { ok: false, reason: "not_authenticated", detail: "should not be reached" };
+    });
+
+    expect(asked).toBe(0);
+    expect(resolved.ok).toBe(true);
+  });
+
+  it("cannot be talked into an account by a header", async () => {
+    /*
+     * The development headers are read only after the witness is obtained, so in
+     * a deployment they are not read at all. Asserted through the authenticator
+     * rather than through the old blanket refusal: the stub refuses, and the
+     * point is that the header did not produce an account on the way past.
+     */
+    const resolved = await resolveRequestAccount(
       request({ [DEVELOPMENT_ACCOUNT_HEADER]: "household-b" }),
-      null
+      null,
+      async () => ({ ok: false, reason: "not_authenticated", detail: "no session" })
     );
-    /* The header is read only after the witness is obtained, so in a deployment
-     * it is not read at all. */
     expect(resolved.ok).toBe(false);
+    if (resolved.ok) return;
+    expect(resolved.reason).toBe("not_authenticated");
   });
 });
 
@@ -129,9 +160,9 @@ describe("a classification the contracts module never issued", () => {
     return [cast, copied];
   }
 
-  it("gets an explanation, not an account", () => {
+  it("gets an explanation, not an account", async () => {
     for (const forged of forgeries()) {
-      const resolved = resolveRequestAccount(request(), forged);
+      const resolved = await resolveRequestAccount(request(), forged);
       expect(resolved.ok).toBe(false);
       if (resolved.ok) continue;
       expect(resolved.reason).toBe("authentication_not_configured");
@@ -143,7 +174,7 @@ describe("a classification the contracts module never issued", () => {
     }
   });
 
-  it("is refused before a header is read", () => {
+  it("is refused before a header is read", async () => {
     /*
      * The ordering, pinned with a header that would otherwise produce
      * `development_identifier_malformed`: a caller holding a forgery is told
@@ -151,7 +182,7 @@ describe("a classification the contracts module never issued", () => {
      * what actually blocks the request.
      */
     for (const forged of forgeries()) {
-      const resolved = resolveRequestAccount(
+      const resolved = await resolveRequestAccount(
         request({ [DEVELOPMENT_ACCOUNT_HEADER]: "Household A" }),
         forged
       );
@@ -170,9 +201,9 @@ describe("outside a deployment", () => {
     expect(isNonDeploymentEnvironmentName(nodeEnv)).toBe(true);
   });
 
-  it("produces a stable default account for a classified process", () => {
+  it("produces a stable default account for a classified process", async () => {
     const environment = classifiedProcess();
-    const resolved = resolveRequestAccount(request(), environment);
+    const resolved = await resolveRequestAccount(request(), environment);
     expect(resolved.ok).toBe(true);
     if (!resolved.ok) return;
     expect(resolved.account.userId).toBe(DEFAULT_DEVELOPMENT_ACCOUNT_ID);
@@ -191,13 +222,13 @@ describe("outside a deployment", () => {
     expect(resolved.detail).toContain(`NODE_ENV=${environment.nodeEnv}`);
   });
 
-  it("lets a developer name two households, with distinct sessions", () => {
+  it("lets a developer name two households, with distinct sessions", async () => {
     const environment = classifiedProcess();
-    const first = resolveRequestAccount(
+    const first = await resolveRequestAccount(
       request({ [DEVELOPMENT_ACCOUNT_HEADER]: "household-a" }),
       environment
     );
-    const second = resolveRequestAccount(
+    const second = await resolveRequestAccount(
       request({ [DEVELOPMENT_ACCOUNT_HEADER]: "household-b" }),
       environment
     );
@@ -209,8 +240,8 @@ describe("outside a deployment", () => {
     );
   });
 
-  it("lets one account hold two sessions, which is what two devices are", () => {
-    const television = resolveRequestAccount(
+  it("lets one account hold two sessions, which is what two devices are", async () => {
+    const television = await resolveRequestAccount(
       request({
         [DEVELOPMENT_ACCOUNT_HEADER]: "household-a",
         [DEVELOPMENT_SESSION_HEADER]: "television"
@@ -221,9 +252,9 @@ describe("outside a deployment", () => {
     expect(television.ok && television.account.sessionId).toBe("television");
   });
 
-  it("refuses a malformed header rather than falling back to the default", () => {
+  it("refuses a malformed header rather than falling back to the default", async () => {
     for (const value of ["Household A", "household_a", "../etc/passwd", "a".repeat(65)]) {
-      const resolved = resolveRequestAccount(
+      const resolved = await resolveRequestAccount(
         request({ [DEVELOPMENT_ACCOUNT_HEADER]: value }),
         classifiedProcess()
       );

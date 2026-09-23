@@ -88,6 +88,35 @@ Use PostgreSQL for durable state and Redis only for ephemeral/cached workloads. 
 
 ## ADR-007 - Authentication seam, database sessions, and a minted profile scope
 
+**Status:** Accepted, and CONSTRUCTED as of PW-0403.
+
+The decision was ratified with PL-0405 and the seam shipped then; what did not exist until
+PW-0403 was anything that built an instance from it. `apps/web/src/lib/session/auth-instance.ts`
+is that composition root and `/api/auth/*` serves the endpoints, so a deployment identity is now
+a verified database-backed session rather than `authentication_not_configured`.
+
+Three consequences of this ADR became observable rather than intended, and are worth recording
+where the decision is, not only where the code is:
+
+- **Database sessions earn their cost at revocation.** The instance declines Better Auth's
+  `cookieCache` for the reason the ADR gives: a cached session keeps working after the row is
+  deleted, which is the one property stateless tokens were rejected for.
+- **Profiles stayed above auth.** No profile reaches the identity library. `getSession` answers
+  with an account and a session id, `active_profile_selection` remains Liberty's own table keyed
+  by session, and the television and the phone therefore remain different profiles of one
+  account. Folding the selection into Better Auth's session record would have worked and would
+  have made swapping the library a product-data migration.
+- **The seam held under a second consumer.** `better-auth` is still imported in exactly one file
+  in this repository. The route handler forwards `Request` to `auth.handler` rather than
+  importing `better-auth/next-js`, which is three lines and keeps the boundary the ADR asked for.
+
+What this ADR does **not** yet cover, and what PW-0403's own record and `docs/SECURITY.md` state
+plainly: no mail transport is configured, no SQL has been executed against PostgreSQL from this
+lane, and there is no sign-in screen.
+
+*Original status text follows, unchanged, because the routing argument it makes is still the
+rule:*
+
 **Status:** Proposed. **`control/tasks.json` is authoritative for who implements this, who
 reviews it, and whether it has been ratified. This document does not restate any of that.**
 

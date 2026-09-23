@@ -1,4 +1,5 @@
 import type { AccountIdentity } from "@liberty/auth";
+import { resolveAuthInstance } from "./auth-instance";
 /*
  * Both come through `app/api/deployment-environment.ts`, this app's door for the
  * CAPABILITY: it re-exports the registry check alongside the allowlist and the
@@ -103,16 +104,43 @@ const DEVELOPMENT_IDENTIFIER = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const MAX_DEVELOPMENT_IDENTIFIER_LENGTH = 64;
 
 /**
- * Why this request has no account.
+ * Why this request has no account. THREE remedies, and each goes to a different
+ * person.
  *
  * `development_identifier_malformed` is separate from
  * `authentication_not_configured` because the remedies are different and only
  * one of them is the operator's: a bad header is the developer's own typo, and
  * reporting it as "authentication is not configured" would send them to wire up
  * an auth instance they do not need.
+ *
+ * `not_authenticated` IS THE ONE PW-0403 ADDED, and it did not exist before
+ * because it could not be true: with no auth instance anywhere in this
+ * application, every deployment request was `authentication_not_configured` and
+ * there was no state in which a request could simply be signed out. Now there
+ * is, and collapsing the two would be the worst of both -- an operator told to
+ * wire an instance that is already wired, and a viewer told nothing about
+ * signing in.
+ *
+ *   - `authentication_not_configured` -- THE OPERATOR. No instance exists: no
+ *     secret, no PostgreSQL, or configuration the schema refused. Nothing the
+ *     caller can do.
+ *   - `not_authenticated` -- THE CALLER. An instance exists and answered. The
+ *     request carried no session cookie, or one that is malformed, expired or
+ *     revoked, and all four are reported identically for the reason below.
+ *   - `development_identifier_malformed` -- THE DEVELOPER. Their own typo, and
+ *     reachable only outside a deployment.
+ *
+ * THE FOUR NOT-AUTHENTICATED CASES ARE DELIBERATELY INDISTINGUISHABLE. A
+ * response that separated "expired" from "revoked" would tell an attacker
+ * holding a stolen cookie whether the session it came from still existed, and
+ * one that separated "malformed" from "absent" is a cheap oracle for whether a
+ * cookie name is right. This is the same non-oracle discipline
+ * `profile_unavailable` already applies one layer up, and PW-0402's review
+ * required that behaviour be preserved.
  */
 export type RequestAccountRefusalReason =
   | "authentication_not_configured"
+  | "not_authenticated"
   | "development_identifier_malformed";
 
 export type RequestAccountResolution =
@@ -262,17 +290,223 @@ export function developmentAccount(
  * `NonDeploymentEnvironment | null` and `developmentAccount` takes the non-null
  * type, so removing it does not widen the gate -- it fails to compile.
  */
-export function resolveRequestAccount(
+/**
+ * How a DEPLOYMENT establishes an identity (PW-0403).
+ *
+ * Injected rather than imported at the call site so that every branch of
+ * `resolveRequestAccount` can be tested without a PostgreSQL instance and
+ * without a constructed auth library -- the same reason `selectRepository` and
+ * `selectAuthInstance` take their inputs explicitly. The DEFAULT is the real
+ * one, so nothing is opt-in: a caller that passes nothing gets the verified
+ * database-backed session.
+ */
+export type DeploymentAuthenticator = (
+  request: Request
+) => Promise<RequestAccountResolution>;
+
+/**
+ * The real deployment authenticator: a verified, database-backed session.
+ *
+ * `auth.api.getSession` is what does the verifying, and what it verifies is the
+ * whole point of the PL-0401 ruling that Liberty uses DATABASE sessions rather
+ * than signed stateless tokens: the cookie is a pointer, the row is the
+ * authority, and a row that has been deleted stops working immediately. That is
+ * why `createLibertyAuth` also declines Better Auth's `cookieCache` -- with it,
+ * a revoked session keeps working until the cache expires, which is the exact
+ * property database sessions were chosen to avoid.
+ *
+ * WHAT MAKES THIS A SESSION AND NOT SOMETHING ELSE. The only input is
+ * `request.headers`, and the only header it reads is the session cookie the
+ * library set. In particular:
+ *
+ *   - THE DESKTOP LAUNCH TOKEN CANNOT SUBSTITUTE. `lib/sidecar/policy.ts`
+ *     authorises a LISTENER -- it establishes that a request reached the right
+ *     loopback process -- and PW-0402's `authorizeRoute` was built never to
+ *     receive a `Request` so that the token could not become a login. Nothing
+ *     here reads it either, and the direction matters: the seam is closed from
+ *     both sides or it is not closed.
+ *   - A LOOPBACK ORIGIN CANNOT SUBSTITUTE. Being on 127.0.0.1 is a statement
+ *     about a socket, not about a person. Nothing below inspects the origin, the
+ *     remote address or any forwarded header.
+ *   - NO PROFILE IS READ. `getSession` answers with an account and a session id
+ *     and this function publishes exactly those two. The active profile comes
+ *     from `active_profile_selection`, written only by `selectActiveProfile`,
+ *     and keeping it out of Better Auth is the PL-0402 ruling that profiles live
+ *     above auth -- a viewer's profile is product data, and the identity library
+ *     has no reason to hold it.
+ *
+ * EVERY FAILURE IS THE SAME ANSWER. Absent, malformed, expired and revoked all
+ * return `not_authenticated` with one detail, because the differences between
+ * them are exactly the facts an attacker holding a stolen cookie would like to
+ * learn. A thrown error is the one exception in KIND, not in wording: it means
+ * the store could not answer, which is an operator problem rather than a
+ * signed-out viewer, so it reports `authentication_not_configured` -- and it
+ * reports the thrown message without a stack, because the options object behind
+ * this instance holds the secret and the connection string.
+ */
+export interface SessionReadResult {
+  readonly user?: { readonly id?: unknown } | null;
+  readonly session?: { readonly id?: unknown } | null;
+}
+
+/**
+ * Reading the verified session, as a function of headers and nothing else.
+ *
+ * STRUCTURAL RATHER THAN THE VENDOR TYPE, for two reasons. The honest one is
+ * testability: `LibertyAuth` is the precise inferred instance and cannot be
+ * hand-built, so a suite that wanted to exercise expired-versus-revoked would
+ * otherwise need PostgreSQL and a clock. The better one is that this signature
+ * is the boundary's whole content -- headers in, an account or nothing out --
+ * and writing it down as a type makes that auditable. Anything not in this
+ * signature cannot influence the answer: not the URL, not the remote address,
+ * not a launch token, not a body.
+ */
+export type SessionReader = (headers: Headers) => Promise<SessionReadResult | null | undefined>;
+
+export type SessionReaderResolution =
+  | { readonly ok: true; readonly read: SessionReader }
+  | { readonly ok: false; readonly detail: string };
+
+/**
+ * The real reader, built from this process's auth instance.
+ *
+ * `auth.api.getSession` is what verifies, and what it verifies is the point of
+ * the PL-0401 ruling that Liberty uses DATABASE sessions rather than signed
+ * stateless tokens: the cookie is a pointer, the row is the authority, and a
+ * deleted row stops working immediately. It is also why `createLibertyAuth`
+ * declines Better Auth's `cookieCache` -- with it, a revoked session keeps
+ * working until the cache expires, which is the exact property database
+ * sessions were chosen to avoid.
+ */
+export function resolveSessionReader(): SessionReaderResolution {
+  const instance = resolveAuthInstance();
+  if (!instance.ok) return { ok: false, detail: instance.detail };
+  return {
+    ok: true,
+    read: (headers) => instance.auth.api.getSession({ headers })
+  };
+}
+
+/**
+ * How a DEPLOYMENT establishes an identity (PW-0403).
+ *
+ * WHAT MAKES THIS A SESSION AND NOT SOMETHING ELSE. The only input is
+ * `request.headers`, and the only header that decides anything is the session
+ * cookie the library set. In particular:
+ *
+ *   - THE DESKTOP LAUNCH TOKEN CANNOT SUBSTITUTE. `lib/sidecar/policy.ts`
+ *     authorises a LISTENER -- it establishes that a request reached the right
+ *     loopback process -- and PW-0402's `authorizeRoute` was built never to
+ *     receive a `Request` so that the token could not become a login. Nothing
+ *     here reads it either, and the direction matters: a seam is closed from
+ *     both sides or it is not closed.
+ *   - A LOOPBACK ORIGIN CANNOT SUBSTITUTE. Being on 127.0.0.1 is a statement
+ *     about a socket, not about a person. Nothing below inspects the origin, the
+ *     remote address or any forwarded header.
+ *   - NO PROFILE IS READ. This publishes an account id and a session id and
+ *     nothing else. The active profile comes from `active_profile_selection`,
+ *     written only by `selectActiveProfile`, and keeping it out of Better Auth
+ *     is the PL-0402 ruling that profiles live above auth.
+ *
+ * EVERY FAILURE IS THE SAME ANSWER. Absent, malformed, expired and revoked all
+ * return `not_authenticated` with one detail, because the differences between
+ * them are exactly the facts an attacker holding a stolen cookie would like to
+ * learn. A THROWN error is the one exception in KIND rather than in wording: it
+ * means the store could not answer, which is an operator problem rather than a
+ * signed-out viewer, so it reports `authentication_not_configured` -- with the
+ * thrown message and no stack, because the options object behind this instance
+ * holds the secret and the connection string.
+ */
+export async function deploymentSessionAccount(
   request: Request,
-  environment: NonDeploymentEnvironment | null = NonDeploymentEnvironment.classify()
-): RequestAccountResolution {
-  if (environment === null) {
+  resolveReader: () => SessionReaderResolution = resolveSessionReader
+): Promise<RequestAccountResolution> {
+  const reader = resolveReader();
+  if (!reader.ok) {
+    return { ok: false, reason: "authentication_not_configured", detail: reader.detail };
+  }
+
+  let result: SessionReadResult | null | undefined;
+  try {
+    result = await reader.read(request.headers);
+  } catch (error) {
     return {
       ok: false,
       reason: "authentication_not_configured",
-      detail:
-        "no authentication instance is constructed in this app: @liberty/auth/server is not wired to a route handler, so this deployment cannot identify an account"
+      detail: `the session store could not be consulted: ${error instanceof Error ? error.message : String(error)}`
     };
   }
+
+  /*
+   * BOTH IDS ARE CHECKED, not merely read. `AccountIdentity` is the input to
+   * every profile decision -- `authorizeProfileAccess` compares against
+   * `userId`, and `active_profile_selection` is keyed by `sessionId` -- so an
+   * empty string in either position would be an identity that compares equal to
+   * another empty one. The library should never produce that; this is the
+   * assertion rather than the hope, and it fails closed as not-authenticated
+   * rather than as a server error, because the caller cannot tell the two apart
+   * and must not be able to.
+   */
+  const userId = result?.user?.id;
+  const sessionId = result?.session?.id;
+  if (
+    typeof userId !== "string" ||
+    userId === "" ||
+    typeof sessionId !== "string" ||
+    sessionId === ""
+  ) {
+    return { ok: false, reason: "not_authenticated", detail: NOT_AUTHENTICATED_DETAIL };
+  }
+
+  return {
+    ok: true,
+    account: { userId, sessionId },
+    /*
+     * NEITHER ID IS IN THE DETAIL. A reason trail is logged, and a session id in
+     * a log is a credential-shaped value sitting in the log aggregator; an
+     * account id is the value `profileViewSchema` already refuses to publish,
+     * for the same reason. The trail says WHERE the identity came from, which is
+     * the debuggable fact.
+     */
+    detail: "verified database-backed session"
+  };
+}
+
+/**
+ * The one wording every not-authenticated answer uses.
+ *
+ * Declared once so the four cases cannot drift into four sentences that can be
+ * told apart, which would rebuild the oracle by accident.
+ */
+const NOT_AUTHENTICATED_DETAIL =
+  "this request carried no valid session; sign in to continue";
+
+export async function resolveRequestAccount(
+  request: Request,
+  environment: NonDeploymentEnvironment | null = NonDeploymentEnvironment.classify(),
+  /*
+   * THE DEPLOYMENT BRANCH, INJECTABLE AND DEFAULTED TO THE REAL ONE.
+   *
+   * Third parameter rather than an options object, matching `environment` above,
+   * and defaulted for the same reason: a test names what it needs and everything
+   * else takes the production path. It is NOT a request input -- nothing on the
+   * wire reaches it -- and it cannot widen the gate, because it is only
+   * consulted on the branch where `environment` is `null`, which is precisely
+   * the branch no development capability can reach.
+   */
+  authenticate: DeploymentAuthenticator = deploymentSessionAccount
+): Promise<RequestAccountResolution> {
+  /*
+   * ASYNC AS OF PW-0403, and the change is load-bearing rather than incidental:
+   * a verified session is a database read. The single production call site,
+   * `resolveRequestContext`, was already async, so the cost was one `await`.
+   *
+   * THE ORDER IS UNCHANGED AND MUST STAY UNCHANGED. A deployment is decided by
+   * the absence of a minted capability, not by the presence of a session, so a
+   * process that IS a deployment can never fall through to the development
+   * branch no matter what it sends -- and a development process never consults
+   * the session store, so a stale cookie cannot identify anybody in `next dev`.
+   */
+  if (environment === null) return authenticate(request);
   return developmentAccount(environment, request.headers);
 }

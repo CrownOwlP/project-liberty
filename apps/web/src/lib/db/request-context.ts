@@ -51,6 +51,20 @@ export const REQUEST_CONTEXT_REASON_CODES = [
 
   /* Nobody could be identified. `lib/session/account.ts` decides these. */
   "authentication_not_configured",
+  /**
+   * An auth instance exists, answered, and this request is signed out (PW-0403).
+   *
+   * DISTINCT FROM `authentication_not_configured` because the remedies go to
+   * different people: that one is an operator wiring an instance, this one is a
+   * viewer signing in. Before PW-0403 the state was unreachable -- with no
+   * instance anywhere, every deployment request was the operator's problem --
+   * and collapsing them now would tell an operator to wire something already
+   * wired while telling a viewer nothing.
+   *
+   * It carries ONE detail for absent, malformed, expired and revoked alike; see
+   * `deploymentSessionAccount` for why separating them is an oracle.
+   */
+  "not_authenticated",
   "development_identifier_malformed",
 
   /**
@@ -165,6 +179,15 @@ export function contextRefusalIsClientFault(code: RequestContextReasonCode): boo
   switch (code) {
     /* The developer's own typo in a development header, not the operator's problem. */
     case "development_identifier_malformed":
+    /*
+     * THE CALLER'S, and the classification is what decides the HTTP status: a
+     * signed-out request must not be reported as a server-side unavailability,
+     * because "retry later" is false and no amount of waiting signs anybody in.
+     * It shares this branch with the malformed development header for the same
+     * underlying reason -- the request is answerable, and what it carried is
+     * what was wrong with it.
+     */
+    case "not_authenticated":
       return true;
     case "served_by_postgres_adapter":
     case "served_by_in_memory_adapter":
@@ -241,9 +264,15 @@ export async function resolveRequestContext(
   const adapter = reason(adapterReasonCode(repository.adapterId), adapterDetail);
 
   const injectedAccount = options.account;
+  /*
+   * `await` AS OF PW-0403. `resolveRequestAccount` became asynchronous because a
+   * deployment identity is a verified database-backed session, and a session is
+   * a row. This function was already async, so the whole cost of that change is
+   * this keyword.
+   */
   const identity =
     injectedAccount === undefined
-      ? resolveRequestAccount(request)
+      ? await resolveRequestAccount(request)
       : { ok: true as const, account: injectedAccount, detail: "account supplied by the caller" };
   if (!identity.ok) {
     return {

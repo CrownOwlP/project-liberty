@@ -592,17 +592,60 @@ error. Every response names which adapter answered, as
 development environment, so the PostgreSQL adapter is unexercised and the `integration` gate
 on PL-0402/0403/0404 is not satisfiable from this lane.
 
-### Identity, while there is no sign-in
+### Identity (PW-0403)
 
-`@liberty/auth` ships the seam but nothing in `apps/web` constructs it — there is no
-`app/api/auth/[...all]` handler, no configured secret or mail transport, and no database for
-the sessions PL-0401 chose. So in a deployment every route below answers `unavailable` with
-`authentication_not_configured` (503). Outside a deployment they act as a **development
-account**, gated by the same witness, defaulting to `development-account` and overridable per
+**A deployment authenticates.** `apps/web/src/lib/session/auth-instance.ts` constructs the
+reviewed `@liberty/auth/server` instance from validated configuration, and
+`/api/auth/*` serves its endpoints. An identity in a deployment comes from a **verified,
+database-backed session** and from nothing else: the cookie is a pointer, the row is the
+authority, and a revoked row stops working immediately — which is why the instance declines
+Better Auth's `cookieCache`.
+
+Three things explicitly **cannot** substitute for that session, each asserted as an absence in
+`lib/session/deployment-session.test.ts`: the desktop launch token (which authorises a
+*listener*, and which PW-0402's `authorizeRoute` was built never to receive), a loopback
+origin (a fact about a socket, not about a person), and the development headers below.
+
+Outside a deployment the routes act as a **development account**, gated by the same minted
+`NonDeploymentEnvironment` witness, defaulting to `development-account` and overridable per
 request with `x-liberty-development-account` / `x-liberty-development-session` so that
-cross-household behaviour can be exercised. No route reads a profile id from a client: the
-active profile comes from `active_profile_selection`, written only by
-`POST /api/v1/profiles/selection`.
+cross-household behaviour can be exercised. A deployment never reaches that branch, and a
+development process never consults the session store, so a stale cookie identifies nobody in
+`next dev`.
+
+No route reads a profile id from a client: the active profile comes from
+`active_profile_selection`, written only by `POST /api/v1/profiles/selection`. It is **not**
+stored in the identity library — profiles live above auth (PL-0402), and a selection is a
+property of this session on this device rather than of the account.
+
+#### Three ways identity can fail, and three different people
+
+| reason | status | who fixes it |
+| --- | --- | --- |
+| `authentication_not_configured` | 503 | **the operator.** No instance exists: no secret, no PostgreSQL, configuration the schema refused, or the session store could not be consulted. |
+| `not_authenticated` | **401** | **the caller.** An instance exists and answered; this request carried no valid session. |
+| `development_identifier_malformed` | 400 | **the developer.** Their own typo, reachable only outside a deployment. |
+
+`not_authenticated` is **401**, and that status only became truthful with PW-0403 — before it
+there was no endpoint at which a client could obtain a credential, so the routes answered 503.
+It is returned identically for an **absent, malformed, expired or revoked** session. The four
+are not distinguished on the wire, because the differences are precisely what an attacker
+holding a stolen cookie would like to learn; this is the same non-oracle discipline
+`profile_unavailable` applies one layer up.
+
+### `/api/auth/*` — the authentication endpoints
+
+Served by the vendor instance, and **deliberately outside the `/api/v1` surface**: the shapes
+are Better Auth's, not ours, and versioning them here would promise a stability this project
+does not control. The path is `/api/auth` because that is what
+`libertyAuthConfigSchema.baseUrl` builds cookie paths and callbacks from; a different path
+issues cookies the browser will not send back.
+
+Only `GET` and `POST` are exported. The configured surface is email/password, verification,
+reset and database sessions, and no endpoint in it answers `PATCH`, `PUT` or `DELETE`.
+
+With no instance the group answers **503** with the reason, `no-store` — the endpoint exists,
+the service behind it is not configured, and an operator can act on it.
 
 ### Shared response shape
 

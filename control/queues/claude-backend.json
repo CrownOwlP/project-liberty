@@ -1,16 +1,13 @@
 {
-  "generatedAt": "2026-09-23T20:34:12.593Z",
+  "generatedAt": "2026-09-23T20:34:57.073Z",
   "agent": "claude-backend",
   "executionAvailable": true,
-  "assigned": [],
-  "review": [],
-  "reservedExternal": [],
-  "recommended": [
+  "assigned": [
     {
       "id": "PW-0403",
       "priority": "P0",
       "lane": "Backend",
-      "status": "READY",
+      "status": "IN_PROGRESS",
       "title": "Production authentication and session resolution",
       "dependencies": [
         "PW-0402"
@@ -44,10 +41,16 @@
       ],
       "acceptance": "A request in a DEPLOYMENT can be identified, so that an account identity is never a typed header. This task owns the residual gpt-architect named when approving PW-0402, verbatim: PW-0402 does NOT establish production user authentication, and today a desktop build classifying as non-deployment would make the header the identity layer, with nothing currently preventing that classification. THE BOUNDARIES, WHICH THIS TASK DOES NOT MOVE. PW-0101 owns local listener authentication and hardening. PW-0402 owns authorization once an identity is known. PW-0401 owns the authenticated backend service for provider resolution. PW-0403 owns production account and session authentication and nothing else. REQUIRED: ADOPT the reviewed @liberty/auth/server Better Auth seam rather than replacing it. packages/auth/src/better-auth.ts is already the only module in the repository that imports better-auth, it already refuses a surface beyond ENABLED_AUTH_CAPABILITIES, and config.ts already validates secure-cookie, trusted-origin and baseURL behaviour. This task constructs the reviewed instance from that validated config; it does not stand up a second identity system beside it. REQUIRED: expose the Next App Router auth handler and endpoints, importing better-auth/next-js in apps/web rather than in the package, which must stay buildable and testable without Next -- the boundary better-auth.ts states in its own header. REQUIRED: a deployment request resolves AccountIdentity ONLY from a verified database-backed session. resolveRequestAccount gains a real deployment-authenticated branch instead of answering authentication_not_configured. REQUIRED: development headers stay strictly confined to a minted non-deployment runtime capability. The witness discipline in apps/web/src/lib/session/account.ts is preserved exactly -- a deployment cannot obtain an identity there, cannot be issued the witness, and a manufactured one is refused rather than accepted on the strength of its type. REQUIRED: a missing, malformed, expired or revoked session CANNOT produce an AccountIdentity. Each of the four is its own test, because 'expired' and 'revoked' fail through different code paths and a suite that covers only the missing case proves the least interesting one. REQUIRED: the desktop launch token cannot substitute for a user session. This is the exact confusion PW-0402's authorizeRoute was built to prevent by never being given a Request, and authentication must not reintroduce it from the other side. REQUIRED: a loopback origin cannot substitute for a user session. Being on 127.0.0.1 is not an identity. REQUIRED: profile selection stays ABOVE authentication and is not moved into Better Auth user or session product data. active_profile_selection is keyed by session in Liberty's own store, which is what lets the television and the phone act as different profiles; folding it into the identity library's session record would couple the two and lose that. REQUIRED: PW-0402's indistinguishable authorization refusal behaviour is preserved. An unauthenticated request and a request for another household's resource must not become distinguishable because one of them now fails earlier. REQUIRED: secure cookie, trusted-origin and baseURL behaviour comes from the existing validated auth configuration rather than from new literals at the handler. REQUIRED: no credential or secret is placed in the desktop artifact or in any log. REQUIRED: docs/SECURITY.md R4 is updated to state what is then true. Its current text was corrected in round 82 to say authorization is enforced and authentication is not; leaving that in place after this task ships would be a second competing truth.",
       "notes": "Filed in round 83 to own the residual gpt-architect named when approving PW-0402; acceptance rewritten in the same round to the reviewer's own round-83 specification, which is narrower and sharper than the original filing. allowedPaths gained apps/web/src/app/api/auth/** because Better Auth's validated basePath is /api/auth and the App Router handler has to live at the path the config already declares, not at a v1 path chosen to fit an earlier surface guess. The three packages/auth modules briefly added as reviewDependencies were removed again: packages/auth/src/** is already in allowedPaths and ai:validate correctly reported them redundant, because allowedPaths is always part of the reviewed surface.",
-      "owner": null,
+      "owner": "claude-backend",
       "gateResults": {},
-      "updatedAt": "2026-09-23T09:46:11.048999Z"
-    },
+      "updatedAt": "2026-09-23T20:34:57.039Z",
+      "implementationAgent": "claude-backend",
+      "implementationBaseSha": "c238d140fd3e26efc7185bddd5c61bad89eff63d"
+    }
+  ],
+  "review": [],
+  "reservedExternal": [],
+  "recommended": [
     {
       "id": "PW-0401",
       "priority": "P1",

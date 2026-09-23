@@ -126,6 +126,16 @@ export const profilesReasonCodeSchema = z.enum([
   "database_url_malformed",
   "storage_not_configured",
   "authentication_not_configured",
+  /**
+   * An auth instance exists, answered, and this request is signed out (PW-0403).
+   *
+   * Widened from `RequestContextReasonCode` by identity like the rest of this
+   * block; the reasoning for why it is separate from
+   * `authentication_not_configured` lives in `lib/session/account.ts` and is not
+   * restated here, because a second copy of a rule is a second thing to drift.
+   * What IS this file's business is the status: see below, it is 401.
+   */
+  "not_authenticated",
   "development_identifier_malformed",
   "unexpected_repository_failure",
 
@@ -476,6 +486,23 @@ export function profilesHttpStatus(response: ProfilesResponse): number {
       return 503;
     case "refused": {
       const primary = response.reasons[0].code;
+      /*
+       * 401 BEFORE ANYTHING ELSE, and it is the one status in this function that
+       * only became truthful with PW-0403.
+       *
+       * The comment this replaces argued that a 401 would tell a client to
+       * present a credential this deployment had no way to issue -- which was
+       * correct while no auth instance existed anywhere in the application.
+       * There is one now, at `/api/auth`, so 401 is the accurate answer and the
+       * only one a client can act on: 400 would send somebody to fix a
+       * well-formed request, and 403 would say the request was understood and
+       * denied on the merits, which is how a signed-out viewer ends up
+       * convinced their account lacks permission.
+       *
+       * FIRST, so it cannot be reordered behind a list membership test. It is a
+       * property of the primary reason alone.
+       */
+      if (primary === "not_authenticated") return 401;
       if (CLIENT_INPUT_REFUSALS.includes(primary)) return 400;
       if (STATE_CONFLICT_REFUSALS.includes(primary)) return 409;
       /*

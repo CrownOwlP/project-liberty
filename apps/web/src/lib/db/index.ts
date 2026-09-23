@@ -1,3 +1,4 @@
+import type { DatabaseHandle } from "@liberty/persistence";
 import {
   isClassifiedRuntime,
   NonDeploymentEnvironment
@@ -114,6 +115,27 @@ export type RepositoryResolution =
       readonly repository: LibertyRepository;
       /** Never empty. Says which adapter answered and what admitted it. */
       readonly detail: string;
+      /**
+       * The PostgreSQL handle this repository was built over, or `null` for the
+       * in-memory adapter, which has no database at all (PW-0403).
+       *
+       * IT WAS ALWAYS CREATED AND ALWAYS DISCARDED. `createPostgresRepository`
+       * returns `{ repository, handle }` and this module used only the first
+       * half, so the pool existed with no reference to it outside the
+       * repository's closures. Returning it changes nothing about the pool's
+       * lifetime -- the cache below is still what guarantees one per connection
+       * string per process -- and it is what lets the auth instance share this
+       * pool instead of opening a second one. A second pool would break the
+       * invariant this module's own comments state, and it would do it in a
+       * desktop sidecar where connection count is not free.
+       *
+       * REQUIRED-AND-NULLABLE rather than optional, the rule this repository
+       * applies to every unknown fact: `null` says "this adapter has no
+       * database", while an absent key would say only that somebody did not
+       * think about it. A caller that needs SQL must handle the `null` and say
+       * what it does about it.
+       */
+      readonly handle: DatabaseHandle | null;
     }
   | {
       readonly ok: false;
@@ -228,10 +250,12 @@ export function selectRepository(
       };
     }
 
+    const postgres = createPostgresRepository(configured);
     return {
       ok: true,
-      repository: createPostgresRepository(configured).repository,
-      detail: `PostgreSQL, selected by ${DATABASE_URL_VARIABLE}`
+      repository: postgres.repository,
+      detail: `PostgreSQL, selected by ${DATABASE_URL_VARIABLE}`,
+      handle: postgres.handle
     };
   }
 
@@ -247,6 +271,14 @@ export function selectRepository(
   return {
     ok: true,
     repository,
+    /*
+     * `null`, and it is an assertion rather than a gap: the in-memory adapter
+     * executes no SQL and has no database. A caller that needs one -- the auth
+     * instance is the first -- has to say what it does about that, and what it
+     * does is refuse, because database sessions cannot live in a store that
+     * disappears with the process.
+     */
+    handle: null,
     /*
      * The environment is reported from the witness rather than re-read, so the
      * trail names the value that actually admitted this adapter.
