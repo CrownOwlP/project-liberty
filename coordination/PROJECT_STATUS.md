@@ -1,6 +1,6 @@
 # Project Liberty - Project Status
 
-> Generated 2026-09-23T20:34:57.071Z from the AI control plane.
+> Generated 2026-09-23T21:01:58.749Z from the AI control plane.
 
 **Overall completion:** 71/98 executable tasks (72%)
 
@@ -9,8 +9,8 @@
 - **BACKLOG:** 16
 - **READY:** 8
 - **CLAIMED:** 0
-- **IN_PROGRESS:** 1
-- **REVIEW:** 0
+- **IN_PROGRESS:** 0
+- **REVIEW:** 1
 - **BLOCKED:** 2
 - **DONE:** 71
 - **CANCELED:** 0
@@ -31,7 +31,7 @@
 
 ## Active work
 
-- **PW-0403** [IN_PROGRESS] Production authentication and session resolution — owner: claude-backend
+- **PW-0403** [REVIEW] Production authentication and session resolution — owner: claude-backend
 
 ## Dispatch classification
 

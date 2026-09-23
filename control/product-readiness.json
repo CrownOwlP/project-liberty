@@ -79,8 +79,8 @@
         {
           "id": "auth-seam",
           "state": "partial",
-          "note": "Profile AUTHORIZATION is enforced on every profile-scoped route and guarded mechanically; AUTHENTICATION is not -- the account comes from a development header in a non-deployment runtime and a deployment refuses outright. Still partial, for a narrower and sharper reason than before",
-          "evidence": "apps/web/src/lib/authorization (PW-0402); docs/SECURITY.md R4, corrected"
+          "note": "Authorization is enforced on every profile-scoped route and guarded mechanically (PW-0402); AUTHENTICATION is now enforced too -- a deployment resolves identity only from a verified database-backed session, witnessed end to end against a real PostgreSQL including immediate revocation. STILL PARTIAL for three stated reasons rather than one vague one: no mail transport is configured, so verification and reset cannot complete; no SQL is exercised from CI; and there is no sign-in screen, so a deployment viewer gets a 401 with nowhere to go. PW-0403 is in REVIEW",
+          "evidence": "apps/web/src/lib/session/auth-instance.ts, apps/web/src/app/api/auth (PW-0403, in REVIEW); apps/web/src/lib/authorization (PW-0402); docs/SECURITY.md R4"
         },
         {
           "id": "http-api",
