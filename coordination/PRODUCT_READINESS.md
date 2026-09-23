@@ -7,7 +7,7 @@
 it.** `coordination/PROJECT_STATUS.md` answers *has the board been worked*.
 This answers *can a person install this on a Windows PC and watch something*.
 
-## Overall usable-product readiness: 31%
+## Overall usable-product readiness: 46%
 
 Weighted mean of the dimensions below, using the weights in the data file —
 not a mean of means, because the dimensions are not equally load-bearing.
@@ -15,12 +15,12 @@ not a mean of means, because the dimensions are not equally load-bearing.
 | Dimension | Readiness | Weight | present | partial | absent |
 | --- | --- | --- | --- | --- | --- |
 | Engineering foundation | **81%** | 10 | 6 | 1 | 1 |
-| Windows desktop integration | **25%** | 20 | 2 | 0 | 6 |
-| Native playback | **35%** | 20 | 2 | 3 | 5 |
-| UI / product polish | **28%** | 20 | 1 | 7 | 8 |
+| Windows desktop integration | **69%** | 20 | 5 | 1 | 2 |
+| Native playback | **45%** | 20 | 3 | 3 | 4 |
+| UI / product polish | **44%** | 20 | 3 | 8 | 5 |
 | Real-content integration | **10%** | 10 | 0 | 1 | 4 |
 | Packaging and release | **0%** | 10 | 0 | 0 | 6 |
-| Testing and reliability | **43%** | 10 | 3 | 0 | 4 |
+| Testing and reliability | **57%** | 10 | 4 | 0 | 3 |
 
 ## How each figure is derived
 
@@ -56,9 +56,9 @@ would claim a person can use them.
 - [ ] **rate-limits** — No rate limit on any route
   - evidence: `docs/SECURITY.md residual risk R2`
 
-### Windows desktop integration — 25%
+### Windows desktop integration — 69%
 
-2 of 8 capability points.
+5.5 of 8 capability points.
 
 - [x] **build-target-split** — LIBERTY_BUILD_TARGET, .desktop module resolution, separate distDir, import-graph guard
   - evidence: `apps/web/src/app/api/v1/playback/build-target.ts + .test.ts (853 lines)`
@@ -66,23 +66,23 @@ would claim a person can use them.
   - evidence: `apps/web/src/app/api/v1/playback/session/playback-session-implementation.desktop.ts`
 - [ ] **tauri-shell** — No Rust, no src-tauri, no tauri.conf.json anywhere in the repo
   - evidence: `absent: find for Cargo.toml/*.rs/tauri.conf.json returns nothing`
-- [ ] **standalone-sidecar** — output:'standalone' is specified in two docs and set in no config
-  - evidence: `absent: apps/web/next.config.ts sets distDir and resolution only`
-- [ ] **sidecar-supervision** — No port discovery, no Job Object, no health check, no restart
-  - evidence: `absent`
-- [ ] **loopback-hardening** — No 127.0.0.1 bind assertion, no per-launch bearer token, no Host validation
-  - evidence: `absent: docs/DESKTOP_PLAYBACK.md section 7 specifies all three`
-- [ ] **csp-emission** — Tauri CSP injection stops applying under a sidecar; the app emits none
-  - evidence: `absent`
+- [x] **standalone-sidecar** — output:'standalone' is set for the desktop target and only for it
+  - evidence: `apps/web/next.config.ts (PW-0101)`
+- [~] **sidecar-supervision** — The sidecar half of the port handshake exists and is tested; port discovery, Job Object, health check and restart are the shell's and are PW-0102
+  - evidence: `apps/web/src/lib/sidecar/handshake.ts (PW-0101)`
+- [x] **loopback-hardening** — Per-launch 256-bit token compared in constant time, exact-literal Host check, one indistinguishable refusal, and a start-time refusal when HOSTNAME is unset
+  - evidence: `apps/web/src/lib/sidecar/policy.ts + policy.test.ts (PW-0101)`
+- [x] **csp-emission** — The application emits its own CSP in sidecar mode, replacing the injection Tauri stops applying
+  - evidence: `apps/web/src/lib/sidecar/policy.ts contentSecurityPolicy; apps/web/src/proxy.ts (PW-0101)`
 - [ ] **window-lifecycle** — No native window, crash/restart, deep links or protocol handler
   - evidence: `absent`
 
-### Native playback — 35%
+### Native playback — 45%
 
-3.5 of 10 capability points.
+4.5 of 10 capability points.
 
-- [ ] **player-adapter-boundary** — Specified as ~260 lines of TS in docs; no module exists
-  - evidence: `absent: docs/DESKTOP_PLAYBACK.md section 3 is design-only`
+- [x] **player-adapter-boundary** — The module exists with all four section-3 rules enforced by an import-graph guard proven against a planted offender
+  - evidence: `apps/web/src/components/player/player-adapter.ts + .test.ts (PW-0201)`
 - [~] **web-adapter** — A Shaka controller and <liberty-video> exist and work; they do not implement the boundary
   - evidence: `apps/web/src/components/player/playback-controller.ts, liberty-video.ts`
 - [ ] **native-adapter** — No libmpv binding, no child HWND, no vo=gpu-next
@@ -102,14 +102,14 @@ would claim a person can use them.
 - [ ] **hdr-4k-hwdec** — No HDR, no hardware-decoding, no D3D11 handling in code
   - evidence: `absent`
 
-### UI / product polish — 28%
+### UI / product polish — 44%
 
-4.5 of 16 capability points.
+7 of 16 capability points.
 
-- [ ] **app-shell** — layout.tsx is 16 lines: html/body/children. Topbar hand-copied into 8 files
-  - evidence: `apps/web/src/app/layout.tsx`
-- [ ] **navigation** — Nav is four fragment anchors; /search is unreachable from any link
-  - evidence: `apps/web/src/app/page.tsx:206`
+- [x] **app-shell** — One AppShell with a skip link, a global focus rule, a root not-found and a global-error; a guard fails the build if a route grows its own header again
+  - evidence: `apps/web/src/components/shell (PW-0301)`
+- [x] **navigation** — Every entry goes somewhere real or states why it is planned; /search is reachable for the first time and the four fragment anchors are gone
+  - evidence: `apps/web/src/components/shell/navigation.ts (PW-0301)`
 - [~] **home-discovery** — Two hardcoded rails over 6 demo items; loading/empty/error states are good
   - evidence: `apps/web/src/app/page.tsx; lib/catalog.ts:119`
 - [~] **title-detail** — Hero, three facts, per-episode rights gating; the only action is Play
@@ -132,12 +132,12 @@ would claim a person can use them.
   - evidence: `absent`
 - [ ] **artwork** — Zero images. Posters are CSS gradients and the contracts carry no artwork field
   - evidence: `absent: no poster/artwork/backdrop key in packages/contracts/src`
-- [ ] **design-system** — Eight dark-only CSS variables, one media query, every other value a px literal
-  - evidence: `apps/web/src/app/globals.css:1-10`
+- [~] **design-system** — Spacing, type, radius, elevation and focus tokens exist and a second breakpoint handles Windows scaling; components still carry px literals and there is no light theme, which is a recorded decision
+  - evidence: `apps/web/src/app/globals.css (PW-0301)`
 - [ ] **offline-network-state** — No navigator.onLine, no offline banner, no retry-on-reconnect
   - evidence: `absent`
-- [~] **accessibility** — Live regions, list roles and hidden labels are careful; no skip link, no focus management, zero keyboard handlers
-  - evidence: `apps/web/src/components/search/search-form.tsx:311; no onKeyDown anywhere`
+- [~] **accessibility** — Skip link, a global :focus-visible where globals.css previously defined none, and the existing live regions; still no keyboard handlers, no focus management and no roving tabindex -- PW-0310
+  - evidence: `apps/web/src/app/globals.css; apps/web/src/components/shell/app-shell.tsx (PW-0301)`
 
 ### Real-content integration — 10%
 
@@ -171,9 +171,9 @@ would claim a person can use them.
 - [ ] **crash-diagnostics** — No log location, no crash capture, no diagnostics bundle
   - evidence: `absent`
 
-### Testing and reliability — 43%
+### Testing and reliability — 57%
 
-3 of 7 capability points.
+4 of 7 capability points.
 
 - [x] **unit-suites** — Monorepo suites green, cache-busted, on every package
   - evidence: `turbo run test --force 20/20`
@@ -183,8 +183,8 @@ would claim a person can use them.
   - evidence: `e2e/tests/playback-session.desktop.api.spec.ts, .cross-target.api.spec.ts`
 - [ ] **windows-e2e** — No test has ever run on Windows; no windows runner
   - evidence: `absent`
-- [ ] **real-device-matrix** — docs/TEST_MATRIX.md has no manual, real-device, HDR or Windows row
-  - evidence: `docs/TEST_MATRIX.md`
+- [x] **real-device-matrix** — 41 rows, each owned AUTO, RIG or BLOCKED, with a recorded-environment rule and a reporting format
+  - evidence: `docs/WINDOWS_CERTIFICATION.md (PW-0601)`
 - [ ] **long-session-soak** — No long-playback, memory, sleep/wake or network-interruption test
   - evidence: `absent`
 - [ ] **install-upgrade-tests** — No clean-install, upgrade or uninstall test

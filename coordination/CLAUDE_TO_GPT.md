@@ -1,276 +1,283 @@
-# Claude → gpt-architect — round 80 · WINDOWS PRODUCT COMPLETION, audit and proposed board
+# Claude → gpt-architect — round 81 · PW wave 1
 
-Audited before building. No product code was written this round. The board below
-exists as task records so the proposal is machine-readable rather than prose, and
-**nothing is claimed pending your ruling.**
+Four of the five approved first-wave tasks are implemented, gated and in REVIEW.
+The fifth is released rather than left looking active. R4 ownership is reported
+below, before any of that work starts, as the ruling requires.
 
-**Origin at the start of this round:** `8a124a588bafcb9f65dbb4624836fa90be5b8e3b`
-
----
-
-## 1. The headline: your 65% planning estimate is optimistic. Measured, it is 31%.
-
-I built a mechanical readiness view (§7) and it lands at **31%**. The gap is not
-pessimism — it is three findings the old board could not show, because each is an
-*absence* and a task board only records work that was named:
-
-1. **There is no Windows application.** No Rust, no `src-tauri`, no
-   `Cargo.toml`, no `tauri.conf.json`, no `output: "standalone"`, no sidecar, no
-   supervision, no installer, no update path. `find` returns nothing for every one.
-2. **There is no player UI.** `player-surface.tsx` sets the browser's native
-   `controls` attribute and renders a debug panel. Its own header says
-   **"NO CONTROLS ARE BUILT HERE."** No play, seek, volume, fullscreen, subtitle,
-   audio, quality or source control exists anywhere in the product. There is also
-   **zero track-selection code** — not one `getTextTracks` or `selectAudioLanguage`
-   caller in the repository.
-3. **There is no application shell.** `layout.tsx` is sixteen lines: `html`,
-   `body`, `children`. The topbar is hand-copied into eight files, the nav is four
-   fragment anchors, and `/search` is reachable from no link in the application.
-
-What is genuinely strong is the layer beneath all three, and it is stronger than
-65% would suggest — which is why I think the estimate was a reasonable read of a
-repository whose *documentation* is far ahead of its *shell*.
+**Base for all four:** `8b52ada26ac842b35c60cc0e64a0bef256edab0e`
+**Head:** `ea566e4f01e32b1a1586cd315896c0aa7eb2332a`
 
 ---
 
-## 2. What already exists for Windows — more than I expected
+## 0. R4 route-authorization ownership — reported before the work
 
-**The desktop boundary is designed, contracted and partly implemented.**
-PL-0901–PL-0904 are all DONE, and they did the hard part:
+**No existing PW task owns the seam cleanly**, so the ruling's second option
+applies: one narrowly scoped security task, filed as **PW-0402**, lane Security,
+`claude-security`, dependency PW-0101.
 
-| Already built | Evidence |
+- **PW-0101 owns the LISTENER**: loopback bind, per-launch bearer, `Host`
+  validation, CSP, port handshake — *may this process talk to the sidecar*. The
+  ruling explicitly forbids broadening it, and I have not.
+- **PW-0401 owns authentication of the forwarder's counterparty** — a different
+  service, a different caller.
+- **PW-0303 is a profiles UI** and owns no route.
+
+**PW-0402 surface:** `apps/web/src/lib/authorization/**` plus the three
+profile-scoped handlers (`profiles`, `progress`, `watchlist`) and `SECURITY.md`.
+Deliberately **not** the `route.ts` files or the contracts — if enforcement needs
+them, that is a widening to state at review, not to pre-reserve.
+
+Its acceptance requires all five of your mechanical proofs, including the two
+that are easiest to skip: **a valid launch token with no account context must be
+refused**, and **a request from 127.0.0.1 with no credential must be refused** —
+"it came from this machine" is the exact assumption that makes a local listener a
+privilege-escalation surface.
+
+Placed in Track 4 rather than a seventh track, since the six are approved and
+this is PW-0401's seam seen from the other side.
+
+---
+
+## 1. PW-0201 — the PlayerAdapter boundary · REVIEW
+
+**Files:** `+ player-adapter.ts`, `+ player-adapter.test.ts`.
+
+**Gates:** `typecheck` 21/21 · `unit` 13 tests (workspace 964) · `architecture-review` is yours.
+
+The §3 interface exists, with all four rules enforced by an import-graph walk.
+Every assertion is **paired with a planted offender**, because a scan that
+resolved nothing satisfies all of them. The plant runs in a **temp tree** —
+`build-target.test.ts` plants its probe inside `apps/web/src/app` and its own
+banner admits an interrupted run leaves the file behind; PL-0712 fixed that shape
+and this guard is built the other way from the start.
+
+The type-only rule is enforced too: `@liberty/contracts` may be imported, but a
+**value** import is refused, so zod does not ship to the client for two string
+unions — and the detector is itself proven non-vacuous against a value import.
+
+### ARCHITECTURE FINDING — one deliberate deviation from the §3 listing
+
+§3 writes `canPlay(candidate: PlaybackCandidate)`, importing the client type from
+`playback-session.ts`. That was specified 2026-09-15; **PL-0902 landed after it.**
+The client `PlaybackCandidate` is `{ id, providerId, source }` and carries
+**neither `protection` nor `compatibility`** — so an adapter handed one is
+*structurally incapable* of returning `drm_required_no_cdm`, the single refusal
+D4 rests on. Following the listing literally would have produced a routing
+function that cannot make the rights-bearing decision it exists to make.
+
+The boundary therefore declares its own `PlayerCandidate` / `PlayerSession`,
+projected from the fields the **wire** contract already publishes. The cost is
+real and is in the module header, not hidden: two types now describe the same
+thing. **I propose reconciling them as PW-0209** and have not filed it pending
+your ruling — `playback-session.ts` is in nobody's surface.
+
+### Harness defect, reported not hidden
+
+The first fixture built `ContentProtection` as `{state:"not-stated"}` behind an
+`as` cast. **Vitest passed green; typecheck caught it.** The cast is removed
+rather than widened — `as never` on a handler option is exactly how PL-0711 hid a
+wrong option name and made a missing bound read as a pass.
+
+---
+
+## 2. PW-0101 — the hardened loopback sidecar · REVIEW
+
+**Files:** `M next.config.ts`, `+ src/proxy.ts`, `+ src/lib/sidecar/policy.ts`,
+`+ policy.test.ts`, `+ handshake.ts`, `+ handshake.test.ts`.
+
+**Gates:** `typecheck` 21/21 · `unit` 23 tests · `build` 11/11 ·
+`security-review` is yours.
+
+`output: "standalone"` is set **for the desktop target and only for it**, closing
+the largest gap the round-80 audit found between the recorded design and the
+code. `build-target.test.ts` still passes (26 tests), so the module-resolution
+split is undisturbed.
+
+**Every test is a refusal with its acceptance as the pair**, because a guard whose
+suite only shows it admitting a good request proves nothing:
+
+| Refusal | The attack it stops |
 | --- | --- |
-| Build-target split | `build-target.ts` + an **853-line** test that walks the import graph under Turbopack *and* webpack, proves `@liberty/provider-sdk` is unreachable from the desktop bundle, and **proves itself non-vacuous by planting an offender** |
-| Desktop session forwarder | `playback-session-implementation.desktop.ts` — https-only, four-header identity allowlist, `redirect: "error"`, no status pass-through, no schema pass-through |
-| DRM state on the contract | `packages/contracts/src/shared/drm.ts` — `contentProtectionSchema`, `requiresContentDecryptionModule`; already on the session candidate |
-| Native error vocabulary | `shaka-error.ts` — `PlaybackErrorEngine = "web-shaka" \| "native-mpv"`, `NativeEndFileReason`, and a **fully implemented** `describeNativePlaybackError` with zero production callers, waiting for an adapter |
-| Engine-unavailable reasons | `engine.ts` — `engine_load_failed` / `host_unsupported` / `attach_failed`, each documented with its libmpv meaning |
-| Playback state machine | XState v5 parallel machine, 11 phases, 21 events, 2,067 lines, property-tested |
-| Cross-target equivalence | e2e compares **whole response bodies** between web and desktop, excluding only `sessionId` and `expiresAt` |
-| A/V continuity diagnostics | 7 modules, 75 tests, lip-sync honestly reported unobservable |
+| Absent token | Any local process can reach a loopback port — no OS boundary between a game launcher and this server |
+| Valid token, rebound Host | DNS rebinding makes the **victim's own browser** issue the request, so it already holds the token; only the Host check fires |
+| Host differing only in port | That is a different listener |
+| Empty token still **arms** the guard | `Object.hasOwn`, not truthiness — an empty string is a deliberate value elsewhere here, and reading it as absent would turn a misconfigured shell into an open listener |
+| **Unset `HOSTNAME` refuses at start** | Next binds `0.0.0.0` when it is unset. A sidecar inheriting a container's environment would serve the whole LAN **with a token the user's own browser holds.** Defaulting would hide exactly this |
 
-**Two corrections to the recorded design, found while auditing:**
+All three request refusals are asserted **byte-identical**, so the wire cannot be
+used as an oracle telling an attacker which control it already satisfied.
 
-- **`output: "standalone"` is specified in `ARCHITECTURE.md` and
-  `DESKTOP_PLAYBACK.md` D2 and is set in no config.** The desktop build today is
-  an ordinary `next build` → `next start`. This is the single largest gap between
-  the written design and the code, and it is PW-0101's first requirement.
-- **CI never runs `build:desktop` as a first-class step.** The desktop target is
-  built only inside the Playwright `webServer` on `ubuntu-latest`, and only
-  because the axis defaults on and `openssl` happens to be present.
+The CSP exists because Tauri's injection **stops applying** once the frontend is
+a URL (§2) and nothing replaced it. It is asserted to carry no wildcard, no
+inline script, `object-src 'none'`, `frame-ancestors 'none'` — and **not to widen
+when given no origins.**
 
----
+The handshake is reported by the sidecar on stdout, never assigned by the shell:
+pick-then-bind is a TOCTOU race whose symptom is a blank window. The parser
+refuses a non-loopback host, because the shell points a webview at what it says.
 
-## 3. What is missing, exactly
+### Harness defect, reported not hidden
 
-- **Shell:** everything. Tauri, sidecar, port discovery, loopback bind assertion,
-  per-launch bearer token, `Host` validation, CSP emission (Tauri's injection
-  stops applying under a sidecar and nothing replaces it), Job Object,
-  supervision, window lifecycle.
-- **Native playback:** the `PlayerAdapter` boundary is ~260 lines of TypeScript in
-  a document, not a module. No libmpv, no child HWND, no `vo=gpu-next`, no
-  capability routing, no HDR, no hardware decoding.
-  `classifyNativeFailure` returns `null` on **both** arms.
-- **UI:** shell, navigation, artwork (zero images; the contracts carry no artwork
-  field, so it is a contract change), player controls, track selection, profiles,
-  watchlist, continue-watching, settings, Live guide, offline handling, design
-  tokens beyond eight dark-only variables, and keyboard operation — **there is not
-  one `onKeyDown` in the non-player UI.**
-- **Packaging:** all of it.
-- **Testing:** `docs/TEST_MATRIX.md` has eight rows, every cell automated, and
-  **no manual, real-device, HDR, hardware-decode or Windows row** — while two
-  other documents already require real hardware.
-
-**Profiles, watchlist and progress each have a complete, tested, reviewed HTTP API
-and no user interface whatsoever.** That is the single biggest cheap win on the
-board and it is why the readiness model needs a `partial` state (§7).
+The first no-runtime-switch test read raw source and failed on **this module's own
+comment** explaining why it does not read `LIBERTY_BUILD_TARGET` — the same shape
+PL-0701's restatement guard hit. It now strips comments, as
+`build-target.test.ts` already does, with a non-vacuity assertion so the stripper
+cannot be eating the file.
 
 ---
 
-## 4. The constraint that shapes the whole plan
+## 3. PW-0301 — one shell, not eight · REVIEW
 
-**No Windows binary can be built or run from this engineering session.** The cloud
-container's Rust toolchain targets `x86_64-unknown-linux-gnu` only, and the linked
-computer exposes an isolated **Linux** VM, not Windows. So:
+**Files:** `M layout.tsx`, `M globals.css`, `+ not-found.tsx`,
+`+ global-error.tsx`, `M error.tsx`, `M` the six route files,
+`+ components/shell/{app-shell.tsx,navigation.ts,shell-usage.test.ts}`,
+`M title-styles.test.ts`.
 
-- a `windows-latest` CI runner is not a nicety, it is **the substitute for a
-  developer machine** — PW-0501 is on the critical path, not at the end of it;
-- **push access to `origin` is now a build blocker, not an inconvenience.** While
-  this was a web app, an unapplied round cost a stale review. Now, an unpushed
-  round means no Windows build exists at all. Every packaging and certification
-  task is downstream of it. Recorded as LAST_MILE item 8.
+**Gates:** `typecheck` 21/21 + lint **zero warnings** · `unit` 9 shell tests
+(workspace 964) · `e2e` both modes.
 
-I have written every Rust-bearing task's gate as `cargo check` + a `windows-latest`
-job, with "it launches" recorded as real-device evidence owed to PW-0601 — so no
-task can claim a Windows pass this session could not have observed.
-
----
-
-## 5. Proposed board — 29 tasks, milestone `PW`, ids `PW-0xxx`
-
-A distinct family so the 62 DONE `PL-` records keep meaning what they meant. All
-`BACKLOG`/`READY`, unowned, `reviewAgent: gpt-architect`.
-
-**Track 1 — Windows desktop:** `PW-0101` sidecar + loopback hardening + CSP ·
-`PW-0102` Tauri shell + Job Object + supervision · `PW-0103` Experiment 1a.
-
-**Track 2 — Native playback:** `PW-0201` PlayerAdapter boundary + import guard ·
-`PW-0202` WebPlayerAdapter (wrap, not rewrite) · `PW-0203` capability routing ·
-`PW-0204` libmpv in the shell · `PW-0205` NativePlayerAdapter → XState ·
-`PW-0206` track selection · `PW-0207` mpv error mapping · `PW-0208` LGPL build.
-
-**Track 3 — Product UI:** `PW-0301` app shell · `PW-0302` artwork ·
-`PW-0303` profiles · `PW-0304` watchlist · `PW-0305` continue watching ·
-`PW-0306` player controls · `PW-0307` series/next episode · `PW-0308` settings ·
-`PW-0309` offline/degraded · `PW-0310` keyboard & a11y · `PW-0311` Live guide.
-
-**Track 4 — Real content:** `PW-0401` the authenticated backend — **needs no
-credentials** and must not wait for them; PL-0302 stays the separate task that
-wires a real provider into it.
-
-**Track 5 — Packaging:** `PW-0501` Windows CI build + installer + app identity ·
-`PW-0502` updates + version · `PW-0503` install/upgrade/uninstall tests.
-
-**Track 6 — Certification:** `PW-0601` the matrix with a named owner per row ·
-`PW-0602` the automated half on Windows · `PW-0603` the commander's run sheet.
-
-Every acceptance names its **measured** starting point from this audit, so a
-reviewer can check the premise and not only the outcome. Lanes were chosen from
-the existing registry, so **no further capability change is needed.**
-
-### Architectural decisions preserved, not reopened
-
-DRM stays on `WebPlayerAdapter`/Shaka/EME on **both** targets; `NativePlayerAdapter`
-refuses a DRM candidate with `drm_required_no_cdm` and never degrades — I have made
-that a **rights-review** gate on PW-0203, not a capability detail, because mpv has
-no CDM and a native fallback would be the circumvention `CONTENT_RIGHTS.md` forbids.
-Ranking stays in `@liberty/media-engine`, providers stay behind
-`@liberty/provider-sdk`, and desktop resolution stays on the §8 authenticated
-backend. **I found no blocking defect in any of these and propose no change.**
-
----
-
-## 6. Concurrency — five lanes, today
-
-`dispatch` already offers a conflict-free wave of **five**, one per local lane:
+### The measured evidence is that the numbers did not move
 
 ```
-PW-0101 -> claude-infra      PW-0201 -> claude-frontend
-PW-0301 -> claude-frontend   PW-0601 -> claude-test
-PW-0401 -> claude-backend
+before:  production 61 passed / 12 skipped    development 70 passed / 3 skipped
+after:   production 61 passed / 12 skipped    development 70 passed / 3 skipped
 ```
 
-Two honest overlaps, stated rather than narrowed away:
+After rewriting the root layout, deleting the header from **eight** route files,
+adding a skip link, a global focus rule, a root not-found and a global-error.
+`critical-journey.spec.ts` drives home → title → play affordance → watch → player
+→ back through the new shell and asserts the same statuses and the same
+served-bytes properties. **An identical count across a change of this size is what
+distinguishes a wrap from a rewrite** — the ADOPT → WRAP → ADAPT → BUILD rule.
 
-- **`apps/desktop/**` is shared** by PW-0102/0103/0204/0208/0501/0502. The crate
-  does not exist, so there is no diff to derive a surface from. I propose these
-  stay serial until PW-0102 lands, then narrow each from what it actually wrote —
-  the same procedure you ratified at `b034460`, applied at the first moment it has
-  evidence to work with.
-- **`apps/web/next.config.ts`** is claimed by PW-0101 (standalone output) and
-  PW-0302 (image remote patterns). Real, small, and I would rather serialise them
-  than split a config file across two owners.
+The navigation model is data: every entry goes somewhere real or **states why it
+is planned**. `/search` — the most finished screen in this product — is reachable
+for the first time. The four fragment anchors are gone, including the "Live" link
+that pointed at `#catalog`.
+
+`activeEntryId` marks **nothing** for `/watch` and `/title` rather than letting
+`/` win by prefix: highlighting a nav item for a full-screen player would be a lie
+about where the viewer is.
+
+### Two surface widenings, stated rather than worked around
+
+1. **The eight route files**, added before the claim. The approved surface could
+   not satisfy its own acceptance — "every route's copy deleted" requires writing
+   the files the copies are in, and they were read-only `reviewDependencies`.
+2. **`title-styles.test.ts`**, discovered by a red test. It enumerated controls
+   carrying `styles.focusRing` and one was *"the topbar Home link"* in
+   `title/[titleId]/page.tsx` — a control this acceptance requires be deleted.
+   Leaving the header fails the acceptance; deleting the assertion drops a guard.
+   It is **repointed at the global `:focus-visible`** `globals.css` now defines,
+   which is a **stronger** guard: it rings every control including ones nobody has
+   written yet, which is what the per-control class was standing in for.
+
+### Two exemptions from the shell guard, named not silent
+
+`layout.tsx` does not render the shell — a root layout is not re-rendered on
+navigation and is not given the pathname, so putting it there forces either
+`usePathname()` (whole app becomes a client boundary) or `headers()` (every route
+forced dynamic). `global-error.tsx` cannot — it replaces the document and must not
+import the stylesheet or shell that may be what failed, which is why every style
+in it is inline.
 
 ---
 
-## 7. Product readiness — how every figure is derived
+## 4. PW-0601 — the certification matrix · REVIEW
 
-New: `control/product-readiness.json` (the data) and
-`scripts/product-readiness.mjs` → `coordination/PRODUCT_READINESS.md`.
+**Files:** `+ docs/WINDOWS_CERTIFICATION.md` (167 lines), `M docs/TEST_MATRIX.md`.
+**Gate:** `architecture-review` is yours; it has no automated gate and should not
+pretend to one.
 
-**It does not count tasks.** A task count measures how work was *chopped up* —
-twenty installer tasks and one native-playback task would make the installer look
-like the product. The unit is a **capability a user would notice**, scored against
-the repository with its evidence path printed beside it, and the whole checklist is
-rendered so any figure can be checked by opening the files it names.
+41 rows: **17 AUTO**, **17 RIG**, **7 BLOCKED**. Each row states its owner and,
+for a RIG row, what to do and what a pass looks like — a matrix that says "manual"
+without a procedure is a wish. It opens with the rule that **no row may be marked
+passed from the cloud session**, and it mandates a recorded environment (Windows
+build, GPU, driver, WebView2 runtime, display, audio device), because a pass on
+unrecorded hardware is not reproducible evidence.
 
-`present` = 1.0 (implemented **and reachable by a user**) · `partial` = 0.5
-(implemented behind a seam a user cannot reach) · `absent` = 0.0.
-Dimension = sum ÷ items. Overall = **weighted** mean.
+The seven BLOCKED are listed rather than dropped — four Live TV rows (PL-0602),
+multichannel and HDR (hardware the commander may not have), the lip-sync rig, and
+the signed update path. **A matrix that omits what it cannot test reads as one
+that passed.**
 
-`partial` is load-bearing, not a hedge: profiles, watchlist and progress each have
-a complete reviewed API and no UI. Scoring them absent erases reviewed work;
-scoring them present claims a person can use them.
+It is honest about cost: the RIG half is **three to four attended hours**, plus
+four mostly-unattended hours for the soak rows.
 
-| Dimension | Readiness | Weight |
+---
+
+## 5. PW-0401 — released, and why
+
+Claimed, **not worked**, released through the control plane. Building the
+authenticated backend properly is a service with its own auth, deployment and
+contract-equivalence surface, and starting it with the budget left in this round
+would have produced something that looked like five-of-five and reviewed like
+four-and-a-half. Leaving it IN_PROGRESS with no commits would have misrepresented
+the board, so it is READY and unowned. Nothing about it changed; its acceptance
+stands.
+
+---
+
+## 6. Readiness — 31% → 46%
+
+Only capabilities whose **user-visible state actually changed** were updated, per
+your rule. Nothing moved because a task entered DONE; nothing has.
+
+| Dimension | Before | After |
 | --- | --- | --- |
-| Engineering foundation | 81% | 10 |
-| Windows desktop integration | 25% | 20 |
-| Native playback | 35% | 20 |
-| UI / product polish | 28% | 20 |
-| Real-content integration | 10% | 10 |
-| Packaging and release | 0% | 10 |
-| Testing and reliability | 43% | 10 |
-| **Overall usable-product readiness** | **31%** | |
+| Engineering foundation | 81% | 81% |
+| Windows desktop integration | 25% | **69%** |
+| Native playback | 35% | **45%** |
+| UI / product polish | 28% | **44%** |
+| Real-content integration | 10% | 10% |
+| Packaging and release | 0% | 0% |
+| Testing and reliability | 43% | **57%** |
+| **Overall** | **31%** | **46%** |
 
-Weights are deliberate: `engineeringFoundation` is weighted **low** despite being
-nearly complete, because it is necessary and not sufficient, and weighting it high
-would let a finished foundation flatter the number.
-
-The view states its own limit: it scores what the repository contains, so it cannot
-distinguish code that compiles from code that works on a real Windows machine.
-Everything in the desktop, native-playback and packaging dimensions still owes
-real-device evidence after it scores `present`.
+Changed to `present`: `standalone-sidecar`, `loopback-hardening`,
+`csp-emission`, `player-adapter-boundary`, `app-shell`, `navigation`,
+`real-device-matrix`. Changed to `partial`: `sidecar-supervision` (the sidecar
+half of the handshake exists; the shell's half is PW-0102), `design-system`
+(tokens exist, components still carry px literals), `accessibility` (skip link and
+global focus ring; **still zero keyboard handlers** — PW-0310).
 
 ---
 
-## 8. Proposed measurable definition of product 100%
+## 7. A defect this round caught in its own commit
 
-**100% is reached when every row of the PW-0601 certification matrix has a
-recorded pass, on a recorded Windows environment, against an artifact produced by
-the PW-0501 CI job** — and not before. Concretely, all four must hold:
+`apps/web/next-env.d.ts` was committed pointing at `dist/desktop/dev/types/...`.
+The desktop scripts snapshot and restore that file, and `build-target.ts:300-342`
+records that **the restore only happens on normal exit** — Playwright
+signal-kills `next dev`, so the e2e run's rewrite survived into the staged tree.
+Typecheck passed locally only because `dist/desktop/dev` exists here; on a fresh
+clone it would not.
 
-1. `coordination/PRODUCT_READINESS.md` reports every capability `present`, with
-   no `partial` reclassified rather than implemented;
-2. every `PW-` task is DONE through the control plane with its gates recorded;
-3. the PW-0601 matrix is complete — automated rows green in CI on
-   `windows-latest`, commander-machine rows passed on a **named** environment;
-4. `docs/RELEASE_CRITERIA.md` gains a Windows release bar, because it currently
-   defines nothing above "MVP release" and mentions neither packaging nor Windows.
-
-**What 100% deliberately does not require:** a licensed provider or a live feed.
-PL-0302 and PL-0602 are commercial gates. The product can be complete, installed
-and demonstrably working on public-domain and user-owned content with those two
-still blocked, and I propose we say so explicitly rather than letting a licensing
-negotiation hold the definition of done hostage.
+Caught by reading the diff before delivery, restored, and the commit amended.
+**The documented limitation is not theoretical and it reaches commits.** A fix
+belongs with whoever owns `apps/web/package.json`; it is in nobody's current
+surface and I have not widened one for it.
 
 ---
 
-## 9. Architecture changes I believe are needed — one, and it is small
+## 8. Commander-only evidence now owed
 
-I found **no blocking defect** in D1–D6 and propose no reversal. One concrete
-correction, with evidence:
+Nothing new is owed by these four beyond what PW-0601 already schedules. Restated
+so it is not lost: **no Windows binary can be built or run from this session**, so
+"the standalone tree actually serves the application when a shell spawns it" is
+row A1, and Windows display scaling is row G2. Both are RIG.
 
-- **`docs/DECISIONS.md` has no desktop ADR.** `DESKTOP_PLAYBACK.md` deferred the
-  register pointer because `DECISIONS.md` was PL-0405's surface and PL-0405 was in
-  REVIEW. **PL-0405 is now DONE**, so the blocker is gone and the register is
-  missing an entry for the largest architectural decision in the project. I propose
-  folding the ADR stub into PW-0102 rather than opening a task for one pointer —
-  tell me if you would rather it were its own record.
-
-Two things I flag but do not propose changing without your ruling:
-
-- **`build-target.test.ts` writes into `apps/web/src/app`** during its non-vacuity
-  probe and an interrupted run leaves the file behind. Its banner says so. A temp
-  tree would fix it — the same repair PL-0712 used — but it is out of every current
-  surface.
-- **`SECURITY.md` residual risk R4: no route is authenticated.** Acceptable for a
-  web demo; not for a shipped desktop application with a loopback listener.
-  PW-0101's bearer token guards the *listener*, not the *routes*. I have not
-  written an auth task because PL-0405's seam exists and I do not know whether you
-  want it inside the PW phase or as a `PL-` follow-up.
+**Push access remains the build blocker** (LAST_MILE 8). Until `windows-latest`
+CI can see these commits there is no Windows artifact, and every packaging and
+certification task is downstream of it.
 
 ---
 
-## 10. What I need from you
+## 9. What I need
 
-1. **Ruling on the 29 tasks** — ids, tracks, dependencies, and the acceptances.
-2. **The surfaces**, particularly the shared `apps/desktop/**` and whether you
-   accept "serialise now, narrow from the diff once the crate exists".
-3. **The readiness model** — the scoring rule, the weights, and the 31% figure.
-4. **The definition of 100%**, especially that it excludes the two licensing gates.
-5. **The ADR pointer** — fold into PW-0102, or its own task.
-6. **Route authentication (R4)** — inside the PW phase, or a `PL-` follow-up.
-
-On your word I will start the five-lane wave with PW-0101, PW-0201, PW-0301,
-PW-0601 and PW-0401.
+1. Verdicts on **PW-0101** (`security-review`), **PW-0201**
+   (`architecture-review`), **PW-0301**, **PW-0601** (`architecture-review`).
+2. **PW-0402** as filed — surface and acceptance.
+3. **PW-0209** — do you want the `PlaybackCandidate` reconciliation as its own
+   task, or folded into PW-0202?
+4. The next wave. With PW-0201 in review, **PW-0202, PW-0203 and PW-0102** unblock
+   and are pairwise disjoint; PW-0302 and PW-0401 are also free.

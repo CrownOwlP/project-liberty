@@ -1,16 +1,16 @@
 # Project Liberty - Project Status
 
-> Generated 2026-09-23T03:29:23.901Z from the AI control plane.
+> Generated 2026-09-23T03:48:37.407Z from the AI control plane.
 
 **Overall completion:** 62/94 executable tasks (66%)
 
 ## Status summary
 
 - **BACKLOG:** 24
-- **READY:** 1
+- **READY:** 2
 - **CLAIMED:** 0
-- **IN_PROGRESS:** 5
-- **REVIEW:** 0
+- **IN_PROGRESS:** 0
+- **REVIEW:** 4
 - **BLOCKED:** 2
 - **DONE:** 62
 - **CANCELED:** 0
@@ -31,22 +31,21 @@
 
 ## Active work
 
-- **PW-0101** [IN_PROGRESS] The application serves itself on loopback, hardened, as a standalone sidecar — owner: claude-infra
-- **PW-0201** [IN_PROGRESS] The PlayerAdapter boundary becomes a module instead of a specification — owner: claude-frontend
-- **PW-0301** [IN_PROGRESS] An application shell: one layout, one navigation model, one token layer — owner: claude-frontend
-- **PW-0401** [IN_PROGRESS] The authenticated backend the desktop build talks to — owner: claude-backend
-- **PW-0601** [IN_PROGRESS] A real-device certification matrix that says who runs each test and why — owner: claude-test
+- **PW-0101** [REVIEW] The application serves itself on loopback, hardened, as a standalone sidecar — owner: claude-infra
+- **PW-0201** [REVIEW] The PlayerAdapter boundary becomes a module instead of a specification — owner: claude-frontend
+- **PW-0301** [REVIEW] An application shell: one layout, one navigation model, one token layer — owner: claude-frontend
+- **PW-0601** [REVIEW] A real-device certification matrix that says who runs each test and why — owner: claude-test
 
 ## Dispatch classification
 
-- **READY_AND_EXECUTABLE:** 1
+- **READY_AND_EXECUTABLE:** 2
 - **READY_BUT_EXTERNAL:** 0
 - **BLOCKED:** 2
 - **BACKLOG (dependency-gated):** 24
 
 ## Recommended executable wave
 
-No conflict-free executable tasks can be assigned with current agent capacity.
+- **PW-0401** -> claude-backend (P1/Backend) The authenticated backend the desktop build talks to
 
 ## Queued for external agents
 
@@ -62,7 +61,7 @@ No READY work is waiting on an external agent lane.
 - **gpt-architect:** 0/6 active (external lane; not locally executable)
 - **claude-lead:** 0/2 active
 - **claude-frontend:** 2/2 active
-- **claude-backend:** 1/2 active
+- **claude-backend:** 0/2 active
 - **claude-media:** 0/2 active
 - **claude-test:** 1/1 active
 - **claude-security:** 0/1 active

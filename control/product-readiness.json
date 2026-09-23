@@ -126,27 +126,27 @@
         },
         {
           "id": "standalone-sidecar",
-          "state": "absent",
-          "note": "output:'standalone' is specified in two docs and set in no config",
-          "evidence": "absent: apps/web/next.config.ts sets distDir and resolution only"
+          "state": "present",
+          "note": "output:'standalone' is set for the desktop target and only for it",
+          "evidence": "apps/web/next.config.ts (PW-0101)"
         },
         {
           "id": "sidecar-supervision",
-          "state": "absent",
-          "note": "No port discovery, no Job Object, no health check, no restart",
-          "evidence": "absent"
+          "state": "partial",
+          "note": "The sidecar half of the port handshake exists and is tested; port discovery, Job Object, health check and restart are the shell's and are PW-0102",
+          "evidence": "apps/web/src/lib/sidecar/handshake.ts (PW-0101)"
         },
         {
           "id": "loopback-hardening",
-          "state": "absent",
-          "note": "No 127.0.0.1 bind assertion, no per-launch bearer token, no Host validation",
-          "evidence": "absent: docs/DESKTOP_PLAYBACK.md section 7 specifies all three"
+          "state": "present",
+          "note": "Per-launch 256-bit token compared in constant time, exact-literal Host check, one indistinguishable refusal, and a start-time refusal when HOSTNAME is unset",
+          "evidence": "apps/web/src/lib/sidecar/policy.ts + policy.test.ts (PW-0101)"
         },
         {
           "id": "csp-emission",
-          "state": "absent",
-          "note": "Tauri CSP injection stops applying under a sidecar; the app emits none",
-          "evidence": "absent"
+          "state": "present",
+          "note": "The application emits its own CSP in sidecar mode, replacing the injection Tauri stops applying",
+          "evidence": "apps/web/src/lib/sidecar/policy.ts contentSecurityPolicy; apps/web/src/proxy.ts (PW-0101)"
         },
         {
           "id": "window-lifecycle",
@@ -162,9 +162,9 @@
       "items": [
         {
           "id": "player-adapter-boundary",
-          "state": "absent",
-          "note": "Specified as ~260 lines of TS in docs; no module exists",
-          "evidence": "absent: docs/DESKTOP_PLAYBACK.md section 3 is design-only"
+          "state": "present",
+          "note": "The module exists with all four section-3 rules enforced by an import-graph guard proven against a planted offender",
+          "evidence": "apps/web/src/components/player/player-adapter.ts + .test.ts (PW-0201)"
         },
         {
           "id": "web-adapter",
@@ -228,15 +228,15 @@
       "items": [
         {
           "id": "app-shell",
-          "state": "absent",
-          "note": "layout.tsx is 16 lines: html/body/children. Topbar hand-copied into 8 files",
-          "evidence": "apps/web/src/app/layout.tsx"
+          "state": "present",
+          "note": "One AppShell with a skip link, a global focus rule, a root not-found and a global-error; a guard fails the build if a route grows its own header again",
+          "evidence": "apps/web/src/components/shell (PW-0301)"
         },
         {
           "id": "navigation",
-          "state": "absent",
-          "note": "Nav is four fragment anchors; /search is unreachable from any link",
-          "evidence": "apps/web/src/app/page.tsx:206"
+          "state": "present",
+          "note": "Every entry goes somewhere real or states why it is planned; /search is reachable for the first time and the four fragment anchors are gone",
+          "evidence": "apps/web/src/components/shell/navigation.ts (PW-0301)"
         },
         {
           "id": "home-discovery",
@@ -306,9 +306,9 @@
         },
         {
           "id": "design-system",
-          "state": "absent",
-          "note": "Eight dark-only CSS variables, one media query, every other value a px literal",
-          "evidence": "apps/web/src/app/globals.css:1-10"
+          "state": "partial",
+          "note": "Spacing, type, radius, elevation and focus tokens exist and a second breakpoint handles Windows scaling; components still carry px literals and there is no light theme, which is a recorded decision",
+          "evidence": "apps/web/src/app/globals.css (PW-0301)"
         },
         {
           "id": "offline-network-state",
@@ -319,8 +319,8 @@
         {
           "id": "accessibility",
           "state": "partial",
-          "note": "Live regions, list roles and hidden labels are careful; no skip link, no focus management, zero keyboard handlers",
-          "evidence": "apps/web/src/components/search/search-form.tsx:311; no onKeyDown anywhere"
+          "note": "Skip link, a global :focus-visible where globals.css previously defined none, and the existing live regions; still no keyboard handlers, no focus management and no roving tabindex -- PW-0310",
+          "evidence": "apps/web/src/app/globals.css; apps/web/src/components/shell/app-shell.tsx (PW-0301)"
         }
       ]
     },
@@ -432,9 +432,9 @@
         },
         {
           "id": "real-device-matrix",
-          "state": "absent",
-          "note": "docs/TEST_MATRIX.md has no manual, real-device, HDR or Windows row",
-          "evidence": "docs/TEST_MATRIX.md"
+          "state": "present",
+          "note": "41 rows, each owned AUTO, RIG or BLOCKED, with a recorded-environment rule and a reporting format",
+          "evidence": "docs/WINDOWS_CERTIFICATION.md (PW-0601)"
         },
         {
           "id": "long-session-soak",
