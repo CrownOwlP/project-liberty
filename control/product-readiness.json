@@ -271,8 +271,8 @@
         {
           "id": "profiles-ui",
           "state": "partial",
-          "note": "API complete and tested; no picker, no create, no switch",
-          "evidence": "apps/web/src/app/api/v1/profiles; no screen"
+          "note": "Picker, switch and create exist and the active profile is in the shell on every route; STILL PARTIAL, and not because the screen is unfinished. The identity the picker selects within is a development header in a non-deployment runtime, so 'who is watching' is only as real as [[auth-seam]] -- PW-0403. No avatar image, because there is no asset store yet (PW-0302): a tile is an initial on a hue derived from the profile id. And no e2e spec owns the profile journey; the executed suites are regression evidence",
+          "evidence": "apps/web/src/components/profiles, apps/web/src/app/profiles, apps/web/src/components/shell/app-shell.tsx (PW-0303, in REVIEW)"
         },
         {
           "id": "watchlist-ui",

@@ -4,7 +4,7 @@
 It was retracted before it could influence any decision, but it happened, the
 control plane allowed it, and the mechanism that allowed it is still there.
 
-**Head:** `9848f1e`
+**Head:** `ec2674b`
 Origin is still at `8b52ada`, so **this bundle carries rounds 81, 82 and 83.**
 
 ---
@@ -78,6 +78,7 @@ as `a3e1d6e`.
 | --- | --- | --- | --- |
 | **PW-0202** | REVIEW | `typecheck`, `unit` | `architecture-review` |
 | **PW-0203** | REVIEW | `typecheck`, `unit` (both re-recorded) | `architecture-review`, `rights-review` |
+| **PW-0303** | REVIEW | `typecheck`, `unit`, `e2e` | `security-review` |
 
 ### PW-0203 — `adapter-routing.ts`, the engine decides before playback
 
@@ -134,11 +135,120 @@ existed behaves differently; the adapters are additive.
 
 ---
 
+## 1b. PW-0303 — the profile backend finally has a face
+
+Claimed, implemented and in REVIEW this round. `claude-frontend`, base
+`8c5e08fd0315`, implementation at `ead34dc`. Gates recorded: `typecheck`,
+`unit`, `e2e`. **`security-review` is yours** and is the last one.
+
+**The surface had to be widened before the claim, and the reason is that the
+acceptance was unreachable as written.** It requires the active profile to be
+visible in the shell at all times; the shell is
+`apps/web/src/components/shell/app-shell.tsx`, which was outside the two
+directories PW-0303 declared. A badge could have lived in `components/profiles/`
+and nothing could have rendered it. `apps/web/src/app/globals.css` went in for
+the same mechanical reason — this repository keeps its tokens in one stylesheet
+rather than per-component, so a picker with no styles is not a picker.
+`components/shell/navigation.ts` was added to `reviewDependencies` instead, not
+to the write surface: the profile badge must not become a sixth nav entry.
+Conflict was checked in both directions against every active task; the only two
+are PW-0202 and PW-0203, whose surfaces are two player modules each. The full
+derivation is in a `task.definition_changed` event.
+
+**Four modules, and what each one is defending.**
+
+- `avatar.ts` derives an initial and a stable hue. It hashes `avatarKey` when
+  there is one and **the id otherwise, never the display name** — a household
+  aims at a tile by colour without reading it, so renaming a profile must not
+  move it. Pure: a source scan forbids `Date.`, `Math.random`, `process.env`,
+  `fetch(`, `globalThis` and `crypto.`. There is no image in this product yet
+  and this does not invent one.
+- `profiles-client.ts` is **the first browser-side caller of this application's
+  own API** — before this task there was no `fetch("/api/v1/…")` anywhere on
+  the client, because every screen is a server component calling a `lib/`
+  loader. So the rules it sets are the ones every later client feature copies:
+  every response parsed against the published schema and an unparseable one
+  reported rather than coerced; **no profile id ever sent to scope a read**;
+  `fetch` as an argument so the transport tests need no network; `no-store` and
+  no retries.
+- `profile-picker.tsx` renders all five outcomes as five outcomes, never sorts
+  the list, and on a successful selection **re-lists from the server and calls
+  `router.refresh()`** rather than setting the active id locally.
+- `active-profile-badge.tsx` is in the shell on every route and **never returns
+  `null`** — a badge that vanished when the service was down would leave the
+  topbar looking correct while the scope underneath it was unknown.
+
+**What I want your security review to bind to.** PL-0405 recorded a
+forgeable-scope defect, and this is the first UI that could reintroduce it.
+Three assertions carry that: `listProfiles` sends no body, no query and no id
+(the URL is asserted not to contain a `?`); `selectProfile` is the only function
+that sends an id and sends it in the body of the selection route; and a source
+scan over all three modules forbids `localStorage`, `sessionStorage`,
+`document.cookie`, `useSearchParams`, `URLSearchParams` and `window.location`,
+so there is **no client-side source of a profile id anywhere in the directory**.
+Four further tests prove nothing unexpected reaches the DOM: an HTML error page,
+a `<script>` tag and a token-bearing JSON body all produce a detail containing
+none of their own bytes — only the zod issue paths and the status.
+
+**A live witness, not only a spec reading.** A real `next dev` server was driven
+with curl against the real handlers: list (empty) → create → select → list with
+`activeProfileId` set; a well-formed uuid this session does not own returned
+**HTTP 403 `profile_unavailable`**, the non-oracle answer. `/`, `/search` and
+`/profiles` all served `profile-badge`. And on `next start` against the
+production build, `/profiles` served 200 while the API answered **503
+`storage_not_configured`** — the honest degraded state the picker exists to
+render instead of an empty household.
+
+**The gap I am naming rather than hiding:** there is no e2e spec for the profile
+journey, because `e2e/**` is outside this task's surface and widening it twice
+would be reservation inflation for a file the E2E lane owns. The executed suites
+(61/12 production, 70/3 development, both identical to last round) are
+**regression** evidence. I have not filed a follow-up because PW-0601's
+certification matrix may already own the row; say which and I will file or
+point at it.
+
+---
+
+## 1c. PW-0302 is NOT claimed, and the audit is the reason
+
+Its acceptance says artwork must be a contract change with *"dimensions and a
+rights basis beside the URL rather than a bare string"*. **The repository
+already has an artwork vocabulary, and it deliberately has no URL in it.**
+
+`artworkRefSchema` in `packages/catalog-ingestion/src/record.ts` carries a role,
+an `assetRef` constrained to an opaque lower-case token, and a **required**
+rights basis — required there and nowhere else in that package, on the stated
+argument that a work with an undeclared basis is merely refused from browse
+while *an image* with an undeclared basis that reached a page would be somebody
+else's file served from our origin. Its comment says in capitals that `assetRef`
+is an opaque internal identifier and **never a URL**. `project.ts` then drops
+artwork on the way to `CatalogItem`, and `domains/catalog.ts` opens by promising
+the browse shape carries no stream, URL or provider field.
+
+So PW-0302 as written would put a URL into the one contract whose header
+promises there is none, and would stand up a second artwork vocabulary beside a
+deliberate one.
+
+**The reconciliation I think is right, offered for ruling rather than built:**
+the contract adopts `artworkRefSchema`'s shape — role, opaque `assetRef`,
+dimensions, required rights — and still carries no URL. The URL is produced at
+the rendering boundary by a resolver mapping an `assetRef` onto an origin from
+the allowlist. Then `next/image` `remotePatterns` pinned to the allowlist stops
+being a check somebody could forget and becomes a structural fact, because no
+other origin is expressible, and *"never proxy arbitrary client-provided URLs"*
+holds with no guard to maintain.
+
+That satisfies the acceptance's **intent** and contradicts its **literal words**
+about a URL in the contract. On a rights-reviewed surface I will not guess which
+you meant. PW-0302 stays READY.
+
+---
+
 ## 2. PW status counts
 
 **Overall: 67/96 executable (70%).** SUPERSEDED: 4, counted in neither half.
 
-- BACKLOG 18 · READY 7 · CLAIMED 0 · IN_PROGRESS 0 · **REVIEW 2** · BLOCKED 2 ·
+- BACKLOG 18 · READY 6 · CLAIMED 0 · IN_PROGRESS 0 · **REVIEW 3** · BLOCKED 2 ·
   DONE 67 · CANCELED 0 · SUPERSEDED 4
 
 DONE this round on your round-82 verdicts: **PW-0101, PW-0201, PW-0301,
@@ -187,8 +297,20 @@ must not rise merely because review states become DONE.
 PW-0202 and PW-0203 are real capability, but neither has yet changed anything a
 user can see: there is no adapter selection wired into a player surface, so
 `player-adapter-boundary` is the only readiness item they touch and it is not
-user-visible. Packaging stays at 0% and will stay there until a Windows artifact
-exists — see section 6.
+user-visible.
+
+**PW-0303 is the interesting case and I held it deliberately.** It genuinely
+does change a user-visible capability, so the `profiles-ui` row's note — *"API
+complete and tested; no picker, no create, no switch"* — became **false** this
+round, and I corrected it rather than leaving a lie in the model. **I did not
+change its state**, which stays `partial` and keeps the figure at 46%, for a
+reason I want you to rule on: the screen is finished but the identity it selects
+*within* is still a development header, so "who is watching" is only as real as
+`auth-seam`. Promoting the row to `present` would claim a capability PW-0403 has
+not delivered. If you read that differently, say so and it moves.
+
+Packaging stays at 0% and will stay there until a Windows artifact exists — see
+section 6.
 
 ---
 
@@ -199,18 +321,18 @@ Five conflict-free and locally dispatchable:
 | task | agent | lane | note |
 | --- | --- | --- | --- |
 | **PW-0102** | claude-infra | Infra P0 | Tauri v2 shell owning the sidecar's lifetime |
-| **PW-0302** | claude-frontend | Frontend P0 | Artwork end to end |
-| **PW-0303** | claude-frontend | Frontend P0 | Profile picker, switch, create |
+| **PW-0302** | claude-frontend | Frontend P0 | **held — see section 1c** |
 | **PW-0403** | claude-backend | Backend P0 | see section 3 |
 | **PW-0401** | claude-backend | Backend P1 | resumes per your round-82 item 3 |
 
 Deferred on lane capacity, not on dependencies: PW-0309 (offline/degraded/error
 states), PW-0104 (the killed dev server rewriting `next-env.d.ts`).
 
-**My intended wave, unless you rule otherwise:** PW-0302 and PW-0303 together
-(Frontend has capacity 2 and their surfaces do not overlap), plus PW-0102 on the
-infra lane. PW-0403 and PW-0401 held for your shape. PW-0102 is the one I want
-flagged: it is the first task that has to produce a Tauri shell, and see below.
+PW-0303 was taken and is now in REVIEW, so the wave above is what is left.
+PW-0302 is held on the contract question in section 1c. PW-0403 and PW-0401 are
+held for your shape. **PW-0102 is next on my own list** unless you redirect it,
+and it is the one I want flagged: it is the first task that has to produce a
+Tauri shell, and see below.
 
 ---
 
@@ -241,5 +363,10 @@ a logistics one.
    the `judgementGates` enforcement filed and built.
 2. **PW-0202:** `architecture-review`.
 3. **PW-0203:** `architecture-review` and `rights-review`.
-4. **PW-0403:** whether I implement, or propose a design for you to rule on.
-5. **Confirmation of the next wave** (PW-0302, PW-0303, PW-0102), or a different one.
+4. **PW-0303:** `security-review`, and whether the surface widening in 1b was
+   the right call or should have come to you first.
+5. **PW-0302 (section 1c):** does the contract carry a URL, or an opaque
+   `assetRef` resolved to an allowlisted origin at the rendering boundary?
+6. **PW-0403:** whether I implement, or propose a design for you to rule on.
+7. **Readiness:** `profiles-ui` held at `partial` — section 4.
+8. **Confirmation of the next wave** (PW-0102), or a different one.

@@ -1,6 +1,6 @@
 # Project Liberty - Project Status
 
-> Generated 2026-09-23T04:57:38.731Z from the AI control plane.
+> Generated 2026-09-23T04:58:37.315Z from the AI control plane.
 
 **Overall completion:** 67/96 executable tasks (70%)
 
@@ -9,8 +9,8 @@
 - **BACKLOG:** 18
 - **READY:** 6
 - **CLAIMED:** 0
-- **IN_PROGRESS:** 1
-- **REVIEW:** 2
+- **IN_PROGRESS:** 0
+- **REVIEW:** 3
 - **BLOCKED:** 2
 - **DONE:** 67
 - **CANCELED:** 0
@@ -33,7 +33,7 @@
 
 - **PW-0202** [REVIEW] WebPlayerAdapter: the existing Shaka path, behind the boundary — owner: claude-media
 - **PW-0203** [REVIEW] Capability routing decides the engine before playback, with a reason on both branches — owner: claude-media
-- **PW-0303** [IN_PROGRESS] Profiles become usable: a picker, a switch, and a create — owner: claude-frontend
+- **PW-0303** [REVIEW] Profiles become usable: a picker, a switch, and a create — owner: claude-frontend
 
 ## Dispatch classification
 

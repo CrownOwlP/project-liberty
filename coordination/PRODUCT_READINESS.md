@@ -120,8 +120,8 @@ would claim a person can use them.
   - evidence: `apps/web/src/components/title/episode-list.tsx`
 - [ ] **player-controls** — The browser's native <video> chrome. No play, seek, volume, fullscreen, subtitle, audio or quality control
   - evidence: `apps/web/src/components/player/player-surface.tsx:264`
-- [~] **profiles-ui** — API complete and tested; no picker, no create, no switch
-  - evidence: `apps/web/src/app/api/v1/profiles; no screen`
+- [~] **profiles-ui** — Picker, switch and create exist and the active profile is in the shell on every route; STILL PARTIAL, and not because the screen is unfinished. The identity the picker selects within is a development header in a non-deployment runtime, so 'who is watching' is only as real as [[auth-seam]] -- PW-0403. No avatar image, because there is no asset store yet (PW-0302): a tile is an initial on a hue derived from the profile id. And no e2e spec owns the profile journey; the executed suites are regression evidence
+  - evidence: `apps/web/src/components/profiles, apps/web/src/app/profiles, apps/web/src/components/shell/app-shell.tsx (PW-0303, in REVIEW)`
 - [~] **watchlist-ui** — API complete and tested; no add control, no list screen
   - evidence: `apps/web/src/app/api/v1/watchlist; no screen`
 - [~] **continue-watching** — Progress API complete and tested; no rail, no resume prompt, no card progress
