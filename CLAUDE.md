@@ -48,7 +48,21 @@ npm run ai:done -- <TASK_ID>
 npm run ai:block -- <TASK_ID> "reason"
 npm run ai:release -- <TASK_ID> [AGENT_ID]
 npm run ai:sync
+
+node scripts/ai-control-plane.mjs supersede <TASK_ID> --by <SUCCESSOR_ID> --reason "..."
 ```
+
+`supersede` is the terminal state for a task whose work was re-done and shipped
+under a named successor. It exists because the other two terminal options are
+false for that case: `DONE` it cannot reach and has not earned, and `CANCELED` is
+documented as meaning *there is no work to evidence*, which would erase a
+reviewed implementation in order to tidy a queue. The successor must already be
+`DONE`; the status is reachable only from `BACKLOG`, `READY` or `BLOCKED`, so an
+active task is released first; it counts as neither completed nor outstanding;
+and it does **not** satisfy `requireAllDependenciesDone` — repoint dependents at
+the successor deliberately. It has no `npm run ai:*` alias yet, because
+`package.json` was outside the declaring task's write surface. See
+`control/README.md`.
 
 Never claim work by merely writing your name into Markdown. `coordination/TASKS.md`, `coordination/PROJECT_STATUS.md`, and `control/queues/*.json` are generated views.
 

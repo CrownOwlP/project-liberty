@@ -8,7 +8,8 @@
     "REVIEW",
     "BLOCKED",
     "DONE",
-    "CANCELED"
+    "CANCELED",
+    "SUPERSEDED"
   ],
   "activeStatuses": [
     "CLAIMED",
@@ -19,12 +20,14 @@
     "BACKLOG": [
       "READY",
       "BLOCKED",
-      "CANCELED"
+      "CANCELED",
+      "SUPERSEDED"
     ],
     "READY": [
       "CLAIMED",
       "BLOCKED",
-      "CANCELED"
+      "CANCELED",
+      "SUPERSEDED"
     ],
     "CLAIMED": [
       "IN_PROGRESS",
@@ -47,10 +50,22 @@
     "BLOCKED": [
       "BACKLOG",
       "READY",
-      "CANCELED"
+      "CANCELED",
+      "SUPERSEDED"
     ],
     "DONE": [],
-    "CANCELED": []
+    "CANCELED": [],
+    "SUPERSEDED": []
+  },
+  "supersession": {
+    "terminalStatus": "SUPERSEDED",
+    "requireSuccessor": true,
+    "requireSuccessorDone": true,
+    "reachableFrom": ["BACKLOG", "READY", "BLOCKED"],
+    "satisfiesDependency": false,
+    "countsAsCompleted": false,
+    "countedInTotal": false,
+    "notes": "SUPERSEDED means the work exists, was reviewed, and shipped under the named successor -- which is precisely what CANCELED cannot say, because the control plane documents CANCELED as meaning there is no work to evidence. The successor is REQUIRED and must already be DONE: the whole content of the claim is which task carries the work now, so a null successor would be a status that says nothing. It is NOT reachable from CLAIMED, IN_PROGRESS or REVIEW, because an active task could otherwise declare supersession to leave review without a verdict; release it first, deliberately. It does NOT satisfy requireAllDependenciesDone: a dependent of a superseded task is almost certainly meant to depend on the successor, and the validator already errors telling you to repoint. It is excluded from BOTH halves of the completion ratio, like CANCELED -- counting it as done would double-count work the successor already counts, and counting it only in the denominator would make the project permanently incomplete for having recorded its own history honestly."
   },
   "completion": {
     "requireAllDependenciesDone": true,

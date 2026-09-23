@@ -30,6 +30,14 @@ The one hard distinction is environmental: Claude Code Desktop can directly oper
 9. Status and queues regenerate from the source of truth.
 10. Only true executive decisions escalate to the human commander.
 
+A task whose work was re-done and shipped under a named successor ends at
+SUPERSEDED rather than at DONE or CANCELED, through
+`supersede <taskId> --by <successorId> --reason "..."`. It is terminal, it names
+the task that carries the work, it is counted as neither completed nor
+outstanding, and it does not satisfy a dependency -- repoint dependents at the
+successor deliberately. CANCELED means there is no work to evidence, which is a
+different statement and must not be used for this. See `control/README.md`.
+
 ## Sources of truth
 
 - Machine task state: `control/tasks.json`

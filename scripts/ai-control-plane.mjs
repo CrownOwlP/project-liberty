@@ -170,6 +170,36 @@ function priorityRank(p) {
 function isDone(id, map) {
   return map.get(id)?.status === "DONE";
 }
+/**
+ * The statuses that are ENDPOINTS: nothing transitions out of them, and no
+ * scheduler should ever offer them work again.
+ *
+ * Read from the policy document rather than listed here, because a status added
+ * to `transitions` with an empty successor list and forgotten here is exactly
+ * how `SUPERSEDED` would have started being treated as a live task by half the
+ * code and a finished one by the other half.
+ */
+function terminalStatuses(policies) {
+  return Object.entries(policies.transitions ?? {})
+    .filter(([, next]) => (next ?? []).length === 0)
+    .map(([status]) => status);
+}
+/**
+ * Statuses that are finished WITHOUT the work having been completed under this
+ * id -- so they leave the schedule entirely rather than counting as progress.
+ *
+ * `CANCELED` because there is no work. `SUPERSEDED` because the work exists but
+ * is counted under its successor, which is itself a task in these figures;
+ * counting it here too would report one body of work twice. See
+ * `policies.supersession`.
+ */
+function retiredStatuses(policies) {
+  const superseded = policies.supersession?.terminalStatus;
+  return superseded ? ["CANCELED", superseded] : ["CANCELED"];
+}
+function isRetired(task, policies) {
+  return retiredStatuses(policies).includes(task.status);
+}
 function depsDone(task, map) {
   return (task.dependencies ?? []).every((id) => isDone(id, map));
 }
@@ -216,14 +246,20 @@ function conflictWithActive(task, tasks, policies) {
     .filter((t) => active(t, policies) && t.id !== task.id)
     .find((other) => pathsOverlap(task.allowedPaths, other.allowedPaths));
 }
-function refreshReadiness(tasks) {
+function refreshReadiness(tasks, policies) {
   const map = taskMap(tasks);
   let changed = 0;
   for (const task of tasks) {
+    /*
+     * `SUPERSEDED` arrives here through `terminalStatuses`, not as a literal.
+     * The previous list was hand-written, and a hand-written list of "statuses
+     * that are not schedulable" is the thing that goes stale the moment a
+     * status is added -- the failure would have been silent and the symptom
+     * would have been a finished task reappearing in a dispatch wave.
+     */
     if (
       [
-        "DONE",
-        "CANCELED",
+        ...terminalStatuses(policies),
         "CLAIMED",
         "IN_PROGRESS",
         "REVIEW",
@@ -273,7 +309,7 @@ function executableAgents(d) {
  * Dispatch classification
  * ------------------------------------------------------------------------- */
 function classifyTasks(d) {
-  refreshReadiness(d.taskDoc.tasks);
+  refreshReadiness(d.taskDoc.tasks, d.policies);
   const tasks = d.taskDoc.tasks;
   const map = taskMap(tasks);
   const amap = agentMap(d.agentDoc.agents);
@@ -288,7 +324,10 @@ function classifyTasks(d) {
   };
 
   for (const task of tasks) {
-    if (task.status === "CANCELED") continue;
+    /* Retired, not finished here: see `retiredStatuses`. A SUPERSEDED task is
+     * counted under its successor, so listing it as `done` would report one
+     * body of work twice and listing it anywhere else would offer it work. */
+    if (isRetired(task, d.policies)) continue;
     if (task.status === "DONE") {
       out.done.push(task);
       continue;
@@ -2807,8 +2846,23 @@ function validateState(d) {
       if (!dependentsOf.has(dep)) dependentsOf.set(dep, []);
       dependentsOf.get(dep).push(task.id);
     }
+  const SUPERSEDED = policies.supersession?.terminalStatus ?? "SUPERSEDED";
   for (const task of tasks) {
     const successorId = task.supersededBy;
+    /*
+     * THE STATUS CANNOT EXIST WITHOUT THE POINTER (PL-AI-0011).
+     *
+     * `SUPERSEDED` says exactly one thing -- "the work is carried by that task
+     * now" -- so a SUPERSEDED record with no successor is a status with no
+     * content, and strictly worse than the BLOCKED it replaced, which at least
+     * admitted it was stuck. The `supersede` command cannot produce one; this
+     * catches a hand-edited tasks.json, which is the only other way in.
+     */
+    if (task.status === SUPERSEDED && !successorId) {
+      errors.push(
+        `${task.id}: is ${SUPERSEDED} but names no supersededBy; the successor is the whole content of that status`,
+      );
+    }
     if (successorId === undefined || successorId === null) continue;
     if (typeof successorId !== "string" || !successorId.trim()) {
       errors.push(`${task.id}: supersededBy is present but not a task id`);
@@ -2829,6 +2883,17 @@ function validateState(d) {
       errors.push(
         `${task.id}: is DONE and also declares supersededBy ${successorId}; a completed task and its replacement are two records of the same work`,
       );
+    /*
+     * A SUPERSEDED task's successor must ALREADY be DONE, checked here and not
+     * only in the command, because the command is not the only writer. The
+     * reverse order -- retiring the original while its replacement is still in
+     * flight -- would leave the work with no live record at all if the
+     * successor were later released or blocked.
+     */
+    if (task.status === SUPERSEDED && successor.status !== "DONE")
+      errors.push(
+        `${task.id}: is ${SUPERSEDED} by ${successorId}, but ${successorId} is ${successor.status} and not DONE; the work would have no completed record anywhere`,
+      );
     // A one-way pointer is a typo waiting to be trusted. Checked only when the
     // successor states the relationship at all, so a predecessor may be annotated
     // before its successor is.
@@ -2837,6 +2902,16 @@ function validateState(d) {
         `${task.id}: supersededBy names ${successorId}, but ${successorId} declares supersedes ${successor.supersedes}`,
       );
     for (const dependentId of dependentsOf.get(task.id) ?? []) {
+      /*
+       * UNCHANGED BY THE NEW STATUS, DELIBERATELY. `SUPERSEDED` does not
+       * satisfy `requireAllDependenciesDone` -- see `policies.supersession` --
+       * so a dependent of a superseded task is still stuck, and this is still
+       * the error that says so. Making the status satisfy the dependency was
+       * the tempting shortcut and was rejected: a dependent of a superseded
+       * task is almost certainly meant to depend on the SUCCESSOR, and silently
+       * satisfying the old edge would let it complete having never pointed at
+       * the work it actually needs.
+       */
       if (successor.status === "DONE")
         errors.push(
           `${dependentId}: depends on ${task.id}, which is superseded by ${successorId} and cannot reach DONE, while ${successorId} already is DONE; repoint the dependency deliberately and record why`,
@@ -2890,7 +2965,7 @@ function renderTaskBoard(project, tasks) {
     "",
     "> Generated from `control/tasks.json`. Do not edit status here; use `npm run ai:*` commands.",
     "",
-    "Statuses: `BACKLOG`, `READY`, `CLAIMED`, `IN_PROGRESS`, `REVIEW`, `BLOCKED`, `DONE`, `CANCELED`.",
+    "Statuses: `BACKLOG`, `READY`, `CLAIMED`, `IN_PROGRESS`, `REVIEW`, `BLOCKED`, `DONE`, `CANCELED`, `SUPERSEDED`.",
     "",
     "| ID | Priority | Lane | Status | Owner | Review | Task | Acceptance |",
     "| --- | --- | --- | --- | --- | --- | --- | --- |",
@@ -2919,7 +2994,7 @@ function renderStatus(d) {
   } = d;
   // Refresh first so the status counts below and the dispatch classification
   // further down are computed from the same task statuses.
-  refreshReadiness(taskDoc.tasks);
+  refreshReadiness(taskDoc.tasks, policies);
   const tasks = taskDoc.tasks;
   const agents = agentDoc.agents;
   const counts = Object.fromEntries(
@@ -2931,7 +3006,15 @@ function renderStatus(d) {
   const activeTasks = tasks.filter((t) => active(t, policies));
   const blockers = tasks.filter((t) => t.status === "BLOCKED");
   const done = counts.DONE ?? 0;
-  const total = tasks.filter((t) => t.status !== "CANCELED").length;
+  /*
+   * BOTH HALVES EXCLUDE THE RETIRED STATUSES, and the symmetry is the point.
+   * A SUPERSEDED task's work shipped under its successor, and the successor is
+   * itself one of these tasks -- so counting it in the numerator would report
+   * one body of work twice, and counting it in the denominator alone would make
+   * the project permanently incomplete as a punishment for recording its own
+   * history honestly. `policies.supersession` states this.
+   */
+  const total = tasks.filter((t) => !isRetired(t, policies)).length;
   const pct = total ? Math.round((done / total) * 100) : 0;
   const classification = classifyTasks(d);
   const wave = planExecutableWave(d, classification);
@@ -3072,7 +3155,7 @@ function generateQueues(d) {
   }
 }
 function syncAll(d, shouldEvent = true) {
-  refreshReadiness(d.taskDoc.tasks);
+  refreshReadiness(d.taskDoc.tasks, d.policies);
   saveTasks(d.taskDoc);
   fs.mkdirSync(path.dirname(files.statusMd), { recursive: true });
   fs.writeFileSync(files.tasksMd, renderTaskBoard(d.project, d.taskDoc.tasks));
@@ -3085,7 +3168,7 @@ const [command = "help", ...args] = process.argv.slice(2);
 try {
   const d = data();
   if (command === "validate") {
-    refreshReadiness(d.taskDoc.tasks);
+    refreshReadiness(d.taskDoc.tasks, d.policies);
     const result = validateState(d);
     for (const w of result.warnings) console.warn(`WARN: ${w}`);
     if (result.errors.length) {
@@ -3187,7 +3270,7 @@ try {
   } else if (command === "claim") {
     const [taskId, agentId] = args;
     if (!taskId || !agentId) throw new Error("Usage: claim <taskId> <agentId>");
-    refreshReadiness(d.taskDoc.tasks);
+    refreshReadiness(d.taskDoc.tasks, d.policies);
     const task = requireTask(d.taskDoc, taskId);
     const agent = requireAgent(d, agentId);
     if (task.status !== "READY")
@@ -3823,6 +3906,10 @@ try {
      *                afterwards would let a recorded `fail` be papered over with
      *                no transition anywhere in the audit trail.
      *   CANCELED     there is no work to evidence.
+     *   SUPERSEDED   there IS work, and it is evidenced under the successor.
+     *                Recording a gate here would attach fresh evidence to a
+     *                record that has been closed precisely because its evidence
+     *                belongs somewhere else.
      */
     const GATE_RECORDABLE_STATUSES = ["IN_PROGRESS", "REVIEW"];
     if (!GATE_RECORDABLE_STATUSES.includes(task.status)) {
@@ -3948,6 +4035,99 @@ try {
     console.log(
       `${taskId} -> ${next}${dropped.length ? ` (cleared gate results: ${dropped.join(", ")})` : ""}` +
         `${baseReturnNote(base)}.`,
+    );
+  } else if (command === "supersede") {
+    /* -----------------------------------------------------------------------
+     * `supersede <taskId> --by <successorId> --reason "..."`  (PL-AI-0011)
+     *
+     * THE HOLE THIS FILLS. Four tasks in this repository are provenance-invalid
+     * originals whose work was re-done, reviewed and shipped under a named
+     * successor. Before this command their only terminal options were DONE,
+     * which they cannot reach and have not earned, and CANCELED, which this
+     * file documents as meaning "there is no work to evidence" -- false, and
+     * the falsehood is the whole problem: it would erase a reviewed
+     * implementation from the record in order to tidy a queue. So they sat
+     * BLOCKED forever, and `validate` had to keep explaining why.
+     *
+     * A TERMINAL STATE REACHABLE ONLY BY HAND-EDITING THE SOURCE OF TRUTH IS
+     * WORSE THAN NO TERMINAL STATE, which is why this is a command and not a
+     * note in the README. `CANCELED` has exactly that shape today and nothing
+     * has ever legitimately used it.
+     *
+     * WHAT IS REFUSED, AND WHY EACH ONE:
+     *   - an unknown successor, a self-pointer, or a successor that is itself
+     *     superseded: the pointer is the entire content of the status;
+     *   - a successor that is not DONE: retiring the original while its
+     *     replacement is in flight would leave the work with no completed
+     *     record anywhere if that replacement were later released;
+     *   - an ACTIVE task (CLAIMED/IN_PROGRESS/REVIEW): otherwise an agent in
+     *     REVIEW could declare supersession and leave without a verdict.
+     *     `release` first, deliberately, so the abandonment is its own event;
+     *   - a back-pointer that names somebody else, so a typo cannot quietly
+     *     rewrite which task carries the work.
+     *
+     * The audit event carries BOTH ids and the reason, because "which task
+     * carries this now" is the only question anybody reads this record to ask.
+     * --------------------------------------------------------------------- */
+    const [taskId] = args;
+    const successorId = flagValue(args, "--by");
+    const reason = flagValue(args, "--reason");
+    if (!taskId || !successorId || !reason)
+      throw new Error(
+        'Usage: supersede <taskId> --by <successorId> --reason "why the successor carries this work"',
+      );
+    const task = requireTask(d.taskDoc, taskId);
+    const successor = requireTask(d.taskDoc, successorId);
+    const SUPERSEDED = d.policies.supersession?.terminalStatus ?? "SUPERSEDED";
+    const reachableFrom = d.policies.supersession?.reachableFrom ?? [];
+
+    if (successorId === taskId)
+      throw new Error(`${taskId} cannot supersede itself`);
+    if (successor.status !== "DONE")
+      throw new Error(
+        `${successorId} is ${successor.status}, not DONE; ${taskId} may only be superseded by work that is finished, ` +
+          "or the work it carries would have no completed record anywhere",
+      );
+    if (successor.supersededBy)
+      throw new Error(
+        `${successorId} is itself superseded by ${successor.supersededBy}; name the task that actually carries the work`,
+      );
+    if (successor.supersedes && successor.supersedes !== taskId)
+      throw new Error(
+        `${successorId} already declares supersedes ${successor.supersedes}; two predecessors need two records, not one overwritten pointer`,
+      );
+    if (!reachableFrom.includes(task.status))
+      throw new Error(
+        `${taskId} is ${task.status}; ${SUPERSEDED} is reachable only from ${reachableFrom.join(", ")}. ` +
+          "An active task must be released first, so that abandoning it is its own recorded event rather than a side effect of this one.",
+      );
+
+    /* Captured BEFORE the transition: `task.status` is the new one after it,
+     * and an audit line that says a task went from SUPERSEDED to SUPERSEDED
+     * tells the next reader nothing about where it actually came from. */
+    const previousStatus = task.status;
+    transition(task, SUPERSEDED, d.policies);
+    task.supersededBy = successorId;
+    task.supersessionReason = reason;
+    task.supersededAt = now();
+    /* The back-pointer is written here rather than left to a second command,
+     * because a one-way pointer is the state `validate` already distrusts. */
+    successor.supersedes = taskId;
+    const formerOwner = task.owner;
+    task.owner = null;
+    delete task.blocker;
+    event("task.superseded", {
+      taskId,
+      supersededBy: successorId,
+      from: previousStatus,
+      formerOwner: formerOwner ?? null,
+      reason,
+    });
+    saveTasks(d.taskDoc);
+    syncAll(d, false);
+    console.log(
+      `${taskId} ${SUPERSEDED} by ${successorId}. It is not counted as completed and does not satisfy ` +
+        `dependencies; repoint any dependent at ${successorId} deliberately.`,
     );
   } else if (command === "release") {
     const [taskId, agentId] = args;
@@ -4359,7 +4539,7 @@ try {
           // 4. PERSIST TASK STATE -- the durable commit point. Nothing that can
           //    fail may run between this write and the APPLIED marker below, or a
           //    crash would look like "redo" when the state is already on disk.
-          refreshReadiness(d.taskDoc.tasks);
+          refreshReadiness(d.taskDoc.tasks, d.policies);
           saveTasks(d.taskDoc);
           advanceJournal(root, message.id, "APPLIED", {
             applied: outcome.summary,
@@ -4455,6 +4635,8 @@ try {
   review-status <taskId>
   gate <taskId> <gate> <pass|fail> [--agent <agentId>] <evidence>
   done <taskId>
+  supersede <taskId> --by <successorId> --reason "..."
+                                the successor must already be DONE
   block <taskId> <reason>
   unblock <taskId>              clears gate results; the task returns to a queue unowned
   release <taskId> [agentId]    clears gate results; the task returns to READY unowned

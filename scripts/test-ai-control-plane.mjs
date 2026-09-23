@@ -8305,6 +8305,247 @@ try {
   }
 
   /* ---------------------------------------------------------------------
+   * 10t. SUPERSEDED: a terminal state that is TRUE, and the four ways it could
+   *      have been a lie (PL-AI-0011).
+   *
+   *      Before this status the only terminal options for a provenance-invalid
+   *      original whose work shipped under a successor were DONE, which it
+   *      cannot reach and has not earned, and CANCELED, which
+   *      scripts/ai-control-plane.mjs documents as "there is no work to
+   *      evidence" -- false for these, and the falsehood is the point: taking
+   *      it would erase a reviewed implementation in order to tidy a queue.
+   *
+   *      Four properties are asserted, and each one is a specific way this
+   *      feature could have shipped as an audit fiction:
+   *
+   *        1. the status cannot exist without naming its successor, because the
+   *           successor is the entire content of the claim;
+   *        2. the successor must already be DONE, or the work has no completed
+   *           record anywhere;
+   *        3. it does NOT satisfy a dependency and does NOT count as completed
+   *           -- a version that quietly did either would be DONE with a nicer
+   *           name, which is the exact thing the reviewer refused;
+   *        4. it is not reachable from an ACTIVE status, so nobody can leave
+   *           review by declaring supersession.
+   *
+   *      Fixtures, on this file's standing rule. The live board has four
+   *      candidates for this status and none has been transitioned, so a
+   *      scenario reading live data would pass by being inert.
+   * ------------------------------------------------------------------- */
+  {
+    const repo = freshRepo();
+    const tasksFile = path.join(repo, "control", "tasks.json");
+    const sup = (id, overrides = {}) =>
+      fixtureTask(id, {
+        lane: "Coordination",
+        preferredAgent: "claude-lead",
+        reviewAgent: null,
+        acceptance: "fixture task used by the SUPERSEDED terminal-state regressions",
+        ...overrides,
+      });
+    const readTasks = () =>
+      Object.fromEntries(
+        JSON.parse(fs.readFileSync(tasksFile, "utf8")).tasks.map((t) => [t.id, t]),
+      );
+    const mutate = (fn) => {
+      const doc = JSON.parse(fs.readFileSync(tasksFile, "utf8"));
+      fn(Object.fromEntries(doc.tasks.map((t) => [t.id, t])));
+      fs.writeFileSync(tasksFile, JSON.stringify(doc, null, 2) + "\n");
+    };
+
+    useFixtureTaskSet(
+      repo,
+      sup("PL-SUPX-0001", {
+        title: "PL-SUPX-0001 the provenance-invalid original",
+        status: "BLOCKED",
+        blocker: "provenance invalid; preserved as audit history",
+        allowedPaths: ["fixtures/supx/pred/**"],
+      }),
+      sup("PL-SUPX-0002", {
+        title: "PL-SUPX-0002 the successor that carries the work",
+        status: "DONE",
+        allowedPaths: ["fixtures/supx/succ/**"],
+      }),
+      sup("PL-SUPX-0003", {
+        title: "PL-SUPX-0003 a successor that has not finished",
+        status: "READY",
+        allowedPaths: ["fixtures/supx/other/**"],
+      }),
+      sup("PL-SUPX-0004", {
+        title: "PL-SUPX-0004 the dependent",
+        status: "BACKLOG",
+        dependencies: ["PL-SUPX-0001"],
+        allowedPaths: ["fixtures/supx/dep/**"],
+      }),
+    );
+
+    /* --- 2. an unfinished successor is refused --------------------------- */
+    runFail(
+      repo,
+      [
+        "supersede",
+        "PL-SUPX-0001",
+        "--by",
+        "PL-SUPX-0003",
+        "--reason",
+        "fixture",
+      ],
+      /PL-SUPX-0003 is READY, not DONE/,
+      {},
+    );
+    runFail(
+      repo,
+      [
+        "supersede",
+        "PL-SUPX-0001",
+        "--by",
+        "PL-SUPX-0001",
+        "--reason",
+        "fixture",
+      ],
+      /cannot supersede itself/,
+      {},
+    );
+    /* The reason is not optional: a terminal record whose only content is a
+     * pointer still has to say why somebody believed the pointer. */
+    runFail(
+      repo,
+      ["supersede", "PL-SUPX-0001", "--by", "PL-SUPX-0002"],
+      /Usage: supersede/,
+      {},
+    );
+
+    /* --- 4. an ACTIVE task must be released first ------------------------ */
+    mutate((byId) => {
+      byId["PL-SUPX-0001"].status = "REVIEW";
+      byId["PL-SUPX-0001"].owner = "claude-lead";
+      delete byId["PL-SUPX-0001"].blocker;
+    });
+    runFail(
+      repo,
+      [
+        "supersede",
+        "PL-SUPX-0001",
+        "--by",
+        "PL-SUPX-0002",
+        "--reason",
+        "fixture",
+      ],
+      /is REVIEW; SUPERSEDED is reachable only from BACKLOG, READY, BLOCKED/,
+      {},
+    );
+    mutate((byId) => {
+      byId["PL-SUPX-0001"].status = "BLOCKED";
+      byId["PL-SUPX-0001"].owner = null;
+      byId["PL-SUPX-0001"].blocker = "provenance invalid; preserved as audit history";
+    });
+
+    /* --- the transition itself ------------------------------------------- */
+    const out = run(repo, CLI, [
+      "supersede",
+      "PL-SUPX-0001",
+      "--by",
+      "PL-SUPX-0002",
+      "--reason",
+      "the successor reconciles from the true base and carries the same acceptance",
+    ]);
+    assert.match(out, /PL-SUPX-0001 SUPERSEDED by PL-SUPX-0002/);
+
+    const after = readTasks();
+    assert.equal(after["PL-SUPX-0001"].status, "SUPERSEDED");
+    assert.equal(after["PL-SUPX-0001"].supersededBy, "PL-SUPX-0002");
+    assert.equal(after["PL-SUPX-0001"].owner, null);
+    assert.equal(
+      after["PL-SUPX-0002"].supersedes,
+      "PL-SUPX-0001",
+      "the back-pointer is written by the command, because a one-way pointer is " +
+        "the state validate already distrusts",
+    );
+    assert.match(
+      after["PL-SUPX-0001"].supersessionReason,
+      /reconciles from the true base/,
+      "the reason is part of the record, not only of the console output",
+    );
+
+    /* The audit event names BOTH ids, which is the only question anybody reads
+     * this record to ask. */
+    const events = fs
+      .readFileSync(path.join(repo, "control", "events.jsonl"), "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    const recorded = events.filter((e) => e.type === "task.superseded");
+    assert.equal(recorded.length, 1);
+    assert.equal(recorded[0].taskId ?? recorded[0].payload?.taskId, "PL-SUPX-0001");
+    assert.match(JSON.stringify(recorded[0]), /PL-SUPX-0002/);
+    assert.match(
+      JSON.stringify(recorded[0]),
+      /"from":"BLOCKED"/,
+      "the event must record where the task came from; capturing task.status " +
+        "after the transition would log SUPERSEDED -> SUPERSEDED",
+    );
+
+    /* --- 3a. it does NOT satisfy the dependency -------------------------- */
+    runFail(
+      repo,
+      ["validate"],
+      /PL-SUPX-0004: depends on PL-SUPX-0001, which is superseded by PL-SUPX-0002 and cannot reach DONE/,
+      {},
+    );
+    mutate((byId) => {
+      byId["PL-SUPX-0004"].dependencies = ["PL-SUPX-0002"];
+    });
+    const clean = runCombined(repo, CLI, ["validate"]);
+    assert.match(clean, /AI control plane valid/);
+
+    /* --- 3b. it counts as neither completed nor outstanding -------------- */
+    const status = runCombined(repo, CLI, ["status"]);
+    assert.match(
+      status,
+      /\*\*Overall completion:\*\* 1\/3 executable tasks/,
+      "four fixtures, one SUPERSEDED: the retired task leaves BOTH halves of the " +
+        "ratio. Counting it as done would report one body of work twice, since " +
+        "its successor is already in the numerator; counting it in the " +
+        "denominator alone would make the project permanently incomplete for " +
+        "having recorded its own history honestly",
+    );
+    assert.match(status, /- \*\*SUPERSEDED:\*\* 1/);
+
+    /* --- it never reappears as work -------------------------------------- */
+    const dispatch = runCombined(repo, CLI, ["dispatch"]);
+    assert.doesNotMatch(
+      dispatch,
+      /PL-SUPX-0001/,
+      "a terminal task must not be offered to any agent, in any section of the " +
+        "dispatch report",
+    );
+
+    /* --- 1. the status cannot exist without the pointer ------------------ */
+    mutate((byId) => {
+      delete byId["PL-SUPX-0001"].supersededBy;
+      delete byId["PL-SUPX-0002"].supersedes;
+    });
+    runFail(
+      repo,
+      ["validate"],
+      /PL-SUPX-0001: is SUPERSEDED but names no supersededBy/,
+      {},
+    );
+
+    /* --- 2 again, this time as a hand-edit the command cannot make ------- */
+    mutate((byId) => {
+      byId["PL-SUPX-0001"].supersededBy = "PL-SUPX-0003";
+      byId["PL-SUPX-0004"].dependencies = [];
+    });
+    runFail(
+      repo,
+      ["validate"],
+      /PL-SUPX-0001: is SUPERSEDED by PL-SUPX-0003, but PL-SUPX-0003 is READY and not DONE/,
+      {},
+    );
+  }
+
+  /* ---------------------------------------------------------------------
    * 11. The live repository state must be untouched by the whole run.
    *     This now also guards coordination/agent-bus, so a test that forgets
    *     freshRepo() cannot publish a real handoff message.
@@ -8322,7 +8563,7 @@ try {
     "running the test suite must not mutate any live control/ or coordination/ file",
   );
 
-  console.log("AI control plane tests passed (69 scenarios).");
+  console.log("AI control plane tests passed (70 scenarios).");
 } finally {
   /*
    * Cleanup must never replace the result.

@@ -42,8 +42,8 @@ npm run ai:sync
 
 A gate result is evidence about work performed against a task, so the control
 plane only accepts one while the task is `IN_PROGRESS` or `REVIEW` and has an
-owner. `READY`, `BACKLOG`, `CLAIMED`, `BLOCKED`, `DONE` and `CANCELED` are all
-refused.
+owner. `READY`, `BACKLOG`, `CLAIMED`, `BLOCKED`, `DONE`, `CANCELED` and
+`SUPERSEDED` are all refused.
 
 - `IN_PROGRESS` is the normal case: claim, start, then record.
 - `REVIEW` is permitted because a reviewer re-runs checks, and because the
@@ -379,12 +379,11 @@ mutating another agent's lane.
 
 ## Supersession, and a dependency nothing can satisfy
 
-A corrective re-run **supersedes** its predecessor, and the predecessor stays
-`BLOCKED` on purpose: its provenance record is preserved as audit history rather
-than repaired, on the rule PL-0703 established. But `BLOCKED` transitions only to
-`BACKLOG`, `READY` or `CANCELED`. A superseded task can therefore never reach
-`DONE`, and with `completion.requireAllDependenciesDone`, every task depending on
-one is gated forever.
+A corrective re-run **supersedes** its predecessor, and the predecessor's
+provenance record is preserved as audit history rather than repaired, on the rule
+PL-0703 established. Such a task can never reach `DONE`, and with
+`completion.requireAllDependenciesDone`, every task depending on one is gated
+forever.
 
 That is not a hypothetical. `PL-0301` sat dependency-gated behind `PL-0205` —
 BLOCKED, terminal, superseded by `PL-0207`, which was already `DONE` — and
@@ -426,6 +425,75 @@ on the agent bus. It proves that somebody wrote a pointer, not that the successo
 carries the predecessor's work. A wrong pointer produces a wrong error, or hides
 a real deadlock. It is a cheap alarm on a failure mode that has already cost this
 project a stalled milestone — not a proof of anything.
+
+
+### `SUPERSEDED` — the terminal state that is true (PL-AI-0011)
+
+For a long time a superseded original had two terminal options and both were
+lies.
+
+- `DONE` it cannot reach and has not earned: the range it was reviewed against
+  was false, which is why it was superseded in the first place.
+- `CANCELED` is documented in `scripts/ai-control-plane.mjs` as meaning **"there
+  is no work to evidence"**, and for these tasks the work exists, was reviewed
+  and shipped. Taking it would erase a real implementation from the record in
+  order to tidy a queue. There is also no `cancel` command, so reaching it at all
+  meant hand-editing `control/tasks.json` — the one move the operating contract
+  forbids.
+
+So they sat `BLOCKED` forever and `validate` had to keep explaining why. There is
+now a third terminal status and a command to reach it:
+
+```bash
+node scripts/ai-control-plane.mjs supersede <taskId> \
+  --by <successorId> --reason "why that task carries this work"
+```
+
+`SUPERSEDED` means: **the work exists, it was reviewed, and it shipped under the
+named successor.** Everything about how it behaves follows from that sentence,
+and each rule is a way it could have shipped as an audit fiction instead.
+
+- **The successor is required**, and `validate` errors on a `SUPERSEDED` task
+  without one. Which task carries the work now is the entire content of the
+  claim; a null successor would be a status that says nothing.
+- **The successor must already be `DONE`**, checked in the command *and* in
+  `validate`, because the command is not the only writer. Retiring an original
+  while its replacement is still in flight would leave the work with no completed
+  record anywhere if that replacement were later released or blocked.
+- **It is reachable only from `BACKLOG`, `READY` and `BLOCKED`** —
+  `policies.supersession.reachableFrom`. An active task must be released first,
+  deliberately, so that abandoning it is its own recorded event. Otherwise an
+  agent in `REVIEW` could declare supersession and leave without a verdict.
+- **It does not satisfy a dependency.** `requireAllDependenciesDone` still means
+  `DONE`. Making the new status satisfy it was the tempting shortcut and was
+  rejected: a dependent of a superseded task is almost certainly meant to depend
+  on the **successor**, and silently satisfying the old edge would let that
+  dependent complete having never pointed at the work it actually needs. The
+  error above still fires and still says to repoint.
+- **It counts as neither completed nor outstanding.** It leaves *both* halves of
+  the completion ratio, like `CANCELED`. Counting it in the numerator would
+  report one body of work twice, since the successor is already there; counting
+  it in the denominator alone would make the project permanently incomplete as a
+  punishment for recording its own history honestly. It appears in the status
+  summary under its own heading, so it is visible rather than merely absent.
+- **The back-pointer is written by the command**, not left to a second step: a
+  one-way pointer is the state `validate` already distrusts.
+- **The audit event `task.superseded` carries both ids, the reason and the status
+  the task came from.**
+
+What it still cannot do is unchanged and is stated below: the pointer is
+self-asserted. `SUPERSEDED` proves that somebody recorded a supersession and that
+the successor is finished. It does not prove the successor carries the
+predecessor's work — that is a judgement a reviewer makes by reading both
+acceptances, and the four current instances were audited that way in round 73
+before this mechanism existed.
+
+**One loose end, stated rather than hidden.** Every other command has an
+`npm run ai:*` alias in `package.json`. This one does not, because `package.json`
+is outside PL-AI-0011's declared `allowedPaths` and widening a write surface to
+add a convenience alias is the kind of quiet scope creep this control plane
+exists to prevent. Invoke it directly, or add the alias in a task that owns that
+file.
 
 ## Returning a task to a queue
 
