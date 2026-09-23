@@ -1,18 +1,18 @@
 # Project Liberty - Project Status
 
-> Generated 2026-09-23T13:10:06.662Z from the AI control plane.
+> Generated 2026-09-23T20:34:12.590Z from the AI control plane.
 
-**Overall completion:** 70/97 executable tasks (72%)
+**Overall completion:** 71/98 executable tasks (72%)
 
 ## Status summary
 
 - **BACKLOG:** 16
-- **READY:** 8
+- **READY:** 9
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 0
-- **REVIEW:** 1
+- **REVIEW:** 0
 - **BLOCKED:** 2
-- **DONE:** 70
+- **DONE:** 71
 - **CANCELED:** 0
 - **SUPERSEDED:** 4
 
@@ -31,11 +31,11 @@
 
 ## Active work
 
-- **PL-AI-0012** [REVIEW] Enforce reviewer ownership of judgement gates — owner: claude-lead
+No tasks are currently claimed, in progress, or in review.
 
 ## Dispatch classification
 
-- **READY_AND_EXECUTABLE:** 8
+- **READY_AND_EXECUTABLE:** 9
 - **READY_BUT_EXTERNAL:** 0
 - **BLOCKED:** 2
 - **BACKLOG (dependency-gated):** 16
@@ -47,6 +47,7 @@
 - **PW-0305** -> claude-frontend (P0/Frontend) Continue watching: resume where the viewer left off
 - **PW-0403** -> claude-backend (P0/Backend) Production authentication and session resolution
 - **PW-0401** -> claude-backend (P1/Backend) The authenticated backend the desktop build talks to
+- **PL-AI-0013** -> claude-lead (P2/Coordination) A verdict that discusses the placeholder rule is not a placeholder
 
 ## Queued for external agents
 
@@ -60,7 +61,7 @@ No READY work is waiting on an external agent lane.
 ## Agent capacity
 
 - **gpt-architect:** 0/6 active (external lane; not locally executable)
-- **claude-lead:** 1/2 active
+- **claude-lead:** 0/2 active
 - **claude-frontend:** 0/2 active
 - **claude-backend:** 0/2 active
 - **claude-media:** 0/2 active
