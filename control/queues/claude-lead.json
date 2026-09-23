@@ -1,16 +1,13 @@
 {
-  "generatedAt": "2026-09-22T22:30:05.792Z",
+  "generatedAt": "2026-09-23T01:48:03.825Z",
   "agent": "claude-lead",
   "executionAvailable": true,
-  "assigned": [],
-  "review": [],
-  "reservedExternal": [],
-  "recommended": [
+  "assigned": [
     {
       "id": "PL-AI-0011",
       "priority": "P1",
       "lane": "Coordination",
-      "status": "READY",
+      "status": "REVIEW",
       "title": "A superseded task needs a terminal state that is true",
       "dependencies": [],
       "allowedPaths": [
@@ -33,9 +30,31 @@
       ],
       "acceptance": "A superseded task has a TRUTHFUL terminal representation, so that a provenance-invalid original whose work shipped under a named successor is neither left BLOCKED forever nor mislabelled as work nobody did. THE GAP, measured rather than asserted. control/policies.json lists eight statuses and exactly two are terminal: DONE and CANCELED. BLOCKED transitions only to BACKLOG, READY or CANCELED. There is NO cancel command on the CLI -- the reachable verbs are validate, sync, status, dispatch, claim, start, gate, review, approve, request-changes, done, block, unblock, release and event -- so CANCELED is currently reachable only by hand-editing control/tasks.json, which is the move the operating contract forbids. And scripts/ai-control-plane.mjs states at its gate-recording guard that CANCELED means 'there is no work to evidence', which is FALSE for a superseded original: the work exists, was reviewed and shipped under the successor's id. THE CONTROL PLANE ALREADY KNOWS ABOUT SUPERSESSION AND DELIBERATELY DOES NOT ACT ON IT. The comment at the supersession detector says a corrective re-run supersedes its predecessor and 'the predecessor is left BLOCKED deliberately -- its provenance record is preserved as audit history rather than repaired, on the rule PL-0703 established', and that BLOCKED can never reach DONE so requireAllDependenciesDone gates every dependent forever. It reports and never repairs, by design. This task does not change that: it adds a way to SAY the thing the detector already notices. REQUIRED: a terminal status that means superseded and says so -- the implementer chooses the spelling and justifies it -- carrying a REQUIRED reference to the successor task id, validated to exist and to be DONE. A status that permits a null successor is not acceptable: the whole content of the claim is which task carries the work now. REQUIRED: a control-plane command to reach it, because a terminal state reachable only by hand-editing the source of truth is worse than no terminal state. The transition must be refused when the named successor is not DONE, and the audit event must carry both ids. REQUIRED: a superseded task must NOT count as DONE in progress figures and must NOT satisfy requireAllDependenciesDone by pretending to be complete. Whether it should satisfy a dependency AT ALL is the design question and the implementer must answer it explicitly: a dependent of a superseded task is almost certainly meant to depend on the successor, and the existing detector already reports exactly that -- so the safe answer may be that supersession does NOT satisfy the dependency and the detector's advice to repoint stands. REQUIRED: the four current instances are the acceptance test, and their subsumption was audited in round 73 before this task was filed. PL-0205 superseded by PL-0207 (DONE), PL-0401 by PL-0405 (DONE), PL-0601 by PL-0603 (DONE), PL-0703 by PL-0706 (DONE). In every case the successor's acceptance was read in full against the original's and found to be a strict superset, not merely a DONE task with a similar name. NOT IN SCOPE: repairing the four originals' provenance, which the reviewer has ruled cannot be done in place; automatically repointing dependencies, which the existing comment refuses on the ground that a self-modifying graph is a larger failure than the one it fixes; and any change that lets a superseded task reach DONE.",
       "notes": "Filed 2026-09-22 from the round-73 subsumption audit gpt-architect ordered at b034460. The reviewer's instruction was explicit: verify subsumption mechanically, preserve the originals' audit history, use a legitimate terminal transition ONLY if one exists and accurately describes the relationship, and -- if the control plane has no truthful terminal representation -- LEAVE THE TASKS BLOCKED AND IMPROVE THE MECHANISM RATHER THAN FALSIFYING HISTORY. The audit found subsumption in all four cases and found no truthful terminal state, so all four stay BLOCKED and this task is the second half of that instruction. The decisive evidence is the control plane's own words: CANCELED is documented in scripts/ai-control-plane.mjs as meaning 'there is no work to evidence', and for these four the work exists and was reviewed. control/tasks.json is in reviewDependencies rather than allowedPaths deliberately: this task builds the mechanism and does not transition the four originals, which is a separate decision for the reviewer once a truthful state exists.",
-      "owner": null,
-      "gateResults": {}
-    },
+      "owner": "claude-lead",
+      "gateResults": {
+        "typecheck": {
+          "status": "pass",
+          "at": "2026-09-23T01:47:38.190Z",
+          "by": "claude-lead",
+          "commitSha": "398445d1cd43dbdec50f144d2b5747df6e02d795",
+          "evidence": "npm run typecheck at the repository root on 398445d, its own invocation, never combined with lint or build. turbo 21/21, exit 0. The surface is .mjs and .json and .md, so typecheck proves only that nothing downstream of control/policies.json broke; the load-bearing checks for this task are the unit gate below. Also run: npm run repo:validate -> passed, exit 0, which reads control/policies.json and the generated views."
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-09-23T01:48:03.784Z",
+          "by": "claude-lead",
+          "commitSha": "398445d1cd43dbdec50f144d2b5747df6e02d795",
+          "evidence": "EXECUTED on 398445d. (1) node scripts/test-ai-control-plane.mjs -> 70 scenarios, exit 0 (was 69; scenario 10t is new). (2) npx turbo run test --force across the monorepo -> 20/20 tasks, exit 0. (3) npm run repo:validate -> passed. (4) node scripts/ai-control-plane.mjs validate against the live board -> valid, 68 tasks, 9 agents, with only the three pre-existing WARNs. SCENARIO 10t ASSERTS THE FOUR WAYS THIS COULD HAVE SHIPPED AS AN AUDIT FICTION, on fixtures rather than live data because the live board has four candidates and none is transitioned, so a live-reading scenario would pass by being inert: the status cannot exist without naming a successor; an unfinished successor is refused by the command AND by validate as a hand-edit; SUPERSEDED does not satisfy a dependency (the existing repoint error still fires) and is excluded from both halves of the completion ratio; and the status is refused from an ACTIVE task with a message naming the three statuses it is reachable from. It also asserts the back-pointer is written by the command, that supersessionReason is persisted rather than only printed, and that the audit event records from=BLOCKED -- which would read SUPERSEDED -> SUPERSEDED if the status were captured after the transition. NON-VACUITY PROVEN BY MUTATION: reverting the completion denominator to the old expression [status !== CANCELED] makes scenario 10t fail on its assertion [Overall completion: 1/3 executable tasks], exit 1; restored and re-run green, 70 scenarios. SMOKE-TESTED AGAINST REAL DATA IN A THROWAWAY COPY of control/ and scripts/, never the live tree: supersede PL-0205 --by PL-0207 succeeded, validate stayed clean, PL-0207.supersedes was written, the completion denominator moved 68 -> 67 and the status summary gained a SUPERSEDED: 1 line. Refusals exercised there too: self-pointer, a successor that is REVIEW and not DONE, a successor already declaring a different supersedes, a missing --reason, and a hand-edited SUPERSEDED with the pointer deleted. THE LIVE BOARD IS UNCHANGED -- the four originals are NOT transitioned here, control/tasks.json is a reviewDependency on purpose, and that decision is left to the reviewer now that a truthful state exists. STATED LIMITATION: there is no npm run ai:supersede alias, because package.json is outside this task allowedPaths and widening a write surface for a convenience alias is the scope creep this control plane exists to prevent."
+        }
+      },
+      "implementationAgent": "claude-lead",
+      "updatedAt": "2026-09-23T01:47:38.396Z",
+      "implementationBaseSha": "b687910e6ad06cde039461520a4329e940b45158"
+    }
+  ],
+  "review": [],
+  "reservedExternal": [],
+  "recommended": [
     {
       "id": "PL-AI-0003",
       "priority": "P1",

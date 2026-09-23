@@ -1,19 +1,20 @@
 # Project Liberty - Project Status
 
-> Generated 2026-09-22T22:30:05.791Z from the AI control plane.
+> Generated 2026-09-23T01:48:03.824Z from the AI control plane.
 
-**Overall completion:** 56/68 executable tasks (82%)
+**Overall completion:** 58/68 executable tasks (85%)
 
 ## Status summary
 
 - **BACKLOG:** 0
-- **READY:** 4
+- **READY:** 2
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 0
 - **REVIEW:** 2
 - **BLOCKED:** 6
-- **DONE:** 56
+- **DONE:** 58
 - **CANCELED:** 0
+- **SUPERSEDED:** 0
 
 ## Milestones / phases
 
@@ -21,7 +22,7 @@
 - **M1 — Core Discovery Experience:** COMPLETE, 3/3 (100%)
 - **M2 — Media Resolution + Provider Foundation:** COMPLETE, 6/6 (100%)
 - **M3 — Identity + Personal State:** BLOCKED, 3/4 (75%), 1 blocked
-- **M4 — Playback Vertical Slice:** IN_PROGRESS, 4/6 (67%)
+- **M4 — Playback Vertical Slice:** COMPLETE, 6/6 (100%)
 - **M5 — Live + Intelligence Boundaries:** NOT_STARTED, 0/2 (0%), 1 blocked
 - **M6 — Shared-Agent Automation Bridge:** IN_PROGRESS, 2/3 (67%)
 - **EXT — External Licensed Integrations:** BLOCKED, 0/2 (0%), 2 blocked
@@ -29,19 +30,19 @@
 
 ## Active work
 
-- **PL-0504** [REVIEW] A/V continuity diagnostics — owner: claude-media
-- **PL-0701** [REVIEW] Critical E2E harness — owner: claude-test
+- **PL-AI-0011** [REVIEW] A superseded task needs a terminal state that is true — owner: claude-lead
+- **PL-0712** [REVIEW] A repo guard that times out under load is a guard nobody can read — owner: claude-test
 
 ## Dispatch classification
 
-- **READY_AND_EXECUTABLE:** 2
+- **READY_AND_EXECUTABLE:** 0
 - **READY_BUT_EXTERNAL:** 2
 - **BLOCKED:** 6
 - **BACKLOG (dependency-gated):** 0
 
 ## Recommended executable wave
 
-- **PL-AI-0011** -> claude-lead (P1/Coordination) A superseded task needs a terminal state that is true
+No conflict-free executable tasks can be assigned with current agent capacity.
 
 ## Queued for external agents
 
@@ -60,10 +61,10 @@
 ## Agent capacity
 
 - **gpt-architect:** 0/6 active (external lane; not locally executable)
-- **claude-lead:** 0/2 active
+- **claude-lead:** 1/2 active
 - **claude-frontend:** 0/2 active
 - **claude-backend:** 0/2 active
-- **claude-media:** 1/2 active
+- **claude-media:** 0/2 active
 - **claude-test:** 1/1 active
 - **claude-security:** 0/1 active
 - **claude-infra:** 0/1 active

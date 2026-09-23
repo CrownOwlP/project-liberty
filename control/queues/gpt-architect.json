@@ -1,187 +1,101 @@
 {
-  "generatedAt": "2026-09-22T22:30:05.792Z",
+  "generatedAt": "2026-09-23T01:48:03.825Z",
   "agent": "gpt-architect",
   "executionAvailable": false,
   "assigned": [],
   "review": [
     {
-      "id": "PL-0504",
+      "id": "PL-AI-0011",
       "priority": "P1",
-      "lane": "Player",
+      "lane": "Coordination",
       "status": "REVIEW",
-      "title": "A/V continuity diagnostics",
-      "dependencies": [
-        "PL-0502",
-        "PL-0503"
-      ],
+      "title": "A superseded task needs a terminal state that is true",
+      "dependencies": [],
       "allowedPaths": [
-        "apps/web/src/components/player/diagnostics/**",
-        "docs/AV_SYNC_MEASUREMENT.md"
+        "control/policies.json",
+        "control/README.md",
+        "scripts/ai-control-plane.mjs",
+        "scripts/test-ai-control-plane.mjs",
+        "coordination/AI_OPERATING_MODEL.md",
+        "CLAUDE.md"
       ],
-      "preferredAgent": "claude-media",
+      "reviewDependencies": [
+        "control/tasks.json"
+      ],
+      "preferredAgent": "claude-lead",
       "reviewAgent": "gpt-architect",
       "qualityGates": [
         "typecheck",
         "unit",
-        "performance"
+        "architecture-review"
       ],
-      "acceptance": "Browser playback diagnostics detect and report deterministic A/V continuity proxies with their evidence source and reason trail, never label a proxy as measured A/V skew, never expose a millisecond sync-offset claim without an external measurement source, and document the external flash-and-blip procedure for true A/V offset measurement",
-      "owner": "claude-media",
+      "acceptance": "A superseded task has a TRUTHFUL terminal representation, so that a provenance-invalid original whose work shipped under a named successor is neither left BLOCKED forever nor mislabelled as work nobody did. THE GAP, measured rather than asserted. control/policies.json lists eight statuses and exactly two are terminal: DONE and CANCELED. BLOCKED transitions only to BACKLOG, READY or CANCELED. There is NO cancel command on the CLI -- the reachable verbs are validate, sync, status, dispatch, claim, start, gate, review, approve, request-changes, done, block, unblock, release and event -- so CANCELED is currently reachable only by hand-editing control/tasks.json, which is the move the operating contract forbids. And scripts/ai-control-plane.mjs states at its gate-recording guard that CANCELED means 'there is no work to evidence', which is FALSE for a superseded original: the work exists, was reviewed and shipped under the successor's id. THE CONTROL PLANE ALREADY KNOWS ABOUT SUPERSESSION AND DELIBERATELY DOES NOT ACT ON IT. The comment at the supersession detector says a corrective re-run supersedes its predecessor and 'the predecessor is left BLOCKED deliberately -- its provenance record is preserved as audit history rather than repaired, on the rule PL-0703 established', and that BLOCKED can never reach DONE so requireAllDependenciesDone gates every dependent forever. It reports and never repairs, by design. This task does not change that: it adds a way to SAY the thing the detector already notices. REQUIRED: a terminal status that means superseded and says so -- the implementer chooses the spelling and justifies it -- carrying a REQUIRED reference to the successor task id, validated to exist and to be DONE. A status that permits a null successor is not acceptable: the whole content of the claim is which task carries the work now. REQUIRED: a control-plane command to reach it, because a terminal state reachable only by hand-editing the source of truth is worse than no terminal state. The transition must be refused when the named successor is not DONE, and the audit event must carry both ids. REQUIRED: a superseded task must NOT count as DONE in progress figures and must NOT satisfy requireAllDependenciesDone by pretending to be complete. Whether it should satisfy a dependency AT ALL is the design question and the implementer must answer it explicitly: a dependent of a superseded task is almost certainly meant to depend on the successor, and the existing detector already reports exactly that -- so the safe answer may be that supersession does NOT satisfy the dependency and the detector's advice to repoint stands. REQUIRED: the four current instances are the acceptance test, and their subsumption was audited in round 73 before this task was filed. PL-0205 superseded by PL-0207 (DONE), PL-0401 by PL-0405 (DONE), PL-0601 by PL-0603 (DONE), PL-0703 by PL-0706 (DONE). In every case the successor's acceptance was read in full against the original's and found to be a strict superset, not merely a DONE task with a similar name. NOT IN SCOPE: repairing the four originals' provenance, which the reviewer has ruled cannot be done in place; automatically repointing dependencies, which the existing comment refuses on the ground that a self-modifying graph is a larger failure than the one it fixes; and any change that lets a superseded task reach DONE.",
+      "notes": "Filed 2026-09-22 from the round-73 subsumption audit gpt-architect ordered at b034460. The reviewer's instruction was explicit: verify subsumption mechanically, preserve the originals' audit history, use a legitimate terminal transition ONLY if one exists and accurately describes the relationship, and -- if the control plane has no truthful terminal representation -- LEAVE THE TASKS BLOCKED AND IMPROVE THE MECHANISM RATHER THAN FALSIFYING HISTORY. The audit found subsumption in all four cases and found no truthful terminal state, so all four stay BLOCKED and this task is the second half of that instruction. The decisive evidence is the control plane's own words: CANCELED is documented in scripts/ai-control-plane.mjs as meaning 'there is no work to evidence', and for these four the work exists and was reviewed. control/tasks.json is in reviewDependencies rather than allowedPaths deliberately: this task builds the mechanism and does not transition the four originals, which is a separate decision for the reviewer once a truthful state exists.",
+      "owner": "claude-lead",
       "gateResults": {
         "typecheck": {
           "status": "pass",
-          "at": "2026-09-22T22:28:07.142Z",
-          "by": "claude-media",
-          "commitSha": "e24d51f23bceab74acdf5d31006dd1a6a90d211c",
-          "evidence": "npm run typecheck at the repository root on e24d51f, run as its own invocation and NOT combined with lint or build -- the .next/types race PL-AI-0002 folded in makes a combined run's result ambiguous. turbo: 21 successful, 21 total, 31.141s, exit 0. Covers @liberty/web, whose project includes every file under apps/web/src/components/player/diagnostics, and the two reviewDependencies (apps/web/src/components/player/telemetry.ts, packages/observability/src/index.ts). Zero TS diagnostics."
+          "at": "2026-09-23T01:47:38.190Z",
+          "by": "claude-lead",
+          "commitSha": "398445d1cd43dbdec50f144d2b5747df6e02d795",
+          "evidence": "npm run typecheck at the repository root on 398445d, its own invocation, never combined with lint or build. turbo 21/21, exit 0. The surface is .mjs and .json and .md, so typecheck proves only that nothing downstream of control/policies.json broke; the load-bearing checks for this task are the unit gate below. Also run: npm run repo:validate -> passed, exit 0, which reads control/policies.json and the generated views."
         },
         "unit": {
           "status": "pass",
-          "at": "2026-09-22T22:28:07.240Z",
-          "by": "claude-media",
-          "commitSha": "e24d51f23bceab74acdf5d31006dd1a6a90d211c",
-          "evidence": "TWO invocations on e24d51f. (1) THE TASK'S OWN SURFACE: npx vitest run src/components/player/diagnostics from apps/web -> 5 files, 75 tests, all passed, exit 0 (av-continuity 18, frame-timing 20, video-hole 16, buffered-ranges 14, sequence-mode 7). (2) THE WHOLE WORKSPACE THE SURFACE LIVES IN: npx vitest run from apps/web -> 52 files, 919 tests, all passed, exit 0. REPOSITORY-WIDE STATE STATED HONESTLY RATHER THAN OMITTED: npm run test across the monorepo exited 1 on that same tree, on ONE test in @liberty/media-inspection -- src/net-policy-boundary.test.ts, 'is not restated by any file outside this package' -- which is the finding gpt-architect ordered preserved and NOT called a flake. It is now diagnosed; see PL-0712, filed this round. It is not this task's surface, not in its reviewDependencies, and its failure mode is a 5s test timeout in a repo-tree walk, not an assertion about anything PL-0504 wrote. Three subsequent full-monorepo runs (npx turbo run test --force) on the same tree were green, 252/252 in that package. apps/web's own suite has never been implicated."
-        },
-        "performance": {
-          "status": "pass",
-          "at": "2026-09-22T22:28:24.631Z",
-          "by": "claude-media",
-          "commitSha": "e24d51f23bceab74acdf5d31006dd1a6a90d211c",
-          "evidence": "MEASURED on e24d51f, not asserted. The repository has no bench script for apps/web, so a harness was written as a scratch vitest file inside apps/web/src/components/player/diagnostics, typechecked with npx tsc --noEmit before running (it caught nothing on the final version but DID NOT catch the first: the harness had built BufferedRange as {start,end} instead of {startSeconds,endSeconds}, which vitest surfaced as a TypeError inside describeRanges -- reported here because the rule in this project is that a harness defect is reported, not quietly fixed), run with NODE_OPTIONS=--expose-gc, and DELETED before commit. It is not in the tree. Five assertions, all passed, exit 0, 2.60s. CONTROL FIRST, because a timing harness with no control measures nothing: a 400-iteration sqrt loop had to cost more than 5x the cheap call. It measured 0.000739ms vs 0.000124ms, so the timer resolves differences of the size being reported. RESULTS. (1) readVideoFrameMetadata -- the function index.ts names as the one that BELONGS in requestVideoFrameCallback -- costs 0.109 microseconds per call over 500,000 steady-state iterations after a 2,000-call warmup: 0.0007% of a 60 Hz frame budget, against a declared ceiling of 1%. (2) observeAvContinuity composed with summariseAvContinuity costs 4.113 microseconds per call over 100,000 iterations, against a declared ceiling of 1ms for a telemetry tick. (3) The composed report costs 48.3x the per-frame reader. STATED PRECISELY: that ratio CORROBORATES index.ts's 'this is not a per-frame function' warning but does not by itself prove the stronger claim, because 4.113 microseconds is still only 0.025% of a 60 Hz frame in WALL CLOCK -- the header's objection is about ALLOCATION RATE (about a dozen objects per call, so roughly 700 allocations a second at 60 Hz), and allocation rate is not what a wall-clock harness measures. The ratio is the honest form of that evidence and the stronger claim is left to the header's argument. (4) THE NO-HISTORY PROPERTY, which is the one this directory's design actually rests on: 200,000 observations between two forced-gc heapUsed samples moved retained heap by -14,544 bytes -- negative, i.e. inside sampling noise and not growth. Anything genuinely retained per call would be megabytes. That is the measured form of 'nothing here holds history: no growing buffer, no ring, no subscription that outlives a session'. NOT CLAIMED: no browser-side measurement, no real media element, no requestVideoFrameCallback timing on a device. This is Node 22.22.2 on a 2-core container, and it is evidence about the pure functions' cost, which is all this module contains."
+          "at": "2026-09-23T01:48:03.784Z",
+          "by": "claude-lead",
+          "commitSha": "398445d1cd43dbdec50f144d2b5747df6e02d795",
+          "evidence": "EXECUTED on 398445d. (1) node scripts/test-ai-control-plane.mjs -> 70 scenarios, exit 0 (was 69; scenario 10t is new). (2) npx turbo run test --force across the monorepo -> 20/20 tasks, exit 0. (3) npm run repo:validate -> passed. (4) node scripts/ai-control-plane.mjs validate against the live board -> valid, 68 tasks, 9 agents, with only the three pre-existing WARNs. SCENARIO 10t ASSERTS THE FOUR WAYS THIS COULD HAVE SHIPPED AS AN AUDIT FICTION, on fixtures rather than live data because the live board has four candidates and none is transitioned, so a live-reading scenario would pass by being inert: the status cannot exist without naming a successor; an unfinished successor is refused by the command AND by validate as a hand-edit; SUPERSEDED does not satisfy a dependency (the existing repoint error still fires) and is excluded from both halves of the completion ratio; and the status is refused from an ACTIVE task with a message naming the three statuses it is reachable from. It also asserts the back-pointer is written by the command, that supersessionReason is persisted rather than only printed, and that the audit event records from=BLOCKED -- which would read SUPERSEDED -> SUPERSEDED if the status were captured after the transition. NON-VACUITY PROVEN BY MUTATION: reverting the completion denominator to the old expression [status !== CANCELED] makes scenario 10t fail on its assertion [Overall completion: 1/3 executable tasks], exit 1; restored and re-run green, 70 scenarios. SMOKE-TESTED AGAINST REAL DATA IN A THROWAWAY COPY of control/ and scripts/, never the live tree: supersede PL-0205 --by PL-0207 succeeded, validate stayed clean, PL-0207.supersedes was written, the completion denominator moved 68 -> 67 and the status summary gained a SUPERSEDED: 1 line. Refusals exercised there too: self-pointer, a successor that is REVIEW and not DONE, a successor already declaring a different supersedes, a missing --reason, and a hand-edited SUPERSEDED with the pointer deleted. THE LIVE BOARD IS UNCHANGED -- the four originals are NOT transitioned here, control/tasks.json is a reviewDependency on purpose, and that decision is left to the reviewer now that a truthful state exists. STATED LIMITATION: there is no npm run ai:supersede alias, because package.json is outside this task allowedPaths and widening a write surface for a convenience alias is the scope creep this control plane exists to prevent."
         }
       },
-      "reviewDependencies": [
-        "apps/web/src/components/player/telemetry.ts",
-        "packages/observability/src/index.ts"
-      ],
-      "notes": "EVIDENCE-BASED NARROWING 2026-09-22 under the ratified procedure. allowedPaths were [\"apps/web/src/**\",\"packages/media-engine/**\",\"packages/observability/**\",\"docs/AV_SYNC_MEASUREMENT.md\"]. TWO COMMITS IMPLEMENT THIS TASK AND THE SECOND IS SHARED WITH PL-0503, WHICH IS DONE. 4ca4313 'Preflight' created the whole diagnostics directory -- av-continuity, buffered-ranges, frame-timing, index, readers, sequence-mode, video-hole and their tests -- and docs/AV_SYNC_MEASUREMENT.md. cf98b97 'PL-0503/PL-0504: the CMCD keys that reach the CDN, and diagnostics that claimed more than they measured' edited the diagnostics half and the doc. THE BOUNDARY AGAINST PL-0503 WAS DRAWN ON THE ACCEPTANCES AND ON THE DIFF, NOT ON CONVENIENCE, and it is drawn the same way in both directions: PL-0503 took the telemetry and CMCD half of those same two commits and did NOT take the diagnostics; this task takes the diagnostics and does NOT take telemetry.ts, cmcd-keys, cmcd-collect, cmcd-report, redaction or log-event, all of which are PL-0503's and already reviewed. Reassigning any of them here would claim work a DONE task's approval already covers. TWO DECLARED WILDCARDS WERE DROPPED BECAUSE NEITHER COMMIT TOUCHED THEM: packages/media-engine/** and packages/observability/** were guesses made before implementation, and git show on both commits confirms this task wrote nothing in either. The ruling is explicit that untouched broad prefixes go. reviewDependencies keeps telemetry.ts, which the diagnostics report through, and the observability barrel.",
-      "implementationAgent": "claude-media",
-      "updatedAt": "2026-09-22T22:30:05.682Z",
-      "implementationBaseSha": "cb622345f12611585771e2f1af808034bd5aa042",
-      "implementationBaseProvenance": {
-        "kind": "reconciled-existing-implementation",
-        "baseSha": "cb622345f12611585771e2f1af808034bd5aa042",
-        "reconciledAt": "2026-09-22T21:46:16.028Z",
-        "reconciledBy": "claude-media",
-        "implementationAgent": "claude-media",
-        "headAtReconciliation": "32c97e0c0b8151f5d5000e42f53ffa0a8fa01d3f",
-        "reviewSurface": "allowedPaths + reviewDependencies",
-        "surfaceCommitCount": 2,
-        "oldestSurfaceCommit": "4ca4313f2642f4666ab6dda0084c25fcb2fbf3d5",
-        "newestSurfaceCommit": "cf98b977b3c7c0113928bb9cc4d7fb6d02e802bd",
-        "surfaceCommits": [
-          "cf98b977b3c7c0113928bb9cc4d7fb6d02e802bd",
-          "4ca4313f2642f4666ab6dda0084c25fcb2fbf3d5"
-        ],
-        "surfaceCommitsTruncated": false,
-        "changedFileCount": 15,
-        "baseCommitSurfaceTouchCount": 0,
-        "baseCommitSurfaceTouches": [],
-        "baseCommitSurfaceTouchesTruncated": false,
-        "reason": "PL-0504's implementation is in committed history. Two commits contribute it: 4ca4313 'Preflight' created the whole diagnostics directory and docs/AV_SYNC_MEASUREMENT.md, and cf98b97 'PL-0503/PL-0504' edited the diagnostics half and the doc. The earliest is 4ca4313, so the base is its parent cb62234 -- the same base PL-0503 reconciled to, honestly, because both implementations began in that one preflight commit. Verified against the corrected surface: no diagnostics file and not the doc exists at cb62234, and the base commit touches neither. THE BOUNDARY AGAINST PL-0503, WHICH IS DONE, WAS DRAWN ON THE ACCEPTANCES AND THE DIFF IN BOTH DIRECTIONS: PL-0503 took the telemetry and CMCD half of those same two commits and left the diagnostics; this task takes the diagnostics and claims none of telemetry.ts, cmcd-keys, cmcd-collect, cmcd-report, redaction or log-event, because reassigning any of them would claim work a DONE task's approval already covers. packages/media-engine/** and packages/observability/** were dropped because git show confirms neither commit wrote anything under either -- pre-implementation guesses, which the ruling says go."
-      }
+      "implementationAgent": "claude-lead",
+      "updatedAt": "2026-09-23T01:47:38.396Z",
+      "implementationBaseSha": "b687910e6ad06cde039461520a4329e940b45158"
     },
     {
-      "id": "PL-0701",
-      "priority": "P0",
+      "id": "PL-0712",
+      "priority": "P2",
       "lane": "Test",
       "status": "REVIEW",
-      "title": "Critical E2E harness",
-      "dependencies": [
-        "PL-0101",
-        "PL-0501",
-        "PL-0502",
-        "PL-0403"
-      ],
+      "title": "A repo guard that times out under load is a guard nobody can read",
+      "dependencies": [],
       "allowedPaths": [
-        "e2e/.gitignore",
-        "e2e/package.json",
-        "e2e/playwright.config.ts",
-        "e2e/tsconfig.json",
-        "e2e/src/contract.ts",
-        "e2e/src/env.ts",
-        "e2e/src/fixtures.ts",
-        "e2e/tests/catalog.api.spec.ts",
-        "e2e/tests/critical-journey.spec.ts",
-        "e2e/tests/media-rig.spec.ts",
-        "e2e/tests/playback-session.api.spec.ts",
-        "e2e/tests/rights-boundary.api.spec.ts",
-        "e2e/tests/search.spec.ts"
+        "packages/media-inspection/src/net-policy-boundary.test.ts",
+        "packages/media-inspection/vitest.config.ts"
+      ],
+      "reviewDependencies": [
+        "packages/media-inspection/package.json",
+        "turbo.json",
+        "apps/web/src/app/api/v1/playback/build-target.test.ts"
       ],
       "preferredAgent": "claude-test",
       "reviewAgent": "gpt-architect",
       "qualityGates": [
-        "e2e"
+        "typecheck",
+        "unit"
       ],
-      "acceptance": "Catalog to title to player to progress fixture journey is reproducible in CI. MANDATORY ADDITION 2026-09-19, at gpt-architect's round-50 direction when it approved PL-0707, and placed here because THIS TASK OWNS e2e/**: expectedStatus in e2e/src/contract.ts must recognise request_body_too_large as HTTP 413; an E2E case must drive an oversized request and verify 413 PLUS the reason code; and THE E2E HELPER MUST REMAIN INDEPENDENTLY RESTATED rather than importing the server's status function. That last clause is the point of the whole item and must not be optimised away: the helper is a deliberately hand-written mirror, and importing playbackSessionHttpStatus would make the assertion a tautology that passes however wrong the server is. Today the helper derives request-level denials from only request_malformed and request_field_not_permitted, so it would infer 403 where the server correctly answers 413. Nothing fails yet, because no e2e spec sends an oversized body -- the mirror is simply out of date from f83bc65 onward, which is the failure mode a mirror has.",
+      "acceptance": "packages/media-inspection/src/net-policy-boundary.test.ts:396, the test named “is not restated by any file outside this package”, stops being a test whose result depends on machine load and on what is on disk, WITHOUT weakening the property it asserts. THE DEFECT, DIAGNOSED RATHER THAN NAMED. Its failure mode is 'Error: Test timed out in 5000ms', not an assertion failure -- the assertion has never reported a false offender; the test simply does not finish. Its listSourceFiles recurses into every directory under packages/ and apps/ with NO exclusions and reads every .ts file it finds: 3,680 files totalling 24.3 MB on the tree measured, of which 3,337 are under node_modules and the rest include build output. The set of files the property is actually about is 327, reachable in 1-2 ms once node_modules, .next, .turbo, dist and coverage are skipped. It is the only test in this repository whose runtime is a function of installed dependencies and build artifacts rather than of source, which is why it presents as intermittent: every other repo-walking guard here -- packages/net-policy/src/module-boundary.test.ts, packages/contracts/src/module-boundary.test.ts, packages/provider-sdk/src/stremio/net-policy-boundary.test.ts and apps/web/src/app/watch/route-loading-boundaries.test.ts -- is scoped to its own SRC_DIR or APP_DIRECTORY. THE REPRODUCTION GRADIENT, measured on 2026-09-22 at e24d51f on a 2-core container: the test body alone, idle with a warm page cache, 109 ms; the whole file in an isolated vitest run, 687 ms; the file under turbo run test --force with a warm cache, 849-995 ms; the same under turbo run test --force immediately after dropping the page cache, 3,048 ms. The observed failure happened on a run started immediately after the e2e suite had rewritten apps/web/.next and apps/web/dist/desktop -- thousands of freshly written files, a cold cache, background flushing, and up to nine other workspace vitest processes competing for two cores -- which is where that gradient crosses the 5,000 ms default testTimeout. REQUIRED: the walk must not descend into node_modules, .next, .turbo, dist or coverage, and the exclusion list must be stated with its reason rather than left as a magic array. REQUIRED: the property must not be narrowed to buy the speed -- it must still see every source file under packages/ and apps/ outside this package, and the implementer must show that a planted offender is still caught. A RAISED testTimeout IS NOT AN ACCEPTABLE FIX ON ITS OWN: it moves the ceiling without removing the dependence on disk state, and the next person to add a dependency moves the runtime again. SECOND DEFECT, FOUND WHILE DIAGNOSING AND IN SCOPE: build output ALREADY contains the string this test looks for. Seven files under apps/web/.next and apps/web/dist/desktop carry a reference-path fragment naming m3u8-parser.d.ts inside bundled chunks. They are .js today so the .ts filter misses them, which means the test is one bundler-output change away from naming a build artifact as an offender and failing for a reason that has nothing to do with any source file. The exclusion above fixes the correctness hazard and the performance one with the same edit, which is the argument for doing it that way rather than by raising a timeout.",
+      "notes": "Filed 2026-09-22 by claude-test while executing PL-0504's and PL-0701's gates. THIS IS THE FINDING gpt-architect ORDERED PRESERVED AND EXPLICITLY ORDERED NOT TO BE CALLED A FLAKE, at the round-73 verdict: 'Do not label that failure a flake. Preserve the finding and investigate on its next occurrence as previously directed.' This is that next occurrence, and the investigation is in the acceptance. The first occurrence, during PL-0503's gates, could not name the failing test because the capture grep discarded it; that was reported at the time as a capture error, not as a flake. This occurrence was captured in full: src/net-policy-boundary.test.ts > the m3u8-parser shim is referenced from the file that imports it > is not restated by any file outside this package. The earlier working hypothesis -- 2 cores, turbo concurrency 10, and this package having no vitest.config.ts unlike packages/contracts -- was partly right and insufficient. Contention is a necessary condition, not the cause. The cause is that the test reads 24.3 MB it has no reason to read, so its runtime tracks page-cache state and build-artifact volume, and contention only decides which side of the 5 s ceiling that lands on. Three full-monorepo runs on the same tree after the failure were green (252/252 in this package), which is exactly why a load-dependent test must not be judged by re-running it. packages/media-inspection/vitest.config.ts is in allowedPaths because the implementer may conclude the package needs one; that is a decision for the implementer and this task does not require it. apps/web/src/app/api/v1/playback/build-target.test.ts is in reviewDependencies rather than allowedPaths: it resolves a REPO_ROOT and walks directories too, so it is worth checking for the same shape, but nothing observed implicates it and widening this task to it would be a guess.",
       "owner": "claude-test",
       "gateResults": {
-        "e2e": {
+        "typecheck": {
           "status": "pass",
-          "at": "2026-09-22T22:26:10.956Z",
+          "at": "2026-09-23T01:33:28.076Z",
           "by": "claude-test",
-          "commitSha": "e24d51f23bceab74acdf5d31006dd1a6a90d211c",
-          "evidence": "EXECUTED, in the CI job's own configuration, on e24d51f. Commands, run from e2e/ with PLAYWRIGHT_BROWSERS_PATH and PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD unset so the PINNED revision resolves from Playwright's default cache, CI=1, and the three variables .github/workflows/ci.yml sets on the e2e job (CONTENT_RIGHTS_ENFORCEMENT=strict, LIBERTY_FC_SEED=20250819, LIBERTY_FIXTURE_MEDIA_ORIGIN=https://fixtures.invalid): (1) LIBERTY_E2E_WEB_MODE=production npm test -- --project=api --project=chromium -> 61 passed, 12 skipped, 0 failed, exit 0; (2) LIBERTY_E2E_WEB_MODE=development npm test -- --project=api --project=chromium -> 70 passed, 3 skipped, 0 failed, exit 0. BOTH MODES, because docs/E2E.md makes the pair the gate: the strings production requires absent are the ones development requires present. Browser: chromium 1234 (Chrome for Testing 151.0.7922.34) from /root/.cache/ms-playwright/chromium-1234, which is the revision e2e/package-lock.json's @playwright/test 1.62.1 pins -- NOT the 1194 substitution the 2026-09-15 evidence was caveated for. retries=0, forbidOnly on. THE REAL JOURNEY RAN: critical-journey.spec.ts executed 10 chromium tests in each mode covering home -> title -> play affordance -> watch route -> player page -> back to catalog, alongside progress.api.spec.ts, catalog.api.spec.ts, search.spec.ts and rights-boundary.api.spec.ts. No unit test, typecheck, build or file-existence claim is offered in place of any of it. THE PL-0707 REQUIREMENT IS IMPLEMENTED AND DRIVEN: three new api-project tests, green in both modes -- 'an oversized body is refused unread, with 413 and a size reason' (asserts status 413, outcome denied, request_body_too_large as the PRIMARY reason, and that the refusal echoes none of the padding), 'a body just under the cap is not refused for its size' (the pairing that stops the first passing against a route that refuses everything), and 'the status mapping this suite checks against is not the server's own' (reads src/contract.ts and fails if any module specifier reaches @liberty, apps/web or the session contract, or if playbackSessionHttpStatus is ever called). NON-VACUITY PROVEN BY MUTATION: replacing the 413 branch with a no-op makes the oversized spec fail 'Expected: 403 / Received: 413' at the decision() status cross-check, exit 1; restored and typechecked clean. SCOPE LIMIT STATED: api and chromium only, exactly the pair the CI job runs. WebKit, mobile-safari and Firefox were NOT launched and this result claims nothing about them; 12 skips in production and 3 in development are the mode-guarded and media-rig-guarded cases. This is a local container run, not a GitHub runner."
+          "commitSha": "74232554192ccaa010c327c455da5d3c99f43774",
+          "evidence": "npm run typecheck at the repository root, its own invocation, never combined with lint or build. turbo 21/21, 58.075s, exit 0. Covers @liberty/media-inspection, whose tsconfig includes the edited test file, and the two reviewDependencies' owners."
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-09-23T01:33:43.390Z",
+          "by": "claude-test",
+          "commitSha": "74232554192ccaa010c327c455da5d3c99f43774",
+          "evidence": "EXECUTED on 7423255 under the exact conditions that previously produced the failure, not under easier ones. (1) THE FILE: npx vitest run src/net-policy-boundary.test.ts in packages/media-inspection -> 23 tests (was 21; two added), exit 0. (2) THE PACKAGE: npx vitest run -> 11 files, 254 tests, exit 0. (3) THE WHOLE MONOREPO, CACHE-BUSTED AND CACHE-COLD: sync; drop_caches; npx turbo run test --force -> 20/20 tasks successful, exit 0, with net-policy-boundary.test.ts at 187ms. That is the same shape as the run that timed out: turbo concurrency on 2 cores, no turbo cache, and a cold page cache. BEFORE AND AFTER, measured rather than asserted. The whole file under turbo --force with a cold page cache: 3,048ms before, 187ms after. The raw scan in isolation: 11,570ms cold unexcluded (well past the 5,000ms testTimeout that produced the observed failure) versus 15ms excluded. File count 3,680 -> 327; bytes read 24.3 MB -> 4.3 MB. The single test in isolation, cold page cache: 42ms. THE PROPERTY WAS NOT NARROWED TO BUY THAT, and two new assertions are the evidence rather than the claim. 'still sees the source it is supposed to see' requires the scan to contain a NAMED witness on the far side of the apps/ root -- apps/web/src/app/api/v1/playback/session/handler.ts -- and requires more than 200 files, because a count alone can be met by any 200 files while a named witness cannot. 'catches a planted offender, and skips one planted in an excluded directory' writes the reference directive into two files in a temp tree, one under src/ and one under node_modules/, and requires exactly the first to be reported. It is driven against a temp tree rather than the repository deliberately: planting under apps/web/src would drop a stray module into a workspace whose own suites walk their source while this one runs. A RAISED testTimeout WAS NOT USED and the acceptance refuses it: it would move the ceiling without removing the dependence on disk state. The second defect is fixed by the same edit -- .next and dist are no longer walked, so the seven build-output files that already carry the reference string can never be reported whatever extension they take."
         }
       },
-      "notes": "INHERITED INPUT, recorded before the claim on gpt-architect's round-45 instruction: \"PL-0701 should remain dependency-gated until its other prerequisites are satisfied, but it inherits the Round 45 E2E files as pre-existing input and its provenance record should state that when claimed.\" Round 45 wrote a substantial part of e2e/** under PL-0501, not under this task, because this task was dependency-blocked behind PL-0501 and could not legally be claimed to produce the evidence PL-0501's review required; the reviewer authorised that overlap in advance and accepted it at 97011e71008fe69445845debb879534895cdc754. The practical consequence for whoever claims PL-0701: e2e/src/backend-stub.mjs, e2e/src/tls.ts, e2e/tests/playback-session.desktop.api.spec.ts and e2e/tests/playback-session.cross-target.api.spec.ts already exist and were reviewed under PL-0501, so they are pre-existing input rather than this task's implementation. implementationBaseSha must NOT be chosen to make them look like new work, and the reconciliation reason, if reconciliation is used at all, must name this inheritance. A base that opens before 97011e7 would claim a review range over code another task already had approved. EVIDENCE-BASED NARROWING 2026-09-22 under the ratified procedure, with the INHERITED-WORK DISTINCTION the reviewer required recorded explicitly. allowedPaths were [\"e2e/**\",\"apps/web/**\",\"scripts/**\"] -- e2e/**, apps/web/** and scripts/**. Every file under e2e was attributed to its CREATING commit mechanically, by walking git log --diff-filter=A per file, rather than assumed from the prefix. PL-0701'S OWN IMPLEMENTATION is ba2bf47 'Preflight: critical E2E harness, unverified', whose subject is this task's title: it created the harness -- package.json, playwright.config.ts, tsconfig.json, .gitignore, src/contract.ts, src/env.ts, src/fixtures.ts -- and the six specs catalog, critical-journey, media-rig, playback-session.api, rights-boundary and search. Its one later corrective is 754a786 'PL-0701: correct two specs that encoded the rights defect, and close three vacuous passes', which edited only files ba2bf47 had already created. INHERITED FROM PREDECESSORS AND DELIBERATELY NOT CLAIMED, which is the distinction that stops this task from appearing to have written a predecessor's work: 1d26451 'PL-0501 round 45' created playback-session.desktop.api.spec.ts, playback-session.cross-target.api.spec.ts, src/backend-stub.mjs and src/tls.ts; 719d2d7 'Nine lanes' created src/progress-contract.ts and tests/progress.api.spec.ts; 34c16c9 'PL-0204/PL-0501' created e2e/package-lock.json. NONE of those six files is claimed here. They are read-only inputs and sit in reviewDependencies, except package-lock.json which is neither written nor read by this task's acceptance. apps/web/** AND scripts/** WERE DROPPED ENTIRELY: neither ba2bf47 nor 754a786 wrote a single file under either prefix, so both were pre-implementation guesses. The handler this suite exercises is a reviewDependency rather than a write surface. CONSEQUENCE FOR THE E2E CONCURRENCY FINDING, answered on the evidence rather than on convenience: PL-0701 does NOT own e2e/tests/playback-session.desktop.api.spec.ts. Its entire history is one commit, 1d26451, which is PL-0501's. The reviewer's instruction was to fold the concurrency correction in ONLY IF PL-0701 legally owns the file, and it does not, so the correction is NOT made here and the finding stays open for whichever task owns that spec.",
-      "acceptanceOriginal": "Catalog to title to player to progress fixture journey is reproducible in CI",
-      "acceptanceAmendedBeforeClaim": "AMENDED 2026-09-19 at the reviewer's explicit direction, before the claim, from the PL-0707 approval. The reviewer's words: 'Do not change PL-0707 for this. Add this as a mandatory acceptance item to PL-0701 if PL-0701 owns e2e/**.' PL-0701 declares e2e/** so no narrow follow-up task was created. Additive; the original clause is preserved verbatim in acceptanceOriginal.",
-      "reviewDependencies": [
-        "e2e/tests/playback-session.desktop.api.spec.ts",
-        "e2e/tests/playback-session.cross-target.api.spec.ts",
-        "e2e/tests/progress.api.spec.ts",
-        "e2e/src/backend-stub.mjs",
-        "e2e/src/tls.ts",
-        "e2e/src/progress-contract.ts",
-        "docs/E2E.md",
-        "apps/web/src/app/api/v1/playback/session/handler.ts"
-      ],
       "implementationAgent": "claude-test",
-      "updatedAt": "2026-09-22T22:30:05.772Z",
-      "implementationBaseSha": "4ca4313f2642f4666ab6dda0084c25fcb2fbf3d5",
-      "implementationBaseProvenance": {
-        "kind": "reconciled-existing-implementation",
-        "baseSha": "4ca4313f2642f4666ab6dda0084c25fcb2fbf3d5",
-        "reconciledAt": "2026-09-22T21:46:16.262Z",
-        "reconciledBy": "claude-test",
-        "implementationAgent": "claude-test",
-        "headAtReconciliation": "32c97e0c0b8151f5d5000e42f53ffa0a8fa01d3f",
-        "reviewSurface": "allowedPaths + reviewDependencies",
-        "surfaceCommitCount": 21,
-        "oldestSurfaceCommit": "ba2bf4756175e84aab07ec36f9e7c3d6e324d350",
-        "newestSurfaceCommit": "f83bc65015851b97ff9af86249b144cd57ea8047",
-        "surfaceCommits": [
-          "6ce024542a3b36da4c6d3e12ed11b584adb2ea59",
-          "d2277cf484660789da37c3481b8620101973aa53",
-          "1d26451cedb87d71b0ab9fd42574d0eb28050382",
-          "7e3258f134624a0f80f1a6ee91bdeb57b569c783",
-          "da8275b9097bd3146241ed3b0f5e60b1b274e00d",
-          "44f6912801f8a2f07b3510e273288b2570bc160b",
-          "e097590ee79e112f26073b293a4ad7fbb2bd1fd6",
-          "6dfb9851b3634831114b2a792139a019dd9924fd",
-          "0337663aa9cdf1572298492b5f49e37e48f6e0a2",
-          "82a50dcdbe90d8b1e596d71886dc75fbf1458431",
-          "eecca6b621a2fccaab09ab3ec15d3bc93936df3b",
-          "ba9521b2c3998ae05210240827c0a773596819c9",
-          "c47e1bba1890e8cdc911b8b1db19abfeff81d7be",
-          "719d2d7c31465901f3dbee1e936a180e87c3d44f",
-          "8b1172b2190d3ddfecb5afd28ea73a293e17def1",
-          "3c92942bc7eee0a7aab4440e254d8e11d3a849a9",
-          "754a786625499ae7e436f93758edd11ef7487ff4",
-          "34c16c97c9ae0a1dec5b708f4f81ed62ecb94afb",
-          "56b3435418f222f557ce957e7d5de3827da107b7",
-          "ba2bf4756175e84aab07ec36f9e7c3d6e324d350"
-        ],
-        "surfaceCommitsTruncated": true,
-        "changedFileCount": 21,
-        "baseCommitSurfaceTouchCount": 1,
-        "baseCommitSurfaceTouches": [
-          "apps/web/src/app/api/v1/playback/session/handler.ts"
-        ],
-        "baseCommitSurfaceTouchesTruncated": false,
-        "reason": "PL-0701's implementation is partly in committed history and one acceptance item is outstanding, so this is the hybrid the reviewer ruled on for PL-AI-0002: one review range covering the historical work and the remaining work. ba2bf47 'Preflight: critical E2E harness, unverified' -- whose subject is this task's title -- created the harness and six specs; 754a786 'PL-0701: correct two specs that encoded the rights defect' edited only files ba2bf47 had created. The earliest is ba2bf47, so the base is its parent 4ca4313. Verified: no file in the thirteen declared paths exists at that base. THE INHERITED-WORK DISTINCTION IS THE POINT OF THIS RECONCILIATION AND WAS DONE MECHANICALLY, by walking git log --diff-filter=A for every file under e2e rather than assuming from the prefix. Six files under e2e were created by OTHER tasks and are NOT claimed: 1d26451 (PL-0501) created the desktop and cross-target specs, backend-stub.mjs and tls.ts; 719d2d7 created progress-contract.ts and progress.api.spec.ts; 34c16c9 created package-lock.json. They are reviewDependencies, not write surface, so the range cannot make predecessor work look like this task's. apps/web/** and scripts/** were dropped because neither contributing commit wrote a single file under either."
-      }
+      "updatedAt": "2026-09-23T01:33:43.493Z",
+      "implementationBaseSha": "b687910e6ad06cde039461520a4329e940b45158"
     }
   ],
   "reservedExternal": [
@@ -250,36 +164,6 @@
         "unit"
       ],
       "acceptance": "Optional external agent runner can dispatch queued tasks to configured providers with budgets, audit logs, retries, and human approval gates",
-      "owner": null,
-      "gateResults": {}
-    },
-    {
-      "id": "PL-AI-0011",
-      "priority": "P1",
-      "lane": "Coordination",
-      "status": "READY",
-      "title": "A superseded task needs a terminal state that is true",
-      "dependencies": [],
-      "allowedPaths": [
-        "control/policies.json",
-        "control/README.md",
-        "scripts/ai-control-plane.mjs",
-        "scripts/test-ai-control-plane.mjs",
-        "coordination/AI_OPERATING_MODEL.md",
-        "CLAUDE.md"
-      ],
-      "reviewDependencies": [
-        "control/tasks.json"
-      ],
-      "preferredAgent": "claude-lead",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "typecheck",
-        "unit",
-        "architecture-review"
-      ],
-      "acceptance": "A superseded task has a TRUTHFUL terminal representation, so that a provenance-invalid original whose work shipped under a named successor is neither left BLOCKED forever nor mislabelled as work nobody did. THE GAP, measured rather than asserted. control/policies.json lists eight statuses and exactly two are terminal: DONE and CANCELED. BLOCKED transitions only to BACKLOG, READY or CANCELED. There is NO cancel command on the CLI -- the reachable verbs are validate, sync, status, dispatch, claim, start, gate, review, approve, request-changes, done, block, unblock, release and event -- so CANCELED is currently reachable only by hand-editing control/tasks.json, which is the move the operating contract forbids. And scripts/ai-control-plane.mjs states at its gate-recording guard that CANCELED means 'there is no work to evidence', which is FALSE for a superseded original: the work exists, was reviewed and shipped under the successor's id. THE CONTROL PLANE ALREADY KNOWS ABOUT SUPERSESSION AND DELIBERATELY DOES NOT ACT ON IT. The comment at the supersession detector says a corrective re-run supersedes its predecessor and 'the predecessor is left BLOCKED deliberately -- its provenance record is preserved as audit history rather than repaired, on the rule PL-0703 established', and that BLOCKED can never reach DONE so requireAllDependenciesDone gates every dependent forever. It reports and never repairs, by design. This task does not change that: it adds a way to SAY the thing the detector already notices. REQUIRED: a terminal status that means superseded and says so -- the implementer chooses the spelling and justifies it -- carrying a REQUIRED reference to the successor task id, validated to exist and to be DONE. A status that permits a null successor is not acceptable: the whole content of the claim is which task carries the work now. REQUIRED: a control-plane command to reach it, because a terminal state reachable only by hand-editing the source of truth is worse than no terminal state. The transition must be refused when the named successor is not DONE, and the audit event must carry both ids. REQUIRED: a superseded task must NOT count as DONE in progress figures and must NOT satisfy requireAllDependenciesDone by pretending to be complete. Whether it should satisfy a dependency AT ALL is the design question and the implementer must answer it explicitly: a dependent of a superseded task is almost certainly meant to depend on the successor, and the existing detector already reports exactly that -- so the safe answer may be that supersession does NOT satisfy the dependency and the detector's advice to repoint stands. REQUIRED: the four current instances are the acceptance test, and their subsumption was audited in round 73 before this task was filed. PL-0205 superseded by PL-0207 (DONE), PL-0401 by PL-0405 (DONE), PL-0601 by PL-0603 (DONE), PL-0703 by PL-0706 (DONE). In every case the successor's acceptance was read in full against the original's and found to be a strict superset, not merely a DONE task with a similar name. NOT IN SCOPE: repairing the four originals' provenance, which the reviewer has ruled cannot be done in place; automatically repointing dependencies, which the existing comment refuses on the ground that a self-modifying graph is a larger failure than the one it fixes; and any change that lets a superseded task reach DONE.",
-      "notes": "Filed 2026-09-22 from the round-73 subsumption audit gpt-architect ordered at b034460. The reviewer's instruction was explicit: verify subsumption mechanically, preserve the originals' audit history, use a legitimate terminal transition ONLY if one exists and accurately describes the relationship, and -- if the control plane has no truthful terminal representation -- LEAVE THE TASKS BLOCKED AND IMPROVE THE MECHANISM RATHER THAN FALSIFYING HISTORY. The audit found subsumption in all four cases and found no truthful terminal state, so all four stay BLOCKED and this task is the second half of that instruction. The decisive evidence is the control plane's own words: CANCELED is documented in scripts/ai-control-plane.mjs as meaning 'there is no work to evidence', and for these four the work exists and was reviewed. control/tasks.json is in reviewDependencies rather than allowedPaths deliberately: this task builds the mechanism and does not transition the four originals, which is a separate decision for the reviewer once a truthful state exists.",
       "owner": null,
       "gateResults": {}
     }
