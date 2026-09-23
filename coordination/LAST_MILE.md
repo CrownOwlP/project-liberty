@@ -73,3 +73,56 @@ answer it; the right subsists in the compilation. Nobody has asked counsel.
 This is not blocking any current task. It is recorded because "a real source is
 wired" and "a catalog may lawfully be served" remain different statements, and the
 gap between them is a legal question rather than an engineering one.
+
+## 6. Windows code-signing certificate — PW-0502 depends on it
+
+An Authenticode certificate is owner-held and cannot be provisioned from an
+engineering session. Two consequences, both stated so neither is worked around:
+
+- **The installer will warn.** An unsigned installer trips SmartScreen and
+  Defender. PW-0501 ships it anyway, because an unsigned build the commander can
+  install is worth more than no build.
+- **Auto-update stays OFF until a certificate exists.** PW-0502's acceptance
+  requires signature verification on update payloads, and an updater that fetches
+  and runs an unverified binary is a remote-code-execution feature. If signing is
+  unavailable the update path is disabled and says so, rather than shipping an
+  unverified one.
+
+**Owner action:** obtain an Authenticode certificate (EV or standard) and decide
+where the private key lives — a hardware token the commander holds, or a CI
+secret. That second choice is itself an owner decision, not an engineering one.
+
+## 7. The real-device Windows certification run — PW-0603 produces the sheet
+
+Nothing in the cloud session can observe a Windows machine. The linked computer
+exposes an isolated **Linux** VM, and this container's Rust toolchain targets
+`x86_64-unknown-linux-gnu` only — so **no Windows binary can be built or run from
+the engineering session at all.** A `windows-latest` CI runner substitutes for a
+build machine (PW-0501), and the rest is the commander's.
+
+Owner-run and not delegable, because each needs the actual hardware:
+
+- **Experiment 1a** (PW-0103) — whether a child HWND composites beneath the
+  WebView2. **The whole choice of Tauri rests on this and it has never been run.**
+  A failure reverses D1 rather than being worked around.
+- Real playback: 1080p, 4K, **HDR where the display supports it**, hardware
+  decoding, multichannel audio.
+- Lip-sync / A/V offset, which needs the external flash-and-blip rig
+  `docs/AV_SYNC_MEASUREMENT.md` specifies. The browser cannot measure it; that is
+  settled, not pending.
+- Sleep/wake, long sessions, memory/CPU/GPU behaviour, clean install, upgrade,
+  uninstall/reinstall.
+
+**Owner action:** run the sheet PW-0603 delivers, on a recorded environment
+(Windows build, GPU, driver, display, audio device), and hand back the results.
+A pass on unrecorded hardware is not reproducible evidence, and **no row of that
+matrix may be marked passed from this session.**
+
+## 8. Push access is now a build blocker, not an inconvenience
+
+Item 1 above changes character in this phase. While the product was a web
+application, an unapplied round cost a stale review. Now that the only way to
+build a Windows artifact is a `windows-latest` CI job, **an unpushed round means
+no Windows build exists at all** — the engineering session cannot compile one and
+the runner never sees the commit. Every Windows build/packaging/certification
+task is downstream of item 1.

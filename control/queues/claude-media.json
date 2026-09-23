@@ -1,9 +1,41 @@
 {
-  "generatedAt": "2026-09-23T02:42:32.716Z",
+  "generatedAt": "2026-09-23T03:18:02.479Z",
   "agent": "claude-media",
   "executionAvailable": true,
   "assigned": [],
   "review": [],
   "reservedExternal": [],
-  "recommended": []
+  "recommended": [
+    {
+      "id": "PW-0201",
+      "priority": "P0",
+      "lane": "Player",
+      "status": "READY",
+      "title": "The PlayerAdapter boundary becomes a module instead of a specification",
+      "dependencies": [],
+      "allowedPaths": [
+        "apps/web/src/components/player/player-adapter.ts",
+        "apps/web/src/components/player/player-adapter.test.ts"
+      ],
+      "reviewDependencies": [
+        "apps/web/src/components/player/engine.ts",
+        "apps/web/src/components/player/playback-machine.ts",
+        "apps/web/src/components/player/shaka-error.ts",
+        "packages/contracts/src/shared/drm.ts",
+        "docs/DESKTOP_PLAYBACK.md",
+        "docs/ARCHITECTURE.md"
+      ],
+      "preferredAgent": "claude-frontend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "architecture-review"
+      ],
+      "acceptance": "The ~260 lines of TypeScript in docs/DESKTOP_PLAYBACK.md section 3 exist as a module, and the four rules that make it a boundary are enforced mechanically rather than stated. REQUIRED: PlayerAdapterId, the closed PlayerRefusalCode union, canPlay returning a reason on BOTH branches, PlayerLoadRequest taking a PlaybackSession plus a candidateId and never a URL, getTracks, readAvSyncTelemetry, subscribe, and an idempotent dispose. REQUIRED: no shaka-player, mpv/libmpv, @tauri-apps/* or electron type is reachable from this module or anything it imports, enforced by an import-graph test on the model of the existing PROHIBITED_AV_INSTRUMENTATION scan and of build-target.test.ts -- and that test must be proven non-vacuous by planting an offender, the way build-target.test.ts already does. REQUIRED: no `any` anywhere in the module; no engine-handle passthrough of any name; no opaque config bag -- EngineConfig from engine.ts must not be promoted onto the boundary. THE EXISTING ShakaPlayerHandle IN engine.ts IS NOT THIS and is not replaced: it is the seam INSIDE the web implementation, one layer below, and section 3 says so explicitly.",
+      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. ",
+      "owner": null,
+      "gateResults": {}
+    }
+  ]
 }

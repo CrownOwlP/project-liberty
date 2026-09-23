@@ -1,13 +1,13 @@
 # Project Liberty - Project Status
 
-> Generated 2026-09-23T02:42:32.714Z from the AI control plane.
+> Generated 2026-09-23T03:18:02.476Z from the AI control plane.
 
-**Overall completion:** 62/64 executable tasks (97%)
+**Overall completion:** 62/93 executable tasks (67%)
 
 ## Status summary
 
-- **BACKLOG:** 0
-- **READY:** 0
+- **BACKLOG:** 23
+- **READY:** 6
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 0
 - **REVIEW:** 0
@@ -27,6 +27,7 @@
 - **M6 — Shared-Agent Automation Bridge:** COMPLETE, 3/3 (100%)
 - **EXT — External Licensed Integrations:** BLOCKED, 0/2 (0%), 2 blocked
 - **M7 — Windows Desktop Shell + Native Playback:** COMPLETE, 4/4 (100%)
+- **PW — undefined:** NOT_STARTED, 0/29 (0%)
 
 ## Active work
 
@@ -34,14 +35,18 @@ No tasks are currently claimed, in progress, or in review.
 
 ## Dispatch classification
 
-- **READY_AND_EXECUTABLE:** 0
+- **READY_AND_EXECUTABLE:** 6
 - **READY_BUT_EXTERNAL:** 0
 - **BLOCKED:** 2
-- **BACKLOG (dependency-gated):** 0
+- **BACKLOG (dependency-gated):** 23
 
 ## Recommended executable wave
 
-No conflict-free executable tasks can be assigned with current agent capacity.
+- **PW-0101** -> claude-infra (P0/Infra) The application serves itself on loopback, hardened, as a standalone sidecar
+- **PW-0201** -> claude-frontend (P0/Player) The PlayerAdapter boundary becomes a module instead of a specification
+- **PW-0301** -> claude-frontend (P0/Frontend) An application shell: one layout, one navigation model, one token layer
+- **PW-0601** -> claude-test (P0/Test) A real-device certification matrix that says who runs each test and why
+- **PW-0401** -> claude-backend (P1/Backend) The authenticated backend the desktop build talks to
 
 ## Queued for external agents
 

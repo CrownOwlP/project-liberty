@@ -97,6 +97,42 @@
         "PL-0903",
         "PL-0904"
       ]
+    },
+    {
+      "id": "PW",
+      "title": "Windows product completion",
+      "goal": "Project Liberty installs and runs on Windows as the finished consumer application. This milestone is scored by coordination/PRODUCT_READINESS.md, not by the DONE ratio in PROJECT_STATUS.md, and the two must not be compared.",
+      "tasks": [
+        "PW-0101",
+        "PW-0102",
+        "PW-0103",
+        "PW-0201",
+        "PW-0202",
+        "PW-0203",
+        "PW-0204",
+        "PW-0205",
+        "PW-0206",
+        "PW-0207",
+        "PW-0208",
+        "PW-0301",
+        "PW-0302",
+        "PW-0303",
+        "PW-0304",
+        "PW-0305",
+        "PW-0306",
+        "PW-0307",
+        "PW-0308",
+        "PW-0309",
+        "PW-0310",
+        "PW-0311",
+        "PW-0401",
+        "PW-0501",
+        "PW-0502",
+        "PW-0503",
+        "PW-0601",
+        "PW-0602",
+        "PW-0603"
+      ]
     }
   ]
 }

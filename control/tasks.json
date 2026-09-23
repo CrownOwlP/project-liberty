@@ -7567,6 +7567,928 @@
         }
       ],
       "completedAt": "2026-09-23T01:54:18.645Z"
+    },
+    {
+      "id": "PW-0101",
+      "priority": "P0",
+      "lane": "Infra",
+      "status": "READY",
+      "title": "The application serves itself on loopback, hardened, as a standalone sidecar",
+      "dependencies": [],
+      "allowedPaths": [
+        "apps/web/next.config.ts",
+        "apps/web/src/proxy.ts",
+        "apps/web/src/lib/sidecar/**",
+        "docs/DESKTOP_PLAYBACK.md"
+      ],
+      "reviewDependencies": [
+        "apps/web/package.json",
+        "package.json",
+        "turbo.json",
+        "apps/web/src/app/api/v1/playback/build-target.ts",
+        "docs/SECURITY.md"
+      ],
+      "preferredAgent": "claude-infra",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "build",
+        "security-review"
+      ],
+      "acceptance": "The desktop target builds a Next standalone server that a shell can spawn, and every control docs/DESKTOP_PLAYBACK.md section 7 names is implemented and tested. REQUIRED: output 'standalone' is set for the desktop target and only for it -- the document specifies it in two places and next.config.ts sets it in none, which is the single largest gap between the recorded design and the code. REQUIRED: the server binds 127.0.0.1 explicitly and never 0.0.0.0, asserted by a test rather than by configuration alone, because Next reads HOSTNAME from the environment and an inherited value would silently expose the listener to the LAN. REQUIRED: a per-launch 256-bit CSPRNG bearer token passed through the environment, required on every request, with a constant-time comparison and a refusal that does not state whether the token was absent or wrong. REQUIRED: Host header validation against the exact expected literal, because a bearer token does not stop DNS rebinding. REQUIRED: the application emits its own Content-Security-Policy, because Tauri's CSP injection stops applying the moment the frontend is a URL rather than bundled assets -- this is a real loss the document names and nothing currently replaces it. REQUIRED: the sidecar reports its actually-bound port on stdout rather than being told which port to use; a pick-then-bind handshake is a TOCTOU race and is refused. NOT IN SCOPE: the Rust shell, which is PW-0102.",
+      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. SURFACE NOTE: this task's allowedPaths name directories that do not exist yet. The evidence-based narrowing procedure applies to reconciling work already in history; for genuinely new work the surface is the smallest set of paths the acceptance can be satisfied within, and it is narrowed again from the diff before review if it turns out to be wider than what was written. ",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PW-0102",
+      "priority": "P0",
+      "lane": "Infra",
+      "status": "BACKLOG",
+      "title": "A Tauri v2 shell that owns the sidecar's lifetime",
+      "dependencies": [
+        "PW-0101"
+      ],
+      "allowedPaths": [
+        "apps/desktop/**"
+      ],
+      "reviewDependencies": [
+        "apps/web/next.config.ts",
+        "apps/web/package.json",
+        "turbo.json",
+        "package.json",
+        "docs/DESKTOP_PLAYBACK.md",
+        "docs/ARCHITECTURE.md"
+      ],
+      "preferredAgent": "claude-infra",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "build",
+        "architecture-review",
+        "security-review"
+      ],
+      "acceptance": "A Tauri v2 application starts, spawns the PW-0101 sidecar, reads its bound port from stdout, points the webview at it, and cannot leave the sidecar running. REQUIRED: the Tauri version is pinned exactly, on the rule this repository already applies to Shaka and Playwright -- a caret range means the shell a gate was recorded against can change under a lockfile refresh. REQUIRED: the sidecar is packaged as node.exe plus the standalone tree under bundle.resources and spawned as a child process; pkg, Node SEA and Bun --compile are documented as unable to swallow a Next standalone server and must not be attempted as a shortcut. REQUIRED: a Win32 Job Object with JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, because Tauri provides no supervision and an orphaned node.exe holding a loopback port is the failure a user sees as 'it will not start the second time'. REQUIRED: supervision -- health check, restart with a bounded attempt budget, and an honest surfaced failure when the budget is spent, never a blank window. REQUIRED: the shell passes the bearer token to the sidecar through the environment and never on a command line, where it would be readable from the process list. STATED LIMITATION TO CARRY IN THE GATE EVIDENCE: no Windows binary can be produced or run from the cloud session, so this task's build gate is cargo check plus a windows-latest CI job, and 'it launches' is real-device evidence owed to PW-0601.",
+      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. SURFACE NOTE: this task's allowedPaths name directories that do not exist yet. The evidence-based narrowing procedure applies to reconciling work already in history; for genuinely new work the surface is the smallest set of paths the acceptance can be satisfied within, and it is narrowed again from the diff before review if it turns out to be wider than what was written. ",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PW-0103",
+      "priority": "P0",
+      "lane": "Player",
+      "status": "BACKLOG",
+      "title": "Experiment 1a: can a child HWND composite beneath the webview",
+      "dependencies": [
+        "PW-0102"
+      ],
+      "allowedPaths": [
+        "apps/desktop/**",
+        "docs/DESKTOP_PLAYBACK.md"
+      ],
+      "reviewDependencies": [
+        "docs/ARCHITECTURE.md"
+      ],
+      "preferredAgent": "claude-frontend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "build",
+        "architecture-review"
+      ],
+      "acceptance": "The pass/fail experiment docs/DESKTOP_PLAYBACK.md section 10 specifies is executed on real Windows hardware and its result recorded, because D1 -- the entire choice of Tauri -- rests on it and it has never been run. A sibling child HWND must render beneath a WebView2 whose DefaultBackgroundColor has alpha 0, with the web UI visible above it. REQUIRED: the result is recorded as a fact with the Windows build, GPU and WebView2 runtime version it was observed on, not as an expectation. REQUIRED: if it FAILS, stop and report rather than working around it -- section 11 names this as one of the specific facts that would reverse D1, and the honest outcome of a failed experiment is a reversed decision, not a hack that makes the demo look right. THIS TASK CANNOT BE COMPLETED WITHOUT THE COMMANDER'S WINDOWS MACHINE and its real-device half belongs in LAST_MILE the moment the code is ready.",
+      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. SURFACE NOTE: this task's allowedPaths name directories that do not exist yet. The evidence-based narrowing procedure applies to reconciling work already in history; for genuinely new work the surface is the smallest set of paths the acceptance can be satisfied within, and it is narrowed again from the diff before review if it turns out to be wider than what was written. ",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PW-0201",
+      "priority": "P0",
+      "lane": "Player",
+      "status": "READY",
+      "title": "The PlayerAdapter boundary becomes a module instead of a specification",
+      "dependencies": [],
+      "allowedPaths": [
+        "apps/web/src/components/player/player-adapter.ts",
+        "apps/web/src/components/player/player-adapter.test.ts"
+      ],
+      "reviewDependencies": [
+        "apps/web/src/components/player/engine.ts",
+        "apps/web/src/components/player/playback-machine.ts",
+        "apps/web/src/components/player/shaka-error.ts",
+        "packages/contracts/src/shared/drm.ts",
+        "docs/DESKTOP_PLAYBACK.md",
+        "docs/ARCHITECTURE.md"
+      ],
+      "preferredAgent": "claude-frontend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "architecture-review"
+      ],
+      "acceptance": "The ~260 lines of TypeScript in docs/DESKTOP_PLAYBACK.md section 3 exist as a module, and the four rules that make it a boundary are enforced mechanically rather than stated. REQUIRED: PlayerAdapterId, the closed PlayerRefusalCode union, canPlay returning a reason on BOTH branches, PlayerLoadRequest taking a PlaybackSession plus a candidateId and never a URL, getTracks, readAvSyncTelemetry, subscribe, and an idempotent dispose. REQUIRED: no shaka-player, mpv/libmpv, @tauri-apps/* or electron type is reachable from this module or anything it imports, enforced by an import-graph test on the model of the existing PROHIBITED_AV_INSTRUMENTATION scan and of build-target.test.ts -- and that test must be proven non-vacuous by planting an offender, the way build-target.test.ts already does. REQUIRED: no `any` anywhere in the module; no engine-handle passthrough of any name; no opaque config bag -- EngineConfig from engine.ts must not be promoted onto the boundary. THE EXISTING ShakaPlayerHandle IN engine.ts IS NOT THIS and is not replaced: it is the seam INSIDE the web implementation, one layer below, and section 3 says so explicitly.",
+      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. ",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PW-0202",
+      "priority": "P0",
+      "lane": "Player",
+      "status": "BACKLOG",
+      "title": "WebPlayerAdapter: the existing Shaka path, behind the boundary",
+      "dependencies": [
+        "PW-0201"
+      ],
+      "allowedPaths": [
+        "apps/web/src/components/player/web-player-adapter.ts",
+        "apps/web/src/components/player/web-player-adapter.test.ts"
+      ],
+      "reviewDependencies": [
+        "apps/web/src/components/player/player-adapter.ts",
+        "apps/web/src/components/player/playback-controller.ts",
+        "apps/web/src/components/player/liberty-video.ts",
+        "apps/web/src/components/player/engine.ts",
+        "apps/web/src/components/player/playback-failure.ts"
+      ],
+      "preferredAgent": "claude-frontend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "architecture-review"
+      ],
+      "acceptance": "The Shaka path that exists today satisfies PlayerAdapter without being rewritten. ADOPT, WRAP, ADAPT: PlaybackController, <liberty-video>, the XState machine and the failure classifier are working, reviewed code and are wrapped, not replaced. REQUIRED: canPlay answers for a DRM candidate with a reason on the accepting branch too, because this adapter is the DRM path on BOTH targets and 'it can play it' must be as legible as a refusal. REQUIRED: getTracks reports text and audio tracks from the Shaka player, which is the first time this repository reads them at all. REQUIRED: dispose is idempotent and releases the CDM session, a hazard three separate comments in the existing player already name. REQUIRED: no behaviour change observable at the existing e2e boundary -- the critical-journey and playback-session suites must pass unchanged, and that is the evidence that this was a wrap rather than a rewrite.",
+      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. ",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PW-0203",
+      "priority": "P0",
+      "lane": "Player",
+      "status": "BACKLOG",
+      "title": "Capability routing decides the engine before playback, with a reason on both branches",
+      "dependencies": [
+        "PW-0201"
+      ],
+      "allowedPaths": [
+        "apps/web/src/components/player/adapter-routing.ts",
+        "apps/web/src/components/player/adapter-routing.test.ts"
+      ],
+      "reviewDependencies": [
+        "apps/web/src/components/player/player-adapter.ts",
+        "packages/contracts/src/shared/drm.ts",
+        "apps/web/src/app/api/v1/playback/session/contract.ts",
+        "docs/DESKTOP_PLAYBACK.md"
+      ],
+      "preferredAgent": "claude-media",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "architecture-review",
+        "rights-review"
+      ],
+      "acceptance": "Which engine plays a candidate is decided before playback and recorded with a reason, satisfying the architecture invariant that already states this. REQUIRED: the routing function is PURE and deterministic -- no clocks, no I/O, no ambient state -- on the same rule ADR-003 and ADR-005 apply to ranking, so a routing decision can be reconstructed from a bug report. REQUIRED: a candidate whose contentProtection requires a CDM routes to the web adapter, always, and the native adapter REFUSES it with drm_required_no_cdm rather than falling back or degrading. mpv has no CDM; a native path that tried would be the DRM circumvention CONTENT_RIGHTS.md forbids, so this refusal is a rights property and not a capability detail -- which is why this task carries a rights-review gate. REQUIRED: the reason is recorded on the accepting branch as well, so 'why is this playing natively' is answerable. REQUIRED: routing consumes the protection state already on the session contract (PL-0902) rather than re-deriving it, because two opinions about a candidate's protection would eventually disagree.",
+      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. ",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PW-0204",
+      "priority": "P0",
+      "lane": "Player",
+      "status": "BACKLOG",
+      "title": "libmpv in the shell: a child HWND, gpu-next, and an event pump",
+      "dependencies": [
+        "PW-0102",
+        "PW-0103"
+      ],
+      "allowedPaths": [
+        "apps/desktop/**"
+      ],
+      "reviewDependencies": [
+        "apps/web/src/components/player/player-adapter.ts",
+        "apps/web/src/components/player/shaka-error.ts",
+        "docs/DESKTOP_PLAYBACK.md"
+      ],
+      "preferredAgent": "claude-media",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "build",
+        "unit",
+        "architecture-review",
+        "security-review"
+      ],
+      "acceptance": "The Rust side hosts libmpv in a child window and exposes exactly the operations PlayerAdapter needs, and nothing wider. REQUIRED: vo=gpu-next with gpu-context=d3d11, embedded by --wid into the child HWND proven by PW-0103. REQUIRED: the command surface is the adapter's, not mpv's -- load, stop, seek, pause, resume, select track, dispose -- and mpv property names never cross into TypeScript, which is the no-passthrough rule from section 3 applied at the process boundary. REQUIRED: the event pump handles MPV_EVENT_QUEUE_OVERFLOW by resynchronising from properties rather than by assuming the queue is authoritative, which section 5 names specifically. REQUIRED: the shell accepts a candidateId and resolves the URI from the session it was given; it must never accept an arbitrary URL from the webview, because that would make the shell an open proxy and would contradict the transport controls the web path already enforces. STATED LIMITATION: this cannot be compiled for Windows from the cloud session; the build gate is cargo check on the Linux host plus a windows-latest CI job, and playback evidence is owed to PW-0601.",
+      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. SURFACE NOTE: this task's allowedPaths name directories that do not exist yet. The evidence-based narrowing procedure applies to reconciling work already in history; for genuinely new work the surface is the smallest set of paths the acceptance can be satisfied within, and it is narrowed again from the diff before review if it turns out to be wider than what was written. ",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PW-0205",
+      "priority": "P0",
+      "lane": "Player",
+      "status": "BACKLOG",
+      "title": "NativePlayerAdapter translates mpv into the existing state machine",
+      "dependencies": [
+        "PW-0201",
+        "PW-0204"
+      ],
+      "allowedPaths": [
+        "apps/web/src/components/player/native-player-adapter.ts",
+        "apps/web/src/components/player/native-player-adapter.test.ts",
+        "apps/web/src/components/player/native-bridge.ts",
+        "apps/web/src/components/player/native-bridge.test.ts"
+      ],
+      "reviewDependencies": [
+        "apps/web/src/components/player/player-adapter.ts",
+        "apps/web/src/components/player/playback-machine.ts",
+        "apps/web/src/components/player/shaka-error.ts",
+        "apps/web/src/components/player/adapter-routing.ts",
+        "apps/desktop",
+        "docs/DESKTOP_PLAYBACK.md"
+      ],
+      "preferredAgent": "claude-media",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "architecture-review"
+      ],
+      "acceptance": "mpv's events become the existing machine's events, and the machine stays the single source of playback truth. REQUIRED: the mapping in docs/DESKTOP_PLAYBACK.md section 6 is implemented against the ACTUAL machine -- 11 phases and the 21 PlaybackEvent members in playback-machine.ts -- and any event mpv produces that the machine has no member for is either mapped to an existing one with a stated reason or reported as an explicit gap, never silently dropped. REQUIRED: 'ready' is a CORRELATION and not a single mpv event, as section 5 states; the adapter must not claim readiness from one property. REQUIRED: the adapter imports no @tauri-apps type directly -- the invoke boundary is native-bridge.ts, which is the one module the import-graph guard permits to know the shell exists, and the guard is extended to say so. REQUIRED: no new machine state and no new PlaybackEvent member unless a concrete mpv behaviour cannot be expressed without one, in which case the addition is justified in the gate evidence; the machine is deliberately narrow and widening it to fit a second engine is how it stops being a mirror.",
+      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. ",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PW-0206",
+      "priority": "P1",
+      "lane": "Player",
+      "status": "BACKLOG",
+      "title": "Subtitle and audio track selection, on both engines, for the first time",
+      "dependencies": [
+        "PW-0202",
+        "PW-0205"
+      ],
+      "allowedPaths": [
+        "apps/web/src/components/player/tracks.ts",
+        "apps/web/src/components/player/tracks.test.ts"
+      ],
+      "reviewDependencies": [
+        "apps/web/src/components/player/player-adapter.ts",
+        "apps/web/src/components/player/web-player-adapter.ts",
+        "apps/web/src/components/player/native-player-adapter.ts",
+        "packages/contracts/src/domains/audio.ts",
+        "packages/contracts/src/domains/subtitles.ts"
+      ],
+      "preferredAgent": "claude-frontend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "architecture-review"
+      ],
+      "acceptance": "A viewer can choose an audio track and a subtitle track, and the choice survives a candidate switch. THIS CAPABILITY DOES NOT EXIST AT ALL TODAY: there is no getTextTracks, no selectAudioLanguage, no track state and no UI anywhere in the repository, while PRODUCT_SPEC.md names 'Accessibility, subtitles, and audio correctness are core features' as a product principle and RELEASE_CRITERIA.md lists 'Audio/subtitle preferences implemented' as an MVP bar. REQUIRED: one normalised track vocabulary that both adapters answer in, so the UI never branches on engine. REQUIRED: the audio-language and subtitle-preference policy already contracted in packages/contracts/src/domains/audio.ts and subtitles.ts is the source of the DEFAULT selection, rather than a second policy being invented here. REQUIRED: forced and default subtitle flags are honoured, which the existing test matrix already lists as a playback regression scenario. REQUIRED: a selection made by the viewer is re-applied after a failover, because a candidate switch is a full teardown and losing the viewer's language on a network blip is the defect this clause exists to prevent.",
+      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. ",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PW-0207",
+      "priority": "P2",
+      "lane": "Player",
+      "status": "BACKLOG",
+      "title": "A native failure says what went wrong instead of returning null",
+      "dependencies": [
+        "PW-0204"
+      ],
+      "allowedPaths": [
+        "apps/web/src/components/player/playback-failure.ts",
+        "apps/web/src/components/player/playback-failure.test.ts"
+      ],
+      "reviewDependencies": [
+        "apps/web/src/components/player/shaka-error.ts",
+        "packages/contracts/src/domains/failover.ts",
+        "apps/desktop"
+      ],
+      "preferredAgent": "claude-media",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "architecture-review"
+      ],
+      "acceptance": "classifyNativeFailure maps mpv's error enum to PlaybackFailureKind instead of returning null on every path. TODAY BOTH ARMS OF THAT FUNCTION RETURN null (playback-failure.ts:262) above a 44-line comment that names exactly what would change it: reading the mpv_error enum off include/mpv/client.h. This is a documented placeholder with a stated unblock condition, and PW-0204 is that condition. REQUIRED: the mapping is built against the header of the libmpv version actually shipped, and the version is recorded in the gate evidence, because the enum is not stable across major versions. REQUIRED: an unmapped error stays null rather than being assigned a plausible kind -- null is a contractually valid 'cannot tell' and guessing a retryable kind for an unknown fault is how a permanent failure becomes an infinite retry. REQUIRED: a DRM-adjacent native fault can never map to a retryable kind, mirroring the web path where the whole Shaka DRM category maps to rights_unverifiable and is never retried.",
+      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. ",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PW-0208",
+      "priority": "P1",
+      "lane": "Infra",
+      "status": "BACKLOG",
+      "title": "An LGPL-compatible libmpv and FFmpeg the product may actually ship",
+      "dependencies": [
+        "PW-0102"
+      ],
+      "allowedPaths": [
+        "apps/desktop/**",
+        "docs/LICENSING.md"
+      ],
+      "reviewDependencies": [
+        "docs/DESKTOP_PLAYBACK.md",
+        "docs/CONTENT_RIGHTS.md",
+        "README.md"
+      ],
+      "preferredAgent": "claude-infra",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "build",
+        "architecture-review"
+      ],
+      "acceptance": "The libmpv and FFmpeg binaries the installer ships are built under terms this product may distribute, and the evidence is recorded rather than assumed. docs/DESKTOP_PLAYBACK.md section 9 names two traps and RESEARCH_PLAYBACK.md already found the equivalent defect elsewhere -- 'every prebuilt ffprobe on npm is a GPL-3.0 binary, and several declare otherwise' -- so a downloaded build is not evidence of its own licence. REQUIRED: the configure flags that keep the build LGPL are stated and reproducible, and any GPL-only component is named and excluded. REQUIRED: the written-offer and attribution obligations LGPL imposes on a shipped binary are satisfied by something in the installer, not by a sentence in a README nobody ships. REQUIRED: the exact upstream versions are pinned and recorded, because PW-0207's error mapping is built against a specific header. NOT IN SCOPE: any decoder whose distribution needs a patent licence this project does not hold -- if one is required, stop and report it as a commander decision rather than shipping it.",
+      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. SURFACE NOTE: this task's allowedPaths name directories that do not exist yet. The evidence-based narrowing procedure applies to reconciling work already in history; for genuinely new work the surface is the smallest set of paths the acceptance can be satisfied within, and it is narrowed again from the diff before review if it turns out to be wider than what was written. ",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PW-0301",
+      "priority": "P0",
+      "lane": "Frontend",
+      "status": "READY",
+      "title": "An application shell: one layout, one navigation model, one token layer",
+      "dependencies": [],
+      "allowedPaths": [
+        "apps/web/src/app/layout.tsx",
+        "apps/web/src/app/globals.css",
+        "apps/web/src/components/shell/**",
+        "apps/web/src/app/not-found.tsx",
+        "apps/web/src/app/global-error.tsx"
+      ],
+      "reviewDependencies": [
+        "apps/web/src/app/page.tsx",
+        "apps/web/src/app/search/page.tsx",
+        "apps/web/src/app/title/[titleId]/page.tsx",
+        "apps/web/src/app/watch/[contentId]/page.tsx",
+        "apps/web/src/app/error.tsx"
+      ],
+      "preferredAgent": "claude-frontend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "e2e"
+      ],
+      "acceptance": "The application has a real shell, and the eight hand-copied topbars become one. MEASURED STARTING POINT: layout.tsx is sixteen lines -- html, body, children -- and the topbar is duplicated by hand in eight files, each with a slightly different status badge and a different or absent nav; the nav itself is four fragment anchors, and /search is reachable from no link anywhere in the application. REQUIRED: one persistent chrome in the root layout, with every route's copy deleted rather than left beside it. REQUIRED: a navigation model that reaches every screen that exists, including search; a dead link is worse than an absent one because it teaches a viewer the feature is broken. REQUIRED: a token layer -- spacing, type, radius, elevation, colour -- replacing eight dark-only variables and the px literals around them, and a light theme or an explicit recorded decision that this product is dark-only. REQUIRED: a skip link, a focus indicator defined globally rather than only inside two CSS modules, and Windows display scaling at 100/125/150/200 percent without clipping. NOT IN SCOPE: replacing any working server-side logic; this task is the shell the existing screens hang in.",
+      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. ",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PW-0302",
+      "priority": "P0",
+      "lane": "Frontend",
+      "status": "READY",
+      "title": "Artwork, end to end, because a media application without images is a list",
+      "dependencies": [],
+      "allowedPaths": [
+        "packages/contracts/src/domains/catalog.ts",
+        "packages/contracts/src/domains/title.ts",
+        "apps/web/src/components/artwork/**",
+        "apps/web/next.config.ts"
+      ],
+      "reviewDependencies": [
+        "packages/catalog-ingestion/src",
+        "apps/web/src/lib/catalog.ts",
+        "apps/web/src/lib/title-detail.ts",
+        "apps/web/src/components/catalog-card.tsx",
+        "docs/API_CONTRACTS.md",
+        "docs/CONTENT_RIGHTS.md",
+        "docs/SECURITY.md"
+      ],
+      "preferredAgent": "claude-frontend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "security-review",
+        "rights-review"
+      ],
+      "acceptance": "Titles have artwork, and getting it does not become a new way to fetch arbitrary URLs. MEASURED STARTING POINT: there are zero images in this product at any layer -- no next/image, no img tag, and no poster, artwork, backdrop or thumbnail key anywhere in packages/contracts/src. Posters are CSS gradients. REQUIRED: artwork is a contract change first, reviewed, with dimensions and a rights basis beside the URL rather than a bare string, because an image is content and CONTENT_RIGHTS.md does not exempt it. REQUIRED: the host allowlist and transport rules the rest of this repository already enforces apply to image origins too; SECURITY.md's 'never proxy arbitrary client-provided URLs' is not weakened for pictures, which is why this task carries a security review. REQUIRED: an absent image is a designed state, not a broken one -- the existing gradient placeholder stays as the fallback rather than a broken-image icon. REQUIRED: next/image remote patterns are pinned to the allowlist, not opened to a wildcard.",
+      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. ",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PW-0303",
+      "priority": "P0",
+      "lane": "Frontend",
+      "status": "BACKLOG",
+      "title": "Profiles become usable: a picker, a switch, and a create",
+      "dependencies": [
+        "PW-0301"
+      ],
+      "allowedPaths": [
+        "apps/web/src/app/profiles/**",
+        "apps/web/src/components/profiles/**"
+      ],
+      "reviewDependencies": [
+        "apps/web/src/app/api/v1/profiles",
+        "packages/persistence/src",
+        "packages/auth/src",
+        "apps/web/src/lib/session/account.ts"
+      ],
+      "preferredAgent": "claude-frontend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "e2e",
+        "security-review"
+      ],
+      "acceptance": "A person can see who they are watching as, switch, and create a profile. THE BACKEND IS COMPLETE AND REVIEWED AND NOTHING RENDERS IT: /api/v1/profiles and /api/v1/profiles/selection exist with handlers, contracts and tests, and there is no picker, no switch, no create and no avatar anywhere in the application. REQUIRED: the active profile is visible in the shell at all times, because every progress and watchlist row in this product is profile-scoped and a viewer who cannot see which profile is active cannot understand their own continue-watching list. REQUIRED: profile selection goes through the existing selection route and the existing ProfileScope, never through a client-held id -- PL-0405 recorded a forgeable-scope defect and this UI must not reintroduce it, which is why a security review is required. REQUIRED: switching profiles invalidates any cached profile-scoped view rather than leaving another profile's rows on screen.",
+      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. ",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PW-0304",
+      "priority": "P1",
+      "lane": "Frontend",
+      "status": "BACKLOG",
+      "title": "Watchlist becomes usable: an add control and a list",
+      "dependencies": [
+        "PW-0301",
+        "PW-0303"
+      ],
+      "allowedPaths": [
+        "apps/web/src/app/watchlist/**",
+        "apps/web/src/components/watchlist/**"
+      ],
+      "reviewDependencies": [
+        "apps/web/src/app/api/v1/watchlist",
+        "packages/persistence/src/watchlist-mutation.ts",
+        "apps/web/src/components/title",
+        "apps/web/src/components/catalog-card.tsx"
+      ],
+      "preferredAgent": "claude-frontend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "e2e"
+      ],
+      "acceptance": "A person can add a title to their watchlist and see the list. The API and its mutation rules are complete, tested and reviewed -- including the conflict semantics in packages/persistence/src/watchlist-mutation.ts -- and nothing renders them. REQUIRED: the add control appears on the title screen and on a catalog card, and reflects state optimistically while remaining correct when the write is refused. REQUIRED: the resolution vocabulary the API already returns (accepted plus a reason, not a boolean ok) is surfaced honestly; a refused write must not render as a success, which is the shape of defect the harnesses in this repository have caught four times.",
+      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. ",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PW-0305",
+      "priority": "P0",
+      "lane": "Frontend",
+      "status": "BACKLOG",
+      "title": "Continue watching: resume where the viewer left off",
+      "dependencies": [
+        "PW-0301",
+        "PW-0303"
+      ],
+      "allowedPaths": [
+        "apps/web/src/components/continue-watching/**",
+        "apps/web/src/lib/continue-watching.ts",
+        "apps/web/src/lib/continue-watching.test.ts"
+      ],
+      "reviewDependencies": [
+        "apps/web/src/app/api/v1/progress",
+        "packages/persistence/src/progress-repository.ts",
+        "apps/web/src/app/page.tsx",
+        "apps/web/src/components/catalog-card.tsx",
+        "apps/web/src/components/player/playback-session.ts"
+      ],
+      "preferredAgent": "claude-frontend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "e2e"
+      ],
+      "acceptance": "A viewer sees what they were watching and resumes it at the right position. The progress API, its lease route and its writer-epoch conflict rules are complete, tested and reviewed, and no rail, no card progress bar and no resume prompt exists. REQUIRED: a continue-watching rail on home, profile-scoped, ordered by recency, excluding finished items by a stated rule rather than a magic threshold buried in a component. REQUIRED: a progress indicator on cards for partially watched titles. REQUIRED: resume uses the stored position through the session's startAtSeconds, which the playback path already carries, rather than seeking after load -- the test matrix already lists 'resumed playback uses stored progress safely' as a regression scenario. REQUIRED: a viewer can start over; a resume that cannot be declined is a trap.",
+      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. ",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PW-0306",
+      "priority": "P0",
+      "lane": "Player",
+      "status": "BACKLOG",
+      "title": "A player that can actually be operated",
+      "dependencies": [
+        "PW-0201",
+        "PW-0206"
+      ],
+      "allowedPaths": [
+        "apps/web/src/components/player/controls/**",
+        "apps/web/src/components/player/player-surface.tsx"
+      ],
+      "reviewDependencies": [
+        "apps/web/src/components/player/player-adapter.ts",
+        "apps/web/src/components/player/playback-machine.ts",
+        "apps/web/src/components/player/tracks.ts",
+        "apps/web/src/components/player/liberty-video.ts",
+        "apps/web/package.json"
+      ],
+      "preferredAgent": "claude-frontend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "e2e"
+      ],
+      "acceptance": "The player has controls. TODAY IT HAS NONE: player-surface.tsx sets the native controls attribute on a video element and renders a debug panel, and its own header says 'NO CONTROLS ARE BUILT HERE'. There is no play, pause, seek, volume, fullscreen, subtitle, audio, quality or source control anywhere in this product. REQUIRED: play/pause, a seek bar with buffered ranges, volume and mute, fullscreen, a subtitle menu and an audio-track menu driven by PW-0206, and a source/quality state the viewer can read. REQUIRED: keyboard operation -- space, arrows, F, M, and Escape -- because there is not one keyboard handler in the entire application today and a Windows media application that cannot be driven from the keyboard is not finished. REQUIRED: an idle-hide overlay that never hides a control from a keyboard or screen-reader user. REQUIRED: the controls layer sends no side effect the state machine does not already own; playback-effects.ts deliberately exposes four effects and its header says FOUR, AND NO MORE, so a control that needs a fifth is a machine change with its own justification. REQUIRED: the controls read the adapter, not Shaka, so the same UI operates the native engine.",
+      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. ",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PW-0307",
+      "priority": "P1",
+      "lane": "Frontend",
+      "status": "BACKLOG",
+      "title": "Series navigation and the next episode",
+      "dependencies": [
+        "PW-0301",
+        "PW-0305"
+      ],
+      "allowedPaths": [
+        "apps/web/src/components/title/episode-list.tsx",
+        "apps/web/src/components/title/season-navigation.tsx",
+        "apps/web/src/lib/next-episode.ts",
+        "apps/web/src/lib/next-episode.test.ts"
+      ],
+      "reviewDependencies": [
+        "packages/contracts/src/domains/title.ts",
+        "apps/web/src/lib/title-detail.ts",
+        "apps/web/src/components/player/player-surface.tsx",
+        "apps/web/src/app/title/[titleId]/page.tsx"
+      ],
+      "preferredAgent": "claude-frontend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "e2e"
+      ],
+      "acceptance": "A viewer can move through a series without going back to the catalog. Today every season of a series renders as one flat stack on the title page, with no season selector, no per-episode progress and no way to reach the next episode. REQUIRED: season navigation that does not lose the viewer's place. REQUIRED: per-episode watched and in-progress state from the progress API. REQUIRED: a next-episode affordance at the end of playback, honouring the SAME per-episode rights gate the episode list already applies -- an autoplay that skips the rights check would be the rights breach PL-0703 was opened for, in a new place. REQUIRED: the next-episode selection rule is a pure function with its own tests, not logic inside a component, because 'what plays next' is exactly the kind of decision this project requires to be reconstructible.",
+      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. ",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PW-0308",
+      "priority": "P2",
+      "lane": "Frontend",
+      "status": "BACKLOG",
+      "title": "Settings a viewer can actually change",
+      "dependencies": [
+        "PW-0301",
+        "PW-0306"
+      ],
+      "allowedPaths": [
+        "apps/web/src/app/settings/**",
+        "apps/web/src/components/settings/**"
+      ],
+      "reviewDependencies": [
+        "apps/web/src/app/api/v1/profiles",
+        "apps/web/src/components/player/telemetry-decision.ts",
+        "packages/contracts/src/domains/audio.ts",
+        "packages/contracts/src/domains/subtitles.ts",
+        "docs/SECURITY.md"
+      ],
+      "preferredAgent": "claude-frontend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "e2e"
+      ],
+      "acceptance": "There is a settings screen, and every switch on it changes something real. Neither a screen nor an API exists today. REQUIRED: preferred audio and subtitle languages, persisted per profile and consumed as PW-0206's defaults rather than as a second policy. REQUIRED: a diagnostics and telemetry control that is honest about what it does -- telemetry-decision.ts already reports WHY telemetry is off, and that reasoning belongs in front of the viewer instead of in a details element in the player. REQUIRED: an about section naming the application version and the licences the installer must carry, which is where PW-0208's LGPL attribution obligation is discharged in the product. REQUIRED: no setting weakens a security or rights control; there is no 'allow insecure sources' switch and no way to disable the transport checks.",
+      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. ",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PW-0309",
+      "priority": "P1",
+      "lane": "Frontend",
+      "status": "BACKLOG",
+      "title": "Offline, degraded and error states a desktop application needs",
+      "dependencies": [
+        "PW-0301"
+      ],
+      "allowedPaths": [
+        "apps/web/src/components/state/**",
+        "apps/web/src/lib/network-state.ts",
+        "apps/web/src/lib/network-state.test.ts"
+      ],
+      "reviewDependencies": [
+        "apps/web/src/app/error.tsx",
+        "apps/web/src/app/page.tsx",
+        "apps/web/src/app/watch/[contentId]/page.tsx",
+        "apps/web/src/components/player/playback-machine.ts",
+        "apps/web/src/lib/sidecar"
+      ],
+      "preferredAgent": "claude-frontend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "e2e"
+      ],
+      "acceptance": "The application behaves honestly when the network, the backend or the sidecar is unavailable. There is no offline handling of any kind today -- no navigator.onLine, no service worker, no offline banner, no retry-on-reconnect. THIS MATTERS MORE ON THE DESKTOP THAN IT DID ON THE WEB: docs/DESKTOP_PLAYBACK.md section 8 accepts that an offline desktop cannot resolve playback at all, and requires that failure be surfaced as an honest unavailable outcome rather than an empty candidate list -- so the UI half of that ruling is this task. REQUIRED: a network-state signal and a visible degraded mode that names what is unavailable. REQUIRED: recovery on reconnect without a manual reload. REQUIRED: the sidecar being down is a DISTINCT state from the backend being down and from the network being down, because the three have different remedies and collapsing them produces a support burden. REQUIRED: no state invents content; an offline home shows what it has and says so.",
+      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. ",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PW-0310",
+      "priority": "P1",
+      "lane": "Frontend",
+      "status": "BACKLOG",
+      "title": "Keyboard, focus and accessibility across the whole application",
+      "dependencies": [
+        "PW-0301",
+        "PW-0306"
+      ],
+      "allowedPaths": [
+        "apps/web/src/lib/a11y/**",
+        "apps/web/src/app/globals.css"
+      ],
+      "reviewDependencies": [
+        "apps/web/src/components",
+        "apps/web/src/app",
+        "docs/PRODUCT_SPEC.md"
+      ],
+      "preferredAgent": "claude-frontend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "e2e",
+        "architecture-review"
+      ],
+      "acceptance": "The application is operable from the keyboard, end to end, and PRODUCT_SPEC.md's principle that 'accessibility, subtitles, and audio correctness are core features' is true of the shipped product rather than of three components. MEASURED STARTING POINT: there are zero keyboard handlers in the non-player UI, no skip link, no focus trap and no focus restoration; the rails are not arrow-key navigable, which is table stakes for a desktop media application. REQUIRED: roving tabindex on rails and grids. REQUIRED: focus restoration on route change and on dialog close. REQUIRED: a visible focus indicator on every interactive element, including those styled by globals.css, which defines none today. REQUIRED: an automated check in the e2e suite that fails when a new interactive element is unreachable by keyboard, because a one-off audit decays and a gate does not. NOT IN SCOPE: a full WCAG certification; the bar here is operability plus a mechanical guard against regression.",
+      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. ",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PW-0311",
+      "priority": "P2",
+      "lane": "Live",
+      "status": "BACKLOG",
+      "title": "Live TV and the guide",
+      "dependencies": [
+        "PW-0301",
+        "PL-0602"
+      ],
+      "allowedPaths": [
+        "apps/web/src/app/live/**",
+        "apps/web/src/components/live/**"
+      ],
+      "reviewDependencies": [
+        "packages/contracts/src/domains/live.ts",
+        "docs/LIVE_TV.md",
+        "docs/API_CONTRACTS.md"
+      ],
+      "preferredAgent": "claude-media",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "e2e",
+        "rights-review"
+      ],
+      "acceptance": "A channel list and a guide exist and they obey the rule LIVE_TV.md exists to state: A LISTING IS NOT AN ENTITLEMENT. REQUIRED: playability is read from the CHANNEL's rights basis and never from a listing, which the contract already makes structurally impossible to get wrong -- EpgListing has no field capable of expressing playability and a compile-time guard keeps it that way -- so the UI must not reintroduce the idea by inferring it. REQUIRED: channel change and guide navigation from the keyboard. REQUIRED: a listing for a channel the viewer has no basis for renders as information, not as a play affordance. DEPENDS ON PL-0602, WHICH IS BLOCKED ON LICENSED LIVE FEED ACCESS, and that dependency is real: the contract is implemented and tested, the acquisition is not, and building a guide over fabricated channels would be fabricating provider success. This task stays BACKLOG until PL-0602 can move.",
+      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. ",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PW-0401",
+      "priority": "P1",
+      "lane": "Backend",
+      "status": "READY",
+      "title": "The authenticated backend the desktop build talks to",
+      "dependencies": [],
+      "allowedPaths": [
+        "apps/backend/**"
+      ],
+      "reviewDependencies": [
+        "apps/web/src/app/api/v1/playback/session",
+        "packages/provider-sdk/src",
+        "packages/media-engine/src",
+        "e2e/src/backend-stub.mjs",
+        "docs/DESKTOP_PLAYBACK.md",
+        "docs/SECURITY.md"
+      ],
+      "preferredAgent": "claude-backend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "e2e",
+        "architecture-review",
+        "security-review"
+      ],
+      "acceptance": "The counterparty the desktop forwarder already speaks to exists as a service instead of only as an e2e stub. docs/DESKTOP_PLAYBACK.md section 8 was ruled by the commander: provider resolution must not rely on the user-administered sidecar as its trust boundary, and the desktop build proxies to an authenticated backend. The FORWARDER is implemented and tested; the thing it forwards TO is e2e/src/backend-stub.mjs. REQUIRED: the same route contract, byte for byte -- the cross-target e2e suite already compares whole bodies between targets and must keep passing. REQUIRED: caller authentication, and a refusal that does not leak whether a content id exists. REQUIRED: provider credentials live only here, never in a desktop artifact, env var, config file or cached response; the build-target import-graph guard already proves the desktop bundle cannot reach @liberty/provider-sdk and this service is where that capability actually lives. REQUIRED: it is deployable and testable WITHOUT a licensed provider -- the resolution path must return an honest unavailable with provider_not_configured when none is wired, which is exactly what the web target already does. THIS TASK DOES NOT NEED CREDENTIALS and must not wait for them; PL-0302 remains the separate task that wires a real provider into it.",
+      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. SURFACE NOTE: this task's allowedPaths name directories that do not exist yet. The evidence-based narrowing procedure applies to reconciling work already in history; for genuinely new work the surface is the smallest set of paths the acceptance can be satisfied within, and it is narrowed again from the diff before review if it turns out to be wider than what was written. ",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PW-0501",
+      "priority": "P0",
+      "lane": "Infra",
+      "status": "BACKLOG",
+      "title": "A Windows build that CI actually produces",
+      "dependencies": [
+        "PW-0102"
+      ],
+      "allowedPaths": [
+        ".github/workflows/windows.yml",
+        "apps/desktop/**",
+        "scripts/windows/**"
+      ],
+      "reviewDependencies": [
+        ".github/workflows/ci.yml",
+        "package.json",
+        "turbo.json",
+        "apps/web/package.json",
+        "docs/DEVELOPMENT.md"
+      ],
+      "preferredAgent": "claude-infra",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "build",
+        "architecture-review"
+      ],
+      "acceptance": "An installable Windows artifact is produced by CI on a windows-latest runner. MEASURED STARTING POINT: every job in .github/workflows/ci.yml is ubuntu-latest, no Windows runner exists, and nothing in this repository builds, packages, signs, installs or updates a Windows application. THIS IS ALSO THE ONLY WAY THIS WORK CAN BE BUILT AT ALL FROM THE ENGINEERING SESSION: the cloud container has a Linux-only Rust toolchain and the linked machine exposes a Linux VM, so no Windows binary can be produced or run here, and a windows-latest job is the substitute for a developer machine rather than a nicety. REQUIRED: the job builds the sidecar, the shell and the installer, and uploads the artifact. REQUIRED: application identity -- product name, publisher, icons, a version scheme derived from one source rather than restated in three manifests. REQUIRED: application data, log and cache locations under the correct Windows known folders, stated and tested, not scattered beside the executable. REQUIRED: the job fails on a real failure; no continue-on-error and no || true, on the rule the e2e job already states. NOT IN SCOPE: code signing, which needs an owner-held certificate and belongs in LAST_MILE.",
+      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. SURFACE NOTE: this task's allowedPaths name directories that do not exist yet. The evidence-based narrowing procedure applies to reconciling work already in history; for genuinely new work the surface is the smallest set of paths the acceptance can be satisfied within, and it is narrowed again from the diff before review if it turns out to be wider than what was written. ",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PW-0502",
+      "priority": "P1",
+      "lane": "Infra",
+      "status": "BACKLOG",
+      "title": "Updates, and a version the application can prove",
+      "dependencies": [
+        "PW-0501"
+      ],
+      "allowedPaths": [
+        "apps/desktop/**",
+        "scripts/windows/**",
+        "docs/RELEASE.md"
+      ],
+      "reviewDependencies": [
+        ".github/workflows/windows.yml",
+        "docs/SECURITY.md",
+        "docs/RELEASE_CRITERIA.md"
+      ],
+      "preferredAgent": "claude-infra",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "build",
+        "architecture-review",
+        "security-review"
+      ],
+      "acceptance": "The application can tell a user what version it is and can update itself safely, or states plainly that it cannot yet and why. REQUIRED: an update mechanism whose payloads are signature-verified -- an updater that fetches and executes an unverified binary is a remote code execution feature, and SECURITY.md's threat list already ranks unauthorized access above convenience. REQUIRED: the update endpoint is pinned and allowlisted like every other egress in this repository. REQUIRED: a rollback story, or a stated decision that there is none and what a user does instead. REQUIRED: the version is derived from one source shared with PW-0501. IF SIGNING IS UNAVAILABLE the update path must be disabled by default and say so, rather than shipping an unverified one -- an unsigned auto-updater is worse than no updater, and that dependency goes to LAST_MILE rather than being worked around.",
+      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. SURFACE NOTE: this task's allowedPaths name directories that do not exist yet. The evidence-based narrowing procedure applies to reconciling work already in history; for genuinely new work the surface is the smallest set of paths the acceptance can be satisfied within, and it is narrowed again from the diff before review if it turns out to be wider than what was written. ",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PW-0503",
+      "priority": "P1",
+      "lane": "Test",
+      "status": "BACKLOG",
+      "title": "Install, upgrade, uninstall, reinstall — tested, not assumed",
+      "dependencies": [
+        "PW-0501"
+      ],
+      "allowedPaths": [
+        "scripts/windows/**",
+        "e2e/windows/**"
+      ],
+      "reviewDependencies": [
+        ".github/workflows/windows.yml",
+        "apps/desktop",
+        "docs/TEST_MATRIX.md"
+      ],
+      "preferredAgent": "claude-test",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "build",
+        "unit"
+      ],
+      "acceptance": "The installer's lifecycle is exercised automatically wherever that is possible on a runner, and everything that is not is named for the commander's machine. REQUIRED: clean install on a machine that has never had the application, then launch. REQUIRED: upgrade over a previous version with user data preserved, which is the one a release breaks most often and nobody tests. REQUIRED: uninstall leaves no service, no scheduled task and no orphaned node.exe, and states exactly what user data it keeps or removes. REQUIRED: reinstall after uninstall. REQUIRED: each case is marked automated or commander-machine, with the reason, so the split is visible rather than implied.",
+      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. SURFACE NOTE: this task's allowedPaths name directories that do not exist yet. The evidence-based narrowing procedure applies to reconciling work already in history; for genuinely new work the surface is the smallest set of paths the acceptance can be satisfied within, and it is narrowed again from the diff before review if it turns out to be wider than what was written. ",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PW-0601",
+      "priority": "P0",
+      "lane": "Test",
+      "status": "READY",
+      "title": "A real-device certification matrix that says who runs each test and why",
+      "dependencies": [],
+      "allowedPaths": [
+        "docs/TEST_MATRIX.md",
+        "docs/WINDOWS_CERTIFICATION.md"
+      ],
+      "reviewDependencies": [
+        "docs/RELEASE_CRITERIA.md",
+        "docs/DESKTOP_PLAYBACK.md",
+        "docs/AV_SYNC_MEASUREMENT.md",
+        "coordination/LAST_MILE.md",
+        "e2e"
+      ],
+      "preferredAgent": "claude-test",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "architecture-review"
+      ],
+      "acceptance": "Every scenario the Windows product must survive is written down, with an explicit owner: automated, or the commander's machine. MEASURED STARTING POINT: docs/TEST_MATRIX.md has eight rows, every cell an automated tier, and no manual, real-device, HDR, hardware-decode or Windows row at all -- while two other documents already require real hardware, for the compositing experiment and for the flash-and-blip A/V rig. REQUIRED: the matrix covers cold start, restart, crash recovery, movie and episodic playback, seek, pause/resume, source switching, resume position, next episode, subtitles, multiple audio tracks, stereo and multichannel, lip-sync and A/V drift, long sessions, 1080p, 4K, HDR where the display supports it, hardware decoding, fullscreen and window transitions, sleep/wake, network interruption and recovery, backend unavailable, malformed or unavailable source, Live TV channel change, EPG behaviour, memory/CPU/GPU behaviour, clean install, upgrade, and uninstall/reinstall. REQUIRED: each row states its owner and, for a commander-machine row, exactly what to do and what a pass looks like -- a matrix that says 'manual' without a procedure is a wish. REQUIRED: rows that cannot be judged without hardware the commander may not have (an HDR display, a multichannel receiver) say so rather than being marked failed. NO ROW MAY BE MARKED PASSED FROM THIS SESSION; nothing here can observe a Windows machine.",
+      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. ",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PW-0602",
+      "priority": "P1",
+      "lane": "Test",
+      "status": "BACKLOG",
+      "title": "The automated half of the Windows matrix, running on Windows",
+      "dependencies": [
+        "PW-0501",
+        "PW-0601"
+      ],
+      "allowedPaths": [
+        "e2e/windows/**",
+        ".github/workflows/windows.yml"
+      ],
+      "reviewDependencies": [
+        "docs/WINDOWS_CERTIFICATION.md",
+        "e2e/playwright.config.ts",
+        "apps/desktop",
+        "docs/E2E.md"
+      ],
+      "preferredAgent": "claude-test",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "e2e"
+      ],
+      "acceptance": "Every row PW-0601 marks automated runs on a windows-latest runner and fails the build when it fails. REQUIRED: the existing e2e suite runs against the DESKTOP target on Windows, not only the web target on Ubuntu -- the desktop axis is currently built on Ubuntu only, and only incidentally, because the axis defaults on and openssl happens to be installed. REQUIRED: the shell is driven end to end where the harness can reach it, and where it cannot, the row stays in the commander-machine half rather than being replaced by a unit test that proves something easier. REQUIRED: retries stay at zero, on the rule playwright.config.ts already states at length. REQUIRED: a row that is skipped says why, by name, the way the existing harness already does for the desktop and media-rig axes.",
+      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. SURFACE NOTE: this task's allowedPaths name directories that do not exist yet. The evidence-based narrowing procedure applies to reconciling work already in history; for genuinely new work the surface is the smallest set of paths the acceptance can be satisfied within, and it is narrowed again from the diff before review if it turns out to be wider than what was written. ",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PW-0603",
+      "priority": "P1",
+      "lane": "Test",
+      "status": "BACKLOG",
+      "title": "The commander's run sheet, and the evidence it produces",
+      "dependencies": [
+        "PW-0601",
+        "PW-0602"
+      ],
+      "allowedPaths": [
+        "docs/WINDOWS_CERTIFICATION.md",
+        "coordination/LAST_MILE.md"
+      ],
+      "reviewDependencies": [
+        "docs/TEST_MATRIX.md",
+        "docs/RELEASE_CRITERIA.md"
+      ],
+      "preferredAgent": "claude-test",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "architecture-review"
+      ],
+      "acceptance": "The commander can run the real-device half in one sitting and hand back evidence that is worth recording. REQUIRED: an ordered run sheet with a stated environment -- Windows build, GPU, driver, display, audio device -- because a pass on unrecorded hardware is not reproducible evidence. REQUIRED: for each row, the exact action, the expected result, and what to capture when it fails. REQUIRED: a defect report format that carries enough to reproduce: the reason trail the player already publishes, the log location PW-0501 establishes, and the version PW-0502 exposes. REQUIRED: the sheet is honest about how long it takes. THE RUN ITSELF IS A LAST_MILE ITEM and this task delivers the sheet, not the results; recording a pass nobody observed would be fabricating a gate result.",
+      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. SURFACE NOTE: this task's allowedPaths name directories that do not exist yet. The evidence-based narrowing procedure applies to reconciling work already in history; for genuinely new work the surface is the smallest set of paths the acceptance can be satisfied within, and it is narrowed again from the diff before review if it turns out to be wider than what was written. ",
+      "owner": null,
+      "gateResults": {}
     }
   ]
 }

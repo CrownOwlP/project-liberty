@@ -1,9 +1,109 @@
 {
-  "generatedAt": "2026-09-23T02:42:32.715Z",
+  "generatedAt": "2026-09-23T03:18:02.479Z",
   "agent": "claude-frontend",
   "executionAvailable": true,
   "assigned": [],
   "review": [],
   "reservedExternal": [],
-  "recommended": []
+  "recommended": [
+    {
+      "id": "PW-0201",
+      "priority": "P0",
+      "lane": "Player",
+      "status": "READY",
+      "title": "The PlayerAdapter boundary becomes a module instead of a specification",
+      "dependencies": [],
+      "allowedPaths": [
+        "apps/web/src/components/player/player-adapter.ts",
+        "apps/web/src/components/player/player-adapter.test.ts"
+      ],
+      "reviewDependencies": [
+        "apps/web/src/components/player/engine.ts",
+        "apps/web/src/components/player/playback-machine.ts",
+        "apps/web/src/components/player/shaka-error.ts",
+        "packages/contracts/src/shared/drm.ts",
+        "docs/DESKTOP_PLAYBACK.md",
+        "docs/ARCHITECTURE.md"
+      ],
+      "preferredAgent": "claude-frontend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "architecture-review"
+      ],
+      "acceptance": "The ~260 lines of TypeScript in docs/DESKTOP_PLAYBACK.md section 3 exist as a module, and the four rules that make it a boundary are enforced mechanically rather than stated. REQUIRED: PlayerAdapterId, the closed PlayerRefusalCode union, canPlay returning a reason on BOTH branches, PlayerLoadRequest taking a PlaybackSession plus a candidateId and never a URL, getTracks, readAvSyncTelemetry, subscribe, and an idempotent dispose. REQUIRED: no shaka-player, mpv/libmpv, @tauri-apps/* or electron type is reachable from this module or anything it imports, enforced by an import-graph test on the model of the existing PROHIBITED_AV_INSTRUMENTATION scan and of build-target.test.ts -- and that test must be proven non-vacuous by planting an offender, the way build-target.test.ts already does. REQUIRED: no `any` anywhere in the module; no engine-handle passthrough of any name; no opaque config bag -- EngineConfig from engine.ts must not be promoted onto the boundary. THE EXISTING ShakaPlayerHandle IN engine.ts IS NOT THIS and is not replaced: it is the seam INSIDE the web implementation, one layer below, and section 3 says so explicitly.",
+      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. ",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PW-0301",
+      "priority": "P0",
+      "lane": "Frontend",
+      "status": "READY",
+      "title": "An application shell: one layout, one navigation model, one token layer",
+      "dependencies": [],
+      "allowedPaths": [
+        "apps/web/src/app/layout.tsx",
+        "apps/web/src/app/globals.css",
+        "apps/web/src/components/shell/**",
+        "apps/web/src/app/not-found.tsx",
+        "apps/web/src/app/global-error.tsx"
+      ],
+      "reviewDependencies": [
+        "apps/web/src/app/page.tsx",
+        "apps/web/src/app/search/page.tsx",
+        "apps/web/src/app/title/[titleId]/page.tsx",
+        "apps/web/src/app/watch/[contentId]/page.tsx",
+        "apps/web/src/app/error.tsx"
+      ],
+      "preferredAgent": "claude-frontend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "e2e"
+      ],
+      "acceptance": "The application has a real shell, and the eight hand-copied topbars become one. MEASURED STARTING POINT: layout.tsx is sixteen lines -- html, body, children -- and the topbar is duplicated by hand in eight files, each with a slightly different status badge and a different or absent nav; the nav itself is four fragment anchors, and /search is reachable from no link anywhere in the application. REQUIRED: one persistent chrome in the root layout, with every route's copy deleted rather than left beside it. REQUIRED: a navigation model that reaches every screen that exists, including search; a dead link is worse than an absent one because it teaches a viewer the feature is broken. REQUIRED: a token layer -- spacing, type, radius, elevation, colour -- replacing eight dark-only variables and the px literals around them, and a light theme or an explicit recorded decision that this product is dark-only. REQUIRED: a skip link, a focus indicator defined globally rather than only inside two CSS modules, and Windows display scaling at 100/125/150/200 percent without clipping. NOT IN SCOPE: replacing any working server-side logic; this task is the shell the existing screens hang in.",
+      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. ",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PW-0302",
+      "priority": "P0",
+      "lane": "Frontend",
+      "status": "READY",
+      "title": "Artwork, end to end, because a media application without images is a list",
+      "dependencies": [],
+      "allowedPaths": [
+        "packages/contracts/src/domains/catalog.ts",
+        "packages/contracts/src/domains/title.ts",
+        "apps/web/src/components/artwork/**",
+        "apps/web/next.config.ts"
+      ],
+      "reviewDependencies": [
+        "packages/catalog-ingestion/src",
+        "apps/web/src/lib/catalog.ts",
+        "apps/web/src/lib/title-detail.ts",
+        "apps/web/src/components/catalog-card.tsx",
+        "docs/API_CONTRACTS.md",
+        "docs/CONTENT_RIGHTS.md",
+        "docs/SECURITY.md"
+      ],
+      "preferredAgent": "claude-frontend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "security-review",
+        "rights-review"
+      ],
+      "acceptance": "Titles have artwork, and getting it does not become a new way to fetch arbitrary URLs. MEASURED STARTING POINT: there are zero images in this product at any layer -- no next/image, no img tag, and no poster, artwork, backdrop or thumbnail key anywhere in packages/contracts/src. Posters are CSS gradients. REQUIRED: artwork is a contract change first, reviewed, with dimensions and a rights basis beside the URL rather than a bare string, because an image is content and CONTENT_RIGHTS.md does not exempt it. REQUIRED: the host allowlist and transport rules the rest of this repository already enforces apply to image origins too; SECURITY.md's 'never proxy arbitrary client-provided URLs' is not weakened for pictures, which is why this task carries a security review. REQUIRED: an absent image is a designed state, not a broken one -- the existing gradient placeholder stays as the fallback rather than a broken-image icon. REQUIRED: next/image remote patterns are pinned to the allowlist, not opened to a wildcard.",
+      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. ",
+      "owner": null,
+      "gateResults": {}
+    }
+  ]
 }
