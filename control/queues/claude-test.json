@@ -1,54 +1,8 @@
 {
-  "generatedAt": "2026-09-23T01:48:03.826Z",
+  "generatedAt": "2026-09-23T01:54:58.118Z",
   "agent": "claude-test",
   "executionAvailable": true,
-  "assigned": [
-    {
-      "id": "PL-0712",
-      "priority": "P2",
-      "lane": "Test",
-      "status": "REVIEW",
-      "title": "A repo guard that times out under load is a guard nobody can read",
-      "dependencies": [],
-      "allowedPaths": [
-        "packages/media-inspection/src/net-policy-boundary.test.ts",
-        "packages/media-inspection/vitest.config.ts"
-      ],
-      "reviewDependencies": [
-        "packages/media-inspection/package.json",
-        "turbo.json",
-        "apps/web/src/app/api/v1/playback/build-target.test.ts"
-      ],
-      "preferredAgent": "claude-test",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "typecheck",
-        "unit"
-      ],
-      "acceptance": "packages/media-inspection/src/net-policy-boundary.test.ts:396, the test named “is not restated by any file outside this package”, stops being a test whose result depends on machine load and on what is on disk, WITHOUT weakening the property it asserts. THE DEFECT, DIAGNOSED RATHER THAN NAMED. Its failure mode is 'Error: Test timed out in 5000ms', not an assertion failure -- the assertion has never reported a false offender; the test simply does not finish. Its listSourceFiles recurses into every directory under packages/ and apps/ with NO exclusions and reads every .ts file it finds: 3,680 files totalling 24.3 MB on the tree measured, of which 3,337 are under node_modules and the rest include build output. The set of files the property is actually about is 327, reachable in 1-2 ms once node_modules, .next, .turbo, dist and coverage are skipped. It is the only test in this repository whose runtime is a function of installed dependencies and build artifacts rather than of source, which is why it presents as intermittent: every other repo-walking guard here -- packages/net-policy/src/module-boundary.test.ts, packages/contracts/src/module-boundary.test.ts, packages/provider-sdk/src/stremio/net-policy-boundary.test.ts and apps/web/src/app/watch/route-loading-boundaries.test.ts -- is scoped to its own SRC_DIR or APP_DIRECTORY. THE REPRODUCTION GRADIENT, measured on 2026-09-22 at e24d51f on a 2-core container: the test body alone, idle with a warm page cache, 109 ms; the whole file in an isolated vitest run, 687 ms; the file under turbo run test --force with a warm cache, 849-995 ms; the same under turbo run test --force immediately after dropping the page cache, 3,048 ms. The observed failure happened on a run started immediately after the e2e suite had rewritten apps/web/.next and apps/web/dist/desktop -- thousands of freshly written files, a cold cache, background flushing, and up to nine other workspace vitest processes competing for two cores -- which is where that gradient crosses the 5,000 ms default testTimeout. REQUIRED: the walk must not descend into node_modules, .next, .turbo, dist or coverage, and the exclusion list must be stated with its reason rather than left as a magic array. REQUIRED: the property must not be narrowed to buy the speed -- it must still see every source file under packages/ and apps/ outside this package, and the implementer must show that a planted offender is still caught. A RAISED testTimeout IS NOT AN ACCEPTABLE FIX ON ITS OWN: it moves the ceiling without removing the dependence on disk state, and the next person to add a dependency moves the runtime again. SECOND DEFECT, FOUND WHILE DIAGNOSING AND IN SCOPE: build output ALREADY contains the string this test looks for. Seven files under apps/web/.next and apps/web/dist/desktop carry a reference-path fragment naming m3u8-parser.d.ts inside bundled chunks. They are .js today so the .ts filter misses them, which means the test is one bundler-output change away from naming a build artifact as an offender and failing for a reason that has nothing to do with any source file. The exclusion above fixes the correctness hazard and the performance one with the same edit, which is the argument for doing it that way rather than by raising a timeout.",
-      "notes": "Filed 2026-09-22 by claude-test while executing PL-0504's and PL-0701's gates. THIS IS THE FINDING gpt-architect ORDERED PRESERVED AND EXPLICITLY ORDERED NOT TO BE CALLED A FLAKE, at the round-73 verdict: 'Do not label that failure a flake. Preserve the finding and investigate on its next occurrence as previously directed.' This is that next occurrence, and the investigation is in the acceptance. The first occurrence, during PL-0503's gates, could not name the failing test because the capture grep discarded it; that was reported at the time as a capture error, not as a flake. This occurrence was captured in full: src/net-policy-boundary.test.ts > the m3u8-parser shim is referenced from the file that imports it > is not restated by any file outside this package. The earlier working hypothesis -- 2 cores, turbo concurrency 10, and this package having no vitest.config.ts unlike packages/contracts -- was partly right and insufficient. Contention is a necessary condition, not the cause. The cause is that the test reads 24.3 MB it has no reason to read, so its runtime tracks page-cache state and build-artifact volume, and contention only decides which side of the 5 s ceiling that lands on. Three full-monorepo runs on the same tree after the failure were green (252/252 in this package), which is exactly why a load-dependent test must not be judged by re-running it. packages/media-inspection/vitest.config.ts is in allowedPaths because the implementer may conclude the package needs one; that is a decision for the implementer and this task does not require it. apps/web/src/app/api/v1/playback/build-target.test.ts is in reviewDependencies rather than allowedPaths: it resolves a REPO_ROOT and walks directories too, so it is worth checking for the same shape, but nothing observed implicates it and widening this task to it would be a guess.",
-      "owner": "claude-test",
-      "gateResults": {
-        "typecheck": {
-          "status": "pass",
-          "at": "2026-09-23T01:33:28.076Z",
-          "by": "claude-test",
-          "commitSha": "74232554192ccaa010c327c455da5d3c99f43774",
-          "evidence": "npm run typecheck at the repository root, its own invocation, never combined with lint or build. turbo 21/21, 58.075s, exit 0. Covers @liberty/media-inspection, whose tsconfig includes the edited test file, and the two reviewDependencies' owners."
-        },
-        "unit": {
-          "status": "pass",
-          "at": "2026-09-23T01:33:43.390Z",
-          "by": "claude-test",
-          "commitSha": "74232554192ccaa010c327c455da5d3c99f43774",
-          "evidence": "EXECUTED on 7423255 under the exact conditions that previously produced the failure, not under easier ones. (1) THE FILE: npx vitest run src/net-policy-boundary.test.ts in packages/media-inspection -> 23 tests (was 21; two added), exit 0. (2) THE PACKAGE: npx vitest run -> 11 files, 254 tests, exit 0. (3) THE WHOLE MONOREPO, CACHE-BUSTED AND CACHE-COLD: sync; drop_caches; npx turbo run test --force -> 20/20 tasks successful, exit 0, with net-policy-boundary.test.ts at 187ms. That is the same shape as the run that timed out: turbo concurrency on 2 cores, no turbo cache, and a cold page cache. BEFORE AND AFTER, measured rather than asserted. The whole file under turbo --force with a cold page cache: 3,048ms before, 187ms after. The raw scan in isolation: 11,570ms cold unexcluded (well past the 5,000ms testTimeout that produced the observed failure) versus 15ms excluded. File count 3,680 -> 327; bytes read 24.3 MB -> 4.3 MB. The single test in isolation, cold page cache: 42ms. THE PROPERTY WAS NOT NARROWED TO BUY THAT, and two new assertions are the evidence rather than the claim. 'still sees the source it is supposed to see' requires the scan to contain a NAMED witness on the far side of the apps/ root -- apps/web/src/app/api/v1/playback/session/handler.ts -- and requires more than 200 files, because a count alone can be met by any 200 files while a named witness cannot. 'catches a planted offender, and skips one planted in an excluded directory' writes the reference directive into two files in a temp tree, one under src/ and one under node_modules/, and requires exactly the first to be reported. It is driven against a temp tree rather than the repository deliberately: planting under apps/web/src would drop a stray module into a workspace whose own suites walk their source while this one runs. A RAISED testTimeout WAS NOT USED and the acceptance refuses it: it would move the ceiling without removing the dependence on disk state. The second defect is fixed by the same edit -- .next and dist are no longer walked, so the seven build-output files that already carry the reference string can never be reported whatever extension they take."
-        }
-      },
-      "implementationAgent": "claude-test",
-      "updatedAt": "2026-09-23T01:33:43.493Z",
-      "implementationBaseSha": "b687910e6ad06cde039461520a4329e940b45158"
-    }
-  ],
+  "assigned": [],
   "review": [],
   "reservedExternal": [],
   "recommended": []
