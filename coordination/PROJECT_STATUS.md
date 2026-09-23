@@ -1,18 +1,18 @@
 # Project Liberty - Project Status
 
-> Generated 2026-09-23T04:58:37.315Z from the AI control plane.
+> Generated 2026-09-23T09:46:51.704Z from the AI control plane.
 
-**Overall completion:** 67/96 executable tasks (70%)
+**Overall completion:** 70/97 executable tasks (72%)
 
 ## Status summary
 
-- **BACKLOG:** 18
-- **READY:** 6
+- **BACKLOG:** 16
+- **READY:** 9
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 0
-- **REVIEW:** 3
+- **REVIEW:** 0
 - **BLOCKED:** 2
-- **DONE:** 67
+- **DONE:** 70
 - **CANCELED:** 0
 - **SUPERSEDED:** 4
 
@@ -27,26 +27,26 @@
 - **M6 — Shared-Agent Automation Bridge:** COMPLETE, 3/3 (100%)
 - **EXT — External Licensed Integrations:** BLOCKED, 0/2 (0%), 2 blocked
 - **M7 — Windows Desktop Shell + Native Playback:** COMPLETE, 4/4 (100%)
-- **PW — undefined:** IN_PROGRESS, 5/32 (16%)
+- **PW — undefined:** IN_PROGRESS, 8/32 (25%)
 
 ## Active work
 
-- **PW-0202** [REVIEW] WebPlayerAdapter: the existing Shaka path, behind the boundary — owner: claude-media
-- **PW-0203** [REVIEW] Capability routing decides the engine before playback, with a reason on both branches — owner: claude-media
-- **PW-0303** [REVIEW] Profiles become usable: a picker, a switch, and a create — owner: claude-frontend
+No tasks are currently claimed, in progress, or in review.
 
 ## Dispatch classification
 
-- **READY_AND_EXECUTABLE:** 6
+- **READY_AND_EXECUTABLE:** 9
 - **READY_BUT_EXTERNAL:** 0
 - **BLOCKED:** 2
-- **BACKLOG (dependency-gated):** 18
+- **BACKLOG (dependency-gated):** 16
 
 ## Recommended executable wave
 
+- **PL-AI-0012** -> claude-lead (P0/Coordination) Enforce reviewer ownership of judgement gates
 - **PW-0102** -> claude-infra (P0/Infra) A Tauri v2 shell that owns the sidecar's lifetime
 - **PW-0302** -> claude-frontend (P0/Frontend) Artwork, end to end, because a media application without images is a list
-- **PW-0403** -> claude-backend (P0/Backend) Production user authentication, so an account identity is not a typed header
+- **PW-0305** -> claude-frontend (P0/Frontend) Continue watching: resume where the viewer left off
+- **PW-0403** -> claude-backend (P0/Backend) Production authentication and session resolution
 - **PW-0401** -> claude-backend (P1/Backend) The authenticated backend the desktop build talks to
 
 ## Queued for external agents
@@ -62,9 +62,9 @@ No READY work is waiting on an external agent lane.
 
 - **gpt-architect:** 0/6 active (external lane; not locally executable)
 - **claude-lead:** 0/2 active
-- **claude-frontend:** 1/2 active
+- **claude-frontend:** 0/2 active
 - **claude-backend:** 0/2 active
-- **claude-media:** 2/2 active
+- **claude-media:** 0/2 active
 - **claude-test:** 0/1 active
 - **claude-security:** 0/1 active
 - **claude-infra:** 0/1 active
