@@ -1,6 +1,6 @@
 # Project Liberty - Project Status
 
-> Generated 2026-09-23T13:06:29.839Z from the AI control plane.
+> Generated 2026-09-23T13:10:06.662Z from the AI control plane.
 
 **Overall completion:** 70/97 executable tasks (72%)
 
@@ -9,8 +9,8 @@
 - **BACKLOG:** 16
 - **READY:** 8
 - **CLAIMED:** 0
-- **IN_PROGRESS:** 1
-- **REVIEW:** 0
+- **IN_PROGRESS:** 0
+- **REVIEW:** 1
 - **BLOCKED:** 2
 - **DONE:** 70
 - **CANCELED:** 0
@@ -31,7 +31,7 @@
 
 ## Active work
 
-- **PL-AI-0012** [IN_PROGRESS] Enforce reviewer ownership of judgement gates — owner: claude-lead
+- **PL-AI-0012** [REVIEW] Enforce reviewer ownership of judgement gates — owner: claude-lead
 
 ## Dispatch classification
 
