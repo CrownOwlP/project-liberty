@@ -902,3 +902,58 @@ whether the two are path-disjoint; if so they may run concurrently despite both
 having been reserved for gpt-architect, and the historical preferredAgent field
 must not force duplicate implementation. PL-0302 and PL-0602 remain separately
 blocked on licensed provider access.
+
+---
+
+## Round 77 rulings, at origin `0ac4af8`
+
+**PROVENANCE WARNING (standing).** TRANSCRIBED BY CLAUDE; the GitHub write
+integration returns 403.
+
+**DELIVERY:** round 77 supersedes the unapplied round 76. Apply and push only
+round 77; verify origin reaches `0ac4af861af297b76a6ef3a2b2cb71ede2927ca7`.
+
+**1. PL-0801 local capability — APPROVED.** Add `Recommendations` to
+`claude-lead`'s capabilities in `control/agents.json`, as a truthful
+capability-registry correction: PL-0801 is already implemented in committed
+history, claude-lead has already performed the provenance analysis needed to
+reconcile it, the only refusal is that no local agent advertises the lane,
+changing the task's lane would be false, and rebuilding under gpt-architect would
+duplicate work. Do not broaden other agents' capabilities for symmetry.
+
+**2. Independent reviewers — CHANGE BOTH.** `reviewAgent` → `gpt-architect` on
+PL-0801 and PL-AI-0003, because Claude performed the implementation-side
+reconciliation and gate work and leaving claude-lead would make the tasks either
+self-reviewed or permanently unapprovable. Record the reason explicitly in task
+notes and DO NOT pretend the original assignment was correct for the changed
+execution path. Routing correction, not an implementation change.
+
+**3. PL-AI-0003 fingerprint-exclusion ruling.** The global exclusion of
+`coordination/agent-bus/**` does NOT by itself block the task:
+`coordination/agent-bus/README.md` is documentation and
+`coordination/agent-bus/dispatch/**` is operational/audit/approval/ledger state,
+both intentionally excluded so handoff and runtime records cannot invalidate
+approvals. The executable behaviour and policy must therefore be reviewable in
+the fingerprinted implementation — `control/adapters.json`,
+`agent-dispatcher.mjs`, `dispatch-policy.mjs`, `dispatch-runners.mjs`. Do NOT use
+excluded agent-bus files as the sole evidence for any acceptance clause, and if
+any clause exists only in an excluded coordination file, STOP AND REPORT rather
+than asking for approval.
+
+**4. PL-0801.** After the capability correction: claim with claude-lead,
+reconcile-existing from `bbe68ed8d16f864c87309ceb1c089495deb89766`, preserve the
+evidence-derived surface `packages/recommendations/**`, keep `package-lock.json`
+as a reviewDependency if the historical attribution supports it, record fresh
+gates, move to REVIEW for gpt-architect. Do not build a recommender model; this
+is the recommendation INFORMATION BOUNDARY.
+
+**5. PL-AI-0003.** Keep the reconciled base
+`f6c4b942ebbd02fd3fa9ed8f74fde4fc603affc2`; do not rebuild; keep it in REVIEW for
+gpt-architect after the reviewer correction; provide a clause-by-clause map of
+which fingerprinted file enforces each acceptance item.
+
+**6.** After both are in REVIEW run ai:validate, ai:sync, repo:validate,
+ai:status and ai:dispatch, and report the board figures, PL-0801's gate results,
+the PL-AI-0003 acceptance-to-code map, whether any clause relies only on a
+fingerprint-excluded file, and remaining blockers. Do not touch PL-0302 or
+PL-0602; their licensed-provider blockers remain real.

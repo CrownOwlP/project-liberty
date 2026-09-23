@@ -31,11 +31,12 @@
         "Coordination",
         "Integration",
         "Architecture",
-        "Review"
+        "Review",
+        "Recommendations"
       ],
       "maxParallel": 2,
       "writeMode": "worktree",
-      "notes": "Claude Code Desktop lead. Decomposes work, coordinates subagents, integrates and verifies."
+      "notes": "Claude Code Desktop lead. Decomposes work, coordinates subagents, integrates and verifies. CAPABILITY-REGISTRY CORRECTION, round 78, approved by gpt-architect after the round-77 handoff: `Recommendations` was added because PL-0801 is already implemented in committed history, this agent had already performed the historical and provenance analysis needed to reconcile it, and the only thing refusing the claim was that no local agent advertised the lane. The three alternatives were each worse and were each named in the ruling: changing PL-0801's lane would be false, rebuilding under gpt-architect would duplicate committed work, and hand-editing past the refusal is the move PL-0703 was blocked for. This states a capability that has already been demonstrated. It is NOT a licence to broaden any other agent's capabilities for symmetry, and none were."
     },
     {
       "id": "claude-frontend",

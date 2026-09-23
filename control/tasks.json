@@ -3394,7 +3394,7 @@
       "id": "PL-0801",
       "priority": "P1",
       "lane": "Recommendations",
-      "status": "READY",
+      "status": "REVIEW",
       "title": "Recommendation boundary",
       "dependencies": [
         "PL-0101",
@@ -3404,14 +3404,22 @@
         "packages/recommendations/**"
       ],
       "preferredAgent": "gpt-architect",
-      "reviewAgent": "claude-lead",
+      "reviewAgent": "gpt-architect",
       "qualityGates": [
         "architecture-review",
         "unit"
       ],
       "acceptance": "The deliverable is a package and information boundary, not a recommender: eligibility is resolved upstream so recommendation can never make content playable, candidate generation may see only the active profile's explicit watchlist, that profile's progress and completion state, catalog metadata and already-resolved eligibility, and it returns content ids plus generator reasons so the reason trail survives the layer most likely to lose it",
-      "owner": null,
-      "gateResults": {},
+      "owner": "claude-lead",
+      "gateResults": {
+        "unit": {
+          "status": "pass",
+          "at": "2026-09-23T02:27:52.597Z",
+          "by": "claude-lead",
+          "commitSha": "0ac4af861af297b76a6ef3a2b2cb71ede2927ca7",
+          "evidence": "EXECUTED on 0ac4af8, the reconciled range bbe68ed8..HEAD. (1) npx vitest run --root packages/recommendations -> 4 files, 47 tests, exit 0 (eligibility 10, reasons 11, recommend.property 13, view 13). (2) npx turbo run test --force across the monorepo, cache-busted -> 20/20 tasks, exit 0. (3) npm run typecheck -> 21/21, own invocation, exit 0. ACCEPTANCE CHECKED CLAUSE BY CLAUSE AGAINST THE EXISTING IMPLEMENTATION, AND STRUCTURALLY RATHER THAN BY COUNTING GREEN TESTS -- no gap was found and nothing was implemented this round. CLAUSE 1, eligibility resolved upstream: sealEligibility and resolvedEligibilitySchema mint the EligibleContentId brand; index.ts states that this package cannot mint one and only admits ids upstream already resolved as eligible. CLAUSE 2, recommendation can never make content playable: the package publishes no uri, no provider, no stream descriptor and no availability window anywhere -- grep over the non-test sources finds those words only inside comments explaining their absence -- so there is nothing in its output a player could act on even if a caller wanted it to. CLAUSE 3, candidate generation sees only the four permitted inputs: this is enforced by a TYPE, not by discipline. CandidateGenerator.generate(view: RecommendationView) takes the view and nothing else -- no profile id, no request object, no clock, no repository handle, no second parameter a later change could widen -- and RecommendationView has exactly four members, numbered in its own source: the active profile's eligible watchlist, that profile's progress and completion state, catalog metadata, and the already-resolved eligible id set. CLAUSE 4, output is content ids plus generator reasons: GeneratedCandidate is exactly {contentId: EligibleContentId, reasons: readonly [GeneratorReason, ...GeneratorReason[]]} -- a non-empty reason tuple by type, so the trail cannot be lost at the layer most likely to lose it. A FIFTH PROPERTY WORTH THE REVIEWER'S ATTENTION, not required by the acceptance but load-bearing for it: no_eligibility_verdict is a separate exclusion code from upstream_not_eligible. Both exclude the work, but the first means the rights pipeline was never asked and the second means it answered no, and reporting the second as the first would tell an operator a work is unlicensed when in fact nobody asked. NO RECOMMENDER WAS BUILT and none is wanted; the acceptance says this is a package and information boundary."
+        }
+      },
       "reviewDependencies": [
         "packages/contracts/src/domains/catalog.ts",
         "packages/contracts/src/shared/ids.ts",
@@ -3419,7 +3427,42 @@
         "packages/contracts/src/testing/arbitraries.ts",
         "package-lock.json"
       ],
-      "notes": "SURFACE DERIVED MECHANICALLY FROM HISTORY, round 77, under gpt-architect's round-71 evidence-based narrowing procedure and its round-76 direction that this task is NOT greenfield. `git log --diff-filter=A` per file over packages/recommendations names exactly two authoring commits: 33588cd (\"PL-0801: recommendation boundary, not a recommender\", 16 files created) and b7bc31c (six of those files corrected, the \"recommendation honesty\" lane). No third commit has ever touched the directory. DROPPED `apps/web/src/**` and `docs/**`: neither was ever written by this task. Nothing anywhere imports @liberty/recommendations -- the package is a boundary that is not yet wired into a consumer, which is consistent with an acceptance that says this is a package and information boundary and not a recommender. Dropping them is evidence, not convenience: the measured answer is zero files. `package-lock.json` IS a reviewDependency rather than an allowedPath, and the reason is not collision avoidance. 33588cd changed it by 4,117 added / 2,481 removed lines across 338 added and 244 removed package entries, of which this task's authored content is three: the @liberty/recommendations workspace registration, a mechanical consequence of packages/recommendations/package.json, which IS in the surface. Declaring the root lockfile as this task's write surface would pull every dependency change made by every other task since bbe68ed8 into PL-0801's review range and present it as this task's work -- the exact false-range failure the reconciliation procedure exists to prevent."
+      "notes": "SURFACE DERIVED MECHANICALLY FROM HISTORY, round 77, under gpt-architect's round-71 evidence-based narrowing procedure and its round-76 direction that this task is NOT greenfield. `git log --diff-filter=A` per file over packages/recommendations names exactly two authoring commits: 33588cd (\"PL-0801: recommendation boundary, not a recommender\", 16 files created) and b7bc31c (six of those files corrected, the \"recommendation honesty\" lane). No third commit has ever touched the directory. DROPPED `apps/web/src/**` and `docs/**`: neither was ever written by this task. Nothing anywhere imports @liberty/recommendations -- the package is a boundary that is not yet wired into a consumer, which is consistent with an acceptance that says this is a package and information boundary and not a recommender. Dropping them is evidence, not convenience: the measured answer is zero files. `package-lock.json` IS a reviewDependency rather than an allowedPath, and the reason is not collision avoidance. 33588cd changed it by 4,117 added / 2,481 removed lines across 338 added and 244 removed package entries, of which this task's authored content is three: the @liberty/recommendations workspace registration, a mechanical consequence of packages/recommendations/package.json, which IS in the surface. Declaring the root lockfile as this task's write surface would pull every dependency change made by every other task since bbe68ed8 into PL-0801's review range and present it as this task's work -- the exact false-range failure the reconciliation procedure exists to prevent. REVIEWER ROUTING CORRECTION, round 78, approved by gpt-architect after the round-77 handoff. reviewAgent moved from `claude-lead` to `gpt-architect`. THE ORIGINAL ASSIGNMENT WAS NOT CORRECT FOR THE EXECUTION PATH THIS TASK ACTUALLY TOOK, and is not being described as though it were: it paired gpt-architect as implementer with claude-lead as reviewer, which was independent while GPT was expected to write the code. Once the implementation-side reconciliation and gate work was performed by claude-lead, that pairing inverted -- `assertReviewAllowed` compares the reviewer against both `implementationAgent` and `owner`, so claude-lead could not approve its own round, and `reviewAgent` pinned the reviewer to claude-lead, leaving the task permanently unapprovable rather than merely self-reviewed. This is a routing correction only; no implementation changed.",
+      "previousReviewAgent": "claude-lead",
+      "implementationAgent": "claude-lead",
+      "updatedAt": "2026-09-23T02:27:52.698Z",
+      "implementationBaseSha": "bbe68ed8d16f864c87309ceb1c089495deb89766",
+      "implementationBaseProvenance": {
+        "kind": "reconciled-existing-implementation",
+        "baseSha": "bbe68ed8d16f864c87309ceb1c089495deb89766",
+        "reconciledAt": "2026-09-23T02:25:12.698Z",
+        "reconciledBy": "claude-lead",
+        "implementationAgent": "claude-lead",
+        "headAtReconciliation": "0ac4af861af297b76a6ef3a2b2cb71ede2927ca7",
+        "reviewSurface": "allowedPaths + reviewDependencies",
+        "surfaceCommitCount": 11,
+        "oldestSurfaceCommit": "33588cdce6de6a21c19a0f4725cc87b199deaa50",
+        "newestSurfaceCommit": "24ed3c4e7598361e40f7b5280302f6c88377a7c0",
+        "surfaceCommits": [
+          "24ed3c4e7598361e40f7b5280302f6c88377a7c0",
+          "f932ebe66c99cbb4fdf15f631d1464b16115aadc",
+          "33195d593695618b779ab6c97a50817a2694e8df",
+          "27d3a03389781256451c5e52d72520132cfa76c1",
+          "0337663aa9cdf1572298492b5f49e37e48f6e0a2",
+          "6d158b0eb8d4393a7afe321b600d70ed19ffe9f7",
+          "1ee833d2f7834729b871f868a2bcd6c7cc8d1981",
+          "719d2d7c31465901f3dbee1e936a180e87c3d44f",
+          "4951bbe2e2aa9681ce01fa11bc823fbb10ae9f6d",
+          "b7bc31cb2799cf6838c5acdf5cefd906c5e699ca",
+          "33588cdce6de6a21c19a0f4725cc87b199deaa50"
+        ],
+        "surfaceCommitsTruncated": false,
+        "changedFileCount": 18,
+        "baseCommitSurfaceTouchCount": 0,
+        "baseCommitSurfaceTouches": [],
+        "baseCommitSurfaceTouchesTruncated": false,
+        "reason": "Derived mechanically, not guessed. git log --diff-filter=A over packages/recommendations names exactly two authoring commits: 33588cd, whose subject is 'PL-0801: recommendation boundary, not a recommender' and which creates all 16 files, and b7bc31c, which corrects six of them in its recommendation-honesty lane. No third commit has ever touched the directory; 045695f mentions PL-0801 but changes only control/ and coordination/, so it is not implementation. bbe68ed8 is 33588cd's first parent and its tree was checked directly: it contains zero files under packages/recommendations. The range therefore opens exactly where the implementation begins."
+      }
     },
     {
       "id": "PL-AI-0001",
@@ -3592,7 +3635,7 @@
         "scripts/cloud/test-dispatcher.mjs"
       ],
       "preferredAgent": "gpt-architect",
-      "reviewAgent": "claude-lead",
+      "reviewAgent": "gpt-architect",
       "qualityGates": [
         "architecture-review",
         "security-review",
@@ -3619,7 +3662,7 @@
         "docs/GITHUB_SETUP.md",
         "package.json"
       ],
-      "notes": "SURFACE DERIVED MECHANICALLY FROM HISTORY, round 77, under gpt-architect's round-71 evidence-based narrowing procedure and its round-76 direction that this task is NOT greenfield. All four dispatcher scripts were created by exactly one commit, 719d2d7, and no commit has touched any of them since. control/adapters.json changed exactly once in the review range, in that same commit, and its parent tree contains no dispatcher configuration at all. coordination/agent-bus/dispatch/** was created there, and the eight lines 719d2d7 added to coordination/agent-bus/README.md are entirely about that directory. DROPPED `packages/**` outright: measured, this task wrote nothing under it. `control/**`, `scripts/**` and `docs/**` are replaced by the specific files, because 719d2d7 was a NINE-LANE commit touching 145 files and inheriting those prefixes would have presented eight other lanes' work as this task's. TWO FILES THIS TASK GENUINELY WROTE ARE reviewDependencies RATHER THAN allowedPaths, stated rather than quietly dropped. .github/workflows/ci.yml: this task contributed one step (`Test the optional dispatcher` running scripts/cloud/test-dispatcher.mjs) and its comment, but 326 lines changed in the review range across four commits, and the other three are PL-AI-0002's two CI checks and PL-0704's two browser-gate rounds -- work already reviewed and approved under those ids. docs/GITHUB_SETUP.md: 719d2d7 created the whole document, but only section 3, `The optional dispatcher (PL-AI-0003)`, is this task's; sections 1 and 2 are the GitHub bridge. In both cases claiming the file would make the review range false in the direction the procedure most cares about -- other tasks' approved work appearing as this one's. package.json is a reviewDependency because the ci.yml comment records that the `test:scripts` alias could not be extended in this task's own round, package.json being outside its surface; the follow-up landed under another id.",
+      "notes": "SURFACE DERIVED MECHANICALLY FROM HISTORY, round 77, under gpt-architect's round-71 evidence-based narrowing procedure and its round-76 direction that this task is NOT greenfield. All four dispatcher scripts were created by exactly one commit, 719d2d7, and no commit has touched any of them since. control/adapters.json changed exactly once in the review range, in that same commit, and its parent tree contains no dispatcher configuration at all. coordination/agent-bus/dispatch/** was created there, and the eight lines 719d2d7 added to coordination/agent-bus/README.md are entirely about that directory. DROPPED `packages/**` outright: measured, this task wrote nothing under it. `control/**`, `scripts/**` and `docs/**` are replaced by the specific files, because 719d2d7 was a NINE-LANE commit touching 145 files and inheriting those prefixes would have presented eight other lanes' work as this task's. TWO FILES THIS TASK GENUINELY WROTE ARE reviewDependencies RATHER THAN allowedPaths, stated rather than quietly dropped. .github/workflows/ci.yml: this task contributed one step (`Test the optional dispatcher` running scripts/cloud/test-dispatcher.mjs) and its comment, but 326 lines changed in the review range across four commits, and the other three are PL-AI-0002's two CI checks and PL-0704's two browser-gate rounds -- work already reviewed and approved under those ids. docs/GITHUB_SETUP.md: 719d2d7 created the whole document, but only section 3, `The optional dispatcher (PL-AI-0003)`, is this task's; sections 1 and 2 are the GitHub bridge. In both cases claiming the file would make the review range false in the direction the procedure most cares about -- other tasks' approved work appearing as this one's. package.json is a reviewDependency because the ci.yml comment records that the `test:scripts` alias could not be extended in this task's own round, package.json being outside its surface; the follow-up landed under another id. REVIEWER ROUTING CORRECTION, round 78, approved by gpt-architect after the round-77 handoff. reviewAgent moved from `claude-lead` to `gpt-architect`. THE ORIGINAL ASSIGNMENT WAS NOT CORRECT FOR THE EXECUTION PATH THIS TASK ACTUALLY TOOK, and is not being described as though it were: it paired gpt-architect as implementer with claude-lead as reviewer, which was independent while GPT was expected to write the code. Once the implementation-side reconciliation and gate work was performed by claude-lead, that pairing inverted -- `assertReviewAllowed` compares the reviewer against both `implementationAgent` and `owner`, so claude-lead could not approve its own round, and `reviewAgent` pinned the reviewer to claude-lead, leaving the task permanently unapprovable rather than merely self-reviewed. This is a routing correction only; no implementation changed.",
       "implementationAgent": "claude-lead",
       "updatedAt": "2026-09-23T02:10:44.125Z",
       "implementationBaseSha": "f6c4b942ebbd02fd3fa9ed8f74fde4fc603affc2",
@@ -3662,7 +3705,8 @@
         "baseCommitSurfaceTouches": [],
         "baseCommitSurfaceTouchesTruncated": false,
         "reason": "Derived mechanically, not guessed. All four dispatcher scripts (agent-dispatcher.mjs, dispatch-policy.mjs, dispatch-runners.mjs, test-dispatcher.mjs) were CREATED by 719d2d7 and no commit has touched any of them since; control/adapters.json gained its entire dispatcher block in that same commit and changed nowhere else in the range; coordination/agent-bus/dispatch/** was created there. f6c4b942 is 719d2d7's first parent, and its tree was checked directly: none of the four scripts exist in it and its control/adapters.json contains no occurrence of the string dispatch. So the base is the last commit before any part of this implementation existed, and the range opens exactly where the work does."
-      }
+      },
+      "previousReviewAgent": "claude-lead"
     },
     {
       "id": "PL-AI-0004",
