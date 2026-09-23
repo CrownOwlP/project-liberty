@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-23T01:54:58.117Z",
+  "generatedAt": "2026-09-23T02:12:33.225Z",
   "agent": "gpt-architect",
   "executionAvailable": false,
   "assigned": [],
@@ -10,13 +10,6 @@
       "title": "Recommendation boundary",
       "priority": "P1",
       "lane": "Recommendations",
-      "reason": "reserved for gpt-architect via openai-chatgpt; not locally executable"
-    },
-    {
-      "id": "PL-AI-0003",
-      "title": "Optional API-driven autonomous dispatcher",
-      "priority": "P1",
-      "lane": "Coordination",
       "reason": "reserved for gpt-architect via openai-chatgpt; not locally executable"
     }
   ],
@@ -32,9 +25,7 @@
         "PL-0403"
       ],
       "allowedPaths": [
-        "packages/**",
-        "apps/web/src/**",
-        "docs/**"
+        "packages/recommendations/**"
       ],
       "preferredAgent": "gpt-architect",
       "reviewAgent": "claude-lead",
@@ -44,34 +35,15 @@
       ],
       "acceptance": "The deliverable is a package and information boundary, not a recommender: eligibility is resolved upstream so recommendation can never make content playable, candidate generation may see only the active profile's explicit watchlist, that profile's progress and completion state, catalog metadata and already-resolved eligibility, and it returns content ids plus generator reasons so the reason trail survives the layer most likely to lose it",
       "owner": null,
-      "gateResults": {}
-    },
-    {
-      "id": "PL-AI-0003",
-      "priority": "P1",
-      "lane": "Coordination",
-      "status": "READY",
-      "title": "Optional API-driven autonomous dispatcher",
-      "dependencies": [
-        "PL-AI-0001",
-        "PL-AI-0002"
+      "gateResults": {},
+      "reviewDependencies": [
+        "packages/contracts/src/domains/catalog.ts",
+        "packages/contracts/src/shared/ids.ts",
+        "packages/contracts/src/shared/rights.ts",
+        "packages/contracts/src/testing/arbitraries.ts",
+        "package-lock.json"
       ],
-      "allowedPaths": [
-        "control/**",
-        "scripts/**",
-        "packages/**",
-        "docs/**"
-      ],
-      "preferredAgent": "gpt-architect",
-      "reviewAgent": "claude-lead",
-      "qualityGates": [
-        "architecture-review",
-        "security-review",
-        "unit"
-      ],
-      "acceptance": "Optional external agent runner can dispatch queued tasks to configured providers with budgets, audit logs, retries, and human approval gates",
-      "owner": null,
-      "gateResults": {}
+      "notes": "SURFACE DERIVED MECHANICALLY FROM HISTORY, round 77, under gpt-architect's round-71 evidence-based narrowing procedure and its round-76 direction that this task is NOT greenfield. `git log --diff-filter=A` per file over packages/recommendations names exactly two authoring commits: 33588cd (\"PL-0801: recommendation boundary, not a recommender\", 16 files created) and b7bc31c (six of those files corrected, the \"recommendation honesty\" lane). No third commit has ever touched the directory. DROPPED `apps/web/src/**` and `docs/**`: neither was ever written by this task. Nothing anywhere imports @liberty/recommendations -- the package is a boundary that is not yet wired into a consumer, which is consistent with an acceptance that says this is a package and information boundary and not a recommender. Dropping them is evidence, not convenience: the measured answer is zero files. `package-lock.json` IS a reviewDependency rather than an allowedPath, and the reason is not collision avoidance. 33588cd changed it by 4,117 added / 2,481 removed lines across 338 added and 244 removed package entries, of which this task's authored content is three: the @liberty/recommendations workspace registration, a mechanical consequence of packages/recommendations/package.json, which IS in the surface. Declaring the root lockfile as this task's write surface would pull every dependency change made by every other task since bbe68ed8 into PL-0801's review range and present it as this task's work -- the exact false-range failure the reconciliation procedure exists to prevent."
     }
   ]
 }

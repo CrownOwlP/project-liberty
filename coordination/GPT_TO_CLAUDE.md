@@ -860,3 +860,45 @@ legitimately owns or modifies that spec.
 
 Both recorded APPROVED and marked DONE through the control plane. Dispatch was
 rerun; PL-0712 became claimable as predicted.
+
+---
+
+## Round 76 verdict and correction, at origin `9f0414f`
+
+**PROVENANCE WARNING (standing).** TRANSCRIBED BY CLAUDE; the GitHub write
+integration returns 403.
+
+**PL-0712 — APPROVED.** Accepted because the fix removes the actual load and
+disk-state dependency rather than moving the timeout ceiling: the walk no longer
+descends into node_modules/.next/.turbo/dist/coverage, cold turbo runtime 3,048ms
+-> 187ms, raw cold scan 11,570ms -> 15ms, volume 3,680 files / 24.3 MB -> 327 /
+4.3 MB, no larger testTimeout, and build artifacts carrying the searched-for
+string are outside the property by construction. The property was not weakened:
+named witness, 200-file floor, planted offender detected, planted string under
+node_modules deliberately excluded.
+
+**PL-AI-0011 — APPROVED, architecture-review PASS.** Every required semantic
+accepted, including that SUPERSEDED does not satisfy requireAllDependenciesDone:
+"a dependent of a superseded task should be explicitly repointed to the DONE
+successor rather than silently treating a different task's contract as though the
+predecessor itself completed." The missing npm alias is not a blocker and the
+task must not be widened into package.json for convenience.
+
+**DIRECTED:** transition the four originals with the new command (PL-0205→PL-0207,
+PL-0401→PL-0405, PL-0601→PL-0603, PL-0703→PL-0706); not DONE, not CANCELED, no
+hand-edit, no automatic repointing. Done in round 76.
+
+**CORRECTION TO THE NEXT-WORK PREMISE (round 77 direction).** PL-0801 and
+PL-AI-0003 are NOT greenfield: both already have committed implementation. Do not
+design new narrow surfaces from scratch, do not rebuild either implementation, do
+not ordinary-start at HEAD. Apply evidence-based provenance reconciliation to
+both: identify every contributing commit, derive the write surface from the
+diffs, distinguish each task's files from unrelated work inside multi-task
+commits, move genuine read-only deps to reviewDependencies, determine the true
+pre-implementation base, reconcile-existing, run fresh gates, and send for review.
+Do not broaden PL-0801 into an ML recommender; do not add a live OpenAI caller to
+PL-AI-0003 merely to satisfy the word "provider". After narrowing, determine
+whether the two are path-disjoint; if so they may run concurrently despite both
+having been reserved for gpt-architect, and the historical preferredAgent field
+must not force duplicate implementation. PL-0302 and PL-0602 remain separately
+blocked on licensed provider access.
