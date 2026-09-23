@@ -1,4 +1,13 @@
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { bareAddress as sharedBareAddress } from "@liberty/net-policy/host";
@@ -53,10 +62,57 @@ function srcRelative(absolutePath: string): string {
   return relative(SRC_DIR, absolutePath).split(sep).join("/");
 }
 
+/**
+ * DIRECTORIES THIS WALK MUST NOT DESCEND INTO, AND WHY IT IS A LIST AND NOT A
+ * SPEED OPTIMISATION (PL-0712).
+ *
+ * The repository-wide scan at the bottom of this file used to walk `packages/`
+ * and `apps/` with no exclusions at all, and that was two defects wearing one
+ * coat.
+ *
+ * THE ONE THAT WAS OBSERVED. It read 3,680 `.ts` files totalling 24.3 MB, of
+ * which 3,337 were under `node_modules`. The property it asserts concerns 327
+ * files. Reading 24 MB it has no reason to read made this the only test in the
+ * repository whose runtime is a function of INSTALLED DEPENDENCIES AND BUILD
+ * ARTIFACTS rather than of source -- so it tracked page-cache state, and under
+ * `turbo run test` on a small runner it crossed vitest's 5,000 ms default
+ * `testTimeout` and failed with `Test timed out in 5000ms`. Measured on a
+ * 2-core container at b687910: 109 ms for the body alone with a warm cache, 687
+ * ms for the whole file isolated, 849-995 ms under turbo, and 3,048 ms under
+ * turbo with the page cache dropped. It went green on every re-run, which is
+ * exactly why a load-dependent test must never be judged by re-running it.
+ * Raising the timeout was considered and rejected: it moves the ceiling without
+ * removing the dependence on disk state, and the next dependency added moves
+ * the runtime again.
+ *
+ * THE ONE THAT HAD NOT FIRED YET, and which is the reason this is a correctness
+ * fix rather than a performance one. Build output ALREADY contains the string
+ * this scan looks for: seven files under `apps/web/.next` and
+ * `apps/web/dist/desktop` carry a `reference path` fragment naming
+ * `m3u8-parser.d.ts` inside bundled chunks, because the bundler inlines the
+ * source of `hls.ts`. They are `.js` today and the extension filter misses
+ * them, so the test is one bundler-output change away from naming a build
+ * artifact as an offender -- a failure about nothing any human wrote, in a test
+ * whose whole job is to name the human who wrote one. Skipping the directories
+ * removes that hazard whatever extension the artifacts take.
+ *
+ * `coverage` is listed although nothing here writes one: it is the fourth
+ * directory of this kind a JavaScript repository grows, and a list that has to
+ * be extended after the next timeout is a list that did not learn anything.
+ */
+const NOT_SOURCE_DIRECTORIES: ReadonlySet<string> = new Set([
+  "node_modules",
+  ".next",
+  ".turbo",
+  "dist",
+  "coverage"
+]);
+
 function listSourceFiles(dir: string): string[] {
   const found: string[] = [];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const full = join(dir, entry.name);
+    if (entry.isDirectory() && NOT_SOURCE_DIRECTORIES.has(entry.name)) continue;
     if (entry.isDirectory()) found.push(...listSourceFiles(full));
     else if (entry.isFile() && entry.name.endsWith(".ts")) found.push(full);
   }
@@ -386,6 +442,41 @@ describe("the subpaths a consumer of the bounded fetch needs are published", () 
  * package. Delete the first and `apps/web` fails `TS7016` again; satisfy the
  * first by re-adding a downstream reference and the second fails instead.
  */
+/** The two workspace roots the scan below covers, skipped when absent. */
+const WORKSPACE_ROOTS: readonly string[] = ["packages", "apps"]
+  .map((workspace) => join(dirname(dirname(PACKAGE_ROOT)), workspace))
+  .filter((root) => existsSync(root));
+
+/**
+ * A `<reference path=...>` naming our shim. Written once so the real scan and
+ * the planted-offender test below cannot drift into testing different things.
+ */
+const SHIM_REFERENCE = /<reference\s+path=["'][^"']*m3u8-parser\.d\.ts["']/;
+
+/**
+ * Every source file under `roots`, outside this package, that restates the
+ * shim reference -- as repository-relative paths, so a failure names something
+ * a reader can open.
+ *
+ * TAKES ITS ROOTS AS A PARAMETER so the walk and the predicate can be driven
+ * against a temporary tree. Before PL-0712 they were inlined in the one test
+ * that used them, which meant the only way to check that the scan still finds
+ * anything was to break the repository on purpose.
+ */
+function filesRestatingTheShim(roots: readonly string[]): string[] {
+  const repoRoot = dirname(dirname(PACKAGE_ROOT));
+  const offenders: string[] = [];
+  for (const root of roots) {
+    for (const file of listSourceFiles(root)) {
+      if (file.startsWith(PACKAGE_ROOT + sep)) continue;
+      if (SHIM_REFERENCE.test(readFileSync(file, "utf8"))) {
+        offenders.push(relative(repoRoot, file).split(sep).join("/"));
+      }
+    }
+  }
+  return offenders;
+}
+
 describe("the m3u8-parser shim is referenced from the file that imports it", () => {
   it("names the declaration in hls.ts, where the untyped import is", () => {
     const hls = readFileSync(join(SRC_DIR, "hls.ts"), "utf8");
@@ -394,17 +485,78 @@ describe("the m3u8-parser shim is referenced from the file that imports it", () 
   });
 
   it("is not restated by any file outside this package", () => {
-    const repoRoot = dirname(dirname(PACKAGE_ROOT));
-    const offenders: string[] = [];
-    for (const workspace of ["packages", "apps"]) {
-      const root = join(repoRoot, workspace);
-      if (!existsSync(root)) continue;
-      for (const file of listSourceFiles(root)) {
-        if (file.startsWith(PACKAGE_ROOT + sep)) continue;
-        if (/<reference\s+path=["'][^"']*m3u8-parser\.d\.ts["']/.test(readFileSync(file, "utf8")))
-          offenders.push(relative(repoRoot, file).split(sep).join("/"));
-      }
+    expect(filesRestatingTheShim(WORKSPACE_ROOTS)).toEqual([]);
+  });
+
+  /*
+   * THE TWO ASSERTIONS THAT STOP THE EXCLUSION LIST ABOVE FROM BUYING SPEED BY
+   * LOOKING AT LESS (PL-0712).
+   *
+   * An empty offender list is the same result whether the scan searched the
+   * repository or searched nothing, so the fix that made the scan fast is
+   * exactly the kind of fix that can hollow out the property it was protecting.
+   * These two are the guard on the guard.
+   */
+
+  it("still sees the source it is supposed to see", () => {
+    const scanned = WORKSPACE_ROOTS.flatMap((root) => listSourceFiles(root));
+
+    /* A specific file, named, rather than only a count: a count can be met by
+     * any 300 files and this one is on the far side of the `apps/` root, which
+     * is the half a `packages`-only regression would silently drop. */
+    const witness = join(
+      dirname(dirname(PACKAGE_ROOT)),
+      "apps",
+      "web",
+      "src",
+      "app",
+      "api",
+      "v1",
+      "playback",
+      "session",
+      "handler.ts"
+    );
+    expect(existsSync(witness), "the witness file moved; pick another and say so").toBe(true);
+    expect(scanned).toContain(witness);
+
+    /* And a floor, because one file proves one path. 200 is well under the 327
+     * measured at b687910 and well over anything an accidental early return
+     * would leave. */
+    expect(scanned.length).toBeGreaterThan(200);
+  });
+
+  it("catches a planted offender, and skips one planted in an excluded directory", () => {
+    /*
+     * DRIVEN AGAINST A TEMPORARY TREE, NOT THE REPOSITORY. Planting a file
+     * under `apps/web/src` would work, and would also drop a stray module into
+     * a workspace whose own suites walk their source while this one runs. A
+     * temp root exercises the same walker and the same predicate with nothing
+     * shared.
+     */
+    const root = mkdtempSync(join(tmpdir(), "pl0712-"));
+    try {
+      mkdirSync(join(root, "src"), { recursive: true });
+      mkdirSync(join(root, "node_modules", "pretend-dep"), { recursive: true });
+
+      const planted = join(root, "src", "offender.ts");
+      const shimReference = '/// <reference path="../media-inspection/src/m3u8-parser.d.ts" />';
+      writeFileSync(planted, `${shimReference}\nexport const x = 1;\n`, "utf8");
+
+      /* The same text, inside a directory the walk is now told to skip. It must
+       * NOT be reported -- that is what makes the exclusion a statement about
+       * what is source rather than a hole in the scan. */
+      writeFileSync(
+        join(root, "node_modules", "pretend-dep", "vendored.ts"),
+        `${shimReference}\nexport const y = 2;\n`,
+        "utf8"
+      );
+
+      const offenders = filesRestatingTheShim([root]);
+      expect(offenders).toHaveLength(1);
+      expect(offenders[0]).toContain("offender.ts");
+      expect(offenders.join("\n")).not.toContain("vendored.ts");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
     }
-    expect(offenders).toEqual([]);
   });
 });
