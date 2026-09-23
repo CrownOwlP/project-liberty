@@ -1,15 +1,15 @@
 # Project Liberty - Project Status
 
-> Generated 2026-09-23T03:48:37.407Z from the AI control plane.
+> Generated 2026-09-23T04:05:27.281Z from the AI control plane.
 
-**Overall completion:** 62/94 executable tasks (66%)
+**Overall completion:** 62/95 executable tasks (65%)
 
 ## Status summary
 
-- **BACKLOG:** 24
-- **READY:** 2
+- **BACKLOG:** 23
+- **READY:** 3
 - **CLAIMED:** 0
-- **IN_PROGRESS:** 0
+- **IN_PROGRESS:** 1
 - **REVIEW:** 4
 - **BLOCKED:** 2
 - **DONE:** 62
@@ -27,7 +27,7 @@
 - **M6 — Shared-Agent Automation Bridge:** COMPLETE, 3/3 (100%)
 - **EXT — External Licensed Integrations:** BLOCKED, 0/2 (0%), 2 blocked
 - **M7 — Windows Desktop Shell + Native Playback:** COMPLETE, 4/4 (100%)
-- **PW — undefined:** IN_PROGRESS, 0/30 (0%)
+- **PW — undefined:** IN_PROGRESS, 0/31 (0%)
 
 ## Active work
 
@@ -35,13 +35,14 @@
 - **PW-0201** [REVIEW] The PlayerAdapter boundary becomes a module instead of a specification — owner: claude-frontend
 - **PW-0301** [REVIEW] An application shell: one layout, one navigation model, one token layer — owner: claude-frontend
 - **PW-0601** [REVIEW] A real-device certification matrix that says who runs each test and why — owner: claude-test
+- **PW-0402** [IN_PROGRESS] Routes authorize the caller, and a launch token is not a login — owner: claude-security
 
 ## Dispatch classification
 
-- **READY_AND_EXECUTABLE:** 2
+- **READY_AND_EXECUTABLE:** 3
 - **READY_BUT_EXTERNAL:** 0
 - **BLOCKED:** 2
-- **BACKLOG (dependency-gated):** 24
+- **BACKLOG (dependency-gated):** 23
 
 ## Recommended executable wave
 
@@ -64,6 +65,6 @@ No READY work is waiting on an external agent lane.
 - **claude-backend:** 0/2 active
 - **claude-media:** 0/2 active
 - **claude-test:** 1/1 active
-- **claude-security:** 0/1 active
+- **claude-security:** 1/1 active
 - **claude-infra:** 1/1 active
 - **human-commander:** 0/99 active (external lane; not locally executable)

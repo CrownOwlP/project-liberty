@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-23T03:48:37.411Z",
+  "generatedAt": "2026-09-23T04:05:27.284Z",
   "agent": "claude-infra",
   "executionAvailable": true,
   "assigned": [
@@ -64,5 +64,38 @@
   ],
   "review": [],
   "reservedExternal": [],
-  "recommended": []
+  "recommended": [
+    {
+      "id": "PW-0104",
+      "priority": "P1",
+      "lane": "Infra",
+      "status": "READY",
+      "title": "A killed desktop dev server cannot leave a tracked file rewritten",
+      "dependencies": [],
+      "allowedPaths": [
+        "apps/web/package.json",
+        "apps/web/next-env.d.ts",
+        ".gitignore",
+        "scripts/desktop-target.mjs",
+        "scripts/test-desktop-target.mjs"
+      ],
+      "reviewDependencies": [
+        "apps/web/src/app/api/v1/playback/build-target.ts",
+        "apps/web/next.config.ts",
+        "e2e/playwright.config.ts",
+        "docs/DEVELOPMENT.md"
+      ],
+      "preferredAgent": "claude-infra",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "build"
+      ],
+      "acceptance": "A desktop build or dev server cannot leave apps/web/next-env.d.ts rewritten in the working tree, under ANY termination. THE DEFECT, OBSERVED RATHER THAN PREDICTED, in round 81: the file was committed pointing at ./dist/desktop/dev/types/routes.d.ts instead of ./.next/types/routes.d.ts. Next regenerates that TRACKED file to name whichever distDir last built; the three *:desktop scripts snapshot and restore it around the child; and build-target.ts:300-342 already records that the restore happens ONLY ON NORMAL EXIT. Playwright signal-kills `next dev` when the harness finishes, so the rewrite survived, was staged by a routine `git add -A`, and was caught only by reading the diff before delivery. It typechecked locally because dist/desktop/dev happened to exist; on a fresh clone it would not have. REQUIRED: a forced termination -- SIGTERM, SIGINT, SIGKILL of the child, and the parent being killed -- cannot leave the tracked file dirty. REQUIRED: THE SOLUTION MUST NOT DEPEND ON A NORMAL-EXIT CLEANUP HOOK ALONE. A second `process.on('exit')` handler is the same mechanism that already failed and would fail the same way under SIGKILL; the implementer must choose a design that is correct when no cleanup runs at all, and justify it. Two candidates, neither mandated: make the file untracked and generated (which changes what a fresh clone must do, and docs/DEVELOPMENT.md must then say so), or make the desktop distDir's type path stable so no rewrite occurs. REQUIRED: the regression is MECHANICALLY TESTED -- a test that starts a desktop invocation, kills it without letting it clean up, and fails if the tracked file differs from HEAD. A test that only exercises normal exit reproduces nothing, because normal exit already works. REQUIRED: the fix does not weaken the build-target split; build-target.test.ts must keep passing, including its assertion that no shipped module under apps/web/src names LIBERTY_BUILD_TARGET. NOT IN SCOPE: anything about product behaviour. This is a tooling defect and gpt-architect's ruling is explicit that it must not be folded into unrelated product work.",
+      "notes": "Filed round 82 on gpt-architect's ruling item 4, which refused to let this stay a warning in a handoff. The scripts directory is named in allowedPaths because the three `node -e` wrappers inside apps/web/package.json are the thing that would move: JSON cannot carry a comment, which is why their reasoning currently lives in build-target.ts, and a real script file is the likeliest shape of the fix. It is not mandated -- the implementer chooses and justifies.",
+      "owner": null,
+      "gateResults": {}
+    }
+  ]
 }

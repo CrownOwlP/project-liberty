@@ -7785,7 +7785,9 @@
         "apps/web/src/components/player/player-adapter.ts",
         "packages/contracts/src/shared/drm.ts",
         "apps/web/src/app/api/v1/playback/session/contract.ts",
-        "docs/DESKTOP_PLAYBACK.md"
+        "docs/DESKTOP_PLAYBACK.md",
+        "apps/web/src/components/player/playback-session.ts",
+        "apps/web/src/components/player/web-player-adapter.ts"
       ],
       "preferredAgent": "claude-media",
       "reviewAgent": "gpt-architect",
@@ -7795,8 +7797,8 @@
         "architecture-review",
         "rights-review"
       ],
-      "acceptance": "Which engine plays a candidate is decided before playback and recorded with a reason, satisfying the architecture invariant that already states this. REQUIRED: the routing function is PURE and deterministic -- no clocks, no I/O, no ambient state -- on the same rule ADR-003 and ADR-005 apply to ranking, so a routing decision can be reconstructed from a bug report. REQUIRED: a candidate whose contentProtection requires a CDM routes to the web adapter, always, and the native adapter REFUSES it with drm_required_no_cdm rather than falling back or degrading. mpv has no CDM; a native path that tried would be the DRM circumvention CONTENT_RIGHTS.md forbids, so this refusal is a rights property and not a capability detail -- which is why this task carries a rights-review gate. REQUIRED: the reason is recorded on the accepting branch as well, so 'why is this playing natively' is answerable. REQUIRED: routing consumes the protection state already on the session contract (PL-0902) rather than re-deriving it, because two opinions about a candidate's protection would eventually disagree.",
-      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. ",
+      "acceptance": "Which engine plays a candidate is decided before playback and recorded with a reason, satisfying the architecture invariant that already states this. REQUIRED: the routing function is PURE and deterministic -- no clocks, no I/O, no ambient state -- on the same rule ADR-003 and ADR-005 apply to ranking, so a routing decision can be reconstructed from a bug report. REQUIRED: a candidate whose contentProtection requires a CDM routes to the web adapter, always, and the native adapter REFUSES it with drm_required_no_cdm rather than falling back or degrading. mpv has no CDM; a native path that tried would be the DRM circumvention CONTENT_RIGHTS.md forbids, so this refusal is a rights property and not a capability detail -- which is why this task carries a rights-review gate. REQUIRED: the reason is recorded on the accepting branch as well, so 'why is this playing natively' is answerable. REQUIRED: routing consumes the protection state already on the session contract (PL-0902) rather than re-deriving it, because two opinions about a candidate's protection would eventually disagree. THE CANDIDATE-PROJECTION FINDING FROM PW-0201 IS THIS TASK'S, per gpt-architect's round-81 ruling, and no separate follow-up is filed unless this task proves one is needed. PW-0201 could not implement `canPlay(candidate: PlaybackCandidate)` as docs/DESKTOP_PLAYBACK.md §3 writes it: that client type is `{ id, providerId, source }`, it predates PL-0902, and it carries neither `protection` nor `compatibility` -- so an adapter handed one is STRUCTURALLY INCAPABLE of returning `drm_required_no_cdm`, which is the refusal this task exists to make. The boundary therefore declares a narrow adapter-facing projection, and that projection is ACCEPTED. REQUIRED HERE: routing consumes the protection state from the playback-session CONTRACT -- the `protection` field `playbackSessionCandidateSchema` already publishes, which PL-0902 put there -- and never re-derives it; the adapter capability input is that narrow projection and nothing wider; NO SECOND DRM OR PROTECTION DECISION IS INVENTED anywhere in the routing path, because two opinions about a candidate's protection would eventually disagree and the reason trail would then explain a decision nobody made; and the native refusal `drm_required_no_cdm` remains STRUCTURAL rather than conditional. DO NOT change the adapter back to the older type to match the §3 prose: the prose was written on 2026-09-15 and PL-0902 landed after it, so the listing is stale and the code is right. A cross-package contract change is only to be proposed if this task PROVES one is required, with the specific field and the specific decision that cannot be made without it.",
+      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict.  ROUND 82: absorbed PW-0201's candidate-projection finding on gpt-architect's ruling. PW-0209 was NOT filed; this task owns the reconciliation question and only escalates it if a cross-package contract change turns out to be genuinely required.",
       "owner": null,
       "gateResults": {}
     },
@@ -8577,11 +8579,9 @@
       "id": "PW-0402",
       "priority": "P0",
       "lane": "Security",
-      "status": "BACKLOG",
+      "status": "IN_PROGRESS",
       "title": "Routes authorize the caller, and a launch token is not a login",
-      "dependencies": [
-        "PW-0101"
-      ],
+      "dependencies": [],
       "allowedPaths": [
         "apps/web/src/lib/authorization/**",
         "apps/web/src/app/api/v1/profiles/handler.ts",
@@ -8607,7 +8607,42 @@
         "security-review"
       ],
       "acceptance": "Sensitive application routes authorize WHO is calling them, and possession of the desktop launch token is never mistaken for that. THE R4 FINDING, QUOTED: docs/SECURITY.md records that 'no authentication or authorization exists on any API route yet' and that 'nothing in the current code should be read as a decision that these routes are safe to leave anonymous'. Acceptable for a web demo; not for a shipped desktop application with a loopback listener. THIS TASK IS DELIBERATELY NOT PW-0101 AND MUST NOT BE FOLDED INTO IT. PW-0101 owns the LISTENER boundary -- loopback-only bind, per-launch bearer, Host validation, CSP, the port handshake -- which answers 'may this process talk to the sidecar at all'. This task answers 'may this caller perform this operation', and the two are different questions with different failure modes. A single machine-wide token that satisfied both would mean every process on the user's PC, and every page the webview ever loads, holds full authority over every profile. REQUIRED, each proven mechanically rather than asserted: (1) a protected route requires an authenticated account/session context and refuses without one; (2) a profile-scoped route authorizes the ACTIVE OR OWNED profile and never trusts a profile id supplied by the caller -- PL-0405 recorded a forgeable ProfileScope as a cross-profile data-access bypass and this is the route-level half of that same defect; (3) a playback or session operation does not become authorized merely because the caller holds the desktop launch token, asserted by a test that presents a valid token and no account context and requires a refusal; (4) a refusal does not leak resource existence where an existing contract requires that property, so 'not yours' and 'not there' are indistinguishable on the wire; (5) loopback origin is NEVER treated as authentication -- a test must present a request from 127.0.0.1 with no credential and require a refusal, because 'it came from this machine' is the exact assumption that makes a local listener a privilege-escalation surface. REQUIRED: the authorization decision is made in ONE place and the routes call it, rather than each handler deciding -- a second opinion about who may read a profile is how the first one stops being enforced. USES THE EXISTING SEAM: packages/auth and the ProfileScope minted by PL-0405 are adopted and wrapped, not replaced.",
-      "notes": "R4 OWNERSHIP, DECIDED AND REPORTED BEFORE THE WORK STARTS, as gpt-architect's round-80 ruling item 7 requires. No existing PW task owns the route-authorization seam cleanly: PW-0101 owns the listener and the ruling explicitly forbids broadening it into application auth merely because it already carries a security-review gate; PW-0401 owns authentication of the desktop forwarder's counterparty, which is a different service and a different caller; PW-0303 is a profiles UI and owns no route. So this is the 'one narrowly scoped PW security task' the ruling permits. It sits in Track 4 rather than in a seventh track, because the six tracks are approved and this is the same seam as PW-0401 seen from the other side -- who may call, rather than what the callee proves. The surface is the three profile-scoped handlers plus one authorization module, and it deliberately does not include the route.ts files or the contracts: if enforcement turns out to need them, that is a surface widening to state at review, not to pre-reserve.",
+      "notes": "R4 OWNERSHIP, DECIDED AND REPORTED BEFORE THE WORK STARTS, as gpt-architect's round-80 ruling item 7 requires. No existing PW task owns the route-authorization seam cleanly: PW-0101 owns the listener and the ruling explicitly forbids broadening it into application auth merely because it already carries a security-review gate; PW-0401 owns authentication of the desktop forwarder's counterparty, which is a different service and a different caller; PW-0303 is a profiles UI and owns no route. So this is the 'one narrowly scoped PW security task' the ruling permits. It sits in Track 4 rather than in a seventh track, because the six tracks are approved and this is the same seam as PW-0401 seen from the other side -- who may call, rather than what the callee proves. The surface is the three profile-scoped handlers plus one authorization module, and it deliberately does not include the route.ts files or the contracts: if enforcement turns out to need them, that is a surface widening to state at review, not to pre-reserve. DEPENDENCY EDGE ON PW-0101 REMOVED, ROUND 82, AND THE REMOVAL IS THE POINT. It was written as a hard dependency to express \"the listener exists first\", and that is a READ relationship, not a build one: this task writes apps/web/src/lib/authorization and three handlers, none of which PW-0101 touches, and its negative proof -- a valid launch token with no account context is REFUSED -- needs only that the token concept exist to be refused, which it now does and is committed. requireAllDependenciesDone would have held this BACKLOG until PW-0101 cleared review, which is the PL-0311 deadlock shape: a false edge gating work that does not actually depend on it. apps/web/src/lib/sidecar stays in reviewDependencies, which is where the real relationship belongs.",
+      "owner": "claude-security",
+      "gateResults": {},
+      "implementationAgent": "claude-security",
+      "updatedAt": "2026-09-23T04:05:27.256Z",
+      "implementationBaseSha": "01d30760b24c4295640e6ec64e33b16e7bc090f1"
+    },
+    {
+      "id": "PW-0104",
+      "priority": "P1",
+      "lane": "Infra",
+      "status": "READY",
+      "title": "A killed desktop dev server cannot leave a tracked file rewritten",
+      "dependencies": [],
+      "allowedPaths": [
+        "apps/web/package.json",
+        "apps/web/next-env.d.ts",
+        ".gitignore",
+        "scripts/desktop-target.mjs",
+        "scripts/test-desktop-target.mjs"
+      ],
+      "reviewDependencies": [
+        "apps/web/src/app/api/v1/playback/build-target.ts",
+        "apps/web/next.config.ts",
+        "e2e/playwright.config.ts",
+        "docs/DEVELOPMENT.md"
+      ],
+      "preferredAgent": "claude-infra",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "build"
+      ],
+      "acceptance": "A desktop build or dev server cannot leave apps/web/next-env.d.ts rewritten in the working tree, under ANY termination. THE DEFECT, OBSERVED RATHER THAN PREDICTED, in round 81: the file was committed pointing at ./dist/desktop/dev/types/routes.d.ts instead of ./.next/types/routes.d.ts. Next regenerates that TRACKED file to name whichever distDir last built; the three *:desktop scripts snapshot and restore it around the child; and build-target.ts:300-342 already records that the restore happens ONLY ON NORMAL EXIT. Playwright signal-kills `next dev` when the harness finishes, so the rewrite survived, was staged by a routine `git add -A`, and was caught only by reading the diff before delivery. It typechecked locally because dist/desktop/dev happened to exist; on a fresh clone it would not have. REQUIRED: a forced termination -- SIGTERM, SIGINT, SIGKILL of the child, and the parent being killed -- cannot leave the tracked file dirty. REQUIRED: THE SOLUTION MUST NOT DEPEND ON A NORMAL-EXIT CLEANUP HOOK ALONE. A second `process.on('exit')` handler is the same mechanism that already failed and would fail the same way under SIGKILL; the implementer must choose a design that is correct when no cleanup runs at all, and justify it. Two candidates, neither mandated: make the file untracked and generated (which changes what a fresh clone must do, and docs/DEVELOPMENT.md must then say so), or make the desktop distDir's type path stable so no rewrite occurs. REQUIRED: the regression is MECHANICALLY TESTED -- a test that starts a desktop invocation, kills it without letting it clean up, and fails if the tracked file differs from HEAD. A test that only exercises normal exit reproduces nothing, because normal exit already works. REQUIRED: the fix does not weaken the build-target split; build-target.test.ts must keep passing, including its assertion that no shipped module under apps/web/src names LIBERTY_BUILD_TARGET. NOT IN SCOPE: anything about product behaviour. This is a tooling defect and gpt-architect's ruling is explicit that it must not be folded into unrelated product work.",
+      "notes": "Filed round 82 on gpt-architect's ruling item 4, which refused to let this stay a warning in a handoff. The scripts directory is named in allowedPaths because the three `node -e` wrappers inside apps/web/package.json are the thing that would move: JSON cannot carry a comment, which is why their reasoning currently lives in build-target.ts, and a real script file is the likeliest shape of the fix. It is not mandated -- the implementer chooses and justifies.",
       "owner": null,
       "gateResults": {}
     }
