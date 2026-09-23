@@ -1,8 +1,8 @@
 # Project Liberty - Project Status
 
-> Generated 2026-09-23T02:28:34.216Z from the AI control plane.
+> Generated 2026-09-23T02:42:32.714Z from the AI control plane.
 
-**Overall completion:** 60/64 executable tasks (94%)
+**Overall completion:** 62/64 executable tasks (97%)
 
 ## Status summary
 
@@ -10,9 +10,9 @@
 - **READY:** 0
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 0
-- **REVIEW:** 2
+- **REVIEW:** 0
 - **BLOCKED:** 2
-- **DONE:** 60
+- **DONE:** 62
 - **CANCELED:** 0
 - **SUPERSEDED:** 4
 
@@ -23,15 +23,14 @@
 - **M2 — Media Resolution + Provider Foundation:** COMPLETE, 6/6 (100%)
 - **M3 — Identity + Personal State:** IN_PROGRESS, 3/4 (75%)
 - **M4 — Playback Vertical Slice:** COMPLETE, 6/6 (100%)
-- **M5 — Live + Intelligence Boundaries:** IN_PROGRESS, 0/2 (0%)
-- **M6 — Shared-Agent Automation Bridge:** IN_PROGRESS, 2/3 (67%)
+- **M5 — Live + Intelligence Boundaries:** IN_PROGRESS, 1/2 (50%)
+- **M6 — Shared-Agent Automation Bridge:** COMPLETE, 3/3 (100%)
 - **EXT — External Licensed Integrations:** BLOCKED, 0/2 (0%), 2 blocked
 - **M7 — Windows Desktop Shell + Native Playback:** COMPLETE, 4/4 (100%)
 
 ## Active work
 
-- **PL-0801** [REVIEW] Recommendation boundary — owner: claude-lead
-- **PL-AI-0003** [REVIEW] Optional API-driven autonomous dispatcher — owner: claude-lead
+No tasks are currently claimed, in progress, or in review.
 
 ## Dispatch classification
 
@@ -56,7 +55,7 @@ No READY work is waiting on an external agent lane.
 ## Agent capacity
 
 - **gpt-architect:** 0/6 active (external lane; not locally executable)
-- **claude-lead:** 2/2 active
+- **claude-lead:** 0/2 active
 - **claude-frontend:** 0/2 active
 - **claude-backend:** 0/2 active
 - **claude-media:** 0/2 active

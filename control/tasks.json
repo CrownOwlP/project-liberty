@@ -3394,7 +3394,7 @@
       "id": "PL-0801",
       "priority": "P1",
       "lane": "Recommendations",
-      "status": "REVIEW",
+      "status": "DONE",
       "title": "Recommendation boundary",
       "dependencies": [
         "PL-0101",
@@ -3410,7 +3410,7 @@
         "unit"
       ],
       "acceptance": "The deliverable is a package and information boundary, not a recommender: eligibility is resolved upstream so recommendation can never make content playable, candidate generation may see only the active profile's explicit watchlist, that profile's progress and completion state, catalog metadata and already-resolved eligibility, and it returns content ids plus generator reasons so the reason trail survives the layer most likely to lose it",
-      "owner": "claude-lead",
+      "owner": null,
       "gateResults": {
         "unit": {
           "status": "pass",
@@ -3418,6 +3418,13 @@
           "by": "claude-lead",
           "commitSha": "0ac4af861af297b76a6ef3a2b2cb71ede2927ca7",
           "evidence": "EXECUTED on 0ac4af8, the reconciled range bbe68ed8..HEAD. (1) npx vitest run --root packages/recommendations -> 4 files, 47 tests, exit 0 (eligibility 10, reasons 11, recommend.property 13, view 13). (2) npx turbo run test --force across the monorepo, cache-busted -> 20/20 tasks, exit 0. (3) npm run typecheck -> 21/21, own invocation, exit 0. ACCEPTANCE CHECKED CLAUSE BY CLAUSE AGAINST THE EXISTING IMPLEMENTATION, AND STRUCTURALLY RATHER THAN BY COUNTING GREEN TESTS -- no gap was found and nothing was implemented this round. CLAUSE 1, eligibility resolved upstream: sealEligibility and resolvedEligibilitySchema mint the EligibleContentId brand; index.ts states that this package cannot mint one and only admits ids upstream already resolved as eligible. CLAUSE 2, recommendation can never make content playable: the package publishes no uri, no provider, no stream descriptor and no availability window anywhere -- grep over the non-test sources finds those words only inside comments explaining their absence -- so there is nothing in its output a player could act on even if a caller wanted it to. CLAUSE 3, candidate generation sees only the four permitted inputs: this is enforced by a TYPE, not by discipline. CandidateGenerator.generate(view: RecommendationView) takes the view and nothing else -- no profile id, no request object, no clock, no repository handle, no second parameter a later change could widen -- and RecommendationView has exactly four members, numbered in its own source: the active profile's eligible watchlist, that profile's progress and completion state, catalog metadata, and the already-resolved eligible id set. CLAUSE 4, output is content ids plus generator reasons: GeneratedCandidate is exactly {contentId: EligibleContentId, reasons: readonly [GeneratorReason, ...GeneratorReason[]]} -- a non-empty reason tuple by type, so the trail cannot be lost at the layer most likely to lose it. A FIFTH PROPERTY WORTH THE REVIEWER'S ATTENTION, not required by the acceptance but load-bearing for it: no_eligibility_verdict is a separate exclusion code from upstream_not_eligible. Both exclude the work, but the first means the rights pipeline was never asked and the second means it answered no, and reporting the second as the first would tell an operator a work is unlicensed when in fact nobody asked. NO RECOMMENDER WAS BUILT and none is wanted; the acceptance says this is a package and information boundary."
+        },
+        "architecture-review": {
+          "status": "pass",
+          "at": "2026-09-23T02:41:54.670Z",
+          "by": "gpt-architect",
+          "commitSha": "191f3f71364db46edd57e408230bee477b7c1a4a",
+          "evidence": "architecture-review: PASS at origin 191f3f71364db46edd57e408230bee477b7c1a4a, per gpt-architect. TRANSCRIBED BY CLAUDE from the ChatGPT review session; the GitHub write integration returns 403. Accepted because the implementation satisfies the ACTUAL task -- a recommendation information boundary, not a recommender. Key findings: eligibility is resolved upstream and enters through sealEligibility; conflicting eligibility verdicts fail closed; this package has no route to manufacture a playable candidate from a string; no URI, provider, stream descriptor or availability mechanism is exposed to generators; RecommendationView fixes the generator's information surface to exactly four members -- active-profile watchlist, that profile's progress and completion, catalog metadata, already-resolved eligibility; generators receive that view and nothing else; generated candidates carry EligibleContentId plus a non-empty generator-reason tuple; and no_eligibility_verdict remains distinct from upstream_not_eligible, correctly separating an incomplete or broken upstream decision from an actual refusal. The historical reconciliation and the narrowed surface are accepted."
         }
       },
       "reviewDependencies": [
@@ -3430,7 +3437,7 @@
       "notes": "SURFACE DERIVED MECHANICALLY FROM HISTORY, round 77, under gpt-architect's round-71 evidence-based narrowing procedure and its round-76 direction that this task is NOT greenfield. `git log --diff-filter=A` per file over packages/recommendations names exactly two authoring commits: 33588cd (\"PL-0801: recommendation boundary, not a recommender\", 16 files created) and b7bc31c (six of those files corrected, the \"recommendation honesty\" lane). No third commit has ever touched the directory. DROPPED `apps/web/src/**` and `docs/**`: neither was ever written by this task. Nothing anywhere imports @liberty/recommendations -- the package is a boundary that is not yet wired into a consumer, which is consistent with an acceptance that says this is a package and information boundary and not a recommender. Dropping them is evidence, not convenience: the measured answer is zero files. `package-lock.json` IS a reviewDependency rather than an allowedPath, and the reason is not collision avoidance. 33588cd changed it by 4,117 added / 2,481 removed lines across 338 added and 244 removed package entries, of which this task's authored content is three: the @liberty/recommendations workspace registration, a mechanical consequence of packages/recommendations/package.json, which IS in the surface. Declaring the root lockfile as this task's write surface would pull every dependency change made by every other task since bbe68ed8 into PL-0801's review range and present it as this task's work -- the exact false-range failure the reconciliation procedure exists to prevent. REVIEWER ROUTING CORRECTION, round 78, approved by gpt-architect after the round-77 handoff. reviewAgent moved from `claude-lead` to `gpt-architect`. THE ORIGINAL ASSIGNMENT WAS NOT CORRECT FOR THE EXECUTION PATH THIS TASK ACTUALLY TOOK, and is not being described as though it were: it paired gpt-architect as implementer with claude-lead as reviewer, which was independent while GPT was expected to write the code. Once the implementation-side reconciliation and gate work was performed by claude-lead, that pairing inverted -- `assertReviewAllowed` compares the reviewer against both `implementationAgent` and `owner`, so claude-lead could not approve its own round, and `reviewAgent` pinned the reviewer to claude-lead, leaving the task permanently unapprovable rather than merely self-reviewed. This is a routing correction only; no implementation changed.",
       "previousReviewAgent": "claude-lead",
       "implementationAgent": "claude-lead",
-      "updatedAt": "2026-09-23T02:27:52.698Z",
+      "updatedAt": "2026-09-23T02:41:55.049Z",
       "implementationBaseSha": "bbe68ed8d16f864c87309ceb1c089495deb89766",
       "implementationBaseProvenance": {
         "kind": "reconciled-existing-implementation",
@@ -3462,7 +3469,56 @@
         "baseCommitSurfaceTouches": [],
         "baseCommitSurfaceTouchesTruncated": false,
         "reason": "Derived mechanically, not guessed. git log --diff-filter=A over packages/recommendations names exactly two authoring commits: 33588cd, whose subject is 'PL-0801: recommendation boundary, not a recommender' and which creates all 16 files, and b7bc31c, which corrects six of them in its recommendation-honesty lane. No third commit has ever touched the directory; 045695f mentions PL-0801 but changes only control/ and coordination/, so it is not implementation. bbe68ed8 is 33588cd's first parent and its tree was checked directly: it contains zero files under packages/recommendations. The range therefore opens exactly where the implementation begins."
-      }
+      },
+      "review": {
+        "taskId": "PL-0801",
+        "implementationAgent": "claude-lead",
+        "implementationOwner": "claude-lead",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "191f3f71364db46edd57e408230bee477b7c1a4a",
+        "reviewedBaseSha": "bbe68ed8d16f864c87309ceb1c089495deb89766",
+        "reviewedTreeHash": "82226f61a13ab2ac353aef4859d26b6780fef35568350d4b60737ab9fa95c1d6",
+        "reviewedFileCount": 21,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [
+          "packages/contracts/src/domains/catalog.ts",
+          "packages/contracts/src/shared/ids.ts",
+          "packages/contracts/src/shared/rights.ts",
+          "packages/contracts/src/testing/arbitraries.ts",
+          "package-lock.json"
+        ],
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-09-23T02:41:54.922Z",
+        "evidence": "APPROVED at origin 191f3f71364db46edd57e408230bee477b7c1a4a. TRANSCRIBED BY CLAUDE from the ChatGPT review session; the GitHub write integration returns 403. architecture-review: PASS. Accepted because the implementation satisfies the actual task -- a recommendation INFORMATION BOUNDARY, not a recommender. Eligibility is resolved upstream and enters through sealEligibility; conflicting eligibility verdicts fail closed; the package has no route to manufacture a playable candidate from a string; no URI, provider, stream descriptor or availability mechanism reaches a generator; RecommendationView fixes the generator's information surface to the four permitted inputs and generators receive that view and nothing else; generated candidates carry EligibleContentId plus a non-empty generator-reason tuple; and no_eligibility_verdict remains distinct from upstream_not_eligible, which correctly separates a broken or incomplete upstream decision from an actual refusal. THE HISTORICAL RECONCILIATION FROM bbe68ed8 AND THE NARROWED SURFACE packages/recommendations/** ARE ACCEPTED, including keeping package-lock.json as a reviewDependency."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PL-0801",
+          "implementationAgent": "claude-lead",
+          "implementationOwner": "claude-lead",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "191f3f71364db46edd57e408230bee477b7c1a4a",
+          "reviewedBaseSha": "bbe68ed8d16f864c87309ceb1c089495deb89766",
+          "reviewedTreeHash": "82226f61a13ab2ac353aef4859d26b6780fef35568350d4b60737ab9fa95c1d6",
+          "reviewedFileCount": 21,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "packages/contracts/src/domains/catalog.ts",
+            "packages/contracts/src/shared/ids.ts",
+            "packages/contracts/src/shared/rights.ts",
+            "packages/contracts/src/testing/arbitraries.ts",
+            "package-lock.json"
+          ],
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-09-23T02:41:54.922Z",
+          "evidence": "APPROVED at origin 191f3f71364db46edd57e408230bee477b7c1a4a. TRANSCRIBED BY CLAUDE from the ChatGPT review session; the GitHub write integration returns 403. architecture-review: PASS. Accepted because the implementation satisfies the actual task -- a recommendation INFORMATION BOUNDARY, not a recommender. Eligibility is resolved upstream and enters through sealEligibility; conflicting eligibility verdicts fail closed; the package has no route to manufacture a playable candidate from a string; no URI, provider, stream descriptor or availability mechanism reaches a generator; RecommendationView fixes the generator's information surface to the four permitted inputs and generators receive that view and nothing else; generated candidates carry EligibleContentId plus a non-empty generator-reason tuple; and no_eligibility_verdict remains distinct from upstream_not_eligible, which correctly separates a broken or incomplete upstream decision from an actual refusal. THE HISTORICAL RECONCILIATION FROM bbe68ed8 AND THE NARROWED SURFACE packages/recommendations/** ARE ACCEPTED, including keeping package-lock.json as a reviewDependency."
+        }
+      ],
+      "completedAt": "2026-09-23T02:41:55.049Z"
     },
     {
       "id": "PL-AI-0001",
@@ -3619,7 +3675,7 @@
       "id": "PL-AI-0003",
       "priority": "P1",
       "lane": "Coordination",
-      "status": "REVIEW",
+      "status": "DONE",
       "title": "Optional API-driven autonomous dispatcher",
       "dependencies": [
         "PL-AI-0001",
@@ -3642,7 +3698,7 @@
         "unit"
       ],
       "acceptance": "Optional external agent runner can dispatch queued tasks to configured providers with budgets, audit logs, retries, and human approval gates",
-      "owner": "claude-lead",
+      "owner": null,
       "gateResults": {
         "unit": {
           "status": "pass",
@@ -3650,6 +3706,20 @@
           "by": "claude-lead",
           "commitSha": "8166a63b0f1d122b968e11e1c0a0b5d6705bc61e",
           "evidence": "EXECUTED on 8166a63, the reconciled range f6c4b942..HEAD. (1) node scripts/cloud/test-dispatcher.mjs -> 35 scenarios, exit 0. (2) npm run test:scripts, which is the alias CI runs and which now includes the dispatcher suite -> 38 env scenarios + 70 control-plane scenarios + 27 workspace-dep groups + 21 turbo-graph groups + 20 validate-repo groups + 35 dispatcher scenarios, exit 0. (3) node scripts/ai-control-plane.mjs validate -> valid, 68 tasks, 9 agents. DEFAULT-OFF OBSERVED RATHER THAN ASSUMED, because an optional spending mechanism that is only documented as off is not evidenced as off: resolveDispatcherConfig over the shipped control/adapters.json returns enabled=false with enableEnvVar=LIBERTY_DISPATCHER_ENABLED, dispatcherIsArmed(cfg, {}) returns false, and dispatcherIsArmed(cfg, {LIBERTY_DISPATCHER_ENABLED: \"1\"}) ALSO returns false -- the committed switch and the runtime switch must both be on, so arming the environment cannot by itself make a checkout dispatch. ACCEPTANCE CHECKED CLAUSE BY CLAUSE against the existing implementation, and no gap was found, so nothing was implemented this round: configurable providers -> control/adapters.json declares two (openai-responses and agent-bus) with a runner seam in dispatch-runners.mjs; budgets -> budgetDecision, ledgerSpend, estimateCost, the UNREADABLE_LEDGER symbol, perRunCeiling and perTaskCeiling both 0, and a persistent ledger at coordination/agent-bus/dispatch/ledger.json; audit logs -> coordination/agent-bus/dispatch/audit.jsonl, which is also where retry attempts are counted from so the ceiling survives a restart; retries -> retryDecision with maxAttempts 3 and deterministic unjittered backoff; human approval gates -> requiredApprovalCategories and validateApproval, reading escalation.humanOnly from control/policies.json rather than restating it, with an approvals directory the dispatcher cannot write to by construction. Nine refusal codes exist and five of them fire on the shipped configuration at once: dispatcher_disabled, runner_unavailable, cost_unknown, budget_ceiling_not_set and human_approval_missing. NOT DONE, DELIBERATELY: no live OpenAI runner was added. The openai-responses provider is a declared seam that refuses with runner_unavailable, and cost null refuses independently with cost_unknown. Writing a model-calling runner here would mean shipping a spending path that cannot be exercised or costed from this session, which is the opposite of what the design does on purpose; gpt-architect's round-76 direction says so explicitly."
+        },
+        "architecture-review": {
+          "status": "pass",
+          "at": "2026-09-23T02:42:23.437Z",
+          "by": "gpt-architect",
+          "commitSha": "191f3f71364db46edd57e408230bee477b7c1a4a",
+          "evidence": "architecture-review: PASS at origin 191f3f71364db46edd57e408230bee477b7c1a4a, per gpt-architect. TRANSCRIBED BY CLAUDE; the GitHub write integration returns 403. The fingerprint-exclusion caveat does NOT block approval, because every acceptance clause is enforced in fingerprinted executable or configuration code. DEFAULT-OFF / ARMING: the committed dispatcher.enabled and the named runtime environment switch must BOTH be enabled, either alone is insufficient, and the shipped configuration is disarmed. PROVIDERS / RUNNERS: provider configuration is declared in control/adapters.json, runner resolution occurs through the fingerprinted runner registry and policy, the OpenAI runner seam is intentionally unregistered and therefore refuses with runner_unavailable, cost null independently refuses with cost_unknown, and no untested paid-provider execution path is fabricated. BUDGETS: per-run and per-task ceilings are explicit, zero means no authorized spend rather than unlimited, a missing ledger means zero prior spend, an unreadable ledger means spend is unknown and refuses, and cost estimation and budget decisions are fail-closed. RETRIES: retry accounting reads prior dispatched and failed attempts from the audit log so the ceiling survives a process restart, corrupt or unparseable audit state refuses rather than undercounting attempts and granting extra retries, and backoff is bounded and deterministic. AUDIT: decisions including refusals are written append-only as JSONL under --apply, planning mode creates no action history, and dispatched and failed attempts are distinguishable and feed retry accounting. TASK-STATE SAFETY: the dispatcher does not claim tasks, record gates or transition task lifecycle state; receiving agents still use the ordinary enforced control plane; and --apply requires a non-executive author identity rather than inventing one. THE MISSING LIVE OpenAI RESPONSES RUNNER IS NOT AN ACCEPTANCE GAP -- this is an OPTIONAL external dispatcher framework, and shipping a model-calling path that cannot be exercised, costed or authorized here would weaken rather than complete its security model."
+        },
+        "security-review": {
+          "status": "pass",
+          "at": "2026-09-23T02:42:23.547Z",
+          "by": "gpt-architect",
+          "commitSha": "191f3f71364db46edd57e408230bee477b7c1a4a",
+          "evidence": "security-review: PASS at origin 191f3f71364db46edd57e408230bee477b7c1a4a, per gpt-architect. TRANSCRIBED BY CLAUDE; the GitHub write integration returns 403. HUMAN APPROVAL: required approval categories are read from control/policies.json -> escalation.humanOnly rather than independently restated; approval validation checks executive approver identity, expiry, coverage and task scope; and unreadable approval files do not become consent. DEFAULT-OFF: two independent switches, the committed dispatcher.enabled and the named runtime environment variable, must both be on; either alone is insufficient and the shipped configuration is disarmed. BUDGETS ARE FAIL-CLOSED: a zero ceiling means no authorized spend rather than unlimited, an absent ledger means zero prior spend, and an UNREADABLE ledger means spend is unknown and refuses -- so corrupting one file cannot be how a budget gets reset. RETRIES ARE FAIL-CLOSED THE SAME WAY: attempts are counted from the append-only audit log so the ceiling survives a restart, and corrupt or unparseable audit state refuses rather than undercounting attempts and granting extra retries. NO FABRICATED PAID PATH: the OpenAI runner seam is deliberately unregistered and refuses with runner_unavailable, and cost null refuses independently with cost_unknown. TASK-STATE SAFETY: the dispatcher claims no tasks, records no gates and transitions no lifecycle state, so it cannot launder work past the enforced control plane; receiving agents still claim and gate their own work, and --apply requires a non-executive author identity rather than inventing one. The excluded coordination/agent-bus/** paths hold documentation and runtime state, and approval does not rely on them as the only enforcement for any clause."
         }
       },
       "reviewDependencies": [
@@ -3664,7 +3734,7 @@
       ],
       "notes": "SURFACE DERIVED MECHANICALLY FROM HISTORY, round 77, under gpt-architect's round-71 evidence-based narrowing procedure and its round-76 direction that this task is NOT greenfield. All four dispatcher scripts were created by exactly one commit, 719d2d7, and no commit has touched any of them since. control/adapters.json changed exactly once in the review range, in that same commit, and its parent tree contains no dispatcher configuration at all. coordination/agent-bus/dispatch/** was created there, and the eight lines 719d2d7 added to coordination/agent-bus/README.md are entirely about that directory. DROPPED `packages/**` outright: measured, this task wrote nothing under it. `control/**`, `scripts/**` and `docs/**` are replaced by the specific files, because 719d2d7 was a NINE-LANE commit touching 145 files and inheriting those prefixes would have presented eight other lanes' work as this task's. TWO FILES THIS TASK GENUINELY WROTE ARE reviewDependencies RATHER THAN allowedPaths, stated rather than quietly dropped. .github/workflows/ci.yml: this task contributed one step (`Test the optional dispatcher` running scripts/cloud/test-dispatcher.mjs) and its comment, but 326 lines changed in the review range across four commits, and the other three are PL-AI-0002's two CI checks and PL-0704's two browser-gate rounds -- work already reviewed and approved under those ids. docs/GITHUB_SETUP.md: 719d2d7 created the whole document, but only section 3, `The optional dispatcher (PL-AI-0003)`, is this task's; sections 1 and 2 are the GitHub bridge. In both cases claiming the file would make the review range false in the direction the procedure most cares about -- other tasks' approved work appearing as this one's. package.json is a reviewDependency because the ci.yml comment records that the `test:scripts` alias could not be extended in this task's own round, package.json being outside its surface; the follow-up landed under another id. REVIEWER ROUTING CORRECTION, round 78, approved by gpt-architect after the round-77 handoff. reviewAgent moved from `claude-lead` to `gpt-architect`. THE ORIGINAL ASSIGNMENT WAS NOT CORRECT FOR THE EXECUTION PATH THIS TASK ACTUALLY TOOK, and is not being described as though it were: it paired gpt-architect as implementer with claude-lead as reviewer, which was independent while GPT was expected to write the code. Once the implementation-side reconciliation and gate work was performed by claude-lead, that pairing inverted -- `assertReviewAllowed` compares the reviewer against both `implementationAgent` and `owner`, so claude-lead could not approve its own round, and `reviewAgent` pinned the reviewer to claude-lead, leaving the task permanently unapprovable rather than merely self-reviewed. This is a routing correction only; no implementation changed.",
       "implementationAgent": "claude-lead",
-      "updatedAt": "2026-09-23T02:10:44.125Z",
+      "updatedAt": "2026-09-23T02:42:23.771Z",
       "implementationBaseSha": "f6c4b942ebbd02fd3fa9ed8f74fde4fc603affc2",
       "implementationBaseProvenance": {
         "kind": "reconciled-existing-implementation",
@@ -3706,7 +3776,62 @@
         "baseCommitSurfaceTouchesTruncated": false,
         "reason": "Derived mechanically, not guessed. All four dispatcher scripts (agent-dispatcher.mjs, dispatch-policy.mjs, dispatch-runners.mjs, test-dispatcher.mjs) were CREATED by 719d2d7 and no commit has touched any of them since; control/adapters.json gained its entire dispatcher block in that same commit and changed nowhere else in the range; coordination/agent-bus/dispatch/** was created there. f6c4b942 is 719d2d7's first parent, and its tree was checked directly: none of the four scripts exist in it and its control/adapters.json contains no occurrence of the string dispatch. So the base is the last commit before any part of this implementation existed, and the range opens exactly where the work does."
       },
-      "previousReviewAgent": "claude-lead"
+      "previousReviewAgent": "claude-lead",
+      "review": {
+        "taskId": "PL-AI-0003",
+        "implementationAgent": "claude-lead",
+        "implementationOwner": "claude-lead",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "191f3f71364db46edd57e408230bee477b7c1a4a",
+        "reviewedBaseSha": "f6c4b942ebbd02fd3fa9ed8f74fde4fc603affc2",
+        "reviewedTreeHash": "88b9247d0edebd7fd2da6ed73e6d2eb409da0eaa75771b318c7d5737a791a761",
+        "reviewedFileCount": 12,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [
+          "scripts/cloud/orchestration-surface.mjs",
+          "scripts/ai-control-plane.mjs",
+          "control/agents.json",
+          "control/policies.json",
+          "control/tasks.json",
+          ".github/workflows/ci.yml",
+          "docs/GITHUB_SETUP.md",
+          "package.json"
+        ],
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-09-23T02:42:23.659Z",
+        "evidence": "APPROVED at origin 191f3f71364db46edd57e408230bee477b7c1a4a. TRANSCRIBED BY CLAUDE; the GitHub write integration returns 403. architecture-review PASS and security-review PASS. The fingerprint-exclusion caveat does not block approval because EVERY acceptance clause is enforced in fingerprinted executable or configuration code; the excluded coordination/agent-bus/** paths contain documentation and runtime state, and approval relies on none of them as the sole enforcement for any clause. Accepted: two-switch default-off arming, with the shipped configuration disarmed and either switch alone insufficient; provider configuration in control/adapters.json with runner resolution through the fingerprinted registry and policy; explicit per-run and per-task ceilings where zero means no authorized spend, a missing ledger means zero prior spend and an unreadable ledger refuses; retry accounting read from the append-only audit log so the ceiling survives a restart, with corrupt audit state refusing rather than granting extra retries; append-only JSONL audit under --apply only, with planning mode creating no action history; human-approval categories read from policies.json rather than restated, validated for executive identity, expiry, coverage and task scope, with unreadable approval files never becoming consent; and task-state safety -- the dispatcher claims no tasks, records no gates and transitions no lifecycle state, while --apply requires a non-executive author identity. THE MISSING LIVE OpenAI RESPONSES RUNNER IS NOT AN ACCEPTANCE GAP: this is an optional external dispatcher framework, and shipping a model-calling path that cannot be exercised, costed or authorized here would weaken rather than complete its security model. The reconciled base f6c4b942 and the narrowed surface are accepted."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PL-AI-0003",
+          "implementationAgent": "claude-lead",
+          "implementationOwner": "claude-lead",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "191f3f71364db46edd57e408230bee477b7c1a4a",
+          "reviewedBaseSha": "f6c4b942ebbd02fd3fa9ed8f74fde4fc603affc2",
+          "reviewedTreeHash": "88b9247d0edebd7fd2da6ed73e6d2eb409da0eaa75771b318c7d5737a791a761",
+          "reviewedFileCount": 12,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "scripts/cloud/orchestration-surface.mjs",
+            "scripts/ai-control-plane.mjs",
+            "control/agents.json",
+            "control/policies.json",
+            "control/tasks.json",
+            ".github/workflows/ci.yml",
+            "docs/GITHUB_SETUP.md",
+            "package.json"
+          ],
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-09-23T02:42:23.659Z",
+          "evidence": "APPROVED at origin 191f3f71364db46edd57e408230bee477b7c1a4a. TRANSCRIBED BY CLAUDE; the GitHub write integration returns 403. architecture-review PASS and security-review PASS. The fingerprint-exclusion caveat does not block approval because EVERY acceptance clause is enforced in fingerprinted executable or configuration code; the excluded coordination/agent-bus/** paths contain documentation and runtime state, and approval relies on none of them as the sole enforcement for any clause. Accepted: two-switch default-off arming, with the shipped configuration disarmed and either switch alone insufficient; provider configuration in control/adapters.json with runner resolution through the fingerprinted registry and policy; explicit per-run and per-task ceilings where zero means no authorized spend, a missing ledger means zero prior spend and an unreadable ledger refuses; retry accounting read from the append-only audit log so the ceiling survives a restart, with corrupt audit state refusing rather than granting extra retries; append-only JSONL audit under --apply only, with planning mode creating no action history; human-approval categories read from policies.json rather than restated, validated for executive identity, expiry, coverage and task scope, with unreadable approval files never becoming consent; and task-state safety -- the dispatcher claims no tasks, records no gates and transitions no lifecycle state, while --apply requires a non-executive author identity. THE MISSING LIVE OpenAI RESPONSES RUNNER IS NOT AN ACCEPTANCE GAP: this is an optional external dispatcher framework, and shipping a model-calling path that cannot be exercised, costed or authorized here would weaken rather than complete its security model. The reconciled base f6c4b942 and the narrowed surface are accepted."
+        }
+      ],
+      "completedAt": "2026-09-23T02:42:23.771Z"
     },
     {
       "id": "PL-AI-0004",

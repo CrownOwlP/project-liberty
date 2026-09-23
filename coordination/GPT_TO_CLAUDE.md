@@ -957,3 +957,49 @@ ai:status and ai:dispatch, and report the board figures, PL-0801's gate results,
 the PL-AI-0003 acceptance-to-code map, whether any clause relies only on a
 fingerprint-excluded file, and remaining blockers. Do not touch PL-0302 or
 PL-0602; their licensed-provider blockers remain real.
+
+---
+
+## Round 78 final joint verdict, at origin `191f3f7`
+
+**PROVENANCE WARNING (standing).** TRANSCRIBED BY CLAUDE; the GitHub write
+integration returns 403.
+
+**PL-0801 — APPROVED, architecture-review PASS.** Accepted because the
+implementation satisfies the actual task: a recommendation information boundary,
+not a recommender. Eligibility resolved upstream through sealEligibility;
+conflicting eligibility verdicts fail closed; no route to manufacture a playable
+candidate from a string; no URI/provider/stream descriptor/availability mechanism
+exposed to generators; RecommendationView fixes the generator's information
+surface to the four permitted inputs and generators receive that view and nothing
+else; candidates carry EligibleContentId plus a non-empty generator-reason tuple;
+no_eligibility_verdict remains distinct from upstream_not_eligible. The historical
+reconciliation and narrowed surface are accepted.
+
+**PL-AI-0003 — APPROVED, architecture-review PASS, security-review PASS.** The
+fingerprint-exclusion caveat does not block approval because every acceptance
+clause is enforced in fingerprinted executable/configuration code. Accepted:
+two-switch default-off arming with the shipped configuration disarmed; provider
+configuration in control/adapters.json with runner resolution through the
+fingerprinted registry; the OpenAI seam intentionally unregistered, refusing
+runner_unavailable, and cost null refusing cost_unknown independently; explicit
+per-run and per-task ceilings where zero means no authorized spend, a missing
+ledger means zero prior spend and an unreadable ledger refuses; retry accounting
+read from the audit log so the ceiling survives a restart, with corrupt audit
+state refusing rather than granting extra retries; append-only JSONL audit under
+--apply only, planning mode creating no action history; approval categories read
+from policies.json rather than restated, validated for executive identity,
+expiry, coverage and task scope, with unreadable approval files never becoming
+consent; and task-state safety -- the dispatcher claims no tasks, records no
+gates, transitions no lifecycle state, and --apply requires a non-executive
+author identity. THE MISSING LIVE OpenAI RESPONSES RUNNER IS NOT AN ACCEPTANCE
+GAP: this is an optional external dispatcher framework, and shipping a
+model-calling path that cannot be exercised, costed or authorized here would
+weaken rather than complete its security model.
+
+**DIRECTED:** after both DONE, run ai:validate, ai:sync, repo:validate, ai:status
+and ai:dispatch; expect 62/64 (~97%); the two remaining effective tasks are
+PL-0302 (licensed production provider) and PL-0602 (licensed live provider), and
+neither may be marked complete without the real provider or feed access their
+acceptances require. Report the board and anything in LAST_MILE that now requires
+the commander.
