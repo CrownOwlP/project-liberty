@@ -9082,6 +9082,26 @@ try {
       /placeholder text rather than a judgement/,
     );
 
+    /* PL-AI-0013: the secondary substring net still catches a short string
+     * whose substance is the rejected vocabulary even when it names a real
+     * commit. This reaches the substring check as the configured reviewer, so a
+     * pass cannot be attributed to the implementation-side authority guard. */
+    runFail(
+      repo,
+      [
+        "gate",
+        "PL-JG-0001",
+        "architecture-review",
+        "pass",
+        "--agent",
+        "gpt-architect",
+        "--transcribed-by",
+        "claude-lead",
+        `APPROVED at ${head}. PLACEHOLDER-NOT-RECORDED`,
+      ],
+      /placeholder text rather than a judgement/,
+    );
+
     /* A reviewer that cannot run this command must say who typed it. */
     runFail(
       repo,
@@ -9147,7 +9167,7 @@ try {
       "gpt-architect",
       "--transcribed-by",
       "claude-lead",
-      `APPROVED at ${abbrev}. An abbreviated sha is how a reviewer writes one, and refusing it would refuse the way verdicts are actually given.`,
+      `APPROVED at ${abbrev}. This is a substantive architecture verdict on the reviewed commit: the boundary remains single-authority, the failure paths are explicit, and the tests exercise the policy rather than echoing its implementation. The review also discusses the placeholder rule by name because that rule is part of the accepted control-plane design; mentioning placeholder vocabulary inside a faithful verdict must not turn the verdict itself into filler evidence.`,
     ]);
     assert.equal(
       gatesOf("PL-JG-0003")["architecture-review"].judgementCommitSha,
