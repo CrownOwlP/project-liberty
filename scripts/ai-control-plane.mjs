@@ -4187,15 +4187,43 @@ try {
         }
       }
 
-      const lowered = evidence.toLowerCase();
-      const offending = (evidencePolicy.rejectedSubstrings ?? []).find((needle) =>
-        lowered.includes(String(needle).toLowerCase()),
-      );
-      if (offending)
-        throw new Error(
-          `${gate} on ${taskId} has evidence containing ${JSON.stringify(offending)}, which is ` +
-            `placeholder text rather than a judgement. Record the verdict, or do not record the gate.`,
+      /*
+       * THE REJECTED-SUBSTRING LIST IS A NET FOR SHORT PLACEHOLDER EVIDENCE,
+       * NOT A PROSE CENSOR (PL-AI-0013).
+       *
+       * A real verdict can discuss this rule and therefore name words such as
+       * "placeholder", "TBD" or "pending review". Matching those words across
+       * arbitrarily long evidence made the guard reject the very round-84
+       * verdict that approved it. The commit-binding check above is the actual
+       * semantic rule; this list is only defence in depth for short strings that
+       * are themselves filler.
+       *
+       * The net is therefore scoped to evidence no longer than the configured
+       * maximum. The maximum is intentionally larger than the ordinary evidence
+       * floor: a real sha followed by "Full rationale TBD" and an explanation
+       * that the judgement has not been made yet is still short enough to be
+       * caught, while a substantive verdict that has room to discuss the rule is
+       * not rejected merely for vocabulary.
+       *
+       * QUOTED-SPAN EXEMPTIONS WERE REJECTED. They would require this control
+       * plane to parse every quoting/citation convention agents may use, and a
+       * placeholder could then be laundered simply by putting quotation marks
+       * around it. Length is format-agnostic and leaves the commit requirement
+       * untouched.
+       */
+      const rejectedSubstringMaximumEvidenceLength =
+        evidencePolicy.rejectedSubstringMaximumEvidenceLength ?? Infinity;
+      if (evidence.length <= rejectedSubstringMaximumEvidenceLength) {
+        const lowered = evidence.toLowerCase();
+        const offending = (evidencePolicy.rejectedSubstrings ?? []).find((needle) =>
+          lowered.includes(String(needle).toLowerCase()),
         );
+        if (offending)
+          throw new Error(
+            `${gate} on ${taskId} has short-form evidence containing ${JSON.stringify(offending)}, which is ` +
+              `placeholder text rather than a judgement. Record the verdict, or do not record the gate.`,
+          );
+      }
 
       const floor = evidencePolicy.minimumLength ?? 0;
       if (evidence.length < floor)
