@@ -87,7 +87,7 @@ anything**:
 | nobody on the implementation side may record it — neither `owner` nor `implementationAgent` | the same pair `assertReviewAllowed` compares, for the same reason: asserting a third-party implementer must only ever *add* an identity |
 | only `reviewAgent`, or an agent in `authorizedIndependentReviewers` | that list is empty, and `review.allowAutomaticReviewerSubstitution` is `false`, so substitution is a human decision |
 | the evidence must name the commit it judged | a verdict that cannot say what it looked at is not a verdict. Inside a git checkout the sha must **resolve** to a commit (`rev-parse --verify` also refuses an ambiguous prefix and a non-commit object); outside one the naming rule still applies and the result records `judgementCommitVerified: false` |
-| a rejected-substring list and a length floor | second and third nets only. A length floor alone is not a placeholder test, because a long placeholder passes one |
+| a rejected-substring list scoped to short evidence, plus a length floor | second and third nets only. The substring net applies only through `rejectedSubstringMaximumEvidenceLength`: short filler such as a real sha followed by `TBD` is still refused, while a substantive verdict may discuss words from the guard without becoming filler itself. The commit-naming rule above remains the actual rule. Quoted-span exemptions were rejected because quote syntax is format-dependent and would let filler be laundered with punctuation |
 | `--transcribed-by` when the reviewer cannot run the CLI | see below |
 
 A judgement gate is therefore reachable only in `REVIEW`. That is not a separate
