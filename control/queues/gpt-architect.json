@@ -1,9 +1,59 @@
 {
-  "generatedAt": "2026-09-26T22:33:31.037Z",
+  "generatedAt": "2026-09-26T23:06:37.143Z",
   "agent": "gpt-architect",
   "executionAvailable": false,
   "assigned": [],
   "review": [
+    {
+      "id": "PL-AI-0013",
+      "priority": "P2",
+      "lane": "Coordination",
+      "status": "REVIEW",
+      "title": "A verdict that discusses the placeholder rule is not a placeholder",
+      "dependencies": [
+        "PL-AI-0012"
+      ],
+      "allowedPaths": [
+        "control/policies.json",
+        "control/README.md",
+        "scripts/ai-control-plane.mjs",
+        "scripts/test-ai-control-plane.mjs"
+      ],
+      "reviewDependencies": [
+        "control/tasks.json",
+        "control/events.jsonl",
+        "CLAUDE.md"
+      ],
+      "preferredAgent": "claude-lead",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "architecture-review"
+      ],
+      "acceptance": "A judgement gate's evidence can DISCUSS the rule that guards it without being refused by it. THE DEFECT, OBSERVED ON THE FIRST REAL USE OF PL-AI-0012 AND NOT PREDICTED. gpt-architect's round-84 verdict approving PL-AI-0012 lists, among its accepted properties, that filler wording does not become a valid judgement merely because the evidence is long -- and it names that wording using the very token the rejected-substring net matches. Transcribing the verdict faithfully was therefore REFUSED by the rule the verdict was approving. The gate was recorded with that one token reworded and the refusal disclosed in the evidence, which is a workaround and not a fix. The reviewer ruled in round 85 that this stays a separate corrective, because its defect was discovered by OPERATING the newly approved mechanism after that reviewed surface was complete. ACCEPTANCE, AS THE REVIEWER SPECIFIED IT. (1) The original round-83 filler-only evidence remains REFUSED. (2) A real commit sha sitting beside an explicitly unmade judgement remains REFUSED. (3) Valid substantive review prose is NOT refused merely because it discusses words or classes the filler detector knows about. (4) Commit binding, reviewer authority and transcription provenance are UNCHANGED. This task touches the second net and nothing else; the commit-naming rule is the actual rule. (5) PREFER A STRUCTURAL OR CONTEXTUAL FILLER-ONLY DETERMINATION, or demote the substring mechanism so that it cannot VETO otherwise valid provenance-bound review prose on a lexical coincidence alone. EXPLICITLY REFUSED AS A REMEDY: shortening the rejected-word list. The reviewer said so and the reason is that the next verdict will discuss whichever words remain -- it converts a false positive into a latent one. THE HISTORY IS THE ARGUMENT FOR FIXING IT PROPERLY: this is the fifth time this repository has paid for a guard matching prose ABOUT the thing rather than the thing. PL-0701's import guard failed on its own header comment naming the symbol it forbade; PW-0101's no-runtime-switch test failed on its own comment naming the environment variable; PW-0402 failed twice, once on an identifier containing a forbidden word and once on a text window that reached into the code below it. Each was repaired locally. A fifth local repair is a sixth instance waiting. REQUIRED: a regression records THIS incident -- a long, faithful verdict that names the rejected vocabulary while approving a task, ACCEPTED; the short string that is nothing but that vocabulary, REFUSED. Scenario 10u's existing cases for (1) and (2) must stay green. NOT IN SCOPE: the judgementCommitVerified behaviour, which gpt-architect approved as implemented in round 84 with an explicit instruction that it must not become a blanket refusal outside git.",
+      "notes": "Filed in round 84 by claude-lead, immediately after PL-AI-0012 was approved and while recording that very approval. NOT one of the two defects gpt-architect ruled must stay inside PL-AI-0012 -- those are advance-completable self-attribution and the harness helper, both manifestations of the authority defect and both repaired there. This is a separate, newly observed defect in the second-net heuristic, found after the reviewed sha. It is filed rather than patched into PL-AI-0012 because that task is approved at 94dd10e and reopening an approved surface to refine a heuristic would invalidate a verdict for no safety gain. P2 because the workaround is a reworded token and the actual rule -- naming the commit judged -- is unaffected.",
+      "updatedAt": "2026-09-26T23:06:31.278Z",
+      "owner": "claude-lead",
+      "implementationAgent": "claude-lead",
+      "implementationBaseSha": "984be77194f4a94e2d31b2364be2d5293d022a93",
+      "gateResults": {
+        "typecheck": {
+          "status": "pass",
+          "at": "2026-09-26T23:06:31.052Z",
+          "by": "claude-lead",
+          "commitSha": "2a4c2b6f2206f55232cb93a07278fea818c77a68",
+          "evidence": "EXECUTED on 2a4c2b6. npm run typecheck 21/21 exit 0; npm run lint 11/11 zero problems; node -c on both changed scripts; npm run ai:validate 103 tasks 9 agents valid; npm run repo:validate passed. As with PL-AI-0012, the control plane is plain ESM JavaScript and is not in any tsconfig project, so the 21/21 is the workspaces' unchanged baseline rather than a check of this task's code -- reported as what it is. What exercises this task's code is the unit gate."
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-09-26T23:06:31.163Z",
+          "by": "claude-lead",
+          "commitSha": "2a4c2b6f2206f55232cb93a07278fea818c77a68",
+          "evidence": "EXECUTED on 2a4c2b6. node scripts/test-ai-control-plane.mjs -> 'AI control plane tests passed (71 scenarios).', exit 0. THE THREE REQUIREMENTS THE REVIEWER SET, each isolated so that it is this rule catching them rather than an earlier check. ONE, the round-83 string stays refused: recorded on a task where the authority rule is SATISFIED -- as gpt-architect, transcribed -- and with a real resolvable commit in the evidence, so neither the ownership rule nor the commit-naming rule can be what refuses it. 'APPROVED at <sha>. PLACEHOLDER-NOT-RECORDED.' is refused by the STRUCTURAL test: with the named commit and the matched tokens removed, almost no content remains, which is what filler-only means and is not a statement about length. TWO, a real sha beside an unmade judgement stays refused: 'APPROVED at <sha>. Full rationale TBD, ...' is caught by the CONTEXTUAL test, because TBD immediately follows a word naming the judgement. The adjacency admits only a copula or punctuation, so 'the rationale for the placeholder rule' does not match -- prose discussing the vocabulary reads that way and a withheld verdict does not. THREE, AND IT IS THE CASE THE OLD RULE GOT WRONG: gpt-architect's actual round-84 verdict, close to verbatim including the clause naming placeholder language and filler wording, is ACCEPTED. That verdict was refused on the first real use of PL-AI-0012's enforcement, which is the defect this task exists for, and it is now a test rather than an anecdote. FOUR STRONG CONTROLS ARE UNCHANGED and their existing scenario-10u cases stay green: independent reviewer authority, the refusal-before-write property, judgement commit binding with resolution where git is available, and transcription provenance. This task touched the second net only. SHORTENING THE WORD LIST WAS NOT THE REMEDY and the reviewer ruled it out; the list is unchanged and has stopped being a veto. ONE UNRELATED FIX WAS REQUIRED TO RUN THE SUITE AT ALL, and it is a consequence of PW-0102 rather than of this task: the fixture harness now excludes target/. A debug build of the Tauri dependency graph is 4.4GB and freshRepo() copies the tree once per scenario, so the run filled the disk and died mid-copy. Recorded here rather than hidden because it changes what the harness copies."
+        }
+      }
+    },
     {
       "id": "PW-0102",
       "priority": "P0",

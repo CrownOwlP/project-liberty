@@ -1,6 +1,6 @@
 # Project Liberty - Project Status
 
-> Generated 2026-09-26T22:33:31.035Z from the AI control plane.
+> Generated 2026-09-26T23:06:37.141Z from the AI control plane.
 
 **Overall completion:** 72/99 executable tasks (73%)
 
@@ -9,8 +9,8 @@
 - **BACKLOG:** 16
 - **READY:** 7
 - **CLAIMED:** 0
-- **IN_PROGRESS:** 1
-- **REVIEW:** 1
+- **IN_PROGRESS:** 0
+- **REVIEW:** 2
 - **BLOCKED:** 2
 - **DONE:** 72
 - **CANCELED:** 0
@@ -31,7 +31,7 @@
 
 ## Active work
 
-- **PL-AI-0013** [IN_PROGRESS] A verdict that discusses the placeholder rule is not a placeholder — owner: claude-lead
+- **PL-AI-0013** [REVIEW] A verdict that discusses the placeholder rule is not a placeholder — owner: claude-lead
 - **PW-0102** [REVIEW] A Tauri v2 shell that owns the sidecar's lifetime — owner: claude-infra
 
 ## Dispatch classification
