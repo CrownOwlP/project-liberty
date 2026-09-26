@@ -1,18 +1,18 @@
 # Project Liberty - Project Status
 
-> Generated 2026-09-23T21:01:58.749Z from the AI control plane.
+> Generated 2026-09-26T21:30:36.138Z from the AI control plane.
 
-**Overall completion:** 71/98 executable tasks (72%)
+**Overall completion:** 72/99 executable tasks (73%)
 
 ## Status summary
 
 - **BACKLOG:** 16
 - **READY:** 8
 - **CLAIMED:** 0
-- **IN_PROGRESS:** 0
-- **REVIEW:** 1
+- **IN_PROGRESS:** 1
+- **REVIEW:** 0
 - **BLOCKED:** 2
-- **DONE:** 71
+- **DONE:** 72
 - **CANCELED:** 0
 - **SUPERSEDED:** 4
 
@@ -27,11 +27,11 @@
 - **M6 — Shared-Agent Automation Bridge:** COMPLETE, 3/3 (100%)
 - **EXT — External Licensed Integrations:** BLOCKED, 0/2 (0%), 2 blocked
 - **M7 — Windows Desktop Shell + Native Playback:** COMPLETE, 4/4 (100%)
-- **PW — undefined:** IN_PROGRESS, 8/32 (25%)
+- **PW — undefined:** IN_PROGRESS, 9/32 (28%)
 
 ## Active work
 
-- **PW-0403** [REVIEW] Production authentication and session resolution — owner: claude-backend
+- **PW-0102** [IN_PROGRESS] A Tauri v2 shell that owns the sidecar's lifetime — owner: claude-infra
 
 ## Dispatch classification
 
@@ -42,7 +42,6 @@
 
 ## Recommended executable wave
 
-- **PW-0102** -> claude-infra (P0/Infra) A Tauri v2 shell that owns the sidecar's lifetime
 - **PW-0302** -> claude-frontend (P0/Frontend) Artwork, end to end, because a media application without images is a list
 - **PW-0305** -> claude-frontend (P0/Frontend) Continue watching: resume where the viewer left off
 - **PW-0401** -> claude-backend (P1/Backend) The authenticated backend the desktop build talks to
@@ -62,9 +61,9 @@ No READY work is waiting on an external agent lane.
 - **gpt-architect:** 0/6 active (external lane; not locally executable)
 - **claude-lead:** 0/2 active
 - **claude-frontend:** 0/2 active
-- **claude-backend:** 1/2 active
+- **claude-backend:** 0/2 active
 - **claude-media:** 0/2 active
 - **claude-test:** 0/1 active
 - **claude-security:** 0/1 active
-- **claude-infra:** 0/1 active
+- **claude-infra:** 1/1 active
 - **human-commander:** 0/99 active (external lane; not locally executable)

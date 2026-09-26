@@ -1,16 +1,13 @@
 {
-  "generatedAt": "2026-09-23T21:01:58.754Z",
+  "generatedAt": "2026-09-26T21:30:36.141Z",
   "agent": "claude-infra",
   "executionAvailable": true,
-  "assigned": [],
-  "review": [],
-  "reservedExternal": [],
-  "recommended": [
+  "assigned": [
     {
       "id": "PW-0102",
       "priority": "P0",
       "lane": "Infra",
-      "status": "READY",
+      "status": "IN_PROGRESS",
       "title": "A Tauri v2 shell that owns the sidecar's lifetime",
       "dependencies": [
         "PW-0101"
@@ -37,9 +34,16 @@
       ],
       "acceptance": "A Tauri v2 application starts, spawns the PW-0101 sidecar, reads its bound port from stdout, points the webview at it, and cannot leave the sidecar running. REQUIRED: the Tauri version is pinned exactly, on the rule this repository already applies to Shaka and Playwright -- a caret range means the shell a gate was recorded against can change under a lockfile refresh. REQUIRED: the sidecar is packaged as node.exe plus the standalone tree under bundle.resources and spawned as a child process; pkg, Node SEA and Bun --compile are documented as unable to swallow a Next standalone server and must not be attempted as a shortcut. REQUIRED: a Win32 Job Object with JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, because Tauri provides no supervision and an orphaned node.exe holding a loopback port is the failure a user sees as 'it will not start the second time'. REQUIRED: supervision -- health check, restart with a bounded attempt budget, and an honest surfaced failure when the budget is spent, never a blank window. REQUIRED: the shell passes the bearer token to the sidecar through the environment and never on a command line, where it would be readable from the process list. STATED LIMITATION TO CARRY IN THE GATE EVIDENCE: no Windows binary can be produced or run from the cloud session, so this task's build gate is cargo check plus a windows-latest CI job, and 'it launches' is real-device evidence owed to PW-0601.",
       "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. SURFACE NOTE: this task's allowedPaths name directories that do not exist yet. The evidence-based narrowing procedure applies to reconciling work already in history; for genuinely new work the surface is the smallest set of paths the acceptance can be satisfied within, and it is narrowed again from the diff before review if it turns out to be wider than what was written. ",
-      "owner": null,
-      "gateResults": {}
-    },
+      "owner": "claude-infra",
+      "gateResults": {},
+      "implementationAgent": "claude-infra",
+      "updatedAt": "2026-09-26T21:30:36.114Z",
+      "implementationBaseSha": "ead46a5f20a5f784398a0380ccdf02dfe9e5e77a"
+    }
+  ],
+  "review": [],
+  "reservedExternal": [],
+  "recommended": [
     {
       "id": "PW-0104",
       "priority": "P1",

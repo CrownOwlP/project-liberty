@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-23T21:01:58.752Z",
+  "generatedAt": "2026-09-26T21:30:36.140Z",
   "agent": "claude-frontend",
   "executionAvailable": true,
   "assigned": [],
@@ -76,6 +76,40 @@
       "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. ",
       "owner": null,
       "gateResults": {}
+    },
+    {
+      "id": "PW-0312",
+      "priority": "P0",
+      "lane": "Frontend",
+      "status": "READY",
+      "title": "Authentication entry and session UX",
+      "dependencies": [
+        "PW-0403"
+      ],
+      "allowedPaths": [
+        "apps/web/src/app/signin/**",
+        "apps/web/src/app/signup/**",
+        "apps/web/src/components/auth/**"
+      ],
+      "reviewDependencies": [
+        "apps/web/src/lib/session/account.ts",
+        "apps/web/src/lib/session/auth-instance.ts",
+        "apps/web/src/app/api/auth",
+        "apps/web/src/components/profiles",
+        "apps/web/src/components/shell",
+        "docs/SECURITY.md",
+        "docs/API_CONTRACTS.md"
+      ],
+      "preferredAgent": "claude-frontend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "e2e",
+        "security-review"
+      ],
+      "acceptance": "A viewer who is signed out can do something about it. PW-0403 made a deployment answer 401 not_authenticated, and there is no screen anywhere in this application that consumes it: /api/auth/* is served and nothing links to it, so the honest description of a deployment today is that it refuses everybody correctly and offers them nowhere to go. REQUIRED: a sign-in screen reachable FROM the signed-out protected state, not only from a URL somebody knows. A 401 that renders as a generic error is the same dead end with better manners. REQUIRED: a sign-up flow where deployment policy permits it. Policy, not preference: requireEmailVerification and the absence of a mail transport both decide what can actually complete, and the screen must reflect what this deployment can do rather than what the library can. REQUIRED: a sign-out action, and an authenticated shell state -- the shell already carries the active profile badge from PW-0303, and who you are SIGNED IN AS is a different fact from which profile is selected. Both belong there and neither may be mistaken for the other. REQUIRED: a protected-view redirect or an equivalent actionable signed-out experience. Either is acceptable; what is not is a screen that silently renders empty because every request behind it returned 401. REQUIRED: verification and password-reset entry states. REQUIRED: EXPLICIT UX WHEN THE MAIL TRANSPORT IS UNAVAILABLE, and this is the clause most likely to be got wrong. The composition root's transport REJECTS rather than logging the link, because a verification or reset URL is a one-click account-takeover token; the screen must say the message cannot be sent and must NOT log, display, copy or otherwise expose such a token to work around it. A UI that showed the link to be helpful would undo the reason the placeholder throws. REQUIRED: it consumes /api/auth/* and does not invent a second auth protocol. No client-side session parsing, no second cookie, no parallel identity state -- the server is the authority and the screen reads its answers. REQUIRED: profile selection is NOT moved into Better Auth. Profiles live above auth (PL-0402), active_profile_selection stays keyed by session in Liberty's own store, and a sign-in screen is exactly where somebody would be tempted to fold the two together. REQUIRED: the server-side not_authenticated behaviour and the PW-0402 authorization boundaries are preserved. Nothing in this task may make a refusal more informative than it is today: the four session failure modes stay externally indistinguishable, and profile_unavailable keeps answering for both of its cases. MEASURED STARTING POINT: apps/web contains no sign-in, sign-up, sign-out or password-reset screen, no link to /api/auth anywhere, and exactly one client-side caller of this application's own API -- the profiles client PW-0303 introduced, whose rules this task should follow rather than re-derive.",
+      "notes": "Created on gpt-architect's round-85 ruling, which specified the id PW-0310. THAT ID WAS ALREADY TAKEN by 'Keyboard, focus and accessibility across the whole application', filed in round 80 and still BACKLOG, so this task was filed as PW-0312 rather than renumbering or overwriting an existing record. The reviewer also ruled explicitly that this must NOT be folded into PW-0309 (offline, degraded and error states). allowedPaths name directories that do not exist yet; per the PW-0102 surface note, a genuinely new surface is the smallest set the acceptance can be satisfied within and is narrowed again from the diff before review. The shell and the profiles components are reviewDependencies rather than writable: this task will almost certainly need to add a signed-in control to the shell, and that widening should be argued for with a derivation at claim time the way PW-0303's was, not reserved speculatively now."
     },
     {
       "id": "PW-0304",

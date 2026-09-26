@@ -1,0 +1,89 @@
+# The Windows shell (PW-0102).
+#
+# EVERY VERSION IS AN EXACT PIN, `=x.y.z`, with no caret anywhere. That is the
+# rule this repository already applies to Shaka (`~5.2.6`) and Playwright
+# (`1.62.1`), and the reason is the same one PL-0704 paid for: a gate is
+# recorded against what was built, and a caret range means a lockfile refresh
+# can change the shell a passing gate was recorded against without any commit
+# saying so. `Cargo.lock` is committed for the same reason -- this crate
+# produces a binary, and a binary's dependency graph is part of what was
+# reviewed.
+[package]
+name = "liberty-desktop"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.82"
+description = "Project Liberty desktop shell"
+publish = false
+
+[lib]
+name = "liberty_desktop"
+path = "src/lib.rs"
+
+[[bin]]
+name = "liberty-desktop"
+path = "src/main.rs"
+
+# Portable, and the only dependencies a non-Windows build has. Everything this
+# crate decides -- the handshake contract, the supervision budget, the launch
+# plan, the failure text -- is expressed with these two and is therefore
+# testable anywhere.
+[dependencies]
+serde = { version = "=1.0.228", features = ["derive"] }
+serde_json = "=1.0.145"
+
+# TAURI IS A WINDOWS-TARGET DEPENDENCY, AND THAT IS A STATEMENT RATHER THAN A
+# WORKAROUND. This shell is a Windows product: it hosts WebView2, it owns a
+# Win32 Job Object, and there is no Linux or macOS build of it to ship. Scoping
+# the dependency to the target says so structurally, so a `cargo test` run on
+# the machine where this work is done compiles the decisions and not a GUI
+# toolkit.
+#
+# It is also what makes that run possible at all. Tauri's Linux runtime pulls
+# GTK, WebKitGTK and a `tauri-runtime-wry`/`wry` pair whose latest compatible
+# versions do not currently compile together -- a conflict inside the vendor's
+# own transitive tree, reachable only on a target this product does not have.
+# The fix is not to pin around somebody else's Linux graph; it is to stop
+# building it.
+# UNCONDITIONAL, unlike the runtime dependency below, and the asymmetry is the
+# point. A build script is compiled for the HOST, so a `cfg(windows)`
+# build-dependency would be absent exactly when cross-compiling a Windows binary
+# from Linux -- which is the case this whole arrangement exists to support.
+# `tauri-build` is config reading and codegen; it links no GUI toolkit. Whether
+# it RUNS is decided inside `build.rs`, from the target rather than the host.
+[build-dependencies]
+tauri-build = { version = "=2.7.0", features = [] }
+
+[features]
+# ON BY DEFAULT, so an ordinary build and the shipped installer both include the
+# shell. The feature exists so the crate's OWN Windows code -- the Job Object in
+# `src/job.rs` above all -- can be cross-checked from Linux without also
+# compiling Tauri's transitive graph, which is currently broken upstream. See
+# `docs/DECISIONS.md` ADR-009 for the exact conflicting versions and for why
+# pinning around it was abandoned rather than continued.
+#
+# `--no-default-features` therefore verifies THIS crate for Windows today.
+# It does not verify that the shell links, and no gate recorded from it may say
+# otherwise.
+default = ["shell"]
+shell = ["dep:tauri"]
+
+[target.'cfg(windows)'.dependencies]
+tauri = { version = "=2.9.1", features = [], optional = true }
+# The Job Object is the whole reason this one exists; see `src/job.rs`.
+windows-sys = { version = "=0.61.2", features = [
+  "Win32_Foundation",
+  "Win32_System_JobObjects",
+  "Win32_System_Threading",
+  # SECURITY_ATTRIBUTES appears in CreateJobObjectW's signature, so the symbol is
+  # not exported without it. Found by the Windows cross-check rather than by
+  # reading the crate, which is the point of running that check.
+  "Win32_Security",
+] }
+
+[profile.release]
+# A shell that panics should fail loudly and die rather than unwind through a
+# FFI boundary into Windows. `panic = "abort"` also removes the landing pads,
+# which is a smaller binary for free.
+panic = "abort"
+strip = true

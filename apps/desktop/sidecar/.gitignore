@@ -1,0 +1,15 @@
+# Everything in this directory is PRODUCED, never authored.
+#
+# `scripts/package-sidecar.mjs` fills it with the Next standalone tree and the
+# Node runtime that runs it; both are build outputs and neither belongs in
+# version control -- the runtime is a platform binary of tens of megabytes and
+# the tree is regenerated from `apps/web` on every build.
+#
+# The DIRECTORY is tracked, and that is deliberate rather than an accident of
+# needing a placeholder: `tauri.conf.json` names it under `bundle.resources`,
+# and `tauri-build` refuses at build time when a declared resource path does not
+# exist. A missing directory therefore breaks `cargo check`, which is the one
+# verification this crate has.
+*
+!.gitignore
+!README.md

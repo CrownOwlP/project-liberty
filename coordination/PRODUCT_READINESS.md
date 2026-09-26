@@ -47,8 +47,8 @@ would claim a person can use them.
   - evidence: `packages/media-engine/src (20 files)`
 - [x] **persistence** — Profiles, progress, watchlist repositories, profile-scoped
   - evidence: `packages/persistence/src (26 files)`
-- [~] **auth-seam** — Authorization is enforced on every profile-scoped route and guarded mechanically (PW-0402); AUTHENTICATION is now enforced too -- a deployment resolves identity only from a verified database-backed session, witnessed end to end against a real PostgreSQL including immediate revocation. STILL PARTIAL for three stated reasons rather than one vague one: no mail transport is configured, so verification and reset cannot complete; no SQL is exercised from CI; and there is no sign-in screen, so a deployment viewer gets a 401 with nowhere to go. PW-0403 is in REVIEW
-  - evidence: `apps/web/src/lib/session/auth-instance.ts, apps/web/src/app/api/auth (PW-0403, in REVIEW); apps/web/src/lib/authorization (PW-0402); docs/SECURITY.md R4`
+- [~] **auth-seam** — Authorization is enforced on every profile-scoped route and guarded mechanically (PW-0402); AUTHENTICATION is enforced too and APPROVED (PW-0403) -- a deployment resolves identity only from a verified database-backed session, witnessed end to end against a real PostgreSQL including immediate revocation. STILL PARTIAL for three named reasons: no mail transport, so verification and reset cannot complete; no SQL exercised from CI; and no sign-in screen, so a deployment viewer gets a correct 401 with nowhere to go. The last is [[PW-0312]] and is why this row is not user-reachable capability yet
+  - evidence: `apps/web/src/lib/session/auth-instance.ts, apps/web/src/app/api/auth (PW-0403, DONE); apps/web/src/lib/authorization (PW-0402); docs/SECURITY.md R4; ADR-007 accepted`
 - [x] **http-api** — catalog/home, playback/session, profiles, progress, watchlist, telemetry
   - evidence: `apps/web/src/app/api/v1`
 - [x] **observability** — CMCD v2 vocabulary and playback reason trail

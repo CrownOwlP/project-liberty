@@ -86,6 +86,84 @@ until explicitly reviewed, whereas a denylist would silently admit it.
 
 Use PostgreSQL for durable state and Redis only for ephemeral/cached workloads. Final ORM choice is deferred to the persistence task.
 
+## ADR-009 - The desktop shell is a Tauri v2 application that owns its sidecar
+
+**Status:** Accepted (PW-0102), with one part of it BLOCKED UPSTREAM and recorded
+below rather than worked around.
+
+`apps/desktop` hosts a WebView2 window pointed at a Next.js standalone server
+running as a child process. The decisions that are not obvious, and the reasons
+they are not the obvious alternative:
+
+**The sidecar binds first and reports its port.** The shell never picks one.
+Picking a free port and passing it in has a TOCTOU window between the pick and
+the bind which, on a machine doing anything else, is not theoretical -- and the
+shell loses that race silently, pointing a webview at a port nothing is
+listening on. The contract is one prefixed JSON line on stdout, parsed
+independently on both sides.
+
+**A Win32 Job Object with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` owns the child's
+lifetime.** Tauri supervises nothing. Every user-mode alternative -- a `Drop`
+impl, an exit or ctrl handler, the child polling for its parent, `taskkill /T`
+-- fails in the same place: none of them runs when the shell is *killed*. The
+kernel enforces the job. The failure this prevents is the one users report as
+"it will not start the second time", which is an orphaned `node.exe` still
+holding the loopback port.
+
+**The per-launch token goes through the environment, never `argv`.** A Windows
+process's command line is readable by any process running as the same user and
+is displayed by Task Manager; the environment block is not enumerable the same
+way. PW-0101 made that token the separation between this application's listener
+and every other local process, and `argv` would publish it to all of them.
+
+**The sidecar ships as a Node runtime plus a standalone tree, not as one
+executable.** `pkg`, Node SEA and `bun --compile` were each considered. None can
+swallow a Next standalone tree, because it is a server *plus* a `.next`
+directory the server reads from disk at runtime, resolving chunk files by path.
+A single-file packer produces a binary that starts and then cannot find its own
+pages. Recorded so the shortcut is not attempted and abandoned twice.
+
+### The upstream conflict, and why pinning around it was stopped
+
+`cargo check --target x86_64-pc-windows-msvc` of the FULL tree does not compile
+today, and the failure is inside Tauri's own transitive graph rather than in
+this crate. `tauri 2.9.1` is the latest stable release and several of its
+transitive dependencies have since published semver-compatible patches it does
+not work with. Three were pinned back in `Cargo.lock` before the attempt was
+stopped:
+
+- `wry` 0.53.5 to **0.53.4** -- 0.53.5 changed a trait `tauri-runtime-wry`
+  implements;
+- `tauri-runtime` 2.12.0 to **2.9.2** -- 2.12.0 pulls `webview2-com` 0.39 while
+  `wry` uses 0.38, so an `ICoreWebView2Environment` crosses between two
+  incompatible copies of the same interface;
+- `muda`, which then failed on a `tauri`-expected error variant that no 0.17.x
+  provides.
+
+Continuing would mean hand-resolving somebody else's dependency graph release by
+release, and the result would be a lockfile nobody could justify line by line.
+It was stopped instead, and the verification was decoupled: `tauri` is an
+optional dependency behind a `shell` feature that is ON by default, so the
+shipped build is unchanged, and `--no-default-features` cross-checks THIS
+crate's Windows code -- including every Job Object call -- for
+`x86_64-pc-windows-msvc`. That check passes, and it found a real defect while
+doing so: `CreateJobObjectW` is not exported by `windows-sys` without the
+`Win32_Security` feature, because `SECURITY_ATTRIBUTES` appears in its
+signature.
+
+**What this means for the Windows CI job (PW-0501).** The job cannot build the
+shell until the Tauri graph resolves. The options are to wait for a `tauri`
+release that matches its dependencies, or to pin the whole transitive set
+deliberately with a stated justification. That is a decision for the reviewer,
+not something a packaging task should settle by grinding.
+
+### What is not evidenced
+
+That the shell launches, that WebView2 renders, that the Job Object kills the
+sidecar in practice, or that the installer works. Those require a Windows runner
+or the commander's machine and are owed to PW-0601. Nothing produced in the
+development environment may be recorded as evidence for them.
+
 ## ADR-007 - Authentication seam, database sessions, and a minted profile scope
 
 **Status:** Accepted, and CONSTRUCTED as of PW-0403.
