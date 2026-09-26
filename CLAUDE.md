@@ -117,6 +117,13 @@ PL-AI-0012 made it a refusal. On a judgement gate:
   `judgementCommitVerified: false`. A length floor is not a placeholder test,
   because a long placeholder passes one; a verdict that cannot say what it
   looked at is not a verdict.
+- Filler is refused **structurally, not lexically** (PL-AI-0013). A word from
+  `rejectedSubstrings` no longer refuses a gate by appearing. It opens two
+  questions: is the word used *as* the judgement — `rationale TBD`,
+  `verdict: placeholder`, with only a copula between — and, with the named
+  commit and the matched words removed, is there any content left? A real
+  verdict that *discusses* the vocabulary passes both. The lexical veto did not:
+  it refused gpt-architect's own approval of the task that introduced it.
 - Recording as an agent that cannot run this command requires
   `--transcribed-by <agentId>`. This is the normal case here: the GitHub write
   integration returns 403, so every judgement gate in this project is typed by

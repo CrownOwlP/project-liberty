@@ -87,7 +87,7 @@ anything**:
 | nobody on the implementation side may record it — neither `owner` nor `implementationAgent` | the same pair `assertReviewAllowed` compares, for the same reason: asserting a third-party implementer must only ever *add* an identity |
 | only `reviewAgent`, or an agent in `authorizedIndependentReviewers` | that list is empty, and `review.allowAutomaticReviewerSubstitution` is `false`, so substitution is a human decision |
 | the evidence must name the commit it judged | a verdict that cannot say what it looked at is not a verdict. Inside a git checkout the sha must **resolve** to a commit (`rev-parse --verify` also refuses an ambiguous prefix and a non-commit object); outside one the naming rule still applies and the result records `judgementCommitVerified: false` |
-| a rejected-substring list and a length floor | second and third nets only. A length floor alone is not a placeholder test, because a long placeholder passes one |
+| filler is refused structurally, not lexically | PL-AI-0013. A word from `rejectedSubstrings` no longer vetoes by appearing: it opens a CONTEXTUAL question (is it used *as* the judgement — `rationale TBD`, with only a copula between?) and a STRUCTURAL one (strip the named commit and the matched words; is anything left?). The lexical veto refused gpt-architect's own approval of PL-AI-0012, because that verdict named the vocabulary it was approving — the fifth guard in this repository to match prose *about* a thing rather than the thing. Shortening the word list was ruled out: the next verdict discusses whichever words remain |
 | `--transcribed-by` when the reviewer cannot run the CLI | see below |
 
 A judgement gate is therefore reachable only in `REVIEW`. That is not a separate

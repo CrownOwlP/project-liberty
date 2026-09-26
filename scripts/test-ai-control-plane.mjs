@@ -316,6 +316,12 @@ const EXCLUDED_FIXTURE_DIRS = [
   "dist",
   "build",
   "coverage",
+  // Cargo build output, added when PW-0102 brought a Rust crate into the
+  // repository. Not an optimisation: a debug build of the Tauri dependency
+  // graph is several gigabytes, and freshRepo() copies the tree once per
+  // scenario -- the suite filled the disk and died mid-copy before this line
+  // existed. It is gitignored, so no fixture can legitimately need it.
+  "target",
 ];
 
 function freshRepo() {
@@ -8861,7 +8867,7 @@ try {
         reviewAgent: null,
       }),
       jg("PL-JG-0003", {
-        title: "PL-JG-0003 the abbreviated-sha case, on its own task",
+        title: "PL-JG-0003 the PL-AI-0013 false-positive case, on its own task",
         allowedPaths: ["fixtures/jg/three/**"],
       }),
     );
@@ -9064,8 +9070,9 @@ try {
       /name the commit it judged/i,
     );
 
-    /* ...and naming the real commit does not launder placeholder text beside
-     *    it. The substring net exists for exactly this shape. */
+    /* ...and naming the real commit does not launder an unmade judgement beside
+     *    it. THE CONTEXTUAL TEST catches this: "rationale TBD" is the token
+     *    being used AS the judgement, immediately after a word naming it. */
     runFail(
       repo,
       [
@@ -9079,7 +9086,63 @@ try {
         "claude-lead",
         `APPROVED at ${head}. Full rationale TBD, which is the case where a real sha sits beside text that says the judgement has not actually been made yet`,
       ],
-      /placeholder text rather than a judgement/,
+      /reads as filler rather than a judgement/,
+    );
+
+    /* claude-lead's maxParallel is 2 and it holds PL-JG-0001 in REVIEW and
+     * PL-JG-0002 in IN_PROGRESS; PL-JG-0002 has served its purpose. */
+    run(repo, CLI, ["release", "PL-JG-0002", "claude-lead"]);
+    run(repo, CLI, ["claim", "PL-JG-0003", "claude-lead"]);
+    run(repo, CLI, ["start", "PL-JG-0003", "claude-lead"]);
+    run(repo, CLI, ["review", "PL-JG-0003", "claude-lead"]);
+
+    /* REQUIREMENT ONE, ISOLATED: the round-83 string stays refused even when it
+     * names a real commit and the authority rule is satisfied. The STRUCTURAL
+     * test is what catches it -- with the sha and the filler removed there is
+     * almost nothing left, which is what "filler-only" means and is not a
+     * statement about length. */
+    runFail(
+      repo,
+      [
+        "gate",
+        "PL-JG-0003",
+        "architecture-review",
+        "pass",
+        "--agent",
+        "gpt-architect",
+        "--transcribed-by",
+        "claude-lead",
+        `APPROVED at ${head}. PLACEHOLDER-NOT-RECORDED.`,
+      ],
+      /reads as filler rather than a judgement/,
+    );
+
+    /* THE FALSE POSITIVE THIS RULE WAS REBUILT FOR (PL-AI-0013).
+     *
+     * On the FIRST real use of PL-AI-0012's enforcement, transcribing
+     * gpt-architect's own approval OF PL-AI-0012 was refused -- the verdict's
+     * accepted-properties list named the vocabulary the lexical veto matched.
+     * This is that verdict, close to verbatim, and it must be ACCEPTED: it
+     * names a real commit, it discusses the filler vocabulary while doing so,
+     * and it is unmistakably a judgement.
+     *
+     * The old rule refused this. Shortening the word list was explicitly ruled
+     * out, because the next verdict discusses whichever words remain. */
+    run(repo, CLI, [
+      "gate",
+      "PL-JG-0003",
+      "architecture-review",
+      "pass",
+      "--agent",
+      "gpt-architect",
+      "--transcribed-by",
+      "claude-lead",
+      `APPROVED at ${head}. architecture-review PASS. Accepted properties: judgement gates are declared by policy rather than inferred; implementation owners cannot self-record them; unauthorized attempts are refused before task.gateResults is mutated; and placeholder language, filler wording and unresolved shas do not become valid merely because the evidence is long. The round-83 incident history remains untouched.`,
+    ]);
+    assert.equal(
+      gatesOf("PL-JG-0003")["architecture-review"]?.status,
+      "pass",
+      "a real verdict that DISCUSSES the filler vocabulary must not be refused by it",
     );
 
     /* A reviewer that cannot run this command must say who typed it. */
@@ -9132,12 +9195,10 @@ try {
      * is how reviewers actually write them. On its own task, because a recorded
      * gate cannot be re-recorded from REVIEW without a release, and REVIEW is
      * deliberately not releasable. */
-    // claude-lead's maxParallel is 2 and it is holding PL-JG-0001 in REVIEW and
-    // PL-JG-0002 in IN_PROGRESS; PL-JG-0002 has served its purpose.
-    run(repo, CLI, ["release", "PL-JG-0002", "claude-lead"]);
-    run(repo, CLI, ["claim", "PL-JG-0003", "claude-lead"]);
-    run(repo, CLI, ["start", "PL-JG-0003", "claude-lead"]);
-    run(repo, CLI, ["review", "PL-JG-0003", "claude-lead"]);
+    /* ON PL-JG-0003, which is already in REVIEW. A fourth fixture task would
+     * need capacity claude-lead does not have -- maxParallel is 2 and two are
+     * in REVIEW, which is deliberately not releasable -- and re-recording the
+     * same gate is the accurate shape anyway: a reviewer restating a verdict. */
     run(repo, CLI, [
       "gate",
       "PL-JG-0003",

@@ -878,6 +878,92 @@ function commitResolves(sha) {
   }
 }
 
+/** Escapes a literal for embedding in a RegExp. */
+function escapeForRegExp(literal) {
+  return String(literal).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Whether a judgement gate's evidence is FILLER rather than a judgement
+ * (PL-AI-0013).
+ *
+ * Returns a reason string when it is, and `null` when it is not. Two tests, and
+ * neither is "does a rejected word appear anywhere", which is the lexical veto
+ * this replaces.
+ *
+ * TEST ONE -- CONTEXTUAL, and it is the one that catches a real sha sitting
+ * beside an unmade judgement. A rejected token IMMEDIATELY FOLLOWING a word for
+ * the judgement itself -- "rationale TBD", "verdict: placeholder", "reasoning is
+ * to be determined" -- is that token being used AS the judgement. The adjacency
+ * is deliberately tight: only a copula or punctuation may sit between, so
+ * "the rationale for the placeholder rule" does not match, because "for the"
+ * is not a copula. Prose that discusses the vocabulary reads that way; a
+ * withheld verdict does not.
+ *
+ * TEST TWO -- STRUCTURAL, and it is what catches the round-83 string. Remove the
+ * commit the evidence names and every rejected token, then ask how much is
+ * actually left. `PLACEHOLDER-NOT-RECORDED` leaves nothing; a verdict that
+ * happens to mention the word leaves the whole verdict. This measures
+ * substance rather than length, which is the distinction gpt-architect asked
+ * for: a long filler still fails it, and a short but real judgement does not.
+ *
+ * A JUDGEMENT WITH NO REJECTED TOKEN AT ALL IS NOT EXAMINED. The list is the
+ * entry condition, so this costs nothing on ordinary evidence.
+ */
+function judgementIsFillerOnly(evidence, namedCommit, policy) {
+  const tokens = (policy.rejectedSubstrings ?? []).filter((needle) =>
+    evidence.toLowerCase().includes(String(needle).toLowerCase()),
+  );
+  if (tokens.length === 0) return null;
+
+  const nouns = policy.judgementNouns ?? [
+    "rationale",
+    "reasoning",
+    "verdict",
+    "justification",
+    "evidence",
+    "review",
+    "detail",
+    "details",
+    "analysis",
+    "assessment",
+    "conclusion",
+    "finding",
+    "findings",
+    "notes",
+  ];
+  const joiner = "\\s*(?:is|are|was|were|:|=|--|-|\u2014)?\\s*";
+  for (const token of tokens) {
+    const pattern = new RegExp(
+      `\\b(?:${nouns.map(escapeForRegExp).join("|")})\\b${joiner}${escapeForRegExp(token)}\\b`,
+      "i",
+    );
+    if (pattern.test(evidence))
+      return (
+        `${JSON.stringify(token)} is used as the judgement itself, immediately after a word ` +
+        `naming it, which says the verdict has not been reached`
+      );
+  }
+
+  let residue = evidence;
+  if (namedCommit) residue = residue.split(namedCommit).join(" ");
+  // Every sha-shaped token, not only the resolved one: an abbreviation was what
+  // was typed, and leaving it in would count as substance.
+  residue = residue.replace(/\b[0-9a-f]{7,40}\b/gi, " ");
+  for (const token of tokens) {
+    residue = residue.replace(new RegExp(escapeForRegExp(token), "gi"), " ");
+  }
+  const substance = residue.replace(/[^\p{L}\p{N}]+/gu, "").length;
+  const floor = policy.minimumSubstanceChars ?? 80;
+  if (substance < floor)
+    return (
+      `with the commit it names and the filler removed, ${String(substance)} characters of ` +
+      `content remain and at least ${String(floor)} are required`
+    );
+
+  return null;
+}
+
 /**
  * Resolve an abbreviated or full commit-ish to its full sha, or `null`.
  *
@@ -4187,14 +4273,34 @@ try {
         }
       }
 
-      const lowered = evidence.toLowerCase();
-      const offending = (evidencePolicy.rejectedSubstrings ?? []).find((needle) =>
-        lowered.includes(String(needle).toLowerCase()),
-      );
-      if (offending)
+      /*
+       * IS THIS EVIDENCE A FILLER, OR DOES IT MERELY TALK ABOUT ONE?
+       *
+       * The rule this replaces was a lexical veto: any rejected substring
+       * anywhere in the evidence refused the gate. It failed on its FIRST REAL
+       * USE. gpt-architect's round-84 verdict approving PL-AI-0012 listed, among
+       * its accepted properties, that filler wording does not become a valid
+       * judgement merely because evidence is long -- naming the very vocabulary
+       * the veto matched -- so transcribing that verdict faithfully was refused
+       * by the rule the verdict was approving.
+       *
+       * THAT IS THE FIFTH TIME THIS REPOSITORY HAS PAID FOR A GUARD MATCHING
+       * PROSE ABOUT A THING RATHER THAN THE THING: PL-0701's import guard on its
+       * own header comment, PW-0101's no-runtime-switch test on its own comment,
+       * and PW-0402 twice. Every previous one was repaired locally, and a fifth
+       * local repair would be a sixth instance waiting.
+       *
+       * SHORTENING THE WORD LIST IS EXPLICITLY NOT THE REMEDY, and gpt-architect
+       * ruled it out for the reason that matters: the next verdict will discuss
+       * whichever words remain, so it converts a false positive into a latent
+       * one. The list stays; what changes is that it can no longer VETO on its
+       * own. It is a signal that two questions are then asked about.
+       */
+      const fillerOnly = judgementIsFillerOnly(evidence, judgementCommit, evidencePolicy);
+      if (fillerOnly)
         throw new Error(
-          `${gate} on ${taskId} has evidence containing ${JSON.stringify(offending)}, which is ` +
-            `placeholder text rather than a judgement. Record the verdict, or do not record the gate.`,
+          `${gate} on ${taskId} reads as filler rather than a judgement: ${fillerOnly}. ` +
+            `Record the verdict, or do not record the gate.`,
         );
 
       const floor = evidencePolicy.minimumLength ?? 0;

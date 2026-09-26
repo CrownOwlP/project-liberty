@@ -1,15 +1,15 @@
 # Project Liberty - Project Status
 
-> Generated 2026-09-26T21:50:31.408Z from the AI control plane.
+> Generated 2026-09-26T22:33:31.035Z from the AI control plane.
 
 **Overall completion:** 72/99 executable tasks (73%)
 
 ## Status summary
 
 - **BACKLOG:** 16
-- **READY:** 8
+- **READY:** 7
 - **CLAIMED:** 0
-- **IN_PROGRESS:** 0
+- **IN_PROGRESS:** 1
 - **REVIEW:** 1
 - **BLOCKED:** 2
 - **DONE:** 72
@@ -31,11 +31,12 @@
 
 ## Active work
 
+- **PL-AI-0013** [IN_PROGRESS] A verdict that discusses the placeholder rule is not a placeholder — owner: claude-lead
 - **PW-0102** [REVIEW] A Tauri v2 shell that owns the sidecar's lifetime — owner: claude-infra
 
 ## Dispatch classification
 
-- **READY_AND_EXECUTABLE:** 8
+- **READY_AND_EXECUTABLE:** 7
 - **READY_BUT_EXTERNAL:** 0
 - **BLOCKED:** 2
 - **BACKLOG (dependency-gated):** 16
@@ -45,7 +46,6 @@
 - **PW-0302** -> claude-frontend (P0/Frontend) Artwork, end to end, because a media application without images is a list
 - **PW-0305** -> claude-frontend (P0/Frontend) Continue watching: resume where the viewer left off
 - **PW-0401** -> claude-backend (P1/Backend) The authenticated backend the desktop build talks to
-- **PL-AI-0013** -> claude-lead (P2/Coordination) A verdict that discusses the placeholder rule is not a placeholder
 
 ## Queued for external agents
 
@@ -59,7 +59,7 @@ No READY work is waiting on an external agent lane.
 ## Agent capacity
 
 - **gpt-architect:** 0/6 active (external lane; not locally executable)
-- **claude-lead:** 0/2 active
+- **claude-lead:** 1/2 active
 - **claude-frontend:** 0/2 active
 - **claude-backend:** 0/2 active
 - **claude-media:** 0/2 active

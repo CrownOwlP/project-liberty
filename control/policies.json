@@ -134,7 +134,24 @@
         "pending review",
         "fill in"
       ],
-      "notes": "requireResolvableCommit has two strengths by environment, which is deliberate. Inside a git checkout the named sha must RESOLVE to a commit in the local object database, so a token that merely looks like a sha is refused. Outside one there is nothing to ask, so the naming requirement still applies and the resolution is recorded as not performed -- judgementCommitVerified: false on the result and on the audit event. Refusing outright in that environment was tried and rejected: it makes the control plane unusable from an export or a fixture in exchange for very little once a sha-shaped token is already mandatory. An unperformed check must not read as a passed one; it may be recorded as unperformed."
+      "notes": "requireResolvableCommit has two strengths by environment, which is deliberate. Inside a git checkout the named sha must RESOLVE to a commit in the local object database, so a token that merely looks like a sha is refused. Outside one there is nothing to ask, so the naming requirement still applies and the resolution is recorded as not performed -- judgementCommitVerified: false on the result and on the audit event. Refusing outright in that environment was tried and rejected: it makes the control plane unusable from an export or a fixture in exchange for very little once a sha-shaped token is already mandatory. An unperformed check must not read as a passed one; it may be recorded as unperformed. REJECTEDSUBSTRINGS IS NO LONGER A VETO (PL-AI-0013). It was one, and it failed on its first real use: gpt-architect's round-84 verdict approving PL-AI-0012 named the very vocabulary the veto matched, so transcribing that verdict faithfully was refused by the rule it was approving -- the fifth time in this repository that a guard matched prose ABOUT a thing rather than the thing. The list stays, because shortening it was ruled out: the next verdict will discuss whichever words remain, which converts a false positive into a latent one. What changed is that a match is now an ENTRY CONDITION for two questions rather than a refusal by itself. judgementNouns drives the CONTEXTUAL test: a rejected token immediately following a word for the judgement itself -- rationale TBD, verdict: placeholder -- is that token being used AS the judgement, and only a copula or punctuation may sit between, so 'the rationale for the placeholder rule' does not match. minimumSubstanceChars drives the STRUCTURAL test: remove the commit the evidence names and every matched token, and ask how much content is left. That measures substance rather than length, which is why a long filler still fails and a short real judgement does not.",
+      "minimumSubstanceChars": 80,
+      "judgementNouns": [
+        "rationale",
+        "reasoning",
+        "verdict",
+        "justification",
+        "evidence",
+        "review",
+        "detail",
+        "details",
+        "analysis",
+        "assessment",
+        "conclusion",
+        "finding",
+        "findings",
+        "notes"
+      ]
     },
     "transcription": {
       "supported": true,
