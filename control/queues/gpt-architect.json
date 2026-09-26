@@ -1,9 +1,72 @@
 {
-  "generatedAt": "2026-09-26T21:30:36.140Z",
+  "generatedAt": "2026-09-26T21:50:31.410Z",
   "agent": "gpt-architect",
   "executionAvailable": false,
   "assigned": [],
-  "review": [],
+  "review": [
+    {
+      "id": "PW-0102",
+      "priority": "P0",
+      "lane": "Infra",
+      "status": "REVIEW",
+      "title": "A Tauri v2 shell that owns the sidecar's lifetime",
+      "dependencies": [
+        "PW-0101"
+      ],
+      "allowedPaths": [
+        "apps/desktop/**",
+        "docs/DECISIONS.md"
+      ],
+      "reviewDependencies": [
+        "apps/web/next.config.ts",
+        "apps/web/package.json",
+        "turbo.json",
+        "package.json",
+        "docs/DESKTOP_PLAYBACK.md",
+        "docs/ARCHITECTURE.md",
+        "apps/web/src/lib/sidecar/handshake.ts",
+        "apps/web/src/lib/sidecar/policy.ts"
+      ],
+      "preferredAgent": "claude-infra",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "build",
+        "architecture-review",
+        "security-review"
+      ],
+      "acceptance": "A Tauri v2 application starts, spawns the PW-0101 sidecar, reads its bound port from stdout, points the webview at it, and cannot leave the sidecar running. REQUIRED: the Tauri version is pinned exactly, on the rule this repository already applies to Shaka and Playwright -- a caret range means the shell a gate was recorded against can change under a lockfile refresh. REQUIRED: the sidecar is packaged as node.exe plus the standalone tree under bundle.resources and spawned as a child process; pkg, Node SEA and Bun --compile are documented as unable to swallow a Next standalone server and must not be attempted as a shortcut. REQUIRED: a Win32 Job Object with JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, because Tauri provides no supervision and an orphaned node.exe holding a loopback port is the failure a user sees as 'it will not start the second time'. REQUIRED: supervision -- health check, restart with a bounded attempt budget, and an honest surfaced failure when the budget is spent, never a blank window. REQUIRED: the shell passes the bearer token to the sidecar through the environment and never on a command line, where it would be readable from the process list. STATED LIMITATION TO CARRY IN THE GATE EVIDENCE: no Windows binary can be produced or run from the cloud session, so this task's build gate is cargo check plus a windows-latest CI job, and 'it launches' is real-device evidence owed to PW-0601.",
+      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. SURFACE NOTE: this task's allowedPaths name directories that do not exist yet. The evidence-based narrowing procedure applies to reconciling work already in history; for genuinely new work the surface is the smallest set of paths the acceptance can be satisfied within, and it is narrowed again from the diff before review if it turns out to be wider than what was written. ",
+      "owner": "claude-infra",
+      "gateResults": {
+        "typecheck": {
+          "status": "pass",
+          "at": "2026-09-26T21:49:42.750Z",
+          "by": "claude-infra",
+          "commitSha": "96cdb0e3cf7de5b6cc2d6b59a7702b404dbafdba",
+          "evidence": "EXECUTED on 96cdb0e. THE MONOREPO IS UNCHANGED: npm run typecheck 21/21 exit 0, npm run lint 11/11 zero problems. This task adds a Rust crate and touches no TypeScript, so those two are the wrap evidence rather than a check of this task's code -- stated plainly rather than presented as coverage. WHAT ACTUALLY CHECKS THIS TASK'S CODE, and it is the gate that matters here: cargo check --target x86_64-pc-windows-msvc --no-default-features, exit 0, which compiles liberty-desktop FOR WINDOWS including every #[cfg(windows)] path -- the CreateJobObjectW, SetInformationJobObject and AssignProcessToJobObject calls in src/job.rs among them. The x86_64-pc-windows-msvc std was installed with rustup for this; no Windows machine is involved and none is implied. THE CHECK EARNED ITS KEEP ON FIRST RUN: it refused CreateJobObjectW as an unresolved import, because windows-sys does not export it without the Win32_Security feature -- SECURITY_ATTRIBUTES appears in its signature -- which no amount of reading the code on Linux would have surfaced. node --check on scripts/package-sidecar.mjs, exit 0. npm run repo:validate passed."
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-09-26T21:50:01.521Z",
+          "by": "claude-infra",
+          "commitSha": "96cdb0e3cf7de5b6cc2d6b59a7702b404dbafdba",
+          "evidence": "EXECUTED on 96cdb0e. cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --target x86_64-unknown-linux-gnu -> 25 passed, 0 failed, exit 0. The monorepo suite is unchanged at 20/20 with apps/web at 1109; this task adds no TypeScript. WHAT THE 25 DEFEND, and the ones that matter are ABSENCES rather than behaviours. THE TOKEN IS ASSERTED NOT TO APPEAR IN ANY ARGUMENT: launch_arguments is built from a planned launch whose token is a real 64-character value, and every argument is asserted not to contain it while the environment IS asserted to carry it. That is the PW-0101 property from the other side -- a Windows process's command line is readable by any process running as the same user and is shown in Task Manager, so argv would publish the one value separating our listener from every other local process. NO FAILURE REPORT MAY CONTAIN THE TOKEN: all six startup failures are described and scanned, and the Token arm is deliberately CONSTRUCTED with the token embedded in its inner message so that forwarding that message would fail the test -- the arm drops it and says so. A NON-LOOPBACK HANDSHAKE HOST IS REFUSED: 0.0.0.0, a LAN address, a domain and localhost are each refused, and this is a RESTATEMENT of a rule apps/web/src/lib/sidecar/handshake.ts already enforces, not an inheritance of it. The justification is in the module: this process is the one that acts on the value by pointing a webview at it, and a compromised or simply buggy child is exactly the case where the producer's check did not run, so a consumer that trusted the producer would be trusting the thing it validates. AN UNUSABLE PORT IS REFUSED RATHER THAN WRAPPED: 0, -1, 70000, 65536, a string and null. 70000 narrowed to u16 is 4464, a perfectly plausible port, which is why the range check precedes the narrowing. IPv6 IS BRACKETED: http://::1:41999/ is not a URL and the shell would silently fail to navigate. ORDINARY LOG LINES ARE NOT ERRORS while a handshake-shaped line with no body IS -- the caller reads every line the child prints, so collapsing those two would either report a broken contract on Next's startup banner or swallow a genuinely broken one. THE RESTART BUDGET: four consecutive failures then a stated failure, never an unbounded loop behind a blank window; a healthy run clears the budget BEFORE its own failure is charged, so a crash after an hour is a first failure rather than a fifth; the boundary at MIN_HEALTHY_RUN minus one millisecond is asserted, because roughly twenty seconds is not a rule; the backoff shift is asserted not to overflow at u32::MAX, because 1 << attempt is undefined past 63 and the input is a counter; and the worst-case total wait before the user is told something is asserted under fifteen seconds, because that total is what a person actually experiences. THE LAUNCH PLAN: a short or non-hex token is refused before anything is spawned, since this process MINTS it and learning at the sidecar's bind check that the shell generated rubbish would put the failure in the wrong half of the system; a missing runtime names what is missing and where, because an incomplete-installation message with no path is a support ticket nobody can act on; and resources are asserted to resolve under the directory given rather than the current one, which is the difference between working under cargo run and failing in an installed build. FIVE TESTS ARE WINDOWS-BEHAVIOUR-SHAPED AND ARE NOT CLAIMED AS SUCH: job.rs's tests assert the error text names which step failed, and that a non-Windows build REFUSES rather than silently running unsupervised. Whether the kernel terminates job members is not asserted by anything here and cannot be from this environment."
+        },
+        "build": {
+          "status": "fail",
+          "at": "2026-09-26T21:50:24.860Z",
+          "by": "claude-infra",
+          "commitSha": "96cdb0e3cf7de5b6cc2d6b59a7702b404dbafdba",
+          "evidence": "RECORDED AS FAIL, DELIBERATELY, AND IT IS THE TRUTHFUL STATE RATHER THAN A SETBACK. The acceptance names this gate precisely: 'this task's build gate is cargo check plus a windows-latest CI job'. Neither half can be satisfied today and both reasons are external to this crate. HALF ONE, cargo check of the full tree for Windows: EXECUTED on 96cdb0e as cargo check --target x86_64-pc-windows-msvc, and it FAILS inside Tauri's own transitive graph. tauri 2.9.1 is the latest stable release and several of its transitive dependencies have published semver-compatible patches it does not work with. Three were pinned back in Cargo.lock before the attempt was stopped: wry 0.53.5 to 0.53.4, because 0.53.5 changed a trait tauri-runtime-wry implements; tauri-runtime 2.12.0 to 2.9.2, because 2.12.0 pulls webview2-com 0.39 while wry uses 0.38, so an ICoreWebView2Environment crosses between two incompatible copies of one interface; and then muda failed on a tauri-expected error variant that no 0.17.x provides. Continuing would mean hand-resolving somebody else's dependency graph release by release and producing a lockfile nobody could justify line by line, so it was stopped and handed to the reviewer as ADR-009 rather than ground through. HALF TWO, the windows-latest CI job: NOT WRITTEN, because .github/workflows/windows.yml is already declared by PW-0501 and by PW-0602. Writing it here would take a file two other tasks reserved. That is reported as a finding rather than acted on. WHAT DOES PASS, and it is recorded under typecheck rather than smuggled in here: cargo check --target x86_64-pc-windows-msvc --no-default-features compiles this crate's own Windows code for Windows, every Job Object call included. tauri is optional behind a shell feature that is ON by default, so the shipped build is unchanged by that arrangement and the no-default-features mode exists only to verify what is verifiable. A PASS HERE WOULD HAVE BEEN AVAILABLE by quietly redefining the gate as the check that succeeds. The acceptance says cargo check plus a CI job; neither is satisfied; the gate is fail. It should stay fail until a Windows runner exists or the reviewer rules on the Tauri graph."
+        }
+      },
+      "implementationAgent": "claude-infra",
+      "updatedAt": "2026-09-26T21:50:24.981Z",
+      "implementationBaseSha": "ead46a5f20a5f784398a0380ccdf02dfe9e5e77a"
+    }
+  ],
   "reservedExternal": [],
   "recommended": [
     {

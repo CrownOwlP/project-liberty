@@ -64,12 +64,12 @@ would claim a person can use them.
   - evidence: `apps/web/src/app/api/v1/playback/build-target.ts + .test.ts (853 lines)`
 - [x] **desktop-session-forwarder** — Authenticated-backend proxy, identity allowlist, https-only, no pass-through
   - evidence: `apps/web/src/app/api/v1/playback/session/playback-session-implementation.desktop.ts`
-- [ ] **tauri-shell** — No Rust, no src-tauri, no tauri.conf.json anywhere in the repo
-  - evidence: `absent: find for Cargo.toml/*.rs/tauri.conf.json returns nothing`
+- [ ] **tauri-shell** — The crate EXISTS and is tested (PW-0102, in REVIEW): handshake, Job Object, launch plan, restart budget and failure text, 25 Rust tests, and the crate's own Windows code cross-compiles for x86_64-pc-windows-msvc. STILL ABSENT AS A CAPABILITY, and the state is unchanged on purpose: no binary can be produced, because the full tree does not compile inside Tauri's own transitive graph (ADR-009), and nothing has launched. Files existing is not a shell running
+  - evidence: `apps/desktop/src-tauri (PW-0102, in REVIEW; build gate recorded FAIL); ADR-009`
 - [x] **standalone-sidecar** — output:'standalone' is set for the desktop target and only for it
   - evidence: `apps/web/next.config.ts (PW-0101)`
-- [~] **sidecar-supervision** — The sidecar half of the port handshake exists and is tested; port discovery, Job Object, health check and restart are the shell's and are PW-0102
-  - evidence: `apps/web/src/lib/sidecar/handshake.ts (PW-0101)`
+- [~] **sidecar-supervision** — Both halves now exist in code: the sidecar's port handshake (PW-0101) and the shell's consumer, Job Object ownership, bounded restart budget and surfaced failure (PW-0102). STILL PARTIAL because none of it has been OBSERVED -- whether the kernel terminates job members is owed to a Windows runner or PW-0601, and the supervision loop's runtime assembly is a stub that panics naming what it owes
+  - evidence: `apps/web/src/lib/sidecar/handshake.ts (PW-0101); apps/desktop/src-tauri/src/{job,supervision,sidecar,failure}.rs (PW-0102)`
 - [x] **loopback-hardening** — Per-launch 256-bit token compared in constant time, exact-literal Host check, one indistinguishable refusal, and a start-time refusal when HOSTNAME is unset
   - evidence: `apps/web/src/lib/sidecar/policy.ts + policy.test.ts (PW-0101)`
 - [x] **csp-emission** — The application emits its own CSP in sidecar mode, replacing the injection Tauri stops applying
