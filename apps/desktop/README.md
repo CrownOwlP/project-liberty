@@ -9,8 +9,7 @@ This is the honest boundary, stated first because everything else depends on it.
 | | how | status |
 | --- | --- | --- |
 | the handshake contract, the supervision budget, the launch plan, the failure text | `cargo test` | **25 tests, green** |
-| this crate's Windows-only code, including the Job Object | `cargo check --target x86_64-pc-windows-msvc --no-default-features` | **compiles** |
-| the full shell including Tauri, for Windows | `cargo check --target x86_64-pc-windows-msvc` | **blocked upstream** — ADR-009 |
+| the whole crate including Tauri, for Windows | `cargo check --target x86_64-pc-windows-msvc` | **compiles** |
 | it launches, WebView2 renders, the Job Object kills the sidecar, the installer works | a Windows runner or a real machine | **not observed** |
 
 Nothing in this directory may be read as evidence for the last row. No Windows
@@ -68,8 +67,7 @@ binary that starts and then cannot find its own pages.
 ```bash
 # tests and the Windows cross-check, from anywhere
 cargo test --manifest-path src-tauri/Cargo.toml
-cargo check --manifest-path src-tauri/Cargo.toml \
-  --target x86_64-pc-windows-msvc --no-default-features
+cargo check --manifest-path src-tauri/Cargo.toml --target x86_64-pc-windows-msvc
 
 # packaging, on a machine that has a node.exe to ship
 npm run build:desktop -w @liberty/web

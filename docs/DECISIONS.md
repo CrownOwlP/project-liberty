@@ -88,8 +88,8 @@ Use PostgreSQL for durable state and Redis only for ephemeral/cached workloads. 
 
 ## ADR-009 - The desktop shell is a Tauri v2 application that owns its sidecar
 
-**Status:** Accepted (PW-0102), with one part of it BLOCKED UPSTREAM and recorded
-below rather than worked around.
+**Status:** Accepted (PW-0102). The crate cross-compiles for Windows; what remains
+unevidenced is observation on a Windows machine, not compilation.
 
 `apps/desktop` hosts a WebView2 window pointed at a Next.js standalone server
 running as a child process. The decisions that are not obvious, and the reasons
@@ -123,39 +123,55 @@ directory the server reads from disk at runtime, resolving chunk files by path.
 A single-file packer produces a binary that starts and then cannot find its own
 pages. Recorded so the shortcut is not attempted and abandoned twice.
 
-### The upstream conflict, and why pinning around it was stopped
+### The dependency episode, and what it was actually about
 
-`cargo check --target x86_64-pc-windows-msvc` of the FULL tree does not compile
-today, and the failure is inside Tauri's own transitive graph rather than in
-this crate. `tauri 2.9.1` is the latest stable release and several of its
-transitive dependencies have since published semver-compatible patches it does
-not work with. Three were pinned back in `Cargo.lock` before the attempt was
-stopped:
+**RESOLVED. The crate builds for Windows against `tauri 2.12.0` with no
+hand-pinned transitive versions at all.** The episode below is kept in full
+because the lesson is worth more than the outcome, and because rewriting it as
+though it never happened would delete the only record of how a wrong conclusion
+was reached.
 
-- `wry` 0.53.5 to **0.53.4** -- 0.53.5 changed a trait `tauri-runtime-wry`
-  implements;
-- `tauri-runtime` 2.12.0 to **2.9.2** -- 2.12.0 pulls `webview2-com` 0.39 while
-  `wry` uses 0.38, so an `ICoreWebView2Environment` crosses between two
-  incompatible copies of the same interface;
-- `muda`, which then failed on a `tauri`-expected error variant that no 0.17.x
-  provides.
+**What was claimed, and was wrong.** PW-0102 first pinned `tauri 2.9.1`, on the
+stated basis that it was the latest stable release. `cargo info tauri` in the
+implementation environment reported `version: 2.9.1`, and that was taken as
+fact. Three transitive crates then refused to compile together, and each was
+pinned back by hand:
 
-Continuing would mean hand-resolving somebody else's dependency graph release by
-release, and the result would be a lockfile nobody could justify line by line.
-It was stopped instead, and the verification was decoupled: `tauri` is an
-optional dependency behind a `shell` feature that is ON by default, so the
-shipped build is unchanged, and `--no-default-features` cross-checks THIS
-crate's Windows code -- including every Job Object call -- for
-`x86_64-pc-windows-msvc`. That check passes, and it found a real defect while
-doing so: `CreateJobObjectW` is not exported by `windows-sys` without the
-`Win32_Security` feature, because `SECURITY_ATTRIBUTES` appears in its
-signature.
+- `wry` 0.53.5 to 0.53.4 — 0.53.5 changed a trait `tauri-runtime-wry` implements;
+- `tauri-runtime` 2.12.0 to 2.9.2 — 2.12.0 pulls `webview2-com` 0.39 while `wry`
+  used 0.38, so an `ICoreWebView2Environment` crossed two incompatible copies of
+  one interface;
+- `muda`, which then failed on a `tauri`-expected error variant no 0.17.x provides.
 
-**What this means for the Windows CI job (PW-0501).** The job cannot build the
-shell until the Tauri graph resolves. The options are to wait for a `tauri`
-release that matches its dependencies, or to pin the whole transitive set
-deliberately with a stated justification. That is a decision for the reviewer,
-not something a packaging task should settle by grinding.
+After the fourth attempt the conclusion recorded here was that Tauri's graph was
+irreconcilable and the decision belonged to the reviewer.
+
+**That conclusion was wrong, and the error was upstream of every symptom.**
+`tauri 2.12.0` is the current stable release. `cargo info` had answered from a
+stale local registry index; querying the crates.io API directly returns
+`max_stable_version: 2.12.0`. Every transitive conflict above was a consequence
+of holding a top-level version three minor releases behind its own dependencies
+— `tauri-runtime` 2.12.0 was not "too new", it was the version that matches a
+`tauri` the manifest was refusing to use. The graph was never broken. The
+version the manifest named was.
+
+**The rule this leaves behind.** A dependency version is a fact about the
+registry, not about the local cache, and a tool that answers from a cache is not
+a source for it. Determine the version from the registry, resolve once, and add
+a pin only where an upstream defect is actually demonstrated — never to preserve
+a stale top-level version. There are no transitive pins in `Cargo.lock` now, and
+there should not be any without a comment saying which defect required it.
+
+**What survived the correction as real evidence:** the Windows-target check
+itself, and the defect it found on its first run — `CreateJobObjectW` is not
+exported by `windows-sys` without the `Win32_Security` feature, because
+`SECURITY_ATTRIBUTES` appears in its signature. That was found by cross-checking
+for Windows from Linux and by nothing else.
+
+A `shell` cargo feature was introduced during the episode so the crate's own
+Windows code could be checked without Tauri's graph. It has been **removed**: it
+existed for a problem that did not exist, and leaving it would mean a
+`--no-default-features` build silently produces a binary with no shell in it.
 
 ### What is not evidenced
 

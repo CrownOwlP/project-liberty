@@ -54,22 +54,14 @@ serde_json = "=1.0.145"
 [build-dependencies]
 tauri-build = { version = "=2.7.0", features = [] }
 
-[features]
-# ON BY DEFAULT, so an ordinary build and the shipped installer both include the
-# shell. The feature exists so the crate's OWN Windows code -- the Job Object in
-# `src/job.rs` above all -- can be cross-checked from Linux without also
-# compiling Tauri's transitive graph, which is currently broken upstream. See
-# `docs/DECISIONS.md` ADR-009 for the exact conflicting versions and for why
-# pinning around it was abandoned rather than continued.
-#
-# `--no-default-features` therefore verifies THIS crate for Windows today.
-# It does not verify that the shell links, and no gate recorded from it may say
-# otherwise.
-default = ["shell"]
-shell = ["dep:tauri"]
-
 [target.'cfg(windows)'.dependencies]
-tauri = { version = "=2.9.1", features = [], optional = true }
+# EXACT, AND RESOLVED AGAINST THE CURRENT STABLE RELEASE RATHER THAN AROUND AN
+# OLD ONE. An earlier revision of this file pinned 2.9.1 and then hand-pinned
+# three transitive crates to make its graph compile; the top-level version was
+# stale and the transitive conflicts were a symptom of that, not of the
+# ecosystem. ADR-009 keeps the whole episode, because the lesson is about how
+# the version was determined and not about Tauri.
+tauri = { version = "=2.12.0", features = [] }
 # The Job Object is the whole reason this one exists; see `src/job.rs`.
 windows-sys = { version = "=0.61.2", features = [
   "Win32_Foundation",

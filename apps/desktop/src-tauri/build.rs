@@ -1,22 +1,17 @@
-//! Tauri's build step runs for the Windows target, and only when the shell is
-//! actually being built.
+//! Tauri's build step runs for the Windows target only.
 //!
-//! TWO CONDITIONS, AND NEITHER IS `cfg!(windows)`. A build script is compiled
-//! for the HOST, so `cfg!(windows)` here asks which machine is doing the
-//! building -- exactly the wrong question when the point is cross-checking a
-//! Windows binary from Linux. `CARGO_CFG_TARGET_OS` asks about the target.
+//! THE CHECK IS `CARGO_CFG_TARGET_OS` AND NOT `cfg!(windows)`, and the
+//! difference is the whole reason this file has a comment. A build script is
+//! compiled for the HOST, so `cfg!(windows)` here asks which machine is doing
+//! the building -- exactly the wrong question when the point is cross-checking
+//! a Windows binary from Linux, which is how this crate is verified.
 //!
-//! `CARGO_FEATURE_SHELL` is the second: `tauri-build` reads the Tauri
-//! configuration and generates code the `tauri` crate consumes, so running it
-//! in a `--no-default-features` build -- where `tauri` is not linked -- panics
-//! inside `tauri_build::is_dev`. That build mode exists to verify this crate's
-//! own Windows code while Tauri's transitive graph is broken upstream; see
-//! `docs/DECISIONS.md` ADR-009.
+//! `tauri-build` itself is an unconditional build-dependency for the same
+//! reason: a `cfg(windows)` build-dependency would be absent precisely when
+//! cross-compiling from Linux. It reads configuration and generates code; it
+//! links no GUI toolkit. Whether it RUNS is decided here, from the target.
 fn main() {
-    let targets_windows =
-        std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default() == "windows";
-    let builds_shell = std::env::var_os("CARGO_FEATURE_SHELL").is_some();
-    if targets_windows && builds_shell {
+    if std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default() == "windows" {
         tauri_build::build();
     }
 }
