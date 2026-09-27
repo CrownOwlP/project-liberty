@@ -1,15 +1,15 @@
 # Project Liberty - Project Status
 
-> Generated 2026-09-27T03:14:03.305Z from the AI control plane.
+> Generated 2026-09-27T03:14:03.729Z from the AI control plane.
 
 **Overall completion:** 75/99 executable tasks (76%)
 
 ## Status summary
 
 - **BACKLOG:** 16
-- **READY:** 5
+- **READY:** 4
 - **CLAIMED:** 0
-- **IN_PROGRESS:** 0
+- **IN_PROGRESS:** 1
 - **REVIEW:** 1
 - **BLOCKED:** 2
 - **DONE:** 75
@@ -32,17 +32,17 @@
 ## Active work
 
 - **PW-0102** [REVIEW] A Tauri v2 shell that owns the sidecar's lifetime — owner: claude-infra
+- **PW-0305** [IN_PROGRESS] Continue watching: resume where the viewer left off — owner: claude-frontend
 
 ## Dispatch classification
 
-- **READY_AND_EXECUTABLE:** 5
+- **READY_AND_EXECUTABLE:** 4
 - **READY_BUT_EXTERNAL:** 0
 - **BLOCKED:** 2
 - **BACKLOG (dependency-gated):** 16
 
 ## Recommended executable wave
 
-- **PW-0305** -> claude-frontend (P0/Frontend) Continue watching: resume where the viewer left off
 - **PW-0312** -> claude-frontend (P0/Frontend) Authentication entry and session UX
 
 ## Queued for external agents
@@ -58,7 +58,7 @@ No READY work is waiting on an external agent lane.
 
 - **gpt-architect:** 0/6 active (external lane; not locally executable)
 - **claude-lead:** 0/2 active
-- **claude-frontend:** 0/2 active
+- **claude-frontend:** 1/2 active
 - **claude-backend:** 0/2 active
 - **claude-media:** 0/2 active
 - **claude-test:** 0/1 active

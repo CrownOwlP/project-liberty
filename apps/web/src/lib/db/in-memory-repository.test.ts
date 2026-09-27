@@ -89,8 +89,16 @@ function isProgressFailure(
   return "ok" in value;
 }
 
-function isLimitRejection(
-  value: readonly WatchlistEntryRow[] | ListLimitRejection
+/**
+ * Generic over the row, because two list methods now share the refusal shape.
+ *
+ * It was typed to `WatchlistEntryRow` until PW-0305 added `listContinueWatching`,
+ * whose rows are `PlaybackProgressRow`. A second copy of this predicate would
+ * have been the easy edit and the wrong one: the thing being narrowed is the
+ * REFUSAL, which is one type, and the row is the part that varies.
+ */
+function isLimitRejection<Row>(
+  value: readonly Row[] | ListLimitRejection
 ): value is ListLimitRejection {
   return !Array.isArray(value);
 }
@@ -416,6 +424,128 @@ describe("progress", () => {
     /* Same household, same title, different profile: a shared list is a
      * different and worse product, and this is the row-level half of that. */
     expect(await store.readProgress({ scope: kidsScope, contentId: "aurora-fall" })).toBeNull();
+  });
+});
+
+describe("continue watching (PW-0305)", () => {
+  /**
+   * Written because the port's own header says why it must be: a port method
+   * whose in-memory implementation is never executed is a guess about
+   * behaviour rather than a statement of it, and this is the implementation
+   * `next dev`, vitest and CI actually run. The PostgreSQL one is a delegation
+   * nothing in this environment can exercise.
+   */
+  async function watched(
+    store: LibertyRepository,
+    scope: Awaited<ReturnType<typeof scopeFor>>,
+    contentId: string,
+    positionSeconds: number,
+    instant: Date
+  ): Promise<void> {
+    const lease = await store.issueWriterLease({ scope, contentId, writerId: "tv", instant });
+    if (!lease.ok) throw new Error(lease.reason);
+    const written = await store.writeProgress({
+      scope,
+      contentId,
+      write: {
+        lease: { epoch: lease.epoch, writerId: "tv" },
+        writeSeq: 1,
+        positionSeconds,
+        runtimeSeconds: 7200
+      },
+      instant
+    });
+    if ("ok" in written) throw new Error(written.reason);
+  }
+
+  it("excludes a leased row, because a lease is a claim and not progress", async () => {
+    const store = repository();
+    const id = await createProfile(store, HOUSEHOLD_A, "Dad");
+    const scope = await scopeFor(store, sessionFor(HOUSEHOLD_A, null), id);
+
+    /*
+     * THE DEFECT THIS EXCLUDES IS A REAL ONE THAT SHIPPED ONCE. When a lease
+     * wrote `positionSeconds: 0`, opening a title put it at the top of
+     * "continue watching" at 0:00 with nothing to resume from. `null` is what
+     * makes the two states distinguishable, and this filter is what spends the
+     * distinction.
+     */
+    await store.issueWriterLease({
+      scope,
+      contentId: "aurora-fall",
+      writerId: "tv",
+      instant: INSTANT
+    });
+
+    const listed = await store.listContinueWatching({ scope, limit: 10 });
+    if (isLimitRejection(listed)) throw new Error(listed.reason);
+    expect(listed).toEqual([]);
+  });
+
+  it("orders most recently updated first, with a total order", async () => {
+    const store = repository();
+    const id = await createProfile(store, HOUSEHOLD_A, "Dad");
+    const scope = await scopeFor(store, sessionFor(HOUSEHOLD_A, null), id);
+
+    /* `alpha` and `beta` are written in the SAME instant. Without the
+     * content-id tie-break their order depends on insertion order, which is how
+     * a paginated list drops and repeats rows. */
+    await watched(store, scope, "alpha", 100, INSTANT);
+    await watched(store, scope, "beta", 200, INSTANT);
+    await watched(store, scope, "gamma", 300, new Date("2026-09-05T10:00:00.000Z"));
+
+    const listed = await store.listContinueWatching({ scope, limit: 10 });
+    if (isLimitRejection(listed)) throw new Error(listed.reason);
+    expect(listed.map((row) => row.contentId)).toEqual(["gamma", "beta", "alpha"]);
+  });
+
+  it("is scoped to one profile and does not leak a sibling's viewing", async () => {
+    /*
+     * The property the whole ProfileScope apparatus exists for, asserted on
+     * this method rather than assumed from the others. A continue-watching rail
+     * that showed another household member's titles is a privacy failure that
+     * looks exactly like a working feature.
+     */
+    const store = repository();
+    const dad = await createProfile(store, HOUSEHOLD_A, "Dad");
+    const kid = await createProfile(store, HOUSEHOLD_A, "Kid");
+    const dadScope = await scopeFor(store, sessionFor(HOUSEHOLD_A, null), dad);
+    const kidScope = await scopeFor(store, sessionFor(HOUSEHOLD_A, null), kid);
+
+    await watched(store, dadScope, "aurora-fall", 600, INSTANT);
+    await watched(store, kidScope, "northstar", 300, INSTANT);
+
+    const dadList = await store.listContinueWatching({ scope: dadScope, limit: 10 });
+    if (isLimitRejection(dadList)) throw new Error(dadList.reason);
+    expect(dadList.map((row) => row.contentId)).toEqual(["aurora-fall"]);
+
+    const kidList = await store.listContinueWatching({ scope: kidScope, limit: 10 });
+    if (isLimitRejection(kidList)) throw new Error(kidList.reason);
+    expect(kidList.map((row) => row.contentId)).toEqual(["northstar"]);
+  });
+
+  it("honours the limit rather than returning everything", async () => {
+    const store = repository();
+    const id = await createProfile(store, HOUSEHOLD_A, "Dad");
+    const scope = await scopeFor(store, sessionFor(HOUSEHOLD_A, null), id);
+
+    await watched(store, scope, "alpha", 100, new Date("2026-09-05T10:00:00.000Z"));
+    await watched(store, scope, "beta", 200, new Date("2026-09-05T11:00:00.000Z"));
+    await watched(store, scope, "gamma", 300, new Date("2026-09-05T12:00:00.000Z"));
+
+    const listed = await store.listContinueWatching({ scope, limit: 2 });
+    if (isLimitRejection(listed)) throw new Error(listed.reason);
+    expect(listed.map((row) => row.contentId)).toEqual(["gamma", "beta"]);
+  });
+
+  it("refuses a limit that is not a representable page size", async () => {
+    const store = repository();
+    const id = await createProfile(store, HOUSEHOLD_A, "Dad");
+    const scope = await scopeFor(store, sessionFor(HOUSEHOLD_A, null), id);
+
+    const rejected = await store.listContinueWatching({ scope, limit: Number.NaN });
+    if (!isLimitRejection(rejected)) throw new Error("expected a limit refusal");
+    expect(rejected.reason).toBe("limit_not_representable");
   });
 });
 

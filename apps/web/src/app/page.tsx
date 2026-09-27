@@ -2,6 +2,7 @@ import { AppShell } from "../components/shell/app-shell";
 import Link from "next/link";
 import { Suspense } from "react";
 import { CatalogRail } from "../components/catalog-rail";
+import { ContinueWatchingRail } from "../components/continue-watching/continue-watching-rail";
 import { loadHomeCatalog, type CatalogEmptyCause } from "../lib/catalog";
 
 /**
@@ -216,6 +217,34 @@ export default function HomePage() {
           </div>
         </div>
       </section>
+
+      {/*
+        THE CONTINUE-WATCHING RAIL HAS ITS OWN BOUNDARY, AND IT IS NOT THE
+        CATALOG'S (PW-0305).
+
+        Two separate `Suspense` boundaries rather than one around both, because
+        the two loads fail and stall for completely different reasons. The
+        catalog comes from a metadata source; this rail reads the identity store
+        and the progress table. Sharing a boundary would make an unreachable
+        database into a slow catalog -- the wrong failure, attributed to the
+        wrong subsystem, in front of the thing the page is actually for.
+
+        `fallback={null}` RATHER THAN A SKELETON, and that is the difference
+        between this rail and the one below it. A skeleton is a promise that
+        something is coming, and it is the right promise for the catalog:
+        `loadHomeCatalog` always produces a rail, a panel or an error. This rail
+        very often resolves to NOTHING -- a viewer who has watched nothing, a
+        session with no profile selected yet, a deployment with no database --
+        and a row of grey boxes that vanishes is a promise broken every time the
+        normal case happens.
+
+        ABOVE THE CATALOG in document order because a viewer who left something
+        half-watched came back for it, and below the hero because the hero is
+        static markup that never waits.
+      */}
+      <Suspense fallback={null}>
+        <ContinueWatchingRail />
+      </Suspense>
 
       <div id="catalog">
         <Suspense fallback={<CatalogSkeleton />}>

@@ -3,6 +3,7 @@ import {
   createDatabase,
   createProfile,
   issueWriterLease,
+  listContinueWatching,
   listProfilesForAccount,
   listWatchlist,
   loadProfileOwnership,
@@ -61,6 +62,7 @@ export function postgresRepositoryOver(handle: DatabaseHandle): LibertyRepositor
     issueWriterLease: (input) => issueWriterLease(db, input),
     writeProgress: (input) => writeProgress(db, input),
     readProgress: (input) => readProgress(db, input),
+    listContinueWatching: (input) => listContinueWatching(db, input),
 
     addToWatchlist: (input) => addToWatchlist(db, input),
     removeFromWatchlist: (input) => removeFromWatchlist(db, input),

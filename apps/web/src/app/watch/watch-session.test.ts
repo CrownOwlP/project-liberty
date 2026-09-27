@@ -196,6 +196,90 @@ describe("what the route will not accept", () => {
   });
 });
 
+describe("where playback begins (PW-0305)", () => {
+  /**
+   * The resume point arrives as a PARAMETER, which is why every branch here
+   * runs with no database, no profile and no progress row. The watch page
+   * resolves the real value and hands it down; see that page for why the read
+   * is not done inside this module.
+   */
+  it("starts at the stored position when the issuer states nothing", async () => {
+    const { issue } = answering(
+      grantedSession(issued({ startAtSeconds: null }), playbackReason("session_issued", "ok"))
+    );
+    const result = await loadPlaybackSession(CONTENT_ID, {}, issue, 1234);
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") return;
+    expect(result.session.startAtSeconds).toBe(1234);
+  });
+
+  it("lets the ISSUER win when it states a position, and does not overrule it", async () => {
+    /*
+     * `null` means "engine default" -- the beginning for VOD, the LIVE EDGE for
+     * live -- so a non-null value from the session route is a deliberate
+     * statement by the side of the boundary that knows what kind of stream this
+     * is. Under the desktop target that side is the authenticated backend.
+     * Overruling it with a stored position is how a live channel would start
+     * forty minutes behind.
+     */
+    const { issue } = answering(
+      grantedSession(issued({ startAtSeconds: 42 }), playbackReason("session_issued", "ok"))
+    );
+    const result = await loadPlaybackSession(CONTENT_ID, {}, issue, 1234);
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") return;
+    expect(result.session.startAtSeconds).toBe(42);
+  });
+
+  it("starts at the engine default when there is nothing stored", async () => {
+    /* The ordinary case for a title nobody has watched, and the case a
+     * start-over request produces: the page passes `null` rather than reading
+     * and discarding. */
+    const { issue } = answering(
+      grantedSession(issued({ startAtSeconds: null }), playbackReason("session_issued", "ok"))
+    );
+    const result = await loadPlaybackSession(CONTENT_ID, {}, issue, null);
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") return;
+    expect(result.session.startAtSeconds).toBeNull();
+  });
+
+  it("defaults to no resume, so every existing caller is unchanged", async () => {
+    /*
+     * The parameter is defaulted rather than required. Every call site that
+     * predates PW-0305 -- including the ones in this file -- keeps the
+     * behaviour it had, which is what makes this change additive rather than a
+     * rewrite of the watch path.
+     */
+    const { issue } = answering(
+      grantedSession(issued({ startAtSeconds: null }), playbackReason("session_issued", "ok"))
+    );
+    const result = await loadPlaybackSession(CONTENT_ID, {}, issue);
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") return;
+    expect(result.session.startAtSeconds).toBeNull();
+  });
+
+  it("resumes THROUGH the session rather than by seeking after load", async () => {
+    /*
+     * The acceptance's own wording, asserted as a property of the object the
+     * player is handed: the position is on the SESSION, so the machine passes
+     * it to `load()` and the viewer never sees the opening frames of something
+     * they were half-way through. Nothing in this path emits a seek, and
+     * `playback-machine.test.ts` is where the load-time behaviour of
+     * `startAtSeconds` is pinned.
+     */
+    const { issue } = answering(
+      grantedSession(issued({ startAtSeconds: null }), playbackReason("session_issued", "ok"))
+    );
+    const result = await loadPlaybackSession(CONTENT_ID, {}, issue, 900);
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") return;
+    expect(Object.keys(result.session)).toContain("startAtSeconds");
+    expect(result.session).not.toHaveProperty("seekTo");
+  });
+});
+
 describe("the decision, mapped onto what the page renders", () => {
   it("renders a granted session in the order the session published", async () => {
     const first = candidate({ id: "a", uri: "https://fixtures.invalid/a.m3u8" });

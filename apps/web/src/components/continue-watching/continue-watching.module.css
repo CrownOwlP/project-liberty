@@ -1,0 +1,66 @@
+/*
+ * Scoped to the continue-watching surface (PW-0305).
+ *
+ * A CSS module rather than additions to `globals.css`, for the two reasons
+ * `search.module.css`, `title.module.css` and `artwork.module.css` all record.
+ * The narrow one: `app/globals.css` is outside this task's allowed paths and is
+ * held by PW-0310. The durable one: four rules do not need to become global
+ * class names every future surface has to avoid colliding with. `.section`,
+ * `.section-head`, `.rail`, `.card` and `.visually-hidden` are reused from
+ * `globals.css` unchanged, so this rail cannot drift visually from the catalog
+ * rails beside it.
+ */
+
+/*
+ * The track the bar sits in.
+ *
+ * `margin-top` rather than a gap on the card, because the card's own spacing is
+ * global and this element is an addition to it: a change here must not move the
+ * title and meta lines of every card in the product.
+ */
+.progressTrack {
+  margin: 8px 2px 0;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--border);
+  overflow: hidden;
+}
+
+/*
+ * The watched portion.
+ *
+ * WIDTH COMES FROM AN INLINE STYLE, and that is the one place in this surface
+ * where that is right: the value is per-card data, and the alternative -- a
+ * class per five-percent step, or a CSS variable set inline anyway -- is the
+ * same inline style with more indirection. Nothing else about the bar is
+ * inline, so a visual change is still a change to this file.
+ */
+.progressBar {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--accent, #6c97f1);
+}
+
+/*
+ * The second control on a card.
+ *
+ * Deliberately quiet. `catalog-card.tsx` argues at length that the heading is
+ * the link and the card is not; a start-over control that competed with the
+ * title for attention would undo that, and a viewer looking for it knows it is
+ * there. It is a real link rather than a button because it navigates, and
+ * because a link works with no JavaScript -- which on this rail matters, since
+ * everything else about it is server-rendered.
+ */
+.startOver {
+  display: inline-block;
+  margin: 4px 2px 0;
+  font-size: 12px;
+  color: var(--muted);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.startOver:hover,
+.startOver:focus-visible {
+  color: var(--text);
+}

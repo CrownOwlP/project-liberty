@@ -5,6 +5,11 @@ import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { PlayerSurface } from "../../../components/player/player-surface";
 import { isWatchableContentId, loadPlaybackSession } from "../watch-session";
+import {
+  RESTART_PARAM,
+  isRestartRequested,
+  loadResumePosition
+} from "../../../lib/continue-watching";
 
 /**
  * Rendered per request rather than prerendered.
@@ -94,7 +99,14 @@ function PlaybackLoading() {
  * HTTP 200 have been flushed. It therefore renders outcomes and never calls
  * `notFound()`.
  */
-async function PlaybackBody({ contentId }: { contentId: string }) {
+async function PlaybackBody({
+  contentId,
+  restart
+}: {
+  contentId: string;
+  /** The viewer asked to start over. See `lib/continue-watching.ts`. */
+  restart: boolean;
+}) {
   /*
    * THE INBOUND HEADERS ARE HANDED DOWN, AND THIS IS THE ONLY REASON THEY ARE
    * READ HERE (PL-0501, round 45).
@@ -114,7 +126,28 @@ async function PlaybackBody({ contentId }: { contentId: string }) {
    * security test does not cover. `headers()` also marks this subtree dynamic,
    * which it already is — `revalidate = 0` above says the same thing.
    */
-  const result = await loadPlaybackSession(contentId, { headers: await headers() });
+  const inbound = await headers();
+
+  /*
+   * THE RESUME POINT IS RESOLVED HERE AND HANDED DOWN (PW-0305).
+   *
+   * Here rather than in `watch-session.ts` because that module's own suite
+   * asserts which modules it may name, and reaching the progress store from it
+   * would mean importing `lib/continue-watching.ts` -- which statically reaches
+   * the catalog metadata registry and through it `@liberty/catalog-ingestion`.
+   * This page already sits on that side of the graph. A resume point is data;
+   * making it an import would have been a dependency.
+   *
+   * `restart` SHORT-CIRCUITS THE READ ENTIRELY rather than reading and
+   * discarding. Start over must not depend on what the store happens to say, so
+   * the store is not asked -- and the stored position is left exactly where it
+   * was, because starting over is a request for a different session and not a
+   * mutation. The next heartbeat from the player overwrites it in the ordinary
+   * way.
+   */
+  const resumeAtSeconds = restart ? null : await loadResumePosition(inbound, contentId);
+
+  const result = await loadPlaybackSession(contentId, { headers: inbound }, undefined, resumeAtSeconds);
 
   if (result.status === "error") {
     return (
@@ -197,8 +230,28 @@ async function PlaybackBody({ contentId }: { contentId: string }) {
   return <PlayerSurface session={result.session} policy={result.policy} />;
 }
 
-export default async function WatchPage({ params }: { params: Promise<{ contentId: string }> }) {
+export default async function WatchPage({
+  params,
+  searchParams
+}: {
+  params: Promise<{ contentId: string }>;
+  /**
+   * `?restart=1` asks to start over (PW-0305).
+   *
+   * READ HERE AND NOWHERE ELSE, and interpreted by `isRestartRequested` rather
+   * than by a presence check: `?restart=0` reads as "no" to a person and would
+   * read as "yes" to a truthiness test, and the cost of getting that backwards
+   * is a viewer losing their place. `lib/continue-watching.ts` owns both the
+   * parameter's name and the one value that means it, so the rail that builds
+   * the link and the page that reads it cannot drift apart.
+   *
+   * Reading it does NOT make this subtree dynamic in a way it was not already:
+   * `revalidate = 0` and the `headers()` call below both already say so.
+   */
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const { contentId } = await params;
+  const restart = isRestartRequested((await searchParams)[RESTART_PARAM]);
 
   /*
    * THE EXISTENCE DECISION, TAKEN ABOVE EVERY SUSPENSE BOUNDARY ON THIS ROUTE.
@@ -256,7 +309,7 @@ export default async function WatchPage({ params }: { params: Promise<{ contentI
     <AppShell pathname="/watch" badge="Player" mainClassName="player-shell">
 
       <Suspense fallback={<PlaybackLoading />}>
-        <PlaybackBody contentId={contentId} />
+        <PlaybackBody contentId={contentId} restart={restart} />
       </Suspense>
 
       <div className="player-meta">

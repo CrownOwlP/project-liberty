@@ -198,7 +198,16 @@ const SCOPE_TAKING = {
       contentId: "the-northstar-affair"
     }),
   listWatchlist: (repository: InMemoryRepository) =>
-    repository.listWatchlist({ scope: forgedScope, limit: 20 })
+    repository.listWatchlist({ scope: forgedScope, limit: 20 }),
+  /*
+   * Added with the port method in PW-0305, in the same change. A scope-taking
+   * method that reached the port without reaching this enumeration would have
+   * no forgery guard AND this suite would still pass -- the defect would be an
+   * absence, which is the kind nothing reports. The completeness test below is
+   * what turns that from a discipline into a failure.
+   */
+  listContinueWatching: (repository: InMemoryRepository) =>
+    repository.listContinueWatching({ scope: forgedScope, limit: 20 })
 } satisfies Record<string, (repository: InMemoryRepository) => Promise<unknown>>;
 
 /**
@@ -225,16 +234,22 @@ describe("the classification is complete, so a new method cannot slip past this 
     const classified = [...Object.keys(SCOPE_TAKING), ...SCOPE_FREE, ...NOT_A_METHOD].sort();
 
     /*
-     * THIS IS THE ASSERTION THAT MAKES THE SUITE EXHAUSTIVE. A twelfth member
-     * added to `createInMemoryRepository` fails here until somebody decides
-     * which list it belongs in, and putting it in `SCOPE_TAKING` means writing
-     * the forgery call for it, because the list is a map of invocations.
+     * THIS IS THE ASSERTION THAT MAKES THE SUITE EXHAUSTIVE. A new member added
+     * to `createInMemoryRepository` fails here until somebody decides which
+     * list it belongs in, and putting it in `SCOPE_TAKING` means writing the
+     * forgery call for it, because the list is a map of invocations.
+     *
+     * IT DID ITS JOB IN PW-0305. `listContinueWatching` was added to the port
+     * and to the adapter, and this pair of tests failed -- the classification
+     * test until the method was classified, and the count below until the
+     * number was updated -- which is the whole reason the count is written out
+     * rather than derived from the list it is checking.
      */
     expect(Object.keys(adapter()).sort()).toStrictEqual(classified);
   });
 
   it("the scope-taking list is not silently empty", () => {
-    expect(Object.keys(SCOPE_TAKING)).toHaveLength(7);
+    expect(Object.keys(SCOPE_TAKING)).toHaveLength(8);
   });
 });
 
@@ -297,6 +312,11 @@ describe("the check runs before argument validation, so it is not an oracle", ()
   it("a forged scope with an unusable limit still fails on the scope", async () => {
     await expect(
       adapter().listWatchlist({ scope: forgedScope, limit: Number.NaN })
+    ).rejects.toThrow(ForgedProfileScopeError);
+    /* The same ordering on the method PW-0305 added, asserted rather than
+     * assumed to have been copied correctly. */
+    await expect(
+      adapter().listContinueWatching({ scope: forgedScope, limit: Number.NaN })
     ).rejects.toThrow(ForgedProfileScopeError);
   });
 });

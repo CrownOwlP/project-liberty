@@ -580,6 +580,45 @@ export function createInMemoryRepository(
       return store.progress.get(scopedKey(profileId, contentId.contentId)) ?? null;
     },
 
+    /**
+     * "Continue watching" for one profile (PW-0305).
+     *
+     * WRITTEN TO REPRODUCE THE QUERY, NOT TO APPROXIMATE IT, because this is
+     * the implementation `next dev`, vitest and CI actually execute -- the
+     * PostgreSQL one is a delegation nothing here can run. Three properties
+     * come straight from `listContinueWatching`'s SQL and each one is
+     * load-bearing:
+     *
+     *   - ISSUANCE FIRST, ahead of `parseListLimit`, matching every other
+     *     method on this adapter and the package's own ordering. A forged
+     *     scope must be refused before a malformed limit is, or the refusal
+     *     order tells a caller which of the two it got right.
+     *   - A ROW WITH A NULL `positionSeconds` IS A LEASE, NOT PROGRESS, and is
+     *     excluded. Including it would put a title at the top of this list
+     *     purely because somebody opened it, with nothing to resume from --
+     *     the defect the old `positionSeconds: 0` at lease time actually
+     *     produced.
+     *   - `contentId` DESCENDING BREAKS THE TIE on `updatedAt`, so the order is
+     *     total. Two rows written in the same millisecond otherwise come back
+     *     in whatever order the plan chose, and a paginated list then skips and
+     *     repeats entries.
+     */
+    listContinueWatching: async (input) => {
+      // Issuance first; see the header. Ahead of `parseListLimit` deliberately.
+      const profileId = profileIdFromScope(input.scope);
+
+      const limit = parseListLimit(input.limit);
+      if (!limit.ok) return limit;
+
+      return [...store.progress.values()]
+        .filter((row) => row.profileId === profileId && row.positionSeconds !== null)
+        .sort((left, right) => {
+          const byUpdated = right.updatedAt.getTime() - left.updatedAt.getTime();
+          return byUpdated !== 0 ? byUpdated : right.contentId.localeCompare(left.contentId);
+        })
+        .slice(0, limit.limit);
+    },
+
     /* ----------------------------------------------------------------
      * Watchlist (PL-0404)
      * ---------------------------------------------------------------- */

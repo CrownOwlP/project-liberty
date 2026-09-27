@@ -2,6 +2,7 @@ import type {
   addToWatchlist,
   createProfile,
   issueWriterLease,
+  listContinueWatching,
   listProfilesForAccount,
   listWatchlist,
   loadProfileOwnership,
@@ -40,12 +41,20 @@ import type {
  * adapter at once, and nothing here restates a parameter or a result type that
  * could quietly stop matching.
  *
- * WHAT IS DELIBERATELY NOT HERE. `archiveProfile`, `listContinueWatching`,
- * `watchlistContains` and `countLiveProfilesForAccount` are exported by the
- * package and are not on this port, because no route in this task calls them. A
- * port method with no caller is a method whose in-memory implementation is
- * never executed, and an unexecuted implementation is a guess about behaviour
- * rather than a statement of it. They go on the port when a route needs them.
+ * WHAT IS DELIBERATELY NOT HERE. `archiveProfile`, `watchlistContains` and
+ * `countLiveProfilesForAccount` are exported by the package and are not on this
+ * port, because no route calls them. A port method with no caller is a method
+ * whose in-memory implementation is never executed, and an unexecuted
+ * implementation is a guess about behaviour rather than a statement of it. They
+ * go on the port when a route needs them.
+ *
+ * `listContinueWatching` WAS ON THAT LIST UNTIL PW-0305, which is the surface
+ * that needed it: the home route's continue-watching rail. It was added under
+ * the rule above rather than around it -- the in-memory adapter implements the
+ * query's stated behaviour rather than an approximation, `in-memory-repository.test.ts`
+ * executes it, and `scope-forgery.test.ts` gained it in the same change,
+ * because a new scope-taking method absent from that enumeration is a method
+ * with no forgery guard and the suite would still pass.
  * ---------------------------------------------------------------------- */
 
 /**
@@ -119,6 +128,15 @@ export interface LibertyRepository {
   readonly issueWriterLease: Bound<typeof issueWriterLease>;
   readonly writeProgress: Bound<typeof writeProgress>;
   readonly readProgress: Bound<typeof readProgress>;
+  /**
+   * "Continue watching" for the active profile (PW-0305).
+   *
+   * `limit` is required by the package and stays required here: an unbounded
+   * list query against a table that grows with every episode a household
+   * watches is a slow request waiting for a heavy user, and a default on the
+   * port would hide that decision from the call site that has to live with it.
+   */
+  readonly listContinueWatching: Bound<typeof listContinueWatching>;
 
   /* --- watchlist (PL-0404) --- */
 

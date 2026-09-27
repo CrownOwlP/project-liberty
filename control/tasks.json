@@ -8969,7 +8969,7 @@
       "id": "PW-0305",
       "priority": "P0",
       "lane": "Frontend",
-      "status": "READY",
+      "status": "IN_PROGRESS",
       "title": "Continue watching: resume where the viewer left off",
       "dependencies": [
         "PW-0301",
@@ -8978,14 +8978,27 @@
       "allowedPaths": [
         "apps/web/src/components/continue-watching/**",
         "apps/web/src/lib/continue-watching.ts",
-        "apps/web/src/lib/continue-watching.test.ts"
+        "apps/web/src/lib/continue-watching.test.ts",
+        "apps/web/src/app/page.tsx",
+        "apps/web/src/components/catalog-card.tsx",
+        "apps/web/src/app/watch/watch-session.ts",
+        "apps/web/src/app/watch/watch-session.test.ts",
+        "apps/web/src/app/watch/[contentId]/page.tsx",
+        "apps/web/src/lib/db/repository.ts",
+        "apps/web/src/lib/db/postgres-repository.ts",
+        "apps/web/src/lib/db/in-memory-repository.ts",
+        "apps/web/src/lib/db/in-memory-repository.test.ts",
+        "apps/web/src/lib/db/scope-forgery.test.ts"
       ],
       "reviewDependencies": [
         "apps/web/src/app/api/v1/progress",
         "packages/persistence/src/progress-repository.ts",
-        "apps/web/src/app/page.tsx",
-        "apps/web/src/components/catalog-card.tsx",
-        "apps/web/src/components/player/playback-session.ts"
+        "apps/web/src/components/player/playback-session.ts",
+        "apps/web/src/lib/catalog.ts",
+        "apps/web/src/lib/catalog-source.ts",
+        "apps/web/src/lib/catalog-source-registry.ts",
+        "apps/web/src/lib/db/request-context.ts",
+        "apps/web/src/app/globals.css"
       ],
       "preferredAgent": "claude-frontend",
       "reviewAgent": "gpt-architect",
@@ -8996,8 +9009,11 @@
       ],
       "acceptance": "A viewer sees what they were watching and resumes it at the right position. The progress API, its lease route and its writer-epoch conflict rules are complete, tested and reviewed, and no rail, no card progress bar and no resume prompt exists. REQUIRED: a continue-watching rail on home, profile-scoped, ordered by recency, excluding finished items by a stated rule rather than a magic threshold buried in a component. REQUIRED: a progress indicator on cards for partially watched titles. REQUIRED: resume uses the stored position through the session's startAtSeconds, which the playback path already carries, rather than seeking after load -- the test matrix already lists 'resumed playback uses stored progress safely' as a regression scenario. REQUIRED: a viewer can start over; a resume that cannot be declined is a trap.",
       "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. ",
-      "owner": null,
-      "gateResults": {}
+      "owner": "claude-frontend",
+      "gateResults": {},
+      "implementationAgent": "claude-frontend",
+      "updatedAt": "2026-09-27T03:19:16.777Z",
+      "implementationBaseSha": "33c70e8a3b135917ac1e2f7072cef460ae3df0d2"
     },
     {
       "id": "PW-0306",

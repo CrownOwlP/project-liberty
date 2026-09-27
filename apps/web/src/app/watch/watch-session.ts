@@ -331,7 +331,15 @@ export function isWatchableContentId(contentId: string): boolean {
  */
 export function watchResultFor(
   contentId: string,
-  response: PlaybackSessionResponse
+  response: PlaybackSessionResponse,
+  /**
+   * Where this profile last was, in seconds, or `null` (PW-0305).
+   *
+   * A PARAMETER RATHER THAN A READ, so every resume branch is reachable from a
+   * unit test with no database and no profile -- the same reason `issue` is
+   * injected above. `loadPlaybackSession` supplies the real value.
+   */
+  resumeAtSeconds: number | null = null
 ): WatchSessionResult {
   const reasons = response.reasons.map(describeReason);
 
@@ -365,13 +373,34 @@ export function watchResultFor(
       contentId: response.session.contentId,
       candidates,
       /*
-       * THE SESSION'S OWN RESUME POINT, not `null` restated. `issue-session.ts`
-       * writes `null` unconditionally today and `null` still means "engine
-       * default" — the beginning for VOD, the live edge for live. Reading it
-       * from the response rather than hardcoding it means the day PL-0403 joins
-       * progress to session issuance, this page honours it without an edit.
+       * WHERE PLAYBACK BEGINS, AND WHO GETS TO SAY (PW-0305).
+       *
+       * THE ISSUER WINS WHEN IT STATES ANYTHING. `null` means "engine default"
+       * -- the beginning for VOD, the live edge for live -- so a NON-null value
+       * from the session route is a deliberate statement by the side of the
+       * boundary that knows what kind of stream this is, and a page must not
+       * overrule it with a stored position. Under the desktop target that side
+       * is the authenticated backend, which makes the precedence matter more
+       * rather than less.
+       *
+       * THE STORED POSITION FILLS THE `null`, which today is every session.
+       * That is the resume the acceptance asks for, and it arrives THROUGH
+       * `startAtSeconds` rather than as a seek after load: the player is told
+       * where to start before it starts, so a viewer never sees the opening
+       * frames of something they were half-way through.
+       *
+       * THE COMMENT THIS REPLACES SAID PL-0403 WOULD JOIN PROGRESS TO SESSION
+       * ISSUANCE. PL-0403 is DONE and did not: it built the progress repository
+       * and the progress API and stopped, and `issue-session.ts` still writes
+       * `null` unconditionally. Setting it there would be the better boundary
+       * and is not reachable from this task -- the playback-session route is
+       * not profile-authorized, PW-0402 having deliberately left it out, so the
+       * issuer has no scope to read progress against. Giving it one is an
+       * authorization and published-contract change on a route whose whole body
+       * the cross-target suite compares between targets. Named as follow-up
+       * here rather than done quietly.
        */
-      startAtSeconds: response.session.startAtSeconds,
+      startAtSeconds: response.session.startAtSeconds ?? resumeAtSeconds,
       reasons
     },
     /*
@@ -403,7 +432,21 @@ export function watchResultFor(
 export async function loadPlaybackSession(
   contentId: string,
   context: WatchSessionRequestContext = {},
-  issue: PlaybackSessionIssuer = handlePlaybackSessionRequest
+  issue: PlaybackSessionIssuer = handlePlaybackSessionRequest,
+  /**
+   * Where this profile last was, in seconds, or `null` (PW-0305).
+   *
+   * PASSED IN AS DATA, AND THIS FILE READS NO PROGRESS ITSELF. The resume point
+   * is resolved by the watch page and handed here, which keeps two properties
+   * this module has and should keep. It stays testable with no database: every
+   * resume branch is a value, not a store. And its IMPORT GRAPH is unchanged --
+   * reaching the progress store from here would mean importing
+   * `lib/continue-watching.ts`, which statically reaches the catalog metadata
+   * registry and through it `@liberty/catalog-ingestion`, and this file's own
+   * suite asserts what it is allowed to name. A resume point is data; making it
+   * an import would have been a dependency.
+   */
+  resumeAtSeconds: number | null = null
 ): Promise<WatchSessionResult> {
   /*
    * Checked before the route is called. An id that is not normalized cannot
@@ -461,5 +504,5 @@ export async function loadPlaybackSession(
     };
   }
 
-  return watchResultFor(contentId, parsed.data);
+  return watchResultFor(contentId, parsed.data, resumeAtSeconds);
 }
