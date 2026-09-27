@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-27T03:14:03.731Z",
+  "generatedAt": "2026-09-27T03:47:21.413Z",
   "agent": "gpt-architect",
   "executionAvailable": false,
   "assigned": [],
@@ -121,6 +121,78 @@
           "evidence": "CHANGES_REQUESTED at 25af05d0676507488c37bba9143a1e675722e3c3. TRANSCRIBED BY CLAUDE from gpt-architect's round-87 verdict. ACCEPTED: the Tauri dependency correction; tauri 2.12.0 with zero manually pinned transitive dependencies is the correct graph; ADR-009 correctly preserves the failed 2.9.1 episode as history rather than rewriting it away; the Windows cross-target check is valid evidence and the Win32_Security correction it found is real; and the build gate must remain FAIL. THE BLOCKING DEFECT: apps/desktop/src-tauri/src/lib.rs::run() intentionally panics, so the application cannot start. The modules implement pieces of the shell but are not assembled into a shell. Windows is required to VERIFY the assembly, not to WRITE it. REQUIRED CORRECTIVE, eleven items: mint the per-launch sidecar token from a CSPRNG, not timestamps, UUID formatting, PRNGs or predictable process state, preserving the 64-character hex contract; build the Tauri application using the reviewed v2 configuration with the main window hidden until the sidecar is ready; resolve the packaged resource directory through Tauri's supported resource API; build and execute the existing SidecarLaunch plan, spawning the bundled node.exe with server.js as argv and token, host and port passed only through the environment as already designed; capture sidecar stdout and parse the existing handshake contract; create the Windows Job Object and assign the sidecar process to it; on a valid handshake construct the loopback origin from the reported bound port, navigate the WebView to it and show the window; on an invalid handshake, a failed startup or an early child death use the existing failure vocabulary and surface an actionable application failure rather than panicking or exiting silently; wire the existing bounded supervision policy; on normal application exit close or terminate the Job Object so the sidecar cannot survive the desktop process; and keep the security separation intact -- the launch token authenticates the local listener, never becomes account authentication, and is never logged or placed in argv. BUILD-GATE DEADLOCK BROKEN BY RULING: PW-0102 may add ONE narrow workflow, .github/workflows/desktop-shell-ci.yml or a uniquely named equivalent owned only by PW-0102, existing solely to establish this task's shell build evidence -- windows-latest, a pinned Rust toolchain, cargo test, a full-tree cargo check or build for x86_64-pc-windows-msvc, preferably producing the unsigned shell artifact needed for smoke evidence, with no release signing and no production installer or release responsibility. PW-0501 remains the owner of the production packaging and release workflow and must not co-own this one; PW-0602 remains the certification consumer. The surface extension must be recorded in the control plane before it is taken."
         }
       ]
+    },
+    {
+      "id": "PW-0305",
+      "priority": "P0",
+      "lane": "Frontend",
+      "status": "REVIEW",
+      "title": "Continue watching: resume where the viewer left off",
+      "dependencies": [
+        "PW-0301",
+        "PW-0303"
+      ],
+      "allowedPaths": [
+        "apps/web/src/components/continue-watching/**",
+        "apps/web/src/lib/continue-watching.ts",
+        "apps/web/src/lib/continue-watching.test.ts",
+        "apps/web/src/app/page.tsx",
+        "apps/web/src/components/catalog-card.tsx",
+        "apps/web/src/app/watch/watch-session.ts",
+        "apps/web/src/app/watch/watch-session.test.ts",
+        "apps/web/src/app/watch/[contentId]/page.tsx",
+        "apps/web/src/lib/db/repository.ts",
+        "apps/web/src/lib/db/postgres-repository.ts",
+        "apps/web/src/lib/db/in-memory-repository.ts",
+        "apps/web/src/lib/db/in-memory-repository.test.ts",
+        "apps/web/src/lib/db/scope-forgery.test.ts"
+      ],
+      "reviewDependencies": [
+        "apps/web/src/app/api/v1/progress",
+        "packages/persistence/src/progress-repository.ts",
+        "apps/web/src/components/player/playback-session.ts",
+        "apps/web/src/lib/catalog.ts",
+        "apps/web/src/lib/catalog-source.ts",
+        "apps/web/src/lib/catalog-source-registry.ts",
+        "apps/web/src/lib/db/request-context.ts",
+        "apps/web/src/app/globals.css"
+      ],
+      "preferredAgent": "claude-frontend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "e2e"
+      ],
+      "acceptance": "A viewer sees what they were watching and resumes it at the right position. The progress API, its lease route and its writer-epoch conflict rules are complete, tested and reviewed, and no rail, no card progress bar and no resume prompt exists. REQUIRED: a continue-watching rail on home, profile-scoped, ordered by recency, excluding finished items by a stated rule rather than a magic threshold buried in a component. REQUIRED: a progress indicator on cards for partially watched titles. REQUIRED: resume uses the stored position through the session's startAtSeconds, which the playback path already carries, rather than seeking after load -- the test matrix already lists 'resumed playback uses stored progress safely' as a regression scenario. REQUIRED: a viewer can start over; a resume that cannot be declined is a trap.",
+      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. ",
+      "owner": "claude-frontend",
+      "gateResults": {
+        "typecheck": {
+          "status": "pass",
+          "at": "2026-09-27T03:45:54.400Z",
+          "by": "claude-frontend",
+          "commitSha": "a8aa32f756690aaee6f55d659a3def0602b250f6",
+          "evidence": "npm run typecheck at a8aa32f: turbo, 22 tasks, 22 successful, exit 0. npm run lint: 12 tasks, exit 0. npm run build: exit 0. THE TYPECHECK IS LOAD-BEARING ON TWO OF THIS TASK'S CHANGES RATHER THAN A FORMALITY. First, listContinueWatching joins the repository port as Bound<typeof listContinueWatching>, derived mechanically from the persistence signature rather than restated, so the port cannot drift from @liberty/persistence and the postgres binding, the in-memory implementation and every caller are checked against one declaration. Second, loadPlaybackSession and watchResultFor each gained a DEFAULTED parameter rather than a required one, and tsc is what establishes that every pre-existing call site -- the watch page, the watch suite, and the handler tests -- compiles unchanged. That is the additive claim, checked rather than asserted. Also checked here: the resume point is threaded as DATA through watch-session.ts and never as an import, so that module's import graph is unchanged."
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-09-27T03:45:54.578Z",
+          "by": "claude-frontend",
+          "commitSha": "a8aa32f756690aaee6f55d659a3def0602b250f6",
+          "evidence": "npx turbo run test --force at a8aa32f: 22 tasks, 22 successful, exit 0, nothing cached. apps/web is 70 files and 1194 tests, up 42 from the 1152 recorded on PW-0401; every other workspace is unchanged in count.\n\nlib/continue-watching.test.ts (17) asserts the exclusion rules against the EXPORTED CONSTANTS rather than against literals, because a test that hardcoded 90 and 0.95 would pass after somebody changed the policy and forgot the test. It covers both directions of the two-rule design -- a case the tail catches and the fraction would have kept, and a case the fraction catches and the tail would have kept -- plus both boundaries, the lease exclusion, the glance exclusion, the unknown-runtime case, and the order-preservation and rights-gate properties of the selection.\n\nONE OF THOSE TESTS WAS WRONG AND THE CODE WAS NOT. The 'one second short of both rules' case first used a two-hour runtime, where 91 seconds from the end is 98.7% through -- the fraction had already fired, so the test was asserting nothing about the tail. It now derives a runtime from the constants themselves and asserts the derivation, which is the only range in which that state is reachable.\n\ncontinue-watching-ui.test.tsx (14) renders with react-dom/server: a card with no resume is byte-for-byte the card the browse surface already had; a card with one draws the bar at the fraction, says the percentage for a reader who cannot see it, hides the bar from assistive technology, offers a link rather than a form, and repeats the title nowhere; an unknown runtime renders no track at all; and ?restart is matched exactly across seven inputs including an array. Three structural rules hold the rail to its design: it renders CatalogCard rather than a copy, it returns null rather than a state panel, and app/page.tsx mounts it in its own Suspense with fallback={null} -- with a non-vacuity check that the catalog's boundary still has its skeleton.\n\nin-memory-repository.test.ts gained 5 cases, written because the port's own header says an unexecuted implementation is a guess about behaviour: the lease exclusion, the total order with a same-instant tie-break, profile scoping across two profiles of one household, the limit, and the limit refusal.\n\nscope-forgery.test.ts gained the new method, AND ITS EXHAUSTIVENESS ASSERTION DID ITS JOB: adding listContinueWatching to the port failed that suite twice -- once until the method was classified as scope-taking, once until the count was updated -- which is exactly the guard the file exists to be.\n\nwatch-session.test.ts gained 5 resume cases: the stored position fills a null, the issuer wins when it states one, nothing stored is the engine default, the parameter defaults so every existing caller is unchanged, and the position arrives on the session rather than as a seek.\n\nONE GUARD FIRED DURING THIS WORK AND WAS RIGHT TO. build-target.test.ts walks the import graph with a regex over raw source, and a sentence in one of my comments ended with the two characters that regex reads as the start of an import specifier -- so the walk tried to resolve a fragment of English as a module and the section-8 guard failed. The prose moved rather than the walker: a cleverer regex is one that can miss a real import, and that file belongs to a task that owns it."
+        },
+        "e2e": {
+          "status": "pass",
+          "at": "2026-09-27T03:46:19.510Z",
+          "by": "claude-frontend",
+          "commitSha": "a8aa32f756690aaee6f55d659a3def0602b250f6",
+          "evidence": "EXECUTED at a8aa32f, both modes, from e2e/, in the CI job's own configuration -- PLAYWRIGHT_BROWSERS_PATH and PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD unset so the pinned chromium 1234 resolves from Playwright's default cache, CI=1, CONTENT_RIGHTS_ENFORCEMENT=strict, LIBERTY_FC_SEED=20250819, LIBERTY_FIXTURE_MEDIA_ORIGIN=https://fixtures.invalid. Production: 61 passed, 12 skipped, 0 failed, exit 0. Development: 70 passed, 3 skipped, 0 failed, exit 0. Both counts IDENTICAL to rounds 82 through 90, which is the regression evidence this task most needs: it adds a rail above the catalog on the home route, a second control to the card every rail and the search results render, and a parameter to the watch page -- three of the four surfaces the critical-journey and search specs walk. A moved count would have meant one of them changed shape.\n\nWHAT THIS GATE DOES NOT COVER, STATED PLAINLY. No Playwright spec exercises the continue-watching journey itself. e2e/** is outside this task's allowedPaths, and PW-0303 set the precedent for saying so rather than widening a surface to buy a spec. The rail is also genuinely awkward for that harness as it stands: it requires a profile to be created and selected and progress to be written before the page is loaded, which is three API calls of setup the existing fixtures have no vocabulary for.\n\nWHAT REPLACES IT, AND IT IS STRONGER THAN A SPEC AGAINST FIXTURES. The whole feature was witnessed against a REAL POSTGRESQL 16 -- the instance this container's PW-0401 work created, migrated with the repository's own 0000_profile_scoped_identity.sql -- with next dev supplying the development catalog and DATABASE_URL supplying the store, which is the only combination in which both halves are real at once.\n\nFour progress rows were written through the application's own progress API, one per rule branch: deep-current 2400/3120, aurora-fall 1800/7680, northstar 7150/7200, signal-zero 5/6840. Observed on the rendered home page: the rail is present with the heading 'Continue watching'; its cards are deep-current then aurora-fall, which is recency order; the bars are width:77% and width:23%; the hidden text reads '77% watched' and '23% watched'; the start-over links are /watch/deep-current?restart=1 and /watch/aurora-fall?restart=1; the posters resolve through PW-0302's artwork boundary. northstar does NOT appear -- 50 seconds from the end is inside the 90-second tail -- and signal-zero does NOT appear, at 5 seconds. No progress markup appears anywhere in the catalog rails below.\n\nResume, observed in the session the watch route server-rendered: /watch/deep-current issues startAtSeconds 2400; ?restart=1 issues null; ?restart=0 and ?restart=true BOTH still issue 2400, which is the exact-match rule rather than a presence check; a title with no progress issues null; the FINISHED title issues null rather than 7150, so a viewer who opens it gets the film and not the credits; the glance issues null.\n\nProfile scoping, observed: creating a second profile and selecting it removes the rail entirely and leaks none of the first profile's titles, and the same watch route then issues null for a title the first profile was half-way through.\n\nONE FINDING FROM THE WITNESS, REPORTED BECAUSE IT WILL COST SOMEBODY AN HOUR. The first attempt ran next dev with NO database, on the in-memory adapter, and the rail never appeared even though the progress API read its own writes back correctly. The cause is not this feature: lib/db/index.ts memoises the repository in a module-scope variable, and under next dev the React Server Components layer and the route-handler layer are separate compilations of that module -- so a page render and a route handler hold two different in-memory stores. Anything server-rendered from data written through a route handler is invisible in that configuration. It is a development-only artifact of the in-memory adapter, it predates this task, and it is not fixed here; it is named so the next person to test continue watching in next dev does not conclude the feature is broken."
+        }
+      },
+      "implementationAgent": "claude-frontend",
+      "updatedAt": "2026-09-27T03:46:25.699Z",
+      "implementationBaseSha": "33c70e8a3b135917ac1e2f7072cef460ae3df0d2"
     }
   ],
   "reservedExternal": [],
