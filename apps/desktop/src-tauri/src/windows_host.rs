@@ -14,8 +14,14 @@
 //!
 //! COMPILED FOR WINDOWS ONLY. The shell is a Windows product; a Linux build of
 //! this file would be a stub pretending to supervise, which `job.rs` already
-//! refuses to be.
-#![cfg(windows)]
+//! refuses to be. THE GATE IS ON THE MODULE DECLARATION -- `#[cfg(windows)]`
+//! above `pub mod windows_host;` in `lib.rs` -- and it is there and nowhere
+//! else. This file used to ALSO carry an inner `#![cfg(windows)]`, which was
+//! redundant: a module that is not declared cannot be reached, so the inner
+//! attribute could only ever be evaluated in a build where it was already
+//! true. It was removed on the commander's round-89 corrective. Do not add it
+//! back; one gate that can be seen from the declaration site is worth more
+//! than two that have to agree.
 
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
