@@ -1,6 +1,6 @@
 # Project Liberty - Project Status
 
-> Generated 2026-09-27T01:21:27.904Z from the AI control plane.
+> Generated 2026-09-27T01:33:20.213Z from the AI control plane.
 
 **Overall completion:** 73/99 executable tasks (74%)
 
@@ -9,8 +9,8 @@
 - **BACKLOG:** 16
 - **READY:** 7
 - **CLAIMED:** 0
-- **IN_PROGRESS:** 1
-- **REVIEW:** 0
+- **IN_PROGRESS:** 0
+- **REVIEW:** 1
 - **BLOCKED:** 2
 - **DONE:** 73
 - **CANCELED:** 0
@@ -31,7 +31,7 @@
 
 ## Active work
 
-- **PW-0102** [IN_PROGRESS] A Tauri v2 shell that owns the sidecar's lifetime — owner: claude-infra
+- **PW-0102** [REVIEW] A Tauri v2 shell that owns the sidecar's lifetime — owner: claude-infra
 
 ## Dispatch classification
 
