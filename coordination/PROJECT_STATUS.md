@@ -1,8 +1,8 @@
 # Project Liberty - Project Status
 
-> Generated 2026-09-27T03:06:28.496Z from the AI control plane.
+> Generated 2026-09-27T03:14:03.305Z from the AI control plane.
 
-**Overall completion:** 73/99 executable tasks (74%)
+**Overall completion:** 75/99 executable tasks (76%)
 
 ## Status summary
 
@@ -10,9 +10,9 @@
 - **READY:** 5
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 0
-- **REVIEW:** 3
+- **REVIEW:** 1
 - **BLOCKED:** 2
-- **DONE:** 73
+- **DONE:** 75
 - **CANCELED:** 0
 - **SUPERSEDED:** 4
 
@@ -27,13 +27,11 @@
 - **M6 — Shared-Agent Automation Bridge:** COMPLETE, 3/3 (100%)
 - **EXT — External Licensed Integrations:** BLOCKED, 0/2 (0%), 2 blocked
 - **M7 — Windows Desktop Shell + Native Playback:** COMPLETE, 4/4 (100%)
-- **PW — undefined:** IN_PROGRESS, 9/32 (28%)
+- **PW — undefined:** IN_PROGRESS, 11/32 (34%)
 
 ## Active work
 
 - **PW-0102** [REVIEW] A Tauri v2 shell that owns the sidecar's lifetime — owner: claude-infra
-- **PW-0302** [REVIEW] Artwork, end to end, because a media application without images is a list — owner: claude-frontend
-- **PW-0401** [REVIEW] The authenticated backend the desktop build talks to — owner: claude-backend
 
 ## Dispatch classification
 
@@ -45,6 +43,7 @@
 ## Recommended executable wave
 
 - **PW-0305** -> claude-frontend (P0/Frontend) Continue watching: resume where the viewer left off
+- **PW-0312** -> claude-frontend (P0/Frontend) Authentication entry and session UX
 
 ## Queued for external agents
 
@@ -59,8 +58,8 @@ No READY work is waiting on an external agent lane.
 
 - **gpt-architect:** 0/6 active (external lane; not locally executable)
 - **claude-lead:** 0/2 active
-- **claude-frontend:** 1/2 active
-- **claude-backend:** 1/2 active
+- **claude-frontend:** 0/2 active
+- **claude-backend:** 0/2 active
 - **claude-media:** 0/2 active
 - **claude-test:** 0/1 active
 - **claude-security:** 0/1 active
