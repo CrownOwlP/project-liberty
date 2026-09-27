@@ -1,37 +1,9 @@
 {
-  "generatedAt": "2026-09-27T10:16:55.729Z",
+  "generatedAt": "2026-09-27T11:20:56.856Z",
   "agent": "claude-media",
   "executionAvailable": true,
   "assigned": [],
   "review": [],
   "reservedExternal": [],
-  "recommended": [
-    {
-      "id": "PW-0103",
-      "priority": "P0",
-      "lane": "Player",
-      "status": "READY",
-      "title": "Experiment 1a: can a child HWND composite beneath the webview",
-      "dependencies": [
-        "PW-0102"
-      ],
-      "allowedPaths": [
-        "apps/desktop/**",
-        "docs/DESKTOP_PLAYBACK.md"
-      ],
-      "reviewDependencies": [
-        "docs/ARCHITECTURE.md"
-      ],
-      "preferredAgent": "claude-frontend",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "build",
-        "architecture-review"
-      ],
-      "acceptance": "The pass/fail experiment docs/DESKTOP_PLAYBACK.md section 10 specifies is executed on real Windows hardware and its result recorded, because D1 -- the entire choice of Tauri -- rests on it and it has never been run. A sibling child HWND must render beneath a WebView2 whose DefaultBackgroundColor has alpha 0, with the web UI visible above it. REQUIRED: the result is recorded as a fact with the Windows build, GPU and WebView2 runtime version it was observed on, not as an expectation. REQUIRED: if it FAILS, stop and report rather than working around it -- section 11 names this as one of the specific facts that would reverse D1, and the honest outcome of a failed experiment is a reversed decision, not a hack that makes the demo look right. THIS TASK CANNOT BE COMPLETED WITHOUT THE COMMANDER'S WINDOWS MACHINE and its real-device half belongs in LAST_MILE the moment the code is ready.",
-      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. SURFACE NOTE: this task's allowedPaths name directories that do not exist yet. The evidence-based narrowing procedure applies to reconciling work already in history; for genuinely new work the surface is the smallest set of paths the acceptance can be satisfied within, and it is narrowed again from the diff before review if it turns out to be wider than what was written. ",
-      "owner": null,
-      "gateResults": {}
-    }
-  ]
+  "recommended": []
 }
