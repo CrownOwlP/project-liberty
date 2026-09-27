@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-27T01:54:13.432Z",
+  "generatedAt": "2026-09-27T02:26:12.377Z",
   "agent": "claude-frontend",
   "executionAvailable": true,
   "assigned": [
@@ -7,7 +7,7 @@
       "id": "PW-0302",
       "priority": "P0",
       "lane": "Frontend",
-      "status": "IN_PROGRESS",
+      "status": "REVIEW",
       "title": "Artwork, end to end, because a media application without images is a list",
       "dependencies": [],
       "allowedPaths": [
@@ -17,8 +17,6 @@
         "apps/web/next.config.ts",
         "packages/contracts/src/shared/artwork.ts",
         "packages/contracts/src/artwork.test.ts",
-        "packages/contracts/src/catalog.test.ts",
-        "packages/contracts/src/title.test.ts",
         "packages/catalog-ingestion/src/record.ts",
         "apps/web/src/app/api/v1/artwork/**",
         "apps/web/src/components/catalog-card.tsx",
@@ -33,7 +31,9 @@
         "docs/CONTENT_RIGHTS.md",
         "docs/SECURITY.md",
         "apps/web/src/app/globals.css",
-        "apps/web/src/components/title/title-hero.tsx"
+        "apps/web/src/components/title/title-hero.tsx",
+        "packages/contracts/src/catalog.test.ts",
+        "packages/contracts/src/title.test.ts"
       ],
       "preferredAgent": "claude-frontend",
       "reviewAgent": "gpt-architect",
@@ -47,8 +47,23 @@
       "acceptance": "Titles have artwork, and getting it does not become a new way to fetch arbitrary URLs. ACCEPTANCE RECONCILED IN ROUND 83 ON gpt-architect's RULING. The previous wording asked for a rights basis and dimensions 'beside the URL'. The repository already has a reviewed artwork vocabulary that deliberately carries NO URL: artworkRefSchema in packages/catalog-ingestion/src/record.ts holds a role, an assetRef constrained to an opaque lower-case token, and a REQUIRED rights basis -- required there and nowhere else in that package, on the stated argument that a work with an undeclared basis is merely refused from browse while an IMAGE with an undeclared basis that reached a page would be somebody else's file served from our origin. project.ts then drops artwork on the way to CatalogItem, and domains/catalog.ts opens by promising the browse shape carries no stream, URL or provider field. The ruling is explicit: do not weaken a previously rights- and security-reviewed opaque-reference boundary to satisfy stale task prose. REQUIRED: the catalog and title contracts carry an OPAQUE ARTWORK REFERENCE plus required display metadata and a rights basis. Not a URL. The vocabulary ADOPTS artworkRefSchema's shape rather than inventing a second one; where the two must differ, say why in the module. REQUIRED: the client never receives an arbitrary upstream image URL merely to render artwork. REQUIRED: an authorized artwork-resolution boundary turns the opaque reference into a fetchable or served asset under allowlisted transport policy. That boundary is where an origin is decided, and it is the only place one is. REQUIRED: no arbitrary URL proxy. SECURITY.md's 'never proxy arbitrary client-provided URLs' is not weakened for pictures, which is why this task carries a security review as well as a rights review. REQUIRED: absent artwork keeps the DESIGNED gradient fallback. An absent image is a designed state, not a broken one, and a broken-image icon is not the answer. REQUIRED: next/image -- or whatever equivalent configuration the implementation uses -- permits only the controlled Liberty artwork origin or boundary, never arbitrary remote hosts and never a wildcard. Because no other origin is expressible through the resolution boundary, this should be a structural fact rather than a check somebody has to remember to maintain; state which of the two the implementation achieves. MEASURED STARTING POINT, unchanged and still true: there are zero images in this product at any layer -- no next/image, no img tag, and no poster, artwork, backdrop or thumbnail key anywhere in packages/contracts/src. Posters are CSS gradients.",
       "notes": "Acceptance reconciled in round 83 on gpt-architect's ruling after a round-83 audit found the original wording would have put a URL into the one contract whose header promises there is none, and would have stood a second artwork vocabulary beside the reviewed opaque-reference one in @liberty/catalog-ingestion. The reviewer ruled: do not claim under the old acceptance, preserve the opaque-reference architecture, and resolve the reference behind an authorized boundary. An architecture-review gate was added because the task now introduces a resolution boundary rather than a field.",
       "owner": "claude-frontend",
-      "gateResults": {},
-      "updatedAt": "2026-09-27T01:53:42.316Z",
+      "gateResults": {
+        "typecheck": {
+          "status": "pass",
+          "at": "2026-09-27T02:26:09.134Z",
+          "by": "claude-frontend",
+          "commitSha": "9af012ede78ebaf890e846e29e6ac4468d562c53",
+          "evidence": "npm run typecheck at 9af012e: turbo ran tsc --noEmit across all 21 workspace tasks, 21 successful, 0 failed. Re-verified for apps/web alone with npx tsc --noEmit -p apps/web/tsconfig.json after every edit in this round, including the one that matters most for a contract change: adding an optional artwork field to catalogItemBaseShape and titleDetailBaseShape compiles against every existing producer of those types -- the demo fixtures, the Wikidata adapter, the Stremio addon shape, the recommendation views, the ingestion projection and the five test suites -- with none of them edited. That is the compatibility claim the optional key was chosen for, checked rather than asserted. npm run lint also passes (11 tasks, 0 failures); it is not a required gate on this task but the new img element carries an eslint-disable and I verified the directive is neither vacuous nor stale: removing it reports @next/next/no-img-element at poster-artwork.tsx:84, and eslint --report-unused-disable-directives with it in place reports nothing. npm run build passes; a forced uncached next build of apps/web emits the new route as a dynamic handler at /api/v1/artwork/[assetRef]."
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-09-27T02:26:09.296Z",
+          "by": "claude-frontend",
+          "commitSha": "9af012ede78ebaf890e846e29e6ac4468d562c53",
+          "evidence": "npx turbo run test --force at 9af012e: 20 tasks, 20 successful, exit 0, nothing cached. apps/web alone is 68 files and 1152 tests; packages/contracts is 10 files and 240 tests. 61 tests are new in this round across three files. packages/contracts/src/artwork.test.ts (32) asserts that twelve real spellings of an image address -- https, http, protocol-relative, two data URLs, file://, an absolute POSIX path, a relative traversal, a percent-encoded traversal, a bare host, a bare filename and a Windows path -- are all refused on SHAPE, that the module declares no url/uri/src/href/origin field (with a non-vacuity check, because that module's own prose names those words), that an artwork entry with no rights basis and one with a null basis are both unparseable, that absent and empty stay distinguishable, and that both published shapes parse with and without the field while refusing an entry whose assetRef is an address. apps/web/src/app/api/v1/artwork/store.test.ts (14) covers store configuration, candidate construction including nine hostile references, and header-byte identification -- SVG, XML-prefixed SVG, HTML, PDF and ELF all answer null, and a truncated header does not throw at any length from 0 to 11 bytes -- plus a source rule that the module contains no fetch, no new URL and no http(s) literal. apps/web/src/app/api/v1/artwork/handler.test.ts (14) reaches all eight refusal codes through a fake filesystem, proves the malformed-reference branch never touches the store, and proves the size cap refuses BEFORE reading by making the fake's read() throw if reached. apps/web/src/components/artwork/poster-artwork.test.tsx (15) renders with react-dom/server and asserts the absent, empty, wrong-role and malformed-reference cases all produce the gradient frame with no img at all, that a present reference produces a relative same-origin src with the asset's dimensions and an empty alt, and that nextConfigFor returns empty remotePatterns, boundary-only localPatterns and dangerouslyAllowSVG false under BOTH build targets. ONE HONEST NOTE: the first npm run test of this round reported @liberty/web#test failed while printing no failing test; two subsequent runs, one of them turbo run test --force with an empty cache, both passed 1152/1152 with exit 0. I could not reproduce it and it left no failing assertion in the log, so I am recording it as an unreproduced transient rather than claiming it did not happen."
+        }
+      },
+      "updatedAt": "2026-09-27T02:26:12.208Z",
       "implementationAgent": "claude-frontend",
       "implementationBaseSha": "d4997f2c666160ecca53d01321abc109696f8730"
     }
