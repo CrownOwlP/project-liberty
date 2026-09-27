@@ -391,6 +391,44 @@ describe("the decision, mapped onto what the page renders", () => {
     ).toBe("error");
   });
 
+  it("names WHICH configuration is missing, rather than blaming the provider", () => {
+    /*
+     * THE MISATTRIBUTION THIS CLOSES (PW-0312, round 93). Both codes reach the
+     * `not-configured` panel, because both are permanent until an operator acts
+     * -- but the panel's copy was a fixed sentence about a media provider,
+     * written when a provider registry was the only thing that could be absent.
+     * A deployment with no identity system now lands here too, and telling that
+     * viewer the provider is missing sends whoever reads the screenshot to
+     * inspect a registry that is working. It is the same misattribution that
+     * made `authentication_not_configured` its own reason code one layer down.
+     */
+    const provider = watchResultFor(
+      CONTENT_ID,
+      unavailableSession(playbackReason("provider_not_configured", "no provider"))
+    );
+    const identity = watchResultFor(
+      CONTENT_ID,
+      unavailableSession(playbackReason("authentication_not_configured", "no identity system"))
+    );
+
+    expect(provider).toEqual({ status: "not-configured", contentId: CONTENT_ID, missing: "provider" });
+    expect(identity).toEqual({ status: "not-configured", contentId: CONTENT_ID, missing: "identity" });
+  });
+
+  it("does NOT offer a sign-in when the deployment has no identity system", () => {
+    /*
+     * The dead end this task removes, pointing the other way. There is no
+     * sign-in that could complete in that deployment, so `signed-out` -- the
+     * status that renders the sign-in panel -- would be an instruction the
+     * viewer cannot follow.
+     */
+    const identity = watchResultFor(
+      CONTENT_ID,
+      unavailableSession(playbackReason("authentication_not_configured", "no identity system"))
+    );
+    expect(identity.status).not.toBe("signed-out");
+  });
+
   it("renders a signed-out session as an ACTIONABLE state, not as an error", () => {
     /*
      * THE DEFECT THIS CLOSES (PW-0312). Before the contract carried a fourth

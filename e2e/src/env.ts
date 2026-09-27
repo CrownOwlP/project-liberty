@@ -202,26 +202,213 @@ export type StorageAdapterCode = "served_by_in_memory_adapter" | "served_by_post
 export const EXPECTED_STORAGE_ADAPTER: StorageAdapterCode =
   DATABASE_URL === null ? "served_by_in_memory_adapter" : "served_by_postgres_adapter";
 
+/* -------------------------------------------------------------------------
+ * THE THIRD AXIS: IDENTITY (PW-0312, gpt-architect's round-93 corrective)
+ *
+ * WHY IT HAD TO EXIST. Until this round the harness could not start a server
+ * that was able to authenticate anybody. `.github/workflows/ci.yml` declared no
+ * PostgreSQL service and nothing set an auth secret, so every production-mode
+ * run was a DEPLOYMENT WITH NO IDENTITY SYSTEM -- and that gap was then used,
+ * in round 92, as an argument for letting such a deployment serve playback
+ * without authenticating. The security review failed it: "The fact that
+ * .github/workflows/ci.yml currently has no PostgreSQL service is NOT a reason
+ * to preserve an authentication bypass. Fix the harness."
+ *
+ * So this is the harness being fixed rather than the product being bent. The
+ * axis is read once, here, like every other knob in this file, because the
+ * question "can the server under test authenticate anybody" is asked by the
+ * config (which must pin the variables) and by the specs (which must know which
+ * of four answers to expect), and those two must be one answer.
+ *
+ * THREE CONFIGURATIONS, ALL OF THEM REAL:
+ *
+ *   - DEVELOPMENT MODE. A non-deployment process resolves a development
+ *     identity from headers and never consults a session store, so every
+ *     request is identified and no auth secret is involved. This is case 5 of
+ *     the ruling -- "do not break the approved development identity mechanism"
+ *     -- and the way to keep it working is to keep running it, which the
+ *     development-mode job does.
+ *   - PRODUCTION WITH IDENTITY. A real Better Auth instance over a real
+ *     PostgreSQL database. This is the configuration the five required playback
+ *     cases need, and the one CI's production job now runs.
+ *   - PRODUCTION WITHOUT IDENTITY. A misconfigured deployment, and since this
+ *     round it FAILS CLOSED: every route that needs an identity answers
+ *     `unavailable` / 503 without reaching a decision. It stays a supported
+ *     configuration of this harness because it is a supported configuration of
+ *     the product, and because a developer with no database gets it by default.
+ * ---------------------------------------------------------------------- */
+
+/**
+ * The secret this harness pins as `LIBERTY_AUTH_SECRET`, or `null` for "this
+ * run has no identity system".
+ *
+ * PINNED FOR THE REASON `DATABASE_URL` AND THE MEDIA ORIGIN ARE. `apps/web`'s
+ * `dev` and `start` run through `scripts/with-root-env.mjs`, which fills any
+ * name the environment has not already set from the repository root's dotenv
+ * files -- so an omitted secret is not "no identity system", it is "whatever is
+ * in the developer's .env.local", and the specs would then be asserting a
+ * fail-closed refusal against a server that had quietly constructed an auth
+ * instance.
+ *
+ * DERIVED FROM `DATABASE_URL` RATHER THAN CONFIGURED SEPARATELY. An identity
+ * system needs BOTH a secret and a store; a run with one and not the other is
+ * not a configuration anybody wants to test, it is a mistake that would produce
+ * a confusing third answer. Tying them together means there are two states here
+ * and not four. A caller who wants a specific secret can still set
+ * `LIBERTY_E2E_AUTH_SECRET`; the default is a fixed literal because it is a
+ * throwaway for a loopback server whose database is thrown away with it, and a
+ * random one would make two runs of the same commit differ.
+ */
+const DEFAULT_HARNESS_AUTH_SECRET = "liberty-e2e-harness-secret-not-for-any-deployment";
+
+export const AUTH_SECRET: string | null =
+  DATABASE_URL === null ? null : (read("LIBERTY_E2E_AUTH_SECRET") ?? DEFAULT_HARNESS_AUTH_SECRET);
+
+/** The value the harness PINS as `LIBERTY_AUTH_SECRET`. Empty string = absent. */
+export const SERVER_AUTH_SECRET: string = AUTH_SECRET ?? "";
+
+/**
+ * Whether the server under test can establish an identity for a real caller.
+ *
+ * TRUE IN DEVELOPMENT MODE WITHOUT A DATABASE, and that is not a quirk: the
+ * development identity mechanism is an identity mechanism. What differs is HOW
+ * a spec establishes one -- headers there, a signed-in session here -- which is
+ * what `IDENTITY_MECHANISM` below names.
+ */
+export type IdentityMechanism = "development-headers" | "database-session" | "none";
+
+export const IDENTITY_MECHANISM: IdentityMechanism = !MANAGES_SERVER
+  ? "none"
+  : WEB_MODE === "development"
+    ? "development-headers"
+    : AUTH_SECRET === null
+      ? "none"
+      : "database-session";
+
+/**
+ * Why the authenticated-playback cases are skipped, or `null` when they may run.
+ *
+ * A SENTENCE RATHER THAN A BOOLEAN, following `MEDIA_RIG_SKIP_REASON` and
+ * `DESKTOP_SKIP_REASON`: a suite that quietly does not run is indistinguishable
+ * from one that passed, and these are the cases a security review asked for by
+ * name. The reason says which configuration was missing and how to supply it.
+ */
+export const DATABASE_SESSION_SKIP_REASON: string | null =
+  IDENTITY_MECHANISM === "database-session"
+    ? null
+    : !MANAGES_SERVER
+      ? "Testing an external deployment, whose identity configuration this harness did not " +
+        "choose and cannot observe. Point the harness at a server it starts to sign in against it."
+      : WEB_MODE === "development"
+        ? "LIBERTY_E2E_WEB_MODE=development, where identity comes from the development headers " +
+          "rather than from a session store, so there is no sign-in to perform. The " +
+          "database-session cases run in production mode; see docs/E2E.md."
+        : "No LIBERTY_E2E_DATABASE_URL, so this production-mode run is a deployment with no " +
+          "identity system -- which is itself asserted, as the fail-closed configuration. Set " +
+          "LIBERTY_E2E_DATABASE_URL to a PostgreSQL connection string with the repository " +
+          "migration applied to exercise a real signed-in session.";
+
 /**
  * The reason a DEPLOYMENT refuses a profile/progress request before it reaches
  * any decision of its own, for the configuration this harness pinned.
  *
  * `resolveRequestContext` resolves storage FIRST and identity second, so which
- * of the two refusals a hosted build produces is decided by whether a database
- * was configured:
+ * refusal a hosted build produces is decided by what was configured:
  *
  *   - no `DATABASE_URL` -> `storage_not_configured`, from `selectRepository`;
- *   - a `DATABASE_URL` -> storage resolves, and then
- *     `resolveRequestAccount` answers `authentication_not_configured`, because
- *     nothing in `apps/web` constructs `@liberty/auth/server` yet.
+ *   - a `DATABASE_URL` and no auth secret -> storage resolves, and
+ *     `resolveRequestAccount` answers `authentication_not_configured`;
+ *   - both, and no session on the request -> `not_authenticated`.
  *
- * Both are `unavailable` / 503 rather than 401 or 500: the remedy is an
- * operator's, and neither is a fault in handling the request.
+ * THE THIRD CASE IS NEW AND THE COMMENT HERE WAS STALE BEFORE IT. This constant
+ * used to say the second case held "because nothing in `apps/web` constructs
+ * `@liberty/auth/server` yet". PW-0403 built that composition root; the
+ * constant had been describing an application that no longer existed. It is
+ * corrected here rather than in the round that changes it, because a harness
+ * that describes the product wrongly is the thing that makes a real regression
+ * look like an expectation.
+ *
+ * The first two are `unavailable` / 503 -- the remedy is an operator's. The
+ * third is 401: the remedy is the caller's, and `AUTHENTICATED_REQUESTS` below
+ * is how a spec carries it out.
  */
-export type DeploymentPreambleRefusal = "storage_not_configured" | "authentication_not_configured";
+export type DeploymentPreambleRefusal =
+  | "storage_not_configured"
+  | "authentication_not_configured"
+  | "not_authenticated";
+
+/**
+ * Why a playback DECISION cannot be observed at all on this run, or `null`.
+ *
+ * THE CONSEQUENCE OF FAILING CLOSED (PW-0312, round 93). A deployment with no
+ * identity system now refuses every playback request with `unavailable` / 503
+ * before the body is parsed, so on such a run there is no malformed body to
+ * refuse, no device ceiling to apply, no smuggled field to reject and no
+ * candidate list to compare across targets -- the route answers one thing, to
+ * everyone, about everything. Tests whose subject is the decision are therefore
+ * SKIPPED here rather than rewritten to assert the refusal a second time: that
+ * refusal has its own tests, in `playback-session.api.spec.ts`, and asserting it
+ * ten more times under other headings would read as coverage.
+ *
+ * A SENTENCE RATHER THAN A BOOLEAN, following `MEDIA_RIG_SKIP_REASON` and
+ * `DESKTOP_SKIP_REASON`: a suite that quietly does not run is indistinguishable
+ * from one that passed, and this is a large block of it. The remedy is in the
+ * sentence, and CI's production job takes it.
+ *
+ * `development` IS NOT AFFECTED. It resolves an identity from headers, so every
+ * request there reaches a decision exactly as it always did.
+ */
+export const PLAYBACK_DECISION_SKIP_REASON: string | null =
+  MANAGES_SERVER && IDENTITY_MECHANISM === "none"
+    ? "This production-mode run has no identity system, so the playback route fails closed " +
+      "with 503 for every caller and no decision can be reached to assert anything about. " +
+      "That refusal is itself asserted, in playback-session.api.spec.ts's \"a deployment " +
+      "with no identity system\" block. Set LIBERTY_E2E_DATABASE_URL to a PostgreSQL " +
+      "connection string with the repository migration applied -- which is what CI's " +
+      "production job does -- to exercise the decision."
+    : null;
+
+/**
+ * The origin `src/identity.ts` signs in against.
+ *
+ * THE WEB TARGET'S, ALWAYS, even for a spec that then talks to the desktop
+ * server. `/api/auth/*` is served by both builds, but the desktop build's
+ * database is the same one only because this harness points both servers at the
+ * same `DATABASE_URL` -- and a session established against one and presented to
+ * the other is exactly the cross-target property the desktop specs exist to
+ * measure, not an assumption they should be built on. One origin mints, and a
+ * spec that wants to know whether the other honours it asks that question out
+ * loud.
+ */
+export const AUTH_BASE_URL_FOR_SIGN_IN = BASE_URL;
 
 export const DEPLOYMENT_PREAMBLE_REFUSAL: DeploymentPreambleRefusal =
-  DATABASE_URL === null ? "storage_not_configured" : "authentication_not_configured";
+  DATABASE_URL === null
+    ? "storage_not_configured"
+    : AUTH_SECRET === null
+      ? "authentication_not_configured"
+      : "not_authenticated";
+
+/**
+ * The OUTCOME that refusal rides on, derived from the same expression.
+ *
+ * TWO CONSTANTS AND NOT ONE, because the outcome is not a function of the code
+ * that a spec could compute for itself -- it is a product decision, and the
+ * split is the remedy test the whole union is built on. The first two refusals
+ * are `unavailable`: the remedy is an operator's and no credential would help.
+ * The third is `refused`: the remedy is the CALLER's, which is also why the
+ * status is 401 rather than 503.
+ *
+ * DERIVED RATHER THAN ASSERTED IN EACH SPEC, for the reason every other value in
+ * this file is. A spec that hard-coded `unavailable` was correct in both
+ * configurations this harness could previously produce, and became wrong the
+ * moment a third one existed -- which is exactly what happened when the identity
+ * axis landed, in two tests that had been right for a year.
+ */
+export type DeploymentPreambleOutcome = "unavailable" | "refused";
+
+export const DEPLOYMENT_PREAMBLE_OUTCOME: DeploymentPreambleOutcome =
+  DEPLOYMENT_PREAMBLE_REFUSAL === "not_authenticated" ? "refused" : "unavailable";
 
 /**
  * Whether the catalog metadata source can be constructed on the build under

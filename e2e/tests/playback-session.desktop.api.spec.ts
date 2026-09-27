@@ -10,11 +10,15 @@ import {
 } from "../src/contract";
 import {
   BACKEND_STUB_ORIGIN,
+  BASE_URL,
   DESKTOP_BASE_URL,
   DESKTOP_SKIP_REASON,
+  IDENTITY_MECHANISM,
+  PLAYBACK_DECISION_SKIP_REASON,
   WEB_MODE
 } from "../src/env";
 import { CAPABLE_DEVICE, DEMO, sessionRequest } from "../src/fixtures";
+import { establishSession, type SessionHeaders } from "../src/identity";
 
 /* -------------------------------------------------------------------------
  * THE DESKTOP BUILD TARGET, END TO END (PL-0501, round 45, correction 4)
@@ -84,13 +88,46 @@ interface StubRequest {
 let desktop: APIRequestContext;
 let stub: APIRequestContext;
 
+/* -------------------------------------------------------------------------
+ * A SESSION MINTED ON THE WEB ORIGIN AND PRESENTED TO THE DESKTOP TARGET
+ * (PW-0312)
+ *
+ * This is PW-0401's "forwards an authenticated caller identity", observed. The
+ * cookie goes to the desktop server, which passes it to its backend through the
+ * `IDENTITY_HEADERS` allowlist -- an allowlist and not a copy, precisely so the
+ * next header somebody adds is not forwarded by default -- and the backend
+ * authenticates it against the same database the web origin issued it from.
+ * Liberty uses DATABASE sessions (PL-0401), so what crosses is a pointer and the
+ * row is the authority.
+ *
+ * WITHOUT IT, every test below whose subject is the FORWARDER would be a test
+ * of the authentication gate instead: the desktop target now refuses an
+ * anonymous request in front of everything this file measures.
+ *
+ * Empty under `development` and under a production run with no identity system.
+ * ---------------------------------------------------------------------- */
+let SIGNED_IN: SessionHeaders = {};
+
 test.beforeAll(async () => {
   desktop = await playwrightRequest.newContext({ baseURL: DESKTOP_BASE_URL });
   stub = await playwrightRequest.newContext({
     baseURL: BACKEND_STUB_ORIGIN,
     ignoreHTTPSErrors: true
   });
+
+  if (IDENTITY_MECHANISM !== "database-session") return;
+  const web = await playwrightRequest.newContext({ baseURL: BASE_URL });
+  try {
+    SIGNED_IN = await establishSession(web);
+  } finally {
+    await web.dispose();
+  }
 });
+
+/** A signed-in request's headers, plus any the caller needs of its own. */
+function signedIn(headers: Record<string, string> = {}): Record<string, string> {
+  return { ...headers, ...SIGNED_IN };
+}
 
 test.afterAll(async () => {
   await desktop.dispose();
@@ -134,7 +171,9 @@ test("a forwarded request actually reaches the backend stub", async () => {
   await clearLedger();
 
   const body = sessionRequest(DEMO.movie.id);
-  const shape = await decision(await desktop.post(ROUTE, { data: body }));
+  const shape = await decision(
+    await desktop.post(ROUTE, { data: body, headers: signedIn() })
+  );
   expect(["granted", "denied", "unavailable"]).toContain(shape.outcome);
 
   const seen = await ledger();
@@ -327,6 +366,7 @@ test("an unavailable backend is an unavailable session, with a reason", async ()
 });
 
 test("a malformed body is refused before it is forwarded to anybody", async () => {
+  test.skip(PLAYBACK_DECISION_SKIP_REASON !== null, PLAYBACK_DECISION_SKIP_REASON ?? "");
   /*
    * The forwarder relays the bytes as given, so a malformed body IS forwarded
    * and the backend's route answers it -- which is the stated design: deciding
@@ -337,7 +377,7 @@ test("a malformed body is refused before it is forwarded to anybody", async () =
    */
   for (const body of ["not json at all", "7", "null", "[]"]) {
     const response = await desktop.post(ROUTE, {
-      headers: { "content-type": "application/json" },
+      headers: signedIn({ "content-type": "application/json" }),
       data: body
     });
     expect(response.status(), `body ${body} produced ${response.status()}`).not.toBe(500);
@@ -349,6 +389,7 @@ test("a malformed body is refused before it is forwarded to anybody", async () =
 });
 
 test("a normalized content id is required before the backend is consulted", async () => {
+  test.skip(PLAYBACK_DECISION_SKIP_REASON !== null, PLAYBACK_DECISION_SKIP_REASON ?? "");
   /*
    * The request schema runs on the backend under this target, so the refusal is
    * the backend's -- but the CONTRACT is that the caller sees the same denial
@@ -356,7 +397,10 @@ test("a normalized content id is required before the backend is consulted", asyn
    */
   for (const contentId of ["../../etc/passwd", "Aurora Fall", "https://evil.test/x.mpd", ""]) {
     const shape = await decision(
-      await desktop.post(ROUTE, { data: sessionRequest(contentId, CAPABLE_DEVICE) })
+      await desktop.post(ROUTE, {
+        data: sessionRequest(contentId, CAPABLE_DEVICE),
+        headers: signedIn()
+      })
     );
     expect(shape.outcome, `contentId ${JSON.stringify(contentId)}`).toBe("denied");
     expect(reasonCodes(shape)).toContain("request_malformed");

@@ -128,20 +128,38 @@ cannot report whether a title exists. The reason detail is one fixed sentence fo
 all four ways a session can fail to verify — absent, expired, revoked, malformed
 — for the same non-oracle reason `resolveRequestAccount` gives.
 
-Three states are deliberately kept apart:
+**Nothing gets past this gate without an identity.** Four states are kept apart,
+and every one of them that is not an established identity refuses *before* any
+content or provider is consulted:
 
 | What happened | Outcome | Status |
 | --- | --- | --- |
+| The caller is authenticated | the playback decision | 200 / 400 / 403 / 404 / 503 |
 | A session was required and none verified | `unauthenticated` / `not_authenticated` | **401** |
 | An identity store exists and could not be consulted | `unavailable` / `provider_unavailable` | **503** |
-| This deployment has no identity system at all | *unchanged* — the route decides as it did before the gate existed | — |
+| This deployment has no identity system configured | `unavailable` / `authentication_not_configured` | **503** |
 
-The third row is conditional on an identity system **existing**. A deployment
-with none has no sign-in for anyone to perform, so answering `unauthenticated`
-would be the same dead end pointing the other way; `/profiles` makes the same
-call when it falls through to the picker rather than to the sign-in panel on an
-`unavailable` account. It is also what keeps the production-mode e2e suite
-honest: CI declares no PostgreSQL service, so those runs have no identity system.
+The last row **fails closed**, and the reason it is 503 rather than 401 is the
+remedy test this union is built on: there is no sign-in action available in that
+state, so telling a viewer to sign in would be an instruction they cannot
+follow. A deployment with no identity system is *misconfigured*, and the remedy
+belongs to an operator. Absence of the identity system is never a bypass of
+authentication.
+
+The two 503 rows share an outcome and carry different reason codes, because
+"configure an identity store" and "your identity store is down" send an operator
+to different places. `authentication_not_configured` is deliberately **not**
+`provider_not_configured`: that one names the wrong subsystem, and an operator
+following it would go and inspect a provider registry that is working. It is the
+same code `resolveRequestContext` already publishes for this fact on the profile,
+progress and watchlist routes, so one fact is reported under one name. Both details are caller-invariant and content-invariant — they are
+statements about the deployment, identical for every request — so neither can
+report anything about a viewer or a title.
+
+**Development is unaffected.** `authentication_not_configured` is reachable only
+from the deployment branch of `resolveRequestAccount`; a non-deployment process
+resolves a development identity and never consults a session store, so `next dev`
+and the development-mode e2e runs behave exactly as before.
 
 ### `reasons` is non-empty on every branch
 

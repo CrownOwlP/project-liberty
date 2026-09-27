@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, request as playwrightRequest, test } from "@playwright/test";
 import {
   collectStrings,
   isRecord,
@@ -6,8 +6,15 @@ import {
   reasonCodes,
   type PlaybackSessionResponseShape
 } from "../src/contract";
-import { MANAGES_SERVER, WEB_MODE } from "../src/env";
+import {
+  BASE_URL,
+  IDENTITY_MECHANISM,
+  MANAGES_SERVER,
+  PLAYBACK_DECISION_SKIP_REASON,
+  WEB_MODE
+} from "../src/env";
 import { CAPABLE_DEVICE, DEMO, SMUGGLED_URI, resolveCandidate } from "../src/fixtures";
+import { establishSession, type SessionHeaders } from "../src/identity";
 
 /* -------------------------------------------------------------------------
  * The rights boundary, asserted from outside the process
@@ -27,6 +34,41 @@ import { CAPABLE_DEVICE, DEMO, SMUGGLED_URI, resolveCandidate } from "../src/fix
 const SESSION = "/api/v1/playback/session";
 const RESOLVE = "/api/v1/playback/resolve";
 
+/* -------------------------------------------------------------------------
+ * A SIGNED-IN CALLER, WHERE THE SUBJECT IS NOT AUTHENTICATION (PW-0312)
+ *
+ * The session route authenticates BEFORE it parses the body, so on a deployment
+ * with an identity system an anonymous request never reaches the schema. Every
+ * request below whose subject is something other than the authentication gate
+ * therefore signs in first -- otherwise a rights assertion would be asserting
+ * that gate a second time under a rights heading, and the smuggled field would
+ * never be looked at at all.
+ *
+ * THE RIGHTS ASSERTIONS THEMSELVES ARE UNCHANGED. What changes is the caller.
+ *
+ * Empty in the other two configurations, and correctly so: `development`
+ * resolves an identity from headers, and a production run with no identity
+ * system fails closed for everyone. Both of those are asserted in
+ * `playback-session.api.spec.ts`, which owns them.
+ * ---------------------------------------------------------------------- */
+let SIGNED_IN: SessionHeaders = {};
+
+test.beforeAll(async () => {
+  if (IDENTITY_MECHANISM !== "database-session") return;
+  const context = await playwrightRequest.newContext({ baseURL: BASE_URL });
+  try {
+    SIGNED_IN = await establishSession(context);
+  } finally {
+    await context.dispose();
+  }
+});
+
+/** A signed-in request's headers, plus any the caller needs of its own. */
+function signedIn(headers: Record<string, string> = {}): Record<string, string> {
+  return { ...headers, ...SIGNED_IN };
+}
+
+
 /**
  * Which build this run measured, recorded on every result in this file.
  *
@@ -45,8 +87,10 @@ test.beforeEach(() => {
 });
 
 test("the session endpoint refuses a request that names a media URL", async ({ request }) => {
+  test.skip(PLAYBACK_DECISION_SKIP_REASON !== null, PLAYBACK_DECISION_SKIP_REASON ?? "");
   const response = await request.post(SESSION, {
-    data: { contentId: DEMO.movie.id, capabilities: CAPABLE_DEVICE, uri: SMUGGLED_URI }
+    data: { contentId: DEMO.movie.id, capabilities: CAPABLE_DEVICE, uri: SMUGGLED_URI },
+    headers: signedIn()
   });
 
   const body: unknown = await response.json();
@@ -81,11 +125,13 @@ test("the session endpoint refuses a request that names a media URL", async ({ r
 test("a media URL smuggled into the nested capabilities object is refused too", async ({
   request
 }) => {
+  test.skip(PLAYBACK_DECISION_SKIP_REASON !== null, PLAYBACK_DECISION_SKIP_REASON ?? "");
   const response = await request.post(SESSION, {
     data: {
       contentId: DEMO.movie.id,
       capabilities: { ...CAPABLE_DEVICE, manifestUrl: SMUGGLED_URI }
-    }
+    },
+    headers: signedIn()
   });
 
   const shape = (await response.json()) as PlaybackSessionResponseShape;
@@ -104,7 +150,10 @@ test("no session route echoes a client-supplied address back", async ({ request 
   ];
 
   for (const data of bodies) {
-    const response = await request.post(SESSION, { data });
+    /* SIGNED IN, so the refusal under test is the SCHEMA's. A 401 produced
+     * before the body was parsed trivially echoes nothing, which would make
+     * this assertion pass without measuring the thing it is about. */
+    const response = await request.post(SESSION, { data, headers: signedIn() });
     const raw = await response.text();
 
     /*

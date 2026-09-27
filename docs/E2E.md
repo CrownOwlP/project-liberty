@@ -261,7 +261,73 @@ by it.
 | `LIBERTY_E2E_PORT`       | `3100`           | Port for the harness-managed server. Not 3000, because that is where a developer's `next dev` already is and `reuseExistingServer` would silently adopt it. |
 | `LIBERTY_E2E_WEB_MODE`   | `production`     | `production` runs `npm run build` + `next start`. `development` runs `next dev`. See the notes below — the two answer the session API differently, disagree about whether `/api/v1/playback/resolve` exists, disagree about whether the **watch route** mounts a player, disagree about whether there is a **catalog** at all (which now decides the home API, the home page, **search** and the **title route** together), and disagree about whether **progress** can be written. All five on purpose, and all five the same switch. **Neither mode is the gate on its own**: see "Both modes are the gate, not a choice". |
 | `LIBERTY_E2E_MEDIA_ORIGIN` | unset          | A DASH/HLS origin you hold rights to serve from. Passed to the server as `LIBERTY_FIXTURE_MEDIA_ORIGIN`. Unset means the harness pins the server to `https://fixtures.invalid` — never to an inherited value — and the media-rig suite skips. |
+| `LIBERTY_E2E_AUTH_SECRET` | a fixed harness literal | The secret the server's Better Auth instance is built with. **Only takes effect when `LIBERTY_E2E_DATABASE_URL` is set**, because an identity system needs both a secret and a store, and a run with one and not the other is a mistake rather than a configuration anybody wants to test. Pinned on the server — never inherited — for the same reason `DATABASE_URL` is: with a secret from a developer's root `.env.local`, a run the specs were told has no identity system would quietly have one, and since round 93 those two deployments answer differently on every route that needs an identity. |
 | `LIBERTY_E2E_DATABASE_URL` | unset          | A PostgreSQL connection string for the profile, progress and watchlist routes — the three groups that share `resolveRequestContext`, though only the first two are asserted here. Passed to the server as `DATABASE_URL`, and **pinned to the empty string when unset** rather than omitted, for the same reason the media origin is: `apps/web`'s `dev` and `start` run through `scripts/with-root-env.mjs`, so an omitted variable means "whatever is in the developer's root `.env.local`". Unset is the default and is a real configuration — `next dev` then uses the in-memory store, and a production build answers `storage_not_configured`. Both are asserted. |
+
+### The third axis: whether the server can authenticate anybody
+
+**Added by PW-0312 in round 93, on a security review that failed the round
+before it.** Until then no job in this repository ran a database, so every
+production-mode run was a *deployment with no identity system* — and that gap
+was used as an argument for letting such a deployment serve playback without
+authenticating. The verdict: *"The fact that `.github/workflows/ci.yml`
+currently has no PostgreSQL service is NOT a reason to preserve an
+authentication bypass. Fix the harness."*
+
+`src/env.ts` reads the axis once, as `IDENTITY_MECHANISM`, and there are three
+values — all of them real configurations of the product:
+
+| `IDENTITY_MECHANISM` | When | What the playback route does |
+| --- | --- | --- |
+| `development-headers` | `LIBERTY_E2E_WEB_MODE=development` | A non-deployment process resolves an identity from headers and never consults a session store. Every request is identified; nothing signs in. |
+| `database-session` | `production` **and** `LIBERTY_E2E_DATABASE_URL` set | A real Better Auth instance over a real PostgreSQL database. Signed-out requests get **401 `unauthenticated`**; `src/identity.ts` signs in and the specs carry the cookie. |
+| `none` | `production` with no database | A misconfigured deployment. **Fails closed**: every playback request is `unavailable` / `authentication_not_configured` / **503**, before the body is parsed. |
+
+**The third row is why a plain `LIBERTY_E2E_WEB_MODE=production` run now skips a
+block of tests.** There is genuinely nothing else to observe in that
+configuration — the route answers one thing, to everyone, about everything — so
+the tests whose subject is the *decision* skip with
+`PLAYBACK_DECISION_SKIP_REASON`, which names the remedy. The refusal itself is
+asserted, in `playback-session.api.spec.ts`'s *"a deployment with no identity
+system"* block. CI's production job supplies a database, so CI exercises the
+whole set.
+
+**The development run is deliberately left without one.** Case 5 of the ruling
+preserves the development identity mechanism, and the way to preserve something
+is to keep running it.
+
+#### What the CI job does
+
+`.github/workflows/ci.yml`'s `e2e` job runs a pinned `postgres:16.10-alpine`
+service, applies `packages/persistence/migrations/0000_profile_scoped_identity.sql`
+with `psql`, **asserts the eight tables exist**, and hands the production run a
+`LIBERTY_E2E_DATABASE_URL`.
+
+It does **not** use `npm run db:migrate -w @liberty/persistence`, and that is a
+defect rather than a preference: `drizzle-kit migrate` decides what to apply from
+`packages/persistence/migrations/meta/_journal.json`, which does not exist — the
+first migration was hand-written — so the command **applies nothing and exits
+0**. Verified against a live PostgreSQL 16 while the job was written. The table
+count after the `psql` step is there because the failure it routes around was
+silent.
+
+#### The one precondition the harness relaxes
+
+The harness sets `LIBERTY_AUTH_REQUIRE_EMAIL_VERIFICATION=false` on the server it
+starts. Sign-up otherwise answers `token: null` — `requireEmailVerification`
+working correctly — and the only ways onward are a mail transport the
+composition root deliberately refuses to fake (a verification URL is a one-click
+account takeover) or a direct `UPDATE` on the `user` table, which would mean the
+suite reaching around the application it is measuring.
+
+The account, the credential, the sign-in, the session row and its per-request
+verification all stay real. The verification **policy** is asserted where it
+belongs: `components/auth/auth-policy.ts` and `auth-ui.test.tsx`.
+
+`src/identity.ts` memoises one sign-in per worker and waits once on a `429`.
+That is not the retry `playwright.config.ts` forbids — no assertion is retried;
+a 429 is the server stating a protocol requirement, and the alternative would be
+switching off a real rate limiter to measure something else.
 
 ### The two web modes are not the same deployment
 

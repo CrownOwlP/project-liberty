@@ -133,6 +133,23 @@ export const playbackSessionReasonCodeSchema = z.enum([
    * themselves can carry out.
    */
   "not_authenticated",
+  /**
+   * This deployment has no identity system, so it can authenticate nobody
+   * (PW-0312, gpt-architect's round-93 corrective).
+   *
+   * A SEPARATE CODE FROM `provider_not_configured`, which it was briefly folded
+   * into, because that one names the wrong subsystem: an operator reading it
+   * would go and look at a provider registry that is working. This is the
+   * vocabulary `lib/db/request-context.ts` already publishes for exactly this
+   * fact on the profile, progress and watchlist routes, so one fact is reported
+   * under one name across the product rather than under two.
+   *
+   * IT IS NOT `not_authenticated`. That one means "say who you are and try
+   * again", which a viewer can act on. This one means "an operator must
+   * configure this deployment", which they cannot -- so it rides on
+   * `unavailable` and answers 503, never 401.
+   */
+  "authentication_not_configured",
   "provider_not_configured",
   "provider_unavailable",
   "no_candidates_resolved",

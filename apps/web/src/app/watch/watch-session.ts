@@ -143,7 +143,29 @@ const IN_PROCESS_ORIGIN = "http://localhost";
 export type WatchSessionResult =
   | { readonly status: "ok"; readonly session: PlaybackSession; readonly policy: FailoverPolicy }
   | { readonly status: "not-found"; readonly contentId: string }
-  | { readonly status: "not-configured"; readonly contentId: string }
+  /**
+   * Something an OPERATOR has to configure is missing, and `missing` says what
+   * (PW-0312, round 93).
+   *
+   * IT CARRIES WHICH ONE BECAUSE THE PANEL USED TO GUESS. The copy was a fixed
+   * sentence about a media provider, written when a provider registry was the
+   * only thing that could be absent here. A deployment with no IDENTITY system
+   * now reaches this branch too -- it fails closed rather than serving
+   * unauthenticated callers -- and telling that viewer "no authorized media
+   * provider is configured" sends whoever reads the screenshot to inspect a
+   * provider registry that is working. It is the same misattribution that made
+   * `authentication_not_configured` a separate reason code one layer down, and
+   * it would have been undone here by a sentence.
+   *
+   * ONE STATUS AND NOT TWO, because the REMEDY is identical -- permanent until
+   * an operator acts, no retry, no rights implication -- and the union is
+   * organised by remedy. What differs is the sentence.
+   */
+  | {
+      readonly status: "not-configured";
+      readonly contentId: string;
+      readonly missing: "provider" | "identity";
+    }
   | { readonly status: "denied"; readonly contentId: string; readonly reasons: readonly string[] }
   /**
    * Nobody is signed in, and this deployment has a way to be (PW-0312).
@@ -329,8 +351,9 @@ export function isWatchableContentId(contentId: string): boolean {
  *   - `unavailable` -> three different panels, because "we would have and could
  *                      not" has three different remedies:
  *                        `content_not_found`       -> `not-found`   (nothing to fix)
- *                        `provider_not_configured` -> `not-configured` (operator's)
- *                        anything else             -> `error`       (retryable)
+ *                        `provider_not_configured`      -> `not-configured` (operator's)
+ *                        `authentication_not_configured`-> `not-configured` (operator's)
+ *                        anything else                  -> `error`       (retryable)
  *
  * The last split is the one that matters most and is the one this page has
  * always made: telling a viewer to "try again in a moment" about a deployment
@@ -375,7 +398,23 @@ export function watchResultFor(
       case "content_not_found":
         return { status: "not-found", contentId };
       case "provider_not_configured":
-        return { status: "not-configured", contentId };
+        return { status: "not-configured", contentId, missing: "provider" };
+      /*
+       * `authentication_not_configured` JOINS IT (PW-0312). Both are
+       * "permanent until an OPERATOR acts", which is the whole definition of
+       * this branch as stated where the union is declared. A deployment with no
+       * identity system is misconfigured in exactly the way a deployment with
+       * no provider registry is, and a viewer told to "try again in a moment"
+       * about either one gets a retry loop no waiting resolves.
+       *
+       * DELIBERATELY NOT `signed-out`. There is no sign-in to offer: the screens
+       * PW-0312 built are driven by `resolveAuthPolicy`, and a deployment with
+       * no identity system has no sign-in that could complete. Offering one
+       * would be the dead end this task exists to remove, wearing the label of
+       * the fix.
+       */
+      case "authentication_not_configured":
+        return { status: "not-configured", contentId, missing: "identity" };
       default:
         /* The panel shows one sentence, so the PRIMARY reason is what it shows.
          * The rest of the trail is not discarded — `denied` carries all of it —

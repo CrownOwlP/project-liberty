@@ -207,13 +207,37 @@ async function PlaybackBody({
      * splits `not-configured` from `provider-unavailable` for exactly this
      * reason.
      */
+    /*
+     * WHICH CONFIGURATION IS MISSING IS NOT GUESSED (PW-0312, round 93). This
+     * used to be one fixed sentence about a media provider, because a provider
+     * registry was the only thing that could be absent here. A deployment with
+     * no identity system now reaches this branch as well -- it fails closed
+     * rather than serving unauthenticated callers -- and the old copy would
+     * have sent whoever read the screenshot to inspect a provider registry that
+     * was working. The heading and the remedy shape are shared; the sentence
+     * is not.
+     *
+     * NEITHER VARIANT OFFERS A SIGN-IN. A deployment with no identity system
+     * has no sign-in that could complete, so the panel that PW-0312 built for
+     * an actionable signed-out state would be the dead end this task exists to
+     * remove, wearing the label of the fix.
+     */
+    const missing =
+      result.missing === "identity"
+        ? {
+            body: "This deployment has no identity system configured, so nobody can be signed in and no playback session can be issued. This is a configuration gap rather than a problem with this title or with your device.",
+            reason: `${result.contentId}: this deployment has no identity system configured`
+          }
+        : {
+            body: "No authorized media provider is configured here, so there is no stream to play. This is a configuration gap rather than a problem with this title or with your device.",
+            reason: `${result.contentId}: no authorized media provider is configured for this deployment`
+          };
+
     return (
       <PlaybackUnavailable
         heading="Playback isn’t available on this deployment"
-        body="No authorized media provider is configured here, so there is no stream to play. This is a configuration gap rather than a problem with this title or with your device."
-        reasons={[
-          `${result.contentId}: no authorized media provider is configured for this deployment`
-        ]}
+        body={missing.body}
+        reasons={[missing.reason]}
       />
     );
   }

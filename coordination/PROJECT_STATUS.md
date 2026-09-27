@@ -1,6 +1,6 @@
 # Project Liberty - Project Status
 
-> Generated 2026-09-27T11:20:56.850Z from the AI control plane.
+> Generated 2026-09-27T21:16:00.196Z from the AI control plane.
 
 **Overall completion:** 77/99 executable tasks (78%)
 
@@ -9,8 +9,8 @@
 - **BACKLOG:** 12
 - **READY:** 6
 - **CLAIMED:** 0
-- **IN_PROGRESS:** 0
-- **REVIEW:** 1
+- **IN_PROGRESS:** 1
+- **REVIEW:** 0
 - **BLOCKED:** 3
 - **DONE:** 77
 - **CANCELED:** 0
@@ -31,7 +31,7 @@
 
 ## Active work
 
-- **PW-0312** [REVIEW] Authentication entry and session UX — owner: claude-frontend
+- **PW-0312** [IN_PROGRESS] Authentication entry and session UX — owner: claude-frontend
 
 ## Dispatch classification
 

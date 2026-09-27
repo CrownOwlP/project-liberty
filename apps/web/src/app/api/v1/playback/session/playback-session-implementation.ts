@@ -74,9 +74,13 @@ export interface PlaybackSessionOptions extends IssueSessionOptions {
    */
   readonly authenticate?: (request: Request) => Promise<RequestAccountResolution>;
   /**
-   * Whether this process HAS an identity system, asked independently of any
-   * one request. Injected for the same reason and defaulted to the real check.
-   * See the gate below for why the two questions are separate.
+   * Whether this process HAS an identity system, asked independently of any one
+   * request. Injected for the same reason and defaulted to the real check.
+   *
+   * IT NO LONGER DECIDES WHETHER TO REFUSE -- only which refusal. Both answers
+   * produce `unavailable` / 503; they differ in the detail, because
+   * "configure an identity store" and "your identity store is down" send an
+   * operator to different places. See the gate below.
    */
   readonly identityConfigured?: () => boolean;
 }
@@ -134,6 +138,14 @@ async function readJsonBody(request: Request): Promise<unknown> {
  * to sign in rather than told its body was malformed. That is the right way
  * round. The alternative answers a shape question for somebody we have not
  * identified, and a validator is a cheaper oracle than a catalog.
+ *
+ * NOTHING GETS PAST THIS GATE WITHOUT AN IDENTITY. A deployment that cannot
+ * establish one -- because it has no identity system, or because the one it has
+ * could not answer -- refuses with `unavailable` / 503 and never reaches
+ * `issuePlaybackSession`. There is no configuration of this process in which an
+ * unidentified caller receives a content decision. See the
+ * `authentication_not_configured` branch for why that is 503 rather than 401,
+ * and for why development is unaffected.
  * ---------------------------------------------------------------------- */
 
 /**
@@ -202,26 +214,47 @@ async function authenticationRefusal(
       );
     case "authentication_not_configured":
       /*
-       * TWO DIFFERENT EVENTS ARRIVE UNDER ONE REASON, and they need opposite
-       * answers, so the process is asked a second, request-independent
-       * question: does an identity system EXIST here?
+       * A MISCONFIGURED DEPLOYMENT, AND IT FAILS CLOSED. Both events that
+       * arrive under this reason -- no identity system at all, and one that
+       * could not answer -- are `unavailable` / 503, and NEITHER continues into
+       * content or provider resolution.
        *
-       *   - IT DOES NOT. Then there is no sign-in for anyone to perform, and
-       *     "sign in to continue" would be the dead end this task removes,
-       *     pointing the other way -- the same argument `/profiles` makes when
-       *     it falls through to the picker rather than to the panel on an
-       *     `unavailable` account. The route behaves exactly as it did before
-       *     this gate existed. This is what keeps `next build`-mode e2e
-       *     honest: `.github/workflows/ci.yml` declares no PostgreSQL service
-       *     and `e2e/src/env.ts` defaults `LIBERTY_E2E_DATABASE_URL` to null,
-       *     so every production-mode playback spec runs in a process that has
-       *     no identity system at all.
-       *   - IT DOES, AND IT COULD NOT ANSWER. Then this is an outage of a
-       *     dependency, not a signed-out viewer, and `unavailable` is the
-       *     outcome whose remedy -- wait and retry -- is the true one. It is
-       *     deliberately NOT reported as `unauthenticated`: telling a signed-in
-       *     viewer to sign in during a database blip is the collapse this
-       *     task's ruling forbids, with the operands swapped.
+       * THIS BRANCH USED TO FALL THROUGH AND DECIDE PLAYBACK when no identity
+       * system was configured, and gpt-architect's round-93 security review
+       * failed the task for it: "Absence of the identity system must NOT become
+       * a bypass of authentication in a deployment." The argument I had
+       * recorded for the fall-through was that a deployment with no identity
+       * system has no sign-in for anyone to perform, so refusing there is a
+       * dead end. The answer is that a dead end is the CORRECT response to a
+       * misconfigured deployment, and that the remedy is an OPERATOR's rather
+       * than a viewer's -- which is exactly why the outcome is `unavailable`
+       * and not `unauthenticated`. I had let "the viewer can do nothing about
+       * it" argue for serving them, when the same fact should have argued for
+       * 503.
+       *
+       * IT IS NOT `unauthenticated`, and that is the ruling's own reasoning
+       * rather than a preference: there is no sign-in action available in this
+       * state, so telling a viewer to sign in would be an instruction they
+       * cannot follow. `unauthenticated` means "say who you are and try again";
+       * this means "an operator must configure this deployment".
+       *
+       * WHY THE PROCESS IS STILL ASKED A SECOND QUESTION. The two events need
+       * the same OUTCOME and different DETAILS, because their remedies differ:
+       * "configure an identity store" and "your identity store is down" send an
+       * operator to different places. The detail is caller-invariant and
+       * content-invariant -- it is a statement about this deployment's
+       * configuration, identical for every request -- so it cannot become an
+       * oracle about a viewer or a title, which is the property the rest of
+       * this gate is built around.
+       *
+       * DEVELOPMENT IS UNAFFECTED, structurally rather than by care. This
+       * reason is reachable only from the DEPLOYMENT branch of
+       * `resolveRequestAccount`: a non-deployment process takes
+       * `developmentAccount` and never consults a session store at all, so it
+       * answers `ok` or `development_identifier_malformed` and never lands
+       * here. That is case 5 of the ruling -- "do not break the approved
+       * development identity mechanism merely to make production fail closed"
+       * -- and it needed no code to honour, only this note saying why.
        */
       return identityConfigured()
         ? unavailableSession(
@@ -230,7 +263,13 @@ async function authenticationRefusal(
               "the identity store could not be consulted for this request"
             )
           )
-        : null;
+        : unavailableSession(
+            playbackReason(
+              "authentication_not_configured",
+              "this deployment has no identity system configured, so no caller can be " +
+                "authenticated and no playback session can be issued"
+            )
+          );
   }
 }
 

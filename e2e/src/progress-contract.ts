@@ -246,6 +246,30 @@ function isWholeAtLeast(value: unknown, minimum: number): boolean {
  * 500 -- none of the conditions that reach it is a fault in handling the
  * request, and all of them are things an operator can act on.
  */
+/**
+ * The one refusal that is 401 rather than 403 (PW-0312, round 93).
+ *
+ * WHY IT WAS MISSING UNTIL NOW, because the answer is not "somebody forgot".
+ * `not_authenticated` needs a deployment that has BOTH a session store and an
+ * auth secret -- one with a store and no secret answers
+ * `authentication_not_configured`, and one with neither answers
+ * `storage_not_configured`, and both of those are `unavailable` / 503. No run
+ * of this harness could reach that configuration until the identity axis landed
+ * in `src/env.ts`, so this branch of the mapping had never been exercised and
+ * its absence had never cost anything.
+ *
+ * `docs/API_CONTRACTS.md` has documented the 401 since PW-0403: "an instance
+ * exists and answered; this request carried no valid session". So this is the
+ * harness catching up with the published contract, and NOT the product
+ * changing: 403 would say "we know who you are and the answer is no", which is
+ * exactly what a signed-out caller has not been told.
+ *
+ * RESTATED HERE RATHER THAN IMPORTED, like every other number in this file, for
+ * the reason its header gives: importing the server's own mapping would make
+ * "the status matches the outcome" a tautology.
+ */
+const UNAUTHENTICATED_REFUSAL = "not_authenticated";
+
 export function expectedProgressStatus(shape: ProgressResponseShape): number {
   switch (shape.outcome) {
     case "read":
@@ -257,6 +281,7 @@ export function expectedProgressStatus(shape: ProgressResponseShape): number {
     case "refused": {
       const primary = shape.reasons[0];
       if (primary === undefined) return 403;
+      if (primary.code === UNAUTHENTICATED_REFUSAL) return 401;
       if (CLIENT_INPUT_REFUSALS.includes(primary.code)) return 400;
       if (WRITE_CONFLICT_REFUSALS.includes(primary.code)) return 409;
       return 403;
@@ -388,6 +413,11 @@ export function expectedProfilesStatus(shape: ProfilesResponseShape): number {
     case "refused": {
       const primary = shape.reasons[0];
       if (primary === undefined) return 403;
+      /* The same 401 the progress mapping above takes, for the same reason and
+       * from the same shared preamble: `resolveRequestContext` refuses both
+       * route groups identically, so a difference here would be this file
+       * disagreeing with itself about one fact. */
+      if (primary.code === UNAUTHENTICATED_REFUSAL) return 401;
       if (PROFILE_INPUT_REFUSALS.includes(primary.code)) return 400;
       if (PROFILE_STATE_CONFLICTS.includes(primary.code)) return 409;
       return 403;

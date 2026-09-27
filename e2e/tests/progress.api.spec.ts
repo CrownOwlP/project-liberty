@@ -11,6 +11,7 @@ import {
 } from "../src/progress-contract";
 import { isRecord } from "../src/contract";
 import {
+  DEPLOYMENT_PREAMBLE_OUTCOME,
   DEPLOYMENT_PREAMBLE_REFUSAL,
   EXPECTED_STORAGE_ADAPTER,
   MANAGES_SERVER,
@@ -204,7 +205,16 @@ test("which refusal a progress read meets is decided by the build, and both are 
      * `@liberty/auth/server` yet. Either way the request never reaches a
      * decision about a profile.
      */
-    expect(shape.outcome).toBe("unavailable");
+    /*
+     * THE OUTCOME IS DERIVED, NOT LITERAL (PW-0312, round 93). It used to read
+     * `"unavailable"`, which was right for both configurations this harness
+     * could produce -- a deployment with no store, and one with a store and no
+     * auth secret -- because both are an operator's problem. A deployment with
+     * BOTH now answers `not_authenticated`, whose remedy is the CALLER's, so it
+     * rides on `refused` and 401. `src/env.ts` derives the pair from one
+     * expression, so the outcome and the reason cannot disagree here.
+     */
+    expect(shape.outcome).toBe(DEPLOYMENT_PREAMBLE_OUTCOME);
     expect(progressReasonCodes(shape)[0]).toBe(DEPLOYMENT_PREAMBLE_REFUSAL);
 
     /*
@@ -216,7 +226,7 @@ test("which refusal a progress read meets is decided by the build, and both are 
      * become an identity on a build that ships.
      */
     const anonymous = await decision(await request.get(PROGRESS(DEMO.movie.id)));
-    expect(anonymous.outcome).toBe("unavailable");
+    expect(anonymous.outcome).toBe(DEPLOYMENT_PREAMBLE_OUTCOME);
     expect(progressReasonCodes(anonymous)[0]).toBe(DEPLOYMENT_PREAMBLE_REFUSAL);
     return;
   }
@@ -272,7 +282,7 @@ test("the whole progress leg is decided by the build, and both are asserted", as
         data: { displayName: "E2E viewer", avatarKey: null, maxRating: null }
       })
     );
-    expect(creation.outcome).toBe("unavailable");
+    expect(creation.outcome).toBe(DEPLOYMENT_PREAMBLE_OUTCOME);
     expect(creation.reasons[0]?.code).toBe(DEPLOYMENT_PREAMBLE_REFUSAL);
 
     const lease = await decision(
@@ -281,7 +291,7 @@ test("the whole progress leg is decided by the build, and both are asserted", as
         data: { writerId: "e2e-writer" }
       })
     );
-    expect(lease.outcome).toBe("unavailable");
+    expect(lease.outcome).toBe(DEPLOYMENT_PREAMBLE_OUTCOME);
     expect(progressReasonCodes(lease)[0]).toBe(DEPLOYMENT_PREAMBLE_REFUSAL);
 
     const write = await decision(
@@ -295,7 +305,7 @@ test("the whole progress leg is decided by the build, and both are asserted", as
         }
       })
     );
-    expect(write.outcome).toBe("unavailable");
+    expect(write.outcome).toBe(DEPLOYMENT_PREAMBLE_OUTCOME);
     expect(progressReasonCodes(write)[0]).toBe(DEPLOYMENT_PREAMBLE_REFUSAL);
     return;
   }

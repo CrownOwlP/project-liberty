@@ -232,30 +232,125 @@ describe("an identity store that exists and could not answer", () => {
 });
 
 describe("a deployment with no identity system at all", () => {
-  it("decides exactly as it did before this gate existed", async () => {
+  /*
+   * THE REGRESSION gpt-architect ASKED FOR BY NAME IN ROUND 93, and the branch
+   * it guards is the one the round-92 security review failed.
+   *
+   * WHAT USED TO HAPPEN HERE. This configuration fell through the gate and
+   * decided playback, on my argument that a deployment with no identity system
+   * has no sign-in for anyone to perform, so refusing there is a dead end. The
+   * ruling: "Absence of the identity system must NOT become a bypass of
+   * authentication in a deployment. A production deployment with no auth
+   * store/configuration is misconfigured. It must fail closed." The dead end is
+   * the correct answer, because the remedy is an operator's.
+   *
+   * These tests are written as the four claims that would each individually
+   * have let the defect back in, rather than as one assertion about an outcome.
+   */
+  const noIdentitySystem = (resolve?: AuthorizedCandidateResolver): PlaybackSessionOptions => ({
+    authenticate: refusing("authentication_not_configured", "no auth instance is configured"),
+    identityConfigured: NO_IDENTITY_SYSTEM,
+    ...(resolve === undefined ? {} : { resolve })
+  });
+
+  it("refuses a VALID request as unavailable, not as a playback decision", async () => {
     /*
-     * THE CONDITIONAL, AND WHY IT IS NOT A HOLE. There is no sign-in for anyone
-     * to perform in such a process, so `unauthenticated` would be the dead end
-     * this task removes, pointing the other way. It is also the state the
-     * production-mode e2e suite runs in: CI declares no PostgreSQL service.
-     *
-     * The assertion is that the answer is the CONTENT decision -- here, a title
-     * nothing is registered under -- and not an authentication answer of any
-     * kind.
+     * A VALID request on purpose. A malformed one would be refused by the
+     * schema whatever the gate did, so it could not tell a fail-closed gate
+     * from an absent one.
      */
-    const resolver = forbiddenResolver();
     const response = await decidePlaybackSession(
-      sessionRequest({ contentId: "no-such-title-anywhere", capabilities: CAPABILITIES }),
-      {
-        authenticate: refusing("authentication_not_configured", "no auth instance is configured"),
-        identityConfigured: NO_IDENTITY_SYSTEM,
-        resolve: resolver.resolve
-      }
+      sessionRequest({ contentId: "aurora-fall", capabilities: CAPABILITIES }),
+      noIdentitySystem()
     );
 
     expect(response.outcome).toBe("unavailable");
-    expect(response.reasons[0].code).toBe("content_not_found");
-    expect(resolver.calls()).toBe(1);
+    /* `authentication_not_configured` and NOT `provider_not_configured`: the
+     * provider registry is not the thing that is missing, and an operator sent
+     * to look at it would find nothing wrong. It is the same code
+     * `request-context.ts` publishes for this fact on every other route group. */
+    expect(response.reasons[0].code).toBe("authentication_not_configured");
+    /* NOT `unauthenticated`: there is no sign-in action available in this
+     * state, so telling a viewer to sign in is an instruction they cannot
+     * follow. The ruling is explicit -- "the correct external remedy is
+     * operator configuration". */
+    expect(response.reasons[0].detail).toContain("no identity system configured");
+  });
+
+  it("answers 503 through the envelope", async () => {
+    const http = await handlePlaybackSessionRequest(
+      sessionRequest({ contentId: "aurora-fall", capabilities: CAPABILITIES }),
+      noIdentitySystem()
+    );
+    expect(http.status).toBe(503);
+    expect(http.headers.get("cache-control")).toBe("no-store");
+  });
+
+  it("does NOT reach content or provider resolution", async () => {
+    /*
+     * THE CLAUSE, ASSERTED AS A MECHANISM: "Do NOT continue into
+     * content/provider resolution." A resolver that is never called cannot have
+     * looked anything up, which is a stronger statement than any property of
+     * the response body -- and it stays true when somebody later changes what
+     * the refusal says.
+     */
+    const resolver = forbiddenResolver();
+    await decidePlaybackSession(
+      sessionRequest({ contentId: "aurora-fall", capabilities: CAPABILITIES }),
+      noIdentitySystem(resolver.resolve)
+    );
+
+    expect(resolver.calls()).toBe(0);
+  });
+
+  it("leaves the body UNREAD, so absence of auth is not a content oracle either", async () => {
+    /*
+     * gpt-architect: "assert the request body is still unread at the point this
+     * refusal is produced if practical, so the absence-of-auth case cannot
+     * become a content oracle either." It is practical, because the gate runs
+     * in front of `readJsonBody` for every branch rather than for the
+     * signed-out one only.
+     */
+    const request = sessionRequest({ contentId: "aurora-fall", capabilities: CAPABILITIES });
+    await decidePlaybackSession(request, noIdentitySystem());
+    expect(request.bodyUsed).toBe(false);
+  });
+
+  it("is refused BYTE-IDENTICALLY whatever the body said", async () => {
+    /* The same non-oracle property the signed-out branch has, applied to this
+     * one. A misconfigured deployment must not answer a real title differently
+     * from an invented one either. */
+    const answers = new Set<string>();
+    for (const body of [
+      { contentId: "aurora-fall", capabilities: CAPABILITIES },
+      { contentId: "no-such-title-anywhere", capabilities: CAPABILITIES },
+      { contentId: "NOT A CONTENT ID", capabilities: CAPABILITIES },
+      "{ this is not json"
+    ] as unknown[]) {
+      const http = await handlePlaybackSessionRequest(sessionRequest(body), noIdentitySystem());
+      expect(http.status).toBe(503);
+      answers.add(await http.text());
+    }
+
+    expect(answers.size).toBe(1);
+  });
+
+  it("still tells an operator WHICH failure it was", async () => {
+    /*
+     * The two events under `authentication_not_configured` keep different
+     * details, because "configure an identity store" and "your identity store
+     * is down" send an operator to different places. Both are caller-invariant
+     * and content-invariant -- statements about this deployment -- so neither
+     * can become an oracle about a viewer or a title.
+     */
+    const absent = await decidePlaybackSession(sessionRequest({}), noIdentitySystem());
+    const broken = await decidePlaybackSession(sessionRequest({}), {
+      authenticate: refusing("authentication_not_configured", "the store threw"),
+      identityConfigured: HAS_IDENTITY_SYSTEM
+    });
+
+    expect(absent.outcome).toBe(broken.outcome);
+    expect(absent.reasons[0].detail).not.toBe(broken.reasons[0].detail);
   });
 });
 

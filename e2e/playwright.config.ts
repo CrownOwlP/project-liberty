@@ -9,6 +9,7 @@ import {
   DESKTOP_PORT,
   MANAGES_SERVER,
   PORT,
+  SERVER_AUTH_SECRET,
   SERVER_DATABASE_URL,
   SERVER_MEDIA_ORIGIN,
   STUB_CERTIFICATE,
@@ -146,7 +147,48 @@ const APPLICATION_ENV: Record<string, string> = {
    * file overrides it -- and `selectRepository` trims and treats it as unset,
    * which is the "no database" branch the default asserts.
    */
-  DATABASE_URL: SERVER_DATABASE_URL
+  DATABASE_URL: SERVER_DATABASE_URL,
+
+  /*
+   * THE IDENTITY SYSTEM (PW-0312, gpt-architect's round-93 corrective).
+   *
+   * WRITTEN EVEN WHEN EMPTY, for the reason every other entry in this block is,
+   * and with a sharper edge than most. `auth-instance.ts` constructs a Better
+   * Auth instance only when it has a secret AND a store; an inherited
+   * LIBERTY_AUTH_SECRET from a developer's root `.env.local` would therefore
+   * hand a harness-started server an identity system the specs were told it did
+   * not have -- and since this round a deployment WITHOUT one fails closed with
+   * 503, the two configurations answer differently on every route that needs an
+   * identity. A hole here would read as a product regression.
+   *
+   * `SERVER_AUTH_SECRET` is derived from `SERVER_DATABASE_URL` in `src/env.ts`,
+   * so there is no run in which one is present and the other is not.
+   */
+  LIBERTY_AUTH_SECRET: SERVER_AUTH_SECRET,
+
+  /*
+   * WHERE THE INSTANCE IS TOLD IT LIVES, AND WHICH ORIGINS IT TRUSTS. Better
+   * Auth refuses a sign-in whose `origin` header is not on the trusted list,
+   * and a Playwright request context sends one. Both are this server's own URL,
+   * which is the expression `src/identity.ts` signs in against.
+   */
+  LIBERTY_AUTH_BASE_URL: BASE_URL,
+  LIBERTY_AUTH_TRUSTED_ORIGINS: BASE_URL,
+
+  /*
+   * THE ONE PRECONDITION THIS HARNESS RELAXES, AND IT IS STATED IN FULL IN
+   * `src/identity.ts` RATHER THAN SUMMARISED HERE.
+   *
+   * In one sentence: sign-up otherwise answers `token: null`, and the only ways
+   * onward are a mail transport the composition root deliberately refuses to
+   * fake -- a verification URL is a one-click account takeover -- or a direct
+   * UPDATE on the user table, which would mean this suite reaching around the
+   * application it is measuring. The account, the credential, the sign-in, the
+   * session row and its per-request verification all stay real; the
+   * verification POLICY is asserted in `auth-policy.ts` and `auth-ui.test.tsx`,
+   * not here.
+   */
+  LIBERTY_AUTH_REQUIRE_EMAIL_VERIFICATION: "false"
 
   /*
    * NODE_ENV is the one application variable deliberately NOT pinned, and it is
@@ -242,6 +284,19 @@ const WEB_SERVERS = [
            * it is the same value.
            */
           LIBERTY_BUILD_TARGET: "desktop",
+          /*
+           * ITS OWN ADDRESS, overriding the web server's. `/api/auth/*` is
+           * served by both builds and Better Auth validates the base URL and
+           * the trusted origins against the request it actually receives, so
+           * inheriting the web server's port here would make every auth call to
+           * this server fail an origin check. The harness signs in against the
+           * WEB origin (see `AUTH_BASE_URL_FOR_SIGN_IN`); this exists so that
+           * the desktop build can READ the session that produces, against the
+           * same database, which is what makes a cross-target authenticated
+           * request meaningful.
+           */
+          LIBERTY_AUTH_BASE_URL: DESKTOP_BASE_URL,
+          LIBERTY_AUTH_TRUSTED_ORIGINS: [BASE_URL, DESKTOP_BASE_URL].join(","),
           /*
            * The authenticated backend, as `docs/DESKTOP_PLAYBACK.md` section 8
            * requires the desktop build to have one. An absent value would make

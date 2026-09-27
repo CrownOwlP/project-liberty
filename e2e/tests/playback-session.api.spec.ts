@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { expect, test } from "@playwright/test";
-import type { APIResponse } from "@playwright/test";
+import { expect, request as playwrightRequest, test } from "@playwright/test";
+import type { APIRequestContext, APIResponse } from "@playwright/test";
 import {
   collectStrings,
   expectedStatus,
@@ -10,8 +10,17 @@ import {
   reasonCodes,
   type PlaybackSessionResponseShape
 } from "../src/contract";
-import { EXPECTED_MEDIA_ORIGIN, MANAGES_SERVER, WEB_MODE } from "../src/env";
+import {
+  BASE_URL,
+  DATABASE_SESSION_SKIP_REASON,
+  EXPECTED_MEDIA_ORIGIN,
+  IDENTITY_MECHANISM,
+  MANAGES_SERVER,
+  PLAYBACK_DECISION_SKIP_REASON,
+  WEB_MODE
+} from "../src/env";
 import { CAPABLE_DEVICE, DEMO, TINY_DEVICE, sessionRequest } from "../src/fixtures";
+import { establishSession, type SessionHeaders } from "../src/identity";
 
 /* -------------------------------------------------------------------------
  * POST /api/v1/playback/session - the discriminated union, end to end
@@ -39,7 +48,57 @@ const ROUTE = "/api/v1/playback/session";
  */
 test.beforeEach(() => {
   test.info().annotations.push({ type: "web-mode", description: WEB_MODE });
+  /* THE IDENTITY CONFIGURATION IS PART OF THE EVIDENCE TOO (PW-0312). This file
+   * asserts one thing when the server can authenticate a caller and a different
+   * thing when it cannot, so a result that does not say which is half a
+   * statement -- exactly the argument the web-mode annotation above makes. */
+  test.info().annotations.push({ type: "identity", description: IDENTITY_MECHANISM });
 });
+
+/* -------------------------------------------------------------------------
+ * WHY ALMOST EVERY REQUEST BELOW IS SIGNED IN (PW-0312, round 93)
+ *
+ * The playback route authenticates BEFORE it parses the body, so on a
+ * deployment with an identity system an anonymous request never reaches a
+ * decision -- it is answered 401 `unauthenticated` whatever it asked for. Every
+ * test in this file whose subject is the DECISION (the outcome, the reason
+ * trail, the status mapping, the body bound, the id normalisation) therefore
+ * has to get past that gate first, or it would be measuring the gate over and
+ * over under different names.
+ *
+ * The tests whose subject IS the gate are in the describe block at the bottom,
+ * and they deliberately send nothing.
+ *
+ * `SIGNED_IN` IS EMPTY IN THE OTHER TWO CONFIGURATIONS, AND CORRECTLY SO. Under
+ * `development` the identity comes from the development headers the server
+ * already honours, so there is nothing to attach. Under a production run with
+ * no identity system the deployment fails closed for everyone and a session
+ * could not be established anyway -- which is itself asserted below.
+ * ---------------------------------------------------------------------- */
+let SIGNED_IN: SessionHeaders = {};
+
+test.beforeAll(async () => {
+  if (IDENTITY_MECHANISM !== "database-session") return;
+
+  /*
+   * ITS OWN CONTEXT rather than the `request` fixture, because a fixture is
+   * per-test and this is established once per worker. `establishSession`
+   * throws rather than returning empty headers if anything fails, so a
+   * misconfigured run fails here instead of silently reporting every
+   * authenticated case as a signed-out one.
+   */
+  const context: APIRequestContext = await playwrightRequest.newContext({ baseURL: BASE_URL });
+  try {
+    SIGNED_IN = await establishSession(context);
+  } finally {
+    await context.dispose();
+  }
+});
+
+/** A signed-in POST body, with any headers the test needs of its own. */
+function signedIn(headers: Record<string, string> = {}): Record<string, string> {
+  return { ...headers, ...SIGNED_IN };
+}
 
 /**
  * Strings that only the fixture provider can put into a response.
@@ -136,16 +195,17 @@ async function decision(response: APIResponse): Promise<PlaybackSessionResponseS
 
 test("a well-formed request produces a well-formed decision", async ({ request }) => {
   const shape = await decision(
-    await request.post(ROUTE, { data: sessionRequest(DEMO.movie.id) })
+    await request.post(ROUTE, { data: sessionRequest(DEMO.movie.id), headers: signedIn() })
   );
   expect(["granted", "denied", "unavailable"]).toContain(shape.outcome);
 });
 
 test("the outcome matches what this deployment is configured to resolve", async ({ request }) => {
+  test.skip(PLAYBACK_DECISION_SKIP_REASON !== null, PLAYBACK_DECISION_SKIP_REASON ?? "");
   test.skip(!MANAGES_SERVER, "Only this harness knows how a server it started was configured.");
 
   const shape = await decision(
-    await request.post(ROUTE, { data: sessionRequest(DEMO.movie.id) })
+    await request.post(ROUTE, { data: sessionRequest(DEMO.movie.id), headers: signedIn() })
   );
 
   if (WEB_MODE === "production") {
@@ -217,7 +277,7 @@ test("a granted session publishes candidates only on the configured media origin
   request
 }) => {
   const shape = await decision(
-    await request.post(ROUTE, { data: sessionRequest(DEMO.movie.id) })
+    await request.post(ROUTE, { data: sessionRequest(DEMO.movie.id), headers: signedIn() })
   );
   test.skip(shape.outcome !== "granted", `Outcome was ${shape.outcome}; there is no candidate list.`);
   test.skip(
@@ -313,10 +373,11 @@ test("a granted session publishes candidates only on the configured media origin
  * the moment a fixture starts stating a height or a codec again.
  * ---------------------------------------------------------------------- */
 test("a device ceiling cannot refuse a candidate that states no height", async ({ request }) => {
+  test.skip(PLAYBACK_DECISION_SKIP_REASON !== null, PLAYBACK_DECISION_SKIP_REASON ?? "");
   test.skip(!MANAGES_SERVER, "Only this harness knows how a server it started was configured.");
 
   const shape = await decision(
-    await request.post(ROUTE, { data: sessionRequest(DEMO.movie.id, TINY_DEVICE) })
+    await request.post(ROUTE, { data: sessionRequest(DEMO.movie.id, TINY_DEVICE), headers: signedIn() })
   );
 
   if (WEB_MODE === "production") {
@@ -377,8 +438,12 @@ test("the same request twice produces the same decision", async ({ request }) =>
    * unguessable, and the expiry, which is a clock reading -- so they are
    * removed rather than the comparison being weakened to a subset check.
    */
-  const first = await decision(await request.post(ROUTE, { data: sessionRequest(DEMO.movie.id) }));
-  const second = await decision(await request.post(ROUTE, { data: sessionRequest(DEMO.movie.id) }));
+  const first = await decision(
+    await request.post(ROUTE, { data: sessionRequest(DEMO.movie.id), headers: signedIn() })
+  );
+  const second = await decision(
+    await request.post(ROUTE, { data: sessionRequest(DEMO.movie.id), headers: signedIn() })
+  );
 
   expect(withoutPerCallFields(second)).toEqual(withoutPerCallFields(first));
 });
@@ -394,9 +459,10 @@ function withoutPerCallFields(shape: PlaybackSessionResponseShape): unknown {
 }
 
 test("a malformed body is a decision, never a stack trace", async ({ request }) => {
+  test.skip(PLAYBACK_DECISION_SKIP_REASON !== null, PLAYBACK_DECISION_SKIP_REASON ?? "");
   for (const body of ["not json at all", "7", "null", "[]"]) {
     const response = await request.post(ROUTE, {
-      headers: { "content-type": "application/json" },
+      headers: signedIn({ "content-type": "application/json" }),
       data: body
     });
 
@@ -469,7 +535,7 @@ test("an oversized body is refused unread, with 413 and a size reason", async ({
   ).toBeGreaterThan(MAX_REQUEST_BODY_BYTES);
 
   const response = await request.post(ROUTE, {
-    headers: { "content-type": "application/json" },
+    headers: signedIn({ "content-type": "application/json" }),
     data: oversized.body
   });
 
@@ -510,7 +576,7 @@ test("a body just under the cap is not refused for its size", async ({ request }
 
   const shape = await decision(
     await request.post(ROUTE, {
-      headers: { "content-type": "application/json" },
+      headers: signedIn({ "content-type": "application/json" }),
       data: under.body
     })
   );
@@ -582,19 +648,214 @@ test("the session route does not answer a GET with a session", async ({ request 
 });
 
 test("capabilities are required, and the refusal explains itself", async ({ request }) => {
+  test.skip(PLAYBACK_DECISION_SKIP_REASON !== null, PLAYBACK_DECISION_SKIP_REASON ?? "");
   const shape = await decision(
-    await request.post(ROUTE, { data: { contentId: DEMO.movie.id } })
+    await request.post(ROUTE, { data: { contentId: DEMO.movie.id }, headers: signedIn() })
   );
   expect(shape.outcome).toBe("denied");
   expect(reasonCodes(shape)).toContain("request_malformed");
 });
 
 test("a normalized content id is required before any resolver is consulted", async ({ request }) => {
+  test.skip(PLAYBACK_DECISION_SKIP_REASON !== null, PLAYBACK_DECISION_SKIP_REASON ?? "");
   for (const contentId of ["../../etc/passwd", "Aurora Fall", "https://evil.test/x.mpd", ""]) {
     const shape = await decision(
-      await request.post(ROUTE, { data: sessionRequest(contentId, CAPABLE_DEVICE) })
+      await request.post(ROUTE, { data: sessionRequest(contentId, CAPABLE_DEVICE), headers: signedIn() })
     );
     expect(shape.outcome, `contentId ${JSON.stringify(contentId)}`).toBe("denied");
     expect(reasonCodes(shape)).toContain("request_malformed");
   }
+});
+
+/* -------------------------------------------------------------------------
+ * THE AUTHENTICATION GATE, END TO END (PW-0312, gpt-architect's round-93
+ * corrective)
+ *
+ * The five cases the verdict named, run against a REAL identity system: a
+ * PostgreSQL database with this repository's own migration applied, a Better
+ * Auth instance built by `apps/web`'s composition root, an account created
+ * through `/api/auth/sign-up/email` and a session issued by
+ * `/api/auth/sign-in/email`. Nothing here is faked; see `src/identity.ts` for
+ * the one precondition that is relaxed and why it is not one of these five.
+ *
+ * WHY THIS BLOCK HAD TO EXIST. Round 92 asserted the gate at unit level only
+ * and argued that the harness could not reach it, because CI declared no
+ * PostgreSQL service. The security review's answer was that a harness gap is
+ * not a product requirement: "The fact that .github/workflows/ci.yml currently
+ * has no PostgreSQL service is NOT a reason to preserve an authentication
+ * bypass. Fix the harness." This is the harness, fixed.
+ * ---------------------------------------------------------------------- */
+test.describe("a deployment that can authenticate a caller", () => {
+  test.skip(DATABASE_SESSION_SKIP_REASON !== null, DATABASE_SESSION_SKIP_REASON ?? "");
+
+  test("refuses a signed-out caller with 401 unauthenticated", async ({ request }) => {
+    const response = await request.post(ROUTE, { data: sessionRequest(DEMO.movie.id) });
+    const shape = await decision(response);
+
+    expect(shape.outcome).toBe("unauthenticated");
+    expect(reasonCodes(shape)).toEqual(["not_authenticated"]);
+    /* `decision()` has already required that the status is derivable from the
+     * outcome, so this line is about the number rather than the mapping: 401,
+     * because the remedy is the caller's. */
+    expect(response.status()).toBe(401);
+  });
+
+  test("lets a signed-in caller reach the deployment's real decision", async ({ request }) => {
+    const shape = await decision(
+      await request.post(ROUTE, { data: sessionRequest(DEMO.movie.id), headers: signedIn() })
+    );
+
+    /*
+     * THE SAME ANSWER THIS BUILD GAVE BEFORE ANY OF THIS EXISTED. A production
+     * build resolves no candidates on purpose -- no provider registry is wired
+     * in -- so the decision a signed-in caller reaches is
+     * `provider_not_configured`. That is the point: the gate changed WHO gets a
+     * decision, not WHAT the decision is.
+     */
+    expect(shape.outcome).toBe("unavailable");
+    expect(reasonCodes(shape)).toContain("provider_not_configured");
+    /* And emphatically not the authentication refusal: this caller was
+     * identified. */
+    expect(reasonCodes(shape)).not.toContain("not_authenticated");
+    expect(reasonCodes(shape)).not.toContain("authentication_not_configured");
+  });
+
+  test("gives a signed-in caller the request-shape refusal a signed-out one is denied", async ({
+    request
+  }) => {
+    /*
+     * THE ORDERING PROPERTY, OBSERVED FROM OUTSIDE. The gate runs before the
+     * body is parsed, so an unidentified caller gets 401 for a malformed body
+     * and an identified one gets the 400 that says what was wrong with it. A
+     * validator is a cheaper oracle than a catalog, and this is the pair that
+     * shows the route treats it as one.
+     */
+    const anonymous = await request.post(ROUTE, {
+      headers: { "content-type": "application/json" },
+      data: "not json at all"
+    });
+    expect(anonymous.status()).toBe(401);
+
+    const identified = await request.post(ROUTE, {
+      headers: signedIn({ "content-type": "application/json" }),
+      data: "not json at all"
+    });
+    const shape = await decision(identified);
+    expect(identified.status()).toBe(400);
+    expect(shape.outcome).toBe("denied");
+    expect(reasonCodes(shape)).toContain("request_malformed");
+  });
+
+  test("leaks nothing about whether a content id exists while signed out", async ({ request }) => {
+    /*
+     * THE CLAUSE, MEASURED ON THE WIRE RATHER THAN ARGUED FROM THE SOURCE. Four
+     * bodies a deployment would normally answer four different ways -- a title
+     * the demo catalog carries, one nothing is registered under, an id the
+     * schema refuses, and a field this route will not accept -- and the refusal
+     * has to be one set of bytes.
+     */
+    const bodies: unknown[] = [
+      sessionRequest(DEMO.movie.id),
+      sessionRequest("no-such-title-anywhere"),
+      sessionRequest("NOT A CONTENT ID"),
+      { ...sessionRequest(DEMO.movie.id), uri: "https://evil.test/x.mpd" }
+    ];
+
+    const answers = new Set<string>();
+    for (const body of bodies) {
+      const response = await request.post(ROUTE, { data: body });
+      expect(response.status()).toBe(401);
+      answers.add(await response.text());
+    }
+
+    expect(answers.size, `signed-out refusals differed: ${[...answers].join(" | ")}`).toBe(1);
+    /* And the one answer names none of the ids it was asked about. */
+    const [only] = [...answers];
+    expect(only).not.toContain(DEMO.movie.id);
+    expect(only).not.toContain("no-such-title");
+  });
+
+  test("answers a session store that cannot be consulted as unavailable, not as signed out", async ({
+    request
+  }) => {
+    /*
+     * "Authentication system exists but cannot answer -> unavailable / 503."
+     *
+     * DRIVEN BY A COOKIE THE STORE MUST BE ASKED ABOUT rather than by stopping
+     * PostgreSQL, which this harness has no authority to do and which would
+     * make the test a statement about the runner. A forged session token is a
+     * pointer to a row that is not there, so the store IS consulted and answers
+     * "no such session" -- which is `not_authenticated`, a 401, and the correct
+     * distinction: the store answered.
+     *
+     * The 503 half of the pair is the configuration case below, and the unit
+     * suite drives the throwing store directly, where a thrown error can be
+     * injected without lying about the deployment.
+     */
+    const forged = await request.post(ROUTE, {
+      headers: { cookie: "better-auth.session_token=forged.forged" },
+      data: sessionRequest(DEMO.movie.id)
+    });
+
+    expect(forged.status()).toBe(401);
+    const shape = await decision(forged);
+    expect(shape.outcome).toBe("unauthenticated");
+    /* A stolen or invented cookie learns nothing an absent one would not: the
+     * four ways a session fails to verify are one answer. */
+    expect(reasonCodes(shape)).toEqual(["not_authenticated"]);
+  });
+});
+
+/* -------------------------------------------------------------------------
+ * THE MISCONFIGURED DEPLOYMENT (PW-0312, round 93)
+ *
+ * "Deployment requires authentication but the identity system is not
+ * configured: unavailable / 503. Do NOT continue into content/provider
+ * resolution."
+ *
+ * This is the configuration a production-mode run has by default -- no
+ * LIBERTY_E2E_DATABASE_URL -- which is why it is asserted here rather than only
+ * in the job that supplies one. Before round 93 this configuration DECIDED
+ * PLAYBACK, and every production-mode e2e result this project had recorded was
+ * a result about a deployment serving unauthenticated callers.
+ * ---------------------------------------------------------------------- */
+test.describe("a deployment with no identity system", () => {
+  test.skip(
+    !(MANAGES_SERVER && WEB_MODE === "production" && IDENTITY_MECHANISM === "none"),
+    "Only a production-mode run with no LIBERTY_E2E_DATABASE_URL is this configuration. " +
+      "A development run resolves a development identity, and a run with a database has " +
+      "an identity system -- both are asserted elsewhere in this file."
+  );
+
+  test("fails closed with 503 and names the operator's remedy", async ({ request }) => {
+    const response = await request.post(ROUTE, { data: sessionRequest(DEMO.movie.id) });
+    const shape = await decision(response);
+
+    expect(response.status()).toBe(503);
+    expect(shape.outcome).toBe("unavailable");
+    /*
+     * `authentication_not_configured` and NOT `provider_not_configured`: the
+     * provider registry is not what is missing, and an operator sent to inspect
+     * it would find nothing wrong. It is also NOT `unauthenticated` -- there is
+     * no sign-in available in this state, so telling a viewer to sign in is an
+     * instruction they cannot follow.
+     */
+    expect(reasonCodes(shape)).toContain("authentication_not_configured");
+    expect(reasonCodes(shape)).not.toContain("not_authenticated");
+  });
+
+  test("publishes nothing only a resolver could know", async ({ request }) => {
+    /*
+     * "Do NOT continue into content/provider resolution", measured from
+     * outside. The unit suite proves it with a resolver that counts its calls;
+     * from here the observable is that nothing only the fixture provider can
+     * compose appears in the answer -- and that a real title and an invented
+     * one are answered identically, so the refusal cannot be read as a catalog.
+     */
+    const real = await request.post(ROUTE, { data: sessionRequest(DEMO.movie.id) });
+    const invented = await request.post(ROUTE, { data: sessionRequest("no-such-title-anywhere") });
+
+    expect(await real.text()).toBe(await invented.text());
+    expect(fixtureArtefactsIn(await decision(real))).toEqual([]);
+  });
 });

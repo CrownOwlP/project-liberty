@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import {
   CATALOG_AVAILABILITY,
+  IDENTITY_MECHANISM,
   MANAGES_SERVER,
   UNKNOWN_CATALOG_SKIP_REASON,
   WEB_MODE
@@ -593,13 +594,49 @@ test("the watch route answers with the id it was asked about, and never with a s
   expect(response?.status()).toBe(200);
 
   /*
-   * The assertion that the id survived the whole journey, in the one form both
-   * branches share: the player prints `Content: <id>` and the unavailable panel
-   * prints `<id>: no authorized media provider ...`. Matching the id itself
-   * rather than either sentence is what keeps this mode-independent without
-   * making it a copy check on marketing text.
+   * THE THIRD BRANCH PRINTS THE ID IN A LINK RATHER THAN IN PROSE (PW-0312). A
+   * signed-out viewer on a deployment that CAN identify one is offered a sign-in
+   * whose destination is this title -- `/signin?next=/watch/<id>` -- so the id
+   * is in an href and not in visible text, and `getByText` correctly does not
+   * find it. That is the state working, not the id being lost: the whole point
+   * of the panel is that signing in returns the viewer to the thing they asked
+   * for rather than to the home page.
+   *
+   * So the two claims are separated. The id survives the journey -- asserted
+   * against the DESTINATION here and against visible text on the other two
+   * branches -- and no `src` reaches the player element, which is asserted for
+   * all three below.
    */
-  await expect(page.getByText(DEMO.movie.id).first()).toBeVisible();
+  if (IDENTITY_MECHANISM === "database-session") {
+    /*
+     * SCOPED TO `#main`, and the reason is worth keeping: there are TWO sign-in
+     * links on this page. The shell's account region carries a plain `/signin`
+     * on every screen -- PW-0312 part 1 put it there -- and the panel carries
+     * the one whose destination is this title. An unscoped locator matches both
+     * and Playwright's strict mode refuses, which is the right refusal: the two
+     * links mean different things and a test that accepted either would be
+     * asserting the weaker one by accident.
+     */
+    const signIn = page.locator("#main").getByRole("link", { name: /^sign in$/i });
+    await expect(signIn).toBeVisible();
+    /* PERCENT-ENCODED, because the destination is a query parameter. Asserted
+     * as the encoded form rather than loosened to a substring match on the bare
+     * id: `next=%2Fwatch%2Faurora-fall` is what a browser sends back, and a
+     * test that accepted either spelling would pass on a link that had stopped
+     * encoding -- which is the bug `safeNextPath` exists upstream of. */
+    expect(await signIn.getAttribute("href")).toContain(
+      encodeURIComponent(`/watch/${DEMO.movie.id}`)
+    );
+  } else {
+    /*
+     * The one form the other two branches share: the player prints
+     * `Content: <id>` and the unavailable panel prints `<id>: no authorized
+     * media provider ...`. Matching the id itself rather than either sentence
+     * is what keeps this mode-independent without making it a copy check on
+     * marketing text.
+     */
+    await expect(page.getByText(DEMO.movie.id).first()).toBeVisible();
+  }
 
   /*
    * THE INVARIANT THIS PAGE EXISTS TO PROTECT. `player-surface.tsx` sets
@@ -627,12 +664,49 @@ test("which branch the watch route takes is decided by the build, and both are a
 
   await page.goto(`/watch/${DEMO.movie.id}`);
 
+  if (WEB_MODE === "production" && IDENTITY_MECHANISM === "database-session") {
+    /*
+     * THE THIRD BRANCH, AND THE ONE CI ACTUALLY RUNS (PW-0312).
+     *
+     * "Production" split in two when the harness gained a real identity system:
+     * a deployment that can tell a signed-out viewer from a signed-in one owes
+     * them something they can act on, and a deployment that cannot does not.
+     * This test's name is "both are asserted"; there are three now, and the
+     * configuration CI runs must not be the one nobody asserts.
+     *
+     * THIS IS THE ACCEPTANCE CLAUSE ON SCREEN. "REQUIRED: a sign-in screen
+     * reachable FROM the signed-out protected state, not only from a URL
+     * somebody knows." Asserted in a browser, on the route a viewer actually
+     * hit, rather than argued from a component test -- and the destination
+     * carries this title, so the remedy returns them where they were.
+     */
+    await expect(page.getByRole("heading", { name: /^sign in to watch this$/i })).toBeVisible();
+
+    /* `#main`, not the page: the shell's account region carries its own plain
+     * `/signin` link on every screen. See the test above. */
+    const signIn = page.locator("#main").getByRole("link", { name: /^sign in$/i });
+    await expect(signIn).toBeVisible();
+    expect(await signIn.getAttribute("href")).toBe(
+      `/signin?next=${encodeURIComponent(`/watch/${DEMO.movie.id}`)}`
+    );
+
+    /* AND NO PLAYER, for the same reason the branch below asserts it: a
+     * signed-out viewer reaching a mounted player would mean the session was
+     * issued to somebody nobody identified. */
+    expect(await page.locator("liberty-video").count()).toBe(0);
+    return;
+  }
+
   if (WEB_MODE === "production") {
     /*
      * NOT A DEGRADED PASS, and the same argument the session API's mode split
      * makes: a production build resolves no candidates because no provider
      * registry is wired in yet, and serving fixtures from a hosted deployment
      * would publish fabricated `owned` rights for files that do not exist.
+     *
+     * REACHED ONLY WHEN THE DEPLOYMENT CANNOT IDENTIFY A VIEWER. With an
+     * identity system the branch above owns this route, because the
+     * authentication gate answers before provider resolution is reached at all.
      *
      * Addressed by accessible name, and by a regex because the heading uses a
      * typographic apostrophe -- pinning U+2019 in a test file is how a locator
@@ -642,11 +716,21 @@ test("which branch the watch route takes is decided by the build, and both are a
       page.getByRole("heading", { name: /available on this deployment/i })
     ).toBeVisible();
 
-    /* Product invariant 4 applies to a refusal exactly as much as to a grant:
+    /*
+     * Product invariant 4 applies to a refusal exactly as much as to a grant:
      * the panel publishes a machine-readable line naming the title, so a
-     * screenshot in a bug report is enough to find this state in the code. */
+     * screenshot in a bug report is enough to find this state in the code.
+     *
+     * AND IT NAMES THE RIGHT SUBSYSTEM (PW-0312, round 93). This branch is now
+     * reached for two different missing configurations -- no provider registry,
+     * and no identity system -- and the panel says which. A production run with
+     * a database never reaches this branch at all (the sign-in branch above
+     * owns it), so what is left here is the deployment that can identify
+     * nobody, and the line must say so rather than blaming a provider that is
+     * working.
+     */
     await expect(
-      page.getByText(`${DEMO.movie.id}: no authorized media provider is configured`)
+      page.getByText(`${DEMO.movie.id}: this deployment has no identity system configured`)
     ).toBeVisible();
 
     /*

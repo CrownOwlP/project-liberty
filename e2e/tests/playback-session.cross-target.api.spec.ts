@@ -7,8 +7,16 @@ import {
   reasonCodes,
   type PlaybackSessionResponseShape
 } from "../src/contract";
-import { DESKTOP_BASE_URL, DESKTOP_SKIP_REASON, WEB_MODE } from "../src/env";
+import {
+  BASE_URL,
+  DESKTOP_BASE_URL,
+  DESKTOP_SKIP_REASON,
+  IDENTITY_MECHANISM,
+  PLAYBACK_DECISION_SKIP_REASON,
+  WEB_MODE
+} from "../src/env";
 import { CAPABLE_DEVICE, DEMO, TINY_DEVICE, sessionRequest } from "../src/fixtures";
+import { establishSession, type SessionHeaders } from "../src/identity";
 
 /* -------------------------------------------------------------------------
  * CROSS-TARGET CONTRACT EQUIVALENCE (PL-0501, round 45, correction 4)
@@ -59,8 +67,39 @@ test.beforeEach(() => {
 
 let desktop: APIRequestContext;
 
+/* -------------------------------------------------------------------------
+ * ONE SESSION, PRESENTED TO BOTH TARGETS (PW-0312)
+ *
+ * The playback route authenticates before it parses the body, so on a
+ * deployment with an identity system an anonymous request reaches neither
+ * target's decision -- both would answer 401, identically, and the equivalence
+ * table would compare two refusals produced in front of everything it exists to
+ * measure. Signing in is what keeps the comparison about the envelope.
+ *
+ * MINTED AGAINST THE WEB ORIGIN AND PRESENTED TO BOTH, deliberately. Liberty
+ * uses DATABASE sessions (PL-0401): the cookie is a pointer and the row is the
+ * authority, so a session issued by one server is honoured by the other because
+ * they share a database -- not because a token was copied. The desktop target
+ * forwards the cookie to its backend through the `IDENTITY_HEADERS` allowlist
+ * in `playback-session-implementation.desktop.ts`, which is PW-0401's "forwards
+ * an authenticated caller identity", and this is the first run in this
+ * repository that can observe it end to end.
+ *
+ * Empty under `development` and under a production run with no identity system;
+ * see `playback-session.api.spec.ts`, which owns both of those cases.
+ * ---------------------------------------------------------------------- */
+let SIGNED_IN: SessionHeaders = {};
+
 test.beforeAll(async () => {
   desktop = await playwrightRequest.newContext({ baseURL: DESKTOP_BASE_URL });
+
+  if (IDENTITY_MECHANISM !== "database-session") return;
+  const web = await playwrightRequest.newContext({ baseURL: BASE_URL });
+  try {
+    SIGNED_IN = await establishSession(web);
+  } finally {
+    await web.dispose();
+  }
 });
 
 test.afterAll(async () => {
@@ -127,8 +166,12 @@ function comparable(shape: PlaybackSessionResponseShape): unknown {
 
 for (const row of REQUESTS) {
   test(`both targets answer identically: ${row.name}`, async ({ request }) => {
-    const web = await observe(await request.post(ROUTE, { data: row.body }));
-    const desk = await observe(await desktop.post(ROUTE, { data: row.body }));
+    const web = await observe(
+      await request.post(ROUTE, { data: row.body, headers: { ...SIGNED_IN } })
+    );
+    const desk = await observe(
+      await desktop.post(ROUTE, { data: row.body, headers: { ...SIGNED_IN } })
+    );
 
     /* STATUS. §8 lists "same status codes" and this is the one a client branches
      * on before it reads anything. */
@@ -158,6 +201,7 @@ for (const row of REQUESTS) {
 }
 
 test("the equivalence table is not vacuously passing on refusals alone", async ({ request }) => {
+  test.skip(PLAYBACK_DECISION_SKIP_REASON !== null, PLAYBACK_DECISION_SKIP_REASON ?? "");
   /*
    * THE PAIRING FOR THE WHOLE FILE. Twelve of the rows above are refusals, and
    * two identical refusals would be produced by two targets that had both
@@ -171,8 +215,12 @@ test("the equivalence table is not vacuously passing on refusals alone", async (
    * operator remedy -- which is still a statement about the envelope, and it is
    * the strongest one that build can support.
    */
-  const web = await observe(await request.post(ROUTE, { data: sessionRequest(DEMO.movie.id) }));
-  const desk = await observe(await desktop.post(ROUTE, { data: sessionRequest(DEMO.movie.id) }));
+  const web = await observe(
+    await request.post(ROUTE, { data: sessionRequest(DEMO.movie.id), headers: { ...SIGNED_IN } })
+  );
+  const desk = await observe(
+    await desktop.post(ROUTE, { data: sessionRequest(DEMO.movie.id), headers: { ...SIGNED_IN } })
+  );
 
   if (WEB_MODE === "development") {
     expect(web.shape.outcome).toBe("granted");

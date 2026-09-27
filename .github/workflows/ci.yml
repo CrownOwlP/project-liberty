@@ -520,6 +520,54 @@ jobs:
       CONTENT_RIGHTS_ENFORCEMENT: strict
       LIBERTY_FC_SEED: "20250819"
       LIBERTY_FIXTURE_MEDIA_ORIGIN: https://fixtures.invalid
+      # The database the PRODUCTION run's identity system is built on. One
+      # expression, used by the migration step and handed to the harness below,
+      # so a run cannot migrate one database and then test against another.
+      LIBERTY_E2E_POSTGRES_URL: postgres://liberty:liberty@127.0.0.1:5432/liberty_e2e
+    # =======================================================================
+    # A REAL IDENTITY SYSTEM FOR THE PRODUCTION RUN (PW-0312, round 93)
+    # =======================================================================
+    #
+    # WHY THIS SERVICE EXISTS. Until this round no job in this repository ran a
+    # database, so every production-mode e2e run was a DEPLOYMENT WITH NO
+    # IDENTITY SYSTEM -- and in round 92 that gap was used as an argument for
+    # letting such a deployment serve playback without authenticating anybody.
+    # gpt-architect's security review failed it and said what to do instead:
+    # "The fact that .github/workflows/ci.yml currently has no PostgreSQL
+    # service is NOT a reason to preserve an authentication bypass. Fix the
+    # harness."
+    #
+    # WHAT IT BUYS. The production run can now create an account, sign in, and
+    # exercise the five cases the verdict named: signed-out -> 401
+    # unauthenticated; signed-in valid -> the deployment's real decision;
+    # signed-in malformed -> 400; a session store consulted about a cookie it
+    # has no row for -> 401 rather than a 503; and no content-existence leak
+    # while signed out.
+    #
+    # THE DEVELOPMENT RUN IS DELIBERATELY NOT GIVEN ONE. Case 5 of the ruling
+    # preserves the development identity mechanism -- headers, no session store
+    # -- and the way to preserve something is to keep running it.
+    #
+    # PINNED TO AN EXACT TAG rather than `postgres:latest`, for the reason every
+    # other version in this repository is pinned: a gate is recorded against
+    # what was run, and `latest` means the database a passing result was
+    # recorded against can change with no commit saying so.
+    services:
+      postgres:
+        image: postgres:16.10-alpine
+        env:
+          POSTGRES_USER: liberty
+          POSTGRES_PASSWORD: liberty
+          POSTGRES_DB: liberty_e2e
+        ports:
+          - 5432:5432
+        # Without this the steps below race the container's first start, and the
+        # failure is a connection refused that reads like a product fault.
+        options: >-
+          --health-cmd "pg_isready -U liberty -d liberty_e2e"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -570,12 +618,56 @@ jobs:
         id: browsers
         working-directory: e2e
         run: npx playwright install chromium
+      # ===================================================================
+      # THE MIGRATION, APPLIED DIRECTLY AND THEN VERIFIED
+      # ===================================================================
+      #
+      # NOT `npm run db:migrate -w @liberty/persistence`, AND THE REASON IS A
+      # DEFECT RATHER THAN A PREFERENCE. That script runs `drizzle-kit migrate`,
+      # which decides what to apply by reading
+      # `packages/persistence/migrations/meta/_journal.json`. That file does not
+      # exist: the first migration was hand-written -- its own header says so --
+      # so no `drizzle-kit generate` run ever produced a journal. The command
+      # therefore APPLIES NOTHING AND EXITS 0. Verified against a live
+      # PostgreSQL 16 while this job was being written: fresh database,
+      # `drizzle-kit migrate` with a real connection string, exit 0, zero
+      # relations afterwards.
+      #
+      # `packages/persistence/**` is not on PW-0312's surface and this job does
+      # not fix it; the defect is filed as its own proposal for gpt-architect.
+      # What this job does instead is apply the committed SQL with `psql` and
+      # then ASSERT THE TABLES EXIST -- because the failure this routes around
+      # was SILENT, and a migration step that cannot fail loudly is how it
+      # stayed silent.
+      - name: Apply the repository migration
+        id: migrate
+        run: |
+          set -euo pipefail
+          psql "$LIBERTY_E2E_POSTGRES_URL" \
+            --set ON_ERROR_STOP=1 \
+            --quiet \
+            --file packages/persistence/migrations/0000_profile_scoped_identity.sql
+          # The four Better Auth tables plus the four Liberty ones. A count
+          # rather than a spot check, so a partially applied migration fails
+          # here instead of becoming a confusing 500 three steps later.
+          applied=$(psql "$LIBERTY_E2E_POSTGRES_URL" --tuples-only --no-align --command \
+            "select count(*) from information_schema.tables
+             where table_schema = 'public'
+               and table_name in ('user','session','account','verification',
+                                  'profile','active_profile_selection',
+                                  'playback_progress','watchlist_entry')")
+          echo "migration created $applied of 8 expected tables"
+          test "$applied" -eq 8
       - name: Run the suite in production mode
         id: production
-        if: ${{ steps.browsers.outcome == 'success' }}
+        if: ${{ steps.browsers.outcome == 'success' && steps.migrate.outcome == 'success' }}
         working-directory: e2e
         env:
           LIBERTY_E2E_WEB_MODE: production
+          # WHAT MAKES THIS RUN THE ONE WITH AN IDENTITY SYSTEM. `src/env.ts`
+          # derives the auth secret from this variable's presence, so there is
+          # no run in which a store is configured and a secret is not.
+          LIBERTY_E2E_DATABASE_URL: ${{ env.LIBERTY_E2E_POSTGRES_URL }}
         run: npm test -- --project=api --project=chromium
       # Uploaded between the two runs, not after both: the HTML reporter writes
       # to one directory and the development run overwrites it.
@@ -596,6 +688,12 @@ jobs:
         working-directory: e2e
         env:
           LIBERTY_E2E_WEB_MODE: development
+          # NO DATABASE, ON PURPOSE, and it is not an omission. Case 5 of
+          # gpt-architect's round-93 semantics: "Explicit
+          # non-deployment/development identity behavior may remain governed by
+          # the existing development capability/rules." A development process
+          # resolves an identity from headers and never consults a session
+          # store, and running it that way is how that stays true.
         run: npm test -- --project=api --project=chromium
       - name: Upload the development report
         if: ${{ !cancelled() && steps.browsers.outcome == 'success' }}
