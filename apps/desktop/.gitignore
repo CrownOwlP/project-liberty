@@ -7,3 +7,14 @@ src-tauri/target/
 # capabilities directory. Committing it means a diff on every build that says
 # nothing, and a merge conflict in a file nobody edits.
 src-tauri/gen/schemas/
+
+# `dist/` IS AUTHORED HERE, unlike everywhere else in this repository.
+#
+# The root .gitignore excludes `dist/` because it is build output in every
+# other package. This one is not: it is a single hand-written HTML file, the
+# failure screen the shell serves when its sidecar will not start, and there is
+# no build step that could regenerate it. `tauri.conf.json` names it as
+# `frontendDist`, so an ignored copy means a packaged shell with no page to
+# show when it has something to say.
+!dist/
+!dist/index.html

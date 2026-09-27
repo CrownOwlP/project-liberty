@@ -191,11 +191,8 @@ mod tests {
         // told what went wrong.
         let mut budget = Budget::new();
         let mut total = Duration::ZERO;
-        loop {
-            match budget.record_exit(Duration::from_millis(50)) {
-                Decision::Restart { after } => total += after,
-                Decision::GiveUp { .. } => break,
-            }
+        while let Decision::Restart { after } = budget.record_exit(Duration::from_millis(50)) {
+            total += after;
         }
         assert!(
             total <= Duration::from_secs(15),

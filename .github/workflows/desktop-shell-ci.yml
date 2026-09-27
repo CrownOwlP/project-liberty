@@ -1,0 +1,120 @@
+name: Desktop shell
+
+# ============================================================================
+# WHY THIS WORKFLOW EXISTS SEPARATELY FROM ci.yml AND FROM windows.yml
+# ============================================================================
+#
+# It exists to break a deadlock the board contained, and gpt-architect's
+# round-87 ruling is what carved it out. PW-0102 cannot reach DONE without
+# windows-latest evidence; PW-0501 owns the Windows PACKAGING workflow and
+# depends on PW-0102 being DONE. Neither could move.
+#
+# So this is PW-0102's own, narrow, uniquely named job, and its scope is fixed
+# by that ruling: establish that the shell crate BUILDS and its tests PASS on
+# Windows. Nothing else.
+#
+# WHAT THIS WORKFLOW MUST NEVER GROW INTO. It carries no release signing, no
+# MSI or NSIS packaging, no installer or update evidence, and no release
+# artifact responsibility. All of those belong to
+# `.github/workflows/windows.yml`, which is PW-0501's alone. `PW-0602` is the
+# certification consumer and reads both; it writes neither.
+#
+# If a future change wants packaging here, the answer is that packaging already
+# has an owner and a file. Adding it here would recreate exactly the co-ownership
+# the round-87 ruling resolved.
+#
+# ============================================================================
+# WHAT IT DOES NOT PROVE
+# ============================================================================
+#
+# That the shell LAUNCHES, that WebView2 renders anything, that the Job Object
+# terminates the sidecar, or that an installer works. This job compiles and
+# runs unit tests; it never starts the application. Those observations are owed
+# to PW-0601 on a real machine, or to a smoke job built on the artifact this one
+# uploads. No gate may be recorded as if this job supplied them.
+
+on:
+  push:
+    # Deliberately narrower than ci.yml's deny-list trigger: this job installs a
+    # Rust toolchain and compiles a large dependency graph on a Windows runner,
+    # which is the most expensive minute this repository spends. Running it on
+    # every push to every branch would spend it on commits that cannot affect
+    # the crate.
+    paths:
+      - "apps/desktop/**"
+      - ".github/workflows/desktop-shell-ci.yml"
+  pull_request:
+    paths:
+      - "apps/desktop/**"
+      - ".github/workflows/desktop-shell-ci.yml"
+  # The autonomous loop cannot rely on push events: GitHub does not fire
+  # push-triggered workflows for commits made with the default GITHUB_TOKEN.
+  # ci.yml records the same constraint and the same remedy.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-shell-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows-shell:
+    # THE WHOLE POINT. Every other job in this repository is ubuntu-latest, and
+    # the shell is the one thing ubuntu cannot answer for.
+    runs-on: windows-latest
+
+    defaults:
+      run:
+        working-directory: apps/desktop/src-tauri
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # PINNED, NOT `stable`. A gate is recorded against what was built, and
+      # `stable` means the toolchain that produced a passing result can change
+      # under the next run with no commit saying so -- the same argument
+      # Cargo.toml makes for exact dependency pins and the same one
+      # playwright.config.ts makes for its browser revision.
+      #
+      # `rust-version` in Cargo.toml is the MINIMUM this crate supports; this is
+      # the one it is verified with. They are different claims.
+      - name: Install the pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.90.0"
+          components: clippy
+
+      # Keyed on Cargo.lock, which is committed for exactly this reason: the
+      # lockfile is the dependency graph, so a cache entry that survives a
+      # dependency change would be serving a different build than the one under
+      # test.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+
+      - name: Unit tests
+        run: cargo test --locked
+
+      # `--locked` on every step. Without it Cargo may quietly update the
+      # lockfile to satisfy a resolution, which would mean CI verifying a graph
+      # that is not the committed one -- and ADR-009 records what happens when
+      # the graph under test is not the graph that was named.
+      - name: Clippy, warnings denied
+        run: cargo clippy --locked --all-targets -- -D warnings
+
+      - name: Build the shell
+        run: cargo build --locked --release
+
+      # Uploaded so that a later smoke job -- or the commander -- can observe
+      # the thing this workflow only compiled. UNSIGNED and explicitly named so,
+      # because signing is PW-0501's and a consumer must not mistake this for a
+      # release artifact.
+      - name: Upload the unsigned shell binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: liberty-desktop-unsigned-${{ github.sha }}
+          path: apps/desktop/src-tauri/target/release/liberty-desktop.exe
+          if-no-files-found: error
+          retention-days: 14

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-26T23:06:37.145Z",
+  "generatedAt": "2026-09-27T01:21:28.097Z",
   "agent": "claude-infra",
   "executionAvailable": true,
   "assigned": [
@@ -7,7 +7,7 @@
       "id": "PW-0102",
       "priority": "P0",
       "lane": "Infra",
-      "status": "REVIEW",
+      "status": "IN_PROGRESS",
       "title": "A Tauri v2 shell that owns the sidecar's lifetime",
       "dependencies": [
         "PW-0101"
@@ -62,8 +62,62 @@
         }
       },
       "implementationAgent": "claude-infra",
-      "updatedAt": "2026-09-26T21:50:24.981Z",
-      "implementationBaseSha": "ead46a5f20a5f784398a0380ccdf02dfe9e5e77a"
+      "updatedAt": "2026-09-27T01:21:27.712Z",
+      "implementationBaseSha": "ead46a5f20a5f784398a0380ccdf02dfe9e5e77a",
+      "review": {
+        "taskId": "PW-0102",
+        "implementationAgent": "claude-infra",
+        "implementationOwner": "claude-infra",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "25af05d0676507488c37bba9143a1e675722e3c3",
+        "reviewedBaseSha": "ead46a5f20a5f784398a0380ccdf02dfe9e5e77a",
+        "reviewedTreeHash": "2d5420b86523cadde3bdef6cf15fd7c5e87abb76f20594cc5cfadda0f92d774c",
+        "reviewedFileCount": 30,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [
+          "apps/web/next.config.ts",
+          "apps/web/package.json",
+          "turbo.json",
+          "package.json",
+          "docs/DESKTOP_PLAYBACK.md",
+          "docs/ARCHITECTURE.md",
+          "apps/web/src/lib/sidecar/handshake.ts",
+          "apps/web/src/lib/sidecar/policy.ts"
+        ],
+        "outcome": "CHANGES_REQUESTED",
+        "reviewedAt": "2026-09-27T01:21:27.711Z",
+        "evidence": "CHANGES_REQUESTED at 25af05d0676507488c37bba9143a1e675722e3c3. TRANSCRIBED BY CLAUDE from gpt-architect's round-87 verdict. ACCEPTED: the Tauri dependency correction; tauri 2.12.0 with zero manually pinned transitive dependencies is the correct graph; ADR-009 correctly preserves the failed 2.9.1 episode as history rather than rewriting it away; the Windows cross-target check is valid evidence and the Win32_Security correction it found is real; and the build gate must remain FAIL. THE BLOCKING DEFECT: apps/desktop/src-tauri/src/lib.rs::run() intentionally panics, so the application cannot start. The modules implement pieces of the shell but are not assembled into a shell. Windows is required to VERIFY the assembly, not to WRITE it. REQUIRED CORRECTIVE, eleven items: mint the per-launch sidecar token from a CSPRNG, not timestamps, UUID formatting, PRNGs or predictable process state, preserving the 64-character hex contract; build the Tauri application using the reviewed v2 configuration with the main window hidden until the sidecar is ready; resolve the packaged resource directory through Tauri's supported resource API; build and execute the existing SidecarLaunch plan, spawning the bundled node.exe with server.js as argv and token, host and port passed only through the environment as already designed; capture sidecar stdout and parse the existing handshake contract; create the Windows Job Object and assign the sidecar process to it; on a valid handshake construct the loopback origin from the reported bound port, navigate the WebView to it and show the window; on an invalid handshake, a failed startup or an early child death use the existing failure vocabulary and surface an actionable application failure rather than panicking or exiting silently; wire the existing bounded supervision policy; on normal application exit close or terminate the Job Object so the sidecar cannot survive the desktop process; and keep the security separation intact -- the launch token authenticates the local listener, never becomes account authentication, and is never logged or placed in argv. BUILD-GATE DEADLOCK BROKEN BY RULING: PW-0102 may add ONE narrow workflow, .github/workflows/desktop-shell-ci.yml or a uniquely named equivalent owned only by PW-0102, existing solely to establish this task's shell build evidence -- windows-latest, a pinned Rust toolchain, cargo test, a full-tree cargo check or build for x86_64-pc-windows-msvc, preferably producing the unsigned shell artifact needed for smoke evidence, with no release signing and no production installer or release responsibility. PW-0501 remains the owner of the production packaging and release workflow and must not co-own this one; PW-0602 remains the certification consumer. The surface extension must be recorded in the control plane before it is taken."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PW-0102",
+          "implementationAgent": "claude-infra",
+          "implementationOwner": "claude-infra",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "25af05d0676507488c37bba9143a1e675722e3c3",
+          "reviewedBaseSha": "ead46a5f20a5f784398a0380ccdf02dfe9e5e77a",
+          "reviewedTreeHash": "2d5420b86523cadde3bdef6cf15fd7c5e87abb76f20594cc5cfadda0f92d774c",
+          "reviewedFileCount": 30,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "apps/web/next.config.ts",
+            "apps/web/package.json",
+            "turbo.json",
+            "package.json",
+            "docs/DESKTOP_PLAYBACK.md",
+            "docs/ARCHITECTURE.md",
+            "apps/web/src/lib/sidecar/handshake.ts",
+            "apps/web/src/lib/sidecar/policy.ts"
+          ],
+          "outcome": "CHANGES_REQUESTED",
+          "reviewedAt": "2026-09-27T01:21:27.711Z",
+          "evidence": "CHANGES_REQUESTED at 25af05d0676507488c37bba9143a1e675722e3c3. TRANSCRIBED BY CLAUDE from gpt-architect's round-87 verdict. ACCEPTED: the Tauri dependency correction; tauri 2.12.0 with zero manually pinned transitive dependencies is the correct graph; ADR-009 correctly preserves the failed 2.9.1 episode as history rather than rewriting it away; the Windows cross-target check is valid evidence and the Win32_Security correction it found is real; and the build gate must remain FAIL. THE BLOCKING DEFECT: apps/desktop/src-tauri/src/lib.rs::run() intentionally panics, so the application cannot start. The modules implement pieces of the shell but are not assembled into a shell. Windows is required to VERIFY the assembly, not to WRITE it. REQUIRED CORRECTIVE, eleven items: mint the per-launch sidecar token from a CSPRNG, not timestamps, UUID formatting, PRNGs or predictable process state, preserving the 64-character hex contract; build the Tauri application using the reviewed v2 configuration with the main window hidden until the sidecar is ready; resolve the packaged resource directory through Tauri's supported resource API; build and execute the existing SidecarLaunch plan, spawning the bundled node.exe with server.js as argv and token, host and port passed only through the environment as already designed; capture sidecar stdout and parse the existing handshake contract; create the Windows Job Object and assign the sidecar process to it; on a valid handshake construct the loopback origin from the reported bound port, navigate the WebView to it and show the window; on an invalid handshake, a failed startup or an early child death use the existing failure vocabulary and surface an actionable application failure rather than panicking or exiting silently; wire the existing bounded supervision policy; on normal application exit close or terminate the Job Object so the sidecar cannot survive the desktop process; and keep the security separation intact -- the launch token authenticates the local listener, never becomes account authentication, and is never logged or placed in argv. BUILD-GATE DEADLOCK BROKEN BY RULING: PW-0102 may add ONE narrow workflow, .github/workflows/desktop-shell-ci.yml or a uniquely named equivalent owned only by PW-0102, existing solely to establish this task's shell build evidence -- windows-latest, a pinned Rust toolchain, cargo test, a full-tree cargo check or build for x86_64-pc-windows-msvc, preferably producing the unsigned shell artifact needed for smoke evidence, with no release signing and no production installer or release responsibility. PW-0501 remains the owner of the production packaging and release workflow and must not co-own this one; PW-0602 remains the certification consumer. The surface extension must be recorded in the control plane before it is taken."
+        }
+      ]
     }
   ],
   "review": [],

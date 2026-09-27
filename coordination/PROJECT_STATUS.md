@@ -1,18 +1,18 @@
 # Project Liberty - Project Status
 
-> Generated 2026-09-26T23:06:37.141Z from the AI control plane.
+> Generated 2026-09-27T01:21:27.904Z from the AI control plane.
 
-**Overall completion:** 72/99 executable tasks (73%)
+**Overall completion:** 73/99 executable tasks (74%)
 
 ## Status summary
 
 - **BACKLOG:** 16
 - **READY:** 7
 - **CLAIMED:** 0
-- **IN_PROGRESS:** 0
-- **REVIEW:** 2
+- **IN_PROGRESS:** 1
+- **REVIEW:** 0
 - **BLOCKED:** 2
-- **DONE:** 72
+- **DONE:** 73
 - **CANCELED:** 0
 - **SUPERSEDED:** 4
 
@@ -31,8 +31,7 @@
 
 ## Active work
 
-- **PL-AI-0013** [REVIEW] A verdict that discusses the placeholder rule is not a placeholder — owner: claude-lead
-- **PW-0102** [REVIEW] A Tauri v2 shell that owns the sidecar's lifetime — owner: claude-infra
+- **PW-0102** [IN_PROGRESS] A Tauri v2 shell that owns the sidecar's lifetime — owner: claude-infra
 
 ## Dispatch classification
 
@@ -59,7 +58,7 @@ No READY work is waiting on an external agent lane.
 ## Agent capacity
 
 - **gpt-architect:** 0/6 active (external lane; not locally executable)
-- **claude-lead:** 1/2 active
+- **claude-lead:** 0/2 active
 - **claude-frontend:** 0/2 active
 - **claude-backend:** 0/2 active
 - **claude-media:** 0/2 active

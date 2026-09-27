@@ -8,8 +8,9 @@ This is the honest boundary, stated first because everything else depends on it.
 
 | | how | status |
 | --- | --- | --- |
-| the handshake contract, the supervision budget, the launch plan, the failure text | `cargo test` | **25 tests, green** |
+| the handshake contract, the supervision budget, the launch plan, the failure text, the token, **and the startup sequence itself** | `cargo test` | **42 tests, green** |
 | the whole crate including Tauri, for Windows | `cargo check --target x86_64-pc-windows-msvc` | **compiles** |
+| `cargo test`, clippy and a release build, on Windows | `.github/workflows/desktop-shell-ci.yml` | **awaiting a push** |
 | it launches, WebView2 renders, the Job Object kills the sidecar, the installer works | a Windows runner or a real machine | **not observed** |
 
 Nothing in this directory may be read as evidence for the last row. No Windows
@@ -23,17 +24,38 @@ src-tauri/
   build.rs          runs tauri-build for the Windows target only
   tauri.conf.json   window, bundle targets, and the sidecar resources
   src/
-    main.rs         three lines; everything testable is in the library
-    lib.rs          the module list and the run() stub
-    handshake.rs    parses the line the sidecar prints
-    job.rs          the Win32 Job Object that kills orphans
-    sidecar.rs      where the runtime lives and what it is started with
-    supervision.rs  how many restarts, and when to stop
-    failure.rs      what the user is told when it will not start
+    main.rs          three lines; everything testable is in the library
+    lib.rs           run(): the Tauri app, and the supervisor on a worker thread
+    shell.rs         THE ASSEMBLY -- the order a shell starts in, behind a trait
+    windows_host.rs  the Windows implementation of that trait (Windows only)
+    token.rs         the per-launch token, from the OS CSPRNG
+    handshake.rs     parses the line the sidecar prints
+    job.rs           the Win32 Job Object that kills orphans
+    sidecar.rs       where the runtime lives and what it is started with
+    supervision.rs   how many restarts, and when to stop
+    failure.rs       what the user is told when it will not start
+dist/
+  index.html         the only page the shell serves itself: the failure screen
 scripts/
   package-sidecar.mjs  lays out node.exe + the standalone tree
 sidecar/            produced, not authored; see its README
 ```
+
+## How the assembly is verified without Windows
+
+`shell.rs` owns the ORDER a shell starts in — create the job, spawn, assign,
+read the handshake, show — and that order is where the safety lives. The job
+must exist before the child, or there is nothing to assign it to. A child that
+cannot be assigned must be killed, because an unassigned child IS the orphan.
+A failure must be surfaced, never panicked, or the user gets a window that
+closes itself.
+
+Every one of those is an ordering property, and an ordering property can be
+tested by a fake that records calls. So the sequence sits behind a `ShellHost`
+trait and is tested on Linux; `windows_host.rs` implements that trait with the
+real syscalls and is compiled for Windows. **What is proven is that the shell
+does the right things in the right order. What is not proven is that the kernel
+and WebView2 behave as documented** — that needs a machine, not a test.
 
 ## The four decisions worth knowing before changing anything
 

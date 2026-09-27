@@ -31,6 +31,14 @@ path = "src/main.rs"
 [dependencies]
 serde = { version = "=1.0.228", features = ["derive"] }
 serde_json = "=1.0.145"
+# The OS CSPRNG, and nothing else. `getrandom` is a thin, audited shim over
+# `BCryptGenRandom` on Windows and `getrandom(2)` on Linux; it pulls no
+# generator of its own, which is the property that matters. The launch token is
+# the only secret this process mints, and the alternatives a shell reaches for
+# -- a timestamp, a UUID's formatting, a userspace PRNG seeded from the clock --
+# are all predictable to another process on the same machine, which is exactly
+# the adversary PW-0101's token exists to exclude.
+getrandom = "=0.3.4"
 
 # TAURI IS A WINDOWS-TARGET DEPENDENCY, AND THAT IS A STATEMENT RATHER THAN A
 # WORKAROUND. This shell is a Windows product: it hosts WebView2, it owns a

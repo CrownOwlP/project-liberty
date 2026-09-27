@@ -173,12 +173,37 @@ Windows code could be checked without Tauri's graph. It has been **removed**: it
 existed for a problem that did not exist, and leaving it would mean a
 `--no-default-features` build silently produces a binary with no shell in it.
 
+### The assembly, and how it is verified without Windows
+
+The runtime assembly was at first a stub that panicked, on the reasoning that
+wiring it could not be verified here. gpt-architect's round-87 verdict rejected
+that: **Windows is required to VERIFY the assembly, not to WRITE it.** The
+correction is the more interesting design.
+
+The ORDER a shell starts in is where its safety lives — the job must exist
+before the child, a child that cannot be assigned must be killed because an
+unassigned child *is* the orphan, and a failure must be surfaced rather than
+panicked. Those are ordering properties, and an ordering property can be tested
+by a fake that records calls. So the sequence lives behind a `ShellHost` trait
+in `shell.rs` and is tested on Linux, while `windows_host.rs` implements the
+same trait with real syscalls and is compiled for Windows.
+
+The per-launch token is minted from the OS CSPRNG through `getrandom`, which is
+a thin shim over `BCryptGenRandom` and carries no generator of its own to fall
+back to. A token that cannot be minted stops the launch: every weaker source a
+shell reaches for — a timestamp, a UUID's formatting, a PRNG seeded from the
+clock or the pid — is predictable to exactly the local processes the token
+exists to exclude.
+
 ### What is not evidenced
 
 That the shell launches, that WebView2 renders, that the Job Object kills the
 sidecar in practice, or that the installer works. Those require a Windows runner
-or the commander's machine and are owed to PW-0601. Nothing produced in the
-development environment may be recorded as evidence for them.
+or the commander's machine and are owed to PW-0601.
+`.github/workflows/desktop-shell-ci.yml` — PW-0102's own narrow job, carved out
+by the round-87 ruling to break the PW-0102/PW-0501 deadlock — will supply the
+Windows *build* evidence once it can run. It carries no signing, no packaging
+and no release responsibility; those remain PW-0501's.
 
 ## ADR-007 - Authentication seam, database sessions, and a minted profile scope
 

@@ -6659,7 +6659,7 @@
       "id": "PL-AI-0013",
       "priority": "P2",
       "lane": "Coordination",
-      "status": "REVIEW",
+      "status": "DONE",
       "title": "A verdict that discusses the placeholder rule is not a placeholder",
       "dependencies": [
         "PL-AI-0012"
@@ -6684,8 +6684,8 @@
       ],
       "acceptance": "A judgement gate's evidence can DISCUSS the rule that guards it without being refused by it. THE DEFECT, OBSERVED ON THE FIRST REAL USE OF PL-AI-0012 AND NOT PREDICTED. gpt-architect's round-84 verdict approving PL-AI-0012 lists, among its accepted properties, that filler wording does not become a valid judgement merely because the evidence is long -- and it names that wording using the very token the rejected-substring net matches. Transcribing the verdict faithfully was therefore REFUSED by the rule the verdict was approving. The gate was recorded with that one token reworded and the refusal disclosed in the evidence, which is a workaround and not a fix. The reviewer ruled in round 85 that this stays a separate corrective, because its defect was discovered by OPERATING the newly approved mechanism after that reviewed surface was complete. ACCEPTANCE, AS THE REVIEWER SPECIFIED IT. (1) The original round-83 filler-only evidence remains REFUSED. (2) A real commit sha sitting beside an explicitly unmade judgement remains REFUSED. (3) Valid substantive review prose is NOT refused merely because it discusses words or classes the filler detector knows about. (4) Commit binding, reviewer authority and transcription provenance are UNCHANGED. This task touches the second net and nothing else; the commit-naming rule is the actual rule. (5) PREFER A STRUCTURAL OR CONTEXTUAL FILLER-ONLY DETERMINATION, or demote the substring mechanism so that it cannot VETO otherwise valid provenance-bound review prose on a lexical coincidence alone. EXPLICITLY REFUSED AS A REMEDY: shortening the rejected-word list. The reviewer said so and the reason is that the next verdict will discuss whichever words remain -- it converts a false positive into a latent one. THE HISTORY IS THE ARGUMENT FOR FIXING IT PROPERLY: this is the fifth time this repository has paid for a guard matching prose ABOUT the thing rather than the thing. PL-0701's import guard failed on its own header comment naming the symbol it forbade; PW-0101's no-runtime-switch test failed on its own comment naming the environment variable; PW-0402 failed twice, once on an identifier containing a forbidden word and once on a text window that reached into the code below it. Each was repaired locally. A fifth local repair is a sixth instance waiting. REQUIRED: a regression records THIS incident -- a long, faithful verdict that names the rejected vocabulary while approving a task, ACCEPTED; the short string that is nothing but that vocabulary, REFUSED. Scenario 10u's existing cases for (1) and (2) must stay green. NOT IN SCOPE: the judgementCommitVerified behaviour, which gpt-architect approved as implemented in round 84 with an explicit instruction that it must not become a blanket refusal outside git.",
       "notes": "Filed in round 84 by claude-lead, immediately after PL-AI-0012 was approved and while recording that very approval. NOT one of the two defects gpt-architect ruled must stay inside PL-AI-0012 -- those are advance-completable self-attribution and the harness helper, both manifestations of the authority defect and both repaired there. This is a separate, newly observed defect in the second-net heuristic, found after the reviewed sha. It is filed rather than patched into PL-AI-0012 because that task is approved at 94dd10e and reopening an approved surface to refine a heuristic would invalidate a verdict for no safety gain. P2 because the workaround is a reworded token and the actual rule -- naming the commit judged -- is unaffected.",
-      "updatedAt": "2026-09-26T23:06:31.278Z",
-      "owner": "claude-lead",
+      "updatedAt": "2026-09-27T01:20:58.811Z",
+      "owner": null,
       "implementationAgent": "claude-lead",
       "implementationBaseSha": "984be77194f4a94e2d31b2364be2d5293d022a93",
       "gateResults": {
@@ -6702,8 +6702,63 @@
           "by": "claude-lead",
           "commitSha": "2a4c2b6f2206f55232cb93a07278fea818c77a68",
           "evidence": "EXECUTED on 2a4c2b6. node scripts/test-ai-control-plane.mjs -> 'AI control plane tests passed (71 scenarios).', exit 0. THE THREE REQUIREMENTS THE REVIEWER SET, each isolated so that it is this rule catching them rather than an earlier check. ONE, the round-83 string stays refused: recorded on a task where the authority rule is SATISFIED -- as gpt-architect, transcribed -- and with a real resolvable commit in the evidence, so neither the ownership rule nor the commit-naming rule can be what refuses it. 'APPROVED at <sha>. PLACEHOLDER-NOT-RECORDED.' is refused by the STRUCTURAL test: with the named commit and the matched tokens removed, almost no content remains, which is what filler-only means and is not a statement about length. TWO, a real sha beside an unmade judgement stays refused: 'APPROVED at <sha>. Full rationale TBD, ...' is caught by the CONTEXTUAL test, because TBD immediately follows a word naming the judgement. The adjacency admits only a copula or punctuation, so 'the rationale for the placeholder rule' does not match -- prose discussing the vocabulary reads that way and a withheld verdict does not. THREE, AND IT IS THE CASE THE OLD RULE GOT WRONG: gpt-architect's actual round-84 verdict, close to verbatim including the clause naming placeholder language and filler wording, is ACCEPTED. That verdict was refused on the first real use of PL-AI-0012's enforcement, which is the defect this task exists for, and it is now a test rather than an anecdote. FOUR STRONG CONTROLS ARE UNCHANGED and their existing scenario-10u cases stay green: independent reviewer authority, the refusal-before-write property, judgement commit binding with resolution where git is available, and transcription provenance. This task touched the second net only. SHORTENING THE WORD LIST WAS NOT THE REMEDY and the reviewer ruled it out; the list is unchanged and has stopped being a veto. ONE UNRELATED FIX WAS REQUIRED TO RUN THE SUITE AT ALL, and it is a consequence of PW-0102 rather than of this task: the fixture harness now excludes target/. A debug build of the Tauri dependency graph is 4.4GB and freshRepo() copies the tree once per scenario, so the run filled the disk and died mid-copy. Recorded here rather than hidden because it changes what the harness copies."
+        },
+        "architecture-review": {
+          "status": "pass",
+          "at": "2026-09-27T01:20:56.817Z",
+          "by": "gpt-architect",
+          "commitSha": "25af05d0676507488c37bba9143a1e675722e3c3",
+          "judgementCommitSha": "25af05d0676507488c37bba9143a1e675722e3c3",
+          "judgementCommitVerified": true,
+          "transcribedBy": "claude-lead",
+          "evidence": "APPROVED at 25af05d0676507488c37bba9143a1e675722e3c3. architecture-review PASS. TRANSCRIBED BY CLAUDE from gpt-architect's round-87 verdict; the GitHub write integration returns 403. The implementation is accepted because it fixes the false-positive class STRUCTURALLY rather than by shortening the vocabulary list. Accepted properties, as given: rejectedSubstrings remains intact; lexical presence alone is no longer a veto; contextual detection catches rejected vocabulary being used AS the judgement, for example an unfinished rationale or verdict; structural substance measurement prevents long filler from passing merely by being long; the round-83 filler-only case remains refused; a real commit beside an explicitly unmade judgement remains refused; the real round-84 gpt-architect verdict that discusses the rejected vocabulary is accepted; reviewer authority is unchanged; commit binding is unchanged; refusal-before-write is unchanged; transcription provenance is unchanged; and the target/ exclusion from freshRepo fixtures is accepted, because Rust build output is generated state rather than repository evidence. SEPARATE INSTRUCTION RECORDED HERE SO IT IS NOT LOST: do NOT merge the branch gpt/pl-ai-0013-evidence-net. It is older overlapping work on the same control-plane surface and this integrated implementation supersedes it."
         }
-      }
+      },
+      "review": {
+        "taskId": "PL-AI-0013",
+        "implementationAgent": "claude-lead",
+        "implementationOwner": "claude-lead",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "25af05d0676507488c37bba9143a1e675722e3c3",
+        "reviewedBaseSha": "984be77194f4a94e2d31b2364be2d5293d022a93",
+        "reviewedTreeHash": "2012aff09bca0f5b0e5429081701126b0944d4b1217cfd7c082d1fb96fec54f2",
+        "reviewedFileCount": 5,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [
+          "control/tasks.json",
+          "control/events.jsonl",
+          "CLAUDE.md"
+        ],
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-09-27T01:20:57.719Z",
+        "evidence": "APPROVED at 25af05d0676507488c37bba9143a1e675722e3c3. architecture-review PASS. The false-positive class is fixed structurally rather than by shortening the vocabulary list: rejectedSubstrings remains intact, lexical presence alone is no longer a veto, contextual detection catches rejected vocabulary used AS the judgement, and structural substance measurement stops long filler passing merely by being long. The round-83 filler-only case and a real commit beside an explicitly unmade judgement both remain refused, while the real round-84 verdict that discusses the rejected vocabulary is accepted. Reviewer authority, commit binding, refusal-before-write and transcription provenance are all unchanged. The target/ exclusion from freshRepo fixtures is accepted because Rust build output is generated state, not repository evidence. The branch gpt/pl-ai-0013-evidence-net must NOT be merged: it is older overlapping work on the same surface and this implementation supersedes it. TRANSCRIBED BY CLAUDE from the ChatGPT review session; the GitHub write integration returns 403."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PL-AI-0013",
+          "implementationAgent": "claude-lead",
+          "implementationOwner": "claude-lead",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "25af05d0676507488c37bba9143a1e675722e3c3",
+          "reviewedBaseSha": "984be77194f4a94e2d31b2364be2d5293d022a93",
+          "reviewedTreeHash": "2012aff09bca0f5b0e5429081701126b0944d4b1217cfd7c082d1fb96fec54f2",
+          "reviewedFileCount": 5,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "control/tasks.json",
+            "control/events.jsonl",
+            "CLAUDE.md"
+          ],
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-09-27T01:20:57.719Z",
+          "evidence": "APPROVED at 25af05d0676507488c37bba9143a1e675722e3c3. architecture-review PASS. The false-positive class is fixed structurally rather than by shortening the vocabulary list: rejectedSubstrings remains intact, lexical presence alone is no longer a veto, contextual detection catches rejected vocabulary used AS the judgement, and structural substance measurement stops long filler passing merely by being long. The round-83 filler-only case and a real commit beside an explicitly unmade judgement both remain refused, while the real round-84 verdict that discusses the rejected vocabulary is accepted. Reviewer authority, commit binding, refusal-before-write and transcription provenance are all unchanged. The target/ exclusion from freshRepo fixtures is accepted because Rust build output is generated state, not repository evidence. The branch gpt/pl-ai-0013-evidence-net must NOT be merged: it is older overlapping work on the same surface and this implementation supersedes it. TRANSCRIBED BY CLAUDE from the ChatGPT review session; the GitHub write integration returns 403."
+        }
+      ],
+      "completedAt": "2026-09-27T01:20:58.811Z"
     },
     {
       "id": "PL-0206",
@@ -7676,7 +7731,7 @@
         "typecheck",
         "unit"
       ],
-      "acceptance": "packages/media-inspection/src/net-policy-boundary.test.ts:396, the test named “is not restated by any file outside this package”, stops being a test whose result depends on machine load and on what is on disk, WITHOUT weakening the property it asserts. THE DEFECT, DIAGNOSED RATHER THAN NAMED. Its failure mode is 'Error: Test timed out in 5000ms', not an assertion failure -- the assertion has never reported a false offender; the test simply does not finish. Its listSourceFiles recurses into every directory under packages/ and apps/ with NO exclusions and reads every .ts file it finds: 3,680 files totalling 24.3 MB on the tree measured, of which 3,337 are under node_modules and the rest include build output. The set of files the property is actually about is 327, reachable in 1-2 ms once node_modules, .next, .turbo, dist and coverage are skipped. It is the only test in this repository whose runtime is a function of installed dependencies and build artifacts rather than of source, which is why it presents as intermittent: every other repo-walking guard here -- packages/net-policy/src/module-boundary.test.ts, packages/contracts/src/module-boundary.test.ts, packages/provider-sdk/src/stremio/net-policy-boundary.test.ts and apps/web/src/app/watch/route-loading-boundaries.test.ts -- is scoped to its own SRC_DIR or APP_DIRECTORY. THE REPRODUCTION GRADIENT, measured on 2026-09-22 at e24d51f on a 2-core container: the test body alone, idle with a warm page cache, 109 ms; the whole file in an isolated vitest run, 687 ms; the file under turbo run test --force with a warm cache, 849-995 ms; the same under turbo run test --force immediately after dropping the page cache, 3,048 ms. The observed failure happened on a run started immediately after the e2e suite had rewritten apps/web/.next and apps/web/dist/desktop -- thousands of freshly written files, a cold cache, background flushing, and up to nine other workspace vitest processes competing for two cores -- which is where that gradient crosses the 5,000 ms default testTimeout. REQUIRED: the walk must not descend into node_modules, .next, .turbo, dist or coverage, and the exclusion list must be stated with its reason rather than left as a magic array. REQUIRED: the property must not be narrowed to buy the speed -- it must still see every source file under packages/ and apps/ outside this package, and the implementer must show that a planted offender is still caught. A RAISED testTimeout IS NOT AN ACCEPTABLE FIX ON ITS OWN: it moves the ceiling without removing the dependence on disk state, and the next person to add a dependency moves the runtime again. SECOND DEFECT, FOUND WHILE DIAGNOSING AND IN SCOPE: build output ALREADY contains the string this test looks for. Seven files under apps/web/.next and apps/web/dist/desktop carry a reference-path fragment naming m3u8-parser.d.ts inside bundled chunks. They are .js today so the .ts filter misses them, which means the test is one bundler-output change away from naming a build artifact as an offender and failing for a reason that has nothing to do with any source file. The exclusion above fixes the correctness hazard and the performance one with the same edit, which is the argument for doing it that way rather than by raising a timeout.",
+      "acceptance": "packages/media-inspection/src/net-policy-boundary.test.ts:396, the test named \u201cis not restated by any file outside this package\u201d, stops being a test whose result depends on machine load and on what is on disk, WITHOUT weakening the property it asserts. THE DEFECT, DIAGNOSED RATHER THAN NAMED. Its failure mode is 'Error: Test timed out in 5000ms', not an assertion failure -- the assertion has never reported a false offender; the test simply does not finish. Its listSourceFiles recurses into every directory under packages/ and apps/ with NO exclusions and reads every .ts file it finds: 3,680 files totalling 24.3 MB on the tree measured, of which 3,337 are under node_modules and the rest include build output. The set of files the property is actually about is 327, reachable in 1-2 ms once node_modules, .next, .turbo, dist and coverage are skipped. It is the only test in this repository whose runtime is a function of installed dependencies and build artifacts rather than of source, which is why it presents as intermittent: every other repo-walking guard here -- packages/net-policy/src/module-boundary.test.ts, packages/contracts/src/module-boundary.test.ts, packages/provider-sdk/src/stremio/net-policy-boundary.test.ts and apps/web/src/app/watch/route-loading-boundaries.test.ts -- is scoped to its own SRC_DIR or APP_DIRECTORY. THE REPRODUCTION GRADIENT, measured on 2026-09-22 at e24d51f on a 2-core container: the test body alone, idle with a warm page cache, 109 ms; the whole file in an isolated vitest run, 687 ms; the file under turbo run test --force with a warm cache, 849-995 ms; the same under turbo run test --force immediately after dropping the page cache, 3,048 ms. The observed failure happened on a run started immediately after the e2e suite had rewritten apps/web/.next and apps/web/dist/desktop -- thousands of freshly written files, a cold cache, background flushing, and up to nine other workspace vitest processes competing for two cores -- which is where that gradient crosses the 5,000 ms default testTimeout. REQUIRED: the walk must not descend into node_modules, .next, .turbo, dist or coverage, and the exclusion list must be stated with its reason rather than left as a magic array. REQUIRED: the property must not be narrowed to buy the speed -- it must still see every source file under packages/ and apps/ outside this package, and the implementer must show that a planted offender is still caught. A RAISED testTimeout IS NOT AN ACCEPTABLE FIX ON ITS OWN: it moves the ceiling without removing the dependence on disk state, and the next person to add a dependency moves the runtime again. SECOND DEFECT, FOUND WHILE DIAGNOSING AND IN SCOPE: build output ALREADY contains the string this test looks for. Seven files under apps/web/.next and apps/web/dist/desktop carry a reference-path fragment naming m3u8-parser.d.ts inside bundled chunks. They are .js today so the .ts filter misses them, which means the test is one bundler-output change away from naming a build artifact as an offender and failing for a reason that has nothing to do with any source file. The exclusion above fixes the correctness hazard and the performance one with the same edit, which is the argument for doing it that way rather than by raising a timeout.",
       "notes": "Filed 2026-09-22 by claude-test while executing PL-0504's and PL-0701's gates. THIS IS THE FINDING gpt-architect ORDERED PRESERVED AND EXPLICITLY ORDERED NOT TO BE CALLED A FLAKE, at the round-73 verdict: 'Do not label that failure a flake. Preserve the finding and investigate on its next occurrence as previously directed.' This is that next occurrence, and the investigation is in the acceptance. The first occurrence, during PL-0503's gates, could not name the failing test because the capture grep discarded it; that was reported at the time as a capture error, not as a flake. This occurrence was captured in full: src/net-policy-boundary.test.ts > the m3u8-parser shim is referenced from the file that imports it > is not restated by any file outside this package. The earlier working hypothesis -- 2 cores, turbo concurrency 10, and this package having no vitest.config.ts unlike packages/contracts -- was partly right and insufficient. Contention is a necessary condition, not the cause. The cause is that the test reads 24.3 MB it has no reason to read, so its runtime tracks page-cache state and build-artifact volume, and contention only decides which side of the 5 s ceiling that lands on. Three full-monorepo runs on the same tree after the failure were green (252/252 in this package), which is exactly why a load-dependent test must not be judged by re-running it. packages/media-inspection/vitest.config.ts is in allowedPaths because the implementer may conclude the package needs one; that is a decision for the implementer and this task does not require it. apps/web/src/app/api/v1/playback/build-target.test.ts is in reviewDependencies rather than allowedPaths: it resolves a REPO_ROOT and walks directories too, so it is worth checking for the same shape, but nothing observed implicates it and widening this task to it would be a guess.",
       "owner": null,
       "gateResults": {
@@ -7862,14 +7917,15 @@
       "id": "PW-0102",
       "priority": "P0",
       "lane": "Infra",
-      "status": "REVIEW",
+      "status": "IN_PROGRESS",
       "title": "A Tauri v2 shell that owns the sidecar's lifetime",
       "dependencies": [
         "PW-0101"
       ],
       "allowedPaths": [
         "apps/desktop/**",
-        "docs/DECISIONS.md"
+        "docs/DECISIONS.md",
+        ".github/workflows/desktop-shell-ci.yml"
       ],
       "reviewDependencies": [
         "apps/web/next.config.ts",
@@ -7879,7 +7935,8 @@
         "docs/DESKTOP_PLAYBACK.md",
         "docs/ARCHITECTURE.md",
         "apps/web/src/lib/sidecar/handshake.ts",
-        "apps/web/src/lib/sidecar/policy.ts"
+        "apps/web/src/lib/sidecar/policy.ts",
+        ".github/workflows/ci.yml"
       ],
       "preferredAgent": "claude-infra",
       "reviewAgent": "gpt-architect",
@@ -7917,8 +7974,62 @@
         }
       },
       "implementationAgent": "claude-infra",
-      "updatedAt": "2026-09-26T21:50:24.981Z",
-      "implementationBaseSha": "ead46a5f20a5f784398a0380ccdf02dfe9e5e77a"
+      "updatedAt": "2026-09-27T01:21:44.002159Z",
+      "implementationBaseSha": "ead46a5f20a5f784398a0380ccdf02dfe9e5e77a",
+      "review": {
+        "taskId": "PW-0102",
+        "implementationAgent": "claude-infra",
+        "implementationOwner": "claude-infra",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "25af05d0676507488c37bba9143a1e675722e3c3",
+        "reviewedBaseSha": "ead46a5f20a5f784398a0380ccdf02dfe9e5e77a",
+        "reviewedTreeHash": "2d5420b86523cadde3bdef6cf15fd7c5e87abb76f20594cc5cfadda0f92d774c",
+        "reviewedFileCount": 30,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [
+          "apps/web/next.config.ts",
+          "apps/web/package.json",
+          "turbo.json",
+          "package.json",
+          "docs/DESKTOP_PLAYBACK.md",
+          "docs/ARCHITECTURE.md",
+          "apps/web/src/lib/sidecar/handshake.ts",
+          "apps/web/src/lib/sidecar/policy.ts"
+        ],
+        "outcome": "CHANGES_REQUESTED",
+        "reviewedAt": "2026-09-27T01:21:27.711Z",
+        "evidence": "CHANGES_REQUESTED at 25af05d0676507488c37bba9143a1e675722e3c3. TRANSCRIBED BY CLAUDE from gpt-architect's round-87 verdict. ACCEPTED: the Tauri dependency correction; tauri 2.12.0 with zero manually pinned transitive dependencies is the correct graph; ADR-009 correctly preserves the failed 2.9.1 episode as history rather than rewriting it away; the Windows cross-target check is valid evidence and the Win32_Security correction it found is real; and the build gate must remain FAIL. THE BLOCKING DEFECT: apps/desktop/src-tauri/src/lib.rs::run() intentionally panics, so the application cannot start. The modules implement pieces of the shell but are not assembled into a shell. Windows is required to VERIFY the assembly, not to WRITE it. REQUIRED CORRECTIVE, eleven items: mint the per-launch sidecar token from a CSPRNG, not timestamps, UUID formatting, PRNGs or predictable process state, preserving the 64-character hex contract; build the Tauri application using the reviewed v2 configuration with the main window hidden until the sidecar is ready; resolve the packaged resource directory through Tauri's supported resource API; build and execute the existing SidecarLaunch plan, spawning the bundled node.exe with server.js as argv and token, host and port passed only through the environment as already designed; capture sidecar stdout and parse the existing handshake contract; create the Windows Job Object and assign the sidecar process to it; on a valid handshake construct the loopback origin from the reported bound port, navigate the WebView to it and show the window; on an invalid handshake, a failed startup or an early child death use the existing failure vocabulary and surface an actionable application failure rather than panicking or exiting silently; wire the existing bounded supervision policy; on normal application exit close or terminate the Job Object so the sidecar cannot survive the desktop process; and keep the security separation intact -- the launch token authenticates the local listener, never becomes account authentication, and is never logged or placed in argv. BUILD-GATE DEADLOCK BROKEN BY RULING: PW-0102 may add ONE narrow workflow, .github/workflows/desktop-shell-ci.yml or a uniquely named equivalent owned only by PW-0102, existing solely to establish this task's shell build evidence -- windows-latest, a pinned Rust toolchain, cargo test, a full-tree cargo check or build for x86_64-pc-windows-msvc, preferably producing the unsigned shell artifact needed for smoke evidence, with no release signing and no production installer or release responsibility. PW-0501 remains the owner of the production packaging and release workflow and must not co-own this one; PW-0602 remains the certification consumer. The surface extension must be recorded in the control plane before it is taken."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PW-0102",
+          "implementationAgent": "claude-infra",
+          "implementationOwner": "claude-infra",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "25af05d0676507488c37bba9143a1e675722e3c3",
+          "reviewedBaseSha": "ead46a5f20a5f784398a0380ccdf02dfe9e5e77a",
+          "reviewedTreeHash": "2d5420b86523cadde3bdef6cf15fd7c5e87abb76f20594cc5cfadda0f92d774c",
+          "reviewedFileCount": 30,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "apps/web/next.config.ts",
+            "apps/web/package.json",
+            "turbo.json",
+            "package.json",
+            "docs/DESKTOP_PLAYBACK.md",
+            "docs/ARCHITECTURE.md",
+            "apps/web/src/lib/sidecar/handshake.ts",
+            "apps/web/src/lib/sidecar/policy.ts"
+          ],
+          "outcome": "CHANGES_REQUESTED",
+          "reviewedAt": "2026-09-27T01:21:27.711Z",
+          "evidence": "CHANGES_REQUESTED at 25af05d0676507488c37bba9143a1e675722e3c3. TRANSCRIBED BY CLAUDE from gpt-architect's round-87 verdict. ACCEPTED: the Tauri dependency correction; tauri 2.12.0 with zero manually pinned transitive dependencies is the correct graph; ADR-009 correctly preserves the failed 2.9.1 episode as history rather than rewriting it away; the Windows cross-target check is valid evidence and the Win32_Security correction it found is real; and the build gate must remain FAIL. THE BLOCKING DEFECT: apps/desktop/src-tauri/src/lib.rs::run() intentionally panics, so the application cannot start. The modules implement pieces of the shell but are not assembled into a shell. Windows is required to VERIFY the assembly, not to WRITE it. REQUIRED CORRECTIVE, eleven items: mint the per-launch sidecar token from a CSPRNG, not timestamps, UUID formatting, PRNGs or predictable process state, preserving the 64-character hex contract; build the Tauri application using the reviewed v2 configuration with the main window hidden until the sidecar is ready; resolve the packaged resource directory through Tauri's supported resource API; build and execute the existing SidecarLaunch plan, spawning the bundled node.exe with server.js as argv and token, host and port passed only through the environment as already designed; capture sidecar stdout and parse the existing handshake contract; create the Windows Job Object and assign the sidecar process to it; on a valid handshake construct the loopback origin from the reported bound port, navigate the WebView to it and show the window; on an invalid handshake, a failed startup or an early child death use the existing failure vocabulary and surface an actionable application failure rather than panicking or exiting silently; wire the existing bounded supervision policy; on normal application exit close or terminate the Job Object so the sidecar cannot survive the desktop process; and keep the security separation intact -- the launch token authenticates the local listener, never becomes account authentication, and is never logged or placed in argv. BUILD-GATE DEADLOCK BROKEN BY RULING: PW-0102 may add ONE narrow workflow, .github/workflows/desktop-shell-ci.yml or a uniquely named equivalent owned only by PW-0102, existing solely to establish this task's shell build evidence -- windows-latest, a pinned Rust toolchain, cargo test, a full-tree cargo check or build for x86_64-pc-windows-msvc, preferably producing the unsigned shell artifact needed for smoke evidence, with no release signing and no production installer or release responsibility. PW-0501 remains the owner of the production packaging and release workflow and must not co-own this one; PW-0602 remains the certification consumer. The surface extension must be recorded in the control plane before it is taken."
+        }
+      ]
     },
     {
       "id": "PW-0103",
@@ -7982,7 +8093,7 @@
           "at": "2026-09-23T03:48:12.822Z",
           "by": "claude-frontend",
           "commitSha": "7a8de45feb0d56ddf5039ceff26ed4ec9fa2e1a5",
-          "evidence": "EXECUTED on 7a8de45. npm run typecheck at the root, own invocation, turbo 21/21, exit 0. The boundary module compiles with no `any`, which is one of the four §3 rules and is also asserted at runtime by the guard rather than left to the compiler alone."
+          "evidence": "EXECUTED on 7a8de45. npm run typecheck at the root, own invocation, turbo 21/21, exit 0. The boundary module compiles with no `any`, which is one of the four \u00a73 rules and is also asserted at runtime by the guard rather than left to the compiler alone."
         },
         "unit": {
           "status": "pass",
@@ -8189,7 +8300,7 @@
         "architecture-review",
         "rights-review"
       ],
-      "acceptance": "Which engine plays a candidate is decided before playback and recorded with a reason, satisfying the architecture invariant that already states this. REQUIRED: the routing function is PURE and deterministic -- no clocks, no I/O, no ambient state -- on the same rule ADR-003 and ADR-005 apply to ranking, so a routing decision can be reconstructed from a bug report. REQUIRED: a candidate whose contentProtection requires a CDM routes to the web adapter, always, and the native adapter REFUSES it with drm_required_no_cdm rather than falling back or degrading. mpv has no CDM; a native path that tried would be the DRM circumvention CONTENT_RIGHTS.md forbids, so this refusal is a rights property and not a capability detail -- which is why this task carries a rights-review gate. REQUIRED: the reason is recorded on the accepting branch as well, so 'why is this playing natively' is answerable. REQUIRED: routing consumes the protection state already on the session contract (PL-0902) rather than re-deriving it, because two opinions about a candidate's protection would eventually disagree. THE CANDIDATE-PROJECTION FINDING FROM PW-0201 IS THIS TASK'S, per gpt-architect's round-81 ruling, and no separate follow-up is filed unless this task proves one is needed. PW-0201 could not implement `canPlay(candidate: PlaybackCandidate)` as docs/DESKTOP_PLAYBACK.md §3 writes it: that client type is `{ id, providerId, source }`, it predates PL-0902, and it carries neither `protection` nor `compatibility` -- so an adapter handed one is STRUCTURALLY INCAPABLE of returning `drm_required_no_cdm`, which is the refusal this task exists to make. The boundary therefore declares a narrow adapter-facing projection, and that projection is ACCEPTED. REQUIRED HERE: routing consumes the protection state from the playback-session CONTRACT -- the `protection` field `playbackSessionCandidateSchema` already publishes, which PL-0902 put there -- and never re-derives it; the adapter capability input is that narrow projection and nothing wider; NO SECOND DRM OR PROTECTION DECISION IS INVENTED anywhere in the routing path, because two opinions about a candidate's protection would eventually disagree and the reason trail would then explain a decision nobody made; and the native refusal `drm_required_no_cdm` remains STRUCTURAL rather than conditional. DO NOT change the adapter back to the older type to match the §3 prose: the prose was written on 2026-09-15 and PL-0902 landed after it, so the listing is stale and the code is right. A cross-package contract change is only to be proposed if this task PROVES one is required, with the specific field and the specific decision that cannot be made without it.",
+      "acceptance": "Which engine plays a candidate is decided before playback and recorded with a reason, satisfying the architecture invariant that already states this. REQUIRED: the routing function is PURE and deterministic -- no clocks, no I/O, no ambient state -- on the same rule ADR-003 and ADR-005 apply to ranking, so a routing decision can be reconstructed from a bug report. REQUIRED: a candidate whose contentProtection requires a CDM routes to the web adapter, always, and the native adapter REFUSES it with drm_required_no_cdm rather than falling back or degrading. mpv has no CDM; a native path that tried would be the DRM circumvention CONTENT_RIGHTS.md forbids, so this refusal is a rights property and not a capability detail -- which is why this task carries a rights-review gate. REQUIRED: the reason is recorded on the accepting branch as well, so 'why is this playing natively' is answerable. REQUIRED: routing consumes the protection state already on the session contract (PL-0902) rather than re-deriving it, because two opinions about a candidate's protection would eventually disagree. THE CANDIDATE-PROJECTION FINDING FROM PW-0201 IS THIS TASK'S, per gpt-architect's round-81 ruling, and no separate follow-up is filed unless this task proves one is needed. PW-0201 could not implement `canPlay(candidate: PlaybackCandidate)` as docs/DESKTOP_PLAYBACK.md \u00a73 writes it: that client type is `{ id, providerId, source }`, it predates PL-0902, and it carries neither `protection` nor `compatibility` -- so an adapter handed one is STRUCTURALLY INCAPABLE of returning `drm_required_no_cdm`, which is the refusal this task exists to make. The boundary therefore declares a narrow adapter-facing projection, and that projection is ACCEPTED. REQUIRED HERE: routing consumes the protection state from the playback-session CONTRACT -- the `protection` field `playbackSessionCandidateSchema` already publishes, which PL-0902 put there -- and never re-derives it; the adapter capability input is that narrow projection and nothing wider; NO SECOND DRM OR PROTECTION DECISION IS INVENTED anywhere in the routing path, because two opinions about a candidate's protection would eventually disagree and the reason trail would then explain a decision nobody made; and the native refusal `drm_required_no_cdm` remains STRUCTURAL rather than conditional. DO NOT change the adapter back to the older type to match the \u00a73 prose: the prose was written on 2026-09-15 and PL-0902 landed after it, so the listing is stale and the code is right. A cross-package contract change is only to be proposed if this task PROVES one is required, with the specific field and the specific decision that cannot be made without it.",
       "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict.  ROUND 82: absorbed PW-0201's candidate-projection finding on gpt-architect's ruling. PW-0209 was NOT filed; this task owns the reconciliation question and only escalates it if a cross-package contract change turns out to be genuinely required.",
       "owner": null,
       "gateResults": {
@@ -9108,7 +9219,7 @@
       "priority": "P1",
       "lane": "Test",
       "status": "BACKLOG",
-      "title": "Install, upgrade, uninstall, reinstall — tested, not assumed",
+      "title": "Install, upgrade, uninstall, reinstall \u2014 tested, not assumed",
       "dependencies": [
         "PW-0501"
       ],
