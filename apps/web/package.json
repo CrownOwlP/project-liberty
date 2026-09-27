@@ -2,6 +2,17 @@
   "name": "@liberty/web",
   "version": "0.1.0",
   "private": true,
+  "exports": {
+    "./playback-session/*": {
+      "types": "./src/app/api/v1/playback/session/*.ts",
+      "default": "./src/app/api/v1/playback/session/*.ts"
+    },
+    "./session/*": {
+      "types": "./src/lib/session/*.ts",
+      "default": "./src/lib/session/*.ts"
+    },
+    "./package.json": "./package.json"
+  },
   "scripts": {
     "dev": "node ../../scripts/with-root-env.mjs next dev",
     "dev:desktop": "node -e \"const{spawnSync}=require('node:child_process'),fs=require('node:fs'),f='next-env.d.ts';const keep=fs.existsSync(f)?fs.readFileSync(f):null,a=process.argv.slice(1);const r=spawnSync(a[0],a.slice(1),{stdio:'inherit',shell:process.platform==='win32',env:{...process.env,LIBERTY_BUILD_TARGET:'desktop'}});if(keep&&fs.existsSync(f)&&!fs.readFileSync(f).equals(keep))fs.writeFileSync(f,keep);process.exit(r.status??1)\" node ../../scripts/with-root-env.mjs next dev",
