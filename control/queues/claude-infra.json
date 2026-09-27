@@ -1,130 +1,73 @@
 {
-  "generatedAt": "2026-09-27T03:47:21.415Z",
+  "generatedAt": "2026-09-27T10:16:05.212Z",
   "agent": "claude-infra",
   "executionAvailable": true,
-  "assigned": [
+  "assigned": [],
+  "review": [],
+  "reservedExternal": [],
+  "recommended": [
     {
-      "id": "PW-0102",
+      "id": "PW-0501",
       "priority": "P0",
       "lane": "Infra",
-      "status": "REVIEW",
-      "title": "A Tauri v2 shell that owns the sidecar's lifetime",
+      "status": "READY",
+      "title": "A Windows build that CI actually produces",
       "dependencies": [
-        "PW-0101"
+        "PW-0102"
       ],
       "allowedPaths": [
+        ".github/workflows/windows.yml",
         "apps/desktop/**",
-        "docs/DECISIONS.md",
-        ".github/workflows/desktop-shell-ci.yml"
+        "scripts/windows/**"
       ],
       "reviewDependencies": [
-        "apps/web/next.config.ts",
-        "apps/web/package.json",
-        "turbo.json",
+        ".github/workflows/ci.yml",
         "package.json",
-        "docs/DESKTOP_PLAYBACK.md",
-        "docs/ARCHITECTURE.md",
-        "apps/web/src/lib/sidecar/handshake.ts",
-        "apps/web/src/lib/sidecar/policy.ts",
-        ".github/workflows/ci.yml"
+        "turbo.json",
+        "apps/web/package.json",
+        "docs/DEVELOPMENT.md"
       ],
       "preferredAgent": "claude-infra",
       "reviewAgent": "gpt-architect",
       "qualityGates": [
-        "typecheck",
-        "unit",
         "build",
-        "architecture-review",
-        "security-review"
+        "architecture-review"
       ],
-      "acceptance": "A Tauri v2 application starts, spawns the PW-0101 sidecar, reads its bound port from stdout, points the webview at it, and cannot leave the sidecar running. REQUIRED: the Tauri version is pinned exactly, on the rule this repository already applies to Shaka and Playwright -- a caret range means the shell a gate was recorded against can change under a lockfile refresh. REQUIRED: the sidecar is packaged as node.exe plus the standalone tree under bundle.resources and spawned as a child process; pkg, Node SEA and Bun --compile are documented as unable to swallow a Next standalone server and must not be attempted as a shortcut. REQUIRED: a Win32 Job Object with JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, because Tauri provides no supervision and an orphaned node.exe holding a loopback port is the failure a user sees as 'it will not start the second time'. REQUIRED: supervision -- health check, restart with a bounded attempt budget, and an honest surfaced failure when the budget is spent, never a blank window. REQUIRED: the shell passes the bearer token to the sidecar through the environment and never on a command line, where it would be readable from the process list. STATED LIMITATION TO CARRY IN THE GATE EVIDENCE: no Windows binary can be produced or run from the cloud session, so this task's build gate is cargo check plus a windows-latest CI job, and 'it launches' is real-device evidence owed to PW-0601.",
+      "acceptance": "An installable Windows artifact is produced by CI on a windows-latest runner. MEASURED STARTING POINT: every job in .github/workflows/ci.yml is ubuntu-latest, no Windows runner exists, and nothing in this repository builds, packages, signs, installs or updates a Windows application. THIS IS ALSO THE ONLY WAY THIS WORK CAN BE BUILT AT ALL FROM THE ENGINEERING SESSION: the cloud container has a Linux-only Rust toolchain and the linked machine exposes a Linux VM, so no Windows binary can be produced or run here, and a windows-latest job is the substitute for a developer machine rather than a nicety. REQUIRED: the job builds the sidecar, the shell and the installer, and uploads the artifact. REQUIRED: application identity -- product name, publisher, icons, a version scheme derived from one source rather than restated in three manifests. REQUIRED: application data, log and cache locations under the correct Windows known folders, stated and tested, not scattered beside the executable. REQUIRED: the job fails on a real failure; no continue-on-error and no || true, on the rule the e2e job already states. NOT IN SCOPE: code signing, which needs an owner-held certificate and belongs in LAST_MILE.",
+      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. SURFACE NOTE: this task's allowedPaths name directories that do not exist yet. The evidence-based narrowing procedure applies to reconciling work already in history; for genuinely new work the surface is the smallest set of paths the acceptance can be satisfied within, and it is narrowed again from the diff before review if it turns out to be wider than what was written. SURFACE CONFIRMED in round 87 on gpt-architect's ruling, and the apps/desktop/** overlap with PW-0102 is REAL and must be sequenced rather than narrowed away. PW-0501 legitimately writes under apps/desktop/** where packaging and build integration require it -- the sidecar layout script, the bundle configuration and whatever the runner needs -- and PW-0102 wrote the crate itself. conflictWithActive will refuse this task against an active PW-0102, which is the mechanism working: the two must not be claimed concurrently. PW-0501's dependency on PW-0102 already enforces the ordering, so the overlap is resolved by sequence and not by either task pretending to a smaller surface than it has. .github/workflows/windows.yml is this task's alone; PW-0602 reads it.",
+      "owner": null,
+      "gateResults": {},
+      "updatedAt": "2026-09-26T22:32:02.611097Z"
+    },
+    {
+      "id": "PW-0208",
+      "priority": "P1",
+      "lane": "Infra",
+      "status": "READY",
+      "title": "An LGPL-compatible libmpv and FFmpeg the product may actually ship",
+      "dependencies": [
+        "PW-0102"
+      ],
+      "allowedPaths": [
+        "apps/desktop/**",
+        "docs/LICENSING.md"
+      ],
+      "reviewDependencies": [
+        "docs/DESKTOP_PLAYBACK.md",
+        "docs/CONTENT_RIGHTS.md",
+        "README.md"
+      ],
+      "preferredAgent": "claude-infra",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "build",
+        "architecture-review"
+      ],
+      "acceptance": "The libmpv and FFmpeg binaries the installer ships are built under terms this product may distribute, and the evidence is recorded rather than assumed. docs/DESKTOP_PLAYBACK.md section 9 names two traps and RESEARCH_PLAYBACK.md already found the equivalent defect elsewhere -- 'every prebuilt ffprobe on npm is a GPL-3.0 binary, and several declare otherwise' -- so a downloaded build is not evidence of its own licence. REQUIRED: the configure flags that keep the build LGPL are stated and reproducible, and any GPL-only component is named and excluded. REQUIRED: the written-offer and attribution obligations LGPL imposes on a shipped binary are satisfied by something in the installer, not by a sentence in a README nobody ships. REQUIRED: the exact upstream versions are pinned and recorded, because PW-0207's error mapping is built against a specific header. NOT IN SCOPE: any decoder whose distribution needs a patent licence this project does not hold -- if one is required, stop and report it as a commander decision rather than shipping it.",
       "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. SURFACE NOTE: this task's allowedPaths name directories that do not exist yet. The evidence-based narrowing procedure applies to reconciling work already in history; for genuinely new work the surface is the smallest set of paths the acceptance can be satisfied within, and it is narrowed again from the diff before review if it turns out to be wider than what was written. ",
-      "owner": "claude-infra",
-      "gateResults": {
-        "typecheck": {
-          "status": "pass",
-          "at": "2026-09-27T01:33:01.968Z",
-          "by": "claude-infra",
-          "commitSha": "a3d70f5c5a4377d248e9b49a5ae1db6d40e15ff6",
-          "evidence": "EXECUTED on a3d70f5. cargo check --target x86_64-pc-windows-msvc, FULL TREE, exit 0. cargo clippy --all-targets -- -D warnings for BOTH targets, x86_64-pc-windows-msvc and x86_64-unknown-linux-gnu, zero errors -- added because the new CI job runs it and a gate that does not run what CI runs is a gate that discovers its findings on the runner. It found two real ones in existing code and both were fixed rather than allowed: a very complex boxed-closure type in a test, and a loop that is a while-let. Monorepo unchanged: npm run typecheck 21/21, npm run lint 11/11 zero problems, npm run repo:validate passed. The new workflow parses as YAML with one job, windows-shell, on windows-latest, seven steps. ONE PACKAGING FACT FOUND AND FIXED: apps/desktop/dist/index.html was silently ignored by the ROOT .gitignore's dist/ rule. Everywhere else in this repository dist/ is build output; here it is a single hand-written failure page named by tauri.conf.json as frontendDist, with no build step that could regenerate it, so an ignored copy means a packaged shell with no page to show when it has something to say. Un-ignored by exception in apps/desktop/.gitignore with the reason recorded there."
-        },
-        "unit": {
-          "status": "pass",
-          "at": "2026-09-27T01:33:02.118Z",
-          "by": "claude-infra",
-          "commitSha": "a3d70f5c5a4377d248e9b49a5ae1db6d40e15ff6",
-          "evidence": "EXECUTED on a3d70f5. cargo test --target x86_64-unknown-linux-gnu -> 42 passed, 0 failed, exit 0, up from 25. Monorepo suite unchanged at 20/20 with apps/web at 1109; this task adds no TypeScript. THE SEVENTEEN NEW TESTS ARE ABOUT THE ASSEMBLY, which is what the round-87 verdict said was missing, and they are possible because the assembly is a SEQUENCE behind a trait rather than a function full of syscalls. THE CENTRAL ORDERING ASSERTION: create_job before spawn, spawn before assign, assign before the handshake, handshake before show_window -- each checked by position in a recorded call list. A job created after the spawn has nothing to assign; a window shown before a handshake is a window pointed at a port nothing is listening on. THE TOKEN, at the point where a process is actually created: absent from every spawn argument, present in the environment under LIBERTY_SIDECAR_TOKEN. sidecar.rs already asserts this of launch_arguments; this re-asserts it where somebody would one day add an argument. A TOKEN THAT CANNOT BE MINTED STOPS THE LAUNCH: nothing is spawned and a failure is surfaced, because every fallback source is predictable to the local processes the token excludes. A JOB THAT CANNOT BE CREATED REFUSES TO START rather than running unsupervised, and the surfaced text is asserted to explain that choice -- a user not told why nothing opened will think it crashed. A CHILD THAT CANNOT BE ASSIGNED IS KILLED, asserted by position: the kill follows the failed assign and no window is shown. An unassigned running child is the orphan itself. THE ORIGIN COMES FROM WHAT THE CHILD REPORTED: an IPv6 handshake produces http://[::1]:50000, bracketed, because the unbracketed form is not a URL and the shell would silently fail to navigate. A REJECTED HANDSHAKE IS NOT RETRIED -- exactly one spawn -- because a broken contract will not fix itself on the fourth attempt and retrying delays the message that says what happened. A TIMEOUT IS RETRIED WITHIN THE BUDGET AND THEN SURFACED, bounded between two and six spawns. A HEALTHY RUN THAT ENDS IS RESTARTED AND A FLAPPING ONE IS NOT, which exercises the supervision policy THROUGH the assembly rather than only in isolation, so the loop must actually consult it. A MISSING INSTALLATION IS NOT RETRIED and never reaches a job. AND NO FAILURE PATH PANICS: eight distinct failures are each run and each asserted to surface something, because a shell that panics is a window that closes itself. THE TOKEN MODULE ADDS FIVE: the minted token satisfies TOKEN_MIN_CHARS as lower-case hex asserted against the constant rather than the literal; 64 mints produce 64 distinct tokens, because per-launch is the whole property; 256 tokens are checked for prefix distinctness and hex-digit distribution, which is not a statistical test and is not claimed as one -- it catches a source that is a counter, a timestamp or a padded constant; hex encoding is checked directly; and a source scan asserts the module reaches for no SystemTime, Instant, process::id, rand:: or hostname. THAT LAST TEST FAILED ON ITS FIRST RUN by matching its own forbidden-word list, which is a guard matching prose about the thing rather than the thing -- the fifth instance in this repository and written minutes after PL-AI-0013 was approved for that class. It is scoped to the code above the test module and the comment records the miss. ONE HARNESS DEFECT WORTH RECORDING: the fake's first draft repeated its last run duration forever, and with a healthy duration that is an infinite loop -- the suite was SIGKILLed. That is not a defect in run_shell: a sidecar that runs for an hour and exits SHOULD be restarted. It is a fake that could promise an endless supply of healthy runs, which no machine does."
-        },
-        "build": {
-          "status": "fail",
-          "at": "2026-09-27T01:33:16.456Z",
-          "by": "claude-infra",
-          "commitSha": "a3d70f5c5a4377d248e9b49a5ae1db6d40e15ff6",
-          "evidence": "RE-RECORDED on a3d70f5. STILL FAIL, and now for exactly one reason: THE WINDOWS JOB HAS NOT RUN, BECAUSE THE BRANCH CANNOT BE PUSHED. The round-87 ruling set the procedure precisely -- implement the corrective, run the local gates, then push so GitHub Actions can execute the new windows-latest job, record the real job result, and keep build FAIL if the Windows job itself fails. Every step was executed except the push. git push origin codex/pl-ai-0001-repair returns HTTP 403 from the git proxy: CrownOwlP/project-liberty is not in this session's authorized repository set. That has been true for every round since 81 and is a commander-level unblock, not something this task can route around. THE WORKFLOW EXISTS AND IS READY: .github/workflows/desktop-shell-ci.yml, windows-latest, Rust pinned to 1.90.0 rather than stable -- because a gate is recorded against what was built and stable can change under the next run with no commit saying so -- cargo test --locked, cargo clippy --locked --all-targets with warnings denied, cargo build --locked --release, and the unsigned binary uploaded for later smoke evidence. --locked on every step, because without it Cargo may quietly update the lockfile and CI would verify a graph that is not the committed one, which is precisely the failure ADR-009 records. It carries no signing, no MSI or NSIS packaging, no installer or update evidence and no release artifact responsibility; those remain PW-0501's, and the file states what it must never grow into. WHAT WAS RUN LOCALLY AND PASSES, recorded under typecheck and unit rather than smuggled in here: the full-tree Windows cross-check, clippy for both targets with warnings denied, and 42 unit tests including seventeen that assert the startup ORDER itself. WHAT IS STILL NOT EVIDENCED BY ANYTHING: that the shell launches, that WebView2 renders, that the Job Object terminates the sidecar, that an installer works. A cross-compile check never links and is not a build; a unit test of an ordering never starts a process. This gate stays FAIL until the windows-latest job has actually run and its result is recorded here -- and if that job fails, it stays FAIL then too."
-        }
-      },
-      "implementationAgent": "claude-infra",
-      "updatedAt": "2026-09-27T01:33:16.633Z",
-      "implementationBaseSha": "ead46a5f20a5f784398a0380ccdf02dfe9e5e77a",
-      "review": {
-        "taskId": "PW-0102",
-        "implementationAgent": "claude-infra",
-        "implementationOwner": "claude-infra",
-        "reviewerAgent": "gpt-architect",
-        "reviewerClass": "external-reasoning",
-        "reviewerProvider": "openai",
-        "reviewedCommitSha": "25af05d0676507488c37bba9143a1e675722e3c3",
-        "reviewedBaseSha": "ead46a5f20a5f784398a0380ccdf02dfe9e5e77a",
-        "reviewedTreeHash": "2d5420b86523cadde3bdef6cf15fd7c5e87abb76f20594cc5cfadda0f92d774c",
-        "reviewedFileCount": 30,
-        "reviewedFingerprintSource": "git-object",
-        "reviewedDependencies": [
-          "apps/web/next.config.ts",
-          "apps/web/package.json",
-          "turbo.json",
-          "package.json",
-          "docs/DESKTOP_PLAYBACK.md",
-          "docs/ARCHITECTURE.md",
-          "apps/web/src/lib/sidecar/handshake.ts",
-          "apps/web/src/lib/sidecar/policy.ts"
-        ],
-        "outcome": "CHANGES_REQUESTED",
-        "reviewedAt": "2026-09-27T01:21:27.711Z",
-        "evidence": "CHANGES_REQUESTED at 25af05d0676507488c37bba9143a1e675722e3c3. TRANSCRIBED BY CLAUDE from gpt-architect's round-87 verdict. ACCEPTED: the Tauri dependency correction; tauri 2.12.0 with zero manually pinned transitive dependencies is the correct graph; ADR-009 correctly preserves the failed 2.9.1 episode as history rather than rewriting it away; the Windows cross-target check is valid evidence and the Win32_Security correction it found is real; and the build gate must remain FAIL. THE BLOCKING DEFECT: apps/desktop/src-tauri/src/lib.rs::run() intentionally panics, so the application cannot start. The modules implement pieces of the shell but are not assembled into a shell. Windows is required to VERIFY the assembly, not to WRITE it. REQUIRED CORRECTIVE, eleven items: mint the per-launch sidecar token from a CSPRNG, not timestamps, UUID formatting, PRNGs or predictable process state, preserving the 64-character hex contract; build the Tauri application using the reviewed v2 configuration with the main window hidden until the sidecar is ready; resolve the packaged resource directory through Tauri's supported resource API; build and execute the existing SidecarLaunch plan, spawning the bundled node.exe with server.js as argv and token, host and port passed only through the environment as already designed; capture sidecar stdout and parse the existing handshake contract; create the Windows Job Object and assign the sidecar process to it; on a valid handshake construct the loopback origin from the reported bound port, navigate the WebView to it and show the window; on an invalid handshake, a failed startup or an early child death use the existing failure vocabulary and surface an actionable application failure rather than panicking or exiting silently; wire the existing bounded supervision policy; on normal application exit close or terminate the Job Object so the sidecar cannot survive the desktop process; and keep the security separation intact -- the launch token authenticates the local listener, never becomes account authentication, and is never logged or placed in argv. BUILD-GATE DEADLOCK BROKEN BY RULING: PW-0102 may add ONE narrow workflow, .github/workflows/desktop-shell-ci.yml or a uniquely named equivalent owned only by PW-0102, existing solely to establish this task's shell build evidence -- windows-latest, a pinned Rust toolchain, cargo test, a full-tree cargo check or build for x86_64-pc-windows-msvc, preferably producing the unsigned shell artifact needed for smoke evidence, with no release signing and no production installer or release responsibility. PW-0501 remains the owner of the production packaging and release workflow and must not co-own this one; PW-0602 remains the certification consumer. The surface extension must be recorded in the control plane before it is taken."
-      },
-      "reviewHistory": [
-        {
-          "taskId": "PW-0102",
-          "implementationAgent": "claude-infra",
-          "implementationOwner": "claude-infra",
-          "reviewerAgent": "gpt-architect",
-          "reviewerClass": "external-reasoning",
-          "reviewerProvider": "openai",
-          "reviewedCommitSha": "25af05d0676507488c37bba9143a1e675722e3c3",
-          "reviewedBaseSha": "ead46a5f20a5f784398a0380ccdf02dfe9e5e77a",
-          "reviewedTreeHash": "2d5420b86523cadde3bdef6cf15fd7c5e87abb76f20594cc5cfadda0f92d774c",
-          "reviewedFileCount": 30,
-          "reviewedFingerprintSource": "git-object",
-          "reviewedDependencies": [
-            "apps/web/next.config.ts",
-            "apps/web/package.json",
-            "turbo.json",
-            "package.json",
-            "docs/DESKTOP_PLAYBACK.md",
-            "docs/ARCHITECTURE.md",
-            "apps/web/src/lib/sidecar/handshake.ts",
-            "apps/web/src/lib/sidecar/policy.ts"
-          ],
-          "outcome": "CHANGES_REQUESTED",
-          "reviewedAt": "2026-09-27T01:21:27.711Z",
-          "evidence": "CHANGES_REQUESTED at 25af05d0676507488c37bba9143a1e675722e3c3. TRANSCRIBED BY CLAUDE from gpt-architect's round-87 verdict. ACCEPTED: the Tauri dependency correction; tauri 2.12.0 with zero manually pinned transitive dependencies is the correct graph; ADR-009 correctly preserves the failed 2.9.1 episode as history rather than rewriting it away; the Windows cross-target check is valid evidence and the Win32_Security correction it found is real; and the build gate must remain FAIL. THE BLOCKING DEFECT: apps/desktop/src-tauri/src/lib.rs::run() intentionally panics, so the application cannot start. The modules implement pieces of the shell but are not assembled into a shell. Windows is required to VERIFY the assembly, not to WRITE it. REQUIRED CORRECTIVE, eleven items: mint the per-launch sidecar token from a CSPRNG, not timestamps, UUID formatting, PRNGs or predictable process state, preserving the 64-character hex contract; build the Tauri application using the reviewed v2 configuration with the main window hidden until the sidecar is ready; resolve the packaged resource directory through Tauri's supported resource API; build and execute the existing SidecarLaunch plan, spawning the bundled node.exe with server.js as argv and token, host and port passed only through the environment as already designed; capture sidecar stdout and parse the existing handshake contract; create the Windows Job Object and assign the sidecar process to it; on a valid handshake construct the loopback origin from the reported bound port, navigate the WebView to it and show the window; on an invalid handshake, a failed startup or an early child death use the existing failure vocabulary and surface an actionable application failure rather than panicking or exiting silently; wire the existing bounded supervision policy; on normal application exit close or terminate the Job Object so the sidecar cannot survive the desktop process; and keep the security separation intact -- the launch token authenticates the local listener, never becomes account authentication, and is never logged or placed in argv. BUILD-GATE DEADLOCK BROKEN BY RULING: PW-0102 may add ONE narrow workflow, .github/workflows/desktop-shell-ci.yml or a uniquely named equivalent owned only by PW-0102, existing solely to establish this task's shell build evidence -- windows-latest, a pinned Rust toolchain, cargo test, a full-tree cargo check or build for x86_64-pc-windows-msvc, preferably producing the unsigned shell artifact needed for smoke evidence, with no release signing and no production installer or release responsibility. PW-0501 remains the owner of the production packaging and release workflow and must not co-own this one; PW-0602 remains the certification consumer. The surface extension must be recorded in the control plane before it is taken."
-        }
-      ]
-    }
-  ],
-  "review": [],
-  "reservedExternal": [],
-  "recommended": [
+      "owner": null,
+      "gateResults": {}
+    },
     {
       "id": "PW-0104",
       "priority": "P1",

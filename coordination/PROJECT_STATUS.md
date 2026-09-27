@@ -1,18 +1,18 @@
 # Project Liberty - Project Status
 
-> Generated 2026-09-27T03:47:21.411Z from the AI control plane.
+> Generated 2026-09-27T10:16:05.208Z from the AI control plane.
 
-**Overall completion:** 75/99 executable tasks (76%)
+**Overall completion:** 77/99 executable tasks (78%)
 
 ## Status summary
 
-- **BACKLOG:** 16
-- **READY:** 4
+- **BACKLOG:** 12
+- **READY:** 8
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 0
-- **REVIEW:** 2
+- **REVIEW:** 0
 - **BLOCKED:** 2
-- **DONE:** 75
+- **DONE:** 77
 - **CANCELED:** 0
 - **SUPERSEDED:** 4
 
@@ -27,23 +27,25 @@
 - **M6 — Shared-Agent Automation Bridge:** COMPLETE, 3/3 (100%)
 - **EXT — External Licensed Integrations:** BLOCKED, 0/2 (0%), 2 blocked
 - **M7 — Windows Desktop Shell + Native Playback:** COMPLETE, 4/4 (100%)
-- **PW — undefined:** IN_PROGRESS, 11/32 (34%)
+- **PW — undefined:** IN_PROGRESS, 13/32 (41%)
 
 ## Active work
 
-- **PW-0102** [REVIEW] A Tauri v2 shell that owns the sidecar's lifetime — owner: claude-infra
-- **PW-0305** [REVIEW] Continue watching: resume where the viewer left off — owner: claude-frontend
+No tasks are currently claimed, in progress, or in review.
 
 ## Dispatch classification
 
-- **READY_AND_EXECUTABLE:** 4
+- **READY_AND_EXECUTABLE:** 8
 - **READY_BUT_EXTERNAL:** 0
 - **BLOCKED:** 2
-- **BACKLOG (dependency-gated):** 16
+- **BACKLOG (dependency-gated):** 12
 
 ## Recommended executable wave
 
+- **PW-0103** -> claude-media (P0/Player) Experiment 1a: can a child HWND composite beneath the webview
 - **PW-0312** -> claude-frontend (P0/Frontend) Authentication entry and session UX
+- **PW-0104** -> claude-infra (P1/Infra) A killed desktop dev server cannot leave a tracked file rewritten
+- **PW-0304** -> claude-frontend (P1/Frontend) Watchlist becomes usable: an add control and a list
 
 ## Queued for external agents
 
@@ -58,10 +60,10 @@ No READY work is waiting on an external agent lane.
 
 - **gpt-architect:** 0/6 active (external lane; not locally executable)
 - **claude-lead:** 0/2 active
-- **claude-frontend:** 1/2 active
+- **claude-frontend:** 0/2 active
 - **claude-backend:** 0/2 active
 - **claude-media:** 0/2 active
 - **claude-test:** 0/1 active
 - **claude-security:** 0/1 active
-- **claude-infra:** 1/1 active
+- **claude-infra:** 0/1 active
 - **human-commander:** 0/99 active (external lane; not locally executable)
