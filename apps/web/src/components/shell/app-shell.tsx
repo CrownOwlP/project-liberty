@@ -14,6 +14,7 @@
  * ---------------------------------------------------------------------- */
 import type { ReactNode } from "react";
 
+import { AccountRegion } from "../auth/account-region";
 import { ActiveProfileBadge } from "../profiles/active-profile-badge";
 import { PRIMARY_NAVIGATION, activeEntryId } from "./navigation";
 
@@ -108,6 +109,29 @@ export function AppShell({
           * navigation destination.
           */}
         <div className="topbar-end">
+          {/*
+            * TWO FACTS, TWO ELEMENTS, AND THE ORDER IS THE HIERARCHY (PW-0312).
+            *
+            * The account is WHO IS SIGNED IN; the profile is WHO IS WATCHING.
+            * PW-0312's acceptance requires both to be present and requires that
+            * neither be mistaken for the other, and `packages/auth/src/session.ts`
+            * explains why they are separate concepts rather than one field:
+            * profiles live ABOVE auth, and a profile selection is a property of
+            * this browser rather than of the account.
+            *
+            * The account comes FIRST because it is the outer fact -- you are
+            * signed in, and within that you are watching as somebody. Reading
+            * left to right that is the containment order, and it is also the
+            * order in which the two can be absent: there is no profile to show
+            * for a viewer with no session.
+            *
+            * `AccountRegion` is the second client boundary this server shell
+            * opens, and it is opened for the same reason as the first: reading
+            * the session on the server would make every route in the
+            * application dynamic. It renders nothing at all on a deployment
+            * with no identity system, which is what a development build is.
+            */}
+          <AccountRegion />
           <ActiveProfileBadge />
           {badge === null ? null : <div className="status">{badge}</div>}
         </div>

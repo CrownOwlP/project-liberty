@@ -1,15 +1,15 @@
 # Project Liberty - Project Status
 
-> Generated 2026-09-27T10:16:05.208Z from the AI control plane.
+> Generated 2026-09-27T10:16:55.725Z from the AI control plane.
 
 **Overall completion:** 77/99 executable tasks (78%)
 
 ## Status summary
 
 - **BACKLOG:** 12
-- **READY:** 8
+- **READY:** 7
 - **CLAIMED:** 0
-- **IN_PROGRESS:** 0
+- **IN_PROGRESS:** 1
 - **REVIEW:** 0
 - **BLOCKED:** 2
 - **DONE:** 77
@@ -31,11 +31,11 @@
 
 ## Active work
 
-No tasks are currently claimed, in progress, or in review.
+- **PW-0312** [IN_PROGRESS] Authentication entry and session UX — owner: claude-frontend
 
 ## Dispatch classification
 
-- **READY_AND_EXECUTABLE:** 8
+- **READY_AND_EXECUTABLE:** 7
 - **READY_BUT_EXTERNAL:** 0
 - **BLOCKED:** 2
 - **BACKLOG (dependency-gated):** 12
@@ -43,7 +43,6 @@ No tasks are currently claimed, in progress, or in review.
 ## Recommended executable wave
 
 - **PW-0103** -> claude-media (P0/Player) Experiment 1a: can a child HWND composite beneath the webview
-- **PW-0312** -> claude-frontend (P0/Frontend) Authentication entry and session UX
 - **PW-0104** -> claude-infra (P1/Infra) A killed desktop dev server cannot leave a tracked file rewritten
 - **PW-0304** -> claude-frontend (P1/Frontend) Watchlist becomes usable: an add control and a list
 
@@ -60,7 +59,7 @@ No READY work is waiting on an external agent lane.
 
 - **gpt-architect:** 0/6 active (external lane; not locally executable)
 - **claude-lead:** 0/2 active
-- **claude-frontend:** 0/2 active
+- **claude-frontend:** 1/2 active
 - **claude-backend:** 0/2 active
 - **claude-media:** 0/2 active
 - **claude-test:** 0/1 active

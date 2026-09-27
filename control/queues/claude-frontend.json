@@ -1,8 +1,47 @@
 {
-  "generatedAt": "2026-09-27T10:16:05.211Z",
+  "generatedAt": "2026-09-27T10:16:55.728Z",
   "agent": "claude-frontend",
   "executionAvailable": true,
-  "assigned": [],
+  "assigned": [
+    {
+      "id": "PW-0312",
+      "priority": "P0",
+      "lane": "Frontend",
+      "status": "IN_PROGRESS",
+      "title": "Authentication entry and session UX",
+      "dependencies": [
+        "PW-0403"
+      ],
+      "allowedPaths": [
+        "apps/web/src/app/signin/**",
+        "apps/web/src/app/signup/**",
+        "apps/web/src/components/auth/**"
+      ],
+      "reviewDependencies": [
+        "apps/web/src/lib/session/account.ts",
+        "apps/web/src/lib/session/auth-instance.ts",
+        "apps/web/src/app/api/auth",
+        "apps/web/src/components/profiles",
+        "apps/web/src/components/shell",
+        "docs/SECURITY.md",
+        "docs/API_CONTRACTS.md"
+      ],
+      "preferredAgent": "claude-frontend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "e2e",
+        "security-review"
+      ],
+      "acceptance": "A viewer who is signed out can do something about it. PW-0403 made a deployment answer 401 not_authenticated, and there is no screen anywhere in this application that consumes it: /api/auth/* is served and nothing links to it, so the honest description of a deployment today is that it refuses everybody correctly and offers them nowhere to go. REQUIRED: a sign-in screen reachable FROM the signed-out protected state, not only from a URL somebody knows. A 401 that renders as a generic error is the same dead end with better manners. REQUIRED: a sign-up flow where deployment policy permits it. Policy, not preference: requireEmailVerification and the absence of a mail transport both decide what can actually complete, and the screen must reflect what this deployment can do rather than what the library can. REQUIRED: a sign-out action, and an authenticated shell state -- the shell already carries the active profile badge from PW-0303, and who you are SIGNED IN AS is a different fact from which profile is selected. Both belong there and neither may be mistaken for the other. REQUIRED: a protected-view redirect or an equivalent actionable signed-out experience. Either is acceptable; what is not is a screen that silently renders empty because every request behind it returned 401. REQUIRED: verification and password-reset entry states. REQUIRED: EXPLICIT UX WHEN THE MAIL TRANSPORT IS UNAVAILABLE, and this is the clause most likely to be got wrong. The composition root's transport REJECTS rather than logging the link, because a verification or reset URL is a one-click account-takeover token; the screen must say the message cannot be sent and must NOT log, display, copy or otherwise expose such a token to work around it. A UI that showed the link to be helpful would undo the reason the placeholder throws. REQUIRED: it consumes /api/auth/* and does not invent a second auth protocol. No client-side session parsing, no second cookie, no parallel identity state -- the server is the authority and the screen reads its answers. REQUIRED: profile selection is NOT moved into Better Auth. Profiles live above auth (PL-0402), active_profile_selection stays keyed by session in Liberty's own store, and a sign-in screen is exactly where somebody would be tempted to fold the two together. REQUIRED: the server-side not_authenticated behaviour and the PW-0402 authorization boundaries are preserved. Nothing in this task may make a refusal more informative than it is today: the four session failure modes stay externally indistinguishable, and profile_unavailable keeps answering for both of its cases. MEASURED STARTING POINT: apps/web contains no sign-in, sign-up, sign-out or password-reset screen, no link to /api/auth anywhere, and exactly one client-side caller of this application's own API -- the profiles client PW-0303 introduced, whose rules this task should follow rather than re-derive. ADDED ON gpt-architect's ROUND-90 RULING, WHICH GAVE THIS TASK OWNERSHIP OF A GAP PW-0401 FOUND AND WAS FORBIDDEN TO FIX. PW-0401 built the authenticated playback backend; it answers 401 not_authenticated to a signed-out caller, and the desktop forwarder maps that to a generic unavailable because playbackSessionReasonCodeSchema is a CLOSED vocabulary with no authentication member and the response status in that contract is derived from the OUTCOME alone. The ruling: do not expand PW-0401 to solve it, because it is a published-contract concern; PW-0312 owns or coordinates the corrective. REQUIRED: signed-out playback produces an ACTIONABLE SIGN-IN STATE rather than a generic unavailability, on the desktop target as well as the web one. REQUIRED: the distinction between not_authenticated and backend-or-provider unavailability is PRESERVED and not collapsed -- the same ruling PW-0403 received for the request-context vocabulary. REQUIRED: content existence is still not leaked before authentication; PW-0401's ordering property, that the caller is authenticated before the request body is consumed, must survive whatever shape this takes. REQUIRED: if a new playback-session reason code or envelope state is needed, the PUBLISHED CONTRACT IS UPDATED DELIBERATELY FIRST under invariant 5 -- contract.ts, the status derivation and docs/API_CONTRACTS.md together -- rather than a client inferring authentication state from an unavailable. REQUIRED: BOTH TARGETS AND THE CROSS-TARGET EQUIVALENCE TESTS ARE UPDATED TOGETHER. e2e compares whole bodies between the web and desktop targets, so a contract change landing on one target alone is a failing suite at best and a silent divergence at worst. REQUIRED: profile selection stays ABOVE account authentication, unchanged -- this clause already appears above and is restated because a playback-path sign-in prompt is a second place somebody would be tempted to fold the two together.",
+      "notes": "Created on gpt-architect's round-85 ruling, which specified the id PW-0310. THAT ID WAS ALREADY TAKEN by 'Keyboard, focus and accessibility across the whole application', filed in round 80 and still BACKLOG, so this task was filed as PW-0312 rather than renumbering or overwriting an existing record. The reviewer also ruled explicitly that this must NOT be folded into PW-0309 (offline, degraded and error states). allowedPaths name directories that do not exist yet; per the PW-0102 surface note, a genuinely new surface is the smallest set the acceptance can be satisfied within and is narrowed again from the diff before review. The shell and the profiles components are reviewDependencies rather than writable: this task will almost certainly need to add a signed-in control to the shell, and that widening should be argued for with a derivation at claim time the way PW-0303's was, not reserved speculatively now. ROUND 90: gpt-architect assigned this task the authentication corrective for the playback path, found by PW-0401 and explicitly out of scope for it. The five added REQUIRED clauses are transcribed from that ruling. This task now spans a published-contract change, so its surface at claim time will be wider than the three directories declared here and the widening must be derived from the acceptance and recorded before it is taken.",
+      "updatedAt": "2026-09-27T10:16:55.698Z",
+      "owner": "claude-frontend",
+      "implementationAgent": "claude-frontend",
+      "implementationBaseSha": "ceb1e47e9ccb590395a775619937b7761c0fbad6"
+    }
+  ],
   "review": [],
   "reservedExternal": [],
   "recommended": [
@@ -32,41 +71,6 @@
       "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. SURFACE NOTE: this task's allowedPaths name directories that do not exist yet. The evidence-based narrowing procedure applies to reconciling work already in history; for genuinely new work the surface is the smallest set of paths the acceptance can be satisfied within, and it is narrowed again from the diff before review if it turns out to be wider than what was written. ",
       "owner": null,
       "gateResults": {}
-    },
-    {
-      "id": "PW-0312",
-      "priority": "P0",
-      "lane": "Frontend",
-      "status": "READY",
-      "title": "Authentication entry and session UX",
-      "dependencies": [
-        "PW-0403"
-      ],
-      "allowedPaths": [
-        "apps/web/src/app/signin/**",
-        "apps/web/src/app/signup/**",
-        "apps/web/src/components/auth/**"
-      ],
-      "reviewDependencies": [
-        "apps/web/src/lib/session/account.ts",
-        "apps/web/src/lib/session/auth-instance.ts",
-        "apps/web/src/app/api/auth",
-        "apps/web/src/components/profiles",
-        "apps/web/src/components/shell",
-        "docs/SECURITY.md",
-        "docs/API_CONTRACTS.md"
-      ],
-      "preferredAgent": "claude-frontend",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "typecheck",
-        "unit",
-        "e2e",
-        "security-review"
-      ],
-      "acceptance": "A viewer who is signed out can do something about it. PW-0403 made a deployment answer 401 not_authenticated, and there is no screen anywhere in this application that consumes it: /api/auth/* is served and nothing links to it, so the honest description of a deployment today is that it refuses everybody correctly and offers them nowhere to go. REQUIRED: a sign-in screen reachable FROM the signed-out protected state, not only from a URL somebody knows. A 401 that renders as a generic error is the same dead end with better manners. REQUIRED: a sign-up flow where deployment policy permits it. Policy, not preference: requireEmailVerification and the absence of a mail transport both decide what can actually complete, and the screen must reflect what this deployment can do rather than what the library can. REQUIRED: a sign-out action, and an authenticated shell state -- the shell already carries the active profile badge from PW-0303, and who you are SIGNED IN AS is a different fact from which profile is selected. Both belong there and neither may be mistaken for the other. REQUIRED: a protected-view redirect or an equivalent actionable signed-out experience. Either is acceptable; what is not is a screen that silently renders empty because every request behind it returned 401. REQUIRED: verification and password-reset entry states. REQUIRED: EXPLICIT UX WHEN THE MAIL TRANSPORT IS UNAVAILABLE, and this is the clause most likely to be got wrong. The composition root's transport REJECTS rather than logging the link, because a verification or reset URL is a one-click account-takeover token; the screen must say the message cannot be sent and must NOT log, display, copy or otherwise expose such a token to work around it. A UI that showed the link to be helpful would undo the reason the placeholder throws. REQUIRED: it consumes /api/auth/* and does not invent a second auth protocol. No client-side session parsing, no second cookie, no parallel identity state -- the server is the authority and the screen reads its answers. REQUIRED: profile selection is NOT moved into Better Auth. Profiles live above auth (PL-0402), active_profile_selection stays keyed by session in Liberty's own store, and a sign-in screen is exactly where somebody would be tempted to fold the two together. REQUIRED: the server-side not_authenticated behaviour and the PW-0402 authorization boundaries are preserved. Nothing in this task may make a refusal more informative than it is today: the four session failure modes stay externally indistinguishable, and profile_unavailable keeps answering for both of its cases. MEASURED STARTING POINT: apps/web contains no sign-in, sign-up, sign-out or password-reset screen, no link to /api/auth anywhere, and exactly one client-side caller of this application's own API -- the profiles client PW-0303 introduced, whose rules this task should follow rather than re-derive. ADDED ON gpt-architect's ROUND-90 RULING, WHICH GAVE THIS TASK OWNERSHIP OF A GAP PW-0401 FOUND AND WAS FORBIDDEN TO FIX. PW-0401 built the authenticated playback backend; it answers 401 not_authenticated to a signed-out caller, and the desktop forwarder maps that to a generic unavailable because playbackSessionReasonCodeSchema is a CLOSED vocabulary with no authentication member and the response status in that contract is derived from the OUTCOME alone. The ruling: do not expand PW-0401 to solve it, because it is a published-contract concern; PW-0312 owns or coordinates the corrective. REQUIRED: signed-out playback produces an ACTIONABLE SIGN-IN STATE rather than a generic unavailability, on the desktop target as well as the web one. REQUIRED: the distinction between not_authenticated and backend-or-provider unavailability is PRESERVED and not collapsed -- the same ruling PW-0403 received for the request-context vocabulary. REQUIRED: content existence is still not leaked before authentication; PW-0401's ordering property, that the caller is authenticated before the request body is consumed, must survive whatever shape this takes. REQUIRED: if a new playback-session reason code or envelope state is needed, the PUBLISHED CONTRACT IS UPDATED DELIBERATELY FIRST under invariant 5 -- contract.ts, the status derivation and docs/API_CONTRACTS.md together -- rather than a client inferring authentication state from an unavailable. REQUIRED: BOTH TARGETS AND THE CROSS-TARGET EQUIVALENCE TESTS ARE UPDATED TOGETHER. e2e compares whole bodies between the web and desktop targets, so a contract change landing on one target alone is a failing suite at best and a silent divergence at worst. REQUIRED: profile selection stays ABOVE account authentication, unchanged -- this clause already appears above and is restated because a playback-path sign-in prompt is a second place somebody would be tempted to fold the two together.",
-      "notes": "Created on gpt-architect's round-85 ruling, which specified the id PW-0310. THAT ID WAS ALREADY TAKEN by 'Keyboard, focus and accessibility across the whole application', filed in round 80 and still BACKLOG, so this task was filed as PW-0312 rather than renumbering or overwriting an existing record. The reviewer also ruled explicitly that this must NOT be folded into PW-0309 (offline, degraded and error states). allowedPaths name directories that do not exist yet; per the PW-0102 surface note, a genuinely new surface is the smallest set the acceptance can be satisfied within and is narrowed again from the diff before review. The shell and the profiles components are reviewDependencies rather than writable: this task will almost certainly need to add a signed-in control to the shell, and that widening should be argued for with a derivation at claim time the way PW-0303's was, not reserved speculatively now. ROUND 90: gpt-architect assigned this task the authentication corrective for the playback path, found by PW-0401 and explicitly out of scope for it. The five added REQUIRED clauses are transcribed from that ruling. This task now spans a published-contract change, so its surface at claim time will be wider than the three directories declared here and the widening must be derived from the acceptance and recorded before it is taken.",
-      "updatedAt": "2026-09-27T03:13:47.559Z"
     },
     {
       "id": "PW-0304",

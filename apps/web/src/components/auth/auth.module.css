@@ -1,0 +1,118 @@
+/*
+ * Scoped to the authentication surface (PW-0312).
+ *
+ * A CSS module rather than additions to `globals.css`, for the two reasons
+ * search, title, artwork and continue-watching all record: `app/globals.css` is
+ * outside this task's allowed paths and is held by PW-0310, and a handful of
+ * rules do not need to become global class names. `.shell`, `.section`,
+ * `.state-panel`, `.button`, `.button-primary`, `.muted` and `.visually-hidden`
+ * are reused unchanged so this surface cannot drift from the rest.
+ */
+
+.panel {
+  max-width: 420px;
+  margin: 48px auto;
+  display: grid;
+  gap: 18px;
+}
+
+.form {
+  display: grid;
+  gap: 14px;
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+}
+
+/*
+ * `font: inherit` because a bare `input` does not inherit the page's font and
+ * a credential field rendered in the browser's default serif is the single
+ * clearest signal that a form was not designed -- which is exactly the signal a
+ * phishing page cannot fake and a real one should not emit.
+ */
+.input {
+  font: inherit;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.input:focus-visible {
+  outline: 2px solid var(--accent, #6c97f1);
+  outline-offset: 1px;
+}
+
+.input:disabled {
+  opacity: 0.6;
+}
+
+/*
+ * A refusal. Not red-on-red: `--danger` where the theme has one, and a border
+ * rather than a fill, so the message stays readable for a reader who cannot
+ * distinguish the hue at all. Colour is never the only carrier -- the text says
+ * what happened, and `role="alert"` announces it.
+ */
+.failure {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--danger, #e2555a);
+  color: var(--text);
+  font-size: 13px;
+}
+
+.alternate {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* The account region in the topbar. */
+.account {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.accountName {
+  color: var(--text);
+  max-width: 18ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/*
+ * Sign out is a BUTTON styled as a link, not a link styled as a button, and the
+ * distinction is the whole reason this rule exists: signing out changes state
+ * on the server, so it must be a form submission rather than a GET that a
+ * prefetcher, a crawler or a mail scanner can follow.
+ */
+.signOut {
+  font: inherit;
+  font-size: 12px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.signOut:hover:not(:disabled),
+.signOut:focus-visible {
+  color: var(--text);
+}
+
+.signOut:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
