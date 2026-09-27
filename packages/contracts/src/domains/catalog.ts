@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { artworkListSchema } from "../shared/artwork";
 import { contentRightsSchema } from "../shared/rights";
 
 /* -------------------------------------------------------------------------
@@ -6,8 +7,17 @@ import { contentRightsSchema } from "../shared/rights";
  *
  * Browse-surface metadata: what a rail shows and what the home response is made
  * of. Carries no stream, URL or provider field -- a catalog item says a work
- * exists, never that it is playable. Depends only on the shared rights
- * vocabulary.
+ * exists, never that it is playable. Depends only on shared leaf vocabularies.
+ *
+ * THAT HEADER SURVIVES PW-0302 UNCHANGED, AND IT HAD TO. A catalog item now
+ * carries artwork, and the sentence above still says there is no URL field in
+ * this shape, because `artworkListSchema` is a list of OPAQUE REFERENCES:
+ * `../shared/artwork` has no url, uri, src, href or origin field and constrains
+ * the reference so that none can be spelled inside one. An image is named here;
+ * where to fetch it from is decided at the artwork resolution boundary in
+ * `apps/web`, which is the only place in the product an artwork origin exists.
+ * The alternative -- a `posterUrl` beside the title -- would have made this
+ * header false, which is how the round-83 audit caught it.
  *
  * `PLAYABLE_CONTENT_RIGHTS` used to be declared under this heading; it now lives
  * in `../shared/rights` beside the vocabulary it is an allowlist over, because
@@ -28,7 +38,16 @@ const catalogItemBaseShape = {
   title: z.string().min(1),
   rights: contentRightsSchema,
   genre: z.string().min(1),
-  releaseYear: z.number().int().min(1888)
+  releaseYear: z.number().int().min(1888),
+  /**
+   * Opaque artwork references, never image addresses.
+   *
+   * See `../shared/artwork` for the whole vocabulary, including why the list is
+   * optional where the rest of this shape is required -- in short, because ten
+   * existing producers of this type have no artwork concept and a required key
+   * would force each of them to assert a fact it has not established.
+   */
+  artwork: artworkListSchema
 };
 
 const runtime = z.number().int().positive();

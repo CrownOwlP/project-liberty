@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { CatalogItem } from "@liberty/contracts/domains/catalog";
+import { PosterArtwork } from "./artwork/poster-artwork";
 import { formatCatalogMeta } from "../lib/catalog";
 import { resolveCatalogItemRoute } from "../lib/routes";
 
@@ -51,15 +52,30 @@ export interface CatalogCardProps {
  * per-card DOM id, and `item.id` is not constrained enough by the catalog
  * contract to be safe to interpolate into one.
  *
- * The poster stays `aria-hidden`: it is a decorative gradient, not an image, so
- * it carries nothing to name, and it is deliberately not part of the link.
+ * THE POSTER STAYS `aria-hidden` AND STAYS OUT OF THE LINK, WHICH IS NOW A
+ * DECISION RATHER THAN A DESCRIPTION.
+ *
+ * It used to be trivially true: the poster was a gradient, so it carried nothing
+ * to name. PW-0302 put an image in it, and an image is the sort of thing people
+ * reflexively give an `alt` and wrap in the anchor. Both were considered and
+ * both are refused, on the arguments already made above rather than on new ones.
+ * An `alt` here would repeat the title that is already the link's accessible
+ * name -- every card announced twice -- or describe artwork nobody has
+ * described, which is the invented context this surface avoids everywhere else.
+ * And moving the poster inside the anchor would reintroduce exactly the
+ * paragraph-sized link name this file rejected at the top.
+ *
+ * So the element is unchanged in kind: a decorative frame that is not part of
+ * the link, now with a decorative image inside it. `artwork/poster-artwork.tsx`
+ * renders the frame and owns both properties; see its header for why the image
+ * is a plain `img` and why it can only ever come from this origin.
  */
 export function CatalogCard({ item }: CatalogCardProps) {
   const route = resolveCatalogItemRoute(item);
 
   return (
     <article className="card">
-      <div className="poster" aria-hidden="true" />
+      <PosterArtwork artwork={item.artwork} />
       {/*
         An item with no resolvable route renders its title as plain text.
 

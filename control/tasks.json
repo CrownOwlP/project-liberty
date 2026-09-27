@@ -8670,23 +8670,33 @@
       "id": "PW-0302",
       "priority": "P0",
       "lane": "Frontend",
-      "status": "READY",
+      "status": "IN_PROGRESS",
       "title": "Artwork, end to end, because a media application without images is a list",
       "dependencies": [],
       "allowedPaths": [
         "packages/contracts/src/domains/catalog.ts",
         "packages/contracts/src/domains/title.ts",
         "apps/web/src/components/artwork/**",
-        "apps/web/next.config.ts"
+        "apps/web/next.config.ts",
+        "packages/contracts/src/shared/artwork.ts",
+        "packages/contracts/src/artwork.test.ts",
+        "packages/catalog-ingestion/src/record.ts",
+        "apps/web/src/app/api/v1/artwork/**",
+        "apps/web/src/components/catalog-card.tsx",
+        "apps/web/src/lib/demo-catalog.ts",
+        "apps/web/fixtures/artwork/**",
+        "docs/API_CONTRACTS.md"
       ],
       "reviewDependencies": [
         "packages/catalog-ingestion/src",
         "apps/web/src/lib/catalog.ts",
         "apps/web/src/lib/title-detail.ts",
-        "apps/web/src/components/catalog-card.tsx",
-        "docs/API_CONTRACTS.md",
         "docs/CONTENT_RIGHTS.md",
-        "docs/SECURITY.md"
+        "docs/SECURITY.md",
+        "apps/web/src/app/globals.css",
+        "apps/web/src/components/title/title-hero.tsx",
+        "packages/contracts/src/catalog.test.ts",
+        "packages/contracts/src/title.test.ts"
       ],
       "preferredAgent": "claude-frontend",
       "reviewAgent": "gpt-architect",
@@ -8699,9 +8709,11 @@
       ],
       "acceptance": "Titles have artwork, and getting it does not become a new way to fetch arbitrary URLs. ACCEPTANCE RECONCILED IN ROUND 83 ON gpt-architect's RULING. The previous wording asked for a rights basis and dimensions 'beside the URL'. The repository already has a reviewed artwork vocabulary that deliberately carries NO URL: artworkRefSchema in packages/catalog-ingestion/src/record.ts holds a role, an assetRef constrained to an opaque lower-case token, and a REQUIRED rights basis -- required there and nowhere else in that package, on the stated argument that a work with an undeclared basis is merely refused from browse while an IMAGE with an undeclared basis that reached a page would be somebody else's file served from our origin. project.ts then drops artwork on the way to CatalogItem, and domains/catalog.ts opens by promising the browse shape carries no stream, URL or provider field. The ruling is explicit: do not weaken a previously rights- and security-reviewed opaque-reference boundary to satisfy stale task prose. REQUIRED: the catalog and title contracts carry an OPAQUE ARTWORK REFERENCE plus required display metadata and a rights basis. Not a URL. The vocabulary ADOPTS artworkRefSchema's shape rather than inventing a second one; where the two must differ, say why in the module. REQUIRED: the client never receives an arbitrary upstream image URL merely to render artwork. REQUIRED: an authorized artwork-resolution boundary turns the opaque reference into a fetchable or served asset under allowlisted transport policy. That boundary is where an origin is decided, and it is the only place one is. REQUIRED: no arbitrary URL proxy. SECURITY.md's 'never proxy arbitrary client-provided URLs' is not weakened for pictures, which is why this task carries a security review as well as a rights review. REQUIRED: absent artwork keeps the DESIGNED gradient fallback. An absent image is a designed state, not a broken one, and a broken-image icon is not the answer. REQUIRED: next/image -- or whatever equivalent configuration the implementation uses -- permits only the controlled Liberty artwork origin or boundary, never arbitrary remote hosts and never a wildcard. Because no other origin is expressible through the resolution boundary, this should be a structural fact rather than a check somebody has to remember to maintain; state which of the two the implementation achieves. MEASURED STARTING POINT, unchanged and still true: there are zero images in this product at any layer -- no next/image, no img tag, and no poster, artwork, backdrop or thumbnail key anywhere in packages/contracts/src. Posters are CSS gradients.",
       "notes": "Acceptance reconciled in round 83 on gpt-architect's ruling after a round-83 audit found the original wording would have put a URL into the one contract whose header promises there is none, and would have stood a second artwork vocabulary beside the reviewed opaque-reference one in @liberty/catalog-ingestion. The reviewer ruled: do not claim under the old acceptance, preserve the opaque-reference architecture, and resolve the reference behind an authorized boundary. An architecture-review gate was added because the task now introduces a resolution boundary rather than a field.",
-      "owner": null,
+      "owner": "claude-frontend",
       "gateResults": {},
-      "updatedAt": "2026-09-23T09:46:11.048999Z"
+      "updatedAt": "2026-09-27T02:22:44.413Z",
+      "implementationAgent": "claude-frontend",
+      "implementationBaseSha": "d4997f2c666160ecca53d01321abc109696f8730"
     },
     {
       "id": "PW-0303",

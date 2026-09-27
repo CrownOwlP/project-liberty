@@ -1,0 +1,59 @@
+/*
+ * Scoped to the artwork surface (PW-0302).
+ *
+ * A CSS module rather than additions to `globals.css`, for the two reasons
+ * `search.module.css` and `title.module.css` both record. The narrow one:
+ * `app/globals.css` is outside this task's allowed paths, and it is held by
+ * PW-0310. The durable one: three rules do not need to become global class names
+ * every future surface has to avoid colliding with.
+ *
+ * `.poster` ITSELF IS NOT REDEFINED HERE, and that is the whole design. The
+ * global `.poster` owns the box -- the 16/10 ratio, the radius, the border and
+ * the gradient, including the `:nth-child` variants that give adjacent cards
+ * different hues. This module adds a containing block on top of it and lays one
+ * image inside. So the gradient is not replaced by the image; it sits BEHIND it,
+ * which is what makes the fallback free: an image that has not arrived, or that
+ * 404s because the operator's store does not hold it, leaves the designed
+ * gradient showing rather than a hole. A broken-image icon never appears,
+ * because the `img` carries `alt=""` and a browser renders nothing for a
+ * decorative image it could not load.
+ */
+
+/*
+ * Turns the existing `.poster` into a containing block, and clips to its radius.
+ *
+ * `overflow: hidden` is doing real work rather than tidying: `.poster` has a
+ * 14px radius and an absolutely-positioned child does not inherit it, so without
+ * this the image would be a square-cornered rectangle sitting inside a rounded
+ * card -- correct in every measurement and obviously wrong to look at.
+ */
+.frame {
+  position: relative;
+  overflow: hidden;
+}
+
+/*
+ * The image, filling the frame.
+ *
+ * `object-fit: cover` rather than `contain`, and the trade is deliberate. A
+ * poster is roughly 2:3 and this frame is 16:10, so neither choice shows the
+ * whole image at its own shape: `contain` letterboxes it against the gradient,
+ * which reads as a rendering fault, and `cover` crops top and bottom, which is
+ * what every catalog shelf in the industry does and what artwork is composed
+ * for. `cover` also guarantees the frame is filled, so the gradient behind is
+ * never half-visible -- it is either the whole poster or the whole fallback,
+ * never a seam between them.
+ *
+ * `display: block` because an inline image sits on the text baseline and leaves
+ * a few pixels of descender space below it, which here would show as a thin band
+ * of gradient along the bottom edge of every card.
+ */
+.image {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border: 0;
+}

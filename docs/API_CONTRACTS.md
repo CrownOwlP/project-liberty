@@ -508,7 +508,16 @@ Response:
           "genre": "Sci-fi",
           "releaseYear": 2024,
           "runtimeMinutes": 128,
-          "episodeCount": null
+          "episodeCount": null,
+          "artwork": [
+            {
+              "role": "poster",
+              "assetRef": "aurora-fall-poster",
+              "width": 400,
+              "height": 600,
+              "rights": "owned"
+            }
+          ]
         }
       ]
     },
@@ -533,6 +542,41 @@ Response:
 }
 ```
 
+### `artwork` (PW-0302)
+
+**An artwork entry names an image. It never says where to fetch one.** `assetRef` is an
+opaque lower-case token — `^[a-z0-9]+(?:-[a-z0-9]+)*$` — and the exclusions are the
+contract: no `:` so no scheme, no `/` or `\` so no host and no path, no `.` so no
+traversal and no filename, no `%` so nothing that decodes into any of those later. A
+client turns a reference into an image by asking this application for it at
+`GET /api/v1/artwork/{assetRef}` (below), which is the only place in the product where
+an artwork origin exists. **No upstream image URL is published on any Liberty payload,
+and there is no field on one that could carry it.**
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `role` | `"poster" \| "backdrop" \| "still"` | What the image is for. Closed, because the role is what a surface selects on: an invented fourth role would be artwork that every surface silently ignores. |
+| `assetRef` | opaque token | Which image. Never an address. |
+| `width`, `height` | positive integers | The asset's intrinsic pixel size. **Required**, so any surface can reserve the right space without fetching the image first. |
+| `rights` | `"licensed" \| "owned" \| "public-domain"` | The basis the IMAGE is carried under, which is not necessarily the work's. **Required and not nullable** — the one rights field in this API with no undeclared case. A work with an undeclared basis is refused from browse and nothing is published; an image with an undeclared basis that reached a page would be somebody else's file served from our origin. |
+
+The **operator's rights-register reference is deliberately not published here**, though
+`@liberty/catalog-ingestion`'s internal artwork record does carry one. The category is
+the enforced half; the register handle is internal bookkeeping, and the browse payload
+already carries only the category for the work itself.
+
+`artwork` is **optional**, and this is the one field in these two shapes that is not
+"required and explicitly nullable". Absent means the producer states nothing about
+artwork; `[]` means it knows about artwork and this work has none. Ten producers of
+`CatalogItem` predate this field and none has an artwork concept — a required key would
+have forced each of them to assert "I looked and found none", which is exactly the
+fabrication the required-nullable rule exists to prevent. **Clients must treat absent,
+empty, and "no entry with the role I wanted" as one case**, and that case is a designed
+fallback rather than an error.
+
+`TitleDetail` carries the identical field with the identical meaning, from the same
+vocabulary in `@liberty/contracts/shared/artwork`.
+
 `CatalogItem` is a discriminated union on `kind`. Both shape fields are always present in every branch, explicitly `null` where they do not apply: a `movie` or `episode` carries `runtimeMinutes` with `episodeCount: null`, a `series` the inverse. A provider omitting a field is saying something different from one asserting the field does not apply, so neither field is optional.
 
 A rail with no surfaceable items is omitted entirely rather than returned empty, because an empty rail renders as a titled band of nothing. Clients must therefore treat rail presence as data, not layout: `rails` may itself be `[]` when nothing clears the rights gate, and that is a valid response meaning "genuinely nothing to show" — distinct from a failure, which is never an empty body.
@@ -556,6 +600,67 @@ Every failure answers `{ "error": "<code>" }`. Never an empty body, never a 200,
 The two 503s follow the precedent the profile, progress and watchlist routes set with `authentication_not_configured`: one status across this app for "this deployment is missing a dependency", so an operator reading across the surfaces sees a single signal. A reason this route does not recognise is answered **500** — the loader produced something the handler was not updated for, which is a server-side inconsistency and not the caller's problem. It is never silently downgraded to a 200.
 
 The response is validated against `catalogHomeResponseSchema` inside `loadHomeCatalog` before it leaves the server, and the HTTP half does not re-parse what the loader has already checked. Every branch, both refusals included, is served `cache-control: no-store`: a cached refusal outlives the configuration that caused it.
+
+## `GET /api/v1/artwork/{assetRef}`
+
+Purpose: **the artwork resolution boundary.** An opaque `assetRef` from a catalog or
+title payload goes in; the bytes of one image come out.
+
+This endpoint is **not a proxy, and cannot become one without a visible change**. It
+holds no HTTP client, constructs no URL and knows no host: it reads one file out of one
+directory an operator configured in `LIBERTY_ARTWORK_STORE`, which must be an absolute
+path. `docs/SECURITY.md`'s "never proxy arbitrary client-provided URLs" is therefore
+satisfied by absence rather than by a check — there is no address for a caller to
+influence, because there is no address. The reference cannot escape the store directory
+either, and again by construction rather than by sanitisation: the pattern admits no
+`/`, `\`, `.` or `%`, so concatenating it onto the directory has nowhere else to go.
+
+**When a real licensed provider arrives, the honest shape of that change is a second
+store kind behind this same boundary, with its own transport allowlist and its own
+security review — not a URL field on a payload.**
+
+**Authorization.** *Operator*-authorized: the only references that resolve are the ones
+whose bytes an operator placed in the store. Deliberately **not** user-authorized — this
+endpoint is exactly as open as the catalog surface that names its references, and
+`GET /api/v1/catalog/home` requires no session. A poster behind a gate the payload naming
+it does not have would produce a signed-out browse page of broken images while protecting
+nothing, since the metadata the image illustrates was already served. If the catalog
+surface gains a session requirement, this endpoint inherits it in the same change; an
+unguessable reference is not treated as protection in the meantime.
+
+**Success** is **200** with the image bytes and:
+
+| Header | Value | Why |
+| --- | --- | --- |
+| `content-type` | `image/avif`, `image/webp`, `image/png` or `image/jpeg` | **Read from the file's own header bytes, not from its extension.** A `.png` holding JPEG bytes is served as `image/jpeg`, because that response is true. Anything that is not one of these four raster formats is refused — which is what keeps an SVG, an HTML document or an executable unservable from this origin whatever it was named. **SVG is not on the allowlist**: it is a document, it can carry script, and serving one here would be a stored-XSS surface on the product's own domain. |
+| `cache-control` | `public, max-age=3600` | **The one documented exception to this document's blanket `no-store`.** An asset addressed by an opaque reference is immutable content; forbidding its cache would re-fetch every poster on every rail on every navigation. Refusals below are still `no-store`. |
+| `x-content-type-options` | `nosniff` | A browser that sniffed its own type would undo the identification above. |
+| `content-security-policy` | `default-src 'none'; sandbox` | Defence for the branch where something one day is a document. |
+| `cross-origin-resource-policy` | `same-origin` | Nothing outside this product has a reason to embed an operator's licensed artwork, and the licence is very often why. |
+
+Only `GET` is exported, so every other method is **405**. There is no upload path into
+the artwork store through this application.
+
+### Failure branches
+
+Every failure answers `{ "error": "<code>", "detail": "<prose for a human>" }`, served
+`no-store`. **Never an empty body** — an image endpoint is where that rule is most
+tempting to break, because the `<img>` that asked will not read the body. The body is for
+the operator with `curl` trying to find out why the posters are gradients.
+
+| Status | `error` | Meaning |
+| --- | --- | --- |
+| 400 | `artwork_reference_malformed` | The path segment is not an opaque reference. Barely reachable through the product — the client's src builder refuses to produce a path for one — and reachable by typing a URL, which is what it is for. The store is not touched. |
+| 404 | `artwork_not_found` | This store holds no asset under that reference. The only 404, and it does not distinguish "no such reference anywhere", because the store is the whole authority. |
+| 500 | `artwork_reference_ambiguous` | Two or more files in the store match one reference. A reference names one asset. Resolving it silently by extension order would serve a format the browser may not decode; resolving it by `Accept` would make this a content negotiator with a cache-key problem. |
+| 500 | `artwork_asset_too_large` | Over the 8 MiB ceiling. Refused **from the file's size, before its bytes are read**, which is the ordering that makes the cap a protection rather than a report. |
+| 500 | `artwork_media_type_unrecognised` | The bytes are not one of the four raster formats above. |
+| 500 | `artwork_store_unreadable` | The store did not answer — permissions, a broken mount. Kept distinct from a missing asset: opposite remedies. |
+| 503 | `artwork_store_not_configured` | `LIBERTY_ARTWORK_STORE` is unset. Every card falls back to its designed gradient, which is a complete state and not a broken one. |
+| 503 | `artwork_store_not_absolute` | It is set to a relative path. Refused rather than resolved, because `next dev`, a standalone `next start` and the desktop sidecar each run from a different working directory — the same setting would name three different places on three machines, and the failure would be silent. |
+
+The two 503s follow the same precedent as the catalog route's: one status across this app
+for "this deployment is missing a dependency".
 
 ## Profile, progress and watchlist routes
 

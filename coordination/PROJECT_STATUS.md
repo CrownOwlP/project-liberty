@@ -1,15 +1,15 @@
 # Project Liberty - Project Status
 
-> Generated 2026-09-27T01:33:20.213Z from the AI control plane.
+> Generated 2026-09-27T01:54:13.429Z from the AI control plane.
 
 **Overall completion:** 73/99 executable tasks (74%)
 
 ## Status summary
 
 - **BACKLOG:** 16
-- **READY:** 7
+- **READY:** 6
 - **CLAIMED:** 0
-- **IN_PROGRESS:** 0
+- **IN_PROGRESS:** 1
 - **REVIEW:** 1
 - **BLOCKED:** 2
 - **DONE:** 73
@@ -32,17 +32,17 @@
 ## Active work
 
 - **PW-0102** [REVIEW] A Tauri v2 shell that owns the sidecar's lifetime — owner: claude-infra
+- **PW-0302** [IN_PROGRESS] Artwork, end to end, because a media application without images is a list — owner: claude-frontend
 
 ## Dispatch classification
 
-- **READY_AND_EXECUTABLE:** 7
+- **READY_AND_EXECUTABLE:** 6
 - **READY_BUT_EXTERNAL:** 0
 - **BLOCKED:** 2
 - **BACKLOG (dependency-gated):** 16
 
 ## Recommended executable wave
 
-- **PW-0302** -> claude-frontend (P0/Frontend) Artwork, end to end, because a media application without images is a list
 - **PW-0305** -> claude-frontend (P0/Frontend) Continue watching: resume where the viewer left off
 - **PW-0401** -> claude-backend (P1/Backend) The authenticated backend the desktop build talks to
 
@@ -59,7 +59,7 @@ No READY work is waiting on an external agent lane.
 
 - **gpt-architect:** 0/6 active (external lane; not locally executable)
 - **claude-lead:** 0/2 active
-- **claude-frontend:** 0/2 active
+- **claude-frontend:** 1/2 active
 - **claude-backend:** 0/2 active
 - **claude-media:** 0/2 active
 - **claude-test:** 0/1 active

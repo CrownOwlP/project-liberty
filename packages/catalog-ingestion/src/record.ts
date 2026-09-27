@@ -1,4 +1,8 @@
 import { z } from "zod";
+import {
+  artworkAssetRefSchema,
+  artworkRoleSchema
+} from "@liberty/contracts/shared/artwork";
 import { normalizedContentIdSchema } from "@liberty/contracts/shared/ids";
 import { contentRightsSchema } from "@liberty/contracts/shared/rights";
 
@@ -145,16 +149,40 @@ export type IngestedRightsBasis = z.infer<typeof ingestedRightsBasisSchema>;
  * `assetRef` IS AN OPAQUE INTERNAL IDENTIFIER AND NEVER A URL. A provider's
  * image CDN link is a media address in a catalog payload, and this package has
  * nowhere to put one. What an operator does with the reference -- resolve it
- * against their own asset store, or nothing at all -- is outside this boundary.
- * `project.ts` drops artwork entirely on the way to `CatalogItem`, which has no
- * image field, so today artwork is ingested and NOT delivered. That is the
- * "or they do not arrive" half of the requirement, made structural.
+ * against their own asset store -- is decided at the artwork resolution
+ * boundary in `apps/web`, which PW-0302 built and which is the only place in the
+ * product an artwork origin exists.
+ *
+ * THE ROLE ENUM AND THE REFERENCE PATTERN ARE NOW IMPORTED, NOT SPELLED HERE
+ * (PW-0302). They were written in this file first, and `CatalogItem` grew an
+ * artwork field afterwards; leaving the definitions here would have meant the
+ * published browse vocabulary either importing upward out of `@liberty/contracts`
+ * into an ingestion package, which inverts the dependency, or restating the
+ * pattern -- two spellings of "what an opaque reference is", free to drift, in
+ * the two modules that most need to agree. They moved to
+ * `@liberty/contracts/shared/artwork`, beside `rights` and `ids`, and this file
+ * reaches them there. Nothing this schema ACCEPTS changed: the enum has the same
+ * three members and the pattern is the same one, moved.
+ *
+ * WHAT IS DELIBERATELY NOT ADOPTED IS `artworkReferenceSchema` ITSELF, because
+ * the two compositions differ in one field and must. This record carries
+ * `ingestedRightsBasisSchema` -- the category AND the opaque pointer into the
+ * operator's rights register -- because an ingestion record is internal and the
+ * register handle is the thing that makes an image's basis auditable. The browse
+ * schema carries `contentRightsSchema` alone: the category and nothing else,
+ * because a public payload has no business naming a row in the operator's
+ * register. The narrowing happens on the way out, in the same direction
+ * `project.ts` already narrows the work's own basis, and it is stated in both
+ * modules so neither side can be changed believing the other agreed.
+ *
+ * `project.ts` still drops artwork on the way to `CatalogItem`. That projection
+ * is outside PW-0302's surface and is named in its handoff: the field exists on
+ * the browse shape and the ingestion path does not yet fill it, so ingested
+ * artwork remains ingested and NOT delivered until that projection is written.
  */
 export const artworkRefSchema = z.object({
-  role: z.enum(["poster", "backdrop", "still"]),
-  assetRef: z
-    .string()
-    .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "must be an opaque lower-case asset reference"),
+  role: artworkRoleSchema,
+  assetRef: artworkAssetRefSchema,
   rights: ingestedRightsBasisSchema
 });
 export type ArtworkRef = z.infer<typeof artworkRefSchema>;

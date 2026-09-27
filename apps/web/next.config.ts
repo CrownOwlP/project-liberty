@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { ARTWORK_ROUTE_PREFIX } from "./src/app/api/v1/artwork/store";
 import {
   applyDesktopModuleResolution,
   buildTargetFrom,
@@ -71,6 +72,49 @@ export function nextConfigFor(target: BuildTarget): NextConfig {
      */
     allowedDevOrigins: ["127.0.0.1"],
     reactStrictMode: true,
+    /*
+     * THE IMAGE LOADER MAY REACH THE ARTWORK BOUNDARY AND NOTHING ELSE (PW-0302).
+     *
+     * WHICH OF THE TWO THIS IS, because the task asks. The product's ability to
+     * render an arbitrary remote image is closed STRUCTURALLY, not here: no
+     * payload in this product has a field that can carry an image address --
+     * `@liberty/contracts/shared/artwork` carries an opaque reference whose
+     * pattern excludes `:`, `/` and `.` -- and the one function that turns a
+     * reference into a URL, `artworkPathFor`, returns a relative path. There is
+     * nowhere for a remote host to enter, so there is nothing for an allowlist
+     * to allow.
+     *
+     * THIS BLOCK IS THEREFORE A STATED INVARIANT OVER A COMPONENT THIS PRODUCT
+     * DOES NOT CURRENTLY USE, and it is worth having for exactly that reason.
+     * `next/image` is the obvious thing for the next person to reach for, it
+     * takes a `src` string, and its defaults are permissive in the two
+     * directions that matter: `localPatterns` defaults to every path on this
+     * origin, and `remotePatterns` is the only thing standing between a
+     * `<Image src={someUrl}>` and an arbitrary fetch. Narrowing both now means
+     * the guard predates the mistake instead of being added after it.
+     *
+     *   - `remotePatterns: []` -- no remote host is permitted. Never a wildcard,
+     *     and an empty list is not the same as an absent key to a reader: it
+     *     states the decision.
+     *   - `localPatterns` -- narrowed from the framework default of every path
+     *     to this boundary's prefix, with `search: ""` so a query string cannot
+     *     be smuggled through. The optimizer could otherwise be pointed at any
+     *     route in this application, including ones that answer JSON about a
+     *     signed-in account.
+     *   - `dangerouslyAllowSVG: false` -- the default, restated because this is
+     *     the key whose name warns about the consequence. The artwork boundary
+     *     refuses SVG by its own allowlist and by reading the file's header;
+     *     this makes the framework agree rather than rely on that.
+     *
+     * The prefix is IMPORTED from the boundary that serves it rather than typed
+     * again here, so a route that moves cannot leave this pattern pointing at
+     * where it used to be.
+     */
+    images: {
+      remotePatterns: [],
+      localPatterns: [{ pathname: `${ARTWORK_ROUTE_PREFIX}**`, search: "" }],
+      dangerouslyAllowSVG: false
+    },
     transpilePackages: [
       "@liberty/contracts",
       "@liberty/media-engine",

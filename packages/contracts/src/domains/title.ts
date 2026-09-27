@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { artworkListSchema } from "../shared/artwork";
 import { normalizedContentIdSchema } from "../shared/ids";
 import { contentRightsSchema } from "../shared/rights";
 
@@ -84,7 +85,25 @@ const titleDetailBaseShape = {
   releaseYear: z.number().int().min(1888),
   /** `null` means no synopsis was supplied, never "there is no story here". */
   synopsis: z.string().min(1).nullable(),
-  technical: titleTechnicalMetadataSchema
+  technical: titleTechnicalMetadataSchema,
+  /**
+   * Opaque artwork references, never image addresses. Same vocabulary as
+   * `CatalogItem` carries, reached from the same leaf -- see `../shared/artwork`.
+   *
+   * Carried on the base shape rather than per kind because a still belongs to an
+   * episode, a backdrop to a movie or a series, and a poster to all three: the
+   * ROLE already distinguishes them, so splitting the field per branch would
+   * encode the same distinction twice and let the two disagree.
+   *
+   * THE TITLE SURFACE DOES NOT YET RENDER THIS. PW-0302 delivers the artwork UI
+   * on the browse card, which is the component both the rails and the search
+   * results use; the title page's hero has no poster slot, so rendering there is
+   * a `.hero` layout change in `app/globals.css` -- a file held by another task
+   * -- rather than a component change. The contract carries the field because
+   * the contract is where the vocabulary is decided; the hero is follow-up, and
+   * it is named as such rather than left to be rediscovered.
+   */
+  artwork: artworkListSchema
 };
 
 /**
