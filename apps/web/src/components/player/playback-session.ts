@@ -66,13 +66,21 @@ export interface PlaybackSession {
 }
 
 /**
- * The three outcomes PL-0501 will publish, with `reasons` on every branch.
+ * The four outcomes PL-0501 publishes, with `reasons` on every branch.
  *
  * Not optional on any branch, for the reason PL-0501's acceptance states: a
  * denial with no reason trail violates invariant 4 exactly as much as a grant
  * with none.
+ *
+ * `unauthenticated` JOINED IN PW-0312 and is carried here even though this
+ * module's own state machine never sees one -- the watch route answers a
+ * signed-out viewer with a sign-in panel and the player is never mounted. It is
+ * here because this type's stated purpose is to mirror the wire contract's
+ * branches so the eventual adapter is "a rename rather than a redesign", and a
+ * mirror missing a branch is the thing that makes that adapter a redesign.
  */
 export type PlaybackSessionOutcome =
   | { readonly outcome: "granted"; readonly session: PlaybackSession; readonly reasons: readonly string[] }
   | { readonly outcome: "denied"; readonly reasons: readonly string[] }
-  | { readonly outcome: "unavailable"; readonly reasons: readonly string[] };
+  | { readonly outcome: "unavailable"; readonly reasons: readonly string[] }
+  | { readonly outcome: "unauthenticated"; readonly reasons: readonly string[] };

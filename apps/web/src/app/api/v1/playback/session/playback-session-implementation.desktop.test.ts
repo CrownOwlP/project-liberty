@@ -89,6 +89,25 @@ const MALFORMED: PlaybackSessionResponse = {
   reasons: [{ code: "request_malformed", candidateId: null, detail: "request: expected object" }]
 };
 
+/**
+ * What an authenticated backend answers a signed-out caller (PW-0312).
+ *
+ * Written out here rather than built with `unauthenticatedSession()` for the
+ * reason every other fixture in this file is: these are the BYTES a backend
+ * sends, and a fixture that shared a constructor with the forwarder would make
+ * "the forwarder relays it" a statement about one function calling itself.
+ */
+const UNAUTHENTICATED: PlaybackSessionResponse = {
+  outcome: "unauthenticated",
+  reasons: [
+    {
+      code: "not_authenticated",
+      candidateId: null,
+      detail: "this request carried no valid session; sign in to continue"
+    }
+  ]
+};
+
 interface Call {
   readonly url: string;
   readonly method: string | undefined;
@@ -187,7 +206,8 @@ describe("the contract in front of the boundary is the same contract", () => {
     const cases: readonly (readonly [PlaybackSessionResponse, number])[] = [
       [GRANTED, 200],
       [DENIED, 403],
-      [MALFORMED, 400]
+      [MALFORMED, 400],
+      [UNAUTHENTICATED, 401]
     ];
 
     for (const [payload, status] of cases) {
@@ -203,6 +223,54 @@ describe("the contract in front of the boundary is the same contract", () => {
       expect(response.headers.get("cache-control")).toBe("no-store");
       expect(await decision(response)).toEqual(payload);
     }
+  });
+
+  it("relays a signed-out backend refusal as a signed-out answer (PW-0312)", async () => {
+    /*
+     * THE DEFECT THIS CLOSES, FROM THE FORWARDER'S SIDE. The backend used to
+     * answer a signed-out caller 401 with `{ error, detail }` -- not a member
+     * of the published union -- so the check below, which is the forwarder
+     * refusing to relay bytes it could not parse, turned it into
+     * `unavailable`/`provider_unavailable`. That check was right and stays
+     * exactly as it was; what changed is that the backend now speaks in the
+     * contract, so there is nothing left to swallow.
+     *
+     * THE BACKEND'S 401 IS STILL NOT READ. It answers 200 below on purpose:
+     * the status on this side is derived from the OUTCOME, as it is for every
+     * other branch, so a backend and a client can never disagree about what a
+     * response meant.
+     */
+    const remote = backend(answering(UNAUTHENTICATED, 200));
+    const response = playbackSessionResponse(
+      await decidePlaybackSession(post(REQUEST_BODY), {
+        fetch: remote.fetch,
+        backendOrigin: BACKEND
+      })
+    );
+
+    expect(response.status).toBe(401);
+    const relayed = await decision(response);
+    expect(relayed).toEqual(UNAUTHENTICATED);
+    expect(relayed.reasons[0].code).not.toBe("provider_unavailable");
+  });
+
+  it("still swallows an OFF-CONTRACT refusal, which is why the contract had to change", async () => {
+    /*
+     * NON-VACUITY FOR THE TEST ABOVE. This is the exact body the backend used
+     * to send, and it still becomes an honest `unavailable` -- so the previous
+     * test passes because the backend was corrected, not because the forwarder
+     * was loosened to let authentication bodies through.
+     */
+    const remote = backend(
+      answering({ error: "not_authenticated", detail: "the caller must sign in" }, 401)
+    );
+    const relayed = await decidePlaybackSession(post(REQUEST_BODY), {
+      fetch: remote.fetch,
+      backendOrigin: BACKEND
+    });
+
+    expect(relayed.outcome).toBe("unavailable");
+    expect(relayed.reasons[0].code).toBe("provider_unavailable");
   });
 
   it("relays the protection descriptor verbatim", async () => {

@@ -13,7 +13,7 @@
  * `docs/API_CONTRACTS.md` and the contract module's stated invariants, and they
  * are deliberately the PROPERTIES rather than the schema:
  *
- *   - exactly one of three outcomes, discriminated on `outcome`;
+ *   - exactly one of FOUR outcomes, discriminated on `outcome`;
  *   - a non-empty reason trail on EVERY branch, including the ones that refuse;
  *   - reasons are codes, not sentences;
  *   - the HTTP status is derivable from the outcome, so the wire status and the
@@ -32,7 +32,16 @@
  * the suite loudly; an import that got it wrong agrees with production forever.
  * ---------------------------------------------------------------------- */
 
-export type PlaybackOutcome = "granted" | "denied" | "unavailable";
+/**
+ * `unauthenticated` JOINED IN PW-0312, and it is restated here by hand for the
+ * reason the header gives about everything else in this file: if this list were
+ * imported, the commit that added a fourth outcome would have widened the
+ * server and the check on the server in one move, and the suite would have
+ * stayed green through a contract change nobody outside that commit had agreed
+ * to. Written out, a new outcome reaching the wire without this file changing
+ * is a failure -- which is what a cross-target contract gate is for.
+ */
+export type PlaybackOutcome = "granted" | "denied" | "unavailable" | "unauthenticated";
 
 export interface PlaybackReason {
   readonly code: string;
@@ -92,8 +101,15 @@ export function playbackSessionViolations(body: unknown): string[] {
   if (!isRecord(body)) return ["response body is not a JSON object"];
 
   const outcome = body["outcome"];
-  if (outcome !== "granted" && outcome !== "denied" && outcome !== "unavailable") {
-    problems.push(`outcome is ${JSON.stringify(outcome)}, not one of granted/denied/unavailable`);
+  if (
+    outcome !== "granted" &&
+    outcome !== "denied" &&
+    outcome !== "unavailable" &&
+    outcome !== "unauthenticated"
+  ) {
+    problems.push(
+      `outcome is ${JSON.stringify(outcome)}, not one of granted/denied/unavailable/unauthenticated`
+    );
   }
 
   const reasons = body["reasons"];
@@ -226,6 +242,10 @@ function grantedSessionViolations(session: unknown): string[] {
 /**
  * The status a response of this shape must have arrived with.
  *
+ * `unauthenticated` does not split: there is one reason code under it and one
+ * status, because the four ways a session can fail to verify are deliberately
+ * indistinguishable on the wire -- see `contract.ts`'s `NOT_AUTHENTICATED_DETAIL`.
+ *
  * `denied` splits on the primary reason because the codes mean different things
  * downstream: 413 says the envelope was refused unread, 400 tells a client to
  * fix its request, 403 is a rights signal that lands in the metrics a rights
@@ -247,6 +267,15 @@ export function expectedStatus(body: PlaybackSessionResponseShape): number {
       return primary !== undefined && REQUEST_LEVEL_DENIALS.includes(primary.code) ? 400 : 403;
     case "unavailable":
       return primary !== undefined && primary.code === "content_not_found" ? 404 : 503;
+    case "unauthenticated":
+      /*
+       * 401 AND NOT 403 (PW-0312). The split this whole function measures is a
+       * REMEDY split, and these two are the pair most often confused: 401 says
+       * "we do not know who you are, say so and try again", which a viewer can
+       * act on, and 403 says "we know, and the answer is no", which they
+       * cannot. Restated here rather than imported, like every other branch.
+       */
+      return 401;
   }
 }
 

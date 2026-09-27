@@ -1,8 +1,13 @@
 import { handlePlaybackSessionRequest } from "@liberty/web/playback-session/handler";
+import {
+  playbackSessionHttpStatus,
+  unauthenticatedSession
+} from "@liberty/web/playback-session/contract";
 import type { RequestAccountRefusalReason } from "@liberty/web/session/account";
 import {
   authenticateCaller,
   authenticationRefusalStatus,
+  type AuthenticatedCaller,
   type AuthenticationOutcome,
   type CallerAuthenticator
 } from "./authentication";
@@ -44,8 +49,27 @@ import {
  * carrying no JSON at all.
  * ---------------------------------------------------------------------- */
 
-/** The decision, injected for tests. The default is the application's own. */
-export type SessionDecider = (request: Request) => Promise<Response>;
+/**
+ * The decision, injected for tests. The default is the application's own.
+ *
+ * IT TAKES THE CALLER THIS SERVICE ALREADY ESTABLISHED (PW-0312). The
+ * application's resolving implementation now authenticates too -- it has to,
+ * because under the web target nothing else does -- and handing it the identity
+ * this endpoint just verified is what keeps that from becoming a SECOND session
+ * store read on every forwarded request. It is not a widening: the injection
+ * point is the same options bag a test uses, nothing on the wire reaches it, and
+ * the only value ever passed is one `authenticateCaller` produced from this
+ * request's own headers a few lines above.
+ */
+export type SessionDecider = (request: Request, caller: AuthenticatedCaller) => Promise<Response>;
+
+/**
+ * The real decision: the application's route envelope, told who is asking.
+ */
+const decideWithApplication: SessionDecider = (request, caller) =>
+  handlePlaybackSessionRequest(request, {
+    authenticate: async () => ({ ok: true, account: caller.account, detail: caller.detail })
+  });
 
 export interface SessionEndpointDependencies {
   readonly authenticate?: CallerAuthenticator;
@@ -65,35 +89,62 @@ export interface SessionEndpointDependencies {
  * caller-supplied header value back into a response body is a habit worth not
  * having in a service that faces a forwarder.
  *
- * The real one: THIS BODY IS NOT PART OF THE PUBLISHED CONTRACT AND MUST NOT
- * LOOK LIKE IT IS. `playbackSessionReasonCodeSchema` is a closed vocabulary
- * with no authentication member, and the response status in that contract is
- * derived from the OUTCOME alone -- `granted`, `denied`, `unavailable` -- so
- * there is no shape in it that means 401. The desktop forwarder validates every
- * backend body against that schema and turns anything else into an honest
- * `unavailable`. So these bytes reach an operator with `curl` and a log, never
- * a client that parses them, and they are written for that reader.
+ * THE REAL ONE: THESE BODIES ARE NOT PART OF THE PUBLISHED CONTRACT AND MUST
+ * NOT LOOK LIKE IT. The desktop forwarder validates every backend body against
+ * `playbackSessionResponseSchema` and turns anything else into an honest
+ * `unavailable`, which is the right answer for both of the reasons still
+ * answered this way: a backend with no identity store and a development header
+ * that is not well formed are an operator's problem and a developer's, and
+ * neither is a state a viewer can act on. So these bytes reach an operator with
+ * `curl` and a log, never a client that parses them, and they are written for
+ * that reader.
  *
- * THE COST IS REAL AND IS NOT HIDDEN: a desktop viewer who is signed out sees
- * "unavailable" rather than "sign in", because the contract has no way to say
- * the second. Adding one is a published-contract change under invariant 5 --
- * `contract.ts`, the status derivation and `docs/API_CONTRACTS.md` together --
- * which is a wider surface than this task owns and is raised for gpt-architect
- * as a follow-up rather than taken unilaterally here. It is the same change
- * PW-0403 made deliberately for the request-context vocabulary, and the ruling
- * there was "do not collapse these states".
+ * `not_authenticated` IS NO LONGER AMONG THEM (PW-0312). It was, and the cost
+ * was recorded here in the round that built this endpoint: a signed-out desktop
+ * viewer saw "unavailable" rather than "sign in", because the contract had no
+ * way to say the second and the forwarder correctly refused to invent one.
+ * gpt-architect's round-90 ruling assigned that corrective to PW-0312, the
+ * contract now carries an `unauthenticated` outcome, and `unauthenticatedRefusal`
+ * below answers with it -- so the desktop target and the web target produce the
+ * same outcome, the same reason code and the same detail for the same fact.
  */
-const REFUSAL_DETAIL: Readonly<Record<RequestAccountRefusalReason, string>> = {
-  not_authenticated:
-    "this request carried no valid session; the caller must sign in before a playback session can be issued",
+const REFUSAL_DETAIL: Readonly<
+  Record<Exclude<RequestAccountRefusalReason, "not_authenticated">, string>
+> = {
   authentication_not_configured:
     "this backend has no identity store configured, so no caller can be authenticated",
   development_identifier_malformed:
     "a development identity header on this request is not a well-formed identifier"
 };
 
+/**
+ * A signed-out caller, IN THE PUBLISHED CONTRACT (PW-0312).
+ *
+ * THE BODY AND THE STATUS BOTH COME FROM `contract.ts` -- `unauthenticatedSession`
+ * builds it and `playbackSessionHttpStatus` derives the 401 -- rather than being
+ * written out here. That is the same discipline `handler.ts` applies to every
+ * other outcome, and it is what makes "the forwarder relays this unchanged" a
+ * property of one definition rather than an agreement between two files that
+ * can drift. `authenticationRefusalStatus("not_authenticated")` is 401 as well;
+ * `session-endpoint.test.ts` asserts the two agree, so the day one of them
+ * moves is the day a test says so.
+ *
+ * IT SAYS NOTHING ABOUT CONTENT, and structurally cannot: at the moment it is
+ * produced the request body is still an unconsumed stream, so there is no
+ * content id in scope for it to differ on.
+ */
+function unauthenticatedRefusal(): Response {
+  const body = unauthenticatedSession();
+  return new Response(JSON.stringify(body), {
+    status: playbackSessionHttpStatus(body),
+    headers: { "content-type": "application/json", "cache-control": "no-store" }
+  });
+}
+
 function refusalResponse(outcome: Extract<AuthenticationOutcome, { ok: false }>): Response {
   const { reason } = outcome.refusal;
+  if (reason === "not_authenticated") return unauthenticatedRefusal();
+
   const body = JSON.stringify({ error: reason, detail: REFUSAL_DETAIL[reason] });
   return new Response(body, {
     status: authenticationRefusalStatus(reason),
@@ -133,9 +184,9 @@ export async function handleSessionRequest(
 
   observe(`playback session authenticated: ${outcome.caller.detail}`);
 
-  const decide = dependencies.decide ?? handlePlaybackSessionRequest;
+  const decide = dependencies.decide ?? decideWithApplication;
   try {
-    return await decide(request);
+    return await decide(request, outcome.caller);
   } catch {
     /*
      * `handlePlaybackSessionRequest` is documented not to throw, and this is

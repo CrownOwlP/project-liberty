@@ -8,6 +8,8 @@ import {
   deniedSession,
   grantedSession,
   playbackReason,
+  unauthenticatedSession,
+  NOT_AUTHENTICATED_DETAIL,
   playbackSessionHttpStatus,
   playbackSessionRequestSchema,
   playbackSessionReasonCodeSchema,
@@ -389,6 +391,44 @@ describe("the decision, mapped onto what the page renders", () => {
     ).toBe("error");
   });
 
+  it("renders a signed-out session as an ACTIONABLE state, not as an error", () => {
+    /*
+     * THE DEFECT THIS CLOSES (PW-0312). Before the contract carried a fourth
+     * outcome, a signed-out desktop viewer reached this mapping as
+     * `unavailable`/`provider_unavailable` -- the forwarder's honest answer to
+     * a backend body it could not parse -- and the page told them the playback
+     * service was down. The remedy was theirs all along and they were never
+     * offered it.
+     */
+    const result = watchResultFor(CONTENT_ID, unauthenticatedSession());
+
+    expect(result.status).toBe("signed-out");
+    if (result.status !== "signed-out") return;
+    /* The content id survives, because the sign-in link carries it as the
+     * destination: signing in returns the viewer to the title they asked for
+     * rather than to the home page. */
+    expect(result.contentId).toBe(CONTENT_ID);
+  });
+
+  it("carries no reason trail onto the signed-out branch, deliberately", () => {
+    /*
+     * The trail on this outcome is one line and it is the SAME line whether the
+     * cookie was absent, expired, revoked or malformed -- `contract.ts`'s
+     * `NOT_AUTHENTICATED_DETAIL`. A page that rendered a different sentence per
+     * cause would rebuild, in the UI, the oracle that constant exists to
+     * prevent, so this branch is a status and a content id and nothing else.
+     */
+    const result = watchResultFor(
+      CONTENT_ID,
+      unauthenticatedSession(
+        playbackReason("not_authenticated", NOT_AUTHENTICATED_DETAIL),
+        playbackReason("not_authenticated", "a second line nobody should see")
+      )
+    );
+
+    expect(result).toEqual({ status: "signed-out", contentId: CONTENT_ID });
+  });
+
   it("renders a denial as a denial, with the whole trail", () => {
     const response = deniedSession(
       playbackReason("rights_not_established", "no candidate carries a playable basis"),
@@ -432,6 +472,16 @@ describe("the decision, mapped onto what the page renders", () => {
         ["not-found", "not-configured", "error"],
         `unavailable/${code}`
       ).toContain(unavailable.status);
+
+      /* THE FOURTH BRANCH IS FLAT BY CONSTRUCTION (PW-0312): whatever reason
+       * code arrives on it, the page answers `signed-out`. That is not a gap in
+       * the exhaustiveness above -- it is the assertion that no reason code can
+       * steer the signed-out branch anywhere else, which is what keeps the
+       * refusal from becoming an oracle. */
+      expect(
+        watchResultFor(CONTENT_ID, unauthenticatedSession(playbackReason(code, "detail"))),
+        `unauthenticated/${code}`
+      ).toEqual({ status: "signed-out", contentId: CONTENT_ID });
 
       /* No branch is ever reason-less; product invariant 4 applies to the panel
        * exactly as it applies to the wire. */

@@ -96,22 +96,59 @@ exist.
   id, no provider configured, the provider could not answer, or nothing survived
   eligibility and transport. HTTP **404** when the primary reason is
   `content_not_found`, **503** otherwise.
+- **`unauthenticated`** — we do not know who is asking, and this deployment has a
+  way for them to say. The primary reason is always `not_authenticated`. HTTP
+  **401**. *(Added by PW-0312; see* The caller is authenticated first *below.)*
 
-The last two are a *remedy* distinction, not a severity one. A viewer told "try
+All four are a *remedy* distinction, not a severity one. A viewer told "try
 again in a moment" about something we will never be entitled to play will keep
-trying, and a viewer told "you may not watch this" about a CDN blip will stop.
-The status is derived from the response by `playbackSessionHttpStatus`, so the
-wire status and the outcome cannot disagree.
+trying, and a viewer told "you may not watch this" about a CDN blip will stop; a
+signed-out viewer told either one is left with nothing they can do, which is why
+the fourth branch was added rather than folded into one of the first three. The
+status is derived from the response by `playbackSessionHttpStatus`, so the wire
+status and the outcome cannot disagree.
 
-`denied` and `unavailable` carry `reasons` and nothing else — there is no
-`session` field on them, empty or otherwise.
+`denied`, `unavailable` and `unauthenticated` carry `reasons` and nothing else —
+there is no `session` field on them, empty or otherwise.
+
+### The caller is authenticated first
+
+**Before the request body is read.** The gate runs in the *resolving* half of
+the build-target split (`playback-session-implementation.ts`), not in the shared
+envelope (`handler.ts`): the desktop sidecar holds no identity store and
+forwards precisely so that it needs none, so a gate in the envelope would refuse
+every desktop request locally and never reach the backend. Under the desktop
+target the resolving half runs on the authenticated backend, where
+`apps/backend/src/session-endpoint.ts` authenticates from headers alone and then
+hands the established identity inward — one gate, one place, both targets.
+
+Because the gate runs before the body is parsed, a signed-out caller's answer is
+a function of its headers alone. It **cannot** vary with the content id, so it
+cannot report whether a title exists. The reason detail is one fixed sentence for
+all four ways a session can fail to verify — absent, expired, revoked, malformed
+— for the same non-oracle reason `resolveRequestAccount` gives.
+
+Three states are deliberately kept apart:
+
+| What happened | Outcome | Status |
+| --- | --- | --- |
+| A session was required and none verified | `unauthenticated` / `not_authenticated` | **401** |
+| An identity store exists and could not be consulted | `unavailable` / `provider_unavailable` | **503** |
+| This deployment has no identity system at all | *unchanged* — the route decides as it did before the gate existed | — |
+
+The third row is conditional on an identity system **existing**. A deployment
+with none has no sign-in for anyone to perform, so answering `unauthenticated`
+would be the same dead end pointing the other way; `/profiles` makes the same
+call when it falls through to the picker rather than to the sign-in panel on an
+`unavailable` account. It is also what keeps the production-mode e2e suite
+honest: CI declares no PostgreSQL service, so those runs have no identity system.
 
 ### `reasons` is non-empty on every branch
 
 Not an optional field on a shared envelope: a non-empty tuple
-(`z.array(...).nonempty()`) on each of the three branches, so a branch with no
+(`z.array(...).nonempty()`) on each of the four branches, so a branch with no
 reasons is not constructible, `reasons[0]` reads as a reason rather than as
-possibly-undefined, and the three constructors each take the primary reason as a
+possibly-undefined, and the four constructors each take the primary reason as a
 required positional argument. This is product invariant 4 enforced by the type: a
 denial with no trail breaks it exactly as badly as a grant with none.
 

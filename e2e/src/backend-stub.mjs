@@ -95,6 +95,29 @@ const CANNED = {
       ]
     }
   },
+  /*
+   * A SIGNED-OUT CALLER, AS THE AUTHENTICATED BACKEND ANSWERS ONE (PW-0312).
+   *
+   * This is the shape `apps/backend/src/session-endpoint.ts` produces when
+   * `resolveRequestAccount` refuses: a member of the published union, so the
+   * forwarder relays it as itself instead of swallowing it into an
+   * `unavailable`. The status here is 401 and the forwarder deliberately does
+   * not read it -- `handler.ts` derives the client-facing status from the
+   * outcome, which is what keeps the two targets from disagreeing.
+   */
+  "stub-unauthenticated": {
+    status: 401,
+    body: {
+      outcome: "unauthenticated",
+      reasons: [
+        {
+          code: "not_authenticated",
+          candidateId: null,
+          detail: "this request carried no valid session; sign in to continue"
+        }
+      ]
+    }
+  },
   /* Not a member of the response union. The forwarder must refuse to relay a
    * body it could not parse as a decision, rather than passing bytes through. */
   "stub-off-contract": { status: 200, body: { outcome: "granted", session: null } },

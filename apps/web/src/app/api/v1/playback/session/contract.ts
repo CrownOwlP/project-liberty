@@ -116,6 +116,23 @@ export const playbackSessionReasonCodeSchema = z.enum([
   "request_field_not_permitted",
   "request_body_too_large",
   "content_not_found",
+  /**
+   * The caller has no session, and this deployment has one to have (PW-0312).
+   *
+   * ADDED AS A DELIBERATE CONTRACT CHANGE under invariant 5, on gpt-architect's
+   * round-90 ruling, and it exists because the alternative was a lie. PW-0401's
+   * authenticated backend answers a signed-out caller 401 with a body that is
+   * not a member of this union; the desktop forwarder validates every backend
+   * body against the schema, fails, and produces `unavailable` with
+   * `provider_unavailable`. A viewer who needs to sign in was being told to
+   * wait for a provider -- the exact collapse the ruling forbids by name.
+   *
+   * DISTINCT FROM `provider_not_configured` AND `provider_unavailable`, which
+   * are the operator's and the network's problems. This one is the viewer's,
+   * and it is the only reason in this vocabulary whose remedy the viewer
+   * themselves can carry out.
+   */
+  "not_authenticated",
   "provider_not_configured",
   "provider_unavailable",
   "no_candidates_resolved",
@@ -375,23 +392,35 @@ export const PLAYBACK_SESSION_TTL_MS = 5 * 60 * 1000;
  * ---------------------------------------------------------------------- */
 
 /**
- * Three outcomes, and the distinction between the last two is a REMEDY
- * distinction rather than a severity one:
+ * FOUR outcomes, and every distinction between them is a REMEDY distinction
+ * rather than a severity one:
  *
- *   - `granted`     -- a session exists and these are its candidates.
- *   - `denied`      -- we refuse. Either the request is not one we accept, or
- *                      no candidate carries a rights basis we may play from.
- *                      Retrying changes nothing; the caller must change what it
- *                      asked for, or we must acquire rights.
- *   - `unavailable` -- we would have, and could not. Nothing is registered
- *                      under that id, the provider could not answer, or nothing
- *                      survived eligibility and transport. Retrying later is
- *                      sometimes reasonable.
+ *   - `granted`         -- a session exists and these are its candidates.
+ *   - `denied`          -- we refuse. Either the request is not one we accept,
+ *                          or no candidate carries a rights basis we may play
+ *                          from. Retrying changes nothing; the caller must
+ *                          change what it asked for, or we must acquire rights.
+ *   - `unavailable`     -- we would have, and could not. Nothing is registered
+ *                          under that id, the provider could not answer, or
+ *                          nothing survived eligibility and transport. Retrying
+ *                          later is sometimes reasonable.
+ *   - `unauthenticated` -- we do not know who is asking, and this deployment
+ *                          has a way for them to say. SIGNING IN IS THE REMEDY,
+ *                          and it is the only one on this list the viewer can
+ *                          carry out themselves.
  *
  * A viewer told "try again in a moment" about something we will never be
  * entitled to play will keep trying, and a viewer told "you may not watch this"
- * about a CDN blip will stop. Collapsing the two is the whole reason this is a
- * union and not a boolean.
+ * about a CDN blip will stop. Collapsing any two of these is the whole reason
+ * this is a union and not a boolean.
+ *
+ * THE FOURTH WAS ADDED BY PW-0312 RATHER THAN SQUEEZED INTO ONE OF THE FIRST
+ * THREE, and the choice is the union's own organising principle applied
+ * honestly. `denied` would tell a signed-out viewer that nothing can be done;
+ * `unavailable` would tell them to wait. Both are false and both leave them
+ * with no action. It is a new member of a discriminated union, so every
+ * exhaustive switch over it stops compiling until it is handled -- which is how
+ * the consumers of this type were FOUND rather than guessed at.
  *
  * `reasons[0]` is the PRIMARY reason -- the one that decided the outcome. The
  * rest are the trail behind it: candidates dropped, and why. Consumers may show
@@ -409,6 +438,10 @@ export const playbackSessionResponseSchema = z.discriminatedUnion("outcome", [
   }),
   z.object({
     outcome: z.literal("unavailable"),
+    reasons: reasonsSchema
+  }),
+  z.object({
+    outcome: z.literal("unauthenticated"),
     reasons: reasonsSchema
   })
 ]);
@@ -460,6 +493,31 @@ export function unavailableSession(
   ...rest: PlaybackSessionReason[]
 ): PlaybackSessionResponse {
   return { outcome: "unavailable", reasons: trail(primary, rest) };
+}
+
+/**
+ * The caller has no session (PW-0312).
+ *
+ * `NOT_AUTHENTICATED_DETAIL` is a CONSTANT rather than a sentence written at
+ * each call site, and the reason is the one `deploymentSessionAccount` gives
+ * about its own four indistinguishable failures: a detail that varied by call
+ * site would eventually vary by CAUSE, and the difference between "no cookie",
+ * "expired", "revoked" and "malformed" is exactly what an attacker holding a
+ * stolen cookie would like to learn. One string, from both targets, for all
+ * four.
+ */
+export const NOT_AUTHENTICATED_DETAIL =
+  "this request carried no valid session; sign in to continue";
+
+export function unauthenticatedSession(
+  primary: PlaybackSessionReason = {
+    code: "not_authenticated",
+    candidateId: null,
+    detail: NOT_AUTHENTICATED_DETAIL
+  },
+  ...rest: PlaybackSessionReason[]
+): PlaybackSessionResponse {
+  return { outcome: "unauthenticated", reasons: trail(primary, rest) };
 }
 
 /**
@@ -518,5 +576,16 @@ export function playbackSessionHttpStatus(response: PlaybackSessionResponse): nu
        * title does not exist because a provider timed out is how a viewer
        * concludes their library lost something. */
       return response.reasons[0].code === "content_not_found" ? 404 : 503;
+    case "unauthenticated":
+      /*
+       * 401, AND NOT 403. The two are routinely confused and the difference is
+       * exactly this union's remedy test: 401 is "we do not know who you are,
+       * say so and try again", 403 is "we know who you are and the answer is
+       * no". A signed-out viewer is the first. It is also the status
+       * `request-context.ts` already answers for `not_authenticated` on the
+       * profile, progress and watchlist routes, so an operator reading across
+       * this application sees one status for one fact.
+       */
+      return 401;
   }
 }

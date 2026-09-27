@@ -1,7 +1,15 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 
-import { authenticateCaller, authenticationRefusalStatus } from "./authentication";
+import {
+  NOT_AUTHENTICATED_DETAIL,
+  playbackSessionResponseSchema
+} from "@liberty/web/playback-session/contract";
+import {
+  authenticateCaller,
+  authenticationRefusalStatus,
+  type AuthenticatedCaller
+} from "./authentication";
 import { handleSessionRequest } from "./session-endpoint";
 import { routeRequest, SESSION_PATH, HEALTH_PATH } from "./router";
 
@@ -82,10 +90,52 @@ describe("authentication happens before the body is read", () => {
 
     expect(new Set(answers).size).toBe(1);
     expect(answers[0]).toContain("not_authenticated");
+    expect(answers[0]).toContain("unauthenticated");
     expect(answers[0]).toContain("no-store");
     /* And it does not echo any of the ids it was asked about. */
     expect(answers[0]).not.toContain("aurora-fall");
     expect(answers[0]).not.toContain("no-such-title");
+  });
+
+  it("refuses a signed-out caller INSIDE the published contract (PW-0312)", async () => {
+    /*
+     * THE CORRECTIVE gpt-architect ASSIGNED PW-0312. This endpoint used to
+     * answer a signed-out caller with `{ error, detail }` -- a shape the
+     * playback contract has no member for -- so the desktop forwarder, which
+     * validates every backend body against `playbackSessionResponseSchema`,
+     * correctly refused to relay it and produced an honest `unavailable`
+     * instead. A viewer who needed to sign in was told to wait for a provider.
+     *
+     * The contract now has a fourth outcome, and this refusal is a member of
+     * it. The forwarder parses it, `handler.ts` derives the same 401 from it on
+     * the other side, and both targets answer one fact one way.
+     */
+    const response = await handleSessionRequest(
+      sessionRequest({ contentId: "aurora-fall", capabilities: CAPABLE_DEVICE }),
+      { authenticate: SIGNED_OUT }
+    );
+
+    expect(response.status).toBe(401);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+
+    const parsed = playbackSessionResponseSchema.safeParse(await response.json());
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    expect(parsed.data.outcome).toBe("unauthenticated");
+    expect(parsed.data.reasons[0].code).toBe("not_authenticated");
+    /* One sentence, shared with the web target, for all four ways a session
+     * fails to verify -- so the wire cannot be read as an oracle. */
+    expect(parsed.data.reasons[0].detail).toBe(NOT_AUTHENTICATED_DETAIL);
+  });
+
+  it("derives that 401 from the contract, not from a second opinion about it", async () => {
+    /*
+     * `unauthenticatedRefusal` takes its status from `playbackSessionHttpStatus`
+     * while `authenticationRefusalStatus` still maps the reason for the other
+     * two refusals. They agree today; this is what says so the day one moves.
+     */
+    const response = await handleSessionRequest(sessionRequest({}), { authenticate: SIGNED_OUT });
+    expect(response.status).toBe(authenticationRefusalStatus("not_authenticated"));
   });
 
   it("does not reflect the upstream detail, which can quote a caller's header", async () => {
@@ -129,6 +179,31 @@ describe("authentication happens before the body is read", () => {
 });
 
 describe("an authenticated caller reaches the application's own decision", () => {
+  it("tells the decision who the caller is, so the identity store is read ONCE", async () => {
+    /*
+     * PW-0312 gave the application's resolving implementation an authentication
+     * gate of its own -- it has to have one, because under the web target
+     * nothing else authenticates. Under the desktop target that same code runs
+     * HERE, behind this endpoint, which has already verified the caller from
+     * headers alone. Handing the established identity inward is what keeps the
+     * two gates from becoming two database reads per forwarded request.
+     *
+     * The assertion is on the SEAM rather than on a query count: the decision
+     * receives the caller this endpoint authenticated, and nothing else.
+     */
+    const decide = vi.fn(
+      async (_request: Request, _caller: AuthenticatedCaller) =>
+        new Response("{}", { status: 200 })
+    );
+    await handleSessionRequest(sessionRequest({}), { authenticate: SIGNED_IN, decide });
+
+    expect(decide).toHaveBeenCalledTimes(1);
+    expect(decide.mock.calls[0]?.[1]).toEqual({
+      account: { userId: "viewer-1", sessionId: "session-1" },
+      detail: "a verified session"
+    });
+  });
+
   it("hands the request through untouched", async () => {
     const decide = vi.fn(async (request: Request) => {
       expect(await request.json()).toEqual({

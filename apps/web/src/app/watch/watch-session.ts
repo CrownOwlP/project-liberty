@@ -145,6 +145,16 @@ export type WatchSessionResult =
   | { readonly status: "not-found"; readonly contentId: string }
   | { readonly status: "not-configured"; readonly contentId: string }
   | { readonly status: "denied"; readonly contentId: string; readonly reasons: readonly string[] }
+  /**
+   * Nobody is signed in, and this deployment has a way to be (PW-0312).
+   *
+   * ITS OWN STATUS RATHER THAN AN `error`, because the remedy is the viewer's
+   * and it is the only one on this union they can carry out themselves. The
+   * page renders a sign-in panel carrying this title as the destination, so a
+   * viewer who signs in lands back on the thing they were trying to watch --
+   * which is the whole difference between an actionable state and a dead end.
+   */
+  | { readonly status: "signed-out"; readonly contentId: string }
   | { readonly status: "error"; readonly reason: string };
 
 /**
@@ -342,6 +352,19 @@ export function watchResultFor(
   resumeAtSeconds: number | null = null
 ): WatchSessionResult {
   const reasons = response.reasons.map(describeReason);
+
+  if (response.outcome === "unauthenticated") {
+    /*
+     * FIRST, AND WITH NO REASON TRAIL CARRIED. The trail on this outcome is one
+     * line and it is the same line for every cause -- `contract.ts`'s
+     * `NOT_AUTHENTICATED_DETAIL`, deliberately identical whether the cookie was
+     * absent, expired, revoked or malformed. Rendering it beneath a sign-in
+     * button would add nothing a viewer can act on, and a page that showed a
+     * DIFFERENT sentence per cause would be the oracle that constant exists to
+     * prevent.
+     */
+    return { status: "signed-out", contentId };
+  }
 
   if (response.outcome === "denied") {
     return { status: "denied", contentId, reasons };

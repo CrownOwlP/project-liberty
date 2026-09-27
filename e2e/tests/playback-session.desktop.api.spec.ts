@@ -51,6 +51,7 @@ const ROUTE = "/api/v1/playback/session";
 const STUB_DENIED = "stub-denied";
 const STUB_UNAVAILABLE = "stub-unavailable";
 const STUB_OFF_CONTRACT = "stub-off-contract";
+const STUB_UNAUTHENTICATED = "stub-unauthenticated";
 const STUB_REDIRECT = "stub-redirect";
 
 test.skip(DESKTOP_SKIP_REASON !== null, DESKTOP_SKIP_REASON ?? "");
@@ -263,6 +264,32 @@ test("a backend body outside the contract is an honest unavailable, not a pass-t
 
   expect(shape.outcome).toBe("unavailable");
   expect(reasonCodes(shape)).toContain("provider_unavailable");
+  expect(isRecord(shape.session)).toBe(false);
+});
+
+test("a signed-out backend refusal reaches the viewer as sign-in, not as an outage", async () => {
+  /*
+   * THE CORRECTIVE gpt-architect ASSIGNED PW-0312, END TO END ON THIS TARGET.
+   *
+   * Before the contract carried a fourth outcome, the authenticated backend's
+   * 401 was `{ error, detail }` -- not a member of the union -- so the test
+   * above, which is the forwarder refusing to relay a body it cannot parse,
+   * was the code path a signed-out desktop viewer actually took. They were told
+   * the playback service was unavailable. The remedy was theirs all along.
+   *
+   * What this asserts is the pair of facts that makes the state ACTIONABLE:
+   * the outcome is `unauthenticated` rather than `unavailable`, and the status
+   * is 401 rather than 503 -- derived here from the relayed decision, not
+   * echoed from the stub.
+   */
+  const shape = await decision(
+    await desktop.post(ROUTE, { data: sessionRequest(STUB_UNAUTHENTICATED) })
+  );
+
+  expect(shape.outcome).toBe("unauthenticated");
+  expect(reasonCodes(shape)).toEqual(["not_authenticated"]);
+  /* The collapse the ruling forbids by name, asserted as an absence. */
+  expect(reasonCodes(shape)).not.toContain("provider_unavailable");
   expect(isRecord(shape.session)).toBe(false);
 });
 

@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { PlayerSurface } from "../../../components/player/player-surface";
 import { isWatchableContentId, loadPlaybackSession } from "../watch-session";
+import { SignedOutPanel } from "../../../components/auth/signed-out-panel";
 import {
   RESTART_PARAM,
   isRestartRequested,
@@ -225,6 +226,23 @@ async function PlaybackBody({
         reasons={result.reasons}
       />
     );
+  }
+
+  if (result.status === "signed-out") {
+    /*
+     * THE CLAUSE gpt-architect ASSIGNED THIS TASK IN ROUND 90, on screen
+     * (PW-0312). A signed-out viewer used to reach this route and be told the
+     * playback service was unavailable -- because the backend's 401 had no
+     * shape in the published contract and the forwarder turned it into
+     * `provider_unavailable`. They are now told to sign in, and the link
+     * carries THIS title as the destination, so signing in returns them to the
+     * thing they were trying to watch rather than to the home page.
+     *
+     * The destination is built from the route's own content id and narrowed by
+     * `safeNextPath` inside `signInHref`, so nothing a caller put in the URL
+     * reaches the redirect -- see `components/auth/next-path.ts`.
+     */
+    return <SignedOutPanel next={`/watch/${result.contentId}`} what="watch this" />;
   }
 
   return <PlayerSurface session={result.session} policy={result.policy} />;
