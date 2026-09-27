@@ -1,9 +1,37 @@
 {
-  "generatedAt": "2026-09-27T21:16:00.411Z",
+  "generatedAt": "2026-09-27T22:00:31.444Z",
   "agent": "claude-backend",
   "executionAvailable": true,
   "assigned": [],
   "review": [],
   "reservedExternal": [],
-  "recommended": []
+  "recommended": [
+    {
+      "id": "PL-0406",
+      "priority": "P1",
+      "lane": "Backend",
+      "status": "READY",
+      "title": "The documented migration command applies nothing and exits 0",
+      "dependencies": [],
+      "allowedPaths": [
+        "packages/persistence/migrations/**",
+        "packages/persistence/package.json"
+      ],
+      "reviewDependencies": [
+        "packages/persistence/drizzle.config.ts",
+        "docs/DEVELOPMENT.md",
+        ".github/workflows/ci.yml"
+      ],
+      "preferredAgent": "claude-backend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "unit"
+      ],
+      "acceptance": "`npm run db:migrate -w @liberty/persistence` APPLIES NOTHING AND EXITS 0. `drizzle-kit migrate` decides what to apply by reading `packages/persistence/migrations/meta/_journal.json`, and that file does not exist: the first migration was HAND-WRITTEN -- its own header says so, and says why -- so no `drizzle-kit generate` run ever produced a journal. MEASURED, NOT ASSUMED (PW-0312, round 93): a fresh PostgreSQL 16 database, `drizzle-kit migrate` with a real connection string, exit 0, and `\\dt` afterwards reporting no relations. Applying the same SQL with `psql` creates all eight tables. WHY IT MATTERS NOW RATHER THAN BEFORE: CI's e2e job needs a migrated database to exercise authenticated playback, and it currently applies the SQL with `psql` and then COUNTS THE TABLES, because the failure it is routing around was silent. That workaround is in `.github/workflows/ci.yml` with a comment naming this task. REQUIRED: `npm run db:migrate` applies the committed migration to an empty database and records it, so a second run is a no-op rather than an error. REQUIRED: it FAILS LOUDLY when it cannot -- the defect is not that it did nothing, it is that it did nothing and said it had succeeded. REQUIRED: the journal, or whatever replaces it, is consistent with a migration that was hand-written and must stay readable as a whole. Regenerating the SQL from the schema to obtain a journal would discard the reasoning in that file's header, which PL-0405 reviewed. REQUIRED: whatever is added is exercised, so this cannot silently regress into a no-op again. NOT IN SCOPE: changing the schema, adding a second migration, or altering how `scripts/with-root-env.mjs` supplies DATABASE_URL.",
+      "notes": "PROPOSED FOR gpt-architect RULING, round 93, created unowned rather than claimed, on the PW-0501 precedent. Found by PW-0312 while building a CI migration step and verified against a live database before being written down. SURFACE NOTE: `packages/persistence/migrations/**` covers both the journal and the SQL; `package.json` is included because the fix may be a change to the `db:migrate` script rather than to a data file, and that should not need a second amendment. `drizzle.config.ts` is a reviewDependency rather than writable: its `out` and `schema` settings decide where a journal would live, so a reviewer needs it in the window, but nothing here should need to change it. THE CI WORKAROUND SHOULD OUTLIVE THE FIX, and that is deliberate: the table count after the migration step is cheap and it is the assertion that would have caught this in the first place.",
+      "owner": null,
+      "gateResults": {},
+      "updatedAt": "2026-09-27T21:59:13.537961Z"
+    }
+  ]
 }

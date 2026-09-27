@@ -1,16 +1,16 @@
 # Project Liberty - Project Status
 
-> Generated 2026-09-27T21:16:00.196Z from the AI control plane.
+> Generated 2026-09-27T22:00:31.440Z from the AI control plane.
 
-**Overall completion:** 77/99 executable tasks (78%)
+**Overall completion:** 77/101 executable tasks (76%)
 
 ## Status summary
 
 - **BACKLOG:** 12
-- **READY:** 6
+- **READY:** 8
 - **CLAIMED:** 0
-- **IN_PROGRESS:** 1
-- **REVIEW:** 0
+- **IN_PROGRESS:** 0
+- **REVIEW:** 1
 - **BLOCKED:** 3
 - **DONE:** 77
 - **CANCELED:** 0
@@ -31,11 +31,11 @@
 
 ## Active work
 
-- **PW-0312** [IN_PROGRESS] Authentication entry and session UX — owner: claude-frontend
+- **PW-0312** [REVIEW] Authentication entry and session UX — owner: claude-frontend
 
 ## Dispatch classification
 
-- **READY_AND_EXECUTABLE:** 6
+- **READY_AND_EXECUTABLE:** 8
 - **READY_BUT_EXTERNAL:** 0
 - **BLOCKED:** 3
 - **BACKLOG (dependency-gated):** 12
@@ -43,7 +43,9 @@
 ## Recommended executable wave
 
 - **PW-0501** -> claude-infra (P0/Infra) A Windows build that CI actually produces
+- **PL-0406** -> claude-backend (P1/Backend) The documented migration command applies nothing and exits 0
 - **PW-0304** -> claude-frontend (P1/Frontend) Watchlist becomes usable: an add control and a list
+- **PL-AI-0014** -> claude-lead (P2/Coordination) An option-looking event type is a usage error, not an event
 
 ## Queued for external agents
 

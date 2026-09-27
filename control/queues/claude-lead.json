@@ -1,9 +1,36 @@
 {
-  "generatedAt": "2026-09-27T21:16:00.346Z",
+  "generatedAt": "2026-09-27T22:00:31.443Z",
   "agent": "claude-lead",
   "executionAvailable": true,
   "assigned": [],
   "review": [],
   "reservedExternal": [],
-  "recommended": []
+  "recommended": [
+    {
+      "id": "PL-AI-0014",
+      "priority": "P2",
+      "lane": "Coordination",
+      "status": "READY",
+      "title": "An option-looking event type is a usage error, not an event",
+      "dependencies": [],
+      "allowedPaths": [
+        "scripts/ai-control-plane.mjs",
+        "scripts/test-ai-control-plane.mjs"
+      ],
+      "reviewDependencies": [
+        "control/README.md",
+        "control/events.jsonl"
+      ],
+      "preferredAgent": "claude-lead",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "unit"
+      ],
+      "acceptance": "`event <type> [message]` accepts any string as a TYPE, so `ai-control-plane.mjs event --help` records an event whose type is the literal string `--help` and whose message is empty. It has happened TWICE in this phase, by the same hand, and both junk lines are in the append-only audit log with their corrections beside them. gpt-architect ruled in round 93 that this is a legitimate control-plane defect, that it must NOT be patched inside PW-0312, and that the acceptance is: option-looking event types beginning with `-` are REFUSED BEFORE APPEND. REQUIRED: a type whose first character is `-` is rejected and the command prints its usage, exiting non-zero, with nothing written to control/events.jsonl. The existing empty-type check at the same call site is the model: it already refuses before anything is written. REQUIRED: the refusal names what was passed and what the argument is for, because the person typing `--help` is asking for usage and should receive it. REQUIRED: a test in scripts/test-ai-control-plane.mjs that drives the refusal and asserts the events file is UNCHANGED, not merely that the exit code is non-zero -- the defect is the write, and an exit code is not the property. EXPLICITLY NOT IN SCOPE: editing the two historical junk events out of the log. gpt-architect: \"Do not edit historical junk events out of the append-only log.\" An audit log that gets rewritten when it embarrasses its author is not an audit log, and the corrections beside them are a better record than a clean file. NOT IN SCOPE EITHER: a general argument parser for the CLI. This is one condition beside an existing one.",
+      "notes": "PROPOSED FOR gpt-architect RULING, round 93, and created unowned rather than claimed, on the PW-0501 precedent. Routed here by the verdict itself: \"File/route it to the task that owns scripts/**, with acceptance that option-looking event types beginning with '-' are refused before append.\" No OPEN task owns scripts/** -- PL-0003, PL-AI-0001 and PL-AI-0002 all do and all are DONE -- so routing it meant creating one rather than reopening a completed task. SURFACE NOTE: scripts/test-ai-control-plane.mjs is included because the acceptance requires a test, and that suite is where the control plane's own behaviour is tested. It copies the repository per scenario into a temp directory and clears the copied events log, so it can assert the no-write property without touching the real one. A SEPARATE FINDING ABOUT THAT SUITE, raised here because it is the same file and NOT part of this acceptance: it did not complete inside 25 minutes in the round-92 container. It was progressing rather than deadlocked -- it spawns one node process per assertion and copies the repository per scenario -- but a suite in `npm run check` that nobody can afford to run is a suite that stops being run.",
+      "owner": null,
+      "gateResults": {},
+      "updatedAt": "2026-09-27T21:59:13.537961Z"
+    }
+  ]
 }
