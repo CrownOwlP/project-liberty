@@ -1,8 +1,8 @@
 # Project Liberty - Project Status
 
-> Generated 2026-09-27T22:02:16.881Z from the AI control plane.
+> Generated 2026-09-28T02:10:45.794Z from the AI control plane.
 
-**Overall completion:** 77/101 executable tasks (76%)
+**Overall completion:** 78/101 executable tasks (77%)
 
 ## Status summary
 
@@ -10,9 +10,9 @@
 - **READY:** 7
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 1
-- **REVIEW:** 1
+- **REVIEW:** 0
 - **BLOCKED:** 3
-- **DONE:** 77
+- **DONE:** 78
 - **CANCELED:** 0
 - **SUPERSEDED:** 4
 
@@ -31,7 +31,6 @@
 
 ## Active work
 
-- **PW-0312** [REVIEW] Authentication entry and session UX — owner: claude-frontend
 - **PW-0501** [IN_PROGRESS] A Windows build that CI actually produces — owner: claude-infra
 
 ## Dispatch classification
@@ -45,6 +44,7 @@
 
 - **PL-0406** -> claude-backend (P1/Backend) The documented migration command applies nothing and exits 0
 - **PW-0304** -> claude-frontend (P1/Frontend) Watchlist becomes usable: an add control and a list
+- **PW-0307** -> claude-frontend (P1/Frontend) Series navigation and the next episode
 - **PL-AI-0014** -> claude-lead (P2/Coordination) An option-looking event type is a usage error, not an event
 
 ## Queued for external agents
@@ -69,7 +69,7 @@ UNBLOCK WHEN: the commander runs Experiment 1a on real Windows hardware and hand
 
 - **gpt-architect:** 0/6 active (external lane; not locally executable)
 - **claude-lead:** 0/2 active
-- **claude-frontend:** 1/2 active
+- **claude-frontend:** 0/2 active
 - **claude-backend:** 0/2 active
 - **claude-media:** 0/2 active
 - **claude-test:** 0/1 active
