@@ -27,7 +27,7 @@ use std::time::Duration;
 use crate::failure::{describe, FailureReport, StartupFailure};
 use crate::handshake::{self, Handshake, HandshakeError};
 use crate::job::JobError;
-use crate::sidecar::{plan_launch, LaunchError, SidecarLaunch};
+use crate::sidecar::{plan_launch, LaunchError, SidecarLaunch, WritableDirectories};
 use crate::supervision::{Budget, Decision, HANDSHAKE_TIMEOUT};
 
 /// A running sidecar, from the host's point of view.
@@ -63,6 +63,21 @@ pub trait ShellHost {
     /// directory, which works under `cargo run` and breaks in an installed
     /// build.
     fn resource_dir(&mut self) -> Result<std::path::PathBuf, String>;
+
+    /// Tauri's `app.path().app_local_data_dir()` -- the per-user writable root
+    /// under the Windows LOCAL known folder, NOT roaming.
+    ///
+    /// SEPARATE FROM `resource_dir` BECAUSE THEY ARE DIFFERENT PLACES WITH
+    /// DIFFERENT PERMISSIONS, and conflating them is the whole defect: one is
+    /// where the installer put the application and the other is where the
+    /// person running it is allowed to write.
+    fn data_dir(&mut self) -> Result<std::path::PathBuf, String>;
+
+    /// Create the writable directories, or say why not.
+    ///
+    /// IDEMPOTENT. They exist after the first launch, so "already there" is the
+    /// normal answer and must not be an error.
+    fn create_directories(&mut self, directories: &WritableDirectories) -> Result<(), String>;
 
     /// Whether a packaged resource is present.
     ///
@@ -188,11 +203,37 @@ fn start_once<H: ShellHost>(
         })
     })?;
 
+    /*
+     * WHERE THE CHILD MAY WRITE, resolved from the platform rather than
+     * composed here (PW-0501). An installed build's resource directory is
+     * under Program Files and is read-only to the person running it, so a
+     * sidecar given nowhere else to write fails on its first cache write --
+     * after starting, which is the worst moment to find out.
+     */
+    let writable_root = host.data_dir().map_err(|detail| {
+        StartupFailure::Launch(LaunchError::Missing {
+            what: "application data directory",
+            at: std::path::PathBuf::from(detail),
+        })
+    })?;
+
     let launch = {
         let probe = &*host;
-        plan_launch(&resources, &token, &|path| probe.resource_exists(path))
-            .map_err(StartupFailure::Launch)?
+        plan_launch(&resources, &writable_root, &token, &|path| {
+            probe.resource_exists(path)
+        })
+        .map_err(StartupFailure::Launch)?
     };
+
+    /*
+     * CREATED BEFORE THE SPAWN, AND A FAILURE HERE REFUSES THE LAUNCH. The
+     * alternative -- start anyway and let the child discover it -- is the
+     * defect this exists to prevent, one process later and with a worse error.
+     * `create_directories` is idempotent: after the first run these all exist,
+     * and that is the normal case rather than the exception.
+     */
+    host.create_directories(&launch.writable)
+        .map_err(|detail| StartupFailure::Launch(LaunchError::Unwritable { detail }))?;
 
     /*
      * THE JOB IS CREATED BEFORE THE CHILD EXISTS, and if it cannot be created
@@ -274,6 +315,8 @@ mod tests {
     #[derive(Debug, Clone, PartialEq, Eq)]
     enum Call {
         ResourceDir,
+        DataDir,
+        CreateDirectories(Vec<PathBuf>),
         CreateJob,
         Spawn { args: Vec<String>, env: Vec<(String, String)> },
         Assign,
@@ -291,6 +334,8 @@ mod tests {
     struct Fake {
         calls: RefCell<Vec<Call>>,
         resource_dir: Result<PathBuf, String>,
+        data_dir: Result<PathBuf, String>,
+        create_directories: Result<(), String>,
         create_job: Result<(), JobError>,
         assign: Result<(), JobError>,
         handshakes: RefCell<Vec<HandshakeOutcome>>,
@@ -305,6 +350,8 @@ mod tests {
             Self {
                 calls: RefCell::new(Vec::new()),
                 resource_dir: Ok(PathBuf::from("C:\\Liberty")),
+                data_dir: Ok(PathBuf::from("C:\\Users\\viewer\\AppData\\Local\\Liberty")),
+                create_directories: Ok(()),
                 create_job: Ok(()),
                 assign: Ok(()),
                 handshakes: RefCell::new(vec![HandshakeOutcome::Ready(Handshake {
@@ -325,6 +372,8 @@ mod tests {
                 .iter()
                 .map(|c| match c {
                     Call::ResourceDir => "resource_dir",
+                    Call::DataDir => "data_dir",
+                    Call::CreateDirectories(_) => "create_directories",
                     Call::CreateJob => "create_job",
                     Call::Spawn { .. } => "spawn",
                     Call::Assign => "assign",
@@ -345,6 +394,16 @@ mod tests {
         fn resource_dir(&mut self) -> Result<PathBuf, String> {
             self.calls.borrow_mut().push(Call::ResourceDir);
             self.resource_dir.clone()
+        }
+        fn data_dir(&mut self) -> Result<PathBuf, String> {
+            self.calls.borrow_mut().push(Call::DataDir);
+            self.data_dir.clone()
+        }
+        fn create_directories(&mut self, directories: &WritableDirectories) -> Result<(), String> {
+            self.calls.borrow_mut().push(Call::CreateDirectories(
+                directories.all().iter().map(|p| p.to_path_buf()).collect(),
+            ));
+            self.create_directories.clone()
         }
         fn resource_exists(&self, _path: &std::path::Path) -> bool {
             self.resources_present

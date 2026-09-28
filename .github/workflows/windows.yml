@@ -1,0 +1,302 @@
+name: Windows package
+
+# ============================================================================
+# THE WINDOWS PACKAGING AND RELEASE JOB (PW-0501)
+# ============================================================================
+#
+# WHY THIS FILE IS THE ONLY WAY THIS WORK CAN BE BUILT AT ALL. The cloud
+# engineering session has a Linux-only Rust toolchain and the linked machine
+# exposes a Linux VM, so no Windows binary can be produced or run there. A
+# `windows-latest` runner is not a nicety here -- it is the substitute for a
+# developer machine, and it is the only build machine this project has.
+#
+# WHAT THIS WORKFLOW OWNS, AND WHAT IT MUST NOT TAKE FROM ITS NEIGHBOUR.
+# `.github/workflows/desktop-shell-ci.yml` is PW-0102's and establishes that
+# the shell CRATE builds and its tests pass on Windows. Its header says what it
+# must never grow into -- "no release signing, no MSI or NSIS packaging, no
+# installer or update evidence, and no release artifact responsibility" -- and
+# names this file as where those belong. The split is gpt-architect's round-87
+# ruling; do not merge them.
+#
+# ============================================================================
+# WHAT THIS JOB PROVES, AND WHAT IT CANNOT
+# ============================================================================
+#
+# PROVES, because CI observes it:
+#   - the desktop-target web build produces a Next standalone tree;
+#   - the sidecar lays out against the Rust constants that read it;
+#   - `tauri build` produces exactly one MSI and one NSIS installer;
+#   - the exact artifact inventory, with SHA-256 digests;
+#   - the MSI installs silently, puts the application where it says, and
+#     uninstalls without leaving it behind.
+#
+# CANNOT PROVE, and no gate recorded from this job may claim it:
+#   - that the application LAUNCHES. Nothing here starts it. A runner has no
+#     attended session, no GPU worth the name and nobody to look at a window.
+#   - that WebView2 renders anything, or that a child HWND composites beneath
+#     it. That is PW-0103, and it needs the commander's hardware.
+#   - anything about signing. These artifacts are UNSIGNED and say so in the
+#     inventory. PW-0502 depends on an owner-held Authenticode certificate;
+#     coordination/LAST_MILE.md item 6 records it.
+#
+# ============================================================================
+# NO `continue-on-error`, NO `|| true`
+# ============================================================================
+#
+# The acceptance asks for it by name and the e2e job already states the rule.
+# Every step below either succeeds or fails the job. The one place a shell
+# script could swallow a failure silently -- a PowerShell block, which does NOT
+# stop on a non-zero native exit code by default -- sets
+# `$ErrorActionPreference` and checks `$LASTEXITCODE` explicitly.
+
+on:
+  push:
+    # Narrower than ci.yml's deny-list trigger, for the reason
+    # desktop-shell-ci.yml gives about its own: this job installs a Rust
+    # toolchain, compiles a large dependency graph, downloads the WiX and NSIS
+    # toolchains and then INSTALLS an MSI on the runner. It is the most
+    # expensive minute this repository spends, and spending it on a commit that
+    # cannot affect the package is waste.
+    paths:
+      - "apps/desktop/**"
+      - "apps/web/**"
+      - "packages/**"
+      - "scripts/windows/**"
+      - ".github/workflows/windows.yml"
+      - "package-lock.json"
+  pull_request:
+    paths:
+      - "apps/desktop/**"
+      - "apps/web/**"
+      - "packages/**"
+      - "scripts/windows/**"
+      - ".github/workflows/windows.yml"
+      - "package-lock.json"
+  # The autonomous loop cannot rely on push events: GitHub does not fire
+  # push-triggered workflows for commits made with the default GITHUB_TOKEN.
+  # ci.yml and desktop-shell-ci.yml record the same constraint.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-package-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Hashed into the turbo build cache key and required by
+  # `validate-env.mjs --scope ci`; an unset one hashes as ABSENT and this job
+  # could be served an artifact built under a different enforcement mode.
+  CONTENT_RIGHTS_ENFORCEMENT: strict
+  LIBERTY_FIXTURE_MEDIA_ORIGIN: https://fixtures.invalid
+  # PINNED TO THE CRATE. `apps/desktop/src-tauri/Cargo.toml` pins
+  # `tauri = "=2.12.0"`, and the CLI that drives it is pinned to the same
+  # number. A caret here would mean the bundler a passing gate was recorded
+  # against can change under a lockfile nobody edited -- the argument
+  # Cargo.toml already makes about every one of its own versions.
+  TAURI_CLI_VERSION: "2.12.0"
+
+jobs:
+  package:
+    runs-on: windows-latest
+    # A ceiling for a hang, not a budget. A cold Rust compile of the Tauri
+    # graph, a Next build, a WiX download and an MSI install fit inside this;
+    # the default 360 minutes is what a stuck installer would otherwise burn.
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # THE NODE THAT SHIPS INSIDE THE APPLICATION COMES FROM HERE, and that is
+      # the answer `package-sidecar.mjs` demands in its own header: "which one
+      # ships is a release decision with a supply-chain answer attached -- a
+      # pinned version, a checksum, and a place it came from."
+      #
+      # The version is `.nvmrc`, the same file every other job reads, so the
+      # runtime inside the installer is the runtime the repository develops
+      # against. `actions/setup-node` downloads it from nodejs.org and verifies
+      # the published checksum; that is the provenance, and it is better than
+      # any binary this repository could vendor.
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      # PINNED, NOT `stable`, for the reason desktop-shell-ci.yml gives: a gate
+      # is recorded against what was built, and `stable` means the toolchain
+      # that produced a passing result can change with no commit saying so.
+      - name: Install the pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.90.0"
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      # ==================================================================
+      # THE SIDECAR: the application server that ships inside the bundle
+      # ==================================================================
+      #
+      # `build:desktop` is the intentional desktop build path `apps/web`
+      # exposes -- the same script a human would run -- and it is what sets
+      # `output: "standalone"` through LIBERTY_BUILD_TARGET. Running `next
+      # build` with a variable bolted on here instead would exercise a private
+      # arrangement that only works in CI.
+      - name: Build the application server for the desktop target
+        run: npm run build:desktop --workspace @liberty/web
+
+      - name: Lay out the packaged sidecar
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          # The runtime setup-node just installed and verified. Resolved rather
+          # than assumed: the runner's PATH decides which node is current, and
+          # hard-coding a path would ship whatever happened to be at it.
+          $node = (Get-Command node).Source
+          Write-Host "sidecar runtime: $node"
+          & node --version
+          $env:LIBERTY_SIDECAR_NODE = $node
+          & node apps/desktop/scripts/package-sidecar.mjs
+          if ($LASTEXITCODE -ne 0) { throw "package-sidecar failed with $LASTEXITCODE" }
+
+      # ==================================================================
+      # THE BUNDLE
+      # ==================================================================
+      #
+      # `npx --yes @tauri-apps/cli@<exact>` rather than a dependency in a
+      # manifest, and the trade is stated rather than hidden. `apps/desktop`
+      # is not an npm workspace member -- the root declares `apps/*`, so adding
+      # a package.json there would make it one, put a large prebuilt binary
+      # into `npm ci` for every ubuntu job that does not need it, and change
+      # the root lockfile, which is not on this task's surface.
+      #
+      # THE COST: the pin lives in this file's `env` block rather than in a
+      # lockfile, so it is exact but not integrity-checked. Moving it into a
+      # lockfile is the better long-term home and is blocked only on the root
+      # manifest surface; it is raised rather than quietly preferred.
+      - name: Build the Windows installers
+        working-directory: apps/desktop
+        run: npx --yes "@tauri-apps/cli@${{ env.TAURI_CLI_VERSION }}" build
+
+      # ==================================================================
+      # WHAT WAS ACTUALLY PRODUCED
+      # ==================================================================
+      #
+      # `tauri build` exits 0 having produced whatever it produced. This step
+      # is what turns that into a claim: exactly one MSI and exactly one NSIS
+      # installer, each with a digest. It FAILS when the set is wrong -- none,
+      # or a stale artifact from an earlier build sitting beside the new one --
+      # which is the difference between a build step and a gate.
+      - name: Publish the artifact inventory
+        id: inventory
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $bundle = "apps/desktop/src-tauri/target/release/bundle"
+          & node scripts/windows/artifact-inventory.mjs --bundle $bundle --out artifact-inventory.json
+          if ($LASTEXITCODE -ne 0) { throw "artifact-inventory failed with $LASTEXITCODE" }
+          Get-Content artifact-inventory.json
+
+      # ==================================================================
+      # CLEAN INSTALL, THEN UNINSTALL
+      # ==================================================================
+      #
+      # gpt-architect's round-94 scope asks for "clean-install/update/uninstall
+      # automation where CI can prove it". A runner can prove install and
+      # uninstall: `msiexec` runs silently, the runner is an administrator, and
+      # the filesystem afterwards is observable.
+      #
+      # IT CANNOT PROVE UPGRADE, and that absence is deliberate rather than an
+      # omission: an upgrade needs a PREVIOUS version to upgrade FROM, and this
+      # repository has never shipped one. The first release is the one that
+      # creates the thing a second run could upgrade. PW-0503 owns that matrix.
+      #
+      # AND IT PROVES NOTHING ABOUT LAUNCHING. The application is installed and
+      # removed; it is never started. See the header.
+      - name: Install the MSI, verify it landed, uninstall it
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $inventory = Get-Content artifact-inventory.json | ConvertFrom-Json
+          $msi = $inventory.artifacts | Where-Object { $_.kind -eq "msi" }
+          if (-not $msi) { throw "no msi in the inventory" }
+          $installer = Join-Path "apps/desktop/src-tauri/target/release/bundle" $msi.name
+          Write-Host "installing $installer"
+
+          # /qn silent, /norestart because a reboot would end the job, and a
+          # log because a failed MSI says nothing useful on stdout.
+          $install = Start-Process msiexec.exe -Wait -PassThru -ArgumentList @(
+            "/i", "`"$installer`"", "/qn", "/norestart", "/l*v", "install.log"
+          )
+          if ($install.ExitCode -ne 0) {
+            Get-Content install.log -Tail 80
+            throw "msiexec /i exited $($install.ExitCode)"
+          }
+
+          # WHERE IT SAYS IT IS. `productName` is "Project Liberty" and the
+          # default WiX install path is Program Files\<productName>. Asserting
+          # the executable exists is what distinguishes an installer that ran
+          # from one that installed.
+          $installed = Join-Path ${env:ProgramFiles} "Project Liberty\liberty-desktop.exe"
+          if (-not (Test-Path $installed)) {
+            Get-ChildItem (Join-Path ${env:ProgramFiles} "Project Liberty") -Recurse -ErrorAction SilentlyContinue |
+              Select-Object -First 40 | ForEach-Object { Write-Host $_.FullName }
+            throw "installed, but $installed is not there"
+          }
+          Write-Host "installed executable: $installed"
+
+          # THE SIDECAR CAME WITH IT. A bundle that shipped the shell and left
+          # the server behind would install cleanly and fail at first launch --
+          # on the commander's machine, which is the expensive place to find
+          # out.
+          foreach ($resource in @("sidecar\node.exe", "sidecar\server\server.js")) {
+            $path = Join-Path ${env:ProgramFiles} "Project Liberty\$resource"
+            if (-not (Test-Path $path)) { throw "the bundle did not carry $resource" }
+            Write-Host "packaged resource: $path"
+          }
+
+          # UNINSTALL, AND PROVE IT LEFT. An installer that cannot be removed
+          # is worse than one that cannot be installed.
+          $uninstall = Start-Process msiexec.exe -Wait -PassThru -ArgumentList @(
+            "/x", "`"$installer`"", "/qn", "/norestart", "/l*v", "uninstall.log"
+          )
+          if ($uninstall.ExitCode -ne 0) {
+            Get-Content uninstall.log -Tail 80
+            throw "msiexec /x exited $($uninstall.ExitCode)"
+          }
+          if (Test-Path $installed) { throw "uninstalled, but $installed is still there" }
+          Write-Host "uninstalled cleanly"
+
+      - name: Upload the unsigned installers and their inventory
+        uses: actions/upload-artifact@v4
+        with:
+          # UNSIGNED IS IN THE NAME, so a consumer cannot mistake this for a
+          # release artifact by reading a download link.
+          name: liberty-windows-unsigned-${{ github.sha }}
+          path: |
+            apps/desktop/src-tauri/target/release/bundle/msi/*.msi
+            apps/desktop/src-tauri/target/release/bundle/nsis/*.exe
+            artifact-inventory.json
+          if-no-files-found: error
+          retention-days: 14
+
+      # Uploaded whatever happened, because an MSI log is only interesting when
+      # the step above failed -- and `if: always()` on an upload is not
+      # `continue-on-error`: the job's result is unchanged.
+      - name: Upload the installer logs
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: liberty-windows-installer-logs-${{ github.sha }}
+          path: |
+            install.log
+            uninstall.log
+          if-no-files-found: ignore
+          retention-days: 14

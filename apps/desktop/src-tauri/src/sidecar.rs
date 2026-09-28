@@ -44,6 +44,67 @@ pub const HOST_VAR: &str = "LIBERTY_SIDECAR_HOST";
 pub const NODE_HOSTNAME_VAR: &str = "HOSTNAME";
 pub const NODE_PORT_VAR: &str = "PORT";
 
+/* -------------------------------------------------------------------------
+ * WHERE THE SIDECAR MAY WRITE (PW-0501)
+ *
+ * THE DEFECT THIS EXISTS TO PREVENT, and it is not hypothetical: an installed
+ * build lives under `C:\Program Files`, which is READ-ONLY to a normal user.
+ * The sidecar is a Next standalone server, and a Next server writes a cache at
+ * runtime -- `.next/cache`, beside `server.js`, which is inside the resource
+ * directory. Nothing above has ever told it otherwise, so the first
+ * cache write in an installed build is an EACCES from a directory the
+ * installer created, and the symptom is a server that starts and then fails on
+ * a request rather than one that fails to start.
+ *
+ * `cargo run` never sees it, because the resource directory is then the
+ * developer's own checkout and is writable. That is exactly the shape of
+ * defect `resource_dir()` already carries a comment about: it works in
+ * development and breaks in an installed build.
+ *
+ * THREE DIRECTORIES, NOT ONE, because Windows distinguishes them and so does a
+ * person trying to clear one:
+ *
+ *   - DATA is state the application must not lose. Roaming would follow a user
+ *     between machines on a domain, which for a media cache and a local
+ *     database would be a surprise measured in gigabytes, so this is LOCAL.
+ *   - CACHE is state that may be deleted at any moment, by a disk-cleanup tool
+ *     or by a user who wants the space back. Nothing here may assume it
+ *     survives.
+ *   - LOGS are what a person is asked to send when something goes wrong, so
+ *     they need a path that can be said out loud over the phone.
+ *
+ * THEY ARE DERIVED FROM ONE ROOT the host supplies rather than composed here
+ * from `%LOCALAPPDATA%`. Reading the variable in this module would make the
+ * layout depend on an environment this process does not control, and Tauri
+ * already resolves the known folder properly through `app.path()`. What this
+ * module owns is the SHAPE under that root, which is the part the sidecar and
+ * the shell must agree on.
+ * ---------------------------------------------------------------------- */
+
+/// Where application state that must survive goes, under the host's data root.
+pub const DATA_RELATIVE_PATH: &str = "data";
+/// Where deletable state goes. Assume it is gone on every start.
+pub const CACHE_RELATIVE_PATH: &str = "cache";
+/// Where the logs a person is asked to send go.
+pub const LOG_RELATIVE_PATH: &str = "logs";
+
+/// The variables the sidecar reads to find them.
+///
+/// NAMED IN THIS PROJECT'S OWN NAMESPACE rather than borrowed from Next, so a
+/// future change to how the server uses them is a change in one application
+/// rather than a dependence on a framework's internal variable staying put.
+pub const DATA_DIR_VAR: &str = "LIBERTY_SIDECAR_DATA_DIR";
+pub const CACHE_DIR_VAR: &str = "LIBERTY_SIDECAR_CACHE_DIR";
+pub const LOG_DIR_VAR: &str = "LIBERTY_SIDECAR_LOG_DIR";
+
+/// Next's own cache location, pointed at the cache directory above.
+///
+/// THE ONE BORROWED NAME, and it is borrowed because it is the variable the
+/// framework actually reads: `NEXT_CACHE_DIR` is what moves the incremental
+/// cache off `.next/cache`. Setting our own name beside it would be a variable
+/// nobody reads and a cache still being written into Program Files.
+pub const NEXT_CACHE_DIR_VAR: &str = "NEXT_CACHE_DIR";
+
 /// The host the sidecar is told to bind.
 ///
 /// `127.0.0.1` and not `localhost`: a name is resolved, and on Windows it can
@@ -62,6 +123,9 @@ pub const BIND_PORT: &str = "0";
 pub struct SidecarLaunch {
     pub node: PathBuf,
     pub server: PathBuf,
+    /// Where the child may write. Published on the launch so the host can
+    /// create them without recomputing the layout from the root.
+    pub writable: WritableDirectories,
     /// Name/value pairs, in a stable order so this is testable.
     pub env: Vec<(String, String)>,
 }
@@ -72,6 +136,13 @@ pub enum LaunchError {
     /// it. Almost always a broken install or a `bundle.resources` that stopped
     /// matching these constants.
     Missing { what: &'static str, at: PathBuf },
+    /// A directory the child must be able to write could not be created.
+    ///
+    /// ITS OWN VARIANT, not a `Missing`. "The install is broken" and "this
+    /// user cannot write to their own profile" are different events with
+    /// different remedies -- reinstall against ask an administrator -- and the
+    /// failure text a person is shown is built from this distinction.
+    Unwritable { detail: String },
     /// The token this launch would have used is not usable.
     Token(String),
 }
@@ -83,6 +154,10 @@ impl std::fmt::Display for LaunchError {
                 f,
                 "the packaged {what} is missing at {}; the installation is incomplete",
                 at.display()
+            ),
+            LaunchError::Unwritable { detail } => write!(
+                f,
+                "a directory this application must be able to write could not be created: {detail}"
             ),
             LaunchError::Token(detail) => write!(f, "the launch token is unusable: {detail}"),
         }
@@ -108,6 +183,7 @@ pub const TOKEN_MIN_CHARS: usize = 64;
 /// out a fake install tree. In production it is `Path::exists`.
 pub fn plan_launch(
     resource_dir: &Path,
+    writable_root: &Path,
     token: &str,
     exists: &dyn Fn(&Path) -> bool,
 ) -> Result<SidecarLaunch, LaunchError> {
@@ -138,6 +214,18 @@ pub fn plan_launch(
         });
     }
 
+    /*
+     * THE WRITABLE ROOT IS NOT PROBED FOR EXISTENCE, and that asymmetry with
+     * the two resources above is deliberate. A missing `node.exe` means the
+     * install is broken and there is nothing to do but say so; a missing data
+     * directory means the application has not run yet, which is the normal
+     * state on a first launch. Creating it is `create_writable_directories`'
+     * job, called by the host before the spawn -- this function stays pure.
+     */
+    let data = writable_root.join(DATA_RELATIVE_PATH);
+    let cache = writable_root.join(CACHE_RELATIVE_PATH);
+    let logs = writable_root.join(LOG_RELATIVE_PATH);
+
     Ok(SidecarLaunch {
         node,
         server,
@@ -146,8 +234,47 @@ pub fn plan_launch(
             (HOST_VAR.to_string(), BIND_HOST.to_string()),
             (NODE_HOSTNAME_VAR.to_string(), BIND_HOST.to_string()),
             (NODE_PORT_VAR.to_string(), BIND_PORT.to_string()),
+            (DATA_DIR_VAR.to_string(), path_string(&data)),
+            (CACHE_DIR_VAR.to_string(), path_string(&cache)),
+            (LOG_DIR_VAR.to_string(), path_string(&logs)),
+            /* The same directory under the name the framework reads. One
+             * location, two names, because one of the readers is not ours. */
+            (NEXT_CACHE_DIR_VAR.to_string(), path_string(&cache)),
         ],
+        writable: WritableDirectories { data, cache, logs },
     })
+}
+
+/// A path as an environment value.
+///
+/// `to_string_lossy` rather than `to_str().unwrap()`: a Windows path is UTF-16
+/// and a user name can contain a surrogate that does not round-trip, and a
+/// shell that PANICKED on such a profile would be unreachable for exactly the
+/// people who cannot change their user name. A lossy path fails later, in the
+/// open, with a path in the message.
+fn path_string(path: &Path) -> String {
+    path.to_string_lossy().into_owned()
+}
+
+/// The three directories the host must create before the child starts.
+///
+/// RETURNED RATHER THAN CREATED HERE, for the reason this whole module is pure:
+/// `plan_launch` is testable on a machine that cannot run the thing it plans,
+/// and a function that made directories would need a real filesystem or a
+/// fourth injected capability to stay that way. The host creates them; this
+/// says which.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WritableDirectories {
+    pub data: PathBuf,
+    pub cache: PathBuf,
+    pub logs: PathBuf,
+}
+
+impl WritableDirectories {
+    /// In creation order, which is arbitrary -- they are siblings.
+    pub fn all(&self) -> [&Path; 3] {
+        [&self.data, &self.cache, &self.logs]
+    }
 }
 
 /// The arguments the child is given.
@@ -169,7 +296,12 @@ mod tests {
     }
 
     fn plan(token: &str) -> Result<SidecarLaunch, LaunchError> {
-        plan_launch(Path::new("C:\\Program Files\\Liberty"), token, &everything_exists)
+        plan_launch(
+            Path::new("C:\\Program Files\\Liberty"),
+            Path::new("C:\\Users\\viewer\\AppData\\Local\\Project Liberty"),
+            token,
+            &everything_exists,
+        )
     }
 
     #[test]
@@ -232,7 +364,7 @@ mod tests {
         // "The installation is incomplete" with no path is a support ticket
         // nobody can act on.
         let missing_node = |path: &Path| !path.to_string_lossy().contains("node.exe");
-        match plan_launch(Path::new("C:\\Liberty"), TOKEN, &missing_node) {
+        match plan_launch(Path::new("C:\\Liberty"), Path::new("C:\\State"), TOKEN, &missing_node) {
             Err(LaunchError::Missing { what, at }) => {
                 assert_eq!(what, "Node runtime");
                 assert!(at.to_string_lossy().contains("node.exe"));
@@ -241,17 +373,158 @@ mod tests {
         }
 
         let missing_server = |path: &Path| !path.to_string_lossy().contains("server.js");
-        match plan_launch(Path::new("C:\\Liberty"), TOKEN, &missing_server) {
+        match plan_launch(Path::new("C:\\Liberty"), Path::new("C:\\State"), TOKEN, &missing_server) {
             Err(LaunchError::Missing { what, .. }) => assert_eq!(what, "application server"),
             other => panic!("expected a missing-server error: {other:?}"),
         }
     }
 
     #[test]
+    fn nothing_writable_is_under_the_resource_directory() {
+        /*
+         * THE DEFECT THIS WHOLE FEATURE EXISTS TO PREVENT, asserted as the
+         * relationship rather than as a path (PW-0501).
+         *
+         * An installed build's resource directory is under `C:\Program Files`,
+         * which is read-only to the person running it. A Next standalone
+         * server writes an incremental cache at runtime, and with nowhere else
+         * to put it that cache lands in `.next/cache` BESIDE `server.js` --
+         * inside the read-only tree. The server starts, and then fails on a
+         * request, which is the worst moment to discover a permissions
+         * problem.
+         *
+         * `cargo run` never sees it, because the resource directory is then
+         * the developer's own checkout. That is exactly the shape of defect
+         * `resource_dir()` already carries a warning about.
+         */
+        let resources = Path::new("C:\\Program Files\\Project Liberty");
+        let writable = Path::new("C:\\Users\\viewer\\AppData\\Local\\Project Liberty");
+        let launch = plan_launch(resources, writable, TOKEN, &everything_exists).unwrap();
+
+        for directory in launch.writable.all() {
+            assert!(
+                !directory.starts_with(resources),
+                "{directory:?} is inside the resource directory, which an installed build \
+                 cannot write to"
+            );
+            assert!(
+                directory.starts_with(writable),
+                "{directory:?} is not under the writable root the host resolved"
+            );
+        }
+    }
+
+    #[test]
+    fn the_three_directories_are_distinct_and_named_for_what_they_hold() {
+        /*
+         * DISTINCT, because they have different lifetimes and a person clears
+         * them separately: a disk-cleanup tool may delete the cache at any
+         * moment, the data must survive that, and the logs are what somebody
+         * is asked to send when neither worked. One directory for all three
+         * would mean clearing the cache discards the state.
+         */
+        let launch = plan_launch(
+            Path::new("C:\\Liberty"),
+            Path::new("C:\\State"),
+            TOKEN,
+            &everything_exists,
+        )
+        .unwrap();
+
+        let all = launch.writable.all();
+        for (index, directory) in all.iter().enumerate() {
+            for other in &all[index + 1..] {
+                assert_ne!(directory, other, "two of the writable directories are the same path");
+            }
+        }
+
+        assert!(launch.writable.data.ends_with(DATA_RELATIVE_PATH));
+        assert!(launch.writable.cache.ends_with(CACHE_RELATIVE_PATH));
+        assert!(launch.writable.logs.ends_with(LOG_RELATIVE_PATH));
+    }
+
+    #[test]
+    fn the_child_is_told_where_to_write_in_its_environment() {
+        /*
+         * IN THE ENVIRONMENT AND NOT ON THE COMMAND LINE, for the reason the
+         * token is: `launch_arguments` is one path and is asserted to carry
+         * one thing. A directory on a command line is not a secret, but two
+         * channels for the same kind of configuration is how the token ends up
+         * on the second one.
+         *
+         * AND THE FRAMEWORK'S OWN NAME IS SET TOO. `NEXT_CACHE_DIR` is what
+         * actually moves Next's incremental cache; a Liberty-namespaced
+         * variable alone would be read by nobody and the cache would still be
+         * written into Program Files. One directory, two names, because one of
+         * the readers is not ours.
+         */
+        let launch = plan_launch(
+            Path::new("C:\\Liberty"),
+            Path::new("C:\\State"),
+            TOKEN,
+            &everything_exists,
+        )
+        .unwrap();
+        let env: std::collections::HashMap<_, _> = launch.env.iter().cloned().collect();
+
+        assert_eq!(
+            env.get(DATA_DIR_VAR).map(String::as_str),
+            Some(launch.writable.data.to_string_lossy().as_ref())
+        );
+        assert_eq!(
+            env.get(CACHE_DIR_VAR).map(String::as_str),
+            Some(launch.writable.cache.to_string_lossy().as_ref())
+        );
+        assert_eq!(
+            env.get(LOG_DIR_VAR).map(String::as_str),
+            Some(launch.writable.logs.to_string_lossy().as_ref())
+        );
+        assert_eq!(
+            env.get(NEXT_CACHE_DIR_VAR),
+            env.get(CACHE_DIR_VAR),
+            "the framework's cache variable and ours must name ONE directory"
+        );
+
+        /* Not on the command line. */
+        let args = launch_arguments(&launch);
+        for directory in launch.writable.all() {
+            let rendered = directory.to_string_lossy().into_owned();
+            assert!(!args.iter().any(|arg| arg.contains(&rendered)));
+        }
+    }
+
+    #[test]
+    fn a_missing_writable_root_is_not_a_broken_installation() {
+        /*
+         * THE ASYMMETRY WITH THE RESOURCE CHECKS, stated as a test because it
+         * looks like an omission otherwise. A missing `node.exe` means the
+         * install is broken; a missing data directory means the application
+         * has not run yet, which is the normal state of a first launch. So
+         * `exists` is not consulted for the writable root, and planning
+         * succeeds against a root that is not there -- the host creates it
+         * before the spawn.
+         */
+        let nothing_writable_exists =
+            |path: &Path| !path.to_string_lossy().contains("brand-new-profile");
+
+        let launch = plan_launch(
+            Path::new("C:\\Liberty"),
+            Path::new("C:\\Users\\brand-new-profile\\AppData\\Local\\Liberty"),
+            TOKEN,
+            &nothing_writable_exists,
+        )
+        .expect("a first launch must plan successfully against a profile that has no state yet");
+
+        assert!(launch.writable.data.to_string_lossy().contains("brand-new-profile"));
+    }
+
+    #[test]
     fn resources_are_resolved_under_the_directory_they_were_given() {
         // Not relative to the current directory, which works under `cargo run`
         // and breaks in an installed build -- the classic late failure.
-        let launch = plan_launch(Path::new("/opt/liberty"), TOKEN, &everything_exists).unwrap();
+        let launch =
+            plan_launch(Path::new("/opt/liberty"), Path::new("/var/liberty"), TOKEN, &everything_exists)
+                .unwrap();
         assert!(launch.node.starts_with("/opt/liberty"));
         assert!(launch.server.starts_with("/opt/liberty"));
     }

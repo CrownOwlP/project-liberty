@@ -21,7 +21,7 @@
  * without it, and PW-0501 -- which owns the Windows CI job -- is where the
  * runner supplies it.
  * ---------------------------------------------------------------------- */
-import { cpSync, existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -67,7 +67,36 @@ if (!existsSync(standalone)) {
 const staticDir = join(repoRoot, "apps", "web", ".next", "static");
 if (!existsSync(staticDir)) fail(`no static assets at ${staticDir}`);
 
-rmSync(sidecarDir, { recursive: true, force: true, maxRetries: 5 });
+/*
+ * THE TWO TRACKED FILES SURVIVE THE WIPE (PW-0501 corrective).
+ *
+ * THE DEFECT THIS REPLACES, and it was live: the directory was removed whole
+ * and the two files were then restored from `../sidecar-template/`, a
+ * directory that does not exist -- guarded by `existsSync`, so the restore
+ * silently did nothing. Running the packaging script therefore DELETED two
+ * TRACKED files, `sidecar/.gitignore` and `sidecar/README.md`, and left the
+ * working tree dirty with two deletions nobody asked for. The same class of
+ * defect PW-0104 exists for, arriving through a different door.
+ *
+ * WHY THOSE TWO ARE TRACKED AT ALL, which is what makes deleting them
+ * expensive rather than untidy: `tauri-build` validates `bundle.resources` at
+ * build time and FAILS when a declared path is absent, and git does not carry
+ * empty directories. The two files are what keep `sidecar/` present in a fresh
+ * clone, so `cargo check` does not depend on whether somebody has run this
+ * script first. `sidecar/README.md` says so in its own words.
+ *
+ * SO THE WIPE IS NOW SELECTIVE rather than the directory being recreated from
+ * a template that never existed. One source for those files -- the tracked
+ * ones -- instead of two copies to keep in step.
+ */
+const PRESERVED = [".gitignore", "README.md"];
+
+if (existsSync(sidecarDir)) {
+  for (const entry of readdirSync(sidecarDir)) {
+    if (PRESERVED.includes(entry)) continue;
+    rmSync(join(sidecarDir, entry), { recursive: true, force: true, maxRetries: 5 });
+  }
+}
 mkdirSync(join(sidecarDir, "server"), { recursive: true });
 
 cpSync(standalone, join(sidecarDir, "server"), { recursive: true });
@@ -81,10 +110,20 @@ cpSync(standalone, join(sidecarDir, "server"), { recursive: true });
 cpSync(staticDir, join(sidecarDir, "server", ".next", "static"), { recursive: true });
 cpSync(nodeBinary, join(sidecarDir, NODE_RELATIVE));
 
-/* Keep the two files that describe the directory rather than its contents. */
-for (const kept of [".gitignore", "README.md"]) {
-  const source = join(desktop, "sidecar-template", kept);
-  if (existsSync(source)) cpSync(source, join(sidecarDir, kept));
+/*
+ * ASSERTED RATHER THAN RESTORED. They were never removed above, so this is a
+ * check that the selective wipe stayed selective -- the failure mode it
+ * replaces was silent, and a guard that only runs when something has already
+ * gone wrong is the one worth having.
+ */
+for (const kept of PRESERVED) {
+  if (!existsSync(join(sidecarDir, kept))) {
+    fail(
+      `packaging removed the tracked file sidecar/${kept}. It is tracked so that git carries ` +
+        `the directory into a fresh clone, which is what lets tauri-build validate ` +
+        `bundle.resources without this script having been run first.`
+    );
+  }
 }
 
 /*

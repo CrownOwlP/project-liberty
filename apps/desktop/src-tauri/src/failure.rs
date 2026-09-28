@@ -54,6 +54,29 @@ pub fn describe(failure: &StartupFailure) -> FailureReport {
             ),
             retry_may_help: false,
         },
+        StartupFailure::Launch(LaunchError::Unwritable { detail }) => FailureReport {
+            headline: "Project Liberty could not write to your profile".into(),
+            /*
+             * A DIFFERENT REMEDY FROM THE MISSING-RESOURCE ARM ABOVE, which is
+             * why it is a different variant. That one says reinstall; this one
+             * cannot, because reinstalling replaces files under Program Files
+             * and the thing that failed is under the user's own profile. The
+             * causes a person can act on are disk space, a policy that
+             * redirects the local app-data folder, and a security product
+             * holding the directory -- so the text names the path and stops.
+             *
+             * THE INNER DETAIL IS FORWARDED, unlike the token arm below. It is
+             * an operating-system message about a directory, carrying no
+             * credential, and it is the only thing that distinguishes "the
+             * disk is full" from "access is denied".
+             */
+            detail: format!(
+                "{detail} This is usually disk space, a policy that redirects your local \
+                 application data folder, or a security product holding it open. Reinstalling \
+                 will not help: the folder is in your user profile, not in the installation."
+            ),
+            retry_may_help: true,
+        },
         StartupFailure::Launch(LaunchError::Token(_)) => FailureReport {
             headline: "Project Liberty could not secure its local connection".into(),
             /*

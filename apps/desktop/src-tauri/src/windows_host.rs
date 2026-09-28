@@ -35,6 +35,7 @@ use crate::failure::FailureReport;
 use crate::job::KillOnCloseJob;
 use crate::job::JobError;
 use crate::shell::{Child, HandshakeOutcome, ShellHost};
+use crate::sidecar::WritableDirectories;
 use crate::sidecar::{launch_arguments, SidecarLaunch};
 
 /// The event the failure window listens for.
@@ -77,6 +78,47 @@ impl ShellHost for WindowsHost {
             .path()
             .resource_dir()
             .map_err(|error| format!("the packaged resource directory could not be located: {error}"))
+    }
+
+    fn data_dir(&mut self) -> Result<PathBuf, String> {
+        /*
+         * `app_local_data_dir`, NOT `app_data_dir` -- LOCAL, never roaming, and
+         * the difference is measured in gigabytes on a domain (PW-0501).
+         *
+         * Tauri's `app_data_dir` resolves to the ROAMING known folder on
+         * Windows (`%APPDATA%`), which a corporate profile service copies
+         * between every machine the user signs in to. This application's
+         * writable root holds a media cache and a local store; putting that on
+         * the roaming path would make every sign-in a sync of state that is
+         * meaningless on another machine, and the person whose logon takes
+         * twenty minutes would have no way to know why.
+         *
+         * `app_local_data_dir` is `%LOCALAPPDATA%\<identifier>`, which is the
+         * known folder Windows documents for exactly this, resolved through the
+         * platform API rather than by reading the variable -- so a redirected
+         * profile is honoured instead of guessed at.
+         */
+        self.app.path().app_local_data_dir().map_err(|error| {
+            format!("the per-user application data directory could not be located: {error}")
+        })
+    }
+
+    fn create_directories(&mut self, directories: &WritableDirectories) -> Result<(), String> {
+        /*
+         * `create_dir_all`, which is idempotent -- after the first launch these
+         * all exist and that is the normal answer, not an error.
+         *
+         * THE PATH IS IN THE MESSAGE. This is the failure a person is most
+         * likely to be able to act on -- disk space, a redirected folder, a
+         * security product holding a handle -- and a report that said only
+         * "access denied" would tell them nothing about where.
+         */
+        for directory in directories.all() {
+            std::fs::create_dir_all(directory).map_err(|error| {
+                format!("{} could not be created: {error}", directory.display())
+            })?;
+        }
+        Ok(())
     }
 
     fn resource_exists(&self, path: &Path) -> bool {

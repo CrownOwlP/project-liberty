@@ -19,6 +19,12 @@
 //!   machine and are owed to PW-0601. No gate recorded from this environment may
 //!   imply otherwise.
 
+/// Application identity and the one place the version comes from (PW-0501).
+///
+/// Portable on purpose: it is a constant and a set of guards over
+/// `tauri.conf.json`, so the checks that stop a Windows bundle failing minutes
+/// into a runner job run on any machine that can compile this crate.
+pub mod identity;
 pub mod failure;
 pub mod handshake;
 pub mod job;
