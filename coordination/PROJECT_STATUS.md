@@ -1,13 +1,13 @@
 # Project Liberty - Project Status
 
-> Generated 2026-09-29T23:07:55.629Z from the AI control plane.
+> Generated 2026-09-29T23:26:18.201Z from the AI control plane.
 
 **Overall completion:** 78/103 executable tasks (76%)
 
 ## Status summary
 
-- **BACKLOG:** 12
-- **READY:** 8
+- **BACKLOG:** 13
+- **READY:** 7
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 0
 - **REVIEW:** 2
@@ -37,9 +37,9 @@
 ## Dispatch classification
 
 - **READY_AND_EXECUTABLE:** 7
-- **READY_BUT_EXTERNAL:** 1
+- **READY_BUT_EXTERNAL:** 0
 - **BLOCKED:** 3
-- **BACKLOG (dependency-gated):** 12
+- **BACKLOG (dependency-gated):** 13
 
 ## Recommended executable wave
 
@@ -50,7 +50,7 @@
 
 ## Queued for external agents
 
-- **PW-0106** (P1/Player) PORT=0 never reaches the kernel: the packaged sidecar always tries to bind 3000 — reserved for gpt-architect via openai-chatgpt; not locally executable
+No READY work is waiting on an external agent lane.
 
 ## Blockers
 

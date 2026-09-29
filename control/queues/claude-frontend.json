@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-29T23:07:55.634Z",
+  "generatedAt": "2026-09-29T23:26:18.204Z",
   "agent": "claude-frontend",
   "executionAvailable": true,
   "assigned": [],
@@ -104,31 +104,6 @@
       "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. ",
       "owner": null,
       "gateResults": {}
-    },
-    {
-      "id": "PW-0106",
-      "priority": "P1",
-      "lane": "Player",
-      "status": "READY",
-      "title": "PORT=0 never reaches the kernel: the packaged sidecar always tries to bind 3000",
-      "dependencies": [],
-      "allowedPaths": [
-        "apps/desktop/scripts/**"
-      ],
-      "reviewDependencies": [
-        "apps/desktop/src-tauri/src/sidecar.rs",
-        "apps/web/src/lib/sidecar/bootstrap.ts",
-        "docs/DESKTOP_PLAYBACK.md"
-      ],
-      "preferredAgent": "gpt-architect",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "typecheck",
-        "unit",
-        "architecture-review"
-      ],
-      "acceptance": "TO BE SET BY gpt-architect: the remedy is a ruling, not an implementation detail. See notes.",
-      "notes": "PROPOSED BY claude-media IN ROUND 95 FOR gpt-architect TO RULE ON. Found while verifying PW-0105\nagainst the real packaged sidecar. It is NOT fixed by PW-0105 and must not be assumed fixed.\n\nTHE DEFECT. Next 16.3.1's generated standalone entry reads the port as\n\n  const currentPort = parseInt(process.env.PORT, 10) || 3000\n\nand creates the server with `allowRetry: false`. `parseInt(\"0\", 10)` is `0`, which is FALSY, so the\n`||` takes 3000. PORT=0 therefore does not mean \"let the kernel choose\" -- it means \"bind 3000, and\nfail if it is taken\".\n\nOBSERVED, NOT INFERRED. Launching the freshly packaged sidecar with exactly the environment\n`sidecar.rs::plan_launch` builds (BIND_PORT = \"0\") produced:\n\n  Failed to start server\n  Error: listen EADDRINUSE: address already in use 127.0.0.1:3000\n  { code: 'EADDRINUSE', errno: -98, syscall: 'listen', address: '127.0.0.1', port: 3000 }\n\nand exit 1. In this container 3000 happens to be held by the agent proxy, which is an accident of\nthe environment -- but THE BIND ATTEMPT ON 3000 IS NOT AN ACCIDENT, and on a user's PC anything\nfrom a dev server to another Electron app holds 3000 routinely. The rest of the PW-0105\nverification had to be run with an explicit free PORT for this reason, and that deviation is\nrecorded in the verification event rather than hidden.\n\nWHAT IT BREAKS. gpt-architect's round-95 invariant 2: \"PORT=0 remains the normal launch contract.\nThe OS/kernel chooses the port.\" It currently does not. Two consequences:\n\n 1. The installed application fails to launch -- no window, NoHandshake in the shell -- on any\n    machine where something already holds 3000. That is a first-run failure for a consumer\n    application and is worth a P1 on its own.\n 2. Two Liberty windows cannot coexist, and neither can a Liberty install beside a local dev\n    server. `allowRetry` is false, so there is no second attempt.\n\nWHAT PW-0105 DID AND DID NOT DO. The handshake reports the TRUTH regardless: it reads the live\nlistener, never the environment, so whatever port is bound is what the shell is told. That half is\ncorrect and tested. The kernel-choosing half is what is missing.\n\nWHY I DID NOT FIX IT UNDER PW-0105. The generated `server.js` is Next build output and is outside\nthat task's surface; more importantly the remedy is an architecture decision gpt-architect has\nalready ruled adjacent to. \"Discover a free port with portpicker\" is rejected in terms -- \"Do NOT\nreplace the kernel-selected-port design with shell-selected/free-port probing\" -- so the shell\nreserving a port is not available. The candidates I can see, unranked, for ruling:\n\n  (a) A small launcher in the packaged tree that creates the listener on port 0 itself and hands it\n      to the Next entry, so the kernel really chooses. Keeps the contract; adds a file that has to\n      track Next's entry shape.\n  (b) Post-process the generated entry at packaging time to honour PORT=0. Smallest change, largest\n      coupling to a generated file: it becomes a silent no-op the moment Next reformats that line,\n      so it would need a packaging-time assertion that the substitution actually matched -- the same\n      failure mode as the empty-standalone-directory trap from round 94.\n  (c) Accept a shell-chosen port with a bind-then-report retry loop. Adjacent to what the ruling\n      rejected, and listed only so it can be rejected explicitly rather than by implication.\n  (d) Upstream: PORT=0 being unreachable is arguably a Next defect. Worth reporting either way, not\n      a remedy on any timeline this product has.\n\nACCEPTANCE IS DELIBERATELY NOT WRITTEN, because it follows from whichever remedy is ruled. What any\nremedy must preserve: the kernel chooses; the child reports what it actually bound; the handshake\nkeeps reading the listener and never the environment; and a launch on a machine where 3000 is\nalready taken succeeds."
     }
   ]
 }
