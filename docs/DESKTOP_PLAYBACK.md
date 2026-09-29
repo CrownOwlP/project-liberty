@@ -215,10 +215,19 @@ The costs, each of which is work somebody has to do:
 
 ### Wiring, and the one part that needs a spike
 
-Discover a free port with `portpicker`, spawn the sidecar, and have **the sidecar report its
-actually-bound port on stdout** rather than being told which port to use — the pick-then-bind window
-is a TOCTOU race, and the one production precedent hit the related failure (build-time-baked port
-env vars silently disagreeing with runtime-assigned ports). Then either:
+Spawn the sidecar with `PORT=0` and have **the sidecar report its actually-bound port on stdout**
+rather than being told which port to use — the pick-then-bind window is a TOCTOU race, and the one
+production precedent hit the related failure (build-time-baked port env vars silently disagreeing
+with runtime-assigned ports).
+
+> **Corrected in round 95 (PW-0105).** This paragraph used to open "Discover a free port with
+> `portpicker`". gpt-architect's ruling rejects that in terms — *"Do NOT replace the
+> kernel-selected-port design with shell-selected/free-port probing"* — and the rest of the
+> paragraph was already arguing against it. The kernel chooses; the child reports. The reporting
+> half is implemented in `apps/web/src/lib/sidecar/bootstrap.ts`, which obtains the port from the
+> live listener and never from `PORT`.
+
+Then either:
 
 - `Manager::add_capability(CapabilityBuilder::new(..).remote(url).window("main"))` — a real runtime
   API, gated behind the `dynamic-acl` cargo feature, which is **enabled by default**. This is the
@@ -937,9 +946,9 @@ is a refusal and not a preference.
 `127.0.0.1` explicitly and never `0.0.0.0` (Next reads `HOSTNAME`; getting it wrong exposes the port
 to the LAN, and it is a one-word mistake with a large blast radius — make it a test assertion). A
 **256-bit CSPRNG bearer token** generated per launch, passed to the sidecar through the environment,
-injected into the webview by an initialisation script, and required on every request. **`Host`
-header validation against the exact expected literal**, which mechanically defeats DNS rebinding
-because a rebound request arrives with `Host: evil.com`. `Origin`/`Sec-Fetch-Site` checks on
+injected into the webview by an initialisation script, and required on every request.
+**Hostname-exact `Host` header validation**, which mechanically defeats DNS rebinding because a
+rebound request arrives with `Host: evil.com`. `Origin`/`Sec-Fetch-Site` checks on
 state-changing requests. A random port is **obscurity only** — a local process enumerates listeners
 in milliseconds — and must not be counted as a control. Chrome 142's Local Network Access permission
 gating is defence in depth we get for free and is not a substitute for `Host` validation.
@@ -950,6 +959,40 @@ no provider secret for these controls to be the last line in front of. They keep
 processes out of the user's own session, which is what they are good at. They were never strong
 enough to be the only thing protecting a provider relationship, and under the ruling they do not
 have to be.
+
+### What `Host` validation compares, precisely (amended in round 95, PW-0105)
+
+This paragraph used to say "the exact expected literal", and the code implemented it literally:
+`LIBERTY_SIDECAR_HOST` was compared to the whole incoming `Host` value, port included. **That rule
+could not be satisfied by any shell that also honoured the port contract above.** The kernel
+chooses the port after the shell has finished building the child's environment, so no value the
+shell can compute before spawning contains it. In practice the shell sent `127.0.0.1`, every
+request arrived as `127.0.0.1:<chosen-port>`, and the listener refused all of them.
+
+gpt-architect's ruling resolves it by amending the contract rather than the port design:
+`LIBERTY_SIDECAR_HOST` **"should represent the expected HOSTNAME / loopback identity, not a
+precomputed `<host>:<unknown-port>` authority"**. So:
+
+- `LIBERTY_SIDECAR_HOST` is a **literal loopback address** — `127.0.0.1` or `::1`. A name is
+  refused at startup, because a name is exactly what a rebinding attacker supplies, and the value
+  is the entire rebinding defence. This is narrower than the set of addresses the sidecar may
+  *bind*, where `localhost` is still a loopback bind.
+- The incoming `Host` is **parsed**, not pattern-matched, and every ambiguous shape is refused
+  rather than normalised: userinfo, URL delimiters, whitespace, control characters, an unbracketed
+  authority with more than one colon, a non-decimal or out-of-range or zero-padded port, a trailing
+  dot, a zone-scoped IP-literal. See `parseHostHeader` in `apps/web/src/lib/sidecar/policy.ts`.
+- The parsed hostname must **equal** the configured literal. Not a suffix match, not
+  `includes("127.0.0.1")` — `127.0.0.1.evil.test` contains it and is refused.
+- The parsed port must equal **the port the process is really listening on**, obtained from the
+  live server at startup. When that cannot be established the hostname match plus the per-launch
+  token is the enforced minimum, and the guard does not fall open.
+
+**Known open defect, not fixed by PW-0105 and not to be assumed fixed:** Next's generated
+standalone entry reads the port as `parseInt(process.env.PORT, 10) || 3000`, so `PORT=0` is falsy
+after parsing and the server binds **3000** with `allowRetry: false` rather than letting the kernel
+choose. The handshake still reports the truth, because it reads the listener rather than the
+environment — but the kernel-chosen-port half of the contract above is currently not in effect, and
+a machine already using 3000 will fail to launch. Tracked separately; see `control/tasks.json`.
 
 ---
 

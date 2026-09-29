@@ -14,6 +14,7 @@
  * ---------------------------------------------------------------------- */
 import { NextResponse, type NextRequest } from "next/server";
 
+import { listeningPortOnce } from "./lib/sidecar/listener";
 import {
   SIDECAR_TOKEN_HEADER,
   authorizeRequest,
@@ -57,10 +58,27 @@ const MEDIA_ORIGIN_VARS = ["LIBERTY_FIXTURE_MEDIA_ORIGIN"];
 const CONNECT_ORIGIN_VARS = ["LIBERTY_PLAYBACK_BACKEND_ORIGIN"];
 
 export function proxy(request: NextRequest): NextResponse {
-  const decision = authorizeRequest(ENVIRONMENT, {
-    presentedToken: request.headers.get(SIDECAR_TOKEN_HEADER),
-    host: request.headers.get("host")
-  });
+  /*
+   * THE THIRD ARGUMENT IS THE ACTUAL LISTENING PORT, AND IT IS NOT READ FROM
+   * `PORT`. Under PW-0101's contract the shell sets `PORT=0` and the kernel
+   * chooses, so the environment holds "0". `lib/sidecar/bootstrap.ts`
+   * establishes the real number from the running server at startup and
+   * publishes it; this reads that. `null` means startup never established one,
+   * and `authorizeRequest` documents what it enforces in that case rather than
+   * falling open.
+   *
+   * It is not folded into `ENVIRONMENT` above because that constant is read at
+   * module load, and this bundle may be instantiated before the bootstrap that
+   * writes the value. `listeningPortOnce` caches a hit and never a miss.
+   */
+  const decision = authorizeRequest(
+    ENVIRONMENT,
+    {
+      presentedToken: request.headers.get(SIDECAR_TOKEN_HEADER),
+      host: request.headers.get("host")
+    },
+    listeningPortOnce()
+  );
 
   if (!decision.ok) {
     /*

@@ -1,15 +1,15 @@
 # Project Liberty - Project Status
 
-> Generated 2026-09-29T22:05:05.752Z from the AI control plane.
+> Generated 2026-09-29T23:02:06.821Z from the AI control plane.
 
-**Overall completion:** 78/102 executable tasks (76%)
+**Overall completion:** 78/103 executable tasks (76%)
 
 ## Status summary
 
 - **BACKLOG:** 12
 - **READY:** 8
 - **CLAIMED:** 0
-- **IN_PROGRESS:** 1
+- **IN_PROGRESS:** 2
 - **REVIEW:** 0
 - **BLOCKED:** 3
 - **DONE:** 78
@@ -32,11 +32,12 @@
 ## Active work
 
 - **PW-0501** [IN_PROGRESS] A Windows build that CI actually produces — owner: claude-infra
+- **PW-0105** [IN_PROGRESS] The sidecar half of the desktop contract was never wired into the server — owner: claude-media
 
 ## Dispatch classification
 
-- **READY_AND_EXECUTABLE:** 8
-- **READY_BUT_EXTERNAL:** 0
+- **READY_AND_EXECUTABLE:** 7
+- **READY_BUT_EXTERNAL:** 1
 - **BLOCKED:** 3
 - **BACKLOG (dependency-gated):** 12
 
@@ -49,7 +50,7 @@
 
 ## Queued for external agents
 
-No READY work is waiting on an external agent lane.
+- **PW-0106** (P1/Player) PORT=0 never reaches the kernel: the packaged sidecar always tries to bind 3000 — reserved for gpt-architect via openai-chatgpt; not locally executable
 
 ## Blockers
 
@@ -71,7 +72,7 @@ UNBLOCK WHEN: the commander runs Experiment 1a on real Windows hardware and hand
 - **claude-lead:** 0/2 active
 - **claude-frontend:** 0/2 active
 - **claude-backend:** 0/2 active
-- **claude-media:** 0/2 active
+- **claude-media:** 1/2 active
 - **claude-test:** 0/1 active
 - **claude-security:** 0/1 active
 - **claude-infra:** 1/1 active

@@ -1,10 +1,18 @@
 {
-  "generatedAt": "2026-09-29T22:05:05.754Z",
+  "generatedAt": "2026-09-29T23:02:06.823Z",
   "agent": "gpt-architect",
   "executionAvailable": false,
   "assigned": [],
   "review": [],
-  "reservedExternal": [],
+  "reservedExternal": [
+    {
+      "id": "PW-0106",
+      "title": "PORT=0 never reaches the kernel: the packaged sidecar always tries to bind 3000",
+      "priority": "P1",
+      "lane": "Player",
+      "reason": "reserved for gpt-architect via openai-chatgpt; not locally executable"
+    }
+  ],
   "recommended": [
     {
       "id": "PL-0406",

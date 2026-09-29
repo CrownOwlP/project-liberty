@@ -27,6 +27,18 @@
  * -- a runtime check does not remove a module from a bundle. So the guard
  * decides whether the module is loaded at all.
  *
+ * IT NOW DOES TWO THINGS, IN AN ORDER THAT MATTERS (PW-0105). The sidecar
+ * startup path runs FIRST, because it is the one that can decide this process
+ * must not serve at all, and a catalog log line printed by a process that is
+ * about to exit non-zero is noise in front of the diagnostic that matters.
+ *
+ * WHY THE SIDECAR CHECK IS HERE AND NOT EARLIER. It should be earlier. Next
+ * constructs the server, calls `listen()` and only then awaits this function --
+ * measured on 16.3.1, not read from a changelog -- so this is the first moment
+ * application code exists at all. `lib/sidecar/bootstrap.ts` records the
+ * consequence and `authorizeRequest` closes the resulting window at the request
+ * boundary.
+ *
  * THERE IS NO LOGIC HERE, AND THAT IS THE POINT. Everything this file could get
  * wrong -- which variables are read, what a half-configured deployment gets,
  * what the log line says -- lives in `lib/server-bootstrap.ts`, where
@@ -37,6 +49,15 @@
 
 export async function register(): Promise<void> {
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
+
+  /*
+   * FIRST, AND IT MAY NOT RETURN. `runSidecarBootstrap` exits the process when
+   * this is a sidecar launch whose bind safety cannot be established, and emits
+   * the one handshake line the desktop shell is waiting on when it can. A
+   * hosted deployment reaches neither branch: no launch token, no sidecar.
+   */
+  const { runSidecarBootstrap } = await import("./lib/sidecar/bootstrap");
+  runSidecarBootstrap();
 
   const { bootstrapCatalogMetadataSource, describeCatalogBootstrapOutcome } = await import(
     "./lib/server-bootstrap"
