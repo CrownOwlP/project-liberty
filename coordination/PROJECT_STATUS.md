@@ -1,6 +1,6 @@
 # Project Liberty - Project Status
 
-> Generated 2026-09-29T23:02:06.821Z from the AI control plane.
+> Generated 2026-09-29T23:07:55.629Z from the AI control plane.
 
 **Overall completion:** 78/103 executable tasks (76%)
 
@@ -9,8 +9,8 @@
 - **BACKLOG:** 12
 - **READY:** 8
 - **CLAIMED:** 0
-- **IN_PROGRESS:** 2
-- **REVIEW:** 0
+- **IN_PROGRESS:** 0
+- **REVIEW:** 2
 - **BLOCKED:** 3
 - **DONE:** 78
 - **CANCELED:** 0
@@ -31,8 +31,8 @@
 
 ## Active work
 
-- **PW-0501** [IN_PROGRESS] A Windows build that CI actually produces — owner: claude-infra
-- **PW-0105** [IN_PROGRESS] The sidecar half of the desktop contract was never wired into the server — owner: claude-media
+- **PW-0501** [REVIEW] A Windows build that CI actually produces — owner: claude-infra
+- **PW-0105** [REVIEW] The sidecar half of the desktop contract was never wired into the server — owner: claude-media
 
 ## Dispatch classification
 
