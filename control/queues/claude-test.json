@@ -1,9 +1,71 @@
 {
-  "generatedAt": "2026-09-29T23:26:18.206Z",
+  "generatedAt": "2026-09-30T03:07:39.773Z",
   "agent": "claude-test",
   "executionAvailable": true,
   "assigned": [],
   "review": [],
   "reservedExternal": [],
-  "recommended": []
+  "recommended": [
+    {
+      "id": "PW-0503",
+      "priority": "P1",
+      "lane": "Test",
+      "status": "READY",
+      "title": "Install, upgrade, uninstall, reinstall — tested, not assumed",
+      "dependencies": [
+        "PW-0501"
+      ],
+      "allowedPaths": [
+        "scripts/windows/**",
+        "e2e/windows/**"
+      ],
+      "reviewDependencies": [
+        ".github/workflows/windows.yml",
+        "apps/desktop",
+        "docs/TEST_MATRIX.md"
+      ],
+      "preferredAgent": "claude-test",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "build",
+        "unit"
+      ],
+      "acceptance": "The installer's lifecycle is exercised automatically wherever that is possible on a runner, and everything that is not is named for the commander's machine. REQUIRED: clean install on a machine that has never had the application, then launch. REQUIRED: upgrade over a previous version with user data preserved, which is the one a release breaks most often and nobody tests. REQUIRED: uninstall leaves no service, no scheduled task and no orphaned node.exe, and states exactly what user data it keeps or removes. REQUIRED: reinstall after uninstall. REQUIRED: each case is marked automated or commander-machine, with the reason, so the split is visible rather than implied.",
+      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. SURFACE NOTE: this task's allowedPaths name directories that do not exist yet. The evidence-based narrowing procedure applies to reconciling work already in history; for genuinely new work the surface is the smallest set of paths the acceptance can be satisfied within, and it is narrowed again from the diff before review if it turns out to be wider than what was written. ",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PW-0602",
+      "priority": "P1",
+      "lane": "Test",
+      "status": "READY",
+      "title": "The automated half of the Windows matrix, running on Windows",
+      "dependencies": [
+        "PW-0501",
+        "PW-0601"
+      ],
+      "allowedPaths": [
+        "e2e/windows/**"
+      ],
+      "reviewDependencies": [
+        "docs/WINDOWS_CERTIFICATION.md",
+        "e2e/playwright.config.ts",
+        "apps/desktop",
+        "docs/E2E.md",
+        ".github/workflows/windows.yml"
+      ],
+      "preferredAgent": "claude-test",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "e2e"
+      ],
+      "acceptance": "Every row PW-0601 marks automated runs on a windows-latest runner and fails the build when it fails. REQUIRED: the existing e2e suite runs against the DESKTOP target on Windows, not only the web target on Ubuntu -- the desktop axis is currently built on Ubuntu only, and only incidentally, because the axis defaults on and openssl happens to be installed. REQUIRED: the shell is driven end to end where the harness can reach it, and where it cannot, the row stays in the commander-machine half rather than being replaced by a unit test that proves something easier. REQUIRED: retries stay at zero, on the rule playwright.config.ts already states at length. REQUIRED: a row that is skipped says why, by name, the way the existing harness already does for the desktop and media-rig axes.",
+      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. SURFACE NOTE: this task's allowedPaths name directories that do not exist yet. The evidence-based narrowing procedure applies to reconciling work already in history; for genuinely new work the surface is the smallest set of paths the acceptance can be satisfied within, and it is narrowed again from the diff before review if it turns out to be wider than what was written. OWNERSHIP RESOLVED BY RESPONSIBILITY in round 87, on gpt-architect's ruling. .github/workflows/windows.yml moved from allowedPaths to reviewDependencies: this task is the certification CONSUMER -- it needs the workflow and the artifact to EXIST and to execute its rows, which is a read relationship. PW-0501 owns the workflow because PW-0501 produces the Windows artifact. A task does not co-own a production build workflow merely because its tests run there. If this task's acceptance genuinely requires editing that workflow after PW-0501 lands, it is sequenced AFTER PW-0501 -- its dependencies already say so -- and its narrowed write surface is derived from the actual change at claim time rather than reserved now. Neither task was narrowed to defeat conflictWithActive; the surfaces follow the implementation responsibility.",
+      "owner": null,
+      "gateResults": {},
+      "updatedAt": "2026-09-26T22:32:02.611097Z"
+    }
+  ]
 }

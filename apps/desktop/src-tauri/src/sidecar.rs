@@ -32,7 +32,23 @@ use std::path::{Path, PathBuf};
 /// also what `tauri.conf.json`'s `bundle.resources` has to name, and two
 /// spellings of one path is a build that ships a tree the shell cannot find.
 pub const NODE_RELATIVE_PATH: &str = "sidecar/node.exe";
-pub const SERVER_RELATIVE_PATH: &str = "sidecar/server/server.js";
+
+/// THE ENTRY POINT IS OURS, NOT NEXT'S (PW-0106).
+///
+/// This used to be `sidecar/server/server.js`, the entry Next generates for
+/// `output: "standalone"`. That file resolves its port as
+/// `parseInt(process.env.PORT, 10) || 3000`, and `parseInt("0", 10)` is `0`,
+/// which is falsy -- so `BIND_PORT` below, the whole kernel-chooses contract,
+/// silently became "bind 3000" with `allowRetry: false`. Observed on the
+/// packaged tree as `EADDRINUSE` on 127.0.0.1:3000 and exit 1, which on a
+/// user's PC is a first launch with no window.
+///
+/// `liberty-sidecar.js` is checked in at `apps/desktop/sidecar-bootstrap/`,
+/// creates the listener itself on `BIND_HOST` port 0, and hosts the same
+/// standalone application through Next's public custom-server API. Next's own
+/// entry is still shipped -- it is build output -- and is never spawned;
+/// `package-sidecar.mjs` asserts this constant against what it lays down.
+pub const SERVER_RELATIVE_PATH: &str = "sidecar/server/liberty-sidecar.js";
 
 /// Environment variables the sidecar reads.
 ///
@@ -116,7 +132,16 @@ pub const BIND_HOST: &str = "127.0.0.1";
 ///
 /// The alternative -- the shell picks a free port and passes it in -- has a
 /// TOCTOU window between the pick and the bind that is not theoretical on a
-/// machine doing anything else. `handshake.ts` records the whole argument.
+/// machine doing anything else. `handshake.ts` records the whole argument, and
+/// gpt-architect's round-96 ruling restates it as a refusal: "Do NOT replace
+/// the kernel-selected-port design with shell-selected/free-port probing."
+///
+/// IT IS STILL SENT EVEN THOUGH OUR ENTRY POINT NO LONGER READS IT. The value
+/// states the launch contract, and `liberty-sidecar.js` implements it by
+/// binding a literal 0 rather than by consulting this variable -- deliberately,
+/// because consulting it is what produced the defect PW-0106 removed. Sending
+/// it keeps the contract legible to anyone reading the spawn, and keeps the
+/// environment honest if Next's own entry is ever run by hand for diagnosis.
 pub const BIND_PORT: &str = "0";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -345,6 +370,55 @@ mod tests {
     }
 
     #[test]
+    fn the_shell_spawns_our_bootstrap_and_never_nexts_generated_entry() {
+        // THE REGRESSION GUARD FOR PW-0106, on the shell's side of the wire.
+        //
+        // Next's generated `server.js` cannot honour BIND_PORT: it resolves the
+        // port as `parseInt(process.env.PORT, 10) || 3000`, so "0" is falsy and
+        // it binds 3000 with retry disabled. Pointing this constant back at it
+        // would restore a first-run failure on any machine already using 3000,
+        // and would do so silently -- the packaging script would still produce
+        // a tree, the installer would still install, and only a user would
+        // find out.
+        assert!(
+            SERVER_RELATIVE_PATH.ends_with("/liberty-sidecar.js"),
+            "the spawned entry must be our bootstrap, not Next's: {SERVER_RELATIVE_PATH}"
+        );
+        assert!(
+            !SERVER_RELATIVE_PATH.ends_with("/server.js"),
+            "SERVER_RELATIVE_PATH names Next's generated entry, which cannot honour PORT=0"
+        );
+
+        let launch = plan(TOKEN).unwrap();
+        let spawned = launch.server.to_string_lossy().into_owned();
+        assert!(
+            spawned.ends_with("liberty-sidecar.js"),
+            "the planned launch must spawn the bootstrap: {spawned}"
+        );
+    }
+
+    #[test]
+    fn the_shell_states_a_kernel_chosen_port_and_never_a_number_it_picked() {
+        // Acceptance item 12: "no shell-side free-port probing exists." There
+        // is nothing to probe WITH in this module -- no socket, no bind, no
+        // retry -- so the property is asserted on the one value that could
+        // carry a preselected port.
+        assert_eq!(
+            BIND_PORT, "0",
+            "the kernel chooses the port; a concrete number here is a preselection"
+        );
+        let launch = plan(TOKEN).unwrap();
+        let env: std::collections::HashMap<_, _> = launch.env.iter().cloned().collect();
+        assert_eq!(env.get(NODE_PORT_VAR).map(String::as_str), Some("0"));
+        assert!(
+            launch_arguments(&launch)
+                .iter()
+                .all(|arg| !arg.contains("--port") && !arg.contains("-p")),
+            "no port may be passed on the command line either"
+        );
+    }
+
+    #[test]
     fn a_short_or_non_hex_token_is_refused_before_anything_is_spawned() {
         // Checked here as well as in policy.ts because this process MINTS it.
         // Learning at the sidecar's bind check that the shell generated rubbish
@@ -372,7 +446,14 @@ mod tests {
             other => panic!("expected a missing-runtime error: {other:?}"),
         }
 
-        let missing_server = |path: &Path| !path.to_string_lossy().contains("server.js");
+        // DERIVED FROM THE CONSTANT rather than spelled out. The literal used
+        // to be "server.js", and when PW-0106 moved the entry to
+        // `liberty-sidecar.js` this predicate silently stopped matching
+        // anything -- so the test claimed a missing server and got a valid
+        // launch. A test whose subject can rename itself out of the assertion
+        // is a test that passes for the wrong reason.
+        let server_file = SERVER_RELATIVE_PATH.rsplit('/').next().unwrap();
+        let missing_server = |path: &Path| !path.to_string_lossy().contains(server_file);
         match plan_launch(Path::new("C:\\Liberty"), Path::new("C:\\State"), TOKEN, &missing_server) {
             Err(LaunchError::Missing { what, .. }) => assert_eq!(what, "application server"),
             other => panic!("expected a missing-server error: {other:?}"),

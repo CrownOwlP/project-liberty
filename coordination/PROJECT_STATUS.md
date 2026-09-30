@@ -1,18 +1,18 @@
 # Project Liberty - Project Status
 
-> Generated 2026-09-29T23:26:18.201Z from the AI control plane.
+> Generated 2026-09-30T03:07:39.768Z from the AI control plane.
 
-**Overall completion:** 78/103 executable tasks (76%)
+**Overall completion:** 79/103 executable tasks (77%)
 
 ## Status summary
 
-- **BACKLOG:** 13
-- **READY:** 7
+- **BACKLOG:** 9
+- **READY:** 10
 - **CLAIMED:** 0
-- **IN_PROGRESS:** 0
-- **REVIEW:** 2
+- **IN_PROGRESS:** 1
+- **REVIEW:** 1
 - **BLOCKED:** 3
-- **DONE:** 78
+- **DONE:** 79
 - **CANCELED:** 0
 - **SUPERSEDED:** 4
 
@@ -27,25 +27,27 @@
 - **M6 — Shared-Agent Automation Bridge:** COMPLETE, 3/3 (100%)
 - **EXT — External Licensed Integrations:** BLOCKED, 0/2 (0%), 2 blocked
 - **M7 — Windows Desktop Shell + Native Playback:** COMPLETE, 4/4 (100%)
-- **PW — undefined:** IN_PROGRESS, 13/32 (41%), 1 blocked
+- **PW — undefined:** IN_PROGRESS, 14/32 (44%), 1 blocked
 
 ## Active work
 
-- **PW-0501** [REVIEW] A Windows build that CI actually produces — owner: claude-infra
 - **PW-0105** [REVIEW] The sidecar half of the desktop contract was never wired into the server — owner: claude-media
+- **PW-0106** [IN_PROGRESS] PORT=0 never reaches the kernel: the packaged sidecar always tries to bind 3000 — owner: claude-media
 
 ## Dispatch classification
 
-- **READY_AND_EXECUTABLE:** 7
+- **READY_AND_EXECUTABLE:** 10
 - **READY_BUT_EXTERNAL:** 0
 - **BLOCKED:** 3
-- **BACKLOG (dependency-gated):** 13
+- **BACKLOG (dependency-gated):** 9
 
 ## Recommended executable wave
 
 - **PL-0406** -> claude-backend (P1/Backend) The documented migration command applies nothing and exits 0
+- **PW-0104** -> claude-infra (P1/Infra) A killed desktop dev server cannot leave a tracked file rewritten
 - **PW-0304** -> claude-frontend (P1/Frontend) Watchlist becomes usable: an add control and a list
 - **PW-0307** -> claude-frontend (P1/Frontend) Series navigation and the next episode
+- **PW-0503** -> claude-test (P1/Test) Install, upgrade, uninstall, reinstall — tested, not assumed
 - **PL-AI-0014** -> claude-lead (P2/Coordination) An option-looking event type is a usage error, not an event
 
 ## Queued for external agents
@@ -72,8 +74,8 @@ UNBLOCK WHEN: the commander runs Experiment 1a on real Windows hardware and hand
 - **claude-lead:** 0/2 active
 - **claude-frontend:** 0/2 active
 - **claude-backend:** 0/2 active
-- **claude-media:** 1/2 active
+- **claude-media:** 2/2 active
 - **claude-test:** 0/1 active
 - **claude-security:** 0/1 active
-- **claude-infra:** 1/1 active
+- **claude-infra:** 0/1 active
 - **human-commander:** 0/99 active (external lane; not locally executable)

@@ -5,9 +5,19 @@
  * Produces exactly the tree `src-tauri/src/sidecar.rs` expects and
  * `tauri.conf.json` declares under `bundle.resources`:
  *
- *     sidecar/node.exe          the Node runtime that runs the server
- *     sidecar/server/server.js  the Next standalone entry point
- *     sidecar/server/.next/     the chunks the server reads at runtime
+ *     sidecar/node.exe                   the Node runtime that runs the server
+ *     sidecar/server/liberty-sidecar.js  OUR entry point (PW-0106)
+ *     sidecar/server/server.js           Next's own entry, shipped, not spawned
+ *     sidecar/server/<distDir>/          the chunks the server reads at runtime
+ *
+ * THE ENTRY POINT IS OURS AND NEXT'S IS NOT SPAWNED (PW-0106). Next's
+ * generated `server.js` resolves its port as `parseInt(process.env.PORT, 10)
+ * || 3000`, so `PORT=0` binds 3000 with `allowRetry: false` -- a first-run
+ * failure on any machine already using that port. `liberty-sidecar.js` owns
+ * the listener instead and lets the kernel choose. Next's entry is still
+ * copied because it is part of the build output and removing build output is
+ * its own risk; nothing spawns it, and the assertions at the bottom fail if
+ * `sidecar.rs` ever points back at it.
  *
  * A SCRIPT RATHER THAN A README INSTRUCTION, because the layout is a contract
  * between three files -- this one, the Rust constants and the Tauri config --
@@ -21,7 +31,7 @@
  * without it, and PW-0501 -- which owns the Windows CI job -- is where the
  * runner supplies it.
  * ---------------------------------------------------------------------- */
-import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -35,11 +45,123 @@ const WEB_WORKSPACE = join("apps", "web");
 
 /** Must equal `NODE_RELATIVE_PATH` / `SERVER_RELATIVE_PATH` in `src/sidecar.rs`. */
 const NODE_RELATIVE = "node.exe";
-const SERVER_RELATIVE = join("server", "server.js");
+const SERVER_RELATIVE = join("server", "liberty-sidecar.js");
+
+/** The checked-in bootstrap this script lays down, and the file it derives. */
+const BOOTSTRAP_SOURCE = join("sidecar-bootstrap", "liberty-sidecar.js");
+const LAYOUT_RELATIVE = join("server", "liberty-sidecar-layout.json");
+
+/** Next's own entry, which is shipped as build output and never spawned. */
+const NEXT_ENTRY = "server.js";
 
 function fail(message) {
   console.error(`package-sidecar: ${message}`);
   process.exit(1);
+}
+
+/**
+ * THE ONE PRIVATE NEXT API THIS PRODUCT DEPENDS ON, CHECKED AGAINST THE COPY
+ * THAT WILL ACTUALLY SHIP.
+ *
+ * `liberty-sidecar.js` delivers the resolved build config through
+ * `__NEXT_PRIVATE_STANDALONE_CONFIG`, because that is the ONLY channel Next
+ * has for it -- `next({ conf })` is ignored on the custom-server path, and
+ * `startServer`'s own `config` option is destructured away and never reaches
+ * `getRequestHandlers` either. Next's build writes the same assignment into
+ * the standalone entry it generates (`dist/build/utils.js`), so a standalone
+ * deployment that did not set it would not work at all.
+ *
+ * WHAT THIS GUARD BUYS. If a future Next removes or renames the variable, the
+ * runtime failure is `loadConfig` silently falling back to defaults --
+ * `distDir` becomes `.next`, and the server looks for a build that is not
+ * there. That is a failure on a user's machine, discovered after shipping.
+ * Checking the SHIPPED copy of `next/dist/server/config.js` moves it to
+ * packaging time, where it costs a red build instead of a broken install.
+ *
+ * It is a substring check over a minified-ish dist file, which is crude. It is
+ * also exact about the thing that matters -- whether the consumer still names
+ * the variable -- and it runs against the bytes being packaged rather than
+ * against whatever is installed at the repository root.
+ */
+function assertStandaloneConfigChannelStillExists(serverRoot) {
+  const consumer = join(serverRoot, "node_modules", "next", "dist", "server", "config.js");
+  if (!existsSync(consumer)) {
+    fail(
+      `no ${consumer}. The packaged tree must carry Next's own server config loader; ` +
+        `without it the sidecar cannot resolve the build it ships with.`
+    );
+  }
+  if (!readFileSync(consumer, "utf8").includes("__NEXT_PRIVATE_STANDALONE_CONFIG")) {
+    const version = (() => {
+      try {
+        return JSON.parse(
+          readFileSync(join(serverRoot, "node_modules", "next", "package.json"), "utf8")
+        ).version;
+      } catch {
+        return "unknown";
+      }
+    })();
+    fail(
+      `next@${version} no longer reads __NEXT_PRIVATE_STANDALONE_CONFIG in ` +
+        `dist/server/config.js. That variable is how the packaged sidecar hands Next its ` +
+        `RESOLVED build config, and it is the only channel that exists: next({ conf }) is ` +
+        `ignored on the custom-server path and startServer's config option never reaches ` +
+        `getRequestHandlers. Without it the server falls back to defaults, looks for a build ` +
+        `in .next, and fails on a user's machine rather than here. Re-do the dependency-risk ` +
+        `analysis recorded for PW-0106 against this version before shipping.`
+    );
+  }
+}
+
+/**
+ * THE REGRESSION GUARD FOR THE DEFECT PW-0106 EXISTS TO REMOVE.
+ *
+ * `PORT=0` silently becoming 3000 is not a behaviour anyone would write on
+ * purpose; it is what you get by deferring to `process.env.PORT` in a
+ * codebase where `parseInt("0", 10) || 3000` is one expression away. So the
+ * property asserted here is the SHAPE of the entry point, checked at
+ * packaging time against the file that will actually ship:
+ *
+ *   - it binds a literal 0, through the named constant, so the kernel chooses;
+ *   - it never reads `process.env.PORT` at all.
+ *
+ * Checked over source with comments stripped, the same technique and the same
+ * reasoning as `policy.test.ts`'s build-target guard: the prose above the
+ * subject has to be able to DISCUSS the variable it refuses to read, or the
+ * guard teaches the next reader to delete the explanation.
+ *
+ * A source-shape assertion is coarse. It is also the only check that runs on
+ * the artifact being shipped rather than on a copy of it, and the failure it
+ * prevents -- an installed application that will not start on a machine using
+ * port 3000 -- is one nobody sees until it is on somebody's PC.
+ */
+function assertBootstrapStillOwnsThePort(file) {
+  const raw = readFileSync(file, "utf8");
+  const code = raw.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+  if (!/const KERNEL_CHOOSES_THE_PORT = 0;/.test(code)) {
+    fail(
+      `${file} no longer declares KERNEL_CHOOSES_THE_PORT = 0. The sidecar must bind a ` +
+        `literal 0 so the kernel selects the port; see PW-0106.`
+    );
+  }
+  if (!/server\.listen\(KERNEL_CHOOSES_THE_PORT, BIND_HOST/.test(code)) {
+    fail(
+      `${file} no longer calls server.listen(KERNEL_CHOOSES_THE_PORT, BIND_HOST, ...). ` +
+        `The bind is the whole of PW-0106 and it must not be parameterised.`
+    );
+  }
+  if (/process\.env\.PORT|process\.env\[["']PORT["']\]/.test(code)) {
+    fail(
+      `${file} reads process.env.PORT. IT MUST NOT: Next's generated entry resolves the port ` +
+        `as parseInt(process.env.PORT, 10) || 3000, which turns the PORT=0 launch contract ` +
+        `into "bind 3000 and fail if it is taken". That is the defect PW-0106 removed, and ` +
+        `reading the variable again is how it comes back.`
+    );
+  }
+  /* Non-vacuity: the comment stripper must not be eating the whole file. */
+  if (!/function main\(\)/.test(code)) {
+    fail(`${file} could not be checked: the stripped source contains no main()`);
+  }
 }
 
 /**
@@ -150,7 +272,10 @@ if (readdirSync(standalone).length === 0) {
  * placed beside it, which reproduces the resolution the server was built for.
  */
 const standaloneApp = join(standalone, WEB_WORKSPACE);
-if (!existsSync(join(standaloneApp, "server.js"))) {
+/* Checked as a SHAPE assertion, not because this file is the entry any more:
+ * its presence is how we know Next emitted the tree under the workspace path
+ * this script flattens. PW-0106 spawns `liberty-sidecar.js` instead. */
+if (!existsSync(join(standaloneApp, NEXT_ENTRY))) {
   fail(
     `no server.js at ${join(standaloneApp, "server.js")}. Next emits the standalone entry ` +
       `under the workspace path it was built from; if that has changed, this script's ` +
@@ -220,6 +345,32 @@ cpSync(staticDir, join(serverDir, DESKTOP_DIST_DIR, "static"), { recursive: true
 cpSync(nodeBinary, join(sidecarDir, NODE_RELATIVE));
 
 /*
+ * OUR ENTRY POINT, AND THE ONE FACT IT CANNOT WORK OUT FOR ITSELF (PW-0106).
+ *
+ * `liberty-sidecar.js` is CHECKED IN -- it is not generated here, and nothing
+ * in it is templated. What it cannot know on a user's PC is which directory
+ * the build wrote to, because that is `DESKTOP_DIST_DIR` in `build-target.ts`
+ * and the packaged tree carries no TypeScript. So this script, which has
+ * already derived that constant from its one source, writes it down beside
+ * the entry. One source, three readers, no restatement -- the round-95 lesson
+ * applied to a third file rather than relearned by it.
+ */
+const bootstrapSource = join(desktop, BOOTSTRAP_SOURCE);
+if (!existsSync(bootstrapSource)) {
+  fail(
+    `no bootstrap at ${bootstrapSource}. It is a tracked source file, not build output; ` +
+      `a checkout missing it cannot produce a runnable sidecar.`
+  );
+}
+assertBootstrapStillOwnsThePort(bootstrapSource);
+assertStandaloneConfigChannelStillExists(serverDir);
+cpSync(bootstrapSource, join(sidecarDir, SERVER_RELATIVE));
+writeFileSync(
+  join(sidecarDir, LAYOUT_RELATIVE),
+  `${JSON.stringify({ distDir: DESKTOP_DIST_DIR }, null, 2)}\n`
+);
+
+/*
  * ASSERTED RATHER THAN RESTORED. They were never removed above, so this is a
  * check that the selective wipe stayed selective -- the failure mode it
  * replaces was silent, and a guard that only runs when something has already
@@ -257,6 +408,13 @@ expect("SERVER_RELATIVE_PATH", `sidecar/${SERVER_RELATIVE.split("\\").join("/")}
 for (const required of [
   NODE_RELATIVE,
   SERVER_RELATIVE,
+  LAYOUT_RELATIVE,
+  /*
+   * Next's own entry, checked for PRESENCE and nothing else. It is build
+   * output and it is not spawned; the assertion above that SERVER_RELATIVE_PATH
+   * names `liberty-sidecar.js` is what keeps it that way.
+   */
+  join("server", NEXT_ENTRY),
   /*
    * THE CHUNKS AND THE CLIENT BUNDLE, checked because their absence is SILENT.
    * A missing `server.js` is a sidecar that will not start, which the shell
