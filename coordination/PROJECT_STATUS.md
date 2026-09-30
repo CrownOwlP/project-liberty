@@ -1,6 +1,6 @@
 # Project Liberty - Project Status
 
-> Generated 2026-09-30T05:34:16.211Z from the AI control plane.
+> Generated 2026-09-30T05:34:30.515Z from the AI control plane.
 
 **Overall completion:** 79/105 executable tasks (75%)
 
@@ -9,8 +9,8 @@
 - **BACKLOG:** 9
 - **READY:** 9
 - **CLAIMED:** 0
-- **IN_PROGRESS:** 1
-- **REVIEW:** 4
+- **IN_PROGRESS:** 0
+- **REVIEW:** 5
 - **BLOCKED:** 3
 - **DONE:** 79
 - **CANCELED:** 0
@@ -32,7 +32,7 @@
 ## Active work
 
 - **PW-0104** [REVIEW] A killed desktop dev server cannot leave a tracked file rewritten — owner: claude-infra
-- **PL-AI-0014** [IN_PROGRESS] An option-looking event type is a usage error, not an event — owner: claude-lead
+- **PL-AI-0014** [REVIEW] An option-looking event type is a usage error, not an event — owner: claude-lead
 - **PL-0406** [REVIEW] The documented migration command applies nothing and exits 0 — owner: claude-backend
 - **PW-0105** [REVIEW] The sidecar half of the desktop contract was never wired into the server — owner: claude-media
 - **PW-0106** [REVIEW] PORT=0 never reaches the kernel: the packaged sidecar always tries to bind 3000 — owner: claude-media

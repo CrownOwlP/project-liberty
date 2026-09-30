@@ -10302,7 +10302,7 @@
       "id": "PL-AI-0014",
       "priority": "P2",
       "lane": "Coordination",
-      "status": "IN_PROGRESS",
+      "status": "REVIEW",
       "title": "An option-looking event type is a usage error, not an event",
       "dependencies": [],
       "allowedPaths": [
@@ -10330,7 +10330,7 @@
           "evidence": "`node scripts/test-ai-control-plane.mjs` -> \"AI control plane tests passed (72 scenarios)\" (was 71; the new section is 10.5). The rest of the `test:scripts` chain also passes: validate-env 38 scenarios, validate-repo 20 assertion groups, desktop-target 9 assertions, cloud dispatcher 35 scenarios.\n\nTHE FIVE REQUIRED PROPERTIES, each measured against the LIVE CLI as well as in a fixture:\n\n - `event --help`, and any type beginning with `-`, is treated as usage input. Four spellings are\n   covered in the test -- `--help`, `-h`, `--agent`, `-x` -- and each is refused with the message\n   `Refused: \"--help\" looks like an option, not an event type, so nothing was appended to\n   control/events.jsonl.` followed by the full command list.\n - THE REFUSAL OCCURS BEFORE APPEND. The check sits at the same call site as the existing empty-type\n   check and runs before `event()`, which is the only function that writes.\n - `control/events.jsonl` IS BYTE-IDENTICAL after a refusal. Asserted with a Buffer comparison per\n   case in the fixture, and checked against the real file here with `cmp` for both `event --help` and\n   `event -x`: identical both times.\n - VALID TYPES STILL APPEND NORMALLY -- the acceptance's non-vacuity clause, \"a fix that refused\n   everything would satisfy every other line here\". The test appends\n   `control_plane.operator_error` and asserts exactly one new line with the message intact.\n - HISTORICAL JUNK AND ITS CORRECTIONS ARE UNTOUCHED. Nothing in this change reads or rewrites the\n   log; the two `--help` events from round 93 and their corrections are still there, which is the\n   point. \"An audit log rewritten when it embarrasses its author is not an audit log.\"\n\nONE PROPERTY THE ACCEPTANCE DID NOT NAME AND THE TEST ASSERTS ANYWAY: a hyphen INSIDE a type is still\nvalid. The rule is about the first character, and refusing every hyphen would refuse\n`operator.note-taken` -- a second defect wearing the first one's clothes. Covered explicitly.\n\nTHE EXIT CODE IS 2, not 0, and that is a judgement worth stating rather than burying: `event` was\nasked to record something and recorded nothing, so a zero exit would let a wrapper script, or the\nnext person reading a terminal, believe an event was written. The usage text is printed either way,\nbecause the person typing `--help` is asking for it.\n\nThe usage text was EXTRACTED into `printUsage()` rather than duplicated, so the refusal and the\nunrecognised-command branch cannot drift apart. It is a function declaration, so it is hoisted above\nthe dispatch chain that calls it."
         }
       },
-      "updatedAt": "2026-09-30T05:02:19.831Z",
+      "updatedAt": "2026-09-30T05:34:30.188Z",
       "implementationAgent": "claude-lead",
       "implementationBaseSha": "b6064bae88c8a4a74742dab39c35024e1ec284d5"
     },
