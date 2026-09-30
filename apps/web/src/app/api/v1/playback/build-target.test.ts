@@ -624,10 +624,41 @@ describe("a web build cannot satisfy a desktop build", () => {
     expect(Object.keys(tasks)).toContain("build:desktop");
     expect(scripts["build:desktop"]).toBeDefined();
 
-    /* It sets the target, and the WEB build says nothing about it -- so the
-     * default build cannot accidentally become a desktop one and vice versa. */
-    expect(scripts["build:desktop"]).toContain(`${BUILD_TARGET_ENV_VAR}:'desktop'`);
+    /*
+     * THE ASSERTION FOLLOWS ONE LEVEL OF INDIRECTION NOW, AND IS STRONGER FOR
+     * IT (PW-0104).
+     *
+     * It used to read `expect(scripts["build:desktop"]).toContain(
+     * `${BUILD_TARGET_ENV_VAR}:'desktop'`)`, which was true only while the
+     * variable was set inside a `node -e` one-liner pasted into package.json
+     * three times. That one-liner also snapshotted and restored
+     * `next-env.d.ts` around the child, and the restore ran only on a normal
+     * exit -- so a signal-killed desktop dev server left a TRACKED file
+     * rewritten. PW-0104 moved the program into `scripts/desktop-target.mjs`,
+     * where it can be tested, and dropped the restore entirely by untracking
+     * the file.
+     *
+     * So the property is checked where it now lives: all three desktop scripts
+     * go through ONE wrapper, and that wrapper is what sets the target. Three
+     * files are covered where one was, and the indirection itself -- a desktop
+     * script that quietly stopped routing through the wrapper -- is now a
+     * failure rather than a silence.
+     */
+    const DESKTOP_WRAPPER = "scripts/desktop-target.mjs";
+    for (const name of ["dev:desktop", "build:desktop", "start:desktop"]) {
+      expect(scripts[name], `${name} must route through ${DESKTOP_WRAPPER}`).toContain(
+        DESKTOP_WRAPPER
+      );
+    }
+
+    const wrapper = readFileSync(join(REPO_ROOT, DESKTOP_WRAPPER), "utf8");
+    expect(wrapper).toContain(`${BUILD_TARGET_ENV_VAR}: "desktop"`);
+
+    /* And the WEB build still says nothing about the target, so a default
+     * build cannot accidentally become a desktop one or vice versa. Checked
+     * against the wrapper too: `build` must not reach it either. */
     expect(scripts["build"]).not.toContain(BUILD_TARGET_ENV_VAR);
+    expect(scripts["build"]).not.toContain(DESKTOP_WRAPPER);
   });
 
   it("gives the two builds disjoint outputs", () => {

@@ -1,8 +1,68 @@
 {
-  "generatedAt": "2026-09-30T03:18:02.241Z",
+  "generatedAt": "2026-09-30T05:01:40.000Z",
   "agent": "claude-infra",
   "executionAvailable": true,
-  "assigned": [],
+  "assigned": [
+    {
+      "id": "PW-0104",
+      "priority": "P1",
+      "lane": "Infra",
+      "status": "IN_PROGRESS",
+      "title": "A killed desktop dev server cannot leave a tracked file rewritten",
+      "dependencies": [],
+      "allowedPaths": [
+        "apps/web/package.json",
+        "apps/web/next-env.d.ts",
+        ".gitignore",
+        "scripts/desktop-target.mjs",
+        "scripts/test-desktop-target.mjs",
+        "package.json",
+        "apps/web/src/app/api/v1/playback/build-target.test.ts"
+      ],
+      "reviewDependencies": [
+        "apps/web/src/app/api/v1/playback/build-target.ts",
+        "apps/web/next.config.ts",
+        "e2e/playwright.config.ts",
+        "docs/DEVELOPMENT.md"
+      ],
+      "preferredAgent": "claude-infra",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "build"
+      ],
+      "acceptance": "A desktop build or dev server cannot leave apps/web/next-env.d.ts rewritten in the working tree, under ANY termination. THE DEFECT, OBSERVED RATHER THAN PREDICTED, in round 81: the file was committed pointing at ./dist/desktop/dev/types/routes.d.ts instead of ./.next/types/routes.d.ts. Next regenerates that TRACKED file to name whichever distDir last built; the three *:desktop scripts snapshot and restore it around the child; and build-target.ts:300-342 already records that the restore happens ONLY ON NORMAL EXIT. Playwright signal-kills `next dev` when the harness finishes, so the rewrite survived, was staged by a routine `git add -A`, and was caught only by reading the diff before delivery. It typechecked locally because dist/desktop/dev happened to exist; on a fresh clone it would not have. REQUIRED: a forced termination -- SIGTERM, SIGINT, SIGKILL of the child, and the parent being killed -- cannot leave the tracked file dirty. REQUIRED: THE SOLUTION MUST NOT DEPEND ON A NORMAL-EXIT CLEANUP HOOK ALONE. A second `process.on('exit')` handler is the same mechanism that already failed and would fail the same way under SIGKILL; the implementer must choose a design that is correct when no cleanup runs at all, and justify it. Two candidates, neither mandated: make the file untracked and generated (which changes what a fresh clone must do, and docs/DEVELOPMENT.md must then say so), or make the desktop distDir's type path stable so no rewrite occurs. REQUIRED: the regression is MECHANICALLY TESTED -- a test that starts a desktop invocation, kills it without letting it clean up, and fails if the tracked file differs from HEAD. A test that only exercises normal exit reproduces nothing, because normal exit already works. REQUIRED: the fix does not weaken the build-target split; build-target.test.ts must keep passing, including its assertion that no shipped module under apps/web/src names LIBERTY_BUILD_TARGET. NOT IN SCOPE: anything about product behaviour. This is a tooling defect and gpt-architect's ruling is explicit that it must not be folded into unrelated product work.",
+      "notes": "Filed round 82 on gpt-architect's ruling item 4, which refused to let this stay a warning in a handoff. The scripts directory is named in allowedPaths because the three `node -e` wrappers inside apps/web/package.json are the thing that would move: JSON cannot carry a comment, which is why their reasoning currently lives in build-target.ts, and a real script file is the likeliest shape of the fix. It is not mandated -- the implementer chooses and justifies.",
+      "owner": "claude-infra",
+      "gateResults": {
+        "typecheck": {
+          "status": "pass",
+          "at": "2026-09-30T05:00:23.971Z",
+          "by": "claude-infra",
+          "commitSha": "27548e920258d21f07dd505e74da5702d09a632e",
+          "evidence": "`npm run typecheck` -> \"Tasks: 22 successful, 22 total\", FULL TURBO. `npm run lint` -> 12/12, 0 errors. `npm run repo:validate` -> passed. `npm run ai:validate` -> valid.\n\nTHE TYPECHECK MEASUREMENT THAT DECIDED THE DESIGN, and it is the one that makes untracking safe rather than merely idiomatic. The acceptance offers untracking as a candidate and warns it \"changes what a fresh clone must do\". Measured on this tree, twice:\n\n  - `apps/web/next-env.d.ts` absent, `apps/web/.next/` absent -- the exact fresh-clone condition --\n    `npx tsc --noEmit -p apps/web/tsconfig.json` exits 0.\n  - `next-env.d.ts` present but carrying the DESKTOP spelling, with `apps/web/dist/desktop/dev/`\n    not existing, `tsc --noEmit` exits 0.\n\nSo a fresh clone typechecks with the file missing, and a developer whose last invocation was a desktop one typechecks with it stale. `tsconfig.json` lists the file under `include`, and an `include` entry that matches nothing is not an error -- only `files` is. Neither case needs a cleanup step, which is what lets the restore be deleted rather than hardened.\n\n`node --check` is clean on both new scripts."
+        },
+        "build": {
+          "status": "pass",
+          "at": "2026-09-30T05:00:24.134Z",
+          "by": "claude-infra",
+          "commitSha": "27548e920258d21f07dd505e74da5702d09a632e",
+          "evidence": "`npx turbo run build --force` -> 12/12 tasks successful in 41s, no cache. `npm run build:desktop -w @liberty/web` -> exit 0 in 43s.\n\nAND THE ASSERTION THAT MATTERS FOR THIS TASK, taken around the desktop build: the set of tracked files with uncommitted changes was captured before and after, and is IDENTICAL. The build did rewrite `apps/web/next-env.d.ts` -- it now reads `import \"./dist/desktop/types/routes.d.ts\"` -- and the tracked tree did not move, because git no longer tracks that file.\n\nThat is the whole shape of the fix in one measurement: the rewrite still happens, and it stopped mattering."
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-09-30T05:00:52.816Z",
+          "by": "claude-infra",
+          "commitSha": "27548e920258d21f07dd505e74da5702d09a632e",
+          "evidence": "`npm run test` -> 22/22 turbo tasks; @liberty/web 1308, @liberty/persistence 268, @liberty/provider-sdk 288, @liberty/catalog-ingestion 152, @liberty/backend 36, all passing.\n\nTHE REGRESSION IS `scripts/test-desktop-target.mjs`, 9 assertions, ~10s, and it is wired into\n`npm run test:scripts` so it actually runs. That wiring is the reason the root package.json joined\nthis task's surface: `scripts/` is not a workspace, `turbo run test` never visits it, and\n`scripts/test-validate-repo.mjs` says so in its own header -- \"a vitest suite placed here would be\nwritten, committed, and never executed by any gate.\" The whole chain was run and every member\npasses: validate-env 38 scenarios, ai-control-plane 71 scenarios, validate-repo 20 groups,\ndesktop-target 9 assertions, cloud dispatcher 35 scenarios.\n\nWHAT THE REGRESSION ACTUALLY DOES, because the acceptance rules out the cheap version -- \"a test\nthat only exercises normal exit reproduces nothing, because normal exit already works.\" Each of four\ncases writes the WEB spelling into `apps/web/next-env.d.ts`, starts a real desktop dev server through\nthe wrapper in its own process group, WAITS UNTIL NEXT HAS REWRITTEN THE FILE to name the desktop\ndistDir, and only then kills it. The four terminations are the four the acceptance names: SIGTERM,\nSIGINT and SIGKILL to the process group, and SIGKILL to the parent alone, which orphans the dev\nserver and is the case where no code of ours runs at all. After each, the set of tracked files with\nuncommitted changes must equal a baseline captured at start.\n\nTHE NON-VACUITY CHECK IS PART OF THE TEST, not something I ran by hand: if the rewrite never happens,\nthe case FAILS with \"this case proved nothing\", rather than passing against a dev server that did not\nstart. Measured: the rewrite lands 1214 ms after spawn.\n\nIT COMPARES AGAINST A BASELINE rather than demanding a clean checkout, because a developer running\n`npm run test:scripts` mid-change has a dirty tree and a test that failed for that reason gets turned\noff.\n\nPROVEN NON-VACUOUS BY MUTATION, both directions:\n  - `git add -f apps/web/next-env.d.ts`  -> 2 failed, 7 passed; the failure names the re-tracking and\n                                            says why no cleanup hook can close it.\n  - removing the `.gitignore` line       -> 1 failed, 8 passed.\n  - restoring either                     -> 9 passed.\n\n`build-target.test.ts` KEEPS PASSING as the acceptance requires, and it was UPDATED rather than left\nalone because its old assertion encoded the implementation: it read the literal string\n`LIBERTY_BUILD_TARGET:'desktop'` out of `scripts[\"build:desktop\"]`, which was only true while the\none-liner was pasted into package.json. The test caught the change immediately -- \"expected 'node\n../../scripts/desktop-target.mjs…' to contain ...\" -- and the replacement is strictly stronger: all\nthree `*:desktop` scripts must route through the one wrapper, the wrapper itself must set the\nvariable, and the plain `build` must contain neither. Three files covered where one was, and a\ndesktop script that quietly stopped routing through the wrapper is now a failure. Its other\nassertion, that no shipped module under `apps/web/src` names the variable, is untouched and still\npasses -- the wrapper lives in `scripts/`.\n\nONE DEFECT FOUND AND NOT FIXED HERE: `scripts/test-ai-control-plane.mjs` copies the repository per\nscenario and its exclusion list misses `apps/desktop/sidecar`, the 196 MB packaged tree PW-0102\nproduces. With a packaged tree present the suite fills the disk and dies mid-copy -- observed as\n`ENOSPC ... copyfile '.../apps/desktop/sidecar/node.exe'`. It is the same failure the list's own\n`target` entry was added for. Unrelated to a killed dev server, so it is proposed separately rather\nthan folded in."
+        }
+      },
+      "implementationAgent": "claude-infra",
+      "updatedAt": "2026-09-30T03:19:59.250Z",
+      "implementationBaseSha": "27548e920258d21f07dd505e74da5702d09a632e"
+    }
+  ],
   "review": [],
   "reservedExternal": [],
   "recommended": [
@@ -63,38 +123,6 @@
       ],
       "acceptance": "The application can tell a user what version it is and can update itself safely, or states plainly that it cannot yet and why. REQUIRED: an update mechanism whose payloads are signature-verified -- an updater that fetches and executes an unverified binary is a remote code execution feature, and SECURITY.md's threat list already ranks unauthorized access above convenience. REQUIRED: the update endpoint is pinned and allowlisted like every other egress in this repository. REQUIRED: a rollback story, or a stated decision that there is none and what a user does instead. REQUIRED: the version is derived from one source shared with PW-0501. IF SIGNING IS UNAVAILABLE the update path must be disabled by default and say so, rather than shipping an unverified one -- an unsigned auto-updater is worse than no updater, and that dependency goes to LAST_MILE rather than being worked around.",
       "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. SURFACE NOTE: this task's allowedPaths name directories that do not exist yet. The evidence-based narrowing procedure applies to reconciling work already in history; for genuinely new work the surface is the smallest set of paths the acceptance can be satisfied within, and it is narrowed again from the diff before review if it turns out to be wider than what was written. ",
-      "owner": null,
-      "gateResults": {}
-    },
-    {
-      "id": "PW-0104",
-      "priority": "P1",
-      "lane": "Infra",
-      "status": "READY",
-      "title": "A killed desktop dev server cannot leave a tracked file rewritten",
-      "dependencies": [],
-      "allowedPaths": [
-        "apps/web/package.json",
-        "apps/web/next-env.d.ts",
-        ".gitignore",
-        "scripts/desktop-target.mjs",
-        "scripts/test-desktop-target.mjs"
-      ],
-      "reviewDependencies": [
-        "apps/web/src/app/api/v1/playback/build-target.ts",
-        "apps/web/next.config.ts",
-        "e2e/playwright.config.ts",
-        "docs/DEVELOPMENT.md"
-      ],
-      "preferredAgent": "claude-infra",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "typecheck",
-        "unit",
-        "build"
-      ],
-      "acceptance": "A desktop build or dev server cannot leave apps/web/next-env.d.ts rewritten in the working tree, under ANY termination. THE DEFECT, OBSERVED RATHER THAN PREDICTED, in round 81: the file was committed pointing at ./dist/desktop/dev/types/routes.d.ts instead of ./.next/types/routes.d.ts. Next regenerates that TRACKED file to name whichever distDir last built; the three *:desktop scripts snapshot and restore it around the child; and build-target.ts:300-342 already records that the restore happens ONLY ON NORMAL EXIT. Playwright signal-kills `next dev` when the harness finishes, so the rewrite survived, was staged by a routine `git add -A`, and was caught only by reading the diff before delivery. It typechecked locally because dist/desktop/dev happened to exist; on a fresh clone it would not have. REQUIRED: a forced termination -- SIGTERM, SIGINT, SIGKILL of the child, and the parent being killed -- cannot leave the tracked file dirty. REQUIRED: THE SOLUTION MUST NOT DEPEND ON A NORMAL-EXIT CLEANUP HOOK ALONE. A second `process.on('exit')` handler is the same mechanism that already failed and would fail the same way under SIGKILL; the implementer must choose a design that is correct when no cleanup runs at all, and justify it. Two candidates, neither mandated: make the file untracked and generated (which changes what a fresh clone must do, and docs/DEVELOPMENT.md must then say so), or make the desktop distDir's type path stable so no rewrite occurs. REQUIRED: the regression is MECHANICALLY TESTED -- a test that starts a desktop invocation, kills it without letting it clean up, and fails if the tracked file differs from HEAD. A test that only exercises normal exit reproduces nothing, because normal exit already works. REQUIRED: the fix does not weaken the build-target split; build-target.test.ts must keep passing, including its assertion that no shipped module under apps/web/src names LIBERTY_BUILD_TARGET. NOT IN SCOPE: anything about product behaviour. This is a tooling defect and gpt-architect's ruling is explicit that it must not be folded into unrelated product work.",
-      "notes": "Filed round 82 on gpt-architect's ruling item 4, which refused to let this stay a warning in a handoff. The scripts directory is named in allowedPaths because the three `node -e` wrappers inside apps/web/package.json are the thing that would move: JSON cannot carry a comment, which is why their reasoning currently lives in build-target.ts, and a real script file is the likeliest shape of the fix. It is not mandated -- the implementer chooses and justifies.",
       "owner": null,
       "gateResults": {}
     }
