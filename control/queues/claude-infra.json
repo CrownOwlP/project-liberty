@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-30T05:01:40.000Z",
+  "generatedAt": "2026-09-30T05:34:16.219Z",
   "agent": "claude-infra",
   "executionAvailable": true,
   "assigned": [
@@ -7,7 +7,7 @@
       "id": "PW-0104",
       "priority": "P1",
       "lane": "Infra",
-      "status": "IN_PROGRESS",
+      "status": "REVIEW",
       "title": "A killed desktop dev server cannot leave a tracked file rewritten",
       "dependencies": [],
       "allowedPaths": [
@@ -59,7 +59,7 @@
         }
       },
       "implementationAgent": "claude-infra",
-      "updatedAt": "2026-09-30T03:19:59.250Z",
+      "updatedAt": "2026-09-30T05:02:00.853Z",
       "implementationBaseSha": "27548e920258d21f07dd505e74da5702d09a632e"
     }
   ],

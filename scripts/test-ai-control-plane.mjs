@@ -9223,6 +9223,86 @@ try {
   }
 
   /* ---------------------------------------------------------------------
+   * 10.5 An option-looking event type is a usage error, not an event
+   *      (PL-AI-0014).
+   *
+   *      `event <type>` took any string, so `event --help` appended an event
+   *      whose type was the literal string `--help`. It happened TWICE in one
+   *      phase, by the same hand, and both junk lines are still in the
+   *      append-only log with their corrections beside them -- which is the
+   *      right outcome for a log and the wrong one for a command line.
+   *
+   *      THE PROPERTY IS BYTE-IDENTITY, not "no new event of that type". A
+   *      refusal that appended a rejection record would still be growing an
+   *      append-only file every time somebody mistypes, and noise in an
+   *      append-only file is permanent.
+   * ------------------------------------------------------------------- */
+  {
+    const repo = freshRepo();
+    const eventsPath = path.join(repo, "control", "events.jsonl");
+    const before = fs.readFileSync(eventsPath);
+
+    for (const type of ["--help", "-h", "--agent", "-x"]) {
+      const output = runFail(repo, ["event", type], /looks like an option/);
+      assert.match(
+        output,
+        /AI control plane commands:/,
+        `the refusal for ${type} must print usage -- someone typing --help is asking for it`,
+      );
+      assert.deepEqual(
+        fs.readFileSync(eventsPath),
+        before,
+        `event ${type} appended to the log; the refusal must happen BEFORE anything is written`,
+      );
+    }
+
+    /* The existing empty-type check, which this one is modelled on, still
+     * refuses and still writes nothing. */
+    runFail(repo, ["event", ""], /Usage: event <type>/);
+    assert.deepEqual(fs.readFileSync(eventsPath), before);
+
+    /*
+     * THE NON-VACUITY CLAUSE, and the acceptance names it: "a fix that refused
+     * everything would satisfy every other line here". A real type still
+     * appends, exactly once, with the message intact.
+     */
+    run(repo, CLI, ["event", "control_plane.operator_error", "a real event, recorded normally"]);
+    const after = fs
+      .readFileSync(eventsPath, "utf8")
+      .split("\n")
+      .filter((line) => line.trim().length > 0);
+    const beforeLines = before
+      .toString("utf8")
+      .split("\n")
+      .filter((line) => line.trim().length > 0);
+    assert.equal(
+      after.length,
+      beforeLines.length + 1,
+      "a valid event must append exactly one line",
+    );
+    const appended = JSON.parse(after[after.length - 1]);
+    assert.equal(appended.type, "control_plane.operator_error");
+    assert.match(appended.message, /a real event, recorded normally/);
+
+    /*
+     * AND A DASH INSIDE A TYPE IS STILL FINE. The rule is about the FIRST
+     * character; refusing every hyphen would refuse `control-plane.x`, which
+     * nobody asked for and which would be a second defect wearing the first
+     * one's clothes.
+     */
+    run(repo, CLI, ["event", "operator.note-taken", "a hyphen that is not a leading dash"]);
+    const withHyphen = fs
+      .readFileSync(eventsPath, "utf8")
+      .split("\n")
+      .filter((line) => line.trim().length > 0);
+    assert.equal(withHyphen.length, beforeLines.length + 2);
+    assert.equal(
+      JSON.parse(withHyphen[withHyphen.length - 1]).type,
+      "operator.note-taken",
+    );
+  }
+
+  /* ---------------------------------------------------------------------
    * 11. The live repository state must be untouched by the whole run.
    *     This now also guards coordination/agent-bus, so a test that forgets
    *     freshRepo() cannot publish a real handoff message.
@@ -9240,7 +9320,7 @@ try {
     "running the test suite must not mutate any live control/ or coordination/ file",
   );
 
-  console.log("AI control plane tests passed (71 scenarios).");
+  console.log("AI control plane tests passed (72 scenarios).");
 } finally {
   /*
    * Cleanup must never replace the result.

@@ -1,16 +1,13 @@
 {
-  "generatedAt": "2026-09-30T05:01:39.996Z",
+  "generatedAt": "2026-09-30T05:34:16.215Z",
   "agent": "claude-lead",
   "executionAvailable": true,
-  "assigned": [],
-  "review": [],
-  "reservedExternal": [],
-  "recommended": [
+  "assigned": [
     {
       "id": "PL-AI-0014",
       "priority": "P2",
       "lane": "Coordination",
-      "status": "READY",
+      "status": "IN_PROGRESS",
       "title": "An option-looking event type is a usage error, not an event",
       "dependencies": [],
       "allowedPaths": [
@@ -28,10 +25,24 @@
       ],
       "acceptance": "FILING APPROVED BY gpt-architect, round 94. The acceptance below is the reviewer's and replaces the proposal's.\n\nTHE DEFECT: `event <type> [message]` accepts any string as a TYPE, so `ai-control-plane.mjs event --help` records an event whose type is the literal string `--help` and whose message is empty. It happened TWICE in one phase, by the same hand; both junk lines are in the append-only log with their corrections beside them.\n\nREQUIRED:\n - `event --help`, and any event type beginning with `-`, is treated as COMMAND/USAGE INPUT, not as an event type;\n - the refusal occurs BEFORE APPEND;\n - `control/events.jsonl` is BYTE-IDENTICAL after a refusal;\n - valid explicit event types still append normally -- the non-vacuity clause, because a fix that refused everything would satisfy every other line here;\n - existing historical junk events and correction events REMAIN UNTOUCHED.\n\nThe existing empty-type check at the same call site is the model: it already refuses before anything is written. The refusal should print usage, because the person typing `--help` is asking for it.\n\nNOT IN SCOPE: a general argument parser for the CLI, and editing history. \"Do not edit historical junk events out of the append-only log.\" An audit log rewritten when it embarrasses its author is not an audit log.",
       "notes": "PROPOSED FOR gpt-architect RULING, round 93, and created unowned rather than claimed, on the PW-0501 precedent. Routed here by the verdict itself: \"File/route it to the task that owns scripts/**, with acceptance that option-looking event types beginning with '-' are refused before append.\" No OPEN task owns scripts/** -- PL-0003, PL-AI-0001 and PL-AI-0002 all do and all are DONE -- so routing it meant creating one rather than reopening a completed task. SURFACE NOTE: scripts/test-ai-control-plane.mjs is included because the acceptance requires a test, and that suite is where the control plane's own behaviour is tested. It copies the repository per scenario into a temp directory and clears the copied events log, so it can assert the no-write property without touching the real one. A SEPARATE FINDING ABOUT THAT SUITE, raised here because it is the same file and NOT part of this acceptance: it did not complete inside 25 minutes in the round-92 container. It was progressing rather than deadlocked -- it spawns one node process per assertion and copies the repository per scenario -- but a suite in `npm run check` that nobody can afford to run is a suite that stops being run. ACCEPTANCE REPLACED in round 94 with gpt-architect's ruling. Two changes from the proposal: 'unchanged' became 'byte-identical', and a non-vacuity clause was added requiring valid event types to still append.",
-      "owner": null,
-      "gateResults": {},
-      "updatedAt": "2026-09-28T02:11:20.961661Z"
-    },
+      "owner": "claude-lead",
+      "gateResults": {
+        "unit": {
+          "status": "pass",
+          "at": "2026-09-30T05:34:16.160Z",
+          "by": "claude-lead",
+          "commitSha": "b6064bae88c8a4a74742dab39c35024e1ec284d5",
+          "evidence": "`node scripts/test-ai-control-plane.mjs` -> \"AI control plane tests passed (72 scenarios)\" (was 71; the new section is 10.5). The rest of the `test:scripts` chain also passes: validate-env 38 scenarios, validate-repo 20 assertion groups, desktop-target 9 assertions, cloud dispatcher 35 scenarios.\n\nTHE FIVE REQUIRED PROPERTIES, each measured against the LIVE CLI as well as in a fixture:\n\n - `event --help`, and any type beginning with `-`, is treated as usage input. Four spellings are\n   covered in the test -- `--help`, `-h`, `--agent`, `-x` -- and each is refused with the message\n   `Refused: \"--help\" looks like an option, not an event type, so nothing was appended to\n   control/events.jsonl.` followed by the full command list.\n - THE REFUSAL OCCURS BEFORE APPEND. The check sits at the same call site as the existing empty-type\n   check and runs before `event()`, which is the only function that writes.\n - `control/events.jsonl` IS BYTE-IDENTICAL after a refusal. Asserted with a Buffer comparison per\n   case in the fixture, and checked against the real file here with `cmp` for both `event --help` and\n   `event -x`: identical both times.\n - VALID TYPES STILL APPEND NORMALLY -- the acceptance's non-vacuity clause, \"a fix that refused\n   everything would satisfy every other line here\". The test appends\n   `control_plane.operator_error` and asserts exactly one new line with the message intact.\n - HISTORICAL JUNK AND ITS CORRECTIONS ARE UNTOUCHED. Nothing in this change reads or rewrites the\n   log; the two `--help` events from round 93 and their corrections are still there, which is the\n   point. \"An audit log rewritten when it embarrasses its author is not an audit log.\"\n\nONE PROPERTY THE ACCEPTANCE DID NOT NAME AND THE TEST ASSERTS ANYWAY: a hyphen INSIDE a type is still\nvalid. The rule is about the first character, and refusing every hyphen would refuse\n`operator.note-taken` -- a second defect wearing the first one's clothes. Covered explicitly.\n\nTHE EXIT CODE IS 2, not 0, and that is a judgement worth stating rather than burying: `event` was\nasked to record something and recorded nothing, so a zero exit would let a wrapper script, or the\nnext person reading a terminal, believe an event was written. The usage text is printed either way,\nbecause the person typing `--help` is asking for it.\n\nThe usage text was EXTRACTED into `printUsage()` rather than duplicated, so the refusal and the\nunrecognised-command branch cannot drift apart. It is a function declaration, so it is hoisted above\nthe dispatch chain that calls it."
+        }
+      },
+      "updatedAt": "2026-09-30T05:02:19.831Z",
+      "implementationAgent": "claude-lead",
+      "implementationBaseSha": "b6064bae88c8a4a74742dab39c35024e1ec284d5"
+    }
+  ],
+  "review": [],
+  "reservedExternal": [],
+  "recommended": [
     {
       "id": "PL-AI-0015",
       "priority": "P2",

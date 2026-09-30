@@ -1,16 +1,16 @@
 # Project Liberty - Project Status
 
-> Generated 2026-09-30T05:01:39.991Z from the AI control plane.
+> Generated 2026-09-30T05:34:16.211Z from the AI control plane.
 
 **Overall completion:** 79/105 executable tasks (75%)
 
 ## Status summary
 
 - **BACKLOG:** 9
-- **READY:** 10
+- **READY:** 9
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 1
-- **REVIEW:** 3
+- **REVIEW:** 4
 - **BLOCKED:** 3
 - **DONE:** 79
 - **CANCELED:** 0
@@ -31,14 +31,15 @@
 
 ## Active work
 
-- **PW-0104** [IN_PROGRESS] A killed desktop dev server cannot leave a tracked file rewritten — owner: claude-infra
+- **PW-0104** [REVIEW] A killed desktop dev server cannot leave a tracked file rewritten — owner: claude-infra
+- **PL-AI-0014** [IN_PROGRESS] An option-looking event type is a usage error, not an event — owner: claude-lead
 - **PL-0406** [REVIEW] The documented migration command applies nothing and exits 0 — owner: claude-backend
 - **PW-0105** [REVIEW] The sidecar half of the desktop contract was never wired into the server — owner: claude-media
 - **PW-0106** [REVIEW] PORT=0 never reaches the kernel: the packaged sidecar always tries to bind 3000 — owner: claude-media
 
 ## Dispatch classification
 
-- **READY_AND_EXECUTABLE:** 9
+- **READY_AND_EXECUTABLE:** 8
 - **READY_BUT_EXTERNAL:** 1
 - **BLOCKED:** 3
 - **BACKLOG (dependency-gated):** 9
@@ -48,7 +49,6 @@
 - **PW-0304** -> claude-frontend (P1/Frontend) Watchlist becomes usable: an add control and a list
 - **PW-0307** -> claude-frontend (P1/Frontend) Series navigation and the next episode
 - **PW-0503** -> claude-test (P1/Test) Install, upgrade, uninstall, reinstall — tested, not assumed
-- **PL-AI-0014** -> claude-lead (P2/Coordination) An option-looking event type is a usage error, not an event
 
 ## Queued for external agents
 
@@ -71,7 +71,7 @@ UNBLOCK WHEN: the commander runs Experiment 1a on real Windows hardware and hand
 ## Agent capacity
 
 - **gpt-architect:** 0/6 active (external lane; not locally executable)
-- **claude-lead:** 0/2 active
+- **claude-lead:** 1/2 active
 - **claude-frontend:** 0/2 active
 - **claude-backend:** 1/2 active
 - **claude-media:** 2/2 active

@@ -5059,9 +5059,67 @@ try {
   } else if (command === "event") {
     const [type, ...message] = args;
     if (!type) throw new Error("Usage: event <type> [message]");
+    /*
+     * AN OPTION-LOOKING TYPE IS A USAGE ERROR, NOT AN EVENT (PL-AI-0014).
+     *
+     * `event` took any string as a type, so `ai-control-plane.mjs event --help`
+     * appended an event whose type was the literal string `--help` and whose
+     * message was empty. IT HAPPENED TWICE IN ONE PHASE, by the same hand, and
+     * both junk lines are still in the append-only log with their corrections
+     * beside them -- which is the right outcome for a log and the wrong one for
+     * a command line.
+     *
+     * The check is HERE, at the call site, beside the empty-type check it is
+     * modelled on, and it runs BEFORE `event()` -- the only function that
+     * appends. A refusal therefore leaves `control/events.jsonl` byte-identical,
+     * which is the property worth having: an audit log that gains a line every
+     * time somebody mistypes is an audit log with noise in it, and noise in an
+     * append-only file is permanent.
+     *
+     * NOT A GENERAL ARGUMENT PARSER, which the acceptance puts out of scope. One
+     * character, at one call site, for the one shape that has actually gone
+     * wrong.
+     *
+     * IT EXITS NON-ZERO even though `--help` is a request for help. `event` was
+     * asked to record something and recorded nothing; a zero exit would let a
+     * wrapper script -- or the next person reading a terminal -- believe an
+     * event was written. The usage text says what to do instead.
+     */
+    if (type.startsWith("-")) {
+      console.error(
+        `Refused: ${JSON.stringify(type)} looks like an option, not an event type, ` +
+          `so nothing was appended to control/events.jsonl.\n` +
+          `An event type is a dotted name such as task.definition_changed or ` +
+          `control_plane.operator_error.\n` +
+          `If you meant to ask for help, that is what this is:\n`,
+      );
+      printUsage();
+      process.exit(2);
+    }
     event(type, { message: message.join(" ") });
     console.log("Event recorded.");
   } else {
+    printUsage();
+  }
+} catch (error) {
+  console.error(`AI control plane error: ${error.message}`);
+  process.exit(1);
+}
+
+
+/**
+ * The command list, printed by an unrecognised command AND by a refusal that
+ * is really a usage error (PL-AI-0014).
+ *
+ * EXTRACTED SO THERE IS ONE COPY. `event --help` used to record an event whose
+ * TYPE was the literal string `--help`; the remedy is to treat a leading dash
+ * as usage input, and a remedy that printed a second, shorter usage text would
+ * have started the two drifting apart the day it was written.
+ *
+ * A function declaration, so it is hoisted above the dispatch chain that calls
+ * it rather than depending on where in this file it happens to sit.
+ */
+function printUsage() {
     console.log(`AI control plane commands:
   validate
   sync
@@ -5086,78 +5144,74 @@ try {
   unblock <taskId>              clears gate results; the task returns to a queue unowned
   release <taskId> [agentId]    clears gate results; the task returns to READY unowned
   event <type> [message]
-
-A gate result may only be recorded while a task is IN_PROGRESS or REVIEW, and it
-is attributed to the task's owner. The optional [agentId] / --agent arguments are
-assertions, not authentication: they exist so a caller that is wrong about who
-owns a task fails loudly instead of writing evidence under another agent's name.
-
-EXECUTABLE GATES AND JUDGEMENT GATES ARE NOT THE SAME KIND OF CLAIM.
-control/policies.json names the judgement gates -- architecture-review,
-security-review and rights-review. An executable gate reports an exit code and
-the owner records it. A judgement gate is somebody's verdict, and because
-product invariant 7 makes it a precondition of DONE, an implementer who could
-record their own would complete their own task without independent review --
-which the approve command refuses by name. So on a judgement gate --agent is
-REQUIRED, nobody on the implementation side (owner or implementationAgent) may
-record it, only the task's reviewAgent or an explicitly authorized independent
-reviewer may, and the evidence must NAME THE COMMIT IT JUDGED as an abbrev. or full
-sha that resolves here -- because a verdict that cannot say what it looked at is
-not a verdict. Recording as an agent that cannot run this command requires
---transcribed-by, so a relayed verdict says it was relayed. Every one of these
-refuses BEFORE anything is written. Added by PL-AI-0012, after a round-83
-incident in which a task's own owner recorded a passing architecture-review
-whose entire evidence was the string PLACEHOLDER-NOT-RECORDED.
-
-start --reconcile-existing is for ONE case: an implementation that was written and
-COMMITTED BEFORE the task was claimed. implementationBaseSha is the exact lower bound
-of the first review range, so letting an ordinary start capture HEAD there would
-make the machine-readable field false and hand the reviewer a range beginning after
-the code. All three flags are required together, each is refused on an ordinary
-start, the base is verified against real history, and the operation is audited as
-task.started_reconciled -- never as task.started.
-
-"Committed", not "pushed". Every check runs against the local worktree and the
-local commit graph; no remote is contacted, so never-pushed commits pass. Remote
-availability is a handoff/review concern -- the reviewer must be able to fetch the
-sha a decision binds to -- not something reconciliation establishes.
-
-The base is checked only against MECHANICAL facts (full sha, resolvable, ancestor
-of HEAD, not HEAD, a non-empty reviewed surface with something changed in
-base..HEAD, and a clean tree under allowedPaths). Whether it is really the commit
-immediately before this task's work is not decidable from git, which does not
-attribute commits to tasks, so it is PUBLISHED for a reviewer instead of guessed
-at: the window, its endpoints, the files the base commit itself changed under the
-reviewed surface, and your --reason. Name the true base; nothing here will ask you
-to widen it.
-
-Handoff bus (GitHub is the transport; no human relay):
+  
+  A gate result may only be recorded while a task is IN_PROGRESS or REVIEW, and it
+  is attributed to the task's owner. The optional [agentId] / --agent arguments are
+  assertions, not authentication: they exist so a caller that is wrong about who
+  owns a task fails loudly instead of writing evidence under another agent's name.
+  
+  EXECUTABLE GATES AND JUDGEMENT GATES ARE NOT THE SAME KIND OF CLAIM.
+  control/policies.json names the judgement gates -- architecture-review,
+  security-review and rights-review. An executable gate reports an exit code and
+  the owner records it. A judgement gate is somebody's verdict, and because
+  product invariant 7 makes it a precondition of DONE, an implementer who could
+  record their own would complete their own task without independent review --
+  which the approve command refuses by name. So on a judgement gate --agent is
+  REQUIRED, nobody on the implementation side (owner or implementationAgent) may
+  record it, only the task's reviewAgent or an explicitly authorized independent
+  reviewer may, and the evidence must NAME THE COMMIT IT JUDGED as an abbrev. or full
+  sha that resolves here -- because a verdict that cannot say what it looked at is
+  not a verdict. Recording as an agent that cannot run this command requires
+  --transcribed-by, so a relayed verdict says it was relayed. Every one of these
+  refuses BEFORE anything is written. Added by PL-AI-0012, after a round-83
+  incident in which a task's own owner recorded a passing architecture-review
+  whose entire evidence was the string PLACEHOLDER-NOT-RECORDED.
+  
+  start --reconcile-existing is for ONE case: an implementation that was written and
+  COMMITTED BEFORE the task was claimed. implementationBaseSha is the exact lower bound
+  of the first review range, so letting an ordinary start capture HEAD there would
+  make the machine-readable field false and hand the reviewer a range beginning after
+  the code. All three flags are required together, each is refused on an ordinary
+  start, the base is verified against real history, and the operation is audited as
+  task.started_reconciled -- never as task.started.
+  
+  "Committed", not "pushed". Every check runs against the local worktree and the
+  local commit graph; no remote is contacted, so never-pushed commits pass. Remote
+  availability is a handoff/review concern -- the reviewer must be able to fetch the
+  sha a decision binds to -- not something reconciliation establishes.
+  
+  The base is checked only against MECHANICAL facts (full sha, resolvable, ancestor
+  of HEAD, not HEAD, a non-empty reviewed surface with something changed in
+  base..HEAD, and a clean tree under allowedPaths). Whether it is really the commit
+  immediately before this task's work is not decidable from git, which does not
+  attribute commits to tasks, so it is PUBLISHED for a reviewer instead of guessed
+  at: the window, its endpoints, the files the base commit itself changed under the
+  reviewed surface, and your --reason. Name the true base; nothing here will ask you
+  to widen it.
+  
+  Handoff bus (GitHub is the transport; no human relay):
   handoff --from <agent> --to <agent> --type <type> --summary "..." [--task ID] [--sha SHA|auto] [--evidence REF]...
   inbox <agentId> [--all]     --all also shows acknowledged and quarantined messages
   ack <messageId> [--agent <agentId>] [--note "..."]   refused for quarantined messages
   process <agentId>          recover, then apply pending messages
   recover <agentId>           recovery pass only
-
-Also runnable directly as: node scripts/agent-bus.mjs <inbox|process|handoff|ack|recover> ...
-
-Message types:
+  
+  Also runnable directly as: node scripts/agent-bus.mjs <inbox|process|handoff|ack|recover> ...
+  
+  Message types:
   ${MESSAGE_TYPES.join(", ")}
-
-The bus transports decisions; it never bypasses designated reviewer, independent
-review, self-approval rules, fingerprint binding, commit binding, or gates.
-
-A message that is defective in itself (malformed, wrong recipient, wrong
-reviewer) is quarantined to coordination/agent-bus/rejections/ -- durable and
-shared, so no other checkout re-discovers it. A message that is merely early
-(task not yet in REVIEW, stale sha, dirty tree) is retried, not quarantined.
-
-Dispatch classes:
+  
+  The bus transports decisions; it never bypasses designated reviewer, independent
+  review, self-approval rules, fingerprint binding, commit binding, or gates.
+  
+  A message that is defective in itself (malformed, wrong recipient, wrong
+  reviewer) is quarantined to coordination/agent-bus/rejections/ -- durable and
+  shared, so no other checkout re-discovers it. A message that is merely early
+  (task not yet in REVIEW, stale sha, dirty tree) is retried, not quarantined.
+  
+  Dispatch classes:
   READY_AND_EXECUTABLE  dependency-clear and a locally executable agent can take it now
   READY_BUT_EXTERNAL    reserved for an external agent lane; never reduces the local wave
   BLOCKED               explicitly blocked with a recorded reason
   BACKLOG               dependency-gated`);
-  }
-} catch (error) {
-  console.error(`AI control plane error: ${error.message}`);
-  process.exit(1);
 }
