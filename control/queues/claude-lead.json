@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-30T05:34:30.519Z",
+  "generatedAt": "2026-09-30T21:10:04.655Z",
   "agent": "claude-lead",
   "executionAvailable": true,
   "assigned": [
@@ -42,28 +42,5 @@
   ],
   "review": [],
   "reservedExternal": [],
-  "recommended": [
-    {
-      "id": "PL-AI-0015",
-      "priority": "P2",
-      "lane": "Coordination",
-      "status": "READY",
-      "title": "The control-plane suite copies the packaged sidecar into every fixture and fills the disk",
-      "dependencies": [],
-      "allowedPaths": [
-        "scripts/test-ai-control-plane.mjs"
-      ],
-      "reviewDependencies": [
-        "apps/desktop/scripts/package-sidecar.mjs",
-        ".gitignore"
-      ],
-      "preferredAgent": "claude-lead",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "unit"
-      ],
-      "acceptance": "`npm run test:scripts` completes on a working tree that has a packaged sidecar at apps/desktop/sidecar. REQUIRED: the fixture copy excludes that build output for the same reason it already excludes `target`, and the exclusion is expressed so it cannot also hide a future unrelated directory named `sidecar` without that being a deliberate choice. REQUIRED: whether any scenario depends on the two TRACKED files under apps/desktop/sidecar (.gitignore and README.md, which keep the directory present in a fresh clone for tauri-build) is established by measurement rather than assumed. REQUIRED: a regression that fails if a large gitignored directory is missing from the exclusion list, so the next one is caught by the suite rather than by a disk-full error inside it. NOT IN SCOPE: changing what package-sidecar.mjs produces.",
-      "notes": "FOUND BY claude-infra WHILE RUNNING THE GATES FOR PW-0104, PROPOSED FOR gpt-architect. Not fixed\nthere: a fixture-copy exclusion list has nothing to do with a killed dev server, and the acceptance\nfor PW-0104 says in terms that this tooling defect \"must not be folded into unrelated product work\"\n-- the same principle read the other way.\n\nTHE DEFECT. `scripts/test-ai-control-plane.mjs` copies the whole repository into a temp fixture once\nper scenario -- 71 scenarios -- filtered by `EXCLUDED_FIXTURE_DIRS`. That list holds `.git`,\n`node_modules`, `.next`, `.turbo`, `dist`, `build`, `coverage` and `target`. It does NOT hold\n`apps/desktop/sidecar`, which is where `apps/desktop/scripts/package-sidecar.mjs` lays the packaged\nsidecar: a Node runtime, the standalone server and a full `node_modules` copy, 196 MB and roughly\n1549 files, gitignored build output like every other entry on that list.\n\nOBSERVED, not predicted:\n  Error: ENOSPC: no space left on device, copyfile\n    '/home/claude/liberty/apps/desktop/sidecar/node.exe' ->\n    '/tmp/liberty-control-plane-cVoWBs/repo-5/apps/desktop/sidecar/node.exe'\nThe suite died in its fifth scenario. Deleting the packaged tree and re-running took it to\n\"AI control plane tests passed (71 scenarios)\".\n\nTHIS IS THE FAILURE THE LIST'S OWN COMMENT DESCRIBES. Beside `target` it already says: \"a debug build\nof the Tauri dependency graph is several gigabytes, and freshRepo() copies the tree once per scenario\n-- the suite filled the disk and died mid-copy before this line existed. It is gitignored, so no\nfixture can legitimately need it.\" Every word applies here. `apps/desktop/sidecar` simply did not\nexist in a packaged state on any machine that had run the suite until PW-0501 made packaging routine.\n\nWHO IT BITES, and why it is P2 rather than P1. CI does not hit it: the Windows job packages on its own\nrunner and the ubuntu `validate` job that runs `npm run test:scripts` never calls\n`package-sidecar.mjs`. It bites a developer -- or an engineering session -- that has packaged locally\nand then runs the suite, which after PW-0501 and PW-0106 is the normal working state. The symptom is\na disk-full error deep inside a test that was not testing packaging.\n\nTHE FIX LOOKS LIKE ONE LINE plus a comment in the same register as the `target` entry. Two details\nworth getting right rather than guessing:\n  - `apps/desktop/sidecar` is a PATH, not a bare directory name, and the current filter matches whole\n    path SEGMENTS (`includes(sep+dir+sep) || endsWith(sep+dir)`). A bare `sidecar` entry would also\n    exclude any future directory of that name anywhere in the tree, which may be fine or may be too\n    broad; a path-aware entry needs a small change to the matcher.\n  - `apps/desktop/sidecar/.gitignore` and `apps/desktop/sidecar/README.md` are TRACKED, and\n    `package-sidecar.mjs` preserves them deliberately: they are what keeps the directory present in a\n    fresh clone so `tauri-build` can validate `bundle.resources`. Excluding the directory wholesale\n    would remove two tracked files from every fixture. Whether any scenario cares is unknown and\n    should be checked rather than assumed.\n\nA REGRESSION IS AVAILABLE AND CHEAP: assert that every entry of `EXCLUDED_FIXTURE_DIRS` is ignored by\ngit, and that no gitignored directory over some size threshold is missing from it. That turns \"we\nremembered\" into \"the suite says so\"."
-    }
-  ]
+  "recommended": []
 }

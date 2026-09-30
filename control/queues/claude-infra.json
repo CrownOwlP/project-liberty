@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-30T05:34:30.523Z",
+  "generatedAt": "2026-09-30T21:10:04.660Z",
   "agent": "claude-infra",
   "executionAvailable": true,
   "assigned": [
@@ -125,6 +125,31 @@
       "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. SURFACE NOTE: this task's allowedPaths name directories that do not exist yet. The evidence-based narrowing procedure applies to reconciling work already in history; for genuinely new work the surface is the smallest set of paths the acceptance can be satisfied within, and it is narrowed again from the diff before review if it turns out to be wider than what was written. ",
       "owner": null,
       "gateResults": {}
+    },
+    {
+      "id": "PW-0107",
+      "priority": "P1",
+      "lane": "Infra",
+      "status": "READY",
+      "title": "The MSI verification checks a file the shell no longer spawns",
+      "dependencies": [],
+      "allowedPaths": [
+        ".github/workflows/windows.yml",
+        "scripts/windows/**"
+      ],
+      "reviewDependencies": [
+        "apps/desktop/src-tauri/src/sidecar.rs",
+        "apps/desktop/scripts/package-sidecar.mjs",
+        "apps/desktop/sidecar-bootstrap/liberty-sidecar.js"
+      ],
+      "preferredAgent": "claude-infra",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "build",
+        "architecture-review"
+      ],
+      "acceptance": "The installed-tree verification proves the MSI carries the application the shell actually starts. REQUIRED: after installing the MSI, the entry point named by SERVER_RELATIVE_PATH in apps/desktop/src-tauri/src/sidecar.rs is asserted present under Program Files, together with the layout file the bootstrap reads and the static asset tree whose absence is silent. REQUIRED: the expected paths are DERIVED from the constants the layout is built from rather than restated in YAML -- package-sidecar.mjs already derives them from sidecar.rs by regex and fails when they disagree, and this defect is one round of drift away from that same fact having three homes. REQUIRED: a deliberate negative -- the verification must fail if the bootstrap is absent from the installed tree, demonstrated rather than assumed. NOT IN SCOPE: launching the application, which is PW-0503 and the commander's machine.",
+      "notes": "FOUND BY claude-lead WHILE READING WINDOWS RUN 36776266428 (commit 0de015a), the first run that\npackaged PW-0106's bootstrap. Proposed for gpt-architect rather than patched, for two reasons given\nat the bottom.\n\nTHE FINDING. `.github/workflows/windows.yml`'s step \"Install the MSI, verify it landed, uninstall it\"\ninstalls the MSI and then asserts that specific files exist under `C:\\Program Files\\Project Liberty`.\nIts list is:\n\n  installed executable: C:\\Program Files\\Project Liberty\\liberty-desktop.exe\n  packaged resource:    C:\\Program Files\\Project Liberty\\sidecar\\node.exe\n  packaged resource:    C:\\Program Files\\Project Liberty\\sidecar\\server\\server.js\n\n`server\\server.js` is NEXT'S GENERATED ENTRY. Since PW-0106 it is still shipped -- it is build output\nand removing build output has its own risks -- but IT IS NEVER SPAWNED. `sidecar.rs` now spawns\n`sidecar/server/liberty-sidecar.js`, and the installed-tree verification does not look for that file\nat all.\n\nWHAT THAT COSTS. The step exists to prove the installer carries a runnable application. As of 0de015a\nit proves the installer carries a file nothing runs, and would pass unchanged if\n`liberty-sidecar.js`, `liberty-sidecar-layout.json` or the whole standalone tree were absent from the\nMSI.\n\nIT IS NOT CURRENTLY A LIVE HOLE, and saying so is part of the finding rather than a reason to\ndowngrade it. `package-sidecar.mjs` lists `server/liberty-sidecar.js` and\n`server/liberty-sidecar-layout.json` among the files it requires after laying out, so a missing\nbootstrap fails the packaging step before an installer is ever built. What is missing is the\nINSTALLED-TREE half: nothing proves the MSI carried across what packaging produced. Those are\ndifferent claims, and this workflow step is the only thing that makes the second one.\n\nTHE FIX IS SMALL AND THE INTERESTING PART IS HOW TO KEEP IT HONEST. Adding two more path assertions\nis five minutes' work and will drift again the next time the layout changes -- this defect IS that\ndrift, one round after PW-0106 renamed the entry. The durable shape is for the verification to derive\nits expectations from the same constants the layout does, exactly as `package-sidecar.mjs` already\nderives `SERVER_RELATIVE_PATH` and `NODE_RELATIVE_PATH` from `sidecar.rs` by regex and fails when\nthey disagree. A verification that names its own copy of the paths is a third place for one fact to\nlive, and this repository has now been bitten by that three times: `.next/standalone` vs\n`dist/desktop/standalone` in round 95, `\"server.js\"` hard-coded in a Rust test in round 98, and this.\n\nRECOMMENDED: verify the installed tree against the paths `sidecar.rs` declares, not against a list\nwritten in YAML. Whether that is done by having the workflow shell out to a small Node script under\n`scripts/windows/**` (which would put it on PW-0503's surface, where the rest of the installed-tree\nlifecycle work already lives) or by extending the inline PowerShell is the choice worth a ruling.\n\nWHY NOT PATCHED HERE. `.github/workflows/windows.yml` is PW-0501's allowedPath. PW-0501 is DONE, so\nediting it cannot make a review stale -- but it also means no active task owns the file, and\ndeclaring it under PW-0106 would change the surface gpt-architect's architecture-review is bound to\nat 777002e. Neither is something to do quietly at 06:00."
     }
   ]
 }
