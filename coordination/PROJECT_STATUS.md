@@ -1,8 +1,8 @@
 # Project Liberty - Project Status
 
-> Generated 2026-09-30T03:07:39.768Z from the AI control plane.
+> Generated 2026-09-30T03:18:02.232Z from the AI control plane.
 
-**Overall completion:** 79/103 executable tasks (77%)
+**Overall completion:** 79/104 executable tasks (76%)
 
 ## Status summary
 
@@ -10,7 +10,7 @@
 - **READY:** 10
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 1
-- **REVIEW:** 1
+- **REVIEW:** 2
 - **BLOCKED:** 3
 - **DONE:** 79
 - **CANCELED:** 0
@@ -31,19 +31,19 @@
 
 ## Active work
 
+- **PL-0406** [IN_PROGRESS] The documented migration command applies nothing and exits 0 — owner: claude-backend
 - **PW-0105** [REVIEW] The sidecar half of the desktop contract was never wired into the server — owner: claude-media
-- **PW-0106** [IN_PROGRESS] PORT=0 never reaches the kernel: the packaged sidecar always tries to bind 3000 — owner: claude-media
+- **PW-0106** [REVIEW] PORT=0 never reaches the kernel: the packaged sidecar always tries to bind 3000 — owner: claude-media
 
 ## Dispatch classification
 
-- **READY_AND_EXECUTABLE:** 10
-- **READY_BUT_EXTERNAL:** 0
+- **READY_AND_EXECUTABLE:** 9
+- **READY_BUT_EXTERNAL:** 1
 - **BLOCKED:** 3
 - **BACKLOG (dependency-gated):** 9
 
 ## Recommended executable wave
 
-- **PL-0406** -> claude-backend (P1/Backend) The documented migration command applies nothing and exits 0
 - **PW-0104** -> claude-infra (P1/Infra) A killed desktop dev server cannot leave a tracked file rewritten
 - **PW-0304** -> claude-frontend (P1/Frontend) Watchlist becomes usable: an add control and a list
 - **PW-0307** -> claude-frontend (P1/Frontend) Series navigation and the next episode
@@ -52,7 +52,7 @@
 
 ## Queued for external agents
 
-No READY work is waiting on an external agent lane.
+- **PL-0407** (P2/Backend) The Drizzle snapshot names three primary keys the database does not have — reserved for gpt-architect via openai-chatgpt; not locally executable
 
 ## Blockers
 
@@ -73,7 +73,7 @@ UNBLOCK WHEN: the commander runs Experiment 1a on real Windows hardware and hand
 - **gpt-architect:** 0/6 active (external lane; not locally executable)
 - **claude-lead:** 0/2 active
 - **claude-frontend:** 0/2 active
-- **claude-backend:** 0/2 active
+- **claude-backend:** 1/2 active
 - **claude-media:** 2/2 active
 - **claude-test:** 0/1 active
 - **claude-security:** 0/1 active

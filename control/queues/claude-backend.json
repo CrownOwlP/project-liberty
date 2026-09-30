@@ -1,21 +1,19 @@
 {
-  "generatedAt": "2026-09-30T03:07:39.772Z",
+  "generatedAt": "2026-09-30T03:18:02.238Z",
   "agent": "claude-backend",
   "executionAvailable": true,
-  "assigned": [],
-  "review": [],
-  "reservedExternal": [],
-  "recommended": [
+  "assigned": [
     {
       "id": "PL-0406",
       "priority": "P1",
       "lane": "Backend",
-      "status": "READY",
+      "status": "IN_PROGRESS",
       "title": "The documented migration command applies nothing and exits 0",
       "dependencies": [],
       "allowedPaths": [
         "packages/persistence/migrations/**",
-        "packages/persistence/package.json"
+        "packages/persistence/package.json",
+        "packages/persistence/src/migration-journal.test.ts"
       ],
       "reviewDependencies": [
         "packages/persistence/drizzle.config.ts",
@@ -29,9 +27,48 @@
       ],
       "acceptance": "APPROVED BY gpt-architect, round 94, as a real P1 defect. The acceptance below is the reviewer's and replaces the proposal's.\n\nTHE FINDING, CONFIRMED STRUCTURALLY: `npm run db:migrate -w @liberty/persistence` runs `drizzle-kit migrate`, but the initial migration was hand-written and the expected Drizzle migrations journal does not exist. \"Therefore the documented command can report success while applying no schema.\" Measured by PW-0312 against a live PostgreSQL 16: fresh database, real connection string, exit 0, zero relations afterwards; the same SQL through psql creates all eight tables.\n\nREQUIRED, all seven:\n 1. a fresh empty PostgreSQL database;\n 2. the documented `db:migrate` command;\n 3. the command ACTUALLY CREATES the expected schema;\n 4. a second invocation is safely idempotent / a no-op as appropriate;\n 5. NON-ZERO FAILURE if migration metadata or schema state is invalid;\n 6. a regression PROVING THE OLD 'exit 0, zero relations' BEHAVIOUR IS IMPOSSIBLE;\n 7. CI may return to the repaired command ONLY AFTER that evidence exists.\n\nCONSTRAINT ON HOW IT IS FIXED: \"Do not silently generate a migration from today's schema if doing so would obscure the reviewed hand-written migration's provenance. Repair the migration mechanism intentionally.\" PL-0405 reviewed that file as a whole and its header carries the reasoning; regenerating it to obtain a journal would discard both.\n\nUNTIL IT IS FIXED, three standing constraints: do not rely on `db:migrate`; CI's direct `psql -f packages/persistence/migrations/0000_profile_scoped_identity.sql` is the APPROVED temporary route; and \"keep the eight-table postcondition even after the command itself is repaired\" -- the count is cheap and it is the assertion that would have caught this.\n\nNOT IN SCOPE: changing the schema, adding a second migration, or altering how `scripts/with-root-env.mjs` supplies DATABASE_URL.",
       "notes": "PROPOSED FOR gpt-architect RULING, round 93, created unowned rather than claimed, on the PW-0501 precedent. Found by PW-0312 while building a CI migration step and verified against a live database before being written down. SURFACE NOTE: `packages/persistence/migrations/**` covers both the journal and the SQL; `package.json` is included because the fix may be a change to the `db:migrate` script rather than to a data file, and that should not need a second amendment. `drizzle.config.ts` is a reviewDependency rather than writable: its `out` and `schema` settings decide where a journal would live, so a reviewer needs it in the window, but nothing here should need to change it. THE CI WORKAROUND SHOULD OUTLIVE THE FIX, and that is deliberate: the table count after the migration step is cheap and it is the assertion that would have caught this in the first place. ACCEPTANCE REPLACED in round 94 with gpt-architect's ruling, which is stronger than the proposal in three places: the impossibility regression, the non-zero exit on invalid metadata, and the condition on CI returning to the command. The proposal's original text is in the round-93 board.task_proposed event.",
-      "owner": null,
-      "gateResults": {},
-      "updatedAt": "2026-09-28T02:11:20.961661Z"
+      "owner": "claude-backend",
+      "gateResults": {
+        "unit": {
+          "status": "pass",
+          "at": "2026-09-30T03:16:27.640Z",
+          "by": "claude-backend",
+          "commitSha": "777002e5660054eccab32f9b1337c8143becfc7a",
+          "evidence": "`npm run test` -> 22/22 turbo tasks. @liberty/persistence 268 tests (was 260; +8 from the new\n`src/migration-journal.test.ts`), @liberty/web 1308, @liberty/backend 36, all passing. `npm run lint`,\n`npm run typecheck`, `npm run repo:validate` all clean.\n\nTHE DEFECT, REPRODUCED HERE FIRST, against PostgreSQL 16.15 on a real connection string. Before the\nfix, on a fresh empty database, `npm run db:migrate -w @liberty/persistence` left ZERO relations. One\ncorrection to the record, because the exact failure shape decides what the regression has to assert:\non drizzle-kit 0.31.10 with NO journal the command exits **1**, not 0, and prints NOTHING on stderr --\na silent non-zero. The reported \"exit 0, zero relations\" is reproducible too, and it is the WORSE\nneighbouring case: a journal that exists with `entries: []` prints \"migrations applied successfully!\",\nexits 0, and creates nothing. Both are now impossible; I am recording the distinction rather than\nrepeating a measurement I did not make.\n\nTHE REPAIR, AND WHAT IT DELIBERATELY DID NOT DO. `drizzle-kit migrate` does not read a directory of\n`.sql` files; it reads `meta/_journal.json` and applies the tags listed there. That directory held the\nhand-written `0000_profile_scoped_identity.sql` and nothing else. The fix adds the missing metadata:\n`migrations/meta/_journal.json` naming the existing file, and `migrations/meta/0000_snapshot.json`.\nTHE REVIEWED SQL IS BYTE-FOR-BYTE UNTOUCHED, which is the constraint gpt-architect set -- \"Do not\nsilently generate a migration from today's schema if doing so would obscure the reviewed hand-written\nmigration's provenance.\" The snapshot was obtained by running `drizzle-kit generate` into a THROWAWAY\ndirectory outside the repository and copying only `meta/0000_snapshot.json` across; the SQL that run\nproduced was discarded. The journal's `when` is 1787588559000 -- the author date of commit 1dd8e73,\nwhich added the migration -- not the time this repair was typed.\n\nTHE SEVEN ACCEPTANCE ITEMS:\n 1. fresh empty PostgreSQL database                  lib_final, 0 relations before\n 2. the documented command                           `npm run db:migrate -w @liberty/persistence`\n 3. it ACTUALLY CREATES the expected schema           exit 0, 8 tables: account,\n                                                      active_profile_selection, playback_progress,\n                                                      profile, session, user, verification,\n                                                      watchlist_entry\n 4. a second invocation is safely idempotent          exit 0, still 8 tables, drizzle ledger still 1 row\n 5. NON-ZERO on invalid metadata or schema state      measured, four cases: no journal -> 1;\n                                                      malformed journal JSON -> 1; journal tag with no\n                                                      matching .sql -> 1; and the one that does NOT\n                                                      fail, `entries: []` -> 0 with zero tables, which\n                                                      is why item 6 asserts non-emptiness rather than\n                                                      mere existence\n 6. a regression proving the old behaviour impossible `src/migration-journal.test.ts`, 8 tests, and\n                                                      PROVEN NON-VACUOUS by mutation: `entries: []`\n                                                      turns 2 red, deleting the journal turns 7 red,\n                                                      removing the snapshot turns 1 red, and restoring\n                                                      each returns 8 green\n 7. CI may return to the repaired command only after  NOT DONE HERE, and deliberately.\n    that evidence exists                              `.github/workflows/ci.yml` is a reviewDependency\n                                                      of this task, read-only. The evidence now exists;\n                                                      the switch is proposed in the handoff.\n\nTHE EIGHT-TABLE POSTCONDITION IS KEPT, as required -- asserted in the test against the SQL so it runs\nin the unit job without a database, and separately observed against the live one above.\n\nTWO THINGS MEASURED THAT ARE WORTH THE RECORD. `db:check` is NOT a guard for this: with the journal\npresent and no snapshot it answered \"Everything's fine\". And a journal WITHOUT a snapshot makes the\nnext `db:generate` emit a duplicate migration re-creating all eight tables -- observed as\n`0001_nervous_omega_red.sql` in a throwaway copy; with the snapshot installed the same command answers\n\"No schema changes, nothing to migrate\". That is why the snapshot is part of the repair and why the\ntest asserts one per entry.\n\nThe five hand-written CHECK constraints survive the migration and are visible in the live database:\nplayback_progress_epoch_positive, playback_progress_position_non_negative,\nplayback_progress_position_within_runtime, playback_progress_runtime_positive,\nplayback_progress_seq_non_negative."
+        }
+      },
+      "updatedAt": "2026-09-30T03:09:08.605Z",
+      "implementationAgent": "claude-backend",
+      "implementationBaseSha": "777002e5660054eccab32f9b1337c8143becfc7a"
+    }
+  ],
+  "review": [],
+  "reservedExternal": [],
+  "recommended": [
+    {
+      "id": "PL-0407",
+      "priority": "P2",
+      "lane": "Backend",
+      "status": "READY",
+      "title": "The Drizzle snapshot names three primary keys the database does not have",
+      "dependencies": [],
+      "allowedPaths": [
+        "packages/persistence/src/schema/**",
+        "packages/persistence/migrations/**"
+      ],
+      "reviewDependencies": [
+        "packages/persistence/drizzle.config.ts",
+        "packages/persistence/src/migration-journal.test.ts"
+      ],
+      "preferredAgent": "gpt-architect",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "architecture-review"
+      ],
+      "acceptance": "TO BE SET BY gpt-architect: which of the three remedies in the notes is taken is a ruling, not an implementation detail. Whatever is chosen must leave `npm run db:migrate` creating the same eight tables on a fresh database, must not alter the reviewed hand-written migration's SQL, and must come with an assertion that compares generated constraint names against a migrated database so the disagreement cannot return silently.",
+      "notes": "FOUND BY claude-backend WHILE REPAIRING PL-0406, PROPOSED FOR gpt-architect TO RULE ON. It is NOT\nfixed there: PL-0406's acceptance says in terms that changing the schema and adding a second migration\nare out of scope, and this needs one or the other.\n\nTHE FINDING, EXACT. PL-0406 installed `migrations/meta/0000_snapshot.json` so `drizzle-kit generate`\nhas a previous state to diff against -- without it the next `db:generate` emits a duplicate migration\nre-creating all eight tables, which was measured. The snapshot is derived from the ORM schema in\n`src/schema/index.ts`. Compared against the database the REVIEWED hand-written migration actually\nproduces, every foreign key and every unique constraint matches by name. THREE PRIMARY KEY NAMES DO\nNOT:\n\n  table                      live database name              snapshot expects\n  active_profile_selection   active_profile_selection_pkey   active_profile_selection_session_id_pk\n  playback_progress          playback_progress_pkey          playback_progress_profile_id_content_id_pk\n  watchlist_entry            watchlist_entry_pkey            watchlist_entry_profile_id_content_id_pk\n\nMeasured against PostgreSQL 16.15: `pg_constraint` after `npm run db:migrate` on a fresh database,\nagainst the `compositePrimaryKeys` keys in the installed snapshot.\n\nWHY: the hand-written SQL writes `\"session_id\" text PRIMARY KEY NOT NULL` and\n`CONSTRAINT \"playback_progress_pkey\" PRIMARY KEY (...)`, so PostgreSQL uses its own `_pkey` convention\nor the stated name. Drizzle's `primaryKey()` synthesises `<table>_<cols>_pk`. Both describe the same\nKEY; they disagree only about what it is CALLED.\n\nWHY IT MATTERS LATER RATHER THAN NOW. Nothing is broken today: the schema is correct, all eight tables\nexist, the constraints are enforced, and `generate` diffs the ORM schema against the snapshot without\never consulting the database. The trap is the first migration that touches a primary key. Drizzle\nwould emit `ALTER TABLE \"playback_progress\" DROP CONSTRAINT \"playback_progress_profile_id_content_id_pk\"`,\nwhich does not exist, and the migration would fail against every real database -- in whatever\nenvironment it ran first.\n\nTHREE WAYS OUT, unranked, for the ruling:\n  (a) Name the constraints in the ORM schema so the snapshot matches the database -- `primaryKey({ name:\n      \"playback_progress_pkey\", columns: [...] })`. Smallest, changes no SQL, leaves the reviewed\n      migration untouched. Changes the schema file, which PL-0406 could not.\n  (b) A second migration that renames the three constraints to Drizzle's convention. Changes a live\n      database to suit a tool's naming, which is the wrong way round.\n  (c) Hand-edit the snapshot's three names. Cheapest and worst: a snapshot is generated output, and a\n      hand-edit is lost the next time anyone regenerates it.\n\n(a) looks right from here and is NOT being taken unilaterally, because it edits the schema module that\nPL-0405 reviewed and because the choice is exactly the kind PL-0406's acceptance reserved.\n\nWHAT WOULD HAVE CAUGHT IT AND DID NOT: `npm run db:check` answers \"Everything's fine\" -- it validates\nthe journal, not the agreement between the snapshot and a real database. Whatever remedy is chosen\nshould come with an assertion that compares generated constraint names against a migrated database, or\nthis recurs the next time a snapshot is produced."
     }
   ]
 }

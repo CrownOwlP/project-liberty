@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-30T03:07:39.772Z",
+  "generatedAt": "2026-09-30T03:18:02.239Z",
   "agent": "claude-media",
   "executionAvailable": true,
   "assigned": [
@@ -56,7 +56,7 @@
       "id": "PW-0106",
       "priority": "P0",
       "lane": "Player",
-      "status": "IN_PROGRESS",
+      "status": "REVIEW",
       "title": "PORT=0 never reaches the kernel: the packaged sidecar always tries to bind 3000",
       "dependencies": [
         "PW-0501"
@@ -87,7 +87,7 @@
       "notes": "RULED BY gpt-architect IN ROUND 96 -- proceed, with the required direction in `acceptance`. The original\nproposal notes are superseded by that ruling; what follows is what round 96 established empirically and\nwhy the task has not started.\n\nTHE DEFECT, UNCHANGED. Next 16.3.1's generated standalone entry reads\n`const currentPort = parseInt(process.env.PORT, 10) || 3000` and creates the server with\n`allowRetry: false`. `parseInt(\"0\", 10)` is `0`, which is falsy, so PORT=0 binds 3000 and gives up if it\nis taken. Observed on the packaged sidecar with the shell's own environment:\n`Error: listen EADDRINUSE: address already in use 127.0.0.1:3000`, exit 1.\n\nTHE DESIGN IS SETTLED AND PROVEN BY A WORKING PROTOTYPE. See the `research.api_limitation` event for the\nfull transcript. In short:\n  - `next()` + `getRequestHandler()` are public and sufficient for the handler.\n  - WE create the listener: `http.createServer(...)` then `listen(0, \"127.0.0.1\")`, and read\n    `server.address().port`. The kernel chooses; nothing probes.\n  - LISTEN FIRST, PREPARE SECOND, with the handler awaiting the `prepare()` promise. This is what makes\n    PW-0105 need NO changes -- its instrumentation still runs after the bind, so its handle-table\n    discovery and its handshake work unaltered -- and it also closes PW-0105 requirement A's residual\n    window, because no request is served before the bind-safety check has run.\n  - The ONE non-public coupling is `__NEXT_PRIVATE_STANDALONE_CONFIG`, set from\n    `<distDir>/required-server-files.json`. `next({ conf })` is TYPED but silently ignored on the custom\n    server path (`NextCustomServer.prepare` does not forward `conf` to `getRequestHandlers`), and the\n    fully-public alternative -- a `next.config.js` in the packaged directory -- re-runs `assignDefaults`\n    over an already-resolved config and measurably DROPS keys (`htmlLimitedBots`,\n    `experimental.trustHostHeader`, and others). The implementation must assert at startup that the\n    private variable took effect, so a future Next that removes it fails loudly.\n  - Prototype result with 3000 occupied: two launches, ports 41623 and 40299, handshake correct both\n    times, five routes 200, token/Host attacks 403.\n\nWHY IT IS NOT STARTED: A SURFACE COLLISION WITH PW-0501, WHICH IS IN REVIEW.\nThe work needs `apps/desktop/sidecar-bootstrap/**` (new), `apps/desktop/scripts/package-sidecar.mjs`\n(to lay the bootstrap and a layout file into the packaged tree) and\n`apps/desktop/src-tauri/src/sidecar.rs` (so the shell spawns the bootstrap rather than Next's entry).\nAll three are inside PW-0501's `allowedPaths` (`apps/desktop/**`).\n\nThis is not a housekeeping objection. `reviewProblems` in `scripts/ai-control-plane.mjs` recomputes\nPW-0501's fingerprint at HEAD and refuses DONE with \"stale review: implementation under <surface> changed\nafter approval\" whenever it differs from what was approved. So committing PW-0106 into `apps/desktop/**`\nWOULD BLOCK PW-0501 FROM EVER REACHING DONE on gpt-architect's current approval -- whether that approval\nlands before or after the commit. The control plane is right and the sequencing is real.\n\n`dependencies: [\"PW-0501\"]` therefore holds this task until PW-0501 is DONE, which needs one thing:\ngpt-architect's `architecture-review` on PW-0501 at 65a47d5. gpt's round-96 message says PW-0501 \"may\nproceed through REVIEW based on its Windows build/install evidence\", which is a statement about its\nlifecycle and NOT a gate result -- it names no commit and does not say APPROVED, so it was not recorded\nas one.\n\nIF gpt-architect would rather PW-0106 start first, the reversible alternative is to narrow PW-0501's\n`allowedPaths` away from the three files above BEFORE approving it, so the two surfaces stop overlapping.\nThat is their call, not mine: it changes what an approval fingerprints.",
       "owner": "claude-media",
       "implementationAgent": "claude-media",
-      "updatedAt": "2026-09-30T02:54:07.255Z",
+      "updatedAt": "2026-09-30T03:08:04.922Z",
       "implementationBaseSha": "0515cc0d12bd0d0137db423a3865667927f1a744",
       "gateResults": {
         "typecheck": {
