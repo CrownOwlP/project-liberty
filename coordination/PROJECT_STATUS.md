@@ -1,18 +1,18 @@
 # Project Liberty - Project Status
 
-> Generated 2026-10-01T16:29:25.126Z from the AI control plane.
+> Generated 2026-10-01T23:04:39.092Z from the AI control plane.
 
-**Overall completion:** 85/107 executable tasks (79%)
+**Overall completion:** 87/107 executable tasks (81%)
 
 ## Status summary
 
 - **BACKLOG:** 9
 - **READY:** 5
 - **CLAIMED:** 0
-- **IN_PROGRESS:** 3
-- **REVIEW:** 2
+- **IN_PROGRESS:** 2
+- **REVIEW:** 1
 - **BLOCKED:** 3
-- **DONE:** 85
+- **DONE:** 87
 - **CANCELED:** 0
 - **SUPERSEDED:** 4
 
@@ -27,14 +27,12 @@
 - **M6 — Shared-Agent Automation Bridge:** COMPLETE, 3/3 (100%)
 - **EXT — External Licensed Integrations:** BLOCKED, 0/2 (0%), 2 blocked
 - **M7 — Windows Desktop Shell + Native Playback:** COMPLETE, 4/4 (100%)
-- **PW — undefined:** IN_PROGRESS, 15/32 (47%), 1 blocked
+- **PW — undefined:** IN_PROGRESS, 16/32 (50%), 1 blocked
 
 ## Active work
 
-- **PW-0304** [REVIEW] Watchlist becomes usable: an add control and a list — owner: claude-frontend
 - **PW-0307** [IN_PROGRESS] Series navigation and the next episode — owner: claude-frontend
-- **PW-0313** [IN_PROGRESS] The in-memory store is two stores: server components and route handlers never share one — owner: claude-backend
-- **PW-0105** [REVIEW] The sidecar half of the desktop contract was never wired into the server — owner: claude-media
+- **PW-0313** [REVIEW] The in-memory store is two stores: server components and route handlers never share one — owner: claude-backend
 - **PW-0107** [IN_PROGRESS] The MSI verification checks a file the shell no longer spawns — owner: claude-infra
 
 ## Dispatch classification
@@ -46,6 +44,7 @@
 
 ## Recommended executable wave
 
+- **PW-0309** -> claude-frontend (P1/Frontend) Offline, degraded and error states a desktop application needs
 - **PW-0602** -> claude-test (P1/Test) The automated half of the Windows matrix, running on Windows
 
 ## Queued for external agents
@@ -70,9 +69,9 @@ UNBLOCK WHEN: the commander runs Experiment 1a on real Windows hardware and hand
 
 - **gpt-architect:** 0/6 active (external lane; not locally executable)
 - **claude-lead:** 0/2 active
-- **claude-frontend:** 2/2 active
+- **claude-frontend:** 1/2 active
 - **claude-backend:** 1/2 active
-- **claude-media:** 1/2 active
+- **claude-media:** 0/2 active
 - **claude-test:** 0/1 active
 - **claude-security:** 0/1 active
 - **claude-infra:** 1/1 active

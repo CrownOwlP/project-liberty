@@ -8988,7 +8988,7 @@
       "id": "PW-0304",
       "priority": "P1",
       "lane": "Frontend",
-      "status": "REVIEW",
+      "status": "DONE",
       "title": "Watchlist becomes usable: an add control and a list",
       "dependencies": [
         "PW-0301",
@@ -9018,7 +9018,7 @@
       ],
       "acceptance": "A person can add a title to their watchlist and see the list. The API and its mutation rules are complete, tested and reviewed -- including the conflict semantics in packages/persistence/src/watchlist-mutation.ts -- and nothing renders them. REQUIRED: the add control appears on the title screen and on a catalog card, and reflects state optimistically while remaining correct when the write is refused. REQUIRED: the resolution vocabulary the API already returns (accepted plus a reason, not a boolean ok) is surfaced honestly; a refused write must not render as a success, which is the shape of defect the harnesses in this repository have caught four times.",
       "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. ",
-      "owner": "claude-frontend",
+      "owner": null,
       "gateResults": {
         "typecheck": {
           "status": "pass",
@@ -9043,8 +9043,53 @@
         }
       },
       "implementationAgent": "claude-frontend",
-      "updatedAt": "2026-10-01T02:38:10.744Z",
-      "implementationBaseSha": "9039e20563dd314cb730c432e45e32caa50bab61"
+      "updatedAt": "2026-10-01T22:48:37.544Z",
+      "implementationBaseSha": "9039e20563dd314cb730c432e45e32caa50bab61",
+      "review": {
+        "taskId": "PW-0304",
+        "implementationAgent": "claude-frontend",
+        "implementationOwner": "claude-frontend",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "bedceb502ce894d759b01c6f0a8ad9052db6adac",
+        "reviewedBaseSha": "9039e20563dd314cb730c432e45e32caa50bab61",
+        "reviewedTreeHash": "d5833144c58c398c1a879ab21a8fe060abd3ac8361ec6ee9210f06b4c8227317",
+        "reviewedFileCount": 32,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [
+          "apps/web/src/app/api/v1/watchlist",
+          "packages/persistence/src/watchlist-mutation.ts",
+          "apps/web/src/components/title"
+        ],
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-10-01T22:48:21.568Z",
+        "evidence": "APPROVED at bedceb502ce894d759b01c6f0a8ad9052db6adac. gpt-architect, round 102, transcribed by\nclaude-lead from the ChatGPT review document. This REBINDS the round-101 approval, which was given\nat c63c8e8 and refused by the control plane as stale.\n\ngpt-architect's stated reason for rebinding: \"The earlier approval at c63c8e8 became stale because\nsubsequent PW-0307 work changed files under PW-0304's declared reviewDependencies\n(apps/web/src/components/title). The corrected Round-102 tree has now been reviewed as the combined\ncurrent surface.\"\n\nApproval scope, verbatim: \"watchlist navigation; /watchlist page; add/remove control on title hero;\nadd/remove control on catalog cards; optimistic state; rollback on refused writes; honest\nreason-code rendering; route/client HTTP verb agreement; full-project Chromium e2e corrective after\nthe shared role=status regression; PostgreSQL signed-in e2e coverage.\n\nThe shared status-role regression discovered after the first approval was corrected and disclosed.\nRe-run evidence is part of this approval.\n\nIf the currently-running CI remains compatible with the recorded gates and the control-plane\nfingerprint is valid at bedceb5, PW-0304 may reach DONE.\""
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PW-0304",
+          "implementationAgent": "claude-frontend",
+          "implementationOwner": "claude-frontend",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "bedceb502ce894d759b01c6f0a8ad9052db6adac",
+          "reviewedBaseSha": "9039e20563dd314cb730c432e45e32caa50bab61",
+          "reviewedTreeHash": "d5833144c58c398c1a879ab21a8fe060abd3ac8361ec6ee9210f06b4c8227317",
+          "reviewedFileCount": 32,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "apps/web/src/app/api/v1/watchlist",
+            "packages/persistence/src/watchlist-mutation.ts",
+            "apps/web/src/components/title"
+          ],
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-10-01T22:48:21.568Z",
+          "evidence": "APPROVED at bedceb502ce894d759b01c6f0a8ad9052db6adac. gpt-architect, round 102, transcribed by\nclaude-lead from the ChatGPT review document. This REBINDS the round-101 approval, which was given\nat c63c8e8 and refused by the control plane as stale.\n\ngpt-architect's stated reason for rebinding: \"The earlier approval at c63c8e8 became stale because\nsubsequent PW-0307 work changed files under PW-0304's declared reviewDependencies\n(apps/web/src/components/title). The corrected Round-102 tree has now been reviewed as the combined\ncurrent surface.\"\n\nApproval scope, verbatim: \"watchlist navigation; /watchlist page; add/remove control on title hero;\nadd/remove control on catalog cards; optimistic state; rollback on refused writes; honest\nreason-code rendering; route/client HTTP verb agreement; full-project Chromium e2e corrective after\nthe shared role=status regression; PostgreSQL signed-in e2e coverage.\n\nThe shared status-role regression discovered after the first approval was corrected and disclosed.\nRe-run evidence is part of this approval.\n\nIf the currently-running CI remains compatible with the recorded gates and the control-plane\nfingerprint is valid at bedceb5, PW-0304 may reach DONE.\""
+        }
+      ],
+      "completedAt": "2026-10-01T22:48:37.544Z"
     },
     {
       "id": "PW-0305",
@@ -9552,7 +9597,7 @@
       "id": "PW-0313",
       "priority": "P1",
       "lane": "Backend",
-      "status": "IN_PROGRESS",
+      "status": "REVIEW",
       "title": "The in-memory store is two stores: server components and route handlers never share one",
       "dependencies": [],
       "allowedPaths": [
@@ -9560,14 +9605,15 @@
         "apps/web/src/lib/db/in-memory-repository.ts",
         "apps/web/src/lib/db/in-memory-repository.test.ts",
         "apps/web/src/lib/db/index.test.ts",
-        "e2e/tests/continue-watching.spec.ts"
+        "e2e/tests/continue-watching.spec.ts",
+        "e2e/tests/watchlist.spec.ts",
+        "e2e/tests/critical-journey.spec.ts"
       ],
       "reviewDependencies": [
         "apps/web/src/lib/continue-watching.ts",
         "apps/web/src/components/continue-watching",
         "apps/web/src/components/watchlist/watchlist-page-data.ts",
         "apps/web/src/app/watchlist",
-        "e2e/tests/watchlist.spec.ts",
         "docs/DEVELOPMENT.md"
       ],
       "preferredAgent": "claude-frontend",
@@ -9581,7 +9627,7 @@
       "notes": "DEFECT, PROPOSED FOR gpt-architect RULING, round 100. Found while building PW-0304 and REPRODUCED TWICE on a running server; the full reproduction, including the one for PW-0305's rail, is the `defect.found` event of 2026-10-01. In one line: `lib/db/index.ts` caches the resolution in a module-level binding and `in-memory-repository.ts` builds its Maps at construction, and Next's app router compiles the React Server Components graph and the route-handler graph separately, so each gets its own store. PostgreSQL is unaffected, which is why it has been invisible. Created unowned so the proposal is machine-readable rather than prose, and NOT claimed before the verdict -- the remedy touches PW-0305's allowedPaths and the choice between fixing the identity and narrowing the adapter's contract is gpt-architect's to make.",
       "owner": "claude-backend",
       "implementationAgent": "claude-backend",
-      "updatedAt": "2026-10-01T16:07:52.597Z",
+      "updatedAt": "2026-10-01T23:04:13.284Z",
       "implementationBaseSha": "42f5bb7d446c2a12361ba03093121e32b71ce305",
       "gateResults": {
         "typecheck": {
@@ -9597,6 +9643,13 @@
           "by": "claude-backend",
           "commitSha": "42f5bb7d446c2a12361ba03093121e32b71ce305",
           "evidence": "`npm run test` (turbo run test): Tasks 22 successful, 22 total, exit 0. `apps/web` alone is 80 test\nfiles / 1399 tests passed; `src/lib/db/` alone is 3 files / 61 tests.\n\nWHAT THE NEW CASES COVER, against gpt-architect's round-101 evidence list.\n\nin-memory-repository.test.ts, \"the process store (PW-0313)\" -- 7 cases:\n  - the same store is handed to every caller in one realm;\n  - a write through a repository built the way one Next graph builds it is READ through a\n    separately-constructed one (items 1 and 2, as near as a unit test can get: it cannot build two\n    Next module graphs, and says so);\n  - the same in the reverse direction (item 3);\n  - `createInMemoryRepository` still DEFAULTS to a fresh store, so no existing suite becomes\n    order-dependent -- the sharing is a property of the composition root only;\n  - the reset throws the store away, the next ask builds a new one, and the OLD object is left\n    coherent rather than emptied;\n  - ITEM 6, IN A REAL SECOND PROCESS: two `execFileSync(process.execPath, [\"-e\", ...])` children\n    each write the slot and each report the slot was `absent` on entry. The child program\n    interpolates `IN_MEMORY_STORE_GLOBAL_KEY`, the exported constant, so a rename cannot leave this\n    test checking a stale literal;\n  - a source rule that the module touches no `node:fs`, `node:path`, `localStorage` or\n    `writeFile`, with a non-vacuity check -- the ruling says \"do not persist this data to disk\n    merely to solve module identity\".\n\nindex.test.ts, \"the in-memory branch resolves one store per process (PW-0313)\" -- 3 cases:\n  - two independent `selectRepository` calls (NOT `resolveRepository`, whose cache would hand back\n    one object and make the test pass without sharing anything) produce two DIFFERENT repository\n    objects that share state;\n  - what they share is the store the module publishes, asserted against `processInMemoryStore()`\n    rather than merely against each other -- otherwise two copies of the module could both be\n    isolated and the suite still green;\n  - the PostgreSQL branch is untouched: it still reports `postgres`, still returns a handle, and\n    puts nothing in the process store.\n\nITEM 7, ISOLATION, IS EXPLICIT IN BOTH FILES: `beforeEach` and `afterEach` both call\n`resetProcessInMemoryStore()`. The two hooks are not redundant -- the first protects the suite from\nthe world, the second protects the world from the suite, since any test anywhere that reaches\n`selectRepository`'s in-memory branch now shares a store.\n\nNON-VACUITY, MEASURED RATHER THAN ASSERTED. With the one-line change in `index.ts` reverted --\n`createInMemoryRepository(environment)` instead of\n`createInMemoryRepository(environment, processInMemoryStore())` -- `src/lib/db/index.test.ts` goes\n2 failed / 18 passed. The two that fail are the two that are about sharing; the PostgreSQL case\nstill passes, which is the point of having it."
+        },
+        "e2e": {
+          "status": "pass",
+          "at": "2026-10-01T23:04:13.023Z",
+          "by": "claude-backend",
+          "commitSha": "bedceb502ce894d759b01c6f0a8ad9052db6adac",
+          "evidence": "EXECUTED on bedceb5 plus this round's test changes. Browser: Chrome for Testing 151.0.7922.34,\nrevision 1234 -- the build @playwright/test 1.62.1 pins, resolved from /root/.cache/ms-playwright.\nThe container's PLAYWRIGHT_BROWSERS_PATH points at a 1194 tree which was NOT used.\n\nWHOLE PROJECTS, NO SPEC FILTER, three configurations, exit 0 in each:\n\n  development (in-memory, development-header identity), LIBERTY_E2E_PORT=3177\n     --project=chromium : 27 passed,  6 skipped\n     --project=api      : 55 passed,  8 skipped\n  production + REAL POSTGRESQL 16.15, LIBERTY_E2E_PORT=3200,\n  LIBERTY_E2E_DATABASE_URL=postgres://postgres@127.0.0.1:5433/lib_wl\n     --project=chromium --project=api : 72 passed, 24 skipped\n\nEVIDENCE ITEM 4 -- PW-0305's RAIL. `e2e/tests/continue-watching.spec.ts`, new, 4 cases: a profile\nthat has watched nothing gets no rail AND still gets the browse rails (the precondition that makes\nthe positive case mean something, since before this fix the rail was absent in every case); a\nprogress row written through the API is on the page; the card is the RESUME rendering of\n`CatalogCard`, carrying the spoken \"N% watched\" and a start-over LINK with `?restart=1`; and one\nhousehold's resume point is not another's, which is the first question to ask of a store that just\nbecame process-global.\n\nEVIDENCE ITEM 5 -- THE DEVELOPMENT WATCHLIST PATH, ENABLED AND NOT DELETED, which is the wording of\ngpt-architect's round-102 ruling. Four assertions were added to the development group of\n`watchlist.spec.ts`, each marked PW-0313 in the source, each previously impossible:\n  - after adding from a title page, `/watchlist` shows the title -- and NOT \"Choose who is\n    watching\", which is what that page used to answer for a session that had plainly selected a\n    profile;\n  - after removing, `/watchlist` shows the empty panel and not the title;\n  - after adding from a catalog card on the home screen, `/watchlist` shows that one title and not\n    the other demo series -- the full journey through the UI, which no configuration could do\n    before;\n  - after a REFUSED write, `/watchlist` read back as the original identity is empty. That is the\n    acceptance's \"a refused write must not render as a success\", checked in the one place a viewer\n    would go to find out whether it worked.\nThe wire-level `listedContentIds` checks were NOT replaced. \"The server agrees with the row\" and\n\"the page agrees with the server\" are different claims.\n\nNON-VACUITY, MEASURED. With the one line in `lib/db/index.ts` reverted to\n`createInMemoryRepository(environment)`, `watchlist.spec.ts` + `continue-watching.spec.ts` on\nchromium/development go to 7 FAILED / 4 passed / 4 skipped: all four new watchlist page assertions\nand three of the four continue-watching cases. Restored, the same two specs are 11 passed / 4\nskipped, exit 0. Every assertion this gate rests on depends on the fix.\n\nONE EXISTING TEST WAS REPAIRED ON THE WAY, DISCLOSED RATHER THAN QUIETLY FIXED.\n`critical-journey.spec.ts`'s play-affordance case failed at 12.0s with\n`expect(page).toHaveURL` -- not a product failure: the click had navigated and the RSC request was\nwaiting on Turbopack's FIRST compile of `/watch/[contentId]`, which pulls shaka-player. The server\nlog straddles the failure (\"Compiling /watch/[contentId] ...\" then the failure then \"200 in\n262ms\"), and the previous round's run logged the same compile at 6.8s and passed with under two\nseconds of margin. This round's additions consumed that margin. Repaired by waiting on the\nNAVIGATION (`page.waitForURL`) and keeping the URL assertion after it, so the wait is bounded by\nthe thing that actually varies. No timeout was raised and `retries` is still 0 -- PL-0706's\nacceptance says raising a ceiling \"moves the ceiling without removing the dependence\". Diagnosis\nrecorded as `defect.found`.\n\nWHAT THIS GATE STILL DOES NOT COVER. webkit, firefox and mobile-safari were not executed -- only\nchromium 1234 is installed here. No configuration in this harness has both a real database and a\ncatalog, so the PostgreSQL run exercises the list page's `item: null` branch while the development\nrun exercises the named-card branch; between them both branches are covered, but not both on one\nbuild. Nothing here ran on Windows and nothing here claims anything about Windows."
         }
       }
     },
@@ -10598,7 +10651,7 @@
       "id": "PW-0105",
       "priority": "P0",
       "lane": "Player",
-      "status": "REVIEW",
+      "status": "DONE",
       "title": "The sidecar half of the desktop contract was never wired into the server",
       "dependencies": [],
       "allowedPaths": [
@@ -10622,7 +10675,7 @@
       ],
       "acceptance": "PW-0101 designed the sidecar contract and PW-0102 built the shell that speaks it. NOTHING CONNECTED THE SIDECAR HALF. Three symptoms, all found in round 95 by starting the packaged artefact for the first time -- none is reachable by any existing test, because until the packaging corrective landed there was no packaged sidecar to start.\n\n1. THE HANDSHAKE IS NEVER EMITTED. `lib/sidecar/handshake.ts` exports `formatHandshake` and `HANDSHAKE_PREFIX`; the only caller in the repository is its own test. The packaged server's complete stdout is Next's banner plus the catalog line -- no `liberty-sidecar-ready`. `shell.rs` waits for that line, times out, kills the child and reports `NoHandshake`. THE INSTALLED APPLICATION THEREFORE NEVER OPENS A WINDOW ON CONTENT.\n\n2. THE EXPECTED HOST CANNOT MATCH. `sidecar.rs` sets LIBERTY_SIDECAR_HOST to BIND_HOST, the bare literal \"127.0.0.1\". `policy.ts`'s `authorizeRequest` compares it to the request's `Host` header with `!==`, and its comment requires exactness: \"127.0.0.1:3000 and 127.0.0.1:3001 are different listeners\". A Host header always carries a non-default port, so the comparison can never succeed. `policy.test.ts` uses \"127.0.0.1:3100\" -- an authority -- so the policy side expects host:port and the shell side sends a hostname. Each half is self-consistent; the pair is not.\n   PROVEN BY A ONE-VARIABLE COMPARISON against the packaged tree: with \"127.0.0.1\" every route answered 403; with \"127.0.0.1:<bound port>\" /, /search, /profiles, /api/health and /title/<id> answered 200, the stylesheet 200 and a client chunk 200.\n\n3. THE BIND-SAFETY GATE IS NOT WIRED IN. `checkBindSafety` refuses to start a sidecar that would bind 0.0.0.0 -- 'a sidecar inheriting a container's HOSTNAME would serve the whole network with a valid token that the user's own browser holds'. `proxy.ts` calls `readSidecarEnvironment` but NOTHING calls `checkBindSafety`. A written, tested security control that no code path reaches.\n\nTHE ORDERING PROBLEM THAT MAKES 2 NON-TRIVIAL, and the reason this needs a ruling rather than a patch: the expected host must contain the port, and BIND_PORT is \"0\" so the port does not exist until after the child binds. `handshake.ts` records why that was chosen -- the shell picking a port has a TOCTOU window and 'the user sees a blank window'. So either the sidecar derives its own authority after binding (a change in `lib/sidecar/**`), or the shell reserves a port (which reverses a reviewed decision), or the comparison changes shape (which its own comment argues against). ALL THREE ARE ARCHITECTURE DECISIONS; pick one deliberately.\n\nREQUIRED: the packaged sidecar emits exactly one handshake line on stdout, and the shell reaches a window.\nREQUIRED: a request from the shell's own WebView is AUTHORIZED, with the port question settled one way and the reasoning recorded.\nREQUIRED: `checkBindSafety` is consulted before the listener accepts anything, and a sidecar that would bind non-loopback refuses to start.\nREQUIRED: A TEST THAT COMPOSES THE TWO HALVES. Every one of these defects is a pair of self-consistent unit tests with nothing between them. Whatever form it takes -- a harness that starts the packaged server with the environment `plan_launch` produces and asserts an authorized request succeeds -- the property is that the shell's output and the sidecar's input are checked against each other rather than each against its own fixture.\n\nNOT IN SCOPE: packaging (PW-0501), the Job Object, the launch token's minting, and anything requiring attended Windows hardware (PW-0103).",
       "notes": "PROPOSED FOR gpt-architect RULING, round 95, created unowned rather than claimed, on the PW-0501 precedent. Found during PW-0501's qualification by starting the packaged sidecar -- the first time this project has run one. P0 because it is the difference between an installer that produces a working application and one that produces a window that never loads, and because PW-0603's certification sheet and PW-0103's experiment both sit downstream of a shell that can actually reach its own server.\nSURFACE NOTE: spans apps/web/src/lib/sidecar/** and apps/desktop/src-tauri/, which is unusual and is the point -- the defect IS the seam between them, and a task confined to one side would reproduce the two-self-consistent-halves problem that caused it. PW-0501 currently holds apps/desktop/**, so these two must not be active at the same time; the overlap is real and is resolved by sequence, the same way PW-0102 and PW-0501 were.\nWHAT PW-0501 STILL PROVES WITHOUT THIS: that CI produces an installer, that it installs and uninstalls, and that the packaged tree serves pages when given a correct environment. It has never claimed the application launches, and `.github/workflows/windows.yml` says so in its header.",
-      "owner": "claude-media",
+      "owner": null,
       "gateResults": {
         "typecheck": {
           "status": "pass",
@@ -10640,28 +10693,71 @@
         },
         "architecture-review": {
           "status": "pass",
-          "at": "2026-10-01T01:08:23.469Z",
+          "at": "2026-10-01T22:48:59.575Z",
           "by": "gpt-architect",
-          "commitSha": "f59157a327af4b2a2c423d7f79e9ee72cffe5abd",
-          "judgementCommitSha": "77d2eed3adca5aba0abbd769144e7caa451039b6",
+          "commitSha": "bedceb502ce894d759b01c6f0a8ad9052db6adac",
+          "judgementCommitSha": "bedceb502ce894d759b01c6f0a8ad9052db6adac",
           "judgementCommitVerified": true,
           "transcribedBy": "claude-lead",
-          "evidence": "PASS at 77d2eed3adca5aba0abbd769144e7caa451039b6, gpt-architect's round-99 architecture review, transcribed by claude-lead. Reviewed, in their words, \"in the final architecture where PW-0106 owns the listener\" -- so the verdict is on the combined runtime rather than on this task's diff read alone.\n\nThe architecture they approved: the sidecar's security controls execute on the production request path rather than existing only as test helpers, which is the entire finding PW-0105 was opened for -- `checkBindSafety` and `formatHandshake` had been written, documented, unit-tested and called by nothing. `register()` now runs the bind check and the handshake; `authorizeRequest` parses the Host header instead of pattern-matching it and compares hostname and port; and the handshake format is explicit and parser-covered on both sides of the wire.\n\nTHE RESIDUAL SEQUENCING CONCERN I REPORTED IN ROUND 96 IS CLOSED, and gpt-architect names the mechanism rather than accepting my summary of it: \"PW-0106 removes the earlier residual sequencing concern by owning the listener and gating request handling on preparation.\" That window -- between Next's `listen()` and `instrumentation.register()` -- existed because Next binds before the application loads. It is gone because the bootstrap now binds first and the request handler awaits `prepare()`, so no request is served before the bind-safety check has run.\n\nLIMITATION, carried verbatim: \"This verdict concerns the security/architecture implementation and its packaged-sidecar evidence. It does not assert that liberty-desktop.exe has successfully exercised the complete Windows launch path.\""
+          "evidence": "PASS at bedceb502ce894d759b01c6f0a8ad9052db6adac. gpt-architect, round 102, transcribed by\nclaude-lead. REBOUND from the round-99/101 record at 77d2eed3adca5aba0abbd769144e7caa451039b6,\nwhich remains the reviewed implementation lineage; gpt-architect's round-102 instruction is \"Do not\nreuse stale approvals. Bind every judgement to the exact reviewed commit/fingerprint.\"\n\ngpt-architect's stated reason for rebinding: \"The implementation remains the same security/sidecar\ncontract already reviewed, but the control plane requires a current commit binding that includes\nthe final combined runtime surface.\"\n\nArchitecture rationale, verbatim and unchanged from the prior verdict: \"production startup executes\nthe security controls; handshake is on the real runtime path; Host/token enforcement is\nfail-closed; PW-0106 owns the listener and removes the residual request-before-policy window;\nactual kernel-selected port participates in authorization; no security weakening is introduced by\nthe later commits in the reviewed runtime surface.\"\n\nLIMITATION, RECORDED AS PART OF THE VERDICT RATHER THAN AS A FOOTNOTE: \"This does NOT claim that\nthe complete installed Windows shell -> child -> handshake -> WebView path has been demonstrated.\"\nNothing in this project has started liberty-desktop.exe anywhere."
         },
         "security-review": {
           "status": "pass",
-          "at": "2026-10-01T01:08:23.612Z",
+          "at": "2026-10-01T22:48:59.692Z",
           "by": "gpt-architect",
-          "commitSha": "f59157a327af4b2a2c423d7f79e9ee72cffe5abd",
-          "judgementCommitSha": "77d2eed3adca5aba0abbd769144e7caa451039b6",
+          "commitSha": "bedceb502ce894d759b01c6f0a8ad9052db6adac",
+          "judgementCommitSha": "bedceb502ce894d759b01c6f0a8ad9052db6adac",
           "judgementCommitVerified": true,
           "transcribedBy": "claude-lead",
-          "evidence": "PASS at 77d2eed3adca5aba0abbd769144e7caa451039b6, gpt-architect's round-99 security review, transcribed by claude-lead.\n\nTHE RATIONALE, as given: the sidecar token is per-launch and treated as a secret capability; the expected loopback host identity is explicit; Host parsing rejects alternate DNS names, suffix tricks, userinfo forms, localhost substitution, 0.0.0.0 and wrong-port authorities; missing and wrong token requests fail closed; startup rejects unsafe and non-loopback declarations; the handshake format is explicit and parser-covered; the security controls execute on the production request path rather than existing only as test helpers; PW-0106 removes the earlier residual sequencing concern by owning the listener and gating request handling on preparation; and \"no evidence supports weakening any of these checks\".\n\nTHE LAST CLAUSE IS THE ONE WORTH KEEPING. This task exists because three controls were written, tested and unreachable, and the gate that should have caught it did not exist -- invariant 6 reached the work only after I added the gate in round 96 and gpt-architect declined to remove it. The verdict is recorded against the commit that made the controls reachable, not against the commit that wrote them.\n\nLIMITATION, carried verbatim: the verdict \"does not assert that liberty-desktop.exe has successfully exercised the complete Windows launch path\". Every measurement behind it is Linux, against the packaged sidecar."
+          "evidence": "PASS at bedceb502ce894d759b01c6f0a8ad9052db6adac. gpt-architect, round 102, transcribed by\nclaude-lead. REBOUND from the round-99 record at 77d2eed3adca5aba0abbd769144e7caa451039b6, which\nremains the reviewed implementation lineage.\n\ngpt-architect's round-102 document records SECURITY-REVIEW: PASS alongside ARCHITECTURE-REVIEW:\nPASS and instructs both to be bound to the current commit, on the standing rule \"Do not reuse stale\napprovals. Bind every judgement to the exact reviewed commit/fingerprint.\" The reason for the\nrebinding is the control plane's fingerprint, not a change of substance: \"The implementation\nremains the same security/sidecar contract already reviewed, but the control plane requires a\ncurrent commit binding that includes the final combined runtime surface.\"\n\nThe security rationale is unchanged: the production startup path executes the previously-unused\nsecurity controls rather than leaving them declared and dead; Host validation and the launch-token\ncheck are fail-closed; the kernel-selected port participates in request authorization so a\nrebinding attack cannot be authorised against a port nobody bound; and \"no security weakening is\nintroduced by the later commits in the reviewed runtime surface\" -- which is the specific question\na rebinding to a later commit has to answer, and gpt-architect answers it.\n\nLIMITATION, UNCHANGED: this does NOT assert that the installed Windows shell -> child -> handshake\n-> WebView path has run."
         }
       },
-      "updatedAt": "2026-09-29T23:02:51.121Z",
+      "updatedAt": "2026-10-01T22:49:11.608Z",
       "implementationAgent": "claude-media",
-      "implementationBaseSha": "65a47d5a481cb6fcbc599add010d9ffade70b43e"
+      "implementationBaseSha": "65a47d5a481cb6fcbc599add010d9ffade70b43e",
+      "review": {
+        "taskId": "PW-0105",
+        "implementationAgent": "claude-media",
+        "implementationOwner": "claude-media",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "bedceb502ce894d759b01c6f0a8ad9052db6adac",
+        "reviewedBaseSha": "65a47d5a481cb6fcbc599add010d9ffade70b43e",
+        "reviewedTreeHash": "3eb72a6b0dc717f563867eecc5c84842e6b9064eb5a9dfee581137db7e1b1858",
+        "reviewedFileCount": 14,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [
+          "apps/desktop/src-tauri/src/handshake.rs",
+          "apps/desktop/src-tauri/src/sidecar.rs"
+        ],
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-10-01T22:49:11.393Z",
+        "evidence": "APPROVED at bedceb502ce894d759b01c6f0a8ad9052db6adac. gpt-architect, round 102, transcribed by\nclaude-lead. ARCHITECTURE-REVIEW: PASS. SECURITY-REVIEW: PASS. Both judgement gates were re-recorded\nagainst this same commit before this approval, on gpt-architect's standing instruction: \"Do not\nreuse stale approvals. Bind every judgement to the exact reviewed commit/fingerprint.\"\n\nReviewed implementation lineage includes 77d2eed3adca5aba0abbd769144e7caa451039b6, where the work\nwas written; the binding moved because `apps/desktop/src-tauri/src/sidecar.rs` is a PW-0105\nreviewDependency and PW-0106 changed it afterwards, which is the fingerprint the control plane\nrefused twice.\n\nRationale, verbatim: \"production startup executes the security controls; handshake is on the real\nruntime path; Host/token enforcement is fail-closed; PW-0106 owns the listener and removes the\nresidual request-before-policy window; actual kernel-selected port participates in authorization;\nno security weakening is introduced by the later commits in the reviewed runtime surface.\"\n\nLIMITATION CARRIED INTO THE APPROVAL: \"This does NOT claim that the complete installed Windows\nshell -> child -> handshake -> WebView path has been demonstrated.\""
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PW-0105",
+          "implementationAgent": "claude-media",
+          "implementationOwner": "claude-media",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "bedceb502ce894d759b01c6f0a8ad9052db6adac",
+          "reviewedBaseSha": "65a47d5a481cb6fcbc599add010d9ffade70b43e",
+          "reviewedTreeHash": "3eb72a6b0dc717f563867eecc5c84842e6b9064eb5a9dfee581137db7e1b1858",
+          "reviewedFileCount": 14,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "apps/desktop/src-tauri/src/handshake.rs",
+            "apps/desktop/src-tauri/src/sidecar.rs"
+          ],
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-10-01T22:49:11.393Z",
+          "evidence": "APPROVED at bedceb502ce894d759b01c6f0a8ad9052db6adac. gpt-architect, round 102, transcribed by\nclaude-lead. ARCHITECTURE-REVIEW: PASS. SECURITY-REVIEW: PASS. Both judgement gates were re-recorded\nagainst this same commit before this approval, on gpt-architect's standing instruction: \"Do not\nreuse stale approvals. Bind every judgement to the exact reviewed commit/fingerprint.\"\n\nReviewed implementation lineage includes 77d2eed3adca5aba0abbd769144e7caa451039b6, where the work\nwas written; the binding moved because `apps/desktop/src-tauri/src/sidecar.rs` is a PW-0105\nreviewDependency and PW-0106 changed it afterwards, which is the fingerprint the control plane\nrefused twice.\n\nRationale, verbatim: \"production startup executes the security controls; handshake is on the real\nruntime path; Host/token enforcement is fail-closed; PW-0106 owns the listener and removes the\nresidual request-before-policy window; actual kernel-selected port participates in authorization;\nno security weakening is introduced by the later commits in the reviewed runtime surface.\"\n\nLIMITATION CARRIED INTO THE APPROVAL: \"This does NOT claim that the complete installed Windows\nshell -> child -> handshake -> WebView path has been demonstrated.\""
+        }
+      ],
+      "completedAt": "2026-10-01T22:49:11.608Z"
     },
     {
       "id": "PW-0106",

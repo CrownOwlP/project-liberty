@@ -42,39 +42,50 @@ import { DEMO, developmentIdentity, type DevelopmentIdentity } from "../src/fixt
  * own reason. The rollback that follows is the product's.
  *
  * ==========================================================================
- * THE FILE IS IN FOUR GROUPS BECAUSE THE PRODUCT HAS FOUR CONFIGURATIONS, AND
- * ONE OF THEM CANNOT SHOW THE LIST PAGE AT ALL
+ * THE FILE IS IN FOUR GROUPS BECAUSE THE PRODUCT HAS FOUR CONFIGURATIONS
  * ==========================================================================
  *
- * A DEFECT FOUND WHILE WRITING THIS FILE, REPRODUCED TWICE, AND RECORDED IN THE
- * CONTROL PLANE AS `defect.found` RATHER THAN WORKED AROUND HERE.
+ * THE DEFECT THIS BLOCK USED TO DESCRIBE IS FIXED, and the description is
+ * corrected rather than quietly deleted -- the mechanism is the reason some of
+ * these assertions exist, and a comment that outlives the code it describes is
+ * how this repository keeps losing things.
  *
+ * WHAT STOOD HERE. "ONE OF THEM CANNOT SHOW THE LIST PAGE AT ALL ...
  * `lib/db/index.ts` caches the chosen repository in a module-level binding and
  * `lib/db/in-memory-repository.ts` builds its Maps at construction. Next's app
  * router compiles the React Server Components graph and the route-handler graph
  * separately, so on a build with NO `DATABASE_URL` each graph gets its own
- * store: a profile selected through `/api/v1/profiles/selection` is invisible to
- * every server component, and an entry written through `/api/v1/watchlist/:id`
- * is invisible to `/watchlist`. It is PRE-EXISTING -- PW-0305's
- * continue-watching rail is affected identically and SILENTLY, which is why
- * nobody had seen it -- and it disappears entirely on any deployment with a
- * database, because PostgreSQL is state outside the process.
+ * store." That was true when this file was written and it was reported as
+ * `defect.found` rather than designed around. PW-0313 fixed it: the in-memory
+ * store is now anchored on `globalThis` under a `Symbol.for` key, both graphs
+ * resolve the same one, and a row written through `/api/v1/watchlist/:id` is
+ * visible to `/watchlist` in the same process.
  *
- * SO THE LIST PAGE IS ASSERTED WHERE IT CAN BE ASSERTED, and the groups say
- * which is which rather than quietly asserting the half that happens to pass:
+ * SO THE LIST PAGE IS NOW ASSERTED ON BOTH CONFIGURATIONS THAT HAVE ONE, which
+ * is the change this round makes to this file:
  *
  *   A. REACHABILITY -- any configuration. The nav entry and the route itself.
- *   B. NO IDENTITY -- the signed-out rendering of a hosted build with no
- *      identity system.
- *   C. DEVELOPMENT HEADERS -- everything the ROUTE-HANDLER layer owns, which is
- *      the add control, the optimistic flip, the real refusal and the rollback.
- *      It deliberately verifies what was written by READING THE API rather than
- *      the list page, because on this configuration the list page cannot see it.
- *   D. A DATABASE SESSION -- the LIST PAGE, against real PostgreSQL and a real
- *      signed-in session. This is the only configuration in which a server
- *      component and a route handler share a store, and therefore the only one
- *      in which "a person can add a title and SEE THE LIST" is observable end to
- *      end.
+ *   B. NO IDENTITY -- the honest refusal a hosted build with no identity system
+ *      renders, and specifically that it is NOT an empty list.
+ *   C. DEVELOPMENT HEADERS -- the controls (the add control, the optimistic
+ *      flip, the real refusal, the rollback) AND, since PW-0313, the list page
+ *      they write to. The assertions marked "PW-0313" below are the ones that
+ *      were impossible before and that gpt-architect's round-102 ruling
+ *      required be ENABLED rather than deleted.
+ *   D. A DATABASE SESSION -- the same list page against real PostgreSQL and a
+ *      real signed-in session, where the entry renders unnamed because that
+ *      build has no catalog metadata source.
+ *
+ * C AND D ARE NOT REDUNDANT. They exercise two different storage adapters --
+ * the process-global in-memory maps and PostgreSQL -- behind one interface, and
+ * `progress.api.spec.ts` states the standing rule about that: "Passing against
+ * a `Map` is evidence about the `Map`." C is also the only one with a catalog,
+ * so it is the only one that can show a NAMED title on the list.
+ *
+ * THE WIRE CHECKS STAY. Where a test now reads the page, it still also reads
+ * `/api/v1/watchlist` -- "the server agrees with the row" and "the page agrees
+ * with the server" are different claims and the second does not imply the
+ * first. Nothing was replaced; the page assertions are additions.
  *
  * Every wait is on a condition. Nothing sleeps.
  * ---------------------------------------------------------------------- */
@@ -355,7 +366,7 @@ const CONTROLS_SKIP_REASON: string | null =
         "exercise the controls."
       : "This run authenticates through a database session, where the catalog metadata source " +
         "is refused by design -- there is no title page or card to press an add control on. " +
-        "Group D asserts the list page on that configuration instead.";
+        "Group D asserts the list page against PostgreSQL instead.";
 
 test.describe("the add control, where a title page exists to carry it", () => {
   test.skip(() => CONTROLS_SKIP_REASON !== null, CONTROLS_SKIP_REASON ?? "");
@@ -423,6 +434,24 @@ test.describe("the add control, where a title page exists to carry it", () => {
      * the control agrees with the server; this proves the server agrees with
      * the row. */
     expect(await listedContentIds(page.request, identity.headers)).toEqual([DEMO.movie.id]);
+
+    /*
+     * PW-0313 -- THE ASSERTION THIS FILE COULD NOT MAKE ON A DEVELOPMENT BUILD.
+     * The list page is a SERVER COMPONENT, and until PW-0313 it read a
+     * different in-memory store than the route handler that took this write,
+     * so it answered "Choose who is watching" for a session that had plainly
+     * selected a profile. Enabling it rather than deleting it is
+     * gpt-architect's round-102 instruction.
+     *
+     * It is also the only configuration in which the entry can be NAMED: this
+     * build has a catalog metadata source, so the title resolves and the page
+     * renders the ordinary card. Group D, which has a database and no catalog,
+     * exercises the `item: null` branch instead.
+     */
+    await page.goto(WATCHLIST);
+    await expect(page.getByRole("heading", { name: DEMO.movie.title })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /nothing on your list yet/i })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: /choose who is watching/i })).toHaveCount(0);
   });
 
   test("removing takes the row away again", async ({ page }) => {
@@ -445,6 +474,18 @@ test.describe("the add control, where a title page exists to carry it", () => {
     await page.reload();
     await expect(control(page)).toHaveText(ADD);
     expect(await listedContentIds(page.request, identity.headers)).toEqual([]);
+
+    /*
+     * PW-0313. The empty state, on the page, on a development build. The
+     * negative half matters as much as the positive one above: before
+     * PW-0313 the list page ALWAYS failed to see this profile, so "the title
+     * is absent" would have passed for the wrong reason. It can only mean
+     * what it says now that the test above proves the same page sees a title
+     * when there is one.
+     */
+    await page.goto(WATCHLIST);
+    await expect(page.getByRole("heading", { name: /nothing on your list yet/i })).toBeVisible();
+    await expect(page.getByRole("heading", { name: DEMO.movie.title })).toHaveCount(0);
   });
 
   test("a catalog card carries the control, and it writes the card's own title", async ({
@@ -481,6 +522,16 @@ test.describe("the add control, where a title page exists to carry it", () => {
      * that posted the wrong id would pass every assertion above and put a
      * stranger's film on the list. */
     expect(await listedContentIds(page.request, identity.headers)).toEqual([DEMO.movie.id]);
+
+    /*
+     * PW-0313. And the list page shows that one title and no other. This is
+     * the full journey the acceptance asks for -- "a person can add a title to
+     * their watchlist and SEE THE LIST" -- performed entirely through the UI
+     * from the home screen, which no configuration could do before.
+     */
+    await page.goto(WATCHLIST);
+    await expect(page.getByRole("heading", { name: DEMO.movie.title })).toBeVisible();
+    await expect(page.getByRole("heading", { name: DEMO.series.title })).toHaveCount(0);
   });
 
   test("A REFUSED WRITE ROLLS BACK AND SAYS WHY -- it does not render as a success", async ({
@@ -537,11 +588,23 @@ test.describe("the add control, where a title page exists to carry it", () => {
      *    back as the ORIGINAL identity, whose profile is the one that would have
      *    gained the row. */
     expect(await listedContentIds(page.request, identity.headers)).toEqual([]);
+
+    /*
+     * PW-0313, and on this test it is the sharpest form of the acceptance's
+     * own sentence. "A refused write must not render as a success" is checked
+     * above in the control; here it is checked in the one place a viewer would
+     * go to find out whether it worked. The page is read as the ORIGINAL
+     * identity, whose profile is the one that would have gained the row.
+     */
+    await page.setExtraHTTPHeaders(identity.headers);
+    await page.goto(WATCHLIST);
+    await expect(page.getByRole("heading", { name: /nothing on your list yet/i })).toBeVisible();
+    await expect(page.getByRole("heading", { name: DEMO.movie.title })).toHaveCount(0);
   });
 });
 
 /* -------------------------------------------------------------------------
- * D. The list page, on the only configuration that can show one
+ * D. The same list page, against PostgreSQL and a real signed-in session
  * ---------------------------------------------------------------------- */
 
 /**
@@ -696,16 +759,20 @@ test.describe("the list page, against a real session and a real database", () =>
     page
   }) => {
     /*
-     * THE ACCEPTANCE'S "SEE THE LIST", AND THIS IS THE ONLY CONFIGURATION IN
-     * WHICH IT IS OBSERVABLE -- see the defect described at the top of this
-     * file. Here the server component and the route handler read the same
-     * PostgreSQL rows, so what one writes the other can see.
+     * THE ACCEPTANCE'S "SEE THE LIST", AGAINST THE ADAPTER THE PRODUCT SHIPS.
+     * This used to say it was "the only configuration in which it is
+     * observable", which was true before PW-0313 and is not now -- group C
+     * asserts the same page on the in-memory adapter. The two are not
+     * redundant: this one is the only place a server component and a route
+     * handler have been shown to agree through POSTGRESQL, and
+     * `progress.api.spec.ts` states the standing rule about the difference --
+     * "Passing against a `Map` is evidence about the `Map`."
      *
      * THE ENTRY IS WRITTEN AT THE WIRE RATHER THAN BY CLICKING, because this
      * build has no catalog metadata source and therefore no title page and no
-     * card to click. Group C presses the buttons; this group renders the list.
-     * Between them every step of the journey is exercised, and neither pretends
-     * to have done the other's half.
+     * card to click. Group C presses the buttons; this group proves the SQL
+     * behind the same interface agrees. Neither pretends to have done the
+     * other's half.
      */
     const headers = await establishWatchlistSession(page.request, "owner");
     await selectAProfile(page.request, headers);

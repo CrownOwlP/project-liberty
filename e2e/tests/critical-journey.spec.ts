@@ -551,6 +551,40 @@ test("the play affordance is offered only where a rights basis can be read, and 
   await expect(play).toHaveAttribute("href", `/watch/${DEMO.movie.id}`);
 
   await play.click();
+
+  /*
+   * WAITS ON THE NAVIGATION, THEN ASSERTS THE URL -- and the two lines are not
+   * the same line written twice.
+   *
+   * This used to be `await expect(page).toHaveURL(...)` alone, and it failed on
+   * a run of this suite: 12.0s, "Received string: .../title/aurora-fall",
+   * timeout 10000ms. The click HAD navigated. The web server's own log straddles
+   * the failure --
+   *
+   *     [WebServer] (c) Compiling /watch/[contentId] ...
+   *       (x) the play affordance is offered only where a rights basis...  12.0s
+   *     [WebServer]  GET /watch/aurora-fall 200 in 262ms
+   *
+   * -- so Next's client router had issued the RSC request and it sat waiting
+   * while Turbopack compiled the route for the first time. `/watch/[contentId]`
+   * pulls shaka-player, the heaviest chunk in this application. On the previous
+   * run the same compile was logged as `200 in 6.8s` and the test passed with
+   * under two seconds of margin.
+   *
+   * `toHaveURL` polls an ASSERTION with `expect: { timeout: 10_000 }` -- a
+   * constant chosen for assertions about values, and here it was being applied
+   * to a wait on a BUILD. `waitForURL` waits for the navigation and is bounded
+   * by the test timeout instead, which is the right bound for the thing that is
+   * actually variable. The assertion stays after it and is unchanged, so this
+   * test checks exactly what it checked before and now fails for the right
+   * reason when it fails.
+   *
+   * NOT A RAISED CEILING. `playwright.config.ts`'s `expect.timeout`, `timeout`
+   * and `retries: 0` are all untouched. PL-0706's acceptance is explicit that
+   * raising a timeout "moves the ceiling without removing the dependence"; this
+   * removes the dependence on how long a first compile takes.
+   */
+  await page.waitForURL(new RegExp(`/watch/${DEMO.movie.id}$`));
   await expect(page).toHaveURL(new RegExp(`/watch/${DEMO.movie.id}$`));
 });
 

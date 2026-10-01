@@ -1,70 +1,8 @@
 {
-  "generatedAt": "2026-10-01T16:29:25.129Z",
+  "generatedAt": "2026-10-01T23:04:39.095Z",
   "agent": "claude-frontend",
   "executionAvailable": true,
   "assigned": [
-    {
-      "id": "PW-0304",
-      "priority": "P1",
-      "lane": "Frontend",
-      "status": "REVIEW",
-      "title": "Watchlist becomes usable: an add control and a list",
-      "dependencies": [
-        "PW-0301",
-        "PW-0303"
-      ],
-      "allowedPaths": [
-        "apps/web/src/app/watchlist/**",
-        "apps/web/src/components/watchlist/**",
-        "apps/web/src/components/title/title-hero.tsx",
-        "apps/web/src/components/catalog-card.tsx",
-        "e2e/tests/watchlist.spec.ts",
-        "apps/web/src/components/shell/navigation.ts",
-        "apps/web/src/components/continue-watching/continue-watching-ui.test.tsx",
-        "e2e/tests/search.spec.ts"
-      ],
-      "reviewDependencies": [
-        "apps/web/src/app/api/v1/watchlist",
-        "packages/persistence/src/watchlist-mutation.ts",
-        "apps/web/src/components/title"
-      ],
-      "preferredAgent": "claude-frontend",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "typecheck",
-        "unit",
-        "e2e"
-      ],
-      "acceptance": "A person can add a title to their watchlist and see the list. The API and its mutation rules are complete, tested and reviewed -- including the conflict semantics in packages/persistence/src/watchlist-mutation.ts -- and nothing renders them. REQUIRED: the add control appears on the title screen and on a catalog card, and reflects state optimistically while remaining correct when the write is refused. REQUIRED: the resolution vocabulary the API already returns (accepted plus a reason, not a boolean ok) is surfaced honestly; a refused write must not render as a success, which is the shape of defect the harnesses in this repository have caught four times.",
-      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. ",
-      "owner": "claude-frontend",
-      "gateResults": {
-        "typecheck": {
-          "status": "pass",
-          "at": "2026-10-01T02:37:20.883Z",
-          "by": "claude-frontend",
-          "commitSha": "c63c8e89666932bd77b105ea6e882d195914b24c",
-          "evidence": "`npm run typecheck` (turbo run typecheck) at c63c8e8. Tasks: 22 successful, 22 total, exit 0.\n`apps/web` is in that graph and compiles the six new modules and four new suites. Also run directly\nduring development as `npx tsc --noEmit -p apps/web/tsconfig.json`, exit 0, and `npx tsc --noEmit`\nin `e2e/` (which is outside the workspaces and therefore outside turbo's graph), exit 0 -- the new\nspec is typechecked by the second of those and by nothing else."
-        },
-        "unit": {
-          "status": "pass",
-          "at": "2026-10-01T02:37:38.109Z",
-          "by": "claude-frontend",
-          "commitSha": "c63c8e89666932bd77b105ea6e882d195914b24c",
-          "evidence": "`npm run test` (turbo run test) at c63c8e8. Tasks: 22 successful, 22 total, exit 0. Measured\nseparately, `apps/web` alone is 78 test files / 1360 tests passed, exit 0.\n\n52 of those are this task's four new suites:\n  watchlist-state.test.ts      23  the decisions -- the optimistic flip, the four mutation reasons,\n                                   the rollback on refused/unavailable/unreadable/listed\n  watchlist-page-data.test.ts  13  the pure selection and all four branches of the server-side load,\n                                   including that `no_active_profile_selected` is its own answer and\n                                   that the catalog rights gate is applied to a watchlist entry\n  watchlist-ui.test.tsx        12  the first paint via `react-dom/server`, the structural rules, and\n                                   the verb guard described below\n  watchlist-source.test.ts      4  the shared one-read-per-page snapshot\n\nONE EXISTING TEST WAS CHANGED AND IT WAS STRENGTHENED, NOT RELAXED.\n`components/continue-watching/continue-watching-ui.test.tsx` asserted `expect(html).not.toContain\n(\"<button\")` on a resume card. PW-0304 mounts the My List toggle inside `CatalogCard`, so that line\nbegan failing for a card that was behaving correctly -- it asserted an implementation (this card has\nno buttons) rather than the property its own comment states (start over NAVIGATES, it does not\nsubmit). Replaced by three assertions, each sharper than what it replaces: the href and the text are\nnow matched as ONE anchor element rather than as two independent `toContain`s; no `<button>` whose\ntext is \"Start over\"; and the one button a resume card may carry is named by its `data-testid`, so\nthe file states what it tolerates instead of tolerating any button. The surface amendment and this\nreasoning were recorded as `task.definition_changed` before the file was touched.\n\nA DEFECT THE UNIT LAYER DID NOT CATCH, RECORDED HERE BECAUSE THIS GATE IS WHY. `watchlistRequest`\nsent `POST`; the route exports `PUT` and `DELETE` and answers 405 to a POST.\n`watchlist-state.test.ts` asserted `POST` right beside the implementation, so this gate was green\nwhile the control could not add anything. The e2e gate found it. `watchlist-ui.test.tsx` now reads\n`app/api/v1/watchlist/[contentId]/route.ts` and asserts that every verb `watchlistRequest` can\nproduce is one that module exports, with a non-vacuity check on the extraction.\n\nNOT A GATE ON THIS TASK AND NOT CLAIMED AS ONE: `npm run lint` (12/12, exit 0) and\n`npm run repo:validate` (passed) were also run. `npm run format:check` fails on 538 files and did so\nbefore this task; nothing here changed that and it is not asserted either way."
-        },
-        "e2e": {
-          "status": "pass",
-          "at": "2026-10-01T16:26:45.193Z",
-          "by": "claude-frontend",
-          "commitSha": "42f5bb7d446c2a12361ba03093121e32b71ce305",
-          "evidence": "RE-RECORDED, REPLACING A NARROWER RUN. The previous result on this gate was real but incomplete: it\nran `npx playwright test --project=chromium tests/watchlist.spec.ts` -- one spec, the one this task\nwrote -- and PW-0304 mounts a control inside `CatalogCard`, which the home rails, the search\nresults, the continue-watching rail and the watchlist page all render. A change to a shared\ncomponent can only be cleared by the whole suite. Running it found a regression PW-0304 had caused\nin `e2e/tests/search.spec.ts`; that is repaired and disclosed as\n`task.corrective_applied_in_review`.\n\nWHAT RAN NOW, WHOLE PROJECTS, NO SPEC FILTER. Browser: Chrome for Testing 151.0.7922.34, revision\n1234 -- the build @playwright/test 1.62.1 pins, resolved from /root/.cache/ms-playwright. The\ncontainer's PLAYWRIGHT_BROWSERS_PATH points at a 1194 tree which was NOT used.\n\n1. DEVELOPMENT, in-memory adapter, development-header identity.\n   LIBERTY_E2E_WEB_MODE=development LIBERTY_E2E_PORT=3177\n     --project=chromium : 27 passed, 6 skipped, exit 0\n     --project=api      : 55 passed, 8 skipped, exit 0\n\n2. PRODUCTION, REAL POSTGRESQL 16.15 AND A REAL SIGNED-IN SESSION.\n   LIBERTY_E2E_PORT=3200 LIBERTY_E2E_DATABASE_URL=postgres://postgres@127.0.0.1:5433/lib_wl\n     --project=chromium --project=api : 72 passed, 24 skipped, exit 0\n   The database was created for this work and migrated with the repository's own\n   packages/persistence/migrations/0000_profile_scoped_identity.sql; sign-up and sign-in go through\n   /api/auth/*, and the session is a database row as PL-0401 requires.\n\nONE FALSE START IN THAT PRODUCTION RUN, RECORDED SO THE NUMBER ABOVE IS NOT MISREAD. An earlier\nattempt failed 6 of 97 with `[Better Auth] ... connect ECONNREFUSED 127.0.0.1:5433`. That was the\ncontainer's PostgreSQL having stopped, not the product: `pg_isready` reported no response, the\nserver was restarted with `pg_ctl`, and the rerun is the result above. No test was changed between\nthe two runs and no assertion was relaxed.\n\nWHAT THE WATCHLIST SPEC ITSELF COVERS, unchanged from the previous record: the nav entry is a link;\nthe route serves 200; the control's first paint is unpressable and says neither Add nor Remove;\nadding from a title page writes the row and the control still says so after a RELOAD; removing\ntakes it away; a catalog card's control writes the card's own id and nothing else; a REAL refused\nwrite (produced by changing the identity the page sends, not by intercepting anything) rolls back,\nannounces \"Choose a profile first.\", and leaves the list empty; and on the PostgreSQL run the list\npage renders a stored entry, removes it, and the row is gone after a reload.\n\nSTILL NOT COVERED, STATED RATHER THAN IMPLIED. webkit, firefox and mobile-safari were not executed\n-- only chromium 1234 is installed in this container. No configuration in this harness has both a\nreal database and a catalog, so a NAMED card on the list page is UNVERIFIED end to end; the\nproduction run exercises the `item: null` branch, which is the correct rendering there. Nothing\nhere ran on Windows and nothing here claims anything about Windows."
-        }
-      },
-      "implementationAgent": "claude-frontend",
-      "updatedAt": "2026-10-01T02:38:10.744Z",
-      "implementationBaseSha": "9039e20563dd314cb730c432e45e32caa50bab61"
-    },
     {
       "id": "PW-0307",
       "priority": "P1",
