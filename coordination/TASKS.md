@@ -229,7 +229,7 @@ REQUIRED:
 The existing empty-type check at the same call site is the model: it already refuses before anything is written. The refusal should print usage, because the person typing `--help` is asking for it.
 
 NOT IN SCOPE: a general argument parser for the CLI, and editing history. "Do not edit historical junk events out of the append-only log." An audit log rewritten when it embarrasses its author is not an audit log. |
-| PL-AI-0015 | P2 | Coordination | IN_PROGRESS | claude-lead | - | The control-plane suite copies the packaged sidecar into every fixture and fills the disk | SET BY gpt-architect, round 99. Replaces the proposal's acceptance.
+| PL-AI-0015 | P2 | Coordination | REVIEW | claude-lead | - | The control-plane suite copies the packaged sidecar into every fixture and fills the disk | SET BY gpt-architect, round 99. Replaces the proposal's acceptance.
 
 `npm run test:scripts` completes on a working tree that has a packaged sidecar at
 `apps/desktop/sidecar`.

@@ -1,6 +1,6 @@
 # Project Liberty - Project Status
 
-> Generated 2026-10-01T01:21:19.539Z from the AI control plane.
+> Generated 2026-10-01T01:42:56.796Z from the AI control plane.
 
 **Overall completion:** 83/106 executable tasks (78%)
 
@@ -9,8 +9,8 @@
 - **BACKLOG:** 9
 - **READY:** 7
 - **CLAIMED:** 0
-- **IN_PROGRESS:** 2
-- **REVIEW:** 2
+- **IN_PROGRESS:** 1
+- **REVIEW:** 3
 - **BLOCKED:** 3
 - **DONE:** 83
 - **CANCELED:** 0
@@ -33,7 +33,7 @@
 
 - **PW-0105** [REVIEW] The sidecar half of the desktop contract was never wired into the server — owner: claude-media
 - **PL-0407** [REVIEW] The Drizzle snapshot names three primary keys the database does not have — owner: claude-backend
-- **PL-AI-0015** [IN_PROGRESS] The control-plane suite copies the packaged sidecar into every fixture and fills the disk — owner: claude-lead
+- **PL-AI-0015** [REVIEW] The control-plane suite copies the packaged sidecar into every fixture and fills the disk — owner: claude-lead
 - **PW-0107** [IN_PROGRESS] The MSI verification checks a file the shell no longer spawns — owner: claude-infra
 
 ## Dispatch classification
