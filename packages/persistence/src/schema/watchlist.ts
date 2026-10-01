@@ -43,7 +43,28 @@ export const watchlistEntry = pgTable(
      * on one row instead of producing duplicates that then need de-duplicating
      * on read.
      */
-    primaryKey({ columns: [table.profileId, table.contentId] }),
+    /*
+     * THE CONSTRAINT IS NAMED, AND THE NAME IS THE DATABASE'S (PL-0407).
+     *
+     * Drizzle synthesises `<table>_<columns>_pk` when no name is given. The
+     * reviewed hand-written migration does not use that convention -- it
+     * writes `CONSTRAINT "watchlist_entry_pkey" PRIMARY KEY (...)` -- so PostgreSQL creates
+     * `watchlist_entry_pkey`, and the generated snapshot claimed a
+     * constraint that does not exist. Nothing was wrong at runtime; the
+     * first generated migration that touched this key would have emitted
+     * `DROP CONSTRAINT "<the name that is not there>"` and failed against
+     * every real database at once.
+     *
+     * This is a METADATA ALIGNMENT, not a semantic change: the key, its
+     * columns and its behaviour are identical either way. gpt-architect's
+     * round-99 ruling chose it over renaming live constraints to suit a
+     * tool, and over hand-editing generated output, which would be lost the
+     * next time anyone regenerates.
+     */
+    primaryKey({
+      name: "watchlist_entry_pkey",
+      columns: [table.profileId, table.contentId]
+    }),
     index("watchlist_entry_profile_added_idx").on(table.profileId, table.addedAt)
   ]
 );

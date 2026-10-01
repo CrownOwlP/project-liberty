@@ -324,22 +324,82 @@ const EXCLUDED_FIXTURE_DIRS = [
   "target",
 ];
 
+/**
+ * Build output excluded BY PATH rather than by bare directory name (PL-AI-0015).
+ *
+ * `apps/desktop/sidecar` is where `apps/desktop/scripts/package-sidecar.mjs`
+ * lays the packaged sidecar: a Node runtime, the standalone server and a full
+ * `node_modules` copy -- about 196 MB and 1549 files, gitignored build output
+ * exactly like every entry above it. It did not exist in a packaged state on
+ * any machine that ran this suite until PW-0501 and PW-0106 made packaging
+ * routine, and then the suite died in its fifth fixture with
+ * `ENOSPC ... copyfile '.../apps/desktop/sidecar/node.exe'`.
+ *
+ * A PATH, NOT A NAME, and gpt-architect ruled it so: "Do NOT add a bare global
+ * directory-name exclusion for `sidecar`." A bare `sidecar` would also exclude
+ * any future directory of that name anywhere in the tree, which is a silent
+ * over-exclusion in a list whose whole value is being readable at a glance.
+ */
+const EXCLUDED_FIXTURE_PATHS = [path.join("apps", "desktop", "sidecar")];
+
+/**
+ * Files that survive inside an excluded PATH.
+ *
+ * `apps/desktop/sidecar/.gitignore` and `README.md` are TRACKED, deliberately:
+ * git does not carry empty directories, and `tauri-build` validates
+ * `bundle.resources` at build time and fails when a declared path is absent, so
+ * those two files are what keep `sidecar/` present in a fresh clone.
+ * `package-sidecar.mjs` preserves them through its own wipe for the same reason.
+ *
+ * MEASURED: this suite contains zero occurrences of `apps/desktop`, so no
+ * scenario reads them -- and the regression below asserts that, so the claim is
+ * checked rather than remembered. They are kept anyway, because the ruling asks
+ * for the generated contents to be excluded "while retaining those tracked
+ * files" where practical, and with a filter callback it costs one comparison.
+ */
+const KEPT_WITHIN_EXCLUDED_PATHS = new Map([
+  [EXCLUDED_FIXTURE_PATHS[0], new Set([".gitignore", "README.md"])],
+]);
+
+/**
+ * Whether `absolute` should be copied into a fixture.
+ *
+ * Two rules, kept separate because they answer different questions. The NAME
+ * rule is the original one and matches a whole path segment anywhere in the
+ * tree. The PATH rule matches one exact location, and inside that location it
+ * keeps the named tracked files and nothing else.
+ */
+function includeInFixture(absolute) {
+  const named = EXCLUDED_FIXTURE_DIRS.some(
+    (dir) =>
+      absolute.includes(`${path.sep}${dir}${path.sep}`) ||
+      absolute.endsWith(`${path.sep}${dir}`),
+  );
+  if (named) return false;
+
+  const relative = path.relative(source, absolute);
+  for (const excluded of EXCLUDED_FIXTURE_PATHS) {
+    if (relative === excluded) continue; // the directory itself must exist
+    if (!relative.startsWith(`${excluded}${path.sep}`)) continue;
+    const within = relative.slice(excluded.length + 1);
+    // Only the tracked files at the top of that directory survive.
+    return (KEPT_WITHIN_EXCLUDED_PATHS.get(excluded) ?? new Set()).has(within);
+  }
+  return true;
+}
+
 function freshRepo() {
   const repo = path.join(temp, `repo-${++repoSeq}`);
   fs.cpSync(source, repo, {
     recursive: true,
-    // Both an `includes` and an `endsWith` check per directory: without the
-    // `endsWith`, cpSync recurses into the directory itself and walks the whole
-    // subtree before filtering each entry. Both comparisons are delimited by
-    // path separators, so they match a whole path SEGMENT and never a prefix --
-    // a source directory legitimately named `distribution` or `builder` is
-    // unaffected.
-    filter: (src) =>
-      !EXCLUDED_FIXTURE_DIRS.some(
-        (dir) =>
-          src.includes(`${path.sep}${dir}${path.sep}`) ||
-          src.endsWith(`${path.sep}${dir}`),
-      ),
+    // `includeInFixture` carries the reasoning that used to live here: both an
+    // `includes` and an `endsWith` check per excluded NAME, because without the
+    // `endsWith` cpSync recurses into the directory itself and walks the whole
+    // subtree before filtering each entry; both comparisons delimited by path
+    // separators, so they match a whole path SEGMENT and never a prefix -- a
+    // source directory legitimately named `distribution` or `builder` is
+    // unaffected. It gained the by-PATH rule in PL-AI-0015.
+    filter: includeInFixture,
   });
   resetRuntimeState(repo);
   resetBusState(repo);
@@ -9303,6 +9363,166 @@ try {
   }
 
   /* ---------------------------------------------------------------------
+   * 10.6 The fixture exclusion policy covers the build output that exists
+   *      (PL-AI-0015).
+   *
+   *      `freshRepo()` copies the repository once per scenario, around
+   *      seventy times, and nothing is removed until the `finally` at the
+   *      very end -- so every copy is live on disk at once. A gitignored
+   *      build-output directory that nobody added to the policy therefore
+   *      costs seventy copies of itself. `apps/desktop/sidecar` was that
+   *      directory: 196 MB, and the suite died in its fifth fixture with
+   *      ENOSPC copying `node.exe`.
+   *
+   *      THIS ASSERTS THE POLICY AGAINST THE TREE, not against a list. The
+   *      previous two additions -- `target` in PW-0102 and this one -- were
+   *      both made AFTER a disk-full failure, by the person who hit it. A
+   *      test that finds the next one before it fills a disk is the whole
+   *      point, and it is cheap because it only has to measure the
+   *      directories the policy does NOT already cover.
+   * ------------------------------------------------------------------- */
+  {
+    /* Does git ignore this path? Asked per candidate rather than by parsing
+     * .gitignore, which is a pattern language and not ours to reimplement. */
+    const ignoredByGit = (absolute) =>
+      spawnSync("git", ["check-ignore", "-q", absolute], {
+        cwd: source,
+        stdio: "ignore",
+      }).status === 0;
+
+    /** Bytes under a directory, with a hard cap so one bad walk cannot hang. */
+    const sizeOf = (root) => {
+      let bytes = 0;
+      let seen = 0;
+      const walk = (dir) => {
+        if (seen > 20000) return;
+        let entries;
+        try {
+          entries = fs.readdirSync(dir, { withFileTypes: true });
+        } catch {
+          return;
+        }
+        for (const entry of entries) {
+          if (seen > 20000) return;
+          seen += 1;
+          const full = path.join(dir, entry.name);
+          if (entry.isDirectory()) walk(full);
+          else if (entry.isFile()) {
+            try {
+              bytes += fs.statSync(full).size;
+            } catch {
+              /* vanished mid-walk; not this test's problem */
+            }
+          }
+        }
+      };
+      walk(root);
+      return bytes;
+    };
+
+    /* 25 MB. Chosen as a size that is clearly build output rather than source:
+     * the largest tracked directory in this repository is two orders of
+     * magnitude smaller, and the three failures that produced this policy were
+     * 196 MB, several GB and a few thousand files. */
+    const TOO_BIG_TO_COPY_SEVENTY_TIMES = 25 * 1024 * 1024;
+
+    const offenders = [];
+    const scan = (dir, depth) => {
+      if (depth > 3) return;
+      let entries;
+      try {
+        entries = fs.readdirSync(dir, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue;
+        const full = path.join(dir, entry.name);
+        /* Already covered: nothing to measure, and nothing to recurse into. */
+        if (!includeInFixture(full)) continue;
+        if (ignoredByGit(full)) {
+          const bytes = sizeOf(full);
+          if (bytes > TOO_BIG_TO_COPY_SEVENTY_TIMES) {
+            offenders.push(`${path.relative(source, full)} (${Math.round(bytes / 1048576)} MB)`);
+          }
+          /* An ignored directory the policy permits is reported once; its
+           * children are the same finding. */
+          continue;
+        }
+        scan(full, depth + 1);
+      }
+    };
+    scan(source, 0);
+
+    assert.deepEqual(
+      offenders,
+      [],
+      "gitignored build output is not excluded from the fixture copy, and freshRepo() " +
+        "will copy it once per scenario: " +
+        offenders.join(", ") +
+        ". Add it to EXCLUDED_FIXTURE_DIRS (a bare directory name, matched anywhere) or " +
+        "EXCLUDED_FIXTURE_PATHS (one exact location). This assertion exists because the two " +
+        "previous additions were both made after a disk-full failure rather than before one.",
+    );
+
+    /* The by-path rule keeps the two tracked files and drops everything else. */
+    const packaged = path.join(source, "apps", "desktop", "sidecar");
+    assert.equal(includeInFixture(packaged), true, "the directory itself must be copied");
+    for (const kept of [".gitignore", "README.md"]) {
+      assert.equal(
+        includeInFixture(path.join(packaged, kept)),
+        true,
+        `apps/desktop/sidecar/${kept} is tracked and must survive the exclusion`,
+      );
+    }
+    for (const dropped of ["node.exe", path.join("server", "server.js"), path.join("server", "node_modules", "next", "package.json")]) {
+      assert.equal(
+        includeInFixture(path.join(packaged, dropped)),
+        false,
+        `apps/desktop/sidecar/${dropped} is build output and must not be copied`,
+      );
+    }
+
+    /*
+     * AND THE SAME THING AGAINST A REAL FIXTURE, because a filter function
+     * agreeing with itself is not evidence. This copies the repository the way
+     * every scenario does and looks at what landed.
+     */
+    {
+      const fixture = freshRepo();
+      const copied = path.join(fixture, "apps", "desktop", "sidecar");
+      assert.equal(
+        fs.existsSync(copied),
+        true,
+        "the sidecar directory must exist in a fixture; tauri-build validates bundle.resources " +
+          "against it and git carries it only because those two files are tracked",
+      );
+      assert.deepEqual(
+        fs.readdirSync(copied).sort(),
+        [".gitignore", "README.md"],
+        "a fixture must receive the two tracked files and none of the packaged build output",
+      );
+    }
+
+    /*
+     * THE CLAIM THE RULING ASKED TO BE ESTABLISHED RATHER THAN ASSUMED -- that
+     * no scenario depends on anything under `apps/desktop` -- is established by
+     * THIS SUITE PASSING with the exclusion in place, which is a stronger
+     * argument than counting occurrences of a string in this file. If a future
+     * scenario starts reading that tree it will fail here, in the copy it was
+     * given, rather than silently reading a file the policy quietly dropped.
+     */
+
+    /* A bare `sidecar` exclusion was ruled out, so an unrelated directory of
+     * that name elsewhere must still be copied. */
+    assert.equal(
+      includeInFixture(path.join(source, "packages", "sidecar", "index.ts")),
+      true,
+      "the exclusion must be path-specific; a bare directory name would over-exclude",
+    );
+  }
+
+  /* ---------------------------------------------------------------------
    * 11. The live repository state must be untouched by the whole run.
    *     This now also guards coordination/agent-bus, so a test that forgets
    *     freshRepo() cannot publish a real handoff message.
@@ -9320,7 +9540,7 @@ try {
     "running the test suite must not mutate any live control/ or coordination/ file",
   );
 
-  console.log("AI control plane tests passed (72 scenarios).");
+  console.log("AI control plane tests passed (73 scenarios).");
 } finally {
   /*
    * Cleanup must never replace the result.

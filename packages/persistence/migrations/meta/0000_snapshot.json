@@ -1,5 +1,5 @@
 {
-  "id": "0c57f528-908e-4bb0-a30b-594aceaee943",
+  "id": "4455b019-4324-4428-80d8-4d378fc03a8d",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -452,8 +452,8 @@
         }
       },
       "compositePrimaryKeys": {
-        "active_profile_selection_session_id_pk": {
-          "name": "active_profile_selection_session_id_pk",
+        "active_profile_selection_pkey": {
+          "name": "active_profile_selection_pkey",
           "columns": [
             "session_id"
           ]
@@ -658,8 +658,8 @@
         }
       },
       "compositePrimaryKeys": {
-        "playback_progress_profile_id_content_id_pk": {
-          "name": "playback_progress_profile_id_content_id_pk",
+        "playback_progress_pkey": {
+          "name": "playback_progress_pkey",
           "columns": [
             "profile_id",
             "content_id"
@@ -754,8 +754,8 @@
         }
       },
       "compositePrimaryKeys": {
-        "watchlist_entry_profile_id_content_id_pk": {
-          "name": "watchlist_entry_profile_id_content_id_pk",
+        "watchlist_entry_pkey": {
+          "name": "watchlist_entry_pkey",
           "columns": [
             "profile_id",
             "content_id"
