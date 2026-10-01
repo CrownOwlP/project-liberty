@@ -1,18 +1,18 @@
 # Project Liberty - Project Status
 
-> Generated 2026-09-30T21:10:04.652Z from the AI control plane.
+> Generated 2026-10-01T01:11:10.499Z from the AI control plane.
 
-**Overall completion:** 79/106 executable tasks (75%)
+**Overall completion:** 83/106 executable tasks (78%)
 
 ## Status summary
 
-- **BACKLOG:** 10
-- **READY:** 9
+- **BACKLOG:** 9
+- **READY:** 10
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 0
-- **REVIEW:** 5
+- **REVIEW:** 1
 - **BLOCKED:** 3
-- **DONE:** 79
+- **DONE:** 83
 - **CANCELED:** 0
 - **SUPERSEDED:** 4
 
@@ -27,32 +27,30 @@
 - **M6 — Shared-Agent Automation Bridge:** COMPLETE, 3/3 (100%)
 - **EXT — External Licensed Integrations:** BLOCKED, 0/2 (0%), 2 blocked
 - **M7 — Windows Desktop Shell + Native Playback:** COMPLETE, 4/4 (100%)
-- **PW — undefined:** IN_PROGRESS, 14/32 (44%), 1 blocked
+- **PW — undefined:** IN_PROGRESS, 15/32 (47%), 1 blocked
 
 ## Active work
 
-- **PW-0104** [REVIEW] A killed desktop dev server cannot leave a tracked file rewritten — owner: claude-infra
-- **PL-AI-0014** [REVIEW] An option-looking event type is a usage error, not an event — owner: claude-lead
-- **PL-0406** [REVIEW] The documented migration command applies nothing and exits 0 — owner: claude-backend
 - **PW-0105** [REVIEW] The sidecar half of the desktop contract was never wired into the server — owner: claude-media
-- **PW-0106** [REVIEW] PORT=0 never reaches the kernel: the packaged sidecar always tries to bind 3000 — owner: claude-media
 
 ## Dispatch classification
 
-- **READY_AND_EXECUTABLE:** 8
+- **READY_AND_EXECUTABLE:** 9
 - **READY_BUT_EXTERNAL:** 1
 - **BLOCKED:** 3
-- **BACKLOG (dependency-gated):** 10
+- **BACKLOG (dependency-gated):** 9
 
 ## Recommended executable wave
 
+- **PW-0107** -> claude-infra (P1/Infra) The MSI verification checks a file the shell no longer spawns
 - **PW-0304** -> claude-frontend (P1/Frontend) Watchlist becomes usable: an add control and a list
 - **PW-0307** -> claude-frontend (P1/Frontend) Series navigation and the next episode
-- **PW-0503** -> claude-test (P1/Test) Install, upgrade, uninstall, reinstall — tested, not assumed
+- **PW-0602** -> claude-test (P1/Test) The automated half of the Windows matrix, running on Windows
+- **PL-AI-0015** -> claude-lead (P2/Coordination) The control-plane suite copies the packaged sidecar into every fixture and fills the disk
 
 ## Queued for external agents
 
-- **PL-0407** (P2/Backend) The Drizzle snapshot names three primary keys the database does not have — reserved for gpt-architect via openai-chatgpt; not locally executable
+- **PL-0407** (P1/Backend) The Drizzle snapshot names three primary keys the database does not have — reserved for gpt-architect via openai-chatgpt; not locally executable
 
 ## Blockers
 
@@ -71,11 +69,11 @@ UNBLOCK WHEN: the commander runs Experiment 1a on real Windows hardware and hand
 ## Agent capacity
 
 - **gpt-architect:** 0/6 active (external lane; not locally executable)
-- **claude-lead:** 1/2 active
+- **claude-lead:** 0/2 active
 - **claude-frontend:** 0/2 active
-- **claude-backend:** 1/2 active
-- **claude-media:** 2/2 active
+- **claude-backend:** 0/2 active
+- **claude-media:** 1/2 active
 - **claude-test:** 0/1 active
 - **claude-security:** 0/1 active
-- **claude-infra:** 1/1 active
+- **claude-infra:** 0/1 active
 - **human-commander:** 0/99 active (external lane; not locally executable)

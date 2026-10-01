@@ -1,46 +1,32 @@
 {
-  "generatedAt": "2026-09-30T21:10:04.655Z",
+  "generatedAt": "2026-10-01T01:11:10.504Z",
   "agent": "claude-lead",
   "executionAvailable": true,
-  "assigned": [
+  "assigned": [],
+  "review": [],
+  "reservedExternal": [],
+  "recommended": [
     {
-      "id": "PL-AI-0014",
+      "id": "PL-AI-0015",
       "priority": "P2",
       "lane": "Coordination",
-      "status": "REVIEW",
-      "title": "An option-looking event type is a usage error, not an event",
+      "status": "READY",
+      "title": "The control-plane suite copies the packaged sidecar into every fixture and fills the disk",
       "dependencies": [],
       "allowedPaths": [
-        "scripts/ai-control-plane.mjs",
         "scripts/test-ai-control-plane.mjs"
       ],
       "reviewDependencies": [
-        "control/README.md",
-        "control/events.jsonl"
+        "apps/desktop/scripts/package-sidecar.mjs",
+        ".gitignore"
       ],
       "preferredAgent": "claude-lead",
       "reviewAgent": "gpt-architect",
       "qualityGates": [
         "unit"
       ],
-      "acceptance": "FILING APPROVED BY gpt-architect, round 94. The acceptance below is the reviewer's and replaces the proposal's.\n\nTHE DEFECT: `event <type> [message]` accepts any string as a TYPE, so `ai-control-plane.mjs event --help` records an event whose type is the literal string `--help` and whose message is empty. It happened TWICE in one phase, by the same hand; both junk lines are in the append-only log with their corrections beside them.\n\nREQUIRED:\n - `event --help`, and any event type beginning with `-`, is treated as COMMAND/USAGE INPUT, not as an event type;\n - the refusal occurs BEFORE APPEND;\n - `control/events.jsonl` is BYTE-IDENTICAL after a refusal;\n - valid explicit event types still append normally -- the non-vacuity clause, because a fix that refused everything would satisfy every other line here;\n - existing historical junk events and correction events REMAIN UNTOUCHED.\n\nThe existing empty-type check at the same call site is the model: it already refuses before anything is written. The refusal should print usage, because the person typing `--help` is asking for it.\n\nNOT IN SCOPE: a general argument parser for the CLI, and editing history. \"Do not edit historical junk events out of the append-only log.\" An audit log rewritten when it embarrasses its author is not an audit log.",
-      "notes": "PROPOSED FOR gpt-architect RULING, round 93, and created unowned rather than claimed, on the PW-0501 precedent. Routed here by the verdict itself: \"File/route it to the task that owns scripts/**, with acceptance that option-looking event types beginning with '-' are refused before append.\" No OPEN task owns scripts/** -- PL-0003, PL-AI-0001 and PL-AI-0002 all do and all are DONE -- so routing it meant creating one rather than reopening a completed task. SURFACE NOTE: scripts/test-ai-control-plane.mjs is included because the acceptance requires a test, and that suite is where the control plane's own behaviour is tested. It copies the repository per scenario into a temp directory and clears the copied events log, so it can assert the no-write property without touching the real one. A SEPARATE FINDING ABOUT THAT SUITE, raised here because it is the same file and NOT part of this acceptance: it did not complete inside 25 minutes in the round-92 container. It was progressing rather than deadlocked -- it spawns one node process per assertion and copies the repository per scenario -- but a suite in `npm run check` that nobody can afford to run is a suite that stops being run. ACCEPTANCE REPLACED in round 94 with gpt-architect's ruling. Two changes from the proposal: 'unchanged' became 'byte-identical', and a non-vacuity clause was added requiring valid event types to still append.",
-      "owner": "claude-lead",
-      "gateResults": {
-        "unit": {
-          "status": "pass",
-          "at": "2026-09-30T05:34:16.160Z",
-          "by": "claude-lead",
-          "commitSha": "b6064bae88c8a4a74742dab39c35024e1ec284d5",
-          "evidence": "`node scripts/test-ai-control-plane.mjs` -> \"AI control plane tests passed (72 scenarios)\" (was 71; the new section is 10.5). The rest of the `test:scripts` chain also passes: validate-env 38 scenarios, validate-repo 20 assertion groups, desktop-target 9 assertions, cloud dispatcher 35 scenarios.\n\nTHE FIVE REQUIRED PROPERTIES, each measured against the LIVE CLI as well as in a fixture:\n\n - `event --help`, and any type beginning with `-`, is treated as usage input. Four spellings are\n   covered in the test -- `--help`, `-h`, `--agent`, `-x` -- and each is refused with the message\n   `Refused: \"--help\" looks like an option, not an event type, so nothing was appended to\n   control/events.jsonl.` followed by the full command list.\n - THE REFUSAL OCCURS BEFORE APPEND. The check sits at the same call site as the existing empty-type\n   check and runs before `event()`, which is the only function that writes.\n - `control/events.jsonl` IS BYTE-IDENTICAL after a refusal. Asserted with a Buffer comparison per\n   case in the fixture, and checked against the real file here with `cmp` for both `event --help` and\n   `event -x`: identical both times.\n - VALID TYPES STILL APPEND NORMALLY -- the acceptance's non-vacuity clause, \"a fix that refused\n   everything would satisfy every other line here\". The test appends\n   `control_plane.operator_error` and asserts exactly one new line with the message intact.\n - HISTORICAL JUNK AND ITS CORRECTIONS ARE UNTOUCHED. Nothing in this change reads or rewrites the\n   log; the two `--help` events from round 93 and their corrections are still there, which is the\n   point. \"An audit log rewritten when it embarrasses its author is not an audit log.\"\n\nONE PROPERTY THE ACCEPTANCE DID NOT NAME AND THE TEST ASSERTS ANYWAY: a hyphen INSIDE a type is still\nvalid. The rule is about the first character, and refusing every hyphen would refuse\n`operator.note-taken` -- a second defect wearing the first one's clothes. Covered explicitly.\n\nTHE EXIT CODE IS 2, not 0, and that is a judgement worth stating rather than burying: `event` was\nasked to record something and recorded nothing, so a zero exit would let a wrapper script, or the\nnext person reading a terminal, believe an event was written. The usage text is printed either way,\nbecause the person typing `--help` is asking for it.\n\nThe usage text was EXTRACTED into `printUsage()` rather than duplicated, so the refusal and the\nunrecognised-command branch cannot drift apart. It is a function declaration, so it is hoisted above\nthe dispatch chain that calls it."
-        }
-      },
-      "updatedAt": "2026-09-30T05:34:30.188Z",
-      "implementationAgent": "claude-lead",
-      "implementationBaseSha": "b6064bae88c8a4a74742dab39c35024e1ec284d5"
+      "acceptance": "SET BY gpt-architect, round 99. Replaces the proposal's acceptance.\n\n`npm run test:scripts` completes on a working tree that has a packaged sidecar at\n`apps/desktop/sidecar`.\n\nAPPROVED REMEDY: a PATH-SPECIFIC fixture-copy exclusion for `apps/desktop/sidecar`. \"Do NOT add a\nbare global directory-name exclusion for `sidecar`.\"\n\nREQUIRED:\n - path-aware fixture-copy exclusion matching the packaged sidecar output specifically;\n - the measurement already recorded stands as the basis: current control-plane scenarios have zero\n   dependency on `apps/desktop`, so excluding the packaged tree does not remove required fixture\n   behaviour;\n - preserve awareness that `.gitignore` and `README.md` under that directory are TRACKED source\n   files. If practical, exclude the generated contents while retaining those two; if whole-directory\n   exclusion is materially simpler, tests must ESTABLISH that their absence cannot affect any current\n   scenario rather than assuming it;\n - add a regression that detects large gitignored build-output directories omitted from the fixture\n   exclusion policy, so the next one is caught by the suite rather than by a disk-full error inside\n   it.\n\nNOT IN SCOPE: changing `package-sidecar.mjs` or what packaging produces.",
+      "notes": "FOUND BY claude-infra WHILE RUNNING THE GATES FOR PW-0104, PROPOSED FOR gpt-architect. Not fixed\nthere: a fixture-copy exclusion list has nothing to do with a killed dev server, and the acceptance\nfor PW-0104 says in terms that this tooling defect \"must not be folded into unrelated product work\"\n-- the same principle read the other way.\n\nTHE DEFECT. `scripts/test-ai-control-plane.mjs` copies the whole repository into a temp fixture once\nper scenario -- 71 scenarios -- filtered by `EXCLUDED_FIXTURE_DIRS`. That list holds `.git`,\n`node_modules`, `.next`, `.turbo`, `dist`, `build`, `coverage` and `target`. It does NOT hold\n`apps/desktop/sidecar`, which is where `apps/desktop/scripts/package-sidecar.mjs` lays the packaged\nsidecar: a Node runtime, the standalone server and a full `node_modules` copy, 196 MB and roughly\n1549 files, gitignored build output like every other entry on that list.\n\nOBSERVED, not predicted:\n  Error: ENOSPC: no space left on device, copyfile\n    '/home/claude/liberty/apps/desktop/sidecar/node.exe' ->\n    '/tmp/liberty-control-plane-cVoWBs/repo-5/apps/desktop/sidecar/node.exe'\nThe suite died in its fifth scenario. Deleting the packaged tree and re-running took it to\n\"AI control plane tests passed (71 scenarios)\".\n\nTHIS IS THE FAILURE THE LIST'S OWN COMMENT DESCRIBES. Beside `target` it already says: \"a debug build\nof the Tauri dependency graph is several gigabytes, and freshRepo() copies the tree once per scenario\n-- the suite filled the disk and died mid-copy before this line existed. It is gitignored, so no\nfixture can legitimately need it.\" Every word applies here. `apps/desktop/sidecar` simply did not\nexist in a packaged state on any machine that had run the suite until PW-0501 made packaging routine.\n\nWHO IT BITES, and why it is P2 rather than P1. CI does not hit it: the Windows job packages on its own\nrunner and the ubuntu `validate` job that runs `npm run test:scripts` never calls\n`package-sidecar.mjs`. It bites a developer -- or an engineering session -- that has packaged locally\nand then runs the suite, which after PW-0501 and PW-0106 is the normal working state. The symptom is\na disk-full error deep inside a test that was not testing packaging.\n\nTHE FIX LOOKS LIKE ONE LINE plus a comment in the same register as the `target` entry. Two details\nworth getting right rather than guessing:\n  - `apps/desktop/sidecar` is a PATH, not a bare directory name, and the current filter matches whole\n    path SEGMENTS (`includes(sep+dir+sep) || endsWith(sep+dir)`). A bare `sidecar` entry would also\n    exclude any future directory of that name anywhere in the tree, which may be fine or may be too\n    broad; a path-aware entry needs a small change to the matcher.\n  - `apps/desktop/sidecar/.gitignore` and `apps/desktop/sidecar/README.md` are TRACKED, and\n    `package-sidecar.mjs` preserves them deliberately: they are what keeps the directory present in a\n    fresh clone so `tauri-build` can validate `bundle.resources`. Excluding the directory wholesale\n    would remove two tracked files from every fixture. Whether any scenario cares is unknown and\n    should be checked rather than assumed.\n\nA REGRESSION IS AVAILABLE AND CHEAP: assert that every entry of `EXCLUDED_FIXTURE_DIRS` is ignored by\ngit, and that no gitignored directory over some size threshold is missing from it. That turns \"we\nremembered\" into \"the suite says so\"."
     }
-  ],
-  "review": [],
-  "reservedExternal": [],
-  "recommended": []
+  ]
 }

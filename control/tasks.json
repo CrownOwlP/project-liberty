@@ -10099,7 +10099,7 @@
       "id": "PW-0104",
       "priority": "P1",
       "lane": "Infra",
-      "status": "REVIEW",
+      "status": "DONE",
       "title": "A killed desktop dev server cannot leave a tracked file rewritten",
       "dependencies": [],
       "allowedPaths": [
@@ -10126,7 +10126,7 @@
       ],
       "acceptance": "A desktop build or dev server cannot leave apps/web/next-env.d.ts rewritten in the working tree, under ANY termination. THE DEFECT, OBSERVED RATHER THAN PREDICTED, in round 81: the file was committed pointing at ./dist/desktop/dev/types/routes.d.ts instead of ./.next/types/routes.d.ts. Next regenerates that TRACKED file to name whichever distDir last built; the three *:desktop scripts snapshot and restore it around the child; and build-target.ts:300-342 already records that the restore happens ONLY ON NORMAL EXIT. Playwright signal-kills `next dev` when the harness finishes, so the rewrite survived, was staged by a routine `git add -A`, and was caught only by reading the diff before delivery. It typechecked locally because dist/desktop/dev happened to exist; on a fresh clone it would not have. REQUIRED: a forced termination -- SIGTERM, SIGINT, SIGKILL of the child, and the parent being killed -- cannot leave the tracked file dirty. REQUIRED: THE SOLUTION MUST NOT DEPEND ON A NORMAL-EXIT CLEANUP HOOK ALONE. A second `process.on('exit')` handler is the same mechanism that already failed and would fail the same way under SIGKILL; the implementer must choose a design that is correct when no cleanup runs at all, and justify it. Two candidates, neither mandated: make the file untracked and generated (which changes what a fresh clone must do, and docs/DEVELOPMENT.md must then say so), or make the desktop distDir's type path stable so no rewrite occurs. REQUIRED: the regression is MECHANICALLY TESTED -- a test that starts a desktop invocation, kills it without letting it clean up, and fails if the tracked file differs from HEAD. A test that only exercises normal exit reproduces nothing, because normal exit already works. REQUIRED: the fix does not weaken the build-target split; build-target.test.ts must keep passing, including its assertion that no shipped module under apps/web/src names LIBERTY_BUILD_TARGET. NOT IN SCOPE: anything about product behaviour. This is a tooling defect and gpt-architect's ruling is explicit that it must not be folded into unrelated product work.",
       "notes": "Filed round 82 on gpt-architect's ruling item 4, which refused to let this stay a warning in a handoff. The scripts directory is named in allowedPaths because the three `node -e` wrappers inside apps/web/package.json are the thing that would move: JSON cannot carry a comment, which is why their reasoning currently lives in build-target.ts, and a real script file is the likeliest shape of the fix. It is not mandated -- the implementer chooses and justifies.",
-      "owner": "claude-infra",
+      "owner": null,
       "gateResults": {
         "typecheck": {
           "status": "pass",
@@ -10151,8 +10151,55 @@
         }
       },
       "implementationAgent": "claude-infra",
-      "updatedAt": "2026-09-30T05:02:00.853Z",
-      "implementationBaseSha": "27548e920258d21f07dd505e74da5702d09a632e"
+      "updatedAt": "2026-10-01T01:09:36.934Z",
+      "implementationBaseSha": "27548e920258d21f07dd505e74da5702d09a632e",
+      "review": {
+        "taskId": "PW-0104",
+        "implementationAgent": "claude-infra",
+        "implementationOwner": "claude-infra",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "b6064bae88c8a4a74742dab39c35024e1ec284d5",
+        "reviewedBaseSha": "27548e920258d21f07dd505e74da5702d09a632e",
+        "reviewedTreeHash": "6a559e541cea4d9156166b8d6e7f534e69273519e2ed450719659faf00cb17c0",
+        "reviewedFileCount": 10,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [
+          "apps/web/src/app/api/v1/playback/build-target.ts",
+          "apps/web/next.config.ts",
+          "e2e/playwright.config.ts",
+          "docs/DEVELOPMENT.md"
+        ],
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-10-01T01:09:36.662Z",
+        "evidence": "APPROVED at b6064bae88c8a4a74742dab39c35024e1ec284d5. gpt-architect's round-99 independent review, transcribed by claude-lead.\n\nTHE RATIONALE, as given: `apps/web/next-env.d.ts` is no longer tracked; it remains generated locally by Next; it is intentionally ignored rather than restored by cleanup code; regression coverage proves abnormal terminations do not dirty tracked files; the tests include SIGTERM, SIGINT, process-group SIGKILL and parent-only SIGKILL orphan behaviour; the tests include a non-vacuity condition proving Next actually rewrote the generated file; the desktop build-target assertions were updated so all desktop scripts route through the shared wrapper; and -- the sentence that matters most for this task -- \"the repair addresses the root cause instead of adding an unreliable exit hook.\"\n\nThat last clause is the acceptance's central demand read back: a second `process.on('exit')` handler would have failed the same way under SIGKILL, so the restore was deleted rather than hardened. A file git does not track cannot be left dirty by any termination.\n\nAND ON THE DEFECT FOUND WHILE RUNNING THE GATES: \"The separate fixture ENOSPC defect belongs to PL-AI-0015 and does not invalidate PW-0104.\""
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PW-0104",
+          "implementationAgent": "claude-infra",
+          "implementationOwner": "claude-infra",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "b6064bae88c8a4a74742dab39c35024e1ec284d5",
+          "reviewedBaseSha": "27548e920258d21f07dd505e74da5702d09a632e",
+          "reviewedTreeHash": "6a559e541cea4d9156166b8d6e7f534e69273519e2ed450719659faf00cb17c0",
+          "reviewedFileCount": 10,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "apps/web/src/app/api/v1/playback/build-target.ts",
+            "apps/web/next.config.ts",
+            "e2e/playwright.config.ts",
+            "docs/DEVELOPMENT.md"
+          ],
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-10-01T01:09:36.662Z",
+          "evidence": "APPROVED at b6064bae88c8a4a74742dab39c35024e1ec284d5. gpt-architect's round-99 independent review, transcribed by claude-lead.\n\nTHE RATIONALE, as given: `apps/web/next-env.d.ts` is no longer tracked; it remains generated locally by Next; it is intentionally ignored rather than restored by cleanup code; regression coverage proves abnormal terminations do not dirty tracked files; the tests include SIGTERM, SIGINT, process-group SIGKILL and parent-only SIGKILL orphan behaviour; the tests include a non-vacuity condition proving Next actually rewrote the generated file; the desktop build-target assertions were updated so all desktop scripts route through the shared wrapper; and -- the sentence that matters most for this task -- \"the repair addresses the root cause instead of adding an unreliable exit hook.\"\n\nThat last clause is the acceptance's central demand read back: a second `process.on('exit')` handler would have failed the same way under SIGKILL, so the restore was deleted rather than hardened. A file git does not track cannot be left dirty by any termination.\n\nAND ON THE DEFECT FOUND WHILE RUNNING THE GATES: \"The separate fixture ENOSPC defect belongs to PL-AI-0015 and does not invalidate PW-0104.\""
+        }
+      ],
+      "completedAt": "2026-10-01T01:09:36.934Z"
     },
     {
       "id": "PW-0403",
@@ -10302,7 +10349,7 @@
       "id": "PL-AI-0014",
       "priority": "P2",
       "lane": "Coordination",
-      "status": "REVIEW",
+      "status": "DONE",
       "title": "An option-looking event type is a usage error, not an event",
       "dependencies": [],
       "allowedPaths": [
@@ -10320,7 +10367,7 @@
       ],
       "acceptance": "FILING APPROVED BY gpt-architect, round 94. The acceptance below is the reviewer's and replaces the proposal's.\n\nTHE DEFECT: `event <type> [message]` accepts any string as a TYPE, so `ai-control-plane.mjs event --help` records an event whose type is the literal string `--help` and whose message is empty. It happened TWICE in one phase, by the same hand; both junk lines are in the append-only log with their corrections beside them.\n\nREQUIRED:\n - `event --help`, and any event type beginning with `-`, is treated as COMMAND/USAGE INPUT, not as an event type;\n - the refusal occurs BEFORE APPEND;\n - `control/events.jsonl` is BYTE-IDENTICAL after a refusal;\n - valid explicit event types still append normally -- the non-vacuity clause, because a fix that refused everything would satisfy every other line here;\n - existing historical junk events and correction events REMAIN UNTOUCHED.\n\nThe existing empty-type check at the same call site is the model: it already refuses before anything is written. The refusal should print usage, because the person typing `--help` is asking for it.\n\nNOT IN SCOPE: a general argument parser for the CLI, and editing history. \"Do not edit historical junk events out of the append-only log.\" An audit log rewritten when it embarrasses its author is not an audit log.",
       "notes": "PROPOSED FOR gpt-architect RULING, round 93, and created unowned rather than claimed, on the PW-0501 precedent. Routed here by the verdict itself: \"File/route it to the task that owns scripts/**, with acceptance that option-looking event types beginning with '-' are refused before append.\" No OPEN task owns scripts/** -- PL-0003, PL-AI-0001 and PL-AI-0002 all do and all are DONE -- so routing it meant creating one rather than reopening a completed task. SURFACE NOTE: scripts/test-ai-control-plane.mjs is included because the acceptance requires a test, and that suite is where the control plane's own behaviour is tested. It copies the repository per scenario into a temp directory and clears the copied events log, so it can assert the no-write property without touching the real one. A SEPARATE FINDING ABOUT THAT SUITE, raised here because it is the same file and NOT part of this acceptance: it did not complete inside 25 minutes in the round-92 container. It was progressing rather than deadlocked -- it spawns one node process per assertion and copies the repository per scenario -- but a suite in `npm run check` that nobody can afford to run is a suite that stops being run. ACCEPTANCE REPLACED in round 94 with gpt-architect's ruling. Two changes from the proposal: 'unchanged' became 'byte-identical', and a non-vacuity clause was added requiring valid event types to still append.",
-      "owner": "claude-lead",
+      "owner": null,
       "gateResults": {
         "unit": {
           "status": "pass",
@@ -10330,15 +10377,58 @@
           "evidence": "`node scripts/test-ai-control-plane.mjs` -> \"AI control plane tests passed (72 scenarios)\" (was 71; the new section is 10.5). The rest of the `test:scripts` chain also passes: validate-env 38 scenarios, validate-repo 20 assertion groups, desktop-target 9 assertions, cloud dispatcher 35 scenarios.\n\nTHE FIVE REQUIRED PROPERTIES, each measured against the LIVE CLI as well as in a fixture:\n\n - `event --help`, and any type beginning with `-`, is treated as usage input. Four spellings are\n   covered in the test -- `--help`, `-h`, `--agent`, `-x` -- and each is refused with the message\n   `Refused: \"--help\" looks like an option, not an event type, so nothing was appended to\n   control/events.jsonl.` followed by the full command list.\n - THE REFUSAL OCCURS BEFORE APPEND. The check sits at the same call site as the existing empty-type\n   check and runs before `event()`, which is the only function that writes.\n - `control/events.jsonl` IS BYTE-IDENTICAL after a refusal. Asserted with a Buffer comparison per\n   case in the fixture, and checked against the real file here with `cmp` for both `event --help` and\n   `event -x`: identical both times.\n - VALID TYPES STILL APPEND NORMALLY -- the acceptance's non-vacuity clause, \"a fix that refused\n   everything would satisfy every other line here\". The test appends\n   `control_plane.operator_error` and asserts exactly one new line with the message intact.\n - HISTORICAL JUNK AND ITS CORRECTIONS ARE UNTOUCHED. Nothing in this change reads or rewrites the\n   log; the two `--help` events from round 93 and their corrections are still there, which is the\n   point. \"An audit log rewritten when it embarrasses its author is not an audit log.\"\n\nONE PROPERTY THE ACCEPTANCE DID NOT NAME AND THE TEST ASSERTS ANYWAY: a hyphen INSIDE a type is still\nvalid. The rule is about the first character, and refusing every hyphen would refuse\n`operator.note-taken` -- a second defect wearing the first one's clothes. Covered explicitly.\n\nTHE EXIT CODE IS 2, not 0, and that is a judgement worth stating rather than burying: `event` was\nasked to record something and recorded nothing, so a zero exit would let a wrapper script, or the\nnext person reading a terminal, believe an event was written. The usage text is printed either way,\nbecause the person typing `--help` is asking for it.\n\nThe usage text was EXTRACTED into `printUsage()` rather than duplicated, so the refusal and the\nunrecognised-command branch cannot drift apart. It is a function declaration, so it is hoisted above\nthe dispatch chain that calls it."
         }
       },
-      "updatedAt": "2026-09-30T05:34:30.188Z",
+      "updatedAt": "2026-10-01T01:09:37.415Z",
       "implementationAgent": "claude-lead",
-      "implementationBaseSha": "b6064bae88c8a4a74742dab39c35024e1ec284d5"
+      "implementationBaseSha": "b6064bae88c8a4a74742dab39c35024e1ec284d5",
+      "review": {
+        "taskId": "PL-AI-0014",
+        "implementationAgent": "claude-lead",
+        "implementationOwner": "claude-lead",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "3415c03065ab4c2a248c6bda5e22ec75797d3b75",
+        "reviewedBaseSha": "b6064bae88c8a4a74742dab39c35024e1ec284d5",
+        "reviewedTreeHash": "07876f93307d3d2d7585d46e3fb7625ed056f98ddfba9fd5673ca9cc8c6e7ca0",
+        "reviewedFileCount": 3,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [
+          "control/README.md",
+          "control/events.jsonl"
+        ],
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-10-01T01:09:37.129Z",
+        "evidence": "APPROVED at 3415c03065ab4c2a248c6bda5e22ec75797d3b75. gpt-architect's round-99 independent review, transcribed by claude-lead.\n\nTHE RATIONALE, as given: event types beginning with `-` are rejected as usage input; the rejection occurs before the append operation; regression tests assert a byte-identical `control/events.jsonl` after refusal; valid event types still append, satisfying the non-vacuity requirement; internal hyphens remain valid; historical junk and correction events are not rewritten; the usage text is shared rather than duplicated; and \"a non-zero exit is correct because the requested event was not recorded\".\n\nThe two junk `--help` events from round 93 and their corrections remain in the log, which was the acceptance's constraint and is the point of an append-only file: an audit log rewritten when it embarrasses its author is not an audit log."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PL-AI-0014",
+          "implementationAgent": "claude-lead",
+          "implementationOwner": "claude-lead",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "3415c03065ab4c2a248c6bda5e22ec75797d3b75",
+          "reviewedBaseSha": "b6064bae88c8a4a74742dab39c35024e1ec284d5",
+          "reviewedTreeHash": "07876f93307d3d2d7585d46e3fb7625ed056f98ddfba9fd5673ca9cc8c6e7ca0",
+          "reviewedFileCount": 3,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "control/README.md",
+            "control/events.jsonl"
+          ],
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-10-01T01:09:37.129Z",
+          "evidence": "APPROVED at 3415c03065ab4c2a248c6bda5e22ec75797d3b75. gpt-architect's round-99 independent review, transcribed by claude-lead.\n\nTHE RATIONALE, as given: event types beginning with `-` are rejected as usage input; the rejection occurs before the append operation; regression tests assert a byte-identical `control/events.jsonl` after refusal; valid event types still append, satisfying the non-vacuity requirement; internal hyphens remain valid; historical junk and correction events are not rewritten; the usage text is shared rather than duplicated; and \"a non-zero exit is correct because the requested event was not recorded\".\n\nThe two junk `--help` events from round 93 and their corrections remain in the log, which was the acceptance's constraint and is the point of an append-only file: an audit log rewritten when it embarrasses its author is not an audit log."
+        }
+      ],
+      "completedAt": "2026-10-01T01:09:37.416Z"
     },
     {
       "id": "PL-0406",
       "priority": "P1",
       "lane": "Backend",
-      "status": "REVIEW",
+      "status": "DONE",
       "title": "The documented migration command applies nothing and exits 0",
       "dependencies": [],
       "allowedPaths": [
@@ -10358,7 +10448,7 @@
       ],
       "acceptance": "APPROVED BY gpt-architect, round 94, as a real P1 defect. The acceptance below is the reviewer's and replaces the proposal's.\n\nTHE FINDING, CONFIRMED STRUCTURALLY: `npm run db:migrate -w @liberty/persistence` runs `drizzle-kit migrate`, but the initial migration was hand-written and the expected Drizzle migrations journal does not exist. \"Therefore the documented command can report success while applying no schema.\" Measured by PW-0312 against a live PostgreSQL 16: fresh database, real connection string, exit 0, zero relations afterwards; the same SQL through psql creates all eight tables.\n\nREQUIRED, all seven:\n 1. a fresh empty PostgreSQL database;\n 2. the documented `db:migrate` command;\n 3. the command ACTUALLY CREATES the expected schema;\n 4. a second invocation is safely idempotent / a no-op as appropriate;\n 5. NON-ZERO FAILURE if migration metadata or schema state is invalid;\n 6. a regression PROVING THE OLD 'exit 0, zero relations' BEHAVIOUR IS IMPOSSIBLE;\n 7. CI may return to the repaired command ONLY AFTER that evidence exists.\n\nCONSTRAINT ON HOW IT IS FIXED: \"Do not silently generate a migration from today's schema if doing so would obscure the reviewed hand-written migration's provenance. Repair the migration mechanism intentionally.\" PL-0405 reviewed that file as a whole and its header carries the reasoning; regenerating it to obtain a journal would discard both.\n\nUNTIL IT IS FIXED, three standing constraints: do not rely on `db:migrate`; CI's direct `psql -f packages/persistence/migrations/0000_profile_scoped_identity.sql` is the APPROVED temporary route; and \"keep the eight-table postcondition even after the command itself is repaired\" -- the count is cheap and it is the assertion that would have caught this.\n\nNOT IN SCOPE: changing the schema, adding a second migration, or altering how `scripts/with-root-env.mjs` supplies DATABASE_URL.",
       "notes": "PROPOSED FOR gpt-architect RULING, round 93, created unowned rather than claimed, on the PW-0501 precedent. Found by PW-0312 while building a CI migration step and verified against a live database before being written down. SURFACE NOTE: `packages/persistence/migrations/**` covers both the journal and the SQL; `package.json` is included because the fix may be a change to the `db:migrate` script rather than to a data file, and that should not need a second amendment. `drizzle.config.ts` is a reviewDependency rather than writable: its `out` and `schema` settings decide where a journal would live, so a reviewer needs it in the window, but nothing here should need to change it. THE CI WORKAROUND SHOULD OUTLIVE THE FIX, and that is deliberate: the table count after the migration step is cheap and it is the assertion that would have caught this in the first place. ACCEPTANCE REPLACED in round 94 with gpt-architect's ruling, which is stronger than the proposal in three places: the impossibility regression, the non-zero exit on invalid metadata, and the condition on CI returning to the command. The proposal's original text is in the round-93 board.task_proposed event.",
-      "owner": "claude-backend",
+      "owner": null,
       "gateResults": {
         "unit": {
           "status": "pass",
@@ -10368,9 +10458,54 @@
           "evidence": "`npm run test` -> 22/22 turbo tasks. @liberty/persistence 268 tests (was 260; +8 from the new\n`src/migration-journal.test.ts`), @liberty/web 1308, @liberty/backend 36, all passing. `npm run lint`,\n`npm run typecheck`, `npm run repo:validate` all clean.\n\nTHE DEFECT, REPRODUCED HERE FIRST, against PostgreSQL 16.15 on a real connection string. Before the\nfix, on a fresh empty database, `npm run db:migrate -w @liberty/persistence` left ZERO relations. One\ncorrection to the record, because the exact failure shape decides what the regression has to assert:\non drizzle-kit 0.31.10 with NO journal the command exits **1**, not 0, and prints NOTHING on stderr --\na silent non-zero. The reported \"exit 0, zero relations\" is reproducible too, and it is the WORSE\nneighbouring case: a journal that exists with `entries: []` prints \"migrations applied successfully!\",\nexits 0, and creates nothing. Both are now impossible; I am recording the distinction rather than\nrepeating a measurement I did not make.\n\nTHE REPAIR, AND WHAT IT DELIBERATELY DID NOT DO. `drizzle-kit migrate` does not read a directory of\n`.sql` files; it reads `meta/_journal.json` and applies the tags listed there. That directory held the\nhand-written `0000_profile_scoped_identity.sql` and nothing else. The fix adds the missing metadata:\n`migrations/meta/_journal.json` naming the existing file, and `migrations/meta/0000_snapshot.json`.\nTHE REVIEWED SQL IS BYTE-FOR-BYTE UNTOUCHED, which is the constraint gpt-architect set -- \"Do not\nsilently generate a migration from today's schema if doing so would obscure the reviewed hand-written\nmigration's provenance.\" The snapshot was obtained by running `drizzle-kit generate` into a THROWAWAY\ndirectory outside the repository and copying only `meta/0000_snapshot.json` across; the SQL that run\nproduced was discarded. The journal's `when` is 1787588559000 -- the author date of commit 1dd8e73,\nwhich added the migration -- not the time this repair was typed.\n\nTHE SEVEN ACCEPTANCE ITEMS:\n 1. fresh empty PostgreSQL database                  lib_final, 0 relations before\n 2. the documented command                           `npm run db:migrate -w @liberty/persistence`\n 3. it ACTUALLY CREATES the expected schema           exit 0, 8 tables: account,\n                                                      active_profile_selection, playback_progress,\n                                                      profile, session, user, verification,\n                                                      watchlist_entry\n 4. a second invocation is safely idempotent          exit 0, still 8 tables, drizzle ledger still 1 row\n 5. NON-ZERO on invalid metadata or schema state      measured, four cases: no journal -> 1;\n                                                      malformed journal JSON -> 1; journal tag with no\n                                                      matching .sql -> 1; and the one that does NOT\n                                                      fail, `entries: []` -> 0 with zero tables, which\n                                                      is why item 6 asserts non-emptiness rather than\n                                                      mere existence\n 6. a regression proving the old behaviour impossible `src/migration-journal.test.ts`, 8 tests, and\n                                                      PROVEN NON-VACUOUS by mutation: `entries: []`\n                                                      turns 2 red, deleting the journal turns 7 red,\n                                                      removing the snapshot turns 1 red, and restoring\n                                                      each returns 8 green\n 7. CI may return to the repaired command only after  NOT DONE HERE, and deliberately.\n    that evidence exists                              `.github/workflows/ci.yml` is a reviewDependency\n                                                      of this task, read-only. The evidence now exists;\n                                                      the switch is proposed in the handoff.\n\nTHE EIGHT-TABLE POSTCONDITION IS KEPT, as required -- asserted in the test against the SQL so it runs\nin the unit job without a database, and separately observed against the live one above.\n\nTWO THINGS MEASURED THAT ARE WORTH THE RECORD. `db:check` is NOT a guard for this: with the journal\npresent and no snapshot it answered \"Everything's fine\". And a journal WITHOUT a snapshot makes the\nnext `db:generate` emit a duplicate migration re-creating all eight tables -- observed as\n`0001_nervous_omega_red.sql` in a throwaway copy; with the snapshot installed the same command answers\n\"No schema changes, nothing to migrate\". That is why the snapshot is part of the repair and why the\ntest asserts one per entry.\n\nThe five hand-written CHECK constraints survive the migration and are visible in the live database:\nplayback_progress_epoch_positive, playback_progress_position_non_negative,\nplayback_progress_position_within_runtime, playback_progress_runtime_positive,\nplayback_progress_seq_non_negative."
         }
       },
-      "updatedAt": "2026-09-30T03:18:02.515Z",
+      "updatedAt": "2026-10-01T01:09:17.328Z",
       "implementationAgent": "claude-backend",
-      "implementationBaseSha": "777002e5660054eccab32f9b1337c8143becfc7a"
+      "implementationBaseSha": "777002e5660054eccab32f9b1337c8143becfc7a",
+      "review": {
+        "taskId": "PL-0406",
+        "implementationAgent": "claude-backend",
+        "implementationOwner": "claude-backend",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "27548e920258d21f07dd505e74da5702d09a632e",
+        "reviewedBaseSha": "777002e5660054eccab32f9b1337c8143becfc7a",
+        "reviewedTreeHash": "1f35e3ce8432954cfe935d65a73c538972d3c6970611c783d86e91a2fa56017a",
+        "reviewedFileCount": 8,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [
+          "packages/persistence/drizzle.config.ts",
+          "docs/DEVELOPMENT.md",
+          ".github/workflows/ci.yml"
+        ],
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-10-01T01:09:17.068Z",
+        "evidence": "APPROVED at 27548e920258d21f07dd505e74da5702d09a632e. gpt-architect's round-99 independent review, transcribed by claude-lead.\n\nTHE RATIONALE, as given: the migration command now has the Drizzle journal and snapshot metadata it requires; the reported silent no-op migration state is eliminated; fresh migration behaviour is covered by regression tests; manually migrated databases remain safe because the repaired operation is idempotent and a no-op where appropriate; the implementation stays within the migration-journal repair scope; and the schema/constraint-name disagreement \"was correctly split into PL-0407 rather than hidden inside this task\".\n\nAND AN EXPLICIT INSTRUCTION ABOUT THAT SPLIT, recorded because it is the kind of thing a later reader would otherwise have to infer: \"PL-0407 is therefore NOT a reason to reject PL-0406. It is a separate forward-looking schema metadata defect.\" The snapshot this task installed names three primary-key constraints the database does not have, and that is real -- it is PL-0407's subject, ruled on in the same round, and it does not make the journal repair wrong.\n\nThe reviewed hand-written SQL is byte-for-byte untouched, which was the acceptance's constraint."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PL-0406",
+          "implementationAgent": "claude-backend",
+          "implementationOwner": "claude-backend",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "27548e920258d21f07dd505e74da5702d09a632e",
+          "reviewedBaseSha": "777002e5660054eccab32f9b1337c8143becfc7a",
+          "reviewedTreeHash": "1f35e3ce8432954cfe935d65a73c538972d3c6970611c783d86e91a2fa56017a",
+          "reviewedFileCount": 8,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "packages/persistence/drizzle.config.ts",
+            "docs/DEVELOPMENT.md",
+            ".github/workflows/ci.yml"
+          ],
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-10-01T01:09:17.068Z",
+          "evidence": "APPROVED at 27548e920258d21f07dd505e74da5702d09a632e. gpt-architect's round-99 independent review, transcribed by claude-lead.\n\nTHE RATIONALE, as given: the migration command now has the Drizzle journal and snapshot metadata it requires; the reported silent no-op migration state is eliminated; fresh migration behaviour is covered by regression tests; manually migrated databases remain safe because the repaired operation is idempotent and a no-op where appropriate; the implementation stays within the migration-journal repair scope; and the schema/constraint-name disagreement \"was correctly split into PL-0407 rather than hidden inside this task\".\n\nAND AN EXPLICIT INSTRUCTION ABOUT THAT SPLIT, recorded because it is the kind of thing a later reader would otherwise have to infer: \"PL-0407 is therefore NOT a reason to reject PL-0406. It is a separate forward-looking schema metadata defect.\" The snapshot this task installed names three primary-key constraints the database does not have, and that is real -- it is PL-0407's subject, ruled on in the same round, and it does not make the journal repair wrong.\n\nThe reviewed hand-written SQL is byte-for-byte untouched, which was the acceptance's constraint."
+        }
+      ],
+      "completedAt": "2026-10-01T01:09:17.329Z"
     },
     {
       "id": "PW-0105",
@@ -10415,6 +10550,26 @@
           "by": "claude-media",
           "commitSha": "65a47d5a481cb6fcbc599add010d9ffade70b43e",
           "evidence": "`npm run test` -> 74 test files, 1308 tests, all passing (@liberty/web), 22/22 turbo tasks successful. The sidecar surface specifically: `npx vitest run apps/web/src/lib/sidecar/` -> 4 files, 63 tests passing -- policy.test.ts 33 (was 18), bootstrap.test.ts 14 (new), listener.test.ts 11 (new), handshake.test.ts 5 (unchanged).\n\nTHE REGRESSION PROPERTIES REQUIREMENT D ASKS FOR, EACH WITH THE FILE THAT HOLDS IT:\n 1. the bind check runs on the real startup path and refuses a short token -- bootstrap.test.ts\n 2. a refusal exits non-zero -- bootstrap.test.ts (every refusal case asserts exit [1])\n 3. a refusal emits NO handshake -- bootstrap.test.ts\n 4. the diagnostic names the variable and the minimum, and never the token value -- bootstrap.test.ts\n 5. a hosted deployment is untouched: no check, no diagnostic, no exit, no handshake, no published port -- bootstrap.test.ts\n 6. the handshake carries the ACTUAL bound port, never the requested PORT -- bootstrap.test.ts (PORT=0 in the environment, listener on 52341, asserts 52341 and asserts the line does not contain \"port\":0)\n 7. exactly one handshake per process even when the startup path runs twice -- bootstrap.test.ts\n 8. the handshake is the only line on stdout and carries the prefix the shell scans for -- bootstrap.test.ts\n 9. the emitted line round-trips through `parseHandshake`, the parser the Rust side's contract is written against -- bootstrap.test.ts\n10. the port is published for the request path BEFORE the line is printed -- bootstrap.test.ts\n11. an ACTUAL non-loopback bind is refused even when the environment claimed loopback -- bootstrap.test.ts\n12. an unestablishable or ambiguous bound port is a refusal, not a guess -- bootstrap.test.ts + listener.test.ts\n13. sockets are not mistaken for listeners -- listener.test.ts (an outbound socket's ephemeral local port is the intermittent, production-only, under-load-only failure this prevents)\n14. Host validation is hostname-exact: suffix, prefix, userinfo, 0.0.0.0, LAN, alternate loopback spellings and DNS names are all refused -- policy.test.ts\n15. a malformed authority is refused rather than repaired: URL delimiters, whitespace, control characters, multi-colon unbracketed, non-decimal / out-of-range / zero-padded port, trailing dot, zone-scoped literal -- policy.test.ts\n16. a Host naming the right hostname but a different port is refused when the port is known -- policy.test.ts\n17. when the port is UNKNOWN the hostname and token are still enforced and the guard does not fall open -- policy.test.ts\n18. a failing bind check refuses every request at the request boundary, closing the window between `listen()` and `exit(1)` -- policy.test.ts\n19. one refusal shape for every failure, so the wire is not an oracle -- policy.test.ts (6 distinct failures, one JSON shape)\n20. the port memo caches a hit and never a miss, so asking too early cannot freeze the answer to \"unknown\" -- listener.test.ts\n\nTwenty, not sixteen; the extra four are 10, 13, 19 and 20, each of which is a failure mode found while implementing rather than one gpt-architect named."
+        },
+        "architecture-review": {
+          "status": "pass",
+          "at": "2026-10-01T01:08:23.469Z",
+          "by": "gpt-architect",
+          "commitSha": "f59157a327af4b2a2c423d7f79e9ee72cffe5abd",
+          "judgementCommitSha": "77d2eed3adca5aba0abbd769144e7caa451039b6",
+          "judgementCommitVerified": true,
+          "transcribedBy": "claude-lead",
+          "evidence": "PASS at 77d2eed3adca5aba0abbd769144e7caa451039b6, gpt-architect's round-99 architecture review, transcribed by claude-lead. Reviewed, in their words, \"in the final architecture where PW-0106 owns the listener\" -- so the verdict is on the combined runtime rather than on this task's diff read alone.\n\nThe architecture they approved: the sidecar's security controls execute on the production request path rather than existing only as test helpers, which is the entire finding PW-0105 was opened for -- `checkBindSafety` and `formatHandshake` had been written, documented, unit-tested and called by nothing. `register()` now runs the bind check and the handshake; `authorizeRequest` parses the Host header instead of pattern-matching it and compares hostname and port; and the handshake format is explicit and parser-covered on both sides of the wire.\n\nTHE RESIDUAL SEQUENCING CONCERN I REPORTED IN ROUND 96 IS CLOSED, and gpt-architect names the mechanism rather than accepting my summary of it: \"PW-0106 removes the earlier residual sequencing concern by owning the listener and gating request handling on preparation.\" That window -- between Next's `listen()` and `instrumentation.register()` -- existed because Next binds before the application loads. It is gone because the bootstrap now binds first and the request handler awaits `prepare()`, so no request is served before the bind-safety check has run.\n\nLIMITATION, carried verbatim: \"This verdict concerns the security/architecture implementation and its packaged-sidecar evidence. It does not assert that liberty-desktop.exe has successfully exercised the complete Windows launch path.\""
+        },
+        "security-review": {
+          "status": "pass",
+          "at": "2026-10-01T01:08:23.612Z",
+          "by": "gpt-architect",
+          "commitSha": "f59157a327af4b2a2c423d7f79e9ee72cffe5abd",
+          "judgementCommitSha": "77d2eed3adca5aba0abbd769144e7caa451039b6",
+          "judgementCommitVerified": true,
+          "transcribedBy": "claude-lead",
+          "evidence": "PASS at 77d2eed3adca5aba0abbd769144e7caa451039b6, gpt-architect's round-99 security review, transcribed by claude-lead.\n\nTHE RATIONALE, as given: the sidecar token is per-launch and treated as a secret capability; the expected loopback host identity is explicit; Host parsing rejects alternate DNS names, suffix tricks, userinfo forms, localhost substitution, 0.0.0.0 and wrong-port authorities; missing and wrong token requests fail closed; startup rejects unsafe and non-loopback declarations; the handshake format is explicit and parser-covered; the security controls execute on the production request path rather than existing only as test helpers; PW-0106 removes the earlier residual sequencing concern by owning the listener and gating request handling on preparation; and \"no evidence supports weakening any of these checks\".\n\nTHE LAST CLAUSE IS THE ONE WORTH KEEPING. This task exists because three controls were written, tested and unreachable, and the gate that should have caught it did not exist -- invariant 6 reached the work only after I added the gate in round 96 and gpt-architect declined to remove it. The verdict is recorded against the commit that made the controls reachable, not against the commit that wrote them.\n\nLIMITATION, carried verbatim: the verdict \"does not assert that liberty-desktop.exe has successfully exercised the complete Windows launch path\". Every measurement behind it is Linux, against the packaged sidecar."
         }
       },
       "updatedAt": "2026-09-29T23:02:51.121Z",
@@ -10425,7 +10580,7 @@
       "id": "PW-0106",
       "priority": "P0",
       "lane": "Player",
-      "status": "REVIEW",
+      "status": "DONE",
       "title": "PORT=0 never reaches the kernel: the packaged sidecar always tries to bind 3000",
       "dependencies": [
         "PW-0501"
@@ -10454,9 +10609,9 @@
       ],
       "acceptance": "The packaged desktop sidecar binds a port the KERNEL chose, on 127.0.0.1, and reports it. Set by\ngpt-architect's round-96 ruling; the twelve evidence items below are theirs, quoted in substance.\n\nREQUIRED DIRECTION (theirs): keep the Next standalone output as the request handler; introduce the\nsmallest supported desktop-specific bootstrap that creates the HTTP listener explicitly on host\n127.0.0.1 and port 0; read the actual port from server.address() after the listen callback; emit the\nexisting single handshake line with that port; preserve every PW-0105 control (per-launch token,\nrequest authorization, Host validation, bind-safety, fail-closed, no LAN bind, no source-checkout\ndependency); do not patch generated Next output after every build unless there is no stable supported\ncomposition point; and if the public APIs cannot do it without unstable internals, STOP and document\nthe exact limitation before choosing another design.\n\nFORBIDDEN, restated so a later round cannot reintroduce it: the shell must not probe for or preselect\na free TCP port. No portpicker. No bind-then-retry-higher loop.\n\nACCEPTANCE EVIDENCE, all twelve:\n 1. launch with port 3000 deliberately occupied\n 2. the packaged sidecar still starts successfully\n 3. the actual listener port is not 3000 in that test\n 4. the handshake contains the real bound port\n 5. the shell parser accepts it\n 6. all required routes serve successfully\n 7. static / CSS / client assets load\n 8. token and Host attack cases still fail\n 9. non-loopback startup fails\n10. nothing writes beside the executable\n11. repeated launches can use different kernel-selected ports\n12. no shell-side free-port probing exists\nPLUS regression coverage \"specifically preventing PORT=0 from silently becoming 3000 again\".\n\nAND A NINE-ITEM REPORT: bootstrap architecture chosen; whether only public/stable Next APIs are used;\nexact proof with 3000 occupied; real bound port observed; handshake evidence; route/static/security test\nresults; Windows/Linux differences; commits; gate state; delivery bundle/apply script.",
       "notes": "RULED BY gpt-architect IN ROUND 96 -- proceed, with the required direction in `acceptance`. The original\nproposal notes are superseded by that ruling; what follows is what round 96 established empirically and\nwhy the task has not started.\n\nTHE DEFECT, UNCHANGED. Next 16.3.1's generated standalone entry reads\n`const currentPort = parseInt(process.env.PORT, 10) || 3000` and creates the server with\n`allowRetry: false`. `parseInt(\"0\", 10)` is `0`, which is falsy, so PORT=0 binds 3000 and gives up if it\nis taken. Observed on the packaged sidecar with the shell's own environment:\n`Error: listen EADDRINUSE: address already in use 127.0.0.1:3000`, exit 1.\n\nTHE DESIGN IS SETTLED AND PROVEN BY A WORKING PROTOTYPE. See the `research.api_limitation` event for the\nfull transcript. In short:\n  - `next()` + `getRequestHandler()` are public and sufficient for the handler.\n  - WE create the listener: `http.createServer(...)` then `listen(0, \"127.0.0.1\")`, and read\n    `server.address().port`. The kernel chooses; nothing probes.\n  - LISTEN FIRST, PREPARE SECOND, with the handler awaiting the `prepare()` promise. This is what makes\n    PW-0105 need NO changes -- its instrumentation still runs after the bind, so its handle-table\n    discovery and its handshake work unaltered -- and it also closes PW-0105 requirement A's residual\n    window, because no request is served before the bind-safety check has run.\n  - The ONE non-public coupling is `__NEXT_PRIVATE_STANDALONE_CONFIG`, set from\n    `<distDir>/required-server-files.json`. `next({ conf })` is TYPED but silently ignored on the custom\n    server path (`NextCustomServer.prepare` does not forward `conf` to `getRequestHandlers`), and the\n    fully-public alternative -- a `next.config.js` in the packaged directory -- re-runs `assignDefaults`\n    over an already-resolved config and measurably DROPS keys (`htmlLimitedBots`,\n    `experimental.trustHostHeader`, and others). The implementation must assert at startup that the\n    private variable took effect, so a future Next that removes it fails loudly.\n  - Prototype result with 3000 occupied: two launches, ports 41623 and 40299, handshake correct both\n    times, five routes 200, token/Host attacks 403.\n\nWHY IT IS NOT STARTED: A SURFACE COLLISION WITH PW-0501, WHICH IS IN REVIEW.\nThe work needs `apps/desktop/sidecar-bootstrap/**` (new), `apps/desktop/scripts/package-sidecar.mjs`\n(to lay the bootstrap and a layout file into the packaged tree) and\n`apps/desktop/src-tauri/src/sidecar.rs` (so the shell spawns the bootstrap rather than Next's entry).\nAll three are inside PW-0501's `allowedPaths` (`apps/desktop/**`).\n\nThis is not a housekeeping objection. `reviewProblems` in `scripts/ai-control-plane.mjs` recomputes\nPW-0501's fingerprint at HEAD and refuses DONE with \"stale review: implementation under <surface> changed\nafter approval\" whenever it differs from what was approved. So committing PW-0106 into `apps/desktop/**`\nWOULD BLOCK PW-0501 FROM EVER REACHING DONE on gpt-architect's current approval -- whether that approval\nlands before or after the commit. The control plane is right and the sequencing is real.\n\n`dependencies: [\"PW-0501\"]` therefore holds this task until PW-0501 is DONE, which needs one thing:\ngpt-architect's `architecture-review` on PW-0501 at 65a47d5. gpt's round-96 message says PW-0501 \"may\nproceed through REVIEW based on its Windows build/install evidence\", which is a statement about its\nlifecycle and NOT a gate result -- it names no commit and does not say APPROVED, so it was not recorded\nas one.\n\nIF gpt-architect would rather PW-0106 start first, the reversible alternative is to narrow PW-0501's\n`allowedPaths` away from the three files above BEFORE approving it, so the two surfaces stop overlapping.\nThat is their call, not mine: it changes what an approval fingerprints.",
-      "owner": "claude-media",
+      "owner": null,
       "implementationAgent": "claude-media",
-      "updatedAt": "2026-09-30T03:08:04.922Z",
+      "updatedAt": "2026-10-01T01:08:03.244Z",
       "implementationBaseSha": "0515cc0d12bd0d0137db423a3865667927f1a744",
       "gateResults": {
         "typecheck": {
@@ -10482,12 +10637,75 @@
           "judgementCommitVerified": true,
           "transcribedBy": "claude-lead",
           "evidence": "PASS at 777002e (\"PW-0106: the packaged sidecar owns its listener, so the kernel picks the port\"), gpt-architect's round-98 architecture review, transcribed by claude-lead. Remote branch verified by the reviewer at 0de015a, of which 777002e is an ancestor.\n\nTHE VERDICT: \"Architecture evidence supports the intended design.\" The containment they reviewed, in their enumeration: the desktop bootstrap owns the HTTP listener; it binds literal port 0 on explicit loopback; the actual port comes from `server.address()` after a successful bind; Next is constructed with that real port rather than 0; the bootstrap does not read `process.env.PORT`; resolved configuration comes from the packaged `required-server-files.json`; the generated `server.js` is neither patched nor spawned; packaging examines the actual shipped Next bytes and fails if `dist/server/config.js` stops consuming `__NEXT_PRIVATE_STANDALONE_CONFIG`; missing or malformed build configuration fails closed with an actionable diagnostic; the packaged acceptance harness deliberately occupies port 3000 and verifies real runtime behaviour; and the private dependency is documented rather than hidden.\n\nTHE PRIVATE API IS APPROVED AS A VERSION-BOUND COMPATIBILITY ADAPTER, \"not general permission to depend on arbitrary private Next APIs\", under six standing conditions recorded in full as an architecture.ruling event: preserve the packaging guard against the shipped bytes; preserve the runtime fail-closed diagnostics; a Next upgrade touching this contract requires PW-0106 REQUALIFICATION before release; migrate to a stable public mechanism if one appears; never patch or parse the generated server.js; never replace kernel-selected allocation with shell-side probing.\n\nWHAT THIS APPROVAL EXPLICITLY DOES NOT COVER, quoted so completion cannot be read as more than it is: \"This architecture approval does NOT substitute for Windows runtime qualification.\" Three facts remain separate and must not be inferred from Linux or packaging evidence -- liberty-desktop.exe has not demonstrated the complete shell -> child -> handshake -> WebView path on Windows; installed application launch is not qualified; Windows WebView rendering is not qualified.\n\nTHE SECURITY-REVIEW GATE ON THIS TASK IS STILL OUTSTANDING. gpt-architect's round-98 verdict addresses the architecture only and does not remove the gate I added under invariant 6, so PW-0106 cannot reach DONE on this result alone."
+        },
+        "security-review": {
+          "status": "pass",
+          "at": "2026-10-01T01:07:34.141Z",
+          "by": "gpt-architect",
+          "commitSha": "f59157a327af4b2a2c423d7f79e9ee72cffe5abd",
+          "judgementCommitSha": "777002e5660054eccab32f9b1337c8143becfc7a",
+          "judgementCommitVerified": true,
+          "transcribedBy": "claude-lead",
+          "evidence": "PASS at 777002e5660054eccab32f9b1337c8143becfc7a, gpt-architect's round-99 security review, transcribed by claude-lead. Reviewed, in their words, \"against the combined PW-0105/PW-0106 runtime design\" rather than against this task's diff alone -- which is the right frame, because the listener moved between the two tasks and neither half is a security property on its own.\n\nTHE RATIONALE, as given: listener ownership moved into the packaged bootstrap; the listener binds literal port 0 on explicit 127.0.0.1; the actual kernel-selected port is obtained from the bound server; no shell-side port probing exists; the handshake reports the actual bound port; the packaged bootstrap never reads `process.env.PORT`; token enforcement remains required; Host validation remains exact and fail-closed; wrong and missing tokens and the Host attack cases are rejected; non-loopback startup declarations fail BEFORE a usable application is served; the packaged acceptance explicitly occupies port 3000; that acceptance exercises routes, assets, attack cases, repeated kernel-selected launches and no-write behaviour; packaging checks the SHIPPED Next implementation for the private standalone-config channel; and the private API dependency is isolated and version-bound rather than spread through product code.\n\nTHE LIMITATION IS PART OF THE VERDICT AND IS RECORDED WITH IT: \"This security review does NOT claim that the complete installed Windows shell-to-sidecar path has run. Windows installed-runtime qualification remains separate.\" Nothing in this task's evidence started liberty-desktop.exe; the Windows runs built, packaged and installed an MSI, and that is all they did."
         }
-      }
+      },
+      "review": {
+        "taskId": "PW-0106",
+        "implementationAgent": "claude-media",
+        "implementationOwner": "claude-media",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "777002e5660054eccab32f9b1337c8143becfc7a",
+        "reviewedBaseSha": "0515cc0d12bd0d0137db423a3865667927f1a744",
+        "reviewedTreeHash": "4a1eed935538f33c2dc130d8b27f696f77e95b2596a4c293032c06657cebb72a",
+        "reviewedFileCount": 11,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [
+          "apps/web/src/instrumentation.ts",
+          "apps/web/src/lib/sidecar/bootstrap.ts",
+          "apps/web/src/lib/sidecar/listener.ts",
+          "apps/desktop/src-tauri/src/handshake.rs",
+          "apps/desktop/src-tauri/src/shell.rs",
+          "apps/web/src/app/api/v1/playback/build-target.ts",
+          "docs/DESKTOP_PLAYBACK.md"
+        ],
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-10-01T01:07:53.025Z",
+        "evidence": "APPROVED at 777002e5660054eccab32f9b1337c8143becfc7a. gpt-architect's round-99 verdict, transcribed by claude-lead: architecture-review PASS (carried from round 98, with the version-bound private-Next compatibility ruling preserved) and security-review PASS, the latter reviewed against the combined PW-0105/PW-0106 runtime design.\n\nThe packaged sidecar owns its listener, binds a literal 0 on explicit loopback, reads the real port from the bound server, never consults PORT, and reports that port in the handshake. Token enforcement, exact fail-closed Host validation and the non-loopback startup refusal all remain, and the packaged acceptance occupies port 3000 deliberately while exercising routes, assets, attack cases, repeated kernel-selected launches and no-write behaviour. The one private Next dependency is isolated, guarded against the shipped bytes at packaging time, and approved as a version-bound compatibility adapter rather than as general permission.\n\nSCOPE, PRESERVED FROM THE VERDICT: this does not claim the complete installed Windows shell-to-sidecar path has run. liberty-desktop.exe has never been started. Windows installed-runtime qualification is separate and remains pending."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PW-0106",
+          "implementationAgent": "claude-media",
+          "implementationOwner": "claude-media",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "777002e5660054eccab32f9b1337c8143becfc7a",
+          "reviewedBaseSha": "0515cc0d12bd0d0137db423a3865667927f1a744",
+          "reviewedTreeHash": "4a1eed935538f33c2dc130d8b27f696f77e95b2596a4c293032c06657cebb72a",
+          "reviewedFileCount": 11,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "apps/web/src/instrumentation.ts",
+            "apps/web/src/lib/sidecar/bootstrap.ts",
+            "apps/web/src/lib/sidecar/listener.ts",
+            "apps/desktop/src-tauri/src/handshake.rs",
+            "apps/desktop/src-tauri/src/shell.rs",
+            "apps/web/src/app/api/v1/playback/build-target.ts",
+            "docs/DESKTOP_PLAYBACK.md"
+          ],
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-10-01T01:07:53.025Z",
+          "evidence": "APPROVED at 777002e5660054eccab32f9b1337c8143becfc7a. gpt-architect's round-99 verdict, transcribed by claude-lead: architecture-review PASS (carried from round 98, with the version-bound private-Next compatibility ruling preserved) and security-review PASS, the latter reviewed against the combined PW-0105/PW-0106 runtime design.\n\nThe packaged sidecar owns its listener, binds a literal 0 on explicit loopback, reads the real port from the bound server, never consults PORT, and reports that port in the handshake. Token enforcement, exact fail-closed Host validation and the non-loopback startup refusal all remain, and the packaged acceptance occupies port 3000 deliberately while exercising routes, assets, attack cases, repeated kernel-selected launches and no-write behaviour. The one private Next dependency is isolated, guarded against the shipped bytes at packaging time, and approved as a version-bound compatibility adapter rather than as general permission.\n\nSCOPE, PRESERVED FROM THE VERDICT: this does not claim the complete installed Windows shell-to-sidecar path has run. liberty-desktop.exe has never been started. Windows installed-runtime qualification is separate and remains pending."
+        }
+      ],
+      "completedAt": "2026-10-01T01:08:03.244Z"
     },
     {
       "id": "PL-0407",
-      "priority": "P2",
+      "priority": "P1",
       "lane": "Backend",
       "status": "READY",
       "title": "The Drizzle snapshot names three primary keys the database does not have",
@@ -10507,18 +10725,16 @@
         "unit",
         "architecture-review"
       ],
-      "acceptance": "TO BE SET BY gpt-architect: which of the three remedies in the notes is taken is a ruling, not an implementation detail. Whatever is chosen must leave `npm run db:migrate` creating the same eight tables on a fresh database, must not alter the reviewed hand-written migration's SQL, and must come with an assertion that compares generated constraint names against a migrated database so the disagreement cannot return silently.",
+      "acceptance": "SET BY gpt-architect, round 99. Remedy (a) is chosen; this replaces the placeholder acceptance.\n\nName the three primary-key constraints explicitly in the ORM schema so their generated snapshot names\nmatch the database created by the already-reviewed migration. \"This is a metadata/naming alignment\nfix, not a semantic primary-key change.\"\n\nDO NOT: rename live database constraints merely to satisfy generated-tool naming; hand-edit generated\nsnapshot names as the primary fix; alter the reviewed hand-written migration SQL.\n\nREQUIRED:\n - explicit `primaryKey({ name, columns })` names matching the real migrated database;\n - preserve the existing eight-table schema and migration behaviour;\n - regenerate or update metadata only as required by the legitimate schema source;\n - add an assertion comparing the ORM/generated constraint names with the ACTUAL constraint names\n   produced by a freshly migrated PostgreSQL database, specifically covering\n   `active_profile_selection_pkey`, `playback_progress_pkey` and `watchlist_entry_pkey`;\n - keep `npm run db:migrate` creating the same eight tables;\n - architecture-review is required after implementation, because this modifies a previously reviewed\n   schema surface.",
       "notes": "FOUND BY claude-backend WHILE REPAIRING PL-0406, PROPOSED FOR gpt-architect TO RULE ON. It is NOT\nfixed there: PL-0406's acceptance says in terms that changing the schema and adding a second migration\nare out of scope, and this needs one or the other.\n\nTHE FINDING, EXACT. PL-0406 installed `migrations/meta/0000_snapshot.json` so `drizzle-kit generate`\nhas a previous state to diff against -- without it the next `db:generate` emits a duplicate migration\nre-creating all eight tables, which was measured. The snapshot is derived from the ORM schema in\n`src/schema/index.ts`. Compared against the database the REVIEWED hand-written migration actually\nproduces, every foreign key and every unique constraint matches by name. THREE PRIMARY KEY NAMES DO\nNOT:\n\n  table                      live database name              snapshot expects\n  active_profile_selection   active_profile_selection_pkey   active_profile_selection_session_id_pk\n  playback_progress          playback_progress_pkey          playback_progress_profile_id_content_id_pk\n  watchlist_entry            watchlist_entry_pkey            watchlist_entry_profile_id_content_id_pk\n\nMeasured against PostgreSQL 16.15: `pg_constraint` after `npm run db:migrate` on a fresh database,\nagainst the `compositePrimaryKeys` keys in the installed snapshot.\n\nWHY: the hand-written SQL writes `\"session_id\" text PRIMARY KEY NOT NULL` and\n`CONSTRAINT \"playback_progress_pkey\" PRIMARY KEY (...)`, so PostgreSQL uses its own `_pkey` convention\nor the stated name. Drizzle's `primaryKey()` synthesises `<table>_<cols>_pk`. Both describe the same\nKEY; they disagree only about what it is CALLED.\n\nWHY IT MATTERS LATER RATHER THAN NOW. Nothing is broken today: the schema is correct, all eight tables\nexist, the constraints are enforced, and `generate` diffs the ORM schema against the snapshot without\never consulting the database. The trap is the first migration that touches a primary key. Drizzle\nwould emit `ALTER TABLE \"playback_progress\" DROP CONSTRAINT \"playback_progress_profile_id_content_id_pk\"`,\nwhich does not exist, and the migration would fail against every real database -- in whatever\nenvironment it ran first.\n\nTHREE WAYS OUT, unranked, for the ruling:\n  (a) Name the constraints in the ORM schema so the snapshot matches the database -- `primaryKey({ name:\n      \"playback_progress_pkey\", columns: [...] })`. Smallest, changes no SQL, leaves the reviewed\n      migration untouched. Changes the schema file, which PL-0406 could not.\n  (b) A second migration that renames the three constraints to Drizzle's convention. Changes a live\n      database to suit a tool's naming, which is the wrong way round.\n  (c) Hand-edit the snapshot's three names. Cheapest and worst: a snapshot is generated output, and a\n      hand-edit is lost the next time anyone regenerates it.\n\n(a) looks right from here and is NOT being taken unilaterally, because it edits the schema module that\nPL-0405 reviewed and because the choice is exactly the kind PL-0406's acceptance reserved.\n\nWHAT WOULD HAVE CAUGHT IT AND DID NOT: `npm run db:check` answers \"Everything's fine\" -- it validates\nthe journal, not the agreement between the snapshot and a real database. Whatever remedy is chosen\nshould come with an assertion that compares generated constraint names against a migrated database, or\nthis recurs the next time a snapshot is produced."
     },
     {
       "id": "PL-AI-0015",
       "priority": "P2",
       "lane": "Coordination",
-      "status": "BACKLOG",
+      "status": "READY",
       "title": "The control-plane suite copies the packaged sidecar into every fixture and fills the disk",
-      "dependencies": [
-        "PL-AI-0014"
-      ],
+      "dependencies": [],
       "allowedPaths": [
         "scripts/test-ai-control-plane.mjs"
       ],
@@ -10531,7 +10747,7 @@
       "qualityGates": [
         "unit"
       ],
-      "acceptance": "`npm run test:scripts` completes on a working tree that has a packaged sidecar at apps/desktop/sidecar. REQUIRED: the fixture copy excludes that build output for the same reason it already excludes `target`, and the exclusion is expressed so it cannot also hide a future unrelated directory named `sidecar` without that being a deliberate choice. REQUIRED: whether any scenario depends on the two TRACKED files under apps/desktop/sidecar (.gitignore and README.md, which keep the directory present in a fresh clone for tauri-build) is established by measurement rather than assumed. REQUIRED: a regression that fails if a large gitignored directory is missing from the exclusion list, so the next one is caught by the suite rather than by a disk-full error inside it. NOT IN SCOPE: changing what package-sidecar.mjs produces.",
+      "acceptance": "SET BY gpt-architect, round 99. Replaces the proposal's acceptance.\n\n`npm run test:scripts` completes on a working tree that has a packaged sidecar at\n`apps/desktop/sidecar`.\n\nAPPROVED REMEDY: a PATH-SPECIFIC fixture-copy exclusion for `apps/desktop/sidecar`. \"Do NOT add a\nbare global directory-name exclusion for `sidecar`.\"\n\nREQUIRED:\n - path-aware fixture-copy exclusion matching the packaged sidecar output specifically;\n - the measurement already recorded stands as the basis: current control-plane scenarios have zero\n   dependency on `apps/desktop`, so excluding the packaged tree does not remove required fixture\n   behaviour;\n - preserve awareness that `.gitignore` and `README.md` under that directory are TRACKED source\n   files. If practical, exclude the generated contents while retaining those two; if whole-directory\n   exclusion is materially simpler, tests must ESTABLISH that their absence cannot affect any current\n   scenario rather than assuming it;\n - add a regression that detects large gitignored build-output directories omitted from the fixture\n   exclusion policy, so the next one is caught by the suite rather than by a disk-full error inside\n   it.\n\nNOT IN SCOPE: changing `package-sidecar.mjs` or what packaging produces.",
       "notes": "FOUND BY claude-infra WHILE RUNNING THE GATES FOR PW-0104, PROPOSED FOR gpt-architect. Not fixed\nthere: a fixture-copy exclusion list has nothing to do with a killed dev server, and the acceptance\nfor PW-0104 says in terms that this tooling defect \"must not be folded into unrelated product work\"\n-- the same principle read the other way.\n\nTHE DEFECT. `scripts/test-ai-control-plane.mjs` copies the whole repository into a temp fixture once\nper scenario -- 71 scenarios -- filtered by `EXCLUDED_FIXTURE_DIRS`. That list holds `.git`,\n`node_modules`, `.next`, `.turbo`, `dist`, `build`, `coverage` and `target`. It does NOT hold\n`apps/desktop/sidecar`, which is where `apps/desktop/scripts/package-sidecar.mjs` lays the packaged\nsidecar: a Node runtime, the standalone server and a full `node_modules` copy, 196 MB and roughly\n1549 files, gitignored build output like every other entry on that list.\n\nOBSERVED, not predicted:\n  Error: ENOSPC: no space left on device, copyfile\n    '/home/claude/liberty/apps/desktop/sidecar/node.exe' ->\n    '/tmp/liberty-control-plane-cVoWBs/repo-5/apps/desktop/sidecar/node.exe'\nThe suite died in its fifth scenario. Deleting the packaged tree and re-running took it to\n\"AI control plane tests passed (71 scenarios)\".\n\nTHIS IS THE FAILURE THE LIST'S OWN COMMENT DESCRIBES. Beside `target` it already says: \"a debug build\nof the Tauri dependency graph is several gigabytes, and freshRepo() copies the tree once per scenario\n-- the suite filled the disk and died mid-copy before this line existed. It is gitignored, so no\nfixture can legitimately need it.\" Every word applies here. `apps/desktop/sidecar` simply did not\nexist in a packaged state on any machine that had run the suite until PW-0501 made packaging routine.\n\nWHO IT BITES, and why it is P2 rather than P1. CI does not hit it: the Windows job packages on its own\nrunner and the ubuntu `validate` job that runs `npm run test:scripts` never calls\n`package-sidecar.mjs`. It bites a developer -- or an engineering session -- that has packaged locally\nand then runs the suite, which after PW-0501 and PW-0106 is the normal working state. The symptom is\na disk-full error deep inside a test that was not testing packaging.\n\nTHE FIX LOOKS LIKE ONE LINE plus a comment in the same register as the `target` entry. Two details\nworth getting right rather than guessing:\n  - `apps/desktop/sidecar` is a PATH, not a bare directory name, and the current filter matches whole\n    path SEGMENTS (`includes(sep+dir+sep) || endsWith(sep+dir)`). A bare `sidecar` entry would also\n    exclude any future directory of that name anywhere in the tree, which may be fine or may be too\n    broad; a path-aware entry needs a small change to the matcher.\n  - `apps/desktop/sidecar/.gitignore` and `apps/desktop/sidecar/README.md` are TRACKED, and\n    `package-sidecar.mjs` preserves them deliberately: they are what keeps the directory present in a\n    fresh clone so `tauri-build` can validate `bundle.resources`. Excluding the directory wholesale\n    would remove two tracked files from every fixture. Whether any scenario cares is unknown and\n    should be checked rather than assumed.\n\nA REGRESSION IS AVAILABLE AND CHEAP: assert that every entry of `EXCLUDED_FIXTURE_DIRS` is ignored by\ngit, and that no gitignored directory over some size threshold is missing from it. That turns \"we\nremembered\" into \"the suite says so\"."
     },
     {
@@ -10556,7 +10772,7 @@
         "build",
         "architecture-review"
       ],
-      "acceptance": "The installed-tree verification proves the MSI carries the application the shell actually starts. REQUIRED: after installing the MSI, the entry point named by SERVER_RELATIVE_PATH in apps/desktop/src-tauri/src/sidecar.rs is asserted present under Program Files, together with the layout file the bootstrap reads and the static asset tree whose absence is silent. REQUIRED: the expected paths are DERIVED from the constants the layout is built from rather than restated in YAML -- package-sidecar.mjs already derives them from sidecar.rs by regex and fails when they disagree, and this defect is one round of drift away from that same fact having three homes. REQUIRED: a deliberate negative -- the verification must fail if the bootstrap is absent from the installed tree, demonstrated rather than assumed. NOT IN SCOPE: launching the application, which is PW-0503 and the commander's machine.",
+      "acceptance": "SET BY gpt-architect, round 99. FILING APPROVED; this replaces the proposal's acceptance.\n\n\"The Windows installer verification must stop hard-coding Next's obsolete `server.js` entry as the\nruntime proof.\"\n\nPREFERRED REMEDY: derive the installed runtime paths from the same authoritative constants and layout\ncontract used by `sidecar.rs` and packaging, so the Windows workflow verifies the entry the shell will\nactually spawn -- `sidecar\\server\\liberty-sidecar.js`. The verification \"may also assert `server.js`\nexists as packaged Next build output, but that must not be mistaken for the spawned runtime entry.\"\n\nACCEPTANCE MUST INCLUDE:\n - the Windows installer contains `liberty-desktop.exe`;\n - the installed Node runtime exists;\n - the installed `liberty-sidecar.js` exists at the exact path expected by the Rust shell;\n - installed runtime-path verification DERIVES FROM, or is mechanically checked against, the\n   authoritative runtime path contract rather than manually duplicating it;\n - uninstall remains clean.\n\nCONSTRAINT: \"do not reopen or invalidate PW-0501's historical packaging evidence unnecessarily; treat\nthis as a forward corrective task.\"\n\nNOT IN SCOPE: launching the application, which is PW-0503 and the commander's machine.",
       "notes": "FOUND BY claude-lead WHILE READING WINDOWS RUN 36776266428 (commit 0de015a), the first run that\npackaged PW-0106's bootstrap. Proposed for gpt-architect rather than patched, for two reasons given\nat the bottom.\n\nTHE FINDING. `.github/workflows/windows.yml`'s step \"Install the MSI, verify it landed, uninstall it\"\ninstalls the MSI and then asserts that specific files exist under `C:\\Program Files\\Project Liberty`.\nIts list is:\n\n  installed executable: C:\\Program Files\\Project Liberty\\liberty-desktop.exe\n  packaged resource:    C:\\Program Files\\Project Liberty\\sidecar\\node.exe\n  packaged resource:    C:\\Program Files\\Project Liberty\\sidecar\\server\\server.js\n\n`server\\server.js` is NEXT'S GENERATED ENTRY. Since PW-0106 it is still shipped -- it is build output\nand removing build output has its own risks -- but IT IS NEVER SPAWNED. `sidecar.rs` now spawns\n`sidecar/server/liberty-sidecar.js`, and the installed-tree verification does not look for that file\nat all.\n\nWHAT THAT COSTS. The step exists to prove the installer carries a runnable application. As of 0de015a\nit proves the installer carries a file nothing runs, and would pass unchanged if\n`liberty-sidecar.js`, `liberty-sidecar-layout.json` or the whole standalone tree were absent from the\nMSI.\n\nIT IS NOT CURRENTLY A LIVE HOLE, and saying so is part of the finding rather than a reason to\ndowngrade it. `package-sidecar.mjs` lists `server/liberty-sidecar.js` and\n`server/liberty-sidecar-layout.json` among the files it requires after laying out, so a missing\nbootstrap fails the packaging step before an installer is ever built. What is missing is the\nINSTALLED-TREE half: nothing proves the MSI carried across what packaging produced. Those are\ndifferent claims, and this workflow step is the only thing that makes the second one.\n\nTHE FIX IS SMALL AND THE INTERESTING PART IS HOW TO KEEP IT HONEST. Adding two more path assertions\nis five minutes' work and will drift again the next time the layout changes -- this defect IS that\ndrift, one round after PW-0106 renamed the entry. The durable shape is for the verification to derive\nits expectations from the same constants the layout does, exactly as `package-sidecar.mjs` already\nderives `SERVER_RELATIVE_PATH` and `NODE_RELATIVE_PATH` from `sidecar.rs` by regex and fails when\nthey disagree. A verification that names its own copy of the paths is a third place for one fact to\nlive, and this repository has now been bitten by that three times: `.next/standalone` vs\n`dist/desktop/standalone` in round 95, `\"server.js\"` hard-coded in a Rust test in round 98, and this.\n\nRECOMMENDED: verify the installed tree against the paths `sidecar.rs` declares, not against a list\nwritten in YAML. Whether that is done by having the workflow shell out to a small Node script under\n`scripts/windows/**` (which would put it on PW-0503's surface, where the rest of the installed-tree\nlifecycle work already lives) or by extending the inline PowerShell is the choice worth a ruling.\n\nWHY NOT PATCHED HERE. `.github/workflows/windows.yml` is PW-0501's allowedPath. PW-0501 is DONE, so\nediting it cannot make a review stale -- but it also means no active task owns the file, and\ndeclaring it under PW-0106 would change the surface gpt-architect's architecture-review is bound to\nat 777002e. Neither is something to do quietly at 06:00."
     }
   ]
