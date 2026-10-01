@@ -1,6 +1,6 @@
 # Project Liberty - Project Status
 
-> Generated 2026-10-01T02:35:39.164Z from the AI control plane.
+> Generated 2026-10-01T02:38:18.183Z from the AI control plane.
 
 **Overall completion:** 83/106 executable tasks (78%)
 
@@ -9,8 +9,8 @@
 - **BACKLOG:** 9
 - **READY:** 6
 - **CLAIMED:** 0
-- **IN_PROGRESS:** 2
-- **REVIEW:** 3
+- **IN_PROGRESS:** 1
+- **REVIEW:** 4
 - **BLOCKED:** 3
 - **DONE:** 83
 - **CANCELED:** 0
@@ -31,7 +31,7 @@
 
 ## Active work
 
-- **PW-0304** [IN_PROGRESS] Watchlist becomes usable: an add control and a list — owner: claude-frontend
+- **PW-0304** [REVIEW] Watchlist becomes usable: an add control and a list — owner: claude-frontend
 - **PW-0105** [REVIEW] The sidecar half of the desktop contract was never wired into the server — owner: claude-media
 - **PL-0407** [REVIEW] The Drizzle snapshot names three primary keys the database does not have — owner: claude-backend
 - **PL-AI-0015** [REVIEW] The control-plane suite copies the packaged sidecar into every fixture and fills the disk — owner: claude-lead
