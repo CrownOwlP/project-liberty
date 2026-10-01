@@ -1,16 +1,13 @@
 {
-  "generatedAt": "2026-10-01T01:42:56.799Z",
+  "generatedAt": "2026-10-01T02:35:39.167Z",
   "agent": "claude-frontend",
   "executionAvailable": true,
-  "assigned": [],
-  "review": [],
-  "reservedExternal": [],
-  "recommended": [
+  "assigned": [
     {
       "id": "PW-0304",
       "priority": "P1",
       "lane": "Frontend",
-      "status": "READY",
+      "status": "IN_PROGRESS",
       "title": "Watchlist becomes usable: an add control and a list",
       "dependencies": [
         "PW-0301",
@@ -18,13 +15,17 @@
       ],
       "allowedPaths": [
         "apps/web/src/app/watchlist/**",
-        "apps/web/src/components/watchlist/**"
+        "apps/web/src/components/watchlist/**",
+        "apps/web/src/components/title/title-hero.tsx",
+        "apps/web/src/components/catalog-card.tsx",
+        "e2e/tests/watchlist.spec.ts",
+        "apps/web/src/components/shell/navigation.ts",
+        "apps/web/src/components/continue-watching/continue-watching-ui.test.tsx"
       ],
       "reviewDependencies": [
         "apps/web/src/app/api/v1/watchlist",
         "packages/persistence/src/watchlist-mutation.ts",
-        "apps/web/src/components/title",
-        "apps/web/src/components/catalog-card.tsx"
+        "apps/web/src/components/title"
       ],
       "preferredAgent": "claude-frontend",
       "reviewAgent": "gpt-architect",
@@ -35,9 +36,16 @@
       ],
       "acceptance": "A person can add a title to their watchlist and see the list. The API and its mutation rules are complete, tested and reviewed -- including the conflict semantics in packages/persistence/src/watchlist-mutation.ts -- and nothing renders them. REQUIRED: the add control appears on the title screen and on a catalog card, and reflects state optimistically while remaining correct when the write is refused. REQUIRED: the resolution vocabulary the API already returns (accepted plus a reason, not a boolean ok) is surfaced honestly; a refused write must not render as a success, which is the shape of defect the harnesses in this repository have caught four times.",
       "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. ",
-      "owner": null,
-      "gateResults": {}
-    },
+      "owner": "claude-frontend",
+      "gateResults": {},
+      "implementationAgent": "claude-frontend",
+      "updatedAt": "2026-10-01T01:44:19.842Z",
+      "implementationBaseSha": "9039e20563dd314cb730c432e45e32caa50bab61"
+    }
+  ],
+  "review": [],
+  "reservedExternal": [],
+  "recommended": [
     {
       "id": "PW-0307",
       "priority": "P1",

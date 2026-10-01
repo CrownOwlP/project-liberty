@@ -83,17 +83,38 @@ describe("a card with a resume", () => {
     expect(html).toMatch(/aria-hidden="true"[^>]*>\s*<div[^>]*width:28%/);
   });
 
-  it("offers a start-over link, and it is a link rather than a form", () => {
+  it("offers start over as an ANCHOR -- not a form, and not a button", () => {
     /*
      * A link because it navigates and because it works with no JavaScript --
      * which matters on a rail that is otherwise entirely server-rendered. A
      * form would also have implied that following it writes something; it does
      * not. The stored position is untouched until the player's next heartbeat.
+     *
+     * THIS ASSERTION WAS REWRITTEN BY PW-0304, AND IT WAS STRENGTHENED RATHER
+     * THAN RELAXED. It used to end `expect(html).not.toContain("<button")`,
+     * which was a correct shorthand for the property above only while a card
+     * had exactly one affordance. PW-0304 mounts the "My List" toggle inside
+     * `CatalogCard` -- a button, and a legitimate one that `catalog-card.tsx`
+     * has predicted by name since PL-0104 -- so the shorthand began failing for
+     * a card that was behaving correctly. It asserted an implementation (this
+     * card has no buttons) rather than the property (start over navigates).
+     *
+     * The three lines that replace it are each sharper than what they replace.
+     * The href and the text are now matched as ONE ELEMENT, where before they
+     * were two independent `toContain`s that would have passed for an anchor
+     * somewhere on the card plus a "Start over" button somewhere else. The
+     * button rule now names what it forbids. And the last line states which
+     * button the card is allowed to carry, so this file tolerates one named
+     * control rather than tolerating any button at all.
      */
-    expect(html).toContain('href="/watch/aurora-fall?restart=1"');
-    expect(html).toContain("Start over");
+    expect(html).toMatch(/<a[^>]*href="\/watch\/aurora-fall\?restart=1"[^>]*>Start over<\/a>/);
     expect(html).not.toContain("<form");
-    expect(html).not.toContain("<button");
+    expect(html, "start over must navigate, not submit").not.toMatch(
+      /<button[^>]*>[^<]*Start over/
+    );
+    expect(html, "the only button a resume card carries is the watchlist toggle").toContain(
+      'data-testid="watchlist-control"'
+    );
   });
 
   it("does not repeat the title in any of the additions", () => {

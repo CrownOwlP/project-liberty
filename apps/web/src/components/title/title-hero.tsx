@@ -7,6 +7,7 @@ import {
   titleHref
 } from "../../app/title/title-detail";
 import { PlayCta } from "./play-cta";
+import { WatchlistControl } from "../watchlist/watchlist-control";
 import styles from "./title.module.css";
 
 const KIND_LABEL: Readonly<Record<TitleDetailKind, string>> = {
@@ -55,6 +56,23 @@ export function TitleHero({ detail }: TitleHeroProps) {
         ) : null}
 
         <PlayCta availability={availability} label={PLAY_LABEL[detail.kind]} />
+
+        {/*
+          * MY LIST SITS BESIDE PLAY, NOT INSTEAD OF IT (PW-0304).
+          *
+          * It is rendered for every kind, including an episode, because the
+          * list is a list of things a household means to watch and an episode
+          * is one of those. It is NOT gated on `availability`: whether a title
+          * can be played right now and whether someone wants to keep it are
+          * different questions, and hiding the control on an unavailable title
+          * would remove the one affordance that still makes sense there.
+          *
+          * It is a client component and this file is not. That boundary is the
+          * same one `account-region.tsx` opens and for the same reason -- it
+          * reads the viewer's own list, and a server component that did the
+          * same would make every title page dynamic.
+          */}
+        <WatchlistControl contentId={detail.id} />
       </div>
     </section>
   );

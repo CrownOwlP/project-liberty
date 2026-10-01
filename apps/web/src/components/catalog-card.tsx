@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { CatalogItem } from "@liberty/contracts/domains/catalog";
 import { PosterArtwork } from "./artwork/poster-artwork";
 import { ProgressIndicator } from "./continue-watching/progress-indicator";
+import { WatchlistControl } from "./watchlist/watchlist-control";
 import styles from "./continue-watching/continue-watching.module.css";
 import { formatCatalogMeta } from "../lib/catalog";
 import { resolveCatalogItemRoute } from "../lib/routes";
@@ -130,6 +131,24 @@ export function CatalogCard({ item, resume }: CatalogCardProps) {
         {route.status === "routable" ? <Link href={route.href}>{item.title}</Link> : item.title}
       </h3>
       <p>{formatCatalogMeta(item)}</p>
+      {/*
+        MY LIST, AND ONLY WHERE THE ID IS ONE THE LIST CAN HOLD (PW-0304).
+
+        `CatalogItem.id` is `z.string().min(1)`, NOT a normalized content id --
+        `resolveCatalogItemRoute` says so a few lines up and refuses to build a
+        link from one that is not. The watchlist route applies the same schema
+        and answers `not_a_normalized_content_id`, so a control rendered on such
+        a card would be a button whose only possible outcome is a refusal. The
+        route check has already been done here, so reusing it costs nothing and
+        the control appears exactly where it can work.
+
+        It is a sibling of the heading rather than a child of it, which is the
+        arrangement the top of this file chose an anchor-free card for: "the
+        moment a card gains any second control -- a play affordance, a 'my
+        list' toggle -- that control is an interactive element nested inside an
+        anchor, which is invalid". The prediction named this control by name.
+      */}
+      {route.status === "routable" && <WatchlistControl contentId={item.id} compact />}
       {resume !== undefined && (
         <>
           <ProgressIndicator completedFraction={resume.completedFraction} />

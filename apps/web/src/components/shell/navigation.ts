@@ -49,7 +49,17 @@ function planned(id: string, label: string, plannedReason: string): NavigationEn
 export const PRIMARY_NAVIGATION: readonly NavigationEntry[] = [
   live("home", "Home", "/"),
   live("search", "Search", "/search"),
-  planned("watchlist", "Watchlist", "the watchlist API is complete; its screen is PW-0304"),
+  /*
+   * THE MIGRATION THIS FILE WAS DESIGNED FOR, PERFORMED (PW-0304).
+   *
+   * It read `planned("watchlist", "Watchlist", "the watchlist API is complete;
+   * its screen is PW-0304")` -- a non-link with a stated reason -- and the
+   * header above promised that "the entry becomes a link by deleting one
+   * field". PW-0304 built `/watchlist`, so the field is deleted and nothing
+   * else about this module changed. `app-shell.tsx` needed no edit at all: it
+   * branches on `href === null` and renders an anchor for everything else.
+   */
+  live("watchlist", "Watchlist", "/watchlist"),
   planned("live", "Live TV", "live acquisition is PL-0602, blocked on licensed feed access"),
   planned("settings", "Settings", "PW-0308")
 ];
