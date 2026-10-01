@@ -281,3 +281,108 @@ progress API" and "a next-episode affordance at the end of playback", and
 `player-surface.tsx` is a reviewDependency rather than an allowedPath — so the
 affordance may need a surface amendment, and the per-episode progress read runs
 straight into PW-0313. I will record both before writing anything.
+
+---
+
+# Addendum — round 101
+
+Round 100 ended with PW-0304 in REVIEW. This is what happened next, appended
+rather than replacing the document above, because every request in it still
+stands.
+
+## PW-0307 is claimed and HALF of it is built. It will not reach REVIEW.
+
+Two of its four REQUIRED clauses are done: `lib/next-episode.ts` (the pure
+"what plays next" rule, 15 tests) and the season selector
+(`season-navigation.tsx`, 14 tests). Two are not, and **one of them needs a
+decision only you can make.**
+
+### The decision: where does the end-of-playback affordance live?
+
+PW-0307 requires "a next-episode affordance at the end of playback". It has to
+render in **`player-surface.tsx`**, which is in **PW-0306**'s `allowedPaths` —
+a **P0** whose entire subject is that file ("A player that can actually be
+operated"), and which is itself **BLOCKED behind PW-0206** (BACKLOG). The
+player is also handed only `{session, policy}` and knows nothing about a
+series, so the clause additionally needs `app/watch/[contentId]/page.tsx` to
+resolve the next episode server-side and pass it in.
+
+Your round-99 ruling on PW-0304's surface was "amend narrowly … keep PW-0307
+parallelisable". The same reasoning points the other way here: taking
+`player-surface.tsx` into PW-0307 would make a **P0 wait on a P1's review**.
+Three options, recorded in full as `board.sequencing_finding`:
+
+- **(a)** amend PW-0307 to include both files, and accept that PW-0306 waits;
+- **(b)** move the clause to PW-0306 and narrow PW-0307 to the series surface,
+  with `resolveNextEpisode` staying here as the thing PW-0306 consumes;
+- **(c)** file it as its own small task depending on PW-0307, owning those two
+  files, so neither bigger task blocks the other.
+
+I have no preference I would defend. **(b)** and **(c)** leave PW-0307
+completable now; **(a)** does not.
+
+### The finding that limits what any gate on PW-0307 can say
+
+**Every demo series has exactly one season.** `demo-title-details.ts` writes
+`seasonNumber: 1` as a literal. Confirmed on a running server:
+
+```
+$ curl -s localhost:3195/title/northstar | grep -o 'id="season-[0-9]*"' | sort -u
+id="season-1"
+```
+
+So the selector is *correctly* invisible on every title this product can serve,
+and three things follow that must not be reported as working:
+
+- the tab strip's **hydrated** behaviour is **UNVERIFIED in a browser** — no
+  click, no arrow key, no hidden panel has been exercised anywhere. The
+  flat-stack fallback *is* verified, because that is what a one-season series
+  renders.
+- an `e2e` spec could only skip its own subject, which is a gate recording the
+  absence of the thing it measures.
+- `resolveNextEpisode`'s season-boundary branch is unit-tested and
+  **unreachable from the running system**.
+
+I did not fix the fixture. It is not on PW-0307's surface, and it is not the
+one-line edit it looks like: `e2e/src/fixtures.ts` pins ids of the shape
+`${series.id}-s1e${n}` that three specs iterate, and
+`UNDECLARED_RIGHTS_EPISODE_IDS` names `harbor-lights-s1e6` by literal — the
+only rights-gate case this product can demonstrate. The concrete proposal (give
+`demoEpisodes` a per-series season layout; apply a two-season layout to
+`northstar` only; keep the id shape, which leaves every other series
+byte-identical) is in the `research.api_limitation` event for you to accept or
+reject.
+
+### Three more surface amendments, all recorded before the files were touched
+
+- **`apps/web/src/lib/title-detail.ts` → `apps/web/src/app/title/title-detail.ts`**
+  in PW-0307's `reviewDependencies`. **The path named did not exist.** The real
+  module is where `resolvePlayAvailability` lives — the rights gate this task's
+  acceptance is about reusing — so the approval was fingerprinting nothing and
+  would not have gone stale when that gate moved. A **widening**. PW-0302 (DONE)
+  carries the same stale string; left alone, since a completed task's
+  fingerprint is not recomputed.
+- `season-navigation.module.css` and `season-navigation.test.tsx`, both new
+  files, colliding with nothing.
+- Named but **not** amended yet: `e2e/tests/series-navigation.spec.ts`. Left
+  until the open clauses land, so the surface is not amended twice.
+
+### One lint rule earned its keep
+
+`react-hooks/set-state-in-effect` refused both effects in the first draft of the
+selector, correctly. The hydration flag became `useSyncExternalStore` with a
+server snapshot, and the season selection became a value **derived during
+render** rather than state repaired one render late — which makes the
+blank-page failure mode (a selection pointing at a season the series no longer
+has) unrepresentable rather than corrected. Root lint is 12/12 exit 0.
+
+## State at `c03e765`
+
+| Task | State |
+| --- | --- |
+| PW-0304 | REVIEW, three gates PASS — still needs your `approve` |
+| PW-0307 | IN_PROGRESS, half built, blocked on the ruling above |
+| PW-0105 | REVIEW — still needs the approval re-bound to `777002e` |
+| PL-0407, PL-AI-0015 | REVIEW |
+| PW-0107 | IN_PROGRESS — waits on a Windows run, which waits on your push |
+| PW-0313 | BACKLOG — defect in a DONE task, needs a ruling |
