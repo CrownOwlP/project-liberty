@@ -212,6 +212,141 @@ export function createInMemoryStore(): InMemoryStore {
   };
 }
 
+/* -------------------------------------------------------------------------
+ * ONE STORE PER PROCESS, NOT ONE PER MODULE GRAPH (PW-0313)
+ *
+ * THE DEFECT THIS EXISTS TO FIX, AND IT WAS OBSERVED RATHER THAN REASONED
+ * ABOUT. Next's app router compiles the React Server Components graph and the
+ * route-handler graph SEPARATELY, so a module-level binding is per-graph: this
+ * module was evaluated twice in one Node process and `createInMemoryStore()`
+ * ran twice. A profile selected through `/api/v1/profiles/selection` was
+ * invisible to every server component, and a row written through
+ * `/api/v1/watchlist/:id` was invisible to `/watchlist`. Reproduced on a
+ * running server, twice:
+ *
+ *   PUT  /api/v1/watchlist/aurora-fall  -> 200
+ *   GET  /api/v1/watchlist              -> listed, 1 entry
+ *   GET  /watchlist   (the PAGE)        -> "Choose who is watching"
+ *
+ *   PUT  /api/v1/progress/aurora-fall   -> written, 600 of 7680 seconds
+ *   GET  /            | grep "Continue watching"  -> nothing
+ *
+ * The second one is PW-0305's rail, and it had been broken SILENTLY since that
+ * task was marked DONE: `loadContinueWatching` answers `unavailable` and
+ * renders nothing, which is its documented behaviour for a refusal, so a
+ * developer saw a product with no continue-watching and no reason given.
+ *
+ * ==========================================================================
+ * WHY `globalThis` IS THE ONLY ANCHOR THAT WORKS
+ * ==========================================================================
+ *
+ * The two graphs share a Node process and therefore a realm; they do not share
+ * a module registry. `globalThis` is the one object both reach and the one
+ * identity neither can duplicate, which is why gpt-architect's round-101 ruling
+ * names it: "use a process-global identity anchored on globalThis, preferably
+ * through a stable Symbol.for(...) key".
+ *
+ * `Symbol.for` RATHER THAN A STRING PROPERTY. The registry is per-realm and
+ * keyed by description, so two independently-compiled copies of this module
+ * obtain the SAME symbol -- which a locally-created `Symbol()` would not, and
+ * which is the whole requirement. Against a plain string key it buys collision
+ * resistance: a symbol-keyed property is not enumerable by `Object.keys`, does
+ * not appear in a `JSON.stringify` of the global, and cannot be hit by
+ * something iterating `globalThis`.
+ *
+ * THE KEY IS VERSIONED. A change to `InMemoryStore`'s shape in a process that
+ * has already stored one -- which happens under HMR, where this module is
+ * re-evaluated while the global survives -- would otherwise hand new code a map
+ * built by old code. Bumping the suffix is how that is handled; it is cheaper
+ * than a migration for a store whose whole contract is that it is thrown away
+ * with the process.
+ *
+ * ==========================================================================
+ * WHAT IT DOES NOT DO
+ * ==========================================================================
+ *
+ * IT DOES NOT PERSIST. There is no disk, no file, no socket, no second process.
+ * The store is a property of one realm's global object and dies with it, which
+ * is the adapter's whole contract -- `index.ts` publishes
+ * "nothing here is durable" on every reason trail and that stays true.
+ * Persisting to disk to solve a module-identity problem is explicitly refused
+ * by the ruling, and would turn a development convenience into an undeclared
+ * database.
+ *
+ * IT DOES NOT CROSS PROCESSES. A second `node` has its own realm and therefore
+ * its own symbol registry and its own global; `in-memory-repository.test.ts`
+ * asserts that in a real child process rather than asserting Node's
+ * documentation.
+ *
+ * IT IS NOT THE DEFAULT FOR `createInMemoryRepository`. That function still
+ * defaults to a FRESH store, so every direct construction -- which is every
+ * test in this repository -- is isolated exactly as before. The sharing is a
+ * property of the COMPOSITION ROOT: `selectRepository` in `index.ts` is the one
+ * caller that asks for the process store, because it is the one caller whose
+ * job is to hand the whole process one repository. A default that shared would
+ * have made every suite in the app order-dependent at once.
+ *
+ * IT DOES NOT TOUCH POSTGRESQL. The ruling requires PostgreSQL behaviour to be
+ * unchanged, and the narrowest way to honour that is to share the STORE rather
+ * than the resolution: `index.ts`'s `cached` stays per-graph, so the `pg` pool
+ * count per process is exactly what it was. Sharing the resolution object would
+ * have collapsed two pools into one -- arguably better, certainly a change, and
+ * not one this task was asked to make. The ruling's own words are "one
+ * process-wide LOGICAL repository", and two closures over one store are one
+ * logical repository: identical behaviour, identical state, no observable
+ * difference.
+ * ---------------------------------------------------------------------- */
+
+/**
+ * The registry key, exported so a test can look in the same place this module
+ * writes to -- and so the cross-process test can use the real key rather than a
+ * copy of it that could drift.
+ */
+export const IN_MEMORY_STORE_GLOBAL_KEY = "liberty.in-memory-store.v1";
+
+const STORE_SLOT = Symbol.for(IN_MEMORY_STORE_GLOBAL_KEY);
+
+/** `globalThis`, with the one property this module owns. */
+interface GlobalWithStore {
+  [STORE_SLOT]?: InMemoryStore;
+}
+
+function slot(): GlobalWithStore {
+  return globalThis as unknown as GlobalWithStore;
+}
+
+/**
+ * The one in-memory store this PROCESS uses, created on first ask.
+ *
+ * `??=` rather than a presence test and an assignment: the two graphs are
+ * evaluated at different times but JavaScript is single-threaded per realm, so
+ * there is no window between the read and the write for a second caller to
+ * create a competing store.
+ */
+export function processInMemoryStore(): InMemoryStore {
+  const target = slot();
+  target[STORE_SLOT] ??= createInMemoryStore();
+  return target[STORE_SLOT];
+}
+
+/**
+ * Throw the process store away.
+ *
+ * EXPORTED FOR TESTS, AND REQUIRED BY THEM. A process-global is shared state,
+ * and shared state between tests is the order-dependence this repository has
+ * been bitten by six times -- `playwright.config.ts` says so and says it
+ * "treats determinism as correctness". Any suite that reaches
+ * `selectRepository`'s in-memory branch calls this first, so a test cannot
+ * inherit the rows another test left behind.
+ *
+ * It deletes the property rather than emptying the maps, so a caller still
+ * holding a reference to the old store keeps a coherent object instead of
+ * watching it empty underneath them.
+ */
+export function resetProcessInMemoryStore(): void {
+  delete slot()[STORE_SLOT];
+}
+
 /**
  * The development repository, plus the one fact about itself worth publishing.
  *

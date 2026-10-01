@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-01T03:02:31.035Z",
+  "generatedAt": "2026-10-01T16:29:25.129Z",
   "agent": "claude-frontend",
   "executionAvailable": true,
   "assigned": [
@@ -20,7 +20,8 @@
         "apps/web/src/components/catalog-card.tsx",
         "e2e/tests/watchlist.spec.ts",
         "apps/web/src/components/shell/navigation.ts",
-        "apps/web/src/components/continue-watching/continue-watching-ui.test.tsx"
+        "apps/web/src/components/continue-watching/continue-watching-ui.test.tsx",
+        "e2e/tests/search.spec.ts"
       ],
       "reviewDependencies": [
         "apps/web/src/app/api/v1/watchlist",
@@ -54,10 +55,10 @@
         },
         "e2e": {
           "status": "pass",
-          "at": "2026-10-01T02:38:10.493Z",
+          "at": "2026-10-01T16:26:45.193Z",
           "by": "claude-frontend",
-          "commitSha": "c63c8e89666932bd77b105ea6e882d195914b24c",
-          "evidence": "`npx playwright test --project=chromium tests/watchlist.spec.ts` at c63c8e8, EXECUTED in three\nconfigurations, exit 0 in all three. Browser: Chrome for Testing 151.0.7922.34, revision 1234 --\nthe build @playwright/test 1.62.1 pins, resolved from /root/.cache/ms-playwright (the container's\nPLAYWRIGHT_BROWSERS_PATH points at a 1194 tree, which was NOT used; `critical-journey.spec.ts`\nrecords why a shimmed revision is narrow local evidence rather than pinned-browser verification).\n\n1. DEVELOPMENT, in-memory adapter, development-header identity.\n   LIBERTY_E2E_WEB_MODE=development LIBERTY_E2E_PORT=3177\n   7 passed, 4 skipped, exit 0. Covers: the nav entry is a link; the route serves 200 and names\n   itself; the control's first paint is unpressable and says neither Add nor Remove; adding from a\n   title page writes the row and the control still says so after a RELOAD; removing takes it away;\n   a catalog card's control writes the card's own id and nothing else; and the refusal case below.\n\n2. PRODUCTION, no database -- a deployment with no identity system.\n   LIBERTY_E2E_PORT=3210\n   3 passed, 8 skipped, exit 0. Asserts that this build refuses HONESTLY: the heading is \"We\n   couldn't load your list\", the published reason is the one `src/env.ts` derives for the pinned\n   variables (`storage_not_configured`), and \"Nothing on your list yet\" is absent -- the\n   substitution that would tell a household their list is empty on the strength of never having\n   read it.\n\n3. PRODUCTION, REAL POSTGRESQL AND A REAL SIGNED-IN SESSION.\n   LIBERTY_E2E_PORT=3200 LIBERTY_E2E_DATABASE_URL=postgres://postgres@127.0.0.1:5433/lib_wl\n   PostgreSQL 16.15, database created for this run and migrated with the repository's own\n   `packages/persistence/migrations/0000_profile_scoped_identity.sql`. Sign-up and sign-in through\n   `/api/auth/*` against that database; the session is a row, as PL-0401 requires.\n   5 passed, 6 skipped, exit 0, AND RUN TWICE against the same (now non-empty) database to prove it\n   is idempotent -- the second run also 5 passed / 6 skipped / exit 0. Covers: an entry written\n   through the API is rendered on /watchlist, with the remove control, and clicking it removes the\n   ROW (proved by a reload and by reading the API back); a viewer who is not signed in gets the\n   sign-in panel carrying `next=%2Fwatchlist`; a signed-in viewer with no profile selected is sent\n   to /profiles rather than to an error.\n\nTHE REFUSAL CASE IS REAL AND NOTHING IS INTERCEPTED. No `page.route`, no fulfilled response, no\nplanted attribute. The page loads as an identity that HAS selected a profile, so the control\nresolves to a known \"Add to My List\" (asserted as a precondition -- a rollback from `unknown` would\nbe meaningless). The identity the PAGE sends is then changed to one that has selected nothing,\nwhich is what a sign-out in another tab does to a page already on screen. The server answers its\nown 403 `refused` envelope. Asserted: the status is 403; the control rolls back to \"Add to My List\"\nwith `aria-pressed=\"false\"`; the notice reads the sentence that belongs to that reason code\n(\"Choose a profile first.\"), not a generic failure; and the original identity's list is still empty\nwhen read at the wire.\n\nTWO TEST DEFECTS THIS GATE FOUND IN ITS OWN FIRST DRAFTS, recorded because they are the reason the\ncurrent assertions are shaped as they are.\n  (a) THE CLIENT USED THE WRONG VERB. `watchlistRequest` sent `POST`; the route exports `PUT` and\n      answers 405. The unit suite asserted `POST` beside the implementation and was green. Fixed in\n      the client, and `watchlist-ui.test.tsx` now reads the route module so the unit layer can\n      catch it next time.\n  (b) THE FIRST DRAFT ASSERTED THE OPTIMISTIC STATE AND CALLED IT THE SETTLED ONE. `click()` then\n      `toHaveText(\"Remove from My List\")` is satisfied before anything is sent. It then reloaded\n      while the write was still in flight -- the first PUT of a `next dev` process compiles the\n      route and took ~400ms -- read a list the write had not reached, and failed. The product was\n      right and the test was wrong: it had asserted a state the control publishes in order to say\n      \"I have not finished\". Every press now arms `page.waitForResponse` BEFORE clicking, returns\n      the status so the caller states which it expected, and asserts `aria-busy=\"false\"` so the\n      control's own account of being finished must agree with the network's. Nothing sleeps.\n\nWHAT THIS GATE DOES NOT COVER, STATED RATHER THAN IMPLIED.\n  - Only the `chromium` project ran. webkit, firefox and mobile-safari are in `playwright.config.ts`\n    and were NOT executed; only chromium 1234 is installed in this container. UNVERIFIED on the\n    other three engines.\n  - Configuration 1 cannot observe the LIST PAGE at all, and that is the pre-existing defect filed\n    as `defect.found` this round: the in-memory repository is instantiated once per Next module\n    graph, so nothing written through /api/v1/* is visible to a server component. The spec states\n    this in a skip reason rather than omitting the tests, and configuration 3 is what asserts the\n    list page. PW-0305's continue-watching rail is affected identically and silently; the\n    reproduction is in the event.\n  - Configuration 3 has no catalog metadata source, so the entry it renders is the `item: null`\n    branch (\"A title we can't name right now\") rather than a named card. A single configuration\n    with BOTH a real database and a catalog does not exist in this harness today. Named cards on\n    the list page are therefore UNVERIFIED end to end; the branch that produces them is covered by\n    `watchlist-page-data.test.ts` and the card itself is `CatalogCard`, unchanged.\n  - Nothing here was run on Windows and nothing here claims anything about Windows."
+          "commitSha": "42f5bb7d446c2a12361ba03093121e32b71ce305",
+          "evidence": "RE-RECORDED, REPLACING A NARROWER RUN. The previous result on this gate was real but incomplete: it\nran `npx playwright test --project=chromium tests/watchlist.spec.ts` -- one spec, the one this task\nwrote -- and PW-0304 mounts a control inside `CatalogCard`, which the home rails, the search\nresults, the continue-watching rail and the watchlist page all render. A change to a shared\ncomponent can only be cleared by the whole suite. Running it found a regression PW-0304 had caused\nin `e2e/tests/search.spec.ts`; that is repaired and disclosed as\n`task.corrective_applied_in_review`.\n\nWHAT RAN NOW, WHOLE PROJECTS, NO SPEC FILTER. Browser: Chrome for Testing 151.0.7922.34, revision\n1234 -- the build @playwright/test 1.62.1 pins, resolved from /root/.cache/ms-playwright. The\ncontainer's PLAYWRIGHT_BROWSERS_PATH points at a 1194 tree which was NOT used.\n\n1. DEVELOPMENT, in-memory adapter, development-header identity.\n   LIBERTY_E2E_WEB_MODE=development LIBERTY_E2E_PORT=3177\n     --project=chromium : 27 passed, 6 skipped, exit 0\n     --project=api      : 55 passed, 8 skipped, exit 0\n\n2. PRODUCTION, REAL POSTGRESQL 16.15 AND A REAL SIGNED-IN SESSION.\n   LIBERTY_E2E_PORT=3200 LIBERTY_E2E_DATABASE_URL=postgres://postgres@127.0.0.1:5433/lib_wl\n     --project=chromium --project=api : 72 passed, 24 skipped, exit 0\n   The database was created for this work and migrated with the repository's own\n   packages/persistence/migrations/0000_profile_scoped_identity.sql; sign-up and sign-in go through\n   /api/auth/*, and the session is a database row as PL-0401 requires.\n\nONE FALSE START IN THAT PRODUCTION RUN, RECORDED SO THE NUMBER ABOVE IS NOT MISREAD. An earlier\nattempt failed 6 of 97 with `[Better Auth] ... connect ECONNREFUSED 127.0.0.1:5433`. That was the\ncontainer's PostgreSQL having stopped, not the product: `pg_isready` reported no response, the\nserver was restarted with `pg_ctl`, and the rerun is the result above. No test was changed between\nthe two runs and no assertion was relaxed.\n\nWHAT THE WATCHLIST SPEC ITSELF COVERS, unchanged from the previous record: the nav entry is a link;\nthe route serves 200; the control's first paint is unpressable and says neither Add nor Remove;\nadding from a title page writes the row and the control still says so after a RELOAD; removing\ntakes it away; a catalog card's control writes the card's own id and nothing else; a REAL refused\nwrite (produced by changing the identity the page sends, not by intercepting anything) rolls back,\nannounces \"Choose a profile first.\", and leaves the list empty; and on the PostgreSQL run the list\npage renders a stored entry, removes it, and the row is gone after a reload.\n\nSTILL NOT COVERED, STATED RATHER THAN IMPLIED. webkit, firefox and mobile-safari were not executed\n-- only chromium 1234 is installed in this container. No configuration in this harness has both a\nreal database and a catalog, so a NAMED card on the list page is UNVERIFIED end to end; the\nproduction run exercises the `item: null` branch, which is the correct rendering there. Nothing\nhere ran on Windows and nothing here claims anything about Windows."
         }
       },
       "implementationAgent": "claude-frontend",
@@ -139,36 +140,6 @@
       "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. ",
       "owner": null,
       "gateResults": {}
-    },
-    {
-      "id": "PW-0313",
-      "priority": "P1",
-      "lane": "Frontend",
-      "status": "READY",
-      "title": "The in-memory store is two stores: server components and route handlers never share one",
-      "dependencies": [],
-      "allowedPaths": [
-        "apps/web/src/lib/db/index.ts",
-        "apps/web/src/lib/db/in-memory-repository.ts",
-        "apps/web/src/lib/db/in-memory-repository.test.ts"
-      ],
-      "reviewDependencies": [
-        "apps/web/src/lib/continue-watching.ts",
-        "apps/web/src/components/continue-watching",
-        "apps/web/src/components/watchlist/watchlist-page-data.ts",
-        "apps/web/src/app/watchlist",
-        "e2e/tests/watchlist.spec.ts",
-        "docs/DEVELOPMENT.md"
-      ],
-      "preferredAgent": "claude-frontend",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "typecheck",
-        "unit",
-        "e2e"
-      ],
-      "acceptance": "On a build with no DATABASE_URL, a row written through /api/v1/* is visible to a server component and the reverse, in the same process. REQUIRED: the continue-watching rail renders a title whose progress was written through the progress API -- which it does not today, silently. REQUIRED: /watchlist renders an entry added through the watchlist API. REQUIRED: the e2e coverage that watchlist.spec.ts currently skips with a stated reason on a development build is enabled by this task rather than deleted, and PW-0305's rail gains the equivalent. REQUIRED: whatever identity the fix uses must be justified against the alternative of declaring the in-memory adapter route-handler-only, which is a product decision rather than a refactor and would delete the list and the rail as currently designed.",
-      "notes": "DEFECT, PROPOSED FOR gpt-architect RULING, round 100. Found while building PW-0304 and REPRODUCED TWICE on a running server; the full reproduction, including the one for PW-0305's rail, is the `defect.found` event of 2026-10-01. In one line: `lib/db/index.ts` caches the resolution in a module-level binding and `in-memory-repository.ts` builds its Maps at construction, and Next's app router compiles the React Server Components graph and the route-handler graph separately, so each gets its own store. PostgreSQL is unaffected, which is why it has been invisible. Created unowned so the proposal is machine-readable rather than prose, and NOT claimed before the verdict -- the remedy touches PW-0305's allowedPaths and the choice between fixing the identity and narrowing the adapter's contract is gpt-architect's to make."
     }
   ]
 }

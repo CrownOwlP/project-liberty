@@ -141,9 +141,33 @@ const REFUSED_ANNOUNCEMENT = "Search is currently unavailable.";
 const MATCHING_QUERY = "aurora";
 const MATCHED_ARTEFACTS: readonly string[] = [DEMO.movie.id, DEMO.movie.title];
 
-/** The one live region on this surface. `search-form.tsx` renders exactly one. */
+/**
+ * The search form's own live region.
+ *
+ * IT USED TO BE `page.getByRole("status")` AND THAT WAS CORRECT UNTIL PW-0304.
+ * The old comment read "The one live region on this surface. `search-form.tsx`
+ * renders exactly one", and it stopped being true the moment a watchlist
+ * control appeared on every routable catalog card: the search RESULTS are
+ * catalog cards, that control renders an always-present `role="status"` notice
+ * so a refusal is announced rather than silently drawn, and the unscoped
+ * locator then resolved to one element per result plus this one.
+ *
+ *   strict mode violation: getByRole('status') resolved to 2 elements
+ *
+ * `aria-atomic` IS WHAT DISTINGUISHES IT, and it is not an arbitrary hook.
+ * `search-form.tsx` explains why that attribute is on this region and only
+ * this one: "every message here is one whole sentence ... without it,
+ * assistive technology is free to announce only the changed text nodes, and
+ * '1 title matches “a”.' becoming '12 titles match “au”.' is then heard as a
+ * couple of disconnected fragments". A per-control notice is not that kind of
+ * message and does not carry it.
+ *
+ * The count below is the part that keeps this honest: if a SECOND atomic
+ * status region ever appears on this surface, this fails loudly instead of
+ * quietly picking one of them.
+ */
 function announcement(page: Page): Locator {
-  return page.getByRole("status");
+  return page.locator('p[role="status"][aria-atomic="true"]');
 }
 
 /**
@@ -292,6 +316,12 @@ test("what a matching query finds is decided by the build, and both are asserted
    * is still non-vacuous: "0 titles match", the refusal sentence and an empty
    * region all fail it.
    */
+  /* EXACTLY ONE, asserted before it is read. The locator's own header explains
+   * why this count is the thing that keeps it honest: a second atomic status
+   * region on this surface must fail here rather than be silently picked
+   * between. This is the matching-query case, where the results carry the
+   * other (non-atomic) status regions, so it is the sharpest place to check. */
+  await expect(announcement(page)).toHaveCount(1);
   await expect(announcement(page)).toHaveText(/^[1-9]\d* titles? match(es)?\b/);
   await expect(announcement(page)).toContainText(MATCHING_QUERY);
 

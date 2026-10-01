@@ -3,13 +3,26 @@ import {
   isClassifiedRuntime,
   NonDeploymentEnvironment
 } from "../../app/api/deployment-environment";
-import { createInMemoryRepository } from "./in-memory-repository";
+import { createInMemoryRepository, processInMemoryStore } from "./in-memory-repository";
 import { createPostgresRepository } from "./postgres-repository";
 import type { LibertyRepository } from "./repository";
 
 export type { LibertyRepository, RepositoryAdapterId } from "./repository";
 export { REPOSITORY_ADAPTER_IDS } from "./repository";
-export { createInMemoryRepository, createInMemoryStore } from "./in-memory-repository";
+export {
+  IN_MEMORY_STORE_GLOBAL_KEY,
+  createInMemoryRepository,
+  createInMemoryStore,
+  processInMemoryStore,
+  /*
+   * RE-EXPORTED SO A TEST CAN REACH IT THROUGH THE SAME MODULE IT RESOLVES
+   * THROUGH (PW-0313). A suite that imported the reset from one path and the
+   * repository from another would, under a bundler that produced two copies,
+   * be resetting a store nothing reads -- which is the exact class of defect
+   * this task exists to fix, reintroduced in the test layer.
+   */
+  resetProcessInMemoryStore
+} from "./in-memory-repository";
 export type { InMemoryRepository, InMemoryStore } from "./in-memory-repository";
 export { createPostgresRepository, postgresRepositoryOver } from "./postgres-repository";
 
@@ -267,7 +280,19 @@ export function selectRepository(
     };
   }
 
-  const repository = createInMemoryRepository(environment);
+  /*
+   * THE PROCESS STORE, NOT A FRESH ONE (PW-0313).
+   *
+   * This is the one line that makes the in-memory adapter one logical
+   * repository per process rather than one per Next module graph.
+   * `createInMemoryRepository` still DEFAULTS to a fresh store, so every direct
+   * construction stays isolated; the composition root is the only caller that
+   * asks for the shared one, because it is the only caller whose job is to hand
+   * the whole process a single repository. `in-memory-repository.ts` carries
+   * the whole argument, including the two reproductions that prompted it and
+   * why PostgreSQL is untouched by this.
+   */
+  const repository = createInMemoryRepository(environment, processInMemoryStore());
   return {
     ok: true,
     repository,

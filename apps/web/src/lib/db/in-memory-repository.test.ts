@@ -11,9 +11,18 @@ import {
   type ProgressRepositoryFailure,
   type WatchlistEntryRow
 } from "@liberty/persistence";
-import { describe, expect, it } from "vitest";
+import { execFileSync } from "node:child_process";
+import { readFile } from "node:fs/promises";
+
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { NonDeploymentEnvironment } from "../../app/api/deployment-environment";
-import { createInMemoryRepository, createInMemoryStore } from "./in-memory-repository";
+import {
+  IN_MEMORY_STORE_GLOBAL_KEY,
+  createInMemoryRepository,
+  createInMemoryStore,
+  processInMemoryStore,
+  resetProcessInMemoryStore
+} from "./in-memory-repository";
 import type { LibertyRepository } from "./repository";
 
 /*
@@ -614,5 +623,175 @@ describe("watchlist", () => {
     const rejected = await store.listWatchlist({ scope, limit: Number.NaN });
     if (!isLimitRejection(rejected)) throw new Error("expected a limit refusal");
     expect(rejected.reason).toBe("limit_not_representable");
+  });
+});
+
+/* -------------------------------------------------------------------------
+ * One store per PROCESS, not one per module graph (PW-0313)
+ *
+ * WHAT THIS SUITE IS ABOUT. Next's app router compiles the React Server
+ * Components graph and the route-handler graph separately, so a module-level
+ * binding is per-graph and this module was evaluated twice in one Node
+ * process. A profile selected through the API was invisible to every server
+ * component; PW-0305's continue-watching rail therefore rendered nothing on
+ * every in-memory deployment, silently, from the day it was marked DONE.
+ *
+ * WHAT A UNIT SUITE CAN AND CANNOT SHOW. It cannot build two Next module
+ * graphs, so it cannot reproduce the original defect. What it CAN pin is the
+ * three properties the fix rests on, and each is asserted against the real
+ * exported functions rather than against a description of them:
+ *
+ *   1. two independent asks inside one realm get the same store;
+ *   2. a DIFFERENT realm -- a real second `node` process -- gets nothing,
+ *      which is what keeps "in-memory" honest;
+ *   3. the sharing is opt-in at the composition root, so every direct
+ *      construction stays isolated and no existing suite becomes
+ *      order-dependent.
+ *
+ * The end-to-end proof that the two graphs now agree is the e2e layer's, and
+ * it is the only layer that can give one.
+ * ---------------------------------------------------------------------- */
+
+describe("the process store (PW-0313)", () => {
+  /*
+   * THE RESET IS IN `beforeEach` AND NOT ONLY IN THE TESTS THAT DIRTY IT.
+   * gpt-architect's round-101 evidence item 7: "test reset/isolation must be
+   * explicit so one test cannot inherit another test's process-global
+   * repository accidentally." A process-global is shared state, and shared
+   * state between tests is the order-dependence this repository has been
+   * bitten by six times.
+   */
+  beforeEach(() => {
+    resetProcessInMemoryStore();
+  });
+
+  afterEach(() => {
+    /* And again afterwards, so a test in ANOTHER file that reaches
+     * `selectRepository`'s in-memory branch does not inherit this suite's
+     * rows. The two hooks are not redundant: the first protects this suite
+     * from the world, the second protects the world from this suite. */
+    resetProcessInMemoryStore();
+  });
+
+  it("hands the same store to every caller in one realm", () => {
+    /* The property the whole fix is: two module graphs are two callers, and
+     * what they must get is one object. */
+    expect(processInMemoryStore()).toBe(processInMemoryStore());
+  });
+
+  it("SHARES WRITES between two repositories built the way the two graphs build them", async () => {
+    /*
+     * The closest a unit test can get to the real defect. Each repository is
+     * constructed separately -- as the two graphs construct theirs -- over the
+     * store the composition root hands out. A write through one is a read
+     * through the other.
+     */
+    const writer = createInMemoryRepository(classifiedProcess(), processInMemoryStore());
+    const reader = createInMemoryRepository(classifiedProcess(), processInMemoryStore());
+
+    await createProfile(writer, HOUSEHOLD_A, "Shared");
+
+    const seen = await reader.listProfilesForAccount(sessionFor(HOUSEHOLD_A, null));
+    expect(seen.map((row) => row.displayName)).toEqual(["Shared"]);
+  });
+
+  it("shares in BOTH directions, not only from the route handler to the page", async () => {
+    /*
+     * Evidence item 3. The defect was symmetrical and the fix must be: a
+     * server component that writes -- which nothing does today, and which
+     * nothing should be prevented from doing by the storage layer -- must be
+     * visible to a route handler too.
+     */
+    const first = createInMemoryRepository(classifiedProcess(), processInMemoryStore());
+    const second = createInMemoryRepository(classifiedProcess(), processInMemoryStore());
+
+    await createProfile(second, HOUSEHOLD_B, "Other way");
+
+    expect(
+      (await first.listProfilesForAccount(sessionFor(HOUSEHOLD_B, null))).map((r) => r.displayName)
+    ).toEqual(["Other way"]);
+  });
+
+  it("is NOT what `createInMemoryRepository` defaults to, so every other suite stays isolated", async () => {
+    /*
+     * The decision that keeps this fix from making the whole app's test suite
+     * order-dependent in one commit. Sharing is a property of the COMPOSITION
+     * ROOT -- `selectRepository` asks for the process store -- and not of the
+     * constructor. Every direct construction in this repository, including
+     * `repository()` at the top of this file, still gets a fresh store.
+     */
+    const isolated = createInMemoryRepository(classifiedProcess());
+    await createProfile(isolated, HOUSEHOLD_A, "Private");
+
+    const shared = createInMemoryRepository(classifiedProcess(), processInMemoryStore());
+    expect(await shared.listProfilesForAccount(sessionFor(HOUSEHOLD_A, null))).toEqual([]);
+  });
+
+  it("is thrown away by the reset, and the next ask builds a new one", async () => {
+    const before = processInMemoryStore();
+    const repo = createInMemoryRepository(classifiedProcess(), before);
+    await createProfile(repo, HOUSEHOLD_A, "Transient");
+    expect(before.profiles.size).toBe(1);
+
+    resetProcessInMemoryStore();
+
+    const after = processInMemoryStore();
+    expect(after).not.toBe(before);
+    expect(after.profiles.size).toBe(0);
+    /* The old object is left COHERENT rather than emptied, so anything still
+     * holding it sees a consistent store instead of one that vanished under
+     * it. That is why the reset deletes the slot and does not call `.clear()`. */
+    expect(before.profiles.size).toBe(1);
+  });
+
+  it("DOES NOT CROSS PROCESSES -- asserted in a real second node, not from the manual", () => {
+    /*
+     * Evidence item 6: "separate processes must NOT accidentally share
+     * memory." The honest way to show it is to start another process and look,
+     * because the alternative -- reasoning that `globalThis` is per-realm -- is
+     * a claim about Node rather than about this module.
+     *
+     * The child uses `IN_MEMORY_STORE_GLOBAL_KEY`, THE REAL EXPORTED CONSTANT,
+     * interpolated from this import. A copied string literal would keep
+     * passing after the key was renamed, which is the one way this test could
+     * rot into a check on nothing.
+     *
+     * It also writes to the slot before reading, so the second child cannot
+     * pass merely because the first one never wrote anything.
+     */
+    const program = [
+      `const slot = Symbol.for(${JSON.stringify(IN_MEMORY_STORE_GLOBAL_KEY)});`,
+      `const inherited = globalThis[slot] === undefined ? "absent" : "present";`,
+      `globalThis[slot] = { written: true };`,
+      `process.stdout.write(inherited);`
+    ].join("");
+
+    const first = execFileSync(process.execPath, ["-e", program], { encoding: "utf8" });
+    const second = execFileSync(process.execPath, ["-e", program], { encoding: "utf8" });
+
+    expect(first).toBe("absent");
+    expect(second).toBe("absent");
+
+    /* And this process is unaffected by either of them, which is the same
+     * property from the other side. */
+    expect(processInMemoryStore().profiles.size).toBe(0);
+  });
+
+  it("writes nothing outside the realm's global object", async () => {
+    /*
+     * The ruling is explicit: "do not persist this data to disk merely to
+     * solve module identity." A source rule rather than a behavioural one,
+     * because the absence of a write is not observable by calling anything --
+     * and with a non-vacuity check, since a rule whose own file does not
+     * contain the thing it forbids is a rule that cannot fail.
+     */
+    const source = (await readFile(new URL("./in-memory-repository.ts", import.meta.url), "utf8"))
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/\/\/.*$/gm, "");
+
+    for (const forbidden of ["node:fs", "node:path", "localStorage", "writeFile"]) {
+      expect(source, `${forbidden} has no business in a volatile store`).not.toContain(forbidden);
+    }
+    expect(source, "the global anchor is what this rule is about").toContain("Symbol.for");
   });
 });

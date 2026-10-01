@@ -1,10 +1,18 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   isNonDeploymentEnvironmentName,
   NON_DEPLOYMENT_ENVIRONMENTS,
   NonDeploymentEnvironment
 } from "../../app/api/deployment-environment";
-import { DATABASE_URL_VARIABLE, selectRepository } from "./index";
+import {
+  DATABASE_URL_VARIABLE,
+  processInMemoryStore,
+  resetProcessInMemoryStore,
+  selectRepository
+} from "./index";
+
+/** One household, for the PW-0313 cases at the end of this file. */
+const HOUSEHOLD = { userId: "pw0313-household", sessionId: "pw0313-session" };
 
 /*
  * The selection, which is the security-relevant part of the composition root.
@@ -236,5 +244,115 @@ describe("a configured DATABASE_URL selects PostgreSQL", () => {
       /* The connection string must never reach a reason trail. */
       expect(resolved.detail).not.toContain("liberty:liberty");
     }
+  });
+});
+
+/* -------------------------------------------------------------------------
+ * The composition root hands out the PROCESS store (PW-0313)
+ *
+ * This is the half of the fix that lives here. `in-memory-repository.ts` owns
+ * the global anchor and its own suite proves the anchor behaves; what this
+ * file is about is that `selectRepository` ASKS FOR IT -- because the whole
+ * defect was that the composition root built a fresh store per module graph,
+ * and a correct anchor nobody calls fixes nothing.
+ * ---------------------------------------------------------------------- */
+
+describe("the in-memory branch resolves one store per process (PW-0313)", () => {
+  /*
+   * EXPLICIT ISOLATION, WHICH gpt-architect's ROUND-101 EVIDENCE ITEM 7 ASKS
+   * FOR BY NAME. Before this task every call to `selectRepository`'s in-memory
+   * branch produced a private store, so nothing in this file could leak into
+   * anything else. It can now, and the hooks are what keep this suite from
+   * being the thing that makes another one order-dependent.
+   */
+  beforeEach(() => {
+    resetProcessInMemoryStore();
+  });
+
+  afterEach(() => {
+    resetProcessInMemoryStore();
+  });
+
+  it("gives two independent resolutions the same underlying store", async () => {
+    /*
+     * THE REGRESSION, AS CLOSE AS A UNIT TEST GETS. Two calls to
+     * `selectRepository` stand in for the two Next module graphs: before
+     * PW-0313 each built its own `Map`s, and a profile created through one was
+     * invisible to the other. That is exactly what made `/watchlist` answer
+     * "Choose who is watching" for a session that had selected a profile, and
+     * what made PW-0305's continue-watching rail render nothing -- silently --
+     * on every build without a database.
+     *
+     * `selectRepository` is used rather than `resolveRepository` deliberately:
+     * the caching wrapper would hand back one object and the test would pass
+     * without the store being shared at all.
+     */
+    const environment = classifiedProcess();
+    const first = selectRepository(undefined, environment);
+    const second = selectRepository(undefined, environment);
+    expect(first.ok && second.ok).toBe(true);
+    if (!first.ok || !second.ok) return;
+
+    /* Two different repository objects -- so this is not passing because the
+     * resolution happened to be reused. */
+    expect(first.repository).not.toBe(second.repository);
+
+    const session = { account: HOUSEHOLD, activeProfileId: null };
+    const created = await first.repository.createProfile({
+      session,
+      displayName: "Across the graphs",
+      avatarKey: null,
+      maxRating: null,
+      instant: new Date("2026-10-01T00:00:00.000Z")
+    });
+    expect(created.ok).toBe(true);
+
+    expect((await second.repository.listProfilesForAccount(session)).map((r) => r.displayName))
+      .toEqual(["Across the graphs"]);
+  });
+
+  it("writes into the store the module publishes, not a private one", async () => {
+    /*
+     * Non-vacuity for the test above. Two resolutions could share a store that
+     * is nonetheless NOT `processInMemoryStore()` -- for instance if this file
+     * and the adapter resolved two copies of the module -- and the suite would
+     * be green while the two Next graphs still disagreed. This asserts the
+     * identity against the exported accessor.
+     */
+    const resolved = selectRepository(undefined, classifiedProcess());
+    expect(resolved.ok).toBe(true);
+    if (!resolved.ok) return;
+
+    await resolved.repository.createProfile({
+      session: { account: HOUSEHOLD, activeProfileId: null },
+      displayName: "Visible to the accessor",
+      avatarKey: null,
+      maxRating: null,
+      instant: new Date("2026-10-01T00:00:00.000Z")
+    });
+
+    expect([...processInMemoryStore().profiles.values()].map((row) => row.displayName)).toEqual([
+      "Visible to the accessor"
+    ]);
+  });
+
+  it("leaves the PostgreSQL branch alone", () => {
+    /*
+     * The ruling requires PostgreSQL behaviour to be unchanged, and the
+     * narrowest way to honour it was to share the STORE rather than the
+     * resolution -- so `index.ts`'s own `cached` is untouched and the `pg`
+     * pool count per process is exactly what it was. There is no database in
+     * this environment, so what is assertable is that the configured branch
+     * still answers from `DATABASE_URL` and never consults the in-memory
+     * anchor: a resolution that had started sharing would report the wrong
+     * adapter.
+     */
+    const resolved = selectRepository("postgres://liberty@localhost:5432/liberty", null);
+    expect(resolved.ok).toBe(true);
+    if (!resolved.ok) return;
+    expect(resolved.repository.adapterId).toBe("postgres");
+    expect(resolved.handle).not.toBeNull();
+    /* And it put nothing in the process store on the way past. */
+    expect(processInMemoryStore().profiles.size).toBe(0);
   });
 });
