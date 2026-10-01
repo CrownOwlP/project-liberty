@@ -252,14 +252,36 @@ jobs:
           }
           Write-Host "installed executable: $installed"
 
-          # THE SIDECAR CAME WITH IT. A bundle that shipped the shell and left
-          # the server behind would install cleanly and fail at first launch --
-          # on the commander's machine, which is the expensive place to find
-          # out.
-          foreach ($resource in @("sidecar\node.exe", "sidecar\server\server.js")) {
-            $path = Join-Path ${env:ProgramFiles} "Project Liberty\$resource"
-            if (-not (Test-Path $path)) { throw "the bundle did not carry $resource" }
-            Write-Host "packaged resource: $path"
+          # THE SIDECAR CAME WITH IT, AND THE CHECK DERIVES THE PATHS IT LOOKS
+          # FOR (PW-0107). A bundle that shipped the shell and left the server
+          # behind would install cleanly and fail at first launch -- on the
+          # commander's machine, which is the expensive place to find out.
+          #
+          # This step used to assert `sidecar\server\server.js` inline. That
+          # stopped meaning anything when PW-0106 made `liberty-sidecar.js` the
+          # entry the shell spawns: `server.js` is still SHIPPED as Next build
+          # output but is never run, so the check was proving the installer
+          # carried a file nothing starts. It drifted because the path was
+          # written down in a third place. `scripts/windows/verify-install.mjs`
+          # reads SERVER_RELATIVE_PATH and NODE_RELATIVE_PATH out of
+          # `src-tauri/src/sidecar.rs` -- the constants the shell itself uses --
+          # so a future rename moves this check with it instead of past it.
+          $installRoot = Join-Path ${env:ProgramFiles} "Project Liberty"
+
+          # THE NEGATIVE FIRST, on every run. A verification that has never been
+          # seen to fail is a verification nobody has tested. Pointed at a
+          # directory that exists and is not an install, it must exit non-zero.
+          node scripts/windows/verify-install.mjs "${env:TEMP}"
+          if ($LASTEXITCODE -eq 0) {
+            throw "verify-install.mjs passed against a directory that is not an install; the check proves nothing"
+          }
+          Write-Host "verify-install: correctly refused a non-install directory"
+
+          node scripts/windows/verify-install.mjs "$installRoot"
+          if ($LASTEXITCODE -ne 0) {
+            Get-ChildItem $installRoot -Recurse -ErrorAction SilentlyContinue |
+              Select-Object -First 60 | ForEach-Object { Write-Host $_.FullName }
+            throw "the installed tree is missing something the shell will reach for"
           }
 
           # UNINSTALL, AND PROVE IT LEFT. An installer that cannot be removed

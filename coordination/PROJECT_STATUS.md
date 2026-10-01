@@ -1,15 +1,15 @@
 # Project Liberty - Project Status
 
-> Generated 2026-10-01T01:20:44.231Z from the AI control plane.
+> Generated 2026-10-01T01:21:19.539Z from the AI control plane.
 
 **Overall completion:** 83/106 executable tasks (78%)
 
 ## Status summary
 
 - **BACKLOG:** 9
-- **READY:** 8
+- **READY:** 7
 - **CLAIMED:** 0
-- **IN_PROGRESS:** 1
+- **IN_PROGRESS:** 2
 - **REVIEW:** 2
 - **BLOCKED:** 3
 - **DONE:** 83
@@ -34,17 +34,17 @@
 - **PW-0105** [REVIEW] The sidecar half of the desktop contract was never wired into the server — owner: claude-media
 - **PL-0407** [REVIEW] The Drizzle snapshot names three primary keys the database does not have — owner: claude-backend
 - **PL-AI-0015** [IN_PROGRESS] The control-plane suite copies the packaged sidecar into every fixture and fills the disk — owner: claude-lead
+- **PW-0107** [IN_PROGRESS] The MSI verification checks a file the shell no longer spawns — owner: claude-infra
 
 ## Dispatch classification
 
-- **READY_AND_EXECUTABLE:** 8
+- **READY_AND_EXECUTABLE:** 7
 - **READY_BUT_EXTERNAL:** 0
 - **BLOCKED:** 3
 - **BACKLOG (dependency-gated):** 9
 
 ## Recommended executable wave
 
-- **PW-0107** -> claude-infra (P1/Infra) The MSI verification checks a file the shell no longer spawns
 - **PW-0304** -> claude-frontend (P1/Frontend) Watchlist becomes usable: an add control and a list
 - **PW-0307** -> claude-frontend (P1/Frontend) Series navigation and the next episode
 - **PW-0602** -> claude-test (P1/Test) The automated half of the Windows matrix, running on Windows
@@ -76,5 +76,5 @@ UNBLOCK WHEN: the commander runs Experiment 1a on real Windows hardware and hand
 - **claude-media:** 1/2 active
 - **claude-test:** 0/1 active
 - **claude-security:** 0/1 active
-- **claude-infra:** 0/1 active
+- **claude-infra:** 1/1 active
 - **human-commander:** 0/99 active (external lane; not locally executable)
