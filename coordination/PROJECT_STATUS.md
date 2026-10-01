@@ -1,15 +1,15 @@
 # Project Liberty - Project Status
 
-> Generated 2026-10-01T02:39:35.137Z from the AI control plane.
+> Generated 2026-10-01T03:02:31.031Z from the AI control plane.
 
 **Overall completion:** 83/107 executable tasks (78%)
 
 ## Status summary
 
 - **BACKLOG:** 9
-- **READY:** 7
+- **READY:** 6
 - **CLAIMED:** 0
-- **IN_PROGRESS:** 1
+- **IN_PROGRESS:** 2
 - **REVIEW:** 4
 - **BLOCKED:** 3
 - **DONE:** 83
@@ -32,6 +32,7 @@
 ## Active work
 
 - **PW-0304** [REVIEW] Watchlist becomes usable: an add control and a list — owner: claude-frontend
+- **PW-0307** [IN_PROGRESS] Series navigation and the next episode — owner: claude-frontend
 - **PW-0105** [REVIEW] The sidecar half of the desktop contract was never wired into the server — owner: claude-media
 - **PL-0407** [REVIEW] The Drizzle snapshot names three primary keys the database does not have — owner: claude-backend
 - **PL-AI-0015** [REVIEW] The control-plane suite copies the packaged sidecar into every fixture and fills the disk — owner: claude-lead
@@ -39,14 +40,13 @@
 
 ## Dispatch classification
 
-- **READY_AND_EXECUTABLE:** 7
+- **READY_AND_EXECUTABLE:** 6
 - **READY_BUT_EXTERNAL:** 0
 - **BLOCKED:** 3
 - **BACKLOG (dependency-gated):** 9
 
 ## Recommended executable wave
 
-- **PW-0307** -> claude-frontend (P1/Frontend) Series navigation and the next episode
 - **PW-0602** -> claude-test (P1/Test) The automated half of the Windows matrix, running on Windows
 
 ## Queued for external agents
@@ -71,7 +71,7 @@ UNBLOCK WHEN: the commander runs Experiment 1a on real Windows hardware and hand
 
 - **gpt-architect:** 0/6 active (external lane; not locally executable)
 - **claude-lead:** 1/2 active
-- **claude-frontend:** 1/2 active
+- **claude-frontend:** 2/2 active
 - **claude-backend:** 1/2 active
 - **claude-media:** 1/2 active
 - **claude-test:** 0/1 active

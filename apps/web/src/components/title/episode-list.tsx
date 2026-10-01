@@ -9,6 +9,7 @@ import {
 } from "../../app/title/title-detail";
 import { formatRuntime } from "../../lib/catalog";
 import { PLAY_BLOCKED_COPY } from "./play-cta";
+import { SeasonNavigation, type SeasonPanel } from "./season-navigation";
 import styles from "./title.module.css";
 
 /**
@@ -105,29 +106,48 @@ export function EpisodeList({ episodes }: EpisodeListProps) {
     );
   }
 
-  return (
-    <>
-      {seasons.map((season) => (
-        <section
-          className="section"
-          key={season.seasonNumber}
-          aria-labelledby={`season-${season.seasonNumber}`}
-        >
-          <div className="section-head">
-            <h2 id={`season-${season.seasonNumber}`}>Season {season.seasonNumber}</h2>
-            <small>{formatEpisodeCount(season.episodes.length)}</small>
-          </div>
-          {/*
-            A list, not a grid of divs — see `title.module.css` for why the
-            `role` is stated rather than left implicit.
-          */}
-          <ul className={`rail ${styles.episodeGrid}`} role="list">
-            {season.episodes.map((episode) => (
-              <EpisodeCard episode={episode} key={episode.id} />
-            ))}
-          </ul>
-        </section>
-      ))}
-    </>
-  );
+  /*
+   * THE SEASONS ARE HANDED TO A CLIENT COMPONENT AS RENDERED CONTENT (PW-0307).
+   *
+   * WHAT CHANGED AND WHAT DID NOT. Every card below this line is still built
+   * here, on the server, by the same `EpisodeCard` as before -- the rights
+   * gate, the per-episode link, the blocked copy. What moved is only which
+   * season is on screen, and that is a question about the viewer rather than
+   * about the series, so it belongs on the client.
+   *
+   * WHY `content` IS A RENDERED NODE RATHER THAN THE EPISODES THEMSELVES. If
+   * `SeasonNavigation` took `TitleEpisodeSummary[]` and rendered the cards, it
+   * would be a client component importing `app/title/title-detail` -- and with
+   * it `demo-title-details` and the whole title contract -- into the browser
+   * bundle, to decide a rights gate that has already been decided on the
+   * server. `components/auth/account-state.ts` records what that class of
+   * mistake costs: "a bundle boundary a unit suite cannot see and only
+   * `next build` enforces". Passing the rendered node keeps every one of those
+   * modules server-side; the client component receives markup and a season
+   * number and knows nothing else.
+   *
+   * THE FLAT STACK IS NOT GONE, IT IS THE FALLBACK. `SeasonNavigation` renders
+   * exactly the arrangement this function used to return -- a `section` per
+   * season, all of them open -- until its own effect has run, so a browser that
+   * did not execute the bundle keeps the page it had. Its header argues the
+   * point at length.
+   */
+  const panels: readonly SeasonPanel[] = seasons.map((season) => ({
+    seasonNumber: season.seasonNumber,
+    heading: `Season ${String(season.seasonNumber)}`,
+    summary: formatEpisodeCount(season.episodes.length),
+    content: (
+      /*
+        A list, not a grid of divs -- see `title.module.css` for why the
+        `role` is stated rather than left implicit.
+      */
+      <ul className={`rail ${styles.episodeGrid}`} role="list">
+        {season.episodes.map((episode) => (
+          <EpisodeCard episode={episode} key={episode.id} />
+        ))}
+      </ul>
+    )
+  }));
+
+  return <SeasonNavigation panels={panels} />;
 }

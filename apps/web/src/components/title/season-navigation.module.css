@@ -1,0 +1,73 @@
+/* -------------------------------------------------------------------------
+ * The season tab strip (PW-0307).
+ *
+ * ITS OWN MODULE RATHER THAN RULES IN `title.module.css`, for the reason
+ * `watchlist.module.css` gives for the same decision one task earlier: a style
+ * that lived in a shared file is a style another surface borrows. It also keeps
+ * this task off a file `title-styles.test.ts` parses rule by rule and that
+ * PW-0301 owns.
+ * ---------------------------------------------------------------------- */
+
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 14px;
+}
+
+.tab {
+  min-height: 2.75rem; /* a remote-control target, not a mouse target */
+  padding: 0.5rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.06);
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+/*
+ * THE SELECTED TAB IS NOT DISTINGUISHED BY COLOUR ALONE, which is the rule
+ * `title.module.css` already records for the episode row's Play link: `--accent`
+ * and `--muted` differ by 1.20:1 in luminance, so a recoloured tab is the same
+ * tab on a greyscale display or to a reader with a colour deficiency. The
+ * reversed background carries the state, and the underline carries it again in
+ * case a forced-colours mode discards the background.
+ */
+.tab[aria-selected="true"] {
+  background: var(--text);
+  color: #080a0f;
+  border-color: var(--text);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* The reviewer's standing note on this surface: there was no hover rule
+ * anywhere on it before PW-0302 added one. */
+.tab:hover {
+  border-color: var(--text);
+}
+
+/*
+ * FOCUS IS STATED RATHER THAN INHERITED. `globals.css` defines a global
+ * `:focus-visible` ring now, and this does not remove it -- it restates the
+ * offset, because a tab sits directly against its neighbour and a ring drawn
+ * flush to the border reads as part of the border.
+ */
+.tab:focus-visible {
+  outline: 2px solid var(--focus-ring, currentColor);
+  outline-offset: 3px;
+}
+
+/*
+ * THE PANEL'S OWN FOCUS RING. The panel is focusable so a keyboard user leaving
+ * the tab strip lands in the content it controls; without a visible ring that
+ * stop is a focus the viewer cannot see, which is worse than not being
+ * focusable at all.
+ */
+.panel:focus-visible {
+  outline: 2px solid var(--focus-ring, currentColor);
+  outline-offset: 4px;
+}

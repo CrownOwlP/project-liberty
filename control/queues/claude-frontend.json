@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-01T02:39:35.141Z",
+  "generatedAt": "2026-10-01T03:02:31.035Z",
   "agent": "claude-frontend",
   "executionAvailable": true,
   "assigned": [
@@ -63,16 +63,12 @@
       "implementationAgent": "claude-frontend",
       "updatedAt": "2026-10-01T02:38:10.744Z",
       "implementationBaseSha": "9039e20563dd314cb730c432e45e32caa50bab61"
-    }
-  ],
-  "review": [],
-  "reservedExternal": [],
-  "recommended": [
+    },
     {
       "id": "PW-0307",
       "priority": "P1",
       "lane": "Frontend",
-      "status": "READY",
+      "status": "IN_PROGRESS",
       "title": "Series navigation and the next episode",
       "dependencies": [
         "PW-0301",
@@ -81,12 +77,14 @@
       "allowedPaths": [
         "apps/web/src/components/title/episode-list.tsx",
         "apps/web/src/components/title/season-navigation.tsx",
+        "apps/web/src/components/title/season-navigation.module.css",
+        "apps/web/src/components/title/season-navigation.test.tsx",
         "apps/web/src/lib/next-episode.ts",
         "apps/web/src/lib/next-episode.test.ts"
       ],
       "reviewDependencies": [
         "packages/contracts/src/domains/title.ts",
-        "apps/web/src/lib/title-detail.ts",
+        "apps/web/src/app/title/title-detail.ts",
         "apps/web/src/components/player/player-surface.tsx",
         "apps/web/src/app/title/[titleId]/page.tsx"
       ],
@@ -99,9 +97,16 @@
       ],
       "acceptance": "A viewer can move through a series without going back to the catalog. Today every season of a series renders as one flat stack on the title page, with no season selector, no per-episode progress and no way to reach the next episode. REQUIRED: season navigation that does not lose the viewer's place. REQUIRED: per-episode watched and in-progress state from the progress API. REQUIRED: a next-episode affordance at the end of playback, honouring the SAME per-episode rights gate the episode list already applies -- an autoplay that skips the rights check would be the rights breach PL-0703 was opened for, in a new place. REQUIRED: the next-episode selection rule is a pure function with its own tests, not logic inside a component, because 'what plays next' is exactly the kind of decision this project requires to be reconstructible.",
       "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. ",
-      "owner": null,
-      "gateResults": {}
-    },
+      "owner": "claude-frontend",
+      "gateResults": {},
+      "implementationAgent": "claude-frontend",
+      "updatedAt": "2026-10-01T02:46:31.897Z",
+      "implementationBaseSha": "13798f8f45556ed233b894f94c6206944167c646"
+    }
+  ],
+  "review": [],
+  "reservedExternal": [],
+  "recommended": [
     {
       "id": "PW-0309",
       "priority": "P1",
