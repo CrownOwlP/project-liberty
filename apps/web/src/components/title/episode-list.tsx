@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { headers } from "next/headers";
 import type { TitleEpisodeSummary } from "@liberty/contracts/domains/title";
 import {
   formatEpisodeCount,
@@ -8,6 +9,12 @@ import {
   titleHref
 } from "../../app/title/title-detail";
 import { formatRuntime } from "../../lib/catalog";
+import {
+  episodeProgressLabel,
+  loadEpisodeProgress,
+  type EpisodeProgress,
+  type EpisodeProgressIndex
+} from "../../lib/episode-progress";
 import { PLAY_BLOCKED_COPY } from "./play-cta";
 import { SeasonNavigation, type SeasonPanel } from "./season-navigation";
 import styles from "./title.module.css";
@@ -31,8 +38,16 @@ import styles from "./title.module.css";
  * for it precisely because it carries no information — an empty `alt` on a
  * MEANINGFUL image would be the defect, and this is the other case.
  */
-function EpisodeCard({ episode }: { episode: TitleEpisodeSummary }) {
+function EpisodeCard({
+  episode,
+  progress
+}: {
+  episode: TitleEpisodeSummary;
+  /** Undefined when nothing is known -- see the badge below. */
+  progress: EpisodeProgress | undefined;
+}) {
   const availability = resolvePlayAvailability(episode);
+  const progressLabel = episodeProgressLabel(progress);
 
   /*
    * `episode.title` is `z.string().min(1)`, so an untitled episode cannot reach
@@ -48,6 +63,28 @@ function EpisodeCard({ episode }: { episode: TitleEpisodeSummary }) {
         <Link href={titleHref(episode.id)}>{name}</Link>
       </h3>
       <p>{formatRuntime(episode.runtimeMinutes)}</p>
+      {/*
+        WATCHED AND IN-PROGRESS STATE (PW-0307), AND THE ABSENT CASE IS THE
+        ONE WORTH READING.
+
+        `episodeProgressLabel` answers `null` for BOTH "nothing was watched"
+        and "nothing was read", and nothing is rendered for either. The two
+        are different facts and only one of them could be drawn: a badge is a
+        claim, and a request that failed to read a profile's progress -- no
+        session, no profile chosen, no database -- has not earned one. Marking
+        such an episode "not watched" would tell a household they have not
+        seen it on the strength of never having looked, which is the
+        substitution `app/page.tsx` refuses for the catalog and
+        `watchlist-source.ts` refuses for the list.
+
+        TEXT, NOT A COLOUR OR AN ICON. The same rule `title.module.css`
+        records for the episode row's Play link: `--accent` and `--muted`
+        differ by 1.20:1 in luminance, so a recoloured row is the same row on
+        a greyscale display or to a reader with a colour deficiency. The
+        percentage is also the figure a screen reader can speak, which a
+        progress bar is not.
+      */}
+      {progressLabel === null ? null : <p className="code">{progressLabel}</p>}
       {availability.status === "playable" ? (
         <p>
           {/*
@@ -89,7 +126,25 @@ export interface EpisodeListProps {
  * link — because the alternative is a heading followed by nothing, which looks
  * exactly like the page half-rendered.
  */
-export function EpisodeList({ episodes }: EpisodeListProps) {
+/*
+ * AN ASYNC SERVER COMPONENT SINCE PW-0307, and the read is here rather than in
+ * the page for the reason `continue-watching-rail.tsx` gives about its own: the
+ * page should not have to know that this list needs the progress table, and a
+ * prop threaded down from `app/title/[titleId]/page.tsx` would make every
+ * caller of this component responsible for a read only this component uses.
+ *
+ * ONE READ FOR THE WHOLE SERIES, not one per episode -- `lib/episode-progress.ts`
+ * argues the query shape and owns the page size. It never throws, and a failure
+ * renders the list with no badges rather than an error: the episodes are still
+ * listed and still playable, and the state is supplementary.
+ *
+ * WHAT THIS COSTS, STATED. The title route is already dynamic for a signed-in
+ * viewer; this read makes the episode list depend on the identity store as well
+ * as the metadata source. That is the same dependency the continue-watching
+ * rail already took on the home page, and it is why the failure is silent here
+ * too.
+ */
+export async function EpisodeList({ episodes }: EpisodeListProps) {
   const seasons = groupEpisodesBySeason(episodes);
 
   if (seasons.length === 0) {
@@ -132,6 +187,35 @@ export function EpisodeList({ episodes }: EpisodeListProps) {
    * did not execute the bundle keeps the page it had. Its header argues the
    * point at length.
    */
+  /*
+   * READ AFTER THE EMPTY CHECK ABOVE, so a series with no episodes costs no
+   * query -- and `loadEpisodeProgress` refuses an empty id list for the same
+   * reason, which is belt and braces rather than duplication: this component
+   * is not the only possible caller.
+   */
+  const read = await loadEpisodeProgress(
+    await headers(),
+    episodes.map((episode) => episode.id)
+  );
+  /*
+   * A FAILED READ IS `unknown` FOR EVERY EPISODE, NOT AN EMPTY INDEX.
+   *
+   * The two render identically -- neither draws a badge -- so this looks like
+   * a distinction without a difference, and it is not. An empty index says
+   * "no episode has a row"; `unknown` says "this request did not find out".
+   * Writing the first when the second is true is the lie the badge rule is
+   * about, it would be invisible here and visible the moment anything else
+   * consumed this index, and it would leave `EpisodeProgress["state"]`
+   * carrying a member nothing produces -- which is how a state stops being
+   * handled.
+   */
+  const progress: EpisodeProgressIndex =
+    read.status === "ok"
+      ? read.byContentId
+      : new Map<string, EpisodeProgress>(
+          episodes.map((episode) => [episode.id, { state: "unknown" }])
+        );
+
   const panels: readonly SeasonPanel[] = seasons.map((season) => ({
     seasonNumber: season.seasonNumber,
     heading: `Season ${String(season.seasonNumber)}`,
@@ -143,7 +227,11 @@ export function EpisodeList({ episodes }: EpisodeListProps) {
       */
       <ul className={`rail ${styles.episodeGrid}`} role="list">
         {season.episodes.map((episode) => (
-          <EpisodeCard episode={episode} key={episode.id} />
+          <EpisodeCard
+            episode={episode}
+            key={episode.id}
+            progress={progress.get(episode.id)}
+          />
         ))}
       </ul>
     )

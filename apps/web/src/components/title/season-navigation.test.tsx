@@ -245,7 +245,22 @@ describe("the episode list still owns the cards", () => {
 
     const list = await sourceOf("./episode-list.tsx");
     expect(list).toContain("<SeasonNavigation panels={panels} />");
-    /* And the card is still built there, by the same component as before. */
-    expect(list).toContain("<EpisodeCard episode={episode}");
+    /*
+     * And the card is still built there, by the same component as before.
+     *
+     * MATCHED AS TWO FACTS RATHER THAN AS ONE LITERAL. This used to assert the
+     * exact string `<EpisodeCard episode={episode}` and it broke the moment
+     * PW-0307 added a second prop and the element wrapped onto several lines
+     * -- a test that fails because a formatter moved a newline is asserting
+     * the formatting, not the property. The property is that the episode list
+     * is what renders the card.
+     */
+    expect(list).toContain("<EpisodeCard");
+    expect(list).toContain("episode={episode}");
+    /* And the state it draws comes from the loader, not from anything this
+     * component decided: the index is read, and the card is handed one
+     * episode's entry out of it. */
+    expect(list).toContain("progress={progress.get(episode.id)}");
+    expect(list).toContain("loadEpisodeProgress(");
   });
 });
