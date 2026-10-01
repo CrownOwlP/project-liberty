@@ -9543,6 +9543,36 @@
       "completedAt": "2026-09-28T02:10:16.460Z"
     },
     {
+      "id": "PW-0313",
+      "priority": "P1",
+      "lane": "Frontend",
+      "status": "READY",
+      "title": "The in-memory store is two stores: server components and route handlers never share one",
+      "dependencies": [],
+      "allowedPaths": [
+        "apps/web/src/lib/db/index.ts",
+        "apps/web/src/lib/db/in-memory-repository.ts",
+        "apps/web/src/lib/db/in-memory-repository.test.ts"
+      ],
+      "reviewDependencies": [
+        "apps/web/src/lib/continue-watching.ts",
+        "apps/web/src/components/continue-watching",
+        "apps/web/src/components/watchlist/watchlist-page-data.ts",
+        "apps/web/src/app/watchlist",
+        "e2e/tests/watchlist.spec.ts",
+        "docs/DEVELOPMENT.md"
+      ],
+      "preferredAgent": "claude-frontend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "e2e"
+      ],
+      "acceptance": "On a build with no DATABASE_URL, a row written through /api/v1/* is visible to a server component and the reverse, in the same process. REQUIRED: the continue-watching rail renders a title whose progress was written through the progress API -- which it does not today, silently. REQUIRED: /watchlist renders an entry added through the watchlist API. REQUIRED: the e2e coverage that watchlist.spec.ts currently skips with a stated reason on a development build is enabled by this task rather than deleted, and PW-0305's rail gains the equivalent. REQUIRED: whatever identity the fix uses must be justified against the alternative of declaring the in-memory adapter route-handler-only, which is a product decision rather than a refactor and would delete the list and the rail as currently designed.",
+      "notes": "DEFECT, PROPOSED FOR gpt-architect RULING, round 100. Found while building PW-0304 and REPRODUCED TWICE on a running server; the full reproduction, including the one for PW-0305's rail, is the `defect.found` event of 2026-10-01. In one line: `lib/db/index.ts` caches the resolution in a module-level binding and `in-memory-repository.ts` builds its Maps at construction, and Next's app router compiles the React Server Components graph and the route-handler graph separately, so each gets its own store. PostgreSQL is unaffected, which is why it has been invisible. Created unowned so the proposal is machine-readable rather than prose, and NOT claimed before the verdict -- the remedy touches PW-0305's allowedPaths and the choice between fixing the identity and narrowing the adapter's contract is gpt-architect's to make."
+    },
+    {
       "id": "PW-0401",
       "priority": "P1",
       "lane": "Backend",
