@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-02T02:09:53.036Z",
+  "generatedAt": "2026-10-02T13:14:03.213Z",
   "agent": "claude-test",
   "executionAvailable": true,
   "assigned": [
@@ -56,6 +56,29 @@
   "review": [],
   "reservedExternal": [],
   "recommended": [
+    {
+      "id": "PL-0713",
+      "priority": "P1",
+      "lane": "Test",
+      "status": "READY",
+      "title": "The desktop forwarder spec shares one ledger across parallel workers",
+      "dependencies": [],
+      "allowedPaths": [
+        "e2e/tests/playback-session.desktop.api.spec.ts"
+      ],
+      "reviewDependencies": [
+        "e2e/src/backend-stub.mjs",
+        "e2e/playwright.config.ts"
+      ],
+      "preferredAgent": "claude-test",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "e2e"
+      ],
+      "acceptance": "The desktop forwarder spec gives the same answer however many workers Playwright runs it with. It does not today: the stub backend keeps ONE request ledger for the whole process, three tests clear it and then assert it holds exactly their own request, and playwright.config.ts sets fullyParallel: true -- which splits tests WITHIN a file across workers. A two-core machine gets one worker and the file passes; a CI runner gets several and a neighbour's forwarded request lands between the clear and the read. CI run 37007312900 failed exactly that way on three assertions, and --workers=4 reproduces it locally. REQUIRED: the isolation is structural rather than a matter of how many cores the machine running it happens to have. REQUIRED: toHaveLength(1) survives unchanged -- it is the assertion that a forwarder neither retries nor fans out, which the spec records as 'a duplicated session request against a real backend is a duplicated authorization', and relaxing it to 'at least one' would delete the check in order to make the schedule convenient. REQUIRED: the repair is demonstrated under more workers than the machine has cores, because a pass at one worker is what hid this for as long as it was hidden.",
+      "notes": "FILED IN ROUND 104 from CI run 37007312900 on d6d0324, which is the first run after the branch was published. Not caused by that round: neither PW-0309 nor PW-0503 touches this spec, the stub or the forwarder."
+    },
     {
       "id": "PW-0602",
       "priority": "P1",

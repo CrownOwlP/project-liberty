@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-02T02:09:53.035Z",
+  "generatedAt": "2026-10-02T13:14:03.211Z",
   "agent": "claude-frontend",
   "executionAvailable": true,
   "assigned": [
@@ -22,7 +22,10 @@
         "apps/web/src/lib/next-episode.ts",
         "apps/web/src/lib/next-episode.test.ts",
         "apps/web/src/lib/episode-progress.ts",
-        "apps/web/src/lib/episode-progress.test.ts"
+        "apps/web/src/lib/episode-progress.test.ts",
+        "apps/web/src/app/title/demo-title-details.ts",
+        "apps/web/src/app/title/demo-title-details.test.ts",
+        "e2e/tests/series-navigation.spec.ts"
       ],
       "reviewDependencies": [
         "packages/contracts/src/domains/title.ts",
@@ -43,17 +46,24 @@
       "gateResults": {
         "typecheck": {
           "status": "pass",
-          "at": "2026-10-01T23:14:13.130Z",
+          "at": "2026-10-02T13:01:27.950Z",
           "by": "claude-frontend",
-          "commitSha": "aa80fac77fe2a7f36bf673a3dd7ea619ab861445",
-          "evidence": "`npm run typecheck` (turbo run typecheck): Tasks 22 successful, 22 total, exit 0. Also run directly\nas `npx tsc --noEmit -p apps/web/tsconfig.json`, exit 0.\n\n`EpisodeList` became an ASYNC server component in this round and the compiler accepts it where it\nis mounted -- `app/title/[titleId]/page.tsx` renders `<EpisodeList episodes={...} />` and is itself\na server component, so the async child is an ordinary RSC child rather than a promise somebody has\nto await. No `any` was added; the progress index is a `ReadonlyMap<string, EpisodeProgress>` and\nthe card takes `EpisodeProgress | undefined`, so the absent case is in the type rather than in a\nconvention."
+          "commitSha": "5dad6d3575f990a650600256096ead7334913435",
+          "evidence": "Re-recorded at 5dad6d3575f990a650600256096ead7334913435, superseding the aa80fac evidence: this round changed demo-title-details.ts and added an e2e spec, so the earlier result describes a tree that no longer exists. npx tsc --noEmit in apps/web: exit 0. cd e2e && npx tsc --noEmit: exit 0, which matters because series-navigation.spec.ts is new and imports DEMO from src/fixtures rather than src/env -- the compiler caught that on the first attempt."
         },
         "unit": {
           "status": "pass",
-          "at": "2026-10-01T23:14:13.255Z",
+          "at": "2026-10-02T13:01:37.195Z",
           "by": "claude-frontend",
-          "commitSha": "aa80fac77fe2a7f36bf673a3dd7ea619ab861445",
-          "evidence": "`npm run test` (turbo run test): Tasks 22 successful, 22 total, exit 0. `apps/web` alone is 81 test\nfiles / 1417 tests passed. lint 12/12 exit 0 (one pre-existing warning in\n`lib/db/in-memory-repository.test.ts`, not from this task).\n\nWHAT THIS TASK'S SUITES COVER, 47 cases across three files.\n\n`lib/next-episode.test.ts` -- 15. The pure \"what plays next\" rule: the ordinary case, independence\nfrom the caller's order, the season-boundary crossing, the three absences told apart, and the\nrights cases -- that an undeclared episode is never offered, that what was passed over is\nREPORTED, that the href returned is the gate's own rather than one the module built, and a property\ntest that walks a mixed series and checks every offer against `resolvePlayAvailability`\nindependently.\n\n`components/title/season-navigation.test.tsx` -- 14. The first render is the flat stack with no tab\nstrip, which is the property that keeps a browser without the bundle from losing four of five\nseasons; a one-season series is never given a selector; and the post-hydration rules this\nenvironment cannot execute are asserted against source with a non-vacuity check beside each --\nroving tabindex, the four arrow keys, `preventDefault` only after a key has matched, panels\n`hidden` rather than unmounted (so find-in-page still sees the whole series), `aria-controls`\npointing at ids the same builders produce, and the derivation that makes a stale season selection\nunrepresentable rather than repaired.\n\n`lib/episode-progress.test.ts` -- 18, new this round. The MAPPING from `continueWatchingVerdict`'s\nthree answers onto what an episode list says, which is where this module can be wrong in a way a\nviewer sees: finished means watched; BARELY STARTED means unwatched, not in progress -- opening a\ntitle and leaving writes a row, and a resume badge on it would re-introduce one surface over the\nmistake `RESUMABLE_MINIMUM_SECONDS` exists to prevent; a lease row is unwatched; an unknown runtime\nis in progress with a NULL fraction and never zero. Plus what it refuses to index (a row for a\ntitle this page is not showing; an episode with no row stays ABSENT rather than being asserted\nunwatched), that it honours the store's order for a duplicate rather than re-sorting, and the badge\ncopy -- including that `unknown` renders NOTHING, because a badge is a claim and a failed read has\nnot earned one.\n\nEVERY THRESHOLD IS READ FROM THE EXPORTED CONSTANTS, never written as a literal:\n`FINISHED_TAIL_SECONDS`, `FINISHED_FRACTION`, `RESUMABLE_MINIMUM_SECONDS` and\n`CONTINUE_WATCHING_QUERY_LIMIT` are all imported from `lib/continue-watching.ts`. A test that\nhardcoded 90 and 0.95 would pass after somebody changed the policy and forgot the test.\n\nONE EXISTING ASSERTION WAS REWRITTEN AND IT WAS LOOSENED ON PURPOSE, which is the opposite of this\nrepository's usual direction, so it is called out. `season-navigation.test.tsx` asserted the exact\nstring `<EpisodeCard episode={episode}`; adding a second prop wrapped that element onto several\nlines and broke it. A test that fails because a formatter moved a newline is asserting the\nformatting. It now asserts two facts instead -- `<EpisodeCard` and `episode={episode}` -- and GAINS\ntwo: that the card is handed `progress={progress.get(episode.id)}` and that the index comes from\n`loadEpisodeProgress(`. Net stricter about the property, looser about the whitespace.\n\nVERIFIED ON A RUNNING SERVER, not only in the suite. Development build, in-memory adapter, a\nprofile selected, `/title/northstar`:\n  before any progress ................ no badges at all\n  PUT 900 of 3000 on northstar-s1e2 ... \"30% watched\" appears\n  PUT 2990 of 3000 on northstar-s1e3 .. \"Watched\" appears (inside FINISHED_TAIL_SECONDS)\nThat read only works at all because PW-0313 landed first: before it, a server component could not\nsee what the progress API had written."
+          "commitSha": "5dad6d3575f990a650600256096ead7334913435",
+          "evidence": "npx vitest run in apps/web at 5dad6d3575f990a650600256096ead7334913435: 84 files / 1494 tests, exit 0. Six new cases in demo-title-details.test.ts run the REAL decision over the REAL catalog rather than over fixtures the test built for itself -- northstar has two seasons that still sum to its advertised episodeCount, episodes are numbered within their season, runtime is derived from the ordinal in the series so season 2 episode 1 is not a byte copy of season 1 episode 1, resolveNextEpisode crosses the boundary from northstar-s1e5 to northstar-s2e1, it ends the series at northstar-s2e3 rather than wrapping, and harbor-lights stays single-season with harbor-lights-s1e6's rights still null. NON-VACUITY, each reverted after measuring: collapsing northstar's layout back to [8] fails 4 of the 6; a layout of [5,2] fails all of them with the invariant's own message, 'the season layout for northstar covers 7 episodes but its catalog entry advertises 8'. lint: 0 errors (1 pre-existing warning in PW-0313's surface, untouched)."
+        },
+        "e2e": {
+          "status": "pass",
+          "at": "2026-10-02T13:01:51.755Z",
+          "by": "claude-frontend",
+          "commitSha": "5dad6d3575f990a650600256096ead7334913435",
+          "evidence": "Playwright 1.62.1, chromium revision 1234, retries 0, at 5dad6d3575f990a650600256096ead7334913435. THE FIRST BROWSER COVERAGE THIS TASK HAS EVER HAD, and the reason it could not exist before is recorded in the spec: every demo series had one season, so a tab strip with one tab was all any build could show. e2e/tests/series-navigation.spec.ts, 6 cases, 18/18 over --repeat-each=3 in development. It proves two tabs, different episodes behind each (5 and 3, summing to the advertised 8), mouse switching both ways, and the keyboard -- roving tabindex, ArrowRight, Home and End with automatic activation, which is the first keyboard interaction in this application with a test behind it. Two assertions are about absence: a one-season series gets NO tablist rather than a hidden one, and the closed season is absent from the ACCESSIBILITY TREE, which is what distinguishes hidden from styling a panel away. WHOLE PROJECTS, three configurations, all exit 0: development chromium+api 93 passed / 14 skipped; production no database 61 passed / 46 skipped; production + real PostgreSQL 16.15 at postgres://postgres@127.0.0.1:5433/lib_wl, 8 tables asserted, 76 passed / 31 skipped. series-navigation skips outside development because those builds serve no catalog metadata, which is the existing convention and the reason the skip count rises. THREE CORRECTIONS THE BROWSER MADE, every one of them the test being wrong rather than the product: getByRole does not see a hidden subtree; a single-season series renders the flat stack and has no season-panel testid at all; and a bare link count gave 11 for 6 episodes because each card carries a title link, so play affordances are counted by accessible name. WHAT THIS GATE DOES NOT COVER: clause 3, the end-of-playback next-episode affordance, is UNBUILT -- it lives in player-surface.tsx, which the round-103 ruling puts out of bounds until PW-0306 completes. PW-0307 stays IN_PROGRESS. UNVERIFIED: Linux chromium in a container; no Windows runtime, no WebView2, no attended GUI behaviour is claimed."
         }
       },
       "implementationAgent": "claude-frontend",
