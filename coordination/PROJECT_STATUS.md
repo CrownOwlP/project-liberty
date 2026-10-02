@@ -1,18 +1,18 @@
 # Project Liberty - Project Status
 
-> Generated 2026-10-02T15:52:14.228Z from the AI control plane.
+> Generated 2026-10-02T17:05:24.526Z from the AI control plane.
 
-**Overall completion:** 90/110 executable tasks (82%)
+**Overall completion:** 91/110 executable tasks (83%)
 
 ## Status summary
 
 - **BACKLOG:** 9
-- **READY:** 3
+- **READY:** 2
 - **CLAIMED:** 0
-- **IN_PROGRESS:** 1
-- **REVIEW:** 2
+- **IN_PROGRESS:** 2
+- **REVIEW:** 1
 - **BLOCKED:** 5
-- **DONE:** 90
+- **DONE:** 91
 - **CANCELED:** 0
 - **SUPERSEDED:** 4
 
@@ -31,13 +31,13 @@
 
 ## Active work
 
-- **PL-0713** [REVIEW] The desktop forwarder spec shares one ledger across parallel workers — owner: claude-test
 - **PW-0208** [REVIEW] An LGPL-compatible libmpv and FFmpeg the product may actually ship — owner: claude-infra
 - **PW-0307** [IN_PROGRESS] Series navigation and the next episode — owner: claude-frontend
+- **PW-0602** [IN_PROGRESS] The automated half of the Windows matrix, running on Windows — owner: claude-test
 
 ## Dispatch classification
 
-- **READY_AND_EXECUTABLE:** 3
+- **READY_AND_EXECUTABLE:** 2
 - **READY_BUT_EXTERNAL:** 0
 - **BLOCKED:** 5
 - **BACKLOG (dependency-gated):** 9

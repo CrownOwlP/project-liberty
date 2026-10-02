@@ -48,6 +48,45 @@ name: Windows package
 # script could swallow a failure silently -- a PowerShell block, which does NOT
 # stop on a non-zero native exit code by default -- sets
 # `$ErrorActionPreference` and checks `$LASTEXITCODE` explicitly.
+#
+# ----------------------------------------------------------------------------
+# THE ONE EXCEPTION, NAMED, DATED AND WITH ITS REMOVAL CONDITION WRITTEN DOWN
+# ----------------------------------------------------------------------------
+#
+# **"Observe the installer lifecycle harness (non-blocking)"** carries
+# `continue-on-error: true`. It is the only step in this file that does, and
+# it is a measurement rather than a gate. PW-0602, round 107.
+#
+# WHY AN EXCEPTION EXISTS AT ALL. `scripts/windows/lifecycle.mjs` is 30 unit
+# cases and zero runs against a real Windows machine. Its residue classifier
+# inspects `Win32_Service`, `Get-ScheduledTask` and `Get-Process` on a host
+# nobody has seen, and this job is the only green signal this project has.
+# Arming an unrun gate against the one working build is how a project loses
+# its last working build; running it beside the real gate and reading what it
+# says costs one Windows run and risks nothing.
+#
+# WHY `continue-on-error` RATHER THAN SWALLOWING THE EXIT CODE. The rule above
+# forbids a step that hides a failure. This step does the opposite: it throws
+# on a non-zero exit exactly like every other step here, and GitHub records
+# the failure, renders the step red, and continues. The result is visible on
+# the run page instead of buried in a log nobody reads. A PowerShell block
+# that quietly returned 0 would be the thing the rule was written against.
+#
+# HOW IT GOES AWAY. Read the lifecycle report on the run page -- the step
+# after it publishes the report to the job summary for exactly that purpose.
+# Then, in a SECOND commit: delete the inline
+# "Install the MSI, verify it landed, uninstall it" step, delete
+# `continue-on-error` from this one, and let the harness be the gate. If the
+# report shows F1 reporting `not-run`, or residue entries belonging to the
+# runner rather than to the product, those are defects in `scripts/windows/**`
+# -- PW-0502's and PW-0503's surface, not this task's -- and they are fixed
+# before the arming commit, not after. The full plan, including what would
+# make arming the wrong call, is `coordination/WINDOWS_LIFECYCLE_WIRING.md`
+# sections 6 and 7.
+#
+# IF YOU ARE READING THIS AND THE HARNESS IS STILL NON-BLOCKING, the
+# observation step has not been acted on, and this job is still proving only
+# what the inline block proves.
 
 on:
   push:
@@ -296,6 +335,180 @@ jobs:
           if (Test-Path $installed) { throw "uninstalled, but $installed is still there" }
           Write-Host "uninstalled cleanly"
 
+      # ==================================================================
+      # THE LIFECYCLE HARNESS, OBSERVED BEFORE IT IS TRUSTED (PW-0602)
+      # ==================================================================
+      #
+      # WHAT THIS ADDS THAT THE INLINE BLOCK ABOVE CANNOT. The inline block
+      # installs, verifies and uninstalls. `scripts/windows/lifecycle.mjs`
+      # performs the AUTO half of `docs/WINDOWS_CERTIFICATION.md` section F --
+      # the document that already assigns each lifecycle row an owner -- and
+      # three things fall out of that which an inline PowerShell block does not
+      # have:
+      #
+      #   - it DERIVES the installed paths from `src-tauri/src/sidecar.rs`, the
+      #     constants the shell itself compiles, rather than restating them
+      #     here. Restating them in a third place is what turned this job's
+      #     only install assertion into a check that the MSI carried a file
+      #     nothing starts (round 99);
+      #   - it CLASSIFIES residue after uninstall -- leftover service,
+      #     scheduled task, process still running out of the install root,
+      #     install-root leftovers -- by install-root containment and by the
+      #     product's own registered names, never by the substring "liberty",
+      #     so it cannot accuse the runner's own software;
+      #   - it performs F4, REINSTALL, which nothing in this job does today.
+      #
+      # IT RUNS AFTER THE INLINE BLOCK, NOT INSTEAD OF IT, AND THE ORDER IS
+      # LOAD-BEARING. The harness refuses to call an install "clean" when the
+      # install root already exists -- it reports F1 as `not-run` with that
+      # reason rather than reporting a different scenario under F1's name. The
+      # inline block ends with the product uninstalled, so this step starts
+      # from the cleanest state this job ever reaches. The install root is
+      # probed and printed first precisely so a `not-run` can be read as the
+      # fact it is rather than guessed at.
+      #
+      # WHAT IT STILL CANNOT PROVE, and no gate recorded from it may claim:
+      # that the application LAUNCHES. F1's launch half needs an attended
+      # desktop session; it is PW-0504 and it is the commander's machine. F2,
+      # upgrade, needs a previous release this repository has never shipped;
+      # it is PW-0505 and the harness reports it `not-run` with that reason,
+      # never as passed.
+      - name: Observe the installer lifecycle harness (non-blocking)
+        id: lifecycle
+        # The single documented exception to this file's no-continue-on-error
+        # rule. The header says why, and says what removes it.
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $inventory = Get-Content artifact-inventory.json | ConvertFrom-Json
+          $msi = $inventory.artifacts | Where-Object { $_.kind -eq "msi" }
+          if (-not $msi) { throw "no msi in the inventory" }
+          $installer = Join-Path "apps/desktop/src-tauri/target/release/bundle" $msi.name
+
+          # PRINTED BEFORE THE RUN so an F1 of `not-run` is readable as a fact
+          # about this machine rather than as a mystery.
+          $root = Join-Path ${env:ProgramFiles} "Project Liberty"
+          Write-Host "install root before the harness: $root (exists: $(Test-Path $root))"
+          if (Test-Path $root) {
+            Get-ChildItem $root -Recurse -ErrorAction SilentlyContinue |
+              Select-Object -First 40 | ForEach-Object { Write-Host "  leftover: $($_.FullName)" }
+          }
+
+          & node scripts/windows/lifecycle.mjs --msi "$installer" --out windows-lifecycle-report.json
+          $code = $LASTEXITCODE
+
+          # THE THREE EXIT CODES MEAN DIFFERENT THINGS and the first run is
+          # exactly when that matters: 2 is a REFUSAL (bad arguments, wrong
+          # platform) and reads as a wiring mistake here, 1 is a real case
+          # failure and reads as a product or classifier finding, 0 is every
+          # automated case passing. Collapsing them is how a configuration
+          # mistake gets filed as a product defect.
+          switch ($code) {
+            0 { Write-Host "lifecycle: every automated case passed" }
+            1 { Write-Host "lifecycle: at least one automated case FAILED -- read the report below" }
+            2 { Write-Host "lifecycle: REFUSED to run (arguments or platform). This is a wiring fault in this workflow, not a product failure." }
+            default { Write-Host "lifecycle: unexpected exit $code" }
+          }
+          if ($code -ne 0) { throw "lifecycle.mjs exited $code" }
+
+      # ==================================================================
+      # THE REPORT, ON THE RUN PAGE
+      # ==================================================================
+      #
+      # NOT DECORATION. The engineering session that maintains this workflow
+      # cannot read run logs or download artifacts -- the Actions API answers
+      # 403 and artifact download needs authentication -- but it CAN read a
+      # public run page, which is how every CI result in the last three round
+      # handoffs was obtained. A job summary renders there. So this step is the
+      # difference between "the Windows lifecycle ran" being a fact that can be
+      # checked and one that has to be taken on trust, and taking Windows
+      # evidence on trust is the one thing this project forbids outright.
+      - name: Publish the lifecycle report to the run summary
+        if: ${{ !cancelled() }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $path = "windows-lifecycle-report.json"
+          $out = $env:GITHUB_STEP_SUMMARY
+
+          function Cell([object] $value) {
+            if ($null -eq $value) { return "" }
+            return ([string] $value) -replace '\|', '\|' -replace '\r?\n', ' '
+          }
+
+          $lines = @("## Windows installer lifecycle (observation only)", "")
+
+          if (-not (Test-Path $path)) {
+            # An absent report is itself a result, and it is a DIFFERENT result
+            # from a failing one. The harness refuses rather than reports when
+            # it cannot run, so saying "no report" beats rendering an empty
+            # table that looks like a clean machine.
+            $lines += "**No report was produced.** The harness exits 2 and writes nothing when it refuses"
+            $lines += "(wrong platform, missing or bad ``--msi``). Read the ``Observe the installer lifecycle"
+            $lines += "harness`` step: a refusal is a fault in this workflow, not in the product."
+            $lines -join "`n" | Out-File -Append -Encoding utf8 $out
+            exit 0
+          }
+
+          $report = Get-Content $path -Raw | ConvertFrom-Json
+
+          # ConvertFrom-Json turns an ISO-8601 string into a [datetime], and
+          # interpolating that renders it in the RUNNER'S locale -- "10/02/2026"
+          # with no timezone, which is ambiguous between two continents and
+          # loses the only unambiguous form the harness wrote. Put it back.
+          $producedAt = if ($report.producedAt -is [datetime]) {
+            $report.producedAt.ToUniversalTime().ToString("o")
+          } else { [string] $report.producedAt }
+          $lines += "Produced by ``$($report.producedBy)`` on ``$($report.platform)`` at $producedAt."
+          $lines += ""
+          $lines += "> **This step does not gate the build.** The inline install/verify/uninstall step is"
+          $lines += "> still the gate. See the header of ``.github/workflows/windows.yml`` for what removes"
+          $lines += "> this arrangement."
+          $lines += ""
+          $lines += "| Case | Scenario | Owner | Outcome |"
+          $lines += "| --- | --- | --- | --- |"
+          foreach ($r in $report.results) {
+            $lines += "| $(Cell $r.id) | $(Cell $r.scenario) | $(Cell $r.owner) | **$(Cell $r.outcome)** |"
+          }
+
+          $lines += ""
+          $lines += "### Still owed by a real machine"
+          $outstanding = @($report.outstandingForTheCommandersMachine)
+          if ($outstanding.Count -eq 0) {
+            $lines += "_Nothing recorded._"
+          } else {
+            foreach ($o in $outstanding) {
+              $why = if ($o.outstanding) { $o.outstanding } else { $o.blockedReason }
+              $lines += "- **$(Cell $o.id)** ($(Cell $o.owner)) — $(Cell $o.scenario): $(Cell $why)"
+            }
+          }
+
+          $lines += ""
+          $lines += "### What this report does not claim"
+          $lines += (Cell $report.claim)
+
+          foreach ($r in $report.results) {
+            $lines += ""
+            $lines += "<details><summary>$(Cell $r.id) detail — $(Cell $r.outcome)</summary>"
+            $lines += ""
+            $lines += '```json'
+            $lines += ($r.detail | ConvertTo-Json -Depth 8)
+            $lines += '```'
+            $lines += ""
+            $lines += "</details>"
+          }
+
+          # A job summary is capped at 1 MiB and a silently truncated one would
+          # be worse than a short one, so the cut is made here and announced.
+          $text = $lines -join "`n"
+          $limit = 900000
+          if ($text.Length -gt $limit) {
+            $text = $text.Substring(0, $limit) + "`n`n_**Truncated** at $limit characters. The complete report is in the ``liberty-windows-installer-logs`` artifact._"
+          }
+          $text | Out-File -Append -Encoding utf8 $out
+
       - name: Upload the unsigned installers and their inventory
         uses: actions/upload-artifact@v4
         with:
@@ -320,5 +533,10 @@ jobs:
           path: |
             install.log
             uninstall.log
+            lifecycle-install.log
+            lifecycle-upgrade.log
+            lifecycle-uninstall.log
+            lifecycle-reinstall.log
+            windows-lifecycle-report.json
           if-no-files-found: ignore
           retention-days: 14

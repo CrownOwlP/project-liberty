@@ -7803,7 +7803,7 @@
       "id": "PL-0713",
       "priority": "P1",
       "lane": "Test",
-      "status": "REVIEW",
+      "status": "DONE",
       "title": "The desktop forwarder spec shares one ledger across parallel workers",
       "dependencies": [],
       "allowedPaths": [
@@ -7821,9 +7821,9 @@
       ],
       "acceptance": "The desktop forwarder spec gives the same answer however many workers Playwright runs it with. It does not today: the stub backend keeps ONE request ledger for the whole process, three tests clear it and then assert it holds exactly their own request, and playwright.config.ts sets fullyParallel: true -- which splits tests WITHIN a file across workers. A two-core machine gets one worker and the file passes; a CI runner gets several and a neighbour's forwarded request lands between the clear and the read. CI run 37007312900 failed exactly that way on three assertions, and --workers=4 reproduces it locally. REQUIRED: the isolation is structural rather than a matter of how many cores the machine running it happens to have. REQUIRED: toHaveLength(1) survives unchanged -- it is the assertion that a forwarder neither retries nor fans out, which the spec records as 'a duplicated session request against a real backend is a duplicated authorization', and relaxing it to 'at least one' would delete the check in order to make the schedule convenient. REQUIRED: the repair is demonstrated under more workers than the machine has cores, because a pass at one worker is what hid this for as long as it was hidden.",
       "notes": "FILED IN ROUND 104 from CI run 37007312900 on d6d0324, which is the first run after the branch was published. Not caused by that round: neither PW-0309 nor PW-0503 touches this spec, the stub or the forwarder.",
-      "owner": "claude-test",
+      "owner": null,
       "implementationAgent": "claude-test",
-      "updatedAt": "2026-10-02T15:15:45.160Z",
+      "updatedAt": "2026-10-02T16:55:03.351Z",
       "implementationBaseSha": "64a76b3992bd8917391547207a29d08cb7ace8be",
       "gateResults": {
         "typecheck": {
@@ -7840,7 +7840,50 @@
           "commitSha": "95d8b7658065b4c52699d6e0882ed7d04a119a21",
           "evidence": "RE-RECORDED to carry the GitHub result, which the first recording could not. Implementation 2f69f2d07c05bc077505f5d7326ef998a628ba17; confirmed on CI run 37028642916 at commit 30cef6e88a0bac82bf60fd4c9500c5ce4003da8f, the first commit GitHub has executed containing the repair. ITS e2e JOB COMPLETED IN 3m 33s WITH NO ERROR ANNOTATIONS: '14 skipped 93 passed' development, '31 skipped 76 passed' production -- the same counts measured locally. The two prior runs, 37007312900 on d6d0324 and 37022965860 on 64a76b3, each failed exactly three assertions in that spec, the second time all three reading 'Expected 1 request received 2'; both predate the repair. The runner's own worker count is what exposed the shared ledger and is what has now exercised the per-invocation correlation identity -- the environment this container could only approximate. LOCAL EVIDENCE UNCHANGED AND STILL THE BASIS. Old implementation --workers=4: 1 failed / 8 passed; old --repeat-each=3 --workers=4: 5 failed / 22 passed. Repaired: 0 failed at 4 and at 8 workers; 27 passed at --repeat-each=3 --workers=4; 45 passed at --repeat-each=5 --workers=8; whole api project 55 passed / 8 skipped at both worker counts. Collateral, whole projects: development chromium+api 93/14, production 61/46, production + real PostgreSQL 16.15 76/31; apps/web 84 files / 1494 tests. fullyParallel stays enabled, retries stay 0, no timeout ceiling was raised, and toHaveLength(1) is unchanged in all three places. NOT CLAIMED: the run as a whole had not concluded when this was read -- validate takes about 27 minutes -- so this records the e2e JOB's result, which is the job that failed twice and the only one this task is about."
         }
-      }
+      },
+      "review": {
+        "taskId": "PL-0713",
+        "implementationAgent": "claude-test",
+        "implementationOwner": "claude-test",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "2f69f2d07c05bc077505f5d7326ef998a628ba17",
+        "reviewedBaseSha": "64a76b3992bd8917391547207a29d08cb7ace8be",
+        "reviewedTreeHash": "b7dd2ac630f1343468df7bbc55a77b3c4bced4f671809c3f436cd1d52c46e1a1",
+        "reviewedFileCount": 3,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [
+          "e2e/src/backend-stub.mjs",
+          "e2e/playwright.config.ts"
+        ],
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-10-02T16:54:59.446Z",
+        "evidence": "APPROVED at 2f69f2d07c05bc077505f5d7326ef998a628ba17 (transcribed by claude-lead from the round-107 commander relay). The repair is the preferred one named in the round-105 verdict: an explicit TEST-ONLY correlation identity per invocation, with the shared clearLedger() removed entirely rather than guarded. The prohibited remedies were not used -- fullyParallel stays enabled, retries stays 0, no timeout ceiling was raised, no project was serialised, and toHaveLength(1) is unchanged at all three call sites. GitHub executed the repaired code on 30cef6e: the e2e job PASSED in 3m33s with no annotations, where the two preceding runs (37007312900 on d6d0324, 37022965860 on 64a76b3) each failed the same three ledger assertions. Fingerprint re-checked before recording: allowedPaths and reviewDependencies are byte-identical between 2f69f2d and the current head 2c037d5. Close PL-0713."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PL-0713",
+          "implementationAgent": "claude-test",
+          "implementationOwner": "claude-test",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "2f69f2d07c05bc077505f5d7326ef998a628ba17",
+          "reviewedBaseSha": "64a76b3992bd8917391547207a29d08cb7ace8be",
+          "reviewedTreeHash": "b7dd2ac630f1343468df7bbc55a77b3c4bced4f671809c3f436cd1d52c46e1a1",
+          "reviewedFileCount": 3,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "e2e/src/backend-stub.mjs",
+            "e2e/playwright.config.ts"
+          ],
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-10-02T16:54:59.446Z",
+          "evidence": "APPROVED at 2f69f2d07c05bc077505f5d7326ef998a628ba17 (transcribed by claude-lead from the round-107 commander relay). The repair is the preferred one named in the round-105 verdict: an explicit TEST-ONLY correlation identity per invocation, with the shared clearLedger() removed entirely rather than guarded. The prohibited remedies were not used -- fullyParallel stays enabled, retries stays 0, no timeout ceiling was raised, no project was serialised, and toHaveLength(1) is unchanged at all three call sites. GitHub executed the repaired code on 30cef6e: the e2e job PASSED in 3m33s with no annotations, where the two preceding runs (37007312900 on d6d0324, 37022965860 on 64a76b3) each failed the same three ledger assertions. Fingerprint re-checked before recording: allowedPaths and reviewDependencies are byte-identical between 2f69f2d and the current head 2c037d5. Close PL-0713."
+        }
+      ],
+      "completedAt": "2026-10-02T16:55:03.352Z"
     },
     {
       "id": "PW-0101",
@@ -10369,21 +10412,21 @@
       "id": "PW-0602",
       "priority": "P1",
       "lane": "Test",
-      "status": "READY",
+      "status": "IN_PROGRESS",
       "title": "The automated half of the Windows matrix, running on Windows",
       "dependencies": [
         "PW-0501",
         "PW-0601"
       ],
       "allowedPaths": [
-        "e2e/windows/**"
+        "e2e/windows/**",
+        ".github/workflows/windows.yml"
       ],
       "reviewDependencies": [
         "docs/WINDOWS_CERTIFICATION.md",
         "e2e/playwright.config.ts",
         "apps/desktop",
-        "docs/E2E.md",
-        ".github/workflows/windows.yml"
+        "docs/E2E.md"
       ],
       "preferredAgent": "claude-test",
       "reviewAgent": "gpt-architect",
@@ -10392,10 +10435,27 @@
         "e2e"
       ],
       "acceptance": "Every row PW-0601 marks automated runs on a windows-latest runner and fails the build when it fails. REQUIRED: the existing e2e suite runs against the DESKTOP target on Windows, not only the web target on Ubuntu -- the desktop axis is currently built on Ubuntu only, and only incidentally, because the axis defaults on and openssl happens to be installed. REQUIRED: the shell is driven end to end where the harness can reach it, and where it cannot, the row stays in the commander-machine half rather than being replaced by a unit test that proves something easier. REQUIRED: retries stay at zero, on the rule playwright.config.ts already states at length. REQUIRED: a row that is skipped says why, by name, the way the existing harness already does for the desktop and media-rig axes.",
-      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. SURFACE NOTE: this task's allowedPaths name directories that do not exist yet. The evidence-based narrowing procedure applies to reconciling work already in history; for genuinely new work the surface is the smallest set of paths the acceptance can be satisfied within, and it is narrowed again from the diff before review if it turns out to be wider than what was written. OWNERSHIP RESOLVED BY RESPONSIBILITY in round 87, on gpt-architect's ruling. .github/workflows/windows.yml moved from allowedPaths to reviewDependencies: this task is the certification CONSUMER -- it needs the workflow and the artifact to EXIST and to execute its rows, which is a read relationship. PW-0501 owns the workflow because PW-0501 produces the Windows artifact. A task does not co-own a production build workflow merely because its tests run there. If this task's acceptance genuinely requires editing that workflow after PW-0501 lands, it is sequenced AFTER PW-0501 -- its dependencies already say so -- and its narrowed write surface is derived from the actual change at claim time rather than reserved now. Neither task was narrowed to defeat conflictWithActive; the surfaces follow the implementation responsibility.",
-      "owner": null,
-      "gateResults": {},
-      "updatedAt": "2026-09-26T22:32:02.611097Z"
+      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. SURFACE NOTE: this task's allowedPaths name directories that do not exist yet. The evidence-based narrowing procedure applies to reconciling work already in history; for genuinely new work the surface is the smallest set of paths the acceptance can be satisfied within, and it is narrowed again from the diff before review if it turns out to be wider than what was written. OWNERSHIP RESOLVED BY RESPONSIBILITY in round 87, on gpt-architect's ruling. .github/workflows/windows.yml moved from allowedPaths to reviewDependencies: this task is the certification CONSUMER -- it needs the workflow and the artifact to EXIST and to execute its rows, which is a read relationship. PW-0501 owns the workflow because PW-0501 produces the Windows artifact. A task does not co-own a production build workflow merely because its tests run there. If this task's acceptance genuinely requires editing that workflow after PW-0501 lands, it is sequenced AFTER PW-0501 -- its dependencies already say so -- and its narrowed write surface is derived from the actual change at claim time rather than reserved now. Neither task was narrowed to defeat conflictWithActive; the surfaces follow the implementation responsibility. ROUND 107 AMENDMENT, on gpt-architect's ruling: .github/workflows/windows.yml has MOVED from reviewDependencies to allowedPaths -- allowedPaths is always part of the reviewed surface, so leaving it in both is redundant and ai:validate says so. This is the condition the round-87 note above named -- PW-0501 has landed, and the acceptance clause 'runs on a windows-latest runner and fails the build when it fails' cannot be satisfied without writing the only file that defines one. The surface was derived at claim time from the actual change, as that note required, and is the single file rather than .github/workflows/**. scripts/windows/** was deliberately NOT taken; it remains PW-0502's and PW-0503's. Conflict check and the cost to those two tasks' future fingerprints are recorded in the task.definition_changed event of this round.",
+      "owner": "claude-test",
+      "gateResults": {
+        "typecheck": {
+          "status": "pass",
+          "at": "2026-10-02T17:03:01.755Z",
+          "by": "claude-test",
+          "commitSha": "2c037d54ed834af9dba3c6b12a29c395dee81b9d",
+          "evidence": "npm run typecheck -- 22 tasks successful, 22 total (13.3s). RECORDED FOR COMPLETENESS AND WORTH READING AS SUCH: this round's change is .github/workflows/windows.yml only, which no TypeScript project compiles, so a pass here establishes that nothing ELSE was disturbed and nothing about the workflow. The evidence that bears on the change is in the e2e gate."
+        },
+        "e2e": {
+          "status": "pass",
+          "at": "2026-10-02T17:05:24.467Z",
+          "by": "claude-test",
+          "commitSha": "2c037d54ed834af9dba3c6b12a29c395dee81b9d",
+          "evidence": "WHAT THIS GATE ACTUALLY ESTABLISHES, STATED BEFORE THE NUMBERS, BECAUSE THE SUITE DOES NOT EXERCISE THE CHANGE. The round-107 change is .github/workflows/windows.yml only. Playwright does not read it. So: (a) 'npx playwright test --project=chromium --project=api' in development mode, 93 passed / 14 skipped in 1.9m, 0 failed -- no regression anywhere, which is all a Linux Playwright run can say about a Windows workflow; and (b) the evidence that DOES bear on the change, which is PowerShell, recorded here because this task has no gate named for it.\n\nPOWERSHELL EVIDENCE, EXECUTED NOT INSPECTED. PowerShell 7.4.6 was installed in this container (the windows-latest runner ships 7.4/7.5) and both added steps were extracted from the YAML by a parser rather than retyped.\n  1. PARSE. [System.Management.Automation.Language.Parser]::ParseFile over all five pwsh steps in the file, including the three this round did not touch: 0 errors. A pwsh syntax error in the publisher step would fail the job, and the publisher deliberately carries no continue-on-error, so this was checked rather than assumed.\n  2. EXECUTION, four branches, against reports built by calling the REAL scripts/windows/ modules -- loadPlan, readIdentity, locations, classifyResidue -- not by hand-writing JSON.\n     - report present, all cases passing: renders the table, the outstanding list (F1 launch, F3 real-user-data, F5 SmartScreen, F6 update) and four collapsible JSON details. exit 0.\n     - report absent: says NO REPORT WAS PRODUCED and explains that a refusal is a wiring fault in the workflow rather than a product failure. exit 0. An empty table that reads as a clean machine is the failure mode this branch exists to prevent.\n     - a FAILING F3 whose scenario text contains a pipe and a newline: rendered as 'Uninstall \\| residue check' -- the table survives, which a raw interpolation would not.\n     - a single-result report with an empty outstanding list: scalar handled, '_Nothing recorded._' printed.\n     - 1.2 MB report: truncated at 900000 characters with an explicit notice pointing at the artifact, final summary 900689 bytes, under GitHub's 1 MiB cap.\n  3. A DEFECT FOUND AND FIXED BY RUNNING IT. ConvertFrom-Json turns the harness's ISO-8601 producedAt into a [datetime], and interpolating that rendered '10/02/2026 17:01:23' in the runner's locale -- ambiguous between two continents, timezone gone. The publisher now converts back to round-trip form. Inspection would not have found this.\n  4. THE RESIDUE CLASSIFIER ON DELIBERATELY MESSY INPUT, which is the hazard section 6 of coordination/WINDOWS_LIFECYCLE_WIRING.md names. Given a service literally named 'LibertyBroadcast' at C:\\\\Vendor\\\\liberty-broadcast.exe, a Google updater scheduled task and the runner's own hostedtoolcache node.exe, classifyResidue returned clean with zero violations -- it matched on install-root containment and the product's registered names, and did not accuse the runner's software. Still only a fixture; the real service and process lists are what the first run is for.\n\nWHAT IS NOT CLAIMED. No Windows machine has run any of this. msiexec, Get-CimInstance, Get-ScheduledTask and Get-Process were not executed anywhere; the harness refuses off win32 and that refusal was not circumvented. Whether the lifecycle harness passes on a runner is unknown and is precisely what the non-blocking step is for."
+        }
+      },
+      "updatedAt": "2026-10-02T16:58:35.333Z",
+      "implementationAgent": "claude-test",
+      "implementationBaseSha": "2c037d54ed834af9dba3c6b12a29c395dee81b9d"
     },
     {
       "id": "PW-0603",
