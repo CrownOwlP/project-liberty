@@ -27,16 +27,18 @@ node scripts/ai-control-plane.mjs approve PW-0208 gpt-architect \
 | Run | Workflow | Result |
 | --- | --- | --- |
 | `37028642927` | `windows.yml` | **SUCCESS** — `package` 6m 4s; 71.3 MB unsigned installer, 665 KB logs |
-| `37028642916` | `ci.yml` | **`e2e` job PASSED** — 3m 33s, no error annotations; `e2e-typecheck` 12s; `validate` still running when read |
+| `37028642916` | `ci.yml` | **FAILURE** — but **`e2e` PASSED** 3m 33s; `e2e-typecheck` ✅ 12s; **`validate` ❌ 10m 38s, exit 134** |
 
 The `e2e` job reported **"14 skipped 93 passed"** (development) and **"31
 skipped 76 passed"** (production) — the same counts this container measured
-locally. The run as a whole had not concluded, because `validate` takes about
-27 minutes; what matters is that the job which failed on the previous two runs
-is the job that has now passed.
+locally, and no error annotations. **The job that failed on the previous two
+runs is the job that has now passed.**
 
-**I am not calling the run green.** The job is green and the run was unfinished
-at the time of reading.
+**The run failed on something else, and it is new.** `validate` succeeded on
+both previous runs — 25m 4s and 27m 29s — and now aborts at **10m 38s** with a
+single annotation: *"Process completed with exit code 134"*. That is SIGABRT.
+Less than half the time it used to take to pass means it is aborting part way,
+not failing a check at the end. **§6 is what I know and what I do not.**
 
 ---
 
@@ -157,6 +159,41 @@ decides, and I did not widen into `apps/web` to pre-empt it.
 asks for a recipe that is stated and reproducible, not for binaries that
 cannot be built until the commander's patent decision says what they may
 contain.
+
+---
+
+## 3a. The new CI failure — reported, not diagnosed
+
+I could not determine the cause and I am not going to name one.
+
+**Two reproduction attempts, neither successful.**
+`scripts/test-ai-control-plane.mjs` — the prime suspect, already filed in
+round 104 as a defect that copies the working tree ~69 times and holds every
+copy — passes locally in **1261 s** ambient and **1807 s** under a runner-like
+`--max-old-space-size=4096`. 73 scenarios, exit 0 both times.
+
+**One real confounder came out of trying, and it outlives this failure:** this
+container sets `NODE_OPTIONS=--max-old-space-size=8192` and a GitHub runner
+does not. **Every local measurement of that suite, round 104's included, was
+taken with an 8 GB heap CI never has.** The capped run controlled for it and
+still passed, so the heap hypothesis is not supported — but the confounder was
+real and nobody had noticed it.
+
+**What the timing suggests and does not establish:** if the runner is ~2.5×
+faster than this 2-core container, 1807 s here is ≈11m40 there, so an abort at
+10m38 lands near the *end* of that suite rather than early — possibly in its
+final `rmSync` of ~69 held copies. That is arithmetic, not evidence.
+
+**Why I am stuck:** the annotation names an exit code and no step, and the log
+needs authentication. §9 of the wiring proposal is the smallest fix — a
+failure-only step that writes core count, memory, free disk and `NODE_OPTIONS`
+to `$GITHUB_STEP_SUMMARY`, which renders on the run page. Those are the four
+facts that would have decided this. It does not replace reading the log; it
+replaces guessing when the log cannot be read.
+
+**It is not from this round's work.** The delta from the last passing
+`validate` is one e2e spec, three `apps/desktop/scripts` files, a doc and the
+control-plane state.
 
 ---
 

@@ -264,3 +264,60 @@ same problem again.
 **Recommendation: the workspace**, because it is the version where the next
 test file is run by having been written. But it touches a decision PW-0501
 recorded deliberately, so it is a ruling and not an edit.
+
+---
+
+## 9. A second, smaller amendment: making `ci.yml` failures diagnosable from here
+
+Added in round 106, after CI run `37028642916` failed in a way this session
+**could not diagnose**.
+
+`validate` failed with the single annotation *"Process completed with exit
+code 134"* — SIGABRT — in **10m 38s**, having passed on the two previous runs
+in 25m 4s and 27m 29s. Which step died is not on the run page, and the log is
+not readable: the Actions API answers 403 and logs need authentication, while
+run pages and their annotations do not.
+
+**Two reproduction attempts, neither successful.**
+`scripts/test-ai-control-plane.mjs` passes locally in **1261 s** with this
+container's ambient settings and in **1807 s** with a runner-like
+`--max-old-space-size=4096`. 73 scenarios, exit 0 both times.
+
+**One real confounder, worth more than the attempt itself:** this container
+sets `NODE_OPTIONS=--max-old-space-size=8192`. A GitHub runner does not. Every
+previous local measurement of that suite — including round 104's — was taken
+with an 8 GB heap CI never has. The second run controlled for it and still
+passed, so the heap hypothesis is **not supported**; but the confounder was
+real and had gone unnoticed.
+
+### The amendment
+
+One step at the end of the `validate` job:
+
+```yaml
+      - name: Publish a failure tail to the run summary
+        if: failure()
+        shell: bash
+        run: |
+          {
+            echo "## validate failed"
+            echo ""
+            echo "Runner: $(nproc) cpus, $(free -m | awk '/^Mem:/{print $2}') MB RAM"
+            echo "Disk:   $(df -h / | awk 'NR==2{print $4}') free on /"
+            echo "NODE_OPTIONS=${NODE_OPTIONS:-<unset>}"
+            echo "Node:   $(node --version)"
+          } >> "$GITHUB_STEP_SUMMARY"
+```
+
+**That is deliberately not a log dump.** It is the four facts that would have
+decided this investigation — core count, memory, free disk, and whether a heap
+override is in play — rendered where a session without credentials can read
+them. The step costs seconds, runs only on failure, and changes nothing about
+what the job proves.
+
+**It does not replace reading the log.** It replaces *guessing* when the log
+cannot be read, which is the position this round ended in.
+
+`.github/workflows/ci.yml` is in no open task's write surface — the same
+ruling as §1, a different file. PL-0001 held `.github/workflows/**` and is
+DONE.
