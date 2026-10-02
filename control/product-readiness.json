@@ -28,7 +28,46 @@
     "honest answer and the evidence field says which half exists.",
     "",
     "EVERY item's `evidence` is a repository path or an explicit statement of",
-    "absence. An item with no evidence is a defect in this file."
+    "absence. An item with no evidence is a defect in this file.",
+    "",
+    "=== ROUND 107 RE-SCORE: READ THIS BEFORE COMPARING THE FIGURE TO AN EARLIER ONE ===",
+    "",
+    "Overall moved from 46% to 60%, and ALMOST NONE OF THAT IS WORK DONE IN ROUND 107.",
+    "It is this file catching up with work that had already landed, in some cases",
+    "many rounds earlier. A figure that rises because the product improved and a",
+    "figure that rises because the instrument was wrong are different events, and",
+    "treating the 14 points as progress would be the exact mistake this file's own",
+    "header warns about for the task count.",
+    "",
+    "Nine items stated as FACT things that had stopped being true, several citing",
+    "line numbers and absences as evidence. The worst: packagingRelease reported 0%",
+    "and said 'Every CI job is ubuntu-latest; no windows-latest runner exists' on a",
+    "tree where CI builds, digests, installs, verifies and uninstalls a real Windows",
+    "installer on every push. Also stale: the installer, the app identity, the Tauri",
+    "shell, capability routing, track selection, offline/network state, Windows test",
+    "execution, and several notes describing PW-0102, PW-0303, PW-0312 and PW-0403",
+    "as in review when all four are DONE.",
+    "",
+    "EVERY NOTE NOW SAYS WHICH KIND OF CHANGE IT RECORDS, in its first words:",
+    "  CORRECTED  -- the instrument was wrong; the product did not change.",
+    "  CHANGED    -- the product moved.",
+    "  CORRECTED AND CHANGED -- the note was stale AND work landed.",
+    "Keep that convention. It is what makes the next reading trustworthy.",
+    "",
+    "THE SCORING RULES WERE APPLIED, NOT RELAXED. 'present' still means reachable by",
+    "a user. So the Windows installer is present and the Tauri shell is PARTIAL,",
+    "because an installer that CI produces and nobody has launched is not a running",
+    "application; the player adapter, capability routing and track selection are all",
+    "partial because player-surface.tsx still drives the controller directly and",
+    "nothing routes through the boundary. Four items went UP by half a point only.",
+    "",
+    "WHAT THE CORRECTED FIGURE MAKES VISIBLE, which the wrong one hid: the dimensions",
+    "that are genuinely stuck are realContent at 10% -- blocked on a licensed",
+    "provider, which is the commander's -- and nativePlayback at 55%, blocked behind",
+    "PW-0103 on the commander's Windows hardware. They were previously obscured by",
+    "dimensions that only looked stuck.",
+    "",
+    "The rules, the weights and the dimension list were NOT touched. PL-0716."
   ],
   "weights": {
     "$comment": [
@@ -79,8 +118,8 @@
         {
           "id": "auth-seam",
           "state": "partial",
-          "note": "Authorization is enforced on every profile-scoped route and guarded mechanically (PW-0402); AUTHENTICATION is enforced too and APPROVED (PW-0403) -- a deployment resolves identity only from a verified database-backed session, witnessed end to end against a real PostgreSQL including immediate revocation. STILL PARTIAL for three named reasons: no mail transport, so verification and reset cannot complete; no SQL exercised from CI; and no sign-in screen, so a deployment viewer gets a correct 401 with nowhere to go. The last is [[PW-0312]] and is why this row is not user-reachable capability yet",
-          "evidence": "apps/web/src/lib/session/auth-instance.ts, apps/web/src/app/api/auth (PW-0403, DONE); apps/web/src/lib/authorization (PW-0402); docs/SECURITY.md R4; ADR-007 accepted"
+          "note": "CORRECTED round 107 (the instrument was wrong, the product did not change): two of the three reasons this row was partial have been false for several rounds. The sign-in screen EXISTS (PW-0312, DONE) and SQL IS exercised from CI -- the e2e job applies the repository migration and runs the whole suite against a real PostgreSQL in production mode. Identity resolves only from a verified database-backed session, witnessed end to end including immediate revocation (PW-0403, DONE). ONE reason remains and it is enough: the mail transport is `noMailTransport`, a function whose body throws, so email verification and password reset cannot complete. A viewer who forgets their password has nowhere to go",
+          "evidence": "apps/web/src/lib/session/auth-instance.ts:266 (noMailTransport); apps/web/src/components/auth/auth-policy.ts:25; .github/workflows/ci.yml e2e job (PostgreSQL); PW-0312, PW-0403 DONE"
         },
         {
           "id": "http-api",
@@ -96,9 +135,9 @@
         },
         {
           "id": "rate-limits",
-          "state": "absent",
-          "note": "No rate limit on any route",
-          "evidence": "docs/SECURITY.md residual risk R2"
+          "state": "partial",
+          "note": "CORRECTED round 107 (the instrument was wrong, the product did not change): \"No rate limit on any route\" is false for the AUTH routes and true for the application's own. better-auth 1.7.5 enables rate limiting whenever the server is in production -- `enabled: options.rateLimit?.enabled ?? isProduction` -- with a 100-per-60-seconds default and a special rule of THREE PER TEN SECONDS on anything under /sign-in or /sign-up, keyed per client IP and path. Nobody configured that; it is the library's default and packages/auth passes no rateLimit option at all. Partial rather than present for exactly that reason: an unexamined default is not a policy, it applies to no route this product wrote, and PL-0715 is very likely a consequence of the half that exists",
+          "evidence": "packages/auth/src/better-auth.ts (no rateLimit option); better-auth/dist/context/create-context.mjs:172 and dist/api/rate-limiter/index.mjs getDefaultSpecialRules; docs/SECURITY.md residual risk R2; PL-0715"
         }
       ]
     },
@@ -120,9 +159,9 @@
         },
         {
           "id": "tauri-shell",
-          "state": "absent",
-          "note": "The crate EXISTS and is tested (PW-0102, in REVIEW): handshake, Job Object, launch plan, restart budget and failure text, 25 Rust tests, and the crate's own Windows code cross-compiles for x86_64-pc-windows-msvc. STILL ABSENT AS A CAPABILITY, and the state is unchanged on purpose: no binary can be produced, because the full tree does not compile inside Tauri's own transitive graph (ADR-009), and nothing has launched. Files existing is not a shell running",
-          "evidence": "apps/desktop/src-tauri (PW-0102, in REVIEW; build gate recorded FAIL); ADR-009"
+          "state": "partial",
+          "note": "CORRECTED AND CHANGED round 107 (both -- the note was stale AND work landed): the note said \"no binary can be produced\". One is produced on every push: .github/workflows/windows.yml builds the Tauri bundle on windows-latest, asserts exactly one MSI and one NSIS installer with SHA-256 digests, INSTALLS the MSI, verifies the installed tree against the constants the shell itself compiles, and uninstalls it. Run 37036128017 at 2c037d5 succeeded in 5m 0s. NOT PRESENT, and the rule is what says so: nothing has LAUNCHED. No runner has an attended desktop session, so whether the shell starts, spawns its sidecar, completes the handshake and shows a window is unobserved -- PW-0103 and PW-0504, both on the commander's machine",
+          "evidence": "apps/desktop/src-tauri (PW-0102, DONE); .github/workflows/windows.yml; run 37036128017"
         },
         {
           "id": "standalone-sidecar",
@@ -133,8 +172,8 @@
         {
           "id": "sidecar-supervision",
           "state": "partial",
-          "note": "Both halves now exist in code: the sidecar's port handshake (PW-0101) and the shell's consumer, Job Object ownership, bounded restart budget and surfaced failure (PW-0102). STILL PARTIAL because none of it has been OBSERVED -- whether the kernel terminates job members is owed to a Windows runner or PW-0601, and the supervision loop's runtime assembly is a stub that panics naming what it owes",
-          "evidence": "apps/web/src/lib/sidecar/handshake.ts (PW-0101); apps/desktop/src-tauri/src/{job,supervision,sidecar,failure}.rs (PW-0102)"
+          "note": "CORRECTED round 107 (the instrument was wrong, the product did not change): PW-0102 is DONE, not in review. Both halves exist in code -- the sidecar's port handshake (PW-0101) and the shell's consumer, Job Object ownership, bounded restart budget and surfaced failure -- and the shipped tree is now verified on a real Windows machine on every push, by derivation from src-tauri/src/sidecar.rs rather than by restating paths. STILL PARTIAL for the reason that has not changed: none of the SUPERVISION has been observed. Whether the kernel terminates job members when the shell dies needs a process that has actually launched",
+          "evidence": "apps/web/src/lib/sidecar/handshake.ts (PW-0101); apps/desktop/src-tauri/src/{job,supervision,sidecar,failure}.rs (PW-0102, DONE); scripts/windows/verify-install.mjs"
         },
         {
           "id": "loopback-hardening",
@@ -151,8 +190,8 @@
         {
           "id": "window-lifecycle",
           "state": "absent",
-          "note": "No native window, crash/restart, deep links or protocol handler",
-          "evidence": "absent"
+          "note": "CORRECTED round 107 (the instrument was wrong, the product did not change): the shell crate exists and now ships inside an installed binary, so \"no native window\" is a statement about what has RUN rather than about what has been written. Nothing changes the score: no window has been created or observed anywhere, and crash/restart behaviour, deep links and a protocol handler are genuinely unwritten",
+          "evidence": "apps/desktop/src-tauri/src/shell.rs exists; no observation; PW-0103, PW-0504"
         }
       ]
     },
@@ -169,8 +208,8 @@
         {
           "id": "web-adapter",
           "state": "partial",
-          "note": "A Shaka controller and <liberty-video> exist and work; they do not implement the boundary",
-          "evidence": "apps/web/src/components/player/playback-controller.ts, liberty-video.ts"
+          "note": "CORRECTED round 107 (the instrument was wrong, the product did not change): the note said \"they do not implement the boundary\". WebPlayerAdapter implements PlayerAdapter in full -- load, play, pause, seek, stop, track reading and selection, volume, timeline, A/V telemetry -- and has 29 tests (PW-0202, DONE). It stays PARTIAL for a different and still-true reason: nothing routes through it. player-surface.tsx drives playback-controller.ts directly, so the boundary, the routing and the track policy are all behind a seam a user cannot reach. Wiring it is PW-0306",
+          "evidence": "apps/web/src/components/player/web-player-adapter.ts (PW-0202, DONE); apps/web/src/components/player/player-surface.tsx imports playback-controller, not the adapter"
         },
         {
           "id": "native-adapter",
@@ -180,9 +219,9 @@
         },
         {
           "id": "capability-routing",
-          "state": "absent",
-          "note": "canPlay and the DRM-to-web routing function are design-only",
-          "evidence": "absent; contract prerequisite IS present: packages/contracts/src/shared/drm.ts"
+          "state": "partial",
+          "note": "CORRECTED round 107 (the instrument was wrong, the product did not change): \"design-only\" is false: adapter-routing.ts shipped with PW-0203 and carries routeCandidate, protectionDecisionFor, the two adapter preference orders and the declared capability sets, with its own suite including property tests over the DRM clauses. Partial and not present for the same reason as web-adapter: nothing in the application calls it yet",
+          "evidence": "apps/web/src/components/player/adapter-routing.ts and adapter-routing.test.ts (PW-0203, DONE)"
         },
         {
           "id": "playback-state-machine",
@@ -198,9 +237,9 @@
         },
         {
           "id": "track-selection",
-          "state": "absent",
-          "note": "No subtitle or audio track selection anywhere, on either engine",
-          "evidence": "absent: zero getTextTracks/selectAudioLanguage callers"
+          "state": "partial",
+          "note": "CORRECTED AND CHANGED round 107 (both -- the note was stale AND work landed): \"zero getTextTracks/selectAudioLanguage callers\" is false -- web-player-adapter.ts calls both, and the boundary has carried getTracks, selectAudioTrack, selectSubtitleTrack and a trackselected event since PW-0201. PW-0206 adds what was genuinely missing: the bridge from engine-reported tracks to the contracted selection policy in @liberty/media-engine, with forced and default honoured, a viewer's choice remembered as a language and a purpose so it survives a candidate switch, and every assumed field reported rather than hidden. PARTIAL: there is no UI to choose with (PW-0306) and no mpv side (PW-0205)",
+          "evidence": "apps/web/src/components/player/{player-adapter,web-player-adapter,tracks}.ts (PW-0201, PW-0202, PW-0206)"
         },
         {
           "id": "source-switching",
@@ -241,14 +280,14 @@
         {
           "id": "home-discovery",
           "state": "partial",
-          "note": "Two hardcoded rails over 6 demo items; loading/empty/error states are good",
-          "evidence": "apps/web/src/app/page.tsx; lib/catalog.ts:119"
+          "note": "CORRECTED round 107 (the instrument was wrong, the product did not change): the rails are no longer two: a Continue Watching rail renders on the home page (PW-0305) and catalog cards carry real artwork rather than CSS gradients (PW-0302). Still partial: the catalog behind it is a small demo set, and a real metadata source is a separate row",
+          "evidence": "apps/web/src/app/page.tsx; apps/web/src/components/continue-watching/continue-watching-rail.tsx (PW-0305); apps/web/src/components/artwork (PW-0302)"
         },
         {
           "id": "title-detail",
           "state": "partial",
-          "note": "Hero, three facts, per-episode rights gating; the only action is Play",
-          "evidence": "apps/web/src/app/title/[titleId]"
+          "note": "CORRECTED round 107 (the instrument was wrong, the product did not change): \"the only action is Play\" is false: a watchlist add control lives on the title page (PW-0304) and is exercised in the browser, including the refused-write rollback. Series pages carry a season selector, per-episode progress and per-episode rights gating (PW-0307). Still partial: no next-episode affordance at the end of playback, which is PW-0307's last clause and waits on player controls",
+          "evidence": "apps/web/src/app/title/[titleId]; e2e/tests/watchlist.spec.ts; e2e/tests/series-navigation.spec.ts"
         },
         {
           "id": "search",
@@ -259,8 +298,8 @@
         {
           "id": "series-episodes",
           "state": "partial",
-          "note": "Contract and EpisodeList exist; no season selector, no next-episode, no progress",
-          "evidence": "apps/web/src/components/title/episode-list.tsx"
+          "note": "CORRECTED AND CHANGED round 107 (both -- the note was stale AND work landed): \"no season selector, no next-episode, no progress\" is false on all three counts. PW-0307 shipped the season selector with keyboard operation and a roving tabindex, per-episode watched and in-progress state from the progress API, and resolveNextEpisode as a pure function with its own tests, all with browser coverage. Partial because the last clause -- a next-episode affordance AT THE END OF PLAYBACK, honouring the same per-episode rights gate -- needs a player that can report an ending, which is PW-0306",
+          "evidence": "apps/web/src/components/title/{episode-list,season-navigation}.tsx; apps/web/src/lib/next-episode.ts; e2e/tests/series-navigation.spec.ts (PW-0307)"
         },
         {
           "id": "player-controls",
@@ -271,20 +310,20 @@
         {
           "id": "profiles-ui",
           "state": "partial",
-          "note": "Picker, switch and create exist and the active profile is in the shell on every route; STILL PARTIAL, and not because the screen is unfinished. The identity the picker selects within is a development header in a non-deployment runtime, so 'who is watching' is only as real as [[auth-seam]] -- PW-0403. No avatar image, because there is no asset store yet (PW-0302): a tile is an initial on a hue derived from the profile id. And no e2e spec owns the profile journey; the executed suites are regression evidence",
-          "evidence": "apps/web/src/components/profiles, apps/web/src/app/profiles, apps/web/src/components/shell/app-shell.tsx (PW-0303, in REVIEW)"
+          "note": "CORRECTED round 107 (the instrument was wrong, the product did not change): two of the three reasons are gone. The identity the picker selects within is now a real database-backed session rather than a development header (PW-0403, DONE), and the profile journey is exercised in the browser against a real PostgreSQL by the watchlist suite. ONE reason remains and it is unchanged: there is still no profile PICTURE. PW-0302 shipped artwork for catalog posters, not for avatars -- avatar.ts derives an initial and a hue from the profile id, and profileViewSchema's avatarKey is an opaque storage key with nothing to resolve it against",
+          "evidence": "apps/web/src/components/profiles (PW-0303, DONE); apps/web/src/components/profiles/avatar.ts; PW-0403 DONE"
         },
         {
           "id": "watchlist-ui",
-          "state": "partial",
-          "note": "API complete and tested; no add control, no list screen",
-          "evidence": "apps/web/src/app/api/v1/watchlist; no screen"
+          "state": "present",
+          "note": "CHANGED round 107 (the product moved): PW-0304 shipped both halves the note said were missing: an add control on the title page and a /watchlist list screen. Both are exercised in the browser against a real session and a real database, including a refused write that rolls back and says why rather than rendering as a success",
+          "evidence": "apps/web/src/app/watchlist/page.tsx; apps/web/src/components/watchlist (PW-0304, DONE); e2e/tests/watchlist.spec.ts"
         },
         {
           "id": "continue-watching",
-          "state": "partial",
-          "note": "Progress API complete and tested; no rail, no resume prompt, no card progress",
-          "evidence": "apps/web/src/app/api/v1/progress; no screen"
+          "state": "present",
+          "note": "CHANGED round 107 (the product moved): PW-0305 shipped the rail. It renders on the home page from the progress API",
+          "evidence": "apps/web/src/components/continue-watching/continue-watching-rail.tsx; apps/web/src/app/page.tsx (PW-0305, DONE)"
         },
         {
           "id": "settings",
@@ -300,9 +339,9 @@
         },
         {
           "id": "artwork",
-          "state": "absent",
-          "note": "Zero images. Posters are CSS gradients and the contracts carry no artwork field",
-          "evidence": "absent: no poster/artwork/backdrop key in packages/contracts/src"
+          "state": "present",
+          "note": "CHANGED round 107 (the product moved): PW-0302 shipped artwork end to end: an artwork vocabulary in the contracts, a poster component, and real images on catalog cards. \"Zero images\" and \"the contracts carry no artwork field\" are both false. Note for the next reader: profile AVATARS are still generated rather than stored, which is counted under profiles-ui and not here",
+          "evidence": "packages/contracts/src/shared/artwork.ts; apps/web/src/components/artwork (PW-0302, DONE)"
         },
         {
           "id": "design-system",
@@ -312,15 +351,15 @@
         },
         {
           "id": "offline-network-state",
-          "state": "absent",
-          "note": "No navigator.onLine, no offline banner, no retry-on-reconnect",
-          "evidence": "absent"
+          "state": "present",
+          "note": "CHANGED round 107 (the product moved): PW-0309 shipped all three things the note says are missing, and more carefully than the note asks for. navigator.onLine is read twice -- when a probe is issued and when it fails -- so a dead link is not reported as a dead process; a degraded banner distinguishes offline from sidecar-unreachable; and recovery re-fetches. A stale probe answer can no longer be read as recovery, which was a real defect that drove the application to a browser error page",
+          "evidence": "apps/web/src/lib/network-state.ts; apps/web/src/components/state/{reachability-store.ts,degraded-banner.tsx}; e2e/tests/degraded-states.spec.ts (PW-0309, DONE)"
         },
         {
           "id": "accessibility",
           "state": "partial",
-          "note": "Skip link, a global :focus-visible where globals.css previously defined none, and the existing live regions; still no keyboard handlers, no focus management and no roving tabindex -- PW-0310",
-          "evidence": "apps/web/src/app/globals.css; apps/web/src/components/shell/app-shell.tsx (PW-0301)"
+          "note": "CORRECTED round 107 (the instrument was wrong, the product did not change): \"no keyboard handlers, no focus management and no roving tabindex\" is no longer true everywhere: the season selector shipped with arrow, Home and End handling and a roving tabindex, asserted in the browser (PW-0307). It is the only place in the application that has them, which is why this stays partial and why PW-0310 still owns the rest",
+          "evidence": "apps/web/src/components/title/season-navigation.tsx; e2e/tests/series-navigation.spec.ts (PW-0307); apps/web/src/app/globals.css (PW-0301); PW-0310 outstanding"
         }
       ]
     },
@@ -366,21 +405,21 @@
       "items": [
         {
           "id": "windows-build",
-          "state": "absent",
-          "note": "Every CI job is ubuntu-latest; no windows-latest runner exists",
-          "evidence": ".github/workflows/ci.yml:134,333,505"
+          "state": "present",
+          "note": "CHANGED round 107 (the product moved): \"Every CI job is ubuntu-latest; no windows-latest runner exists\" has been false since PW-0501. .github/workflows/windows.yml builds the desktop target and the Tauri bundle on windows-latest with a pinned Rust toolchain and a pinned CLI, and .github/workflows/desktop-shell-ci.yml builds and tests the shell crate there too. Both succeeded on 2c037d5",
+          "evidence": "runs 37036128017 (windows.yml, 5m 0s) and 37036127979 (desktop-shell-ci.yml, 2m 25s), both SUCCESS at 2c037d5"
         },
         {
           "id": "installer",
-          "state": "absent",
-          "note": "No NSIS, WiX, MSI, MSIX or Inno configuration anywhere",
-          "evidence": "absent"
+          "state": "present",
+          "note": "CHANGED round 107 (the product moved): \"No NSIS, WiX, MSI, MSIX or Inno configuration anywhere\" is false. Every Windows run produces exactly one MSI and one NSIS installer -- asserted, not assumed: a step fails the build if the set is wrong or a stale artifact sits beside a new one -- publishes an inventory with SHA-256 digests, installs the MSI silently, verifies the installed tree and uninstalls it. The artifact is 71.3 MB and is uploaded with UNSIGNED in its name. Signing is a separate row and so is launching",
+          "evidence": "apps/desktop/src-tauri/tauri.conf.json bundle; .github/workflows/windows.yml; scripts/windows/{artifact-inventory,verify-install}.mjs"
         },
         {
           "id": "app-identity",
-          "state": "absent",
-          "note": "No product name, publisher, icons, version scheme or app-data location",
-          "evidence": "absent"
+          "state": "partial",
+          "note": "CORRECTED AND CHANGED round 107 (both -- the note was stale AND work landed): four of the five things the note says are missing exist: productName \"Project Liberty\", publisher \"Project Liberty\", identifier app.projectliberty.desktop and four bundle icons in tauri.conf.json, plus the app-data, cache and log locations declared as constants in src-tauri/src/sidecar.rs and derived from there by scripts/windows/installed-identity.mjs. PARTIAL on the fifth: there is no VERSION SCHEME. tauri.conf.json states no version at all and the bundle inherits Cargo.toml's 0.1.0, so nothing decides what the next number is or ties it to a release. That is PW-0502's \"a version the application can prove\"",
+          "evidence": "apps/desktop/src-tauri/tauri.conf.json; apps/desktop/src-tauri/Cargo.toml version = 0.1.0; apps/desktop/src-tauri/src/sidecar.rs; PW-0502 outstanding"
         },
         {
           "id": "code-signing",
@@ -397,8 +436,8 @@
         {
           "id": "crash-diagnostics",
           "state": "absent",
-          "note": "No log location, no crash capture, no diagnostics bundle",
-          "evidence": "absent"
+          "note": "CORRECTED round 107 (the instrument was wrong, the product did not change): a log DIRECTORY is declared -- LOG_RELATIVE_PATH in src-tauri/src/sidecar.rs, resolved under the user-data root and passed to the sidecar -- so \"no log location\" is not quite right. The score does not move: whether anything writes to it has never been observed, and crash capture and a diagnostics bundle are genuinely unwritten. A declared directory is not a diagnostic",
+          "evidence": "apps/desktop/src-tauri/src/sidecar.rs LOG_RELATIVE_PATH; nothing observed; no crash capture"
         }
       ]
     },
@@ -415,8 +454,8 @@
         {
           "id": "e2e-web",
           "state": "present",
-          "note": "api + chromium, both modes, pinned browser, retries 0",
-          "evidence": "e2e/; production 61 passed, development 70 passed"
+          "note": "CORRECTED round 107 (the instrument was wrong, the product did not change): unchanged capability, but the next reader deserves the current state: this suite is RED on CI as of run 37036128012, one assertion, production mode only -- the watchlist harness reads a rate-limited sign-up as a wrong password (PL-0715). The capability is present; the build is not green",
+          "evidence": "e2e/playwright.config.ts; .github/workflows/ci.yml e2e job; PL-0715 open"
         },
         {
           "id": "e2e-desktop-target",
@@ -426,9 +465,9 @@
         },
         {
           "id": "windows-e2e",
-          "state": "absent",
-          "note": "No test has ever run on Windows; no windows runner",
-          "evidence": "absent"
+          "state": "partial",
+          "note": "CORRECTED AND CHANGED round 107 (both -- the note was stale AND work landed): \"No test has ever run on Windows; no windows runner\" is false twice over. The shell crate's 25 Rust tests run on windows-latest on every push (desktop-shell-ci.yml), and the Windows package job installs the MSI, verifies the installed tree and uninstalls it there. PARTIAL and not present because the thing this row is named for has not happened: the Playwright suite has never run on Windows and has never run against the DESKTOP target anywhere but Ubuntu. That is PW-0602",
+          "evidence": "runs 37036127979 and 37036128017 at 2c037d5; PW-0602 outstanding"
         },
         {
           "id": "real-device-matrix",
@@ -444,9 +483,9 @@
         },
         {
           "id": "install-upgrade-tests",
-          "state": "absent",
-          "note": "No clean-install, upgrade or uninstall test",
-          "evidence": "absent"
+          "state": "partial",
+          "note": "CORRECTED AND CHANGED round 107 (both -- the note was stale AND work landed): clean install, installed-tree verification and uninstall run on a real Windows machine on every push, and the verification is derived from the Rust constants the shell compiles rather than restated -- plus a deliberate negative, pointed at a directory that is not an install, so the check is one somebody has seen fail. UPGRADE is genuinely absent and cannot be written yet: it needs a PREVIOUS RELEASE to upgrade from and this repository has never shipped one (PW-0505). The lifecycle harness that performs F1 to F4 was wired into the Windows job this round as a NON-BLOCKING observation; until its first real report is read it proves nothing",
+          "evidence": "/.github/workflows/windows.yml; scripts/windows/{verify-install,lifecycle}.mjs; PW-0505 blocked on a first release"
         }
       ]
     }

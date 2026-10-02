@@ -1,8 +1,8 @@
 # Project Liberty - Project Status
 
-> Generated 2026-10-02T17:41:02.487Z from the AI control plane.
+> Generated 2026-10-02T17:49:22.051Z from the AI control plane.
 
-**Overall completion:** 91/113 executable tasks (81%)
+**Overall completion:** 91/114 executable tasks (80%)
 
 ## Status summary
 
@@ -10,7 +10,7 @@
 - **READY:** 3
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 2
-- **REVIEW:** 3
+- **REVIEW:** 4
 - **BLOCKED:** 5
 - **DONE:** 91
 - **CANCELED:** 0
@@ -32,6 +32,7 @@
 ## Active work
 
 - **PL-0714** [REVIEW] CI executes every script suite the repository declares, and a failing validate job says something — owner: claude-lead
+- **PL-0716** [REVIEW] The product-readiness instrument is out of date, and it is the figure the commander reads — owner: claude-lead
 - **PW-0206** [REVIEW] Subtitle and audio track selection, on both engines, for the first time — owner: claude-media
 - **PW-0208** [REVIEW] An LGPL-compatible libmpv and FFmpeg the product may actually ship — owner: claude-infra
 - **PW-0307** [IN_PROGRESS] Series navigation and the next episode — owner: claude-frontend
@@ -71,7 +72,7 @@ UNBLOCK WHEN: the commander runs Experiment 1a on real Windows hardware and hand
 ## Agent capacity
 
 - **gpt-architect:** 0/6 active (external lane; not locally executable)
-- **claude-lead:** 1/2 active
+- **claude-lead:** 2/2 active
 - **claude-frontend:** 1/2 active
 - **claude-backend:** 0/2 active
 - **claude-media:** 1/2 active

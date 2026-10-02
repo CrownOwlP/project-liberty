@@ -7,20 +7,20 @@
 it.** `coordination/PROJECT_STATUS.md` answers *has the board been worked*.
 This answers *can a person install this on a Windows PC and watch something*.
 
-## Overall usable-product readiness: 46%
+## Overall usable-product readiness: 60%
 
 Weighted mean of the dimensions below, using the weights in the data file —
 not a mean of means, because the dimensions are not equally load-bearing.
 
 | Dimension | Readiness | Weight | present | partial | absent |
 | --- | --- | --- | --- | --- | --- |
-| Engineering foundation | **81%** | 10 | 6 | 1 | 1 |
-| Windows desktop integration | **69%** | 20 | 5 | 1 | 2 |
-| Native playback | **45%** | 20 | 3 | 3 | 4 |
-| UI / product polish | **44%** | 20 | 3 | 8 | 5 |
+| Engineering foundation | **88%** | 10 | 6 | 2 | 0 |
+| Windows desktop integration | **75%** | 20 | 5 | 2 | 1 |
+| Native playback | **55%** | 20 | 3 | 5 | 2 |
+| UI / product polish | **63%** | 20 | 7 | 6 | 3 |
 | Real-content integration | **10%** | 10 | 0 | 1 | 4 |
-| Packaging and release | **0%** | 10 | 0 | 0 | 6 |
-| Testing and reliability | **57%** | 10 | 4 | 0 | 3 |
+| Packaging and release | **42%** | 10 | 2 | 1 | 3 |
+| Testing and reliability | **71%** | 10 | 4 | 2 | 1 |
 
 ## How each figure is derived
 
@@ -35,9 +35,9 @@ progress each have a complete, tested, reviewed HTTP API and no user interface
 at all. Scoring them absent would erase reviewed work; scoring them present
 would claim a person can use them.
 
-### Engineering foundation — 81%
+### Engineering foundation — 88%
 
-6.5 of 8 capability points.
+7 of 8 capability points.
 
 - [x] **contracts** — Transport/domain shapes incl. DRM state, live/EPG, failover
   - evidence: `packages/contracts/src (26 files)`
@@ -47,54 +47,54 @@ would claim a person can use them.
   - evidence: `packages/media-engine/src (20 files)`
 - [x] **persistence** — Profiles, progress, watchlist repositories, profile-scoped
   - evidence: `packages/persistence/src (26 files)`
-- [~] **auth-seam** — Authorization is enforced on every profile-scoped route and guarded mechanically (PW-0402); AUTHENTICATION is enforced too and APPROVED (PW-0403) -- a deployment resolves identity only from a verified database-backed session, witnessed end to end against a real PostgreSQL including immediate revocation. STILL PARTIAL for three named reasons: no mail transport, so verification and reset cannot complete; no SQL exercised from CI; and no sign-in screen, so a deployment viewer gets a correct 401 with nowhere to go. The last is [[PW-0312]] and is why this row is not user-reachable capability yet
-  - evidence: `apps/web/src/lib/session/auth-instance.ts, apps/web/src/app/api/auth (PW-0403, DONE); apps/web/src/lib/authorization (PW-0402); docs/SECURITY.md R4; ADR-007 accepted`
+- [~] **auth-seam** — CORRECTED round 107 (the instrument was wrong, the product did not change): two of the three reasons this row was partial have been false for several rounds. The sign-in screen EXISTS (PW-0312, DONE) and SQL IS exercised from CI -- the e2e job applies the repository migration and runs the whole suite against a real PostgreSQL in production mode. Identity resolves only from a verified database-backed session, witnessed end to end including immediate revocation (PW-0403, DONE). ONE reason remains and it is enough: the mail transport is `noMailTransport`, a function whose body throws, so email verification and password reset cannot complete. A viewer who forgets their password has nowhere to go
+  - evidence: `apps/web/src/lib/session/auth-instance.ts:266 (noMailTransport); apps/web/src/components/auth/auth-policy.ts:25; .github/workflows/ci.yml e2e job (PostgreSQL); PW-0312, PW-0403 DONE`
 - [x] **http-api** — catalog/home, playback/session, profiles, progress, watchlist, telemetry
   - evidence: `apps/web/src/app/api/v1`
 - [x] **observability** — CMCD v2 vocabulary and playback reason trail
   - evidence: `packages/observability/src; apps/web/src/components/player/telemetry.ts`
-- [ ] **rate-limits** — No rate limit on any route
-  - evidence: `docs/SECURITY.md residual risk R2`
+- [~] **rate-limits** — CORRECTED round 107 (the instrument was wrong, the product did not change): "No rate limit on any route" is false for the AUTH routes and true for the application's own. better-auth 1.7.5 enables rate limiting whenever the server is in production -- `enabled: options.rateLimit?.enabled ?? isProduction` -- with a 100-per-60-seconds default and a special rule of THREE PER TEN SECONDS on anything under /sign-in or /sign-up, keyed per client IP and path. Nobody configured that; it is the library's default and packages/auth passes no rateLimit option at all. Partial rather than present for exactly that reason: an unexamined default is not a policy, it applies to no route this product wrote, and PL-0715 is very likely a consequence of the half that exists
+  - evidence: `packages/auth/src/better-auth.ts (no rateLimit option); better-auth/dist/context/create-context.mjs:172 and dist/api/rate-limiter/index.mjs getDefaultSpecialRules; docs/SECURITY.md residual risk R2; PL-0715`
 
-### Windows desktop integration — 69%
+### Windows desktop integration — 75%
 
-5.5 of 8 capability points.
+6 of 8 capability points.
 
 - [x] **build-target-split** — LIBERTY_BUILD_TARGET, .desktop module resolution, separate distDir, import-graph guard
   - evidence: `apps/web/src/app/api/v1/playback/build-target.ts + .test.ts (853 lines)`
 - [x] **desktop-session-forwarder** — Authenticated-backend proxy, identity allowlist, https-only, no pass-through
   - evidence: `apps/web/src/app/api/v1/playback/session/playback-session-implementation.desktop.ts`
-- [ ] **tauri-shell** — The crate EXISTS and is tested (PW-0102, in REVIEW): handshake, Job Object, launch plan, restart budget and failure text, 25 Rust tests, and the crate's own Windows code cross-compiles for x86_64-pc-windows-msvc. STILL ABSENT AS A CAPABILITY, and the state is unchanged on purpose: no binary can be produced, because the full tree does not compile inside Tauri's own transitive graph (ADR-009), and nothing has launched. Files existing is not a shell running
-  - evidence: `apps/desktop/src-tauri (PW-0102, in REVIEW; build gate recorded FAIL); ADR-009`
+- [~] **tauri-shell** — CORRECTED AND CHANGED round 107 (both -- the note was stale AND work landed): the note said "no binary can be produced". One is produced on every push: .github/workflows/windows.yml builds the Tauri bundle on windows-latest, asserts exactly one MSI and one NSIS installer with SHA-256 digests, INSTALLS the MSI, verifies the installed tree against the constants the shell itself compiles, and uninstalls it. Run 37036128017 at 2c037d5 succeeded in 5m 0s. NOT PRESENT, and the rule is what says so: nothing has LAUNCHED. No runner has an attended desktop session, so whether the shell starts, spawns its sidecar, completes the handshake and shows a window is unobserved -- PW-0103 and PW-0504, both on the commander's machine
+  - evidence: `apps/desktop/src-tauri (PW-0102, DONE); .github/workflows/windows.yml; run 37036128017`
 - [x] **standalone-sidecar** — output:'standalone' is set for the desktop target and only for it
   - evidence: `apps/web/next.config.ts (PW-0101)`
-- [~] **sidecar-supervision** — Both halves now exist in code: the sidecar's port handshake (PW-0101) and the shell's consumer, Job Object ownership, bounded restart budget and surfaced failure (PW-0102). STILL PARTIAL because none of it has been OBSERVED -- whether the kernel terminates job members is owed to a Windows runner or PW-0601, and the supervision loop's runtime assembly is a stub that panics naming what it owes
-  - evidence: `apps/web/src/lib/sidecar/handshake.ts (PW-0101); apps/desktop/src-tauri/src/{job,supervision,sidecar,failure}.rs (PW-0102)`
+- [~] **sidecar-supervision** — CORRECTED round 107 (the instrument was wrong, the product did not change): PW-0102 is DONE, not in review. Both halves exist in code -- the sidecar's port handshake (PW-0101) and the shell's consumer, Job Object ownership, bounded restart budget and surfaced failure -- and the shipped tree is now verified on a real Windows machine on every push, by derivation from src-tauri/src/sidecar.rs rather than by restating paths. STILL PARTIAL for the reason that has not changed: none of the SUPERVISION has been observed. Whether the kernel terminates job members when the shell dies needs a process that has actually launched
+  - evidence: `apps/web/src/lib/sidecar/handshake.ts (PW-0101); apps/desktop/src-tauri/src/{job,supervision,sidecar,failure}.rs (PW-0102, DONE); scripts/windows/verify-install.mjs`
 - [x] **loopback-hardening** — Per-launch 256-bit token compared in constant time, exact-literal Host check, one indistinguishable refusal, and a start-time refusal when HOSTNAME is unset
   - evidence: `apps/web/src/lib/sidecar/policy.ts + policy.test.ts (PW-0101)`
 - [x] **csp-emission** — The application emits its own CSP in sidecar mode, replacing the injection Tauri stops applying
   - evidence: `apps/web/src/lib/sidecar/policy.ts contentSecurityPolicy; apps/web/src/proxy.ts (PW-0101)`
-- [ ] **window-lifecycle** — No native window, crash/restart, deep links or protocol handler
-  - evidence: `absent`
+- [ ] **window-lifecycle** — CORRECTED round 107 (the instrument was wrong, the product did not change): the shell crate exists and now ships inside an installed binary, so "no native window" is a statement about what has RUN rather than about what has been written. Nothing changes the score: no window has been created or observed anywhere, and crash/restart behaviour, deep links and a protocol handler are genuinely unwritten
+  - evidence: `apps/desktop/src-tauri/src/shell.rs exists; no observation; PW-0103, PW-0504`
 
-### Native playback — 45%
+### Native playback — 55%
 
-4.5 of 10 capability points.
+5.5 of 10 capability points.
 
 - [x] **player-adapter-boundary** — The module exists with all four section-3 rules enforced by an import-graph guard proven against a planted offender
   - evidence: `apps/web/src/components/player/player-adapter.ts + .test.ts (PW-0201)`
-- [~] **web-adapter** — A Shaka controller and <liberty-video> exist and work; they do not implement the boundary
-  - evidence: `apps/web/src/components/player/playback-controller.ts, liberty-video.ts`
+- [~] **web-adapter** — CORRECTED round 107 (the instrument was wrong, the product did not change): the note said "they do not implement the boundary". WebPlayerAdapter implements PlayerAdapter in full -- load, play, pause, seek, stop, track reading and selection, volume, timeline, A/V telemetry -- and has 29 tests (PW-0202, DONE). It stays PARTIAL for a different and still-true reason: nothing routes through it. player-surface.tsx drives playback-controller.ts directly, so the boundary, the routing and the track policy are all behind a seam a user cannot reach. Wiring it is PW-0306
+  - evidence: `apps/web/src/components/player/web-player-adapter.ts (PW-0202, DONE); apps/web/src/components/player/player-surface.tsx imports playback-controller, not the adapter`
 - [ ] **native-adapter** — No libmpv binding, no child HWND, no vo=gpu-next
   - evidence: `absent`
-- [ ] **capability-routing** — canPlay and the DRM-to-web routing function are design-only
-  - evidence: `absent; contract prerequisite IS present: packages/contracts/src/shared/drm.ts`
+- [~] **capability-routing** — CORRECTED round 107 (the instrument was wrong, the product did not change): "design-only" is false: adapter-routing.ts shipped with PW-0203 and carries routeCandidate, protectionDecisionFor, the two adapter preference orders and the declared capability sets, with its own suite including property tests over the DRM clauses. Partial and not present for the same reason as web-adapter: nothing in the application calls it yet
+  - evidence: `apps/web/src/components/player/adapter-routing.ts and adapter-routing.test.ts (PW-0203, DONE)`
 - [x] **playback-state-machine** — XState v5 parallel machine, 11 phases, 21 events, property-tested
   - evidence: `apps/web/src/components/player/playback-machine.ts (2067 lines)`
 - [~] **native-error-vocabulary** — describeNativePlaybackError is implemented; classifyNativeFailure returns null on every path
   - evidence: `apps/web/src/components/player/shaka-error.ts:467; playback-failure.ts:262`
-- [ ] **track-selection** — No subtitle or audio track selection anywhere, on either engine
-  - evidence: `absent: zero getTextTracks/selectAudioLanguage callers`
+- [~] **track-selection** — CORRECTED AND CHANGED round 107 (both -- the note was stale AND work landed): "zero getTextTracks/selectAudioLanguage callers" is false -- web-player-adapter.ts calls both, and the boundary has carried getTracks, selectAudioTrack, selectSubtitleTrack and a trackselected event since PW-0201. PW-0206 adds what was genuinely missing: the bridge from engine-reported tracks to the contracted selection policy in @liberty/media-engine, with forced and default honoured, a viewer's choice remembered as a language and a purpose so it survives a candidate switch, and every assumed field reported rather than hidden. PARTIAL: there is no UI to choose with (PW-0306) and no mpv side (PW-0205)
+  - evidence: `apps/web/src/components/player/{player-adapter,web-player-adapter,tracks}.ts (PW-0201, PW-0202, PW-0206)`
 - [~] **source-switching** — Automatic failover between candidates works; no user-facing switch
   - evidence: `playback-machine.ts failingOver state; no UI control`
 - [x] **av-continuity** — Proxy diagnostics with evidence source and reason trail; lip-sync reported unobservable
@@ -102,42 +102,42 @@ would claim a person can use them.
 - [ ] **hdr-4k-hwdec** — No HDR, no hardware-decoding, no D3D11 handling in code
   - evidence: `absent`
 
-### UI / product polish — 44%
+### UI / product polish — 63%
 
-7 of 16 capability points.
+10 of 16 capability points.
 
 - [x] **app-shell** — One AppShell with a skip link, a global focus rule, a root not-found and a global-error; a guard fails the build if a route grows its own header again
   - evidence: `apps/web/src/components/shell (PW-0301)`
 - [x] **navigation** — Every entry goes somewhere real or states why it is planned; /search is reachable for the first time and the four fragment anchors are gone
   - evidence: `apps/web/src/components/shell/navigation.ts (PW-0301)`
-- [~] **home-discovery** — Two hardcoded rails over 6 demo items; loading/empty/error states are good
-  - evidence: `apps/web/src/app/page.tsx; lib/catalog.ts:119`
-- [~] **title-detail** — Hero, three facts, per-episode rights gating; the only action is Play
-  - evidence: `apps/web/src/app/title/[titleId]`
+- [~] **home-discovery** — CORRECTED round 107 (the instrument was wrong, the product did not change): the rails are no longer two: a Continue Watching rail renders on the home page (PW-0305) and catalog cards carry real artwork rather than CSS gradients (PW-0302). Still partial: the catalog behind it is a small demo set, and a real metadata source is a separate row
+  - evidence: `apps/web/src/app/page.tsx; apps/web/src/components/continue-watching/continue-watching-rail.tsx (PW-0305); apps/web/src/components/artwork (PW-0302)`
+- [~] **title-detail** — CORRECTED round 107 (the instrument was wrong, the product did not change): "the only action is Play" is false: a watchlist add control lives on the title page (PW-0304) and is exercised in the browser, including the refused-write rollback. Series pages carry a season selector, per-episode progress and per-episode rights gating (PW-0307). Still partial: no next-episode affordance at the end of playback, which is PW-0307's last clause and waits on player controls
+  - evidence: `apps/web/src/app/title/[titleId]; e2e/tests/watchlist.spec.ts; e2e/tests/series-navigation.spec.ts`
 - [x] **search** — Server-rendered results, debounced client input, hydration adoption, live region
   - evidence: `apps/web/src/components/search (452+478+194 lines)`
-- [~] **series-episodes** — Contract and EpisodeList exist; no season selector, no next-episode, no progress
-  - evidence: `apps/web/src/components/title/episode-list.tsx`
+- [~] **series-episodes** — CORRECTED AND CHANGED round 107 (both -- the note was stale AND work landed): "no season selector, no next-episode, no progress" is false on all three counts. PW-0307 shipped the season selector with keyboard operation and a roving tabindex, per-episode watched and in-progress state from the progress API, and resolveNextEpisode as a pure function with its own tests, all with browser coverage. Partial because the last clause -- a next-episode affordance AT THE END OF PLAYBACK, honouring the same per-episode rights gate -- needs a player that can report an ending, which is PW-0306
+  - evidence: `apps/web/src/components/title/{episode-list,season-navigation}.tsx; apps/web/src/lib/next-episode.ts; e2e/tests/series-navigation.spec.ts (PW-0307)`
 - [ ] **player-controls** — The browser's native <video> chrome. No play, seek, volume, fullscreen, subtitle, audio or quality control
   - evidence: `apps/web/src/components/player/player-surface.tsx:264`
-- [~] **profiles-ui** — Picker, switch and create exist and the active profile is in the shell on every route; STILL PARTIAL, and not because the screen is unfinished. The identity the picker selects within is a development header in a non-deployment runtime, so 'who is watching' is only as real as [[auth-seam]] -- PW-0403. No avatar image, because there is no asset store yet (PW-0302): a tile is an initial on a hue derived from the profile id. And no e2e spec owns the profile journey; the executed suites are regression evidence
-  - evidence: `apps/web/src/components/profiles, apps/web/src/app/profiles, apps/web/src/components/shell/app-shell.tsx (PW-0303, in REVIEW)`
-- [~] **watchlist-ui** — API complete and tested; no add control, no list screen
-  - evidence: `apps/web/src/app/api/v1/watchlist; no screen`
-- [~] **continue-watching** — Progress API complete and tested; no rail, no resume prompt, no card progress
-  - evidence: `apps/web/src/app/api/v1/progress; no screen`
+- [~] **profiles-ui** — CORRECTED round 107 (the instrument was wrong, the product did not change): two of the three reasons are gone. The identity the picker selects within is now a real database-backed session rather than a development header (PW-0403, DONE), and the profile journey is exercised in the browser against a real PostgreSQL by the watchlist suite. ONE reason remains and it is unchanged: there is still no profile PICTURE. PW-0302 shipped artwork for catalog posters, not for avatars -- avatar.ts derives an initial and a hue from the profile id, and profileViewSchema's avatarKey is an opaque storage key with nothing to resolve it against
+  - evidence: `apps/web/src/components/profiles (PW-0303, DONE); apps/web/src/components/profiles/avatar.ts; PW-0403 DONE`
+- [x] **watchlist-ui** — CHANGED round 107 (the product moved): PW-0304 shipped both halves the note said were missing: an add control on the title page and a /watchlist list screen. Both are exercised in the browser against a real session and a real database, including a refused write that rolls back and says why rather than rendering as a success
+  - evidence: `apps/web/src/app/watchlist/page.tsx; apps/web/src/components/watchlist (PW-0304, DONE); e2e/tests/watchlist.spec.ts`
+- [x] **continue-watching** — CHANGED round 107 (the product moved): PW-0305 shipped the rail. It renders on the home page from the progress API
+  - evidence: `apps/web/src/components/continue-watching/continue-watching-rail.tsx; apps/web/src/app/page.tsx (PW-0305, DONE)`
 - [ ] **settings** — No screen and no API
   - evidence: `absent`
 - [ ] **live-guide-ui** — No route, no component; the home nav Live link points at a fragment
   - evidence: `absent`
-- [ ] **artwork** — Zero images. Posters are CSS gradients and the contracts carry no artwork field
-  - evidence: `absent: no poster/artwork/backdrop key in packages/contracts/src`
+- [x] **artwork** — CHANGED round 107 (the product moved): PW-0302 shipped artwork end to end: an artwork vocabulary in the contracts, a poster component, and real images on catalog cards. "Zero images" and "the contracts carry no artwork field" are both false. Note for the next reader: profile AVATARS are still generated rather than stored, which is counted under profiles-ui and not here
+  - evidence: `packages/contracts/src/shared/artwork.ts; apps/web/src/components/artwork (PW-0302, DONE)`
 - [~] **design-system** — Spacing, type, radius, elevation and focus tokens exist and a second breakpoint handles Windows scaling; components still carry px literals and there is no light theme, which is a recorded decision
   - evidence: `apps/web/src/app/globals.css (PW-0301)`
-- [ ] **offline-network-state** — No navigator.onLine, no offline banner, no retry-on-reconnect
-  - evidence: `absent`
-- [~] **accessibility** — Skip link, a global :focus-visible where globals.css previously defined none, and the existing live regions; still no keyboard handlers, no focus management and no roving tabindex -- PW-0310
-  - evidence: `apps/web/src/app/globals.css; apps/web/src/components/shell/app-shell.tsx (PW-0301)`
+- [x] **offline-network-state** — CHANGED round 107 (the product moved): PW-0309 shipped all three things the note says are missing, and more carefully than the note asks for. navigator.onLine is read twice -- when a probe is issued and when it fails -- so a dead link is not reported as a dead process; a degraded banner distinguishes offline from sidecar-unreachable; and recovery re-fetches. A stale probe answer can no longer be read as recovery, which was a real defect that drove the application to a browser error page
+  - evidence: `apps/web/src/lib/network-state.ts; apps/web/src/components/state/{reachability-store.ts,degraded-banner.tsx}; e2e/tests/degraded-states.spec.ts (PW-0309, DONE)`
+- [~] **accessibility** — CORRECTED round 107 (the instrument was wrong, the product did not change): "no keyboard handlers, no focus management and no roving tabindex" is no longer true everywhere: the season selector shipped with arrow, Home and End handling and a roving tabindex, asserted in the browser (PW-0307). It is the only place in the application that has them, which is why this stays partial and why PW-0310 still owns the rest
+  - evidence: `apps/web/src/components/title/season-navigation.tsx; e2e/tests/series-navigation.spec.ts (PW-0307); apps/web/src/app/globals.css (PW-0301); PW-0310 outstanding`
 
 ### Real-content integration — 10%
 
@@ -154,41 +154,41 @@ would claim a person can use them.
 - [ ] **operator-rights-register** — No register, so a configured deployment correctly publishes nothing
   - evidence: `coordination/LAST_MILE.md item 4; docs/CATALOG_SOURCE.md`
 
-### Packaging and release — 0%
+### Packaging and release — 42%
 
-0 of 6 capability points.
+2.5 of 6 capability points.
 
-- [ ] **windows-build** — Every CI job is ubuntu-latest; no windows-latest runner exists
-  - evidence: `.github/workflows/ci.yml:134,333,505`
-- [ ] **installer** — No NSIS, WiX, MSI, MSIX or Inno configuration anywhere
-  - evidence: `absent`
-- [ ] **app-identity** — No product name, publisher, icons, version scheme or app-data location
-  - evidence: `absent`
+- [x] **windows-build** — CHANGED round 107 (the product moved): "Every CI job is ubuntu-latest; no windows-latest runner exists" has been false since PW-0501. .github/workflows/windows.yml builds the desktop target and the Tauri bundle on windows-latest with a pinned Rust toolchain and a pinned CLI, and .github/workflows/desktop-shell-ci.yml builds and tests the shell crate there too. Both succeeded on 2c037d5
+  - evidence: `runs 37036128017 (windows.yml, 5m 0s) and 37036127979 (desktop-shell-ci.yml, 2m 25s), both SUCCESS at 2c037d5`
+- [x] **installer** — CHANGED round 107 (the product moved): "No NSIS, WiX, MSI, MSIX or Inno configuration anywhere" is false. Every Windows run produces exactly one MSI and one NSIS installer -- asserted, not assumed: a step fails the build if the set is wrong or a stale artifact sits beside a new one -- publishes an inventory with SHA-256 digests, installs the MSI silently, verifies the installed tree and uninstalls it. The artifact is 71.3 MB and is uploaded with UNSIGNED in its name. Signing is a separate row and so is launching
+  - evidence: `apps/desktop/src-tauri/tauri.conf.json bundle; .github/workflows/windows.yml; scripts/windows/{artifact-inventory,verify-install}.mjs`
+- [~] **app-identity** — CORRECTED AND CHANGED round 107 (both -- the note was stale AND work landed): four of the five things the note says are missing exist: productName "Project Liberty", publisher "Project Liberty", identifier app.projectliberty.desktop and four bundle icons in tauri.conf.json, plus the app-data, cache and log locations declared as constants in src-tauri/src/sidecar.rs and derived from there by scripts/windows/installed-identity.mjs. PARTIAL on the fifth: there is no VERSION SCHEME. tauri.conf.json states no version at all and the bundle inherits Cargo.toml's 0.1.0, so nothing decides what the next number is or ties it to a release. That is PW-0502's "a version the application can prove"
+  - evidence: `apps/desktop/src-tauri/tauri.conf.json; apps/desktop/src-tauri/Cargo.toml version = 0.1.0; apps/desktop/src-tauri/src/sidecar.rs; PW-0502 outstanding`
 - [ ] **code-signing** — Requires an owner-held certificate; LAST_MILE
   - evidence: `absent; owner gate`
 - [ ] **updates** — No update feed, no updater, no version check
   - evidence: `absent`
-- [ ] **crash-diagnostics** — No log location, no crash capture, no diagnostics bundle
-  - evidence: `absent`
+- [ ] **crash-diagnostics** — CORRECTED round 107 (the instrument was wrong, the product did not change): a log DIRECTORY is declared -- LOG_RELATIVE_PATH in src-tauri/src/sidecar.rs, resolved under the user-data root and passed to the sidecar -- so "no log location" is not quite right. The score does not move: whether anything writes to it has never been observed, and crash capture and a diagnostics bundle are genuinely unwritten. A declared directory is not a diagnostic
+  - evidence: `apps/desktop/src-tauri/src/sidecar.rs LOG_RELATIVE_PATH; nothing observed; no crash capture`
 
-### Testing and reliability — 57%
+### Testing and reliability — 71%
 
-4 of 7 capability points.
+5 of 7 capability points.
 
 - [x] **unit-suites** — Monorepo suites green, cache-busted, on every package
   - evidence: `turbo run test --force 20/20`
-- [x] **e2e-web** — api + chromium, both modes, pinned browser, retries 0
-  - evidence: `e2e/; production 61 passed, development 70 passed`
+- [x] **e2e-web** — CORRECTED round 107 (the instrument was wrong, the product did not change): unchanged capability, but the next reader deserves the current state: this suite is RED on CI as of run 37036128012, one assertion, production mode only -- the watchlist harness reads a rate-limited sign-up as a wrong password (PL-0715). The capability is present; the build is not green
+  - evidence: `e2e/playwright.config.ts; .github/workflows/ci.yml e2e job; PL-0715 open`
 - [x] **e2e-desktop-target** — Desktop forwarder and cross-target body equivalence are executed
   - evidence: `e2e/tests/playback-session.desktop.api.spec.ts, .cross-target.api.spec.ts`
-- [ ] **windows-e2e** — No test has ever run on Windows; no windows runner
-  - evidence: `absent`
+- [~] **windows-e2e** — CORRECTED AND CHANGED round 107 (both -- the note was stale AND work landed): "No test has ever run on Windows; no windows runner" is false twice over. The shell crate's 25 Rust tests run on windows-latest on every push (desktop-shell-ci.yml), and the Windows package job installs the MSI, verifies the installed tree and uninstalls it there. PARTIAL and not present because the thing this row is named for has not happened: the Playwright suite has never run on Windows and has never run against the DESKTOP target anywhere but Ubuntu. That is PW-0602
+  - evidence: `runs 37036127979 and 37036128017 at 2c037d5; PW-0602 outstanding`
 - [x] **real-device-matrix** — 41 rows, each owned AUTO, RIG or BLOCKED, with a recorded-environment rule and a reporting format
   - evidence: `docs/WINDOWS_CERTIFICATION.md (PW-0601)`
 - [ ] **long-session-soak** — No long-playback, memory, sleep/wake or network-interruption test
   - evidence: `absent`
-- [ ] **install-upgrade-tests** — No clean-install, upgrade or uninstall test
-  - evidence: `absent`
+- [~] **install-upgrade-tests** — CORRECTED AND CHANGED round 107 (both -- the note was stale AND work landed): clean install, installed-tree verification and uninstall run on a real Windows machine on every push, and the verification is derived from the Rust constants the shell compiles rather than restated -- plus a deliberate negative, pointed at a directory that is not an install, so the check is one somebody has seen fail. UPGRADE is genuinely absent and cannot be written yet: it needs a PREVIOUS RELEASE to upgrade from and this repository has never shipped one (PW-0505). The lifecycle harness that performs F1 to F4 was wired into the Windows job this round as a NON-BLOCKING observation; until its first real report is read it proves nothing
+  - evidence: `/.github/workflows/windows.yml; scripts/windows/{verify-install,lifecycle}.mjs; PW-0505 blocked on a first release`
 
 ## What this view cannot tell you
 
