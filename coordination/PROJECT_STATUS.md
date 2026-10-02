@@ -1,18 +1,18 @@
 # Project Liberty - Project Status
 
-> Generated 2026-10-02T13:14:03.208Z from the AI control plane.
+> Generated 2026-10-02T15:00:51.277Z from the AI control plane.
 
-**Overall completion:** 89/108 executable tasks (82%)
+**Overall completion:** 90/110 executable tasks (82%)
 
 ## Status summary
 
 - **BACKLOG:** 9
 - **READY:** 3
 - **CLAIMED:** 0
-- **IN_PROGRESS:** 2
-- **REVIEW:** 2
-- **BLOCKED:** 3
-- **DONE:** 89
+- **IN_PROGRESS:** 3
+- **REVIEW:** 0
+- **BLOCKED:** 5
+- **DONE:** 90
 - **CANCELED:** 0
 - **SUPERSEDED:** 4
 
@@ -27,20 +27,19 @@
 - **M6 — Shared-Agent Automation Bridge:** COMPLETE, 3/3 (100%)
 - **EXT — External Licensed Integrations:** BLOCKED, 0/2 (0%), 2 blocked
 - **M7 — Windows Desktop Shell + Native Playback:** COMPLETE, 4/4 (100%)
-- **PW — undefined:** IN_PROGRESS, 16/32 (50%), 1 blocked
+- **PW — undefined:** IN_PROGRESS, 17/32 (53%), 1 blocked
 
 ## Active work
 
+- **PL-0713** [IN_PROGRESS] The desktop forwarder spec shares one ledger across parallel workers — owner: claude-test
 - **PW-0208** [IN_PROGRESS] An LGPL-compatible libmpv and FFmpeg the product may actually ship — owner: claude-infra
 - **PW-0307** [IN_PROGRESS] Series navigation and the next episode — owner: claude-frontend
-- **PW-0309** [REVIEW] Offline, degraded and error states a desktop application needs — owner: claude-frontend
-- **PW-0503** [REVIEW] Install, upgrade, uninstall, reinstall — tested, not assumed — owner: claude-test
 
 ## Dispatch classification
 
 - **READY_AND_EXECUTABLE:** 3
 - **READY_BUT_EXTERNAL:** 0
-- **BLOCKED:** 3
+- **BLOCKED:** 5
 - **BACKLOG (dependency-gated):** 9
 
 ## Recommended executable wave
@@ -64,12 +63,14 @@ WHY IT IS BEING RECORDED NOW RATHER THAN LEFT. While PW-0103 sat in READY, ai-co
 WHAT IT IS NOT. Not a claim that PW-0103 is unimportant, and not a request to descope it: it is the experiment the architecture rests on. It is a claim about WHO can run it. The owner action is in LAST_MILE item 7 and is unchanged.
 
 UNBLOCK WHEN: the commander runs Experiment 1a on real Windows hardware and hands back the result, or gpt-architect rules that some part of it can be established without the hardware.
+- **PW-0504** Installed-application qualification on the commander's Windows machine: reason not recorded
+- **PW-0505** Upgrade qualification: user data across a real previous release: reason not recorded
 
 ## Agent capacity
 
 - **gpt-architect:** 0/6 active (external lane; not locally executable)
 - **claude-lead:** 0/2 active
-- **claude-frontend:** 2/2 active
+- **claude-frontend:** 1/2 active
 - **claude-backend:** 0/2 active
 - **claude-media:** 0/2 active
 - **claude-test:** 1/1 active

@@ -7803,7 +7803,7 @@
       "id": "PL-0713",
       "priority": "P1",
       "lane": "Test",
-      "status": "READY",
+      "status": "IN_PROGRESS",
       "title": "The desktop forwarder spec shares one ledger across parallel workers",
       "dependencies": [],
       "allowedPaths": [
@@ -7820,7 +7820,11 @@
         "e2e"
       ],
       "acceptance": "The desktop forwarder spec gives the same answer however many workers Playwright runs it with. It does not today: the stub backend keeps ONE request ledger for the whole process, three tests clear it and then assert it holds exactly their own request, and playwright.config.ts sets fullyParallel: true -- which splits tests WITHIN a file across workers. A two-core machine gets one worker and the file passes; a CI runner gets several and a neighbour's forwarded request lands between the clear and the read. CI run 37007312900 failed exactly that way on three assertions, and --workers=4 reproduces it locally. REQUIRED: the isolation is structural rather than a matter of how many cores the machine running it happens to have. REQUIRED: toHaveLength(1) survives unchanged -- it is the assertion that a forwarder neither retries nor fans out, which the spec records as 'a duplicated session request against a real backend is a duplicated authorization', and relaxing it to 'at least one' would delete the check in order to make the schedule convenient. REQUIRED: the repair is demonstrated under more workers than the machine has cores, because a pass at one worker is what hid this for as long as it was hidden.",
-      "notes": "FILED IN ROUND 104 from CI run 37007312900 on d6d0324, which is the first run after the branch was published. Not caused by that round: neither PW-0309 nor PW-0503 touches this spec, the stub or the forwarder."
+      "notes": "FILED IN ROUND 104 from CI run 37007312900 on d6d0324, which is the first run after the branch was published. Not caused by that round: neither PW-0309 nor PW-0503 touches this spec, the stub or the forwarder.",
+      "owner": "claude-test",
+      "implementationAgent": "claude-test",
+      "updatedAt": "2026-10-02T15:00:51.246Z",
+      "implementationBaseSha": "64a76b3992bd8917391547207a29d08cb7ace8be"
     },
     {
       "id": "PW-0101",
@@ -9381,7 +9385,7 @@
       "id": "PW-0309",
       "priority": "P1",
       "lane": "Frontend",
-      "status": "REVIEW",
+      "status": "DONE",
       "title": "Offline, degraded and error states a desktop application needs",
       "dependencies": [
         "PW-0301"
@@ -9410,7 +9414,7 @@
       ],
       "acceptance": "The application behaves honestly when the network, the backend or the sidecar is unavailable. There is no offline handling of any kind today -- no navigator.onLine, no service worker, no offline banner, no retry-on-reconnect. THIS MATTERS MORE ON THE DESKTOP THAN IT DID ON THE WEB: docs/DESKTOP_PLAYBACK.md section 8 accepts that an offline desktop cannot resolve playback at all, and requires that failure be surfaced as an honest unavailable outcome rather than an empty candidate list -- so the UI half of that ruling is this task. REQUIRED: a network-state signal and a visible degraded mode that names what is unavailable. REQUIRED: recovery on reconnect without a manual reload. REQUIRED: the sidecar being down is a DISTINCT state from the backend being down and from the network being down, because the three have different remedies and collapsing them produces a support burden. REQUIRED: no state invents content; an offline home shows what it has and says so.",
       "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. ",
-      "owner": "claude-frontend",
+      "owner": null,
       "gateResults": {
         "typecheck": {
           "status": "pass",
@@ -9435,8 +9439,57 @@
         }
       },
       "implementationAgent": "claude-frontend",
-      "updatedAt": "2026-10-02T00:26:26.979Z",
-      "implementationBaseSha": "11a5bb3365e4c591e9630e7153493ac2efc77001"
+      "updatedAt": "2026-10-02T14:57:38.949Z",
+      "implementationBaseSha": "11a5bb3365e4c591e9630e7153493ac2efc77001",
+      "review": {
+        "taskId": "PW-0309",
+        "implementationAgent": "claude-frontend",
+        "implementationOwner": "claude-frontend",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "3ab6a82f5b3e7160981fab720528964af423f3be",
+        "reviewedBaseSha": "11a5bb3365e4c591e9630e7153493ac2efc77001",
+        "reviewedTreeHash": "c6341ad1b6d8303097a6129475cfd07156ef41d0b5d116089afba9c233405dd1",
+        "reviewedFileCount": 22,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [
+          "apps/web/src/app/error.tsx",
+          "apps/web/src/app/page.tsx",
+          "apps/web/src/app/watch/[contentId]/page.tsx",
+          "apps/web/src/components/player/playback-machine.ts",
+          "apps/web/src/lib/sidecar"
+        ],
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-10-02T14:57:29.398Z",
+        "evidence": "APPROVED at 3ab6a82f5b3e7160981fab720528964af423f3be. Transcribed by claude-lead from gpt-architect's round-105 ruling, section 1. The verdict, in gpt's terms: typecheck PASS; 1488 web unit tests PASS; full Chromium development suite PASS; full production suite PASS; real PostgreSQL suite PASS; degraded-state repeated runs PASS; retries remain 0; no timeout ceiling was raised; and the degraded-state failures found during implementation were real product defects that were repaired rather than hidden. gpt further ruled that the round-104 GitHub CI failure does NOT invalidate PW-0309 and must not be attributed to it: that failure was independently diagnosed and reproduced as the pre-existing parallel request-ledger defect now filed as PL-0713, which lives in e2e/tests/playback-session.desktop.api.spec.ts -- a file in neither PW-0309's allowedPaths nor its reviewDependencies. FINGERPRINT CHECKED BEFORE RECORDING, which is the condition gpt attached: git diff over PW-0309's allowedPaths UNION reviewDependencies from 3ab6a82 to HEAD 64a76b3 is empty, and the newest commit touching that surface is 3ab6a82 itself. The two commits since it, 5dad6d3 and 64a76b3, touch apps/web/src/app/title, e2e/tests/series-navigation.spec.ts, control and coordination -- none of which that surface names."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PW-0309",
+          "implementationAgent": "claude-frontend",
+          "implementationOwner": "claude-frontend",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "3ab6a82f5b3e7160981fab720528964af423f3be",
+          "reviewedBaseSha": "11a5bb3365e4c591e9630e7153493ac2efc77001",
+          "reviewedTreeHash": "c6341ad1b6d8303097a6129475cfd07156ef41d0b5d116089afba9c233405dd1",
+          "reviewedFileCount": 22,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "apps/web/src/app/error.tsx",
+            "apps/web/src/app/page.tsx",
+            "apps/web/src/app/watch/[contentId]/page.tsx",
+            "apps/web/src/components/player/playback-machine.ts",
+            "apps/web/src/lib/sidecar"
+          ],
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-10-02T14:57:29.398Z",
+          "evidence": "APPROVED at 3ab6a82f5b3e7160981fab720528964af423f3be. Transcribed by claude-lead from gpt-architect's round-105 ruling, section 1. The verdict, in gpt's terms: typecheck PASS; 1488 web unit tests PASS; full Chromium development suite PASS; full production suite PASS; real PostgreSQL suite PASS; degraded-state repeated runs PASS; retries remain 0; no timeout ceiling was raised; and the degraded-state failures found during implementation were real product defects that were repaired rather than hidden. gpt further ruled that the round-104 GitHub CI failure does NOT invalidate PW-0309 and must not be attributed to it: that failure was independently diagnosed and reproduced as the pre-existing parallel request-ledger defect now filed as PL-0713, which lives in e2e/tests/playback-session.desktop.api.spec.ts -- a file in neither PW-0309's allowedPaths nor its reviewDependencies. FINGERPRINT CHECKED BEFORE RECORDING, which is the condition gpt attached: git diff over PW-0309's allowedPaths UNION reviewDependencies from 3ab6a82 to HEAD 64a76b3 is empty, and the newest commit touching that surface is 3ab6a82 itself. The two commits since it, 5dad6d3 and 64a76b3, touch apps/web/src/app/title, e2e/tests/series-navigation.spec.ts, control and coordination -- none of which that surface names."
+        }
+      ],
+      "completedAt": "2026-10-02T14:57:38.949Z"
     },
     {
       "id": "PW-0310",
@@ -10072,7 +10125,7 @@
       "id": "PW-0503",
       "priority": "P1",
       "lane": "Test",
-      "status": "REVIEW",
+      "status": "READY",
       "title": "Install, upgrade, uninstall, reinstall — tested, not assumed",
       "dependencies": [
         "PW-0501"
@@ -10096,26 +10149,109 @@
       ],
       "acceptance": "The installer's lifecycle is exercised automatically wherever that is possible on a runner, and everything that is not is named for the commander's machine. REQUIRED: clean install on a machine that has never had the application, then launch. REQUIRED: upgrade over a previous version with user data preserved, which is the one a release breaks most often and nobody tests. REQUIRED: uninstall leaves no service, no scheduled task and no orphaned node.exe, and states exactly what user data it keeps or removes. REQUIRED: reinstall after uninstall. REQUIRED: each case is marked automated or commander-machine, with the reason, so the split is visible rather than implied.",
       "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. SURFACE NOTE: this task's allowedPaths name directories that do not exist yet. The evidence-based narrowing procedure applies to reconciling work already in history; for genuinely new work the surface is the smallest set of paths the acceptance can be satisfied within, and it is narrowed again from the diff before review if it turns out to be wider than what was written. ",
-      "owner": "claude-test",
-      "gateResults": {
-        "unit": {
-          "status": "pass",
-          "at": "2026-10-02T02:01:13.805Z",
-          "by": "claude-test",
-          "commitSha": "835823561c69f5bbdebf19c637eeeabff19dacf7",
-          "evidence": "node --test scripts/windows/test-lifecycle.mjs at 835823561c69f5bbdebf19c637eeeabff19dacf7: 30 tests, 7 suites, 0 failures, exit 0. Also the whole alias this round extends: npm run test:scripts EXIT=0 in 1261s -- 38 env scenarios, 73 control-plane scenarios, 27+21+20 validator assertion groups, 9 desktop-target, 35 dispatcher, and the 30 new cases last. NON-VACUITY, three independent weakenings, each reverted after measuring: (a) letting an absent observation read as an empty one AND relaxing the product-name match to the substring 'liberty' fails 2 of 30 -- the check-never-run case and the Liberty Insurance Helper case; (b) pointing CERTIFICATION_SECTION at a heading the document does not have fails 4 of 30 across three suites, which is the derivation proving it is a derivation; (c) the entry-point guard was found by this suite rather than reasoned about -- process.argv[1].endsWith('lifecycle.mjs') also matches test-lifecycle.mjs, so importing the module to test parseArguments ran the harness and exited the test process with code 2. It is now compared by resolved path. WHAT NO TEST HERE CLAIMS: nothing in this suite observes a Windows machine. It tests the decisions -- which cases exist, who owns them, what counts as residue, whether an upgrade preserved content -- and one case runs the real script on this Linux container and asserts it exits non-zero with 'refusing to run on'. UNVERIFIED: every msiexec path, because no msiexec ran."
-        },
-        "build": {
-          "status": "pass",
-          "at": "2026-10-02T02:01:25.324Z",
-          "by": "claude-test",
-          "commitSha": "835823561c69f5bbdebf19c637eeeabff19dacf7",
-          "evidence": "npm run build (turbo) at 835823561c69f5bbdebf19c637eeeabff19dacf7: Tasks 12 successful, 12 total, exit 0. STATED PLAINLY RATHER THAN DRESSED UP: that run was FULL TURBO, entirely cache-hit, because this task's surface is scripts/windows/**, e2e/windows/** and one line of package.json's scripts block -- none of which is a build input for any workspace. A build gate on a change the build graph cannot see is close to vacuous and saying otherwise would be the kind of green mark this project refuses. What actually exercises this round's code: node scripts/windows/lifecycle.mjs --plan runs on this platform and prints all six section-F cases with their owners and procedures, exit 0; node scripts/windows/lifecycle.mjs --msi nowhere.msi exits 2 with 'refusing to run on linux'; and the 30-case suite recorded under the unit gate. Also clean at the same commit: npm run lint (12/12 tasks, 0 errors, 1 pre-existing warning in PW-0313's surface), npm run repo:validate, npm run env:validate, npm run ai:validate (111 tasks). The MSI itself cannot be built here -- the Rust toolchain in this container targets x86_64-unknown-linux-gnu only -- so no installer was produced and none of F1 to F4 was executed. UNVERIFIED on Windows, and that is reported rather than approximated."
-        }
-      },
+      "owner": null,
+      "gateResults": {},
       "implementationAgent": "claude-test",
-      "updatedAt": "2026-10-02T02:01:52.328Z",
-      "implementationBaseSha": "643dbeb8230b53b86ddee9281458eb07528a0c17"
+      "updatedAt": "2026-10-02T15:00:45.316Z",
+      "implementationBaseSha": "643dbeb8230b53b86ddee9281458eb07528a0c17",
+      "review": {
+        "taskId": "PW-0503",
+        "implementationAgent": "claude-test",
+        "implementationOwner": "claude-test",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "64a76b3992bd8917391547207a29d08cb7ace8be",
+        "reviewedBaseSha": "643dbeb8230b53b86ddee9281458eb07528a0c17",
+        "reviewedTreeHash": "337e4d1b43a7bee3bc38038a56b2bf8d1424879e705ec9f301bbc05a36a9e9e3",
+        "reviewedFileCount": 40,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [
+          ".github/workflows/windows.yml",
+          "apps/desktop",
+          "docs/TEST_MATRIX.md",
+          "docs/WINDOWS_CERTIFICATION.md"
+        ],
+        "outcome": "CHANGES_REQUESTED",
+        "reviewedAt": "2026-10-02T15:00:39.136Z",
+        "evidence": "CHANGES REQUESTED at 835823561c69f5bbdebf19c637eeeabff19dacf7. Transcribed by claude-lead from gpt-architect's round-105 ruling, section 2, which is a request for changes in substance even though it does not use the word: 'The lifecycle harness architecture is accepted. DO NOT mark PW-0503 DONE merely to free the Test lane. Current Windows evidence establishes only part of the lifecycle matrix.' gpt's itemised verdict: F1 clean install PARTIAL PASS -- the MSI builds, installs and its installed tree is verified; still unverified is actual installed application launch and WebView runtime. F2 upgrade UNVERIFIED -- no real previous release has been exercised as an upgrade source, so user-data preservation across an actual upgrade remains unproven. F3 uninstall PARTIAL PASS -- msiexec uninstall executes; still to prove where automation permits are no orphaned service, no scheduled task, no orphaned node.exe, expected files removed, and documented user-data retention behaviour. F4 reinstall UNVERIFIED but AUTOMATABLE -- 'implement and execute this rather than classifying it as commander-only'. WHAT HAS CHANGED SINCE THAT VERDICT WAS WRITTEN, and it narrows the request rather than answering it: the IMPLEMENTATION of F3's residue classification and of F4 reinstall already exists in scripts/windows/lifecycle.mjs and residue.mjs at the commit above, with 30 cases behind the decisions, and F4 is already marked plannedAutomated with no manual portion. What does not exist is EXECUTION, and it cannot be created by any open task: no open task can write .github/workflows/windows.yml -- every writer is DONE and PW-0502, PW-0503 and PW-0602 hold it read-only. That is recorded as a board.sequencing_finding and needs a ruling on which task gets the write surface. Recorded so the task leaves REVIEW honestly rather than being completed on evidence gpt declined to accept."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PW-0503",
+          "implementationAgent": "claude-test",
+          "implementationOwner": "claude-test",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "64a76b3992bd8917391547207a29d08cb7ace8be",
+          "reviewedBaseSha": "643dbeb8230b53b86ddee9281458eb07528a0c17",
+          "reviewedTreeHash": "337e4d1b43a7bee3bc38038a56b2bf8d1424879e705ec9f301bbc05a36a9e9e3",
+          "reviewedFileCount": 40,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            ".github/workflows/windows.yml",
+            "apps/desktop",
+            "docs/TEST_MATRIX.md",
+            "docs/WINDOWS_CERTIFICATION.md"
+          ],
+          "outcome": "CHANGES_REQUESTED",
+          "reviewedAt": "2026-10-02T15:00:39.136Z",
+          "evidence": "CHANGES REQUESTED at 835823561c69f5bbdebf19c637eeeabff19dacf7. Transcribed by claude-lead from gpt-architect's round-105 ruling, section 2, which is a request for changes in substance even though it does not use the word: 'The lifecycle harness architecture is accepted. DO NOT mark PW-0503 DONE merely to free the Test lane. Current Windows evidence establishes only part of the lifecycle matrix.' gpt's itemised verdict: F1 clean install PARTIAL PASS -- the MSI builds, installs and its installed tree is verified; still unverified is actual installed application launch and WebView runtime. F2 upgrade UNVERIFIED -- no real previous release has been exercised as an upgrade source, so user-data preservation across an actual upgrade remains unproven. F3 uninstall PARTIAL PASS -- msiexec uninstall executes; still to prove where automation permits are no orphaned service, no scheduled task, no orphaned node.exe, expected files removed, and documented user-data retention behaviour. F4 reinstall UNVERIFIED but AUTOMATABLE -- 'implement and execute this rather than classifying it as commander-only'. WHAT HAS CHANGED SINCE THAT VERDICT WAS WRITTEN, and it narrows the request rather than answering it: the IMPLEMENTATION of F3's residue classification and of F4 reinstall already exists in scripts/windows/lifecycle.mjs and residue.mjs at the commit above, with 30 cases behind the decisions, and F4 is already marked plannedAutomated with no manual portion. What does not exist is EXECUTION, and it cannot be created by any open task: no open task can write .github/workflows/windows.yml -- every writer is DONE and PW-0502, PW-0503 and PW-0602 hold it read-only. That is recorded as a board.sequencing_finding and needs a ruling on which task gets the write surface. Recorded so the task leaves REVIEW honestly rather than being completed on evidence gpt declined to accept."
+        }
+      ]
+    },
+    {
+      "id": "PW-0504",
+      "priority": "P1",
+      "lane": "Test",
+      "status": "BLOCKED",
+      "title": "Installed-application qualification on the commander's Windows machine",
+      "dependencies": [
+        "PW-0503"
+      ],
+      "allowedPaths": [
+        "docs/WINDOWS_CERTIFICATION.md",
+        "coordination/LAST_MILE.md"
+      ],
+      "reviewDependencies": [
+        "scripts/windows",
+        "apps/desktop",
+        "docs/TEST_MATRIX.md"
+      ],
+      "preferredAgent": "claude-test",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "architecture-review"
+      ],
+      "acceptance": "CATEGORY B of PW-0503's lifecycle matrix, split out under gpt-architect's round-105 section 3 so that PW-0503 is not held open waiting for evidence that can only exist on a person's machine. THE CLAUSES ARE CARRIED FORWARD, NOT WEAKENED. REQUIRED: F1's second half -- the installed liberty-desktop.exe actually LAUNCHES, the sidecar process starts, the handshake completes and WebView2 renders the application. A runner has no interactive desktop session, so this cannot be automated, and packaging or install verification is NOT proof of any of it: gpt's round-105 section 9 says in terms, do not collapse those claims. REQUIRED: F3's second half -- uninstall observed on a machine that has carried real user data for a while, confirming what is kept and what is removed against what scripts/windows/residue.mjs reports. REQUIRED: F5 -- the SmartScreen or Defender wording on first run, recorded verbatim, which is expected to warn until a signing certificate exists (LAST_MILE item 6). EVERY RESULT CARRIES ITS ENVIRONMENT, per docs/WINDOWS_CERTIFICATION.md: 'A RIG pass on unrecorded hardware is not evidence.' NOTHING HERE MAY BE MARKED PASSED FROM THE CLOUD SESSION, which can observe no Windows machine.",
+      "notes": "BLOCKED on the commander's real Windows hardware, the same constraint PW-0103 carries. preferredAgent is claude-test rather than human-commander to match how PW-0103 is modelled -- the task keeps a technical lane and the hardware dependency is carried by BLOCKED and by this note, because human-commander advertises ExecutiveDecision, Credentials, Budget and Licensing and not Test. The person runs it; the lane owns the evidence. Created in round 105 from gpt-architect's instruction to separate PW-0503's work into (A) automatable now, (B) commander-machine, (C) release-dependent. This is B."
+    },
+    {
+      "id": "PW-0505",
+      "priority": "P1",
+      "lane": "Test",
+      "status": "BLOCKED",
+      "title": "Upgrade qualification: user data across a real previous release",
+      "dependencies": [
+        "PW-0503",
+        "PW-0502"
+      ],
+      "allowedPaths": [
+        "scripts/windows/lifecycle-upgrade-evidence.md"
+      ],
+      "reviewDependencies": [
+        "scripts/windows",
+        "docs/RELEASE.md",
+        "docs/WINDOWS_CERTIFICATION.md"
+      ],
+      "preferredAgent": "claude-test",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "architecture-review"
+      ],
+      "acceptance": "CATEGORY C of PW-0503's lifecycle matrix, split out under gpt-architect's round-105 section 3. THE CLAUSE IS CARRIED FORWARD VERBATIM: 'upgrade over a previous version with user data preserved, which is the one a release breaks most often and nobody tests.' REQUIRED: the upgrade is exercised with a REAL previous release as its source, not a rebuild of the same commit -- scripts/windows/lifecycle.mjs already takes --previous-msi and already compares the user-data root by FILE CONTENT rather than by existence, because a store recreated empty passes an existence check and fails a person. REQUIRED: the previous release is identified by version and artifact hash, so 'upgraded from what' is answerable afterwards. WHY THIS CANNOT BE DONE YET, and it is a fact about the project rather than a gap in the harness: .github/workflows/windows.yml says it in its own comments -- an upgrade 'needs a PREVIOUS version to upgrade FROM, and this repository has never shipped one.' The first release is what creates the thing a second run can upgrade. Until then the harness reports F2 as not-run WITH THAT REASON, and never as a pass.",
+      "notes": "BLOCKED until a release exists to upgrade from; PW-0502 (updates, and a version the application can prove) is the task that creates one. Created in round 105. This is category C."
     },
     {
       "id": "PW-0601",

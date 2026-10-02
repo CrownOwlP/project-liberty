@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import { expect, request as playwrightRequest, test } from "@playwright/test";
 import type { APIRequestContext, APIResponse } from "@playwright/test";
 import {
@@ -134,16 +136,92 @@ test.afterAll(async () => {
   await stub.dispose();
 });
 
-async function clearLedger(): Promise<void> {
-  const response = await stub.delete("/__requests");
-  expect(response.status(), "the stub backend did not accept a ledger reset").toBe(200);
+/* =========================================================================
+ * THE LEDGER, AND WHY IT IS READ BY CORRELATION RATHER THAN CLEARED (PL-0713)
+ * =========================================================================
+ *
+ * THERE USED TO BE A `clearLedger()` HERE AND IT WAS THE DEFECT. The stub
+ * keeps ONE ledger for its whole process. Three tests used to wipe it and
+ * then assert it held exactly their own request. `playwright.config.ts` sets
+ * `fullyParallel: true`, which splits tests WITHIN a file across workers —
+ * and this very file contains a test that deliberately forwards four more
+ * requests to the same backend. On a two-core machine Playwright uses one
+ * worker, they serialise, and everything passes. On a GitHub runner they
+ * interleave: CI run 37007312900 failed three assertions here with "Expected
+ * length: 1, Received length: 0" and "Received length: 2".
+ *
+ * TWO REMEDIES WERE TRIED AND MEASURED BEFORE THIS ONE, and both are recorded
+ * because the measurements are the argument:
+ *
+ *   - SERIALISING THE FILE (`test.describe.configure({ mode: "default" })`).
+ *     The file alone went green at 4 and 8 workers; the whole `api` project
+ *     at 4 workers still failed. It does not hold under a `fullyParallel`
+ *     project, and it would have been the wrong shape anyway — scheduling is
+ *     not isolation, it is the absence of a collision this time.
+ *   - FILTERING BY CONTENT ID ALONE. Deterministically worse: two failures at
+ *     1, 4 and 8 workers alike, because `aurora-fall` appears in SEVEN
+ *     requests in this file and `northstar` in two.
+ *
+ * WHAT IS DONE INSTEAD: every flow that asserts on the ledger carries a
+ * CORRELATION IDENTITY unique to that test invocation, and reads only its own
+ * entries. Nothing clears shared state, so there is nothing for a neighbour
+ * to clear out from under it, and a run with `--repeat-each` cannot collide
+ * with itself either.
+ *
+ * TWO MECHANISMS, AND THE SPLIT IS FORCED BY WHERE VALIDATION HAPPENS:
+ *
+ *   1. A RESERVED CONTENT ID (`correlatedContentId`) for flows that fall
+ *      through the stub to the real resolver. This is the mechanism the stub
+ *      ALREADY uses for test-only identities — `stub-denied`,
+ *      `stub-unavailable`, `stub-redirect` are reserved content ids and
+ *      nothing else — so it invents nothing.
+ *   2. A CORRELATION FIELD IN THE BODY (`correlationField`) for flows that hit
+ *      one of those canned ids, where the content id is fixed by the stub and
+ *      cannot also carry the identity. This is safe for exactly those flows
+ *      and ONLY those: `playbackSessionRequestSchema` is `.strict()` at both
+ *      levels on purpose, so an extra field would be refused as malformed by
+ *      the real route — but a canned id is answered by the stub from a literal
+ *      and never reaches that schema. Using it on a proxied flow would convert
+ *      a real decision into a malformed denial, which is why it is not used
+ *      there.
+ *
+ * PRODUCTION IS UNTOUCHED. Nothing in the application sends either; the
+ * forwarder relays bytes it does not read, and the header allowlist — which
+ * `only the identity headers leave the machine` asserts and which must not be
+ * loosened to carry a test identity — is unchanged.
+ * ====================================================================== */
+
+/** A content id reserved to one test invocation. See the header. */
+function correlatedContentId(flow: string): string {
+  return `pl0713-${flow}-${randomUUID()}`;
 }
 
-async function ledger(): Promise<StubRequest[]> {
+/** A correlation field for a flow whose content id is fixed by the stub. */
+function correlationField(): { readonly __pl0713CorrelationId: string } {
+  return { __pl0713CorrelationId: randomUUID() };
+}
+
+/**
+ * The stub requests belonging to one correlation identity, and nothing else.
+ *
+ * Matches on the content id OR the body field, so one reader serves both
+ * mechanisms. A body that is not JSON at all — the malformed-body test
+ * forwards four of those — belongs to no identity and is nobody's evidence.
+ */
+async function ledgerFor(identity: string): Promise<StubRequest[]> {
   const response = await stub.get("/__requests");
   expect(response.status()).toBe(200);
   const body = (await response.json()) as { requests: StubRequest[] };
-  return body.requests;
+  return body.requests.filter((entry) => {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(entry.body);
+    } catch {
+      return false;
+    }
+    if (!isRecord(parsed)) return false;
+    return parsed["contentId"] === identity || parsed["__pl0713CorrelationId"] === identity;
+  });
 }
 
 /** Reads a response and asserts the union holds before anything else reads it. */
@@ -168,15 +246,17 @@ async function decision(response: APIResponse): Promise<PlaybackSessionResponseS
 }
 
 test("a forwarded request actually reaches the backend stub", async () => {
-  await clearLedger();
-
-  const body = sessionRequest(DEMO.movie.id);
+  /* A CONTENT ID BELONGING TO THIS INVOCATION ALONE (PL-0713). It falls
+   * through the stub to the real resolver exactly as a catalog id would --
+   * what it answers is not this test's subject; that the request ARRIVED is. */
+  const contentId = correlatedContentId("forwarded");
+  const body = sessionRequest(contentId);
   const shape = await decision(
     await desktop.post(ROUTE, { data: body, headers: signedIn() })
   );
   expect(["granted", "denied", "unavailable"]).toContain(shape.outcome);
 
-  const seen = await ledger();
+  const seen = await ledgerFor(contentId);
 
   /*
    * ONE REQUEST, NOT "AT LEAST ONE". A forwarder that retried, or that fanned
@@ -258,10 +338,10 @@ test("only the identity headers leave the machine", async () => {
    * send is one nobody has thought of yet -- so this test sends one nobody has
    * thought of and requires it not to arrive.
    */
-  await clearLedger();
+  const contentId = correlatedContentId("identity-headers");
 
   await desktop.post(ROUTE, {
-    data: sessionRequest(DEMO.movie.id),
+    data: sessionRequest(contentId),
     headers: {
       cookie: "liberty_session=e2e",
       authorization: "Bearer e2e-token",
@@ -276,7 +356,7 @@ test("only the identity headers leave the machine", async () => {
     }
   });
 
-  const seen = await ledger();
+  const seen = await ledgerFor(contentId);
   expect(seen).toHaveLength(1);
   const headers = (seen[0] as StubRequest).headers;
 
@@ -339,16 +419,32 @@ test("a redirect from the backend is refused rather than followed", async () => 
    * the redirect named, which is a credential-forwarding decision the forwarder
    * has no business taking, and the contract has no redirect in it to honour.
    */
-  await clearLedger();
-
-  const shape = await decision(await desktop.post(ROUTE, { data: sessionRequest(STUB_REDIRECT) }));
+  /* THE CONTENT ID IS FIXED BY THE STUB here -- `stub-redirect` is what makes
+   * it answer 302 -- so the correlation identity rides in the body instead.
+   * Safe precisely because a canned id is answered from a literal and never
+   * reaches the strict request schema; see the ledger header. */
+  const correlation = correlationField();
+  const shape = await decision(
+    await desktop.post(ROUTE, { data: { ...sessionRequest(STUB_REDIRECT), ...correlation } })
+  );
   expect(shape.outcome).toBe("unavailable");
   expect(reasonCodes(shape)).toContain("provider_unavailable");
 
-  /* And the identity went to exactly one origin: the stub saw the request once
-   * and the redirect target was never contacted, which is unobservable from
-   * here except as the absence of a second ledger entry. */
-  expect(await ledger()).toHaveLength(1);
+  /*
+   * THE STUB SAW THIS FLOW EXACTLY ONCE: the forwarder did not retry and did
+   * not fan out after being handed a 302.
+   *
+   * A CORRECTION TO WHAT THIS LINE USED TO CLAIM. Its comment said the absence
+   * of a second ledger entry is how "the redirect target was never contacted"
+   * is observed. It is not: `stub-redirect` redirects to
+   * `https://127.0.0.1:1/elsewhere`, a different origin that is not this stub,
+   * so the ledger could never have recorded a followed redirect either way.
+   * What proves non-following is the OUTCOME asserted above -- an `unavailable`
+   * carrying `provider_unavailable`, which is what the forwarder answers when
+   * it refuses the redirect rather than chasing it. The ledger count is the
+   * no-retry property, which is worth asserting on its own.
+   */
+  expect(await ledgerFor(correlation.__pl0713CorrelationId)).toHaveLength(1);
 });
 
 test("an unavailable backend is an unavailable session, with a reason", async () => {
