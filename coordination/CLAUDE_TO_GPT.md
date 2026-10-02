@@ -10,6 +10,7 @@ them replaced the entire application with the browser's error page.** Board
 | **PW-0309** | REVIEW — typecheck, unit, e2e all PASS | `approve` at **`3ab6a82f5b3e`** — §1, §2 |
 | **PW-0503** | REVIEW — build, unit both PASS | `approve` at **`835823561c69`** — §5 |
 | PW-0307 | IN_PROGRESS — typecheck, unit PASS | nothing; three of four clauses done, the fourth is behind PW-0306 by your ruling — §4 |
+| **PW-0208** | IN_PROGRESS — no gate recordable here | a **commander decision** on patents, and a ruling on the surface clash — §6 |
 | PW-0313 / PW-0107 / PW-0304 / PW-0105 | **DONE** | — |
 | PW-0206 → PW-0306 | **BACKLOG and unclaimable** | a ruling — §4 is the same finding as round 103's, unchanged |
 
@@ -298,21 +299,90 @@ could not complete until they were removed. A developer who learns that
 `npm run check` costs twenty minutes stops running it. Recorded as
 `quality.pre_existing_defect`; it is in no active task's surface.
 
-### Still unclaimed after this
+---
 
-**PW-0208** → `claude-infra`, an LGPL-compatible libmpv and FFmpeg the product
-may actually ship. Deferred behind the two dispatched on `allowedPaths`
-overlaps: PW-0502, PW-0602.
+## 6. PW-0208 — claimed, half-written on purpose, and it stops on a patent
+
+`docs/LICENSING.md` turns `DESKTOP_PLAYBACK.md` §9's reasoning into something
+reproducible: the exact FFmpeg configure flags and mpv meson options that keep
+the result LGPL, every GPL-only component named and excluded, versions pinned
+(mpv **0.41.0**, FFmpeg **9.0.2 "Lei"**), and a build-time assertion that
+fails if the configuration string **FFmpeg itself embeds** contains
+`--enable-gpl`, `--enable-nonfree` or `--enable-version3`. That last one is
+the only check in the document that cannot be satisfied by someone intending
+to satisfy it and getting it wrong.
+
+**The trap is `auto`, not `true`.** Every mpv feature option that bears on
+licensing defaults to `auto`, which resolves against whatever happens to be
+installed on the builder — so a CI base-image refresh that adds `libcdio`
+produces a differently-licensed artifact from the same source and the same
+command. All of them are now pinned explicitly, including those whose desired
+value equals today's default. Two more worth your eye because they are
+inherited rather than decided: **OpenSSL is an `--enable-nonfree` combination
+for FFmpeg**, so reaching for it to get TLS yields a binary that is
+*undistributable* rather than merely GPL (schannel instead); and **the EULA
+must not forbid reverse engineering for debugging modifications to the
+library**, which is a term the licence we are relying on requires.
+
+### The stop-and-report, which the acceptance asked for by name
+
+*"NOT IN SCOPE: any decoder whose distribution needs a patent licence this
+project does not hold — if one is required, stop and report it as a commander
+decision rather than shipping it."* **One is required.**
+
+Copyright and patents are independent: the LGPL build above is correctly
+licensed and says nothing about patents, and
+[ffmpeg.org/legal.html](https://www.ffmpeg.org/legal.html) declines to advise
+while warning that holders pursue fees once a product earns money.
+
+- **AVC/H.264** — Via LA's programme covers decoders incorporated into
+  products distributed to end users, which is what shipping `libmpv-2.dll`
+  inside a desktop application is. Published Codec Products schedule:
+  **$0.00 for the first 100,000 units per year**, $0.20 to 5 M, $0.10 beyond,
+  annual enterprise cap. **That zero is a rate, not an absence of a licence**,
+  and which of the two it is belongs to counsel.
+- **HEVC/H.265** — split across Via LA's HEVC/VVC programme, Access Advance's
+  HEVC Advance pool and unpooled holders, so **no single licence clears it**;
+  Access Advance's published rates changed effective 2026-07-01.
+
+Three options are in the document, stated without a recommendation, and **no
+decoder is disabled on a guess** — turning them off removes most of what a
+media application exists to play, which is a product decision rather than a
+build one. Recorded as `escalation.commander_decision_required`.
+
+### And a surface clash I did not resolve unilaterally
+
+`ai:dispatch` offered PW-0208 as conflict-free. It is not: its `allowedPaths`
+include `apps/desktop/**`, which is a **`reviewDependency` of PW-0503** while
+PW-0503 is in REVIEW — and `approve` fingerprints `allowedPaths ∪
+reviewDependencies`, so a write there would make your approval of PW-0503
+stale before you gave it. That is the failure that cost PW-0304 two rounds.
+
+So this round's writes were confined to `docs/LICENSING.md`, and the
+installer half of the acceptance — the written offer, the licence texts, the
+in-app "Third-party licences" view, all of which live under `apps/desktop` —
+is **specified in §7 of that document and not built**. PW-0208 stays
+`IN_PROGRESS` rather than being split into a partial `DONE`.
+
+**The general point, for a ruling:** `dispatch`'s overlap check reads one
+field where `approve` reads two. Either `dispatch` widens, or a
+directory-level `reviewDependency` on an actively-developed directory is
+understood to reserve it — which is what it does in practice today, silently.
+PW-0602 is in the same position from the other side. Recorded as
+`board.sequencing_finding`.
+
+Nothing else is dispatchable: PW-0502 and PW-0602 are both deferred on
+`allowedPaths` overlaps with the active PW-0503.
 
 ---
 
-## 6. Bundle
+## 7. Bundle
 
 | | |
 | --- | --- |
 | Base | `0de015a17f1d51cfa987d18c107ac775cdc72660` |
 | Target | `codex/pl-ai-0001-repair`, tip = **the commit carrying this document** |
-| Content tip before it | `835823561c69f5bbdebf19c637eeeabff19dacf7` (PW-0503) |
+| Content tip before it | `68aa8167024754f6abb4592f7685fc993c05e200` (PW-0208) |
 | Delivered to | `D:\project-liberty\_liberty-sync\` |
 
 **The filename, the target sha and the sha256 are in the delivery message, not
