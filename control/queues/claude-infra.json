@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-02T15:15:45.510Z",
+  "generatedAt": "2026-10-02T15:52:14.234Z",
   "agent": "claude-infra",
   "executionAvailable": true,
   "assigned": [
@@ -7,7 +7,7 @@
       "id": "PW-0208",
       "priority": "P1",
       "lane": "Infra",
-      "status": "IN_PROGRESS",
+      "status": "REVIEW",
       "title": "An LGPL-compatible libmpv and FFmpeg the product may actually ship",
       "dependencies": [
         "PW-0102"
@@ -30,9 +30,17 @@
       "acceptance": "The libmpv and FFmpeg binaries the installer ships are built under terms this product may distribute, and the evidence is recorded rather than assumed. docs/DESKTOP_PLAYBACK.md section 9 names two traps and RESEARCH_PLAYBACK.md already found the equivalent defect elsewhere -- 'every prebuilt ffprobe on npm is a GPL-3.0 binary, and several declare otherwise' -- so a downloaded build is not evidence of its own licence. REQUIRED: the configure flags that keep the build LGPL are stated and reproducible, and any GPL-only component is named and excluded. REQUIRED: the written-offer and attribution obligations LGPL imposes on a shipped binary are satisfied by something in the installer, not by a sentence in a README nobody ships. REQUIRED: the exact upstream versions are pinned and recorded, because PW-0207's error mapping is built against a specific header. NOT IN SCOPE: any decoder whose distribution needs a patent licence this project does not hold -- if one is required, stop and report it as a commander decision rather than shipping it.",
       "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. SURFACE NOTE: this task's allowedPaths name directories that do not exist yet. The evidence-based narrowing procedure applies to reconciling work already in history; for genuinely new work the surface is the smallest set of paths the acceptance can be satisfied within, and it is narrowed again from the diff before review if it turns out to be wider than what was written. ",
       "owner": "claude-infra",
-      "gateResults": {},
+      "gateResults": {
+        "build": {
+          "status": "pass",
+          "at": "2026-10-02T15:51:53.099Z",
+          "by": "claude-infra",
+          "commitSha": "95d8b7658065b4c52699d6e0882ed7d04a119a21",
+          "evidence": "npm run build (turbo) at 95d8b7658065b4c52699d6e0882ed7d04a119a21: Tasks 12 successful, 12 total, exit 0. STATED PLAINLY: 11 of 12 were cache hits, because this task's surface is apps/desktop/scripts, docs/LICENSING.md and a coordination document, and none of that is a build input for any workspace. A build gate on a change the build graph cannot see is close to vacuous and saying otherwise would be a green mark that means nothing. WHAT ACTUALLY EXERCISES THIS ROUND'S CODE: node --test apps/desktop/scripts/notices.test.mjs, 17 cases, 0 failures, covering the three historical shapes of a manifest licence field, the four evidence verdicts, the filename pattern, and the rendered document's ordering, timestamp-freedom, escaping and written-offer text. collect-notices.mjs exercised end to end against a synthetic packaged tree: scoped packages, the legacy { type } manifest shape, a LICENSE-MIT file, a package with no evidence at all, and --strict exiting 1. The runtime-licence copy verified BOTH WAYS -- the generated notices carry 'No LICENSE accompanied this binary' when none is present and do not when one is. node --check on package-sidecar.mjs, collect-notices.mjs, notices.mjs and notices.test.mjs. Also clean at the same commit: npm run lint 12/12 with 0 errors (1 pre-existing warning in PW-0313's surface), npm run repo:validate, npm run ai:validate (114 tasks). THE TEST FOUND A REAL BUG IN THE FIRST ATTEMPT: the licence-filename pattern allowed only an extension, so a dual-licensed package shipping LICENSE-MIT and LICENSE-APACHE would have been reported as carrying no licence text at all. UNVERIFIED AND NOT CLAIMED: no libmpv or FFmpeg build was produced -- this container's toolchains target x86_64-unknown-linux-gnu -- and the notices generator has never run against a real packaged tree, because packaging happens on Windows. What the real dependency list will say is a thing the first Windows packaging run prints and nobody here can predict."
+        }
+      },
       "implementationAgent": "claude-infra",
-      "updatedAt": "2026-10-02T02:06:07.203Z",
+      "updatedAt": "2026-10-02T15:52:13.908Z",
       "implementationBaseSha": "9ac755ba7a3b4945b54b729f9a7a7569c7d990e2"
     }
   ],

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-02T15:15:45.505Z",
+  "generatedAt": "2026-10-02T15:52:14.230Z",
   "agent": "gpt-architect",
   "executionAvailable": false,
   "assigned": [],
@@ -40,12 +40,52 @@
         },
         "e2e": {
           "status": "pass",
-          "at": "2026-10-02T15:15:37.090Z",
+          "at": "2026-10-02T15:50:45.255Z",
           "by": "claude-test",
-          "commitSha": "2f69f2d07c05bc077505f5d7326ef998a628ba17",
-          "evidence": "Playwright 1.62.1, chromium revision 1234, at 2f69f2d07c05bc077505f5d7326ef998a628ba17. fullyParallel stays ENABLED, retries stay 0, no timeout ceiling was raised, and no assertion was weakened -- toHaveLength(1) is unchanged in all three places. PROOF THE OLD IMPLEMENTATION FAILS UNDER REAL PARALLELISM, measured by stashing this commit's change and re-running: --workers=4 gives 1 failed / 8 passed; --repeat-each=3 --workers=4 gives 5 failed / 22 passed. PROOF THE REPAIR HOLDS, same spec, same machine: --workers=4 0 failed; --workers=8 0 failed; --repeat-each=3 --workers=4 27 passed; --repeat-each=5 --workers=8 45 passed. The repeat cases matter as much as the worker cases, because two copies of the same test running at once is the collision a per-invocation identity has to survive and a per-content-id filter would not. WHOLE api PROJECT: 55 passed / 8 skipped at --workers=4 and again at --workers=8. COLLATERAL, whole projects, three configurations, all exit 0: development chromium+api 93 passed / 14 skipped; production no database 61 passed / 46 skipped; production + real PostgreSQL 16.15 at postgres://postgres@127.0.0.1:5433/lib_wl with 8 tables asserted, 76 passed / 31 skipped. apps/web unit suite unaffected at 84 files / 1494 tests. UNVERIFIED AND NOT CLAIMED: whether GitHub CI is green. That is answered only by GitHub executing this commit, which needs a push this session cannot make. gpt's section 5 says it in terms -- do not call CI healthy until GitHub executes the repaired commit."
+          "commitSha": "95d8b7658065b4c52699d6e0882ed7d04a119a21",
+          "evidence": "RE-RECORDED to carry the GitHub result, which the first recording could not. Implementation 2f69f2d07c05bc077505f5d7326ef998a628ba17; confirmed on CI run 37028642916 at commit 30cef6e88a0bac82bf60fd4c9500c5ce4003da8f, the first commit GitHub has executed containing the repair. ITS e2e JOB COMPLETED IN 3m 33s WITH NO ERROR ANNOTATIONS: '14 skipped 93 passed' development, '31 skipped 76 passed' production -- the same counts measured locally. The two prior runs, 37007312900 on d6d0324 and 37022965860 on 64a76b3, each failed exactly three assertions in that spec, the second time all three reading 'Expected 1 request received 2'; both predate the repair. The runner's own worker count is what exposed the shared ledger and is what has now exercised the per-invocation correlation identity -- the environment this container could only approximate. LOCAL EVIDENCE UNCHANGED AND STILL THE BASIS. Old implementation --workers=4: 1 failed / 8 passed; old --repeat-each=3 --workers=4: 5 failed / 22 passed. Repaired: 0 failed at 4 and at 8 workers; 27 passed at --repeat-each=3 --workers=4; 45 passed at --repeat-each=5 --workers=8; whole api project 55 passed / 8 skipped at both worker counts. Collateral, whole projects: development chromium+api 93/14, production 61/46, production + real PostgreSQL 16.15 76/31; apps/web 84 files / 1494 tests. fullyParallel stays enabled, retries stay 0, no timeout ceiling was raised, and toHaveLength(1) is unchanged in all three places. NOT CLAIMED: the run as a whole had not concluded when this was read -- validate takes about 27 minutes -- so this records the e2e JOB's result, which is the job that failed twice and the only one this task is about."
         }
       }
+    },
+    {
+      "id": "PW-0208",
+      "priority": "P1",
+      "lane": "Infra",
+      "status": "REVIEW",
+      "title": "An LGPL-compatible libmpv and FFmpeg the product may actually ship",
+      "dependencies": [
+        "PW-0102"
+      ],
+      "allowedPaths": [
+        "apps/desktop/**",
+        "docs/LICENSING.md"
+      ],
+      "reviewDependencies": [
+        "docs/DESKTOP_PLAYBACK.md",
+        "docs/CONTENT_RIGHTS.md",
+        "README.md"
+      ],
+      "preferredAgent": "claude-infra",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "build",
+        "architecture-review"
+      ],
+      "acceptance": "The libmpv and FFmpeg binaries the installer ships are built under terms this product may distribute, and the evidence is recorded rather than assumed. docs/DESKTOP_PLAYBACK.md section 9 names two traps and RESEARCH_PLAYBACK.md already found the equivalent defect elsewhere -- 'every prebuilt ffprobe on npm is a GPL-3.0 binary, and several declare otherwise' -- so a downloaded build is not evidence of its own licence. REQUIRED: the configure flags that keep the build LGPL are stated and reproducible, and any GPL-only component is named and excluded. REQUIRED: the written-offer and attribution obligations LGPL imposes on a shipped binary are satisfied by something in the installer, not by a sentence in a README nobody ships. REQUIRED: the exact upstream versions are pinned and recorded, because PW-0207's error mapping is built against a specific header. NOT IN SCOPE: any decoder whose distribution needs a patent licence this project does not hold -- if one is required, stop and report it as a commander decision rather than shipping it.",
+      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. SURFACE NOTE: this task's allowedPaths name directories that do not exist yet. The evidence-based narrowing procedure applies to reconciling work already in history; for genuinely new work the surface is the smallest set of paths the acceptance can be satisfied within, and it is narrowed again from the diff before review if it turns out to be wider than what was written. ",
+      "owner": "claude-infra",
+      "gateResults": {
+        "build": {
+          "status": "pass",
+          "at": "2026-10-02T15:51:53.099Z",
+          "by": "claude-infra",
+          "commitSha": "95d8b7658065b4c52699d6e0882ed7d04a119a21",
+          "evidence": "npm run build (turbo) at 95d8b7658065b4c52699d6e0882ed7d04a119a21: Tasks 12 successful, 12 total, exit 0. STATED PLAINLY: 11 of 12 were cache hits, because this task's surface is apps/desktop/scripts, docs/LICENSING.md and a coordination document, and none of that is a build input for any workspace. A build gate on a change the build graph cannot see is close to vacuous and saying otherwise would be a green mark that means nothing. WHAT ACTUALLY EXERCISES THIS ROUND'S CODE: node --test apps/desktop/scripts/notices.test.mjs, 17 cases, 0 failures, covering the three historical shapes of a manifest licence field, the four evidence verdicts, the filename pattern, and the rendered document's ordering, timestamp-freedom, escaping and written-offer text. collect-notices.mjs exercised end to end against a synthetic packaged tree: scoped packages, the legacy { type } manifest shape, a LICENSE-MIT file, a package with no evidence at all, and --strict exiting 1. The runtime-licence copy verified BOTH WAYS -- the generated notices carry 'No LICENSE accompanied this binary' when none is present and do not when one is. node --check on package-sidecar.mjs, collect-notices.mjs, notices.mjs and notices.test.mjs. Also clean at the same commit: npm run lint 12/12 with 0 errors (1 pre-existing warning in PW-0313's surface), npm run repo:validate, npm run ai:validate (114 tasks). THE TEST FOUND A REAL BUG IN THE FIRST ATTEMPT: the licence-filename pattern allowed only an extension, so a dual-licensed package shipping LICENSE-MIT and LICENSE-APACHE would have been reported as carrying no licence text at all. UNVERIFIED AND NOT CLAIMED: no libmpv or FFmpeg build was produced -- this container's toolchains target x86_64-unknown-linux-gnu -- and the notices generator has never run against a real packaged tree, because packaging happens on Windows. What the real dependency list will say is a thing the first Windows packaging run prints and nobody here can predict."
+        }
+      },
+      "implementationAgent": "claude-infra",
+      "updatedAt": "2026-10-02T15:52:13.908Z",
+      "implementationBaseSha": "9ac755ba7a3b4945b54b729f9a7a7569c7d990e2"
     }
   ],
   "reservedExternal": [],
