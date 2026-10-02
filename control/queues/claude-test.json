@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-02T17:05:24.531Z",
+  "generatedAt": "2026-10-02T17:21:01.115Z",
   "agent": "claude-test",
   "executionAvailable": true,
   "assigned": [
@@ -56,6 +56,33 @@
   "review": [],
   "reservedExternal": [],
   "recommended": [
+    {
+      "id": "PL-0715",
+      "priority": "P1",
+      "lane": "Test",
+      "status": "READY",
+      "title": "The watchlist harness reads a rate-limited sign-UP as a wrong password",
+      "dependencies": [],
+      "allowedPaths": [
+        "e2e/tests/watchlist.spec.ts"
+      ],
+      "reviewDependencies": [
+        "e2e/src/identity.ts",
+        "packages/auth/src/better-auth.ts",
+        "e2e/playwright.config.ts"
+      ],
+      "preferredAgent": "claude-test",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "e2e"
+      ],
+      "acceptance": "THE OBSERVATION, WHICH IS FACT. CI run 37036128012 at 2c037d54ed834af9dba3c6b12a29c395dee81b9d: the e2e job failed, PRODUCTION mode only, 1 failed / 75 passed / 31 skipped, on 'tests/watchlist.spec.ts:859:7 - the list page, against a real session and a real database - a signed-in viewer with no profile selected is sent to the picker, not to an error'. The annotation is the harness's own message: 'the harness could not sign in as e2e-watchlist-unchosen-0@liberty.invalid: 401 {\"message\":\"Invalid email or password\",\"code\":\"INVALID_EMAIL_OR_PASSWORD\"}'. The DEVELOPMENT run in the same job passed, 93 passed / 14 skipped. The same spec passed in production on the previous run, 37028642916 at 30cef6e, 76 passed / 31 skipped, and nothing between those two commits touches authentication, the harness or the spec -- so it is intermittent rather than a break.\n\nTHE DEFECT IN THE HARNESS, WHICH IS ALSO FACT AND IS VISIBLE IN THE SOURCE REGARDLESS OF WHAT CAUSED THIS RUN. `signIn` in that file POSTs /api/auth/sign-up/email with failOnStatusCode: false and never looks at the response -- the comment says the sign-in is what decides, 'because a session is what the caller asked for and an account is only the way to get one'. It then retries the SIGN-IN on 429 up to four times and on nothing else. So a sign-up that was refused leaves no account, the sign-in that follows correctly answers 401 INVALID_EMAIL_OR_PASSWORD because better-auth does not distinguish an unknown user from a wrong password, and the harness reports a credential failure for an account that was never created. The retry loop makes this worse rather than better: it waits out a rate-limit window and then re-asks a question whose answer cannot change.\nREQUIRED: a sign-up that fails is OBSERVED and reported as itself. A 401 must not be the error text for 'the account does not exist'.\nREQUIRED: whatever retry the sign-up is given is the same client-correctness retry the sign-in already has -- obeying a 429 and its retry-after. playwright.config.ts's rule stands: no ASSERTION is retried, retries stay 0, and the fix must not be `retries: 1` on the project.\nREQUIRED: the diagnosis is CONFIRMED before the repair is called a repair. The hypothesis in the notes is a hypothesis.\nREQUIRED: the repair is demonstrated against the production + real PostgreSQL configuration, which is the only one that failed; a development-mode pass proves nothing here, because that is the configuration that was already green.\n\nOUT OF SCOPE AND MUST NOT BE DONE: deleting or skipping the test, relaxing its assertion, serialising the project, raising a timeout, or changing the application's authentication configuration to make the harness's traffic acceptable. The product's rate limiting is a security property; a test harness that trips it is the harness's problem.",
+      "notes": "FILED IN ROUND 107 from CI run 37036128012. NOT CAUSED BY THIS ROUND'S WORK: the delta from the last green e2e is one apps/desktop packaging script, two coordination documents and control-plane state.\n\nTHE LEADING HYPOTHESIS, LABELLED AS ONE BECAUSE IT HAS NOT BEEN CONFIRMED. packages/auth/src/better-auth.ts passes no `rateLimit` option, so better-auth's default applies -- and that default is ENABLED IN PRODUCTION AND DISABLED IN DEVELOPMENT, which is exactly the split this failure shows. If the per-path default on the sign-up endpoint is short-windowed, several Playwright workers establishing sessions in parallel would exceed it, the refused sign-up would be swallowed by the code above, and the sign-in would answer 401. That fits every observed fact and is still a guess: nobody has watched the sign-up endpoint return 429 under this harness. Confirm it by observation before building on it, and if it is wrong, say so and file what was actually found.\n\nSHAPE NOTE. This is PL-0713 again in a different costume -- a harness that works at one worker and one machine and reports a product failure when the schedule changes. The lesson PL-0713 recorded applies: the repair is structural isolation, not a retry.\n\nCONFLICTS, BOTH FIELDS BOTH DIRECTIONS, AT FILING. e2e/tests/watchlist.spec.ts is in PW-0304's and PW-0313's allowedPaths and both are DONE; e2e/** was PL-0501's and it is DONE. e2e/src/identity.ts is PW-0312's, DONE. No open task holds any of these in either field. The active tasks at filing are PW-0208 (REVIEW), PW-0602 (IN_PROGRESS) and PL-0714 (IN_PROGRESS), and none names an e2e path.",
+      "owner": null,
+      "gateResults": {},
+      "updatedAt": "2026-10-02T17:40:00.000000Z"
+    },
     {
       "id": "PW-0503",
       "priority": "P1",

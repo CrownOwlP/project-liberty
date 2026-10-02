@@ -1,15 +1,15 @@
 # Project Liberty - Project Status
 
-> Generated 2026-10-02T17:05:24.526Z from the AI control plane.
+> Generated 2026-10-02T17:21:01.107Z from the AI control plane.
 
-**Overall completion:** 91/110 executable tasks (83%)
+**Overall completion:** 91/113 executable tasks (81%)
 
 ## Status summary
 
-- **BACKLOG:** 9
-- **READY:** 2
+- **BACKLOG:** 10
+- **READY:** 3
 - **CLAIMED:** 0
-- **IN_PROGRESS:** 2
+- **IN_PROGRESS:** 3
 - **REVIEW:** 1
 - **BLOCKED:** 5
 - **DONE:** 91
@@ -31,16 +31,17 @@
 
 ## Active work
 
+- **PL-0714** [IN_PROGRESS] CI executes every script suite the repository declares, and a failing validate job says something — owner: claude-lead
 - **PW-0208** [REVIEW] An LGPL-compatible libmpv and FFmpeg the product may actually ship — owner: claude-infra
 - **PW-0307** [IN_PROGRESS] Series navigation and the next episode — owner: claude-frontend
 - **PW-0602** [IN_PROGRESS] The automated half of the Windows matrix, running on Windows — owner: claude-test
 
 ## Dispatch classification
 
-- **READY_AND_EXECUTABLE:** 2
+- **READY_AND_EXECUTABLE:** 3
 - **READY_BUT_EXTERNAL:** 0
 - **BLOCKED:** 5
-- **BACKLOG (dependency-gated):** 9
+- **BACKLOG (dependency-gated):** 10
 
 ## Recommended executable wave
 
@@ -69,7 +70,7 @@ UNBLOCK WHEN: the commander runs Experiment 1a on real Windows hardware and hand
 ## Agent capacity
 
 - **gpt-architect:** 0/6 active (external lane; not locally executable)
-- **claude-lead:** 0/2 active
+- **claude-lead:** 1/2 active
 - **claude-frontend:** 1/2 active
 - **claude-backend:** 0/2 active
 - **claude-media:** 0/2 active

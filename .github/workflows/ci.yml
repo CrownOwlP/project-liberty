@@ -168,6 +168,34 @@ jobs:
       CONTENT_RIGHTS_ENFORCEMENT: strict
       LIBERTY_FC_SEED: "20250819"
       LIBERTY_FIXTURE_MEDIA_ORIGIN: https://fixtures.invalid
+      # DIAGNOSTIC ONLY, AND IT CHANGES NOTHING ABOUT WHAT THIS JOB IS GIVEN
+      # (PL-0714). On 30cef6e this job aborted at 10m 38s with a single
+      # annotation -- "Process completed with exit code 134", naming no step --
+      # after passing at 25m 4s and 27m 29s on the two runs before it. 134 is
+      # SIGABRT, which is how Node leaves when V8 calls a fatal error rather
+      # than when a check fails. The engineering session cannot read this job's
+      # log or download its artifacts, so that annotation was the entire
+      # evidence available and it was not enough to name a step, let alone a
+      # cause.
+      #
+      # `--report-on-fatalerror` makes Node write a diagnostic report beside
+      # the process when V8 aborts: the triggering event in words, the heap
+      # limit and what was committed against it, peak RSS, and the native
+      # stack. It costs nothing on a run that does not abort -- no sampling, no
+      # instrumentation, nothing written -- and the final step of this job
+      # renders a REDACTED extract of any report it finds to the job summary,
+      # which is readable on a public run page.
+      #
+      # WHAT IT IS NOT. Not a remedy, and deliberately not accompanied by one.
+      # No `--max-old-space-size`, no raised timeout, no retry, no skipped
+      # suite. A cause has not been established and nothing here asserts one;
+      # OOM is one hypothesis among several and the local reproductions did not
+      # support it (1261 s ambient and 1807 s under a 4 GB cap, both exit 0).
+      # This exists so the NEXT occurrence produces evidence instead of a
+      # number.
+      #
+      # Not in turbo.json's globalEnv, so it does not enter any cache key.
+      NODE_OPTIONS: --report-on-fatalerror
     steps:
       - uses: actions/checkout@v4
         with:
@@ -186,39 +214,85 @@ jobs:
           # that does not match the install about to run, and `npm ci` would
           # paper over it.
           cache-dependency-path: package-lock.json
-      # These six run before install: they depend only on Node builtins, so
+
+      # ====================================================================
+      # THE MACHINE THIS RAN ON (PL-0714)
+      # ====================================================================
+      #
+      # Written to the job summary, which renders on a public run page, because
+      # the log and the artifacts of this job need authentication and the
+      # engineering session that maintains it has neither. When this job
+      # aborted with exit 134 the four facts that would have narrowed it --
+      # core count, memory, free disk and NODE_OPTIONS -- were all unavailable,
+      # and the last of those turned out to matter: every local reproduction of
+      # the prime suspect had been taken in a container that sets
+      # `NODE_OPTIONS=--max-old-space-size=8192`, which a runner does not. The
+      # measurements were being compared against a heap CI never had, and
+      # nobody noticed for two rounds.
+      #
+      # AN ALLOWLIST, NEVER A DUMP. `env` is not printed and must not be: this
+      # summary is public on a public run page. Every value below is either a
+      # fact about the hardware or a variable this workflow itself sets in
+      # plain text a few lines above.
+      - name: Record the machine this job ran on
+        id: runner-facts
+        run: |
+          {
+            echo "## validate — the machine"
+            echo
+            echo "| | |"
+            echo "| --- | --- |"
+            echo "| runner | \`${RUNNER_OS}\` \`${RUNNER_ARCH}\` |"
+            echo "| cores | $(nproc) |"
+            echo "| memory | $(free -h --si | awk '/^Mem:/ {print $2 " total, " $7 " available"}') |"
+            echo "| disk (workspace) | $(df -h --output=size,avail "${GITHUB_WORKSPACE}" | tail -1 | awk '{print $2 " available of " $1}') |"
+            echo "| node | $(node --version) |"
+            echo "| npm | $(npm --version) |"
+            echo "| NODE_OPTIONS | \`${NODE_OPTIONS:-<unset>}\` |"
+            echo "| ulimit -v | $(ulimit -v) |"
+            echo "| ulimit -c | $(ulimit -c) |"
+            echo
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      # These run before install: they depend only on Node builtins (and git),
+      # so
       # a dependency problem cannot mask a control-plane, structure, env-validator
       # or dispatcher failure. That ordering is load-bearing for the structure
       # step in particular, which now also checks that every workspace declares
       # the packages it imports -- a check on the correctness of dependency
       # DECLARATIONS must not need a successful dependency INSTALL in order to run.
       #
-      # The four suites plus the two validators are a COMPLETE mirror of
+      # The suites below plus the two validators are a COMPLETE mirror of
       # `npm run test:scripts`, split into named steps rather than invoked through
       # the npm alias. That split is on purpose: separate steps give independently
-      # readable red/green marks instead of one. It is also a drift surface, so,
-      # concretely: `test:scripts` is `test-validate-env.mjs &&
-      # test-ai-control-plane.mjs && test-validate-repo.mjs &&
-      # cloud/test-dispatcher.mjs`, all four are below, and a FIFTH script added
-      # to it must be added here too. Same rule as the @cache-key variables above,
-      # same failure if forgotten.
+      # readable red/green marks instead of one.
       #
-      # THE DRIFT THIS COMMENT WARNS ABOUT HAD ALREADY HAPPENED when PL-AI-0002
-      # read it. The alias listed four scripts, this block said three and called
-      # itself a complete mirror, and `scripts/test-validate-repo.mjs` -- the
-      # suite behind the agent-instruction-file control -- had no step here at
-      # all. It ran on somebody's laptop and nowhere else. The step is below now.
-      # Worth leaving on the record: the note that a list has to be kept in step
-      # by hand did not keep it in step, it only made the gap legible afterwards.
+      # IT IS ALSO A DRIFT SURFACE, AND THIS COMMENT USED TO BE THE ONLY THING
+      # HOLDING IT TOGETHER. It said, in bold, that a script added to the alias
+      # must be added here too -- and then, in the paragraph after, recorded that
+      # the drift had ALREADY happened once before PL-AI-0002 read it:
+      # `scripts/test-validate-repo.mjs`, the suite behind the agent-instruction
+      # control, ran on somebody's laptop and nowhere else.
       #
-      # This block used to end by saying the dispatcher suite was deliberately
-      # NOT in the alias, so that the list did not read as a complete mirror when
-      # it was not. The alias has since been extended and it now is one. Stated
-      # rather than deleted, because the question a reader arrives with is whether
-      # these two lists still agree.
+      # IT THEN HAPPENED TWICE MORE. By the time PL-0714 looked, the alias named
+      # six scripts and this job ran four: `scripts/test-desktop-target.mjs` and
+      # `node --test scripts/windows/test-lifecycle.mjs` (30 cases) were in the
+      # alias and had no step. Both are below now. The lesson is not that the
+      # comment should have been louder. The note that a hand-kept list must be
+      # kept in step did not keep it in step on any of the three occasions; it
+      # only made each gap legible once somebody went looking.
+      #
+      # SO THE LIST IS NOW CHECKED BY A MACHINE. The `mirror-check` step below
+      # derives the alias's scripts from `package.json`, derives this job's from
+      # this file, and fails with the missing names when they disagree. Adding a
+      # script to the alias and forgetting the step is a red build, not a suite
+      # that runs nowhere. Add your step wherever it belongs; the check is what
+      # remembers, not you.
       - name: Validate AI control plane
+        id: ai-validate
         run: node scripts/ai-control-plane.mjs validate
       - name: Test AI control plane
+        id: ai-suite
         run: node scripts/test-ai-control-plane.mjs
       # Three checks, one step, and deliberately not three steps.
       #
@@ -232,6 +306,7 @@ jobs:
       # and buy a step name. That is the trade this file already weighed and
       # rejected for the transport suite further down, and the answer is the same.
       - name: Validate repository structure
+        id: repo-validate
         run: node scripts/validate-repo.mjs
       # Runs the instruction-surface suite AND, delegated from its last block,
       # the two suites for the checks named above -- the root `package.json` could
@@ -239,8 +314,10 @@ jobs:
       # what invokes them until `test:scripts` names them directly. See the block
       # at the bottom of that file.
       - name: Test repository structure validator
+        id: repo-suite
         run: node scripts/test-validate-repo.mjs
       - name: Test environment validator
+        id: env-suite
         run: node scripts/test-validate-env.mjs
       # Now part of `npm run test:scripts`. It was not, for a scope reason rather
       # than a preference -- `package.json` was outside PL-AI-0003's allowedPaths,
@@ -254,12 +331,135 @@ jobs:
       # fixtures it builds itself, and the two that read control/adapters.json
       # assert only that the shipped configuration refuses.
       - name: Test the optional dispatcher
+        id: dispatcher-suite
         run: node scripts/cloud/test-dispatcher.mjs
+      # The fifth script in the alias, and it had no step here (PL-0714). It
+      # is the PW-0104 regression: a killed desktop invocation must leave no
+      # tracked file dirty. git and Node builtins only, so it belongs with the
+      # pre-install group.
+      - name: Test the desktop target wrapper
+        id: desktop-target-suite
+        run: node scripts/test-desktop-target.mjs
+      # The sixth, and it had no step either. 30 cases over the Windows
+      # lifecycle harness -- the section-F plan parser, the installed-identity
+      # derivation and the residue classifier. All pure functions plus the
+      # harness's own refusal to run off win32, so it runs here on ubuntu and
+      # proves exactly the part that is platform-independent. The harness
+      # ITSELF running on Windows is PW-0602's business, in windows.yml.
+      - name: Test the Windows lifecycle harness
+        id: windows-lifecycle-suite
+        run: node --test scripts/windows/test-lifecycle.mjs
+      # Run by NOTHING before this step -- not by a CI step and not by any npm
+      # alias (PL-0714). 17 cases over the third-party licence decisions that
+      # go into the installer: which manifest shapes declare a licence, which
+      # filenames are licence text, the four declared/shipped verdicts, and the
+      # rendering of the notices document.
+      #
+      # WHY IT IS INVOKED BY PATH RATHER THAN THROUGH turbo. `apps/desktop` is
+      # not an npm workspace, so turbo never reaches it. Making it one was
+      # MEASURED in round 106 and reverted: a dependency-free package.json
+      # there costs 8 lockfile lines and turbo does pick the suite up, but
+      # `validate-workspace-deps.mjs` then walks
+      # `apps/desktop/sidecar/server/` -- GENERATED packaging output, carrying
+      # its own `.gitignore` of `*` -- sees `server.js` importing `next`, and
+      # demands the manifest declare it. The validator's skip list has
+      # node_modules, .next, dist and .turbo and not sidecar, because until now
+      # no workspace contained one. So the workspace route trades one orphaned
+      # suite for a broken repository validator, and `repo:validate` matters
+      # more. The account is in coordination/WINDOWS_LIFECYCLE_WIRING.md §8.
+      - name: Test the installer's third-party notices
+        id: notices-suite
+        run: node --test apps/desktop/scripts/notices.test.mjs
+
+      # ====================================================================
+      # THE MIRROR IS NOW CHECKED BY A MACHINE (PL-0714)
+      # ====================================================================
+      #
+      # Everything above this step is a hand-maintained copy of
+      # `npm run test:scripts`, and the comment that introduces it has asked a
+      # human to keep the copy in step since the file was written. It has not
+      # worked. It failed once before PL-AI-0002 (test-validate-repo.mjs ran on
+      # somebody's laptop and nowhere else), and when PL-0714 looked it had
+      # failed twice more: the alias named six scripts and this job ran four.
+      # The comment was accurate, prominent, and ignored. A fourth occurrence
+      # is not something to write a longer comment about.
+      #
+      # So this step derives the alias's script list from `package.json` and
+      # the job's list from THIS FILE, and fails when they disagree. Adding a
+      # script to the alias and forgetting the step is now a red build with the
+      # missing name in it, not a suite that quietly runs nowhere.
+      #
+      # IT CHECKS ONE DIRECTION DELIBERATELY: every script in the alias must
+      # have a step. The reverse is allowed, because this job legitimately runs
+      # things the alias does not -- `ai-control-plane.mjs validate`,
+      # `validate-repo.mjs`, and the notices suite above, which cannot be in
+      # the alias for the workspace reason stated there.
+      #
+      # IT LIVES INLINE RATHER THAN IN `scripts/`, AND THAT IS A COMPROMISE,
+      # NOT A PREFERENCE. `scripts/` is outside PL-0714's write surface. The
+      # better home is `scripts/validate-ci-mirror.mjs`, called from
+      # `validate-repo.mjs` so it runs locally too; it is named in PL-0714's
+      # notes as the follow-up rather than silently preferred.
+      - name: Every suite in `npm run test:scripts` has a step in this job
+        id: mirror-check
+        run: |
+          cat > "${RUNNER_TEMP}/mirror-check.mjs" <<'MIRROR'
+          import { readFileSync } from "node:fs";
+
+          const alias = JSON.parse(readFileSync("package.json", "utf8")).scripts?.["test:scripts"];
+          if (typeof alias !== "string") {
+            console.error("mirror: package.json has no test:scripts alias to mirror.");
+            process.exit(1);
+          }
+          const workflow = readFileSync(".github/workflows/ci.yml", "utf8");
+
+          /* Every .mjs path the alias names, however it is invoked -- `node x`,
+           * `node --test x`, joined by && or ;. Matching the PATH rather than
+           * the whole command is what makes `node --test` and plain `node`
+           * count as the same suite. */
+          const scripts = [...alias.matchAll(/(?:^|\s)((?:[\w.@/-]+\/)*[\w.@-]+\.mjs)(?=\s|$)/g)]
+            .map((match) => match[1]);
+          if (scripts.length === 0) {
+            console.error(`mirror: parsed no script paths out of test:scripts: ${alias}`);
+            process.exit(1);
+          }
+
+          /* Only `run:` lines, so a script NAMED IN A COMMENT does not count as
+           * executed. That distinction is the whole point: this file discusses
+           * these filenames at length. */
+          const executed = new Set(
+            workflow
+              .split("\n")
+              .map((line) => line.trim())
+              /* `run:` catches a one-line step; a bare `node ` catches a line
+               * inside a `run: |` block. A YAML comment starts with `#`, so
+               * neither test can match one, which is the distinction that
+               * matters in a file that discusses these filenames at length. */
+              .filter((line) => line.startsWith("run:") || line.startsWith("node "))
+              .flatMap((line) => [...line.matchAll(/((?:[\w.@/-]+\/)*[\w.@-]+\.mjs)/g)].map((m) => m[1]))
+          );
+
+          const missing = scripts.filter((script) => !executed.has(script));
+          console.log(`mirror: test:scripts names ${scripts.length} suite(s): ${scripts.join(", ")}`);
+          if (missing.length > 0) {
+            console.error("");
+            console.error("mirror: these are in `npm run test:scripts` and have no step in the validate job:");
+            for (const script of missing) console.error(`  ${script}`);
+            console.error("");
+            console.error("Add a step for each, beside the others, then this check passes. Do not");
+            console.error("remove the script from the alias to make it pass -- that is the same");
+            console.error("suite running nowhere, with the evidence deleted.");
+            process.exit(1);
+          }
+          console.log("mirror: every suite in the alias has a step in this job.");
+          MIRROR
+          node "${RUNNER_TEMP}/mirror-check.mjs"
       # `npm ci` (not `npm install`): installs strictly from package-lock.json,
       # fails if the lockfile is missing or out of sync with package.json, and
       # never silently rewrites the lockfile in CI. This requires the lockfile
       # to be committed -- see PL-0001.
       - name: Install dependencies
+        id: install
         run: npm ci --no-audit --no-fund
       # After install, because it inspects node_modules, the lockfile, and where
       # the workspace links resolve. `--scope ci` because the two escalations it
@@ -269,14 +469,19 @@ jobs:
       # `npm run env:validate` does not pass it, so the script is called
       # directly; the mode list has to be kept in step with that script by hand.
       - name: Validate environment
+        id: env-validate
         run: node scripts/validate-env.mjs --scope ci --mode development --mode test --mode production
       - name: Lint
+        id: lint
         run: npm run lint
       - name: Typecheck
+        id: typecheck
         run: npm run typecheck
       - name: Test
+        id: unit
         run: npm run test
       - name: Build
+        id: build
         run: npm run build
       # ----------------------------------------------------------------------
       # NO SEPARATE TRANSPORT STEP, deliberately.
@@ -304,6 +509,187 @@ jobs:
       # matching would be the one wearing the green tick. Vitest names the
       # failing file, so the signal that step bought is already in `Test`.
       # ----------------------------------------------------------------------
+
+      # ====================================================================
+      # WHEN THIS JOB GOES RED, SAY SOMETHING (PL-0714)
+      # ====================================================================
+      #
+      # THE PROBLEM THIS SOLVES, CONCRETELY. Run 37028642916 on 30cef6e:
+      # `validate` aborted at 10m 38s with one annotation, "Process completed
+      # with exit code 134", naming no step. It had passed at 25m 4s and
+      # 27m 29s on the two runs before it, on a tree whose only delta was one
+      # e2e spec, three apps/desktop scripts, a doc and control-plane state.
+      # The log needs authentication; so do the artifacts. The engineering
+      # session therefore had, in total, an exit code. It could not say which
+      # step aborted. Two local reproductions of the prime suspect passed.
+      #
+      # This step turns the next occurrence into evidence. It runs only on
+      # failure, so a green run pays nothing for it.
+      #
+      #   1. WHICH STEP. Every step above carries an `id`, and GitHub exposes
+      #      each one's outcome. The first `failure` in the table below is the
+      #      step that aborted -- the single fact that was missing.
+      #   2. WHAT THE MACHINE LOOKED LIKE AFTERWARDS. Memory and free disk
+      #      after the fact, next to the same figures taken at the start, so a
+      #      run that exhausted something shows the before and the after
+      #      rather than one number with nothing to compare it to.
+      #   3. WHAT V8 SAID, IF IT SAID ANYTHING. `--report-on-fatalerror` is in
+      #      this job's NODE_OPTIONS, so a V8 abort leaves a diagnostic report
+      #      beside the process. A REDACTED extract is rendered below.
+      #
+      # THE REDACTION IS NOT OPTIONAL AND IS NOT A FORMALITY. A Node diagnostic
+      # report contains an `environmentVariables` section -- every variable in
+      # the process, verbatim -- plus `networkInterfaces`, `host` and the full
+      # command line. A job summary is PUBLIC on a public run page. So the
+      # report is never printed whole and never uploaded as an artifact; an
+      # allowlist of named numeric and descriptive fields is extracted and
+      # nothing else leaves the runner. Add a field to that list only after
+      # asking what it would print on a run that had a secret in scope.
+      #
+      # IT DIAGNOSES AND DOES NOT TREAT. Nothing here retries, extends a
+      # timeout, raises a heap, or skips a suite. The cause of exit 134 has not
+      # been established, this step does not claim one, and no remedy may be
+      # applied until a run produces the evidence above.
+      - name: Why this job failed
+        id: failure-diagnostics
+        if: ${{ failure() }}
+        run: |
+          {
+            echo "## validate — failure diagnostics"
+            echo
+            echo "### Which step"
+            echo
+            echo "The first \`failure\` is the step that aborted."
+            echo
+            echo "| step | outcome |"
+            echo "| --- | --- |"
+            echo "| runner-facts | ${{ steps.runner-facts.outcome }} |"
+            echo "| ai-validate | ${{ steps.ai-validate.outcome }} |"
+            echo "| ai-suite | ${{ steps.ai-suite.outcome }} |"
+            echo "| repo-validate | ${{ steps.repo-validate.outcome }} |"
+            echo "| repo-suite | ${{ steps.repo-suite.outcome }} |"
+            echo "| env-suite | ${{ steps.env-suite.outcome }} |"
+            echo "| dispatcher-suite | ${{ steps.dispatcher-suite.outcome }} |"
+            echo "| desktop-target-suite | ${{ steps.desktop-target-suite.outcome }} |"
+            echo "| windows-lifecycle-suite | ${{ steps.windows-lifecycle-suite.outcome }} |"
+            echo "| notices-suite | ${{ steps.notices-suite.outcome }} |"
+            echo "| mirror-check | ${{ steps.mirror-check.outcome }} |"
+            echo "| install | ${{ steps.install.outcome }} |"
+            echo "| env-validate | ${{ steps.env-validate.outcome }} |"
+            echo "| lint | ${{ steps.lint.outcome }} |"
+            echo "| typecheck | ${{ steps.typecheck.outcome }} |"
+            echo "| unit | ${{ steps.unit.outcome }} |"
+            echo "| build | ${{ steps.build.outcome }} |"
+            echo
+            echo "An empty outcome means the step never started."
+            echo
+            echo "### The machine, after"
+            echo
+            echo '```'
+            free -h --si || true
+            echo
+            df -h "${GITHUB_WORKSPACE}" "${RUNNER_TEMP}" || true
+            echo '```'
+            echo
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+          # A V8 fatal error leaves `report.<date>.<pid>.<tid>.<seq>.json` in
+          # the aborting process's working directory. `find` rather than a
+          # fixed path, because that directory is whichever one the step was
+          # in -- and `-newermt` is not used: a stale report cannot exist, the
+          # workspace is fresh every run.
+          # Read with a loop rather than `find ... | head -5`. GitHub runs this
+          # step under `bash -e -o pipefail`, where `head` closing the pipe
+          # early gives `find` a SIGPIPE and pipefail then aborts the whole
+          # diagnostics step -- which would hide the diagnosis in exactly the
+          # case it exists for. The `|| true` is on the find alone, because a
+          # report that cannot be listed must not take the step down either.
+          reports=()
+          while IFS= read -r found; do
+            reports+=("${found}")
+            # `if`, not `[ ... ] && break`: under `set -e` a false test as
+            # the last command of a loop body exits the step.
+            if [ "${#reports[@]}" -ge 5 ]; then break; fi
+          done < <(find "${GITHUB_WORKSPACE}" "${RUNNER_TEMP}" \
+            -maxdepth 4 -name 'report.*.json' -type f 2>/dev/null || true)
+
+          if [ "${#reports[@]}" -eq 0 ]; then
+            {
+              echo "### V8 diagnostic report"
+              echo
+              echo "None found. The job did not abort through a V8 fatal error — an ordinary"
+              echo "non-zero exit, a killed process, or a runner-level failure leaves no report."
+              echo
+            } >> "${GITHUB_STEP_SUMMARY}"
+            exit 0
+          fi
+
+          cat > "${RUNNER_TEMP}/redact-report.mjs" <<'REDACT'
+          import { readFileSync } from "node:fs";
+          import { basename } from "node:path";
+
+          /*
+           * AN ALLOWLIST. A Node diagnostic report carries environmentVariables,
+           * networkInterfaces, host and the full command line; this summary is
+           * public. Nothing is taken except the fields named here.
+           */
+          const file = process.argv[2];
+          const report = JSON.parse(readFileSync(file, "utf8"));
+          const header = report.header ?? {};
+          const heap = report.javascriptHeap ?? {};
+          const usage = report.resourceUsage ?? {};
+          const mb = (bytes) =>
+            typeof bytes === "number" ? `${(bytes / 1048576).toFixed(1)} MiB` : "unknown";
+
+          const rows = [
+            ["event", header.event],
+            ["trigger", header.trigger],
+            ["node", header.nodejsVersion],
+            ["platform", `${header.osName ?? "?"} ${header.osRelease ?? ""} ${header.arch ?? ""}`],
+            ["cpus", Array.isArray(header.cpus) ? header.cpus.length : "unknown"],
+            ["heap limit", mb(heap.memoryLimit)],
+            ["heap committed", mb(heap.totalCommittedMemory)],
+            ["heap used", mb(heap.usedMemory)],
+            ["external", mb(heap.externalMemory)],
+            ["rss", mb(usage.rss)],
+            ["peak rss", mb(usage.maxRss)],
+            ["free memory", mb(usage.free_memory)],
+            ["total memory", mb(usage.total_memory)],
+            ["user cpu s", usage.userCpuSeconds],
+            ["kernel cpu s", usage.kernelCpuSeconds]
+          ];
+
+          /* The script that was running, by BASENAME. The full command line can
+           * carry arguments this repository has no control over. */
+          const argv = Array.isArray(header.commandLine) ? header.commandLine : [];
+          const script = argv.slice(1).find((a) => typeof a === "string" && a.endsWith(".mjs"));
+          rows.push(["script", script ? basename(script) : "not a .mjs entry point"]);
+
+          const lines = [`#### \`${basename(file)}\``, "", "| | |", "| --- | --- |"];
+          for (const [label, value] of rows) {
+            lines.push(`| ${label} | ${String(value ?? "unknown").replace(/\|/g, "\\|")} |`);
+          }
+
+          /* The top of the JS stack, if there was one. Frame text is this
+           * repository's own function names and file paths, which are public. */
+          const frames = report.javascriptStack?.stack;
+          if (Array.isArray(frames) && frames.length > 0) {
+            lines.push("", "```", ...frames.slice(0, 12).map(String), "```");
+          }
+          console.log(lines.join("\n"));
+          REDACT
+
+          {
+            echo "### V8 diagnostic report"
+            echo
+            echo "Redacted extract. The report itself is **not** uploaded: it contains every"
+            echo "environment variable of the aborting process, and this page is public."
+            echo
+            for report in "${reports[@]}"; do
+              node "${RUNNER_TEMP}/redact-report.mjs" "${report}" || echo "_(could not parse ${report})_"
+              echo
+            done
+          } >> "${GITHUB_STEP_SUMMARY}"
 
   # ==========================================================================
   # The e2e harness's TYPECHECK. Not the suite.
