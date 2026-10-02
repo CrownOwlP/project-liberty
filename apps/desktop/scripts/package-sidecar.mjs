@@ -346,6 +346,39 @@ cpSync(staticDir, join(serverDir, DESKTOP_DIST_DIR, "static"), { recursive: true
 cpSync(nodeBinary, join(sidecarDir, NODE_RELATIVE));
 
 /*
+ * NODE'S OWN LICENCE, BESIDE THE BINARY IT COVERS (PW-0208).
+ *
+ * The runtime that ships is MIT-licensed and redistributes further
+ * components under their own terms -- V8, OpenSSL, ICU and the rest -- all of
+ * which the Node distribution states in one `LICENSE` file beside the
+ * executable. Shipping the binary and leaving that file behind is an
+ * attribution obligation dropped for no reason other than that nobody copied
+ * it, and `docs/LICENSING.md` §7 is explicit that the obligation has to be
+ * met by something the user receives.
+ *
+ * GUARDED, NOT ASSUMED. `LIBERTY_SIDECAR_NODE` can point at a runtime laid
+ * out any way a packager likes, so the licence is looked for beside the
+ * binary and then one directory up -- the two places every mainstream Node
+ * distribution puts it -- and its absence is REPORTED rather than fatal.
+ * `collect-notices.mjs` then states in the shipped notices that no licence
+ * accompanied the binary, which is the honest outcome: the obligation does
+ * not disappear because the file was not found, and a packaging step that
+ * died here would trade a missing text file for no installer at all.
+ */
+const nodeDir = dirname(nodeBinary);
+const nodeLicence = [join(nodeDir, "LICENSE"), join(nodeDir, "..", "LICENSE")].find((candidate) =>
+  existsSync(candidate)
+);
+if (nodeLicence === undefined) {
+  console.warn(
+    `package-sidecar: no LICENSE found beside ${nodeBinary}; the shipped notices will say so`
+  );
+} else {
+  cpSync(nodeLicence, join(sidecarDir, "LICENSE"));
+  console.log(`package-sidecar: carried the runtime licence from ${nodeLicence}`);
+}
+
+/*
  * OUR ENTRY POINT, AND THE ONE FACT IT CANNOT WORK OUT FOR ITSELF (PW-0106).
  *
  * `liberty-sidecar.js` is CHECKED IN -- it is not generated here, and nothing

@@ -275,6 +275,19 @@ today is LGPL**: the component that will carry that obligation is specified
 here and not yet built, and an offer added at the same moment as the binary is
 an offer nobody checked.
 
+**Node's own licence now travels with the binary it covers.**
+`package-sidecar.mjs` looks for the Node distribution's `LICENSE` beside the
+runtime it was told to ship and one directory up — the two places every
+mainstream distribution puts it — and copies it into the packaged tree. Node
+is MIT and redistributes V8, OpenSSL, ICU and others under their own terms,
+all stated in that one file; shipping the executable and leaving the file
+behind was an obligation dropped for no reason except that nobody copied it.
+The search is **guarded, not assumed**: if no licence is found the packaging
+step warns and continues, and the generated notices say in terms that none
+accompanied the binary. A packaging step that died there would trade a
+missing text file for no installer at all, and the obligation does not
+disappear because a file was not found.
+
 `--strict` turns the no-evidence list into a non-zero exit and is
 **deliberately not armed**. Arming it from a Linux session would be deciding
 that a Windows packaging job should start failing on a list nobody has read.
