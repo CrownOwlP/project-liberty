@@ -1,15 +1,15 @@
 # Project Liberty - Project Status
 
-> Generated 2026-10-02T02:01:52.587Z from the AI control plane.
+> Generated 2026-10-02T02:09:53.029Z from the AI control plane.
 
 **Overall completion:** 89/107 executable tasks (83%)
 
 ## Status summary
 
 - **BACKLOG:** 9
-- **READY:** 3
+- **READY:** 2
 - **CLAIMED:** 0
-- **IN_PROGRESS:** 1
+- **IN_PROGRESS:** 2
 - **REVIEW:** 2
 - **BLOCKED:** 3
 - **DONE:** 89
@@ -31,20 +31,21 @@
 
 ## Active work
 
+- **PW-0208** [IN_PROGRESS] An LGPL-compatible libmpv and FFmpeg the product may actually ship — owner: claude-infra
 - **PW-0307** [IN_PROGRESS] Series navigation and the next episode — owner: claude-frontend
 - **PW-0309** [REVIEW] Offline, degraded and error states a desktop application needs — owner: claude-frontend
 - **PW-0503** [REVIEW] Install, upgrade, uninstall, reinstall — tested, not assumed — owner: claude-test
 
 ## Dispatch classification
 
-- **READY_AND_EXECUTABLE:** 3
+- **READY_AND_EXECUTABLE:** 2
 - **READY_BUT_EXTERNAL:** 0
 - **BLOCKED:** 3
 - **BACKLOG (dependency-gated):** 9
 
 ## Recommended executable wave
 
-- **PW-0208** -> claude-infra (P1/Infra) An LGPL-compatible libmpv and FFmpeg the product may actually ship
+No conflict-free executable tasks can be assigned with current agent capacity.
 
 ## Queued for external agents
 
@@ -73,5 +74,5 @@ UNBLOCK WHEN: the commander runs Experiment 1a on real Windows hardware and hand
 - **claude-media:** 0/2 active
 - **claude-test:** 1/1 active
 - **claude-security:** 0/1 active
-- **claude-infra:** 0/1 active
+- **claude-infra:** 1/1 active
 - **human-commander:** 0/99 active (external lane; not locally executable)

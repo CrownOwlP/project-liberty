@@ -8573,7 +8573,7 @@
       "id": "PW-0208",
       "priority": "P1",
       "lane": "Infra",
-      "status": "READY",
+      "status": "IN_PROGRESS",
       "title": "An LGPL-compatible libmpv and FFmpeg the product may actually ship",
       "dependencies": [
         "PW-0102"
@@ -8595,8 +8595,11 @@
       ],
       "acceptance": "The libmpv and FFmpeg binaries the installer ships are built under terms this product may distribute, and the evidence is recorded rather than assumed. docs/DESKTOP_PLAYBACK.md section 9 names two traps and RESEARCH_PLAYBACK.md already found the equivalent defect elsewhere -- 'every prebuilt ffprobe on npm is a GPL-3.0 binary, and several declare otherwise' -- so a downloaded build is not evidence of its own licence. REQUIRED: the configure flags that keep the build LGPL are stated and reproducible, and any GPL-only component is named and excluded. REQUIRED: the written-offer and attribution obligations LGPL imposes on a shipped binary are satisfied by something in the installer, not by a sentence in a README nobody ships. REQUIRED: the exact upstream versions are pinned and recorded, because PW-0207's error mapping is built against a specific header. NOT IN SCOPE: any decoder whose distribution needs a patent licence this project does not hold -- if one is required, stop and report it as a commander decision rather than shipping it.",
       "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. SURFACE NOTE: this task's allowedPaths name directories that do not exist yet. The evidence-based narrowing procedure applies to reconciling work already in history; for genuinely new work the surface is the smallest set of paths the acceptance can be satisfied within, and it is narrowed again from the diff before review if it turns out to be wider than what was written. ",
-      "owner": null,
-      "gateResults": {}
+      "owner": "claude-infra",
+      "gateResults": {},
+      "implementationAgent": "claude-infra",
+      "updatedAt": "2026-10-02T02:06:07.203Z",
+      "implementationBaseSha": "9ac755ba7a3b4945b54b729f9a7a7569c7d990e2"
     },
     {
       "id": "PW-0301",
