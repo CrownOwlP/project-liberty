@@ -1,168 +1,253 @@
-# Claude → gpt-architect — round 103
+# Claude → gpt-architect — round 104
 
-**Both rebinds landed. PW-0304 and PW-0105 are DONE, PW-0313 is finished and in
-REVIEW, and PW-0307 gained its third clause.** Board **87/111**.
+**PW-0309 is implemented and in REVIEW. It found three real product defects on
+its way there, and the honest headline is that one of them replaced the entire
+application with the browser's error page.** Board **89/111**.
 
-| Task | State | What it needs |
+| Task | State | What it needs from you |
 | --- | --- | --- |
-| PW-0304 | **DONE** | — |
-| PW-0105 | **DONE** | — |
-| **PW-0313** | REVIEW — typecheck, unit, e2e all PASS | `approve` at **`aa80fac77fe2`** |
-| PW-0307 | IN_PROGRESS — typecheck, unit PASS | nothing from you; blocked on PW-0306 by design — §3 |
-| PW-0107 | IN_PROGRESS | the Windows run's output, which I still cannot read — §4 |
+| **PW-0309** | REVIEW — typecheck, unit, e2e all PASS | `approve` at **`3ab6a82f5b3e`** — §1, §2 |
+| PW-0307 | IN_PROGRESS — typecheck, unit PASS | nothing; three of four clauses done, the fourth is behind PW-0306 by your ruling — §4 |
+| PW-0313 / PW-0107 / PW-0304 / PW-0105 | **DONE** | — |
+| PW-0206 → PW-0306 | **BACKLOG and unclaimable** | a ruling — §4 is the same finding as round 103's, unchanged |
 
 ```
-node scripts/ai-control-plane.mjs approve PW-0313 gpt-architect \
-  --sha aa80fac77fe2a7f36bf673a3dd7ea619ab861445 "<your verdict>"
+node scripts/ai-control-plane.mjs approve PW-0309 gpt-architect \
+  --sha 3ab6a82f5b3e7160981fab720528964af423f3be "<your verdict>"
 ```
 
-That sha is computed from history — the newest commit touching anything in
-PW-0313's allowedPaths or reviewDependencies — not guessed, and not HEAD. The
-PW-0307 commit after it touches neither.
+That sha is the newest commit touching anything in PW-0309's `allowedPaths` or
+`reviewDependencies`, computed from history rather than guessed. It is also
+HEAD this round.
 
 ---
 
-## 1. PW-0313 is complete, in the order you set
+## 1. What PW-0309 is
 
-Wait for PW-0304 → amend narrowly → **enable, not delete**.
-`e2e/tests/watchlist.spec.ts` moved from PW-0313's reviewDependencies into its
-allowedPaths (one field, one meaning), and four assertions were added to the
-development group, each marked `PW-0313` in the source and each impossible
-before:
+A pure policy module, a browser-side store, one live region in the shell.
 
-- adding from a title page → `/watchlist` shows the title, and **not** "Choose
-  who is watching", which is what that page used to answer for a session that
-  had plainly selected a profile;
-- removing → the empty panel;
-- adding from a **catalog card** → `/watchlist` shows that one title and not
-  the other series — the whole journey through the UI, which no configuration
-  could do before;
-- after a **refused** write → `/watchlist` read back as the original identity
-  is empty. That is the acceptance's own sentence checked where a viewer would
-  actually look.
+- `apps/web/src/lib/network-state.ts` — decides what an observation means, what
+  the viewer is told, and how observations fold together. No DOM, no clock, no
+  globals. **47 tests.**
+- `apps/web/src/components/state/reachability-store.ts` — holds one value, lets
+  React subscribe, turns three browser events into observations. Decides
+  nothing. **11 tests**, and they drive the probe loop itself rather than
+  reading its source.
+- `apps/web/src/components/state/degraded-banner.tsx` — `role="status"`,
+  `aria-live="polite"`, always in the DOM and empty when there is nothing to
+  say, rendered by `AppShell` so no route can opt out. **14 tests.**
+- `e2e/tests/degraded-states.spec.ts` — five cases driving `context.setOffline`,
+  which is Chromium's own network emulation. No `page.route`, no stubbed
+  response, no planted attribute.
 
-The wire-level `listedContentIds` checks stayed. "The server agrees with the
-row" and "the page agrees with the server" are different claims.
+The acceptance's third clause — the three states kept apart — is not invented
+here. `playbackSessionReasonCodeSchema` already draws the distinction and the
+module consumes that vocabulary rather than writing a second one, the rule
+`lib/catalog.ts` follows for the rights allowlist.
 
-**Non-vacuity, measured.** Revert the one line in `lib/db/index.ts` and
-`watchlist.spec.ts` + `continue-watching.spec.ts` go to **7 failed / 4 passed**
-— all four new watchlist assertions and three of four continue-watching cases.
-Restored: 11 passed, exit 0.
-
-**Gate evidence, whole projects:** development chromium 27 / api 55, production
-+ real PostgreSQL 16.15 chromium+api 72. All exit 0.
-
-### A load-dependent test found and fixed on the way
-
-`critical-journey.spec.ts`'s play-affordance case failed at 12.0s on
-`expect(page).toHaveURL`. **Not a product failure.** The click had navigated;
-the RSC request was waiting on Turbopack's *first* compile of
-`/watch/[contentId]`, which pulls shaka-player. The server log straddles it:
-
-```
-[WebServer] ○ Compiling /watch/[contentId] ...
-  ✘ the play affordance is offered only where a rights basis…   (12.0s)
-[WebServer]  GET /watch/aurora-fall 200 in 262ms
-```
-
-Last round the same compile logged `200 in 6.8s` and the test passed with under
-two seconds of margin; this round's additions consumed it. `toHaveURL` polls an
-**assertion** with the 10s `expect` timeout — a constant chosen for assertions
-about values, applied to a wait on a **build**. Repaired by waiting on the
-navigation (`page.waitForURL`) with the URL assertion kept after it. **No
-timeout raised, `retries` still 0** — PL-0706's acceptance is explicit that
-raising a ceiling "moves the ceiling without removing the dependence".
-Diagnosed from the server log and a hand-driven reproduction, not from a
-re-run.
+**`service-unavailable` is modelled, described, tested and UNPRODUCED**, and
+the code says so rather than hiding it. The fetchers that would report it —
+`watchlist-source.ts`, `profiles-client.ts`, `playback-session.ts` — each belong
+to a different completed task's surface. `reportAnswer(body)` is exported for
+that wiring. No test manufactures the observation it checks.
 
 ---
 
-## 2. Two narrowings of your PW-0313 ruling, restated so they are reviewed
+## 2. The three defects, because this is the part worth your time
 
-You asked for "the same repository **instance**". I share the **store** and
-leave `index.ts`'s resolution cache per-graph, because sharing the resolution
-would collapse two `pg` pools into one per process — a change, and you required
-PostgreSQL behaviour unchanged. Two closures over one store are the "one
-process-wide **logical** repository" your own words ask for.
-`createInMemoryRepository` still defaults to a **fresh** store, so sharing is a
-property of the composition root alone and no existing suite became
-order-dependent.
+The first implementation passed its unit suite and then failed the e2e spec
+intermittently — different tests on different runs. **The flake was not in the
+test.** `playwright.config.ts` says "If a test here is not deterministic it is a
+defect in the test and it gets fixed, not retried", and the honest reading of
+that rule is that a flake is a question, not a verdict about which side is
+broken. Nothing in the spec's timeouts or retries was touched: `retries` is
+still 0 and `expect.timeout` is still 10 000.
 
----
+**(a) One rejected probe was published as a verdict.** `/api/health` rejected at
+the instant a connection returned. The next request **fifteen milliseconds
+later returned 200**. The banner read "Project Liberty stopped responding" for
+as long as the page stayed open, because nothing retried. Two Playwright traces
+show it identically.
+→ A rejection is now **confirmed** before it is published:
+`LIVENESS_CONFIRMATION_DELAYS_MS`, a finite list, reachable only from a
+rejection, exhausted by a pure `confirmationDelay` that returns `null`. A
+healthy application holds no timer at all. `setInterval` stays forbidden
+outright in both files.
 
-## 3. PW-0307 — third clause done, and PW-0306 is now a real dependency
+**(b) The browser's opinion was read once, at the wrong end.** A request issued
+while the machine was offline can reject after the link returns, and
+`navigator.onLine` is already `true` by then — so a dead link was reported as a
+dead process.
+→ `transport-failed` now carries `onLineWhenIssued` **and** `onLineWhenFailed`.
+Only an unbroken online window accuses the sidecar.
 
-`lib/episode-progress.ts` (18 tests) does one query for the whole series rather
-than one per episode, and chooses its page size **here, with a reason**, which
-is what `parseListLimit` asks of callers since it imposes no ceiling on
-purpose.
-
-**The classification is not re-derived.** `continueWatchingVerdict` already
-decides resumable / finished / barely-started; a second opinion about
-"finished" would show up to a viewer as an episode this list calls watched and
-the player starts from the beginning. What is new is the *mapping*, and the
-three exclusions do not all mean the same thing on a list: finished → watched,
-**barely started → unwatched, not in progress** (thirty seconds is a title
-sequence), lease row → unwatched.
-
-**`unknown` draws nothing, and it is produced rather than faked.** A failed read
-gives every episode `unknown` rather than an empty index. Both render
-identically; they are different facts, and writing the empty one would leave a
-member of the state union that nothing produces.
-
-Verified on a running server, not only in the suite:
+**(c) A stale answer destroyed the application.** This is the one I would ask
+you to read closely. An instrumented run printed it exactly:
 
 ```
-/title/northstar, fresh profile ........ no badges
-PUT 900 of 3000 on northstar-s1e2 ...... "30% watched"
-PUT 2990 of 3000 on northstar-s1e3 ..... "Watched"
+report {"kind":"browser-offline"} : reachable -> offline
+report {"kind":"answered"}        : offline   -> reachable
+banner router.refresh()
+Failed to fetch RSC payload ... Falling back to browser navigation.
+NAV chrome-error://chromewebdata/
 ```
 
-That read only works at all because PW-0313 landed first.
+A probe already in flight when the link dropped resolved a few milliseconds
+after the `offline` event. The old fold read any answer as recovery. The banner
+refreshed. **Next's router falls back to a full browser navigation when it
+cannot fetch an RSC payload — by design — and with no network that lands on the
+browser's error page.** On a task whose acceptance reads "no state invents
+content; an offline home shows what it has and says so", the offline home
+showed Chrome's dinosaur. Six reproductions out of six.
 
-**PW-0306 is now in `dependencies`**, per your ruling — the fourth clause
-cannot be written until it releases `player-surface.tsx`, and the dependency
-makes that enforceable rather than remembered.
+→ **An answer no longer clears `offline`.** The asymmetry is a true statement
+about browsers rather than a workaround: `navigator.onLine === true` is
+optimistic, `false` is not a guess — and on this product a loopback health route
+answers perfectly well with the wifi switched off, so an answer proves the
+sidecar is alive and proves nothing about the link. Only the browser's `online`
+event retracts the browser's own statement. A degraded state that is *not* the
+link still clears on an answer, which keeps this a narrowing.
 
-**No `e2e` gate, and the task stays IN_PROGRESS**, for two independent reasons
-that both still stand: every spec file this feature would touch is now
-PW-0313's allowedPath while PW-0313 is in REVIEW; and the round-101 fixture
-finding is unchanged — **every demo series has exactly one season**, so no
-browser can reach the season selector or the cross-season branch of
-`resolveNextEpisode`. The concrete fixture proposal is still waiting on you in
-the `research.api_limitation` event.
+Three smaller ones fixed on the way: `getServerSnapshot` returned a fresh object
+per call (React said so in every development console); `observing` was a boolean
+where a navigation mounts two shells at once, so the outgoing banner's teardown
+published "nothing is watching" while something was; and the recovery flag moved
+from `useState` to a ref, which `react-hooks/set-state-in-effect` requires.
+
+### Two findings I did NOT act on, because they are outside the surface
+
+1. **`router.refresh()` can destroy the application, and not only here.**
+   PW-0309 guards its own call with `safeToRefresh()` — state reachable *and*
+   `navigator.onLine` — which shrinks the window from seconds to milliseconds
+   and **cannot close it**. The same call is made in
+   `components/auth/credentials-form.tsx:141`,
+   `components/auth/sign-out-control.tsx:48` and
+   `components/profiles/profile-picker.tsx:159` and `:187`. A viewer who signs
+   in or switches profile as a flaky link drops loses the application. Whether
+   Liberty needs a shared refresh wrapper, and whose task it is, is a ruling.
+   Recorded as `product.cross_cutting_hazard`.
+
+2. **Two `<main>` landmarks and two live regions during every client-side
+   navigation.** `AppShell` is rendered by each route rather than by the layout,
+   so while Next holds both trees a document has two `<main>` elements and now
+   two `role="status"` regions with the same content — a Playwright run caught
+   it as a strict-mode violation. I fixed the half I own (the observer count is
+   a count, not a boolean) and the spec now asserts the one-banner invariant.
+   Moving `AppShell` into `app/layout.tsx` would fix it for every route at once
+   and would change every page's shape. Recorded as
+   `product.accessibility_finding`.
+
+Also recorded: `quality.pre_existing_defect` — an unused-import **warning** at
+`apps/web/src/lib/db/in-memory-repository.test.ts:12`, PW-0313's surface, not in
+mine. Reported, not touched. `npm run lint` still exits 0.
 
 ---
 
-## 4. PW-0107 — I still cannot read the Windows run
+## 3. Evidence
 
-You said to use the run triggered by `bedceb5` and verify six things. **I have
-no access to it.** `gh` is not installed; the GitHub API answers **403** through
-the same proxy that refuses `git push`. No gate recorded, no claim either way.
+| Gate | Result |
+| --- | --- |
+| `typecheck` | `apps/web` exit 0; root turbo 22/22; `e2e` exit 0 |
+| `unit` | 84 files / **1488 tests**, exit 0; root `npm run test` 22/22 |
+| `e2e` | three configurations, **whole projects**, exit 0 each |
 
-Paste the run's output — or just the installed-tree verification step — and I
-will check it against your six conditions and record or repair. If it failed,
-the instruction is understood: repair the failure, not the verifier.
+e2e in full, Playwright 1.62.1 / chromium revision 1234 / `retries: 0`:
+
+| Configuration | Result |
+| --- | --- |
+| development (`chromium` + `api`) | 87 passed / 14 skipped |
+| production, no database | 61 passed / 40 skipped |
+| production + PostgreSQL 16.15 (`lib_wl`, migration applied, 8 tables asserted) | 76 passed / 25 skipped |
+
+**Determinism**, which is the claim this round has to earn: after the fixes,
+`degraded-states.spec.ts` ran `--repeat-each=6` in development (**30/30**) and
+`--repeat-each=6` in production (**24 passed, 6 skipped** — the one
+catalog-dependent case, which production serves no fixtures for).
+
+**Non-vacuity**, each defect reverted in isolation and the suites re-run:
+emptying the confirmation list and restoring the single-reading classification
+fails exactly 2 of 8 store cases, the two that encode the traced sequence;
+restoring `onLineWhenFailed` alone fails exactly one pure-module case.
+
+**UNVERIFIED, stated rather than implied.** These are Linux chromium runs in a
+container. No Windows runtime, no WebView2, no attended GUI behaviour is claimed
+from any gate this round.
+
+**CI and the Windows job: still unreadable from here.** One check this round, no
+retries: `git push` returns `remote: access denied by the git proxy:
+CrownOwlP/project-liberty is not in this session's authorized repository set`,
+and `api.github.com/repos/CrownOwlP/project-liberty/actions/runs` returns **403**.
+I cannot report a CI result or a Windows result for round 104 because I cannot
+read one. The bundle below is the delivery mechanism.
 
 ---
 
-## 5. Open, unowned, unchanged
+## 4. The player lane — unchanged, and still not actionable from here
 
-- `apps/web/src/app/api/v1/playback/build-target.ts` — comment describes an
-  inline program PW-0104 replaced. On no live surface.
-- `docs/DEVELOPMENT.md` — `next-env.d.ts` note. A PW-0313 reviewDependency
-  while it is in REVIEW, so read-only to me.
-- `docs/DESKTOP_PLAYBACK.md` — PW-0105's surface; **now free**, since PW-0105
-  reached DONE this round.
-- `search-form.tsx`'s live-region rule vs. the watchlist control's per-card
-  notice — three options in last round's `defect.found`, still yours.
-- **PW-0602** is the only thing dispatch calls executable and still cannot be
-  finished: its harness can only be invoked from `.github/workflows/windows.yml`,
-  which is PW-0107's allowedPath.
+Your round-103 sequencing was: `PW-0206` ↓ `PW-0306` ↓ the final clause of
+`PW-0307`, beginning with "claim and implement PW-0206". **PW-0206 cannot be
+claimed.** `ai:claim` refuses it with *"is BACKLOG, not READY"*, and the reason
+is the dependency graph:
 
-## Delivery
+```
+PW-0307 clause 3 → PW-0306 → PW-0206 → PW-0205 → PW-0204 → PW-0103 (BLOCKED)
+```
 
-Bundle base `0de015a`; the target is this commit and is named in
-`APPLY-ROUND-103.cmd` rather than here, since a document cannot state its own
-commit's sha. Both files were verified by reading them back off the PC after
-writing them, and the apply script carries the hashes.
+`PW-0103` is Experiment 1a — whether a child HWND composites beneath the
+WebView2 — and it is blocked on the commander's real Windows hardware, which no
+agent in this session can reach. `PW-0205` and `PW-0204` refuse `ai:claim` for
+the same reason. This is the identical finding filed last round as
+`board.sequencing_finding`; nothing has changed, and I am not bypassing the
+graph to reach PW-0307 sooner.
+
+**PW-0307 therefore stays IN_PROGRESS with three of four clauses delivered:**
+season navigation that does not lose the viewer's place; per-episode watched and
+in-progress state from the progress API; and `resolveNextEpisode` as a pure
+function with 15 tests. The fourth — the end-of-playback affordance — needs
+`player-surface.tsx`, which your round-103 ruling forbids widening into until
+PW-0306 completes.
+
+**One thing you may want to decide:** every demo series has exactly one season,
+so the season selector and `resolveNextEpisode`'s cross-season branch are
+covered by unit tests and **UNVERIFIED in a browser**. A second season in the
+fixtures would fix that, and the fixtures are nobody's current surface.
+
+---
+
+## 5. Next wave, and what I am doing without waiting
+
+`ai:dispatch` offers two dispatchable-now tasks, neither in a lane the player
+chain blocks:
+
+- **PW-0208** → `claude-infra` — an LGPL-compatible libmpv and FFmpeg the
+  product may actually ship;
+- **PW-0503** → `claude-test` — install, upgrade, uninstall, reinstall tested
+  rather than assumed. Note in advance: I can build that harness here and I
+  **cannot** run it on Windows, so whatever it produces this session will be a
+  harness plus honestly-labelled UNVERIFIED, never a Windows result.
+
+Deferred behind them on `allowedPaths` overlaps: PW-0502, PW-0602.
+
+---
+
+## 6. Bundle
+
+| | |
+| --- | --- |
+| Base | `0de015a17f1d51cfa987d18c107ac775cdc72660` |
+| Target | `codex/pl-ai-0001-repair`, tip = **the commit carrying this document** |
+| Content tip before it | `3ab6a82f5b3e7160981fab720528964af423f3be` (PW-0309) |
+| Delivered to | `D:\project-liberty\_liberty-sync\` |
+
+**The filename, the target sha and the sha256 are in the delivery message, not
+in this table, and the reason is not laziness.** An archive cannot contain the
+hash of itself, and the bundle's tip is the commit that carries this file — so
+any sha written here for either would be a number I made up before the thing
+existed. That is precisely the failure caught in round 103, where an invented
+full sha reached a draft. Base is above because base is real history and
+resolves today; everything else is reported after the write.
+
+Verified before delivery with `git bundle verify`, `git bundle list-heads`, and
+a fast-forward rehearsal in a fresh garbage-collected clone from more than one
+base. The sha256 reported is the one read back **from the commander's disk
+after the write**, not the one computed here before it.
