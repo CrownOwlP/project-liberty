@@ -15,6 +15,7 @@
 import type { ReactNode } from "react";
 
 import { AccountRegion } from "../auth/account-region";
+import { DegradedBanner } from "../state/degraded-banner";
 import { ActiveProfileBadge } from "../profiles/active-profile-badge";
 import { PRIMARY_NAVIGATION, activeEntryId } from "./navigation";
 
@@ -141,6 +142,29 @@ export function AppShell({
         id="main"
         aria-busy={busy ? "true" : undefined}
       >
+        {/*
+          * WHAT IS UNREACHABLE, ON EVERY ROUTE (PW-0309).
+          *
+          * Here rather than on the routes that happen to need the network,
+          * because that set is "all of them" and a degraded state that
+          * appeared on some screens and not others would be a worse lie than
+          * none. It is the same argument the identity controls above are
+          * mounted on: a fact about the whole application belongs to the one
+          * component every route renders through.
+          *
+          * INSIDE `<main>` AND ABOVE THE CONTENT, not in the topbar. It is
+          * prose a viewer has to read, and it must not compete with the
+          * navigation for the one line of chrome. First in the main region
+          * means a screen reader reaches it before the page's own heading,
+          * which is the right order for "nothing below here can load".
+          *
+          * THE THIRD AND LAST CLIENT BOUNDARY THIS SERVER SHELL OPENS, and
+          * for the same reason as the first two: the fact is the browser's.
+          * The server has no network state to report and renders the banner
+          * empty -- see `reachability-store.ts`'s `serverSnapshot`, which
+          * also keeps a degraded banner out of any cached document.
+          */}
+        <DegradedBanner />
         {children}
       </main>
     </>

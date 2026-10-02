@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { PRIMARY_NAVIGATION, activeEntryId, isReachable } from "../shell/navigation";
 import { AppShell } from "../shell/app-shell";
@@ -26,6 +26,21 @@ import { watchlistRequest } from "./watchlist-state";
  * established, down to the comment-stripping in `sourceOf` -- a rule whose own
  * explanation can fail it is not a rule.
  * ---------------------------------------------------------------------- */
+
+/*
+ * `useRouter` THROWS OUTSIDE A MOUNTED APP ROUTER, AND THERE IS NO ROUTER IN A
+ * NODE TEST (PW-0309).
+ *
+ * `AppShell` now renders `DegradedBanner`, which calls `useRouter` so it can
+ * `router.refresh()` when a degraded state clears -- the "recovery on
+ * reconnect without a manual reload" that task's acceptance requires. Any
+ * suite that renders the shell therefore needs this stub; `profile-ui.test.tsx`
+ * and `auth-ui.test.tsx` already carry the same one for the same reason.
+ *
+ * `refresh` is the only member the banner calls, and the banner does not call
+ * it during a render -- it is an effect, which never runs in this environment.
+ */
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: () => {} }) }));
 
 async function sourceOf(file: string): Promise<string> {
   const raw = await readFile(new URL(file, import.meta.url), "utf8");

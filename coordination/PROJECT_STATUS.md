@@ -1,18 +1,18 @@
 # Project Liberty - Project Status
 
-> Generated 2026-10-01T23:14:35.237Z from the AI control plane.
+> Generated 2026-10-01T23:29:47.205Z from the AI control plane.
 
-**Overall completion:** 87/107 executable tasks (81%)
+**Overall completion:** 89/107 executable tasks (83%)
 
 ## Status summary
 
 - **BACKLOG:** 9
-- **READY:** 5
+- **READY:** 4
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 2
-- **REVIEW:** 1
+- **REVIEW:** 0
 - **BLOCKED:** 3
-- **DONE:** 87
+- **DONE:** 89
 - **CANCELED:** 0
 - **SUPERSEDED:** 4
 
@@ -32,20 +32,19 @@
 ## Active work
 
 - **PW-0307** [IN_PROGRESS] Series navigation and the next episode — owner: claude-frontend
-- **PW-0313** [REVIEW] The in-memory store is two stores: server components and route handlers never share one — owner: claude-backend
-- **PW-0107** [IN_PROGRESS] The MSI verification checks a file the shell no longer spawns — owner: claude-infra
+- **PW-0309** [IN_PROGRESS] Offline, degraded and error states a desktop application needs — owner: claude-frontend
 
 ## Dispatch classification
 
-- **READY_AND_EXECUTABLE:** 5
+- **READY_AND_EXECUTABLE:** 4
 - **READY_BUT_EXTERNAL:** 0
 - **BLOCKED:** 3
 - **BACKLOG (dependency-gated):** 9
 
 ## Recommended executable wave
 
-- **PW-0309** -> claude-frontend (P1/Frontend) Offline, degraded and error states a desktop application needs
-- **PW-0602** -> claude-test (P1/Test) The automated half of the Windows matrix, running on Windows
+- **PW-0208** -> claude-infra (P1/Infra) An LGPL-compatible libmpv and FFmpeg the product may actually ship
+- **PW-0503** -> claude-test (P1/Test) Install, upgrade, uninstall, reinstall — tested, not assumed
 
 ## Queued for external agents
 
@@ -69,10 +68,10 @@ UNBLOCK WHEN: the commander runs Experiment 1a on real Windows hardware and hand
 
 - **gpt-architect:** 0/6 active (external lane; not locally executable)
 - **claude-lead:** 0/2 active
-- **claude-frontend:** 1/2 active
-- **claude-backend:** 1/2 active
+- **claude-frontend:** 2/2 active
+- **claude-backend:** 0/2 active
 - **claude-media:** 0/2 active
 - **claude-test:** 0/1 active
 - **claude-security:** 0/1 active
-- **claude-infra:** 1/1 active
+- **claude-infra:** 0/1 active
 - **human-commander:** 0/99 active (external lane; not locally executable)

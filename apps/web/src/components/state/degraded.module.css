@@ -1,0 +1,48 @@
+/* -------------------------------------------------------------------------
+ * The degraded-mode banner (PW-0309).
+ *
+ * ITS OWN MODULE, following the precedent `watchlist.module.css` and
+ * `season-navigation.module.css` set this phase: a style in a shared file is a
+ * style another surface borrows, and this one belongs to a component that
+ * renders on every route.
+ * ---------------------------------------------------------------------- */
+
+/*
+ * IT PUSHES THE PAGE DOWN RATHER THAN COVERING IT.
+ *
+ * A fixed or sticky overlay was the alternative and it is refused: this banner
+ * can be on screen for as long as a network is down, and an overlay that sits
+ * on top of content for minutes is content a viewer cannot read. The acceptance
+ * says "an offline home shows what it has and says so" -- showing what it has
+ * means not obscuring it.
+ */
+.banner {
+  margin: 0 0 18px;
+  padding: 12px 16px;
+  border: 1px solid var(--border);
+  /*
+   * THE LEFT EDGE IS THE CUE, NOT THE BACKGROUND COLOUR. The same rule
+   * `title.module.css` records for the episode row's Play link and
+   * `watchlist.module.css` for its refusal notice: a recoloured panel is the
+   * same panel on a greyscale display or to a reader with a colour deficiency.
+   * The heading below carries the meaning in words; this is decoration on top
+   * of a sentence rather than instead of one.
+   */
+  border-left: 3px solid currentColor;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.heading {
+  margin: 0;
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.body {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  /* Long enough to be a sentence, short enough to be read. */
+  max-width: 68ch;
+}

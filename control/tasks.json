@@ -9345,7 +9345,7 @@
       "id": "PW-0309",
       "priority": "P1",
       "lane": "Frontend",
-      "status": "READY",
+      "status": "IN_PROGRESS",
       "title": "Offline, degraded and error states a desktop application needs",
       "dependencies": [
         "PW-0301"
@@ -9353,7 +9353,10 @@
       "allowedPaths": [
         "apps/web/src/components/state/**",
         "apps/web/src/lib/network-state.ts",
-        "apps/web/src/lib/network-state.test.ts"
+        "apps/web/src/lib/network-state.test.ts",
+        "apps/web/src/components/shell/app-shell.tsx",
+        "e2e/tests/degraded-states.spec.ts",
+        "apps/web/src/components/watchlist/watchlist-ui.test.tsx"
       ],
       "reviewDependencies": [
         "apps/web/src/app/error.tsx",
@@ -9371,8 +9374,11 @@
       ],
       "acceptance": "The application behaves honestly when the network, the backend or the sidecar is unavailable. There is no offline handling of any kind today -- no navigator.onLine, no service worker, no offline banner, no retry-on-reconnect. THIS MATTERS MORE ON THE DESKTOP THAN IT DID ON THE WEB: docs/DESKTOP_PLAYBACK.md section 8 accepts that an offline desktop cannot resolve playback at all, and requires that failure be surfaced as an honest unavailable outcome rather than an empty candidate list -- so the UI half of that ruling is this task. REQUIRED: a network-state signal and a visible degraded mode that names what is unavailable. REQUIRED: recovery on reconnect without a manual reload. REQUIRED: the sidecar being down is a DISTINCT state from the backend being down and from the network being down, because the three have different remedies and collapsing them produces a support burden. REQUIRED: no state invents content; an offline home shows what it has and says so.",
       "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. ",
-      "owner": null,
-      "gateResults": {}
+      "owner": "claude-frontend",
+      "gateResults": {},
+      "implementationAgent": "claude-frontend",
+      "updatedAt": "2026-10-01T23:29:47.180Z",
+      "implementationBaseSha": "11a5bb3365e4c591e9630e7153493ac2efc77001"
     },
     {
       "id": "PW-0310",
@@ -9615,7 +9621,7 @@
       "id": "PW-0313",
       "priority": "P1",
       "lane": "Backend",
-      "status": "REVIEW",
+      "status": "DONE",
       "title": "The in-memory store is two stores: server components and route handlers never share one",
       "dependencies": [],
       "allowedPaths": [
@@ -9643,9 +9649,9 @@
       ],
       "acceptance": "On a build with no DATABASE_URL, a row written through /api/v1/* is visible to a server component and the reverse, in the same process. REQUIRED: the continue-watching rail renders a title whose progress was written through the progress API -- which it does not today, silently. REQUIRED: /watchlist renders an entry added through the watchlist API. REQUIRED: the e2e coverage that watchlist.spec.ts currently skips with a stated reason on a development build is enabled by this task rather than deleted, and PW-0305's rail gains the equivalent. REQUIRED: whatever identity the fix uses must be justified against the alternative of declaring the in-memory adapter route-handler-only, which is a product decision rather than a refactor and would delete the list and the rail as currently designed.",
       "notes": "DEFECT, PROPOSED FOR gpt-architect RULING, round 100. Found while building PW-0304 and REPRODUCED TWICE on a running server; the full reproduction, including the one for PW-0305's rail, is the `defect.found` event of 2026-10-01. In one line: `lib/db/index.ts` caches the resolution in a module-level binding and `in-memory-repository.ts` builds its Maps at construction, and Next's app router compiles the React Server Components graph and the route-handler graph separately, so each gets its own store. PostgreSQL is unaffected, which is why it has been invisible. Created unowned so the proposal is machine-readable rather than prose, and NOT claimed before the verdict -- the remedy touches PW-0305's allowedPaths and the choice between fixing the identity and narrowing the adapter's contract is gpt-architect's to make.",
-      "owner": "claude-backend",
+      "owner": null,
       "implementationAgent": "claude-backend",
-      "updatedAt": "2026-10-01T23:04:13.284Z",
+      "updatedAt": "2026-10-01T23:26:38.908Z",
       "implementationBaseSha": "42f5bb7d446c2a12361ba03093121e32b71ce305",
       "gateResults": {
         "typecheck": {
@@ -9669,7 +9675,56 @@
           "commitSha": "bedceb502ce894d759b01c6f0a8ad9052db6adac",
           "evidence": "EXECUTED on bedceb5 plus this round's test changes. Browser: Chrome for Testing 151.0.7922.34,\nrevision 1234 -- the build @playwright/test 1.62.1 pins, resolved from /root/.cache/ms-playwright.\nThe container's PLAYWRIGHT_BROWSERS_PATH points at a 1194 tree which was NOT used.\n\nWHOLE PROJECTS, NO SPEC FILTER, three configurations, exit 0 in each:\n\n  development (in-memory, development-header identity), LIBERTY_E2E_PORT=3177\n     --project=chromium : 27 passed,  6 skipped\n     --project=api      : 55 passed,  8 skipped\n  production + REAL POSTGRESQL 16.15, LIBERTY_E2E_PORT=3200,\n  LIBERTY_E2E_DATABASE_URL=postgres://postgres@127.0.0.1:5433/lib_wl\n     --project=chromium --project=api : 72 passed, 24 skipped\n\nEVIDENCE ITEM 4 -- PW-0305's RAIL. `e2e/tests/continue-watching.spec.ts`, new, 4 cases: a profile\nthat has watched nothing gets no rail AND still gets the browse rails (the precondition that makes\nthe positive case mean something, since before this fix the rail was absent in every case); a\nprogress row written through the API is on the page; the card is the RESUME rendering of\n`CatalogCard`, carrying the spoken \"N% watched\" and a start-over LINK with `?restart=1`; and one\nhousehold's resume point is not another's, which is the first question to ask of a store that just\nbecame process-global.\n\nEVIDENCE ITEM 5 -- THE DEVELOPMENT WATCHLIST PATH, ENABLED AND NOT DELETED, which is the wording of\ngpt-architect's round-102 ruling. Four assertions were added to the development group of\n`watchlist.spec.ts`, each marked PW-0313 in the source, each previously impossible:\n  - after adding from a title page, `/watchlist` shows the title -- and NOT \"Choose who is\n    watching\", which is what that page used to answer for a session that had plainly selected a\n    profile;\n  - after removing, `/watchlist` shows the empty panel and not the title;\n  - after adding from a catalog card on the home screen, `/watchlist` shows that one title and not\n    the other demo series -- the full journey through the UI, which no configuration could do\n    before;\n  - after a REFUSED write, `/watchlist` read back as the original identity is empty. That is the\n    acceptance's \"a refused write must not render as a success\", checked in the one place a viewer\n    would go to find out whether it worked.\nThe wire-level `listedContentIds` checks were NOT replaced. \"The server agrees with the row\" and\n\"the page agrees with the server\" are different claims.\n\nNON-VACUITY, MEASURED. With the one line in `lib/db/index.ts` reverted to\n`createInMemoryRepository(environment)`, `watchlist.spec.ts` + `continue-watching.spec.ts` on\nchromium/development go to 7 FAILED / 4 passed / 4 skipped: all four new watchlist page assertions\nand three of the four continue-watching cases. Restored, the same two specs are 11 passed / 4\nskipped, exit 0. Every assertion this gate rests on depends on the fix.\n\nONE EXISTING TEST WAS REPAIRED ON THE WAY, DISCLOSED RATHER THAN QUIETLY FIXED.\n`critical-journey.spec.ts`'s play-affordance case failed at 12.0s with\n`expect(page).toHaveURL` -- not a product failure: the click had navigated and the RSC request was\nwaiting on Turbopack's FIRST compile of `/watch/[contentId]`, which pulls shaka-player. The server\nlog straddles the failure (\"Compiling /watch/[contentId] ...\" then the failure then \"200 in\n262ms\"), and the previous round's run logged the same compile at 6.8s and passed with under two\nseconds of margin. This round's additions consumed that margin. Repaired by waiting on the\nNAVIGATION (`page.waitForURL`) and keeping the URL assertion after it, so the wait is bounded by\nthe thing that actually varies. No timeout was raised and `retries` is still 0 -- PL-0706's\nacceptance says raising a ceiling \"moves the ceiling without removing the dependence\". Diagnosis\nrecorded as `defect.found`.\n\nWHAT THIS GATE STILL DOES NOT COVER. webkit, firefox and mobile-safari were not executed -- only\nchromium 1234 is installed here. No configuration in this harness has both a real database and a\ncatalog, so the PostgreSQL run exercises the list page's `item: null` branch while the development\nrun exercises the named-card branch; between them both branches are covered, but not both on one\nbuild. Nothing here ran on Windows and nothing here claims anything about Windows."
         }
-      }
+      },
+      "review": {
+        "taskId": "PW-0313",
+        "implementationAgent": "claude-backend",
+        "implementationOwner": "claude-backend",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "aa80fac77fe2a7f36bf673a3dd7ea619ab861445",
+        "reviewedBaseSha": "42f5bb7d446c2a12361ba03093121e32b71ce305",
+        "reviewedTreeHash": "f8aef8b39d64f59976c069dfccc2dcdafe29c3f2288befd52b3c7d6c089d4165",
+        "reviewedFileCount": 15,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [
+          "apps/web/src/lib/continue-watching.ts",
+          "apps/web/src/components/continue-watching",
+          "apps/web/src/components/watchlist/watchlist-page-data.ts",
+          "apps/web/src/app/watchlist",
+          "docs/DEVELOPMENT.md"
+        ],
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-10-01T23:26:38.579Z",
+        "evidence": "APPROVED at aa80fac77fe2a7f36bf673a3dd7ea619ab861445. gpt-architect, round 103, transcribed by\nclaude-lead from the ChatGPT review document.\n\nRationale, verbatim: \"one logical in-memory repository is now shared process-wide through the\ncomposition root; the implementation uses a stable process-global identity rather than disk\npersistence; independently-constructed repository objects share the same underlying process store;\nPostgreSQL selection remains separate and does not populate the in-memory store; test isolation is\nexplicit with before/after reset; separate processes were verified not to share state; development\nwatchlist assertions that were previously impossible are now enabled rather than deleted;\ncontinue-watching now renders progress written through the API; reverse-direction/process-sharing\nbehavior is tested; mutation testing proves the e2e assertions genuinely depend on the fix.\n\nThe acceptance evidence is sufficient for review.\n\nIf typecheck/unit/e2e gates remain current and the review fingerprint is valid at this commit,\nPW-0313 may reach DONE.\""
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PW-0313",
+          "implementationAgent": "claude-backend",
+          "implementationOwner": "claude-backend",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "aa80fac77fe2a7f36bf673a3dd7ea619ab861445",
+          "reviewedBaseSha": "42f5bb7d446c2a12361ba03093121e32b71ce305",
+          "reviewedTreeHash": "f8aef8b39d64f59976c069dfccc2dcdafe29c3f2288befd52b3c7d6c089d4165",
+          "reviewedFileCount": 15,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "apps/web/src/lib/continue-watching.ts",
+            "apps/web/src/components/continue-watching",
+            "apps/web/src/components/watchlist/watchlist-page-data.ts",
+            "apps/web/src/app/watchlist",
+            "docs/DEVELOPMENT.md"
+          ],
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-10-01T23:26:38.579Z",
+          "evidence": "APPROVED at aa80fac77fe2a7f36bf673a3dd7ea619ab861445. gpt-architect, round 103, transcribed by\nclaude-lead from the ChatGPT review document.\n\nRationale, verbatim: \"one logical in-memory repository is now shared process-wide through the\ncomposition root; the implementation uses a stable process-global identity rather than disk\npersistence; independently-constructed repository objects share the same underlying process store;\nPostgreSQL selection remains separate and does not populate the in-memory store; test isolation is\nexplicit with before/after reset; separate processes were verified not to share state; development\nwatchlist assertions that were previously impossible are now enabled rather than deleted;\ncontinue-watching now renders progress written through the API; reverse-direction/process-sharing\nbehavior is tested; mutation testing proves the e2e assertions genuinely depend on the fix.\n\nThe acceptance evidence is sufficient for review.\n\nIf typecheck/unit/e2e gates remain current and the review fingerprint is valid at this commit,\nPW-0313 may reach DONE.\""
+        }
+      ],
+      "completedAt": "2026-10-01T23:26:38.908Z"
     },
     {
       "id": "PW-0401",
@@ -11084,7 +11139,7 @@
       "id": "PW-0107",
       "priority": "P1",
       "lane": "Infra",
-      "status": "IN_PROGRESS",
+      "status": "DONE",
       "title": "The MSI verification checks a file the shell no longer spawns",
       "dependencies": [],
       "allowedPaths": [
@@ -11104,10 +11159,74 @@
       ],
       "acceptance": "SET BY gpt-architect, round 99. FILING APPROVED; this replaces the proposal's acceptance.\n\n\"The Windows installer verification must stop hard-coding Next's obsolete `server.js` entry as the\nruntime proof.\"\n\nPREFERRED REMEDY: derive the installed runtime paths from the same authoritative constants and layout\ncontract used by `sidecar.rs` and packaging, so the Windows workflow verifies the entry the shell will\nactually spawn -- `sidecar\\server\\liberty-sidecar.js`. The verification \"may also assert `server.js`\nexists as packaged Next build output, but that must not be mistaken for the spawned runtime entry.\"\n\nACCEPTANCE MUST INCLUDE:\n - the Windows installer contains `liberty-desktop.exe`;\n - the installed Node runtime exists;\n - the installed `liberty-sidecar.js` exists at the exact path expected by the Rust shell;\n - installed runtime-path verification DERIVES FROM, or is mechanically checked against, the\n   authoritative runtime path contract rather than manually duplicating it;\n - uninstall remains clean.\n\nCONSTRAINT: \"do not reopen or invalidate PW-0501's historical packaging evidence unnecessarily; treat\nthis as a forward corrective task.\"\n\nNOT IN SCOPE: launching the application, which is PW-0503 and the commander's machine.",
       "notes": "FOUND BY claude-lead WHILE READING WINDOWS RUN 36776266428 (commit 0de015a), the first run that\npackaged PW-0106's bootstrap. Proposed for gpt-architect rather than patched, for two reasons given\nat the bottom.\n\nTHE FINDING. `.github/workflows/windows.yml`'s step \"Install the MSI, verify it landed, uninstall it\"\ninstalls the MSI and then asserts that specific files exist under `C:\\Program Files\\Project Liberty`.\nIts list is:\n\n  installed executable: C:\\Program Files\\Project Liberty\\liberty-desktop.exe\n  packaged resource:    C:\\Program Files\\Project Liberty\\sidecar\\node.exe\n  packaged resource:    C:\\Program Files\\Project Liberty\\sidecar\\server\\server.js\n\n`server\\server.js` is NEXT'S GENERATED ENTRY. Since PW-0106 it is still shipped -- it is build output\nand removing build output has its own risks -- but IT IS NEVER SPAWNED. `sidecar.rs` now spawns\n`sidecar/server/liberty-sidecar.js`, and the installed-tree verification does not look for that file\nat all.\n\nWHAT THAT COSTS. The step exists to prove the installer carries a runnable application. As of 0de015a\nit proves the installer carries a file nothing runs, and would pass unchanged if\n`liberty-sidecar.js`, `liberty-sidecar-layout.json` or the whole standalone tree were absent from the\nMSI.\n\nIT IS NOT CURRENTLY A LIVE HOLE, and saying so is part of the finding rather than a reason to\ndowngrade it. `package-sidecar.mjs` lists `server/liberty-sidecar.js` and\n`server/liberty-sidecar-layout.json` among the files it requires after laying out, so a missing\nbootstrap fails the packaging step before an installer is ever built. What is missing is the\nINSTALLED-TREE half: nothing proves the MSI carried across what packaging produced. Those are\ndifferent claims, and this workflow step is the only thing that makes the second one.\n\nTHE FIX IS SMALL AND THE INTERESTING PART IS HOW TO KEEP IT HONEST. Adding two more path assertions\nis five minutes' work and will drift again the next time the layout changes -- this defect IS that\ndrift, one round after PW-0106 renamed the entry. The durable shape is for the verification to derive\nits expectations from the same constants the layout does, exactly as `package-sidecar.mjs` already\nderives `SERVER_RELATIVE_PATH` and `NODE_RELATIVE_PATH` from `sidecar.rs` by regex and fails when\nthey disagree. A verification that names its own copy of the paths is a third place for one fact to\nlive, and this repository has now been bitten by that three times: `.next/standalone` vs\n`dist/desktop/standalone` in round 95, `\"server.js\"` hard-coded in a Rust test in round 98, and this.\n\nRECOMMENDED: verify the installed tree against the paths `sidecar.rs` declares, not against a list\nwritten in YAML. Whether that is done by having the workflow shell out to a small Node script under\n`scripts/windows/**` (which would put it on PW-0503's surface, where the rest of the installed-tree\nlifecycle work already lives) or by extending the inline PowerShell is the choice worth a ruling.\n\nWHY NOT PATCHED HERE. `.github/workflows/windows.yml` is PW-0501's allowedPath. PW-0501 is DONE, so\nediting it cannot make a review stale -- but it also means no active task owns the file, and\ndeclaring it under PW-0106 would change the surface gpt-architect's architecture-review is bound to\nat 777002e. Neither is something to do quietly at 06:00.",
-      "owner": "claude-infra",
+      "owner": null,
       "implementationAgent": "claude-infra",
-      "updatedAt": "2026-10-01T01:21:19.504Z",
-      "implementationBaseSha": "0a5fa4b52932469dfd93af74668535fbd80a5f88"
+      "updatedAt": "2026-10-01T23:27:34.636Z",
+      "implementationBaseSha": "0a5fa4b52932469dfd93af74668535fbd80a5f88",
+      "gateResults": {
+        "build": {
+          "status": "pass",
+          "at": "2026-10-01T23:27:13.283Z",
+          "by": "claude-infra",
+          "commitSha": "11a5bb3365e4c591e9630e7153493ac2efc77001",
+          "evidence": "PASS. Windows package run 36936913880, job 110619211847, at commit\nbedceb502ce894d759b01c6f0a8ad9052db6adac, conclusion SUCCESS.\n\nPROVENANCE, STATED BEFORE THE CLAIM BECAUSE IT QUALIFIES IT. I DID NOT OBSERVE THIS RUN. This\ncontainer has no access to the repository's Actions: `gh` is not installed and\n`https://api.github.com/repos/CrownOwlP/project-liberty/actions/runs` answers 403 through the same\nproxy that refuses `git push`. The run id, job id, commit and conclusion above are TRANSCRIBED from\ngpt-architect's round-103 review document, which states them as the Windows build evidence for this\ntask. Nothing in this evidence is a claim I verified myself about what happened on a Windows\nmachine, and it must not be read as one.\n\nWHAT I DID VERIFY, MECHANICALLY, ON THIS TREE -- that the run is about the code this gate is being\nrecorded against:\n\n    $ git diff --name-only 5b4491c bedceb5 -- .github/workflows/windows.yml scripts/windows/\n    (no output)\n    $ git merge-base --is-ancestor 5b4491c bedceb5 && echo YES\n    YES\n\nPW-0107's entire allowedPaths are `.github/workflows/windows.yml` and `scripts/windows/**`, and\nnothing under either changed between the implementation commit 5b4491c226595d29af94dacf74a375a39bd9523e\nand bedceb5. The run therefore exercised this task's verifier and workflow exactly as they stand.\nThe same diff against current HEAD is also empty, so the fingerprint has not moved since.\n\nWHY NOT THE NEWER RUN. gpt-architect's instruction was \"If the current Windows run on 11a5bb3 also\npasses, prefer recording that newer run\" -- run 36940663391. I cannot read it either, for the same\n403, and no result for it was supplied. Recording a run whose outcome nobody has stated would be\ninventing the one fact a build gate exists to carry, so the older run with a stated SUCCESS is used\nand this paragraph says why.\n\nWHAT THE RUN IS EVIDENCE FOR, per gpt-architect's architecture rationale on the same task:\ninstalled runtime paths are no longer duplicated in YAML; `NODE_RELATIVE_PATH` and\n`SERVER_RELATIVE_PATH` are derived from `sidecar.rs`, the shell's authoritative runtime contract;\nthe verifier checks the actual launched entry `liberty-sidecar.js` rather than the generated\n`server.js`; the layout file and a non-empty static tree are required; the deliberate\nmissing-bootstrap negative control runs against a non-install directory and must fail; and MSI\ninstall and uninstall are both observed.\n\nWHAT IT IS NOT EVIDENCE FOR, and the limit is gpt-architect's own: \"Do NOT claim application launch\nor WebView runtime behavior from this gate.\" Nothing has started `liberty-desktop.exe` anywhere.\nThis gate says an installer was produced and its installed tree contains the files the shell's own\nconstants name -- it says nothing about the shell spawning the sidecar, the handshake completing,\nor a WebView rendering."
+        },
+        "architecture-review": {
+          "status": "pass",
+          "at": "2026-10-01T23:27:34.260Z",
+          "by": "gpt-architect",
+          "commitSha": "11a5bb3365e4c591e9630e7153493ac2efc77001",
+          "judgementCommitSha": "5b4491c226595d29af94dacf74a375a39bd9523e",
+          "judgementCommitVerified": true,
+          "transcribedBy": "claude-lead",
+          "evidence": "PASS at 5b4491c226595d29af94dacf74a375a39bd9523e. gpt-architect, round 103, transcribed by\nclaude-lead from the ChatGPT review document.\n\nWindows build evidence cited by the reviewer: run 36936913880, job 110619211847, commit\nbedceb502ce894d759b01c6f0a8ad9052db6adac, conclusion SUCCESS. I did not observe that run -- see the\n`build` gate on this task for the provenance and for the mechanical check that nothing under\nPW-0107's surface changed between 5b4491c and bedceb5.\n\nArchitecture rationale, verbatim: \"installed runtime paths are no longer duplicated manually in\nYAML; NODE_RELATIVE_PATH and SERVER_RELATIVE_PATH are derived directly from sidecar.rs, which is\nthe shell's authoritative runtime contract; the verifier checks the actual launched entry,\nliberty-sidecar.js; server.js is explicitly treated as generated build output rather than as the\nspawned runtime; the layout file is required; a non-empty static/client tree is required; the\nverifier has a deliberate negative control against a non-install directory; MSI install and\nuninstall are both observed; the implementation fixes the class of path-drift defect rather than\nonly replacing one stale string.\"\n\nLIMITATION CARRIED INTO THE VERDICT, in gpt-architect's own words: \"Do NOT claim application launch\nor WebView runtime behavior from this gate.\""
+        }
+      },
+      "review": {
+        "taskId": "PW-0107",
+        "implementationAgent": "claude-infra",
+        "implementationOwner": "claude-infra",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "5b4491c226595d29af94dacf74a375a39bd9523e",
+        "reviewedBaseSha": "0a5fa4b52932469dfd93af74668535fbd80a5f88",
+        "reviewedTreeHash": "4dddd35f62c599f7784c02d5525f9571afe91800244ef4df469f8cbe625fa5c4",
+        "reviewedFileCount": 6,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [
+          "apps/desktop/src-tauri/src/sidecar.rs",
+          "apps/desktop/scripts/package-sidecar.mjs",
+          "apps/desktop/sidecar-bootstrap/liberty-sidecar.js"
+        ],
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-10-01T23:27:34.404Z",
+        "evidence": "APPROVED at 5b4491c226595d29af94dacf74a375a39bd9523e. gpt-architect, round 103, transcribed by\nclaude-lead.\n\nA NOTE ON THE SHAPE OF THIS APPROVAL, because the source document does not contain the line\n\"REVIEW: APPROVED\" for this task and I will not pretend it does. What it contains is a section\nheaded \"PW-0107 -- ARCHITECTURE REVIEW\" recording \"ARCHITECTURE-REVIEW: PASS\" with a full\nrationale, followed by two instructions: \"PW-0107 may reach DONE once its build gate is recorded\nagainst a successful Windows run with a current fingerprint\", and, under CONTINUE AUTONOMOUSLY,\n\"close PW-0107 if the current Windows run and architecture review permit.\" This approval record is\nassembled from those statements. The condition they attach is satisfied and shown: the build gate\nis recorded against a stated-SUCCESS Windows run, and `git diff --name-only 5b4491c bedceb5 --\n.github/workflows/windows.yml scripts/windows/` is empty, as is the same diff against HEAD, so the\nfingerprint has not moved.\n\nArchitecture rationale, verbatim: \"installed runtime paths are no longer duplicated manually in\nYAML; NODE_RELATIVE_PATH and SERVER_RELATIVE_PATH are derived directly from sidecar.rs, which is\nthe shell's authoritative runtime contract; the verifier checks the actual launched entry,\nliberty-sidecar.js; server.js is explicitly treated as generated build output rather than as the\nspawned runtime; the layout file is required; a non-empty static/client tree is required; the\nverifier has a deliberate negative control against a non-install directory; MSI install and\nuninstall are both observed; the implementation fixes the class of path-drift defect rather than\nonly replacing one stale string.\"\n\nLIMITATION, VERBATIM AND CARRIED INTO THE APPROVAL: \"Do NOT claim application launch or WebView\nruntime behavior from this gate.\" Nothing in this project has started liberty-desktop.exe anywhere."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PW-0107",
+          "implementationAgent": "claude-infra",
+          "implementationOwner": "claude-infra",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "5b4491c226595d29af94dacf74a375a39bd9523e",
+          "reviewedBaseSha": "0a5fa4b52932469dfd93af74668535fbd80a5f88",
+          "reviewedTreeHash": "4dddd35f62c599f7784c02d5525f9571afe91800244ef4df469f8cbe625fa5c4",
+          "reviewedFileCount": 6,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "apps/desktop/src-tauri/src/sidecar.rs",
+            "apps/desktop/scripts/package-sidecar.mjs",
+            "apps/desktop/sidecar-bootstrap/liberty-sidecar.js"
+          ],
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-10-01T23:27:34.404Z",
+          "evidence": "APPROVED at 5b4491c226595d29af94dacf74a375a39bd9523e. gpt-architect, round 103, transcribed by\nclaude-lead.\n\nA NOTE ON THE SHAPE OF THIS APPROVAL, because the source document does not contain the line\n\"REVIEW: APPROVED\" for this task and I will not pretend it does. What it contains is a section\nheaded \"PW-0107 -- ARCHITECTURE REVIEW\" recording \"ARCHITECTURE-REVIEW: PASS\" with a full\nrationale, followed by two instructions: \"PW-0107 may reach DONE once its build gate is recorded\nagainst a successful Windows run with a current fingerprint\", and, under CONTINUE AUTONOMOUSLY,\n\"close PW-0107 if the current Windows run and architecture review permit.\" This approval record is\nassembled from those statements. The condition they attach is satisfied and shown: the build gate\nis recorded against a stated-SUCCESS Windows run, and `git diff --name-only 5b4491c bedceb5 --\n.github/workflows/windows.yml scripts/windows/` is empty, as is the same diff against HEAD, so the\nfingerprint has not moved.\n\nArchitecture rationale, verbatim: \"installed runtime paths are no longer duplicated manually in\nYAML; NODE_RELATIVE_PATH and SERVER_RELATIVE_PATH are derived directly from sidecar.rs, which is\nthe shell's authoritative runtime contract; the verifier checks the actual launched entry,\nliberty-sidecar.js; server.js is explicitly treated as generated build output rather than as the\nspawned runtime; the layout file is required; a non-empty static/client tree is required; the\nverifier has a deliberate negative control against a non-install directory; MSI install and\nuninstall are both observed; the implementation fixes the class of path-drift defect rather than\nonly replacing one stale string.\"\n\nLIMITATION, VERBATIM AND CARRIED INTO THE APPROVAL: \"Do NOT claim application launch or WebView\nruntime behavior from this gate.\" Nothing in this project has started liberty-desktop.exe anywhere."
+        }
+      ],
+      "completedAt": "2026-10-01T23:27:34.636Z"
     }
   ]
 }

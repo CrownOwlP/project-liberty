@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-01T23:14:35.241Z",
+  "generatedAt": "2026-10-01T23:29:47.208Z",
   "agent": "claude-frontend",
   "executionAvailable": true,
   "assigned": [
@@ -59,16 +59,12 @@
       "implementationAgent": "claude-frontend",
       "updatedAt": "2026-10-01T02:46:31.897Z",
       "implementationBaseSha": "13798f8f45556ed233b894f94c6206944167c646"
-    }
-  ],
-  "review": [],
-  "reservedExternal": [],
-  "recommended": [
+    },
     {
       "id": "PW-0309",
       "priority": "P1",
       "lane": "Frontend",
-      "status": "READY",
+      "status": "IN_PROGRESS",
       "title": "Offline, degraded and error states a desktop application needs",
       "dependencies": [
         "PW-0301"
@@ -94,8 +90,14 @@
       ],
       "acceptance": "The application behaves honestly when the network, the backend or the sidecar is unavailable. There is no offline handling of any kind today -- no navigator.onLine, no service worker, no offline banner, no retry-on-reconnect. THIS MATTERS MORE ON THE DESKTOP THAN IT DID ON THE WEB: docs/DESKTOP_PLAYBACK.md section 8 accepts that an offline desktop cannot resolve playback at all, and requires that failure be surfaced as an honest unavailable outcome rather than an empty candidate list -- so the UI half of that ruling is this task. REQUIRED: a network-state signal and a visible degraded mode that names what is unavailable. REQUIRED: recovery on reconnect without a manual reload. REQUIRED: the sidecar being down is a DISTINCT state from the backend being down and from the network being down, because the three have different remedies and collapsing them produces a support burden. REQUIRED: no state invents content; an offline home shows what it has and says so.",
       "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. ",
-      "owner": null,
-      "gateResults": {}
+      "owner": "claude-frontend",
+      "gateResults": {},
+      "implementationAgent": "claude-frontend",
+      "updatedAt": "2026-10-01T23:29:47.180Z",
+      "implementationBaseSha": "11a5bb3365e4c591e9630e7153493ac2efc77001"
     }
-  ]
+  ],
+  "review": [],
+  "reservedExternal": [],
+  "recommended": []
 }

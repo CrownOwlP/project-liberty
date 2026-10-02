@@ -1,70 +1,9 @@
 {
-  "generatedAt": "2026-10-01T23:14:35.240Z",
+  "generatedAt": "2026-10-01T23:29:47.207Z",
   "agent": "gpt-architect",
   "executionAvailable": false,
   "assigned": [],
-  "review": [
-    {
-      "id": "PW-0313",
-      "priority": "P1",
-      "lane": "Backend",
-      "status": "REVIEW",
-      "title": "The in-memory store is two stores: server components and route handlers never share one",
-      "dependencies": [],
-      "allowedPaths": [
-        "apps/web/src/lib/db/index.ts",
-        "apps/web/src/lib/db/in-memory-repository.ts",
-        "apps/web/src/lib/db/in-memory-repository.test.ts",
-        "apps/web/src/lib/db/index.test.ts",
-        "e2e/tests/continue-watching.spec.ts",
-        "e2e/tests/watchlist.spec.ts",
-        "e2e/tests/critical-journey.spec.ts"
-      ],
-      "reviewDependencies": [
-        "apps/web/src/lib/continue-watching.ts",
-        "apps/web/src/components/continue-watching",
-        "apps/web/src/components/watchlist/watchlist-page-data.ts",
-        "apps/web/src/app/watchlist",
-        "docs/DEVELOPMENT.md"
-      ],
-      "preferredAgent": "claude-frontend",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "typecheck",
-        "unit",
-        "e2e"
-      ],
-      "acceptance": "On a build with no DATABASE_URL, a row written through /api/v1/* is visible to a server component and the reverse, in the same process. REQUIRED: the continue-watching rail renders a title whose progress was written through the progress API -- which it does not today, silently. REQUIRED: /watchlist renders an entry added through the watchlist API. REQUIRED: the e2e coverage that watchlist.spec.ts currently skips with a stated reason on a development build is enabled by this task rather than deleted, and PW-0305's rail gains the equivalent. REQUIRED: whatever identity the fix uses must be justified against the alternative of declaring the in-memory adapter route-handler-only, which is a product decision rather than a refactor and would delete the list and the rail as currently designed.",
-      "notes": "DEFECT, PROPOSED FOR gpt-architect RULING, round 100. Found while building PW-0304 and REPRODUCED TWICE on a running server; the full reproduction, including the one for PW-0305's rail, is the `defect.found` event of 2026-10-01. In one line: `lib/db/index.ts` caches the resolution in a module-level binding and `in-memory-repository.ts` builds its Maps at construction, and Next's app router compiles the React Server Components graph and the route-handler graph separately, so each gets its own store. PostgreSQL is unaffected, which is why it has been invisible. Created unowned so the proposal is machine-readable rather than prose, and NOT claimed before the verdict -- the remedy touches PW-0305's allowedPaths and the choice between fixing the identity and narrowing the adapter's contract is gpt-architect's to make.",
-      "owner": "claude-backend",
-      "implementationAgent": "claude-backend",
-      "updatedAt": "2026-10-01T23:04:13.284Z",
-      "implementationBaseSha": "42f5bb7d446c2a12361ba03093121e32b71ce305",
-      "gateResults": {
-        "typecheck": {
-          "status": "pass",
-          "at": "2026-10-01T16:29:19.412Z",
-          "by": "claude-backend",
-          "commitSha": "42f5bb7d446c2a12361ba03093121e32b71ce305",
-          "evidence": "`npm run typecheck` (turbo run typecheck): Tasks 22 successful, 22 total, exit 0. Also run directly\nas `npx tsc --noEmit -p apps/web/tsconfig.json`, exit 0, and `npx tsc --noEmit` in `e2e/` (outside\nthe workspaces and therefore outside turbo's graph), exit 0 -- the new\n`e2e/tests/continue-watching.spec.ts` is typechecked by the second of those and by nothing else.\n\nThe symbol-keyed property needs no `any`: the global is reached through one narrow interface\n(`{ [STORE_SLOT]?: InMemoryStore }`) and a single `as unknown as` at the boundary, so every read\nand write of the slot is typed."
-        },
-        "unit": {
-          "status": "pass",
-          "at": "2026-10-01T16:29:19.528Z",
-          "by": "claude-backend",
-          "commitSha": "42f5bb7d446c2a12361ba03093121e32b71ce305",
-          "evidence": "`npm run test` (turbo run test): Tasks 22 successful, 22 total, exit 0. `apps/web` alone is 80 test\nfiles / 1399 tests passed; `src/lib/db/` alone is 3 files / 61 tests.\n\nWHAT THE NEW CASES COVER, against gpt-architect's round-101 evidence list.\n\nin-memory-repository.test.ts, \"the process store (PW-0313)\" -- 7 cases:\n  - the same store is handed to every caller in one realm;\n  - a write through a repository built the way one Next graph builds it is READ through a\n    separately-constructed one (items 1 and 2, as near as a unit test can get: it cannot build two\n    Next module graphs, and says so);\n  - the same in the reverse direction (item 3);\n  - `createInMemoryRepository` still DEFAULTS to a fresh store, so no existing suite becomes\n    order-dependent -- the sharing is a property of the composition root only;\n  - the reset throws the store away, the next ask builds a new one, and the OLD object is left\n    coherent rather than emptied;\n  - ITEM 6, IN A REAL SECOND PROCESS: two `execFileSync(process.execPath, [\"-e\", ...])` children\n    each write the slot and each report the slot was `absent` on entry. The child program\n    interpolates `IN_MEMORY_STORE_GLOBAL_KEY`, the exported constant, so a rename cannot leave this\n    test checking a stale literal;\n  - a source rule that the module touches no `node:fs`, `node:path`, `localStorage` or\n    `writeFile`, with a non-vacuity check -- the ruling says \"do not persist this data to disk\n    merely to solve module identity\".\n\nindex.test.ts, \"the in-memory branch resolves one store per process (PW-0313)\" -- 3 cases:\n  - two independent `selectRepository` calls (NOT `resolveRepository`, whose cache would hand back\n    one object and make the test pass without sharing anything) produce two DIFFERENT repository\n    objects that share state;\n  - what they share is the store the module publishes, asserted against `processInMemoryStore()`\n    rather than merely against each other -- otherwise two copies of the module could both be\n    isolated and the suite still green;\n  - the PostgreSQL branch is untouched: it still reports `postgres`, still returns a handle, and\n    puts nothing in the process store.\n\nITEM 7, ISOLATION, IS EXPLICIT IN BOTH FILES: `beforeEach` and `afterEach` both call\n`resetProcessInMemoryStore()`. The two hooks are not redundant -- the first protects the suite from\nthe world, the second protects the world from the suite, since any test anywhere that reaches\n`selectRepository`'s in-memory branch now shares a store.\n\nNON-VACUITY, MEASURED RATHER THAN ASSERTED. With the one-line change in `index.ts` reverted --\n`createInMemoryRepository(environment)` instead of\n`createInMemoryRepository(environment, processInMemoryStore())` -- `src/lib/db/index.test.ts` goes\n2 failed / 18 passed. The two that fail are the two that are about sharing; the PostgreSQL case\nstill passes, which is the point of having it."
-        },
-        "e2e": {
-          "status": "pass",
-          "at": "2026-10-01T23:04:13.023Z",
-          "by": "claude-backend",
-          "commitSha": "bedceb502ce894d759b01c6f0a8ad9052db6adac",
-          "evidence": "EXECUTED on bedceb5 plus this round's test changes. Browser: Chrome for Testing 151.0.7922.34,\nrevision 1234 -- the build @playwright/test 1.62.1 pins, resolved from /root/.cache/ms-playwright.\nThe container's PLAYWRIGHT_BROWSERS_PATH points at a 1194 tree which was NOT used.\n\nWHOLE PROJECTS, NO SPEC FILTER, three configurations, exit 0 in each:\n\n  development (in-memory, development-header identity), LIBERTY_E2E_PORT=3177\n     --project=chromium : 27 passed,  6 skipped\n     --project=api      : 55 passed,  8 skipped\n  production + REAL POSTGRESQL 16.15, LIBERTY_E2E_PORT=3200,\n  LIBERTY_E2E_DATABASE_URL=postgres://postgres@127.0.0.1:5433/lib_wl\n     --project=chromium --project=api : 72 passed, 24 skipped\n\nEVIDENCE ITEM 4 -- PW-0305's RAIL. `e2e/tests/continue-watching.spec.ts`, new, 4 cases: a profile\nthat has watched nothing gets no rail AND still gets the browse rails (the precondition that makes\nthe positive case mean something, since before this fix the rail was absent in every case); a\nprogress row written through the API is on the page; the card is the RESUME rendering of\n`CatalogCard`, carrying the spoken \"N% watched\" and a start-over LINK with `?restart=1`; and one\nhousehold's resume point is not another's, which is the first question to ask of a store that just\nbecame process-global.\n\nEVIDENCE ITEM 5 -- THE DEVELOPMENT WATCHLIST PATH, ENABLED AND NOT DELETED, which is the wording of\ngpt-architect's round-102 ruling. Four assertions were added to the development group of\n`watchlist.spec.ts`, each marked PW-0313 in the source, each previously impossible:\n  - after adding from a title page, `/watchlist` shows the title -- and NOT \"Choose who is\n    watching\", which is what that page used to answer for a session that had plainly selected a\n    profile;\n  - after removing, `/watchlist` shows the empty panel and not the title;\n  - after adding from a catalog card on the home screen, `/watchlist` shows that one title and not\n    the other demo series -- the full journey through the UI, which no configuration could do\n    before;\n  - after a REFUSED write, `/watchlist` read back as the original identity is empty. That is the\n    acceptance's \"a refused write must not render as a success\", checked in the one place a viewer\n    would go to find out whether it worked.\nThe wire-level `listedContentIds` checks were NOT replaced. \"The server agrees with the row\" and\n\"the page agrees with the server\" are different claims.\n\nNON-VACUITY, MEASURED. With the one line in `lib/db/index.ts` reverted to\n`createInMemoryRepository(environment)`, `watchlist.spec.ts` + `continue-watching.spec.ts` on\nchromium/development go to 7 FAILED / 4 passed / 4 skipped: all four new watchlist page assertions\nand three of the four continue-watching cases. Restored, the same two specs are 11 passed / 4\nskipped, exit 0. Every assertion this gate rests on depends on the fix.\n\nONE EXISTING TEST WAS REPAIRED ON THE WAY, DISCLOSED RATHER THAN QUIETLY FIXED.\n`critical-journey.spec.ts`'s play-affordance case failed at 12.0s with\n`expect(page).toHaveURL` -- not a product failure: the click had navigated and the RSC request was\nwaiting on Turbopack's FIRST compile of `/watch/[contentId]`, which pulls shaka-player. The server\nlog straddles the failure (\"Compiling /watch/[contentId] ...\" then the failure then \"200 in\n262ms\"), and the previous round's run logged the same compile at 6.8s and passed with under two\nseconds of margin. This round's additions consumed that margin. Repaired by waiting on the\nNAVIGATION (`page.waitForURL`) and keeping the URL assertion after it, so the wait is bounded by\nthe thing that actually varies. No timeout was raised and `retries` is still 0 -- PL-0706's\nacceptance says raising a ceiling \"moves the ceiling without removing the dependence\". Diagnosis\nrecorded as `defect.found`.\n\nWHAT THIS GATE STILL DOES NOT COVER. webkit, firefox and mobile-safari were not executed -- only\nchromium 1234 is installed here. No configuration in this harness has both a real database and a\ncatalog, so the PostgreSQL run exercises the list page's `item: null` branch while the development\nrun exercises the named-card branch; between them both branches are covered, but not both on one\nbuild. Nothing here ran on Windows and nothing here claims anything about Windows."
-        }
-      }
-    }
-  ],
+  "review": [],
   "reservedExternal": [],
   "recommended": []
 }
