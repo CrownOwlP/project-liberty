@@ -1,9 +1,71 @@
 {
-  "generatedAt": "2026-10-01T23:29:47.207Z",
+  "generatedAt": "2026-10-02T00:32:32.406Z",
   "agent": "gpt-architect",
   "executionAvailable": false,
   "assigned": [],
-  "review": [],
+  "review": [
+    {
+      "id": "PW-0309",
+      "priority": "P1",
+      "lane": "Frontend",
+      "status": "REVIEW",
+      "title": "Offline, degraded and error states a desktop application needs",
+      "dependencies": [
+        "PW-0301"
+      ],
+      "allowedPaths": [
+        "apps/web/src/components/state/**",
+        "apps/web/src/lib/network-state.ts",
+        "apps/web/src/lib/network-state.test.ts",
+        "apps/web/src/components/shell/app-shell.tsx",
+        "e2e/tests/degraded-states.spec.ts",
+        "apps/web/src/components/watchlist/watchlist-ui.test.tsx"
+      ],
+      "reviewDependencies": [
+        "apps/web/src/app/error.tsx",
+        "apps/web/src/app/page.tsx",
+        "apps/web/src/app/watch/[contentId]/page.tsx",
+        "apps/web/src/components/player/playback-machine.ts",
+        "apps/web/src/lib/sidecar"
+      ],
+      "preferredAgent": "claude-frontend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "e2e"
+      ],
+      "acceptance": "The application behaves honestly when the network, the backend or the sidecar is unavailable. There is no offline handling of any kind today -- no navigator.onLine, no service worker, no offline banner, no retry-on-reconnect. THIS MATTERS MORE ON THE DESKTOP THAN IT DID ON THE WEB: docs/DESKTOP_PLAYBACK.md section 8 accepts that an offline desktop cannot resolve playback at all, and requires that failure be surfaced as an honest unavailable outcome rather than an empty candidate list -- so the UI half of that ruling is this task. REQUIRED: a network-state signal and a visible degraded mode that names what is unavailable. REQUIRED: recovery on reconnect without a manual reload. REQUIRED: the sidecar being down is a DISTINCT state from the backend being down and from the network being down, because the three have different remedies and collapsing them produces a support burden. REQUIRED: no state invents content; an offline home shows what it has and says so.",
+      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. ",
+      "owner": "claude-frontend",
+      "gateResults": {
+        "typecheck": {
+          "status": "pass",
+          "at": "2026-10-02T00:25:23.359Z",
+          "by": "claude-frontend",
+          "commitSha": "3ab6a82f5b3e7160981fab720528964af423f3be",
+          "evidence": "npx tsc --noEmit in apps/web: exit 0, at 3ab6a82f5b3e7160981fab720528964af423f3be. Also `npm run typecheck` at the root (turbo, 22 tasks): 22 successful. And `cd e2e && npx tsc --noEmit`: exit 0, which matters because the spec gained a helper and an attribute assertion this round."
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-10-02T00:25:32.209Z",
+          "by": "claude-frontend",
+          "commitSha": "3ab6a82f5b3e7160981fab720528964af423f3be",
+          "evidence": "npx vitest run in apps/web at 3ab6a82f5b3e7160981fab720528964af423f3be: 84 files / 1488 tests passed, exit 0; `npm run test` at the root (turbo) 22 successful. New this round: lib/network-state.test.ts 41 cases and components/state/reachability-store.test.ts 11 cases, which test the probe loop itself rather than the shape of its source. NON-VACUITY, each defect reverted in isolation and the suites re-run: (a) emptying LIVENESS_CONFIRMATION_DELAYS_MS and restoring the single-reading classification fails 2 of 8 store cases, exactly the two that encode the traced sequence; (b) restoring `observation.onLineWhenFailed` alone fails 'issued offline, rejected after the link returned, is the LINK' and nothing else, so the straddle rule is a narrowing rather than a rewrite. lint: 0 errors (1 pre-existing warning in lib/db/in-memory-repository.test.ts, PW-0313's surface, reported not touched)."
+        },
+        "e2e": {
+          "status": "pass",
+          "at": "2026-10-02T00:25:43.056Z",
+          "by": "claude-frontend",
+          "commitSha": "3ab6a82f5b3e7160981fab720528964af423f3be",
+          "evidence": "Playwright 1.62.1, chromium revision 1234, retries 0, at 3ab6a82f5b3e7160981fab720528964af423f3be. WHOLE PROJECTS, not one spec, in all three configurations: (1) development -- LIBERTY_E2E_WEB_MODE=development, --project=chromium --project=api: 87 passed / 14 skipped, exit 0; (2) production, no database: 61 passed / 40 skipped, exit 0; (3) production + real PostgreSQL 16.15 at postgres://postgres@127.0.0.1:5433/lib_wl with migrations/0000_profile_scoped_identity.sql applied and 8 tables asserted: 76 passed / 25 skipped, exit 0. DETERMINISM, which is the point this round: degraded-states.spec.ts was flaky and the flake was three product defects, not a test defect. After the fixes it ran --repeat-each=6 in development (30/30 passed) and --repeat-each=6 in production (24 passed, 6 skipped -- the catalog-dependent case, which production serves no fixtures for). Nothing in the spec's timeouts or retries was changed; playwright.config.ts still has retries 0 and expect.timeout 10000. UNVERIFIED and stated rather than implied: these are Linux chromium runs in this container. No Windows runtime, no WebView2, no attended GUI behaviour is claimed from this gate."
+        }
+      },
+      "implementationAgent": "claude-frontend",
+      "updatedAt": "2026-10-02T00:26:26.979Z",
+      "implementationBaseSha": "11a5bb3365e4c591e9630e7153493ac2efc77001"
+    }
+  ],
   "reservedExternal": [],
   "recommended": []
 }
