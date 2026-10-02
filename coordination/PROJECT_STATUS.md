@@ -1,6 +1,6 @@
 # Project Liberty - Project Status
 
-> Generated 2026-10-02T00:32:32.405Z from the AI control plane.
+> Generated 2026-10-02T02:01:52.587Z from the AI control plane.
 
 **Overall completion:** 89/107 executable tasks (83%)
 
@@ -9,8 +9,8 @@
 - **BACKLOG:** 9
 - **READY:** 3
 - **CLAIMED:** 0
-- **IN_PROGRESS:** 2
-- **REVIEW:** 1
+- **IN_PROGRESS:** 1
+- **REVIEW:** 2
 - **BLOCKED:** 3
 - **DONE:** 89
 - **CANCELED:** 0
@@ -33,7 +33,7 @@
 
 - **PW-0307** [IN_PROGRESS] Series navigation and the next episode — owner: claude-frontend
 - **PW-0309** [REVIEW] Offline, degraded and error states a desktop application needs — owner: claude-frontend
-- **PW-0503** [IN_PROGRESS] Install, upgrade, uninstall, reinstall — tested, not assumed — owner: claude-test
+- **PW-0503** [REVIEW] Install, upgrade, uninstall, reinstall — tested, not assumed — owner: claude-test
 
 ## Dispatch classification
 

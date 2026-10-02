@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-02T00:32:32.406Z",
+  "generatedAt": "2026-10-02T02:01:52.589Z",
   "agent": "gpt-architect",
   "executionAvailable": false,
   "assigned": [],
@@ -64,6 +64,55 @@
       "implementationAgent": "claude-frontend",
       "updatedAt": "2026-10-02T00:26:26.979Z",
       "implementationBaseSha": "11a5bb3365e4c591e9630e7153493ac2efc77001"
+    },
+    {
+      "id": "PW-0503",
+      "priority": "P1",
+      "lane": "Test",
+      "status": "REVIEW",
+      "title": "Install, upgrade, uninstall, reinstall — tested, not assumed",
+      "dependencies": [
+        "PW-0501"
+      ],
+      "allowedPaths": [
+        "scripts/windows/**",
+        "e2e/windows/**",
+        "package.json"
+      ],
+      "reviewDependencies": [
+        ".github/workflows/windows.yml",
+        "apps/desktop",
+        "docs/TEST_MATRIX.md",
+        "docs/WINDOWS_CERTIFICATION.md"
+      ],
+      "preferredAgent": "claude-test",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "build",
+        "unit"
+      ],
+      "acceptance": "The installer's lifecycle is exercised automatically wherever that is possible on a runner, and everything that is not is named for the commander's machine. REQUIRED: clean install on a machine that has never had the application, then launch. REQUIRED: upgrade over a previous version with user data preserved, which is the one a release breaks most often and nobody tests. REQUIRED: uninstall leaves no service, no scheduled task and no orphaned node.exe, and states exactly what user data it keeps or removes. REQUIRED: reinstall after uninstall. REQUIRED: each case is marked automated or commander-machine, with the reason, so the split is visible rather than implied.",
+      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. SURFACE NOTE: this task's allowedPaths name directories that do not exist yet. The evidence-based narrowing procedure applies to reconciling work already in history; for genuinely new work the surface is the smallest set of paths the acceptance can be satisfied within, and it is narrowed again from the diff before review if it turns out to be wider than what was written. ",
+      "owner": "claude-test",
+      "gateResults": {
+        "unit": {
+          "status": "pass",
+          "at": "2026-10-02T02:01:13.805Z",
+          "by": "claude-test",
+          "commitSha": "835823561c69f5bbdebf19c637eeeabff19dacf7",
+          "evidence": "node --test scripts/windows/test-lifecycle.mjs at 835823561c69f5bbdebf19c637eeeabff19dacf7: 30 tests, 7 suites, 0 failures, exit 0. Also the whole alias this round extends: npm run test:scripts EXIT=0 in 1261s -- 38 env scenarios, 73 control-plane scenarios, 27+21+20 validator assertion groups, 9 desktop-target, 35 dispatcher, and the 30 new cases last. NON-VACUITY, three independent weakenings, each reverted after measuring: (a) letting an absent observation read as an empty one AND relaxing the product-name match to the substring 'liberty' fails 2 of 30 -- the check-never-run case and the Liberty Insurance Helper case; (b) pointing CERTIFICATION_SECTION at a heading the document does not have fails 4 of 30 across three suites, which is the derivation proving it is a derivation; (c) the entry-point guard was found by this suite rather than reasoned about -- process.argv[1].endsWith('lifecycle.mjs') also matches test-lifecycle.mjs, so importing the module to test parseArguments ran the harness and exited the test process with code 2. It is now compared by resolved path. WHAT NO TEST HERE CLAIMS: nothing in this suite observes a Windows machine. It tests the decisions -- which cases exist, who owns them, what counts as residue, whether an upgrade preserved content -- and one case runs the real script on this Linux container and asserts it exits non-zero with 'refusing to run on'. UNVERIFIED: every msiexec path, because no msiexec ran."
+        },
+        "build": {
+          "status": "pass",
+          "at": "2026-10-02T02:01:25.324Z",
+          "by": "claude-test",
+          "commitSha": "835823561c69f5bbdebf19c637eeeabff19dacf7",
+          "evidence": "npm run build (turbo) at 835823561c69f5bbdebf19c637eeeabff19dacf7: Tasks 12 successful, 12 total, exit 0. STATED PLAINLY RATHER THAN DRESSED UP: that run was FULL TURBO, entirely cache-hit, because this task's surface is scripts/windows/**, e2e/windows/** and one line of package.json's scripts block -- none of which is a build input for any workspace. A build gate on a change the build graph cannot see is close to vacuous and saying otherwise would be the kind of green mark this project refuses. What actually exercises this round's code: node scripts/windows/lifecycle.mjs --plan runs on this platform and prints all six section-F cases with their owners and procedures, exit 0; node scripts/windows/lifecycle.mjs --msi nowhere.msi exits 2 with 'refusing to run on linux'; and the 30-case suite recorded under the unit gate. Also clean at the same commit: npm run lint (12/12 tasks, 0 errors, 1 pre-existing warning in PW-0313's surface), npm run repo:validate, npm run env:validate, npm run ai:validate (111 tasks). The MSI itself cannot be built here -- the Rust toolchain in this container targets x86_64-unknown-linux-gnu only -- so no installer was produced and none of F1 to F4 was executed. UNVERIFIED on Windows, and that is reported rather than approximated."
+        }
+      },
+      "implementationAgent": "claude-test",
+      "updatedAt": "2026-10-02T02:01:52.328Z",
+      "implementationBaseSha": "643dbeb8230b53b86ddee9281458eb07528a0c17"
     }
   ],
   "reservedExternal": [],
