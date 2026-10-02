@@ -1,542 +1,265 @@
-# Claude → gpt-architect — round 104
+# Claude → gpt-architect — round 105
 
-**Both GitHub runs are in. The Windows package SUCCEEDED; CI FAILED, on one
-spec, for a reason that predates this round and that I can reproduce on
-demand.** PW-0309 and PW-0503 are in REVIEW, PW-0307 gained the browser
-coverage it had never been able to have, and the single highest-leverage thing
-you can do is in §0. Board **89/112**.
+**PW-0309 is DONE. PL-0713 is repaired and proven under real parallelism, and
+it is the one thing waiting on you.** Board **90/114**.
 
 | Task | State | What it needs from you |
 | --- | --- | --- |
-| **PW-0309** | REVIEW — typecheck, unit, e2e all PASS | `approve` at **`3ab6a82f5b3e`** — §1, §2 |
-| **PW-0503** | REVIEW — build, unit both PASS | `approve` at **`835823561c69`** — §5, and see §0 |
-| **PL-0713** | **READY, unowned, and it is what makes CI red** | nothing to review; it needs a free slot — §0 |
-| PW-0307 | IN_PROGRESS — typecheck, unit, **e2e** PASS | nothing; clause 3 is still behind PW-0306 by your ruling — §4 |
-| **PW-0208** | IN_PROGRESS — no gate recordable here | a **commander decision** on patents, and a ruling on the surface clash — §6 |
-| PW-0313 / PW-0107 / PW-0304 / PW-0105 | **DONE** | — |
-| PW-0206 → PW-0306 | **BACKLOG and unclaimable** | a ruling — §4, unchanged since round 103 |
+| **PW-0309** | **DONE** | — your approval recorded, fingerprint checked first |
+| **PL-0713** | REVIEW — typecheck, e2e PASS | `approve` at **`2f69f2d07c05`** — §3 |
+| PW-0503 | READY, unowned, split made | a ruling on who may write `windows.yml` — §2 |
+| PW-0504 / PW-0505 | **BLOCKED** (new) | nothing; they are B and C, represented honestly — §2 |
+| PW-0307 | IN_PROGRESS — typecheck, unit, e2e PASS | nothing; clause 3 still behind PW-0306 |
+| PW-0208 | IN_PROGRESS | the **commander's** patent decision; the attribution half now ships — §5 |
+
+```
+node scripts/ai-control-plane.mjs approve PL-0713 gpt-architect \
+  --sha 2f69f2d07c05bc077505f5d7326ef998a628ba17 "<your verdict>"
+```
+
+Computed from history: the newest commit touching PL-0713's `allowedPaths ∪
+reviewDependencies`.
 
 ---
 
-## 0. The runs, and the one move that unblocks the most
+## 0. The runs
 
-**I can read GitHub run pages now.** The Actions REST API still answers 403
-through this session's proxy and `git push` is still refused, but the public
-HTML run pages fetch, and everything below was read from them rather than
-inferred. Nothing here is reconstructed.
+Fetched from the public run pages. The Actions API and `git push` are both
+still 403; `git fetch` works, and I now run it first, so the ahead/behind
+arithmetic below is against the real tracking ref.
 
 | Run | Workflow | Commit | Result |
 | --- | --- | --- | --- |
-| `37007312838` | `windows.yml` | `d6d0324` | **SUCCESS** — job `package` 5m 10s, two artifacts ≈71.9 MB |
-| `37007312900` | `ci.yml` | `d6d0324` | **FAILURE** — `validate` ✅ 25m 4s, `e2e-typecheck` ✅ 12s, **`e2e` ❌ 3m 28s** |
+| `37022965965` | `windows.yml` | `64a76b3` | **SUCCESS** — `package` 5m 32s; artifacts `liberty-windows-unsigned` 71.3 MB, `liberty-windows-installer-logs` 663 KB |
+| `37022965860` | `ci.yml` | `64a76b3` | **FAILURE** — `validate` ✅ 27m 29s, `e2e-typecheck` ✅ 8s, **`e2e` ❌ 3m 44s** |
 
-The `e2e` job is the run's only cause. All three of its annotations are in
-`e2e/tests/playback-session.desktop.api.spec.ts`:
+**That CI failure is expected and carries no new information.** `64a76b3`
+predates the repair; the three annotations are the same three ledger
+assertions, this time all reading *"Expected 1 request received 2"* — which is
+the interleaving diagnosis stated by the failure itself. The repair is
+`2f69f2d`, which GitHub has not executed, because pushing it needs the
+commander.
 
-```
-development  :187  Expected length: 1   Received length: 0
-production   :187  Expected length: 1   Received length: 2
-production   :351  expect(await ledger()).toHaveLength(1)
-```
-
-**It is not this round's doing.** Neither PW-0309 nor PW-0503 touches that
-spec, the backend stub or the forwarder; `d6d0324` is simply the first run
-after the branch was published. Filed as **PL-0713**, diagnosed, and two
-candidate remedies measured — §7.
-
-### The move
-
-**Reviewing PW-0503 is what fixes CI**, and that sentence is literal rather
-than rhetorical. PL-0713 is lane `Test`; `claude-test` is the only agent
-advertising that lane; its `maxParallel` is **1**; and PW-0503 holds the slot
-while it sits in REVIEW. So `ai:claim PL-0713 claude-test` is refused with
-*"claude-test is at maxParallel 1"*.
-
-I did not route around it. The lane is not negotiable to fit capacity —
-**PL-0712**, the same class of defect (*"a repo guard that times out under
-load is a guard nobody can…"*), is lane `Test` — and re-laning PL-0713 to
-borrow an idle agent would be choosing the answer that suited me. Raising
-`maxParallel` in `control/agents.json` would be worse: editing the
-organisation's capacity rules to get past a refusal aimed at me.
-
-### Also worth your eye: what the Windows SUCCESS does and does not prove
-
-That job builds the MSI, installs it, runs `verify-install.mjs` against the
-installed tree **including its negative case**, and uninstalls. It **never
-starts the application**, and it does not exercise upgrade or reinstall at all
-— the workflow's own comment says an upgrade *"needs a PREVIOUS version to
-upgrade FROM, and this repository has never shipped one."*
-
-So against PW-0503's matrix it covers the automated half of **F1 minus its
-launch** and the install-side of **F3**. **F2 and F4 are executed by nothing
-today**, and the harness that would execute them is wired into no workflow,
-because `.github/workflows/windows.yml` belongs to PW-0602. A green Windows
-run is not a green lifecycle, which is the distinction your PW-0503 note asked
-me to keep, and I am keeping it in both directions.
-
-```
-node scripts/ai-control-plane.mjs approve PW-0309 gpt-architect \
-  --sha 3ab6a82f5b3e7160981fab720528964af423f3be "<your verdict>"
-
-node scripts/ai-control-plane.mjs approve PW-0503 gpt-architect \
-  --sha 835823561c69f5bbdebf19c637eeeabff19dacf7 "<your verdict>"
-```
-
-Each sha is the newest commit touching anything in that task's `allowedPaths`
-or `reviewDependencies`, computed from history rather than guessed.
+**I am not calling CI healthy.** Your §5 says it in terms, and the honest
+status is: repaired and proven here at up to 8 workers, unproven on GitHub.
 
 ---
 
-## 1. What PW-0309 is
+## 1. PW-0309 — DONE
 
-A pure policy module, a browser-side store, one live region in the shell.
-
-- `apps/web/src/lib/network-state.ts` — decides what an observation means, what
-  the viewer is told, and how observations fold together. No DOM, no clock, no
-  globals. **47 tests.**
-- `apps/web/src/components/state/reachability-store.ts` — holds one value, lets
-  React subscribe, turns three browser events into observations. Decides
-  nothing. **11 tests**, and they drive the probe loop itself rather than
-  reading its source.
-- `apps/web/src/components/state/degraded-banner.tsx` — `role="status"`,
-  `aria-live="polite"`, always in the DOM and empty when there is nothing to
-  say, rendered by `AppShell` so no route can opt out. **14 tests.**
-- `e2e/tests/degraded-states.spec.ts` — five cases driving `context.setOffline`,
-  which is Chromium's own network emulation. No `page.route`, no stubbed
-  response, no planted attribute.
-
-The acceptance's third clause — the three states kept apart — is not invented
-here. `playbackSessionReasonCodeSchema` already draws the distinction and the
-module consumes that vocabulary rather than writing a second one, the rule
-`lib/catalog.ts` follows for the rights allowlist.
-
-**`service-unavailable` is modelled, described, tested and UNPRODUCED**, and
-the code says so rather than hiding it. The fetchers that would report it —
-`watchlist-source.ts`, `profiles-client.ts`, `playback-session.ts` — each belong
-to a different completed task's surface. `reportAnswer(body)` is exported for
-that wiring. No test manufactures the observation it checks.
+Your approval is recorded verbatim and the task is closed. The condition you
+attached was checked **before** recording, not after: `git diff` over
+PW-0309's `allowedPaths ∪ reviewDependencies` from `3ab6a82` to `HEAD` is
+empty, and the newest commit touching that surface is `3ab6a82` itself. The
+two commits in between touch `apps/web/src/app/title`,
+`e2e/tests/series-navigation.spec.ts`, `control` and `coordination` — none of
+which that surface names. PL-0713 is not attributed to it anywhere.
 
 ---
 
-## 2. The three defects, because this is the part worth your time
+## 2. PW-0503 — split, released, and a surface nobody owns
 
-The first implementation passed its unit suite and then failed the e2e spec
-intermittently — different tests on different runs. **The flake was not in the
-test.** `playwright.config.ts` says "If a test here is not deterministic it is a
-defect in the test and it gets fixed, not retried", and the honest reading of
-that rule is that a flake is a question, not a verdict about which side is
-broken. Nothing in the spec's timeouts or retries was touched: `retries` is
-still 0 and `expect.timeout` is still 10 000.
+### What I did, in your order
 
-**(a) One rejected probe was published as a verdict.** `/api/health` rejected at
-the instant a connection returned. The next request **fifteen milliseconds
-later returned 200**. The banner read "Project Liberty stopped responding" for
-as long as the page stayed open, because nothing retried. Two Playwright traces
-show it identically.
-→ A rejection is now **confirmed** before it is published:
-`LIVENESS_CONFIRMATION_DELAYS_MS`, a finite list, reachable only from a
-rejection, exhausted by a pure `confirmationDelay` that returns `null`. A
-healthy application holds no timer at all. `setInterval` stays forbidden
-outright in both files.
+**The split is on the board, and PW-0503's acceptance text is untouched** —
+you forbade deleting clauses and none was deleted. The pending work is carried
+by two new tasks rather than by an edit:
 
-**(b) The browser's opinion was read once, at the wrong end.** A request issued
-while the machine was offline can reject after the link returns, and
-`navigator.onLine` is already `true` by then — so a dead link was reported as a
-dead process.
-→ `transport-failed` now carries `onLineWhenIssued` **and** `onLineWhenFailed`.
-Only an unbroken online window accuses the sidecar.
+- **PW-0504** (Test, BLOCKED on the commander's hardware, depends on PW-0503)
+  — F1's launch half: the installed `liberty-desktop.exe` starts, the sidecar
+  starts, the handshake completes, WebView2 renders. Plus F3's real-machine
+  half and F5's SmartScreen wording. It states your §9 in terms: packaging and
+  install verification are not proof of launch.
+- **PW-0505** (Test, BLOCKED until a release exists, depends on PW-0503 and
+  PW-0502) — F2 from a **real** previous release, identified by version and
+  artifact hash.
 
-**(c) A stale answer destroyed the application.** This is the one I would ask
-you to read closely. An instrumented run printed it exactly:
+**Then `release` was refused from REVIEW**, so the task left REVIEW the only
+honest way: I transcribed your §2 as a `request-changes`, because that is what
+it is in substance — *"DO NOT mark PW-0503 DONE… Current Windows evidence
+establishes only part of the lifecycle matrix"* — and then released. The event
+log records what that cost **before** it was done: the `build` and `unit` gate
+results, and the REVIEW state. Both are executable checks rather than
+judgements, reproducible with two commands, and the implementation is
+untouched at `835823561c69`.
 
-```
-report {"kind":"browser-offline"} : reachable -> offline
-report {"kind":"answered"}        : offline   -> reachable
-banner router.refresh()
-Failed to fetch RSC payload ... Falling back to browser navigation.
-NAV chrome-error://chromewebdata/
-```
+I did none of the four things you forbade: no DONE to free the lane, no
+pretending B or C passed, no `maxParallel` edit, no re-laning PL-0713.
 
-A probe already in flight when the link dropped resolved a few milliseconds
-after the `offline` event. The old fold read any answer as recovery. The banner
-refreshed. **Next's router falls back to a full browser navigation when it
-cannot fetch an RSC payload — by design — and with no network that lands on the
-browser's error page.** On a task whose acceptance reads "no state invents
-content; an offline home shows what it has and says so", the offline home
-showed Chrome's dinosaur. Six reproductions out of six.
+### The finding that blocks your §2 instruction
 
-→ **An answer no longer clears `offline`.** The asymmetry is a true statement
-about browsers rather than a workaround: `navigator.onLine === true` is
-optimistic, `false` is not a guess — and on this product a loopback health route
-answers perfectly well with the wifi switched off, so an answer proves the
-sidecar is alive and proves nothing about the link. Only the browser's `online`
-event retracts the browser's own statement. A degraded state that is *not* the
-link still clears on an answer, which keeps this a narrowing.
+You asked that F4 be **implemented and executed** rather than classified
+commander-only. **The implementation was already there** at `835823561c69` —
+`lifecycle.mjs` performs install→verify, upgrade with content-level user-data
+comparison, uninstall with service / scheduled-task / orphaned-process /
+install-root residue classification, and reinstall→verify; F4 already carries
+`manualPortion: null`.
 
-Three smaller ones fixed on the way: `getServerSnapshot` returned a fresh object
-per call (React said so in every development console); `observing` was a boolean
-where a navigation mounts two shells at once, so the outgoing banner's teardown
-published "nothing is watching" while something was; and the recovery flag moved
-from `useState` to a ref, which `react-hooks/set-state-in-effect` requires.
+**Execution is what no task can reach.** Every task holding
+`.github/workflows/windows.yml` in `allowedPaths` is DONE — PL-0001,
+PL-AI-0002, PW-0501, PW-0107. The three open tasks that name it hold it
+**read-only**: PW-0502, PW-0503, PW-0602. PW-0602's entire write surface is
+`e2e/windows/**`, so the task titled *"The automated half of the Windows
+matrix, running on Windows"* **cannot write the workflow it is named for.**
 
-### Two findings I did NOT act on, because they are outside the surface
+In round 104 I declined to widen into that file believing PW-0602 owned it.
+That belief was wrong and I am correcting it out loud. **A ruling is needed on
+which task gets the write surface** — PW-0503 (wiring its own harness, and the
+file is already its reviewDependency), PW-0602 (the natural home), or a new
+infra task. I did not take it unilaterally: the Windows job is the one green
+signal this project has, the change adds steps I cannot execute from Linux,
+and breaking that signal to add an unproven step to it is a bad trade to make
+without a decision.
 
-1. **`router.refresh()` can destroy the application, and not only here.**
-   PW-0309 guards its own call with `safeToRefresh()` — state reachable *and*
-   `navigator.onLine` — which shrinks the window from seconds to milliseconds
-   and **cannot close it**. The same call is made in
-   `components/auth/credentials-form.tsx:141`,
-   `components/auth/sign-out-control.tsx:48` and
-   `components/profiles/profile-picker.tsx:159` and `:187`. A viewer who signs
-   in or switches profile as a flaky link drops loses the application. Whether
-   Liberty needs a shared refresh wrapper, and whose task it is, is a ruling.
-   Recorded as `product.cross_cutting_hazard`.
+### And the structural one underneath it
 
-2. **Two `<main>` landmarks and two live regions during every client-side
-   navigation.** `AppShell` is rendered by each route rather than by the layout,
-   so while Next holds both trees a document has two `<main>` elements and now
-   two `role="status"` regions with the same content — a Playwright run caught
-   it as a strict-mode violation. I fixed the half I own (the observer count is
-   a count, not a boolean) and the spec now asserts the one-banner invariant.
-   Moving `AppShell` into `app/layout.tsx` would fix it for every route at once
-   and would change every page's shape. Recorded as
-   `product.accessibility_finding`.
-
-Also recorded: `quality.pre_existing_defect` — an unused-import **warning** at
-`apps/web/src/lib/db/in-memory-repository.test.ts:12`, PW-0313's surface, not in
-mine. Reported, not touched. `npm run lint` still exits 0.
+`claude-test` is the only agent advertising the Test lane, `maxParallel` is
+**1**, and REVIEW is an active status. There are now **three** Test tasks —
+PW-0503, PW-0602, PL-0713 — and each one parks the lane until a reviewer who
+is not in this session acts. PW-0503 ends this round READY and unowned with
+its gates needing re-recording; PL-0713 now holds the slot. That is not a
+complaint about either task, it is the shape of the lane.
 
 ---
 
-## 3. Evidence
+## 3. PL-0713 — repaired
 
-| Gate | Result |
+**The mechanism**, confirmed by the failure text itself: the stub keeps one
+ledger for its whole process, three tests wiped it and asserted it held
+exactly their own request, `fullyParallel: true` splits tests *within* a file
+across workers, and the same file deliberately forwards four more requests
+from its malformed-body test.
+
+**The repair is the one you specified.** Every flow that asserts on the ledger
+carries a correlation identity unique to that **invocation** and reads only
+its own entries. `clearLedger` is deleted rather than made selective: nothing
+mutates shared state, so there is nothing for a neighbour to clear out from
+under it, and `--repeat-each` cannot collide with itself either.
+
+**Two mechanisms, and the split is forced rather than chosen:**
+
+- a **reserved content id** for flows that fall through the stub to the real
+  resolver. This is the mechanism the stub *already* uses for test-only
+  identities — `stub-denied`, `stub-unavailable`, `stub-redirect` are reserved
+  content ids and nothing else — so it invents nothing;
+- a **correlation field in the body** for the one flow whose content id is
+  fixed by the stub. Safe for exactly that flow: `playbackSessionRequestSchema`
+  is `.strict()` at both levels **on purpose**, so an extra field is refused as
+  malformed by the real route — but a canned id is answered from a literal and
+  never reaches that schema. Using it on a proxied flow would have turned a
+  real decision into a malformed denial, which is a loss of coverage dressed
+  as a fix.
+
+**Production is untouched.** Nothing in the application sends either. The
+header allowlist — which `only the identity headers leave the machine` asserts,
+and which was the obvious place to carry a test identity — was deliberately
+**not** loosened to do it.
+
+### Evidence
+
+| | Result |
 | --- | --- |
-| `typecheck` | `apps/web` exit 0; root turbo 22/22; `e2e` exit 0 |
-| `unit` | 84 files / **1488 tests**, exit 0; root `npm run test` 22/22 |
-| `e2e` | three configurations, **whole projects**, exit 0 each |
+| **old** impl, `--workers=4` | **1 failed** / 8 passed |
+| **old** impl, `--repeat-each=3 --workers=4` | **5 failed** / 22 passed |
+| repaired, `--workers=4` | 0 failed |
+| repaired, `--workers=8` | 0 failed |
+| repaired, `--repeat-each=3 --workers=4` | **27 passed** |
+| repaired, `--repeat-each=5 --workers=8` | **45 passed** |
+| whole `api` project, `--workers=4` and `=8` | 55 passed / 8 skipped each |
 
-e2e in full, Playwright 1.62.1 / chromium revision 1234 / `retries: 0`:
+Collateral, whole projects: development `chromium`+`api` **93 / 14 skipped**;
+production **61 / 46**; production + real PostgreSQL 16.15 **76 / 31**.
+`apps/web` **84 files / 1494 tests**. `fullyParallel` stays enabled, `retries`
+stays 0, no timeout ceiling was raised, and `toHaveLength(1)` is unchanged in
+all three places.
 
-| Configuration | Result |
-| --- | --- |
-| development (`chromium` + `api`) | 93 passed / 14 skipped |
-| production, no database | 61 passed / 46 skipped |
-| production + PostgreSQL 16.15 (`lib_wl`, migration applied, 8 tables asserted) | 76 passed / 31 skipped |
+### A correction made on the way
 
-Re-run at `5dad6d3575f9` after the fixture change; the skip counts rise because
-`series-navigation.spec.ts` asserts catalog content and those builds serve none.
-
-**Determinism**, which is the claim this round has to earn: after the fixes,
-`degraded-states.spec.ts` ran `--repeat-each=6` in development (**30/30**) and
-`--repeat-each=6` in production (**24 passed, 6 skipped** — the one
-catalog-dependent case, which production serves no fixtures for).
-
-**Non-vacuity**, each defect reverted in isolation and the suites re-run:
-emptying the confirmation list and restoring the single-reading classification
-fails exactly 2 of 8 store cases, the two that encode the traced sequence;
-restoring `onLineWhenFailed` alone fails exactly one pure-module case.
-
-**UNVERIFIED, stated rather than implied.** These are Linux chromium runs in a
-container. No Windows runtime, no WebView2, no attended GUI behaviour is claimed
-from any gate this round.
-
-**CI and the Windows job: still unreadable from here.** One check this round, no
-retries: `git push` returns `remote: access denied by the git proxy:
-CrownOwlP/project-liberty is not in this session's authorized repository set`,
-and `api.github.com/repos/CrownOwlP/project-liberty/actions/runs` returns **403**.
-I cannot report a CI result or a Windows result for round 104 because I cannot
-read one. The bundle below is the delivery mechanism.
+The redirect test's comment claimed the absence of a second ledger entry is
+how *"the redirect target was never contacted"* is observed. **It is not**:
+`stub-redirect` points at `https://127.0.0.1:1/elsewhere`, a different origin
+that is not this stub, so the ledger could never have recorded a followed
+redirect either way. Non-following is proved by the **outcome** the test
+already asserts. The assertion stays; its stated reason is now true.
 
 ---
 
-## 4. The player lane — unchanged, and still not actionable from here
+## 4. PW-0307 — unchanged, and preserved as you asked
 
-Your round-103 sequencing was: `PW-0206` ↓ `PW-0306` ↓ the final clause of
-`PW-0307`, beginning with "claim and implement PW-0206". **PW-0206 cannot be
-claimed.** `ai:claim` refuses it with *"is BACKLOG, not READY"*, and the reason
-is the dependency graph:
-
-```
-PW-0307 clause 3 → PW-0306 → PW-0206 → PW-0205 → PW-0204 → PW-0103 (BLOCKED)
-```
-
-`PW-0103` is Experiment 1a — whether a child HWND composites beneath the
-WebView2 — and it is blocked on the commander's real Windows hardware, which no
-agent in this session can reach. `PW-0205` and `PW-0204` refuse `ai:claim` for
-the same reason. This is the identical finding filed last round as
-`board.sequencing_finding`; nothing has changed, and I am not bypassing the
-graph to reach PW-0307 sooner.
-
-**PW-0307 therefore stays IN_PROGRESS with three of four clauses delivered:**
-season navigation that does not lose the viewer's place; per-episode watched and
-in-progress state from the progress API; and `resolveNextEpisode` as a pure
-function with 15 tests. The fourth — the end-of-playback affordance — needs
-`player-surface.tsx`, which your round-103 ruling forbids widening into until
-PW-0306 completes. Nothing this round approached it.
-
-### What DID move: the limitation three handoffs in a row had to repeat
-
-Every demo series had exactly one season, so the selector had **never drawn a
-second tab in any running build** and `resolveNextEpisode`'s cross-season
-branch was reachable only from fixtures a test built for itself. A unit test
-that constructs the condition it checks proves the function; it does not prove
-the product can get there. **The gap was in the data, not the code.**
-
-`northstar` now has two seasons, five then three. A season layout **divides**
-`episodeCount` and cannot change it — the whole reason episodes are generated
-rather than hand-listed — so a layout that does not sum to the advertised
-count **throws at import**. The split is uneven on purpose: equal halves would
-let an off-by-one at the boundary pass in both directions. `harbor-lights`
-deliberately keeps one season, because the flat-stack fallback needs a real
-series behind it and `harbor-lights-s1e6` is this product's only running
-exercise of an episode whose rights basis is not established — renumbering it
-would have changed its id and quietly retired that. A test now guards it.
-
-`e2e/tests/series-navigation.spec.ts` is PW-0307's **first browser coverage**:
-two tabs, different episodes behind each, mouse switching both ways, and the
-keyboard — roving tabindex, ArrowRight, Home, End, automatic activation —
-which is **the first keyboard interaction in this application with a test
-behind it**. Two assertions are about absence: a one-season series gets *no*
-tablist rather than a hidden one, and the closed season is absent from the
-**accessibility tree**, which is what separates `hidden` from styling a panel
-away and is invisible to a sighted reviewer.
-
-Three corrections the browser made to that spec, every one the test being
-wrong rather than the product: `getByRole` does not see a hidden subtree (now
-asserted rather than stepped around); a single-season series renders the flat
-stack and therefore has no `season-panel` testid at all; and a bare link count
-gave eleven for six episodes, because every card carries a title link too.
-
-`typecheck`, `unit` and **`e2e`** are now recorded for PW-0307 at
-`5dad6d3575f9`. It still does not go to REVIEW: clause 3 is unbuilt and saying
-otherwise would be the fake partial your round-101 note forbade.
+Northstar's second season, the catalog-count invariant (a layout that does not
+sum to `episodeCount` throws at import), the browser coverage of selection and
+the keyboard, the per-episode progress and the pure next-episode rule are all
+intact at `5dad6d3`. Clause 3 is untouched; PW-0306's surface was not edited.
 
 ---
 
-## 5. PW-0503 — the installer's lifecycle
+## 5. PW-0208 — the attribution half now ships
 
-Taken without waiting, because `ai:dispatch` offered it and the player chain
-does not block the Test lane. **build and unit both PASS.**
+Your §8: hold the patent-dependent part, continue what is independently safe,
+and do not let this block unrelated engineering. **The boundary is untouched
+and nothing was enabled.**
 
-**The matrix is read, not retyped.** `docs/WINDOWS_CERTIFICATION.md` section F
-already owns these five scenarios and already assigns each an owner, so
-`scripts/windows/lifecycle-cases.mjs` parses that table and throws if it
-cannot. Re-own F2 from AUTO to RIG in the document and the harness stops
-offering to run it, because the harness never knew the owner. A second table
-would have been the fourth time this repository was bitten by one fact in two
-places — `verify-install.mjs` carries the receipts, and the last of those
-drifts quietly reduced the Windows job's only install assertion to checking
-that the MSI shipped a file nothing ever starts. Same rule for every name and
-path: `productName` and `identifier` from `tauri.conf.json`, the executable
-from `Cargo.toml`'s `[[bin]]`, the sidecar and writable-directory constants
-from `sidecar.rs`.
+`notices.mjs` decides, `collect-notices.mjs` walks the packaged tree, and
+`package-sidecar.mjs` calls it at the end of every package — so the document is
+generated from the tree that was just laid out, **by the thing that laid it
+out**, rather than by a second place that has to agree about the layout.
 
-**It refuses to run off Windows** — exit 2, with the reason — and one of the 30
-tests runs the real script on this container and asserts exactly that. A green
-Windows lifecycle result produced by a container with no Windows in it is the
-one failure this task could commit that has no recovery.
+**It needed no packaging-configuration change.** `tauri.conf.json` already
+carries the whole sidecar directory as one bundle resource, so a file written
+there reaches the installed machine. That was the deciding constraint, for the
+same reason as above: the Windows job is the only green signal and an unproven
+resource glob is a poor way to spend it.
 
-**The decisions are pure, so they are tested here.** `residue.mjs` is a
-function from observations to a verdict. Three rules in it are worth your eye:
+**It never reduces a package to one string.** Declaration and shipped text are
+separate facts, classified against each other, because
+`RESEARCH_PLAYBACK.md` finding 2 is that every prebuilt `ffprobe` on npm is a
+GPL-3.0 binary and several declare otherwise. Packages with **no evidence at
+all** get their own heading. `--strict` turns that into a non-zero exit and is
+**deliberately not armed** — arming it from a Linux session would be deciding
+that a Windows job should start failing on a list nobody has read.
 
-- an **absent** observation is not an **empty** one, so a run whose PowerShell
-  failed cannot report a spotless machine;
-- a name is matched against the product's actual registered names, never the
-  substring "liberty" — a machine may legitimately run somebody else's
-  software with that word in it, and an orphaned `node.exe` is matched by
-  path, because killing the build's own Node would be worse than checking
-  nothing;
-- **user data surviving is reported as KEPT, with the reason.** The MSI never
-  creates `%LOCALAPPDATA%\<identifier>`; the application does, at first
-  launch. So an uninstall has nothing there to remove and an upgrade cannot
-  disturb it — which makes F2's "user data preserved" a property to **verify**
-  rather than a feature to build, and it is judged on file **content**, since
-  a store recreated empty passes an existence check and fails a person.
+The test found a real bug in the first attempt: the licence-filename pattern
+allowed only an extension, so a dual-licensed package shipping `LICENSE-MIT`
+and `LICENSE-APACHE` would have been reported as carrying no licence text.
 
-Two surface amendments, both recorded as `task.definition_changed` **before**
-anything was written and conflict-checked in both fields in both directions:
-`docs/WINDOWS_CERTIFICATION.md` into `reviewDependencies` (because deriving
-from a file makes it a dependency), and `package.json` into `allowedPaths` for
-one line — `npm run test:scripts` now names the new suite. That second one is
-taken on the precedent `ci.yml` records against itself: PL-AI-0003 wrote a
-suite, could not extend the alias that round, and it sat "written, committed,
-and executed by no gate".
-
-**What is honestly not done, named rather than left to be found:**
-
-1. **Nothing calls the harness yet.** `.github/workflows/windows.yml` is a
-   *review dependency* here and **PW-0602 owns it**. The entry point is
-   `node scripts/windows/lifecycle.mjs --msi <path> [--previous-msi <path>]`,
-   exit 0/1/2, with a JSON report whose last field names every row still owed
-   to your machine.
-2. **The new suite has no named CI step.** CI mirrors `test:scripts` as
-   separate steps rather than invoking it, and `ci.yml` is in no active task's
-   surface here.
-3. **F2 cannot pass until a previous version exists.** Without
-   `--previous-msi` it reports **not-run** with that reason — never a pass,
-   and not a failure either, because nothing about the installer failed.
-4. F1's launch half, F3's real-machine half, F5 (SmartScreen) and F6 (blocked
-   on signing) are reported by id as outstanding for your machine.
-
-### One measurement you should probably act on
-
-`npm run test:scripts` took **1261 seconds** on this 2-core container, and
-`scripts/test-ai-control-plane.mjs` is essentially all of it. The shape is in
-the script: `freshRepo()` copies the filtered tree ~69 times and holds every
-copy to the end, and one bare `ai-control-plane validate` now costs 2.4s
-because it reads and validates **111 tasks**. Both halves scale with a board
-that has roughly tripled since the suite was written. It prints nothing for
-twenty minutes, which is indistinguishable from a hang — and interrupting it
-leaves the copies behind: this session found **seven orphaned
-`/tmp/liberty-control-plane-*` roots, 1.1 GB in the largest**, and the suite
-could not complete until they were removed. A developer who learns that
-`npm run check` costs twenty minutes stops running it. Recorded as
-`quality.pre_existing_defect`; it is in no active task's surface.
+**Still missing:** the in-application "Third-party licences" view, which lives
+under `apps/web` and is not this task's surface. **Still the commander's:** the
+H.264/HEVC decision, unchanged from round 104 §6.
 
 ---
 
-## 6. PW-0208 — claimed, half-written on purpose, and it stops on a patent
+## 6. Two suites that nothing runs
 
-`docs/LICENSING.md` turns `DESKTOP_PLAYBACK.md` §9's reasoning into something
-reproducible: the exact FFmpeg configure flags and mpv meson options that keep
-the result LGPL, every GPL-only component named and excluded, versions pinned
-(mpv **0.41.0**, FFmpeg **9.0.2 "Lei"**), and a build-time assertion that
-fails if the configuration string **FFmpeg itself embeds** contains
-`--enable-gpl`, `--enable-nonfree` or `--enable-version3`. That last one is
-the only check in the document that cannot be satisfied by someone intending
-to satisfy it and getting it wrong.
+Named once rather than worked around twice:
 
-**The trap is `auto`, not `true`.** Every mpv feature option that bears on
-licensing defaults to `auto`, which resolves against whatever happens to be
-installed on the builder — so a CI base-image refresh that adds `libcdio`
-produces a differently-licensed artifact from the same source and the same
-command. All of them are now pinned explicitly, including those whose desired
-value equals today's default. Two more worth your eye because they are
-inherited rather than decided: **OpenSSL is an `--enable-nonfree` combination
-for FFmpeg**, so reaching for it to get TLS yields a binary that is
-*undistributable* rather than merely GPL (schannel instead); and **the EULA
-must not forbid reverse engineering for debugging modifications to the
-library**, which is a term the licence we are relying on requires.
+- `scripts/windows/test-lifecycle.mjs` (30 cases) is in `npm run test:scripts`,
+  but **CI mirrors that alias as separate named steps** instead of invoking it,
+  and `ci.yml` is in no active task's surface. That workflow's own comment
+  states the rule being broken: *"a FIFTH script added to it must be added here
+  too."*
+- `apps/desktop/scripts/notices.test.mjs` (17 cases) is run by nothing at all:
+  `apps/desktop` has **no `package.json`**, so it is not an npm workspace and
+  turbo never reaches it.
 
-### The stop-and-report, which the acceptance asked for by name
-
-*"NOT IN SCOPE: any decoder whose distribution needs a patent licence this
-project does not hold — if one is required, stop and report it as a commander
-decision rather than shipping it."* **One is required.**
-
-Copyright and patents are independent: the LGPL build above is correctly
-licensed and says nothing about patents, and
-[ffmpeg.org/legal.html](https://www.ffmpeg.org/legal.html) declines to advise
-while warning that holders pursue fees once a product earns money.
-
-- **AVC/H.264** — Via LA's programme covers decoders incorporated into
-  products distributed to end users, which is what shipping `libmpv-2.dll`
-  inside a desktop application is. Published Codec Products schedule:
-  **$0.00 for the first 100,000 units per year**, $0.20 to 5 M, $0.10 beyond,
-  annual enterprise cap. **That zero is a rate, not an absence of a licence**,
-  and which of the two it is belongs to counsel.
-- **HEVC/H.265** — split across Via LA's HEVC/VVC programme, Access Advance's
-  HEVC Advance pool and unpooled holders, so **no single licence clears it**;
-  Access Advance's published rates changed effective 2026-07-01.
-
-Three options are in the document, stated without a recommendation, and **no
-decoder is disabled on a guess** — turning them off removes most of what a
-media application exists to play, which is a product decision rather than a
-build one. Recorded as `escalation.commander_decision_required`.
-
-### And a surface clash I did not resolve unilaterally
-
-`ai:dispatch` offered PW-0208 as conflict-free. It is not: its `allowedPaths`
-include `apps/desktop/**`, which is a **`reviewDependency` of PW-0503** while
-PW-0503 is in REVIEW — and `approve` fingerprints `allowedPaths ∪
-reviewDependencies`, so a write there would make your approval of PW-0503
-stale before you gave it. That is the failure that cost PW-0304 two rounds.
-
-So this round's writes were confined to `docs/LICENSING.md`, and the
-installer half of the acceptance — the written offer, the licence texts, the
-in-app "Third-party licences" view, all of which live under `apps/desktop` —
-is **specified in §7 of that document and not built**. PW-0208 stays
-`IN_PROGRESS` rather than being split into a partial `DONE`.
-
-**The general point, for a ruling:** `dispatch`'s overlap check reads one
-field where `approve` reads two. Either `dispatch` widens, or a
-directory-level `reviewDependency` on an actively-developed directory is
-understood to reserve it — which is what it does in practice today, silently.
-PW-0602 is in the same position from the other side. Recorded as
-`board.sequencing_finding`.
-
-Nothing else is dispatchable: PW-0502 and PW-0602 are both deferred on
-`allowedPaths` overlaps with the active PW-0503.
+Both are green when run by hand, and a suite nobody runs is the thing
+`ci.yml` already records PL-AI-0003 being bitten by. The fix is one line in
+each of two files that no open task may write — the same shape as §2.
 
 ---
 
-## 7. PL-0713 — diagnosed, two remedies measured, neither sufficient
-
-Everything below was applied locally, run, and **reverted**. The working tree
-carries none of it and that spec is byte-identical to HEAD.
-
-**The mechanism.** The backend stub keeps **one ledger for the whole
-process**. Three tests call `clearLedger()` and then assert it holds exactly
-their own request. `playwright.config.ts` sets `fullyParallel: true`, which
-splits tests **within a file** across workers — and the same file contains
-*"a malformed body is refused before it is forwarded to anybody"*, which
-deliberately forwards four more requests and whose own comment says so: *"the
-forwarder relays the bytes as given, so a malformed body IS forwarded."* Two
-cores means one worker, they serialise, everything passes. A CI runner has
-more. `--workers=4` reproduces the CI failure here exactly.
-
-**Candidate 1 — scheduling.** `test.describe.configure({ mode: "default" })`
-at the top of the file. The file alone went green at 4 and 8 workers, but the
-**whole `api` project at 4 workers still failed**, and the ledger dump named
-the polluter as that same file's malformed-body test. The directive did not
-serialise the file under a `fullyParallel` project. **Rejected on
-measurement.**
-
-**Candidate 2 — scope by content id.** Replace `clearLedger()` with a
-`ledgerFor(contentId)` that filters by the id the test sent. **Deterministically
-worse**: two failures at 1, 4 and 8 workers alike, because `aurora-fall`
-appears in **seven** requests across this file and `northstar` in two. Content
-id is not a unique scope; `clearLedger()` was what had been keeping the ledger
-small. **Rejected on measurement.**
-
-**Candidate 3 — the one I would implement.** Give each ledger-asserting test a
-content id **no other request in the suite uses**. The stub already keys
-behaviour off `contentId` (`stub-unavailable`, `stub-redirect`,
-`stub-off-contract`), so ids like `ledger-forwarded` and
-`ledger-identity-headers` forward normally and scope the ledger uniquely. Then
-`clearLedger()` is deleted, **no test mutates shared state**, isolation is a
-property of the request rather than of the machine's core count — and
-`toHaveLength(1)` survives untouched.
-
-**What the fix must not be,** and PL-0713's acceptance says so: relaxing
-`toHaveLength(1)` to "at least one". That assertion is the point — the spec's
-own words are *"a duplicated session request against a real backend is a
-duplicated authorization"* — and loosening it would delete the check to make
-the schedule convenient. The repair must be demonstrated at **more workers
-than the machine has cores**, because a pass at one worker is exactly what hid
-this.
-
----
-
-## 8. Bundle
+## 7. Bundle
 
 | | |
 | --- | --- |
-| Base | `0de015a17f1d51cfa987d18c107ac775cdc72660` |
-| Target | `codex/pl-ai-0001-repair`, tip = **the commit carrying this document** |
-| Content tip before it | `5dad6d3575f990a650600256096ead7334913435` (PW-0307) |
+| Base | `64a76b3992bd8917391547207a29d08cb7ace8be` (the published head) |
+| Target | the commit carrying this document |
+| Content tip before it | `c1af8d5b0ee19fbff960b8d59b1ef69d247eced1` (PW-0208) |
 | Delivered to | `D:\project-liberty\_liberty-sync\` |
 
-**The filename, the target sha and the sha256 are in the delivery message, not
-in this table, and the reason is not laziness.** An archive cannot contain the
-hash of itself, and the bundle's tip is the commit that carries this file — so
-any sha written here for either would be a number I made up before the thing
-existed. That is precisely the failure caught in round 103, where an invented
-full sha reached a draft. Base is above because base is real history and
-resolves today; everything else is reported after the write.
-
-Verified before delivery with `git bundle verify`, `git bundle list-heads`, and
-a fast-forward rehearsal in a fresh garbage-collected clone from more than one
-base. The sha256 reported is the one read back **from the commander's disk
-after the write**, not the one computed here before it.
+Base is the **published head** this round rather than `0de015a`, because
+`git fetch` now confirms the remote is there. The filename, target sha and
+sha256 are in the delivery message: an archive cannot contain the hash of
+itself, and the tip is the commit that carries this file. Verified before
+delivery with `git bundle verify`, `list-heads`, and a fast-forward rehearsal
+in a fresh garbage-collected clone; the sha256 reported is read back **from
+the commander's disk after the write**.
