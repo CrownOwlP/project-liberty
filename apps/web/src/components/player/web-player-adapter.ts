@@ -23,6 +23,9 @@ import {
   WEB_SHAKA_CAPABILITIES,
   protectionDecisionFor
 } from "./adapter-routing";
+import type { AudioRole } from "@liberty/contracts/domains/audio";
+import type { SubtitleFormat, SubtitleKind } from "@liberty/contracts/domains/subtitles";
+
 import type { PlaybackController } from "./playback-controller";
 import {
   candidateForLoad,
@@ -111,6 +114,122 @@ function readBoolean(source: Record<string, unknown>, key: string): boolean {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/* ===========================================================================
+ * WHAT A TRACK IS FOR, READ OUT OF SHAKA RATHER THAN GUESSED (PW-0206)
+ * ===========================================================================
+ *
+ * `PlayerTrack` gained `audioRole`, `subtitleKind` and `textFormat` because the
+ * selection policy in `@liberty/media-engine` decides on them and this adapter
+ * was dropping them on the floor: Shaka publishes `roles`, `audioRoles`, `kind`
+ * and `mimeType` on the very objects `#readTracks` was already reading.
+ *
+ * EVERY FUNCTION BELOW RETURNS `null` RATHER THAN A DEFAULT. A track the engine
+ * under-described is one the policy must decline to decide about. The one
+ * tempting default -- role "main" -- is the one that would put a COMMENTARY
+ * track into automatic selection, which is the harm `AUTO_SELECTABLE_ROLES`
+ * exists to prevent.
+ *
+ * AND NONE OF THEM READS A LABEL. `subtitles.ts` says it in terms: "SDH" in a
+ * label is a naming convention and this is a decision input.
+ */
+
+/** Role strings, lower-cased. `[]` when the engine stated none. */
+function readRoles(source: Record<string, unknown>, key: string): readonly string[] {
+  const value = source[key];
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((entry): entry is string => typeof entry === "string" && entry !== "")
+    .map((entry) => entry.toLowerCase());
+}
+
+/**
+ * DASH/HLS role vocabulary → the contract's `AudioRole`.
+ *
+ * `audioRoles` first and `roles` second: on a Shaka VARIANT, `roles` is the
+ * union of the video and audio roles, so a video role would otherwise be read
+ * as a statement about the soundtrack. Checked most-specific first, because a
+ * track legitimately carries several and "commentary" said anywhere about the
+ * audio is the one that must not be lost.
+ *
+ * `original` has no DASH role of its own -- it is an HLS CHARACTERISTIC and a
+ * DASH accessibility descriptor in some profiles -- so it is honoured where the
+ * engine literally says it and never derived. A missing `original` costs a
+ * fallback quality; an invented one would override a viewer's real preference.
+ */
+function audioRoleOf(entry: Record<string, unknown>): AudioRole | null {
+  const stated = readRoles(entry, "audioRoles");
+  const roles = stated.length > 0 ? stated : readRoles(entry, "roles");
+  if (roles.includes("commentary")) return "commentary";
+  if (roles.includes("description") || roles.includes("descriptive")) return "descriptive";
+  if (roles.includes("dub")) return "dub";
+  if (roles.includes("original")) return "original";
+  if (roles.includes("main")) return "main";
+  return null;
+}
+
+/**
+ * Shaka's text-track description → the contract's `SubtitleKind`.
+ *
+ * `forced` is decided by the engine's own boolean and is checked FIRST, which
+ * is what keeps `subtitleKind === "forced"` and `isForced` from disagreeing --
+ * the invariant `player-adapter.ts` states and this adapter's suite asserts.
+ *
+ * THE ONE JUDGEMENT CALL, STATED RATHER THAN BURIED: a track Shaka describes as
+ * a CAPTION is reported as `sdh`. They are not definitionally identical -- SDH
+ * is a home-video convention and captions are a broadcast one -- but both mean
+ * "the dialogue plus the non-speech audio, for a viewer who cannot hear it",
+ * which is the distinction the contract's enum draws and the only one the
+ * policy acts on. Reporting captions as `null` instead would be the safer-
+ * looking choice and the worse one: it would leave `sdh` unreachable from the
+ * one engine this product ships today, and `subtitles.ts` records that SDH is
+ * frequently the only subtitle track a title has in a language. If this mapping
+ * is ever wrong for a real stream, it is wrong HERE, in one named function,
+ * rather than spread through a policy.
+ */
+function subtitleKindOf(entry: Record<string, unknown>, isForced: boolean): SubtitleKind | null {
+  if (isForced) return "forced";
+  const roles = readRoles(entry, "roles");
+  if (roles.includes("commentary")) return "commentary";
+  const kind = (readString(entry, "kind") ?? "").toLowerCase();
+  if (kind === "caption" || kind === "captions") return "sdh";
+  if (roles.includes("caption") || roles.includes("captions")) return "sdh";
+  if (kind === "subtitle" || kind === "subtitles" || roles.includes("subtitle")) return "subtitles";
+  return null;
+}
+
+/**
+ * MIME type → the contract's `SubtitleFormat`.
+ *
+ * By mime type and not by a file extension in a URI, because a URI is a
+ * provider's naming habit and a mime type is a declaration. Parameters are
+ * stripped (`text/vtt; charset=utf-8`); an unrecognised type is `null`, which
+ * the policy then rejects as unrenderable -- the honest outcome for a format
+ * nobody has established this client can draw.
+ */
+function textFormatOf(mimeType: string | null): SubtitleFormat | null {
+  if (mimeType === null) return null;
+  switch (mimeType.split(";", 1)[0]?.trim().toLowerCase()) {
+    case "text/vtt":
+    case "text/webvtt":
+      return "webvtt";
+    case "application/ttml+xml":
+    case "application/mp4":
+      /* `application/mp4` on a TEXT track is a TTML payload in an ISO-BMFF
+       * wrapper, which is how DASH ships segmented timed text. Shaka reports
+       * the container; the renderable format inside it is TTML. */
+      return "ttml";
+    case "application/x-subrip":
+    case "text/srt":
+      return "srt";
+    case "text/x-ssa":
+    case "application/x-ass":
+    case "text/x-ass":
+      return "ass";
+    default:
+      return null;
+  }
 }
 
 export class WebPlayerAdapter implements PlayerAdapter {
@@ -319,6 +438,7 @@ export class WebPlayerAdapter implements PlayerAdapter {
       if (!isRecord(entry)) continue;
       const id = readString(entry, "id") ?? String(entry["id"] ?? "");
       if (id === "") continue;
+      const isForced = readBoolean(entry, "forced");
       tracks.push({
         id,
         kind: "subtitle",
@@ -327,7 +447,10 @@ export class WebPlayerAdapter implements PlayerAdapter {
         codec: readString(entry, "codec"),
         channels: null,
         isDefault: readBoolean(entry, "primary"),
-        isForced: readBoolean(entry, "forced")
+        isForced,
+        audioRole: null,
+        subtitleKind: subtitleKindOf(entry, isForced),
+        textFormat: textFormatOf(readString(entry, "mimeType"))
       });
     }
 
@@ -347,7 +470,10 @@ export class WebPlayerAdapter implements PlayerAdapter {
         codec: readString(entry, "audioCodec"),
         channels: readNumber(entry, "channelsCount"),
         isDefault: readBoolean(entry, "primary"),
-        isForced: false
+        isForced: false,
+        audioRole: audioRoleOf(entry),
+        subtitleKind: null,
+        textFormat: null
       });
     }
 

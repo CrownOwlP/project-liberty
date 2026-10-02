@@ -7889,7 +7889,7 @@
       "id": "PL-0714",
       "priority": "P1",
       "lane": "Integration",
-      "status": "IN_PROGRESS",
+      "status": "REVIEW",
       "title": "CI executes every script suite the repository declares, and a failing validate job says something",
       "dependencies": [],
       "allowedPaths": [
@@ -7926,7 +7926,7 @@
           "evidence": "THE TURBO RESULT FIRST, WITH ITS LIMITATION. 'npm run test': 22 tasks successful, 22 total, 47.4s, FULL TURBO -- every task served from cache, because the change touches no workspace. A fully cached pass is evidence of no collateral damage and of nothing else; recording it without saying so would be the weaker claim dressed as the stronger one.\n\nTHE EVIDENCE THAT BEARS ON THE CHANGE WAS PRODUCED BY RUNNING IT.\n\n1. THE THREE PREVIOUSLY-UNRUN SUITES, executed exactly as the new steps invoke them. node scripts/test-desktop-target.mjs: 9 assertions, exit 0. node --test scripts/windows/test-lifecycle.mjs: 30 pass, 0 fail. node --test apps/desktop/scripts/notices.test.mjs: 17 pass, 0 fail. All three are Node-builtins-and-git only, which is why they sit with the pre-install group.\n\n2. THE MIRROR CHECK, PROVED BY ITS FAILURES RATHER THAN ITS PASS. Extracted from the YAML by a parser and run four ways.\n   - Against the current tree: 'test:scripts names 6 suite(s) ... every suite in the alias has a step in this job', exit 0.\n   - AGAINST THE ci.yml AS IT STOOD AT HEAD (git show HEAD:.github/workflows/ci.yml, with the current package.json): exit 1, naming scripts/test-desktop-target.mjs and scripts/windows/test-lifecycle.mjs. That is the real drift, found by the real check, against the real previous file -- not a synthetic case.\n   - A seventh script added to the alias: exit 1, naming it.\n   - The desktop-target step turned into a YAML COMMENT: exit 1, naming it. A filename mentioned in a comment does not count as executed, which matters in a file that discusses these filenames at length.\n\n3. THE DIAGNOSTICS, EXECUTED UNDER GITHUB'S OWN SHELL FLAGS -- bash --noprofile --norc -e -o pipefail -- with GITHUB_STEP_SUMMARY, GITHUB_WORKSPACE, RUNNER_TEMP, RUNNER_OS and RUNNER_ARCH set.\n   - 'Record the machine this job ran on': exit 0, renders cores, memory, free disk, node, npm, NODE_OPTIONS and two ulimits as a table.\n   - 'Why this job failed' with a V8 report present: exit 0, renders the step-outcome table and the redacted extract.\n   - The same with no report anywhere: exit 0, says the job did not abort through a V8 fatal error rather than rendering nothing.\n   - A DEFECT FOUND AND FIXED BY RUNNING IT UNDER THOSE FLAGS: the report search was 'find ... | head -5', which under pipefail gives find a SIGPIPE and would have aborted the diagnostics step in precisely the case it exists for. It is a read loop now. A second one: '[ cond ] && break' as the last command of a loop body exits under set -e; it is an 'if' now.\n\n4. --report-on-fatalerror VERIFIED END TO END, not assumed. Accepted inside NODE_OPTIONS on Node 22.22.2; a forced V8 OOM produced report.<date>.<pid>.<tid>.<seq>.json; the redactor rendered event 'Allocation failed - JavaScript heap out of memory', trigger OOMError, heap limit, committed, used, external, rss, peak rss, free and total memory, cpu seconds and the entry script's basename.\n\n5. THE NO-SECRET-LEAKAGE CLAUSE, TESTED AS AN ATTACK RATHER THAN ASSERTED. A process was aborted with SECRET_TOKEN=hunter2-should-never-appear in its environment. grep finds the value once in the raw diagnostic report and ZERO times in the rendered summary. The raw report is never printed and never uploaded.\n\nWHAT IS NOT CLAIMED. No GitHub runner has executed any of this. Whether 'Record the machine' and 'Why this job failed' render correctly in GitHub's own summary viewer is unverified until a run happens, and whether the exit-134 abort produces a V8 report at all is exactly the open question -- if it does not, the step says so, which is itself the next piece of evidence."
         }
       },
-      "updatedAt": "2026-10-02T17:07:53.077Z",
+      "updatedAt": "2026-10-02T17:22:47.936Z",
       "implementationAgent": "claude-lead",
       "implementationBaseSha": "4ce4d9132ffbeb3bac01e17d0d9c3beb4374f33e"
     },
@@ -8668,15 +8668,18 @@
       "id": "PW-0206",
       "priority": "P1",
       "lane": "Player",
-      "status": "BACKLOG",
+      "status": "REVIEW",
       "title": "Subtitle and audio track selection, on both engines, for the first time",
       "dependencies": [
-        "PW-0202",
-        "PW-0205"
+        "PW-0202"
       ],
       "allowedPaths": [
         "apps/web/src/components/player/tracks.ts",
-        "apps/web/src/components/player/tracks.test.ts"
+        "apps/web/src/components/player/tracks.test.ts",
+        "apps/web/src/components/player/player-adapter.ts",
+        "apps/web/src/components/player/player-adapter.test.ts",
+        "apps/web/src/components/player/web-player-adapter.ts",
+        "apps/web/src/components/player/web-player-adapter.test.ts"
       ],
       "reviewDependencies": [
         "apps/web/src/components/player/player-adapter.ts",
@@ -8693,9 +8696,27 @@
         "architecture-review"
       ],
       "acceptance": "A viewer can choose an audio track and a subtitle track, and the choice survives a candidate switch. THIS CAPABILITY DOES NOT EXIST AT ALL TODAY: there is no getTextTracks, no selectAudioLanguage, no track state and no UI anywhere in the repository, while PRODUCT_SPEC.md names 'Accessibility, subtitles, and audio correctness are core features' as a product principle and RELEASE_CRITERIA.md lists 'Audio/subtitle preferences implemented' as an MVP bar. REQUIRED: one normalised track vocabulary that both adapters answer in, so the UI never branches on engine. REQUIRED: the audio-language and subtitle-preference policy already contracted in packages/contracts/src/domains/audio.ts and subtitles.ts is the source of the DEFAULT selection, rather than a second policy being invented here. REQUIRED: forced and default subtitle flags are honoured, which the existing test matrix already lists as a playback regression scenario. REQUIRED: a selection made by the viewer is re-applied after a failover, because a candidate switch is a full teardown and losing the viewer's language on a network blip is the defect this clause exists to prevent.",
-      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. ",
-      "owner": null,
-      "gateResults": {}
+      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. \n\nROUND 107, TWO CHANGES, BOTH RECORDED AS EVENTS BEFORE THEY WERE MADE.\n\n1. DEPENDENCY AMENDED: PW-0205 removed, PW-0202 kept. PW-0205 -> PW-0204 -> PW-0103 is blocked on the commander's Windows hardware, and it was holding the whole consumer-visible player chain (PW-0206 -> PW-0306 -> PW-0307 clause 3) behind an experiment about compositing a child HWND. This task's surface is two pure files and writes no adapter; 'a vocabulary both adapters answer in' is a contract, and a contract goes before an implementation. PW-0205 stays where it is and must answer in whatever this produces. Reverse by restoring the dependency and releasing this task.\n\n2. CORRECTION TO A STALE PREMISE, dated round 107. The acceptance opens 'THIS CAPABILITY DOES NOT EXIST AT ALL TODAY: there is no getTextTracks, no selectAudioLanguage, no track state and no UI anywhere in the repository.' That was true when it was written and is no longer. apps/web/src/components/player/player-adapter.ts (PW-0201, DONE) declares PlayerTrack, PlayerTrackKind, getTracks(), selectAudioTrack(), selectSubtitleTrack(), a 'tracks' event and a 'trackselected' event. apps/web/src/components/player/web-player-adapter.ts (PW-0202, DONE) implements all of them against Shaka, calling getTextTracks, selectTextTrack, setTextTrackVisibility and selectAudioLanguage. packages/media-engine already holds the SELECTION POLICY -- selectAudioTrack, selectSubtitleTrack, withSelectedAudio and languageMatch with its script and macrolanguage rules -- over the contract shapes in packages/contracts/src/domains/audio.ts and subtitles.ts. EVERY 'REQUIRED' CLAUSE STANDS UNCHANGED; only the statement of what the repository contains is corrected. What is genuinely absent is this task's surface: the bridge from the engine-reported PlayerTrack list to those contract shapes, the default selection coming FROM that policy rather than from a second one invented here, forced and default flags honoured, and a viewer's explicit choice re-applied after a candidate switch. Rebuilding the vocabulary or the policy would be duplication, and the 'rather than a second policy being invented here' clause already forbids it.\n\n3. SURFACE AMENDED, ROUND 107, recorded as task.definition_changed before any write: the adapter boundary and the Shaka adapter join the surface, four named files, because PlayerTrack is LOSSY against the policy's input in exactly the accessibility fields -- no audio `role` at all, only a boolean where subtitleKindSchema needs subtitles/sdh/forced/commentary, and no subtitle `format`. Shaka already reports all three and #readTracks drops them. Inventing them in a bridge would auto-select commentary tracks and make SDH unrepresentable, which the contracts were written to prevent. The change is additive and every new field is nullable with null meaning 'the engine did not state it'.",
+      "owner": "claude-media",
+      "gateResults": {
+        "typecheck": {
+          "status": "pass",
+          "at": "2026-10-02T17:40:38.892Z",
+          "by": "claude-media",
+          "commitSha": "434321305e7683e3b216830b5fbf446ed2a8f3a4",
+          "evidence": "npm run typecheck: 22 tasks successful, 22 total. npm run lint: 12 tasks successful, 0 errors; the single warning is a pre-existing unused import in apps/web/src/lib/db/in-memory-repository.test.ts, which is not on this surface and was not introduced here. The widened PlayerTrack compiles everywhere it is used: only two files in the repository reference the type and both are on this surface, which is why adding three required-but-nullable fields broke no caller out of reach."
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-10-02T17:40:39.058Z",
+          "by": "claude-media",
+          "commitSha": "434321305e7683e3b216830b5fbf446ed2a8f3a4",
+          "evidence": "npm run test: 22 tasks successful, 22 total. apps/web 85 files / 1534 tests, up from 84 / 1494 -- 40 new tests, 0 failed, nothing else disturbed. Whole repository green: provider-sdk 288, catalog-ingestion 152, backend 36, media-engine and the rest unchanged.\n\nNEW COVERAGE, 40 CASES IN TWO FILES.\ntracks.test.ts, 31 cases: codec normalisation including the RFC 6381 spellings a manifest actually states and a null for everything unrecognised; conversion with and without each assumption; the refusal to convert a sub-minimum language tag, which the contract declares .min(2) and which would otherwise build an object the schema rejects; identity and the four re-application confidences; and the resolution, including the clause this task exists for.\nweb-player-adapter.test.ts, 9 new cases over the three fields the adapter now reads.\n\nTHE SUITE WAS MUTATION-TESTED RATHER THAN TRUSTED, because 31 cases passing on the first run is a reason to check the tests, not to celebrate. Four mutations, each reverted:\n  1. short-circuit a viewer \"off\" to null instead of passing the mode to the policy -> 2 failed. This is the one that matters: the contract records that a FORCED track survives an off preference, and the short circuit is the plausible implementation that deletes the only subtitle a non-reading viewer needs.\n  2. let reapply match two tracks that both state no language -> 1 failed.\n  3. tell the subtitle policy nothing about the audio that will actually play -> 2 failed. A forced track is keyed to the soundtrack, so this is what makes audio-before-subtitle load-bearing rather than tidy.\n  4. drop the assumptions from the result -> 1 failed.\nAll four caught; restored, 31 passed.\n\nTHE RE-APPLICATION CLAUSE IS TESTED AS THE REAL EVENT. A candidate switch that renames EVERY id (cdn2/ prefix on all four tracks) still restores the viewer French audio and French subtitles, because a choice is remembered as a language and a purpose rather than as a track id -- WebPlayerAdapter builds audio ids as audio:<language> and takes subtitle ids from the manifest, so the ids genuinely do not survive the teardown the clause names.\n\nORDER-INVARIANCE IS A PROPERTY TEST, not an example: fast-check over 60 shuffles of a four-track list, asserting the same audio and subtitle answer every time. The policy claims order-invariance and this module must not reintroduce a dependency on the way in.\n\nWHAT IS NOT CLAIMED. No browser ran any of this, no real Shaka instance produced a track list, and no mpv adapter exists to confirm it can answer in this vocabulary -- that is PW-0205 and it is sequenced after. The Shaka field names the adapter reads (audioRoles, roles, kind, mimeType, forced, channelsCount, audioCodec) are read from a fake player in the suite, as every other test in that file does; they are not verified against a running Shaka."
+        }
+      },
+      "implementationAgent": "claude-media",
+      "updatedAt": "2026-10-02T17:41:02.456Z",
+      "implementationBaseSha": "434321305e7683e3b216830b5fbf446ed2a8f3a4"
     },
     {
       "id": "PW-0207",

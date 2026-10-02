@@ -157,6 +157,126 @@ describe("tracks — the first code in this repository to read them", () => {
     expect(adapter.getTracks()).toEqual([]);
   });
 
+  /* ======================================================================
+   * WHAT A TRACK IS FOR, READ RATHER THAN GUESSED (PW-0206)
+   * ===================================================================== */
+
+  async function tracksFrom(text: readonly unknown[], variants: readonly unknown[] = []) {
+    const { adapter } = makeAdapter({
+      player: {
+        getTextTracks: () => text,
+        getVariantTracks: () => variants,
+        selectTextTrack: vi.fn(),
+        setTextTrackVisibility: vi.fn(),
+        selectAudioLanguage: vi.fn()
+      }
+    });
+    await adapter.load(request());
+    return adapter.getTracks();
+  }
+
+  it("reads an audio role out of audioRoles, and prefers it to the variant's roles", async () => {
+    /* On a Shaka VARIANT, `roles` is the union of the video and audio roles, so
+     * reading it first would let a VIDEO role describe the soundtrack. */
+    const [track] = await tracksFrom(
+      [],
+      [{ language: "en", audioCodec: "mp4a.40.2", audioRoles: ["commentary"], roles: ["main"] }]
+    );
+    expect(track?.audioRole).toBe("commentary");
+  });
+
+  it("falls back to roles when the engine states no audioRoles", async () => {
+    const [track] = await tracksFrom(
+      [],
+      [{ language: "en", audioCodec: "mp4a.40.2", roles: ["description"] }]
+    );
+    expect(track?.audioRole).toBe("descriptive");
+  });
+
+  it("LEAVES THE ROLE NULL when the engine named none, rather than defaulting it", async () => {
+    /* The only plausible default, "main", is the one that would make a
+     * commentary track automatically selectable. Null is what "the engine did
+     * not say" means, and the bridge decides what to do about it. */
+    const [track] = await tracksFrom([], [{ language: "en", audioCodec: "mp4a.40.2" }]);
+    expect(track?.audioRole).toBeNull();
+    const [unknownRole] = await tracksFrom(
+      [],
+      [{ language: "en", audioCodec: "mp4a.40.2", audioRoles: ["supplementary"] }]
+    );
+    expect(unknownRole?.audioRole).toBeNull();
+  });
+
+  it("reports a caption track as sdh, which a forced boolean could never say", async () => {
+    const [track] = await tracksFrom([
+      { id: 1, language: "en", kind: "caption", mimeType: "text/vtt" }
+    ]);
+    expect(track?.subtitleKind).toBe("sdh");
+  });
+
+  it("reports a commentary subtitle track as commentary", async () => {
+    const [track] = await tracksFrom([
+      { id: 1, language: "en", roles: ["commentary"], mimeType: "text/vtt" }
+    ]);
+    expect(track?.subtitleKind).toBe("commentary");
+  });
+
+  it("NEVER DISAGREES WITH ITSELF about forced", async () => {
+    /* `player-adapter.ts` states the invariant: subtitleKind is "forced"
+     * exactly when isForced is true, for any track whose kind is known. An
+     * adapter that broke it would hand the policy two contradictory facts. */
+    const tracks = await tracksFrom([
+      { id: 1, language: "en", forced: true, kind: "caption", mimeType: "text/vtt" },
+      { id: 2, language: "fr", forced: false, kind: "subtitle", mimeType: "text/vtt" },
+      { id: 3, language: "de", forced: true, roles: ["commentary"], mimeType: "text/vtt" }
+    ]);
+    for (const track of tracks) {
+      if (track.subtitleKind === null) continue;
+      expect(track.subtitleKind === "forced").toBe(track.isForced);
+    }
+  });
+
+  it("reads the text format from the mime type, parameters and all", async () => {
+    const tracks = await tracksFrom([
+      { id: 1, language: "en", mimeType: "text/vtt; charset=utf-8" },
+      { id: 2, language: "fr", mimeType: "application/ttml+xml" },
+      { id: 3, language: "de", mimeType: "application/mp4" },
+      { id: 4, language: "es", mimeType: "application/x-subrip" },
+      { id: 5, language: "it", mimeType: "video/mp2t" },
+      { id: 6, language: "ja" }
+    ]);
+    expect(tracks.map((track) => track.textFormat)).toEqual([
+      "webvtt",
+      "ttml",
+      /* A TEXT track in an ISO-BMFF wrapper is segmented TTML; Shaka reports
+       * the container and the renderable format inside it is TTML. */
+      "ttml",
+      "srt",
+      /* Unrecognised, and null rather than a guess -- an unrenderable subtitle
+       * format fails silently, so the policy must be allowed to reject it. */
+      null,
+      null
+    ]);
+  });
+
+  it("never reads a LABEL to decide any of the three", async () => {
+    /* subtitles.ts: "SDH" in a label is a naming convention and this is a
+     * decision input. A stream that calls a plain subtitle track "English SDH"
+     * must not be promoted by its own marketing. */
+    const [track] = await tracksFrom([
+      { id: 1, language: "en", label: "English SDH (Commentary, Forced)", mimeType: "text/vtt" }
+    ]);
+    expect(track?.subtitleKind).toBeNull();
+    expect(track?.isForced).toBe(false);
+  });
+
+  it("puts no audio fields on a subtitle track, or the reverse", async () => {
+    const [text] = await tracksFrom([{ id: 1, language: "en", mimeType: "text/vtt" }]);
+    expect(text?.audioRole).toBeNull();
+    const [variant] = await tracksFrom([], [{ language: "en", audioCodec: "mp4a.40.2" }]);
+    expect(variant?.subtitleKind).toBeNull();
+    expect(variant?.textFormat).toBeNull();
+  });
+
   it("rejects an unknown track id rather than silently doing nothing", async () => {
     /* A menu that appears to change the language and does not is worse than an
      * error. */

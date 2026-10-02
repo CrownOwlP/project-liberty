@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-02T17:21:01.110Z",
+  "generatedAt": "2026-10-02T17:41:02.489Z",
   "agent": "claude-lead",
   "executionAvailable": true,
   "assigned": [
@@ -7,7 +7,7 @@
       "id": "PL-0714",
       "priority": "P1",
       "lane": "Integration",
-      "status": "IN_PROGRESS",
+      "status": "REVIEW",
       "title": "CI executes every script suite the repository declares, and a failing validate job says something",
       "dependencies": [],
       "allowedPaths": [
@@ -44,7 +44,7 @@
           "evidence": "THE TURBO RESULT FIRST, WITH ITS LIMITATION. 'npm run test': 22 tasks successful, 22 total, 47.4s, FULL TURBO -- every task served from cache, because the change touches no workspace. A fully cached pass is evidence of no collateral damage and of nothing else; recording it without saying so would be the weaker claim dressed as the stronger one.\n\nTHE EVIDENCE THAT BEARS ON THE CHANGE WAS PRODUCED BY RUNNING IT.\n\n1. THE THREE PREVIOUSLY-UNRUN SUITES, executed exactly as the new steps invoke them. node scripts/test-desktop-target.mjs: 9 assertions, exit 0. node --test scripts/windows/test-lifecycle.mjs: 30 pass, 0 fail. node --test apps/desktop/scripts/notices.test.mjs: 17 pass, 0 fail. All three are Node-builtins-and-git only, which is why they sit with the pre-install group.\n\n2. THE MIRROR CHECK, PROVED BY ITS FAILURES RATHER THAN ITS PASS. Extracted from the YAML by a parser and run four ways.\n   - Against the current tree: 'test:scripts names 6 suite(s) ... every suite in the alias has a step in this job', exit 0.\n   - AGAINST THE ci.yml AS IT STOOD AT HEAD (git show HEAD:.github/workflows/ci.yml, with the current package.json): exit 1, naming scripts/test-desktop-target.mjs and scripts/windows/test-lifecycle.mjs. That is the real drift, found by the real check, against the real previous file -- not a synthetic case.\n   - A seventh script added to the alias: exit 1, naming it.\n   - The desktop-target step turned into a YAML COMMENT: exit 1, naming it. A filename mentioned in a comment does not count as executed, which matters in a file that discusses these filenames at length.\n\n3. THE DIAGNOSTICS, EXECUTED UNDER GITHUB'S OWN SHELL FLAGS -- bash --noprofile --norc -e -o pipefail -- with GITHUB_STEP_SUMMARY, GITHUB_WORKSPACE, RUNNER_TEMP, RUNNER_OS and RUNNER_ARCH set.\n   - 'Record the machine this job ran on': exit 0, renders cores, memory, free disk, node, npm, NODE_OPTIONS and two ulimits as a table.\n   - 'Why this job failed' with a V8 report present: exit 0, renders the step-outcome table and the redacted extract.\n   - The same with no report anywhere: exit 0, says the job did not abort through a V8 fatal error rather than rendering nothing.\n   - A DEFECT FOUND AND FIXED BY RUNNING IT UNDER THOSE FLAGS: the report search was 'find ... | head -5', which under pipefail gives find a SIGPIPE and would have aborted the diagnostics step in precisely the case it exists for. It is a read loop now. A second one: '[ cond ] && break' as the last command of a loop body exits under set -e; it is an 'if' now.\n\n4. --report-on-fatalerror VERIFIED END TO END, not assumed. Accepted inside NODE_OPTIONS on Node 22.22.2; a forced V8 OOM produced report.<date>.<pid>.<tid>.<seq>.json; the redactor rendered event 'Allocation failed - JavaScript heap out of memory', trigger OOMError, heap limit, committed, used, external, rss, peak rss, free and total memory, cpu seconds and the entry script's basename.\n\n5. THE NO-SECRET-LEAKAGE CLAUSE, TESTED AS AN ATTACK RATHER THAN ASSERTED. A process was aborted with SECRET_TOKEN=hunter2-should-never-appear in its environment. grep finds the value once in the raw diagnostic report and ZERO times in the rendered summary. The raw report is never printed and never uploaded.\n\nWHAT IS NOT CLAIMED. No GitHub runner has executed any of this. Whether 'Record the machine' and 'Why this job failed' render correctly in GitHub's own summary viewer is unverified until a run happens, and whether the exit-134 abort produces a V8 report at all is exactly the open question -- if it does not, the step says so, which is itself the next piece of evidence."
         }
       },
-      "updatedAt": "2026-10-02T17:07:53.077Z",
+      "updatedAt": "2026-10-02T17:22:47.936Z",
       "implementationAgent": "claude-lead",
       "implementationBaseSha": "4ce4d9132ffbeb3bac01e17d0d9c3beb4374f33e"
     }

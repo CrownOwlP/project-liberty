@@ -45,7 +45,9 @@
  * bundle-weight defect `@liberty/media-engine/scheduling` was split to avoid.
  * ---------------------------------------------------------------------- */
 
+import type { AudioRole } from "@liberty/contracts/domains/audio";
 import type { CompatibilityConfidence } from "@liberty/contracts/domains/playback";
+import type { SubtitleFormat, SubtitleKind } from "@liberty/contracts/domains/subtitles";
 import type { ContentProtection } from "@liberty/contracts/shared/drm";
 
 /** Which implementation. An identity for the reason trail, never a switch. */
@@ -187,6 +189,39 @@ export interface PlayerTimeline {
 
 export type PlayerTrackKind = "audio" | "subtitle";
 
+/* ---------------------------------------------------------------------------
+ * THE THREE POLICY-RELEVANT FIELDS, ADDED BY PW-0206
+ * ---------------------------------------------------------------------------
+ *
+ * They are the CONTRACT's own types, imported, not re-declared. The selection
+ * policy in `@liberty/media-engine` consumes `AudioTrack.role`,
+ * `SubtitleTrack.kind` and `SubtitleTrack.format`, and a second enum here
+ * spelling the same values would be a second vocabulary for one thing -- which
+ * is what "one normalised track vocabulary that both adapters answer in" is
+ * written to prevent. If the contract gains a role, this boundary gains it in
+ * the same commit or stops compiling, which is the intended coupling.
+ *
+ * WHY THEY WERE MISSING AND WHY THAT MATTERED. Until PW-0206 this interface
+ * carried `isDefault` and `isForced` and nothing else about what a track is
+ * FOR, and the loss was concentrated in exactly the accessibility fields:
+ *
+ *   - with no `role`, a bridge into the audio policy had to invent one, and
+ *     the only plausible invention ("main") is the one that makes a COMMENTARY
+ *     track automatically selectable. `AUTO_SELECTABLE_ROLES` exists to stop
+ *     precisely that.
+ *   - with only a forced boolean, `sdh` was unrepresentable -- and
+ *     `subtitles.ts` records that SDH is "frequently the ONLY subtitle track a
+ *     title ships in a given language, so it must remain automatically
+ *     selectable for everyone".
+ *   - with no `format`, a device that cannot render TTML could not reject a
+ *     TTML track, and a subtitle format the renderer does not understand fails
+ *     SILENTLY.
+ *
+ * EVERY ONE IS NULLABLE AND NULL MEANS "THE ENGINE DID NOT STATE IT". Never a
+ * default, never inferred from a label -- the same rule `language` already
+ * states one field above. A track the engine under-described is a track the
+ * policy must decline to decide about, not one it decides about wrongly.
+ */
 export interface PlayerTrack {
   readonly id: string;
   readonly kind: PlayerTrackKind;
@@ -197,6 +232,23 @@ export interface PlayerTrack {
   readonly channels: number | null;
   readonly isDefault: boolean;
   readonly isForced: boolean;
+  /**
+   * AUDIO ONLY. `null` on a subtitle track, and `null` on an audio track whose
+   * engine named no role.
+   */
+  readonly audioRole: AudioRole | null;
+  /**
+   * SUBTITLE ONLY, and the authoritative statement of what the track is for.
+   *
+   * `isForced` above is kept because callers already read it and because it is
+   * the one property an engine states even when it says nothing else. The two
+   * must agree: `subtitleKind === "forced"` exactly when `isForced` is true,
+   * for any track whose kind is known. An adapter that disagrees with itself
+   * is a defect, and each adapter's suite asserts it rather than trusting it.
+   */
+  readonly subtitleKind: SubtitleKind | null;
+  /** SUBTITLE ONLY. The timed-text format, where the engine named a renderable one. */
+  readonly textFormat: SubtitleFormat | null;
 }
 
 export type PlayerErrorSeverity = "recoverable" | "fatal";
