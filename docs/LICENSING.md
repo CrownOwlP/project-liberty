@@ -233,7 +233,7 @@ turns a decoder off on the strength of a guess.
 
 ---
 
-## 7. What this document specifies and this round did not build
+## 7. The installer's obligations: what ships, and what does not
 
 The LGPL's **written offer** and **attribution** obligations have to be
 satisfied by something the user receives, not by a file in a repository. §9 is
@@ -250,15 +250,48 @@ the installer must carry:
   and meson options in §2 are part of "corresponding source", not commentary
   on it.
 
-**None of that was written this round, and the reason is a surface boundary
-rather than a judgement.** All of it lives under `apps/desktop/**`, which is
-PW-0208's write surface and is simultaneously a **reviewDependency of
-PW-0503**, which is in REVIEW. `approve` fingerprints `allowedPaths ∪
-reviewDependencies`, so a write there would make gpt-architect's approval of
-PW-0503 stale before it was given — the failure that cost PW-0304 two rounds.
-Recorded as `board.sequencing_finding`; the work resumes when PW-0503 leaves
-REVIEW, and PW-0208 stays `IN_PROGRESS` rather than being split into a partial
-`DONE`.
+### What the installer carries as of round 105
+
+The **attribution** half is built and ships. `apps/desktop/scripts/notices.mjs`
+decides, `collect-notices.mjs` walks the packaged tree, and
+`package-sidecar.mjs` calls it at the end of every package — so the document
+is generated from the tree that was just laid out, by the thing that laid it
+out, rather than by a second place that has to agree about the layout.
+
+It writes `THIRD-PARTY-NOTICES.md` **into the packaged sidecar directory**,
+which `tauri.conf.json` already carries wholesale as a bundle resource
+(`"../sidecar/": "sidecar/"`). So the obligation reaches the installed machine
+with **no packaging-configuration change** — which matters, because the
+Windows packaging job is the only green signal this project has and an
+unproven resource glob is a poor way to spend it.
+
+**It never reduces a package to one string.** The declaration and the shipped
+licence text are recorded as separate facts and classified against each other
+— `declared-and-shipped`, `declared-only`, `shipped-only`, `neither` — because
+§5's warning is that the two can disagree. Packages with **no evidence at all**
+get their own heading rather than a table row, so they cannot be skimmed past.
+The written offer is stated, together with the fact that **nothing shipped
+today is LGPL**: the component that will carry that obligation is specified
+here and not yet built, and an offer added at the same moment as the binary is
+an offer nobody checked.
+
+`--strict` turns the no-evidence list into a non-zero exit and is
+**deliberately not armed**. Arming it from a Linux session would be deciding
+that a Windows packaging job should start failing on a list nobody has read.
+The first packaging run prints the list; arming the gate is the next decision,
+with the list in hand.
+
+### What is still missing
+
+The **in-application "Third-party licences" view**, reachable without a
+network connection. That lives under `apps/web/src/app/**`, which is not
+PW-0208's write surface, and it is the half a viewer actually sees. The
+document above satisfies the obligation to accompany the binary; it does not
+satisfy the obligation to be findable by the person using it.
+
+PW-0208 therefore stays `IN_PROGRESS`, and the reason is the patent boundary
+in §6 rather than this: the build recipe cannot be exercised, and must not be,
+until the H.264/HEVC decision is made.
 
 ---
 
@@ -269,11 +302,26 @@ files; the exclusion lists, quoted from `LICENSE.md` and `Copyright`; the
 version pins against the projects' release pages; the patent programmes'
 published scope and rates against the licensors' own pages.
 
-**UNVERIFIED, and not claimed:** no build was produced. This container's Rust
-and C toolchains target `x86_64-unknown-linux-gnu`; no Windows `libmpv-2.dll`
-was compiled, no configure line was executed, and the assertion in §5.3 has
-never run. Every statement about *what our build emits* is a specification of
-what it must emit, not a measurement of what it did.
+**UNVERIFIED, and not claimed:** no libmpv or FFmpeg build was produced. This
+container's Rust and C toolchains target `x86_64-unknown-linux-gnu`; no
+Windows `libmpv-2.dll` was compiled, no configure line was executed, and the
+assertion in §5.3 has never run. Every statement about *what our build emits*
+is a specification of what it must emit, not a measurement of what it did.
+
+**Also unverified:** the notices generator described in §7 has never run
+against a real packaged tree, because packaging happens on Windows. Its
+decisions are covered by 17 cases in `apps/desktop/scripts/notices.test.mjs`
+and it was exercised end-to-end against a synthetic tree — scoped packages,
+the legacy `{ type }` manifest shape, a `LICENSE-MIT` file, a package with no
+evidence, and `--strict` exiting 1. What the real dependency tree will say is
+a thing the first Windows packaging run prints and nobody here can predict.
+
+**And nothing runs that test suite automatically.** `apps/desktop` has no
+`package.json`, so it is not an npm workspace and turbo never reaches it, and
+`npm run test:scripts` lives in the root `package.json`, outside this task's
+write surface. The same gap applies to `scripts/windows/test-lifecycle.mjs`'s
+CI step. Both are named in the round handoff as one finding rather than worked
+around twice.
 
 ---
 

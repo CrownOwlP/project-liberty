@@ -31,6 +31,7 @@
  * without it, and PW-0501 -- which owns the Windows CI job -- is where the
  * runner supplies it.
  * ---------------------------------------------------------------------- */
+import { spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -427,6 +428,38 @@ for (const required of [
 ]) {
   const path = join(sidecarDir, required);
   if (!existsSync(path)) fail(`packaging produced no ${required} at ${path}`);
+}
+
+/*
+ * THE THIRD-PARTY NOTICES, GENERATED FROM THE TREE THAT WAS JUST LAID OUT
+ * (PW-0208).
+ *
+ * HERE RATHER THAN IN THE WORKFLOW, for the reason this file exists at all:
+ * the thing that knows what was packaged is the thing that packaged it. A
+ * step in `.github/workflows/windows.yml` would be a second place that has
+ * to agree about the layout, and this repository has been bitten three times
+ * in four rounds by exactly that -- `verify-install.mjs`'s header lists them.
+ *
+ * AFTER the assertions above, so the notices describe a tree that passed
+ * them, and it writes INTO `sidecarDir`, which `tauri.conf.json` already
+ * carries wholesale as a bundle resource -- so the obligation reaches the
+ * installed machine with no packaging-configuration change. `docs/LICENSING.md`
+ * §7: it has to be satisfied by something the user receives, not by a file in
+ * a repository.
+ *
+ * NOT FATAL. `collect-notices.mjs --strict` exits non-zero when a shipped
+ * package neither declares a licence nor carries one; it is not passed here,
+ * deliberately, because arming that gate from a Linux session would be
+ * deciding that a Windows packaging job should start failing on a list
+ * nobody has read yet. The list is printed and written into the document;
+ * arming it is the next decision, with the list in hand.
+ */
+const notices = spawnSync(process.execPath, [join(here, "collect-notices.mjs"), sidecarDir], {
+  encoding: "utf8"
+});
+process.stdout.write(notices.stdout ?? "");
+if (notices.status !== 0) {
+  fail(`collect-notices failed with ${String(notices.status)}: ${(notices.stderr ?? "").slice(0, 500)}`);
 }
 
 console.log(`package-sidecar: laid out ${sidecarDir}`);
