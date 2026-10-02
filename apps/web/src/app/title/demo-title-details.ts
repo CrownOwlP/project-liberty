@@ -142,28 +142,107 @@ function extrasFor(contentId: string): DemoDetailExtras {
 const UNDECLARED_RIGHTS_EPISODE_IDS: ReadonlySet<string> = new Set(["harbor-lights-s1e6"]);
 
 /**
+ * How a series' episodes are divided into seasons.
+ *
+ * ==========================================================================
+ * WHY A SERIES HERE HAS TWO SEASONS, AND WHY IT IS A FIXTURE CHANGE
+ * ==========================================================================
+ *
+ * PW-0307 built a season selector, per-episode progress and a cross-season
+ * `resolveNextEpisode`. Three rounds of handoffs then had to repeat the same
+ * sentence: EVERY DEMO SERIES HAS EXACTLY ONE SEASON. So the selector had
+ * never rendered a second tab in any running build, and the branch of
+ * `resolveNextEpisode` that walks from the last episode of one season to the
+ * first of the next was reachable only from hand-built unit fixtures. A
+ * feature whose central case no browser can reach is not finished, and the
+ * gap was in the data rather than in the code.
+ *
+ * `northstar` therefore has two. `harbor-lights` deliberately keeps one, for
+ * two reasons: a single-season series is the ordinary case and the flat-stack
+ * fallback must stay exercised, and `harbor-lights-s1e6` is the
+ * undeclared-rights fixture — re-numbering it into a second season would
+ * change its id and quietly retire the only running exercise of the
+ * rights-withheld path.
+ *
+ * ==========================================================================
+ * THE INVARIANT THIS MUST NOT BREAK
+ * ==========================================================================
+ *
+ * `demoEpisodes` is generated from `episodeCount` precisely so "the detail
+ * page can never show a different number of episodes than the catalog card
+ * advertises". A season layout is a way of DIVIDING that count, never of
+ * changing it: `assertCoversEpisodeCount` below fails the module at import
+ * time if a layout's seasons do not sum to the series' own count, so the two
+ * cannot drift apart silently the way a hand-listed episode array would.
+ */
+const SEASON_LAYOUTS: Readonly<Record<string, readonly number[]>> = {
+  /* Eight episodes, five then three. Uneven on purpose: equal halves would
+   * let an off-by-one in a season boundary pass both ways. */
+  northstar: [5, 3]
+};
+
+/** The layout for a series, defaulting to the single season every one had. */
+function seasonLayout(series: SeriesCatalogItem): readonly number[] {
+  const declared = SEASON_LAYOUTS[series.id];
+  if (declared === undefined) return [series.episodeCount];
+  assertCoversEpisodeCount(series, declared);
+  return declared;
+}
+
+function assertCoversEpisodeCount(series: SeriesCatalogItem, layout: readonly number[]): void {
+  const total = layout.reduce((sum, count) => sum + count, 0);
+  if (total !== series.episodeCount) {
+    /*
+     * THROWN, NOT LOGGED. A catalog card that advertises eight episodes beside
+     * a detail page that lists seven is the exact drift the generated-episode
+     * design exists to prevent, and it is invisible in a diff. Failing loudly
+     * is the only version of this check worth having.
+     */
+    throw new Error(
+      `the season layout for "${series.id}" covers ${String(total)} episodes but its catalog ` +
+        `entry advertises ${String(series.episodeCount)}. A layout divides the count; it does ` +
+        `not change it.`
+    );
+  }
+}
+
+/**
  * Deterministic episode fixtures for a series.
  *
  * Generated from `episodeCount` rather than hand-listed so the detail page can
  * never show a different number of episodes than the catalog card advertises.
- * Every derived value is a pure function of the episode number: no randomness,
- * no `Date.now()`, so two renders of the same series are byte-identical.
+ * Every derived value is a pure function of the season and episode numbers: no
+ * randomness, no `Date.now()`, so two renders of the same series are
+ * byte-identical.
+ *
+ * THE RUNTIME STILL VARIES ACROSS THE WHOLE SERIES, not within a season. It is
+ * derived from the episode's ORDINAL POSITION in the series rather than from
+ * its number within its season, so season 2 episode 1 does not have the same
+ * runtime as season 1 episode 1 — which would look like a copied row rather
+ * than like data.
  */
 function demoEpisodes(series: SeriesCatalogItem): TitleEpisodeSummary[] {
-  return Array.from({ length: series.episodeCount }, (_, index) => {
-    const episodeNumber = index + 1;
-    const id = `${series.id}-s1e${episodeNumber}`;
+  const episodes: TitleEpisodeSummary[] = [];
+  let ordinal = 0;
 
-    return {
-      id,
-      title: `Episode ${episodeNumber}`,
-      seasonNumber: 1,
-      episodeNumber,
-      runtimeMinutes: 42 + ((episodeNumber * 7) % 11),
-      synopsis: null,
-      rights: UNDECLARED_RIGHTS_EPISODE_IDS.has(id) ? null : series.rights
-    };
+  seasonLayout(series).forEach((count, seasonIndex) => {
+    const seasonNumber = seasonIndex + 1;
+    for (let episodeNumber = 1; episodeNumber <= count; episodeNumber += 1) {
+      ordinal += 1;
+      const id = `${series.id}-s${String(seasonNumber)}e${String(episodeNumber)}`;
+      episodes.push({
+        id,
+        title: `Episode ${String(episodeNumber)}`,
+        seasonNumber,
+        episodeNumber,
+        runtimeMinutes: 42 + ((ordinal * 7) % 11),
+        synopsis: null,
+        rights: UNDECLARED_RIGHTS_EPISODE_IDS.has(id) ? null : series.rights
+      });
+    }
   });
+
+  return episodes;
 }
 
 function buildSeriesDetail(series: SeriesCatalogItem): TitleDetail {

@@ -20,6 +20,7 @@ import {
   findDemoTitleDetail
 } from "./demo-title-details";
 import { loadTitleDetail } from "./title-detail";
+import { resolveNextEpisode } from "../../lib/next-episode";
 
 /* -------------------------------------------------------------------------
  * The title surface's deployment refusal
@@ -389,5 +390,108 @@ describe("findDemoTitleDetail on a deployment with a real source configured", ()
       status: "error",
       reason: "catalog_source_not_configured"
     });
+  });
+});
+
+describe("the demo catalog can finally exercise a second season (PW-0307)", () => {
+  /* -----------------------------------------------------------------------
+   * WHY THESE ASSERTIONS ARE ABOUT A FIXTURE AND NOT ABOUT CODE.
+   *
+   * PW-0307 shipped a season selector, per-episode progress and a
+   * cross-season `resolveNextEpisode`, and three rounds of handoffs then had
+   * to carry the same sentence: every demo series had exactly one season. So
+   * the selector had never drawn a second tab in any running build, and the
+   * branch of `resolveNextEpisode` that walks from the last episode of one
+   * season to the first of the next was reachable only from fixtures a test
+   * had built for itself. A unit test that constructs the condition it
+   * verifies proves the function; it does not prove the product can get
+   * there.
+   *
+   * These run the real decision over the REAL catalog, which is the thing
+   * that was missing.
+   * -------------------------------------------------------------------- */
+
+  async function northstar() {
+    const detail = await findDemoTitleDetail("northstar", TEST_RUNTIME);
+    if (detail === null || detail.kind !== "series") {
+      throw new Error("northstar should be a series in the demo catalog");
+    }
+    return detail;
+  }
+
+  it("northstar has two seasons, and they still add up to its advertised count", async () => {
+    const detail = await northstar();
+    const seasons = [...new Set(detail.episodes.map((episode) => episode.seasonNumber))];
+
+    expect(seasons).toEqual([1, 2]);
+    /* The invariant the generated-episode design exists for: a layout divides
+     * the count, it does not change it. */
+    expect(detail.episodes).toHaveLength(8);
+    expect(detail.episodes.filter((episode) => episode.seasonNumber === 1)).toHaveLength(5);
+    expect(detail.episodes.filter((episode) => episode.seasonNumber === 2)).toHaveLength(3);
+  });
+
+  it("numbers episodes within their season, and says so in the id", async () => {
+    const detail = await northstar();
+    const second = detail.episodes.filter((episode) => episode.seasonNumber === 2);
+
+    expect(second.map((episode) => episode.episodeNumber)).toEqual([1, 2, 3]);
+    expect(second.map((episode) => episode.id)).toEqual([
+      "northstar-s2e1",
+      "northstar-s2e2",
+      "northstar-s2e3"
+    ]);
+  });
+
+  it("gives every episode a distinct id and runtime that does not repeat per season", async () => {
+    /* Runtime is derived from the ordinal position in the SERIES, not from the
+     * number within the season -- otherwise season 2 episode 1 would be a
+     * byte-for-byte copy of season 1 episode 1, which reads as a bug. */
+    const detail = await northstar();
+    const ids = detail.episodes.map((episode) => episode.id);
+    expect(new Set(ids).size).toBe(ids.length);
+
+    const s1e1 = detail.episodes.find((episode) => episode.id === "northstar-s1e1");
+    const s2e1 = detail.episodes.find((episode) => episode.id === "northstar-s2e1");
+    expect(s1e1?.runtimeMinutes).not.toBe(s2e1?.runtimeMinutes);
+  });
+
+  it("CROSSES THE SEASON BOUNDARY, on the catalog the application actually serves", async () => {
+    const detail = await northstar();
+    const next = resolveNextEpisode(detail.episodes, "northstar-s1e5");
+
+    expect(next.kind).toBe("next");
+    if (next.kind !== "next") return;
+    expect(next.episode.id).toBe("northstar-s2e1");
+    expect(next.episode.seasonNumber).toBe(2);
+  });
+
+  it("still ends the series rather than wrapping round to season 1", async () => {
+    /* NON-VACUITY FOR THE CASE ABOVE. A `resolveNextEpisode` that simply
+     * returned the first unplayed episode would pass it and fail this. */
+    const detail = await northstar();
+    const next = resolveNextEpisode(detail.episodes, "northstar-s2e3");
+
+    expect(next.kind).toBe("none");
+    if (next.kind !== "none") return;
+    expect(next.reason).toBe("no_later_episode");
+  });
+
+  it("leaves harbor-lights single-season, and its undeclared-rights episode intact", async () => {
+    /*
+     * DELIBERATELY NOT CONVERTED. The flat-stack fallback -- what the page
+     * renders before hydration and for a series with one season -- has to
+     * stay exercised by a real series. And `harbor-lights-s1e6` is the only
+     * running exercise of the rights-withheld path: renumbering it into a
+     * second season would change its id and quietly retire that.
+     */
+    const detail = await findDemoTitleDetail("harbor-lights", TEST_RUNTIME);
+    if (detail === null || detail.kind !== "series") throw new Error("harbor-lights is a series");
+
+    expect([...new Set(detail.episodes.map((episode) => episode.seasonNumber))]).toEqual([1]);
+
+    const withheld = detail.episodes.find((episode) => episode.id === "harbor-lights-s1e6");
+    expect(withheld, "the undeclared-rights fixture must still exist under this id").toBeDefined();
+    expect(withheld?.rights).toBeNull();
   });
 });
