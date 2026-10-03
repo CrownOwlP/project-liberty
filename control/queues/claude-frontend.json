@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-03T14:27:12.835Z",
+  "generatedAt": "2026-10-03T15:16:44.189Z",
   "agent": "claude-frontend",
   "executionAvailable": true,
   "assigned": [
@@ -7,7 +7,7 @@
       "id": "PW-0307",
       "priority": "P1",
       "lane": "Frontend",
-      "status": "IN_PROGRESS",
+      "status": "REVIEW",
       "title": "Series navigation and the next episode",
       "dependencies": [
         "PW-0301",
@@ -25,12 +25,16 @@
         "apps/web/src/lib/episode-progress.test.ts",
         "apps/web/src/app/title/demo-title-details.ts",
         "apps/web/src/app/title/demo-title-details.test.ts",
-        "e2e/tests/series-navigation.spec.ts"
+        "e2e/tests/series-navigation.spec.ts",
+        "apps/web/src/components/player/player-surface.tsx",
+        "apps/web/src/components/title/next-episode-prompt.tsx",
+        "apps/web/src/components/title/next-episode-prompt.test.tsx",
+        "apps/web/src/components/title/next-episode-prompt.module.css",
+        "apps/web/src/app/watch/[contentId]/page.tsx"
       ],
       "reviewDependencies": [
         "packages/contracts/src/domains/title.ts",
         "apps/web/src/app/title/title-detail.ts",
-        "apps/web/src/components/player/player-surface.tsx",
         "apps/web/src/app/title/[titleId]/page.tsx"
       ],
       "preferredAgent": "claude-frontend",
@@ -41,37 +45,103 @@
         "e2e"
       ],
       "acceptance": "A viewer can move through a series without going back to the catalog. Today every season of a series renders as one flat stack on the title page, with no season selector, no per-episode progress and no way to reach the next episode. REQUIRED: season navigation that does not lose the viewer's place. REQUIRED: per-episode watched and in-progress state from the progress API. REQUIRED: a next-episode affordance at the end of playback, honouring the SAME per-episode rights gate the episode list already applies -- an autoplay that skips the rights check would be the rights breach PL-0703 was opened for, in a new place. REQUIRED: the next-episode selection rule is a pure function with its own tests, not logic inside a component, because 'what plays next' is exactly the kind of decision this project requires to be reconstructible.",
-      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. ",
+      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. \n\nROUND 109 SURFACE AMENDMENT, recorded as an event before any write: player-surface.tsx and app/watch/[contentId]/page.tsx move from reviewDependencies to allowedPaths, and three new components/title/next-episode-prompt.* files are named. The last unmet clause is the affordance AT THE END OF PLAYBACK, which only the player can know about and only the server can gate. PW-0306 owned player-surface.tsx and is DONE as of this round, so the surface is free. components/player/controls/** was deliberately NOT taken: the prompt is not a control and the controls must not learn what a series is.",
       "owner": "claude-frontend",
       "gateResults": {
         "typecheck": {
           "status": "pass",
-          "at": "2026-10-02T13:01:27.950Z",
+          "at": "2026-10-03T15:15:43.295Z",
           "by": "claude-frontend",
-          "commitSha": "5dad6d3575f990a650600256096ead7334913435",
-          "evidence": "Re-recorded at 5dad6d3575f990a650600256096ead7334913435, superseding the aa80fac evidence: this round changed demo-title-details.ts and added an e2e spec, so the earlier result describes a tree that no longer exists. npx tsc --noEmit in apps/web: exit 0. cd e2e && npx tsc --noEmit: exit 0, which matters because series-navigation.spec.ts is new and imports DEMO from src/fixtures rather than src/env -- the compiler caught that on the first attempt."
+          "commitSha": "4f23c1d4d78d12ee49c69fb6f08c6acd73b5cc3e",
+          "evidence": "npx tsc --noEmit -p apps/web/tsconfig.json: clean. npm run typecheck: 22 tasks successful. e2e/ tsc --noEmit: clean. npm run lint: 12 tasks, 0 errors; the one warning is a pre-existing unused import in apps/web/src/lib/db/in-memory-repository.test.ts, not on this surface.\n\nA DETOUR WORTH RECORDING BECAUSE IT COST TIME TWICE: tsc failed mid-round on three syntax errors in apps/web/dist/desktop/dev/types/validator.ts -- GENERATED, gitignored build output, truncated mid-write by an interrupted build. apps/web/tsconfig.json includes **/*.ts and excludes only node_modules, so a half-written artifact breaks the typecheck of the whole repository. Not this task's surface; filed as PL-0718."
         },
         "unit": {
           "status": "pass",
-          "at": "2026-10-02T13:01:37.195Z",
+          "at": "2026-10-03T15:15:43.456Z",
           "by": "claude-frontend",
-          "commitSha": "5dad6d3575f990a650600256096ead7334913435",
-          "evidence": "npx vitest run in apps/web at 5dad6d3575f990a650600256096ead7334913435: 84 files / 1494 tests, exit 0. Six new cases in demo-title-details.test.ts run the REAL decision over the REAL catalog rather than over fixtures the test built for itself -- northstar has two seasons that still sum to its advertised episodeCount, episodes are numbered within their season, runtime is derived from the ordinal in the series so season 2 episode 1 is not a byte copy of season 1 episode 1, resolveNextEpisode crosses the boundary from northstar-s1e5 to northstar-s2e1, it ends the series at northstar-s2e3 rather than wrapping, and harbor-lights stays single-season with harbor-lights-s1e6's rights still null. NON-VACUITY, each reverted after measuring: collapsing northstar's layout back to [8] fails 4 of the 6; a layout of [5,2] fails all of them with the invariant's own message, 'the season layout for northstar covers 7 episodes but its catalog entry advertises 8'. lint: 0 errors (1 pre-existing warning in PW-0313's surface, untouched)."
+          "commitSha": "4f23c1d4d78d12ee49c69fb6f08c6acd73b5cc3e",
+          "evidence": "npm run test: 22 tasks successful, 22 total. apps/web 1614 tests passed, up from 1597 -- 17 new, 0 failed.\n\nTHE LAST CLAUSE, WHICH IS WHAT THIS ROUND ADDED: \"a next-episode affordance at the end of playback, honouring the SAME per-episode rights gate the episode list already applies -- an autoplay that skips the rights check would be the rights breach PL-0703 was opened for, in a new place.\"\n\nTHE GATE IS THE SAME GATE AND IS NEVER RESTATED. The chain is one line of imports: the watch page calls nextUpFor, which calls resolveNextEpisode, which calls resolvePlayAvailability -- the function episode-list.tsx applies to every row. The href the client receives is the one that function returned. There is no string concatenation anywhere on the path.\n\nAND THAT IS CHECKED MECHANICALLY RATHER THAN BY INTENTION, in two places, because a mutation proved an assertion about VALUES cannot do it. Replacing `href: next.href` with a template literal building `/watch/${id}` PASSED ALL TWENTY behavioural tests -- and it has to, since resolvePlayAvailability builds exactly that string, so the honest answer and the forged one are identical for every episode a fixture can describe. The difference is only visible in the source. Both next-episode.ts and next-episode-prompt.tsx are now parsed with their comments stripped and asserted to contain no \"/watch\" literal and no watchHref call. With that guard in place the mutation fails.\n\n17 NEW TESTS.\n  next-episode.test.ts, 6 new (20 -> 21 including the source guard): the projection carries the gate's own href; it counts refused episodes instead of naming them; it answers null for all three absences, which is one screen and not a taxonomy; it carries no rights basis, synopsis or artwork across the server/client boundary; and the source guard above.\n  next-episode-prompt.test.tsx, 11 new: what it says, what it refuses to say about WHY episodes were skipped, the address, that it is a link and not a button, that it is a named region and NOT an alert, and two source-level guards -- no path construction, and no setTimeout/setInterval/router.push, because the acceptance forbids an autoplay and this component autoplays nothing at all.\n\nMUTATION-TESTED: three mutations on the projection, two caught behaviourally (always-zero skip count; returning a projection when the gate refused everything) and the third -- building the href -- only caught after the source guard was added, which is why the guard exists.\n\nNOTHING IN THE EXISTING CLAUSES MOVED. Season navigation, the episodeCount invariant that throws at import, per-episode progress and the pure next-episode rule are untouched; their tests are among the 1614."
         },
         "e2e": {
           "status": "pass",
-          "at": "2026-10-02T13:01:51.755Z",
+          "at": "2026-10-03T15:16:01.839Z",
           "by": "claude-frontend",
-          "commitSha": "5dad6d3575f990a650600256096ead7334913435",
-          "evidence": "Playwright 1.62.1, chromium revision 1234, retries 0, at 5dad6d3575f990a650600256096ead7334913435. THE FIRST BROWSER COVERAGE THIS TASK HAS EVER HAD, and the reason it could not exist before is recorded in the spec: every demo series had one season, so a tab strip with one tab was all any build could show. e2e/tests/series-navigation.spec.ts, 6 cases, 18/18 over --repeat-each=3 in development. It proves two tabs, different episodes behind each (5 and 3, summing to the advertised 8), mouse switching both ways, and the keyboard -- roving tabindex, ArrowRight, Home and End with automatic activation, which is the first keyboard interaction in this application with a test behind it. Two assertions are about absence: a one-season series gets NO tablist rather than a hidden one, and the closed season is absent from the ACCESSIBILITY TREE, which is what distinguishes hidden from styling a panel away. WHOLE PROJECTS, three configurations, all exit 0: development chromium+api 93 passed / 14 skipped; production no database 61 passed / 46 skipped; production + real PostgreSQL 16.15 at postgres://postgres@127.0.0.1:5433/lib_wl, 8 tables asserted, 76 passed / 31 skipped. series-navigation skips outside development because those builds serve no catalog metadata, which is the existing convention and the reason the skip count rises. THREE CORRECTIONS THE BROWSER MADE, every one of them the test being wrong rather than the product: getByRole does not see a hidden subtree; a single-season series renders the flat stack and has no season-panel testid at all; and a bare link count gave 11 for 6 episodes because each card carries a title link, so play affordances are counted by accessible name. WHAT THIS GATE DOES NOT COVER: clause 3, the end-of-playback next-episode affordance, is UNBUILT -- it lives in player-surface.tsx, which the round-103 ruling puts out of bounds until PW-0306 completes. PW-0307 stays IN_PROGRESS. UNVERIFIED: Linux chromium in a container; no Windows runtime, no WebView2, no attended GUI behaviour is claimed."
+          "commitSha": "4f23c1d4d78d12ee49c69fb6f08c6acd73b5cc3e",
+          "evidence": "Development, full chromium+api suite: 108 passed / 15 skipped / 0 failed, up from 103 passed -- the five new cases are the end-of-playback clause. Production + real PostgreSQL 16, cold database, --workers=4: 77 passed / 46 skipped / 0 failed; the five skip there with their reason named, because /watch refuses before a player exists on a build with no catalog source.\n\nHOW THE END OF PLAYBACK IS REACHED IN A BROWSER, AND EXACTLY WHAT IS SIMULATED. No real media decodes in this harness -- the demo catalog's sources are fixtures -- so nothing can play a programme to its end. What the test dispatches is the `ended` EVENT ON THE REAL <liberty-video> ELEMENT, which is the event a real ending fires. Everything downstream is the product and none of it is stubbed: WebPlayerAdapter's own listener, its `ended` adapter event, the machine's MEDIA_ENDED, the transition into the `ended` phase, and player-surface rendering from that phase. THE ONLY THING FAKED IS THE DECODER. It is dispatched rather than the `ended` property being assigned, because the element's listeners are what the adapter attached to and a property would prove nothing about the wiring.\n\nTHE FIVE CASES.\n  NOTHING IS OFFERED UNTIL THE PROGRAMME ENDS -- and the prompt is asserted absent from the DOCUMENT, not merely invisible. A hidden affordance is still in the accessibility tree, and a screen reader that can find \"Next episode\" mid-programme has been told the ending early.\n  When it ends, S1 E2 is offered AND ONLY OFFERED: the URL is still the episode the viewer was watching. Nothing counts down and nothing navigates.\n  The offer is a LINK with the accessible name \"Play S1 E2\" -- not \"Play\", which is what a screen-reader user meets out of context -- it is focusable, Enter follows it, and it lands on /watch/<next>, the ORDINARY route with the ordinary session request and the ordinary authorization decision. No bespoke play-next path.\n  AT THE END OF THE SERIES, NOTHING IS OFFERED AND NOTHING WRAPS AROUND. A player that wrapped to S1 E1 would fail the deterministic-end clause in the most confusing possible way.\n  A FILM OFFERS NOTHING, because \"next\" is a question about a series.\n\nMUTATION-TESTED IN THE BROWSER, NOT ONLY IN UNIT TESTS. Rendering the prompt regardless of the machine phase: 1 failed. Dropping nextUp on the watch page: 2 failed. Both reverted.\n\nWHAT IS NOT CLAIMED. The ending was dispatched, not decoded. The rights gate's refusal path at this affordance -- an episode whose basis lapses between the page render and the click -- is not exercised here and cannot be: the gate runs on the server at render time, and /watch/:id re-decides on arrival, which is the arrangement that makes the stale case safe rather than a case this spec can stage."
         }
       },
       "implementationAgent": "claude-frontend",
-      "updatedAt": "2026-10-01T02:46:31.897Z",
+      "updatedAt": "2026-10-03T15:16:01.982Z",
       "implementationBaseSha": "13798f8f45556ed233b894f94c6206944167c646"
     }
   ],
   "review": [],
   "reservedExternal": [],
-  "recommended": []
+  "recommended": [
+    {
+      "id": "PW-0310",
+      "priority": "P1",
+      "lane": "Frontend",
+      "status": "READY",
+      "title": "Keyboard, focus and accessibility across the whole application",
+      "dependencies": [
+        "PW-0301",
+        "PW-0306"
+      ],
+      "allowedPaths": [
+        "apps/web/src/lib/a11y/**",
+        "apps/web/src/app/globals.css"
+      ],
+      "reviewDependencies": [
+        "apps/web/src/components",
+        "apps/web/src/app",
+        "docs/PRODUCT_SPEC.md"
+      ],
+      "preferredAgent": "claude-frontend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "e2e",
+        "architecture-review"
+      ],
+      "acceptance": "The application is operable from the keyboard, end to end, and PRODUCT_SPEC.md's principle that 'accessibility, subtitles, and audio correctness are core features' is true of the shipped product rather than of three components. MEASURED STARTING POINT: there are zero keyboard handlers in the non-player UI, no skip link, no focus trap and no focus restoration; the rails are not arrow-key navigable, which is table stakes for a desktop media application. REQUIRED: roving tabindex on rails and grids. REQUIRED: focus restoration on route change and on dialog close. REQUIRED: a visible focus indicator on every interactive element, including those styled by globals.css, which defines none today. REQUIRED: an automated check in the e2e suite that fails when a new interactive element is unreachable by keyboard, because a one-off audit decays and a gate does not. NOT IN SCOPE: a full WCAG certification; the bar here is operability plus a mechanical guard against regression.",
+      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. ",
+      "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PW-0308",
+      "priority": "P2",
+      "lane": "Frontend",
+      "status": "READY",
+      "title": "Settings a viewer can actually change",
+      "dependencies": [
+        "PW-0301",
+        "PW-0306"
+      ],
+      "allowedPaths": [
+        "apps/web/src/app/settings/**",
+        "apps/web/src/components/settings/**"
+      ],
+      "reviewDependencies": [
+        "apps/web/src/app/api/v1/profiles",
+        "apps/web/src/components/player/telemetry-decision.ts",
+        "packages/contracts/src/domains/audio.ts",
+        "packages/contracts/src/domains/subtitles.ts",
+        "docs/SECURITY.md"
+      ],
+      "preferredAgent": "claude-frontend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "e2e"
+      ],
+      "acceptance": "There is a settings screen, and every switch on it changes something real. Neither a screen nor an API exists today. REQUIRED: preferred audio and subtitle languages, persisted per profile and consumed as PW-0206's defaults rather than as a second policy. REQUIRED: a diagnostics and telemetry control that is honest about what it does -- telemetry-decision.ts already reports WHY telemetry is off, and that reasoning belongs in front of the viewer instead of in a details element in the player. REQUIRED: an about section naming the application version and the licences the installer must carry, which is where PW-0208's LGPL attribution obligation is discharged in the product. REQUIRED: no setting weakens a security or rights control; there is no 'allow insecure sources' switch and no way to disable the transport checks.",
+      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. ",
+      "owner": null,
+      "gateResults": {}
+    }
+  ]
 }

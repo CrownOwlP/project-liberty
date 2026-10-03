@@ -8002,7 +8002,7 @@
       "id": "PL-0715",
       "priority": "P1",
       "lane": "Test",
-      "status": "REVIEW",
+      "status": "DONE",
       "title": "The watchlist harness reads a rate-limited sign-UP as a wrong password",
       "dependencies": [],
       "allowedPaths": [
@@ -8021,7 +8021,7 @@
       ],
       "acceptance": "THE OBSERVATION, WHICH IS FACT. CI run 37036128012 at 2c037d54ed834af9dba3c6b12a29c395dee81b9d: the e2e job failed, PRODUCTION mode only, 1 failed / 75 passed / 31 skipped, on 'tests/watchlist.spec.ts:859:7 - the list page, against a real session and a real database - a signed-in viewer with no profile selected is sent to the picker, not to an error'. The annotation is the harness's own message: 'the harness could not sign in as e2e-watchlist-unchosen-0@liberty.invalid: 401 {\"message\":\"Invalid email or password\",\"code\":\"INVALID_EMAIL_OR_PASSWORD\"}'. The DEVELOPMENT run in the same job passed, 93 passed / 14 skipped. The same spec passed in production on the previous run, 37028642916 at 30cef6e, 76 passed / 31 skipped, and nothing between those two commits touches authentication, the harness or the spec -- so it is intermittent rather than a break.\n\nTHE DEFECT IN THE HARNESS, WHICH IS ALSO FACT AND IS VISIBLE IN THE SOURCE REGARDLESS OF WHAT CAUSED THIS RUN. `signIn` in that file POSTs /api/auth/sign-up/email with failOnStatusCode: false and never looks at the response -- the comment says the sign-in is what decides, 'because a session is what the caller asked for and an account is only the way to get one'. It then retries the SIGN-IN on 429 up to four times and on nothing else. So a sign-up that was refused leaves no account, the sign-in that follows correctly answers 401 INVALID_EMAIL_OR_PASSWORD because better-auth does not distinguish an unknown user from a wrong password, and the harness reports a credential failure for an account that was never created. The retry loop makes this worse rather than better: it waits out a rate-limit window and then re-asks a question whose answer cannot change.\nREQUIRED: a sign-up that fails is OBSERVED and reported as itself. A 401 must not be the error text for 'the account does not exist'.\nREQUIRED: whatever retry the sign-up is given is the same client-correctness retry the sign-in already has -- obeying a 429 and its retry-after. playwright.config.ts's rule stands: no ASSERTION is retried, retries stay 0, and the fix must not be `retries: 1` on the project.\nREQUIRED: the diagnosis is CONFIRMED before the repair is called a repair. The hypothesis in the notes is a hypothesis.\nREQUIRED: the repair is demonstrated against the production + real PostgreSQL configuration, which is the only one that failed; a development-mode pass proves nothing here, because that is the configuration that was already green.\n\nOUT OF SCOPE AND MUST NOT BE DONE: deleting or skipping the test, relaxing its assertion, serialising the project, raising a timeout, or changing the application's authentication configuration to make the harness's traffic acceptable. The product's rate limiting is a security property; a test harness that trips it is the harness's problem.",
       "notes": "FILED IN ROUND 107 from CI run 37036128012. NOT CAUSED BY THIS ROUND'S WORK: the delta from the last green e2e is one apps/desktop packaging script, two coordination documents and control-plane state.\n\nTHE LEADING HYPOTHESIS, LABELLED AS ONE BECAUSE IT HAS NOT BEEN CONFIRMED. packages/auth/src/better-auth.ts passes no `rateLimit` option, so better-auth's default applies -- and that default is ENABLED IN PRODUCTION AND DISABLED IN DEVELOPMENT, which is exactly the split this failure shows. If the per-path default on the sign-up endpoint is short-windowed, several Playwright workers establishing sessions in parallel would exceed it, the refused sign-up would be swallowed by the code above, and the sign-in would answer 401. That fits every observed fact and is still a guess: nobody has watched the sign-up endpoint return 429 under this harness. Confirm it by observation before building on it, and if it is wrong, say so and file what was actually found.\n\nSHAPE NOTE. This is PL-0713 again in a different costume -- a harness that works at one worker and one machine and reports a product failure when the schedule changes. The lesson PL-0713 recorded applies: the repair is structural isolation, not a retry.\n\nCONFLICTS, BOTH FIELDS BOTH DIRECTIONS, AT FILING. e2e/tests/watchlist.spec.ts is in PW-0304's and PW-0313's allowedPaths and both are DONE; e2e/** was PL-0501's and it is DONE. e2e/src/identity.ts is PW-0312's, DONE. No open task holds any of these in either field. The active tasks at filing are PW-0208 (REVIEW), PW-0602 (IN_PROGRESS) and PL-0714 (IN_PROGRESS), and none names an e2e path.\n\nROUND 108 SURFACE AMENDMENT, recorded as an event before any write: e2e/src/identity.ts moved from reviewDependencies to allowedPaths. The production reproduction at 4 workers failed on HARNESS_ACCOUNT in that file, not on the watchlist slot -- the two carry the identical defect, and repairing only the one CI happened to show would leave the one that actually reproduces.",
-      "owner": "claude-test",
+      "owner": null,
       "gateResults": {
         "typecheck": {
           "status": "pass",
@@ -8038,9 +8038,52 @@
           "evidence": "THE DIAGNOSIS WAS CONFIRMED BEFORE THE REPAIR WAS CALLED A REPAIR, which the acceptance requires, and the confirmation moved the fix.\n\nREAD OUT OF THE INSTALLED LIBRARY. better-auth 1.7.5, dist/context/create-context.mjs line 172: `enabled: options.rateLimit?.enabled ?? isProduction` -- rate limiting is ON in production and OFF in development, which is exactly the split the CI failure showed. dist/api/rate-limiter/index.mjs getDefaultSpecialRules: window 10 seconds, max 3, for any path beginning /sign-in or /sign-up, keyed per IP and path. packages/auth/src/better-auth.ts passes no rateLimit option, so that default is what the application runs.\n\nREPRODUCED, in the configuration the acceptance names as decisive. Production mode, real PostgreSQL 16 on 127.0.0.1:5433 with the repository migration applied, COLD DATABASE so every worker must create its account, --workers=4, full chromium+api suite: 12 failed, and the auth failure is \"the harness could not sign in as e2e-harness-2@liberty.invalid: 401 INVALID_EMAIL_OR_PASSWORD\". A single-worker run of the same suite passes, which is why this was invisible on a two-core machine -- the same thing that hid PL-0713.\n\nTHE REPRODUCTION MOVED THE REPAIR, AND THIS IS THE PART WORTH READING. The failing account is e2e-harness-2, which is src/identity.ts's HARNESS_ACCOUNT -- NOT the watchlist slot CI happened to hit. The two files carry the identical defect line for line. Fixing only the one named in the CI annotation would have left the one that actually reproduces here. The surface was amended to include e2e/src/identity.ts, recorded as an event before the write and conflict-checked in both fields in both directions.\n\nTHE REPAIR, IN BOTH FILES.\n  - SIGN IN FIRST. A database that already has the account costs one request and the burst never happens. This is the change that removes the pressure rather than tolerating it.\n  - The sign-up response is OBSERVED. \"Already exists\" is treated as success -- the account this harness needs is there either way -- and every other refusal throws, naming that the account does not exist so that nothing downstream is about a password.\n  - A 429 is obeyed on BOTH endpoints, honouring X-Retry-After, on the same bounded budget the sign-in already had. SIGN_IN_ATTEMPTS was NOT raised.\n  - Every attempt is logged and the log is in the failure message, so the next occurrence names itself.\n\nTHE REGRESSION RUN, SAME DECISIVE CONFIGURATION. Production mode, real PostgreSQL, cold database, --workers=4, full chromium+api suite: 77 PASSED, 41 skipped, 0 FAILED. No sign-in failure of any kind. Development mode, full suite: 103 passed, 15 skipped, 0 failed.\n\nWHAT WAS NOT DONE, EACH FORBIDDEN BY THE ACCEPTANCE AND NONE OF THEM TEMPTING ONCE THE CAUSE WAS KNOWN: no test deleted or skipped, no assertion relaxed, no project serialised, no timeout raised, no retry count changed -- playwright.config.ts is untouched and `retries` is still 0 -- and NOTHING in the application's rate limiting was configured, relaxed or disabled. Obeying a 429 is correct client behaviour; the file says so at length, and it is the server stating a protocol requirement rather than an assertion being re-evaluated.\n\nA FINDING FOR THE BOARD, NOT FIXED HERE: the application's auth rate limiting is better-auth's UNEXAMINED DEFAULT. Nobody chose 3-per-10-seconds, nobody chose that it is off in development, and docs/SECURITY.md residual risk R2 still says \"No rate limit on any route\". PL-0716 corrected the readiness item to say so precisely; deciding what the limit SHOULD be is a security task that does not exist yet."
         }
       },
-      "updatedAt": "2026-10-03T14:20:27.870Z",
+      "updatedAt": "2026-10-03T14:56:20.386Z",
       "implementationAgent": "claude-test",
-      "implementationBaseSha": "dca6b7fbdc33af18c3be81b2a2d996cebb1fa7bd"
+      "implementationBaseSha": "dca6b7fbdc33af18c3be81b2a2d996cebb1fa7bd",
+      "review": {
+        "taskId": "PL-0715",
+        "implementationAgent": "claude-test",
+        "implementationOwner": "claude-test",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "7ece9dd5461c22d2eb1cb5cb616f816ad2098043",
+        "reviewedBaseSha": "dca6b7fbdc33af18c3be81b2a2d996cebb1fa7bd",
+        "reviewedTreeHash": "ea9f35459765850964d5ce061f6960f96968afaf4823876f4584491ae90239fc",
+        "reviewedFileCount": 4,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [
+          "packages/auth/src/better-auth.ts",
+          "e2e/playwright.config.ts"
+        ],
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-10-03T14:56:20.275Z",
+        "evidence": "APPROVED at 7ece9dd (transcribed by claude-lead from the round-109 commander relay). Fingerprint re-checked before recording: e2e/tests/watchlist.spec.ts and e2e/src/identity.ts are byte-identical between 7ece9dd and the current head 4f23c1d.\n\nThe defect was confirmed rather than guessed. Evidence reviewed: better-auth production rate limiting was read directly from the installed implementation; production enables the default limiter while development does not; /sign-in and /sign-up are subject to the special short-window rule; the failure was reproduced in production mode; real PostgreSQL was used; a cold database was used; 4 workers reproduced the failure; the reproduction showed the same defect exists in BOTH identity helpers, not only the file CI happened to name; both copies were repaired; sign-in is attempted first; a failed sign-up is observed rather than swallowed; a 429 respects the server retry timing; sign-in cannot silently convert failed account creation into a misleading invalid-password diagnosis; assertion retries remain zero; application rate limiting was not weakened; project serialization was not introduced; no timeout was increased; and the production + PostgreSQL regression run completed 77 passed / 41 skipped / 0 failed.\n\nATTACHED TO THIS APPROVAL RATHER THAN BURIED: the verdict separately rules that the auth rate-limit POLICY is now a product and security question of its own -- the behaviour is inherited from better-auth defaults, it differs between production and development, and docs/SECURITY.md still states that no route is rate limited. That is not to be changed inside PL-0715, and a narrowly-scoped security task carries it."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PL-0715",
+          "implementationAgent": "claude-test",
+          "implementationOwner": "claude-test",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "7ece9dd5461c22d2eb1cb5cb616f816ad2098043",
+          "reviewedBaseSha": "dca6b7fbdc33af18c3be81b2a2d996cebb1fa7bd",
+          "reviewedTreeHash": "ea9f35459765850964d5ce061f6960f96968afaf4823876f4584491ae90239fc",
+          "reviewedFileCount": 4,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "packages/auth/src/better-auth.ts",
+            "e2e/playwright.config.ts"
+          ],
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-10-03T14:56:20.275Z",
+          "evidence": "APPROVED at 7ece9dd (transcribed by claude-lead from the round-109 commander relay). Fingerprint re-checked before recording: e2e/tests/watchlist.spec.ts and e2e/src/identity.ts are byte-identical between 7ece9dd and the current head 4f23c1d.\n\nThe defect was confirmed rather than guessed. Evidence reviewed: better-auth production rate limiting was read directly from the installed implementation; production enables the default limiter while development does not; /sign-in and /sign-up are subject to the special short-window rule; the failure was reproduced in production mode; real PostgreSQL was used; a cold database was used; 4 workers reproduced the failure; the reproduction showed the same defect exists in BOTH identity helpers, not only the file CI happened to name; both copies were repaired; sign-in is attempted first; a failed sign-up is observed rather than swallowed; a 429 respects the server retry timing; sign-in cannot silently convert failed account creation into a misleading invalid-password diagnosis; assertion retries remain zero; application rate limiting was not weakened; project serialization was not introduced; no timeout was increased; and the production + PostgreSQL regression run completed 77 passed / 41 skipped / 0 failed.\n\nATTACHED TO THIS APPROVAL RATHER THAN BURIED: the verdict separately rules that the auth rate-limit POLICY is now a product and security question of its own -- the behaviour is inherited from better-auth defaults, it differs between production and development, and docs/SECURITY.md still states that no route is rate limited. That is not to be changed inside PL-0715, and a narrowly-scoped security task carries it."
+        }
+      ],
+      "completedAt": "2026-10-03T14:56:20.386Z"
     },
     {
       "id": "PL-0716",
@@ -8156,6 +8199,34 @@
       "owner": null,
       "gateResults": {},
       "updatedAt": "2026-10-03T14:30:00.000000Z"
+    },
+    {
+      "id": "PL-0718",
+      "priority": "P2",
+      "lane": "Infra",
+      "status": "READY",
+      "title": "npm run typecheck reads generated build output, so a half-written artifact breaks the repository",
+      "dependencies": [],
+      "allowedPaths": [
+        "apps/web/tsconfig.json"
+      ],
+      "reviewDependencies": [
+        "tsconfig.base.json",
+        ".gitignore",
+        "apps/web/next.config.ts",
+        "scripts/desktop-target.mjs",
+        "turbo.json"
+      ],
+      "preferredAgent": "claude-infra",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck"
+      ],
+      "acceptance": "FOUND TWICE IN ONE SESSION, BOTH TIMES THE SAME WAY. apps/web/tsconfig.json has include [\"next-env.d.ts\", \".next/types/**/*.ts\", \"**/*.ts\", \"**/*.tsx\"] and exclude [\"node_modules\"]. `dist/` is GENERATED BUILD OUTPUT and is gitignored, and `**/*.ts` pulls all of it into the typecheck program. In round 109 a desktop build was interrupted and left apps/web/dist/desktop/dev/types/validator.ts truncated mid-write -- `oute.js\")` on its own line -- and `npm run typecheck` then failed the whole repository on three syntax errors in a file nobody wrote, twice, until the directory was deleted by hand.\n\nTHE DEFECT IS NOT THE TRUNCATION. A build can always be interrupted. The defect is that a typecheck of the SOURCE is hostage to the state of the OUTPUT, so a stale or partial artifact presents as a repository that does not compile -- and the error names a path a reader will not recognise, which is the expensive part.\n\nREQUIRED: generated output is outside the typecheck program. `dist` at minimum; weigh `.next` deliberately rather than by reflex, because `.next/types/**/*.ts` is EXPLICITLY INCLUDED on the line above and Next's generated route types are load-bearing for the app's own type safety -- excluding them wholesale would be a real loss and is not what this asks for.\nREQUIRED: the fix is demonstrated against the failure. Write a deliberately broken file into the excluded location and show that typecheck passes; it is the only evidence that distinguishes a fix from a coincidence.\nREQUIRED: nothing that is checked today stops being checked. Enumerate what leaves the program and say why each one is output rather than source.\nREQUIRED: the same question is ASKED of the other workspaces rather than assumed. If another tsconfig has the same shape, say so; fixing one and leaving three is the drift this repository keeps getting bitten by.\n\nOUT OF SCOPE: making the build atomic, or cleaning dist automatically. Both are reasonable and neither is this -- the point is that source typechecking should not depend on output at all.",
+      "notes": "FILED IN ROUND 109 after it cost two debugging detours in one session. apps/web/tsconfig.json was last written by PL-AI-0002, which is DONE; no open task holds it. Conflict-checked in both fields in both directions at filing: the active tasks are PL-0714 (REVIEW, .github/workflows/ci.yml), PW-0208 (REVIEW, apps/desktop/**) and PW-0307 (IN_PROGRESS, named apps/web/src and e2e files); none names any tsconfig in either field.\n\nWHY IT IS P2 AND NOT P1: it never breaks CI, because CI checks out a clean tree and builds once. It breaks the DEVELOPER and this session, repeatedly, which is a real cost but not a release risk.",
+      "owner": null,
+      "gateResults": {},
+      "updatedAt": "2026-10-03T15:10:00.000000Z"
     },
     {
       "id": "PW-0101",
@@ -9671,7 +9742,7 @@
       "id": "PW-0306",
       "priority": "P0",
       "lane": "Player",
-      "status": "REVIEW",
+      "status": "DONE",
       "title": "A player that can actually be operated",
       "dependencies": [
         "PW-0201",
@@ -9701,7 +9772,7 @@
       ],
       "acceptance": "The player has controls. TODAY IT HAS NONE: player-surface.tsx sets the native controls attribute on a video element and renders a debug panel, and its own header says 'NO CONTROLS ARE BUILT HERE'. There is no play, pause, seek, volume, fullscreen, subtitle, audio, quality or source control anywhere in this product. REQUIRED: play/pause, a seek bar with buffered ranges, volume and mute, fullscreen, a subtitle menu and an audio-track menu driven by PW-0206, and a source/quality state the viewer can read. REQUIRED: keyboard operation -- space, arrows, F, M, and Escape -- because there is not one keyboard handler in the entire application today and a Windows media application that cannot be driven from the keyboard is not finished. REQUIRED: an idle-hide overlay that never hides a control from a keyboard or screen-reader user. REQUIRED: the controls layer sends no side effect the state machine does not already own; playback-effects.ts deliberately exposes four effects and its header says FOUR, AND NO MORE, so a control that needs a fifth is a machine change with its own justification. REQUIRED: the controls read the adapter, not Shaka, so the same UI operates the native engine.",
       "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. \n\nROUND 108 SURFACE AMENDMENT, recorded as task.definition_changed before any write. The adapter boundary and the Shaka adapter join the write surface -- four named files, all previously PW-0206's and now unowned -- because two acceptance clauses are unreachable without them: PlayerAdapter cannot report BUFFERED RANGES at all, and it cannot report TRACKS unless it performed the load, which it did not and must not. Routing the load through the adapter was rejected on a RIGHTS ground: PlayerSession candidates carry protection and compatibility, the client PlaybackSession carries neither, and projecting one into the other would mean inventing a rights-bearing fact. That reconciliation is PW-0203's by the round-82 ruling and was not taken. Instead the boundary gains two READS -- resynchronise(), which the boundary already anticipated (the resynchronised event exists and PW-0204 requires mpv to resynchronise from properties on queue overflow) and getBufferedRanges(), beside the three pull-side reads already there. player-adapter.ts moved from reviewDependencies to allowedPaths; it was already inside the reviewed surface, so this widens the write surface and not the fingerprint. The e2e gate needed a path: e2e/tests/player-controls.spec.ts was added to the surface in the same round, one new file, because vitest here runs with environment \"node\" and a keyboard clause cannot be evidenced without a keyboard.",
-      "owner": "claude-media",
+      "owner": null,
       "gateResults": {
         "typecheck": {
           "status": "pass",
@@ -9726,14 +9797,61 @@
         }
       },
       "implementationAgent": "claude-media",
-      "updatedAt": "2026-10-03T13:36:41.500Z",
-      "implementationBaseSha": "975331c084ff0be11805dd69341286cf06b0981b"
+      "updatedAt": "2026-10-03T14:56:07.376Z",
+      "implementationBaseSha": "975331c084ff0be11805dd69341286cf06b0981b",
+      "review": {
+        "taskId": "PW-0306",
+        "implementationAgent": "claude-media",
+        "implementationOwner": "claude-media",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "4f23c1d4d78d12ee49c69fb6f08c6acd73b5cc3e",
+        "reviewedBaseSha": "975331c084ff0be11805dd69341286cf06b0981b",
+        "reviewedTreeHash": "a00a4c8798dbb1d1387d199b48a481aceb81e77081d7c1f08eca0b7acce31169",
+        "reviewedFileCount": 15,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [
+          "apps/web/src/components/player/playback-machine.ts",
+          "apps/web/src/components/player/tracks.ts",
+          "apps/web/src/components/player/liberty-video.ts",
+          "apps/web/package.json"
+        ],
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-10-03T14:56:07.131Z",
+        "evidence": "APPROVED at 4f23c1d4d78d12ee49c69fb6f08c6acd73b5cc3e (transcribed by claude-lead from the round-109 commander relay).\n\nTHE SHA IS THE HEAD AND NOT c93652c, AND THE DIFFERENCE IS CHECKED RATHER THAN ASSUMED. The verdict names \"implementation commit lineage includes c93652c\", which is accurate: the controls landed there. But this task's surface moved afterwards -- e2e/tests/player-controls.spec.ts gained 66 lines in 7ece9dd, the production-mode repair. The verdict reviews that repair in terms (\"development and production configurations were both exercised honestly\", \"production refusal states do not pretend a player exists\"), so the implementation it describes is the head, and recording c93652c would bind the approval to a tree that predates a third of what it approves. Verified: the six other allowedPaths entries are byte-identical between c93652c and 4f23c1d; only the spec differs.\n\nTHE VERDICT. The player-controls architecture is accepted. Evidence reviewed: play/pause; seek bar; buffered ranges; volume; mute; fullscreen; subtitles menu; audio-track menu; readable source/quality state; keyboard Space, arrows, F, M and Escape; idle-hide behaviour; controls remain in the accessibility tree; native video chrome removed so the application does not expose two competing control surfaces; controls operate through PlayerAdapter rather than branching on Shaka; no uncontrolled fifth playback side effect was introduced; PW-0206's normalized track identity is finally reachable from product code; an explicit language/purpose choice survives candidate track-id churn; unit, typecheck and browser evidence pass; development and production configurations were both exercised honestly; production refusal states do not pretend a player exists.\n\nThe implementation also correctly refuses to invent PlaybackCapabilities for default policy selection when this layer cannot measure them. That remaining default-selection wiring belongs to the downstream settings and engine-capability work already identified, not to a fabricated capability claim here.\n\nIMPORTANT LIMITATIONS, recorded as part of the verdict rather than as a footnote. This approval does NOT claim that real media actually decoded in the browser harness, that a real candidate failover with real track lists was exercised end to end, or that native/mpv runtime parity has been proven on Windows hardware. Those remain separate evidence requirements where their owning tasks require them."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PW-0306",
+          "implementationAgent": "claude-media",
+          "implementationOwner": "claude-media",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "4f23c1d4d78d12ee49c69fb6f08c6acd73b5cc3e",
+          "reviewedBaseSha": "975331c084ff0be11805dd69341286cf06b0981b",
+          "reviewedTreeHash": "a00a4c8798dbb1d1387d199b48a481aceb81e77081d7c1f08eca0b7acce31169",
+          "reviewedFileCount": 15,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "apps/web/src/components/player/playback-machine.ts",
+            "apps/web/src/components/player/tracks.ts",
+            "apps/web/src/components/player/liberty-video.ts",
+            "apps/web/package.json"
+          ],
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-10-03T14:56:07.131Z",
+          "evidence": "APPROVED at 4f23c1d4d78d12ee49c69fb6f08c6acd73b5cc3e (transcribed by claude-lead from the round-109 commander relay).\n\nTHE SHA IS THE HEAD AND NOT c93652c, AND THE DIFFERENCE IS CHECKED RATHER THAN ASSUMED. The verdict names \"implementation commit lineage includes c93652c\", which is accurate: the controls landed there. But this task's surface moved afterwards -- e2e/tests/player-controls.spec.ts gained 66 lines in 7ece9dd, the production-mode repair. The verdict reviews that repair in terms (\"development and production configurations were both exercised honestly\", \"production refusal states do not pretend a player exists\"), so the implementation it describes is the head, and recording c93652c would bind the approval to a tree that predates a third of what it approves. Verified: the six other allowedPaths entries are byte-identical between c93652c and 4f23c1d; only the spec differs.\n\nTHE VERDICT. The player-controls architecture is accepted. Evidence reviewed: play/pause; seek bar; buffered ranges; volume; mute; fullscreen; subtitles menu; audio-track menu; readable source/quality state; keyboard Space, arrows, F, M and Escape; idle-hide behaviour; controls remain in the accessibility tree; native video chrome removed so the application does not expose two competing control surfaces; controls operate through PlayerAdapter rather than branching on Shaka; no uncontrolled fifth playback side effect was introduced; PW-0206's normalized track identity is finally reachable from product code; an explicit language/purpose choice survives candidate track-id churn; unit, typecheck and browser evidence pass; development and production configurations were both exercised honestly; production refusal states do not pretend a player exists.\n\nThe implementation also correctly refuses to invent PlaybackCapabilities for default policy selection when this layer cannot measure them. That remaining default-selection wiring belongs to the downstream settings and engine-capability work already identified, not to a fabricated capability claim here.\n\nIMPORTANT LIMITATIONS, recorded as part of the verdict rather than as a footnote. This approval does NOT claim that real media actually decoded in the browser harness, that a real candidate failover with real track lists was exercised end to end, or that native/mpv runtime parity has been proven on Windows hardware. Those remain separate evidence requirements where their owning tasks require them."
+        }
+      ],
+      "completedAt": "2026-10-03T14:56:07.376Z"
     },
     {
       "id": "PW-0307",
       "priority": "P1",
       "lane": "Frontend",
-      "status": "IN_PROGRESS",
+      "status": "REVIEW",
       "title": "Series navigation and the next episode",
       "dependencies": [
         "PW-0301",
@@ -9751,12 +9869,16 @@
         "apps/web/src/lib/episode-progress.test.ts",
         "apps/web/src/app/title/demo-title-details.ts",
         "apps/web/src/app/title/demo-title-details.test.ts",
-        "e2e/tests/series-navigation.spec.ts"
+        "e2e/tests/series-navigation.spec.ts",
+        "apps/web/src/components/player/player-surface.tsx",
+        "apps/web/src/components/title/next-episode-prompt.tsx",
+        "apps/web/src/components/title/next-episode-prompt.test.tsx",
+        "apps/web/src/components/title/next-episode-prompt.module.css",
+        "apps/web/src/app/watch/[contentId]/page.tsx"
       ],
       "reviewDependencies": [
         "packages/contracts/src/domains/title.ts",
         "apps/web/src/app/title/title-detail.ts",
-        "apps/web/src/components/player/player-surface.tsx",
         "apps/web/src/app/title/[titleId]/page.tsx"
       ],
       "preferredAgent": "claude-frontend",
@@ -9767,40 +9889,40 @@
         "e2e"
       ],
       "acceptance": "A viewer can move through a series without going back to the catalog. Today every season of a series renders as one flat stack on the title page, with no season selector, no per-episode progress and no way to reach the next episode. REQUIRED: season navigation that does not lose the viewer's place. REQUIRED: per-episode watched and in-progress state from the progress API. REQUIRED: a next-episode affordance at the end of playback, honouring the SAME per-episode rights gate the episode list already applies -- an autoplay that skips the rights check would be the rights breach PL-0703 was opened for, in a new place. REQUIRED: the next-episode selection rule is a pure function with its own tests, not logic inside a component, because 'what plays next' is exactly the kind of decision this project requires to be reconstructible.",
-      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. ",
+      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. \n\nROUND 109 SURFACE AMENDMENT, recorded as an event before any write: player-surface.tsx and app/watch/[contentId]/page.tsx move from reviewDependencies to allowedPaths, and three new components/title/next-episode-prompt.* files are named. The last unmet clause is the affordance AT THE END OF PLAYBACK, which only the player can know about and only the server can gate. PW-0306 owned player-surface.tsx and is DONE as of this round, so the surface is free. components/player/controls/** was deliberately NOT taken: the prompt is not a control and the controls must not learn what a series is.",
       "owner": "claude-frontend",
       "gateResults": {
         "typecheck": {
           "status": "pass",
-          "at": "2026-10-02T13:01:27.950Z",
+          "at": "2026-10-03T15:15:43.295Z",
           "by": "claude-frontend",
-          "commitSha": "5dad6d3575f990a650600256096ead7334913435",
-          "evidence": "Re-recorded at 5dad6d3575f990a650600256096ead7334913435, superseding the aa80fac evidence: this round changed demo-title-details.ts and added an e2e spec, so the earlier result describes a tree that no longer exists. npx tsc --noEmit in apps/web: exit 0. cd e2e && npx tsc --noEmit: exit 0, which matters because series-navigation.spec.ts is new and imports DEMO from src/fixtures rather than src/env -- the compiler caught that on the first attempt."
+          "commitSha": "4f23c1d4d78d12ee49c69fb6f08c6acd73b5cc3e",
+          "evidence": "npx tsc --noEmit -p apps/web/tsconfig.json: clean. npm run typecheck: 22 tasks successful. e2e/ tsc --noEmit: clean. npm run lint: 12 tasks, 0 errors; the one warning is a pre-existing unused import in apps/web/src/lib/db/in-memory-repository.test.ts, not on this surface.\n\nA DETOUR WORTH RECORDING BECAUSE IT COST TIME TWICE: tsc failed mid-round on three syntax errors in apps/web/dist/desktop/dev/types/validator.ts -- GENERATED, gitignored build output, truncated mid-write by an interrupted build. apps/web/tsconfig.json includes **/*.ts and excludes only node_modules, so a half-written artifact breaks the typecheck of the whole repository. Not this task's surface; filed as PL-0718."
         },
         "unit": {
           "status": "pass",
-          "at": "2026-10-02T13:01:37.195Z",
+          "at": "2026-10-03T15:15:43.456Z",
           "by": "claude-frontend",
-          "commitSha": "5dad6d3575f990a650600256096ead7334913435",
-          "evidence": "npx vitest run in apps/web at 5dad6d3575f990a650600256096ead7334913435: 84 files / 1494 tests, exit 0. Six new cases in demo-title-details.test.ts run the REAL decision over the REAL catalog rather than over fixtures the test built for itself -- northstar has two seasons that still sum to its advertised episodeCount, episodes are numbered within their season, runtime is derived from the ordinal in the series so season 2 episode 1 is not a byte copy of season 1 episode 1, resolveNextEpisode crosses the boundary from northstar-s1e5 to northstar-s2e1, it ends the series at northstar-s2e3 rather than wrapping, and harbor-lights stays single-season with harbor-lights-s1e6's rights still null. NON-VACUITY, each reverted after measuring: collapsing northstar's layout back to [8] fails 4 of the 6; a layout of [5,2] fails all of them with the invariant's own message, 'the season layout for northstar covers 7 episodes but its catalog entry advertises 8'. lint: 0 errors (1 pre-existing warning in PW-0313's surface, untouched)."
+          "commitSha": "4f23c1d4d78d12ee49c69fb6f08c6acd73b5cc3e",
+          "evidence": "npm run test: 22 tasks successful, 22 total. apps/web 1614 tests passed, up from 1597 -- 17 new, 0 failed.\n\nTHE LAST CLAUSE, WHICH IS WHAT THIS ROUND ADDED: \"a next-episode affordance at the end of playback, honouring the SAME per-episode rights gate the episode list already applies -- an autoplay that skips the rights check would be the rights breach PL-0703 was opened for, in a new place.\"\n\nTHE GATE IS THE SAME GATE AND IS NEVER RESTATED. The chain is one line of imports: the watch page calls nextUpFor, which calls resolveNextEpisode, which calls resolvePlayAvailability -- the function episode-list.tsx applies to every row. The href the client receives is the one that function returned. There is no string concatenation anywhere on the path.\n\nAND THAT IS CHECKED MECHANICALLY RATHER THAN BY INTENTION, in two places, because a mutation proved an assertion about VALUES cannot do it. Replacing `href: next.href` with a template literal building `/watch/${id}` PASSED ALL TWENTY behavioural tests -- and it has to, since resolvePlayAvailability builds exactly that string, so the honest answer and the forged one are identical for every episode a fixture can describe. The difference is only visible in the source. Both next-episode.ts and next-episode-prompt.tsx are now parsed with their comments stripped and asserted to contain no \"/watch\" literal and no watchHref call. With that guard in place the mutation fails.\n\n17 NEW TESTS.\n  next-episode.test.ts, 6 new (20 -> 21 including the source guard): the projection carries the gate's own href; it counts refused episodes instead of naming them; it answers null for all three absences, which is one screen and not a taxonomy; it carries no rights basis, synopsis or artwork across the server/client boundary; and the source guard above.\n  next-episode-prompt.test.tsx, 11 new: what it says, what it refuses to say about WHY episodes were skipped, the address, that it is a link and not a button, that it is a named region and NOT an alert, and two source-level guards -- no path construction, and no setTimeout/setInterval/router.push, because the acceptance forbids an autoplay and this component autoplays nothing at all.\n\nMUTATION-TESTED: three mutations on the projection, two caught behaviourally (always-zero skip count; returning a projection when the gate refused everything) and the third -- building the href -- only caught after the source guard was added, which is why the guard exists.\n\nNOTHING IN THE EXISTING CLAUSES MOVED. Season navigation, the episodeCount invariant that throws at import, per-episode progress and the pure next-episode rule are untouched; their tests are among the 1614."
         },
         "e2e": {
           "status": "pass",
-          "at": "2026-10-02T13:01:51.755Z",
+          "at": "2026-10-03T15:16:01.839Z",
           "by": "claude-frontend",
-          "commitSha": "5dad6d3575f990a650600256096ead7334913435",
-          "evidence": "Playwright 1.62.1, chromium revision 1234, retries 0, at 5dad6d3575f990a650600256096ead7334913435. THE FIRST BROWSER COVERAGE THIS TASK HAS EVER HAD, and the reason it could not exist before is recorded in the spec: every demo series had one season, so a tab strip with one tab was all any build could show. e2e/tests/series-navigation.spec.ts, 6 cases, 18/18 over --repeat-each=3 in development. It proves two tabs, different episodes behind each (5 and 3, summing to the advertised 8), mouse switching both ways, and the keyboard -- roving tabindex, ArrowRight, Home and End with automatic activation, which is the first keyboard interaction in this application with a test behind it. Two assertions are about absence: a one-season series gets NO tablist rather than a hidden one, and the closed season is absent from the ACCESSIBILITY TREE, which is what distinguishes hidden from styling a panel away. WHOLE PROJECTS, three configurations, all exit 0: development chromium+api 93 passed / 14 skipped; production no database 61 passed / 46 skipped; production + real PostgreSQL 16.15 at postgres://postgres@127.0.0.1:5433/lib_wl, 8 tables asserted, 76 passed / 31 skipped. series-navigation skips outside development because those builds serve no catalog metadata, which is the existing convention and the reason the skip count rises. THREE CORRECTIONS THE BROWSER MADE, every one of them the test being wrong rather than the product: getByRole does not see a hidden subtree; a single-season series renders the flat stack and has no season-panel testid at all; and a bare link count gave 11 for 6 episodes because each card carries a title link, so play affordances are counted by accessible name. WHAT THIS GATE DOES NOT COVER: clause 3, the end-of-playback next-episode affordance, is UNBUILT -- it lives in player-surface.tsx, which the round-103 ruling puts out of bounds until PW-0306 completes. PW-0307 stays IN_PROGRESS. UNVERIFIED: Linux chromium in a container; no Windows runtime, no WebView2, no attended GUI behaviour is claimed."
+          "commitSha": "4f23c1d4d78d12ee49c69fb6f08c6acd73b5cc3e",
+          "evidence": "Development, full chromium+api suite: 108 passed / 15 skipped / 0 failed, up from 103 passed -- the five new cases are the end-of-playback clause. Production + real PostgreSQL 16, cold database, --workers=4: 77 passed / 46 skipped / 0 failed; the five skip there with their reason named, because /watch refuses before a player exists on a build with no catalog source.\n\nHOW THE END OF PLAYBACK IS REACHED IN A BROWSER, AND EXACTLY WHAT IS SIMULATED. No real media decodes in this harness -- the demo catalog's sources are fixtures -- so nothing can play a programme to its end. What the test dispatches is the `ended` EVENT ON THE REAL <liberty-video> ELEMENT, which is the event a real ending fires. Everything downstream is the product and none of it is stubbed: WebPlayerAdapter's own listener, its `ended` adapter event, the machine's MEDIA_ENDED, the transition into the `ended` phase, and player-surface rendering from that phase. THE ONLY THING FAKED IS THE DECODER. It is dispatched rather than the `ended` property being assigned, because the element's listeners are what the adapter attached to and a property would prove nothing about the wiring.\n\nTHE FIVE CASES.\n  NOTHING IS OFFERED UNTIL THE PROGRAMME ENDS -- and the prompt is asserted absent from the DOCUMENT, not merely invisible. A hidden affordance is still in the accessibility tree, and a screen reader that can find \"Next episode\" mid-programme has been told the ending early.\n  When it ends, S1 E2 is offered AND ONLY OFFERED: the URL is still the episode the viewer was watching. Nothing counts down and nothing navigates.\n  The offer is a LINK with the accessible name \"Play S1 E2\" -- not \"Play\", which is what a screen-reader user meets out of context -- it is focusable, Enter follows it, and it lands on /watch/<next>, the ORDINARY route with the ordinary session request and the ordinary authorization decision. No bespoke play-next path.\n  AT THE END OF THE SERIES, NOTHING IS OFFERED AND NOTHING WRAPS AROUND. A player that wrapped to S1 E1 would fail the deterministic-end clause in the most confusing possible way.\n  A FILM OFFERS NOTHING, because \"next\" is a question about a series.\n\nMUTATION-TESTED IN THE BROWSER, NOT ONLY IN UNIT TESTS. Rendering the prompt regardless of the machine phase: 1 failed. Dropping nextUp on the watch page: 2 failed. Both reverted.\n\nWHAT IS NOT CLAIMED. The ending was dispatched, not decoded. The rights gate's refusal path at this affordance -- an episode whose basis lapses between the page render and the click -- is not exercised here and cannot be: the gate runs on the server at render time, and /watch/:id re-decides on arrival, which is the arrangement that makes the stale case safe rather than a case this spec can stage."
         }
       },
       "implementationAgent": "claude-frontend",
-      "updatedAt": "2026-10-01T02:46:31.897Z",
+      "updatedAt": "2026-10-03T15:16:01.982Z",
       "implementationBaseSha": "13798f8f45556ed233b894f94c6206944167c646"
     },
     {
       "id": "PW-0308",
       "priority": "P2",
       "lane": "Frontend",
-      "status": "BACKLOG",
+      "status": "READY",
       "title": "Settings a viewer can actually change",
       "dependencies": [
         "PW-0301",
@@ -9943,7 +10065,7 @@
       "id": "PW-0310",
       "priority": "P1",
       "lane": "Frontend",
-      "status": "BACKLOG",
+      "status": "READY",
       "title": "Keyboard, focus and accessibility across the whole application",
       "dependencies": [
         "PW-0301",
@@ -10824,7 +10946,7 @@
       "id": "PW-0602",
       "priority": "P1",
       "lane": "Test",
-      "status": "BLOCKED",
+      "status": "IN_PROGRESS",
       "title": "The automated half of the Windows matrix, running on Windows",
       "dependencies": [
         "PW-0501",
@@ -10852,23 +10974,22 @@
       "gateResults": {
         "typecheck": {
           "status": "pass",
-          "at": "2026-10-02T17:03:01.755Z",
+          "at": "2026-10-03T15:16:40.764Z",
           "by": "claude-test",
-          "commitSha": "2c037d54ed834af9dba3c6b12a29c395dee81b9d",
-          "evidence": "npm run typecheck -- 22 tasks successful, 22 total (13.3s). RECORDED FOR COMPLETENESS AND WORTH READING AS SUCH: this round's change is .github/workflows/windows.yml only, which no TypeScript project compiles, so a pass here establishes that nothing ELSE was disturbed and nothing about the workflow. The evidence that bears on the change is in the e2e gate."
+          "commitSha": "4f23c1d4d78d12ee49c69fb6f08c6acd73b5cc3e",
+          "evidence": "npm run typecheck: 22 tasks successful. No TypeScript project compiles .github/workflows/windows.yml; recorded to show nothing else was disturbed. The evidence for this round's change is PowerShell and a real Windows run, under the e2e gate."
         },
         "e2e": {
           "status": "pass",
-          "at": "2026-10-03T13:42:09.373Z",
+          "at": "2026-10-03T15:16:40.896Z",
           "by": "claude-test",
-          "commitSha": "c93652cbc2be1055d4eefddf9f536dd0ba61461c",
-          "evidence": "RE-RECORDED AFTER THE FIRST WINDOWS RUN OF THE WIRING, AND THE RESULT IS NOT THE ONE THE PLAN EXPECTED.\n\nTHE RUN. windows.yml run 37094053371, package job 111120224186, at 975331c -- the first execution of the lifecycle wiring. CONCLUSION SUCCESS, 5m 32s, against 5m 0s for run 37036128017 at 2c037d5 without the wiring. Two artifacts published. The only annotation is the Node 20 deprecation warning every job in this repository now carries.\n\nTHE PACKAGE AND INSTALL GATE IS PRESERVED, which is the clause that mattered most for a first contact: the job still succeeded, so the inline install / verify / uninstall step and the artifact inventory both ran and both passed. Nothing was taken away.\n\nAND THE THING THE STEP EXISTS FOR COULD NOT BE READ. The lifecycle report was published to $GITHUB_STEP_SUMMARY on the round-107 reasoning that a summary \"renders on the run page, which is how every CI result in the last three rounds was obtained\". THAT REASONING WAS WRONG. The run page and the job page were both fetched; neither contains the words \"Windows installer lifecycle\", nor a table of F1 to F4, nor any content this workflow wrote. The only \"Summary\" a fetch can see is GitHub's own metadata and artifact list. The same is true of ci.yml's diagnostics on the same commit, so it is a property of the channel and not of this step.\n\nSO WHICH ROWS EXECUTED, AND WHETHER EACH PASSED, FAILED OR REPORTED not-run, IS UNKNOWN. It is not inferred from the green job: the harness step carries continue-on-error, so the job's success says nothing about the harness's verdict. No claim is made in either direction. The 32-second delta against the previous run is consistent with an install, uninstall and reinstall having happened and is not evidence that they did.\n\nTHE REPAIR, MADE THIS ROUND. The per-case outcome is now ALSO emitted as GitHub annotations -- ::notice for pass and not-run, ::warning for fail, plus a one-line tally and an explicit ::warning when no report was produced at all. Annotations are the one channel this session has ever been able to read; the step summary stays for a human in a browser, where it is more legible and carries the full JSON.\n\nEXECUTED, NOT INSPECTED. PowerShell 7.4.6, the step extracted from the YAML by a parser: parse clean, and run against reports built from the real scripts/windows/ modules. With a report present it emits five annotations -- F1 pass, F2 not-run with its reason, F3 FAIL carrying the residue violation verbatim (\"pid 4312 node at C:\\\\Program Files\\\\Project Liberty\\\\sidecar\\\\node.exe\"), F4 pass, and \"Automated section-F cases on this runner: fail=1 not-run=1 pass=2\" with the non-blocking caveat and the no-launch caveat attached. With no report it emits the warning instead. Truncation at 380 characters was exercised and works.\n\nRETRIES REMAIN ZERO and nothing in e2e/playwright.config.ts was touched this round.\n\nWHAT THIS TASK STILL OWES, AND WHY IT IS NOT IN REVIEW. (1) The harness is still NON-BLOCKING, and the acceptance requires the rows PW-0601 marks automated to fail the build. Arming it needs a readable report first, which needs a Windows run of the annotation code, which needs a push this session cannot make. (2) The larger half is untouched: \"the existing e2e suite runs against the DESKTOP target on Windows, not only the web target on Ubuntu\". Neither is claimed and neither is close to done."
+          "commitSha": "4f23c1d4d78d12ee49c69fb6f08c6acd73b5cc3e",
+          "evidence": "THE HARNESS IS ARMED, AND THE EVIDENCE FOR ARMING IT IS A REAL WINDOWS RUN RATHER THAN AN ARGUMENT.\n\nTHE OBSERVATION RUN. windows.yml run 37131258670, package job 111226666096, at 4f23c1d. CONCLUSION SUCCESS, 5m 19s. Read from the JOB page, which is where annotations are attributed -- the run page drops them, a lesson this project paid two rounds for. Five notice annotations, verbatim in substance:\n  F1 \"Clean install, then launch\" [AUTO+RIG] PASS -- msiexec /i \"Project Liberty_0.1.0_x64_en-US.msi\" /qn /norestart, status 0\n  F2 \"Upgrade over a previous version\" [AUTO] NOT-RUN -- \"no --previous-msi was supplied. An upgrade needs a previous version to upgrade FROM and this repository has never shipped one; the first release is what creates the thing a second run can upgrade. This is a fact about the project, not a failure of the installer.\"\n  F3 \"Uninstall\" [AUTO+RIG] PASS -- msiexec /x, status 0\n  F4 \"Reinstall after uninstall\" [AUTO] PASS -- msiexec /i, status 0\n  \"Automated section-F cases on this runner: not-run=1 pass=3.\"\n\nTHE THREE HAZARDS coordination/WINDOWS_LIFECYCLE_WIRING.md SECTION 6 NAMED, ANSWERED BY OBSERVATION.\n  1. \"F1 may report not-run\" if the install root already exists. It did not; F1 PASSED, so the scenario that ran is the one named.\n  2. \"Residue classification has never run against a real Windows machine.\" It has now, and this is the one that decided arming. F3 is PASS, and F3 is only reachable as pass when classifyResidue returns clean -- so the runner's REAL Win32_Service, Get-ScheduledTask and Get-Process lists produced ZERO violations. The containment rule did not accuse the runner's own software, which section 6 named as the specific finding that would have made arming the wrong call.\n  3. \"An unobserved exit code.\" The harness exited 0 and nothing was ambiguous.\n\nWHAT ARMING CHANGED, AND WHAT IT KEPT.\n  - The inline \"Install the MSI, verify it landed, uninstall it\" step is DELETED. The harness performs F1, F3 and F4 and derives the installed paths from the Rust constants the shell compiles rather than restating them -- the drift that turned this job's only install assertion into a check on a file nothing starts (round 99).\n  - `continue-on-error` is GONE. It appears nowhere in this file now, and the header records what it was for and what removed it rather than deleting the history.\n  - KEPT AS ITS OWN STEP: the NEGATIVE verification. The harness never points verify-install.mjs at a directory that is not an install, and the inline block did on every run since round 99. Without it a verify-install.mjs that returned 0 unconditionally would make every lifecycle PASS meaningless. Deleting it with the rest would have been the quiet loss.\n  - Nothing installs before the harness any more, which is what keeps F1 honest: it meets a machine on which nothing has been installed, so a future `not-run` is a real signal rather than an artefact of ordering.\n  - The publisher's text no longer says the step does not gate. A `fail` fails the job; a `not-run` does not, and names its reason -- which is the PW-0601 rule that a row which does not run says why.\n\nEXECUTED, NOT INSPECTED. PowerShell 7.4.6; all three pwsh steps extracted from the YAML by a parser and parse-checked clean. The publisher was run against a FAILING report and emits ::warning for F3 with the residue violation verbatim and a tally reading \"fail=1 not-run=1 pass=2\"; and against the all-pass shape the real runner produced, emitting \"not-run=1 pass=3\" with the gating caveat and the no-launch caveat attached.\n\nWHAT IS STILL NOT CLAIMED, AND IT IS THE LARGER HALF. \"The existing e2e suite runs against the DESKTOP target on Windows, not only the web target on Ubuntu\" is UNTOUCHED. No Playwright test has ever run on Windows. That clause is why this task is not being offered as complete, and it is stated here so a reviewer does not have to infer it from silence. Also not claimed: that the application LAUNCHES. A runner has no attended session; F1's launch half is PW-0504 and the commander's machine.\n\nRETRIES REMAIN ZERO; e2e/playwright.config.ts was not touched this round or last."
         }
       },
-      "updatedAt": "2026-10-03T13:42:45.094Z",
+      "updatedAt": "2026-10-03T15:13:42.731Z",
       "implementationAgent": "claude-test",
-      "implementationBaseSha": "2c037d54ed834af9dba3c6b12a29c395dee81b9d",
-      "blocker": "EXTERNALLY BLOCKED, NOT PAUSED, AND THE BLOCKER IS NAMED SO IT CAN BE CHECKED.\n\nPW-0602's next step is the one gpt-architect's round-108 verdict specifies: read the lifecycle harness's first real Windows report, classify every row, repair genuine harness defects, and then ARM the rows PW-0601 says must gate the build. That cannot happen yet, for a reason that is not a choice:\n\n1. The first Windows run of the wiring (37094053371, at 975331c) PUBLISHED ITS REPORT WHERE THIS SESSION CANNOT READ IT. A GitHub job summary is not reachable without a login -- verified by fetching the run page and the job page for that run and for CI 37094053423, neither of which contains a word either workflow wrote.\n2. That was repaired this round: the per-case outcomes are now emitted as GitHub annotations, which is the one channel this session has ever been able to read, and the repair was executed against reports built from the real scripts/windows/ modules rather than inspected.\n3. READING THE RESULT NOW REQUIRES A WINDOWS RUN OF THE REPAIRED WORKFLOW, and that requires the commit to reach GitHub. Push from this session returns 403 (\"not in this session's authorized repository set\") and is not retried; the commander applies the delivered bundle and pushes. There is no engineering action available here that produces the evidence.\n\nWHAT IS NOT CLAIMED BY BLOCKING. The task is nowhere near done and this is not a way of parking it: the harness is still non-blocking, and the LARGER half of the acceptance -- \"the existing e2e suite runs against the DESKTOP target on Windows, not only the web target on Ubuntu\" -- has not been started. Both are recorded in the gate evidence.\n\nWHY IT IS BLOCKED RATHER THAN RELEASED. Release discards gate results, and the e2e gate on this task now carries the only written account of what the first Windows run did and did not establish. Blocking preserves it. It also frees claude-test's single slot for PL-0715, which gpt-architect's verdict asks to be worked now and which has no external dependency at all -- that is a consequence of blocking honestly, not the reason for it.\n\nUNBLOCK WHEN: a Windows run of a commit containing the annotation channel has completed and its per-case annotations can be read from the job page."
+      "implementationBaseSha": "2c037d54ed834af9dba3c6b12a29c395dee81b9d"
     },
     {
       "id": "PW-0603",

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-03T14:27:12.834Z",
+  "generatedAt": "2026-10-03T15:16:44.187Z",
   "agent": "gpt-architect",
   "executionAvailable": false,
   "assigned": [],
@@ -118,50 +118,6 @@
       ]
     },
     {
-      "id": "PL-0715",
-      "priority": "P1",
-      "lane": "Test",
-      "status": "REVIEW",
-      "title": "The watchlist harness reads a rate-limited sign-UP as a wrong password",
-      "dependencies": [],
-      "allowedPaths": [
-        "e2e/tests/watchlist.spec.ts",
-        "e2e/src/identity.ts"
-      ],
-      "reviewDependencies": [
-        "packages/auth/src/better-auth.ts",
-        "e2e/playwright.config.ts"
-      ],
-      "preferredAgent": "claude-test",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "typecheck",
-        "e2e"
-      ],
-      "acceptance": "THE OBSERVATION, WHICH IS FACT. CI run 37036128012 at 2c037d54ed834af9dba3c6b12a29c395dee81b9d: the e2e job failed, PRODUCTION mode only, 1 failed / 75 passed / 31 skipped, on 'tests/watchlist.spec.ts:859:7 - the list page, against a real session and a real database - a signed-in viewer with no profile selected is sent to the picker, not to an error'. The annotation is the harness's own message: 'the harness could not sign in as e2e-watchlist-unchosen-0@liberty.invalid: 401 {\"message\":\"Invalid email or password\",\"code\":\"INVALID_EMAIL_OR_PASSWORD\"}'. The DEVELOPMENT run in the same job passed, 93 passed / 14 skipped. The same spec passed in production on the previous run, 37028642916 at 30cef6e, 76 passed / 31 skipped, and nothing between those two commits touches authentication, the harness or the spec -- so it is intermittent rather than a break.\n\nTHE DEFECT IN THE HARNESS, WHICH IS ALSO FACT AND IS VISIBLE IN THE SOURCE REGARDLESS OF WHAT CAUSED THIS RUN. `signIn` in that file POSTs /api/auth/sign-up/email with failOnStatusCode: false and never looks at the response -- the comment says the sign-in is what decides, 'because a session is what the caller asked for and an account is only the way to get one'. It then retries the SIGN-IN on 429 up to four times and on nothing else. So a sign-up that was refused leaves no account, the sign-in that follows correctly answers 401 INVALID_EMAIL_OR_PASSWORD because better-auth does not distinguish an unknown user from a wrong password, and the harness reports a credential failure for an account that was never created. The retry loop makes this worse rather than better: it waits out a rate-limit window and then re-asks a question whose answer cannot change.\nREQUIRED: a sign-up that fails is OBSERVED and reported as itself. A 401 must not be the error text for 'the account does not exist'.\nREQUIRED: whatever retry the sign-up is given is the same client-correctness retry the sign-in already has -- obeying a 429 and its retry-after. playwright.config.ts's rule stands: no ASSERTION is retried, retries stay 0, and the fix must not be `retries: 1` on the project.\nREQUIRED: the diagnosis is CONFIRMED before the repair is called a repair. The hypothesis in the notes is a hypothesis.\nREQUIRED: the repair is demonstrated against the production + real PostgreSQL configuration, which is the only one that failed; a development-mode pass proves nothing here, because that is the configuration that was already green.\n\nOUT OF SCOPE AND MUST NOT BE DONE: deleting or skipping the test, relaxing its assertion, serialising the project, raising a timeout, or changing the application's authentication configuration to make the harness's traffic acceptable. The product's rate limiting is a security property; a test harness that trips it is the harness's problem.",
-      "notes": "FILED IN ROUND 107 from CI run 37036128012. NOT CAUSED BY THIS ROUND'S WORK: the delta from the last green e2e is one apps/desktop packaging script, two coordination documents and control-plane state.\n\nTHE LEADING HYPOTHESIS, LABELLED AS ONE BECAUSE IT HAS NOT BEEN CONFIRMED. packages/auth/src/better-auth.ts passes no `rateLimit` option, so better-auth's default applies -- and that default is ENABLED IN PRODUCTION AND DISABLED IN DEVELOPMENT, which is exactly the split this failure shows. If the per-path default on the sign-up endpoint is short-windowed, several Playwright workers establishing sessions in parallel would exceed it, the refused sign-up would be swallowed by the code above, and the sign-in would answer 401. That fits every observed fact and is still a guess: nobody has watched the sign-up endpoint return 429 under this harness. Confirm it by observation before building on it, and if it is wrong, say so and file what was actually found.\n\nSHAPE NOTE. This is PL-0713 again in a different costume -- a harness that works at one worker and one machine and reports a product failure when the schedule changes. The lesson PL-0713 recorded applies: the repair is structural isolation, not a retry.\n\nCONFLICTS, BOTH FIELDS BOTH DIRECTIONS, AT FILING. e2e/tests/watchlist.spec.ts is in PW-0304's and PW-0313's allowedPaths and both are DONE; e2e/** was PL-0501's and it is DONE. e2e/src/identity.ts is PW-0312's, DONE. No open task holds any of these in either field. The active tasks at filing are PW-0208 (REVIEW), PW-0602 (IN_PROGRESS) and PL-0714 (IN_PROGRESS), and none names an e2e path.\n\nROUND 108 SURFACE AMENDMENT, recorded as an event before any write: e2e/src/identity.ts moved from reviewDependencies to allowedPaths. The production reproduction at 4 workers failed on HARNESS_ACCOUNT in that file, not on the watchlist slot -- the two carry the identical defect, and repairing only the one CI happened to show would leave the one that actually reproduces.",
-      "owner": "claude-test",
-      "gateResults": {
-        "typecheck": {
-          "status": "pass",
-          "at": "2026-10-03T14:20:27.591Z",
-          "by": "claude-test",
-          "commitSha": "dca6b7fbdc33af18c3be81b2a2d996cebb1fa7bd",
-          "evidence": "e2e/ npx tsc --noEmit: clean, after both files changed. Two type imports added (APIResponse in each); nothing else in the harness's types moved."
-        },
-        "e2e": {
-          "status": "pass",
-          "at": "2026-10-03T14:20:27.741Z",
-          "by": "claude-test",
-          "commitSha": "dca6b7fbdc33af18c3be81b2a2d996cebb1fa7bd",
-          "evidence": "THE DIAGNOSIS WAS CONFIRMED BEFORE THE REPAIR WAS CALLED A REPAIR, which the acceptance requires, and the confirmation moved the fix.\n\nREAD OUT OF THE INSTALLED LIBRARY. better-auth 1.7.5, dist/context/create-context.mjs line 172: `enabled: options.rateLimit?.enabled ?? isProduction` -- rate limiting is ON in production and OFF in development, which is exactly the split the CI failure showed. dist/api/rate-limiter/index.mjs getDefaultSpecialRules: window 10 seconds, max 3, for any path beginning /sign-in or /sign-up, keyed per IP and path. packages/auth/src/better-auth.ts passes no rateLimit option, so that default is what the application runs.\n\nREPRODUCED, in the configuration the acceptance names as decisive. Production mode, real PostgreSQL 16 on 127.0.0.1:5433 with the repository migration applied, COLD DATABASE so every worker must create its account, --workers=4, full chromium+api suite: 12 failed, and the auth failure is \"the harness could not sign in as e2e-harness-2@liberty.invalid: 401 INVALID_EMAIL_OR_PASSWORD\". A single-worker run of the same suite passes, which is why this was invisible on a two-core machine -- the same thing that hid PL-0713.\n\nTHE REPRODUCTION MOVED THE REPAIR, AND THIS IS THE PART WORTH READING. The failing account is e2e-harness-2, which is src/identity.ts's HARNESS_ACCOUNT -- NOT the watchlist slot CI happened to hit. The two files carry the identical defect line for line. Fixing only the one named in the CI annotation would have left the one that actually reproduces here. The surface was amended to include e2e/src/identity.ts, recorded as an event before the write and conflict-checked in both fields in both directions.\n\nTHE REPAIR, IN BOTH FILES.\n  - SIGN IN FIRST. A database that already has the account costs one request and the burst never happens. This is the change that removes the pressure rather than tolerating it.\n  - The sign-up response is OBSERVED. \"Already exists\" is treated as success -- the account this harness needs is there either way -- and every other refusal throws, naming that the account does not exist so that nothing downstream is about a password.\n  - A 429 is obeyed on BOTH endpoints, honouring X-Retry-After, on the same bounded budget the sign-in already had. SIGN_IN_ATTEMPTS was NOT raised.\n  - Every attempt is logged and the log is in the failure message, so the next occurrence names itself.\n\nTHE REGRESSION RUN, SAME DECISIVE CONFIGURATION. Production mode, real PostgreSQL, cold database, --workers=4, full chromium+api suite: 77 PASSED, 41 skipped, 0 FAILED. No sign-in failure of any kind. Development mode, full suite: 103 passed, 15 skipped, 0 failed.\n\nWHAT WAS NOT DONE, EACH FORBIDDEN BY THE ACCEPTANCE AND NONE OF THEM TEMPTING ONCE THE CAUSE WAS KNOWN: no test deleted or skipped, no assertion relaxed, no project serialised, no timeout raised, no retry count changed -- playwright.config.ts is untouched and `retries` is still 0 -- and NOTHING in the application's rate limiting was configured, relaxed or disabled. Obeying a 429 is correct client behaviour; the file says so at length, and it is the server stating a protocol requirement rather than an assertion being re-evaluated.\n\nA FINDING FOR THE BOARD, NOT FIXED HERE: the application's auth rate limiting is better-auth's UNEXAMINED DEFAULT. Nobody chose 3-per-10-seconds, nobody chose that it is off in development, and docs/SECURITY.md residual risk R2 still says \"No rate limit on any route\". PL-0716 corrected the readiness item to say so precisely; deciding what the limit SHOULD be is a security task that does not exist yet."
-        }
-      },
-      "updatedAt": "2026-10-03T14:20:27.870Z",
-      "implementationAgent": "claude-test",
-      "implementationBaseSha": "dca6b7fbdc33af18c3be81b2a2d996cebb1fa7bd"
-    },
-    {
       "id": "PW-0208",
       "priority": "P1",
       "lane": "Infra",
@@ -202,29 +158,38 @@
       "implementationBaseSha": "9ac755ba7a3b4945b54b729f9a7a7569c7d990e2"
     },
     {
-      "id": "PW-0306",
-      "priority": "P0",
-      "lane": "Player",
+      "id": "PW-0307",
+      "priority": "P1",
+      "lane": "Frontend",
       "status": "REVIEW",
-      "title": "A player that can actually be operated",
+      "title": "Series navigation and the next episode",
       "dependencies": [
-        "PW-0201",
-        "PW-0206"
+        "PW-0301",
+        "PW-0305",
+        "PW-0306"
       ],
       "allowedPaths": [
-        "apps/web/src/components/player/controls/**",
+        "apps/web/src/components/title/episode-list.tsx",
+        "apps/web/src/components/title/season-navigation.tsx",
+        "apps/web/src/components/title/season-navigation.module.css",
+        "apps/web/src/components/title/season-navigation.test.tsx",
+        "apps/web/src/lib/next-episode.ts",
+        "apps/web/src/lib/next-episode.test.ts",
+        "apps/web/src/lib/episode-progress.ts",
+        "apps/web/src/lib/episode-progress.test.ts",
+        "apps/web/src/app/title/demo-title-details.ts",
+        "apps/web/src/app/title/demo-title-details.test.ts",
+        "e2e/tests/series-navigation.spec.ts",
         "apps/web/src/components/player/player-surface.tsx",
-        "apps/web/src/components/player/player-adapter.ts",
-        "apps/web/src/components/player/player-adapter.test.ts",
-        "apps/web/src/components/player/web-player-adapter.ts",
-        "apps/web/src/components/player/web-player-adapter.test.ts",
-        "e2e/tests/player-controls.spec.ts"
+        "apps/web/src/components/title/next-episode-prompt.tsx",
+        "apps/web/src/components/title/next-episode-prompt.test.tsx",
+        "apps/web/src/components/title/next-episode-prompt.module.css",
+        "apps/web/src/app/watch/[contentId]/page.tsx"
       ],
       "reviewDependencies": [
-        "apps/web/src/components/player/playback-machine.ts",
-        "apps/web/src/components/player/tracks.ts",
-        "apps/web/src/components/player/liberty-video.ts",
-        "apps/web/package.json"
+        "packages/contracts/src/domains/title.ts",
+        "apps/web/src/app/title/title-detail.ts",
+        "apps/web/src/app/title/[titleId]/page.tsx"
       ],
       "preferredAgent": "claude-frontend",
       "reviewAgent": "gpt-architect",
@@ -233,35 +198,35 @@
         "unit",
         "e2e"
       ],
-      "acceptance": "The player has controls. TODAY IT HAS NONE: player-surface.tsx sets the native controls attribute on a video element and renders a debug panel, and its own header says 'NO CONTROLS ARE BUILT HERE'. There is no play, pause, seek, volume, fullscreen, subtitle, audio, quality or source control anywhere in this product. REQUIRED: play/pause, a seek bar with buffered ranges, volume and mute, fullscreen, a subtitle menu and an audio-track menu driven by PW-0206, and a source/quality state the viewer can read. REQUIRED: keyboard operation -- space, arrows, F, M, and Escape -- because there is not one keyboard handler in the entire application today and a Windows media application that cannot be driven from the keyboard is not finished. REQUIRED: an idle-hide overlay that never hides a control from a keyboard or screen-reader user. REQUIRED: the controls layer sends no side effect the state machine does not already own; playback-effects.ts deliberately exposes four effects and its header says FOUR, AND NO MORE, so a control that needs a fifth is a machine change with its own justification. REQUIRED: the controls read the adapter, not Shaka, so the same UI operates the native engine.",
-      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. \n\nROUND 108 SURFACE AMENDMENT, recorded as task.definition_changed before any write. The adapter boundary and the Shaka adapter join the write surface -- four named files, all previously PW-0206's and now unowned -- because two acceptance clauses are unreachable without them: PlayerAdapter cannot report BUFFERED RANGES at all, and it cannot report TRACKS unless it performed the load, which it did not and must not. Routing the load through the adapter was rejected on a RIGHTS ground: PlayerSession candidates carry protection and compatibility, the client PlaybackSession carries neither, and projecting one into the other would mean inventing a rights-bearing fact. That reconciliation is PW-0203's by the round-82 ruling and was not taken. Instead the boundary gains two READS -- resynchronise(), which the boundary already anticipated (the resynchronised event exists and PW-0204 requires mpv to resynchronise from properties on queue overflow) and getBufferedRanges(), beside the three pull-side reads already there. player-adapter.ts moved from reviewDependencies to allowedPaths; it was already inside the reviewed surface, so this widens the write surface and not the fingerprint. The e2e gate needed a path: e2e/tests/player-controls.spec.ts was added to the surface in the same round, one new file, because vitest here runs with environment \"node\" and a keyboard clause cannot be evidenced without a keyboard.",
-      "owner": "claude-media",
+      "acceptance": "A viewer can move through a series without going back to the catalog. Today every season of a series renders as one flat stack on the title page, with no season selector, no per-episode progress and no way to reach the next episode. REQUIRED: season navigation that does not lose the viewer's place. REQUIRED: per-episode watched and in-progress state from the progress API. REQUIRED: a next-episode affordance at the end of playback, honouring the SAME per-episode rights gate the episode list already applies -- an autoplay that skips the rights check would be the rights breach PL-0703 was opened for, in a new place. REQUIRED: the next-episode selection rule is a pure function with its own tests, not logic inside a component, because 'what plays next' is exactly the kind of decision this project requires to be reconstructible.",
+      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. \n\nROUND 109 SURFACE AMENDMENT, recorded as an event before any write: player-surface.tsx and app/watch/[contentId]/page.tsx move from reviewDependencies to allowedPaths, and three new components/title/next-episode-prompt.* files are named. The last unmet clause is the affordance AT THE END OF PLAYBACK, which only the player can know about and only the server can gate. PW-0306 owned player-surface.tsx and is DONE as of this round, so the surface is free. components/player/controls/** was deliberately NOT taken: the prompt is not a control and the controls must not learn what a series is.",
+      "owner": "claude-frontend",
       "gateResults": {
         "typecheck": {
           "status": "pass",
-          "at": "2026-10-03T13:36:24.699Z",
-          "by": "claude-media",
-          "commitSha": "975331c084ff0be11805dd69341286cf06b0981b",
-          "evidence": "npx tsc --noEmit -p apps/web/tsconfig.json: clean. npm run typecheck: 22 tasks successful, 22 total. npm run lint: 12 tasks, 0 errors; the single warning is a pre-existing unused import in apps/web/src/lib/db/in-memory-repository.test.ts, not on this surface. e2e/ typechecks clean too, which matters because the keyboard and overlay clauses are evidenced there."
+          "at": "2026-10-03T15:15:43.295Z",
+          "by": "claude-frontend",
+          "commitSha": "4f23c1d4d78d12ee49c69fb6f08c6acd73b5cc3e",
+          "evidence": "npx tsc --noEmit -p apps/web/tsconfig.json: clean. npm run typecheck: 22 tasks successful. e2e/ tsc --noEmit: clean. npm run lint: 12 tasks, 0 errors; the one warning is a pre-existing unused import in apps/web/src/lib/db/in-memory-repository.test.ts, not on this surface.\n\nA DETOUR WORTH RECORDING BECAUSE IT COST TIME TWICE: tsc failed mid-round on three syntax errors in apps/web/dist/desktop/dev/types/validator.ts -- GENERATED, gitignored build output, truncated mid-write by an interrupted build. apps/web/tsconfig.json includes **/*.ts and excludes only node_modules, so a half-written artifact breaks the typecheck of the whole repository. Not this task's surface; filed as PL-0718."
         },
         "unit": {
           "status": "pass",
-          "at": "2026-10-03T13:36:24.845Z",
-          "by": "claude-media",
-          "commitSha": "975331c084ff0be11805dd69341286cf06b0981b",
-          "evidence": "npm run test: 22 tasks successful, 22 total. apps/web 1597 tests passed, up from 1534 -- 63 new, 0 failed. The player directory alone is 397 tests across 22 files, up from 336.\n\nHOW THE WORK IS SPLIT, BECAUSE apps/web HAS NO DOM. vitest.config.ts sets environment \"node\", so no effect runs, no keystroke is dispatched and no menu opens. The same observation PW-0307 made one task earlier, used the same way:\n  - controls/controls-state.ts holds every DECISION a viewer can feel -- how far a key seeks, when the bar may dim, what a track is called, what a source line says -- as pure functions. 42 tests.\n  - controls/player-controls.test.tsx renders with renderToStaticMarkup and asserts the MARKUP a browser receives before hydration, which is where every accessibility promise that lives in an attribute can be checked. 14 tests.\n  - e2e/tests/player-controls.spec.ts is the keyboard and the menus, in a real browser. 10 tests, recorded under the e2e gate.\n\nWHAT I ADDED THIS ROUND ON TOP OF THE IMPLEMENTATION ALREADY IN THE TREE, and it is the clause that was missing rather than a polish pass.\n\nPW-0206 WAS STILL UNREACHABLE. Its module -- the normalised vocabulary, the identity, reapply, rememberChoice -- was imported by NOTHING. PL-0716's readiness audit had to score track selection PARTIAL for exactly that reason, and this task's acceptance asks for menus \"driven by PW-0206\". The menus were driven by this task's own trackOptions; the POLICY was not wired at all, so a viewer's choice did not survive a candidate switch -- which is the one clause PW-0206 exists for.\n  - controls-state.ts gains restoreCommands() and rememberFromMenu(), pure, which call PW-0206's reapply/rememberChoice. 11 new tests.\n  - player-controls.tsx remembers a TrackIdentity on every menu selection and, when a `tracks` event arrives, issues only the commands restoreCommands returns.\n  - MUTATION-TESTED RATHER THAN TRUSTED, four plausible wrong implementations, each reverted: remembering the track id instead of the identity (3 failed); dropping the already-selected guard, which would re-command on every candidate switch forever (1); treating a subtitle \"off\" as \"no choice\", which would let a default-marked track on the next candidate turn text back on for a viewer who switched it off (2); and a guard written as \"restored differs from current\" instead of \"restored exists and differs from current\" (SURVIVED the first four tests -- it only misbehaves when the viewer's language is absent AND another audio track is already selected, where it would command selectAudioTrack(null), which the adapter throws on. A test was added for exactly that case and the mutant now fails).\n\nWHAT IS DELIBERATELY NOT WIRED, AND WHY IT IS NOT A SHORTCUT. resolveTracks -- the DEFAULT selection for a viewer who has chosen nothing -- needs a PlaybackCapabilities, and this layer does not have one and must not invent one. watch-session.ts refuses the same thing in its own words: a capability union assembled by something that cannot see the engines \"would be a capability claim nobody measured\". Routing a real profile down here is PW-0308's settings work and PL-0502's engine union. Until then the engine's own default plays and the viewer's explicit choice is honoured, which is the honest subset and is stated in the module rather than left to be discovered.\n\nONE DEFECT FIXED IN THE INHERITED CODE: OverlayInput.pointerIsCoarse was documented as \"the viewer has asked the operating system to reduce motion\", which it has never been and which overlayVisibility has never read. Corrected in place with a note, because a comment that describes the wrong input is worse than none -- the next person to add a rule would have reasoned from it."
+          "at": "2026-10-03T15:15:43.456Z",
+          "by": "claude-frontend",
+          "commitSha": "4f23c1d4d78d12ee49c69fb6f08c6acd73b5cc3e",
+          "evidence": "npm run test: 22 tasks successful, 22 total. apps/web 1614 tests passed, up from 1597 -- 17 new, 0 failed.\n\nTHE LAST CLAUSE, WHICH IS WHAT THIS ROUND ADDED: \"a next-episode affordance at the end of playback, honouring the SAME per-episode rights gate the episode list already applies -- an autoplay that skips the rights check would be the rights breach PL-0703 was opened for, in a new place.\"\n\nTHE GATE IS THE SAME GATE AND IS NEVER RESTATED. The chain is one line of imports: the watch page calls nextUpFor, which calls resolveNextEpisode, which calls resolvePlayAvailability -- the function episode-list.tsx applies to every row. The href the client receives is the one that function returned. There is no string concatenation anywhere on the path.\n\nAND THAT IS CHECKED MECHANICALLY RATHER THAN BY INTENTION, in two places, because a mutation proved an assertion about VALUES cannot do it. Replacing `href: next.href` with a template literal building `/watch/${id}` PASSED ALL TWENTY behavioural tests -- and it has to, since resolvePlayAvailability builds exactly that string, so the honest answer and the forged one are identical for every episode a fixture can describe. The difference is only visible in the source. Both next-episode.ts and next-episode-prompt.tsx are now parsed with their comments stripped and asserted to contain no \"/watch\" literal and no watchHref call. With that guard in place the mutation fails.\n\n17 NEW TESTS.\n  next-episode.test.ts, 6 new (20 -> 21 including the source guard): the projection carries the gate's own href; it counts refused episodes instead of naming them; it answers null for all three absences, which is one screen and not a taxonomy; it carries no rights basis, synopsis or artwork across the server/client boundary; and the source guard above.\n  next-episode-prompt.test.tsx, 11 new: what it says, what it refuses to say about WHY episodes were skipped, the address, that it is a link and not a button, that it is a named region and NOT an alert, and two source-level guards -- no path construction, and no setTimeout/setInterval/router.push, because the acceptance forbids an autoplay and this component autoplays nothing at all.\n\nMUTATION-TESTED: three mutations on the projection, two caught behaviourally (always-zero skip count; returning a projection when the gate refused everything) and the third -- building the href -- only caught after the source guard was added, which is why the guard exists.\n\nNOTHING IN THE EXISTING CLAUSES MOVED. Season navigation, the episodeCount invariant that throws at import, per-episode progress and the pure next-episode rule are untouched; their tests are among the 1614."
         },
         "e2e": {
           "status": "pass",
-          "at": "2026-10-03T14:20:51.268Z",
-          "by": "claude-media",
-          "commitSha": "dca6b7fbdc33af18c3be81b2a2d996cebb1fa7bd",
-          "evidence": "RE-RECORDED, AND THE REASON IS A HOLE IN THE PREVIOUS RECORDING RATHER THAN AN ADDITION TO IT.\n\nTHE PREVIOUS e2e GATE REPORTED A DEVELOPMENT-MODE RUN AND DID NOT SAY THAT PRODUCTION WAS UNRUN. It was. Running the full suite in production mode against a real PostgreSQL, which PL-0715's work required anyway, ALL TEN player-controls cases failed at `toHaveCount(1)` on the control bar.\n\nNOT A DEFECT IN THE BAR. On that build /watch answers with a refusal rather than a session -- observed heading \"Sign in to watch this\", because the harness's browser context is anonymous and authentication refuses before the catalog is consulted -- so there is no player, and a bar that had rendered anyway would have been the row of buttons wired to nothing that player-surface.tsx renders conditionally to prevent. The ten cases were simply written as though development were the only configuration.\n\nTHE REPAIR, WHICH FOLLOWS THE RULE PW-0601 AND docs/TEST_MATRIX.md ALREADY STATE -- a row that does not run says why BY NAME. The ten operation cases stand down when CATALOG_AVAILABILITY is \"refused\", through a single guard inside the shared openPlayer helper so the reason cannot drift between them, and the reason names what was actually observed. An ELEVENTH case runs in their place in exactly that configuration and asserts what is true there: the route answers 200, it renders a visible non-empty refusal heading, and NO CONTROL BAR PRETENDS OTHERWISE.\n\nTWO DRAFTS OF THAT ELEVENTH CASE WERE WRONG AND A PRODUCTION RUN CORRECTED BOTH -- recorded because the second is the interesting one. It first asserted an h1; PlaybackUnavailable renders an h2, the route frame owning the h1. It then asserted the heading matched /playback|play/, and the heading it met was \"Sign in to watch this\" -- authentication refusing before the catalog. WHICH refusal is therefore deliberately not pinned: there are four, the one reached depends on configuration this case does not control, and pinning one would make a test about the player fail the next time a deployment's reason changed.\n\nTHE RUNS, BOTH MODES, AFTER EVERY CHANGE THIS ROUND.\n  development, full chromium+api suite: 103 passed, 15 skipped, 0 failed.\n  production + real PostgreSQL 16, cold database, --workers=4, full chromium+api suite: 77 passed, 41 skipped, 0 failed. The ten operation cases are among the skips, each naming its reason; the eleventh passes.\n\nTHE TEN CASES THEMSELVES ARE UNCHANGED and still cover what they covered: every named control present with an accessible name, the native video chrome gone, the whole bar reachable by TAB in order, SPACE operating the player without scrolling the page, the arrows on volume rather than the page, M mutes and the button says which state it is in, a track menu that opens and announces itself and admits an empty source, ESCAPE closing it, THE BAR NEVER LEAVING THE ACCESSIBILITY TREE however it is dimmed, and the seek bar announcing a TIME rather than a percentage.\n\nSTILL NOT ASSERTED, AND THE REASON STILL MATTERS MORE THAN THE OMISSION: that the picture moves, because no real media decodes in this harness; and the re-application of a viewer's track choice across a real candidate switch end to end, because no harness here produces two candidates with real track lists. The decision behind that one has 11 unit tests and four caught mutations; the three lines that issue it are unverified wiring and are named as such.\n\nAND A GAP THIS EXPOSED THAT BELONGS TO NOBODY YET: operating the player on a DEPLOYMENT needs both a configured catalog source and a signed-in viewer, and no spec owns that journey. It is named in the skip reason rather than left for the next person to rediscover."
+          "at": "2026-10-03T15:16:01.839Z",
+          "by": "claude-frontend",
+          "commitSha": "4f23c1d4d78d12ee49c69fb6f08c6acd73b5cc3e",
+          "evidence": "Development, full chromium+api suite: 108 passed / 15 skipped / 0 failed, up from 103 passed -- the five new cases are the end-of-playback clause. Production + real PostgreSQL 16, cold database, --workers=4: 77 passed / 46 skipped / 0 failed; the five skip there with their reason named, because /watch refuses before a player exists on a build with no catalog source.\n\nHOW THE END OF PLAYBACK IS REACHED IN A BROWSER, AND EXACTLY WHAT IS SIMULATED. No real media decodes in this harness -- the demo catalog's sources are fixtures -- so nothing can play a programme to its end. What the test dispatches is the `ended` EVENT ON THE REAL <liberty-video> ELEMENT, which is the event a real ending fires. Everything downstream is the product and none of it is stubbed: WebPlayerAdapter's own listener, its `ended` adapter event, the machine's MEDIA_ENDED, the transition into the `ended` phase, and player-surface rendering from that phase. THE ONLY THING FAKED IS THE DECODER. It is dispatched rather than the `ended` property being assigned, because the element's listeners are what the adapter attached to and a property would prove nothing about the wiring.\n\nTHE FIVE CASES.\n  NOTHING IS OFFERED UNTIL THE PROGRAMME ENDS -- and the prompt is asserted absent from the DOCUMENT, not merely invisible. A hidden affordance is still in the accessibility tree, and a screen reader that can find \"Next episode\" mid-programme has been told the ending early.\n  When it ends, S1 E2 is offered AND ONLY OFFERED: the URL is still the episode the viewer was watching. Nothing counts down and nothing navigates.\n  The offer is a LINK with the accessible name \"Play S1 E2\" -- not \"Play\", which is what a screen-reader user meets out of context -- it is focusable, Enter follows it, and it lands on /watch/<next>, the ORDINARY route with the ordinary session request and the ordinary authorization decision. No bespoke play-next path.\n  AT THE END OF THE SERIES, NOTHING IS OFFERED AND NOTHING WRAPS AROUND. A player that wrapped to S1 E1 would fail the deterministic-end clause in the most confusing possible way.\n  A FILM OFFERS NOTHING, because \"next\" is a question about a series.\n\nMUTATION-TESTED IN THE BROWSER, NOT ONLY IN UNIT TESTS. Rendering the prompt regardless of the machine phase: 1 failed. Dropping nextUp on the watch page: 2 failed. Both reverted.\n\nWHAT IS NOT CLAIMED. The ending was dispatched, not decoded. The rights gate's refusal path at this affordance -- an episode whose basis lapses between the page render and the click -- is not exercised here and cannot be: the gate runs on the server at render time, and /watch/:id re-decides on arrival, which is the arrangement that makes the stale case safe rather than a case this spec can stage."
         }
       },
-      "implementationAgent": "claude-media",
-      "updatedAt": "2026-10-03T13:36:41.500Z",
-      "implementationBaseSha": "975331c084ff0be11805dd69341286cf06b0981b"
+      "implementationAgent": "claude-frontend",
+      "updatedAt": "2026-10-03T15:16:01.982Z",
+      "implementationBaseSha": "13798f8f45556ed233b894f94c6206944167c646"
     }
   ],
   "reservedExternal": [],

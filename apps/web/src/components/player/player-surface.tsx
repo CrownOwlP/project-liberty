@@ -72,6 +72,8 @@ import {
   defineLibertyVideo,
   type LibertyVideoElement
 } from "./liberty-video";
+import { NextEpisodePrompt } from "../title/next-episode-prompt";
+import type { NextUp } from "../../lib/next-episode";
 import { PlayerControls } from "./controls/player-controls";
 import type { PlayerAdapter } from "./player-adapter";
 import type { PlaybackEffects } from "./playback-effects";
@@ -101,6 +103,19 @@ import {
 export interface PlayerSurfaceProps {
   /** Already authorized. This component never fetches or chooses a source. */
   readonly session: PlaybackSession;
+  /**
+   * What to offer when this programme ENDS, or `null` for nothing (PW-0307).
+   *
+   * RESOLVED ON THE SERVER AND HANDED DOWN, never looked up here. `href` is
+   * produced by the rights gate `episode-list.tsx` applies to every row; this
+   * component renders it and cannot build one. A client that could assemble
+   * `/watch/<id>` could reach an episode the gate refused, which is the breach
+   * PL-0703 was opened for.
+   *
+   * Optional so every existing caller — the unit suite included — keeps
+   * compiling and gets the honest default of no affordance.
+   */
+  readonly nextUp?: NextUp | null;
   /** The attempt budget, supplied by the server so both agree on one policy. */
   readonly policy: FailoverPolicy;
 }
@@ -273,7 +288,7 @@ const STOP_REASON_COPY: Readonly<Record<PlaybackStopReason, string>> = {
     "We stopped after the attempt budget ran out. There were still streams left to try."
 };
 
-export function PlayerSurface({ session, policy }: PlayerSurfaceProps) {
+export function PlayerSurface({ session, policy, nextUp = null }: PlayerSurfaceProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const [view, setView] = useState<PlayerView | null>(null);
   const [diagnostics, setDiagnostics] = useState<DiagnosticsView | null>(null);
@@ -636,6 +651,26 @@ export function PlayerSurface({ session, policy }: PlayerSurfaceProps) {
           restarting={view?.restarting === true}
         />
       ) : null}
+
+      {/*
+        * THE NEXT EPISODE, OFFERED ONLY ONCE THIS ONE HAS ENDED (PW-0307).
+        *
+        * Gated on the MACHINE's phase and not on a media event read here: the
+        * machine is the single source of playback truth and it already has an
+        * `ended` state, reached from MEDIA_ENDED. Reading `ended` off the
+        * element in this file would be the second opinion the header forbids.
+        *
+        * RENDERED, NOT HIDDEN. The element does not exist before the phase is
+        * reached, so a screen reader cannot find it — and therefore cannot
+        * announce the ending — while the programme is still playing.
+        *
+        * AND IT IS NOT AN AUTOPLAY. Nothing counts down and nothing navigates;
+        * the viewer follows a link to `/watch/:id`, which issues the ordinary
+        * session request and gets the ordinary authorization decision. A
+        * bespoke "play next" path would be exactly the special playback path
+        * that skips the machinery this file exists to route through.
+        */}
+      {view?.phase === "ended" && nextUp !== null ? <NextEpisodePrompt next={nextUp} /> : null}
 
       <div className="player-meta">
         <strong>Content: {session.contentId}</strong>

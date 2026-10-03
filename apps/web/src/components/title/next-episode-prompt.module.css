@@ -1,0 +1,62 @@
+/* -------------------------------------------------------------------------
+ * The end-of-playback next-episode prompt (PW-0307).
+ *
+ * ITS OWN MODULE, for the reason `season-navigation.module.css` gives: a style
+ * that lived in a shared file is a style another surface borrows, and it keeps
+ * this task off the files `title-styles.test.ts` parses rule by rule.
+ *
+ * TOKENS, NOT LITERALS, for colour and border — `globals.css` (PW-0301) owns
+ * those and a hard-coded hex here would be a second palette. The spacing
+ * literals follow the sibling module rather than inventing a scale.
+ * ---------------------------------------------------------------------- */
+
+.prompt {
+  margin-top: 16px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.heading {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.8;
+}
+
+.episode {
+  margin: 0 0 8px;
+  font-size: 18px;
+}
+
+.ordinal {
+  font-weight: 700;
+  /* Tabular figures so S2 E9 and S2 E10 do not shift the title beside them. */
+  font-variant-numeric: tabular-nums;
+}
+
+.title {
+  font-weight: 400;
+}
+
+.note {
+  margin: 0 0 12px;
+  font-size: 14px;
+  opacity: 0.8;
+}
+
+.play {
+  display: inline-block;
+  /* A remote-control target, not a mouse target — the same floor the season
+   * tabs use, because this product is driven from a sofa. */
+  min-height: 2.75rem;
+  padding: 0.6rem 1.2rem;
+  border-radius: 10px;
+  background: var(--accent, #4f8cff);
+  color: #0b0f17;
+  font-weight: 700;
+  text-decoration: none;
+}

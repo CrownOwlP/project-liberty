@@ -50,44 +50,36 @@ name: Windows package
 # `$ErrorActionPreference` and checks `$LASTEXITCODE` explicitly.
 #
 # ----------------------------------------------------------------------------
-# THE ONE EXCEPTION, NAMED, DATED AND WITH ITS REMOVAL CONDITION WRITTEN DOWN
+# THE ONE EXCEPTION IS GONE, AND THE RECORD OF IT STAYS
 # ----------------------------------------------------------------------------
 #
-# **"Observe the installer lifecycle harness (non-blocking)"** carries
-# `continue-on-error: true`. It is the only step in this file that does, and
-# it is a measurement rather than a gate. PW-0602, round 107.
+# Round 107 added the lifecycle harness beside the inline install block with
+# `continue-on-error: true` -- the only such step this file has ever had --
+# because the harness had 30 unit cases and zero runs against a real Windows
+# machine, and this job is the only reliably green signal the project has.
+# The condition written here for removing it was: read its first real report,
+# fix what it shows, then arm.
 #
-# WHY AN EXCEPTION EXISTS AT ALL. `scripts/windows/lifecycle.mjs` is 30 unit
-# cases and zero runs against a real Windows machine. Its residue classifier
-# inspects `Win32_Service`, `Get-ScheduledTask` and `Get-Process` on a host
-# nobody has seen, and this job is the only green signal this project has.
-# Arming an unrun gate against the one working build is how a project loses
-# its last working build; running it beside the real gate and reading what it
-# says costs one Windows run and risks nothing.
+# ROUND 109 DID THAT. Run 37131258670 at 4f23c1d reported F1 PASS, F2 NOT-RUN
+# with its reason, F3 PASS and F4 PASS, by annotation -- and F3 passing means
+# the residue classifier met the runner's real service, scheduled-task and
+# process lists and accused none of them, which was the specific thing that
+# would have made arming wrong. Nothing needed fixing. The inline block is
+# gone, the harness is the gate, and `continue-on-error` appears nowhere in
+# this file.
 #
-# WHY `continue-on-error` RATHER THAN SWALLOWING THE EXIT CODE. The rule above
-# forbids a step that hides a failure. This step does the opposite: it throws
-# on a non-zero exit exactly like every other step here, and GitHub records
-# the failure, renders the step red, and continues. The result is visible on
-# the run page instead of buried in a log nobody reads. A PowerShell block
-# that quietly returned 0 would be the thing the rule was written against.
+# WHAT WAS KEPT FROM THE INLINE BLOCK, deliberately and as its own step: the
+# NEGATIVE verification. The harness never points `verify-install.mjs` at a
+# directory that is not an install, and without that check a verifier that
+# returned 0 unconditionally would make every lifecycle PASS meaningless.
 #
-# HOW IT GOES AWAY. Read the lifecycle report on the run page -- the step
-# after it publishes the report to the job summary for exactly that purpose.
-# Then, in a SECOND commit: delete the inline
-# "Install the MSI, verify it landed, uninstall it" step, delete
-# `continue-on-error` from this one, and let the harness be the gate. If the
-# report shows F1 reporting `not-run`, or residue entries belonging to the
-# runner rather than to the product, those are defects in `scripts/windows/**`
-# -- PW-0502's and PW-0503's surface, not this task's -- and they are fixed
-# before the arming commit, not after. The full plan, including what would
-# make arming the wrong call, is `coordination/WINDOWS_LIFECYCLE_WIRING.md`
-# sections 6 and 7.
+# ROUND 107's OTHER CLAIM WAS WRONG AND IS CORRECTED HERE. It said the report
+# written to `$GITHUB_STEP_SUMMARY` "renders on the run page", and it does
+# not -- the first run published a verdict nobody could read. The per-case
+# outcomes are emitted as ANNOTATIONS now, which is the one channel this
+# project has ever been able to read without a login; the summary is kept for
+# a human in a browser, where it is more legible.
 #
-# IF YOU ARE READING THIS AND THE HARNESS IS STILL NON-BLOCKING, the
-# observation step has not been acted on, and this job is still proving only
-# what the inline block proves.
-
 on:
   push:
     # Narrower than ci.yml's deny-list trigger, for the reason
@@ -243,97 +235,31 @@ jobs:
           Get-Content artifact-inventory.json
 
       # ==================================================================
-      # CLEAN INSTALL, THEN UNINSTALL
+      # THE NEGATIVE VERIFICATION, WHICH THE HARNESS DOES NOT DO
       # ==================================================================
       #
-      # gpt-architect's round-94 scope asks for "clean-install/update/uninstall
-      # automation where CI can prove it". A runner can prove install and
-      # uninstall: `msiexec` runs silently, the runner is an administrator, and
-      # the filesystem afterwards is observable.
+      # ALL THAT SURVIVES OF THE INLINE INSTALL BLOCK, and it survives on
+      # purpose. `scripts/windows/lifecycle.mjs` performs F1, F3 and F4 --
+      # install, uninstall with residue classification, reinstall -- and it
+      # verifies the installed tree by deriving the paths from the Rust
+      # constants the shell compiles. What it does NOT do is point
+      # `verify-install.mjs` at a directory that is not an install and require
+      # it to refuse.
       #
-      # IT CANNOT PROVE UPGRADE, and that absence is deliberate rather than an
-      # omission: an upgrade needs a PREVIOUS version to upgrade FROM, and this
-      # repository has never shipped one. The first release is the one that
-      # creates the thing a second run could upgrade. PW-0503 owns that matrix.
-      #
-      # AND IT PROVES NOTHING ABOUT LAUNCHING. The application is installed and
-      # removed; it is never started. See the header.
-      - name: Install the MSI, verify it landed, uninstall it
+      # A VERIFICATION THAT HAS NEVER BEEN SEEN TO FAIL IS A VERIFICATION
+      # NOBODY HAS TESTED. The inline block ran this on every run from round 99
+      # and deleting it with the rest would have quietly removed the one check
+      # that keeps the positive check honest: a `verify-install.mjs` that
+      # returned 0 unconditionally would make every F1 and F4 below a pass.
+      - name: The install verifier refuses a directory that is not an install
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-
-          $inventory = Get-Content artifact-inventory.json | ConvertFrom-Json
-          $msi = $inventory.artifacts | Where-Object { $_.kind -eq "msi" }
-          if (-not $msi) { throw "no msi in the inventory" }
-          $installer = Join-Path "apps/desktop/src-tauri/target/release/bundle" $msi.name
-          Write-Host "installing $installer"
-
-          # /qn silent, /norestart because a reboot would end the job, and a
-          # log because a failed MSI says nothing useful on stdout.
-          $install = Start-Process msiexec.exe -Wait -PassThru -ArgumentList @(
-            "/i", "`"$installer`"", "/qn", "/norestart", "/l*v", "install.log"
-          )
-          if ($install.ExitCode -ne 0) {
-            Get-Content install.log -Tail 80
-            throw "msiexec /i exited $($install.ExitCode)"
-          }
-
-          # WHERE IT SAYS IT IS. `productName` is "Project Liberty" and the
-          # default WiX install path is Program Files\<productName>. Asserting
-          # the executable exists is what distinguishes an installer that ran
-          # from one that installed.
-          $installed = Join-Path ${env:ProgramFiles} "Project Liberty\liberty-desktop.exe"
-          if (-not (Test-Path $installed)) {
-            Get-ChildItem (Join-Path ${env:ProgramFiles} "Project Liberty") -Recurse -ErrorAction SilentlyContinue |
-              Select-Object -First 40 | ForEach-Object { Write-Host $_.FullName }
-            throw "installed, but $installed is not there"
-          }
-          Write-Host "installed executable: $installed"
-
-          # THE SIDECAR CAME WITH IT, AND THE CHECK DERIVES THE PATHS IT LOOKS
-          # FOR (PW-0107). A bundle that shipped the shell and left the server
-          # behind would install cleanly and fail at first launch -- on the
-          # commander's machine, which is the expensive place to find out.
-          #
-          # This step used to assert `sidecar\server\server.js` inline. That
-          # stopped meaning anything when PW-0106 made `liberty-sidecar.js` the
-          # entry the shell spawns: `server.js` is still SHIPPED as Next build
-          # output but is never run, so the check was proving the installer
-          # carried a file nothing starts. It drifted because the path was
-          # written down in a third place. `scripts/windows/verify-install.mjs`
-          # reads SERVER_RELATIVE_PATH and NODE_RELATIVE_PATH out of
-          # `src-tauri/src/sidecar.rs` -- the constants the shell itself uses --
-          # so a future rename moves this check with it instead of past it.
-          $installRoot = Join-Path ${env:ProgramFiles} "Project Liberty"
-
-          # THE NEGATIVE FIRST, on every run. A verification that has never been
-          # seen to fail is a verification nobody has tested. Pointed at a
-          # directory that exists and is not an install, it must exit non-zero.
           node scripts/windows/verify-install.mjs "${env:TEMP}"
           if ($LASTEXITCODE -eq 0) {
-            throw "verify-install.mjs passed against a directory that is not an install; the check proves nothing"
+            throw "verify-install.mjs passed against a directory that is not an install; every lifecycle PASS below would be meaningless"
           }
           Write-Host "verify-install: correctly refused a non-install directory"
-
-          node scripts/windows/verify-install.mjs "$installRoot"
-          if ($LASTEXITCODE -ne 0) {
-            Get-ChildItem $installRoot -Recurse -ErrorAction SilentlyContinue |
-              Select-Object -First 60 | ForEach-Object { Write-Host $_.FullName }
-            throw "the installed tree is missing something the shell will reach for"
-          }
-
-          # UNINSTALL, AND PROVE IT LEFT. An installer that cannot be removed
-          # is worse than one that cannot be installed.
-          $uninstall = Start-Process msiexec.exe -Wait -PassThru -ArgumentList @(
-            "/x", "`"$installer`"", "/qn", "/norestart", "/l*v", "uninstall.log"
-          )
-          if ($uninstall.ExitCode -ne 0) {
-            Get-Content uninstall.log -Tail 80
-            throw "msiexec /x exited $($uninstall.ExitCode)"
-          }
-          if (Test-Path $installed) { throw "uninstalled, but $installed is still there" }
-          Write-Host "uninstalled cleanly"
 
       # ==================================================================
       # THE LIFECYCLE HARNESS, OBSERVED BEFORE IT IS TRUSTED (PW-0602)
@@ -358,14 +284,23 @@ jobs:
       #     so it cannot accuse the runner's own software;
       #   - it performs F4, REINSTALL, which nothing in this job does today.
       #
-      # IT RUNS AFTER THE INLINE BLOCK, NOT INSTEAD OF IT, AND THE ORDER IS
-      # LOAD-BEARING. The harness refuses to call an install "clean" when the
-      # install root already exists -- it reports F1 as `not-run` with that
-      # reason rather than reporting a different scenario under F1's name. The
-      # inline block ends with the product uninstalled, so this step starts
-      # from the cleanest state this job ever reaches. The install root is
-      # probed and printed first precisely so a `not-run` can be read as the
-      # fact it is rather than guessed at.
+      # IT IS THE GATE NOW, AND IT REPLACED THE INLINE BLOCK (round 109). It
+      # ran once in observation mode, on run 37131258670 at 4f23c1d, and the
+      # per-case annotations said: F1 clean install PASS, F2 upgrade NOT-RUN
+      # with its reason, F3 uninstall PASS -- which is only reachable when
+      # `classifyResidue` returns clean against the runner's REAL service,
+      # scheduled-task and process lists -- F4 reinstall PASS, tally
+      # "not-run=1 pass=3". The three hazards section 6 of
+      # `coordination/WINDOWS_LIFECYCLE_WIRING.md` named were each answered by
+      # that run rather than by argument, which is what the two-commit plan
+      # asked for before arming.
+      #
+      # NOTHING INSTALLS BEFORE IT ANY MORE, which is what keeps F1 honest: the
+      # harness reports F1 as `not-run` rather than as a pass when the install
+      # root already exists, and with the inline block gone this step meets a
+      # machine on which nothing has been installed. The install root is still
+      # probed and printed first so that a future `not-run` reads as the fact
+      # it is rather than as a mystery.
       #
       # WHAT IT STILL CANNOT PROVE, and no gate recorded from it may claim:
       # that the application LAUNCHES. F1's launch half needs an attended
@@ -373,11 +308,8 @@ jobs:
       # upgrade, needs a previous release this repository has never shipped;
       # it is PW-0505 and the harness reports it `not-run` with that reason,
       # never as passed.
-      - name: Observe the installer lifecycle harness (non-blocking)
+      - name: Exercise the installer lifecycle (PW-0503 harness, PW-0602 gate)
         id: lifecycle
-        # The single documented exception to this file's no-continue-on-error
-        # rule. The header says why, and says what removes it.
-        continue-on-error: true
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
@@ -501,9 +433,9 @@ jobs:
           } else { [string] $report.producedAt }
           $lines += "Produced by ``$($report.producedBy)`` on ``$($report.platform)`` at $producedAt."
           $lines += ""
-          $lines += "> **This step does not gate the build.** The inline install/verify/uninstall step is"
-          $lines += "> still the gate. See the header of ``.github/workflows/windows.yml`` for what removes"
-          $lines += "> this arrangement."
+          $lines += "> **These rows gate the build** (round 109). A ``fail`` here fails the job. ``not-run``"
+          $lines += "> does not: it is the harness refusing to report a scenario it could not perform, and"
+          $lines += "> every one of them names its reason."
           $lines += ""
           $lines += "| Case | Scenario | Owner | Outcome |"
           $lines += "| --- | --- | --- | --- |"
@@ -523,8 +455,8 @@ jobs:
           foreach ($r in $report.results) { $counts[$r.outcome] = 1 + ($counts[$r.outcome] ?? 0) }
           $tally = (($counts.Keys | Sort-Object) | ForEach-Object { "$_=$($counts[$_])" }) -join " "
           Annotate "notice" "Windows lifecycle summary" ("Automated section-F cases on this runner: $tally. " +
-            "This step is NON-BLOCKING: the inline install/verify/uninstall step is still the gate. " +
-            "No claim is made about the application LAUNCHING.")
+            "These rows GATE the build: a fail fails the job. A not-run does not, and names its reason. " +
+            "No claim is made about the application LAUNCHING -- a runner has no attended session.")
 
           $lines += ""
           $lines += "### Still owed by a real machine"

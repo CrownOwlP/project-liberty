@@ -140,3 +140,70 @@ export function resolveNextEpisode(
 
   return { kind: "none", reason: "no_later_episode_is_playable" };
 }
+
+/* ===========================================================================
+ * WHAT THE PLAYER IS HANDED (PW-0307)
+ * ======================================================================== */
+
+/**
+ * The next-episode answer, flattened to the few fields an affordance renders.
+ *
+ * A NARROW PROJECTION AND NOT THE `NextEpisode` ITSELF, for two reasons that
+ * both matter at this boundary.
+ *
+ * It crosses from a server component into a client one, so everything in it
+ * has to survive serialisation; a `TitleEpisodeSummary` would carry a rights
+ * basis, a synopsis and an artwork reference into a browser bundle to render a
+ * link and a number. The second reason is the one worth keeping: `href` IS THE
+ * ONLY WAY TO REACH THE NEXT EPISODE FROM THE CLIENT, and it is produced by
+ * `resolveNextEpisode`, which produces it only from `resolvePlayAvailability`.
+ * Handing the client the episode instead of the href would let a component
+ * build its own address — which is how a rights gate stops being a gate.
+ *
+ * `null` means "render nothing". Deliberately one value for every reason: the
+ * series ended, nothing later is playable, the id was not in the series. A
+ * viewer is owed an honest screen, not a taxonomy of why there is no next
+ * episode, and the distinctions are kept where they are useful — in
+ * `NextEpisodeAbsence`, on the server, where an operator can act on them.
+ */
+export interface NextUp {
+  readonly contentId: string;
+  readonly title: string;
+  readonly seasonNumber: number;
+  readonly episodeNumber: number;
+  /** Built by the rights gate. Never assembled by the surface that renders it. */
+  readonly href: string;
+  /**
+   * How many episodes between this one and that one the gate refused.
+   *
+   * Carried because the numbering a viewer can see will have a hole in it, and
+   * a prompt that silently jumps from 3 to 6 is a prompt that looks broken.
+   * `resolveNextEpisode` already collects them; this keeps the count and drops
+   * the rows, because the surface says "2 episodes were skipped" and does not
+   * name them.
+   */
+  readonly skippedCount: number;
+}
+
+/**
+ * `resolveNextEpisode`, projected — the one call a server surface makes.
+ *
+ * Deliberately not a second rule. It calls the rule and reshapes the answer;
+ * every decision, including the rights gate, is still made in exactly one
+ * place.
+ */
+export function nextUpFor(
+  episodes: readonly TitleEpisodeSummary[],
+  currentEpisodeId: string
+): NextUp | null {
+  const next = resolveNextEpisode(episodes, currentEpisodeId);
+  if (next.kind !== "next") return null;
+  return {
+    contentId: next.episode.id,
+    title: next.episode.title,
+    seasonNumber: next.episode.seasonNumber,
+    episodeNumber: next.episode.episodeNumber,
+    href: next.href,
+    skippedCount: next.skipped.length
+  };
+}

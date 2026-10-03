@@ -11,6 +11,8 @@ import {
   isRestartRequested,
   loadResumePosition
 } from "../../../lib/continue-watching";
+import { findDemoSeriesForEpisode } from "../../title/demo-title-details";
+import { nextUpFor, type NextUp } from "../../../lib/next-episode";
 
 /**
  * Rendered per request rather than prerendered.
@@ -269,7 +271,40 @@ async function PlaybackBody({
     return <SignedOutPanel next={`/watch/${result.contentId}`} what="watch this" />;
   }
 
-  return <PlayerSurface session={result.session} policy={result.policy} />;
+  /*
+   * WHAT TO OFFER WHEN THIS EPISODE ENDS (PW-0307).
+   *
+   * RESOLVED HERE, ON THE SERVER, AND FOR ONE REASON: this is where the rights
+   * gate runs. `nextUpFor` calls `resolveNextEpisode`, which calls
+   * `resolvePlayAvailability` -- the same gate `episode-list.tsx` applies to
+   * every row -- and the `href` it returns is the only address the client is
+   * given. A gate evaluated in the browser is a gate a browser can be made to
+   * skip, and the acceptance names that as the breach PL-0703 was opened for.
+   *
+   * `findDemoSeriesForEpisode` answers `null` for a movie, for a series id and
+   * for an id nothing owns, so the ordinary case of watching a film costs one
+   * lookup and renders nothing. The lookup goes through the CONFIGURED catalog
+   * source, not a fixture: the module's name is historical and
+   * `configuredSource` is what decides where records come from.
+   *
+   * IT NEVER REFUSES THE PAGE. A catalog source that is unavailable, or
+   * unconfigured on a deployment, throws out of this call -- and the viewer
+   * came here to watch something they are already authorized for. Losing the
+   * player because the series index could not be read would be the affordance
+   * breaking the thing it decorates, so the failure costs the prompt and
+   * nothing else.
+   */
+  let nextUp: NextUp | null = null;
+  try {
+    const series = await findDemoSeriesForEpisode(result.session.contentId);
+    if (series !== null && series.kind === "series") {
+      nextUp = nextUpFor(series.episodes, result.session.contentId);
+    }
+  } catch {
+    nextUp = null;
+  }
+
+  return <PlayerSurface session={result.session} policy={result.policy} nextUp={nextUp} />;
 }
 
 export default async function WatchPage({

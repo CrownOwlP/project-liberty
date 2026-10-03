@@ -244,3 +244,134 @@ test("the episode whose rights are not established still withholds its play link
     })
   ).toHaveCount(0);
 });
+
+/* ===========================================================================
+ * THE END OF PLAYBACK (PW-0307's last clause)
+ * ======================================================================== */
+
+/**
+ * End the programme the way the media element ends it.
+ *
+ * WHAT IS SIMULATED AND WHAT IS NOT, STATED BECAUSE THE DIFFERENCE IS THE
+ * WHOLE VALUE OF THIS TEST. No real media decodes in this harness — the demo
+ * catalog's sources are fixtures — so nothing here can play a programme to its
+ * end. What is dispatched is the `ended` event ON THE REAL ELEMENT, which is
+ * exactly the event a real ending fires. Everything downstream of it is the
+ * product: `WebPlayerAdapter`'s own listener, its `ended` adapter event, the
+ * machine's `MEDIA_ENDED`, the transition into the `ended` phase, and the
+ * surface rendering from that phase. The only thing faked is the decoder.
+ *
+ * It is dispatched rather than the `ended` PROPERTY being set because the
+ * element's listeners are what the adapter attached to; assigning a property
+ * would prove nothing about the wiring.
+ */
+async function endPlayback(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const element = document.querySelector("liberty-video");
+    if (element === null) throw new Error("no liberty-video element on this page");
+    element.dispatchEvent(new Event("ended"));
+  });
+}
+
+test("NOTHING IS OFFERED UNTIL THE PROGRAMME ENDS", async ({ page }) => {
+  test.skip(CATALOG_AVAILABILITY === "unknown", UNKNOWN_CATALOG_SKIP_REASON);
+  test.skip(
+    CATALOG_AVAILABILITY !== "fixtures",
+    "the next-episode prompt needs the demo series, which only the fixtures catalog publishes; " +
+      "on a deployment /watch refuses before a player exists at all"
+  );
+
+  await page.goto(`/watch/${DEMO.series.id}-s1e1`);
+  /*
+   * The element exists, so the player mounted and the machine is running --
+   * which is what makes the absence below meaningful rather than a page that
+   * failed to load.
+   */
+  await expect(page.locator("liberty-video")).toHaveCount(1);
+  /*
+   * AND THE PROMPT IS NOT IN THE DOCUMENT AT ALL, not merely invisible. A
+   * hidden affordance is still in the accessibility tree, and a screen reader
+   * that can find "Next episode" while the programme is playing has been told
+   * the ending early.
+   */
+  await expect(page.getByTestId("next-episode-prompt")).toHaveCount(0);
+});
+
+test("when the programme ends, the NEXT EPISODE is offered — and only offered", async ({
+  page
+}) => {
+  test.skip(CATALOG_AVAILABILITY === "unknown", UNKNOWN_CATALOG_SKIP_REASON);
+  test.skip(CATALOG_AVAILABILITY !== "fixtures", "needs the demo series; see the case above");
+
+  await page.goto(`/watch/${DEMO.series.id}-s1e1`);
+  await expect(page.locator("liberty-video")).toHaveCount(1);
+  await endPlayback(page);
+
+  const prompt = page.getByTestId("next-episode-prompt");
+  await expect(prompt).toHaveCount(1);
+  await expect(prompt).toContainText("S1 E2");
+
+  /*
+   * NOTHING NAVIGATED. The acceptance forbids an autoplay that skips the
+   * rights check, and this product goes further and autoplays nothing: the
+   * viewer is still on the episode they were watching until they choose.
+   */
+  expect(new URL(page.url()).pathname).toBe(`/watch/${DEMO.series.id}-s1e1`);
+});
+
+test("the offer is a LINK a keyboard can reach, and it goes through /watch", async ({ page }) => {
+  test.skip(CATALOG_AVAILABILITY === "unknown", UNKNOWN_CATALOG_SKIP_REASON);
+  test.skip(CATALOG_AVAILABILITY !== "fixtures", "needs the demo series; see the case above");
+
+  await page.goto(`/watch/${DEMO.series.id}-s1e1`);
+  await expect(page.locator("liberty-video")).toHaveCount(1);
+  await endPlayback(page);
+
+  const play = page.getByTestId("next-episode-play");
+  await expect(play).toHaveRole("link");
+  /* Named for what it plays, not "Play" alone -- which is what a screen-reader
+   * user meets out of context in a list of links. */
+  await expect(play).toHaveAccessibleName("Play S1 E2");
+
+  /* FOCUSABLE, and reached by the keyboard rather than by a click. */
+  await play.focus();
+  await expect(play).toBeFocused();
+  await page.keyboard.press("Enter");
+
+  /*
+   * AND IT WENT THROUGH THE ORDINARY ROUTE. The same /watch address, the same
+   * session request, the same authorization decision -- not a bespoke
+   * "play next" path that skips the machinery.
+   */
+  await page.waitForURL(`**/watch/${DEMO.series.id}-s1e2`);
+  await expect(page.locator("liberty-video")).toHaveCount(1);
+});
+
+test("AT THE END OF THE SERIES, NOTHING IS OFFERED AND NOTHING WRAPS AROUND", async ({ page }) => {
+  test.skip(CATALOG_AVAILABILITY === "unknown", UNKNOWN_CATALOG_SKIP_REASON);
+  test.skip(CATALOG_AVAILABILITY !== "fixtures", "needs the demo series; see the case above");
+
+  /*
+   * Northstar's last episode. A player that wrapped to S1 E1 would be the
+   * deterministic-end-of-series clause failing in the most confusing possible
+   * way: the viewer would be shown a programme they watched first as though it
+   * were next.
+   */
+  await page.goto(`/watch/${DEMO.series.id}-s2e3`);
+  await expect(page.locator("liberty-video")).toHaveCount(1);
+  await endPlayback(page);
+
+  await expect(page.getByTestId("next-episode-prompt")).toHaveCount(0);
+  expect(new URL(page.url()).pathname).toBe(`/watch/${DEMO.series.id}-s2e3`);
+});
+
+test("A FILM OFFERS NOTHING, because 'next' is a question about a series", async ({ page }) => {
+  test.skip(CATALOG_AVAILABILITY === "unknown", UNKNOWN_CATALOG_SKIP_REASON);
+  test.skip(CATALOG_AVAILABILITY !== "fixtures", "needs the demo catalog; see the case above");
+
+  await page.goto(`/watch/${DEMO.movie.id}`);
+  await expect(page.locator("liberty-video")).toHaveCount(1);
+  await endPlayback(page);
+
+  await expect(page.getByTestId("next-episode-prompt")).toHaveCount(0);
+});

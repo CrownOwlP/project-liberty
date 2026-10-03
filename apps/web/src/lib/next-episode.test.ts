@@ -1,7 +1,9 @@
+import { readFileSync } from "node:fs";
+
 import type { TitleEpisodeSummary } from "@liberty/contracts/domains/title";
 import { describe, expect, it } from "vitest";
 
-import { resolveNextEpisode } from "./next-episode";
+import { nextUpFor, resolveNextEpisode } from "./next-episode";
 import { resolvePlayAvailability, sortEpisodes } from "../app/title/title-detail";
 
 /* -------------------------------------------------------------------------
@@ -252,5 +254,91 @@ describe("determinism", () => {
     expect(next.kind === "next" && next.episode.id).toBe("aaa");
     const reversed = resolveNextEpisode([episode(1, 1), a, b], "s1e1");
     expect(reversed.kind === "next" && reversed.episode.id).toBe("aaa");
+  });
+});
+
+describe("nextUpFor — the projection the player is handed (PW-0307)", () => {
+  it("flattens a next episode to what an affordance renders, and no more", () => {
+    expect(nextUpFor(CLEARED, "s1e1")).toEqual({
+      contentId: "s1e2",
+      title: "Episode 2",
+      seasonNumber: 1,
+      episodeNumber: 2,
+      href: "/watch/s1e2",
+      skippedCount: 0
+    });
+  });
+
+  it("CARRIES THE GATE'S OWN href RATHER THAN BUILDING ONE", () => {
+    /* The projection is the last place the address could be re-derived, and it
+     * is not: whatever `resolveNextEpisode` returned is what travels. */
+    const full = resolveNextEpisode(CLEARED, "s1e1");
+    const projected = nextUpFor(CLEARED, "s1e1");
+    expect(full.kind).toBe("next");
+    if (full.kind !== "next") return;
+    expect(projected?.href).toBe(full.href);
+  });
+
+  it("counts the episodes the gate refused instead of naming them", () => {
+    /* The surface says "2 episodes in between are not available here"; it does
+     * not say which, because it does not know which refusal applied. */
+    const holed = [
+      episode(1, 1),
+      episode(1, 2, null),
+      episode(1, 3, null),
+      episode(1, 4)
+    ];
+    const projected = nextUpFor(holed, "s1e1");
+    expect(projected?.contentId).toBe("s1e4");
+    expect(projected?.skippedCount).toBe(2);
+  });
+
+  it("ANSWERS null FOR EVERY ABSENCE, which is one screen and not a taxonomy", () => {
+    /* The series ended. */
+    expect(nextUpFor(CLEARED, "s1e3")).toBeNull();
+    /* The id is not in this series. */
+    expect(nextUpFor(CLEARED, "some-other-series-s1e1")).toBeNull();
+    /* Later episodes exist and none clears the gate. */
+    expect(nextUpFor([episode(1, 1), episode(1, 2, null)], "s1e1")).toBeNull();
+  });
+
+  it("CONSTRUCTS NO ADDRESS ANYWHERE IN THE MODULE, checked mechanically", () => {
+    /*
+     * ADDED AFTER A MUTATION SURVIVED. Replacing `href: next.href` with
+     * `href: `/watch/${next.episode.id}`` passed all twenty behavioural tests,
+     * and it has to: `resolvePlayAvailability` builds exactly that string, so
+     * the correct answer and the forged one are identical for every episode a
+     * fixture can describe. No assertion about VALUES can tell them apart.
+     *
+     * They are not the same thing. One is the address the rights gate
+     * returned; the other is an address this module decided an episode has,
+     * which would still be produced for an episode the gate refused if the
+     * guard above it were ever loosened. The difference is only visible in the
+     * source, so the source is what is checked -- the same mechanical rule
+     * `player-adapter.ts` applies to its import graph, for the same reason.
+     */
+    const source = readFileSync(new URL("./next-episode.ts", import.meta.url), "utf8");
+    const code = source
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .split("\n")
+      .filter((line) => !line.trim().startsWith("*") && !line.trim().startsWith("//"))
+      .join("\n");
+    expect(code).not.toMatch(/["'`]\/watch/);
+    expect(code).not.toMatch(/watchHref/);
+  });
+
+  it("carries no rights basis, synopsis or artwork into the client", () => {
+    /* It crosses a server/client boundary. Everything in it is rendered; a
+     * TitleEpisodeSummary would ship a rights basis into a browser bundle to
+     * draw a link and a number. */
+    const projected = nextUpFor(CLEARED, "s1e1");
+    expect(Object.keys(projected ?? {}).sort()).toEqual([
+      "contentId",
+      "episodeNumber",
+      "href",
+      "seasonNumber",
+      "skippedCount",
+      "title"
+    ]);
   });
 });

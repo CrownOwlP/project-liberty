@@ -560,15 +560,56 @@ export async function findDemoTitleDetail(
     return item === undefined ? null : buildCatalogItemDetail(item);
   }
 
-  // Episode ids are not catalog ids; they are owned by the series that
-  // generated them, so the only place to look is inside each series the source
-  // publishes.
+  const owner = await findSeriesOwning(contentId, source);
+  return owner === null ? null : buildEpisodeDetail(owner.series, owner.episode);
+}
+
+/**
+ * The series an episode id belongs to, and the episode itself.
+ *
+ * Episode ids are not catalog ids; they are owned by the series that generated
+ * them, so the only place to look is inside each series the source publishes.
+ * That scan used to be inlined in `findDemoTitleDetail`; it is a named function
+ * now because PW-0307 needs the same answer for a different reason and a second
+ * copy of a scan is a second place for the ownership rule to drift.
+ *
+ * BY MEMBERSHIP, NEVER BY PARSING THE ID. `demoEpisodes` happens to build ids
+ * as `<series>-s<season>e<number>`, and a prefix match would be faster and
+ * wrong: it is a fixture's spelling, not a contract, and a real source is free
+ * to hand back ids with no relationship to their series at all.
+ */
+async function findSeriesOwning(
+  episodeId: string,
+  source: CatalogMetadataSource
+): Promise<{ readonly series: SeriesCatalogItem; readonly episode: TitleEpisodeSummary } | null> {
   for (const item of selectDeclaredItems(await source.listRecords()).items) {
     if (item.kind !== "series") continue;
-
-    const episode = demoEpisodes(item).find((candidate) => candidate.id === contentId);
-    if (episode) return buildEpisodeDetail(item, episode);
+    const episode = demoEpisodes(item).find((candidate) => candidate.id === episodeId);
+    if (episode) return { series: item, episode };
   }
-
   return null;
+}
+
+/**
+ * The SERIES detail that owns an episode id — the whole thing, episode list
+ * included.
+ *
+ * WHY THIS AND NOT `findDemoTitleDetail` (PW-0307). That one answers with the
+ * EPISODE's own detail, which is what a title page for an episode needs and is
+ * exactly what the next-episode rule cannot use: `resolveNextEpisode` takes the
+ * series' episode list, because "what follows this" is a question about the
+ * series and not about the episode.
+ *
+ * IT RETURNS NULL FOR A MOVIE, FOR AN UNKNOWN ID, AND FOR A SERIES ID. A series
+ * id is not an episode id, and answering for one would let a caller ask "what
+ * plays after this series", which is not a question. Every one of those is the
+ * same answer to the caller — there is nothing to play next — and the caller
+ * renders nothing.
+ */
+export async function findDemoSeriesForEpisode(
+  episodeId: string,
+  environment: NonDeploymentEnvironment | null = NonDeploymentEnvironment.classify()
+): Promise<TitleDetail | null> {
+  const owner = await findSeriesOwning(episodeId, configuredSource(environment));
+  return owner === null ? null : buildCatalogItemDetail(owner.series);
 }
