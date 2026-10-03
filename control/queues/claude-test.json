@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-03T15:16:44.189Z",
+  "generatedAt": "2026-10-03T16:32:44.227Z",
   "agent": "claude-test",
   "executionAvailable": true,
   "assigned": [
@@ -56,6 +56,40 @@
   "review": [],
   "reservedExternal": [],
   "recommended": [
+    {
+      "id": "PL-0720",
+      "priority": "P0",
+      "lane": "Test",
+      "status": "READY",
+      "title": "No test drives a signed-in viewer through to an operable player on a production build",
+      "dependencies": [
+        "PW-0306",
+        "PW-0403"
+      ],
+      "allowedPaths": [
+        "e2e/tests/production-playback-journey.spec.ts"
+      ],
+      "reviewDependencies": [
+        "e2e/src/identity.ts",
+        "e2e/src/env.ts",
+        "e2e/tests/critical-journey.spec.ts",
+        "e2e/tests/player-controls.spec.ts",
+        "apps/web/src/app/watch",
+        "docs/CONTENT_RIGHTS.md"
+      ],
+      "preferredAgent": "claude-test",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "e2e",
+        "rights-review"
+      ],
+      "acceptance": "THE GAP, ESTABLISHED BY READING THE SUITE RATHER THAN BY IMPRESSION. `establishSession` in e2e/src/identity.ts performs a real sign-up and sign-in against a production build, and it is imported by exactly four specs: playback-session.api, playback-session.cross-target.api, playback-session.desktop.api and rights-boundary.api. Every one of them is an API spec. NO BROWSER SPEC IN THIS SUITE EVER SIGNS IN FOR REAL. The browser specs that touch a player -- player-controls.spec.ts and keyboard-reachability.spec.ts -- skip on a production build because a deployment with no catalog source serves a refusal, and round 108 found that PW-0306's own e2e had only ever run in development, where /watch answers without an identity at all.\n\nSo the product's central journey is proven in two halves that never meet: the API knows an authenticated session can obtain a playback session, and the browser knows a player can be operated by someone who never signed in. Nothing joins them, and the join is where a rights or session regression would actually land.\n\nREQUIRED: one spec that walks the whole journey on a PRODUCTION build -- sign in as a real account, reach an authorized title, obtain a session through the ordinary route, land on the player, and operate a control -- with each step asserted rather than assumed.\nREQUIRED: the fail-closed half, in the same spec. An unauthenticated viewer and a viewer without rights to the title are both REFUSED, and the refusal is asserted as a refusal rather than as the absence of a player.\nREQUIRED: the catalog question is answered honestly. A production build with no catalog source serves a refusal, so this spec either provisions a catalog source the production build will accept, or it states precisely which rung of the journey it therefore cannot reach. A SKIP WITH A REASON IS AN ACCEPTABLE ANSWER AND A SILENT PASS IS NOT.\nREQUIRED: non-vacuity. The spec fails if it reaches the end having asserted nothing, which is how a journey test quietly stops being one.\n\nMUST NOT: disable authentication, relax rights enforcement, set CONTENT_RIGHTS_ENFORCEMENT to anything but strict, reach around the application into its database, or construct a /watch address the rights gate did not return. The whole value of this task is that the machinery is the real machinery; a journey that passes because a control was switched off proves the opposite of what it claims.\nMUST NOT: become a second home for assertions that belong in the specs that already own them. This is the JOIN, not a rewrite of the suite.",
+      "notes": "FILED IN ROUND 109 at gpt-architect's instruction, which asked for a narrowly-scoped task 'if the board confirms that gap' and said not to fake it by disabling authentication or rights checks. The board confirms it: PL-0701 (DONE) built the harness, PL-0704/PL-0706 (DONE) were correctives on the watch route, PW-0403 (DONE) built production authentication and session resolution, and PW-0306 (DONE) made the player operable -- each one true of its own layer, none of them joining the layers on a production build.\n\nConflict-checked in both fields in both directions at filing. The single allowed path is a file that does not yet exist, so it collides with nothing; the existing specs it must be read against are listed as review dependencies and are deliberately NOT reserved. PW-0307 (REVIEW) names e2e/tests/series-navigation.spec.ts and PW-0310 (IN_PROGRESS) names e2e/tests/keyboard-reachability.spec.ts; neither names this file.\n\nP0 because it is the product's central promise and because the two existing halves have ALREADY hidden one real breach between them -- PL-0703 was opened for a production rights-invariant breach in the watch route and had to be re-run as PL-0706.",
+      "owner": null,
+      "gateResults": {},
+      "updatedAt": "2026-10-03T15:36:04.872307Z"
+    },
     {
       "id": "PW-0503",
       "priority": "P1",

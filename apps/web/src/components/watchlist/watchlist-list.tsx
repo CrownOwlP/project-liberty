@@ -2,6 +2,7 @@ import Link from "next/link";
 import { headers } from "next/headers";
 
 import { CatalogCard } from "../catalog-card";
+import { RovingGroup } from "../../lib/a11y/roving-group";
 import { WatchlistControl } from "./watchlist-control";
 import { loadWatchlistPage, type WatchlistPageEntry } from "./watchlist-page-data";
 import styles from "./watchlist.module.css";
@@ -116,7 +117,16 @@ export async function WatchlistList() {
         */}
         <p className="code">{result.entries.length}</p>
       </div>
-      <ul className={styles.list}>
+      {/*
+        ARROW KEYS THROUGH THE LIST (PW-0310). This page is the one a household
+        scrolls, and a forty-entry list was eighty tab stops. `RovingGroup`
+        renders this same `ul` and changes nothing until it has hydrated.
+
+        A tile for a title the catalog cannot name has NO controls, and it is
+        still a position the arrows move through: see `tabIndexPlan` in
+        `lib/a11y/roving.ts` for why an empty card is not a skipped index.
+      */}
+      <RovingGroup as="ul" className={styles.list} itemNoun="titles on your list">
         {result.entries.map((entry) => (
           <li key={entry.contentId}>
             <WatchlistEntryTile entry={entry} />
@@ -143,7 +153,7 @@ export async function WatchlistList() {
             </p>
           </li>
         ))}
-      </ul>
+      </RovingGroup>
     </section>
   );
 }

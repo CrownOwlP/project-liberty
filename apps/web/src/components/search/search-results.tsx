@@ -1,5 +1,6 @@
 import type { SearchMatchKind, SearchResponse } from "@liberty/contracts/domains/search";
 import { CatalogCard } from "../catalog-card";
+import { RovingGroup } from "../../lib/a11y/roving-group";
 import styles from "./search.module.css";
 
 /**
@@ -53,14 +54,25 @@ export function SearchResultList({ response }: SearchResultListProps) {
         stream is resolved through authorized provider adapters at playback
         time, never implied by a result being visible.
       */}
-      <ul className={styles.results} role="list">
+      {/*
+        ARROW KEYS THROUGH THE RESULTS (PW-0310). A query that matches twenty
+        titles is twenty cards, each with a heading link and usually a My List
+        control, between the search box and anything below it. `RovingGroup`
+        renders this same `ul` and changes nothing until it has hydrated.
+
+        `role="list"` IS KEPT. The CSS resets the list style, and Safari then
+        stops exposing an unstyled `ul` as a list at all; the attribute is what
+        PL-0104 added to hold the semantics against that, and the keyboard
+        arrangement has no reason to take it away.
+      */}
+      <RovingGroup as="ul" className={styles.results} itemNoun="search results">
         {response.results.map((result) => (
           <li className={styles.result} key={result.item.id}>
             <CatalogCard item={result.item} />
             <p className={styles.matchReason}>{MATCH_LABEL[result.matchedOn]}</p>
           </li>
         ))}
-      </ul>
+      </RovingGroup>
     </section>
   );
 }

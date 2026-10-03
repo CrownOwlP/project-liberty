@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
+
+import { FocusOnRouteChange } from "../lib/a11y/focus-on-route-change";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -27,7 +29,25 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        {/*
+          THE ONE THING THE ROOT LAYOUT IS THE RIGHT PLACE FOR (PW-0310).
+
+          The paragraph above refuses to put the SHELL here because the shell
+          needs the pathname and a root layout is not given one. This component
+          needs the pathname for the opposite reason: it must survive the
+          navigation it is reacting to, and a root layout is the only thing in
+          the tree that does -- everything below it is replaced by the
+          navigation itself, so a listener mounted there would be unmounted
+          before it could notice.
+
+          It does not make the application a client boundary. It is a client
+          LEAF that renders null; the layout around it stays a server
+          component, and so does every page below it.
+        */}
+        <FocusOnRouteChange />
+        {children}
+      </body>
     </html>
   );
 }

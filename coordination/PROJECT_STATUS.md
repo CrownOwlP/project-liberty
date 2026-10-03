@@ -1,15 +1,15 @@
 # Project Liberty - Project Status
 
-> Generated 2026-10-03T15:16:44.186Z from the AI control plane.
+> Generated 2026-10-03T16:32:44.223Z from the AI control plane.
 
-**Overall completion:** 95/116 executable tasks (82%)
+**Overall completion:** 95/118 executable tasks (81%)
 
 ## Status summary
 
 - **BACKLOG:** 7
-- **READY:** 5
+- **READY:** 6
 - **CLAIMED:** 0
-- **IN_PROGRESS:** 1
+- **IN_PROGRESS:** 2
 - **REVIEW:** 3
 - **BLOCKED:** 5
 - **DONE:** 95
@@ -34,18 +34,19 @@
 - **PL-0714** [REVIEW] CI executes every script suite the repository declares, and a failing validate job says something — owner: claude-lead
 - **PW-0208** [REVIEW] An LGPL-compatible libmpv and FFmpeg the product may actually ship — owner: claude-infra
 - **PW-0307** [REVIEW] Series navigation and the next episode — owner: claude-frontend
+- **PW-0310** [IN_PROGRESS] Keyboard, focus and accessibility across the whole application — owner: claude-frontend
 - **PW-0602** [IN_PROGRESS] The automated half of the Windows matrix, running on Windows — owner: claude-test
 
 ## Dispatch classification
 
-- **READY_AND_EXECUTABLE:** 5
+- **READY_AND_EXECUTABLE:** 6
 - **READY_BUT_EXTERNAL:** 0
 - **BLOCKED:** 5
 - **BACKLOG (dependency-gated):** 7
 
 ## Recommended executable wave
 
-- **PW-0310** -> claude-frontend (P1/Frontend) Keyboard, focus and accessibility across the whole application
+- **PL-0719** -> claude-security (P1/Security) The authentication rate-limit policy is Better Auth's default, which nobody in this project chose
 
 ## Queued for external agents
 
@@ -71,7 +72,7 @@ UNBLOCK WHEN: the commander runs Experiment 1a on real Windows hardware and hand
 
 - **gpt-architect:** 0/6 active (external lane; not locally executable)
 - **claude-lead:** 1/2 active
-- **claude-frontend:** 1/2 active
+- **claude-frontend:** 2/2 active
 - **claude-backend:** 0/2 active
 - **claude-media:** 0/2 active
 - **claude-test:** 1/1 active

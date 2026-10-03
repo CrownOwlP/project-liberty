@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-03T15:16:44.189Z",
+  "generatedAt": "2026-10-03T16:32:44.226Z",
   "agent": "claude-frontend",
   "executionAvailable": true,
   "assigned": [
@@ -73,16 +73,12 @@
       "implementationAgent": "claude-frontend",
       "updatedAt": "2026-10-03T15:16:01.982Z",
       "implementationBaseSha": "13798f8f45556ed233b894f94c6206944167c646"
-    }
-  ],
-  "review": [],
-  "reservedExternal": [],
-  "recommended": [
+    },
     {
       "id": "PW-0310",
       "priority": "P1",
       "lane": "Frontend",
-      "status": "READY",
+      "status": "IN_PROGRESS",
       "title": "Keyboard, focus and accessibility across the whole application",
       "dependencies": [
         "PW-0301",
@@ -90,7 +86,14 @@
       ],
       "allowedPaths": [
         "apps/web/src/lib/a11y/**",
-        "apps/web/src/app/globals.css"
+        "apps/web/src/app/globals.css",
+        "apps/web/src/lib/a11y/keyboard-reachability.test.ts",
+        "e2e/tests/keyboard-reachability.spec.ts",
+        "apps/web/src/app/layout.tsx",
+        "apps/web/src/components/catalog-rail.tsx",
+        "apps/web/src/components/continue-watching/continue-watching-rail.tsx",
+        "apps/web/src/components/search/search-results.tsx",
+        "apps/web/src/components/watchlist/watchlist-list.tsx"
       ],
       "reviewDependencies": [
         "apps/web/src/components",
@@ -106,10 +109,39 @@
         "architecture-review"
       ],
       "acceptance": "The application is operable from the keyboard, end to end, and PRODUCT_SPEC.md's principle that 'accessibility, subtitles, and audio correctness are core features' is true of the shipped product rather than of three components. MEASURED STARTING POINT: there are zero keyboard handlers in the non-player UI, no skip link, no focus trap and no focus restoration; the rails are not arrow-key navigable, which is table stakes for a desktop media application. REQUIRED: roving tabindex on rails and grids. REQUIRED: focus restoration on route change and on dialog close. REQUIRED: a visible focus indicator on every interactive element, including those styled by globals.css, which defines none today. REQUIRED: an automated check in the e2e suite that fails when a new interactive element is unreachable by keyboard, because a one-off audit decays and a gate does not. NOT IN SCOPE: a full WCAG certification; the bar here is operability plus a mechanical guard against regression.",
-      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. ",
-      "owner": null,
-      "gateResults": {}
-    },
+      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. \n\nROUND 109 SURFACE AMENDMENT, recorded as an event before any write: the e2e guard the acceptance requires cannot live in apps/web, which runs vitest in a node environment with no DOM, no focus and no Tab key. e2e/tests/keyboard-reachability.spec.ts added. ALSO A CORRECTION to the acceptance's measured starting point: globals.css already defines a global :focus-visible (PW-0301), app-shell.tsx already renders a skip link, the season selector already has a roving tabindex and arrow keys (PW-0307), and the player's control bar is already keyboard-operable (PW-0306). No REQUIRED clause is weakened; what remains is the rails and grids, focus restoration, and the mechanical guard. Components stay read-only until the guard has measured which elements are actually unreachable.\n\nROUND 109 SECOND SURFACE AMENDMENT, recorded as an event before any write and justified by the guard's own measurement rather than by a plan. The guard found six unreachable episode links on /title/northstar; a tab-order trace showed the browser reaching all six, so both findings were defects in the GATE -- identity was a human-readable description that repeats once per episode row, and the page was observed before hydration had hidden the second season. Both are repaired and the repairs are unit-tested. With the gate correct, NOTHING IN THIS APPLICATION IS UNREACHABLE BY KEYBOARD today, so the remaining REQUIRED clauses are about cost and about focus: a rail of five cards is up to fifteen tab stops. The four rail CONTAINERS and the root layout are added; no card and no control is taken, because the roving tabindex is managed on the group from the DOM side, and app-shell.tsx is not taken because focus restoration mounts in the root layout as a client leaf. episode-list.tsx is also a rail and is DELIBERATELY NOT TAKEN: PW-0307 holds it until that task closes.\n\nAN HONEST FINDING: 'focus restoration on route change and on DIALOG CLOSE' has no dialog to restore from. A search of apps/web/src for role=\"dialog\", <dialog and aria-modal returns nothing; the application has no dialogs. The route-change half is implemented; the dialog half is reported as vacuous rather than satisfied by inventing a dialog.",
+      "owner": "claude-frontend",
+      "gateResults": {
+        "typecheck": {
+          "status": "pass",
+          "at": "2026-10-03T16:32:27.401Z",
+          "by": "claude-frontend",
+          "commitSha": "9c6abd42e80f1796881947aea0cdd0c03d047ed7",
+          "evidence": "npm run typecheck at the repository root: 22 tasks successful, 22 total, exit 0. Covers the four new files under apps/web/src/lib/a11y (keyboard-reachability.ts, roving.ts, roving-group.tsx, focus-on-route-change.tsx), the five amended surfaces, and e2e/tests/keyboard-reachability.spec.ts, which is typechecked separately by npx tsc --noEmit in e2e/ (exit 0, no output). Two real type failures were found and fixed on the way rather than suppressed: the e2e package lists DOM without DOM.Iterable so a NodeList spread was refused and became Array.from, and apps/web sets exactOptionalPropertyTypes so RovingGroup's className had to accept an explicit undefined because two of the four rails pass a CSS-module class. npm run repo:validate also passes."
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-10-03T16:32:27.563Z",
+          "by": "claude-frontend",
+          "commitSha": "9c6abd42e80f1796881947aea0cdd0c03d047ed7",
+          "evidence": "npx vitest run in apps/web: 90 test files passed, 1656 tests passed, exit 0, 53.28s. The two new policy modules carry 42 of those: keyboard-reachability.test.ts 25 and roving.test.ts 17. Both suites test DECISIONS over plain records rather than rendering, because apps/web runs vitest with environment \"node\" and has no DOM, no focus and no Tab key. Three of the new cases exist because the gate itself was wrong first and they are the regressions for it: two elements with the same description and different probes, one reached and one not; a card group with every control at tabindex=-1, which is the abuse the -1 exemption invites; and a control stranded at -1 inside the ACTIVE card, which is a genuinely unreachable control hiding behind a legitimate-looking group. No existing test was changed except the one whose fixture had to gain a probe field."
+        },
+        "e2e": {
+          "status": "pass",
+          "at": "2026-10-03T16:32:44.173Z",
+          "by": "claude-frontend",
+          "commitSha": "9c6abd42e80f1796881947aea0cdd0c03d047ed7",
+          "evidence": "npx playwright test --project=chromium, run in BOTH configurations after the work was complete. DEVELOPMENT (LIBERTY_E2E_WEB_MODE=development, LIBERTY_E2E_PORT=3177): 63 passed, 7 skipped, 0 failed, 2.2m -- the whole suite, not only the new file. PRODUCTION (LIBERTY_E2E_PORT=3177, LIBERTY_E2E_DATABASE_URL=postgres://postgres@127.0.0.1:5433/lib_wl, a real build and a real PostgreSQL): 31 passed, 39 skipped, 0 failed, 46.4s. The new keyboard-reachability.spec.ts contributes 10 tests: all 10 pass in development; in production 6 pass and 4 skip, each naming the catalog reason -- a build with no catalog source serves a refusal rather than a player or a rail, which is the same honest skip the existing player specs take.\n\nTWO GATES IN THAT FILE AND BOTH HAVE BEEN SEEN TO FAIL, which is the only evidence that distinguishes a gate from decoration. \"THE GATE ITSELF FAILS WHEN SOMETHING IS UNREACHABLE\" plants a real div with a real onclick attribute in the live page and requires the reachability check to name it. \"THE ROVING-GROUP CHECK ITSELF FAILS WHEN A RAIL LOSES ITS ENTRY POINT\" sets every control in every real rail on the home page to tabindex=-1 and requires the group check to refuse it; it asserts a non-zero rail count first so it cannot pass by finding nothing.\n\nTHREE FALSE REDS WERE FOUND AND FIXED BEFORE THIS WAS RECORDED, all of them defects in the measurement rather than in the product, and none of them silenced. (1) The first run reported six unreachable episode links on /title/northstar; a tab-order trace of the same page showed the browser reaching every one, because identity was a human-readable description and a title page renders one \"Play\" link per episode row. (2) The same run reported season 2's links unreachable because the page was observed before hydration had hidden that panel. (3) A later run reported 8 of 12 rail controls still in the tab order; a DOM census showed the arrangement was correct and the TEST was counting My List buttons that are disabled for a signed-out viewer and were never in anybody's tab order. Each was fixed at the cause and each has a unit test.\n\nTHE PRODUCTION RUN'S THREE FAILURES ON THE FIRST ATTEMPT WERE ENVIRONMENTAL AND ARE NOT CLAIMED AS PASSES: PostgreSQL had stopped, the server log shows connect ECONNREFUSED 127.0.0.1:5433 behind every sign-up 500, and the two watchlist cases passed once it was restarted. The third was this task's own roving-group negative test lacking a catalog skip, which was added."
+        }
+      },
+      "implementationAgent": "claude-frontend",
+      "updatedAt": "2026-10-03T15:39:36.666048Z",
+      "implementationBaseSha": "9c6abd42e80f1796881947aea0cdd0c03d047ed7"
+    }
+  ],
+  "review": [],
+  "reservedExternal": [],
+  "recommended": [
     {
       "id": "PW-0308",
       "priority": "P2",

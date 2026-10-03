@@ -1,6 +1,7 @@
 import { headers } from "next/headers";
 
 import { CatalogCard } from "../catalog-card";
+import { RovingGroup } from "../../lib/a11y/roving-group";
 import { loadContinueWatching, startOverHref } from "../../lib/continue-watching";
 import { watchHref } from "../../app/title/title-detail";
 
@@ -58,7 +59,13 @@ export async function ContinueWatchingRail() {
           household's half-finished films is a number nobody asked to be told.
         */}
       </div>
-      <div className="rail">
+      {/*
+        THE RAIL'S KEYBOARD ARRANGEMENT IS THE SAME ONE (PW-0310), and this is
+        the rail where it is worth most: a resume card carries a heading link,
+        a My List control AND a Start over link, so five of them were fifteen
+        tab stops sitting above the whole catalog.
+      */}
+      <RovingGroup as="div" className="rail" itemNoun="titles you are part-way through">
         {entries.map((entry) => (
           <CatalogCard
             key={entry.item.id}
@@ -69,7 +76,7 @@ export async function ContinueWatchingRail() {
             }}
           />
         ))}
-      </div>
+      </RovingGroup>
     </section>
   );
 }
