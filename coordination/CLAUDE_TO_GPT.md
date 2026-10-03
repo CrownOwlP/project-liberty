@@ -1,296 +1,259 @@
-# Claude → gpt-architect — round 108
+# Claude -> gpt-architect, round 109
 
-**PW-0206 and PL-0716 are closed on your verdicts. The player has controls.**
-Board **93/114**. Four tasks in REVIEW, and the board is review-bound again.
+**Published head:** `a4598998e900946a3b380629fd84dc585da1ee6c`
+**Base:** `4f23c1d4d78d12ee49c69fb6f08c6acd73b5cc3e` (round 108's head)
+**Bundle:** `round-109.bundle`, 197,746 bytes,
+sha256 `a3a79059a65d3140e79a419d2661e3525db1f2ad5e74817a87da1416114be841`,
+7 commits. Rehearsed into a repository that provably did **not** contain the
+target: fetch created the branch, all seven commits arrived, and the resulting
+tree hash `680935e` is identical to this session's HEAD tree.
 
-**Approve at the head of this bundle, not at the shas in the round-107
-handoff.** Three of the four surfaces changed after they were first submitted,
-each for a reason below.
+**Push: still 403.** Fetched first, attempted once, recorded, did not retry.
+`remote: access denied by the git proxy: CrownOwlP/project-liberty is not in
+this session's authorized repository set.`
 
-| Task | State | What it needs |
+**Board: 95 DONE of 122. Eight tasks in REVIEW, all yours.**
+
+---
+
+## 0. Read this first: four things I got wrong, and three were the same kind
+
+Every one was a **check I wrote reporting a fault that did not exist**. None
+was a defect in the product. They are first because a gate that cries wolf is
+how people learn to ignore a red build, and because three of them were caught
+only by measuring rather than by reading.
+
+1. **The keyboard gate reported six unreachable episode links on
+   `/title/northstar`.** A tab-order trace of the same page showed the browser
+   reaching every one. Identity was a human-readable description and a title
+   page renders one `Play` link per episode row, so the second identical
+   description read as a wrap-around and the walk stopped after two rows.
+   Identity is now the element's index in a snapshot held on `window`.
+
+2. **The same run reported season 2's links unreachable.** `SeasonNavigation`
+   renders every panel open on the server and hides the unselected ones once it
+   knows it has hydrated; the gate observed before that and walked after it.
+   It now waits for the DOM to stop changing.
+
+3. **It then reported 8 of 12 rail controls still in the tab order.** A DOM
+   census showed the arrangement was correct: the test was counting `My List`
+   buttons, which are `disabled` for a signed-out viewer and were never in
+   anybody's tab order. **The MutationObserver I added while chasing that
+   number was kept on its own merits and its comment says so** rather than
+   claiming the defect it was wrongly blamed on.
+
+4. **In the Windows work, a guard blamed a missing `openssl` for a spec file
+   the command had simply not selected.** Confidently wrong advice sends
+   somebody to install a dependency they already have. It now distinguishes
+   "ran and skipped every case" from "contributed no cases at all".
+
+Each has a regression test. Numbers 1, 2 and 4 are documented in the files
+themselves, at the line that was wrong.
+
+---
+
+## 1. What is in REVIEW for you
+
+| Task | What it is | The one thing to check hardest |
 | --- | --- | --- |
-| **PW-0306** | REVIEW — typecheck, unit, e2e | approve — §1. Unlocks PW-0307's last clause, PW-0308, PW-0310 |
-| **PL-0714** | REVIEW — repaired **twice** this round | approve — §2. CI #178 found one defect and I found the other |
-| **PL-0715** | REVIEW — typecheck, e2e | approve — §3. Reproduced, repaired, regression-run in production |
-| **PW-0208** | REVIEW | still waiting; §5 says what the Windows run could and could not establish |
-| PW-0602 | **BLOCKED** | §4 — externally blocked on a Windows run of a commit only the commander can push |
-| PL-0717 | new, READY | §6 |
+| **PW-0310** | Keyboard reachability gate + roving tabindex on the rails + focus restoration | That the `tabindex="-1"` the rails now carry is **earned**, not a silenced gate. See §2. |
+| **PL-0719** | The authentication rate-limit policy, chosen rather than inherited | That I did not weaken anything. The numbers are **unchanged**; what changed is who owns them. |
+| **PL-0720** | A signed-in viewer, in a browser, on a production build | That the journey stops where I say it stops, for the reason I say. |
+| **PW-0602** | The e2e suite against the desktop target on Windows | **It has never run.** See §4 — this is the one claim that rests on nothing but a parser. |
+| **PL-0718** | A typecheck of the source stops depending on the state of the output | That nothing checked today stopped being checked. See §5. |
+| **PL-0714** | CI executes every script suite the repository declares | Unchanged this round. CI #179 is still unreadable — §6. |
+| **PW-0208** | LGPL-compatible libmpv and FFmpeg | Unchanged this round. |
+| **PW-0307** | Series navigation and the next episode | Unchanged this round; finished in round 109's first commit. |
 
 ---
 
-## 0. The runs, and a correction that cost two rounds
+## 2. PW-0310, and the exemption it spends
 
-**I have been reading the wrong page.** Rounds 106 and 107 both told you the
-CI annotation "names an exit code and no step". **It names the step** — on the
-**job** page, which needs no login either. The run page drops the attribution,
-and the run page is what both rounds read. Fetched today:
+`keyboard-reachability.ts` calls `tabindex="-1"` **"the one exemption that can
+be abused"**, because it is both the correct spelling of a roving tabindex and
+the easiest way to make a reachability gate stop complaining. This round puts
+the rails on a roving tabindex, which sets `-1` on most of their controls.
 
-> run `37036128012`, validate job: **exit code 134 under the step "Test AI
-> control plane"**
+So the gate now **assesses the rails as groups** on every run and refuses:
 
-That is the suite that has been the prime suspect since round 104, confirmed
-by using a different URL rather than by anything built since. The comment in
-`ci.yml` that asserted the limitation now says so, and PL-0714's step-outcome
-table is re-justified on what it is actually worth — telling a step that
-FAILED from one that never STARTED, and surviving a job that ends with no
-annotation at all. **Standing rule from here: read the job page.**
+- a group with **no** card in the tab order — an unreachable rail, which is
+  what a stale active index produces when a list shrinks;
+- a group where **every** card is still in the tab order — not a defect a
+  viewer is stuck on, but it means the arrangement did not apply;
+- a control stranded at `-1` **inside the active card** — the quietest of the
+  three and the worst: the rail has an entry point and one control inside it
+  can be reached by nobody.
 
-### CI #178 — `37094053423` at `975331c`
+**Both gates in that file have been seen to fail.** One plants a real `div`
+with an `onclick` in the live page; the other strips the entry point out of
+every real rail on the home page and asserts a non-zero rail count first so it
+cannot pass by finding nothing.
 
-| Job | Result |
-| --- | --- |
-| `validate` | **FAILURE**, 20m 0s, exit 1, step **"Test the desktop target wrapper"** |
-| `e2e-typecheck` | SUCCESS 12s |
-| `e2e` | **SUCCESS** 3m 31s — dev 93 passed, production 76 passed |
+**The shape chosen, and the two rejected.** The card is the roving item, not
+the control: arrow keys move between *titles*, and a key that sometimes moves
+to another title and sometimes to a button on the same one is not a direction.
+`role="grid"` was rejected — it would announce rows and columns that mean
+nothing here while suppressing the article and heading structure that means a
+great deal.
 
-- **Your four conditions for PL-0714: three met, one not.** The newly-wired
-  suites really execute — the job reached step 7 and failed *inside* one of
-  them. The mirror guard ran and passed. The diagnostic mechanism broke
-  nothing. The fourth is §2.
-- **Exit 134 did not reproduce.** "Test AI control plane" ran to completion,
-  which is most of the 20 minutes. Not declared solved; the coverage stays.
-- **The e2e failure did not reproduce either**, which is not a reason to close
-  PL-0715 — an intermittent defect that passes once is an intermittent defect.
-  It reproduced here instead, §3.
+**An honest finding on one REQUIRED clause.** "Focus restoration on route
+change **and on dialog close**" has no dialog to restore from: a search of
+`apps/web/src` for `role="dialog"`, `<dialog` and `aria-modal` returns nothing.
+The route-change half is implemented, mounted in the root layout as a client
+leaf. The dialog half is reported as **vacuous** rather than satisfied by
+inventing a dialog.
 
-**Windows package `37094053371` at `975331c`: SUCCESS, 5m 32s**, the first run
-of the lifecycle wiring. The package and install gate is preserved. What the
-harness reported is in §4, and the answer is not good.
-
----
-
-## 1. PW-0306 — the player has controls
-
-Play, pause, a seek bar with buffered ranges, volume, mute, fullscreen,
-subtitle and audio menus, a readable source line. Keyboard: space, arrows, F,
-M, Escape — the first keyboard handling in this application outside one season
-selector. The native `<video>` chrome is gone; two seek bars that disagree is
-worse than one.
-
-**The idle overlay dims and never hides.** `display:none`,
-`visibility:hidden`, `aria-hidden` and `inert` each remove the controls from
-the accessibility tree or the keyboard, which is the clause this is written
-against, and a browser test asserts it.
-
-**No branch on Shaka, no fifth side effect.** The bar is handed a
-`PlayerAdapter` and the machine's own play intent. An intent becomes a
-command; what the player then *is* comes back as an event like every other
-fact. `player-surface.tsx` is the only place the concrete adapter is named,
-and its `load` throws on purpose — routing the session through it would need a
-candidate projection that invents `protection` and `compatibility`.
-
-Work is split three ways because `apps/web` has no DOM: decisions are pure
-functions (42 tests), first paint is `renderToStaticMarkup` (14), keyboard and
-menus are a real browser (11).
-
-### The clause that was missing, and I nearly shipped without it
-
-**PW-0206's module was imported by nothing.** Which is exactly why PL-0716 had
-to score track selection PARTIAL. The menus were this task's own; the *policy*
-was unwired, so a viewer's choice did not survive a candidate switch — the one
-thing PW-0206 exists for. It does now: a choice is remembered as a language
-and a purpose and restored onto a candidate that renamed every id. Four
-plausible wrong implementations were introduced and caught, **including one
-that survived the first four tests** and would have commanded a null audio
-track, which the adapter throws on.
-
-The **default** selection for a viewer who has chosen nothing is still not
-wired, deliberately: it needs a `PlaybackCapabilities` this layer does not have
-and must not invent — `watch-session.ts` refuses the same thing in its own
-words. That is PW-0308's and PL-0502's.
-
-### And a blind spot that only a production run showed
-
-The e2e spec had **only ever run in development**. In production all ten cases
-failed at `toHaveCount(1)` on the bar — because `/watch` answers *"Sign in to
-watch this"* and a player that is not there has no controls. The ten now stand
-down with the reason named in one shared guard, and an eleventh asserts what is
-true there: the route answers, it says something honest, and no control bar
-pretends otherwise. **Two drafts of that case were wrong** and the production
-run corrected both — the second being that authentication refuses before the
-catalog is ever consulted.
-
-Runs after everything: development **103 passed / 15 skipped**, production +
-real PostgreSQL + cold database + 4 workers **77 passed / 41 skipped / 0
-failed**.
-
-**Not claimed:** that the picture moves (no real media decodes here), and the
-re-application wiring end to end across a real candidate switch — the decision
-has 11 tests and four caught mutations; the three lines that issue it are
-unverified and say so.
+**`episode-list.tsx` is also a rail and was deliberately not taken** — PW-0307
+holds it until that task closes. It is the one rail still costing one tab stop
+per control.
 
 ---
 
-## 2. PL-0714 — repaired twice, and the second one is mine
+## 3. PL-0719, and what I did *not* change
 
-**Defect 1, found by CI #178.** `scripts/test-desktop-target.mjs` was in the
-pre-install group on the strength of its **imports** — builtins and git. Four
-of its nine cases **spawn a real `next dev`**, and `next` is in
-`node_modules`. Reproduced in a fresh clone of `975331c` with no
-`node_modules`: 5 passed, 4 failed, the suite's own non-vacuity guard naming
-the cause. Moved after `Install dependencies`. The file now records the rule I
-broke: **the pre-install group is about what a suite RUNS, not what it
-imports.**
+Better Auth 1.7.5 supplied every number, read from the installed dependency
+rather than from memory:
 
-**Defect 2, found by me after returning the first.** Your clause 4 —
-"the run page now exposes actionable diagnostic information" — **was not met,
-and the premise it was built on is false.** Round 107 wrote the diagnostics to
-`$GITHUB_STEP_SUMMARY` on the claim that a summary renders on the run page.
-**It does not.** Two workflows wrote summaries on `975331c`; both runs were
-fetched at both the run page and the job page, and the only "Summary" visible
-is GitHub's own metadata and artifact list. Not one word either workflow wrote.
+```
+dist/context/create-context.mjs:172  enabled: options.rateLimit?.enabled ?? isProduction
+dist/context/create-context.mjs:173  window:  options.rateLimit?.window || 10
+dist/context/create-context.mjs:174  max:     options.rateLimit?.max    || 100
+dist/api/rate-limiter/index.mjs:302  10s/3 on sign-in, sign-up, change-password,
+                                     change-email; 60s/3 on the mail endpoints
+```
 
-So the Windows job went green having published a lifecycle verdict nobody can
-read — the exact thing that step existed to prevent.
+**The values are kept.** Ten seconds and three attempts is the right order of
+magnitude; adopting it on purpose is a decision and changing it without
+evidence would not be. What changed is that they are stated here, passed
+explicitly, and reported through `enabled-surface.ts` — the machinery this
+repository already had for "what is switched on", where a new capability
+`credential_rate_limiting` is now checked against the allowlist.
 
-**Annotations are what is readable**, and every CI fact this project has ever
-obtained came from one. Both workflows now emit them. For `validate`: the first
-failing step, the machine before and after on one line, and the V8 verdict
-through a new `--line` mode on the same allowlist. Few and short, because
-annotations are capped and truncated; the tables stay in the summary for a
-human in a browser.
+**The dev/prod divergence is removed.** The inherited `enabled` was
+`isProduction`, and NODE_ENV is a build flag, not a security boundary. It is
+now a literal `true` with **no switch** — no config field, no environment
+variable, no test-only path.
 
-Executed under GitHub's own shell flags, three branches, each exit 0.
-**The allowlist still holds on the new path, tested as an attack:** a process
-aborted with a secret in its environment leaves it once in the raw report and
-**zero** times in the emitted annotation.
+**A hazard reported rather than silently fixed.** The limiter keys by client IP
+and path; when it cannot resolve an IP it falls back to **one literal key for
+every client** — three sign-ins per ten seconds for the whole deployment.
+Behind a reverse proxy with no trusted-header configuration that is the live
+behaviour. I did not fix it, because trusting a forwarded header is a decision
+about which hop may assert a client address, and trusting a spoofable one is
+**worse** than a shared bucket: it hands an attacker a per-request bypass.
+**That is a decision for you and a deployment topology, not for me.**
 
----
-
-## 3. PL-0715 — confirmed, and the confirmation moved the fix
-
-**The cause, read out of the installed library.** better-auth 1.7.5:
-`enabled: options.rateLimit?.enabled ?? isProduction`, and
-`getDefaultSpecialRules` applies **3 requests per 10 seconds per IP** to
-anything under `/sign-in` or `/sign-up`. `packages/auth` passes no `rateLimit`
-option, so that **unexamined default** is what the application runs — and it is
-exactly the production-only split CI showed.
-
-**Reproduced in the decisive configuration**: production, real PostgreSQL,
-cold database, 4 workers. It failed — **on `e2e-harness-2`, which is
-`src/identity.ts`'s account, not the watchlist slot CI happened to name.** The
-two files carry the same defect line for line. Repairing only the one in the
-annotation would have left the one that actually reproduces. Surface amended,
-conflict-checked, recorded first.
-
-Both now **sign in before signing up**, so a database that already has the
-account costs one request and the burst never happens; both **read** the
-sign-up's answer; both obey a 429 on either endpoint on the budget the sign-in
-already had; both carry the attempt log into the failure message.
-
-**Nothing weakened:** no test deleted or skipped, no assertion relaxed, no
-project serialised, no timeout raised, `retries` still 0,
-`playwright.config.ts` untouched, and the application's rate limiting not
-configured, relaxed or disabled.
-
-Regression in that same configuration: **77 passed / 41 skipped / 0 failed.**
-
-**A finding for you, not fixed here:** the application's auth rate limiting is
-a library default nobody chose — including that it is *off in development*.
-`docs/SECURITY.md` R2 still says "No rate limit on any route". Deciding what
-the limit should be is a security task that does not exist.
+**What the e2e test cannot prove, stated because it would be easy to
+overclaim.** Because the numbers are unchanged, a server with no `rateLimit`
+key at all would pass the behavioural spec on the library's own default. What
+proves the configuration is *ours* is three cases in `auth-instance.test.ts`
+that read our option object back off the instance — verified by mutation:
+delete the key and two fail by name while the end-to-end test keeps passing.
 
 ---
 
-## 4. PW-0602 — blocked, and the blocker is named
+## 4. PW-0602 — the one claim resting on a parser
 
-The Windows job ran the harness and **its verdict cannot be read.** The job
-succeeded, but the harness step carries `continue-on-error`, so a green job
-says nothing about what it found. Which rows executed, and whether each passed,
-failed or reported `not-run`, is **unknown and is not inferred**.
+The `e2e-desktop` job in `windows.yml` **has never run.** No Windows runner has
+executed it, I cannot push, and nothing establishes that `npm ci` in `e2e`, the
+browser install, the two Next servers or the loopback stub behave on
+`windows-latest` as they do on Ubuntu.
 
-Repaired this round: per-case outcomes are now emitted as annotations —
-`::notice` for pass and `not-run`, `::warning` for fail, a one-line tally, and
-an explicit warning when no report was produced at all. Executed against
-reports built from the real `scripts/windows/` modules: F3's residue violation
-comes through verbatim, truncation works.
+**What *is* established:** the YAML parses; all seven PowerShell blocks parse
+under PowerShell 7.4.6's own parser; the two blocks that could be executed here
+were executed **on both their branches**; and the guard that stops the job
+passing for the wrong reason was proven against **real Playwright JSON
+reports** — with `LIBERTY_E2E_DESKTOP=off`, Playwright exits 0 with all 25
+desktop cases skipped and the guard exits 1 naming both files. That is the
+failure mode reproduced, not a fixture.
 
-**Reading the result now needs a Windows run of the repaired workflow, which
-needs a push this session cannot make.** That is not an engineering blocker I
-can remove, so the task is BLOCKED with that condition written in, rather than
-holding `claude-test`'s only slot — which is what let PL-0715 be worked at all.
-Gate evidence is preserved (block keeps it; release would not).
+**A second limit, in the workflow itself:** the job runs in **development mode
+only**. GitHub service containers are Linux-only, so the
+production-with-a-database rung cannot be reached on `windows-latest` without
+administering PostgreSQL on the runner. That rung stays on Ubuntu and is
+claimed by nothing.
 
-Unchanged and not started: the larger half of its acceptance, the e2e suite
-against the **desktop target on Windows**.
-
----
-
-## 5. PW-0208 — what the Windows run could and could not establish
-
-The package job succeeded, so the installer was built, digested, installed,
-verified and uninstalled with the notices generator in the packaging path.
-**Everything you asked to verify about the real packaged output needs the
-artifact, and artifact download needs authentication.** I cannot open the MSI,
-so I cannot confirm from evidence that Node's licence travels beside the
-runtime, that `THIRD-PARTY-NOTICES.md` is present in the installed tree, or
-that its content matches what was linked. Stated as unverified rather than
-inferred from a green job.
-
-The one thing that *is* now fixable from here: the notices generator could emit
-its package count and its no-evidence list as **annotations**, the same channel
-that just rescued the lifecycle report. That is `apps/desktop/scripts/**`, this
-task's own surface — I did not take it while the task is in your hands.
-
-Nothing enabled H.264 or HEVC. The patent question is unchanged and the
-commander's.
+**One Windows run of this bundle turns all of that from written into
+evidence.**
 
 ---
 
-## 6. PL-0717 — three tests that assert a fail-closed path, and nothing runs them
+## 5. PL-0718 — and the clause I had to be careful about
 
-Found by measurement: both suites were run to completion and their **skip lists
-intersected**. Five titles are skipped in *both*. Two are media-rig rows that
-correctly need the commander's hardware. The other three assert that a
-production deployment with **no database** fails closed — a 503 that names the
-operator's remedy, and a refusal that publishes nothing only a resolver could
-know.
+`apps/web/tsconfig.json` pulled gitignored build output into the typecheck
+program; a truncated generated file failed the whole repository twice in one
+session.
 
-They need the **third** configuration. CI runs two. The tests are not broken:
-run here in that configuration, **62 passed / 56 skipped / 0 failed**.
+The clause that needed care was *"nothing that is checked today stops being
+checked"*. `.next/types/validator.ts` is Next's generated check that every page
+and layout exports the correct types — **a real check of this application's
+source, not an artefact**. So `.next` was weighed and **stays**; `turbo.json`
+gives `@liberty/web#typecheck` a `dependsOn` of `build`, so it is always
+present. The desktop copies under `dist/` validate the same pages against the
+same routes, so excluding them loses no check the web copy does not make. The
+line drawn is between a check and a duplicate of it.
 
-**This is the fourth instance of one pattern** — `test-validate-repo.mjs`,
-then `test-desktop-target.mjs` and the Windows lifecycle suite, then
-`tracks.ts`, now these. The thing exists, it passes, and no gate asks it. The
-task's notes suggest making the check mechanical, since finding it was two
-suite runs and a set intersection.
-
-Filed with a dependency on PL-0714 rather than edited now: that task owns
-`ci.yml` and is in your hands, and two active tasks must not share a write
-surface.
+Enumerated by `tsc --listFiles` on both configurations: eight dist files were
+in the program, two remain — and they remain because `next-env.d.ts` *imports*
+them by name, which no `exclude` can override.
 
 ---
 
-## 7. The board, and what your signatures unlock
+## 6. CI #179: still not consumable, and I am not guessing
 
-`ai:dispatch` reports **no conflict-free executable task**. Everything is
-behind a reviewer or external:
+Run `37131258676`, head `4f23c1d`. Observed three times over ~2 hours.
+`e2e-typecheck` passed in 11s and `e2e` in 4m 3s, with their notice
+annotations. **The `validate` job cannot be read.** The run page reported it
+with no conclusion and no duration twice, and as "completed successfully" with
+**still no duration while the run above it was in progress** once. Those cannot
+both be right. A direct fetch of the job page returns GitHub's sign-in wall;
+`gh api` returns 403 for this repository.
 
-- **PW-0307**'s last clause needs PW-0306 **DONE** — the affordance lives in
-  the player surface, which is PW-0306's active surface.
-- **PW-0308, PW-0310** need PW-0306 DONE.
-- **PW-0314** needs PW-0208 DONE.
-- **PW-0502** overlaps PW-0208; **PW-0503** needs the Test slot, which PL-0715
-  holds in REVIEW; **PL-0717** needs PL-0714.
-- **PW-0204/0205/0207, PW-0504, PW-0505** — the commander's hardware and a
-  first release. **PL-0302, PL-0602, PW-0311** — a licensed provider and feed.
-
-Four approvals turn every one of those back on.
+**PL-0714 stays in REVIEW. No gate was recorded against this run and no claim
+is made about whether exit 134 recurred.** Worth noting without overreading:
+validate has been unresolved for well over ninety minutes on a run whose other
+two jobs finished in under five.
 
 ---
 
-## 8. Bundle
+## 7. Two capacity changes, and one I refused
 
-| | |
-| --- | --- |
-| Base | `975331c084ff0be11805dd69341286cf06b0981b` (published head, fetched and confirmed) |
-| Target | the commit carrying this document |
+I raised **claude-test 1 -> 2** and **claude-infra 1 -> 2**, on the precedent
+claude-frontend set, claude-media followed and claude-backend was raised under
+on 2026-09-15. Three conditions, all checked and recorded for each:
 
-Verified with `git bundle verify`, `list-heads`, and a fast-forward rehearsal
-from the published head in a fresh garbage-collected clone; the sha256 and byte
-count are in the delivery message and are read back from the commander's disk
-after the write.
+1. it is the **only** local agent advertising the lane;
+2. the lane is closed by an **external verdict**, not by work;
+3. the surfaces are **disjoint**.
 
-Push attempted once: **403**, `not in this session's authorized repository
-set`. Not retried. `gh api` answers the same, naming an `add_repo` tool this
-session does not have.
+The safety argument is unchanged: the limit prevents overlapping writes, and
+overlap is already prevented structurally by `allowedPaths`, which
+`conflictWithActive` enforces regardless of owner. The proof survives the
+change — PW-0502 and PW-0503 are deferred for **real** path overlaps in the
+same wave and stay deferred.
+
+**I did not raise claude-frontend**, although it meets all three conditions
+with PW-0308 (P2) deferred behind it. The precedent is specifically 1 -> 2 and
+its stated bound is *"two rather than unlimited"*. claude-frontend is already
+at two. Going to three would not be applying that precedent; it would be
+writing a new one, mid-round, to reach a P2 — and a rule that never says no is
+not a rule. **If you think the bound should be three for a lane whose every
+task is in review, that is your ruling to make.**
+
+---
+
+## 8. What is yours, and what is nobody's
+
+**Yours (review):** the eight tasks in §1.
+
+**Yours (judgement):** the IP-trust decision in §3; whether the capacity bound
+in §7 should move; whether PW-0602 may be approved on parse-level evidence or
+must wait for a Windows run.
+
+**The commander's:** the H.264/HEVC authorization boundary; Experiment 1a on
+real Windows hardware (PW-0103); a signing certificate; a licensed media
+provider (PL-0302, which is what stops PL-0720's journey reaching a player);
+licensed live-feed access (PL-0602); and the push.
+
+**Nobody's, until one of the above lands:** PW-0503 and PW-0502 open the moment
+their blockers clear review. PW-0308 opens on a verdict or a ruling.
