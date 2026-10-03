@@ -52,9 +52,71 @@ import { DEMO } from "../src/fixtures";
 
 test.skip(CATALOG_AVAILABILITY === "unknown", UNKNOWN_CATALOG_SKIP_REASON);
 
+/*
+ * ==========================================================================
+ * A BUILD WITH NO CATALOG SOURCE HAS NOTHING TO PLAY, AND THAT IS ASSERTED
+ * RATHER THAN SKIPPED PAST
+ * ==========================================================================
+ *
+ * FOUND BY RUNNING THIS SUITE IN PRODUCTION MODE, which the first version of
+ * it never was: all ten cases failed at `toHaveCount(1)` on the control bar.
+ * Not a defect in the bar. `CATALOG_AVAILABILITY` is "refused" on a
+ * deployment with no `LIBERTY_CATALOG_SOURCE_ID`, `/watch/<id>` then serves a
+ * refusal panel instead of a session, and a player that is not there has no
+ * controls -- which is correct and is the one thing worth asserting in that
+ * configuration.
+ *
+ * So the operation cases name their reason and stand down, and one case runs
+ * in their place. docs/TEST_MATRIX.md's rule, and PW-0601's, is that a row
+ * which does not run says why BY NAME; "skipped" with no reason is how a
+ * suite quietly stops covering a mode.
+ */
+const REFUSED_SKIP_REASON =
+  "CATALOG_AVAILABILITY is 'refused': on this build /watch answers with a refusal rather " +
+  "than a session, so there is no player to operate. Observed in production mode with a real " +
+  "PostgreSQL, where the refusal is 'Sign in to watch this' -- the harness's browser context " +
+  "is anonymous, and a deployment with no catalog source has nothing to resolve either way. " +
+  "The refusal itself is asserted by the case below. Operating the controls is covered in " +
+  "development mode and, on a deployment, needs both a configured source and a signed-in " +
+  "viewer, which is a journey no spec owns yet.";
+
 function controls(page: Page): Locator {
   return page.getByTestId("player-controls");
 }
+
+test("a build with no catalog source serves no player, and no control bar pretends otherwise", async ({
+  page
+}) => {
+  test.skip(CATALOG_AVAILABILITY !== "refused", "this case is the refused-build half of the matrix");
+
+  const response = await page.goto(`/watch/${DEMO.movie.id}`);
+  /* The route answers, it does not 404: a deployment that cannot resolve a
+   * session still owes the viewer a page that says so. */
+  expect(response?.status()).toBe(200);
+  /* AND IT CLAIMS NOTHING. A control bar rendered over a refusal would be a
+   * row of buttons wired to no adapter, which is exactly the failure mode
+   * `player-surface.tsx` renders the bar conditionally to prevent. */
+  await expect(controls(page)).toHaveCount(0);
+  /*
+   * AND IT SAYS SOMETHING. `PlaybackUnavailable` renders an h2 -- level 2,
+   * not 1: the route frame owns the h1 and the refusal panel is a section
+   * within it. The first draft of this case asserted level 1 and then a
+   * word; a production run corrected both, and the second correction is the
+   * interesting one. The heading it actually met was "Sign in to watch this",
+   * not a catalog refusal -- the harness's browser context is anonymous, so
+   * authentication refuses before the catalog is ever consulted.
+   *
+   * WHICH refusal is therefore deliberately NOT pinned. There are four and
+   * the one reached depends on configuration this case does not control;
+   * pinning one would make a test about the player fail the next time the
+   * deployment's reason changed. What is asserted is the thing that matters
+   * here: the route answers, it says something, and it does not draw a
+   * control bar over a session that does not exist.
+   */
+  const refusal = page.getByRole("heading", { level: 2 });
+  await expect(refusal).toBeVisible();
+  await expect(refusal).not.toHaveText(/^\s*$/);
+});
 
 /**
  * The bar renders only once the adapter exists, which is after the custom
@@ -62,6 +124,10 @@ function controls(page: Page): Locator {
  * therefore also the wait for the player to have started existing.
  */
 async function openPlayer(page: Page): Promise<Locator> {
+  /* Named rather than silent -- see REFUSED_SKIP_REASON. Called from every
+   * operation case, so the stand-down is in one place and cannot drift
+   * between them. */
+  test.skip(CATALOG_AVAILABILITY === "refused", REFUSED_SKIP_REASON);
   const response = await page.goto(`/watch/${DEMO.movie.id}`);
   expect(response?.status()).toBe(200);
   const bar = controls(page);

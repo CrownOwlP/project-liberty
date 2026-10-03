@@ -1,4 +1,4 @@
-import type { APIRequestContext } from "@playwright/test";
+import type { APIRequestContext, APIResponse } from "@playwright/test";
 import { AUTH_BASE_URL_FOR_SIGN_IN } from "./env";
 
 /* -------------------------------------------------------------------------
@@ -160,23 +160,115 @@ function retryDelayMs(header: string | undefined): number {
  */
 const SIGN_IN_ATTEMPTS = 4;
 
-async function signInOnce(request: APIRequestContext): Promise<SessionHeaders> {
+/* -------------------------------------------------------------------------
+ * PL-0715: A RATE-LIMITED SIGN-UP WAS BEING REPORTED AS A WRONG PASSWORD
+ * -------------------------------------------------------------------------
+ *
+ * better-auth 1.7.5 enables rate limiting whenever the server is in
+ * production -- `enabled: options.rateLimit?.enabled ?? isProduction` in
+ * `dist/context/create-context.mjs` -- and `getDefaultSpecialRules` applies
+ * THREE REQUESTS PER TEN SECONDS, per IP and path, to anything beginning
+ * `/sign-in` or `/sign-up`. `packages/auth/src/better-auth.ts` passes no
+ * `rateLimit` option, so that default is what the application runs with.
+ *
+ * Every Playwright worker shares one IP. The sign-up below was posted with
+ * `failOnStatusCode: false` and its response was never read, so a refused
+ * sign-up left no account, the sign-in that followed answered 401 -- correctly,
+ * because better-auth does not distinguish an unknown user from a wrong
+ * password -- and this function blamed the credentials. REPRODUCED: the full
+ * suite in production mode at 4 workers against a real PostgreSQL, "the
+ * harness could not sign in as e2e-harness-2@liberty.invalid: 401
+ * INVALID_EMAIL_OR_PASSWORD".
+ *
+ * SIGN IN FIRST, so a database that already has this account costs one
+ * request and no burst; create only if that fails; READ the creation's
+ * answer; and obey a 429 on BOTH endpoints with the same bounded budget the
+ * sign-in already had. The application's rate limiting is not touched -- it is
+ * a security control, and a harness that trips it is the harness's problem.
+ */
+interface AuthAttempt {
+  readonly what: string;
+  readonly status: number;
+  readonly body: string;
+}
+
+async function postAuth(
+  request: APIRequestContext,
+  url: string,
+  data: unknown,
+  what: string,
+  log: AuthAttempt[]
+): Promise<APIResponse> {
   const origin = AUTH_BASE_URL_FOR_SIGN_IN;
-
-  await request.post(`${origin}/api/auth/sign-up/email`, {
-    headers: { "content-type": "application/json", origin },
-    data: HARNESS_ACCOUNT,
-    failOnStatusCode: false
-  });
-
-  let last = "";
-  for (let attempt = 1; attempt <= SIGN_IN_ATTEMPTS; attempt += 1) {
-    const signIn = await request.post(`${origin}/api/auth/sign-in/email`, {
+  for (let attempt = 1; ; attempt += 1) {
+    const response = await request.post(url, {
       headers: { "content-type": "application/json", origin },
-      data: { email: HARNESS_ACCOUNT.email, password: HARNESS_ACCOUNT.password },
+      data,
       failOnStatusCode: false
     });
+    const body = (await response.text()).slice(0, 300);
+    log.push({ what: `${what} attempt ${attempt}`, status: response.status(), body });
+    if (response.status() !== RATE_LIMITED || attempt === SIGN_IN_ATTEMPTS) return response;
+    await new Promise((resolve) =>
+      setTimeout(resolve, retryDelayMs(response.headers()["x-retry-after"]))
+    );
+  }
+}
 
+/** "Already exists" is a SUCCESS here: the account this harness needs is there. */
+function alreadyExists(status: number, body: string): boolean {
+  return /USER_ALREADY_EXISTS|already exists/i.test(body) || status === 422;
+}
+
+function describeAttempts(log: readonly AuthAttempt[]): string {
+  return log.map((entry) => `${entry.what} -> ${entry.status} ${entry.body}`).join("; ");
+}
+
+async function signInOnce(request: APIRequestContext): Promise<SessionHeaders> {
+  const origin = AUTH_BASE_URL_FOR_SIGN_IN;
+  const log: AuthAttempt[] = [];
+  const credentials = { email: HARNESS_ACCOUNT.email, password: HARNESS_ACCOUNT.password };
+
+  let signIn = await postAuth(
+    request,
+    `${origin}/api/auth/sign-in/email`,
+    credentials,
+    "sign-in before sign-up",
+    log
+  );
+
+  if (!signIn.ok()) {
+    const created = await postAuth(
+      request,
+      `${origin}/api/auth/sign-up/email`,
+      HARNESS_ACCOUNT,
+      "sign-up",
+      log
+    );
+    const createdBody = log[log.length - 1]?.body ?? "";
+    if (!created.ok() && !alreadyExists(created.status(), createdBody)) {
+      throw new Error(
+        `the harness could not CREATE ${HARNESS_ACCOUNT.email}, so nothing below is about a ` +
+          "password: the account does not exist. " +
+          (created.status() === RATE_LIMITED
+            ? `The sign-up endpoint rate-limited all ${SIGN_IN_ATTEMPTS} attempts. better-auth ` +
+              "applies 3 requests per 10 seconds per IP to /sign-up by default and enables it " +
+              "in production only. This is a harness problem and must not be fixed by " +
+              "weakening the application's limit. "
+            : "") +
+          describeAttempts(log)
+      );
+    }
+    signIn = await postAuth(
+      request,
+      `${origin}/api/auth/sign-in/email`,
+      credentials,
+      "sign-in after sign-up",
+      log
+    );
+  }
+
+  for (let once = 0; once < 1; once += 1) {
     if (signIn.ok()) {
       const cookie = cookieHeaderFrom(
         signIn
@@ -195,19 +287,15 @@ async function signInOnce(request: APIRequestContext): Promise<SessionHeaders> {
 
       return { cookie };
     }
-
-    last = `${signIn.status()} ${await signIn.text()}`;
-    if (signIn.status() !== RATE_LIMITED || attempt === SIGN_IN_ATTEMPTS) break;
-
-    await new Promise((resolve) =>
-      setTimeout(resolve, retryDelayMs(signIn.headers()["x-retry-after"]))
-    );
   }
 
+  /* The account exists -- created above or already there -- so this is a real
+   * sign-in failure, which is now a claim this function has earned. */
   throw new Error(
-    `the harness could not sign in as ${HARNESS_ACCOUNT.email}: ${last}. The server under ` +
-      "test was started with an identity system (see src/env.ts's IDENTITY_MECHANISM), so " +
-      "this is a real failure rather than a missing configuration."
+    `the harness could not sign in as ${HARNESS_ACCOUNT.email} even though the account ` +
+      "exists. The server under test was started with an identity system (see src/env.ts's " +
+      "IDENTITY_MECHANISM), so this is a real failure rather than a missing configuration. " +
+      `Attempts: ${describeAttempts(log)}`
   );
 }
 

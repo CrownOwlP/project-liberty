@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import type { APIRequestContext, Page } from "@playwright/test";
+import type { APIRequestContext, APIResponse, Page } from "@playwright/test";
 
 import { isRecord } from "../src/contract";
 import {
@@ -677,67 +677,196 @@ function retryDelayMs(header: string | undefined): number {
   return Number.isFinite(seconds) && seconds > 0 ? Math.ceil(seconds * 1000) : 2_000;
 }
 
+/* -------------------------------------------------------------------------
+ * PL-0715: WHY THIS HARNESS USED TO REPORT A WRONG PASSWORD FOR AN ACCOUNT IT
+ * HAD NEVER CREATED
+ * -------------------------------------------------------------------------
+ *
+ * CI run 37036128012 failed one assertion, in PRODUCTION MODE ONLY, with this
+ * file's own message: "the harness could not sign in as
+ * e2e-watchlist-unchosen-0@liberty.invalid: 401 INVALID_EMAIL_OR_PASSWORD".
+ * The development run in the same job passed. The same spec had passed in
+ * production one run earlier and passed again on the run after, so it is
+ * intermittent.
+ *
+ * THE CAUSE, READ OUT OF THE INSTALLED LIBRARY RATHER THAN GUESSED.
+ * `packages/auth/src/better-auth.ts` passes no `rateLimit` option, so
+ * better-auth 1.7.5's default applies, and that default is
+ * `enabled: options.rateLimit?.enabled ?? isProduction`
+ * (`dist/context/create-context.mjs`) -- ON in production and OFF in
+ * development, which is exactly the split the failure shows. Its
+ * `getDefaultSpecialRules` then applies **window 10 seconds, max 3** to any
+ * path beginning `/sign-in` or `/sign-up`, keyed per client IP and path. Every
+ * Playwright worker shares one IP, and each establishes sessions for two
+ * account slots, so four workers can ask for more than three sign-ups inside
+ * ten seconds without trying.
+ *
+ * AND THE HARNESS TURNED THAT INTO THE WRONG SENTENCE. The sign-up was posted
+ * with `failOnStatusCode: false` and its response was NEVER READ -- the
+ * comment said the sign-in is what decides, "because a session is what the
+ * caller asked for and an account is only the way to get one". So a refused
+ * sign-up left no account; the sign-in that followed answered 401, correctly,
+ * because better-auth does not distinguish an unknown user from a wrong
+ * password; and the harness blamed the credentials. The retry loop made it
+ * worse rather than better: it waited out a rate-limit window and then re-asked
+ * a question whose answer could not change.
+ *
+ * WHAT IS FIXED, AND WHAT IS DELIBERATELY NOT.
+ *   - the sign-up response is OBSERVED, and a 429 on it is retried on the same
+ *     budget the sign-in already had, honouring `X-Retry-After`;
+ *   - the sign-in is tried FIRST, so a run against a database that already has
+ *     these accounts posts no sign-up at all and the burst never happens;
+ *   - a failure says WHICH of the two things went wrong, with the attempt log.
+ *   - RETRIES STAY AT ZERO in `playwright.config.ts`. Obeying a 429 is correct
+ *     client behaviour, not an assertion retry: no expectation is re-evaluated
+ *     and no flaky test is being papered over.
+ *   - THE APPLICATION'S RATE LIMITING IS NOT TOUCHED. It is a security property
+ *     and a test harness that trips it is the harness's problem. Nothing here
+ *     configures, relaxes or disables it.
+ */
+
+interface AuthAttempt {
+  readonly what: string;
+  readonly status: number;
+  readonly body: string;
+}
+
+/**
+ * POST an auth endpoint, obeying a 429 and recording every attempt.
+ *
+ * The attempt log is what turns "401" into a diagnosis: a failure can then say
+ * that the account was never created and how many windows it waited, instead
+ * of naming the password.
+ */
+async function postAuth(
+  request: APIRequestContext,
+  url: string,
+  data: unknown,
+  what: string,
+  log: AuthAttempt[]
+): Promise<APIResponse> {
+  const origin = AUTH_BASE_URL_FOR_SIGN_IN;
+  for (let attempt = 1; ; attempt += 1) {
+    const response = await request.post(url, {
+      headers: { "content-type": "application/json", origin },
+      data,
+      failOnStatusCode: false
+    });
+    const body = (await response.text()).slice(0, 300);
+    log.push({ what: `${what} attempt ${attempt}`, status: response.status(), body });
+    if (response.status() !== RATE_LIMITED || attempt === SIGN_IN_ATTEMPTS) return response;
+    await new Promise((resolve) =>
+      setTimeout(resolve, retryDelayMs(response.headers()["x-retry-after"]))
+    );
+  }
+}
+
+/**
+ * Whether a refused sign-up means the account is already there.
+ *
+ * Matched on better-auth's own code and on the status it uses for it, because
+ * "already exists" is a SUCCESS for this harness -- the account it needs
+ * exists either way -- while every other refusal is the failure the old code
+ * could not see.
+ */
+function alreadyExists(status: number, body: string): boolean {
+  return /USER_ALREADY_EXISTS|already exists/i.test(body) || status === 422;
+}
+
+function describeAttempts(log: readonly AuthAttempt[]): string {
+  return log.map((entry) => `${entry.what} -> ${entry.status} ${entry.body}`).join("; ");
+}
+
 async function signIn(
   request: APIRequestContext,
   slot: AccountSlot
 ): Promise<Readonly<Record<string, string>>> {
   const origin = AUTH_BASE_URL_FOR_SIGN_IN;
   const account = accountFor(slot);
+  const log: AuthAttempt[] = [];
+  const credentials = { email: account.email, password: account.password };
 
-  /* Idempotent: a second worker meets an account that exists, and the endpoint
-   * refuses. What decides success is the SIGN-IN, because a session is what the
-   * caller asked for and an account is only the way to get one. */
-  await request.post(`${origin}/api/auth/sign-up/email`, {
-    headers: { "content-type": "application/json", origin },
-    data: account,
-    failOnStatusCode: false
-  });
+  /*
+   * SIGN IN FIRST. On any run against a database that already carries these
+   * accounts -- which is every re-run, and every worker after the first in a
+   * shared database -- this is the only request made, and the sign-up burst
+   * that trips the three-per-ten-seconds rule never happens at all.
+   */
+  let response = await postAuth(
+    request,
+    `${origin}/api/auth/sign-in/email`,
+    credentials,
+    "sign-in before sign-up",
+    log
+  );
 
-  let last = "";
-  for (let attempt = 1; attempt <= SIGN_IN_ATTEMPTS; attempt += 1) {
-    const response = await request.post(`${origin}/api/auth/sign-in/email`, {
-      headers: { "content-type": "application/json", origin },
-      data: { email: account.email, password: account.password },
-      failOnStatusCode: false
-    });
-
-    if (response.ok()) {
-      /* ALL the set-cookie values, not just the one whose name we know:
-       * hard-coding `better-auth.session_token` would assert a name the library
-       * owns, and the failure mode is a suite that sends nothing and reports
-       * every authenticated case as signed out. */
-      const cookie = response
-        .headersArray()
-        .filter((header) => header.name.toLowerCase() === "set-cookie")
-        .map((header) => header.value.split(";", 1)[0]?.trim())
-        .filter(
-          (pair): pair is string => pair !== undefined && pair.includes("=") && !pair.endsWith("=")
-        )
-        .join("; ");
-
-      if (cookie === "") {
-        throw new Error(
-          "sign-in succeeded but set no cookie. Liberty uses DATABASE sessions (PL-0401), so " +
-            "the cookie is the pointer to the row and there is no bearer token to fall back on."
-        );
-      }
-      return { cookie };
+  if (!response.ok()) {
+    /*
+     * NOW create the account, and READ THE ANSWER. This is the request whose
+     * refusal used to be invisible.
+     */
+    const created = await postAuth(
+      request,
+      `${origin}/api/auth/sign-up/email`,
+      account,
+      "sign-up",
+      log
+    );
+    const createdBody = log[log.length - 1]?.body ?? "";
+    if (!created.ok() && !alreadyExists(created.status(), createdBody)) {
+      throw new Error(
+        `the harness could not CREATE ${account.email}, so no credential failure below is ` +
+          `about a password: the account does not exist. ` +
+          (created.status() === RATE_LIMITED
+            ? `The sign-up endpoint rate-limited every one of ${SIGN_IN_ATTEMPTS} attempts. ` +
+              "better-auth applies 3 requests per 10 seconds per IP to /sign-up by default, and " +
+              "it is enabled in production only -- see the note above this function. This is a " +
+              "harness problem and must not be fixed by weakening the application's limit. "
+            : "") +
+          describeAttempts(log)
+      );
     }
-
-    last = `${response.status()} ${await response.text()}`;
-    if (response.status() !== RATE_LIMITED || attempt === SIGN_IN_ATTEMPTS) break;
-
-    /* Obeying a 429 is correct client behaviour, not the retry
-     * `playwright.config.ts` forbids: no ASSERTION is retried. */
-    await new Promise((resolve) =>
-      setTimeout(resolve, retryDelayMs(response.headers()["x-retry-after"]))
+    response = await postAuth(
+      request,
+      `${origin}/api/auth/sign-in/email`,
+      credentials,
+      "sign-in after sign-up",
+      log
     );
   }
 
+  if (response.ok()) {
+    /* ALL the set-cookie values, not just the one whose name we know:
+     * hard-coding `better-auth.session_token` would assert a name the library
+     * owns, and the failure mode is a suite that sends nothing and reports
+     * every authenticated case as signed out. */
+    const cookie = response
+      .headersArray()
+      .filter((header) => header.name.toLowerCase() === "set-cookie")
+      .map((header) => header.value.split(";", 1)[0]?.trim())
+      .filter(
+        (pair): pair is string => pair !== undefined && pair.includes("=") && !pair.endsWith("=")
+      )
+      .join("; ");
+
+    if (cookie === "") {
+      throw new Error(
+        "sign-in succeeded but set no cookie. Liberty uses DATABASE sessions (PL-0401), so " +
+          "the cookie is the pointer to the row and there is no bearer token to fall back on."
+      );
+    }
+    return { cookie };
+  }
+
+  /*
+   * THE ACCOUNT EXISTS -- the branch above either created it or found it
+   * already there -- so this really is a sign-in failure, and saying so is now
+   * a claim the code has earned rather than the only sentence it had.
+   */
   throw new Error(
-    `the harness could not sign in as ${account.email}: ${last}. This run was started with ` +
-      "an identity system (src/env.ts's IDENTITY_MECHANISM), so this is a real failure rather " +
-      "than a missing configuration."
+    `the harness could not sign in as ${account.email} even though the account exists. ` +
+      "This run was started with an identity system (src/env.ts's IDENTITY_MECHANISM), so it " +
+      `is a real failure rather than a missing configuration. Attempts: ${describeAttempts(log)}`
   );
 }
 

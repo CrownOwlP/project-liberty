@@ -1,17 +1,17 @@
 # Project Liberty - Project Status
 
-> Generated 2026-10-03T13:42:09.418Z from the AI control plane.
+> Generated 2026-10-03T14:21:17.460Z from the AI control plane.
 
 **Overall completion:** 93/114 executable tasks (82%)
 
 ## Status summary
 
 - **BACKLOG:** 8
-- **READY:** 3
+- **READY:** 2
 - **CLAIMED:** 0
-- **IN_PROGRESS:** 2
-- **REVIEW:** 3
-- **BLOCKED:** 5
+- **IN_PROGRESS:** 1
+- **REVIEW:** 4
+- **BLOCKED:** 6
 - **DONE:** 93
 - **CANCELED:** 0
 - **SUPERSEDED:** 4
@@ -27,21 +27,21 @@
 - **M6 — Shared-Agent Automation Bridge:** COMPLETE, 3/3 (100%)
 - **EXT — External Licensed Integrations:** BLOCKED, 0/2 (0%), 2 blocked
 - **M7 — Windows Desktop Shell + Native Playback:** COMPLETE, 4/4 (100%)
-- **PW — undefined:** IN_PROGRESS, 18/32 (56%), 1 blocked
+- **PW — undefined:** IN_PROGRESS, 18/32 (56%), 2 blocked
 
 ## Active work
 
 - **PL-0714** [REVIEW] CI executes every script suite the repository declares, and a failing validate job says something — owner: claude-lead
+- **PL-0715** [REVIEW] The watchlist harness reads a rate-limited sign-UP as a wrong password — owner: claude-test
 - **PW-0208** [REVIEW] An LGPL-compatible libmpv and FFmpeg the product may actually ship — owner: claude-infra
 - **PW-0306** [REVIEW] A player that can actually be operated — owner: claude-media
 - **PW-0307** [IN_PROGRESS] Series navigation and the next episode — owner: claude-frontend
-- **PW-0602** [IN_PROGRESS] The automated half of the Windows matrix, running on Windows — owner: claude-test
 
 ## Dispatch classification
 
-- **READY_AND_EXECUTABLE:** 3
+- **READY_AND_EXECUTABLE:** 2
 - **READY_BUT_EXTERNAL:** 0
-- **BLOCKED:** 5
+- **BLOCKED:** 6
 - **BACKLOG (dependency-gated):** 8
 
 ## Recommended executable wave
@@ -67,6 +67,19 @@ WHAT IT IS NOT. Not a claim that PW-0103 is unimportant, and not a request to de
 UNBLOCK WHEN: the commander runs Experiment 1a on real Windows hardware and hands back the result, or gpt-architect rules that some part of it can be established without the hardware.
 - **PW-0504** Installed-application qualification on the commander's Windows machine: reason not recorded
 - **PW-0505** Upgrade qualification: user data across a real previous release: reason not recorded
+- **PW-0602** The automated half of the Windows matrix, running on Windows: EXTERNALLY BLOCKED, NOT PAUSED, AND THE BLOCKER IS NAMED SO IT CAN BE CHECKED.
+
+PW-0602's next step is the one gpt-architect's round-108 verdict specifies: read the lifecycle harness's first real Windows report, classify every row, repair genuine harness defects, and then ARM the rows PW-0601 says must gate the build. That cannot happen yet, for a reason that is not a choice:
+
+1. The first Windows run of the wiring (37094053371, at 975331c) PUBLISHED ITS REPORT WHERE THIS SESSION CANNOT READ IT. A GitHub job summary is not reachable without a login -- verified by fetching the run page and the job page for that run and for CI 37094053423, neither of which contains a word either workflow wrote.
+2. That was repaired this round: the per-case outcomes are now emitted as GitHub annotations, which is the one channel this session has ever been able to read, and the repair was executed against reports built from the real scripts/windows/ modules rather than inspected.
+3. READING THE RESULT NOW REQUIRES A WINDOWS RUN OF THE REPAIRED WORKFLOW, and that requires the commit to reach GitHub. Push from this session returns 403 ("not in this session's authorized repository set") and is not retried; the commander applies the delivered bundle and pushes. There is no engineering action available here that produces the evidence.
+
+WHAT IS NOT CLAIMED BY BLOCKING. The task is nowhere near done and this is not a way of parking it: the harness is still non-blocking, and the LARGER half of the acceptance -- "the existing e2e suite runs against the DESKTOP target on Windows, not only the web target on Ubuntu" -- has not been started. Both are recorded in the gate evidence.
+
+WHY IT IS BLOCKED RATHER THAN RELEASED. Release discards gate results, and the e2e gate on this task now carries the only written account of what the first Windows run did and did not establish. Blocking preserves it. It also frees claude-test's single slot for PL-0715, which gpt-architect's verdict asks to be worked now and which has no external dependency at all -- that is a consequence of blocking honestly, not the reason for it.
+
+UNBLOCK WHEN: a Windows run of a commit containing the annotation channel has completed and its per-case annotations can be read from the job page.
 
 ## Agent capacity
 
