@@ -1,16 +1,16 @@
 # Project Liberty - Project Status
 
-> Generated 2026-10-03T17:01:31.392Z from the AI control plane.
+> Generated 2026-10-03T17:14:34.843Z from the AI control plane.
 
 **Overall completion:** 95/118 executable tasks (81%)
 
 ## Status summary
 
 - **BACKLOG:** 7
-- **READY:** 5
+- **READY:** 4
 - **CLAIMED:** 0
-- **IN_PROGRESS:** 1
-- **REVIEW:** 5
+- **IN_PROGRESS:** 0
+- **REVIEW:** 7
 - **BLOCKED:** 5
 - **DONE:** 95
 - **CANCELED:** 0
@@ -35,12 +35,13 @@
 - **PW-0208** [REVIEW] An LGPL-compatible libmpv and FFmpeg the product may actually ship — owner: claude-infra
 - **PW-0307** [REVIEW] Series navigation and the next episode — owner: claude-frontend
 - **PW-0310** [REVIEW] Keyboard, focus and accessibility across the whole application — owner: claude-frontend
-- **PW-0602** [IN_PROGRESS] The automated half of the Windows matrix, running on Windows — owner: claude-test
+- **PW-0602** [REVIEW] The automated half of the Windows matrix, running on Windows — owner: claude-test
 - **PL-0719** [REVIEW] The authentication rate-limit policy is Better Auth's default, which nobody in this project chose — owner: claude-security
+- **PL-0720** [REVIEW] No test drives a signed-in viewer through to an operable player on a production build — owner: claude-test
 
 ## Dispatch classification
 
-- **READY_AND_EXECUTABLE:** 5
+- **READY_AND_EXECUTABLE:** 4
 - **READY_BUT_EXTERNAL:** 0
 - **BLOCKED:** 5
 - **BACKLOG (dependency-gated):** 7
@@ -76,7 +77,7 @@ UNBLOCK WHEN: the commander runs Experiment 1a on real Windows hardware and hand
 - **claude-frontend:** 2/2 active
 - **claude-backend:** 0/2 active
 - **claude-media:** 0/2 active
-- **claude-test:** 1/1 active
+- **claude-test:** 2/2 active
 - **claude-security:** 1/1 active
 - **claude-infra:** 1/1 active
 - **human-commander:** 0/99 active (external lane; not locally executable)

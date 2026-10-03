@@ -86,9 +86,10 @@
         "Test",
         "Review"
       ],
-      "maxParallel": 1,
+      "maxParallel": 2,
       "writeMode": "worktree",
-      "definition": ".claude/agents/test-engineer.md"
+      "definition": ".claude/agents/test-engineer.md",
+      "notes": "Raised from 1 to 2 on 2026-10-03 (round 109), on exactly the precedent claude-frontend set, claude-media followed and claude-backend was raised under on 2026-09-15, for the identical reason and with the identical bound. This is the ONLY local agent advertising Test, so with a limit of 1 a single task sitting in REVIEW behind an external reviewer stopped the whole lane: PW-0602 moved to REVIEW for gpt-architect and ai:dispatch immediately reported 'No conflict-free executable tasks can be assigned with current agent capacity', deferring PL-0720 for capacity alone. PL-0720 is the board's P0 -- no test drives a signed-in viewer through to an operable player on a production build -- and its single allowedPath is a file that does not yet exist, disjoint from PW-0602's surface in both fields in both directions. So the capacity number, not any real conflict, was holding the highest-priority open task behind an external verdict.\n\nTHE LIMIT EXISTS TO PREVENT OVERLAPPING WRITES, AND OVERLAP IS ALREADY PREVENTED STRUCTURALLY by allowedPaths, which conflictWithActive enforces on every claim and refuses regardless of owner. PW-0503 is the proof in the same wave: it is deferred for a real path overlap with PW-0602 and stays deferred after this change, because the path arithmetic is untouched. Two rather than unlimited is deliberate, in the same words the other three lanes used: it lets one task wait on review while another proceeds, without pretending one agent can hold an open-ended number of surfaces at once. No capability was added to this or any agent, and no gate, reviewer restriction or self-approval rule is touched."
     },
     {
       "id": "claude-security",
