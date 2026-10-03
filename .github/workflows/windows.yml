@@ -433,6 +433,42 @@ jobs:
           $path = "windows-lifecycle-report.json"
           $out = $env:GITHUB_STEP_SUMMARY
 
+          # ================================================================
+          # ANNOTATIONS FIRST, AND THE STEP SUMMARY SECOND
+          # ================================================================
+          #
+          # THE ROUND-107 PREMISE FOR THIS STEP WAS WRONG AND IS CORRECTED
+          # HERE RATHER THAN QUIETLY. It said a job summary "renders on the
+          # run page, which is how every CI result in the last three rounds
+          # was obtained", and therefore that writing the lifecycle report to
+          # `$GITHUB_STEP_SUMMARY` made it readable by the engineering
+          # session. It does not. Run 37094053371 at 975331c executed this
+          # workflow and NEITHER the run page nor the job page exposes a word
+          # of what was written here; the summary panel a fetch can see
+          # carries GitHub's own metadata and artifact list and nothing the
+          # workflow wrote.
+          #
+          # WHAT IS ACTUALLY READABLE IS AN ANNOTATION. Every CI fact this
+          # project has ever obtained -- the exit codes, the Playwright
+          # counts, and the step name behind exit 134 -- came from one. So
+          # the per-case outcome is emitted as `::notice` and `::warning`
+          # workflow commands as well, which GitHub attaches to the job and
+          # shows without a login.
+          #
+          # BOTH CHANNELS, NOT ONE. The summary stays because it is far more
+          # legible to a HUMAN opening the run in a browser, and it carries
+          # the full JSON detail an annotation cannot. The annotations are
+          # what make the result verifiable from here. A single line per case
+          # is deliberate: annotations are truncated and capped, and a
+          # verdict that gets cut in half is worse than a short one.
+          function Annotate([string] $level, [string] $title, [string] $message) {
+            # One line, no colons-at-start inside the text, and short enough
+            # to survive truncation.
+            $flat = ($message -replace '\r?\n', ' ') -replace '::', ' - '
+            if ($flat.Length -gt 380) { $flat = $flat.Substring(0, 380) + "..." }
+            Write-Host "::${level} title=${title}::${flat}"
+          }
+
           function Cell([object] $value) {
             if ($null -eq $value) { return "" }
             return ([string] $value) -replace '\|', '\|' -replace '\r?\n', ' '
@@ -445,6 +481,8 @@ jobs:
             # from a failing one. The harness refuses rather than reports when
             # it cannot run, so saying "no report" beats rendering an empty
             # table that looks like a clean machine.
+            Annotate "warning" "Windows lifecycle" ("NO REPORT WAS PRODUCED. The harness writes nothing when it refuses " +
+              "(wrong platform, missing or bad --msi), which is a fault in this workflow rather than in the product.")
             $lines += "**No report was produced.** The harness exits 2 and writes nothing when it refuses"
             $lines += "(wrong platform, missing or bad ``--msi``). Read the ``Observe the installer lifecycle"
             $lines += "harness`` step: a refusal is a fault in this workflow, not in the product."
@@ -471,7 +509,22 @@ jobs:
           $lines += "| --- | --- | --- | --- |"
           foreach ($r in $report.results) {
             $lines += "| $(Cell $r.id) | $(Cell $r.scenario) | $(Cell $r.owner) | **$(Cell $r.outcome)** |"
+            # A FAILURE IS A WARNING AND EVERYTHING ELSE IS A NOTICE. `not-run`
+            # is deliberately NOT a warning: F2 reports it because this
+            # repository has never shipped a previous release, which is a fact
+            # about the project and not a defect to be alarmed by.
+            $level = if ($r.outcome -eq "fail") { "warning" } else { "notice" }
+            $detail = if ($r.detail -is [string]) { $r.detail } else { ($r.detail | ConvertTo-Json -Depth 4 -Compress) }
+            Annotate $level "Windows lifecycle $($r.id) - $($r.outcome)" "$($r.scenario) [owner $($r.owner)] $detail"
           }
+          # One line that says what the run as a whole did, so a reader who
+          # sees no per-case annotation knows whether that is good news.
+          $counts = @{}
+          foreach ($r in $report.results) { $counts[$r.outcome] = 1 + ($counts[$r.outcome] ?? 0) }
+          $tally = (($counts.Keys | Sort-Object) | ForEach-Object { "$_=$($counts[$_])" }) -join " "
+          Annotate "notice" "Windows lifecycle summary" ("Automated section-F cases on this runner: $tally. " +
+            "This step is NON-BLOCKING: the inline install/verify/uninstall step is still the gate. " +
+            "No claim is made about the application LAUNCHING.")
 
           $lines += ""
           $lines += "### Still owed by a real machine"

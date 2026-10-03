@@ -237,6 +237,19 @@ jobs:
       - name: Record the machine this job ran on
         id: runner-facts
         run: |
+          # KEPT FOR THE FAILURE STEP, which emits it as an ANNOTATION -- the
+          # only channel this session can actually read. See the long note on
+          # `Why this job failed` below; in short, a job summary is NOT
+          # reachable without a login and round 107 was wrong to assume it
+          # was. Written here as well as to the summary so the failure step
+          # can report the BEFORE figures beside the after ones.
+          {
+            echo "cores=$(nproc)"
+            echo "memory=$(free -m --si | awk '/^Mem:/ {print $2 "MB total, " $7 "MB available"}')"
+            echo "disk=$(df -m --output=avail "${GITHUB_WORKSPACE}" | tail -1 | tr -d ' ')MB available"
+            echo "node=$(node --version) npm=$(npm --version)"
+            echo "NODE_OPTIONS=${NODE_OPTIONS:-<unset>}"
+          } > "${RUNNER_TEMP}/runner-facts.txt"
           {
             echo "## validate — the machine"
             echo
@@ -581,6 +594,70 @@ jobs:
         id: failure-diagnostics
         if: ${{ failure() }}
         run: |
+          # ==================================================================
+          # ANNOTATIONS, BECAUSE A JOB SUMMARY CANNOT BE READ FROM HERE
+          # ==================================================================
+          #
+          # Round 107 wrote these diagnostics to `$GITHUB_STEP_SUMMARY` on the
+          # stated grounds that a summary "renders on the run page, which is
+          # how every CI result in the last three rounds was obtained". THAT
+          # WAS WRONG. On 975331c two workflows wrote summaries -- this one and
+          # windows.yml's lifecycle report -- and neither is reachable: both
+          # the run page and the job page were fetched for runs 37094053423 and
+          # 37094053371, and the only "Summary" visible is GitHub's own
+          # metadata and artifact list. Not one word the workflow wrote.
+          #
+          # What IS readable without a login is an annotation. Every CI fact
+          # this project has obtained came from one. So the facts that matter
+          # are emitted as `::warning` and `::notice` workflow commands, and
+          # the summary below is kept for a human reading in a browser, where
+          # it is far more legible and carries the full detail.
+          #
+          # ANNOTATIONS ARE CAPPED AND TRUNCATED, so this emits FEW and SHORT:
+          # the failing step, the machine before and after, and the V8 verdict
+          # if there is one. The step-by-step table stays in the summary.
+          annotate() {
+            local level="$1" title="$2" message="$3"
+            message="${message//$'\n'/ }"
+            printf '::%s title=%s::%s\n' "${level}" "${title}" "${message:0:380}"
+          }
+
+          # THE FIRST FAILURE IS THE STEP THAT DIED. Named in a single
+          # annotation so it is legible beside GitHub's own, which already
+          # names it for an ordinary non-zero exit but not for every way a
+          # job can end.
+          failed=""
+          for pair in \
+            "runner-facts:${{ steps.runner-facts.outcome }}" \
+            "ai-validate:${{ steps.ai-validate.outcome }}" \
+            "ai-suite:${{ steps.ai-suite.outcome }}" \
+            "repo-validate:${{ steps.repo-validate.outcome }}" \
+            "repo-suite:${{ steps.repo-suite.outcome }}" \
+            "env-suite:${{ steps.env-suite.outcome }}" \
+            "dispatcher-suite:${{ steps.dispatcher-suite.outcome }}" \
+            "windows-lifecycle-suite:${{ steps.windows-lifecycle-suite.outcome }}" \
+            "notices-suite:${{ steps.notices-suite.outcome }}" \
+            "mirror-check:${{ steps.mirror-check.outcome }}" \
+            "install:${{ steps.install.outcome }}" \
+            "desktop-target-suite:${{ steps.desktop-target-suite.outcome }}" \
+            "env-validate:${{ steps.env-validate.outcome }}" \
+            "lint:${{ steps.lint.outcome }}" \
+            "typecheck:${{ steps.typecheck.outcome }}" \
+            "unit:${{ steps.unit.outcome }}" \
+            "build:${{ steps.build.outcome }}"
+          do
+            if [ "${pair#*:}" = "failure" ] && [ -z "${failed}" ]; then failed="${pair%%:*}"; fi
+          done
+          annotate warning "validate failed" \
+            "First failing step: ${failed:-none recorded — the job ended without a step reporting failure}. Full step-by-step outcomes are in this job's summary."
+
+          # THE MACHINE, BEFORE AND AFTER. One annotation, because a figure
+          # with nothing to compare it to is what made the last three rounds
+          # guess. An allowlist of named values; `env` is never printed.
+          before="$(tr '\n' ' ' < "${RUNNER_TEMP}/runner-facts.txt" 2>/dev/null || echo 'not recorded')"
+          after="cores=$(nproc) memory=$(free -m --si | awk '/^Mem:/ {print $2 "MB total, " $7 "MB available"}') disk=$(df -m --output=avail "${GITHUB_WORKSPACE}" | tail -1 | tr -d ' ')MB available"
+          annotate notice "validate machine" "BEFORE ${before}| AFTER ${after}"
+
           {
             echo "## validate — failure diagnostics"
             echo
@@ -660,7 +737,13 @@ jobs:
            * networkInterfaces, host and the full command line; this summary is
            * public. Nothing is taken except the fields named here.
            */
-          const file = process.argv[2];
+          /* `--line` prints the same allowlisted fields on ONE line, for an
+           * annotation; without it, the markdown table for the summary. Two
+           * renderings of one allowlist, never two allowlists. */
+          const args = process.argv.slice(2);
+          const oneLine = args.includes("--line");
+          const file = args.find((a) => !a.startsWith("--"));
+          if (file === undefined) process.exit(1);
           const report = JSON.parse(readFileSync(file, "utf8"));
           const header = report.header ?? {};
           const heap = report.javascriptHeap ?? {};
@@ -692,6 +775,11 @@ jobs:
           const script = argv.slice(1).find((a) => typeof a === "string" && a.endsWith(".mjs"));
           rows.push(["script", script ? basename(script) : "not a .mjs entry point"]);
 
+          if (oneLine) {
+            console.log(rows.map(([label, value]) => `${label}=${String(value ?? "unknown")}`).join(" "));
+            process.exit(0);
+          }
+
           const lines = [`#### \`${basename(file)}\``, "", "| | |", "| --- | --- |"];
           for (const [label, value] of rows) {
             lines.push(`| ${label} | ${String(value ?? "unknown").replace(/\|/g, "\\|")} |`);
@@ -717,6 +805,15 @@ jobs:
               echo
             done
           } >> "${GITHUB_STEP_SUMMARY}"
+
+          # AND THE ONE LINE OF IT THAT HAS TO BE READABLE FROM OUTSIDE. The
+          # redactor's `--line` mode prints the same allowlisted fields as a
+          # single line, so the annotation carries the verdict and the summary
+          # carries the detail. Still an allowlist, still never the raw report.
+          for report in "${reports[@]}"; do
+            line="$(node "${RUNNER_TEMP}/redact-report.mjs" --line "${report}" 2>/dev/null || true)"
+            if [ -n "${line}" ]; then annotate warning "V8 fatal error" "${line}"; fi
+          done
 
   # ==========================================================================
   # The e2e harness's TYPECHECK. Not the suite.
