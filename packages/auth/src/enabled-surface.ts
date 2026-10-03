@@ -35,7 +35,19 @@ export const ENABLED_AUTH_CAPABILITIES = [
    * encrypted-cookie session cannot be, which is the property that matters when
    * a household shares a screen.
    */
-  "database_sessions"
+  "database_sessions",
+  /**
+   * Rate limiting on the authentication endpoints (PL-0719).
+   *
+   * A CAPABILITY RATHER THAN A SETTING, because this list is what a reviewer
+   * reads to find out what is switched on, and "the credential endpoints are
+   * throttled" belongs in that answer. It is here for the same reason the
+   * others are: a product requirement names it. It was previously supplied
+   * by the library's defaults with nothing in this repository saying so, so
+   * a dependency bump could have withdrawn it silently; now its withdrawal
+   * is a diff against `describeConfiguredSurface`.
+   */
+  "credential_rate_limiting"
 ] as const;
 
 export type EnabledAuthCapability = (typeof ENABLED_AUTH_CAPABILITIES)[number];
@@ -134,7 +146,11 @@ export function describeConfiguredSurface(): AuthSurfaceReport {
       "email_password",
       "email_verification",
       "password_reset",
-      "database_sessions"
+      "database_sessions",
+      // `rateLimit.enabled` is a literal `true` in `createLibertyAuth`, with
+      // explicit custom rules from `rate-limit.ts`. Unconditional, like every
+      // other entry here, which is why this function still takes no argument.
+      "credential_rate_limiting"
     ].sort(),
     // No `plugins` key is passed to `betterAuth` at all -- not an empty array.
     // This empty list is the assertion of that, in the form the check reads.

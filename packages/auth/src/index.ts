@@ -13,6 +13,7 @@
 export * from "./authorization";
 export * from "./config";
 export * from "./enabled-surface";
+export * from "./rate-limit";
 export * from "./session";
 
 /* -------------------------------------------------------------------------

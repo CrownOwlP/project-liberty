@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-03T16:32:44.226Z",
+  "generatedAt": "2026-10-03T16:51:38.630Z",
   "agent": "claude-frontend",
   "executionAvailable": true,
   "assigned": [
@@ -78,7 +78,7 @@
       "id": "PW-0310",
       "priority": "P1",
       "lane": "Frontend",
-      "status": "IN_PROGRESS",
+      "status": "REVIEW",
       "title": "Keyboard, focus and accessibility across the whole application",
       "dependencies": [
         "PW-0301",
@@ -135,7 +135,7 @@
         }
       },
       "implementationAgent": "claude-frontend",
-      "updatedAt": "2026-10-03T15:39:36.666048Z",
+      "updatedAt": "2026-10-03T16:33:19.184Z",
       "implementationBaseSha": "9c6abd42e80f1796881947aea0cdd0c03d047ed7"
     }
   ],

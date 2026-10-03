@@ -10065,7 +10065,7 @@
       "id": "PW-0310",
       "priority": "P1",
       "lane": "Frontend",
-      "status": "IN_PROGRESS",
+      "status": "REVIEW",
       "title": "Keyboard, focus and accessibility across the whole application",
       "dependencies": [
         "PW-0301",
@@ -10122,7 +10122,7 @@
         }
       },
       "implementationAgent": "claude-frontend",
-      "updatedAt": "2026-10-03T15:39:36.666048Z",
+      "updatedAt": "2026-10-03T16:33:19.184Z",
       "implementationBaseSha": "9c6abd42e80f1796881947aea0cdd0c03d047ed7"
     },
     {
@@ -12096,16 +12096,26 @@
       "id": "PL-0719",
       "priority": "P1",
       "lane": "Security",
-      "status": "READY",
+      "status": "IN_PROGRESS",
       "title": "The authentication rate-limit policy is Better Auth's default, which nobody in this project chose",
       "dependencies": [],
       "allowedPaths": [
-        "apps/web/src/lib/auth/**",
-        "apps/web/src/lib/auth-policy.ts"
+        "packages/auth/src/rate-limit.ts",
+        "packages/auth/src/rate-limit.test.ts",
+        "packages/auth/src/config.ts",
+        "packages/auth/src/config.test.ts",
+        "packages/auth/src/better-auth.ts",
+        "packages/auth/src/enabled-surface.ts",
+        "packages/auth/src/enabled-surface.test.ts",
+        "packages/auth/src/index.ts",
+        "apps/web/src/lib/session/auth-instance.ts",
+        "apps/web/src/lib/session/auth-instance.test.ts",
+        "e2e/tests/auth-rate-limit.spec.ts"
       ],
       "reviewDependencies": [
-        "apps/web/src/app/api/auth",
         "e2e/src/identity.ts",
+        "docs/RESEARCH_IDENTITY.md",
+        "apps/web/src/app/api/auth",
         "docs/API_CONTRACTS.md",
         "docs/ARCHITECTURE.md"
       ],
@@ -12117,10 +12127,27 @@
         "security-review"
       ],
       "acceptance": "FOUND BY ACCIDENT, WHICH IS THE POINT. PL-0715 was opened because the watchlist e2e harness read a rate-limited sign-UP as a wrong password and reported a product failure. Repairing the harness was correct and is DONE. It did not answer the question the defect exposed: this product has never DECIDED what its authentication rate-limit policy is.\n\nWHAT IS TRUE TODAY, read from the dependency rather than asserted. better-auth 1.7.5 sets `enabled: options.rateLimit?.enabled ?? isProduction` (dist/context/create-context.mjs:172), so throttling is ON in production and OFF in development -- the two deployments this project runs its e2e suite against answer sign-in differently, and neither answer was chosen here. `getDefaultSpecialRules` then applies a window of 10s and a max of 3 to any path beginning /sign-in or /sign-up, keyed per IP and path. Nothing in this repository names any of those numbers, so nobody has weighed them and a dependency bump can change the product's brute-force posture silently.\n\nREQUIRED: the policy is STATED IN THIS REPOSITORY -- window, maximum, key, and which paths -- so a reader can see what the product does without reading node_modules, and so a Better Auth upgrade that changes a default is a diff rather than a surprise.\nREQUIRED: the reasoning is written down, including why the chosen numbers are the chosen numbers. A credential-stuffing attacker and a family of four sharing one IP are both real; this must say which way it errs and why.\nREQUIRED: the development/production divergence is decided deliberately rather than inherited. If throttling stays off in development, that is a defensible choice and must be written as a choice; a suite that can only pass because a control is absent is a suite that does not test the shipped product.\nREQUIRED: the behaviour is asserted by a test that distinguishes a RATE-LIMITED refusal from a WRONG-CREDENTIAL refusal. That confusion is the whole origin of this task and it must not be able to come back silently.\n\nMUST NOT: weaken the control. Raising the ceiling, widening the window, or disabling throttling to make a test or a harness easier is forbidden outright -- if a harness is inconvenienced, the harness changes, which is exactly what PL-0715 did.\nMUST NOT: expose a bypass of any kind -- no header, no environment variable, no test-only path that turns the limiter off in a deployment that ships.\n\nOUT OF SCOPE: CAPTCHA, account lockout, device fingerprinting, IP reputation, and any other new control. This task is about NAMING AND OWNING the policy that is already in effect, not about adding defences.",
-      "notes": "FILED IN ROUND 109 at gpt-architect's instruction, which asked for a narrowly-scoped security task 'if one does not already exist' and said not to change the security behaviour inside PL-0715. Board searched before filing: PL-0715 (DONE) repaired the harness, PW-0312 (DONE) and PW-0403 (DONE) built authentication entry and production session resolution, and none of the three names a rate-limit policy in acceptance or notes. No open task holds it.\n\nConflict-checked in both fields in both directions at filing. Active tasks are PL-0714 (REVIEW, .github/workflows/ci.yml), PW-0208 (REVIEW, apps/desktop/**), PW-0307 (REVIEW, named apps/web and e2e files), PW-0310 (IN_PROGRESS, apps/web/src/lib/a11y/**, globals.css, two test files) and PW-0602 (IN_PROGRESS, .github/workflows/windows.yml). None names apps/web/src/lib/auth in either field. e2e/src/identity.ts is listed here as a REVIEW DEPENDENCY and deliberately not as an allowed path: this task must be readable against the harness it came from without reserving a file it has no reason to write.\n\nP1 rather than P0: the control is PRESENT and the posture is not currently open. What is absent is the decision, which is what makes it silent and what makes a dependency bump dangerous.",
-      "owner": null,
-      "gateResults": {},
-      "updatedAt": "2026-10-03T15:36:04.872307Z"
+      "notes": "FILED IN ROUND 109 at gpt-architect's instruction, which asked for a narrowly-scoped security task 'if one does not already exist' and said not to change the security behaviour inside PL-0715. Board searched before filing: PL-0715 (DONE) repaired the harness, PW-0312 (DONE) and PW-0403 (DONE) built authentication entry and production session resolution, and none of the three names a rate-limit policy in acceptance or notes. No open task holds it.\n\nConflict-checked in both fields in both directions at filing. Active tasks are PL-0714 (REVIEW, .github/workflows/ci.yml), PW-0208 (REVIEW, apps/desktop/**), PW-0307 (REVIEW, named apps/web and e2e files), PW-0310 (IN_PROGRESS, apps/web/src/lib/a11y/**, globals.css, two test files) and PW-0602 (IN_PROGRESS, .github/workflows/windows.yml). None names apps/web/src/lib/auth in either field. e2e/src/identity.ts is listed here as a REVIEW DEPENDENCY and deliberately not as an allowed path: this task must be readable against the harness it came from without reserving a file it has no reason to write.\n\nP1 rather than P0: the control is PRESENT and the posture is not currently open. What is absent is the decision, which is what makes it silent and what makes a dependency bump dangerous.\n\nROUND 109 SURFACE AMENDMENT, recorded as an event before any write, and it begins with a correction: the allowedPaths this task was FILED with -- apps/web/src/lib/auth/** and apps/web/src/lib/auth-policy.ts -- DO NOT EXIST. They were guessed while filing from another lane, on the strength of a component file named components/auth/auth-policy.ts, and neither was checked against the tree; they would have reserved and enforced nothing. The policy actually lives in packages/auth: better-auth.ts is the only module that imports the library and its option object has no rateLimit key at all, which is precisely why the default is inherited; config.ts is the validated schema; and enabled-surface.ts already holds the mechanism this task needs -- an allowlist, a HAND-WRITTEN second reading of the option object, and a check that the two agree. apps/web/src/lib/session/auth-instance.ts is the composition root. The e2e spec is in the surface because the REQUIRED test -- telling a rate-limited refusal apart from a wrong-credential one -- exists only against a real server. Conflict-checked in both fields in both directions against PL-0714, PW-0208, PW-0307, PW-0310 and PW-0602; no task names anything under packages/auth, apps/web/src/lib/session, or e2e/tests/auth-rate-limit.spec.ts. No acceptance clause is weakened.",
+      "owner": "claude-security",
+      "gateResults": {
+        "typecheck": {
+          "status": "pass",
+          "at": "2026-10-03T16:51:38.449Z",
+          "by": "claude-security",
+          "commitSha": "275a609a7737e3941468d8aba115702eea98e478",
+          "evidence": "npm run typecheck at the repository root: 22 tasks successful, 22 total, exit 0, and npx tsc --noEmit in e2e/ for the new spec: exit 0, no output. npm run repo:validate also passes. The new files are packages/auth/src/rate-limit.ts and rate-limit.test.ts and e2e/tests/auth-rate-limit.spec.ts; the amended ones are packages/auth/src/better-auth.ts, enabled-surface.ts, enabled-surface.test.ts, index.ts and apps/web/src/lib/session/auth-instance.test.ts."
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-10-03T16:51:38.577Z",
+          "by": "claude-security",
+          "commitSha": "275a609a7737e3941468d8aba115702eea98e478",
+          "evidence": "npx vitest run in packages/auth: 5 files, 82 tests, exit 0 -- rate-limit.test.ts contributes 14 and enabled-surface.test.ts rose from 21 to 22. npx vitest run in apps/web: 90 files, 1659 tests, exit 0, up from 1656; auth-instance.test.ts rose from 12 to 15.\n\nTHE DISCRIMINATING TEST WAS SEEN TO FAIL, which matters here more than usual. The policy deliberately KEEPS better-auth's numbers -- 10s/3 on the credential paths -- because changing a security limit without evidence is not an improvement, and the consequence is that no behavioural test can tell this product's configuration apart from the library's default. So the three new cases in apps/web/src/lib/session/auth-instance.test.ts read our own option object back off the constructed instance. Verified by mutation: with the rateLimit key deleted from createLibertyAuth, 2 of the 15 fail by name (\"passes an EXPLICIT rateLimit rather than leaving the library's default\" and \"states the credential rule on the path the product actually serves\"); with it restored, 15 pass. The key was restored from a backup copy and the file is byte-identical to the committed version.\n\nThe library facts every number is justified against were read from the installed dependency rather than from memory: packages/auth/node_modules/better-auth 1.7.5, dist/context/create-context.mjs lines 170-176 for enabled/window/max/storage, and dist/api/rate-limiter/index.mjs lines 302-316 for the two default special rules."
+        }
+      },
+      "updatedAt": "2026-10-03T16:34:58.168705Z",
+      "implementationAgent": "claude-security",
+      "implementationBaseSha": "275a609a7737e3941468d8aba115702eea98e478"
     },
     {
       "id": "PL-0720",

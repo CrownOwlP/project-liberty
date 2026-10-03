@@ -1,16 +1,16 @@
 # Project Liberty - Project Status
 
-> Generated 2026-10-03T16:32:44.223Z from the AI control plane.
+> Generated 2026-10-03T16:51:38.627Z from the AI control plane.
 
 **Overall completion:** 95/118 executable tasks (81%)
 
 ## Status summary
 
 - **BACKLOG:** 7
-- **READY:** 6
+- **READY:** 5
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 2
-- **REVIEW:** 3
+- **REVIEW:** 4
 - **BLOCKED:** 5
 - **DONE:** 95
 - **CANCELED:** 0
@@ -34,19 +34,20 @@
 - **PL-0714** [REVIEW] CI executes every script suite the repository declares, and a failing validate job says something — owner: claude-lead
 - **PW-0208** [REVIEW] An LGPL-compatible libmpv and FFmpeg the product may actually ship — owner: claude-infra
 - **PW-0307** [REVIEW] Series navigation and the next episode — owner: claude-frontend
-- **PW-0310** [IN_PROGRESS] Keyboard, focus and accessibility across the whole application — owner: claude-frontend
+- **PW-0310** [REVIEW] Keyboard, focus and accessibility across the whole application — owner: claude-frontend
 - **PW-0602** [IN_PROGRESS] The automated half of the Windows matrix, running on Windows — owner: claude-test
+- **PL-0719** [IN_PROGRESS] The authentication rate-limit policy is Better Auth's default, which nobody in this project chose — owner: claude-security
 
 ## Dispatch classification
 
-- **READY_AND_EXECUTABLE:** 6
+- **READY_AND_EXECUTABLE:** 5
 - **READY_BUT_EXTERNAL:** 0
 - **BLOCKED:** 5
 - **BACKLOG (dependency-gated):** 7
 
 ## Recommended executable wave
 
-- **PL-0719** -> claude-security (P1/Security) The authentication rate-limit policy is Better Auth's default, which nobody in this project chose
+No conflict-free executable tasks can be assigned with current agent capacity.
 
 ## Queued for external agents
 
@@ -76,6 +77,6 @@ UNBLOCK WHEN: the commander runs Experiment 1a on real Windows hardware and hand
 - **claude-backend:** 0/2 active
 - **claude-media:** 0/2 active
 - **claude-test:** 1/1 active
-- **claude-security:** 0/1 active
+- **claude-security:** 1/1 active
 - **claude-infra:** 1/1 active
 - **human-commander:** 0/99 active (external lane; not locally executable)

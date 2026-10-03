@@ -2,6 +2,8 @@ import { readFile } from "node:fs/promises";
 
 import { describe, expect, it } from "vitest";
 
+import { CREDENTIAL_RATE_LIMIT, DEFAULT_RATE_LIMIT } from "@liberty/auth";
+
 import { selectAuthInstance } from "./auth-instance";
 
 /* -------------------------------------------------------------------------
@@ -239,5 +241,84 @@ describe("the module's own shape", () => {
     expect(body).not.toContain("console.");
     expect(body).not.toContain("message.url");
     expect(body).toContain("throw new Error");
+  });
+});
+
+describe("the rate-limit policy reaches the instance (PL-0719)", () => {
+  /*
+   * THE ONLY TEST HERE THAT TAKES THE SUCCESS PATH, and it takes it for a
+   * reason the other cases do not need. Every assertion above is about a
+   * REFUSAL, because `better-auth.ts` argues that assertions about a
+   * constructed instance are assertions about a stub of the vendor's
+   * behaviour. This one is different: it reads back OUR OWN OPTION OBJECT off
+   * the instance, which is our data and not the library's.
+   *
+   * WHY IT IS WORTH THE EXCEPTION. The behavioural proof --
+   * `e2e/tests/auth-rate-limit.spec.ts` -- cannot distinguish this product's
+   * policy from the library's, and says so: the values were deliberately kept
+   * the same as better-auth's defaults, because changing a security limit
+   * without evidence is not an improvement. So a server that throttles proves
+   * only that SOMETHING throttles. This is what proves the configuration is
+   * ours: delete the `rateLimit` key from `createLibertyAuth` and these
+   * assertions fail, while the end-to-end test keeps passing on the library's
+   * default.
+   */
+  it("passes an EXPLICIT rateLimit rather than leaving the library's default", async () => {
+    const resolved = selectAuthInstance(inputs());
+    expect(resolved.ok, resolved.ok ? "" : resolved.detail).toBe(true);
+    if (!resolved.ok) return;
+
+    const rateLimit = resolved.auth.options.rateLimit;
+    expect(
+      rateLimit,
+      "createLibertyAuth passed no rateLimit key, so every number governing this product's " +
+        "brute-force posture is again a dependency default that can change with no diff here"
+    ).toBeDefined();
+    /*
+     * A LITERAL `true`, NOT `isProduction`. The inherited default tied a
+     * security control to NODE_ENV, which is a build flag and not a security
+     * boundary.
+     */
+    expect(rateLimit?.enabled).toBe(true);
+    expect(rateLimit?.window).toBe(DEFAULT_RATE_LIMIT.windowSeconds);
+    expect(rateLimit?.max).toBe(DEFAULT_RATE_LIMIT.maxRequests);
+  });
+
+  it("states the credential rule on the path the product actually serves", async () => {
+    /* `/sign-in/email` is what `e2e/src/identity.ts` posts to and what the
+     * end-to-end test above exercises. A rule written for a path nothing
+     * reaches would be a policy that describes nothing. */
+    const resolved = selectAuthInstance(inputs());
+    expect(resolved.ok).toBe(true);
+    if (!resolved.ok) return;
+
+    const rules = resolved.auth.options.rateLimit?.customRules ?? {};
+    for (const path of ["/sign-in", "/sign-in/*", "/sign-up", "/sign-up/*"]) {
+      expect(rules[path], `no custom rule for ${path}`).toEqual({
+        window: CREDENTIAL_RATE_LIMIT.windowSeconds,
+        max: CREDENTIAL_RATE_LIMIT.maxRequests
+      });
+    }
+  });
+
+  it("NEVER LOOSENS THE CREDENTIAL PATHS, whatever else the rules say", async () => {
+    /*
+     * The guard that matters more than the exact values. A later edit may
+     * have good reason to add a rule or change the backstop; none of them has
+     * a reason to let the endpoint where a password is guessed become more
+     * permissive than the general limit.
+     */
+    const resolved = selectAuthInstance(inputs());
+    expect(resolved.ok).toBe(true);
+    if (!resolved.ok) return;
+
+    const rateLimit = resolved.auth.options.rateLimit;
+    const backstop = rateLimit?.max ?? Number.POSITIVE_INFINITY;
+    for (const [path, rule] of Object.entries(rateLimit?.customRules ?? {})) {
+      if (typeof rule === "function" || rule === undefined) continue;
+      expect(rule.max, `${path} is more permissive than the general backstop`).toBeLessThanOrEqual(
+        backstop
+      );
+    }
   });
 });

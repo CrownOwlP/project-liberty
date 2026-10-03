@@ -6,6 +6,11 @@ import {
   type AuthSurfaceReport,
   findSurfaceViolations
 } from "./enabled-surface";
+import {
+  AUTH_RATE_LIMIT_RULES,
+  AUTH_RATE_LIMIT_STORAGE,
+  DEFAULT_RATE_LIMIT
+} from "./rate-limit";
 
 /* -------------------------------------------------------------------------
  * The ONLY module in Liberty that imports `better-auth`
@@ -175,6 +180,41 @@ export function createLibertyAuth(input: CreateLibertyAuthInput) {
       // display name, avatar, preferences -- belongs to the profile, above
       // auth, and putting any of it here would both duplicate the profile and
       // hand the identity library product data it has no reason to hold.
+    },
+
+    /*
+     * THE RATE-LIMIT POLICY, PASSED EXPLICITLY (PL-0719).
+     *
+     * This key used to be absent, and absence is not neutral here: the
+     * library then supplies `enabled: isProduction`, a 10s/100 default and
+     * its own special rules for the credential paths, so every number
+     * governing this product's brute-force posture came from a dependency
+     * and no diff would show if one changed. `rate-limit.ts` holds the
+     * values and the whole argument for them; this is the one place they
+     * reach the vendor.
+     *
+     * `enabled: true` IS A LITERAL AND NOT A CONFIGURATION FIELD. A switch
+     * that turns a security control off is a bypass whoever adds it and
+     * whatever it is called, and the inherited `isProduction` made the
+     * development build -- the one the e2e suite finds easiest to be green
+     * against -- the build with the control switched off.
+     *
+     * `customRules` RESTATES the credential and recovery limits rather than
+     * leaving them to the library's own default special rules. The numbers
+     * are the same by intention: the point is that they are now written
+     * here, so a change in the dependency is a behaviour change this
+     * repository can see.
+     */
+    rateLimit: {
+      enabled: true,
+      window: DEFAULT_RATE_LIMIT.windowSeconds,
+      max: DEFAULT_RATE_LIMIT.maxRequests,
+      storage: AUTH_RATE_LIMIT_STORAGE,
+      customRules: Object.fromEntries(
+        AUTH_RATE_LIMIT_RULES.flatMap((rule) =>
+          rule.paths.map((path) => [path, { window: rule.windowSeconds, max: rule.maxRequests }])
+        )
+      )
     },
 
     advanced: {

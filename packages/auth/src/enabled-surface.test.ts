@@ -109,18 +109,41 @@ describe("describeConfiguredSurface", () => {
    * against the report's own source -- otherwise the test restates the function
    * and proves nothing. Each one names the option it is reading.
    */
-  it("reports exactly the four capabilities the option object turns on", () => {
+  it("reports exactly the five capabilities the option object turns on", () => {
     // `emailAndPassword.enabled` -> email_password;
     // `emailAndPassword.sendResetPassword` -> password_reset;
     // `emailVerification.sendVerificationEmail` -> email_verification;
     // `drizzleAdapter(..., { provider: "pg" })` with no `cookieCache`
-    //   -> database_sessions.
+    //   -> database_sessions;
+    // `rateLimit: { enabled: true, ... customRules }` -> credential_rate_limiting.
     expect(describeConfiguredSurface().capabilities).toEqual([
+      "credential_rate_limiting",
       "database_sessions",
       "email_password",
       "email_verification",
       "password_reset"
     ]);
+  });
+
+  it("REPORTS RATE LIMITING, which was running and which nothing here said (PL-0719)", () => {
+    /*
+     * The second instance of the defect this report was rewritten for, and it
+     * is worth its own case because the mechanism is identical and the cause
+     * is not. `email_verification` went unreported because the report had a
+     * condition the option object did not. This went unreported because the
+     * OPTION OBJECT WAS ABSENT ENTIRELY and the library supplied the
+     * behaviour -- `enabled: options.rateLimit?.enabled ?? isProduction` in
+     * better-auth 1.7.5. Both end the same way: a capability that is switched
+     * on, missing from the report, and therefore never compared against the
+     * allowlist at all, because findSurfaceViolations only complains about
+     * capabilities that are PRESENT.
+     *
+     * Asserted separately from the list above so that removing it from
+     * `createLibertyAuth` fails a test that says why, rather than only
+     * changing a count.
+     */
+    expect(describeConfiguredSurface().capabilities).toContain("credential_rate_limiting");
+    expect(findSurfaceViolations(describeConfiguredSurface())).toEqual([]);
   });
 
   it("reports email_verification even though requireEmailVerification is a setting", () => {
