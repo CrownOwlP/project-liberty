@@ -1,6 +1,6 @@
 # Project Liberty - Project Status
 
-> Generated 2026-10-03T16:51:38.627Z from the AI control plane.
+> Generated 2026-10-03T16:52:46.436Z from the AI control plane.
 
 **Overall completion:** 95/118 executable tasks (81%)
 
@@ -9,8 +9,8 @@
 - **BACKLOG:** 7
 - **READY:** 5
 - **CLAIMED:** 0
-- **IN_PROGRESS:** 2
-- **REVIEW:** 4
+- **IN_PROGRESS:** 1
+- **REVIEW:** 5
 - **BLOCKED:** 5
 - **DONE:** 95
 - **CANCELED:** 0
@@ -36,7 +36,7 @@
 - **PW-0307** [REVIEW] Series navigation and the next episode — owner: claude-frontend
 - **PW-0310** [REVIEW] Keyboard, focus and accessibility across the whole application — owner: claude-frontend
 - **PW-0602** [IN_PROGRESS] The automated half of the Windows matrix, running on Windows — owner: claude-test
-- **PL-0719** [IN_PROGRESS] The authentication rate-limit policy is Better Auth's default, which nobody in this project chose — owner: claude-security
+- **PL-0719** [REVIEW] The authentication rate-limit policy is Better Auth's default, which nobody in this project chose — owner: claude-security
 
 ## Dispatch classification
 
