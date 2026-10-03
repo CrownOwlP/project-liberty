@@ -1,18 +1,18 @@
 # Project Liberty - Project Status
 
-> Generated 2026-10-02T18:35:43.604Z from the AI control plane.
+> Generated 2026-10-03T13:36:41.650Z from the AI control plane.
 
-**Overall completion:** 91/114 executable tasks (80%)
+**Overall completion:** 93/114 executable tasks (82%)
 
 ## Status summary
 
-- **BACKLOG:** 9
+- **BACKLOG:** 8
 - **READY:** 3
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 2
-- **REVIEW:** 4
+- **REVIEW:** 3
 - **BLOCKED:** 5
-- **DONE:** 91
+- **DONE:** 93
 - **CANCELED:** 0
 - **SUPERSEDED:** 4
 
@@ -27,14 +27,13 @@
 - **M6 — Shared-Agent Automation Bridge:** COMPLETE, 3/3 (100%)
 - **EXT — External Licensed Integrations:** BLOCKED, 0/2 (0%), 2 blocked
 - **M7 — Windows Desktop Shell + Native Playback:** COMPLETE, 4/4 (100%)
-- **PW — undefined:** IN_PROGRESS, 17/32 (53%), 1 blocked
+- **PW — undefined:** IN_PROGRESS, 18/32 (56%), 1 blocked
 
 ## Active work
 
 - **PL-0714** [REVIEW] CI executes every script suite the repository declares, and a failing validate job says something — owner: claude-lead
-- **PL-0716** [REVIEW] The product-readiness instrument is out of date, and it is the figure the commander reads — owner: claude-lead
-- **PW-0206** [REVIEW] Subtitle and audio track selection, on both engines, for the first time — owner: claude-media
 - **PW-0208** [REVIEW] An LGPL-compatible libmpv and FFmpeg the product may actually ship — owner: claude-infra
+- **PW-0306** [REVIEW] A player that can actually be operated — owner: claude-media
 - **PW-0307** [IN_PROGRESS] Series navigation and the next episode — owner: claude-frontend
 - **PW-0602** [IN_PROGRESS] The automated half of the Windows matrix, running on Windows — owner: claude-test
 
@@ -43,7 +42,7 @@
 - **READY_AND_EXECUTABLE:** 3
 - **READY_BUT_EXTERNAL:** 0
 - **BLOCKED:** 5
-- **BACKLOG (dependency-gated):** 9
+- **BACKLOG (dependency-gated):** 8
 
 ## Recommended executable wave
 
@@ -72,7 +71,7 @@ UNBLOCK WHEN: the commander runs Experiment 1a on real Windows hardware and hand
 ## Agent capacity
 
 - **gpt-architect:** 0/6 active (external lane; not locally executable)
-- **claude-lead:** 2/2 active
+- **claude-lead:** 1/2 active
 - **claude-frontend:** 1/2 active
 - **claude-backend:** 0/2 active
 - **claude-media:** 1/2 active

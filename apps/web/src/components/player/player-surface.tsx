@@ -24,9 +24,20 @@
  * the `enginestatechange` the controller emits synchronously from
  * `connectedCallback`.
  *
- * NO CONTROLS ARE BUILT HERE. The native `controls` attribute is set so the
- * surface is usable, and the eventual `<media-controller>` replaces it. Play,
- * pause, seek, rate, volume and fullscreen are that layer's, not this one's.
+ * THE CONTROLS ARE A LAYER, AND THIS FILE IS ITS ONLY WIRING (PW-0306).
+ * `controls/player-controls.tsx` owns play, pause, seek, volume, mute,
+ * fullscreen and the track menus. It is given a `PlayerAdapter` and commands
+ * through it, so the same component will operate libmpv; it is given the
+ * machine's `running` as a prop, so it never forms its own opinion about
+ * whether the picture is moving. The native `controls` attribute is gone --
+ * two seek bars that disagree about the position is worse than one.
+ *
+ * media-chrome was the original plan and is not installed; adding it would
+ * change `apps/web/package.json`, which is this task's reviewDependency and
+ * not its write surface. The bar is built here instead, which also made the
+ * accessibility clauses -- an idle overlay that never leaves the
+ * accessibility tree -- something this repository decides rather than
+ * inherits.
  * ---------------------------------------------------------------------- */
 
 import { useEffect, useRef, useState } from "react";
@@ -61,6 +72,8 @@ import {
   defineLibertyVideo,
   type LibertyVideoElement
 } from "./liberty-video";
+import { PlayerControls } from "./controls/player-controls";
+import type { PlayerAdapter } from "./player-adapter";
 import type { PlaybackEffects } from "./playback-effects";
 import {
   createPlaybackActor,
@@ -76,6 +89,7 @@ import {
 } from "./playback-machine";
 import type { PlaybackSession } from "./playback-session";
 import type { PlaybackError } from "./shaka-error";
+import { WebPlayerAdapter } from "./web-player-adapter";
 import {
   CMCD_COLLECTOR_PATH,
   PLAYBACK_TELEMETRY_DEFAULTS,
@@ -153,6 +167,18 @@ interface PlayerView {
   readonly engineStatus: EngineState["status"];
   /** A load is in flight. The one piece of machine state the markup reacts to. */
   readonly restarting: boolean;
+  /**
+   * Whether the picture is moving, from the MACHINE's mirrored play intent
+   * (PW-0306).
+   *
+   * The control bar is handed this rather than keeping its own opinion. The
+   * machine mirrors `MEDIA_PLAY` and `MEDIA_PAUSE` into `context.paused`
+   * precisely so there is one answer, and a play button that decided for
+   * itself would be the source-of-truth inversion this file's header forbids
+   * -- it would show "Pause" for a video the browser had already paused for
+   * its own reasons.
+   */
+  readonly running: boolean;
   readonly trail: readonly PlaybackTrailEntry[];
   readonly trailDropped: number;
 }
@@ -182,6 +208,7 @@ function toView(snapshot: PlaybackSnapshot): PlayerView {
     stopReason: context.stopReason,
     engineStatus: engineStatus(snapshot),
     restarting: isRestarting(snapshot),
+    running: !context.paused,
     trail: context.trail.filter((entry) => NOTABLE_TRAIL_KINDS.includes(entry.kind)),
     trailDropped: context.trailDropped
   };
@@ -203,6 +230,7 @@ function sameView(a: PlayerView, b: PlayerView): boolean {
     a.stopReason === b.stopReason &&
     a.engineStatus === b.engineStatus &&
     a.restarting === b.restarting &&
+    a.running === b.running &&
     a.trail.length === b.trail.length &&
     a.trailDropped === b.trailDropped
   );
@@ -249,6 +277,25 @@ export function PlayerSurface({ session, policy }: PlayerSurfaceProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const [view, setView] = useState<PlayerView | null>(null);
   const [diagnostics, setDiagnostics] = useState<DiagnosticsView | null>(null);
+  /*
+   * THE CONTROL BAR'S ONLY ROUTE TO THE ENGINE (PW-0306).
+   *
+   * Held in state rather than a ref because the bar is rendered from it and
+   * must re-render once it exists, and created inside the effect below rather
+   * than here because it needs the controller, which does not exist until the
+   * element is connected.
+   */
+  const [adapter, setAdapter] = useState<PlayerAdapter | null>(null);
+  /*
+   * The stage node, as STATE rather than as a ref read during render.
+   *
+   * The control bar is handed the element full screen applies to, and a ref's
+   * `current` is not a render-time value: reading it there gives the PREVIOUS
+   * commit's node and React says so. A callback ref that also stores the node
+   * is the standard answer and the only one that is correct on the first
+   * paint.
+   */
+  const [stage, setStage] = useState<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -261,7 +308,9 @@ export function PlayerSurface({ session, policy }: PlayerSurfaceProps) {
      * `<video>` itself, and `src` is deliberately never among them — this
      * element is driven through the controller, never through an attribute a
      * page could set. */
-    video.setAttribute("controls", "");
+    /* NO `controls` ATTRIBUTE ANY MORE (PW-0306). It was here because there
+     * was nothing else; the bar below replaces it, and leaving both would give
+     * a viewer two seek bars that disagree about where they are. */
     video.setAttribute("playsinline", "");
     video.style.width = "100%";
     video.style.height = "100%";
@@ -391,6 +440,47 @@ export function PlayerSurface({ session, policy }: PlayerSurfaceProps) {
     host.appendChild(video);
 
     /*
+     * THE ADAPTER, BUILT OVER THE ELEMENT THAT IS NOW CONNECTED (PW-0306).
+     *
+     * After `appendChild`, because `playbackController` is created in
+     * `connectedCallback` and is `null` before it.
+     *
+     * `setSource` THROWS ON PURPOSE. `PlayerAdapter.load()` is the one method
+     * this instance must never be asked for: the session is loaded by the
+     * machine's `loadCandidate` effect above, and routing it through the
+     * adapter instead would mean projecting a client `PlaybackCandidate`
+     * -- `{id, providerId, source}` -- into a `PlayerCandidate`, which
+     * requires `protection` and `compatibility` that the client shape does not
+     * carry. Inventing either is inventing a rights-bearing fact, and
+     * `player-adapter.ts` refuses it in writing. Reconciling the two shapes is
+     * PW-0203's, by gpt-architect's round-82 ruling. So the misuse is made
+     * LOUD rather than quietly plausible: anything that calls `load` here gets
+     * an error naming the reason, instead of a second loader racing the first.
+     */
+    const controller = video.playbackController;
+    /*
+     * NULL IS HANDLED RATHER THAN CAST AWAY. `connectedCallback` creates the
+     * controller, so this should not happen -- and "should not happen" is
+     * exactly the condition a cast turns into a crash in somebody's living
+     * room. No controller means no control bar, and the surface still plays.
+     */
+    const controlAdapter =
+      controller === null
+        ? null
+        : new WebPlayerAdapter({
+            controller,
+            media: video,
+            setSource: () => {
+              throw new Error(
+                "this WebPlayerAdapter is the control surface for a session the state " +
+                  "machine loaded; loading through it would need a candidate projection " +
+                  "that invents protection and compatibility. See PW-0306 and PW-0203."
+              );
+            }
+          });
+    setAdapter(controlAdapter);
+
+    /*
      * PL-0504. THE A/V CONTINUITY OBSERVER, AND WHY IT IS SHAPED LIKE THIS.
      *
      * Two loops, at two cadences, because `diagnostics/index.ts` says so: the
@@ -491,6 +581,12 @@ export function PlayerSurface({ session, policy }: PlayerSurfaceProps) {
       clearInterval(diagnosticsTimer);
       subscription.unsubscribe();
       actor.stop();
+      /* The adapter goes before the element it reads. It only ever observed
+       * and commanded this one node, so disposing it releases its listeners
+       * and nothing else; the Shaka session belongs to the controller and dies
+       * with `video.remove()` below, as it always has. */
+      setAdapter(null);
+      void controlAdapter?.dispose();
       /* Removing the node is what destroys the Shaka session: a player that
        * outlives its element keeps its networking engine, its buffers and its
        * CDM session, and keeps downloading a video nobody is watching. */
@@ -506,7 +602,40 @@ export function PlayerSurface({ session, policy }: PlayerSurfaceProps) {
        * candidate is being loaded or reloaded and there is nothing to see yet.
        * Everything else a viewer interacts with belongs to the controls layer.
        */}
-      <div className="player-stage" ref={hostRef} aria-busy={view?.restarting === true} />
+      <div
+        className="player-stage"
+        ref={(node) => {
+          hostRef.current = node;
+          setStage(node);
+        }}
+        aria-busy={view?.restarting === true}
+      />
+
+      {/*
+        * THE CONTROL BAR (PW-0306).
+        *
+        * Rendered only once the adapter exists, because a bar with nothing to
+        * command is a row of buttons that lie. `running` comes from the
+        * machine and every command goes to the adapter; this file is the only
+        * place those two meet, which is the same arrangement the header
+        * describes for the element and the machine.
+        *
+        * `fullscreenTarget` is the STAGE and not this section: a viewer asking
+        * for full screen wants the picture, not the picture plus a debug
+        * panel. The bar is given the node rather than looking one up.
+        */}
+      {adapter !== null ? (
+        <PlayerControls
+          adapter={adapter}
+          fullscreenTarget={stage}
+          running={view?.running ?? null}
+          candidateId={view?.candidateId ?? null}
+          attemptsUsed={view?.attemptsUsed ?? 0}
+          maxAttempts={policy.maxAttempts}
+          engineStatus={view?.engineStatus ?? "idle"}
+          restarting={view?.restarting === true}
+        />
+      ) : null}
 
       <div className="player-meta">
         <strong>Content: {session.contentId}</strong>

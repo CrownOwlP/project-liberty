@@ -26,6 +26,11 @@ import {
 import type { AudioRole } from "@liberty/contracts/domains/audio";
 import type { SubtitleFormat, SubtitleKind } from "@liberty/contracts/domains/subtitles";
 
+import {
+  readTimeRanges,
+  type BufferedRange,
+  type TimeRangesLike
+} from "./diagnostics/buffered-ranges";
 import type { PlaybackController } from "./playback-controller";
 import {
   candidateForLoad,
@@ -53,6 +58,15 @@ export interface MediaElementLike {
   volume: number;
   muted: boolean;
   readonly duration: number;
+  /**
+   * OPTIONAL, and that is a statement about test doubles rather than about
+   * browsers (PW-0306). Every real media element has `buffered`; a structural
+   * double written before this field existed does not, and requiring it would
+   * break every such double in order to express a fact that is already handled
+   * — `readTimeRanges` answers an empty list for an absent reading, and an
+   * empty list is exactly "nothing is held".
+   */
+  readonly buffered?: TimeRangesLike;
   play(): Promise<void>;
   pause(): void;
   addEventListener(type: string, listener: () => void): void;
@@ -372,6 +386,38 @@ export class WebPlayerAdapter implements PlayerAdapter {
 
   getTracks(): readonly PlayerTrack[] {
     return this.#tracks;
+  }
+
+  getBufferedRanges(): readonly BufferedRange[] {
+    /* `readTimeRanges` already answers `[]` for null, undefined, a zero-length
+     * reading and a malformed one, so there is nothing to guard here and no
+     * second opinion about what an absent reading means. */
+    return readTimeRanges(this.#media.buffered);
+  }
+
+  /**
+   * Ask the engine what is true and publish it (PW-0306).
+   *
+   * WHAT IT RE-READS AND WHY EACH ONE. The track list, because that is the
+   * state this adapter holds rather than derives, and it is the one a consumer
+   * cannot recompute. The duration and the position, because they are cheap
+   * and because a consumer that missed events most likely missed those too.
+   * NOT the play state: `playing` and `paused` carry a `loadId` correlating
+   * them to a load, and this adapter must not invent one for a load it did not
+   * perform. A consumer that needs to know whether playback is running asks
+   * the state machine, which is this product's declared source of that truth.
+   *
+   * THE ORDER IS DELIBERATE. The facts go out first and `resynchronised` last,
+   * so a subscriber that treats the marker as "everything before this is the
+   * new truth" is right rather than one event early.
+   */
+  resynchronise(droppedEvents: number | null = null): void {
+    if (this.#disposed) return;
+    this.#tracks = this.#readTracks();
+    this.#emit({ type: "tracks", tracks: this.#tracks });
+    this.#emit({ type: "duration", durationSeconds: this.getTimeline().durationSeconds });
+    this.#emit({ type: "position", positionSeconds: this.#media.currentTime });
+    this.#emit({ type: "resynchronised", droppedEvents });
   }
 
   readAvSyncTelemetry(): AvSyncTelemetry {

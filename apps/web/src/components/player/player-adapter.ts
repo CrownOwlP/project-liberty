@@ -50,6 +50,8 @@ import type { CompatibilityConfidence } from "@liberty/contracts/domains/playbac
 import type { SubtitleFormat, SubtitleKind } from "@liberty/contracts/domains/subtitles";
 import type { ContentProtection } from "@liberty/contracts/shared/drm";
 
+import type { BufferedRange } from "./diagnostics/buffered-ranges";
+
 /** Which implementation. An identity for the reason trail, never a switch. */
 export type PlayerAdapterId = "web-shaka" | "native-mpv";
 
@@ -416,6 +418,45 @@ export interface PlayerAdapter {
   getTimeline(): PlayerTimeline;
   getTracks(): readonly PlayerTrack[];
   readAvSyncTelemetry(): AvSyncTelemetry;
+  /**
+   * What is held, in SECONDS, as ranges rather than as a percentage (PW-0306).
+   *
+   * A SEEK BAR NEEDS THE SHAPE AND NOT THE SIZE. The `buffering` event already
+   * carries `fillPercent`, and a single number cannot draw the thing a viewer
+   * reads a seek bar for: whether the part they are about to drag to is
+   * already held. One range from 0 to 60 and two ranges of thirty seconds
+   * either side of a gap are the same percentage and completely different
+   * answers to "can I jump there".
+   *
+   * EMPTY MEANS NOTHING IS HELD. It does not mean the adapter cannot say — an
+   * adapter with no way to answer this does not exist, because every engine
+   * that can seek knows what it has. `BufferedRange` is imported rather than
+   * re-declared: a second two-field interface spelling the same thing is how
+   * two parts of one player come to disagree about what a second is.
+   */
+  getBufferedRanges(): readonly BufferedRange[];
+
+  /**
+   * Re-read state from the engine and publish it (PW-0306).
+   *
+   * THIS CAPABILITY WAS ALREADY SPECIFIED AND NEVER GIVEN A METHOD.
+   * `PlayerAdapterEvent` has carried a `resynchronised` member since PW-0201,
+   * and PW-0204's acceptance requires the mpv event pump to handle
+   * `MPV_EVENT_QUEUE_OVERFLOW` "by resynchronising from properties rather than
+   * by assuming the queue is authoritative". An adapter that can only be
+   * believed while its event stream is intact is an adapter that silently
+   * disagrees with its engine after the first dropped event.
+   *
+   * It is a READ, not a command: it changes nothing about playback, it asks
+   * the engine what is true and emits the facts as ordinary events. A consumer
+   * calls it when it has reason to think it missed something — a dropped
+   * queue, a load it did not perform, an element that was handed to it already
+   * playing.
+   *
+   * `droppedEvents` is `null` where the adapter cannot know how many it lost,
+   * which is the usual case; it is never 0 for unknown.
+   */
+  resynchronise(droppedEvents?: number | null): void;
 
   subscribe(listener: (event: PlayerAdapterEvent) => void): () => void;
 

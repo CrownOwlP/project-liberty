@@ -333,13 +333,6 @@ jobs:
       - name: Test the optional dispatcher
         id: dispatcher-suite
         run: node scripts/cloud/test-dispatcher.mjs
-      # The fifth script in the alias, and it had no step here (PL-0714). It
-      # is the PW-0104 regression: a killed desktop invocation must leave no
-      # tracked file dirty. git and Node builtins only, so it belongs with the
-      # pre-install group.
-      - name: Test the desktop target wrapper
-        id: desktop-target-suite
-        run: node scripts/test-desktop-target.mjs
       # The sixth, and it had no step either. 30 cases over the Windows
       # lifecycle harness -- the section-F plan parser, the installed-identity
       # derivation and the residue classifier. All pure functions plus the
@@ -461,6 +454,28 @@ jobs:
       - name: Install dependencies
         id: install
         run: npm ci --no-audit --no-fund
+      # ==================================================================
+      # THE FIFTH SCRIPT IN THE ALIAS, AND IT IS HERE AND NOT ABOVE
+      # ==================================================================
+      #
+      # The PW-0104 regression: a killed desktop invocation must leave no
+      # tracked file dirty.
+      #
+      # IT WAS PUT IN THE PRE-INSTALL GROUP AND THAT WAS WRONG, which CI #178
+      # at 975331c found: validate failed at 20m 0s with the job page naming
+      # this step. The suite IMPORTS only Node builtins, which is what the
+      # placement was justified on, and that was the mistake -- four of its
+      # nine cases SPAWN a real `next dev` through scripts/with-root-env.mjs,
+      # and `next` lives in node_modules. Reproduced in a fresh clone with no
+      # node_modules: 5 passed, 4 failed, the suite's own non-vacuity guard
+      # naming the cause.
+      #
+      # The lesson generalises and is the reason this comment is long: the
+      # pre-install group's rule is about what a suite RUNS, not about what it
+      # imports. Check the spawns.
+      - name: Test the desktop target wrapper
+        id: desktop-target-suite
+        run: node scripts/test-desktop-target.mjs
       # After install, because it inspects node_modules, the lockfile, and where
       # the workspace links resolve. `--scope ci` because the two escalations it
       # turns on -- an unset cache-key variable, a runtime newer than .nvmrc --
@@ -515,20 +530,32 @@ jobs:
       # ====================================================================
       #
       # THE PROBLEM THIS SOLVES, CONCRETELY. Run 37028642916 on 30cef6e:
-      # `validate` aborted at 10m 38s with one annotation, "Process completed
-      # with exit code 134", naming no step. It had passed at 25m 4s and
-      # 27m 29s on the two runs before it, on a tree whose only delta was one
-      # e2e spec, three apps/desktop scripts, a doc and control-plane state.
-      # The log needs authentication; so do the artifacts. The engineering
-      # session therefore had, in total, an exit code. It could not say which
-      # step aborted. Two local reproductions of the prime suspect passed.
+      # `validate` aborted at 10m 38s with "Process completed with exit code
+      # 134", after passing at 25m 4s and 27m 29s on the two runs before it,
+      # on a tree whose only delta was one e2e spec, three apps/desktop
+      # scripts, a doc and control-plane state. The log needs authentication;
+      # so do the artifacts.
       #
-      # This step turns the next occurrence into evidence. It runs only on
-      # failure, so a green run pays nothing for it.
+      # ------------------------------------------------------------------
+      # A CORRECTION THAT BELONGS HERE RATHER THAN IN A HANDOFF NOBODY
+      # REREADS, because this step was partly justified on something false.
+      # ------------------------------------------------------------------
+      # Rounds 106 and 107 both reported that the annotation "names an exit
+      # code and no step". IT NAMES THE STEP. The RUN page does not show it;
+      # the JOB page does, and the job page needs no authentication either.
+      # Fetched after the fact, run 37036128012's validate job says in terms:
+      # exit code 134 under the step "Test AI control plane" -- which is the
+      # suite that had been the prime suspect all along, confirmed by reading
+      # the right URL rather than by any mechanism added here. Two rounds of
+      # handoffs asserted a GitHub limitation that was a research failure.
       #
-      #   1. WHICH STEP. Every step above carries an `id`, and GitHub exposes
-      #      each one's outcome. The first `failure` in the table below is the
-      #      step that aborted -- the single fact that was missing.
+      # This step runs only on failure, so a green run pays nothing for it.
+      # What it is still worth, with the above conceded:
+      #
+      #   1. EVERY STEP'S OUTCOME, NOT JUST THE FIRST FAILURE. The table
+      #      distinguishes a step that FAILED from one that never STARTED,
+      #      which an annotation cannot, and it survives the case an
+      #      annotation does not cover -- a job killed without one.
       #   2. WHAT THE MACHINE LOOKED LIKE AFTERWARDS. Memory and free disk
       #      after the fact, next to the same figures taken at the start, so a
       #      run that exhausted something shows the before and the after

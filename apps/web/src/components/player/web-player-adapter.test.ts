@@ -277,6 +277,93 @@ describe("tracks — the first code in this repository to read them", () => {
     expect(variant?.textFormat).toBeNull();
   });
 
+  /* ======================================================================
+   * THE TWO READS THE CONTROL BAR CANNOT DO WITHOUT (PW-0306)
+   * ===================================================================== */
+
+  it("reports BUFFERED RANGES, which a fill percentage cannot express", async () => {
+    const { adapter, media } = makeAdapter();
+    await adapter.load(request());
+    expect(adapter.getBufferedRanges()).toEqual([]);
+    /* Two ranges with a gap: the same total as one 60-second range and the
+     * opposite answer to "can I jump to 45 seconds". */
+    (media as unknown as { buffered: unknown }).buffered = {
+      length: 2,
+      start: (i: number) => (i === 0 ? 0 : 60),
+      end: (i: number) => (i === 0 ? 30 : 90)
+    };
+    expect(adapter.getBufferedRanges()).toEqual([
+      { startSeconds: 0, endSeconds: 30 },
+      { startSeconds: 60, endSeconds: 90 }
+    ]);
+  });
+
+  it("answers an EMPTY LIST, not a throw, for an element that cannot report them", async () => {
+    /* `MediaElementLike.buffered` is optional so a structural double written
+     * before the field existed still satisfies the type, and an absent
+     * reading means nothing is held. */
+    const { adapter } = makeAdapter();
+    await adapter.load(request());
+    expect(adapter.getBufferedRanges()).toEqual([]);
+  });
+
+  it("RESYNCHRONISES by re-reading the engine and publishing what it found", async () => {
+    /* The case the boundary names: a consumer attached to an adapter that did
+     * not perform the load. Its track list starts empty and no `loaded` event
+     * is ever coming. */
+    const { adapter } = makeAdapter();
+    const events: string[] = [];
+    adapter.subscribe((event) => events.push(event.type));
+    expect(adapter.getTracks()).toEqual([]);
+
+    adapter.resynchronise();
+
+    expect(adapter.getTracks().length).toBeGreaterThan(0);
+    expect(events).toEqual(["tracks", "duration", "position", "resynchronised"]);
+  });
+
+  it("puts the MARKER LAST, so everything before it is the new truth", async () => {
+    const { adapter } = makeAdapter();
+    const events: string[] = [];
+    adapter.subscribe((event) => events.push(event.type));
+    adapter.resynchronise();
+    expect(events[events.length - 1]).toBe("resynchronised");
+  });
+
+  it("carries a dropped-event count when it has one, and null when it does not", async () => {
+    const { adapter } = makeAdapter();
+    const seen: (number | null)[] = [];
+    adapter.subscribe((event) => {
+      if (event.type === "resynchronised") seen.push(event.droppedEvents);
+    });
+    adapter.resynchronise();
+    adapter.resynchronise(12);
+    /* Never 0 for unknown -- that is a count, and the adapter does not have
+     * one unless the engine gave it one. */
+    expect(seen).toEqual([null, 12]);
+  });
+
+  it("DOES NOT CLAIM A PLAY STATE it has no load id for", async () => {
+    /* `playing` and `paused` correlate to a load. This adapter did not perform
+     * one here, and inventing an id would attribute a state to a load that
+     * never happened; whether playback is running is the state machine's. */
+    const { adapter } = makeAdapter();
+    const events: string[] = [];
+    adapter.subscribe((event) => events.push(event.type));
+    adapter.resynchronise();
+    expect(events).not.toContain("playing");
+    expect(events).not.toContain("paused");
+  });
+
+  it("says nothing at all once disposed", async () => {
+    const { adapter } = makeAdapter();
+    await adapter.dispose();
+    const events: string[] = [];
+    adapter.subscribe((event) => events.push(event.type));
+    adapter.resynchronise();
+    expect(events).toEqual([]);
+  });
+
   it("rejects an unknown track id rather than silently doing nothing", async () => {
     /* A menu that appears to change the language and does not is worse than an
      * error. */

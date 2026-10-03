@@ -7913,22 +7913,68 @@
       "gateResults": {
         "typecheck": {
           "status": "pass",
-          "at": "2026-10-02T17:21:00.916Z",
+          "at": "2026-10-03T13:35:57.254Z",
           "by": "claude-lead",
-          "commitSha": "4ce4d9132ffbeb3bac01e17d0d9c3beb4374f33e",
-          "evidence": "npm run typecheck: 22 tasks successful, 22 total. STATED PLAINLY: no TypeScript project compiles .github/workflows/ci.yml, so this records that nothing else was disturbed and nothing about the change. The evidence that bears on the change is under the unit gate."
+          "commitSha": "975331c084ff0be11805dd69341286cf06b0981b",
+          "evidence": "npm run typecheck: 22 tasks successful. No TypeScript project compiles .github/workflows/ci.yml; this records that nothing else was disturbed by the repair."
         },
         "unit": {
           "status": "pass",
-          "at": "2026-10-02T18:35:02.124Z",
+          "at": "2026-10-03T13:35:57.389Z",
           "by": "claude-lead",
-          "commitSha": "48f46c9274c9bea6d23ec8f9612bcf2c68cde04f",
-          "evidence": "RE-RECORDED to add the end-to-end execution of the alias this task wires, which the first recording could not carry because the run was still in flight.\n\nnpm run test:scripts: EXIT 0, 2229 SECONDS, tree quiescent, NODE_OPTIONS=--report-on-fatalerror and without this container's usual 8 GB heap. All six suites green -- test-validate-env 38 scenarios, test-ai-control-plane 73, test-validate-repo 20 assertion groups plus the 27 workspace-deps and 21 turbo-graph groups delegated from it, TEST-DESKTOP-TARGET 9 ASSERTIONS and WINDOWS/TEST-LIFECYCLE 30 PASS 0 FAIL -- the last two being exactly the suites this task adds to CI, executed here as part of the alias the new mirror check now enforces. cloud/test-dispatcher 35 scenarios. No temp roots left behind.\n\nA DURATION TREND WORTH THE REVIEWER'S ATTENTION, recorded in full as a ci.run_observed event this round: the same suite measured 1261 s and 1807 s in rounds 104 and 106 and is now 2229 s. It spawns a fresh node per scenario and every one parses the whole 1.5 MB control/tasks.json, so its runtime scales with the size of the board. That does NOT explain exit 134 and is not offered as one -- validate passed at 25m and 27m and aborted at 10.5m, and a growth trend predicts the opposite of that -- but it is the context the next person needs.\n\nTHE EARLIER RUN TODAY EXITED 1 AT 2090 s on the suite's own guard, \"running the test suite must not mutate the real control/tasks.json\". That was my doing: I edited tasks.json four times while a suite that copies the repository was running. Recorded as an operator error rather than left to look like a defect. Everything above is the clean re-run.\n\nEVERYTHING IN THE PREVIOUS RECORDING STANDS UNCHANGED: the three newly-wired suites, the mirror check proved by its failures including against the ci.yml at HEAD, the diagnostics executed under GitHub's own shell flags, --report-on-fatalerror verified end to end, and the secret-leakage test in which a value present once in the raw V8 report appears zero times in the rendered summary."
+          "commitSha": "975331c084ff0be11805dd69341286cf06b0981b",
+          "evidence": "RE-RECORDED AFTER THE REPAIR CI #178 FORCED. The previous recording stands on its local evidence; this adds the real run and the defect it found.\n\nTHE DEFECT, FOUND BY THE RUN AND REPRODUCED BEFORE REPAIR. CI #178 (37094053423) at 975331c: validate failed at 20m 0s, exit 1, and the JOB page names the step -- \"Test the desktop target wrapper\". scripts/test-desktop-target.mjs was in the pre-install group because its IMPORTS are Node builtins and git; four of its nine cases SPAWN `next dev` through scripts/with-root-env.mjs and `next` lives in node_modules. Reproduced rather than deduced: a fresh clone of 975331c with no node_modules, running the step's exact command, gives \"desktop-target tests FAILED (5 passed, 4 failed)\" with the suite's own non-vacuity guard naming it -- \"next-env.d.ts was never rewritten ... Either the dev server failed to start\". The step now sits after `Install dependencies`; with node_modules present it reports \"desktop-target tests passed (9 assertions)\". The clause it broke is one this task's own acceptance states, and the comment in the file now records the generalisable rule: the pre-install group is about what a suite RUNS, not what it imports.\n\nTHE RUN ALSO ANSWERS THREE OF THE FOUR THINGS THE VERDICT ASKED FOR.\n  (1) The newly-wired suites execute. The job reached step 7 and failed INSIDE one of them, which is the strongest evidence available that it ran; every earlier suite, the Windows lifecycle one and the notices one included, ran without failing.\n  (2) The mirror guard executed and passed -- it sits immediately before `Install dependencies` and the job got past it.\n  (3) The diagnostic mechanism did not break CI. NODE_OPTIONS=--report-on-fatalerror was in force for the whole job and nothing failed on it; the one failure was a product/placement defect, not a diagnostic one.\n\nTHE FOURTH IS NOT ANSWERED AND IS RECORDED AS UNVERIFIED. Whether the job summary RENDERS where this session can read it is unknown: neither the run page nor the job page showed the machine table, the step-outcome table or a V8 section when fetched. validate did not abort this time, so the V8 half had nothing to write -- but `runner-facts` runs unconditionally and its table should have been there. Re-checked on the next failing run rather than assumed.\n\nAND A CORRECTION THAT WEAKENS THIS TASK'S OWN JUSTIFICATION, recorded here because a gate is where evidence is supposed to be honest. Rounds 106 and 107 said the annotation \"names an exit code and no step\". It names the step -- on the JOB page, which needs no authentication; the RUN page drops the attribution and that is the page both rounds read. Fetched today, run 37036128012's validate job says exit 134 under \"Test AI control plane\", which is the prime suspect confirmed by a different URL rather than by anything this task added. The comment in ci.yml that asserted the limitation has been corrected in the file. What the step-outcome table is still worth is narrower and is now written there: it separates a step that FAILED from one that never STARTED, and it survives a job killed with no annotation at all.\n\nLOCAL RE-VERIFICATION AFTER THE REPAIR: ci.yml parses, 20 steps, the mirror check passes against the repaired file, and the moved suite passes where it now runs."
         }
       },
-      "updatedAt": "2026-10-02T17:22:47.936Z",
+      "updatedAt": "2026-10-03T13:35:57.530Z",
       "implementationAgent": "claude-lead",
-      "implementationBaseSha": "4ce4d9132ffbeb3bac01e17d0d9c3beb4374f33e"
+      "implementationBaseSha": "4ce4d9132ffbeb3bac01e17d0d9c3beb4374f33e",
+      "review": {
+        "taskId": "PL-0714",
+        "implementationAgent": "claude-lead",
+        "implementationOwner": "claude-lead",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "975331c084ff0be11805dd69341286cf06b0981b",
+        "reviewedBaseSha": "4ce4d9132ffbeb3bac01e17d0d9c3beb4374f33e",
+        "reviewedTreeHash": "b6c8f123f06f24b7a5a620d511b2bbe72440bc6b6505ebc5747d53e6fd89b339",
+        "reviewedFileCount": 5,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [
+          "package.json",
+          "scripts/windows/test-lifecycle.mjs",
+          "apps/desktop/scripts/notices.test.mjs",
+          "scripts/test-desktop-target.mjs"
+        ],
+        "outcome": "CHANGES_REQUESTED",
+        "reviewedAt": "2026-10-03T13:34:10.284Z",
+        "evidence": "CONDITIONAL APPROVAL, NOT YET GRANTED (transcribed by claude-lead from the round-108 commander relay). gpt-architect: \"Implementation surface and local evidence are architecturally sound. The approach is accepted ... However CI #178 is the first published execution of the modified ci.yml. Do not mark PL-0714 DONE until that real run provides evidence that: 1. the newly-wired suites actually execute; 2. the mirror guard executes correctly; 3. the diagnostic mechanism does not itself break CI; 4. if validate aborts again, the run page now exposes actionable diagnostic information. ... If CI #178 exposes a defect in PL-0714: repair it and return the corrected fingerprint to review.\"\n\nCI #178, run 37094053423 at 975331c, HAS EXPOSED A DEFECT IN PL-0714, AND IT IS MINE. The validate job failed at 20m 0s with exit 1, and the job page names the step: \"Test the desktop target wrapper\". That is scripts/test-desktop-target.mjs, one of the three suites this task newly wired in, and I placed it in the PRE-INSTALL group on the strength of its import list -- node builtins and git -- without checking what it SPAWNS. Four of its nine cases start a real `next dev` through scripts/with-root-env.mjs, and `next` lives in node_modules, which does not exist until the `Install dependencies` step that follows.\n\nREPRODUCED RATHER THAN DEDUCED: a fresh clone of 975331c with no node_modules, running the suite exactly as the step does, gives \"desktop-target tests FAILED (5 passed, 4 failed)\" with the suite's own non-vacuity guard naming the cause -- \"next-env.d.ts was never rewritten ... Either the dev server failed to start, or Next stopped regenerating the file\".\n\nTHE CLAUSE I BROKE IS ONE I WROTE: \"the added suites run where their dependencies allow. The six pre-install steps are pre-install on purpose ... and a suite placed there must actually hold to that.\"\n\nReturning to IN_PROGRESS for repair, as the verdict directs."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PL-0714",
+          "implementationAgent": "claude-lead",
+          "implementationOwner": "claude-lead",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "975331c084ff0be11805dd69341286cf06b0981b",
+          "reviewedBaseSha": "4ce4d9132ffbeb3bac01e17d0d9c3beb4374f33e",
+          "reviewedTreeHash": "b6c8f123f06f24b7a5a620d511b2bbe72440bc6b6505ebc5747d53e6fd89b339",
+          "reviewedFileCount": 5,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "package.json",
+            "scripts/windows/test-lifecycle.mjs",
+            "apps/desktop/scripts/notices.test.mjs",
+            "scripts/test-desktop-target.mjs"
+          ],
+          "outcome": "CHANGES_REQUESTED",
+          "reviewedAt": "2026-10-03T13:34:10.284Z",
+          "evidence": "CONDITIONAL APPROVAL, NOT YET GRANTED (transcribed by claude-lead from the round-108 commander relay). gpt-architect: \"Implementation surface and local evidence are architecturally sound. The approach is accepted ... However CI #178 is the first published execution of the modified ci.yml. Do not mark PL-0714 DONE until that real run provides evidence that: 1. the newly-wired suites actually execute; 2. the mirror guard executes correctly; 3. the diagnostic mechanism does not itself break CI; 4. if validate aborts again, the run page now exposes actionable diagnostic information. ... If CI #178 exposes a defect in PL-0714: repair it and return the corrected fingerprint to review.\"\n\nCI #178, run 37094053423 at 975331c, HAS EXPOSED A DEFECT IN PL-0714, AND IT IS MINE. The validate job failed at 20m 0s with exit 1, and the job page names the step: \"Test the desktop target wrapper\". That is scripts/test-desktop-target.mjs, one of the three suites this task newly wired in, and I placed it in the PRE-INSTALL group on the strength of its import list -- node builtins and git -- without checking what it SPAWNS. Four of its nine cases start a real `next dev` through scripts/with-root-env.mjs, and `next` lives in node_modules, which does not exist until the `Install dependencies` step that follows.\n\nREPRODUCED RATHER THAN DEDUCED: a fresh clone of 975331c with no node_modules, running the suite exactly as the step does, gives \"desktop-target tests FAILED (5 passed, 4 failed)\" with the suite's own non-vacuity guard naming the cause -- \"next-env.d.ts was never rewritten ... Either the dev server failed to start, or Next stopped regenerating the file\".\n\nTHE CLAUSE I BROKE IS ONE I WROTE: \"the added suites run where their dependencies allow. The six pre-install steps are pre-install on purpose ... and a suite placed there must actually hold to that.\"\n\nReturning to IN_PROGRESS for repair, as the verdict directs."
+        }
+      ]
     },
     {
       "id": "PL-0715",
@@ -7961,7 +8007,7 @@
       "id": "PL-0716",
       "priority": "P1",
       "lane": "Coordination",
-      "status": "REVIEW",
+      "status": "DONE",
       "title": "The product-readiness instrument is out of date, and it is the figure the commander reads",
       "dependencies": [],
       "allowedPaths": [
@@ -7981,7 +8027,7 @@
       ],
       "acceptance": "FOUND BY THE ROUND-107 PROJECT-WIDE GAP HUNT. control/product-readiness.json answers the question the engineering board deliberately does not -- 'can a person install this on a Windows PC and watch something' -- and its own header says it must never be confused with the task count. It is the honest instrument, and it has gone stale in the direction that makes the product look worse than it is. Several items state as FACT things that stopped being true rounds ago, and cite line numbers and absences as evidence.\n\nDEMONSTRABLY FALSE ITEMS, each checkable in one command. (a) packagingRelease.windows-build 'absent -- Every CI job is ubuntu-latest; no windows-latest runner exists': .github/workflows/windows.yml and desktop-shell-ci.yml both run on windows-latest and both SUCCEEDED on 2c037d5. (b) packagingRelease.installer 'absent -- No NSIS, WiX, MSI, MSIX or Inno configuration anywhere': the Windows job produces exactly one MSI and one NSIS installer every run, asserts the inventory with digests, installs the MSI, verifies the installed tree and uninstalls it; the artifact is 71.3 MB. (c) packagingRelease.app-identity 'absent -- No product name, publisher, icons, version scheme or app-data location': tauri.conf.json declares productName and identifier and sidecar.rs declares the data, cache and log locations, which scripts/windows/installed-identity.mjs derives from. (d) windowsDesktop.tauri-shell 'absent -- no binary can be produced': one is produced and installed on every Windows run. (e) nativePlayback.capability-routing 'absent -- design-only': adapter-routing.ts shipped with PW-0203. (f) nativePlayback.track-selection 'absent -- zero getTextTracks/selectAudioLanguage callers': web-player-adapter.ts calls both. (g) productUi.offline-network-state 'absent -- No navigator.onLine, no offline banner, no retry-on-reconnect': PW-0309 shipped all three with browser coverage. (h) testingReliability.windows-e2e 'absent -- No test has ever run on Windows': 25 Rust tests run on windows-latest every push. (i) several notes describe PW-0102, PW-0303, PW-0312 and PW-0403 as in REVIEW or pending; all are DONE.\n\nREQUIRED: every item is re-scored against the tree and the notes rewritten to what is now true, with the same evidence discipline the file already demands -- a file path, a workflow, or a run.\nREQUIRED: the scoring rules in the header are APPLIED, not relaxed. 'present' still means implemented AND REACHABLE BY A USER OF THE SHIPPED APP. An installer CI produces that nobody has launched is not 'present' for a user; several of the items above move to partial rather than to present, and saying so is the point of the exercise.\nREQUIRED: the direction of each correction is stated. A figure that goes UP because the product improved and a figure that goes up because the instrument was wrong are different events, and conflating them would make the next reading untrustworthy too.\nREQUIRED: engineeringFoundation.rate-limits is re-stated precisely rather than flipped. 'No rate limit on any route' is false for the AUTH routes -- better-auth 1.7.5's default rate limiting is enabled whenever the server is in production and applies 3-per-10-seconds to anything under /sign-in and /sign-up -- and true for the application's own routes. The distinction is not pedantry: PL-0715 is very likely a consequence of the half that exists, and docs/SECURITY.md residual risk R2 is cited as the evidence for a claim that is now half wrong.\nREQUIRED: coordination/PRODUCT_READINESS.md is regenerated by scripts/product-readiness.mjs rather than edited, which that file says in its own header.\n\nOUT OF SCOPE: changing the scoring rules, the weights, or the dimension list. Those are gpt-architect's and the commander's; this task corrects facts, not the instrument.",
       "notes": "CREATED IN ROUND 107 by the project-wide gap hunt the directive asked for. WHY IT MATTERS MORE THAN A TIDY-UP: this is the number that answers 'how far is the product', and it currently reports packagingRelease at 0% on a tree where CI builds, installs, verifies and uninstalls a real Windows installer on every push. Under-reporting is not the safe direction -- it hides which dimensions are genuinely stuck (realContent at 10%, blocked on a licensed provider; nativePlayback, blocked behind PW-0103 on the commander's hardware) behind dimensions that only look stuck.\n\nNOBODY OWNED THE FILE. control/** and coordination/** belong to PL-0002, PL-AI-0001 and PL-AI-0002, all DONE -- the same shape as the windows.yml problem reported in round 105 and resolved in round 107. Conflict-checked in both fields in both directions at filing: no task in any state declares control/product-readiness.json or coordination/PRODUCT_READINESS.md specifically, and the active tasks are PW-0208 (REVIEW), PW-0602 (IN_PROGRESS), PL-0714 (REVIEW), PW-0206 (REVIEW) and PW-0307 (IN_PROGRESS), none of which names either path.\n\ncontrol/tasks.json is a reviewDependency and NOT a write surface: this task reads task states to check its own claims and must not edit them.",
-      "owner": "claude-lead",
+      "owner": null,
       "gateResults": {
         "unit": {
           "status": "pass",
@@ -7991,9 +8037,56 @@
           "evidence": "THE GATE IS \"unit\" BECAUSE THAT IS WHAT THE TASK DECLARES, AND IT IS THE WEAKER HALF OF THE EVIDENCE. node scripts/product-readiness.mjs regenerates coordination/PRODUCT_READINESS.md from the data and exits 0; node scripts/ai-control-plane.mjs validate passes at 118 tasks; npm run repo:validate passes. The document was REGENERATED and not edited, which its own header requires.\n\nTHE EVIDENCE THAT MATTERS IS THAT EVERY CORRECTION WAS CHECKED AGAINST THE TREE OR AGAINST A RUN, one at a time.\n  windows-build: runs 37036128017 (windows.yml, 5m 0s) and 37036127979 (desktop-shell-ci.yml, 2m 25s), both SUCCESS at 2c037d5, both windows-latest. The old note cited three ci.yml line numbers as proof that no Windows runner existed.\n  installer: the Windows job asserts exactly one MSI and one NSIS bundle with SHA-256 digests, installs the MSI silently, verifies the installed tree and uninstalls it; the uploaded artifact is 71.3 MB.\n  app-identity: tauri.conf.json read -- productName \"Project Liberty\", publisher \"Project Liberty\", identifier app.projectliberty.desktop, four icons. PARTIAL and not present, because the fifth thing the old note named is genuinely missing: tauri.conf.json states NO version, the bundle inherits Cargo.toml 0.1.0, and nothing decides the next number. That is the rule being applied rather than a flip.\n  capability-routing: adapter-routing.ts and its suite exist (PW-0203).\n  track-selection: web-player-adapter.ts calls getTextTracks and selectAudioLanguage; the claim of \"zero callers\" is false by grep.\n  offline-network-state: network-state.ts, reachability-store.ts, degraded-banner.tsx and degraded-states.spec.ts all exist (PW-0309).\n  watchlist-ui, continue-watching, artwork: apps/web/src/app/watchlist/page.tsx, components/continue-watching/continue-watching-rail.tsx imported by app/page.tsx, components/artwork and packages/contracts/src/shared/artwork.ts.\n  rate-limits: read out of the installed library rather than assumed -- better-auth 1.7.5 dist/context/create-context.mjs line 172 is `enabled: options.rateLimit?.enabled ?? isProduction`, and dist/api/rate-limiter/index.mjs getDefaultSpecialRules applies window 10 / max 3 to any path starting /sign-in or /sign-up. packages/auth/src/better-auth.ts passes no rateLimit option.\n  crash-diagnostics: LOG_RELATIVE_PATH exists in sidecar.rs, so the old note is imprecise -- AND THE SCORE DOES NOT MOVE, because nothing has been observed writing to it. Correcting a note is not the same as raising a score.\n  auth-seam and profiles-ui: each kept PARTIAL on the one ground that survived -- noMailTransport throws, and profile avatars are still an initial and a hue -- with the two stale grounds in each corrected.\n\nTHREE THINGS I DID NOT DO. The rules, the weights and the dimension list are untouched; they are gpt-architects and the commanders. No item moved to \"present\" that a user cannot reach -- the Tauri shell stays PARTIAL on an installer CI builds and nobody has launched, and the whole adapter boundary stays partial because player-surface.tsx still drives the controller directly. And the file now states, in its own preamble, that the 46 to 60 move is almost entirely the instrument catching up rather than progress made this round.\n\nNOT VERIFIED: nobody re-derived the weighted arithmetic by hand; it is the renderer the file has always used. And the \"reachable by a user\" test is applied to the WEB application, as this file has always applied it -- under the strictest reading, where the shipped app is a Windows desktop application nobody has launched, every row would be partial, which is not the question the instrument was built to answer."
         }
       },
-      "updatedAt": "2026-10-02T17:49:06.315Z",
+      "updatedAt": "2026-10-03T03:46:35.146Z",
       "implementationAgent": "claude-lead",
-      "implementationBaseSha": "59a2712e4ebde988b49756ebdbad7e8f92cb1e9a"
+      "implementationBaseSha": "59a2712e4ebde988b49756ebdbad7e8f92cb1e9a",
+      "review": {
+        "taskId": "PL-0716",
+        "implementationAgent": "claude-lead",
+        "implementationOwner": "claude-lead",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "47240ac3132dfeb3d28e3ef0f99af5aed531fb37",
+        "reviewedBaseSha": "59a2712e4ebde988b49756ebdbad7e8f92cb1e9a",
+        "reviewedTreeHash": "8df23a8baf99913946b47d9be3e6318286b86c128b9035ef809af54c36e96063",
+        "reviewedFileCount": 5,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [
+          "control/tasks.json",
+          "scripts/product-readiness.mjs",
+          ".github/workflows/windows.yml",
+          ".github/workflows/desktop-shell-ci.yml"
+        ],
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-10-03T03:46:27.715Z",
+        "evidence": "APPROVED at 47240ac3132dfeb3d28e3ef0f99af5aed531fb37 (transcribed by claude-lead from the round-108 commander relay).\n\nThe readiness correction is accepted because: scoring rules were not changed; weights were not changed; dimensions were not changed; stale factual claims were checked against implementation and workflow evidence; user reachability remains part of the distinction between PARTIAL and PRESENT; the generated markdown was regenerated from the readiness data rather than hand-edited; and the 46 percent to 60 percent movement is explicitly identified primarily as measurement correction rather than new implementation progress.\n\nSTANDING INSTRUCTION ATTACHED TO THIS APPROVAL: keep that distinction visible, and do not present the 14-point change as one round of product construction.\n\nFingerprint re-checked before recording: control/product-readiness.json and coordination/PRODUCT_READINESS.md are byte-identical between 47240ac3132dfeb3d28e3ef0f99af5aed531fb37 and the current head 975331c."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PL-0716",
+          "implementationAgent": "claude-lead",
+          "implementationOwner": "claude-lead",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "47240ac3132dfeb3d28e3ef0f99af5aed531fb37",
+          "reviewedBaseSha": "59a2712e4ebde988b49756ebdbad7e8f92cb1e9a",
+          "reviewedTreeHash": "8df23a8baf99913946b47d9be3e6318286b86c128b9035ef809af54c36e96063",
+          "reviewedFileCount": 5,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "control/tasks.json",
+            "scripts/product-readiness.mjs",
+            ".github/workflows/windows.yml",
+            ".github/workflows/desktop-shell-ci.yml"
+          ],
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-10-03T03:46:27.715Z",
+          "evidence": "APPROVED at 47240ac3132dfeb3d28e3ef0f99af5aed531fb37 (transcribed by claude-lead from the round-108 commander relay).\n\nThe readiness correction is accepted because: scoring rules were not changed; weights were not changed; dimensions were not changed; stale factual claims were checked against implementation and workflow evidence; user reachability remains part of the distinction between PARTIAL and PRESENT; the generated markdown was regenerated from the readiness data rather than hand-edited; and the 46 percent to 60 percent movement is explicitly identified primarily as measurement correction rather than new implementation progress.\n\nSTANDING INSTRUCTION ATTACHED TO THIS APPROVAL: keep that distinction visible, and do not present the 14-point change as one round of product construction.\n\nFingerprint re-checked before recording: control/product-readiness.json and coordination/PRODUCT_READINESS.md are byte-identical between 47240ac3132dfeb3d28e3ef0f99af5aed531fb37 and the current head 975331c."
+        }
+      ],
+      "completedAt": "2026-10-03T03:46:35.146Z"
     },
     {
       "id": "PW-0101",
@@ -8706,7 +8799,7 @@
       "id": "PW-0206",
       "priority": "P1",
       "lane": "Player",
-      "status": "REVIEW",
+      "status": "DONE",
       "title": "Subtitle and audio track selection, on both engines, for the first time",
       "dependencies": [
         "PW-0202"
@@ -8735,7 +8828,7 @@
       ],
       "acceptance": "A viewer can choose an audio track and a subtitle track, and the choice survives a candidate switch. THIS CAPABILITY DOES NOT EXIST AT ALL TODAY: there is no getTextTracks, no selectAudioLanguage, no track state and no UI anywhere in the repository, while PRODUCT_SPEC.md names 'Accessibility, subtitles, and audio correctness are core features' as a product principle and RELEASE_CRITERIA.md lists 'Audio/subtitle preferences implemented' as an MVP bar. REQUIRED: one normalised track vocabulary that both adapters answer in, so the UI never branches on engine. REQUIRED: the audio-language and subtitle-preference policy already contracted in packages/contracts/src/domains/audio.ts and subtitles.ts is the source of the DEFAULT selection, rather than a second policy being invented here. REQUIRED: forced and default subtitle flags are honoured, which the existing test matrix already lists as a playback regression scenario. REQUIRED: a selection made by the viewer is re-applied after a failover, because a candidate switch is a full teardown and losing the viewer's language on a network blip is the defect this clause exists to prevent.",
       "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. \n\nROUND 107, TWO CHANGES, BOTH RECORDED AS EVENTS BEFORE THEY WERE MADE.\n\n1. DEPENDENCY AMENDED: PW-0205 removed, PW-0202 kept. PW-0205 -> PW-0204 -> PW-0103 is blocked on the commander's Windows hardware, and it was holding the whole consumer-visible player chain (PW-0206 -> PW-0306 -> PW-0307 clause 3) behind an experiment about compositing a child HWND. This task's surface is two pure files and writes no adapter; 'a vocabulary both adapters answer in' is a contract, and a contract goes before an implementation. PW-0205 stays where it is and must answer in whatever this produces. Reverse by restoring the dependency and releasing this task.\n\n2. CORRECTION TO A STALE PREMISE, dated round 107. The acceptance opens 'THIS CAPABILITY DOES NOT EXIST AT ALL TODAY: there is no getTextTracks, no selectAudioLanguage, no track state and no UI anywhere in the repository.' That was true when it was written and is no longer. apps/web/src/components/player/player-adapter.ts (PW-0201, DONE) declares PlayerTrack, PlayerTrackKind, getTracks(), selectAudioTrack(), selectSubtitleTrack(), a 'tracks' event and a 'trackselected' event. apps/web/src/components/player/web-player-adapter.ts (PW-0202, DONE) implements all of them against Shaka, calling getTextTracks, selectTextTrack, setTextTrackVisibility and selectAudioLanguage. packages/media-engine already holds the SELECTION POLICY -- selectAudioTrack, selectSubtitleTrack, withSelectedAudio and languageMatch with its script and macrolanguage rules -- over the contract shapes in packages/contracts/src/domains/audio.ts and subtitles.ts. EVERY 'REQUIRED' CLAUSE STANDS UNCHANGED; only the statement of what the repository contains is corrected. What is genuinely absent is this task's surface: the bridge from the engine-reported PlayerTrack list to those contract shapes, the default selection coming FROM that policy rather than from a second one invented here, forced and default flags honoured, and a viewer's explicit choice re-applied after a candidate switch. Rebuilding the vocabulary or the policy would be duplication, and the 'rather than a second policy being invented here' clause already forbids it.\n\n3. SURFACE AMENDED, ROUND 107, recorded as task.definition_changed before any write: the adapter boundary and the Shaka adapter join the surface, four named files, because PlayerTrack is LOSSY against the policy's input in exactly the accessibility fields -- no audio `role` at all, only a boolean where subtitleKindSchema needs subtitles/sdh/forced/commentary, and no subtitle `format`. Shaka already reports all three and #readTracks drops them. Inventing them in a bridge would auto-select commentary tracks and make SDH unrepresentable, which the contracts were written to prevent. The change is additive and every new field is nullable with null meaning 'the engine did not state it'.",
-      "owner": "claude-media",
+      "owner": null,
       "gateResults": {
         "typecheck": {
           "status": "pass",
@@ -8750,11 +8843,70 @@
           "by": "claude-media",
           "commitSha": "434321305e7683e3b216830b5fbf446ed2a8f3a4",
           "evidence": "npm run test: 22 tasks successful, 22 total. apps/web 85 files / 1534 tests, up from 84 / 1494 -- 40 new tests, 0 failed, nothing else disturbed. Whole repository green: provider-sdk 288, catalog-ingestion 152, backend 36, media-engine and the rest unchanged.\n\nNEW COVERAGE, 40 CASES IN TWO FILES.\ntracks.test.ts, 31 cases: codec normalisation including the RFC 6381 spellings a manifest actually states and a null for everything unrecognised; conversion with and without each assumption; the refusal to convert a sub-minimum language tag, which the contract declares .min(2) and which would otherwise build an object the schema rejects; identity and the four re-application confidences; and the resolution, including the clause this task exists for.\nweb-player-adapter.test.ts, 9 new cases over the three fields the adapter now reads.\n\nTHE SUITE WAS MUTATION-TESTED RATHER THAN TRUSTED, because 31 cases passing on the first run is a reason to check the tests, not to celebrate. Four mutations, each reverted:\n  1. short-circuit a viewer \"off\" to null instead of passing the mode to the policy -> 2 failed. This is the one that matters: the contract records that a FORCED track survives an off preference, and the short circuit is the plausible implementation that deletes the only subtitle a non-reading viewer needs.\n  2. let reapply match two tracks that both state no language -> 1 failed.\n  3. tell the subtitle policy nothing about the audio that will actually play -> 2 failed. A forced track is keyed to the soundtrack, so this is what makes audio-before-subtitle load-bearing rather than tidy.\n  4. drop the assumptions from the result -> 1 failed.\nAll four caught; restored, 31 passed.\n\nTHE RE-APPLICATION CLAUSE IS TESTED AS THE REAL EVENT. A candidate switch that renames EVERY id (cdn2/ prefix on all four tracks) still restores the viewer French audio and French subtitles, because a choice is remembered as a language and a purpose rather than as a track id -- WebPlayerAdapter builds audio ids as audio:<language> and takes subtitle ids from the manifest, so the ids genuinely do not survive the teardown the clause names.\n\nORDER-INVARIANCE IS A PROPERTY TEST, not an example: fast-check over 60 shuffles of a four-track list, asserting the same audio and subtitle answer every time. The policy claims order-invariance and this module must not reintroduce a dependency on the way in.\n\nWHAT IS NOT CLAIMED. No browser ran any of this, no real Shaka instance produced a track list, and no mpv adapter exists to confirm it can answer in this vocabulary -- that is PW-0205 and it is sequenced after. The Shaka field names the adapter reads (audioRoles, roles, kind, mimeType, forced, channelsCount, audioCodec) are read from a fake player in the suite, as every other test in that file does; they are not verified against a running Shaka."
+        },
+        "architecture-review": {
+          "status": "pass",
+          "at": "2026-10-03T03:46:28.049Z",
+          "by": "gpt-architect",
+          "commitSha": "975331c084ff0be11805dd69341286cf06b0981b",
+          "judgementCommitSha": "59a2712e4ebde988b49756ebdbad7e8f92cb1e9a",
+          "judgementCommitVerified": true,
+          "transcribedBy": "claude-lead",
+          "evidence": "APPROVED at 59a2712e4ebde988b49756ebdbad7e8f92cb1e9a. TRANSCRIBED BY CLAUDE from the round-108 commander relay of gpt-architect's verdict.\n\narchitecture-review PASS. The architectural direction is accepted: the normalized track vocabulary belongs AT THE ADAPTER BOUNDARY rather than inside engine-specific UI, which is the question this gate exists to answer. The dependency narrowing is accepted on its merits -- PW-0206 depends on PW-0202, and PW-0205 does not need to block defining and implementing the normalized contract on the adapter surface that exists today. A contract that both adapters must answer in is correctly placed before the second adapter rather than after it.\n\nThe widening of PlayerTrack is accepted as part of that direction: the boundary carries the accessibility fields the normalized vocabulary requires, which is where they belong, rather than being reconstructed in a bridge.\n\nTHE LIMIT OF THIS VERDICT, STATED IN IT. This does not claim that a real mpv or native adapter has been observed producing this vocabulary. That evidence does not exist and must not be manufactured. When PW-0205 implements the same contract it is tested there.\n\nFingerprint checked before recording: the six files of allowedPaths are byte-identical between 59a2712 and head 975331c084ff0be11805dd69341286cf06b0981b, which is the published head."
         }
       },
       "implementationAgent": "claude-media",
-      "updatedAt": "2026-10-02T17:41:02.456Z",
-      "implementationBaseSha": "434321305e7683e3b216830b5fbf446ed2a8f3a4"
+      "updatedAt": "2026-10-03T03:46:34.909Z",
+      "implementationBaseSha": "434321305e7683e3b216830b5fbf446ed2a8f3a4",
+      "review": {
+        "taskId": "PW-0206",
+        "implementationAgent": "claude-media",
+        "implementationOwner": "claude-media",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "59a2712e4ebde988b49756ebdbad7e8f92cb1e9a",
+        "reviewedBaseSha": "434321305e7683e3b216830b5fbf446ed2a8f3a4",
+        "reviewedTreeHash": "fc84ff10fe9b9980abbb5a4059fb3d488f07ae2dd1613a32fe123a6646929539",
+        "reviewedFileCount": 8,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [
+          "apps/web/src/components/player/player-adapter.ts",
+          "apps/web/src/components/player/web-player-adapter.ts",
+          "apps/web/src/components/player/native-player-adapter.ts",
+          "packages/contracts/src/domains/audio.ts",
+          "packages/contracts/src/domains/subtitles.ts"
+        ],
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-10-03T03:46:05.774Z",
+        "evidence": "APPROVED at 59a2712e4ebde988b49756ebdbad7e8f92cb1e9a (transcribed by claude-lead from the round-108 commander relay).\n\nThe architectural direction is accepted: the normalized track vocabulary belongs at the adapter boundary rather than inside engine-specific UI. The dependency narrowing is accepted -- PW-0206 depends on PW-0202, and PW-0205 does not need to block defining and implementing the normalized contract on the currently available adapter surface.\n\nThe evidence is sufficient for the task's current implementation: typecheck passes; the repository unit suite passes; apps/web now has 40 additional tests; viewer track preference is represented semantically rather than by unstable engine track IDs; re-application survives a candidate switch in which every track ID changes; audio selection precedes subtitle policy where forced-subtitle behavior depends on soundtrack; forced/default behavior is covered; order invariance has property coverage; plausible mutations were deliberately introduced and caught; and the adapter boundary carries the accessibility fields required by the normalized vocabulary.\n\nIMPORTANT LIMIT, recorded as part of the verdict rather than as a footnote: this approval does NOT claim that a real mpv/native adapter has already been observed producing this vocabulary. That evidence must not be manufactured. When PW-0205/native integration reaches the point where it must implement the same contract, it is tested there.\n\nFingerprint re-checked before recording: allowedPaths and reviewDependencies are byte-identical between 59a2712 and the current head 975331c, which is also the published head. This approval unblocks PW-0306."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PW-0206",
+          "implementationAgent": "claude-media",
+          "implementationOwner": "claude-media",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "59a2712e4ebde988b49756ebdbad7e8f92cb1e9a",
+          "reviewedBaseSha": "434321305e7683e3b216830b5fbf446ed2a8f3a4",
+          "reviewedTreeHash": "fc84ff10fe9b9980abbb5a4059fb3d488f07ae2dd1613a32fe123a6646929539",
+          "reviewedFileCount": 8,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "apps/web/src/components/player/player-adapter.ts",
+            "apps/web/src/components/player/web-player-adapter.ts",
+            "apps/web/src/components/player/native-player-adapter.ts",
+            "packages/contracts/src/domains/audio.ts",
+            "packages/contracts/src/domains/subtitles.ts"
+          ],
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-10-03T03:46:05.774Z",
+          "evidence": "APPROVED at 59a2712e4ebde988b49756ebdbad7e8f92cb1e9a (transcribed by claude-lead from the round-108 commander relay).\n\nThe architectural direction is accepted: the normalized track vocabulary belongs at the adapter boundary rather than inside engine-specific UI. The dependency narrowing is accepted -- PW-0206 depends on PW-0202, and PW-0205 does not need to block defining and implementing the normalized contract on the currently available adapter surface.\n\nThe evidence is sufficient for the task's current implementation: typecheck passes; the repository unit suite passes; apps/web now has 40 additional tests; viewer track preference is represented semantically rather than by unstable engine track IDs; re-application survives a candidate switch in which every track ID changes; audio selection precedes subtitle policy where forced-subtitle behavior depends on soundtrack; forced/default behavior is covered; order invariance has property coverage; plausible mutations were deliberately introduced and caught; and the adapter boundary carries the accessibility fields required by the normalized vocabulary.\n\nIMPORTANT LIMIT, recorded as part of the verdict rather than as a footnote: this approval does NOT claim that a real mpv/native adapter has already been observed producing this vocabulary. That evidence must not be manufactured. When PW-0205/native integration reaches the point where it must implement the same contract, it is tested there.\n\nFingerprint re-checked before recording: allowedPaths and reviewDependencies are byte-identical between 59a2712 and the current head 975331c, which is also the published head. This approval unblocks PW-0306."
+        }
+      ],
+      "completedAt": "2026-10-03T03:46:34.909Z"
     },
     {
       "id": "PW-0207",
@@ -9450,7 +9602,7 @@
       "id": "PW-0306",
       "priority": "P0",
       "lane": "Player",
-      "status": "BACKLOG",
+      "status": "REVIEW",
       "title": "A player that can actually be operated",
       "dependencies": [
         "PW-0201",
@@ -9458,10 +9610,14 @@
       ],
       "allowedPaths": [
         "apps/web/src/components/player/controls/**",
-        "apps/web/src/components/player/player-surface.tsx"
+        "apps/web/src/components/player/player-surface.tsx",
+        "apps/web/src/components/player/player-adapter.ts",
+        "apps/web/src/components/player/player-adapter.test.ts",
+        "apps/web/src/components/player/web-player-adapter.ts",
+        "apps/web/src/components/player/web-player-adapter.test.ts",
+        "e2e/tests/player-controls.spec.ts"
       ],
       "reviewDependencies": [
-        "apps/web/src/components/player/player-adapter.ts",
         "apps/web/src/components/player/playback-machine.ts",
         "apps/web/src/components/player/tracks.ts",
         "apps/web/src/components/player/liberty-video.ts",
@@ -9475,9 +9631,34 @@
         "e2e"
       ],
       "acceptance": "The player has controls. TODAY IT HAS NONE: player-surface.tsx sets the native controls attribute on a video element and renders a debug panel, and its own header says 'NO CONTROLS ARE BUILT HERE'. There is no play, pause, seek, volume, fullscreen, subtitle, audio, quality or source control anywhere in this product. REQUIRED: play/pause, a seek bar with buffered ranges, volume and mute, fullscreen, a subtitle menu and an audio-track menu driven by PW-0206, and a source/quality state the viewer can read. REQUIRED: keyboard operation -- space, arrows, F, M, and Escape -- because there is not one keyboard handler in the entire application today and a Windows media application that cannot be driven from the keyboard is not finished. REQUIRED: an idle-hide overlay that never hides a control from a keyboard or screen-reader user. REQUIRED: the controls layer sends no side effect the state machine does not already own; playback-effects.ts deliberately exposes four effects and its header says FOUR, AND NO MORE, so a control that needs a fifth is a machine change with its own justification. REQUIRED: the controls read the adapter, not Shaka, so the same UI operates the native engine.",
-      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. ",
-      "owner": null,
-      "gateResults": {}
+      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. \n\nROUND 108 SURFACE AMENDMENT, recorded as task.definition_changed before any write. The adapter boundary and the Shaka adapter join the write surface -- four named files, all previously PW-0206's and now unowned -- because two acceptance clauses are unreachable without them: PlayerAdapter cannot report BUFFERED RANGES at all, and it cannot report TRACKS unless it performed the load, which it did not and must not. Routing the load through the adapter was rejected on a RIGHTS ground: PlayerSession candidates carry protection and compatibility, the client PlaybackSession carries neither, and projecting one into the other would mean inventing a rights-bearing fact. That reconciliation is PW-0203's by the round-82 ruling and was not taken. Instead the boundary gains two READS -- resynchronise(), which the boundary already anticipated (the resynchronised event exists and PW-0204 requires mpv to resynchronise from properties on queue overflow) and getBufferedRanges(), beside the three pull-side reads already there. player-adapter.ts moved from reviewDependencies to allowedPaths; it was already inside the reviewed surface, so this widens the write surface and not the fingerprint. The e2e gate needed a path: e2e/tests/player-controls.spec.ts was added to the surface in the same round, one new file, because vitest here runs with environment \"node\" and a keyboard clause cannot be evidenced without a keyboard.",
+      "owner": "claude-media",
+      "gateResults": {
+        "typecheck": {
+          "status": "pass",
+          "at": "2026-10-03T13:36:24.699Z",
+          "by": "claude-media",
+          "commitSha": "975331c084ff0be11805dd69341286cf06b0981b",
+          "evidence": "npx tsc --noEmit -p apps/web/tsconfig.json: clean. npm run typecheck: 22 tasks successful, 22 total. npm run lint: 12 tasks, 0 errors; the single warning is a pre-existing unused import in apps/web/src/lib/db/in-memory-repository.test.ts, not on this surface. e2e/ typechecks clean too, which matters because the keyboard and overlay clauses are evidenced there."
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-10-03T13:36:24.845Z",
+          "by": "claude-media",
+          "commitSha": "975331c084ff0be11805dd69341286cf06b0981b",
+          "evidence": "npm run test: 22 tasks successful, 22 total. apps/web 1597 tests passed, up from 1534 -- 63 new, 0 failed. The player directory alone is 397 tests across 22 files, up from 336.\n\nHOW THE WORK IS SPLIT, BECAUSE apps/web HAS NO DOM. vitest.config.ts sets environment \"node\", so no effect runs, no keystroke is dispatched and no menu opens. The same observation PW-0307 made one task earlier, used the same way:\n  - controls/controls-state.ts holds every DECISION a viewer can feel -- how far a key seeks, when the bar may dim, what a track is called, what a source line says -- as pure functions. 42 tests.\n  - controls/player-controls.test.tsx renders with renderToStaticMarkup and asserts the MARKUP a browser receives before hydration, which is where every accessibility promise that lives in an attribute can be checked. 14 tests.\n  - e2e/tests/player-controls.spec.ts is the keyboard and the menus, in a real browser. 10 tests, recorded under the e2e gate.\n\nWHAT I ADDED THIS ROUND ON TOP OF THE IMPLEMENTATION ALREADY IN THE TREE, and it is the clause that was missing rather than a polish pass.\n\nPW-0206 WAS STILL UNREACHABLE. Its module -- the normalised vocabulary, the identity, reapply, rememberChoice -- was imported by NOTHING. PL-0716's readiness audit had to score track selection PARTIAL for exactly that reason, and this task's acceptance asks for menus \"driven by PW-0206\". The menus were driven by this task's own trackOptions; the POLICY was not wired at all, so a viewer's choice did not survive a candidate switch -- which is the one clause PW-0206 exists for.\n  - controls-state.ts gains restoreCommands() and rememberFromMenu(), pure, which call PW-0206's reapply/rememberChoice. 11 new tests.\n  - player-controls.tsx remembers a TrackIdentity on every menu selection and, when a `tracks` event arrives, issues only the commands restoreCommands returns.\n  - MUTATION-TESTED RATHER THAN TRUSTED, four plausible wrong implementations, each reverted: remembering the track id instead of the identity (3 failed); dropping the already-selected guard, which would re-command on every candidate switch forever (1); treating a subtitle \"off\" as \"no choice\", which would let a default-marked track on the next candidate turn text back on for a viewer who switched it off (2); and a guard written as \"restored differs from current\" instead of \"restored exists and differs from current\" (SURVIVED the first four tests -- it only misbehaves when the viewer's language is absent AND another audio track is already selected, where it would command selectAudioTrack(null), which the adapter throws on. A test was added for exactly that case and the mutant now fails).\n\nWHAT IS DELIBERATELY NOT WIRED, AND WHY IT IS NOT A SHORTCUT. resolveTracks -- the DEFAULT selection for a viewer who has chosen nothing -- needs a PlaybackCapabilities, and this layer does not have one and must not invent one. watch-session.ts refuses the same thing in its own words: a capability union assembled by something that cannot see the engines \"would be a capability claim nobody measured\". Routing a real profile down here is PW-0308's settings work and PL-0502's engine union. Until then the engine's own default plays and the viewer's explicit choice is honoured, which is the honest subset and is stated in the module rather than left to be discovered.\n\nONE DEFECT FIXED IN THE INHERITED CODE: OverlayInput.pointerIsCoarse was documented as \"the viewer has asked the operating system to reduce motion\", which it has never been and which overlayVisibility has never read. Corrected in place with a note, because a comment that describes the wrong input is worse than none -- the next person to add a rule would have reasoned from it."
+        },
+        "e2e": {
+          "status": "pass",
+          "at": "2026-10-03T13:36:41.361Z",
+          "by": "claude-media",
+          "commitSha": "975331c084ff0be11805dd69341286cf06b0981b",
+          "evidence": "npx playwright test --project=chromium --project=api, development mode: 103 passed / 14 skipped, 0 failed, 1.9m -- up from 93/14, the ten new tests being player-controls.spec.ts. Run again after this round's changes to the control bar, not only before them.\n\nTHE TEN, AND WHY EACH IS HERE RATHER THAN IN A UNIT TEST. apps/web has no DOM, so a keyboard clause tested without a keyboard is not tested:\n  - every control the acceptance names is on the page and has an accessible name;\n  - THE NATIVE VIDEO CHROME IS GONE -- two seek bars that disagree about the position is worse than one;\n  - the whole bar is reachable with TAB, in order, with nothing skipped;\n  - SPACE operates the player AND DOES NOT SCROLL THE PAGE;\n  - the arrow keys move the volume rather than the page;\n  - M mutes and the button says which state it is in;\n  - a track menu opens, announces itself, and says so when there is nothing to choose;\n  - ESCAPE closes the menu;\n  - THE BAR NEVER LEAVES THE ACCESSIBILITY TREE, however it is dimmed -- which is the acceptance clause \"an idle-hide overlay that never hides a control from a keyboard or screen-reader user\", and is why the idle state is opacity rather than display:none, visibility:hidden, aria-hidden or inert, each of which would remove the controls from the tree or the keyboard;\n  - the seek bar announces a TIME rather than a percentage.\n\nWHAT IS DELIBERATELY NOT ASSERTED, AND THE REASON MATTERS MORE THAN THE OMISSION: THAT THE PICTURE MOVES. The demo catalog's sources are fixtures and no real media decodes in this harness, so a test that clicked Play and waited for `playing` would be asserting the fixture rather than the control. What a command reaching the adapter looks like is covered in the adapter's own suite; what a viewer can OPERATE is covered here.\n\nNOT COVERED BY ANY SUITE, AND STATED RATHER THAN LEFT TO BE FOUND: the re-application of a viewer's track choice across a real candidate switch, end to end in a browser. The DECISION has 11 unit tests and four caught mutations, and the wiring that issues it is three lines in one event branch -- but no harness in this repository produces two candidates with real track lists, because no real media decodes here. It is honest unit coverage of the rule plus unverified wiring of the issue, and it is the first thing to exercise when a real stream exists."
+        }
+      },
+      "implementationAgent": "claude-media",
+      "updatedAt": "2026-10-03T13:36:41.500Z",
+      "implementationBaseSha": "975331c084ff0be11805dd69341286cf06b0981b"
     },
     {
       "id": "PW-0307",
