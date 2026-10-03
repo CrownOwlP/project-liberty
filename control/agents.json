@@ -111,9 +111,10 @@
         "Infra",
         "Observability"
       ],
-      "maxParallel": 1,
+      "maxParallel": 2,
       "writeMode": "worktree",
-      "definition": ".claude/agents/infra-engineer.md"
+      "definition": ".claude/agents/infra-engineer.md",
+      "notes": "Raised from 1 to 2 on 2026-10-03 (round 109), on the same precedent and under the same three conditions as the claude-test raise earlier that round and the claude-backend raise on 2026-09-15. ALL THREE MUST HOLD, so that this does not read as a licence to raise a limit whenever one is inconvenient. (1) It is the only local agent advertising Infra; no other agent in the registry advertises it, gpt-architect included. (2) The lane was stopped by an EXTERNAL VERDICT rather than by work: PW-0208 sat in REVIEW for gpt-architect and ai:dispatch deferred PL-0718 for capacity alone. (3) The surfaces are disjoint -- PL-0718 holds the single file apps/web/tsconfig.json, PW-0208 holds apps/desktop/** and docs/LICENSING.md.\n\nThe limit exists to prevent overlapping writes, and overlap is already prevented structurally by allowedPaths, which conflictWithActive enforces on every claim regardless of owner. PW-0502 is deferred for a real path overlap with PW-0208 in the same wave and stays deferred after this change.\n\nNOT APPLIED where the conditions fail, which is the other half of having them: claude-frontend was also full with PW-0308 deferred for capacity and was NOT raised, because it is already at 2 and holding two distinct tasks -- the designed bound working rather than a lane closed by one verdict. claude-security was not raised either, because nothing is queued behind it. A limit is raised when it is starving a lane, never for symmetry."
     },
     {
       "id": "human-commander",

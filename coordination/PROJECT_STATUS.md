@@ -1,16 +1,16 @@
 # Project Liberty - Project Status
 
-> Generated 2026-10-03T17:14:34.843Z from the AI control plane.
+> Generated 2026-10-03T17:22:28.125Z from the AI control plane.
 
 **Overall completion:** 95/118 executable tasks (81%)
 
 ## Status summary
 
 - **BACKLOG:** 7
-- **READY:** 4
+- **READY:** 3
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 0
-- **REVIEW:** 7
+- **REVIEW:** 8
 - **BLOCKED:** 5
 - **DONE:** 95
 - **CANCELED:** 0
@@ -32,6 +32,7 @@
 ## Active work
 
 - **PL-0714** [REVIEW] CI executes every script suite the repository declares, and a failing validate job says something — owner: claude-lead
+- **PL-0718** [REVIEW] npm run typecheck reads generated build output, so a half-written artifact breaks the repository — owner: claude-infra
 - **PW-0208** [REVIEW] An LGPL-compatible libmpv and FFmpeg the product may actually ship — owner: claude-infra
 - **PW-0307** [REVIEW] Series navigation and the next episode — owner: claude-frontend
 - **PW-0310** [REVIEW] Keyboard, focus and accessibility across the whole application — owner: claude-frontend
@@ -41,7 +42,7 @@
 
 ## Dispatch classification
 
-- **READY_AND_EXECUTABLE:** 4
+- **READY_AND_EXECUTABLE:** 3
 - **READY_BUT_EXTERNAL:** 0
 - **BLOCKED:** 5
 - **BACKLOG (dependency-gated):** 7
@@ -79,5 +80,5 @@ UNBLOCK WHEN: the commander runs Experiment 1a on real Windows hardware and hand
 - **claude-media:** 0/2 active
 - **claude-test:** 2/2 active
 - **claude-security:** 1/1 active
-- **claude-infra:** 1/1 active
+- **claude-infra:** 2/2 active
 - **human-commander:** 0/99 active (external lane; not locally executable)

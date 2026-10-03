@@ -1,8 +1,55 @@
 {
-  "generatedAt": "2026-10-03T17:14:34.851Z",
+  "generatedAt": "2026-10-03T17:22:28.133Z",
   "agent": "claude-infra",
   "executionAvailable": true,
   "assigned": [
+    {
+      "id": "PL-0718",
+      "priority": "P2",
+      "lane": "Infra",
+      "status": "REVIEW",
+      "title": "npm run typecheck reads generated build output, so a half-written artifact breaks the repository",
+      "dependencies": [],
+      "allowedPaths": [
+        "apps/web/tsconfig.json",
+        "apps/web/src/lib/build/typecheck-program.test.ts"
+      ],
+      "reviewDependencies": [
+        "tsconfig.base.json",
+        ".gitignore",
+        "apps/web/next.config.ts",
+        "scripts/desktop-target.mjs",
+        "turbo.json"
+      ],
+      "preferredAgent": "claude-infra",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit"
+      ],
+      "acceptance": "FOUND TWICE IN ONE SESSION, BOTH TIMES THE SAME WAY. apps/web/tsconfig.json has include [\"next-env.d.ts\", \".next/types/**/*.ts\", \"**/*.ts\", \"**/*.tsx\"] and exclude [\"node_modules\"]. `dist/` is GENERATED BUILD OUTPUT and is gitignored, and `**/*.ts` pulls all of it into the typecheck program. In round 109 a desktop build was interrupted and left apps/web/dist/desktop/dev/types/validator.ts truncated mid-write -- `oute.js\")` on its own line -- and `npm run typecheck` then failed the whole repository on three syntax errors in a file nobody wrote, twice, until the directory was deleted by hand.\n\nTHE DEFECT IS NOT THE TRUNCATION. A build can always be interrupted. The defect is that a typecheck of the SOURCE is hostage to the state of the OUTPUT, so a stale or partial artifact presents as a repository that does not compile -- and the error names a path a reader will not recognise, which is the expensive part.\n\nREQUIRED: generated output is outside the typecheck program. `dist` at minimum; weigh `.next` deliberately rather than by reflex, because `.next/types/**/*.ts` is EXPLICITLY INCLUDED on the line above and Next's generated route types are load-bearing for the app's own type safety -- excluding them wholesale would be a real loss and is not what this asks for.\nREQUIRED: the fix is demonstrated against the failure. Write a deliberately broken file into the excluded location and show that typecheck passes; it is the only evidence that distinguishes a fix from a coincidence.\nREQUIRED: nothing that is checked today stops being checked. Enumerate what leaves the program and say why each one is output rather than source.\nREQUIRED: the same question is ASKED of the other workspaces rather than assumed. If another tsconfig has the same shape, say so; fixing one and leaving three is the drift this repository keeps getting bitten by.\n\nOUT OF SCOPE: making the build atomic, or cleaning dist automatically. Both are reasonable and neither is this -- the point is that source typechecking should not depend on output at all.",
+      "notes": "FILED IN ROUND 109 after it cost two debugging detours in one session. apps/web/tsconfig.json was last written by PL-AI-0002, which is DONE; no open task holds it. Conflict-checked in both fields in both directions at filing: the active tasks are PL-0714 (REVIEW, .github/workflows/ci.yml), PW-0208 (REVIEW, apps/desktop/**) and PW-0307 (IN_PROGRESS, named apps/web/src and e2e files); none names any tsconfig in either field.\n\nWHY IT IS P2 AND NOT P1: it never breaks CI, because CI checks out a clean tree and builds once. It breaks the DEVELOPER and this session, repeatedly, which is a real cost but not a release risk.",
+      "owner": "claude-infra",
+      "gateResults": {
+        "typecheck": {
+          "status": "pass",
+          "at": "2026-10-03T17:22:27.531Z",
+          "by": "claude-infra",
+          "commitSha": "2ad45f6daa76953380d437ba30943ce93e812b0a",
+          "evidence": "npm run typecheck at the repository root: 22 tasks successful, exit 0. npm run repo:validate passes.\n\nTHE FIX IS DEMONSTRATED AGAINST THE FAILURE, which the acceptance calls \"the only evidence that distinguishes a fix from a coincidence\". BEFORE: writing `this is not typescript at all (((` into apps/web/dist/desktop/types/BROKEN.ts made `npx tsc --noEmit` in apps/web report five syntax errors in that file. AFTER adding \"dist\" to exclude, two such files -- one in dist/desktop/types and one in dist/desktop/dev/types -- are present and the typecheck exits 0 with no output. AND THE CONVERSE, because an exclusion that swallowed source would pass the first test too: writing `export const broken: number = \"not a number\";` into src/lib/BROKEN_PROBE.ts still fails with TS2322. Both probe files were removed.\n\nWHAT LEFT THE PROGRAM, ENUMERATED BY `tsc --noEmit --listFiles` ON BOTH CONFIGURATIONS rather than reasoned about. Before, eight files under dist were in the program: dist/desktop/{,dev/}types/{validator.ts,cache-life.d.ts,routes.d.ts,root-params.d.ts}. After, TWO remain -- dist/desktop/dev/types/routes.d.ts and root-params.d.ts -- and they remain for the right reason: `next-env.d.ts` IMPORTS them by name (\"import \\\"./dist/desktop/dev/types/routes.d.ts\\\"\", because the desktop build ran last), and an imported file enters the program whatever `include` says. So exactly the six glob-only files left, and the one that broke this repository twice -- dist/desktop/dev/types/validator.ts -- is among them.\n\n`.next` WAS WEIGHED AND STAYS, which the acceptance asked for explicitly rather than by reflex. `.next/types/validator.ts` is Next's generated check that every page and layout exports the correct types: a real check of this application's own source, not an artefact, and `tsc --listFiles` confirms it is still in the program. `turbo.json` gives `@liberty/web#typecheck` a dependsOn of [\"^typecheck\", \"build\"], so the web build always runs before the typecheck and those files are always present. The desktop target's copies under dist validate the SAME pages against the SAME routes, so excluding them loses no check the web copy does not already make. The distinction drawn is between a check and a duplicate of it, not between two directories.\n\nTHE SAME QUESTION WAS ASKED OF EVERY OTHER WORKSPACE rather than assumed, by reading all thirteen tsconfig.json files outside node_modules. apps/backend includes [\"src/**/*.ts\",\"esbuild.mjs\",\"vitest.config.ts\"]; e2e includes [\"playwright.config.ts\",\"src/**/*.ts\",\"tests/**/*.ts\"]; all ten packages include [\"src/**/*.ts\"] plus at most one named extra. NONE of them has a bare **/*.ts and none can reach generated output. apps/web was the only instance, which is why one file is the whole fix.\n\nA PRECEDENT INSIDE THE SAME PACKAGE, found while checking: apps/web/package.json already runs `eslint . --ignore-pattern \"dist/**\"`. The lint tool was taught to ignore generated output and the typechecker was not."
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-10-03T17:22:27.659Z",
+          "by": "claude-infra",
+          "commitSha": "2ad45f6daa76953380d437ba30943ce93e812b0a",
+          "evidence": "npx vitest run in apps/web: 91 test files, 1667 tests, exit 0 -- up from 90 files and 1659 tests, which is the new guard's 8 cases.\n\nTHE GUARD WAS SEEN TO FAIL, by mutation rather than by assertion. With \"dist\" removed from exclude -- the exact state the repository was in before this task -- 3 of the 8 fail by name: \"THE FILE THAT ACTUALLY BROKE THE REPOSITORY IS OUT\", \"and so is anything else under dist, whatever a build leaves there\", and \"EXCLUDE BEATS INCLUDE, which is the rule the fix relies on\". With it restored, 8 pass. The file was restored from a byte copy.\n\nIT ASSERTS THE PROPERTY, NOT THE SPELLING. The test translates tsconfig's own include and exclude globs into matchers and asks whether a given path would enter the program, so narrowing `include` to src/** would satisfy it just as well as excluding dist. A test that grepped `exclude` for the string \"dist\" would have pinned one solution and called it the requirement.\n\nTHE TEST'S OWN MATCHER WAS WRONG FIRST, AND THE TEST CAUGHT IT. Its initial translation of `**` required at least one leading directory, so it reported next.config.ts, vitest.config.ts and next-env.d.ts as having left the program. They had not: `tsc --noEmit --listFiles` lists exactly those three outside src/, .next/, dist/ and node_modules/. The translation was corrected against that real output and the correction is commented where it was made. Three of the eight cases exist to pin the matcher itself, because a test whose matcher is wrong passes and fails for reasons that have nothing to do with the thing it is testing."
+        }
+      },
+      "updatedAt": "2026-10-03T17:22:27.874Z",
+      "implementationAgent": "claude-infra",
+      "implementationBaseSha": "2ad45f6daa76953380d437ba30943ce93e812b0a"
+    },
     {
       "id": "PW-0208",
       "priority": "P1",
@@ -77,34 +124,6 @@
       "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. SURFACE NOTE: this task's allowedPaths name directories that do not exist yet. The evidence-based narrowing procedure applies to reconciling work already in history; for genuinely new work the surface is the smallest set of paths the acceptance can be satisfied within, and it is narrowed again from the diff before review if it turns out to be wider than what was written. ",
       "owner": null,
       "gateResults": {}
-    },
-    {
-      "id": "PL-0718",
-      "priority": "P2",
-      "lane": "Infra",
-      "status": "READY",
-      "title": "npm run typecheck reads generated build output, so a half-written artifact breaks the repository",
-      "dependencies": [],
-      "allowedPaths": [
-        "apps/web/tsconfig.json"
-      ],
-      "reviewDependencies": [
-        "tsconfig.base.json",
-        ".gitignore",
-        "apps/web/next.config.ts",
-        "scripts/desktop-target.mjs",
-        "turbo.json"
-      ],
-      "preferredAgent": "claude-infra",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "typecheck"
-      ],
-      "acceptance": "FOUND TWICE IN ONE SESSION, BOTH TIMES THE SAME WAY. apps/web/tsconfig.json has include [\"next-env.d.ts\", \".next/types/**/*.ts\", \"**/*.ts\", \"**/*.tsx\"] and exclude [\"node_modules\"]. `dist/` is GENERATED BUILD OUTPUT and is gitignored, and `**/*.ts` pulls all of it into the typecheck program. In round 109 a desktop build was interrupted and left apps/web/dist/desktop/dev/types/validator.ts truncated mid-write -- `oute.js\")` on its own line -- and `npm run typecheck` then failed the whole repository on three syntax errors in a file nobody wrote, twice, until the directory was deleted by hand.\n\nTHE DEFECT IS NOT THE TRUNCATION. A build can always be interrupted. The defect is that a typecheck of the SOURCE is hostage to the state of the OUTPUT, so a stale or partial artifact presents as a repository that does not compile -- and the error names a path a reader will not recognise, which is the expensive part.\n\nREQUIRED: generated output is outside the typecheck program. `dist` at minimum; weigh `.next` deliberately rather than by reflex, because `.next/types/**/*.ts` is EXPLICITLY INCLUDED on the line above and Next's generated route types are load-bearing for the app's own type safety -- excluding them wholesale would be a real loss and is not what this asks for.\nREQUIRED: the fix is demonstrated against the failure. Write a deliberately broken file into the excluded location and show that typecheck passes; it is the only evidence that distinguishes a fix from a coincidence.\nREQUIRED: nothing that is checked today stops being checked. Enumerate what leaves the program and say why each one is output rather than source.\nREQUIRED: the same question is ASKED of the other workspaces rather than assumed. If another tsconfig has the same shape, say so; fixing one and leaving three is the drift this repository keeps getting bitten by.\n\nOUT OF SCOPE: making the build atomic, or cleaning dist automatically. Both are reasonable and neither is this -- the point is that source typechecking should not depend on output at all.",
-      "notes": "FILED IN ROUND 109 after it cost two debugging detours in one session. apps/web/tsconfig.json was last written by PL-AI-0002, which is DONE; no open task holds it. Conflict-checked in both fields in both directions at filing: the active tasks are PL-0714 (REVIEW, .github/workflows/ci.yml), PW-0208 (REVIEW, apps/desktop/**) and PW-0307 (IN_PROGRESS, named apps/web/src and e2e files); none names any tsconfig in either field.\n\nWHY IT IS P2 AND NOT P1: it never breaks CI, because CI checks out a clean tree and builds once. It breaks the DEVELOPER and this session, repeatedly, which is a real cost but not a release risk.",
-      "owner": null,
-      "gateResults": {},
-      "updatedAt": "2026-10-03T15:10:00.000000Z"
     }
   ]
 }
