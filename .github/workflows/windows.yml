@@ -525,3 +525,260 @@ jobs:
             windows-lifecycle-report.json
           if-no-files-found: ignore
           retention-days: 14
+
+  # =======================================================================
+  # THE E2E SUITE AGAINST THE DESKTOP TARGET, ON WINDOWS (PW-0602)
+  # =======================================================================
+  #
+  # PW-0602's first REQUIRED clause, and the sentence that names the defect:
+  # "the existing e2e suite runs against the DESKTOP target on Windows, not
+  # only the web target on Ubuntu -- the desktop axis is currently built on
+  # Ubuntu only, and only incidentally, because the axis defaults on and
+  # openssl happens to be installed."
+  #
+  # A SEPARATE JOB FROM `package`, DELIBERATELY. That job compiles the Tauri
+  # graph, downloads WiX, builds an MSI and runs the installer lifecycle
+  # against the real Windows installer database; this one starts two Next
+  # servers and a loopback stub and drives them with a browser. They share a
+  # runner image and nothing else, and folding the second into the first would
+  # mean a failing page assertion reads as a packaging failure, with the two
+  # competing for one 60-minute ceiling.
+  #
+  # IT DOES NOT DEPEND ON `package`. The desktop BUILD TARGET is a property of
+  # how `apps/web` is built -- `LIBERTY_BUILD_TARGET=desktop`, a separate
+  # `distDir`, the forwarder that refuses a non-https backend -- and none of
+  # that needs an MSI to exist. Chaining them would make a WiX download failure
+  # look like a desktop-target regression and would serialise two jobs that
+  # have no reason to wait for each other.
+  #
+  # ======================================================================
+  # WHAT THIS JOB CANNOT DO, STATED RATHER THAN QUIETLY OMITTED
+  # ======================================================================
+  #
+  # It runs the suite in DEVELOPMENT mode only, and that is a real limit with
+  # an external cause rather than a convenience. The production run in
+  # `ci.yml` gets its identity system from a PostgreSQL SERVICE CONTAINER, and
+  # GitHub's service containers run on Linux runners only. So the
+  # production-with-a-database rung cannot be reached on `windows-latest`
+  # without installing and administering a database on the runner, which is a
+  # separate piece of work with its own failure modes.
+  #
+  # The rung this job DOES reach is the one PW-0602 asked for: the desktop
+  # build target, exercised by the same specs, on Windows. The
+  # production-with-identity rung stays on Ubuntu and stays claimed by nothing
+  # here. A row that is skipped says why, by name -- which is the fourth
+  # REQUIRED clause, and `assert-desktop-axis-ran.mjs` below is what stops a
+  # skip being mistaken for a pass.
+  e2e-desktop:
+    runs-on: windows-latest
+    # A ceiling for a hang, not a budget. Two Next builds, a browser download
+    # and one suite run fit well inside this.
+    timeout-minutes: 45
+
+    env:
+      # The same @cache-key variables the other jobs pin, for the reason
+      # ci.yml's e2e job states at length: `playwright.config.ts` runs the
+      # build through turbo inside its `webServer` command, so an unset one
+      # hashes as ABSENT and this job could be served an artifact built under
+      # a different enforcement mode.
+      CONTENT_RIGHTS_ENFORCEMENT: strict
+      LIBERTY_FC_SEED: "20250819"
+      LIBERTY_FIXTURE_MEDIA_ORIGIN: https://fixtures.invalid
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        id: install
+        run: npm ci --no-audit --no-fund
+
+      # `e2e/` is not a workspace member -- playwright.config.ts explains why at
+      # length -- so its dependencies install on their own.
+      - name: Install the e2e harness
+        id: harness
+        working-directory: e2e
+        run: npm ci --no-audit --no-fund --ignore-scripts
+
+      # ==================================================================
+      # OPENSSL IS A PRECONDITION, CHECKED BEFORE THE SUITE RATHER THAN
+      # DISCOVERED BY ITS SILENCE
+      # ==================================================================
+      #
+      # `e2e/src/tls.ts` shells out to `openssl` to mint the loopback
+      # certificate the stub backend serves, and when it cannot, `env.ts`
+      # turns the whole desktop axis off WITH A REASON and the specs skip.
+      # That behaviour is correct and must not be relaxed -- the desktop
+      # forwarder accepts an https origin only and deliberately does not carve
+      # out loopback. What is not acceptable is a green job that skipped.
+      #
+      # Git for Windows ships openssl at `usr\bin` and that directory is not
+      # on PATH in a fresh pwsh session, so this resolves it and adds it when
+      # the bare command is missing. If neither is there the job FAILS HERE,
+      # naming the cause, rather than fifteen minutes later as an absence.
+      - name: Make openssl resolvable, or say why the axis cannot run
+        id: openssl
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $found = Get-Command openssl -ErrorAction SilentlyContinue
+          if ($null -eq $found) {
+            # DEFAULTED RATHER THAN READ BLIND. `$env:ProgramFiles` is
+            # always set on Windows, but when it is not, `Join-Path` throws
+            # "Cannot bind argument to parameter 'Path' because it is null"
+            # -- an opaque failure that replaces the explanatory one below.
+            # Found by executing this step with the variable unset.
+            $programFiles = if ($env:ProgramFiles) { $env:ProgramFiles } else { "C:\Program Files" }
+            # STRING INTERPOLATION RATHER THAN `Join-Path`, which is a
+            # provider-aware cmdlet: it resolves the drive and THROWS when
+            # there is not one, so a missing `$env:ProgramFiles` or an absent
+            # C: produced "Cannot bind argument to parameter 'Path'" or
+            # "A drive with the name 'C' does not exist" instead of the
+            # explanatory failure below. Both found by executing this step
+            # rather than by reading it. `-ErrorAction SilentlyContinue` on
+            # the probe for the same reason: a path this job is only
+            # guessing at must not raise, it must answer no.
+            $gitUsrBin = "$programFiles\Git\usr\bin"
+            if (Test-Path -LiteralPath "$gitUsrBin\openssl.exe" -ErrorAction SilentlyContinue) {
+              Write-Host "openssl not on PATH; adding $gitUsrBin"
+              Add-Content -Path $env:GITHUB_PATH -Value $gitUsrBin
+              $env:PATH = "$gitUsrBin;$env:PATH"
+              $found = Get-Command openssl -ErrorAction SilentlyContinue
+            }
+          }
+          if ($null -eq $found) {
+            throw "No openssl on this runner and none at `"$programFiles\Git\usr\bin`". " +
+              "e2e/src/tls.ts needs it to mint the loopback certificate the stub backend " +
+              "serves, and without it the entire desktop axis skips while this job goes " +
+              "green. Install openssl on the runner. Do NOT relax the https-only origin " +
+              "check in the desktop forwarder to work around it."
+          }
+          Write-Host "openssl: $($found.Source)"
+          & openssl version
+
+      # ==================================================================
+      # THE GUARD'S OWN TESTS, BEFORE THE THING IT GUARDS
+      # ==================================================================
+      #
+      # `assert-desktop-axis-ran.mjs` is the only thing standing between a
+      # skipped desktop axis and a green job, so a defect in IT is a silent
+      # hole rather than a loud one. Its judgement is ordinary code over an
+      # ordinary object and is tested here in a second, before forty minutes
+      # of browser work rather than after.
+      #
+      # NAMED AS A GAP RATHER THAN LEFT: these cases ought to run on EVERY
+      # CI run and not only on Windows. `npm run test:scripts` is the alias
+      # that would carry them and `package.json` is outside this task's write
+      # surface, so this step is where they run today. This repository has
+      # found "the thing exists, it passes, and no gate asks it" four times
+      # already; running them somewhere beats running them nowhere.
+      - name: Test the guard that stops this job passing by skipping
+        id: guardtests
+        run: node --test e2e/windows/assert-desktop-axis-ran.test.mjs
+
+      - name: Install the browser this job launches
+        id: browsers
+        working-directory: e2e
+        run: npx playwright install chromium
+
+      # ==================================================================
+      # THE RUN
+      # ==================================================================
+      #
+      # `--project=api --project=chromium`, the same two ci.yml runs, so this
+      # is the SAME SUITE on a different platform and build target rather than
+      # a Windows-flavoured subset. The desktop axis is on by default; nothing
+      # here switches it on, which is the point -- `LIBERTY_E2E_DESKTOP=off`
+      # is the only way to turn it off and this job does not pass it.
+      #
+      # NO `--retries`. playwright.config.ts sets zero and argues for it; a
+      # flake on a new platform is a finding about that platform.
+      #
+      # `continue-on-error` IS DELIBERATELY ABSENT. PW-0602's first sentence is
+      # "fails the build when it fails."
+      - name: Run the suite against the desktop target
+        id: suite
+        working-directory: e2e
+        env:
+          LIBERTY_E2E_WEB_MODE: development
+          # NO DATABASE. Not an omission: GitHub service containers are
+          # Linux-only, so the production-with-identity rung is unreachable
+          # here and stays on Ubuntu. Development identity comes from headers
+          # and needs no store, which is the configuration this job can
+          # honestly run.
+          # WRITTEN TO THE RUNNER'S TEMP, NOT INTO THE CHECKOUT. A JSON
+          # report dropped in `e2e/` is a run artifact inside the working
+          # tree: harmless on a throwaway CI checkout, and a stray untracked
+          # file on the machine of anybody who reproduces this command
+          # locally. `e2e/.gitignore` is outside this task's write surface,
+          # and the right answer is not to need it.
+          PLAYWRIGHT_JSON_OUTPUT_NAME: ${{ runner.temp }}/windows-desktop-report.json
+        run: npx playwright test --project=api --project=chromium --reporter=list,json
+
+      # ==================================================================
+      # AND IT IS NOT ALLOWED TO HAVE PASSED BY SKIPPING
+      # ==================================================================
+      #
+      # The step above exits 0 when every desktop case SKIPPED, which is
+      # precisely what happens when the certificate could not be minted. This
+      # repository has been bitten twice by a gate that never fired; the check
+      # is a script rather than a shell condition so its judgement is unit
+      # tested in `assert-desktop-axis-ran.test.mjs` on a machine that cannot
+      # run the suite it judges.
+      #
+      # `!cancelled()` rather than only on success: a run that FAILED still
+      # answers the question "did the axis execute", and a job that is red for
+      # two reasons should say both.
+      - name: The desktop axis actually ran
+        id: axis
+        if: ${{ !cancelled() && steps.suite.outcome != 'skipped' }}
+        working-directory: e2e
+        run: node windows/assert-desktop-axis-ran.mjs "${{ runner.temp }}/windows-desktop-report.json"
+
+      # ==================================================================
+      # WHAT HAPPENED, IN THE ONE CHANNEL THIS SESSION CAN READ
+      # ==================================================================
+      #
+      # Round 108 established that `$GITHUB_STEP_SUMMARY` is not readable from
+      # the agent session that has to consume these results, and that
+      # annotations are. The Windows run proved the annotation channel works.
+      - name: Publish what the run reported
+        if: ${{ !cancelled() }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Continue"
+          function Annotate([string] $level, [string] $title, [string] $message) {
+            $flat = ($message -replace '\r?\n', ' ') -replace '::', ' - '
+            if ($flat.Length -gt 380) { $flat = $flat.Substring(0, 380) + "..." }
+            Write-Host "::${level} title=${title}::${flat}"
+          }
+
+          $reportPath = Join-Path "${{ runner.temp }}" "windows-desktop-report.json"
+          if (-not (Test-Path $reportPath)) {
+            Annotate "warning" "windows desktop e2e" "No JSON report was written, so the suite did not get far enough to produce one. Read the 'Run the suite against the desktop target' step."
+            exit 0
+          }
+
+          $report = Get-Content $reportPath -Raw | ConvertFrom-Json
+          $stats = $report.stats
+          # Rounded: Playwright reports the duration as a float and an
+          # annotation reading "14398.756000000001ms" is noise where a
+          # whole number of seconds is the fact anybody wants.
+          Annotate "notice" "windows desktop e2e" ("expected={0} unexpected={1} flaky={2} skipped={3} duration={4}s" -f $stats.expected, $stats.unexpected, $stats.flaky, $stats.skipped, [math]::Round($stats.duration / 1000, 1))
+          Annotate "notice" "windows desktop axis" ("openssl={0}; mode=development; database=none (GitHub service containers are Linux-only, so the production-with-identity rung stays on Ubuntu)" -f (Get-Command openssl -ErrorAction SilentlyContinue).Source)
+
+      - name: Upload the report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-windows-desktop
+          path: |
+            e2e/playwright-report
+            ${{ runner.temp }}/windows-desktop-report.json
+          retention-days: 14
+          if-no-files-found: warn
