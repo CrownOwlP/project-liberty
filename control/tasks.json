@@ -8128,6 +8128,36 @@
       "completedAt": "2026-10-03T03:46:35.146Z"
     },
     {
+      "id": "PL-0717",
+      "priority": "P1",
+      "lane": "Test",
+      "status": "BACKLOG",
+      "title": "The fail-closed deployment path is asserted by nobody, because CI runs two of three configurations",
+      "dependencies": [
+        "PL-0714"
+      ],
+      "allowedPaths": [
+        ".github/workflows/ci.yml"
+      ],
+      "reviewDependencies": [
+        "e2e/src/env.ts",
+        "e2e/tests/playback-session.api.spec.ts",
+        "e2e/tests/watchlist.spec.ts",
+        "e2e/playwright.config.ts",
+        "docs/TEST_MATRIX.md"
+      ],
+      "preferredAgent": "claude-test",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "e2e"
+      ],
+      "acceptance": "FOUND BY MEASUREMENT IN ROUND 108: the development and production suites were both run to completion and their SKIP LISTS intersected. Five e2e titles are skipped in BOTH, so no configuration this repository executes ever runs them. Two are media-rig rows that correctly need the commander's hardware. THE OTHER THREE ASSERT A FAIL-CLOSED SECURITY BEHAVIOUR: 'a deployment with no identity system - fails closed with 503 and names the operator's remedy', '- publishes nothing only a resolver could know' (playback-session.api.spec.ts), and 'a deployment with no identity system refuses honestly rather than showing an empty list' (watchlist.spec.ts).\n\nThey need PRODUCTION MODE WITH NO DATABASE -- the third configuration. ci.yml runs exactly two: development, and production with PostgreSQL. The tests are not broken: run locally in that third configuration the full chromium+api suite gives 62 passed / 56 skipped / 0 failed.\n\nREQUIRED: the third configuration runs in CI and fails the build when it fails.\nREQUIRED: the cost is stated rather than absorbed. A third suite run adds to every push; the acceptance is that the fail-closed path is covered, not that it is covered in the most expensive available way. If a narrower invocation -- the three titles, or the two specs -- buys the same coverage for less, take it and say why.\nREQUIRED: the three titles actually EXECUTE in the new configuration. Evidence is the run naming them as passed, not a count that went up.\nREQUIRED: the two media-rig titles stay skipped and stay reasoned. They are RIG rows in PW-0601's matrix and must not be made to look covered.\nREQUIRED: no existing configuration loses coverage, and no skip loses its reason.\n\nOUT OF SCOPE: changing what the three tests assert, and relaxing any of them to make a cheaper configuration reach them.",
+      "notes": "CREATED IN ROUND 108. DEPENDS ON PL-0714 because that task owns .github/workflows/ci.yml and is in REVIEW; editing the file from here while it is an active surface would be the overlapping-surface collision the operating model forbids. Sequenced, not blocked.\n\nTHE PATTERN THIS IS THE FOURTH INSTANCE OF, recorded so the next one is found by a check rather than by accident: scripts/test-validate-repo.mjs ran nowhere until PL-AI-0002; scripts/test-desktop-target.mjs and the 30-case Windows lifecycle suite ran nowhere until PL-0714; apps/web/src/components/player/tracks.ts was imported by nothing until PW-0306 wired it. Each time the thing existed, passed, and no gate asked it. A standing mechanical check for 'skipped in every configuration we run' would have found all four, and proposing one is a reasonable thing for this task's implementation to consider -- the measurement that found this was two suite runs and a set intersection.\n\nCONFLICT-CHECKED IN BOTH FIELDS IN BOTH DIRECTIONS AT FILING: .github/workflows/ci.yml is held by PL-0714 (REVIEW) and by PL-0001, PL-0704, PL-AI-0002 and PW-0312, all DONE. The dependency on PL-0714 is what keeps the two from being active together. The reviewDependencies are read-only here: e2e/tests/watchlist.spec.ts belongs to PL-0715 (REVIEW) and is NOT written by this task.",
+      "owner": null,
+      "gateResults": {},
+      "updatedAt": "2026-10-03T14:30:00.000000Z"
+    },
+    {
       "id": "PW-0101",
       "priority": "P0",
       "lane": "Infra",

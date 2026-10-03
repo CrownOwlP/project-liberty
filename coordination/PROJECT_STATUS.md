@@ -1,12 +1,12 @@
 # Project Liberty - Project Status
 
-> Generated 2026-10-03T14:21:17.460Z from the AI control plane.
+> Generated 2026-10-03T14:27:12.832Z from the AI control plane.
 
-**Overall completion:** 93/114 executable tasks (82%)
+**Overall completion:** 93/115 executable tasks (81%)
 
 ## Status summary
 
-- **BACKLOG:** 8
+- **BACKLOG:** 9
 - **READY:** 2
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 1
@@ -42,7 +42,7 @@
 - **READY_AND_EXECUTABLE:** 2
 - **READY_BUT_EXTERNAL:** 0
 - **BLOCKED:** 6
-- **BACKLOG (dependency-gated):** 8
+- **BACKLOG (dependency-gated):** 9
 
 ## Recommended executable wave
 
