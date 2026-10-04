@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import type { APIRequestContext } from "@playwright/test";
 
 import {
   CREDENTIAL_RATE_LIMIT,
@@ -40,15 +41,32 @@ import { AUTH_BASE_URL_FOR_SIGN_IN, DATABASE_SESSION_SKIP_REASON } from "../src/
  * mean creating accounts to prove a point about refusals.
  *
  * ==========================================================================
- * IT PUTS THE BUCKET BACK, WHICH IS NOT POLITENESS
+ * IT SHARES THE BUCKET IT IS MEASURING, AND THAT GOES BOTH WAYS
  * ==========================================================================
  *
- * The limiter keys by client IP and path, and every Playwright worker in this
- * suite shares one IP. Exhausting `/sign-in/email` therefore exhausts it for
- * the watchlist specs too, which sign in for real -- and PL-0715 exists
- * because a throttled sign-up in exactly that situation was misread as a
- * product failure. Draining the window before this file finishes is what
- * stops this test from manufacturing the defect it was written about.
+ * The limiter keys by client IP and path. Every Playwright worker in this
+ * suite shares one IP, and `playwright.config.ts` sets `fullyParallel` with no
+ * worker cap, so every spec that signs in -- the watchlist cases, the
+ * production-journey cases, `establishSession` itself -- draws from the SAME
+ * `/sign-in/email` bucket this file is trying to measure.
+ *
+ * ON THE WAY OUT, that means this file can poison the ones after it, and
+ * PL-0715 exists because a throttled sign-up in exactly that situation was
+ * misread as a product failure. `afterAll` drains the window.
+ *
+ * ON THE WAY IN, IT MEANS THE BUCKET MAY ALREADY BE EMPTY OR MAY ALREADY BE
+ * FULL, AND THE FIRST VERSION OF THIS FILE ASSUMED THE FIRST. It guarded the
+ * exit and not the entrance. CI #180 failed on it: all four attempts came back
+ * 429 because another worker had got there first, and the spec reported the
+ * limiter working correctly as a defect. Reproduced here with `--workers=4`
+ * against a real production build before it was repaired.
+ *
+ * So this file no longer assumes a starting state -- it OBSERVES its way to
+ * one. `aCredentialRejection` below retries past any throttling, bounded, and
+ * returns only when it has actually seen the endpoint examine a credential;
+ * the burst then runs from a bucket known to have had room a moment earlier.
+ * Nothing about the control changed. The measurement stopped pretending it
+ * had the server to itself.
  * ---------------------------------------------------------------------- */
 
 test.describe.configure({ mode: "serial" });
@@ -73,6 +91,69 @@ function nobody(): { email: string; password: string } {
   };
 }
 
+/** One answer from the credential endpoint. */
+interface Observation {
+  readonly status: number;
+  readonly retryAfter: string | null;
+}
+
+/** One sign-in attempt with an address nobody registered. */
+async function attemptSignIn(
+  request: APIRequestContext,
+  account: { email: string; password: string }
+): Promise<Observation> {
+  const response = await request.post(`${AUTH_BASE_URL_FOR_SIGN_IN}/api/auth${SIGN_IN_PATH}`, {
+    data: { email: account.email, password: account.password },
+    headers: { "content-type": "application/json" },
+    failOnStatusCode: false
+  });
+  return {
+    status: response.status(),
+    retryAfter: response.headers()[RETRY_AFTER_HEADER.toLowerCase()] ?? null
+  };
+}
+
+/** How many windows to wait for room before giving up. */
+const PATIENCE = 4;
+
+/**
+ * Keep trying until the endpoint actually examines a credential.
+ *
+ * NOT A RETRY THAT HIDES A FAILURE, and the distinction is the one
+ * `e2e/src/identity.ts` already draws for the same endpoint: a 429 is the
+ * server stating a protocol requirement -- try again later -- rather than a
+ * failed answer, so obeying it is participating in the protocol, not having
+ * another go at the same question. A wrong password answered 401 returns
+ * immediately and is never retried.
+ *
+ * BOUNDED, and the failure says what contended. An unbounded wait here would
+ * turn a genuine "this endpoint is throttling everything forever" into a
+ * timeout somebody has to go and diagnose.
+ */
+async function aCredentialRejection(request: APIRequestContext): Promise<Observation> {
+  const seen: Observation[] = [];
+  for (let window = 0; window < PATIENCE; window += 1) {
+    const observation = await attemptSignIn(request, nobody());
+    seen.push(observation);
+    if (classifyAuthRefusal(observation.status) !== "rate_limited") return observation;
+    /* The server's own number when it gives one; the policy's window when it
+     * does not. Plus a second, because this clock is not the server's. */
+    const waitSeconds =
+      Number(observation.retryAfter) > 0
+        ? Number(observation.retryAfter)
+        : CREDENTIAL_RATE_LIMIT.windowSeconds;
+    await new Promise((resolve) => setTimeout(resolve, (waitSeconds + 1) * 1000));
+  }
+  throw new Error(
+    `The credential endpoint was throttled on all ${String(PATIENCE)} attempts spread over ` +
+      `${String(PATIENCE)} windows, so this test never saw it examine a credential and cannot ` +
+      "tell a throttled refusal from a rejected one. Every Playwright worker shares one IP and " +
+      "therefore one bucket for this path, so the usual cause is sustained contention from the " +
+      "rest of the suite rather than a product fault -- but it is reported rather than waited " +
+      `out. Responses: ${JSON.stringify(seen)}`
+  );
+}
+
 test.describe("the credential endpoint under repeated attempts", () => {
   test.skip(
     DATABASE_SESSION_SKIP_REASON !== null,
@@ -94,64 +175,68 @@ test.describe("the credential endpoint under repeated attempts", () => {
   test("THE FOURTH ATTEMPT IS REFUSED AS THROTTLED, NOT AS A WRONG PASSWORD", async ({
     request
   }) => {
-    const account = nobody();
-    const seen: { status: number; retryAfter: string | null }[] = [];
-
-    for (let attempt = 0; attempt < ATTEMPTS; attempt += 1) {
-      const response = await request.post(`${AUTH_BASE_URL_FOR_SIGN_IN}/api/auth${SIGN_IN_PATH}`, {
-        data: { email: account.email, password: account.password },
-        headers: { "content-type": "application/json" },
-        failOnStatusCode: false
-      });
-      seen.push({
-        status: response.status(),
-        retryAfter: response.headers()[RETRY_AFTER_HEADER.toLowerCase()] ?? null
-      });
-    }
-
-    const classified = seen.map((entry) => classifyAuthRefusal(entry.status));
+    /*
+     * STEP ONE: SEE THE ENDPOINT EXAMINE A CREDENTIAL. Retrying past the
+     * throttling rather than assuming its absence is the whole repair. When
+     * this returns, the bucket had room a moment ago and one of the two facts
+     * this test exists for has been observed.
+     */
+    const rejection = await aCredentialRejection(request);
 
     /*
-     * NOTHING SUCCEEDED, asserted first. If any attempt had been accepted the
-     * rest of this test would be measuring something else entirely, and a
-     * 200 here would be a far larger finding than a missing rate limit.
+     * STEP TWO: EMPTY THE BUCKET ON PURPOSE. A burst of `maxRequests + 1` in
+     * one breath cannot be absorbed by a limit of `maxRequests` per window
+     * however much room there was a moment ago, so at least one of these must
+     * be refused without the credential being examined -- and that is true
+     * whatever the other workers are doing, which is exactly the property the
+     * first version of this test lacked.
+     */
+    const burst: Observation[] = [];
+    for (let attempt = 0; attempt < ATTEMPTS; attempt += 1) {
+      burst.push(await attemptSignIn(request, nobody()));
+    }
+
+    /*
+     * NOTHING SUCCEEDED, asserted first and over everything observed. If any
+     * attempt had been accepted the rest of this test would be measuring
+     * something else entirely, and a 200 here would be a far larger finding
+     * than a missing rate limit.
      */
     expect(
-      seen.filter((entry) => entry.status < 400),
-      `an attempt with an unregistered address and an invented password was ACCEPTED: ${JSON.stringify(seen)}`
+      [rejection, ...burst].filter((entry) => entry.status < 400),
+      `an attempt with an unregistered address and an invented password was ACCEPTED: ${JSON.stringify([rejection, ...burst])}`
     ).toEqual([]);
 
     /*
-     * THE WHOLE CLAIM. Both kinds of refusal appear, in that order: the
-     * credential is examined and rejected until the bucket empties, and then
-     * the request is refused without the credential being examined at all.
+     * THE WHOLE CLAIM, AND IT IS STILL TWO DIFFERENT FACTS. One refusal
+     * examined the credential and rejected it; the other refused without
+     * looking. The ORDER is no longer asserted within a single array, because
+     * under parallelism the array's first entry says more about another
+     * worker's timing than about this product -- but the two facts are both
+     * required, and `aCredentialRejection` is what establishes that the
+     * throttling below is not simply the endpoint's only answer.
      */
-    expect(
-      classified,
-      `expected credential rejections followed by a throttled refusal, got ${JSON.stringify(seen)}`
-    ).toContain("credential_rejected");
-    expect(
-      classified,
-      `after ${String(ATTEMPTS)} attempts in one window the endpoint was never throttled. The ` +
-        `policy in packages/auth/src/rate-limit.ts says ${String(CREDENTIAL_RATE_LIMIT.maxRequests)} ` +
-        `requests per ${String(CREDENTIAL_RATE_LIMIT.windowSeconds)}s; the server disagrees. ` +
-        `Responses: ${JSON.stringify(seen)}`
-    ).toContain("rate_limited");
+    expect(classifyAuthRefusal(rejection.status)).toBe("credential_rejected");
 
-    /* The throttled one comes AFTER the rejections, never before: a limiter
-     * that fired on the first attempt would be a denial of service. */
-    expect(classified.indexOf("credential_rejected")).toBeLessThan(
-      classified.indexOf("rate_limited")
+    const throttled = burst.find(
+      (entry) => classifyAuthRefusal(entry.status) === "rate_limited"
     );
+    expect(
+      throttled,
+      `a burst of ${String(ATTEMPTS)} attempts in one window was never throttled, though a ` +
+        `credential rejection moments earlier proved the endpoint was answering. The policy in ` +
+        `packages/auth/src/rate-limit.ts says ${String(CREDENTIAL_RATE_LIMIT.maxRequests)} ` +
+        `requests per ${String(CREDENTIAL_RATE_LIMIT.windowSeconds)}s; the server disagrees. ` +
+        `Responses: ${JSON.stringify(burst)}`
+    ).toBeDefined();
 
     /*
      * AND IT SAYS HOW LONG TO WAIT. A 429 with no retry hint leaves a client
      * guessing, and a client that guesses wrong spends the next window being
-     * refused again. This is also the header the harness in `e2e/src/
-     * identity.ts` reads, so a change here would surface as a mysterious
-     * credential failure somewhere else.
+     * refused again. This is also the header `e2e/src/identity.ts` reads to
+     * schedule its own retry, so a change here would surface as a mysterious
+     * credential failure somewhere else entirely.
      */
-    const throttled = seen[classified.indexOf("rate_limited")];
     expect(throttled?.retryAfter, `the 429 carried no ${RETRY_AFTER_HEADER}`).not.toBeNull();
     expect(Number(throttled?.retryAfter)).toBeGreaterThan(0);
     expect(Number(throttled?.retryAfter)).toBeLessThanOrEqual(

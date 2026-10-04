@@ -12499,6 +12499,51 @@
       "owner": null,
       "gateResults": {},
       "updatedAt": "2026-10-04T02:54:45.178414Z"
+    },
+    {
+      "id": "PL-0722",
+      "priority": "P0",
+      "lane": "Test",
+      "status": "REVIEW",
+      "title": "Corrective: the rate-limit spec assumed a bucket no other worker had touched, and CI is red",
+      "dependencies": [],
+      "allowedPaths": [
+        "e2e/tests/auth-rate-limit.spec.ts"
+      ],
+      "reviewDependencies": [
+        "e2e/src/identity.ts",
+        "packages/auth/src/rate-limit.ts",
+        "e2e/playwright.config.ts",
+        "e2e/tests/watchlist.spec.ts"
+      ],
+      "preferredAgent": "claude-test",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "e2e"
+      ],
+      "acceptance": "CI #180 (run 37172243151) IS RED ON A TEST THIS PROJECT SHIPPED IN ROUND 109, and the product is not at fault. The e2e job failed with one error:\n\n  [chromium] > tests/auth-rate-limit.spec.ts:94:7 > the credential endpoint under repeated attempts > THE FOURTH ATTEMPT IS REFUSED AS THROTTLED, NOT AS A WRONG PASSWORD\n\nREPRODUCED HERE, NOT GUESSED. Running the same two projects with --workers=4 against a real production build and a real PostgreSQL reproduces it exactly, with the spec's own message: 'expected credential rejections followed by a throttled refusal, got [{\"status\":429,...},{\"status\":429,...},{\"status\":429,...},{\"status\":429,...}]'. All four attempts were throttled.\n\nTHE CAUSE. better-auth keys each rate-limit bucket by CLIENT IP AND PATH. Every Playwright worker shares one IP, and `playwright.config.ts` sets fullyParallel with no worker cap, so every spec that signs in -- the watchlist cases, the production-journey cases, `establishSession` itself -- draws from the SAME /sign-in/email bucket this spec is trying to measure. The spec's header already identified that hazard and guarded the EXIT, draining the window in afterAll so it could not poison later specs. It did not guard the ENTRANCE: it assumed it arrived at a bucket nobody had touched, and under parallelism that is simply not true.\n\nTHIS IS A DEFECT IN THE MEASUREMENT, NOT IN THE PRODUCT. The limiter did exactly what PL-0719 says it should: four rapid attempts from one address were refused. A spec that reports that as a failure is the fourth instance this project has seen of a new check crying wolf, and the rule is the same -- fix the check, do not relax the control.\n\nREQUIRED: the spec no longer depends on the state of the bucket when it starts. It must OBSERVE its way to a known state rather than assume one.\nREQUIRED: both facts are still proven, and still proven to be DIFFERENT facts -- a credential rejection and a throttled refusal. Dropping either, or collapsing them into 'some refusal happened', would discard the entire reason PL-0715 and PL-0719 exist.\nREQUIRED: it still proves the 429 carries a usable X-Retry-After.\nREQUIRED: it still drains the window before it finishes, so it cannot poison the specs that follow it.\nREQUIRED: it is proven under PARALLELISM, not only serially. A green --workers=1 run is what hid this; the evidence must be a run with several workers, in the production configuration, which is what CI does.\nREQUIRED: any wait it performs is BOUNDED and fails with a message naming the bucket contention, so a future genuine failure is not mistaken for this one.\n\nMUST NOT: weaken, widen, disable or reconfigure the rate-limit policy. MUST NOT add retries to the Playwright configuration -- `retries: 0` is argued for at length and a retry here would convert a real race into a green mark. MUST NOT serialise the whole suite to make one spec easier. MUST NOT mark the test skipped, or assert something weaker that happens to always hold.",
+      "notes": "FILED IN ROUND 110 the moment CI #180 was read. PL-0719 is DONE and gpt-architect approved it; this corrective does not reopen that verdict, which was about the POLICY and the product configuration, both of which are untouched and correct. What is wrong is one end-to-end spec delivered alongside it.\n\nP0 because CI is red and a red CI that everybody knows is 'just the flaky auth test' is how a real failure gets ignored.\n\nConflict-checked in both fields in both directions at filing. The single allowedPath is e2e/tests/auth-rate-limit.spec.ts, which PL-0719 held and released on completion; no active task names it. Active tasks are PL-0714 (.github/workflows/ci.yml), PW-0208 (apps/desktop/**, docs/LICENSING.md) and PW-0602 (e2e/windows/**, .github/workflows/windows.yml).",
+      "owner": "claude-test",
+      "gateResults": {
+        "typecheck": {
+          "status": "pass",
+          "at": "2026-10-04T03:15:46.110Z",
+          "by": "claude-test",
+          "commitSha": "2cc6dfb5e9adec199093d9e892b5972f98a95886",
+          "evidence": "npx tsc --noEmit in e2e/: exit 0, no output. The single changed file is e2e/tests/auth-rate-limit.spec.ts, this task's only allowedPath. No product file and no configuration was touched -- in particular playwright.config.ts is unchanged, so retries remain 0 and fullyParallel remains on."
+        },
+        "e2e": {
+          "status": "pass",
+          "at": "2026-10-04T03:15:46.234Z",
+          "by": "claude-test",
+          "commitSha": "2cc6dfb5e9adec199093d9e892b5972f98a95886",
+          "evidence": "THE FAILURE WAS REPRODUCED BEFORE IT WAS FIXED, AND THE FIX WAS VERIFIED UNDER THE SAME CONDITIONS.\n\nBEFORE. npx playwright test --project=api --project=chromium --workers=4, production build, real PostgreSQL on 127.0.0.1:5433: 1 failed, 89 passed. The failure is CI #180's, verbatim, with the spec's own message: 'expected credential rejections followed by a throttled refusal, got [{\"status\":429,\"retryAfter\":\"7\"},{\"status\":429,\"retryAfter\":\"7\"},{\"status\":429,\"retryAfter\":\"7\"},{\"status\":429,\"retryAfter\":\"7\"}]'. All four attempts throttled, because another worker reached the shared /sign-in/email bucket first.\n\nAFTER, TWICE, same command and configuration: 91 passed, 0 failed (45.1s), and again 91 passed, 0 failed (36.7s). The repaired case takes 8.7s and 9.7s respectively rather than 102ms, which is the waiting-out of contention doing its job and is the visible cost of the repair.\n\nWHAT CHANGED, AND WHAT DELIBERATELY DID NOT. The spec no longer assumes it arrives at an untouched bucket; `aCredentialRejection` retries past throttling, BOUNDED at four windows, and returns only once it has actually seen the endpoint examine a credential. The burst then runs from a bucket known to have had room a moment earlier, and a burst of maxRequests+1 in one breath cannot be absorbed by a limit of maxRequests per window however much room there was -- so the throttled refusal is guaranteed whatever other workers are doing. Both facts are still required and still required to be DIFFERENT facts; the X-Retry-After assertion is unchanged; the afterAll drain is unchanged. What was dropped is the assertion that the two refusals appear in a particular order WITHIN ONE ARRAY, because under contention that array's first entry says more about another worker's timing than about this product. The control itself is untouched: no policy value, no configuration, no retry setting, no skip.\n\nTHE MECHANISM IN CI IS NOT ONLY PARALLELISM, which is worth recording because it changes what a reader should expect. Playwright defaults to half the cores, so a 2-core GitHub runner runs ONE worker and the suite is sequential there. The bucket is nonetheless contended, because it is a 10-second window and the spec file executed immediately after other files that sign in for real. The repair handles both causes because it observes the state rather than reasoning about who else is running.\n\nONE THING I FOUND BY OVER-PARALLELISING, REPORTED AS AN ARTEFACT RATHER THAN A DEFECT. The DEVELOPMENT suite at --workers=4 on this 2-core container fails 6 cases with 'SyntaxError: Unexpected token <, \"<!DOCTYPE\"' -- the Next dev server returning an error page under on-demand compilation load. At --workers=1, which is what a 2-core CI runner actually uses, the same suite is 118 passed / 24 skipped, which matches CI #180's own development notice exactly. So this is a capacity limit of `next dev` on a small machine, not a product fault, and not caused by this change: auth-rate-limit.spec.ts skips entirely in development."
+        }
+      },
+      "updatedAt": "2026-10-04T03:15:46.512Z",
+      "implementationAgent": "claude-test",
+      "implementationBaseSha": "2cc6dfb5e9adec199093d9e892b5972f98a95886"
     }
   ]
 }

@@ -1,8 +1,8 @@
 # Project Liberty - Project Status
 
-> Generated 2026-10-04T02:55:54.436Z from the AI control plane.
+> Generated 2026-10-04T03:15:46.766Z from the AI control plane.
 
-**Overall completion:** 99/120 executable tasks (83%)
+**Overall completion:** 99/121 executable tasks (82%)
 
 ## Status summary
 
@@ -10,7 +10,7 @@
 - **READY:** 4
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 0
-- **REVIEW:** 3
+- **REVIEW:** 4
 - **BLOCKED:** 7
 - **DONE:** 99
 - **CANCELED:** 0
@@ -34,6 +34,7 @@
 - **PL-0714** [REVIEW] CI executes every script suite the repository declares, and a failing validate job says something — owner: claude-lead
 - **PW-0208** [REVIEW] An LGPL-compatible libmpv and FFmpeg the product may actually ship — owner: claude-infra
 - **PW-0602** [REVIEW] The automated half of the Windows matrix, running on Windows — owner: claude-test
+- **PL-0722** [REVIEW] Corrective: the rate-limit spec assumed a bucket no other worker had touched, and CI is red — owner: claude-test
 
 ## Dispatch classification
 
@@ -76,7 +77,7 @@ UNBLOCK WHEN: the commander runs Experiment 1a on real Windows hardware and hand
 - **claude-frontend:** 0/2 active
 - **claude-backend:** 0/2 active
 - **claude-media:** 0/2 active
-- **claude-test:** 1/2 active
+- **claude-test:** 2/2 active
 - **claude-security:** 0/1 active
 - **claude-infra:** 1/2 active
 - **human-commander:** 0/99 active (external lane; not locally executable)
