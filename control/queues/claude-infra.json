@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-04T15:41:56.971Z",
+  "generatedAt": "2026-10-04T15:50:27.654Z",
   "agent": "claude-infra",
   "executionAvailable": true,
   "assigned": [
@@ -33,15 +33,59 @@
       "gateResults": {
         "build": {
           "status": "pass",
-          "at": "2026-10-02T15:51:53.099Z",
+          "at": "2026-10-04T15:49:26.692Z",
           "by": "claude-infra",
-          "commitSha": "95d8b7658065b4c52699d6e0882ed7d04a119a21",
-          "evidence": "npm run build (turbo) at 95d8b7658065b4c52699d6e0882ed7d04a119a21: Tasks 12 successful, 12 total, exit 0. STATED PLAINLY: 11 of 12 were cache hits, because this task's surface is apps/desktop/scripts, docs/LICENSING.md and a coordination document, and none of that is a build input for any workspace. A build gate on a change the build graph cannot see is close to vacuous and saying otherwise would be a green mark that means nothing. WHAT ACTUALLY EXERCISES THIS ROUND'S CODE: node --test apps/desktop/scripts/notices.test.mjs, 17 cases, 0 failures, covering the three historical shapes of a manifest licence field, the four evidence verdicts, the filename pattern, and the rendered document's ordering, timestamp-freedom, escaping and written-offer text. collect-notices.mjs exercised end to end against a synthetic packaged tree: scoped packages, the legacy { type } manifest shape, a LICENSE-MIT file, a package with no evidence at all, and --strict exiting 1. The runtime-licence copy verified BOTH WAYS -- the generated notices carry 'No LICENSE accompanied this binary' when none is present and do not when one is. node --check on package-sidecar.mjs, collect-notices.mjs, notices.mjs and notices.test.mjs. Also clean at the same commit: npm run lint 12/12 with 0 errors (1 pre-existing warning in PW-0313's surface), npm run repo:validate, npm run ai:validate (114 tasks). THE TEST FOUND A REAL BUG IN THE FIRST ATTEMPT: the licence-filename pattern allowed only an extension, so a dual-licensed package shipping LICENSE-MIT and LICENSE-APACHE would have been reported as carrying no licence text at all. UNVERIFIED AND NOT CLAIMED: no libmpv or FFmpeg build was produced -- this container's toolchains target x86_64-unknown-linux-gnu -- and the notices generator has never run against a real packaged tree, because packaging happens on Windows. What the real dependency list will say is a thing the first Windows packaging run prints and nobody here can predict."
+          "commitSha": "e933a44fd414594050b281be3430e7451a069cfc",
+          "evidence": "npm run build (turbo): 12 tasks successful, 0 failures. STATED PLAINLY AGAIN, as the previous recording of this gate did: apps/desktop is not an npm workspace, so none of this round's changes are build inputs and most of those tasks are cache hits. A build gate on a change the build graph cannot see is close to vacuous, and the evidence that matters is below.\n\nWHAT THIS ROUND ADDRESSED, AND WHICH OF gpt-architect's NINE BULLETS IT IS. The round-111 verdict's last bullet: \"strict notice generation fails on missing evidence rather than silently producing a green result\". IT DID NOT, AND THAT IS NOW FIXED AND PROVEN.\n\nTHE DEFECT, EXACTLY. `collect-notices.mjs` walks `<sidecar>/server/node_modules`. If that directory was missing, empty, or laid out somewhere the walk does not read, `collect()` returned zero entries, `renderNotices` produced a document listing nothing, the script wrote it, printed \"0 package(s), 0 with no licence evidence\" and EXITED 0. `--strict` could not catch it: it fires on `attention.length > 0`, and a tree with no packages has nothing to attend to. So the strictest available setting was GREEN on the one input where the evidence was entirely absent -- an installer built on it would have shipped a confident, empty attribution claim.\n\nThat is the third instance of one shape in this project: `drizzle-kit migrate` applying nothing and exiting 0 (PL-0714, and again when PL-0726 found the hand-written replacement had grown its own version), and three e2e titles skipped in every configuration with no gate asking (PL-0717). Each reported success over an empty set.\n\nTHE FIX, IN TWO PLACES ON PURPOSE. `collect-notices.mjs` refuses a tree it found no packages in, and reads its own output back to confirm a non-empty file exists. `package-sidecar.mjs` then asserts the file is in the tree it is about to hand the bundler -- the same fact from the other side, because one asks \"did I write it\" and the other asks \"is it in what ships\", and a step inserted between them that cleaned the directory would leave the first passing.\n\nPROVEN AGAINST REAL TREES, not described. Five cases, driving the actual script as a child process:\n  A. a real-layout tree with two packages          -> exit 0, \"2 package(s), 1 with no licence evidence\", 1618-byte document\n  B. --strict on it, one package lacking evidence  -> exit 1, the original behaviour, unchanged\n  C. server/ present, node_modules absent          -> exit 1, \"found no packages\", AND NO DOCUMENT WRITTEN\n  D. server/node_modules present and empty         -> exit 1\n  E. --strict on the empty tree                    -> exit 1. This is the regression that mattered: it was 0 before.\n\nAND THE TESTS WERE PROVEN NON-VACUOUS BY REMOVING THE FIX. With the empty-tree refusal deleted from collect-notices.mjs, `node --test apps/desktop/scripts/notices.test.mjs` goes 22 tests / 19 pass / 3 FAIL, naming exactly the three new refusals. Restored, 22/22, and `git diff --stat` confirms the file is the fixed one. A control case is in the suite too -- a tree that HAS packages still being described -- because a script that refused everything would satisfy every refusal assertion.\n\nWHAT IS STILL NOT PROVEN, AND IS NOT CLAIMED. Eight of the verdict's nine bullets are about THE CONTENTS OF A REAL WINDOWS PACKAGE TREE, and no such tree exists to inspect: Windows #14's `package` job failed, and Windows #15's (run 37210126408) was still IN PROGRESS when this was recorded. Specifically unproven: whether a libmpv/FFmpeg artifact is included at all and its provenance, version pin and configure flags; whether GPL-only components are excluded; whether THIRD-PARTY-NOTICES.md is actually present in the installed tree; whether the Node LICENSE is beside the shipped runtime; and whether the collected dependency list reflects what was really packaged. The mechanism for every one of those exists and is now harder to fool, which is not the same as having looked.\n\nTWO MECHANISM GAPS FOUND WHILE LOOKING, NEITHER FIXABLE FROM THIS SURFACE (apps/desktop/** and docs/LICENSING.md):\n  - `scripts/windows/verify-install.mjs` requires four paths of the INSTALLED tree and THIRD-PARTY-NOTICES.md is not among them. The one check that inspects a real installation does not ask for the file the attribution obligation depends on.\n  - `apps/desktop/scripts/notices.test.mjs` -- now 22 cases, including these five -- is still run by nothing automatically. apps/desktop is not a workspace and `npm run test:scripts` is in the root package.json. The same gap PL-0714 closed for two other suites.\nBoth are filed rather than reached into.\n\nTHE PATENT BOUNDARY IS UNTOUCHED, as the verdict requires: nothing here enables, assumes or infers anything about H.264/HEVC, and no decoder was added, configured or claimed."
         }
       },
       "implementationAgent": "claude-infra",
-      "updatedAt": "2026-10-02T15:52:13.908Z",
-      "implementationBaseSha": "9ac755ba7a3b4945b54b729f9a7a7569c7d990e2"
+      "updatedAt": "2026-10-04T15:50:07.535Z",
+      "implementationBaseSha": "9ac755ba7a3b4945b54b729f9a7a7569c7d990e2",
+      "review": {
+        "taskId": "PW-0208",
+        "implementationAgent": "claude-infra",
+        "implementationOwner": "claude-infra",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "e933a44fd414594050b281be3430e7451a069cfc",
+        "reviewedBaseSha": "9ac755ba7a3b4945b54b729f9a7a7569c7d990e2",
+        "reviewedTreeHash": "168697b492e2e2f7324acfba4c1f413328cdc55cf9851488e2dedbde990f06d7",
+        "reviewedFileCount": 35,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [
+          "docs/DESKTOP_PLAYBACK.md",
+          "docs/CONTENT_RIGHTS.md",
+          "README.md"
+        ],
+        "outcome": "CHANGES_REQUESTED",
+        "reviewedAt": "2026-10-04T15:44:06.986Z",
+        "evidence": "CHANGES REQUESTED at 659cafa118bdc72b98d43c7f3fa21a120222e57b. TRANSCRIBED BY claude-lead from gpt-architect's round-111 verdict document, which lists PW-0208 under \"NOT APPROVED YET\" and says: \"PW-0208 still requires stronger evidence about the contents of the actual Windows package/distribution tree.\"\n\nThe same document's section 3 states what that evidence has to cover, and it is quoted here in full rather than paraphrased, because it is the acceptance this task is now being measured against:\n\n  - actual libmpv/FFmpeg artifact included, if included\n  - exact provenance/version/pin\n  - build/configuration evidence available for what ships\n  - GPL components excluded where required by the selected LGPL distribution strategy\n  - THIRD-PARTY-NOTICES or equivalent actually present in the package tree\n  - Node licence actually present beside the shipped runtime where required\n  - dependency licence collection reflects the actual packaged dependencies\n  - written-offer/attribution material actually appears where the distribution strategy requires it\n  - strict notice generation fails on missing evidence rather than silently producing a green result\n\nAND THE BOUNDARY IT RESTATES, which this task's own acceptance already carries: \"Do NOT guess the H.264/HEVC patent decision. H.264/HEVC remains a commander/legal decision and must remain explicitly separate from the LGPL evidence. Do not enable patent-dependent functionality based on an assumption.\"\n\nWHAT THE VERDICT IS OBJECTING TO, read plainly: the distinction between evidence about SOURCE AND SCRIPTS and evidence about THE TREE THAT SHIPS. The recorded `build` gate is about what the packaging is configured to do. \"The actual Windows package/distribution tree\" is what came out of it, and the round-110 instruction said the same thing in fewer words -- \"Do not infer packaged contents solely from source intent.\"\n\nReturned to IN_PROGRESS. The gate results are discarded by `request-changes` as the control plane intends: the `build` gate described a tree, and the next one has to describe the tree that is actually inspected."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PW-0208",
+          "implementationAgent": "claude-infra",
+          "implementationOwner": "claude-infra",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "e933a44fd414594050b281be3430e7451a069cfc",
+          "reviewedBaseSha": "9ac755ba7a3b4945b54b729f9a7a7569c7d990e2",
+          "reviewedTreeHash": "168697b492e2e2f7324acfba4c1f413328cdc55cf9851488e2dedbde990f06d7",
+          "reviewedFileCount": 35,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "docs/DESKTOP_PLAYBACK.md",
+            "docs/CONTENT_RIGHTS.md",
+            "README.md"
+          ],
+          "outcome": "CHANGES_REQUESTED",
+          "reviewedAt": "2026-10-04T15:44:06.986Z",
+          "evidence": "CHANGES REQUESTED at 659cafa118bdc72b98d43c7f3fa21a120222e57b. TRANSCRIBED BY claude-lead from gpt-architect's round-111 verdict document, which lists PW-0208 under \"NOT APPROVED YET\" and says: \"PW-0208 still requires stronger evidence about the contents of the actual Windows package/distribution tree.\"\n\nThe same document's section 3 states what that evidence has to cover, and it is quoted here in full rather than paraphrased, because it is the acceptance this task is now being measured against:\n\n  - actual libmpv/FFmpeg artifact included, if included\n  - exact provenance/version/pin\n  - build/configuration evidence available for what ships\n  - GPL components excluded where required by the selected LGPL distribution strategy\n  - THIRD-PARTY-NOTICES or equivalent actually present in the package tree\n  - Node licence actually present beside the shipped runtime where required\n  - dependency licence collection reflects the actual packaged dependencies\n  - written-offer/attribution material actually appears where the distribution strategy requires it\n  - strict notice generation fails on missing evidence rather than silently producing a green result\n\nAND THE BOUNDARY IT RESTATES, which this task's own acceptance already carries: \"Do NOT guess the H.264/HEVC patent decision. H.264/HEVC remains a commander/legal decision and must remain explicitly separate from the LGPL evidence. Do not enable patent-dependent functionality based on an assumption.\"\n\nWHAT THE VERDICT IS OBJECTING TO, read plainly: the distinction between evidence about SOURCE AND SCRIPTS and evidence about THE TREE THAT SHIPS. The recorded `build` gate is about what the packaging is configured to do. \"The actual Windows package/distribution tree\" is what came out of it, and the round-110 instruction said the same thing in fewer words -- \"Do not infer packaged contents solely from source intent.\"\n\nReturned to IN_PROGRESS. The gate results are discarded by `request-changes` as the control plane intends: the `build` gate described a tree, and the next one has to describe the tree that is actually inspected."
+        }
+      ]
     }
   ],
   "review": [],
@@ -76,6 +120,32 @@
       "acceptance": "The application can tell a user what version it is and can update itself safely, or states plainly that it cannot yet and why. REQUIRED: an update mechanism whose payloads are signature-verified -- an updater that fetches and executes an unverified binary is a remote code execution feature, and SECURITY.md's threat list already ranks unauthorized access above convenience. REQUIRED: the update endpoint is pinned and allowlisted like every other egress in this repository. REQUIRED: a rollback story, or a stated decision that there is none and what a user does instead. REQUIRED: the version is derived from one source shared with PW-0501. IF SIGNING IS UNAVAILABLE the update path must be disabled by default and say so, rather than shipping an unverified one -- an unsigned auto-updater is worse than no updater, and that dependency goes to LAST_MILE rather than being worked around.",
       "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. SURFACE NOTE: this task's allowedPaths name directories that do not exist yet. The evidence-based narrowing procedure applies to reconciling work already in history; for genuinely new work the surface is the smallest set of paths the acceptance can be satisfied within, and it is narrowed again from the diff before review if it turns out to be wider than what was written. ",
       "owner": null,
+      "gateResults": {}
+    },
+    {
+      "id": "PL-0729",
+      "priority": "P2",
+      "lane": "Infra",
+      "status": "READY",
+      "title": "The installed-tree verifier does not ask for the notices file the product promises",
+      "dependencies": [],
+      "allowedPaths": [
+        "scripts/windows/verify-install.mjs"
+      ],
+      "reviewDependencies": [
+        "apps/desktop/scripts/collect-notices.mjs",
+        "apps/desktop/scripts/package-sidecar.mjs",
+        "apps/desktop/src-tauri/tauri.conf.json",
+        "docs/LICENSING.md",
+        "apps/web/src/components/settings/about-section.tsx"
+      ],
+      "preferredAgent": "claude-infra",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "unit"
+      ],
+      "acceptance": "scripts/windows/verify-install.mjs is the only check in this repository that inspects a REAL INSTALLED TREE on a real Windows machine. It requires four paths: the shell executable, the Node runtime from NODE_RELATIVE_PATH, the server entry from SERVER_RELATIVE_PATH, and liberty-sidecar-layout.json. THIRD-PARTY-NOTICES.md is not among them.\\n\\nThat file is how an LGPL attribution obligation reaches the person who received the binary -- docs/LICENSING.md section 7 says the obligation must be met by something the user receives -- and the product makes a claim about it in the UI: PW-0308's About section tells a viewer the installer carries it. Nothing checks either statement against an installation.\\n\\nREQUIRED: the verifier requires THIRD-PARTY-NOTICES.md in the installed tree, at the path packaging actually puts it, and fails when it is absent.\\nREQUIRED: it also fails on an EMPTY file. A zero-byte notices file satisfies an existence check and discharges nothing, and this repository has now met the report-success-over-an-empty-set shape three times (PL-0714, PL-0726, PW-0208's own generator).\\nREQUIRED: the path is DERIVED rather than written down a second time if anything already derives it. verify-install.mjs's own header records that a path written down in a third place had already drifted once, and PL-0727 was the correction when a fourth copy went stale.\\nREQUIRED: non-vacuity. The new requirement must be shown to FAIL against a directory that is an install minus the notices file, not merely to pass against one that has it.\\n\\nOUT OF SCOPE: what the notices file CONTAINS. The generator owns that and PW-0208 is judging it; this is about whether the artifact reached the machine.",
+      "notes": "FILED ROUND 111 by claude-infra during PW-0208. Not fixed there: scripts/windows/** is outside PW-0208's allowedPaths (apps/desktop/**, docs/LICENSING.md). scripts/windows/verify-install.mjs is reserved by no ACTIVE task -- PW-0501 and PW-0107 are DONE, PW-0502 and PW-0503 are READY and unowned, PL-0727 holds only test-lifecycle.mjs -- so this is actionable now, though it collides with PW-0502 and PW-0503's scripts/windows/** when either is claimed.",
       "gateResults": {}
     }
   ]

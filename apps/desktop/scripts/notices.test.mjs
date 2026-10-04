@@ -19,7 +19,12 @@
  * handoff as one finding rather than worked around twice.
  * ---------------------------------------------------------------------- */
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
+import { fileURLToPath } from "node:url";
 
 import {
   declaredLicence,
@@ -28,6 +33,8 @@ import {
   needsAttention,
   renderNotices
 } from "./notices.mjs";
+
+const here = dirname(fileURLToPath(import.meta.url));
 
 describe("a manifest's licence field has had three shapes and all of them count", () => {
   it("reads a plain string", () => {
@@ -166,5 +173,109 @@ describe("the document the installer carries", () => {
 
   it("reports an absent runtime rather than pretending one shipped", () => {
     assert.match(renderNotices(entries, null), /No runtime binary was found/);
+  });
+});
+
+/* -------------------------------------------------------------------------
+ * THE GENERATOR REFUSES AN UNDESCRIBED TREE (PW-0208)
+ *
+ * gpt-architect's round-111 verdict asks, among the distribution evidence,
+ * that "strict notice generation fails on missing evidence rather than
+ * silently producing a green result". It did not. A packaged tree whose
+ * `server/node_modules` was missing or empty produced a notices document
+ * listing nothing, printed "0 package(s), 0 with no licence evidence" and
+ * exited 0 -- and `--strict` could not catch it either, because it fires on
+ * `attention.length > 0` and an empty tree has nothing to pay attention to.
+ * The strictest setting available was GREEN on the one input where the
+ * evidence was entirely absent.
+ *
+ * These drive the real script as a child process rather than importing a
+ * function, because the thing being tested is an exit code and a file on
+ * disk, which is what the packaging step depends on.
+ * ---------------------------------------------------------------------- */
+describe("a tree this finds nothing in is unknown, not clean", () => {
+  const script = join(here, "collect-notices.mjs");
+
+  /** Run the real generator against a throwaway tree. */
+  const run = (dir, ...args) =>
+    spawnSync(process.execPath, [script, dir, ...args], { encoding: "utf8" });
+
+  /** A packaged-sidecar-shaped tree, with whatever packages are asked for. */
+  function tree(name, packages) {
+    const root = mkdtempSync(join(tmpdir(), `notices-${name}-`));
+    for (const [pkg, manifest, licence] of packages) {
+      const dir = join(root, "server", "node_modules", ...pkg.split("/"));
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, "package.json"), JSON.stringify(manifest), "utf8");
+      if (licence !== null) writeFileSync(join(dir, "LICENSE"), licence, "utf8");
+    }
+    return root;
+  }
+
+  it("describes a tree that HAS packages, so the refusals below mean something", () => {
+    /*
+     * THE CONTROL CASE. Every assertion after this one is about a refusal,
+     * and a script that refused everything would satisfy all of them. This
+     * is the one that says the generator still works.
+     */
+    const root = tree("ok", [
+      ["alpha", { name: "alpha", version: "1.0.0", license: "MIT" }, "MIT License\n"],
+      ["@scope/beta", { name: "@scope/beta", version: "2.0.0" }, null]
+    ]);
+    const result = run(root);
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /2 package\(s\), 1 with no licence evidence/);
+    assert.ok(statSync(join(root, "THIRD-PARTY-NOTICES.md")).size > 0);
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("REFUSES a tree with no node_modules at all", () => {
+    const root = mkdtempSync(join(tmpdir(), "notices-bare-"));
+    mkdirSync(join(root, "server"), { recursive: true });
+    const result = run(root);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /found no packages/);
+    /* AND IT WROTE NOTHING. A document listing nothing is worse than no
+     * document: it is a confident claim about a tree nobody looked at. */
+    assert.equal(existsSync(join(root, "THIRD-PARTY-NOTICES.md")), false);
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("REFUSES an empty node_modules, which is the same thing one level down", () => {
+    const root = mkdtempSync(join(tmpdir(), "notices-empty-"));
+    mkdirSync(join(root, "server", "node_modules"), { recursive: true });
+    const result = run(root);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /found no packages/);
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("REFUSES IT UNDER --strict TOO, which is the regression that mattered", () => {
+    /*
+     * The specific hole: `--strict` is the setting a packaging job would
+     * reach for to be careful, and on an empty tree it was the setting that
+     * passed. Asserted separately from the case above because the two were
+     * reached by different code paths and only one of them was ever wrong.
+     */
+    const root = mkdtempSync(join(tmpdir(), "notices-strict-"));
+    mkdirSync(join(root, "server", "node_modules"), { recursive: true });
+    assert.equal(run(root, "--strict").status, 1);
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("still refuses a described tree under --strict when evidence is missing", () => {
+    /*
+     * The ORIGINAL `--strict` behaviour, asserted here so the new refusals
+     * cannot be mistaken for having replaced it. A tree with packages, one
+     * of which neither declares a licence nor carries one, still fails.
+     */
+    const root = tree("strictreal", [
+      ["alpha", { name: "alpha", version: "1.0.0", license: "MIT" }, "MIT License\n"],
+      ["@scope/beta", { name: "@scope/beta", version: "2.0.0" }, null]
+    ]);
+    const result = run(root, "--strict");
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /neither declare a licence nor carry one/);
+    rmSync(root, { recursive: true, force: true });
   });
 });

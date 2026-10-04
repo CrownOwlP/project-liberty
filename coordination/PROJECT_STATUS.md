@@ -1,13 +1,13 @@
 # Project Liberty - Project Status
 
-> Generated 2026-10-04T15:41:56.958Z from the AI control plane.
+> Generated 2026-10-04T15:50:27.646Z from the AI control plane.
 
-**Overall completion:** 106/127 executable tasks (83%)
+**Overall completion:** 106/129 executable tasks (82%)
 
 ## Status summary
 
 - **BACKLOG:** 7
-- **READY:** 2
+- **READY:** 4
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 0
 - **REVIEW:** 5
@@ -39,14 +39,14 @@
 
 ## Dispatch classification
 
-- **READY_AND_EXECUTABLE:** 2
+- **READY_AND_EXECUTABLE:** 4
 - **READY_BUT_EXTERNAL:** 0
 - **BLOCKED:** 7
 - **BACKLOG (dependency-gated):** 7
 
 ## Recommended executable wave
 
-No conflict-free executable tasks can be assigned with current agent capacity.
+- **PL-0729** -> claude-infra (P2/Infra) The installed-tree verifier does not ask for the notices file the product promises
 
 ## Queued for external agents
 

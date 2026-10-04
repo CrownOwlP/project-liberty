@@ -32,7 +32,16 @@
  * runner supplies it.
  * ---------------------------------------------------------------------- */
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync
+} from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -493,6 +502,31 @@ const notices = spawnSync(process.execPath, [join(here, "collect-notices.mjs"), 
 process.stdout.write(notices.stdout ?? "");
 if (notices.status !== 0) {
   fail(`collect-notices failed with ${String(notices.status)}: ${(notices.stderr ?? "").slice(0, 500)}`);
+}
+
+/*
+ * AND THE FILE IS IN THE TREE THIS STEP JUST BUILT (PW-0208).
+ *
+ * `collect-notices.mjs` checks its own output, and this checks the same
+ * thing from the other side -- deliberately, because the two answer
+ * different questions. That one asks "did I write it"; this asks "is it in
+ * the tree that is about to be handed to the bundler", which is the claim
+ * `tauri.conf.json`'s `"../sidecar/": "sidecar/"` resource turns into a file
+ * on the installed machine.
+ *
+ * THE DUPLICATION IS THE POINT, and the cost is three lines. A later edit
+ * that moved where the generator writes, or a step inserted between the two
+ * that cleaned the directory, would leave the first check passing and this
+ * one failing -- which is the correct outcome, because the obligation is
+ * discharged by what ships, not by what was generated.
+ */
+const noticesFile = join(sidecarDir, "THIRD-PARTY-NOTICES.md");
+if (!existsSync(noticesFile) || statSync(noticesFile).size === 0) {
+  fail(
+    `collect-notices reported success and ${noticesFile} is missing or empty. The packaged tree ` +
+      `is what carries the attribution obligation to the installed machine, so a tree without ` +
+      `this file is not one to hand to the bundler.`
+  );
 }
 
 console.log(`package-sidecar: laid out ${sidecarDir}`);

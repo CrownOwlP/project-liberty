@@ -131,9 +131,65 @@ if (!existsSync(target)) {
 }
 
 const { entries, runtime } = collect(target);
+
+/* -------------------------------------------------------------------------
+ * A TREE THIS FINDS NOTHING IN IS UNKNOWN, NOT CLEAN (PW-0208)
+ * -------------------------------------------------------------------------
+ *
+ * THE SHAPE THIS CLOSES. Before this check, a `sidecarDir` whose
+ * `node_modules` was missing, empty, or laid out somewhere this script does
+ * not walk produced a notices document listing nothing, printed
+ * "0 package(s), 0 with no licence evidence", and EXITED 0. Worse,
+ * `--strict` could not catch it either: it fires on
+ * `attention.length > 0`, and a tree with no packages has nothing to pay
+ * attention to. The strictest setting available was green on the one input
+ * where the evidence was entirely absent.
+ *
+ * That is the third time this repository has met the same defect in a
+ * month. `drizzle-kit migrate` applied nothing and exited 0 (PL-0714, and
+ * PL-0726 when the hand-written replacement grew its own version of it);
+ * three e2e titles were skipped in every configuration and no gate asked
+ * (PL-0717). Each time the mechanism reported success over an empty set.
+ *
+ * WHY IT IS FATAL RATHER THAN A WARNING. This document is how an LGPL
+ * attribution obligation reaches the person who receives the binary.
+ * `docs/LICENSING.md` §7 says the obligation must be met by something the
+ * user receives; a notices file that lists nothing because the walk found
+ * nothing LOOKS like a clean bill and is the absence of one. An installer
+ * built on top of it would ship a confident, empty claim.
+ *
+ * IT IS NOT A JUDGEMENT ABOUT ANY PACKAGE'S LICENCE, which is the line this
+ * task must not cross on its own. It says only that a packaged tree with no
+ * packages in it is not a tree anybody has described.
+ * ---------------------------------------------------------------------- */
+if (entries.length === 0) {
+  fail(
+    `found no packages under ${target}, so there is nothing to describe and no evidence that ` +
+      `there is nothing to describe. A packaged sidecar carries its own node_modules; an empty ` +
+      `walk means the tree was not packaged, was packaged somewhere else, or is laid out in a ` +
+      `way this script does not read. Writing a notices document that lists nothing would be a ` +
+      `confident claim about a tree nobody looked at.`
+  );
+}
+
 const document = renderNotices(entries, runtime);
 const output = join(target, NOTICES_NAME);
 writeFileSync(output, document, "utf8");
+
+/*
+ * AND THE FILE IS READ BACK (PW-0208). `writeFileSync` throwing is not the
+ * only way to end up without a notices file -- a full disk, a path that
+ * resolved somewhere unexpected, or a later step overwriting it all end the
+ * same way, and every one of them is silent. The obligation is the FILE, so
+ * the file is what gets checked.
+ */
+const written = existsSync(output) ? statSync(output).size : 0;
+if (written === 0) {
+  fail(
+    `wrote ${NOTICES_NAME} to ${output} and it is missing or empty afterwards. The attribution ` +
+      `obligation is the file, not the attempt.`
+  );
+}
 
 const attention = needsAttention(entries);
 console.log(
@@ -147,3 +203,19 @@ if (strict && attention.length > 0) {
       `was given. They are listed above and in ${NOTICES_NAME}.`
   );
 }
+
+/*
+ * WHY `--strict` IS STILL NOT PASSED BY `package-sidecar.mjs`, restated
+ * because this file now fails in two new ways and the difference matters.
+ *
+ * The checks above refuse a tree nobody described and a file that is not
+ * there -- both are statements about whether EVIDENCE WAS GATHERED, and
+ * neither requires an opinion about any package's terms. `--strict` refuses
+ * a tree where a named package carries no licence evidence, which is a
+ * statement about a LIST THAT HAS NEVER BEEN READ: no packaging run has
+ * completed and printed one. Arming it from here would be a Linux session
+ * deciding that a Windows job should fail on contents it has not seen.
+ *
+ * The list is what unblocks that decision, and it arrives with the first
+ * packaging run that gets this far.
+ */
