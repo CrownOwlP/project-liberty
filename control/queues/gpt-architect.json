@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-03T17:22:28.128Z",
+  "generatedAt": "2026-10-04T02:55:54.438Z",
   "agent": "gpt-architect",
   "executionAvailable": false,
   "assigned": [],
@@ -118,53 +118,6 @@
       ]
     },
     {
-      "id": "PL-0718",
-      "priority": "P2",
-      "lane": "Infra",
-      "status": "REVIEW",
-      "title": "npm run typecheck reads generated build output, so a half-written artifact breaks the repository",
-      "dependencies": [],
-      "allowedPaths": [
-        "apps/web/tsconfig.json",
-        "apps/web/src/lib/build/typecheck-program.test.ts"
-      ],
-      "reviewDependencies": [
-        "tsconfig.base.json",
-        ".gitignore",
-        "apps/web/next.config.ts",
-        "scripts/desktop-target.mjs",
-        "turbo.json"
-      ],
-      "preferredAgent": "claude-infra",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "typecheck",
-        "unit"
-      ],
-      "acceptance": "FOUND TWICE IN ONE SESSION, BOTH TIMES THE SAME WAY. apps/web/tsconfig.json has include [\"next-env.d.ts\", \".next/types/**/*.ts\", \"**/*.ts\", \"**/*.tsx\"] and exclude [\"node_modules\"]. `dist/` is GENERATED BUILD OUTPUT and is gitignored, and `**/*.ts` pulls all of it into the typecheck program. In round 109 a desktop build was interrupted and left apps/web/dist/desktop/dev/types/validator.ts truncated mid-write -- `oute.js\")` on its own line -- and `npm run typecheck` then failed the whole repository on three syntax errors in a file nobody wrote, twice, until the directory was deleted by hand.\n\nTHE DEFECT IS NOT THE TRUNCATION. A build can always be interrupted. The defect is that a typecheck of the SOURCE is hostage to the state of the OUTPUT, so a stale or partial artifact presents as a repository that does not compile -- and the error names a path a reader will not recognise, which is the expensive part.\n\nREQUIRED: generated output is outside the typecheck program. `dist` at minimum; weigh `.next` deliberately rather than by reflex, because `.next/types/**/*.ts` is EXPLICITLY INCLUDED on the line above and Next's generated route types are load-bearing for the app's own type safety -- excluding them wholesale would be a real loss and is not what this asks for.\nREQUIRED: the fix is demonstrated against the failure. Write a deliberately broken file into the excluded location and show that typecheck passes; it is the only evidence that distinguishes a fix from a coincidence.\nREQUIRED: nothing that is checked today stops being checked. Enumerate what leaves the program and say why each one is output rather than source.\nREQUIRED: the same question is ASKED of the other workspaces rather than assumed. If another tsconfig has the same shape, say so; fixing one and leaving three is the drift this repository keeps getting bitten by.\n\nOUT OF SCOPE: making the build atomic, or cleaning dist automatically. Both are reasonable and neither is this -- the point is that source typechecking should not depend on output at all.",
-      "notes": "FILED IN ROUND 109 after it cost two debugging detours in one session. apps/web/tsconfig.json was last written by PL-AI-0002, which is DONE; no open task holds it. Conflict-checked in both fields in both directions at filing: the active tasks are PL-0714 (REVIEW, .github/workflows/ci.yml), PW-0208 (REVIEW, apps/desktop/**) and PW-0307 (IN_PROGRESS, named apps/web/src and e2e files); none names any tsconfig in either field.\n\nWHY IT IS P2 AND NOT P1: it never breaks CI, because CI checks out a clean tree and builds once. It breaks the DEVELOPER and this session, repeatedly, which is a real cost but not a release risk.",
-      "owner": "claude-infra",
-      "gateResults": {
-        "typecheck": {
-          "status": "pass",
-          "at": "2026-10-03T17:22:27.531Z",
-          "by": "claude-infra",
-          "commitSha": "2ad45f6daa76953380d437ba30943ce93e812b0a",
-          "evidence": "npm run typecheck at the repository root: 22 tasks successful, exit 0. npm run repo:validate passes.\n\nTHE FIX IS DEMONSTRATED AGAINST THE FAILURE, which the acceptance calls \"the only evidence that distinguishes a fix from a coincidence\". BEFORE: writing `this is not typescript at all (((` into apps/web/dist/desktop/types/BROKEN.ts made `npx tsc --noEmit` in apps/web report five syntax errors in that file. AFTER adding \"dist\" to exclude, two such files -- one in dist/desktop/types and one in dist/desktop/dev/types -- are present and the typecheck exits 0 with no output. AND THE CONVERSE, because an exclusion that swallowed source would pass the first test too: writing `export const broken: number = \"not a number\";` into src/lib/BROKEN_PROBE.ts still fails with TS2322. Both probe files were removed.\n\nWHAT LEFT THE PROGRAM, ENUMERATED BY `tsc --noEmit --listFiles` ON BOTH CONFIGURATIONS rather than reasoned about. Before, eight files under dist were in the program: dist/desktop/{,dev/}types/{validator.ts,cache-life.d.ts,routes.d.ts,root-params.d.ts}. After, TWO remain -- dist/desktop/dev/types/routes.d.ts and root-params.d.ts -- and they remain for the right reason: `next-env.d.ts` IMPORTS them by name (\"import \\\"./dist/desktop/dev/types/routes.d.ts\\\"\", because the desktop build ran last), and an imported file enters the program whatever `include` says. So exactly the six glob-only files left, and the one that broke this repository twice -- dist/desktop/dev/types/validator.ts -- is among them.\n\n`.next` WAS WEIGHED AND STAYS, which the acceptance asked for explicitly rather than by reflex. `.next/types/validator.ts` is Next's generated check that every page and layout exports the correct types: a real check of this application's own source, not an artefact, and `tsc --listFiles` confirms it is still in the program. `turbo.json` gives `@liberty/web#typecheck` a dependsOn of [\"^typecheck\", \"build\"], so the web build always runs before the typecheck and those files are always present. The desktop target's copies under dist validate the SAME pages against the SAME routes, so excluding them loses no check the web copy does not already make. The distinction drawn is between a check and a duplicate of it, not between two directories.\n\nTHE SAME QUESTION WAS ASKED OF EVERY OTHER WORKSPACE rather than assumed, by reading all thirteen tsconfig.json files outside node_modules. apps/backend includes [\"src/**/*.ts\",\"esbuild.mjs\",\"vitest.config.ts\"]; e2e includes [\"playwright.config.ts\",\"src/**/*.ts\",\"tests/**/*.ts\"]; all ten packages include [\"src/**/*.ts\"] plus at most one named extra. NONE of them has a bare **/*.ts and none can reach generated output. apps/web was the only instance, which is why one file is the whole fix.\n\nA PRECEDENT INSIDE THE SAME PACKAGE, found while checking: apps/web/package.json already runs `eslint . --ignore-pattern \"dist/**\"`. The lint tool was taught to ignore generated output and the typechecker was not."
-        },
-        "unit": {
-          "status": "pass",
-          "at": "2026-10-03T17:22:27.659Z",
-          "by": "claude-infra",
-          "commitSha": "2ad45f6daa76953380d437ba30943ce93e812b0a",
-          "evidence": "npx vitest run in apps/web: 91 test files, 1667 tests, exit 0 -- up from 90 files and 1659 tests, which is the new guard's 8 cases.\n\nTHE GUARD WAS SEEN TO FAIL, by mutation rather than by assertion. With \"dist\" removed from exclude -- the exact state the repository was in before this task -- 3 of the 8 fail by name: \"THE FILE THAT ACTUALLY BROKE THE REPOSITORY IS OUT\", \"and so is anything else under dist, whatever a build leaves there\", and \"EXCLUDE BEATS INCLUDE, which is the rule the fix relies on\". With it restored, 8 pass. The file was restored from a byte copy.\n\nIT ASSERTS THE PROPERTY, NOT THE SPELLING. The test translates tsconfig's own include and exclude globs into matchers and asks whether a given path would enter the program, so narrowing `include` to src/** would satisfy it just as well as excluding dist. A test that grepped `exclude` for the string \"dist\" would have pinned one solution and called it the requirement.\n\nTHE TEST'S OWN MATCHER WAS WRONG FIRST, AND THE TEST CAUGHT IT. Its initial translation of `**` required at least one leading directory, so it reported next.config.ts, vitest.config.ts and next-env.d.ts as having left the program. They had not: `tsc --noEmit --listFiles` lists exactly those three outside src/, .next/, dist/ and node_modules/. The translation was corrected against that real output and the correction is commented where it was made. Three of the eight cases exist to pin the matcher itself, because a test whose matcher is wrong passes and fails for reasons that have nothing to do with the thing it is testing."
-        }
-      },
-      "updatedAt": "2026-10-03T17:22:27.874Z",
-      "implementationAgent": "claude-infra",
-      "implementationBaseSha": "2ad45f6daa76953380d437ba30943ce93e812b0a"
-    },
-    {
       "id": "PW-0208",
       "priority": "P1",
       "lane": "Infra",
@@ -203,141 +156,6 @@
       "implementationAgent": "claude-infra",
       "updatedAt": "2026-10-02T15:52:13.908Z",
       "implementationBaseSha": "9ac755ba7a3b4945b54b729f9a7a7569c7d990e2"
-    },
-    {
-      "id": "PW-0307",
-      "priority": "P1",
-      "lane": "Frontend",
-      "status": "REVIEW",
-      "title": "Series navigation and the next episode",
-      "dependencies": [
-        "PW-0301",
-        "PW-0305",
-        "PW-0306"
-      ],
-      "allowedPaths": [
-        "apps/web/src/components/title/episode-list.tsx",
-        "apps/web/src/components/title/season-navigation.tsx",
-        "apps/web/src/components/title/season-navigation.module.css",
-        "apps/web/src/components/title/season-navigation.test.tsx",
-        "apps/web/src/lib/next-episode.ts",
-        "apps/web/src/lib/next-episode.test.ts",
-        "apps/web/src/lib/episode-progress.ts",
-        "apps/web/src/lib/episode-progress.test.ts",
-        "apps/web/src/app/title/demo-title-details.ts",
-        "apps/web/src/app/title/demo-title-details.test.ts",
-        "e2e/tests/series-navigation.spec.ts",
-        "apps/web/src/components/player/player-surface.tsx",
-        "apps/web/src/components/title/next-episode-prompt.tsx",
-        "apps/web/src/components/title/next-episode-prompt.test.tsx",
-        "apps/web/src/components/title/next-episode-prompt.module.css",
-        "apps/web/src/app/watch/[contentId]/page.tsx"
-      ],
-      "reviewDependencies": [
-        "packages/contracts/src/domains/title.ts",
-        "apps/web/src/app/title/title-detail.ts",
-        "apps/web/src/app/title/[titleId]/page.tsx"
-      ],
-      "preferredAgent": "claude-frontend",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "typecheck",
-        "unit",
-        "e2e"
-      ],
-      "acceptance": "A viewer can move through a series without going back to the catalog. Today every season of a series renders as one flat stack on the title page, with no season selector, no per-episode progress and no way to reach the next episode. REQUIRED: season navigation that does not lose the viewer's place. REQUIRED: per-episode watched and in-progress state from the progress API. REQUIRED: a next-episode affordance at the end of playback, honouring the SAME per-episode rights gate the episode list already applies -- an autoplay that skips the rights check would be the rights breach PL-0703 was opened for, in a new place. REQUIRED: the next-episode selection rule is a pure function with its own tests, not logic inside a component, because 'what plays next' is exactly the kind of decision this project requires to be reconstructible.",
-      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. \n\nROUND 109 SURFACE AMENDMENT, recorded as an event before any write: player-surface.tsx and app/watch/[contentId]/page.tsx move from reviewDependencies to allowedPaths, and three new components/title/next-episode-prompt.* files are named. The last unmet clause is the affordance AT THE END OF PLAYBACK, which only the player can know about and only the server can gate. PW-0306 owned player-surface.tsx and is DONE as of this round, so the surface is free. components/player/controls/** was deliberately NOT taken: the prompt is not a control and the controls must not learn what a series is.",
-      "owner": "claude-frontend",
-      "gateResults": {
-        "typecheck": {
-          "status": "pass",
-          "at": "2026-10-03T15:15:43.295Z",
-          "by": "claude-frontend",
-          "commitSha": "4f23c1d4d78d12ee49c69fb6f08c6acd73b5cc3e",
-          "evidence": "npx tsc --noEmit -p apps/web/tsconfig.json: clean. npm run typecheck: 22 tasks successful. e2e/ tsc --noEmit: clean. npm run lint: 12 tasks, 0 errors; the one warning is a pre-existing unused import in apps/web/src/lib/db/in-memory-repository.test.ts, not on this surface.\n\nA DETOUR WORTH RECORDING BECAUSE IT COST TIME TWICE: tsc failed mid-round on three syntax errors in apps/web/dist/desktop/dev/types/validator.ts -- GENERATED, gitignored build output, truncated mid-write by an interrupted build. apps/web/tsconfig.json includes **/*.ts and excludes only node_modules, so a half-written artifact breaks the typecheck of the whole repository. Not this task's surface; filed as PL-0718."
-        },
-        "unit": {
-          "status": "pass",
-          "at": "2026-10-03T15:15:43.456Z",
-          "by": "claude-frontend",
-          "commitSha": "4f23c1d4d78d12ee49c69fb6f08c6acd73b5cc3e",
-          "evidence": "npm run test: 22 tasks successful, 22 total. apps/web 1614 tests passed, up from 1597 -- 17 new, 0 failed.\n\nTHE LAST CLAUSE, WHICH IS WHAT THIS ROUND ADDED: \"a next-episode affordance at the end of playback, honouring the SAME per-episode rights gate the episode list already applies -- an autoplay that skips the rights check would be the rights breach PL-0703 was opened for, in a new place.\"\n\nTHE GATE IS THE SAME GATE AND IS NEVER RESTATED. The chain is one line of imports: the watch page calls nextUpFor, which calls resolveNextEpisode, which calls resolvePlayAvailability -- the function episode-list.tsx applies to every row. The href the client receives is the one that function returned. There is no string concatenation anywhere on the path.\n\nAND THAT IS CHECKED MECHANICALLY RATHER THAN BY INTENTION, in two places, because a mutation proved an assertion about VALUES cannot do it. Replacing `href: next.href` with a template literal building `/watch/${id}` PASSED ALL TWENTY behavioural tests -- and it has to, since resolvePlayAvailability builds exactly that string, so the honest answer and the forged one are identical for every episode a fixture can describe. The difference is only visible in the source. Both next-episode.ts and next-episode-prompt.tsx are now parsed with their comments stripped and asserted to contain no \"/watch\" literal and no watchHref call. With that guard in place the mutation fails.\n\n17 NEW TESTS.\n  next-episode.test.ts, 6 new (20 -> 21 including the source guard): the projection carries the gate's own href; it counts refused episodes instead of naming them; it answers null for all three absences, which is one screen and not a taxonomy; it carries no rights basis, synopsis or artwork across the server/client boundary; and the source guard above.\n  next-episode-prompt.test.tsx, 11 new: what it says, what it refuses to say about WHY episodes were skipped, the address, that it is a link and not a button, that it is a named region and NOT an alert, and two source-level guards -- no path construction, and no setTimeout/setInterval/router.push, because the acceptance forbids an autoplay and this component autoplays nothing at all.\n\nMUTATION-TESTED: three mutations on the projection, two caught behaviourally (always-zero skip count; returning a projection when the gate refused everything) and the third -- building the href -- only caught after the source guard was added, which is why the guard exists.\n\nNOTHING IN THE EXISTING CLAUSES MOVED. Season navigation, the episodeCount invariant that throws at import, per-episode progress and the pure next-episode rule are untouched; their tests are among the 1614."
-        },
-        "e2e": {
-          "status": "pass",
-          "at": "2026-10-03T15:16:01.839Z",
-          "by": "claude-frontend",
-          "commitSha": "4f23c1d4d78d12ee49c69fb6f08c6acd73b5cc3e",
-          "evidence": "Development, full chromium+api suite: 108 passed / 15 skipped / 0 failed, up from 103 passed -- the five new cases are the end-of-playback clause. Production + real PostgreSQL 16, cold database, --workers=4: 77 passed / 46 skipped / 0 failed; the five skip there with their reason named, because /watch refuses before a player exists on a build with no catalog source.\n\nHOW THE END OF PLAYBACK IS REACHED IN A BROWSER, AND EXACTLY WHAT IS SIMULATED. No real media decodes in this harness -- the demo catalog's sources are fixtures -- so nothing can play a programme to its end. What the test dispatches is the `ended` EVENT ON THE REAL <liberty-video> ELEMENT, which is the event a real ending fires. Everything downstream is the product and none of it is stubbed: WebPlayerAdapter's own listener, its `ended` adapter event, the machine's MEDIA_ENDED, the transition into the `ended` phase, and player-surface rendering from that phase. THE ONLY THING FAKED IS THE DECODER. It is dispatched rather than the `ended` property being assigned, because the element's listeners are what the adapter attached to and a property would prove nothing about the wiring.\n\nTHE FIVE CASES.\n  NOTHING IS OFFERED UNTIL THE PROGRAMME ENDS -- and the prompt is asserted absent from the DOCUMENT, not merely invisible. A hidden affordance is still in the accessibility tree, and a screen reader that can find \"Next episode\" mid-programme has been told the ending early.\n  When it ends, S1 E2 is offered AND ONLY OFFERED: the URL is still the episode the viewer was watching. Nothing counts down and nothing navigates.\n  The offer is a LINK with the accessible name \"Play S1 E2\" -- not \"Play\", which is what a screen-reader user meets out of context -- it is focusable, Enter follows it, and it lands on /watch/<next>, the ORDINARY route with the ordinary session request and the ordinary authorization decision. No bespoke play-next path.\n  AT THE END OF THE SERIES, NOTHING IS OFFERED AND NOTHING WRAPS AROUND. A player that wrapped to S1 E1 would fail the deterministic-end clause in the most confusing possible way.\n  A FILM OFFERS NOTHING, because \"next\" is a question about a series.\n\nMUTATION-TESTED IN THE BROWSER, NOT ONLY IN UNIT TESTS. Rendering the prompt regardless of the machine phase: 1 failed. Dropping nextUp on the watch page: 2 failed. Both reverted.\n\nWHAT IS NOT CLAIMED. The ending was dispatched, not decoded. The rights gate's refusal path at this affordance -- an episode whose basis lapses between the page render and the click -- is not exercised here and cannot be: the gate runs on the server at render time, and /watch/:id re-decides on arrival, which is the arrangement that makes the stale case safe rather than a case this spec can stage."
-        }
-      },
-      "implementationAgent": "claude-frontend",
-      "updatedAt": "2026-10-03T15:16:01.982Z",
-      "implementationBaseSha": "13798f8f45556ed233b894f94c6206944167c646"
-    },
-    {
-      "id": "PW-0310",
-      "priority": "P1",
-      "lane": "Frontend",
-      "status": "REVIEW",
-      "title": "Keyboard, focus and accessibility across the whole application",
-      "dependencies": [
-        "PW-0301",
-        "PW-0306"
-      ],
-      "allowedPaths": [
-        "apps/web/src/lib/a11y/**",
-        "apps/web/src/app/globals.css",
-        "apps/web/src/lib/a11y/keyboard-reachability.test.ts",
-        "e2e/tests/keyboard-reachability.spec.ts",
-        "apps/web/src/app/layout.tsx",
-        "apps/web/src/components/catalog-rail.tsx",
-        "apps/web/src/components/continue-watching/continue-watching-rail.tsx",
-        "apps/web/src/components/search/search-results.tsx",
-        "apps/web/src/components/watchlist/watchlist-list.tsx"
-      ],
-      "reviewDependencies": [
-        "apps/web/src/components",
-        "apps/web/src/app",
-        "docs/PRODUCT_SPEC.md"
-      ],
-      "preferredAgent": "claude-frontend",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "typecheck",
-        "unit",
-        "e2e",
-        "architecture-review"
-      ],
-      "acceptance": "The application is operable from the keyboard, end to end, and PRODUCT_SPEC.md's principle that 'accessibility, subtitles, and audio correctness are core features' is true of the shipped product rather than of three components. MEASURED STARTING POINT: there are zero keyboard handlers in the non-player UI, no skip link, no focus trap and no focus restoration; the rails are not arrow-key navigable, which is table stakes for a desktop media application. REQUIRED: roving tabindex on rails and grids. REQUIRED: focus restoration on route change and on dialog close. REQUIRED: a visible focus indicator on every interactive element, including those styled by globals.css, which defines none today. REQUIRED: an automated check in the e2e suite that fails when a new interactive element is unreachable by keyboard, because a one-off audit decays and a gate does not. NOT IN SCOPE: a full WCAG certification; the bar here is operability plus a mechanical guard against regression.",
-      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. \n\nROUND 109 SURFACE AMENDMENT, recorded as an event before any write: the e2e guard the acceptance requires cannot live in apps/web, which runs vitest in a node environment with no DOM, no focus and no Tab key. e2e/tests/keyboard-reachability.spec.ts added. ALSO A CORRECTION to the acceptance's measured starting point: globals.css already defines a global :focus-visible (PW-0301), app-shell.tsx already renders a skip link, the season selector already has a roving tabindex and arrow keys (PW-0307), and the player's control bar is already keyboard-operable (PW-0306). No REQUIRED clause is weakened; what remains is the rails and grids, focus restoration, and the mechanical guard. Components stay read-only until the guard has measured which elements are actually unreachable.\n\nROUND 109 SECOND SURFACE AMENDMENT, recorded as an event before any write and justified by the guard's own measurement rather than by a plan. The guard found six unreachable episode links on /title/northstar; a tab-order trace showed the browser reaching all six, so both findings were defects in the GATE -- identity was a human-readable description that repeats once per episode row, and the page was observed before hydration had hidden the second season. Both are repaired and the repairs are unit-tested. With the gate correct, NOTHING IN THIS APPLICATION IS UNREACHABLE BY KEYBOARD today, so the remaining REQUIRED clauses are about cost and about focus: a rail of five cards is up to fifteen tab stops. The four rail CONTAINERS and the root layout are added; no card and no control is taken, because the roving tabindex is managed on the group from the DOM side, and app-shell.tsx is not taken because focus restoration mounts in the root layout as a client leaf. episode-list.tsx is also a rail and is DELIBERATELY NOT TAKEN: PW-0307 holds it until that task closes.\n\nAN HONEST FINDING: 'focus restoration on route change and on DIALOG CLOSE' has no dialog to restore from. A search of apps/web/src for role=\"dialog\", <dialog and aria-modal returns nothing; the application has no dialogs. The route-change half is implemented; the dialog half is reported as vacuous rather than satisfied by inventing a dialog.",
-      "owner": "claude-frontend",
-      "gateResults": {
-        "typecheck": {
-          "status": "pass",
-          "at": "2026-10-03T16:32:27.401Z",
-          "by": "claude-frontend",
-          "commitSha": "9c6abd42e80f1796881947aea0cdd0c03d047ed7",
-          "evidence": "npm run typecheck at the repository root: 22 tasks successful, 22 total, exit 0. Covers the four new files under apps/web/src/lib/a11y (keyboard-reachability.ts, roving.ts, roving-group.tsx, focus-on-route-change.tsx), the five amended surfaces, and e2e/tests/keyboard-reachability.spec.ts, which is typechecked separately by npx tsc --noEmit in e2e/ (exit 0, no output). Two real type failures were found and fixed on the way rather than suppressed: the e2e package lists DOM without DOM.Iterable so a NodeList spread was refused and became Array.from, and apps/web sets exactOptionalPropertyTypes so RovingGroup's className had to accept an explicit undefined because two of the four rails pass a CSS-module class. npm run repo:validate also passes."
-        },
-        "unit": {
-          "status": "pass",
-          "at": "2026-10-03T16:32:27.563Z",
-          "by": "claude-frontend",
-          "commitSha": "9c6abd42e80f1796881947aea0cdd0c03d047ed7",
-          "evidence": "npx vitest run in apps/web: 90 test files passed, 1656 tests passed, exit 0, 53.28s. The two new policy modules carry 42 of those: keyboard-reachability.test.ts 25 and roving.test.ts 17. Both suites test DECISIONS over plain records rather than rendering, because apps/web runs vitest with environment \"node\" and has no DOM, no focus and no Tab key. Three of the new cases exist because the gate itself was wrong first and they are the regressions for it: two elements with the same description and different probes, one reached and one not; a card group with every control at tabindex=-1, which is the abuse the -1 exemption invites; and a control stranded at -1 inside the ACTIVE card, which is a genuinely unreachable control hiding behind a legitimate-looking group. No existing test was changed except the one whose fixture had to gain a probe field."
-        },
-        "e2e": {
-          "status": "pass",
-          "at": "2026-10-03T16:32:44.173Z",
-          "by": "claude-frontend",
-          "commitSha": "9c6abd42e80f1796881947aea0cdd0c03d047ed7",
-          "evidence": "npx playwright test --project=chromium, run in BOTH configurations after the work was complete. DEVELOPMENT (LIBERTY_E2E_WEB_MODE=development, LIBERTY_E2E_PORT=3177): 63 passed, 7 skipped, 0 failed, 2.2m -- the whole suite, not only the new file. PRODUCTION (LIBERTY_E2E_PORT=3177, LIBERTY_E2E_DATABASE_URL=postgres://postgres@127.0.0.1:5433/lib_wl, a real build and a real PostgreSQL): 31 passed, 39 skipped, 0 failed, 46.4s. The new keyboard-reachability.spec.ts contributes 10 tests: all 10 pass in development; in production 6 pass and 4 skip, each naming the catalog reason -- a build with no catalog source serves a refusal rather than a player or a rail, which is the same honest skip the existing player specs take.\n\nTWO GATES IN THAT FILE AND BOTH HAVE BEEN SEEN TO FAIL, which is the only evidence that distinguishes a gate from decoration. \"THE GATE ITSELF FAILS WHEN SOMETHING IS UNREACHABLE\" plants a real div with a real onclick attribute in the live page and requires the reachability check to name it. \"THE ROVING-GROUP CHECK ITSELF FAILS WHEN A RAIL LOSES ITS ENTRY POINT\" sets every control in every real rail on the home page to tabindex=-1 and requires the group check to refuse it; it asserts a non-zero rail count first so it cannot pass by finding nothing.\n\nTHREE FALSE REDS WERE FOUND AND FIXED BEFORE THIS WAS RECORDED, all of them defects in the measurement rather than in the product, and none of them silenced. (1) The first run reported six unreachable episode links on /title/northstar; a tab-order trace of the same page showed the browser reaching every one, because identity was a human-readable description and a title page renders one \"Play\" link per episode row. (2) The same run reported season 2's links unreachable because the page was observed before hydration had hidden that panel. (3) A later run reported 8 of 12 rail controls still in the tab order; a DOM census showed the arrangement was correct and the TEST was counting My List buttons that are disabled for a signed-out viewer and were never in anybody's tab order. Each was fixed at the cause and each has a unit test.\n\nTHE PRODUCTION RUN'S THREE FAILURES ON THE FIRST ATTEMPT WERE ENVIRONMENTAL AND ARE NOT CLAIMED AS PASSES: PostgreSQL had stopped, the server log shows connect ECONNREFUSED 127.0.0.1:5433 behind every sign-up 500, and the two watchlist cases passed once it was restarted. The third was this task's own roving-group negative test lacking a catalog skip, which was added."
-        }
-      },
-      "implementationAgent": "claude-frontend",
-      "updatedAt": "2026-10-03T16:33:19.184Z",
-      "implementationBaseSha": "9c6abd42e80f1796881947aea0cdd0c03d047ed7"
     },
     {
       "id": "PW-0602",
@@ -387,124 +205,43 @@
       "updatedAt": "2026-10-03T17:02:43.486Z",
       "implementationAgent": "claude-test",
       "implementationBaseSha": "2c037d54ed834af9dba3c6b12a29c395dee81b9d"
-    },
+    }
+  ],
+  "reservedExternal": [],
+  "recommended": [
     {
-      "id": "PL-0719",
+      "id": "PL-0721",
       "priority": "P1",
       "lane": "Security",
-      "status": "REVIEW",
-      "title": "The authentication rate-limit policy is Better Auth's default, which nobody in this project chose",
+      "status": "READY",
+      "title": "Trusted-proxy topology and how this deployment derives a client IP",
       "dependencies": [],
       "allowedPaths": [
-        "packages/auth/src/rate-limit.ts",
-        "packages/auth/src/rate-limit.test.ts",
-        "packages/auth/src/config.ts",
-        "packages/auth/src/config.test.ts",
+        "packages/auth/src/client-ip.ts",
+        "packages/auth/src/client-ip.test.ts",
         "packages/auth/src/better-auth.ts",
-        "packages/auth/src/enabled-surface.ts",
-        "packages/auth/src/enabled-surface.test.ts",
         "packages/auth/src/index.ts",
-        "apps/web/src/lib/session/auth-instance.ts",
-        "apps/web/src/lib/session/auth-instance.test.ts",
-        "e2e/tests/auth-rate-limit.spec.ts"
+        "docs/DEPLOYMENT_TRUST.md"
       ],
       "reviewDependencies": [
-        "e2e/src/identity.ts",
-        "docs/RESEARCH_IDENTITY.md",
-        "apps/web/src/app/api/auth",
-        "docs/API_CONTRACTS.md",
-        "docs/ARCHITECTURE.md"
+        "packages/auth/src/rate-limit.ts",
+        "packages/auth/src/enabled-surface.ts",
+        "apps/web/src/lib/session/auth-instance.ts",
+        "docs/ARCHITECTURE.md",
+        "e2e/tests/auth-rate-limit.spec.ts"
       ],
       "preferredAgent": "claude-security",
       "reviewAgent": "gpt-architect",
       "qualityGates": [
         "typecheck",
         "unit",
-        "e2e",
         "security-review"
       ],
-      "acceptance": "FOUND BY ACCIDENT, WHICH IS THE POINT. PL-0715 was opened because the watchlist e2e harness read a rate-limited sign-UP as a wrong password and reported a product failure. Repairing the harness was correct and is DONE. It did not answer the question the defect exposed: this product has never DECIDED what its authentication rate-limit policy is.\n\nWHAT IS TRUE TODAY, read from the dependency rather than asserted. better-auth 1.7.5 sets `enabled: options.rateLimit?.enabled ?? isProduction` (dist/context/create-context.mjs:172), so throttling is ON in production and OFF in development -- the two deployments this project runs its e2e suite against answer sign-in differently, and neither answer was chosen here. `getDefaultSpecialRules` then applies a window of 10s and a max of 3 to any path beginning /sign-in or /sign-up, keyed per IP and path. Nothing in this repository names any of those numbers, so nobody has weighed them and a dependency bump can change the product's brute-force posture silently.\n\nREQUIRED: the policy is STATED IN THIS REPOSITORY -- window, maximum, key, and which paths -- so a reader can see what the product does without reading node_modules, and so a Better Auth upgrade that changes a default is a diff rather than a surprise.\nREQUIRED: the reasoning is written down, including why the chosen numbers are the chosen numbers. A credential-stuffing attacker and a family of four sharing one IP are both real; this must say which way it errs and why.\nREQUIRED: the development/production divergence is decided deliberately rather than inherited. If throttling stays off in development, that is a defensible choice and must be written as a choice; a suite that can only pass because a control is absent is a suite that does not test the shipped product.\nREQUIRED: the behaviour is asserted by a test that distinguishes a RATE-LIMITED refusal from a WRONG-CREDENTIAL refusal. That confusion is the whole origin of this task and it must not be able to come back silently.\n\nMUST NOT: weaken the control. Raising the ceiling, widening the window, or disabling throttling to make a test or a harness easier is forbidden outright -- if a harness is inconvenienced, the harness changes, which is exactly what PL-0715 did.\nMUST NOT: expose a bypass of any kind -- no header, no environment variable, no test-only path that turns the limiter off in a deployment that ships.\n\nOUT OF SCOPE: CAPTCHA, account lockout, device fingerprinting, IP reputation, and any other new control. This task is about NAMING AND OWNING the policy that is already in effect, not about adding defences.",
-      "notes": "FILED IN ROUND 109 at gpt-architect's instruction, which asked for a narrowly-scoped security task 'if one does not already exist' and said not to change the security behaviour inside PL-0715. Board searched before filing: PL-0715 (DONE) repaired the harness, PW-0312 (DONE) and PW-0403 (DONE) built authentication entry and production session resolution, and none of the three names a rate-limit policy in acceptance or notes. No open task holds it.\n\nConflict-checked in both fields in both directions at filing. Active tasks are PL-0714 (REVIEW, .github/workflows/ci.yml), PW-0208 (REVIEW, apps/desktop/**), PW-0307 (REVIEW, named apps/web and e2e files), PW-0310 (IN_PROGRESS, apps/web/src/lib/a11y/**, globals.css, two test files) and PW-0602 (IN_PROGRESS, .github/workflows/windows.yml). None names apps/web/src/lib/auth in either field. e2e/src/identity.ts is listed here as a REVIEW DEPENDENCY and deliberately not as an allowed path: this task must be readable against the harness it came from without reserving a file it has no reason to write.\n\nP1 rather than P0: the control is PRESENT and the posture is not currently open. What is absent is the decision, which is what makes it silent and what makes a dependency bump dangerous.\n\nROUND 109 SURFACE AMENDMENT, recorded as an event before any write, and it begins with a correction: the allowedPaths this task was FILED with -- apps/web/src/lib/auth/** and apps/web/src/lib/auth-policy.ts -- DO NOT EXIST. They were guessed while filing from another lane, on the strength of a component file named components/auth/auth-policy.ts, and neither was checked against the tree; they would have reserved and enforced nothing. The policy actually lives in packages/auth: better-auth.ts is the only module that imports the library and its option object has no rateLimit key at all, which is precisely why the default is inherited; config.ts is the validated schema; and enabled-surface.ts already holds the mechanism this task needs -- an allowlist, a HAND-WRITTEN second reading of the option object, and a check that the two agree. apps/web/src/lib/session/auth-instance.ts is the composition root. The e2e spec is in the surface because the REQUIRED test -- telling a rate-limited refusal apart from a wrong-credential one -- exists only against a real server. Conflict-checked in both fields in both directions against PL-0714, PW-0208, PW-0307, PW-0310 and PW-0602; no task names anything under packages/auth, apps/web/src/lib/session, or e2e/tests/auth-rate-limit.spec.ts. No acceptance clause is weakened.",
-      "owner": "claude-security",
-      "gateResults": {
-        "typecheck": {
-          "status": "pass",
-          "at": "2026-10-03T16:51:38.449Z",
-          "by": "claude-security",
-          "commitSha": "275a609a7737e3941468d8aba115702eea98e478",
-          "evidence": "npm run typecheck at the repository root: 22 tasks successful, 22 total, exit 0, and npx tsc --noEmit in e2e/ for the new spec: exit 0, no output. npm run repo:validate also passes. The new files are packages/auth/src/rate-limit.ts and rate-limit.test.ts and e2e/tests/auth-rate-limit.spec.ts; the amended ones are packages/auth/src/better-auth.ts, enabled-surface.ts, enabled-surface.test.ts, index.ts and apps/web/src/lib/session/auth-instance.test.ts."
-        },
-        "unit": {
-          "status": "pass",
-          "at": "2026-10-03T16:51:38.577Z",
-          "by": "claude-security",
-          "commitSha": "275a609a7737e3941468d8aba115702eea98e478",
-          "evidence": "npx vitest run in packages/auth: 5 files, 82 tests, exit 0 -- rate-limit.test.ts contributes 14 and enabled-surface.test.ts rose from 21 to 22. npx vitest run in apps/web: 90 files, 1659 tests, exit 0, up from 1656; auth-instance.test.ts rose from 12 to 15.\n\nTHE DISCRIMINATING TEST WAS SEEN TO FAIL, which matters here more than usual. The policy deliberately KEEPS better-auth's numbers -- 10s/3 on the credential paths -- because changing a security limit without evidence is not an improvement, and the consequence is that no behavioural test can tell this product's configuration apart from the library's default. So the three new cases in apps/web/src/lib/session/auth-instance.test.ts read our own option object back off the constructed instance. Verified by mutation: with the rateLimit key deleted from createLibertyAuth, 2 of the 15 fail by name (\"passes an EXPLICIT rateLimit rather than leaving the library's default\" and \"states the credential rule on the path the product actually serves\"); with it restored, 15 pass. The key was restored from a backup copy and the file is byte-identical to the committed version.\n\nThe library facts every number is justified against were read from the installed dependency rather than from memory: packages/auth/node_modules/better-auth 1.7.5, dist/context/create-context.mjs lines 170-176 for enabled/window/max/storage, and dist/api/rate-limiter/index.mjs lines 302-316 for the two default special rules."
-        },
-        "e2e": {
-          "status": "pass",
-          "at": "2026-10-03T16:52:35.343Z",
-          "by": "claude-security",
-          "commitSha": "43bcb9e0a60cf29ecccb301d81b4a727c97daacc",
-          "evidence": "npx playwright test --project=chromium, the WHOLE suite in both configurations after the change. PRODUCTION (LIBERTY_E2E_PORT=3177, LIBERTY_E2E_DATABASE_URL=postgres://postgres@127.0.0.1:5433/lib_wl, a real build and a real PostgreSQL): 33 passed, 39 skipped, 0 failed, 1.7m. DEVELOPMENT (LIBERTY_E2E_WEB_MODE=development): 63 passed, 9 skipped, 0 failed, 2.3m. Production rose from 31 passed to 33 and development's skip count from 7 to 9, which is the new spec's two cases running in production and skipping in development with the reason DATABASE_SESSION_SKIP_REASON states -- a development build in this harness has no identity system, so there is no credential endpoint to throttle.\n\nWHAT THE NEW SPEC ACTUALLY DID. e2e/tests/auth-rate-limit.spec.ts posted four sign-ins to /api/auth/sign-in/email with a per-run unique address at liberty.invalid and a password nobody set, and asserted: nothing was accepted; the early refusals classify as credential_rejected and a later one as rate_limited; the rate-limited one comes AFTER the rejections, never before, because a limiter that fired on the first attempt would be a denial of service; and the 429 carries an X-Retry-After between 1 and the window. It creates no account, writes no row and touches no existing data, and sign-UP is deliberately not exercised even though the same rule governs it, because exercising it would mean creating accounts to prove a point about refusals.\n\nIT PUTS THE BUCKET BACK. The limiter keys by IP and path and every Playwright worker shares one IP, so exhausting /sign-in/email would exhaust it for the watchlist specs that sign in for real -- the exact situation PL-0715 was opened for. The file waits out the window in afterAll, and the three watchlist database-session cases pass in the same production run, which is the evidence that the drain works rather than the intention that it should.\n\nWHAT THIS GATE DOES NOT PROVE, STATED BECAUSE IT WOULD BE EASY TO OVERCLAIM: it does not show the throttling is OURS. The policy keeps better-auth's numbers on purpose, so a server with no rateLimit key at all would pass this spec on the library's own default. The configuration being ours is proven by the three mutation-verified cases in the unit gate, not here.\n\nAn earlier production run in this round had three failures. None is claimed as a pass and none was this change: PostgreSQL had stopped, with connect ECONNREFUSED 127.0.0.1:5433 behind every sign-up 500 in the server log, and all three passed once it was restarted."
-        }
-      },
-      "updatedAt": "2026-10-03T16:52:46.204Z",
-      "implementationAgent": "claude-security",
-      "implementationBaseSha": "275a609a7737e3941468d8aba115702eea98e478"
-    },
-    {
-      "id": "PL-0720",
-      "priority": "P0",
-      "lane": "Test",
-      "status": "REVIEW",
-      "title": "No test drives a signed-in viewer through to an operable player on a production build",
-      "dependencies": [
-        "PW-0306",
-        "PW-0403"
-      ],
-      "allowedPaths": [
-        "e2e/tests/production-playback-journey.spec.ts"
-      ],
-      "reviewDependencies": [
-        "e2e/src/identity.ts",
-        "e2e/src/env.ts",
-        "e2e/tests/critical-journey.spec.ts",
-        "e2e/tests/player-controls.spec.ts",
-        "apps/web/src/app/watch",
-        "docs/CONTENT_RIGHTS.md"
-      ],
-      "preferredAgent": "claude-test",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "typecheck",
-        "e2e",
-        "rights-review"
-      ],
-      "acceptance": "THE GAP, ESTABLISHED BY READING THE SUITE RATHER THAN BY IMPRESSION. `establishSession` in e2e/src/identity.ts performs a real sign-up and sign-in against a production build, and it is imported by exactly four specs: playback-session.api, playback-session.cross-target.api, playback-session.desktop.api and rights-boundary.api. Every one of them is an API spec. NO BROWSER SPEC IN THIS SUITE EVER SIGNS IN FOR REAL. The browser specs that touch a player -- player-controls.spec.ts and keyboard-reachability.spec.ts -- skip on a production build because a deployment with no catalog source serves a refusal, and round 108 found that PW-0306's own e2e had only ever run in development, where /watch answers without an identity at all.\n\nSo the product's central journey is proven in two halves that never meet: the API knows an authenticated session can obtain a playback session, and the browser knows a player can be operated by someone who never signed in. Nothing joins them, and the join is where a rights or session regression would actually land.\n\nREQUIRED: one spec that walks the whole journey on a PRODUCTION build -- sign in as a real account, reach an authorized title, obtain a session through the ordinary route, land on the player, and operate a control -- with each step asserted rather than assumed.\nREQUIRED: the fail-closed half, in the same spec. An unauthenticated viewer and a viewer without rights to the title are both REFUSED, and the refusal is asserted as a refusal rather than as the absence of a player.\nREQUIRED: the catalog question is answered honestly. A production build with no catalog source serves a refusal, so this spec either provisions a catalog source the production build will accept, or it states precisely which rung of the journey it therefore cannot reach. A SKIP WITH A REASON IS AN ACCEPTABLE ANSWER AND A SILENT PASS IS NOT.\nREQUIRED: non-vacuity. The spec fails if it reaches the end having asserted nothing, which is how a journey test quietly stops being one.\n\nMUST NOT: disable authentication, relax rights enforcement, set CONTENT_RIGHTS_ENFORCEMENT to anything but strict, reach around the application into its database, or construct a /watch address the rights gate did not return. The whole value of this task is that the machinery is the real machinery; a journey that passes because a control was switched off proves the opposite of what it claims.\nMUST NOT: become a second home for assertions that belong in the specs that already own them. This is the JOIN, not a rewrite of the suite.",
-      "notes": "FILED IN ROUND 109 at gpt-architect's instruction, which asked for a narrowly-scoped task 'if the board confirms that gap' and said not to fake it by disabling authentication or rights checks. The board confirms it: PL-0701 (DONE) built the harness, PL-0704/PL-0706 (DONE) were correctives on the watch route, PW-0403 (DONE) built production authentication and session resolution, and PW-0306 (DONE) made the player operable -- each one true of its own layer, none of them joining the layers on a production build.\n\nConflict-checked in both fields in both directions at filing. The single allowed path is a file that does not yet exist, so it collides with nothing; the existing specs it must be read against are listed as review dependencies and are deliberately NOT reserved. PW-0307 (REVIEW) names e2e/tests/series-navigation.spec.ts and PW-0310 (IN_PROGRESS) names e2e/tests/keyboard-reachability.spec.ts; neither names this file.\n\nP0 because it is the product's central promise and because the two existing halves have ALREADY hidden one real breach between them -- PL-0703 was opened for a production rights-invariant breach in the watch route and had to be re-run as PL-0706.",
-      "owner": "claude-test",
-      "gateResults": {
-        "typecheck": {
-          "status": "pass",
-          "at": "2026-10-03T17:14:13.883Z",
-          "by": "claude-test",
-          "commitSha": "357c8ff7dd11b95ffeacfdbe4c4ff5f9c8d3d649",
-          "evidence": "npx tsc --noEmit in e2e/: exit 0, no output. The task's single allowedPath is e2e/tests/production-playback-journey.spec.ts and it is the only file this task wrote; no application code was touched, which is deliberate -- a journey test that had to change the product to pass would not be a journey test."
-        },
-        "e2e": {
-          "status": "pass",
-          "at": "2026-10-03T17:14:14.001Z",
-          "by": "claude-test",
-          "commitSha": "357c8ff7dd11b95ffeacfdbe4c4ff5f9c8d3d649",
-          "evidence": "npx playwright test --project=api --project=chromium, the WHOLE suite in both configurations. PRODUCTION (LIBERTY_E2E_PORT=3177, LIBERTY_E2E_DATABASE_URL=postgres://postgres@127.0.0.1:5433/lib_wl, a real build and a real PostgreSQL): 91 passed, 51 skipped, 0 failed, 1.4m. DEVELOPMENT: 118 passed, 24 skipped, 0 failed, 2.5m. The new spec contributes 7 tests: all 7 pass in production and all 7 skip in development, with DATABASE_SESSION_SKIP_REASON's own sentence -- a development build resolves identity from headers and has no sign-in to perform.\n\nWHAT THE SEVEN ACTUALLY ESTABLISHED, measured by probing the running production server before any assertion was written rather than by assuming. (1) An unauthenticated viewer at /watch/<id> is refused with \"Sign in to watch this\", is offered the way in, and gets no player-controls element. (2) THE JOIN: the same route, with a session established through the real sign-up and sign-in routes and carried into the browser, no longer asks for an account and instead reaches \"Playback isn't available on this deployment\", and the shell names the account. (3) The refusal names its reason -- \"no authorized media provider is configured\" -- and says it is a configuration gap rather than a problem with the title, which is product invariant 4. (4) The API agrees: 503, outcome unavailable, reasons containing provider_not_configured. (5) A signed-in viewer with no profile is sent to the picker.\n\nTHE JOIN TEST WAS SEEN TO FAIL. Verified by mutation: with `page.setExtraHTTPHeaders(headers)` removed so the established session is not carried into the browser, test 2 fails on the message written for it -- \"a signed-in viewer was still asked to sign in, so the session established through the API did not carry into the browser\" -- while test 1 keeps passing. The file was restored from a byte copy.\n\nA FINDING WORTH THE REVIEWER'S ATTENTION: the playback API answers the SAME 503 provider_not_configured to an anonymous caller and to an authenticated one, because the provider check precedes the identity check. That is fail-closed and leaks nothing, so it is not reported as a defect -- but it means the API alone cannot demonstrate that authentication did anything on this deployment. The browser can, and that is why the evidence above rests on the CHANGE OF REFUSAL rather than on a status code.\n\nWHAT IS NOT PROVEN, AND WHY IT IS AN EXTERNAL BLOCKER RATHER THAN A GAP HERE. The journey does not reach an operable player. A production build refuses the demo catalog on purpose -- presenting invented titles from a hosted build would present them to a reader as the product's catalog -- and the only licensed source is a live CC0 query, a network dependency a gate should not have. And no authorized media provider is configured: PL-0302 owns that and is BLOCKED on \"a confirmed licensed API/provider and credentials\", which is a purchase and an authorization rather than an engineering step. Two of the seven tests PIN that boundary and FAIL ON SUCCESS, telling whoever configures a provider or a catalog to extend the journey rather than to update the expectation.\n\nNOTHING WAS DISABLED TO REACH THIS. CONTENT_RIGHTS_ENFORCEMENT stayed strict, the identity system is the real one, the session is a real row in PostgreSQL, no address was constructed that the rights gate did not return, and no application file was changed."
-        }
-      },
-      "updatedAt": "2026-10-03T17:14:14.229Z",
-      "implementationAgent": "claude-test",
-      "implementationBaseSha": "357c8ff7dd11b95ffeacfdbe4c4ff5f9c8d3d649"
+      "acceptance": "THE HAZARD, AND THE RULING THAT CREATED THIS TASK. PL-0719 found that better-auth keys each rate-limit bucket by client IP and path, and that when it cannot resolve a client IP it falls back to a SINGLE LITERAL KEY for every caller -- three sign-ins per ten seconds for the entire deployment. Behind a reverse proxy with no trusted-header configuration, that is the live behaviour.\n\nPL-0719 reported it rather than fixing it, and gpt-architect's round-110 security review confirmed that was correct and ruled: DO NOT trust X-Forwarded-For, Forwarded, X-Real-IP or similar headers by default; a shared fallback bucket when the client IP cannot be trusted is SAFER than accepting a spoofable header that gives an attacker per-request rate-limit evasion.\n\nSO THIS TASK IS NOT 'TURN ON FORWARDED HEADERS'. It is: decide, write down and enforce WHICH HOP MAY ASSERT A CLIENT ADDRESS, so that forwarded-client-IP semantics are enabled only where a deployment has explicitly defined that.\n\nREQUIRED: the trusted-proxy topology is STATED IN THIS REPOSITORY -- which proxy hops are trusted, how they are identified, and what the default is when nothing is configured. The default must remain not-trusting, because that is the direction in which being wrong is survivable.\nREQUIRED: an untrusted forwarded header is IGNORED, not merged, not partially honoured and not logged as if it were the client. A header from an untrusted hop is an attacker-supplied string.\nREQUIRED: the direct-client case -- no proxy at all -- derives the address from the connection and is tested.\nREQUIRED: the proxied case, with a configured trusted hop, derives the client address correctly and is tested, including a chain longer than one hop.\nREQUIRED: A SPOOF TEST. A caller that supplies its own X-Forwarded-For must NOT be able to change which bucket it lands in. This is the test the whole task exists for and it must be seen to fail against a naive implementation.\nREQUIRED: A RATE-LIMIT IDENTITY TEST. Two callers the policy should treat as distinct get distinct buckets, and one caller cannot become many by varying a header.\nREQUIRED: the shared-bucket fallback remains reachable and is still correct when no trusted topology is configured. Removing it in favour of trusting something is the failure this task exists to prevent.\n\nMUST NOT: trust any forwarded header by default, under any configuration shortcut, environment-variable convenience or development-only carve-out. MUST NOT weaken, widen or disable the rate-limit policy PL-0719 established; this task changes WHO a request is attributed to, never how many requests are allowed. MUST NOT introduce a header or parameter that lets a caller nominate its own identity for any purpose.\n\nOUT OF SCOPE: geo-IP, IP reputation, blocklists, and any other use of a client address beyond rate-limit identity. Deriving the address correctly is this task; what else might be done with it is not.",
+      "notes": "FILED IN ROUND 110 at gpt-architect's explicit instruction in the PL-0719 security verdict: \"Create a separate deployment-security task if one does not already exist: define trusted-proxy topology and client-IP derivation. Only enable forwarded-client-IP semantics when the deployment explicitly defines which proxy hop is trusted.\" The verdict states the follow-up does NOT block PL-0719, which is DONE.\n\nBoard searched before filing: no task names a proxy, a forwarded header or client-IP derivation in acceptance or notes. PL-0719 (DONE) owns the rate-limit POLICY and names this hazard; it is listed here as a review dependency rather than an allowed path, so this task can be read against it without reserving it.\n\nConflict-checked in both fields in both directions at filing. Active tasks are PL-0714 (.github/workflows/ci.yml), PW-0208 (apps/desktop/**, docs/LICENSING.md), PW-0602 (e2e/windows/**, .github/workflows/windows.yml) and PL-0720 (one e2e spec). None names anything under packages/auth or docs/DEPLOYMENT_TRUST.md. packages/auth/src/better-auth.ts and index.ts were PL-0719's and PL-0719 is now DONE.\n\nP1 and not P0: the current behaviour FAILS CLOSED -- a shared bucket is restrictive, not permissive -- so nothing is open today. What is missing is the topology decision, and the danger is that somebody closes the availability gap by trusting a spoofable header, which would be strictly worse than the gap.",
+      "owner": null,
+      "gateResults": {},
+      "updatedAt": "2026-10-04T02:54:45.178414Z"
     }
-  ],
-  "reservedExternal": [],
-  "recommended": []
+  ]
 }

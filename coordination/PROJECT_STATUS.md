@@ -1,18 +1,18 @@
 # Project Liberty - Project Status
 
-> Generated 2026-10-03T17:22:28.125Z from the AI control plane.
+> Generated 2026-10-04T02:55:54.436Z from the AI control plane.
 
-**Overall completion:** 95/118 executable tasks (81%)
+**Overall completion:** 99/120 executable tasks (83%)
 
 ## Status summary
 
 - **BACKLOG:** 7
-- **READY:** 3
+- **READY:** 4
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 0
-- **REVIEW:** 8
-- **BLOCKED:** 5
-- **DONE:** 95
+- **REVIEW:** 3
+- **BLOCKED:** 7
+- **DONE:** 99
 - **CANCELED:** 0
 - **SUPERSEDED:** 4
 
@@ -27,29 +27,25 @@
 - **M6 — Shared-Agent Automation Bridge:** COMPLETE, 3/3 (100%)
 - **EXT — External Licensed Integrations:** BLOCKED, 0/2 (0%), 2 blocked
 - **M7 — Windows Desktop Shell + Native Playback:** COMPLETE, 4/4 (100%)
-- **PW — undefined:** IN_PROGRESS, 19/32 (59%), 1 blocked
+- **PW — undefined:** IN_PROGRESS, 21/32 (66%), 1 blocked
 
 ## Active work
 
 - **PL-0714** [REVIEW] CI executes every script suite the repository declares, and a failing validate job says something — owner: claude-lead
-- **PL-0718** [REVIEW] npm run typecheck reads generated build output, so a half-written artifact breaks the repository — owner: claude-infra
 - **PW-0208** [REVIEW] An LGPL-compatible libmpv and FFmpeg the product may actually ship — owner: claude-infra
-- **PW-0307** [REVIEW] Series navigation and the next episode — owner: claude-frontend
-- **PW-0310** [REVIEW] Keyboard, focus and accessibility across the whole application — owner: claude-frontend
 - **PW-0602** [REVIEW] The automated half of the Windows matrix, running on Windows — owner: claude-test
-- **PL-0719** [REVIEW] The authentication rate-limit policy is Better Auth's default, which nobody in this project chose — owner: claude-security
-- **PL-0720** [REVIEW] No test drives a signed-in viewer through to an operable player on a production build — owner: claude-test
 
 ## Dispatch classification
 
-- **READY_AND_EXECUTABLE:** 3
+- **READY_AND_EXECUTABLE:** 4
 - **READY_BUT_EXTERNAL:** 0
-- **BLOCKED:** 5
+- **BLOCKED:** 7
 - **BACKLOG (dependency-gated):** 7
 
 ## Recommended executable wave
 
-No conflict-free executable tasks can be assigned with current agent capacity.
+- **PL-0721** -> claude-security (P1/Security) Trusted-proxy topology and how this deployment derives a client IP
+- **PW-0308** -> claude-frontend (P2/Frontend) Settings a viewer can actually change
 
 ## Queued for external agents
 
@@ -70,15 +66,17 @@ WHAT IT IS NOT. Not a claim that PW-0103 is unimportant, and not a request to de
 UNBLOCK WHEN: the commander runs Experiment 1a on real Windows hardware and hands back the result, or gpt-architect rules that some part of it can be established without the hardware.
 - **PW-0504** Installed-application qualification on the commander's Windows machine: reason not recorded
 - **PW-0505** Upgrade qualification: user data across a real previous release: reason not recorded
+- **PL-0720** No test drives a signed-in viewer through to an operable player on a production build: Blocked at gpt-architect's round-110 instruction, with gate results preserved. The architecture is accepted and the spec is preserved; what is missing is the task's central promise -- a signed-in authorized viewer reaching an OPERABLE PLAYER and operating a control -- which cannot happen because no authorized media provider is configured and the production provider boundary refuses first. PL-0302 ("First production provider", itself BLOCKED on a confirmed licensed API/provider and credentials) is now a declared dependency of this task, so DONE is structurally unreachable until that external authorization lands. The executable evidence recorded in round 109 stands and is about committed, correct work: it proves the journey up to the provider boundary. UNBLOCK WHEN: a licensed media provider is configured, at which point the SAME spec is extended through authorized title, real playback session, real player and at least one real control action. Do not close this by configuring a fake or demo provider in production.
+- **PW-0315** The first dialog this product grows must restore focus to its trigger: Its precondition is not expressible as a task dependency, and leaving it READY makes the board advertise work nobody can do. PW-0315 attaches to the FIRST REAL DIALOG this product grows, and apps/web contains none: a search for role="dialog", <dialog and aria-modal returns nothing. ai:sync correctly promoted it out of BACKLOG because it has no unmet task dependencies -- the precondition is the existence of a UI primitive, which the control plane has no way to express -- and ai:dispatch then listed it as dispatchable to claude-frontend alongside PW-0308. A board that says a thing is dispatchable when it is not is worse than one that says it is blocked, which is the same reasoning recorded for PW-0103. Blocking preserves the obligation without pretending it is actionable. UNBLOCK WHEN: a dialog or modal is added to apps/web by any task, at which point this becomes immediately actionable and gpt-architect's round-110 instruction applies -- it must restore focus to its trigger and join the keyboard regression gate. It must NOT be closed by building a dialog for the purpose, and must NOT be marked DONE to tidy the board while no dialog exists.
 
 ## Agent capacity
 
 - **gpt-architect:** 0/6 active (external lane; not locally executable)
 - **claude-lead:** 1/2 active
-- **claude-frontend:** 2/2 active
+- **claude-frontend:** 0/2 active
 - **claude-backend:** 0/2 active
 - **claude-media:** 0/2 active
-- **claude-test:** 2/2 active
-- **claude-security:** 1/1 active
-- **claude-infra:** 2/2 active
+- **claude-test:** 1/2 active
+- **claude-security:** 0/1 active
+- **claude-infra:** 1/2 active
 - **human-commander:** 0/99 active (external lane; not locally executable)

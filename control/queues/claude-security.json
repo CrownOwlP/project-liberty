@@ -1,75 +1,44 @@
 {
-  "generatedAt": "2026-10-03T17:22:28.132Z",
+  "generatedAt": "2026-10-04T02:55:54.441Z",
   "agent": "claude-security",
   "executionAvailable": true,
-  "assigned": [
+  "assigned": [],
+  "review": [],
+  "reservedExternal": [],
+  "recommended": [
     {
-      "id": "PL-0719",
+      "id": "PL-0721",
       "priority": "P1",
       "lane": "Security",
-      "status": "REVIEW",
-      "title": "The authentication rate-limit policy is Better Auth's default, which nobody in this project chose",
+      "status": "READY",
+      "title": "Trusted-proxy topology and how this deployment derives a client IP",
       "dependencies": [],
       "allowedPaths": [
-        "packages/auth/src/rate-limit.ts",
-        "packages/auth/src/rate-limit.test.ts",
-        "packages/auth/src/config.ts",
-        "packages/auth/src/config.test.ts",
+        "packages/auth/src/client-ip.ts",
+        "packages/auth/src/client-ip.test.ts",
         "packages/auth/src/better-auth.ts",
-        "packages/auth/src/enabled-surface.ts",
-        "packages/auth/src/enabled-surface.test.ts",
         "packages/auth/src/index.ts",
-        "apps/web/src/lib/session/auth-instance.ts",
-        "apps/web/src/lib/session/auth-instance.test.ts",
-        "e2e/tests/auth-rate-limit.spec.ts"
+        "docs/DEPLOYMENT_TRUST.md"
       ],
       "reviewDependencies": [
-        "e2e/src/identity.ts",
-        "docs/RESEARCH_IDENTITY.md",
-        "apps/web/src/app/api/auth",
-        "docs/API_CONTRACTS.md",
-        "docs/ARCHITECTURE.md"
+        "packages/auth/src/rate-limit.ts",
+        "packages/auth/src/enabled-surface.ts",
+        "apps/web/src/lib/session/auth-instance.ts",
+        "docs/ARCHITECTURE.md",
+        "e2e/tests/auth-rate-limit.spec.ts"
       ],
       "preferredAgent": "claude-security",
       "reviewAgent": "gpt-architect",
       "qualityGates": [
         "typecheck",
         "unit",
-        "e2e",
         "security-review"
       ],
-      "acceptance": "FOUND BY ACCIDENT, WHICH IS THE POINT. PL-0715 was opened because the watchlist e2e harness read a rate-limited sign-UP as a wrong password and reported a product failure. Repairing the harness was correct and is DONE. It did not answer the question the defect exposed: this product has never DECIDED what its authentication rate-limit policy is.\n\nWHAT IS TRUE TODAY, read from the dependency rather than asserted. better-auth 1.7.5 sets `enabled: options.rateLimit?.enabled ?? isProduction` (dist/context/create-context.mjs:172), so throttling is ON in production and OFF in development -- the two deployments this project runs its e2e suite against answer sign-in differently, and neither answer was chosen here. `getDefaultSpecialRules` then applies a window of 10s and a max of 3 to any path beginning /sign-in or /sign-up, keyed per IP and path. Nothing in this repository names any of those numbers, so nobody has weighed them and a dependency bump can change the product's brute-force posture silently.\n\nREQUIRED: the policy is STATED IN THIS REPOSITORY -- window, maximum, key, and which paths -- so a reader can see what the product does without reading node_modules, and so a Better Auth upgrade that changes a default is a diff rather than a surprise.\nREQUIRED: the reasoning is written down, including why the chosen numbers are the chosen numbers. A credential-stuffing attacker and a family of four sharing one IP are both real; this must say which way it errs and why.\nREQUIRED: the development/production divergence is decided deliberately rather than inherited. If throttling stays off in development, that is a defensible choice and must be written as a choice; a suite that can only pass because a control is absent is a suite that does not test the shipped product.\nREQUIRED: the behaviour is asserted by a test that distinguishes a RATE-LIMITED refusal from a WRONG-CREDENTIAL refusal. That confusion is the whole origin of this task and it must not be able to come back silently.\n\nMUST NOT: weaken the control. Raising the ceiling, widening the window, or disabling throttling to make a test or a harness easier is forbidden outright -- if a harness is inconvenienced, the harness changes, which is exactly what PL-0715 did.\nMUST NOT: expose a bypass of any kind -- no header, no environment variable, no test-only path that turns the limiter off in a deployment that ships.\n\nOUT OF SCOPE: CAPTCHA, account lockout, device fingerprinting, IP reputation, and any other new control. This task is about NAMING AND OWNING the policy that is already in effect, not about adding defences.",
-      "notes": "FILED IN ROUND 109 at gpt-architect's instruction, which asked for a narrowly-scoped security task 'if one does not already exist' and said not to change the security behaviour inside PL-0715. Board searched before filing: PL-0715 (DONE) repaired the harness, PW-0312 (DONE) and PW-0403 (DONE) built authentication entry and production session resolution, and none of the three names a rate-limit policy in acceptance or notes. No open task holds it.\n\nConflict-checked in both fields in both directions at filing. Active tasks are PL-0714 (REVIEW, .github/workflows/ci.yml), PW-0208 (REVIEW, apps/desktop/**), PW-0307 (REVIEW, named apps/web and e2e files), PW-0310 (IN_PROGRESS, apps/web/src/lib/a11y/**, globals.css, two test files) and PW-0602 (IN_PROGRESS, .github/workflows/windows.yml). None names apps/web/src/lib/auth in either field. e2e/src/identity.ts is listed here as a REVIEW DEPENDENCY and deliberately not as an allowed path: this task must be readable against the harness it came from without reserving a file it has no reason to write.\n\nP1 rather than P0: the control is PRESENT and the posture is not currently open. What is absent is the decision, which is what makes it silent and what makes a dependency bump dangerous.\n\nROUND 109 SURFACE AMENDMENT, recorded as an event before any write, and it begins with a correction: the allowedPaths this task was FILED with -- apps/web/src/lib/auth/** and apps/web/src/lib/auth-policy.ts -- DO NOT EXIST. They were guessed while filing from another lane, on the strength of a component file named components/auth/auth-policy.ts, and neither was checked against the tree; they would have reserved and enforced nothing. The policy actually lives in packages/auth: better-auth.ts is the only module that imports the library and its option object has no rateLimit key at all, which is precisely why the default is inherited; config.ts is the validated schema; and enabled-surface.ts already holds the mechanism this task needs -- an allowlist, a HAND-WRITTEN second reading of the option object, and a check that the two agree. apps/web/src/lib/session/auth-instance.ts is the composition root. The e2e spec is in the surface because the REQUIRED test -- telling a rate-limited refusal apart from a wrong-credential one -- exists only against a real server. Conflict-checked in both fields in both directions against PL-0714, PW-0208, PW-0307, PW-0310 and PW-0602; no task names anything under packages/auth, apps/web/src/lib/session, or e2e/tests/auth-rate-limit.spec.ts. No acceptance clause is weakened.",
-      "owner": "claude-security",
-      "gateResults": {
-        "typecheck": {
-          "status": "pass",
-          "at": "2026-10-03T16:51:38.449Z",
-          "by": "claude-security",
-          "commitSha": "275a609a7737e3941468d8aba115702eea98e478",
-          "evidence": "npm run typecheck at the repository root: 22 tasks successful, 22 total, exit 0, and npx tsc --noEmit in e2e/ for the new spec: exit 0, no output. npm run repo:validate also passes. The new files are packages/auth/src/rate-limit.ts and rate-limit.test.ts and e2e/tests/auth-rate-limit.spec.ts; the amended ones are packages/auth/src/better-auth.ts, enabled-surface.ts, enabled-surface.test.ts, index.ts and apps/web/src/lib/session/auth-instance.test.ts."
-        },
-        "unit": {
-          "status": "pass",
-          "at": "2026-10-03T16:51:38.577Z",
-          "by": "claude-security",
-          "commitSha": "275a609a7737e3941468d8aba115702eea98e478",
-          "evidence": "npx vitest run in packages/auth: 5 files, 82 tests, exit 0 -- rate-limit.test.ts contributes 14 and enabled-surface.test.ts rose from 21 to 22. npx vitest run in apps/web: 90 files, 1659 tests, exit 0, up from 1656; auth-instance.test.ts rose from 12 to 15.\n\nTHE DISCRIMINATING TEST WAS SEEN TO FAIL, which matters here more than usual. The policy deliberately KEEPS better-auth's numbers -- 10s/3 on the credential paths -- because changing a security limit without evidence is not an improvement, and the consequence is that no behavioural test can tell this product's configuration apart from the library's default. So the three new cases in apps/web/src/lib/session/auth-instance.test.ts read our own option object back off the constructed instance. Verified by mutation: with the rateLimit key deleted from createLibertyAuth, 2 of the 15 fail by name (\"passes an EXPLICIT rateLimit rather than leaving the library's default\" and \"states the credential rule on the path the product actually serves\"); with it restored, 15 pass. The key was restored from a backup copy and the file is byte-identical to the committed version.\n\nThe library facts every number is justified against were read from the installed dependency rather than from memory: packages/auth/node_modules/better-auth 1.7.5, dist/context/create-context.mjs lines 170-176 for enabled/window/max/storage, and dist/api/rate-limiter/index.mjs lines 302-316 for the two default special rules."
-        },
-        "e2e": {
-          "status": "pass",
-          "at": "2026-10-03T16:52:35.343Z",
-          "by": "claude-security",
-          "commitSha": "43bcb9e0a60cf29ecccb301d81b4a727c97daacc",
-          "evidence": "npx playwright test --project=chromium, the WHOLE suite in both configurations after the change. PRODUCTION (LIBERTY_E2E_PORT=3177, LIBERTY_E2E_DATABASE_URL=postgres://postgres@127.0.0.1:5433/lib_wl, a real build and a real PostgreSQL): 33 passed, 39 skipped, 0 failed, 1.7m. DEVELOPMENT (LIBERTY_E2E_WEB_MODE=development): 63 passed, 9 skipped, 0 failed, 2.3m. Production rose from 31 passed to 33 and development's skip count from 7 to 9, which is the new spec's two cases running in production and skipping in development with the reason DATABASE_SESSION_SKIP_REASON states -- a development build in this harness has no identity system, so there is no credential endpoint to throttle.\n\nWHAT THE NEW SPEC ACTUALLY DID. e2e/tests/auth-rate-limit.spec.ts posted four sign-ins to /api/auth/sign-in/email with a per-run unique address at liberty.invalid and a password nobody set, and asserted: nothing was accepted; the early refusals classify as credential_rejected and a later one as rate_limited; the rate-limited one comes AFTER the rejections, never before, because a limiter that fired on the first attempt would be a denial of service; and the 429 carries an X-Retry-After between 1 and the window. It creates no account, writes no row and touches no existing data, and sign-UP is deliberately not exercised even though the same rule governs it, because exercising it would mean creating accounts to prove a point about refusals.\n\nIT PUTS THE BUCKET BACK. The limiter keys by IP and path and every Playwright worker shares one IP, so exhausting /sign-in/email would exhaust it for the watchlist specs that sign in for real -- the exact situation PL-0715 was opened for. The file waits out the window in afterAll, and the three watchlist database-session cases pass in the same production run, which is the evidence that the drain works rather than the intention that it should.\n\nWHAT THIS GATE DOES NOT PROVE, STATED BECAUSE IT WOULD BE EASY TO OVERCLAIM: it does not show the throttling is OURS. The policy keeps better-auth's numbers on purpose, so a server with no rateLimit key at all would pass this spec on the library's own default. The configuration being ours is proven by the three mutation-verified cases in the unit gate, not here.\n\nAn earlier production run in this round had three failures. None is claimed as a pass and none was this change: PostgreSQL had stopped, with connect ECONNREFUSED 127.0.0.1:5433 behind every sign-up 500 in the server log, and all three passed once it was restarted."
-        }
-      },
-      "updatedAt": "2026-10-03T16:52:46.204Z",
-      "implementationAgent": "claude-security",
-      "implementationBaseSha": "275a609a7737e3941468d8aba115702eea98e478"
+      "acceptance": "THE HAZARD, AND THE RULING THAT CREATED THIS TASK. PL-0719 found that better-auth keys each rate-limit bucket by client IP and path, and that when it cannot resolve a client IP it falls back to a SINGLE LITERAL KEY for every caller -- three sign-ins per ten seconds for the entire deployment. Behind a reverse proxy with no trusted-header configuration, that is the live behaviour.\n\nPL-0719 reported it rather than fixing it, and gpt-architect's round-110 security review confirmed that was correct and ruled: DO NOT trust X-Forwarded-For, Forwarded, X-Real-IP or similar headers by default; a shared fallback bucket when the client IP cannot be trusted is SAFER than accepting a spoofable header that gives an attacker per-request rate-limit evasion.\n\nSO THIS TASK IS NOT 'TURN ON FORWARDED HEADERS'. It is: decide, write down and enforce WHICH HOP MAY ASSERT A CLIENT ADDRESS, so that forwarded-client-IP semantics are enabled only where a deployment has explicitly defined that.\n\nREQUIRED: the trusted-proxy topology is STATED IN THIS REPOSITORY -- which proxy hops are trusted, how they are identified, and what the default is when nothing is configured. The default must remain not-trusting, because that is the direction in which being wrong is survivable.\nREQUIRED: an untrusted forwarded header is IGNORED, not merged, not partially honoured and not logged as if it were the client. A header from an untrusted hop is an attacker-supplied string.\nREQUIRED: the direct-client case -- no proxy at all -- derives the address from the connection and is tested.\nREQUIRED: the proxied case, with a configured trusted hop, derives the client address correctly and is tested, including a chain longer than one hop.\nREQUIRED: A SPOOF TEST. A caller that supplies its own X-Forwarded-For must NOT be able to change which bucket it lands in. This is the test the whole task exists for and it must be seen to fail against a naive implementation.\nREQUIRED: A RATE-LIMIT IDENTITY TEST. Two callers the policy should treat as distinct get distinct buckets, and one caller cannot become many by varying a header.\nREQUIRED: the shared-bucket fallback remains reachable and is still correct when no trusted topology is configured. Removing it in favour of trusting something is the failure this task exists to prevent.\n\nMUST NOT: trust any forwarded header by default, under any configuration shortcut, environment-variable convenience or development-only carve-out. MUST NOT weaken, widen or disable the rate-limit policy PL-0719 established; this task changes WHO a request is attributed to, never how many requests are allowed. MUST NOT introduce a header or parameter that lets a caller nominate its own identity for any purpose.\n\nOUT OF SCOPE: geo-IP, IP reputation, blocklists, and any other use of a client address beyond rate-limit identity. Deriving the address correctly is this task; what else might be done with it is not.",
+      "notes": "FILED IN ROUND 110 at gpt-architect's explicit instruction in the PL-0719 security verdict: \"Create a separate deployment-security task if one does not already exist: define trusted-proxy topology and client-IP derivation. Only enable forwarded-client-IP semantics when the deployment explicitly defines which proxy hop is trusted.\" The verdict states the follow-up does NOT block PL-0719, which is DONE.\n\nBoard searched before filing: no task names a proxy, a forwarded header or client-IP derivation in acceptance or notes. PL-0719 (DONE) owns the rate-limit POLICY and names this hazard; it is listed here as a review dependency rather than an allowed path, so this task can be read against it without reserving it.\n\nConflict-checked in both fields in both directions at filing. Active tasks are PL-0714 (.github/workflows/ci.yml), PW-0208 (apps/desktop/**, docs/LICENSING.md), PW-0602 (e2e/windows/**, .github/workflows/windows.yml) and PL-0720 (one e2e spec). None names anything under packages/auth or docs/DEPLOYMENT_TRUST.md. packages/auth/src/better-auth.ts and index.ts were PL-0719's and PL-0719 is now DONE.\n\nP1 and not P0: the current behaviour FAILS CLOSED -- a shared bucket is restrictive, not permissive -- so nothing is open today. What is missing is the topology decision, and the danger is that somebody closes the availability gap by trusting a spoofable header, which would be strictly worse than the gap.",
+      "owner": null,
+      "gateResults": {},
+      "updatedAt": "2026-10-04T02:54:45.178414Z"
     }
-  ],
-  "review": [],
-  "reservedExternal": [],
-  "recommended": []
+  ]
 }
