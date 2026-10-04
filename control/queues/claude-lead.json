@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-04T15:54:29.246Z",
+  "generatedAt": "2026-10-04T16:09:57.567Z",
   "agent": "claude-lead",
   "executionAvailable": true,
   "assigned": [],
@@ -21,7 +21,6 @@
       "reviewDependencies": [
         "apps/desktop/scripts/notices.test.mjs",
         "apps/desktop/scripts/collect-notices.mjs",
-        ".github/workflows/ci.yml",
         "scripts/windows/test-lifecycle.mjs"
       ],
       "preferredAgent": "claude-lead",

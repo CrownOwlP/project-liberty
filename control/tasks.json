@@ -7731,7 +7731,7 @@
         "typecheck",
         "unit"
       ],
-      "acceptance": "packages/media-inspection/src/net-policy-boundary.test.ts:396, the test named \u201cis not restated by any file outside this package\u201d, stops being a test whose result depends on machine load and on what is on disk, WITHOUT weakening the property it asserts. THE DEFECT, DIAGNOSED RATHER THAN NAMED. Its failure mode is 'Error: Test timed out in 5000ms', not an assertion failure -- the assertion has never reported a false offender; the test simply does not finish. Its listSourceFiles recurses into every directory under packages/ and apps/ with NO exclusions and reads every .ts file it finds: 3,680 files totalling 24.3 MB on the tree measured, of which 3,337 are under node_modules and the rest include build output. The set of files the property is actually about is 327, reachable in 1-2 ms once node_modules, .next, .turbo, dist and coverage are skipped. It is the only test in this repository whose runtime is a function of installed dependencies and build artifacts rather than of source, which is why it presents as intermittent: every other repo-walking guard here -- packages/net-policy/src/module-boundary.test.ts, packages/contracts/src/module-boundary.test.ts, packages/provider-sdk/src/stremio/net-policy-boundary.test.ts and apps/web/src/app/watch/route-loading-boundaries.test.ts -- is scoped to its own SRC_DIR or APP_DIRECTORY. THE REPRODUCTION GRADIENT, measured on 2026-09-22 at e24d51f on a 2-core container: the test body alone, idle with a warm page cache, 109 ms; the whole file in an isolated vitest run, 687 ms; the file under turbo run test --force with a warm cache, 849-995 ms; the same under turbo run test --force immediately after dropping the page cache, 3,048 ms. The observed failure happened on a run started immediately after the e2e suite had rewritten apps/web/.next and apps/web/dist/desktop -- thousands of freshly written files, a cold cache, background flushing, and up to nine other workspace vitest processes competing for two cores -- which is where that gradient crosses the 5,000 ms default testTimeout. REQUIRED: the walk must not descend into node_modules, .next, .turbo, dist or coverage, and the exclusion list must be stated with its reason rather than left as a magic array. REQUIRED: the property must not be narrowed to buy the speed -- it must still see every source file under packages/ and apps/ outside this package, and the implementer must show that a planted offender is still caught. A RAISED testTimeout IS NOT AN ACCEPTABLE FIX ON ITS OWN: it moves the ceiling without removing the dependence on disk state, and the next person to add a dependency moves the runtime again. SECOND DEFECT, FOUND WHILE DIAGNOSING AND IN SCOPE: build output ALREADY contains the string this test looks for. Seven files under apps/web/.next and apps/web/dist/desktop carry a reference-path fragment naming m3u8-parser.d.ts inside bundled chunks. They are .js today so the .ts filter misses them, which means the test is one bundler-output change away from naming a build artifact as an offender and failing for a reason that has nothing to do with any source file. The exclusion above fixes the correctness hazard and the performance one with the same edit, which is the argument for doing it that way rather than by raising a timeout.",
+      "acceptance": "packages/media-inspection/src/net-policy-boundary.test.ts:396, the test named “is not restated by any file outside this package”, stops being a test whose result depends on machine load and on what is on disk, WITHOUT weakening the property it asserts. THE DEFECT, DIAGNOSED RATHER THAN NAMED. Its failure mode is 'Error: Test timed out in 5000ms', not an assertion failure -- the assertion has never reported a false offender; the test simply does not finish. Its listSourceFiles recurses into every directory under packages/ and apps/ with NO exclusions and reads every .ts file it finds: 3,680 files totalling 24.3 MB on the tree measured, of which 3,337 are under node_modules and the rest include build output. The set of files the property is actually about is 327, reachable in 1-2 ms once node_modules, .next, .turbo, dist and coverage are skipped. It is the only test in this repository whose runtime is a function of installed dependencies and build artifacts rather than of source, which is why it presents as intermittent: every other repo-walking guard here -- packages/net-policy/src/module-boundary.test.ts, packages/contracts/src/module-boundary.test.ts, packages/provider-sdk/src/stremio/net-policy-boundary.test.ts and apps/web/src/app/watch/route-loading-boundaries.test.ts -- is scoped to its own SRC_DIR or APP_DIRECTORY. THE REPRODUCTION GRADIENT, measured on 2026-09-22 at e24d51f on a 2-core container: the test body alone, idle with a warm page cache, 109 ms; the whole file in an isolated vitest run, 687 ms; the file under turbo run test --force with a warm cache, 849-995 ms; the same under turbo run test --force immediately after dropping the page cache, 3,048 ms. The observed failure happened on a run started immediately after the e2e suite had rewritten apps/web/.next and apps/web/dist/desktop -- thousands of freshly written files, a cold cache, background flushing, and up to nine other workspace vitest processes competing for two cores -- which is where that gradient crosses the 5,000 ms default testTimeout. REQUIRED: the walk must not descend into node_modules, .next, .turbo, dist or coverage, and the exclusion list must be stated with its reason rather than left as a magic array. REQUIRED: the property must not be narrowed to buy the speed -- it must still see every source file under packages/ and apps/ outside this package, and the implementer must show that a planted offender is still caught. A RAISED testTimeout IS NOT AN ACCEPTABLE FIX ON ITS OWN: it moves the ceiling without removing the dependence on disk state, and the next person to add a dependency moves the runtime again. SECOND DEFECT, FOUND WHILE DIAGNOSING AND IN SCOPE: build output ALREADY contains the string this test looks for. Seven files under apps/web/.next and apps/web/dist/desktop carry a reference-path fragment naming m3u8-parser.d.ts inside bundled chunks. They are .js today so the .ts filter misses them, which means the test is one bundler-output change away from naming a build artifact as an offender and failing for a reason that has nothing to do with any source file. The exclusion above fixes the correctness hazard and the performance one with the same edit, which is the argument for doing it that way rather than by raising a timeout.",
       "notes": "Filed 2026-09-22 by claude-test while executing PL-0504's and PL-0701's gates. THIS IS THE FINDING gpt-architect ORDERED PRESERVED AND EXPLICITLY ORDERED NOT TO BE CALLED A FLAKE, at the round-73 verdict: 'Do not label that failure a flake. Preserve the finding and investigate on its next occurrence as previously directed.' This is that next occurrence, and the investigation is in the acceptance. The first occurrence, during PL-0503's gates, could not name the failing test because the capture grep discarded it; that was reported at the time as a capture error, not as a flake. This occurrence was captured in full: src/net-policy-boundary.test.ts > the m3u8-parser shim is referenced from the file that imports it > is not restated by any file outside this package. The earlier working hypothesis -- 2 cores, turbo concurrency 10, and this package having no vitest.config.ts unlike packages/contracts -- was partly right and insufficient. Contention is a necessary condition, not the cause. The cause is that the test reads 24.3 MB it has no reason to read, so its runtime tracks page-cache state and build-artifact volume, and contention only decides which side of the 5 s ceiling that lands on. Three full-monorepo runs on the same tree after the failure were green (252/252 in this package), which is exactly why a load-dependent test must not be judged by re-running it. packages/media-inspection/vitest.config.ts is in allowedPaths because the implementer may conclude the package needs one; that is a decision for the implementer and this task does not require it. apps/web/src/app/api/v1/playback/build-target.test.ts is in reviewDependencies rather than allowedPaths: it resolves a REPO_ROOT and walks directories too, so it is worth checking for the same shape, but nothing observed implicates it and widening this task to it would be a guess.",
       "owner": null,
       "gateResults": {
@@ -8197,7 +8197,7 @@
       "id": "PL-0717",
       "priority": "P1",
       "lane": "Test",
-      "status": "REVIEW",
+      "status": "DONE",
       "title": "The fail-closed deployment path is asserted by nobody, because CI runs two of three configurations",
       "dependencies": [
         "PL-0714"
@@ -8219,7 +8219,7 @@
       ],
       "acceptance": "FOUND BY MEASUREMENT IN ROUND 108: the development and production suites were both run to completion and their SKIP LISTS intersected. Five e2e titles are skipped in BOTH, so no configuration this repository executes ever runs them. Two are media-rig rows that correctly need the commander's hardware. THE OTHER THREE ASSERT A FAIL-CLOSED SECURITY BEHAVIOUR: 'a deployment with no identity system - fails closed with 503 and names the operator's remedy', '- publishes nothing only a resolver could know' (playback-session.api.spec.ts), and 'a deployment with no identity system refuses honestly rather than showing an empty list' (watchlist.spec.ts).\n\nThey need PRODUCTION MODE WITH NO DATABASE -- the third configuration. ci.yml runs exactly two: development, and production with PostgreSQL. The tests are not broken: run locally in that third configuration the full chromium+api suite gives 62 passed / 56 skipped / 0 failed.\n\nREQUIRED: the third configuration runs in CI and fails the build when it fails.\nREQUIRED: the cost is stated rather than absorbed. A third suite run adds to every push; the acceptance is that the fail-closed path is covered, not that it is covered in the most expensive available way. If a narrower invocation -- the three titles, or the two specs -- buys the same coverage for less, take it and say why.\nREQUIRED: the three titles actually EXECUTE in the new configuration. Evidence is the run naming them as passed, not a count that went up.\nREQUIRED: the two media-rig titles stay skipped and stay reasoned. They are RIG rows in PW-0601's matrix and must not be made to look covered.\nREQUIRED: no existing configuration loses coverage, and no skip loses its reason.\n\nOUT OF SCOPE: changing what the three tests assert, and relaxing any of them to make a cheaper configuration reach them.",
       "notes": "CREATED IN ROUND 108. DEPENDS ON PL-0714 because that task owns .github/workflows/ci.yml and is in REVIEW; editing the file from here while it is an active surface would be the overlapping-surface collision the operating model forbids. Sequenced, not blocked.\n\nTHE PATTERN THIS IS THE FOURTH INSTANCE OF, recorded so the next one is found by a check rather than by accident: scripts/test-validate-repo.mjs ran nowhere until PL-AI-0002; scripts/test-desktop-target.mjs and the 30-case Windows lifecycle suite ran nowhere until PL-0714; apps/web/src/components/player/tracks.ts was imported by nothing until PW-0306 wired it. Each time the thing existed, passed, and no gate asked it. A standing mechanical check for 'skipped in every configuration we run' would have found all four, and proposing one is a reasonable thing for this task's implementation to consider -- the measurement that found this was two suite runs and a set intersection.\n\nCONFLICT-CHECKED IN BOTH FIELDS IN BOTH DIRECTIONS AT FILING: .github/workflows/ci.yml is held by PL-0714 (REVIEW) and by PL-0001, PL-0704, PL-AI-0002 and PW-0312, all DONE. The dependency on PL-0714 is what keeps the two from being active together. The reviewDependencies are read-only here: e2e/tests/watchlist.spec.ts belongs to PL-0715 (REVIEW) and is NOT written by this task.",
-      "owner": "claude-test",
+      "owner": null,
       "gateResults": {
         "e2e": {
           "status": "pass",
@@ -8229,9 +8229,58 @@
           "evidence": "THE THIRD CONFIGURATION RUNS, THE THREE TITLES EXECUTE IN IT, AND THE GUARD THAT SAYS SO WAS PROVEN TO REFUSE.\n\nMEASURED FIRST, DECIDED SECOND. All three configurations were run to completion locally with a JSON reporter and their executed sets compared:\n\n  development              ran 122  skipped 29   274.8s\n  production + PostgreSQL  ran 100  skipped 51    99.0s\n  production, NO database  ran  71  skipped 80    75.4s\n\nTests the third configuration runs that NEITHER other one does -- computed as C minus (A union B), not asserted -- are EXACTLY three:\n  [api]      playback-session.api.spec.ts > a deployment with no identity system > fails closed with 503 and names the operator's remedy\n  [api]      playback-session.api.spec.ts > a deployment with no identity system > publishes nothing only a resolver could know\n  [chromium] watchlist.spec.ts > a deployment with no identity system refuses honestly rather than showing an empty list\n\nTests skipped in ALL THREE once this step exists: exactly two, both media-rig rows. They are RIG rows in PW-0601's matrix, they need the commander's hardware, and they remain skipped with their reasons intact -- which the acceptance requires and which this measurement confirms rather than hopes.\n\nTHE NARROW INVOCATION WAS CONSIDERED AND REJECTED, WITH THE REASON. The acceptance invites naming the two spec files if that buys the same coverage for less. It was measured: the dominant cost is the production build, which either invocation pays and turbo serves from cache in this job, leaving 75 seconds of test time. Against that, naming two files would put a hand-maintained list of what matters into this workflow -- the same defect PL-0714 removed from the suite steps above it and PL-0726 removed from the migration step below it, in this very file, this round and last. A future test that became third-configuration-only would be covered by the whole-suite step and missed by the narrow one, silently, which is precisely how these three were lost for eight rounds.\n\nTHE RUN. `npm test -- --project=api --project=chromium --reporter=list,json,html` with LIBERTY_E2E_WEB_MODE=production and NO LIBERTY_E2E_DATABASE_URL. The absence is the configuration: src/env.ts derives the auth secret from that variable's presence, so a production run without it IS a deployment with no identity system. Nothing is stubbed and no test is told it is special.\n\n`html` IS NAMED ON THE COMMAND LINE DELIBERATELY, and finding out why was a defect caught before commit: --reporter on the CLI REPLACES the config's reporter list rather than adding to it, so the first draft wrote no e2e/playwright-report at all and the upload step would have archived nothing. Verified after the fix: both /tmp/verify-reporters.json and e2e/playwright-report/index.html are produced.\n\nTHE GUARD, AND THE FIVE WAYS IT WAS PROVEN TO REFUSE. The acceptance says evidence must be \"the run naming them as passed, not a count that went up\", so a step reads the JSON report and requires all three BY NAME, each present and each \"expected\". It was extracted from the workflow with yaml.safe_load -- so what was executed is the text CI will execute -- and driven against real reports:\n\n  A. the real third-configuration report      -> exit 0, three \"ran and passed\" notices naming each title and its project\n  B. the real production+PostgreSQL report    -> exit 1, three errors, each saying the title is \"skipped\", not \"expected\"\n  C. the real development report              -> exit 1, three errors\n  D. a report with one title renamed          -> exit 1, \"No test matching ... is in the report at all. It was renamed or deleted\"\n  E. no report file at all                    -> exit 1, \"whether these three ran is unknown -- which is not the same as them having run\"\n\nB and C are the important ones: the guard is driven against the two configurations CI ACTUALLY RUNS TODAY and goes red on both. It would have caught the original defect. A sixth case arrived unplanned while verifying the reporters -- a run of only playback-session.api.spec.ts -- and it refused on the missing watchlist title.\n\nThe step also emits the suite counts as an annotation, because annotations are the only CI channel this session can read.\n\nNOTHING WAS WEAKENED. No test was changed, no assertion relaxed, no skip removed, no retry added, no timeout raised. The two existing suite steps are untouched -- `git diff` over this file is confined to the inserted block -- so no existing configuration loses coverage."
         }
       },
-      "updatedAt": "2026-10-04T15:06:56.962Z",
+      "updatedAt": "2026-10-04T16:05:32.722Z",
       "implementationAgent": "claude-test",
-      "implementationBaseSha": "659cafa118bdc72b98d43c7f3fa21a120222e57b"
+      "implementationBaseSha": "659cafa118bdc72b98d43c7f3fa21a120222e57b",
+      "review": {
+        "taskId": "PL-0717",
+        "implementationAgent": "claude-test",
+        "implementationOwner": "claude-test",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "1474d0b4ee33d9ce5fd5ab49bdefd8f0c415dc32",
+        "reviewedBaseSha": "659cafa118bdc72b98d43c7f3fa21a120222e57b",
+        "reviewedTreeHash": "9613fa1b1080106e9cfe27309f35f81c5b0d6149be2cc48ea0edbc6a7ef76b1d",
+        "reviewedFileCount": 6,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [
+          "e2e/src/env.ts",
+          "e2e/tests/playback-session.api.spec.ts",
+          "e2e/tests/watchlist.spec.ts",
+          "e2e/playwright.config.ts",
+          "docs/TEST_MATRIX.md"
+        ],
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-10-04T16:05:25.449Z",
+        "evidence": "APPROVED at 1474d0b4ee33d9ce5fd5ab49bdefd8f0c415dc32. TRANSCRIBED BY claude-lead from gpt-architect's round-112 verdict document. FINGERPRINT CURRENCY CHECKED RATHER THAN ASSUMED: HEAD is exactly the published head the verdict names, the tracked tree is clean, and `git status --porcelain` restricted to this task's allowedPaths plus its reviewDependencies reports nothing. No commit exists after the reviewed one.\n\nTHE VERDICT: \"The third CI configuration is justified and correctly guarded\", with eleven accepted findings quoted back -- the three configurations' run/skip counts, that exactly three tests are uniquely covered, that all three are required BY NAME, that the guard was proven to fail against the two OLD configurations, against renamed or deleted tests, and against a missing report, and that no test was weakened, no retry added and no timeout raised.\n\nAND THE REASONING FOR THE WHOLE-SUITE INVOCATION IS ACCEPTED IN THE TERMS IT WAS ARGUED: \"the whole-suite invocation was chosen for the correct reason: future third-configuration-only tests should not silently become orphaned again.\" That was the point the acceptance invited me to settle by measurement and the measurement is what settled it -- naming two spec files would have put a hand-maintained list of what matters into the same file PL-0714 and PL-0726 had just removed two hand-maintained lists from."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PL-0717",
+          "implementationAgent": "claude-test",
+          "implementationOwner": "claude-test",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "1474d0b4ee33d9ce5fd5ab49bdefd8f0c415dc32",
+          "reviewedBaseSha": "659cafa118bdc72b98d43c7f3fa21a120222e57b",
+          "reviewedTreeHash": "9613fa1b1080106e9cfe27309f35f81c5b0d6149be2cc48ea0edbc6a7ef76b1d",
+          "reviewedFileCount": 6,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "e2e/src/env.ts",
+            "e2e/tests/playback-session.api.spec.ts",
+            "e2e/tests/watchlist.spec.ts",
+            "e2e/playwright.config.ts",
+            "docs/TEST_MATRIX.md"
+          ],
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-10-04T16:05:25.449Z",
+          "evidence": "APPROVED at 1474d0b4ee33d9ce5fd5ab49bdefd8f0c415dc32. TRANSCRIBED BY claude-lead from gpt-architect's round-112 verdict document. FINGERPRINT CURRENCY CHECKED RATHER THAN ASSUMED: HEAD is exactly the published head the verdict names, the tracked tree is clean, and `git status --porcelain` restricted to this task's allowedPaths plus its reviewDependencies reports nothing. No commit exists after the reviewed one.\n\nTHE VERDICT: \"The third CI configuration is justified and correctly guarded\", with eleven accepted findings quoted back -- the three configurations' run/skip counts, that exactly three tests are uniquely covered, that all three are required BY NAME, that the guard was proven to fail against the two OLD configurations, against renamed or deleted tests, and against a missing report, and that no test was weakened, no retry added and no timeout raised.\n\nAND THE REASONING FOR THE WHOLE-SUITE INVOCATION IS ACCEPTED IN THE TERMS IT WAS ARGUED: \"the whole-suite invocation was chosen for the correct reason: future third-configuration-only tests should not silently become orphaned again.\" That was the point the acceptance invited me to settle by measurement and the measurement is what settled it -- naming two spec files would have put a hand-maintained list of what matters into the same file PL-0714 and PL-0726 had just removed two hand-maintained lists from."
+        }
+      ],
+      "completedAt": "2026-10-04T16:05:32.723Z"
     },
     {
       "id": "PL-0718",
@@ -8674,7 +8723,7 @@
           "at": "2026-09-23T03:48:12.822Z",
           "by": "claude-frontend",
           "commitSha": "7a8de45feb0d56ddf5039ceff26ed4ec9fa2e1a5",
-          "evidence": "EXECUTED on 7a8de45. npm run typecheck at the root, own invocation, turbo 21/21, exit 0. The boundary module compiles with no `any`, which is one of the four \u00a73 rules and is also asserted at runtime by the guard rather than left to the compiler alone."
+          "evidence": "EXECUTED on 7a8de45. npm run typecheck at the root, own invocation, turbo 21/21, exit 0. The boundary module compiles with no `any`, which is one of the four §3 rules and is also asserted at runtime by the guard rather than left to the compiler alone."
         },
         "unit": {
           "status": "pass",
@@ -8881,7 +8930,7 @@
         "architecture-review",
         "rights-review"
       ],
-      "acceptance": "Which engine plays a candidate is decided before playback and recorded with a reason, satisfying the architecture invariant that already states this. REQUIRED: the routing function is PURE and deterministic -- no clocks, no I/O, no ambient state -- on the same rule ADR-003 and ADR-005 apply to ranking, so a routing decision can be reconstructed from a bug report. REQUIRED: a candidate whose contentProtection requires a CDM routes to the web adapter, always, and the native adapter REFUSES it with drm_required_no_cdm rather than falling back or degrading. mpv has no CDM; a native path that tried would be the DRM circumvention CONTENT_RIGHTS.md forbids, so this refusal is a rights property and not a capability detail -- which is why this task carries a rights-review gate. REQUIRED: the reason is recorded on the accepting branch as well, so 'why is this playing natively' is answerable. REQUIRED: routing consumes the protection state already on the session contract (PL-0902) rather than re-deriving it, because two opinions about a candidate's protection would eventually disagree. THE CANDIDATE-PROJECTION FINDING FROM PW-0201 IS THIS TASK'S, per gpt-architect's round-81 ruling, and no separate follow-up is filed unless this task proves one is needed. PW-0201 could not implement `canPlay(candidate: PlaybackCandidate)` as docs/DESKTOP_PLAYBACK.md \u00a73 writes it: that client type is `{ id, providerId, source }`, it predates PL-0902, and it carries neither `protection` nor `compatibility` -- so an adapter handed one is STRUCTURALLY INCAPABLE of returning `drm_required_no_cdm`, which is the refusal this task exists to make. The boundary therefore declares a narrow adapter-facing projection, and that projection is ACCEPTED. REQUIRED HERE: routing consumes the protection state from the playback-session CONTRACT -- the `protection` field `playbackSessionCandidateSchema` already publishes, which PL-0902 put there -- and never re-derives it; the adapter capability input is that narrow projection and nothing wider; NO SECOND DRM OR PROTECTION DECISION IS INVENTED anywhere in the routing path, because two opinions about a candidate's protection would eventually disagree and the reason trail would then explain a decision nobody made; and the native refusal `drm_required_no_cdm` remains STRUCTURAL rather than conditional. DO NOT change the adapter back to the older type to match the \u00a73 prose: the prose was written on 2026-09-15 and PL-0902 landed after it, so the listing is stale and the code is right. A cross-package contract change is only to be proposed if this task PROVES one is required, with the specific field and the specific decision that cannot be made without it.",
+      "acceptance": "Which engine plays a candidate is decided before playback and recorded with a reason, satisfying the architecture invariant that already states this. REQUIRED: the routing function is PURE and deterministic -- no clocks, no I/O, no ambient state -- on the same rule ADR-003 and ADR-005 apply to ranking, so a routing decision can be reconstructed from a bug report. REQUIRED: a candidate whose contentProtection requires a CDM routes to the web adapter, always, and the native adapter REFUSES it with drm_required_no_cdm rather than falling back or degrading. mpv has no CDM; a native path that tried would be the DRM circumvention CONTENT_RIGHTS.md forbids, so this refusal is a rights property and not a capability detail -- which is why this task carries a rights-review gate. REQUIRED: the reason is recorded on the accepting branch as well, so 'why is this playing natively' is answerable. REQUIRED: routing consumes the protection state already on the session contract (PL-0902) rather than re-deriving it, because two opinions about a candidate's protection would eventually disagree. THE CANDIDATE-PROJECTION FINDING FROM PW-0201 IS THIS TASK'S, per gpt-architect's round-81 ruling, and no separate follow-up is filed unless this task proves one is needed. PW-0201 could not implement `canPlay(candidate: PlaybackCandidate)` as docs/DESKTOP_PLAYBACK.md §3 writes it: that client type is `{ id, providerId, source }`, it predates PL-0902, and it carries neither `protection` nor `compatibility` -- so an adapter handed one is STRUCTURALLY INCAPABLE of returning `drm_required_no_cdm`, which is the refusal this task exists to make. The boundary therefore declares a narrow adapter-facing projection, and that projection is ACCEPTED. REQUIRED HERE: routing consumes the protection state from the playback-session CONTRACT -- the `protection` field `playbackSessionCandidateSchema` already publishes, which PL-0902 put there -- and never re-derives it; the adapter capability input is that narrow projection and nothing wider; NO SECOND DRM OR PROTECTION DECISION IS INVENTED anywhere in the routing path, because two opinions about a candidate's protection would eventually disagree and the reason trail would then explain a decision nobody made; and the native refusal `drm_required_no_cdm` remains STRUCTURAL rather than conditional. DO NOT change the adapter back to the older type to match the §3 prose: the prose was written on 2026-09-15 and PL-0902 landed after it, so the listing is stale and the code is right. A cross-package contract change is only to be proposed if this task PROVES one is required, with the specific field and the specific decision that cannot be made without it.",
       "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict.  ROUND 82: absorbed PW-0201's candidate-projection finding on gpt-architect's ruling. PW-0209 was NOT filed; this task owns the reconciliation question and only escalates it if a cross-package contract change turns out to be genuinely required.",
       "owner": null,
       "gateResults": {
@@ -10112,7 +10161,7 @@
       "id": "PW-0308",
       "priority": "P2",
       "lane": "Frontend",
-      "status": "REVIEW",
+      "status": "DONE",
       "title": "Settings a viewer can actually change",
       "dependencies": [
         "PL-0723",
@@ -10147,7 +10196,7 @@
       ],
       "acceptance": "There is a settings screen, and every switch on it changes something real. Neither a screen nor an API exists today. REQUIRED: preferred audio and subtitle languages, persisted per profile and consumed as PW-0206's defaults rather than as a second policy. REQUIRED: a diagnostics and telemetry control that is honest about what it does -- telemetry-decision.ts already reports WHY telemetry is off, and that reasoning belongs in front of the viewer instead of in a details element in the player. REQUIRED: an about section naming the application version and the licences the installer must carry, which is where PW-0208's LGPL attribution obligation is discharged in the product. REQUIRED: no setting weakens a security or rights control; there is no 'allow insecure sources' switch and no way to disable the transport checks.",
       "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. ",
-      "owner": "claude-frontend",
+      "owner": null,
       "gateResults": {
         "typecheck": {
           "status": "pass",
@@ -10172,7 +10221,7 @@
         }
       },
       "implementationAgent": "claude-frontend",
-      "updatedAt": "2026-10-04T04:34:41.641Z",
+      "updatedAt": "2026-10-04T16:09:57.119Z",
       "implementationBaseSha": "25994202b1397d7e972febdb24edd685d8a08405",
       "review": {
         "taskId": "PW-0308",
@@ -10181,9 +10230,9 @@
         "reviewerAgent": "gpt-architect",
         "reviewerClass": "external-reasoning",
         "reviewerProvider": "openai",
-        "reviewedCommitSha": "659cafa118bdc72b98d43c7f3fa21a120222e57b",
+        "reviewedCommitSha": "1474d0b4ee33d9ce5fd5ab49bdefd8f0c415dc32",
         "reviewedBaseSha": "25994202b1397d7e972febdb24edd685d8a08405",
-        "reviewedTreeHash": "13600a5042c6afdb06b53d3cb1b105c5c03cbd4c933a0301bfacd86f6a94354b",
+        "reviewedTreeHash": "441bb8671bdc33964d80a73857c32f227fe85bf16145e4058be37dcf7ea17f4c",
         "reviewedFileCount": 26,
         "reviewedFingerprintSource": "git-object",
         "reviewedDependencies": [
@@ -10194,8 +10243,8 @@
           "docs/SECURITY.md"
         ],
         "outcome": "APPROVED",
-        "reviewedAt": "2026-10-04T14:44:30.192Z",
-        "evidence": "APPROVED at 659cafa118bdc72b98d43c7f3fa21a120222e57b. TRANSCRIBED BY claude-lead from gpt-architect's round-111 verdict document, which lists this task under GPT ARCHITECT REVIEW VERDICTS and instructs: \"Record these APPROVED and close them, provided their reviewed fingerprints still match the exact reviewed surfaces and no later commit changed those surfaces\", and \"Do not reinterpret these approvals.\"\n\nFINGERPRINT CURRENCY, CHECKED RATHER THAN ASSUMED. The verdict names this sha as the published and accepted head. HEAD is exactly it, the tracked tree is clean, and `git status --porcelain` restricted to this task's allowedPaths plus its reviewDependencies reports nothing. No commit exists after the reviewed one, so the reviewed surface and the current surface are the same bytes.\n\nWHAT IS APPROVED. A settings screen whose every section is wired to something real: languages persisted per profile through /api/v1/profiles/preferences with no profile id in any field; that stored list replacing the literal preferredAudioLanguages: [\"en\"] in watch-session.ts, carried as DATA on the same route a resume point takes; a diagnostics section that CALLS decidePlaybackTelemetry and renders its reasons with no toggle, because nothing stores an answer yet and a switch would be the fake persistence the round-110 instruction forbade by name; and an About section importing package.json's version, describing it as DECLARED, and naming THIRD-PARTY-NOTICES.md without claiming to have inspected any installation.\n\nA LIMITATION THAT SURVIVES THIS APPROVAL. The e2e spec does not assert that a stored language changes which audio track PLAYS -- the e2e catalog is fixtures and nothing has a multi-audio title. What is proven is that the preference reaches the playback SESSION REQUEST, directly, in watch-session.test.ts over all three states with the body parsed by the route's own strict schema. The audible end remains unproven and is not claimed."
+        "reviewedAt": "2026-10-04T16:09:56.716Z",
+        "evidence": "RE-APPROVED at 1474d0b4ee33d9ce5fd5ab49bdefd8f0c415dc32. TRANSCRIBED BY claude-lead from gpt-architect's round-112 verdict: \"PW-0308 — RE-APPROVED AT CURRENT FINGERPRINT. The previous approval became stale because PL-0724 legitimately changed the settings contract and the form had to send the new required field. That corrective is accepted.\"\n\nFINGERPRINT CURRENCY: HEAD is the published head the verdict names, the tracked tree is clean, and `git status --porcelain` over this task's allowedPaths plus reviewDependencies reports nothing.\n\nTHE VERDICT MADE THE APPROVAL CONDITIONAL ON NINE CONFIRMATIONS AND REQUIRED THE CHANGED SURFACE TO BE RE-REVIEWED. Each is answered below from a run performed THIS ROUND at THIS HEAD, not carried forward from round 111, because the point of a re-review is that the evidence is current.\n\nTHE RUN: full production build + real PostgreSQL with migration 0002 applied, --project=api --project=chromium, --workers=1. 100 expected, 0 unexpected, 0 flaky, 51 skipped, 83.3s.\n\n1. \"settings save still succeeds\" -- PASS. All five settings.spec.ts database cases are `expected` in that run.\n2. \"language persistence still succeeds\" -- PASS. \"a choice survives a reload, which is what tells persistence from state\" and \"the order is kept, because the order is the preference\" both passed; the reload is what distinguishes them from component state.\n3. \"diagnostics preference now persists\" -- PASS, AND OBSERVED DIRECTLY RATHER THAN INFERRED. Re-running \"the order is kept\" alone and then querying the real database by hand:\n\n     preferred_audio_languages | subtitle_mode | hearing_impaired | playback_diagnostics\n     {pt-BR,ja,en}             | auto          | f                | t\n\n   That row was written by a real browser through the real endpoint into real PostgreSQL, and it carries the column. The other evidence is the handler suite round-tripping a NON-DEFAULT value: its CHOSEN fixture sets playbackDiagnostics to `false` deliberately, so a read that silently dropped the field would fail rather than coincide with the default.\n4. \"strict contract remains strict\" -- PASS. `putPreferencesRequestSchema` is still `mediaPreferencesSchema` with `.strict()`; the field was added to the shared shape rather than beside it, which is why the form had to change at all.\n5. \"no optional/default shortcut silently overwrites an explicit viewer choice\" -- PASS, AND THIS IS THE ONE THE CORRECTIVE TURNED ON. A zod `.default(true)` was explicitly considered and rejected in round 111's record: a body omitting the field would have parsed and SILENTLY RESET a viewer who had declined, every time they saved a language. Instead `language-preferences.tsx` keeps what it READ and sends it back, so saving a language cannot change the diagnostics setting in either direction.\n6. \"production + real PostgreSQL e2e remains green\" -- PASS. 100/0/0/51 above.\n7. \"clearing and 'never chosen' remain distinct\" -- PASS. \"clearing is not the same as leaving the lists empty\" passed: two empty lists saved and reloaded say \"these are your choices\"; cleared and reloaded says \"you have not chosen yet\". Same empty fields, opposite sentences.\n8. \"no security/rights toggle was introduced\" -- PASS. \"offers no switch that could weaken a security or rights control\" passed, asserting an absence of the VOCABULARY rather than of a particular control id.\n9. \"player still consumes stored audio preference through the existing PW-0206 policy rather than a second policy\" -- PASS. watch-session.ts takes the languages as DATA and substitutes only `preferredAudioLanguages` into `CONSERVATIVE_CAPABILITIES`; a blast-radius case asserts the key set is identical and every other key unchanged, so no second policy exists to disagree with the first.\n\nTHE CHANGED SURFACE, RE-REVIEWED AS INSTRUCTED. The only file under this task's allowedPaths that moved since the stale approval is apps/web/src/components/settings/language-preferences.tsx: three additions -- a state field initialised from NO_MEDIA_PREFERENCES, one line in `apply` setting it from the response, and one line in the PUT body. No control was added, and the diagnostics section still tells the viewer the screen cannot yet change it.\n\nA GAP THAT THIS APPROVAL SHOULD NOT BE READ AS CLOSING, found while confirming clause 3: the setting is stored, consumed by the player and round-tripped by the form, and A VIEWER CANNOT SET IT BY ANY MEANS. There is no control anywhere. PL-0724's title says there is one, which is how I nearly missed it. Filed as PL-0732 rather than folded into an approved task."
       },
       "reviewHistory": [
         {
@@ -10220,8 +10269,32 @@
           "outcome": "APPROVED",
           "reviewedAt": "2026-10-04T14:44:30.192Z",
           "evidence": "APPROVED at 659cafa118bdc72b98d43c7f3fa21a120222e57b. TRANSCRIBED BY claude-lead from gpt-architect's round-111 verdict document, which lists this task under GPT ARCHITECT REVIEW VERDICTS and instructs: \"Record these APPROVED and close them, provided their reviewed fingerprints still match the exact reviewed surfaces and no later commit changed those surfaces\", and \"Do not reinterpret these approvals.\"\n\nFINGERPRINT CURRENCY, CHECKED RATHER THAN ASSUMED. The verdict names this sha as the published and accepted head. HEAD is exactly it, the tracked tree is clean, and `git status --porcelain` restricted to this task's allowedPaths plus its reviewDependencies reports nothing. No commit exists after the reviewed one, so the reviewed surface and the current surface are the same bytes.\n\nWHAT IS APPROVED. A settings screen whose every section is wired to something real: languages persisted per profile through /api/v1/profiles/preferences with no profile id in any field; that stored list replacing the literal preferredAudioLanguages: [\"en\"] in watch-session.ts, carried as DATA on the same route a resume point takes; a diagnostics section that CALLS decidePlaybackTelemetry and renders its reasons with no toggle, because nothing stores an answer yet and a switch would be the fake persistence the round-110 instruction forbade by name; and an About section importing package.json's version, describing it as DECLARED, and naming THIRD-PARTY-NOTICES.md without claiming to have inspected any installation.\n\nA LIMITATION THAT SURVIVES THIS APPROVAL. The e2e spec does not assert that a stored language changes which audio track PLAYS -- the e2e catalog is fixtures and nothing has a multi-audio title. What is proven is that the preference reaches the playback SESSION REQUEST, directly, in watch-session.test.ts over all three states with the body parsed by the route's own strict schema. The audible end remains unproven and is not claimed."
+        },
+        {
+          "taskId": "PW-0308",
+          "implementationAgent": "claude-frontend",
+          "implementationOwner": "claude-frontend",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "1474d0b4ee33d9ce5fd5ab49bdefd8f0c415dc32",
+          "reviewedBaseSha": "25994202b1397d7e972febdb24edd685d8a08405",
+          "reviewedTreeHash": "441bb8671bdc33964d80a73857c32f227fe85bf16145e4058be37dcf7ea17f4c",
+          "reviewedFileCount": 26,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "apps/web/src/app/api/v1/profiles",
+            "apps/web/src/components/player/telemetry-decision.ts",
+            "packages/contracts/src/domains/audio.ts",
+            "packages/contracts/src/domains/subtitles.ts",
+            "docs/SECURITY.md"
+          ],
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-10-04T16:09:56.716Z",
+          "evidence": "RE-APPROVED at 1474d0b4ee33d9ce5fd5ab49bdefd8f0c415dc32. TRANSCRIBED BY claude-lead from gpt-architect's round-112 verdict: \"PW-0308 — RE-APPROVED AT CURRENT FINGERPRINT. The previous approval became stale because PL-0724 legitimately changed the settings contract and the form had to send the new required field. That corrective is accepted.\"\n\nFINGERPRINT CURRENCY: HEAD is the published head the verdict names, the tracked tree is clean, and `git status --porcelain` over this task's allowedPaths plus reviewDependencies reports nothing.\n\nTHE VERDICT MADE THE APPROVAL CONDITIONAL ON NINE CONFIRMATIONS AND REQUIRED THE CHANGED SURFACE TO BE RE-REVIEWED. Each is answered below from a run performed THIS ROUND at THIS HEAD, not carried forward from round 111, because the point of a re-review is that the evidence is current.\n\nTHE RUN: full production build + real PostgreSQL with migration 0002 applied, --project=api --project=chromium, --workers=1. 100 expected, 0 unexpected, 0 flaky, 51 skipped, 83.3s.\n\n1. \"settings save still succeeds\" -- PASS. All five settings.spec.ts database cases are `expected` in that run.\n2. \"language persistence still succeeds\" -- PASS. \"a choice survives a reload, which is what tells persistence from state\" and \"the order is kept, because the order is the preference\" both passed; the reload is what distinguishes them from component state.\n3. \"diagnostics preference now persists\" -- PASS, AND OBSERVED DIRECTLY RATHER THAN INFERRED. Re-running \"the order is kept\" alone and then querying the real database by hand:\n\n     preferred_audio_languages | subtitle_mode | hearing_impaired | playback_diagnostics\n     {pt-BR,ja,en}             | auto          | f                | t\n\n   That row was written by a real browser through the real endpoint into real PostgreSQL, and it carries the column. The other evidence is the handler suite round-tripping a NON-DEFAULT value: its CHOSEN fixture sets playbackDiagnostics to `false` deliberately, so a read that silently dropped the field would fail rather than coincide with the default.\n4. \"strict contract remains strict\" -- PASS. `putPreferencesRequestSchema` is still `mediaPreferencesSchema` with `.strict()`; the field was added to the shared shape rather than beside it, which is why the form had to change at all.\n5. \"no optional/default shortcut silently overwrites an explicit viewer choice\" -- PASS, AND THIS IS THE ONE THE CORRECTIVE TURNED ON. A zod `.default(true)` was explicitly considered and rejected in round 111's record: a body omitting the field would have parsed and SILENTLY RESET a viewer who had declined, every time they saved a language. Instead `language-preferences.tsx` keeps what it READ and sends it back, so saving a language cannot change the diagnostics setting in either direction.\n6. \"production + real PostgreSQL e2e remains green\" -- PASS. 100/0/0/51 above.\n7. \"clearing and 'never chosen' remain distinct\" -- PASS. \"clearing is not the same as leaving the lists empty\" passed: two empty lists saved and reloaded say \"these are your choices\"; cleared and reloaded says \"you have not chosen yet\". Same empty fields, opposite sentences.\n8. \"no security/rights toggle was introduced\" -- PASS. \"offers no switch that could weaken a security or rights control\" passed, asserting an absence of the VOCABULARY rather than of a particular control id.\n9. \"player still consumes stored audio preference through the existing PW-0206 policy rather than a second policy\" -- PASS. watch-session.ts takes the languages as DATA and substitutes only `preferredAudioLanguages` into `CONSERVATIVE_CAPABILITIES`; a blast-radius case asserts the key set is identical and every other key unchanged, so no second policy exists to disagree with the first.\n\nTHE CHANGED SURFACE, RE-REVIEWED AS INSTRUCTED. The only file under this task's allowedPaths that moved since the stale approval is apps/web/src/components/settings/language-preferences.tsx: three additions -- a state field initialised from NO_MEDIA_PREFERENCES, one line in `apply` setting it from the response, and one line in the PUT body. No control was added, and the diagnostics section still tells the viewer the screen cannot yet change it.\n\nA GAP THAT THIS APPROVAL SHOULD NOT BE READ AS CLOSING, found while confirming clause 3: the setting is stored, consumed by the player and round-tripped by the form, and A VIEWER CANNOT SET IT BY ANY MEANS. There is no control anywhere. PL-0724's title says there is one, which is how I nearly missed it. Filed as PL-0732 rather than folded into an approved task."
         }
-      ]
+      ],
+      "completedAt": "2026-10-04T16:09:57.119Z"
     },
     {
       "id": "PW-0309",
@@ -11086,7 +11159,7 @@
       "priority": "P1",
       "lane": "Test",
       "status": "READY",
-      "title": "Install, upgrade, uninstall, reinstall \u2014 tested, not assumed",
+      "title": "Install, upgrade, uninstall, reinstall — tested, not assumed",
       "dependencies": [
         "PW-0501"
       ],
@@ -11305,7 +11378,7 @@
       "id": "PW-0602",
       "priority": "P1",
       "lane": "Test",
-      "status": "REVIEW",
+      "status": "DONE",
       "title": "The automated half of the Windows matrix, running on Windows",
       "dependencies": [
         "PW-0501",
@@ -11329,7 +11402,7 @@
       ],
       "acceptance": "Every row PW-0601 marks automated runs on a windows-latest runner and fails the build when it fails. REQUIRED: the existing e2e suite runs against the DESKTOP target on Windows, not only the web target on Ubuntu -- the desktop axis is currently built on Ubuntu only, and only incidentally, because the axis defaults on and openssl happens to be installed. REQUIRED: the shell is driven end to end where the harness can reach it, and where it cannot, the row stays in the commander-machine half rather than being replaced by a unit test that proves something easier. REQUIRED: retries stay at zero, on the rule playwright.config.ts already states at length. REQUIRED: a row that is skipped says why, by name, the way the existing harness already does for the desktop and media-rig axes.",
       "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. SURFACE NOTE: this task's allowedPaths name directories that do not exist yet. The evidence-based narrowing procedure applies to reconciling work already in history; for genuinely new work the surface is the smallest set of paths the acceptance can be satisfied within, and it is narrowed again from the diff before review if it turns out to be wider than what was written. OWNERSHIP RESOLVED BY RESPONSIBILITY in round 87, on gpt-architect's ruling. .github/workflows/windows.yml moved from allowedPaths to reviewDependencies: this task is the certification CONSUMER -- it needs the workflow and the artifact to EXIST and to execute its rows, which is a read relationship. PW-0501 owns the workflow because PW-0501 produces the Windows artifact. A task does not co-own a production build workflow merely because its tests run there. If this task's acceptance genuinely requires editing that workflow after PW-0501 lands, it is sequenced AFTER PW-0501 -- its dependencies already say so -- and its narrowed write surface is derived from the actual change at claim time rather than reserved now. Neither task was narrowed to defeat conflictWithActive; the surfaces follow the implementation responsibility. ROUND 107 AMENDMENT, on gpt-architect's ruling: .github/workflows/windows.yml has MOVED from reviewDependencies to allowedPaths -- allowedPaths is always part of the reviewed surface, so leaving it in both is redundant and ai:validate says so. This is the condition the round-87 note above named -- PW-0501 has landed, and the acceptance clause 'runs on a windows-latest runner and fails the build when it fails' cannot be satisfied without writing the only file that defines one. The surface was derived at claim time from the actual change, as that note required, and is the single file rather than .github/workflows/**. scripts/windows/** was deliberately NOT taken; it remains PW-0502's and PW-0503's. Conflict check and the cost to those two tasks' future fingerprints are recorded in the task.definition_changed event of this round.",
-      "owner": "claude-test",
+      "owner": null,
       "gateResults": {
         "typecheck": {
           "status": "pass",
@@ -11346,7 +11419,7 @@
           "evidence": "WINDOWS PACKAGE #15 (run 37210126408) AT EXACT HEAD 659cafa118bdc72b98d43c7f3fa21a120222e57b. This re-records the e2e gate with the REAL WINDOWS EXECUTION gpt-architect's round-111 verdict asked for, replacing nothing and adding what Windows #14 could not say.\n\nTHE JOB PAGE, NOT THE RUN PAGE, as round 110 established is the only trustworthy surface. Job 111459438814, e2e-desktop: CONCLUSION SUCCEEDED, 3m 25s.\n\nITS TWO ANNOTATIONS, VERBATIM:\n  \"openssl=C:\\Program Files\\OpenSSL\\bin\\openssl.exe; mode=development; database=none (GitHub service containers are Linux-only, so the production-with-identity rung stays on Ubuntu)\"\n  \"expected=122 unexpected=0 flaky=0 skipped=29 duration=125.9s\"\n\nCLAUSE BY CLAUSE.\n\n1. \"the existing e2e suite runs against the DESKTOP target on Windows, not only the web target on Ubuntu\" -- PROVEN BY A RUN. 122 cases executed and passed on a windows-latest runner against the desktop target. Not a count that went up: the job is green and the non-vacuity guard is a FAILING STEP, so green is load-bearing.\n\n2. THE NON-VACUITY GUARD PASSED, and that is what the success actually buys. `assert-desktop-axis-ran.mjs` runs as its own step with `if: !cancelled()`, so an all-skipped axis could not have produced a green job -- the guard would have failed it. Its OWN unit tests also ran, as a separate earlier step, so a defect in the guard would have been loud rather than silent. Both are steps in a job that succeeded, which means both passed; this is inferred from the job's conclusion rather than from a log, and the inference is sound only because each is a failing step, which is why they were written that way.\n\n3. \"retries stay at zero\" -- flaky=0. Playwright reports a case as flaky when it failed and then passed on a retry, so zero flaky over 151 cases means no case was retried into passing. `playwright.config.ts` sets retries: 0 and nothing overrode it.\n\n4. \"a row that is skipped says why, by name\" -- 29 skipped, and here the evidence is CORROBORATION RATHER THAN DIRECT OBSERVATION, which is stated rather than glossed. The annotation gives a count; the per-row reasons are in the artifact (playwright-report-windows-desktop, 17.2 KB, sha256:dffe26c69d3eef4295d4c0d29dde9731c83cc34f662eae839dc45660dda66308), and downloading an artifact requires a login this session does not have. What CAN be said: the Windows axis runs mode=development with database=none, and the identical configuration run locally produces EXACTLY THE SAME NUMBERS -- 122 executed, 29 skipped -- with every one of the 29 carrying a stated reason and ZERO carrying none:\n\n     22  \"LIBERTY_E2E_WEB_MODE=development, where identity comes from the development headers rather than from a session store...\"\n      2  \"Only a production-mode run with no LIBERTY_E2E_DATABASE_URL is this configuration...\"\n      2  \"No media rig configured. Set LIBERTY_E2E_MEDIA_ORIGIN to a DASH/HLS origin you hold rights to serve from...\"\n      1  \"This server runs a development build, where the scaffold is reachable on purpose.\"\n      1  \"this case is the refused-build half of the matrix\"\n      1  \"This run can identify a caller, so it does not render the unconfigured-deployment branch.\"\n\n   Two configurations on two platforms agreeing to the case on both numbers is strong evidence the skip sets are the same set, and it is not the same thing as having read the Windows names. Recorded as corroboration.\n\n5. \"where it cannot [drive the shell end to end], the row stays in the commander-machine half rather than being replaced by a unit test that proves something easier\" -- the two media-rig rows are skipped with the reason above and remain RIG rows in PW-0601's matrix. Nothing was substituted for them.\n\nWHAT THIS EVIDENCE DOES NOT COVER, SO IT CANNOT BE READ AS COVERING IT. The `package` job of the same run was still in progress when this was recorded, so nothing here speaks to packaging, the MSI, the lifecycle harness or F1/F2/F3/F4. Those belong to PW-0501/PW-0503/PW-0502 rather than to this task's acceptance, which is about the e2e matrix, but the distinction is stated because the round-111 directive asks about both and only one is answered here.\n\nWHAT CHANGED SINCE WINDOWS #14. #14's e2e-desktop also succeeded, and that was already evidence for clause 1. What #14 could not give was the counts: the annotation publisher produced them for the first time here, so retries-at-zero and executed-case-count move from \"the guard would have caught it\" to measured values."
         }
       },
-      "updatedAt": "2026-10-04T03:22:32.886Z",
+      "updatedAt": "2026-10-04T16:05:33.405Z",
       "implementationAgent": "claude-test",
       "implementationBaseSha": "2c037d54ed834af9dba3c6b12a29c395dee81b9d",
       "review": {
@@ -11356,9 +11429,9 @@
         "reviewerAgent": "gpt-architect",
         "reviewerClass": "external-reasoning",
         "reviewerProvider": "openai",
-        "reviewedCommitSha": "4a13f4593ee00aff71acb470d065c7cffa39b1a4",
+        "reviewedCommitSha": "1474d0b4ee33d9ce5fd5ab49bdefd8f0c415dc32",
         "reviewedBaseSha": "2c037d54ed834af9dba3c6b12a29c395dee81b9d",
-        "reviewedTreeHash": "97504636bbf82060e86e87486b6acbb54b16d83d6707f39d846fbcd5dc9e0535",
+        "reviewedTreeHash": "8a4248656a11153a5a613d33c6c1b9370d4f37f8ddd347a44f9f40e70ced8a8a",
         "reviewedFileCount": 38,
         "reviewedFingerprintSource": "git-object",
         "reviewedDependencies": [
@@ -11367,9 +11440,9 @@
           "apps/desktop",
           "docs/E2E.md"
         ],
-        "outcome": "CHANGES_REQUESTED",
-        "reviewedAt": "2026-10-04T03:18:22.804Z",
-        "evidence": "CHANGES REQUESTED at 4a13f4593ee00aff71acb470d065c7cffa39b1a4, under gpt-architect's own round-110 condition, transcribed by claude-test. The reviewer wrote: \"Do NOT approve PW-0602 from parser-only evidence if Windows #14 has not proven the new job\", and required that for lifecycle \"every observable row\" be verified as PASS, FAIL, NOT-RUN with an exact reason, then classified as (A) workflow/harness defect, (B) product defect, (C) commander-only row or (D) genuinely unsupported CI row.\n\nWHAT WINDOWS #14 (run 37172243171, head 4a13f45) PROVED, AND IT IS THE HALF THIS TASK WAS WRITTEN FOR. The e2e-desktop job CONCLUDED SUCCESS in 3m 35s. Its annotations read \"openssl=C:\\Program Files\\OpenSSL\\bin\\openssl.exe; mode=development; database=none\" and \"expected=118 unexpected=0 flaky=0 skipped=24 duration=134.8s\". Success is the load-bearing fact: the job contains the non-vacuity guard as a FAILING step, so a run in which the desktop axis had skipped could not have concluded success. The desktop axis therefore genuinely executed on a Windows runner, on the first attempt, with retries still at zero and the same two projects CI runs. PW-0602's first REQUIRED clause is met.\n\nWHY THIS CANNOT BE APPROVED ANYWAY. The package job CONCLUDED FAILURE with \"Process completed with exit code 1\", and the only other annotation is the lifecycle publisher's own notice: \"NO REPORT WAS PRODUCED. The harness writes nothing when it refuses (wrong platform, missing or bad --msi), which is a fault in this workflow rather than in the product.\"\n\nTHAT NOTICE CANNOT SUPPORT THE CLASSIFICATION THE REVIEWER ASKED FOR, and that is the finding. The publisher runs on `!cancelled()`, so it emits that sentence whenever no report file exists -- which is equally true if the Tauri build failed, if the inventory step threw \"no msi in the inventory\", if the install-verifier negative check failed, or if the harness itself refused. Only two of the package job's fourteen steps carry an `id`, so nothing on the run page names the step that exited 1. A reader is therefore invited to conclude \"the harness refused over a bad --msi\" when the evidence does not establish it. That is the same defect this session has now corrected three times in its own instruments: a diagnostic confidently naming a cause it has not measured.\n\nThis is category A -- a workflow/harness defect -- but it is specifically a defect in the workflow's ABILITY TO BE DIAGNOSED, and it must be fixed before any row is classified, because classifying from this annotation would be guessing. Windows #13 at 4f23c1d recorded F1 PASS, F3 PASS, F4 PASS and F2 not-run, so the package job REGRESSED between 4f23c1d and 4a13f45 and the cause is not yet known.\n\nREQUIRED BEFORE RE-REVIEW: every step in the package job carries an id; a failure-diagnostics step names the first failing step and its outcome on the run page, in the annotation channel, as ci.yml's own failure-diagnostics already does; and the \"NO REPORT\" message stops asserting a cause it cannot know."
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-10-04T16:05:25.898Z",
+        "evidence": "APPROVED at 1474d0b4ee33d9ce5fd5ab49bdefd8f0c415dc32. TRANSCRIBED BY claude-lead from gpt-architect's round-112 verdict document. FINGERPRINT CURRENCY CHECKED RATHER THAN ASSUMED: HEAD is exactly the published head the verdict names, the tracked tree is clean, and `git status --porcelain` restricted to this task's allowedPaths plus its reviewDependencies reports nothing. No commit exists after the reviewed one.\n\nTHE VERDICT: \"Windows #15 is sufficient real target-platform evidence\", listing e2e-desktop succeeding on windows-latest, expected=122, unexpected=0, flaky=0, skipped=29, that \"non-vacuity guard is a failing step and therefore a green job proves the desktop axis actually executed\", that retries remain zero, that the local identical configuration corroborates all 29 skips carrying explicit reasons, and that the two media-rig rows remain honestly commander/hardware-bound.\n\nAND A SCOPE RULING I AM RECORDING BECAUSE IT CORRECTS SOMETHING I WAS DOING: \"The package/lifecycle job is NOT PW-0602's remaining acceptance. Do not keep PW-0602 open for PW-050x packaging/lifecycle concerns. Those belong to their owning tasks.\" Round 111's evidence on this task went out of its way to say the package job was still running and that nothing here spoke to the MSI or F1-F4; the ruling is that those were never this task's to answer. PW-0501, PW-0502 and PW-0503 own them.\n\nTHE ONE THING THE EVIDENCE IS CORROBORATION RATHER THAN OBSERVATION ON, carried forward so the approval is not read as more than it is: the 29 skip REASONS were not read off the Windows run -- the artifact needs a login -- they were matched by an identical local configuration producing exactly 122/29 with every row reasoned. gpt-architect's verdict names that as corroboration in the same words, so the distinction survives the approval."
       },
       "reviewHistory": [
         {
@@ -11393,14 +11466,37 @@
           "outcome": "CHANGES_REQUESTED",
           "reviewedAt": "2026-10-04T03:18:22.804Z",
           "evidence": "CHANGES REQUESTED at 4a13f4593ee00aff71acb470d065c7cffa39b1a4, under gpt-architect's own round-110 condition, transcribed by claude-test. The reviewer wrote: \"Do NOT approve PW-0602 from parser-only evidence if Windows #14 has not proven the new job\", and required that for lifecycle \"every observable row\" be verified as PASS, FAIL, NOT-RUN with an exact reason, then classified as (A) workflow/harness defect, (B) product defect, (C) commander-only row or (D) genuinely unsupported CI row.\n\nWHAT WINDOWS #14 (run 37172243171, head 4a13f45) PROVED, AND IT IS THE HALF THIS TASK WAS WRITTEN FOR. The e2e-desktop job CONCLUDED SUCCESS in 3m 35s. Its annotations read \"openssl=C:\\Program Files\\OpenSSL\\bin\\openssl.exe; mode=development; database=none\" and \"expected=118 unexpected=0 flaky=0 skipped=24 duration=134.8s\". Success is the load-bearing fact: the job contains the non-vacuity guard as a FAILING step, so a run in which the desktop axis had skipped could not have concluded success. The desktop axis therefore genuinely executed on a Windows runner, on the first attempt, with retries still at zero and the same two projects CI runs. PW-0602's first REQUIRED clause is met.\n\nWHY THIS CANNOT BE APPROVED ANYWAY. The package job CONCLUDED FAILURE with \"Process completed with exit code 1\", and the only other annotation is the lifecycle publisher's own notice: \"NO REPORT WAS PRODUCED. The harness writes nothing when it refuses (wrong platform, missing or bad --msi), which is a fault in this workflow rather than in the product.\"\n\nTHAT NOTICE CANNOT SUPPORT THE CLASSIFICATION THE REVIEWER ASKED FOR, and that is the finding. The publisher runs on `!cancelled()`, so it emits that sentence whenever no report file exists -- which is equally true if the Tauri build failed, if the inventory step threw \"no msi in the inventory\", if the install-verifier negative check failed, or if the harness itself refused. Only two of the package job's fourteen steps carry an `id`, so nothing on the run page names the step that exited 1. A reader is therefore invited to conclude \"the harness refused over a bad --msi\" when the evidence does not establish it. That is the same defect this session has now corrected three times in its own instruments: a diagnostic confidently naming a cause it has not measured.\n\nThis is category A -- a workflow/harness defect -- but it is specifically a defect in the workflow's ABILITY TO BE DIAGNOSED, and it must be fixed before any row is classified, because classifying from this annotation would be guessing. Windows #13 at 4f23c1d recorded F1 PASS, F3 PASS, F4 PASS and F2 not-run, so the package job REGRESSED between 4f23c1d and 4a13f45 and the cause is not yet known.\n\nREQUIRED BEFORE RE-REVIEW: every step in the package job carries an id; a failure-diagnostics step names the first failing step and its outcome on the run page, in the annotation channel, as ci.yml's own failure-diagnostics already does; and the \"NO REPORT\" message stops asserting a cause it cannot know."
+        },
+        {
+          "taskId": "PW-0602",
+          "implementationAgent": "claude-test",
+          "implementationOwner": "claude-test",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "1474d0b4ee33d9ce5fd5ab49bdefd8f0c415dc32",
+          "reviewedBaseSha": "2c037d54ed834af9dba3c6b12a29c395dee81b9d",
+          "reviewedTreeHash": "8a4248656a11153a5a613d33c6c1b9370d4f37f8ddd347a44f9f40e70ced8a8a",
+          "reviewedFileCount": 38,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "docs/WINDOWS_CERTIFICATION.md",
+            "e2e/playwright.config.ts",
+            "apps/desktop",
+            "docs/E2E.md"
+          ],
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-10-04T16:05:25.898Z",
+          "evidence": "APPROVED at 1474d0b4ee33d9ce5fd5ab49bdefd8f0c415dc32. TRANSCRIBED BY claude-lead from gpt-architect's round-112 verdict document. FINGERPRINT CURRENCY CHECKED RATHER THAN ASSUMED: HEAD is exactly the published head the verdict names, the tracked tree is clean, and `git status --porcelain` restricted to this task's allowedPaths plus its reviewDependencies reports nothing. No commit exists after the reviewed one.\n\nTHE VERDICT: \"Windows #15 is sufficient real target-platform evidence\", listing e2e-desktop succeeding on windows-latest, expected=122, unexpected=0, flaky=0, skipped=29, that \"non-vacuity guard is a failing step and therefore a green job proves the desktop axis actually executed\", that retries remain zero, that the local identical configuration corroborates all 29 skips carrying explicit reasons, and that the two media-rig rows remain honestly commander/hardware-bound.\n\nAND A SCOPE RULING I AM RECORDING BECAUSE IT CORRECTS SOMETHING I WAS DOING: \"The package/lifecycle job is NOT PW-0602's remaining acceptance. Do not keep PW-0602 open for PW-050x packaging/lifecycle concerns. Those belong to their owning tasks.\" Round 111's evidence on this task went out of its way to say the package job was still running and that nothing here spoke to the MSI or F1-F4; the ruling is that those were never this task's to answer. PW-0501, PW-0502 and PW-0503 own them.\n\nTHE ONE THING THE EVIDENCE IS CORROBORATION RATHER THAN OBSERVATION ON, carried forward so the approval is not read as more than it is: the 29 skip REASONS were not read off the Windows run -- the artifact needs a login -- they were matched by an identical local configuration producing exactly 122/29 with every row reasoned. gpt-architect's verdict names that as corroboration in the same words, so the distinction survives the approval."
         }
-      ]
+      ],
+      "completedAt": "2026-10-04T16:05:33.405Z"
     },
     {
       "id": "PW-0603",
       "priority": "P1",
       "lane": "Test",
-      "status": "BACKLOG",
+      "status": "READY",
       "title": "The commander's run sheet, and the evidence it produces",
       "dependencies": [
         "PW-0601",
@@ -11597,7 +11693,7 @@
           "at": "2026-09-30T05:00:52.816Z",
           "by": "claude-infra",
           "commitSha": "27548e920258d21f07dd505e74da5702d09a632e",
-          "evidence": "`npm run test` -> 22/22 turbo tasks; @liberty/web 1308, @liberty/persistence 268, @liberty/provider-sdk 288, @liberty/catalog-ingestion 152, @liberty/backend 36, all passing.\n\nTHE REGRESSION IS `scripts/test-desktop-target.mjs`, 9 assertions, ~10s, and it is wired into\n`npm run test:scripts` so it actually runs. That wiring is the reason the root package.json joined\nthis task's surface: `scripts/` is not a workspace, `turbo run test` never visits it, and\n`scripts/test-validate-repo.mjs` says so in its own header -- \"a vitest suite placed here would be\nwritten, committed, and never executed by any gate.\" The whole chain was run and every member\npasses: validate-env 38 scenarios, ai-control-plane 71 scenarios, validate-repo 20 groups,\ndesktop-target 9 assertions, cloud dispatcher 35 scenarios.\n\nWHAT THE REGRESSION ACTUALLY DOES, because the acceptance rules out the cheap version -- \"a test\nthat only exercises normal exit reproduces nothing, because normal exit already works.\" Each of four\ncases writes the WEB spelling into `apps/web/next-env.d.ts`, starts a real desktop dev server through\nthe wrapper in its own process group, WAITS UNTIL NEXT HAS REWRITTEN THE FILE to name the desktop\ndistDir, and only then kills it. The four terminations are the four the acceptance names: SIGTERM,\nSIGINT and SIGKILL to the process group, and SIGKILL to the parent alone, which orphans the dev\nserver and is the case where no code of ours runs at all. After each, the set of tracked files with\nuncommitted changes must equal a baseline captured at start.\n\nTHE NON-VACUITY CHECK IS PART OF THE TEST, not something I ran by hand: if the rewrite never happens,\nthe case FAILS with \"this case proved nothing\", rather than passing against a dev server that did not\nstart. Measured: the rewrite lands 1214 ms after spawn.\n\nIT COMPARES AGAINST A BASELINE rather than demanding a clean checkout, because a developer running\n`npm run test:scripts` mid-change has a dirty tree and a test that failed for that reason gets turned\noff.\n\nPROVEN NON-VACUOUS BY MUTATION, both directions:\n  - `git add -f apps/web/next-env.d.ts`  -> 2 failed, 7 passed; the failure names the re-tracking and\n                                            says why no cleanup hook can close it.\n  - removing the `.gitignore` line       -> 1 failed, 8 passed.\n  - restoring either                     -> 9 passed.\n\n`build-target.test.ts` KEEPS PASSING as the acceptance requires, and it was UPDATED rather than left\nalone because its old assertion encoded the implementation: it read the literal string\n`LIBERTY_BUILD_TARGET:'desktop'` out of `scripts[\"build:desktop\"]`, which was only true while the\none-liner was pasted into package.json. The test caught the change immediately -- \"expected 'node\n../../scripts/desktop-target.mjs\u2026' to contain ...\" -- and the replacement is strictly stronger: all\nthree `*:desktop` scripts must route through the one wrapper, the wrapper itself must set the\nvariable, and the plain `build` must contain neither. Three files covered where one was, and a\ndesktop script that quietly stopped routing through the wrapper is now a failure. Its other\nassertion, that no shipped module under `apps/web/src` names the variable, is untouched and still\npasses -- the wrapper lives in `scripts/`.\n\nONE DEFECT FOUND AND NOT FIXED HERE: `scripts/test-ai-control-plane.mjs` copies the repository per\nscenario and its exclusion list misses `apps/desktop/sidecar`, the 196 MB packaged tree PW-0102\nproduces. With a packaged tree present the suite fills the disk and dies mid-copy -- observed as\n`ENOSPC ... copyfile '.../apps/desktop/sidecar/node.exe'`. It is the same failure the list's own\n`target` entry was added for. Unrelated to a killed dev server, so it is proposed separately rather\nthan folded in."
+          "evidence": "`npm run test` -> 22/22 turbo tasks; @liberty/web 1308, @liberty/persistence 268, @liberty/provider-sdk 288, @liberty/catalog-ingestion 152, @liberty/backend 36, all passing.\n\nTHE REGRESSION IS `scripts/test-desktop-target.mjs`, 9 assertions, ~10s, and it is wired into\n`npm run test:scripts` so it actually runs. That wiring is the reason the root package.json joined\nthis task's surface: `scripts/` is not a workspace, `turbo run test` never visits it, and\n`scripts/test-validate-repo.mjs` says so in its own header -- \"a vitest suite placed here would be\nwritten, committed, and never executed by any gate.\" The whole chain was run and every member\npasses: validate-env 38 scenarios, ai-control-plane 71 scenarios, validate-repo 20 groups,\ndesktop-target 9 assertions, cloud dispatcher 35 scenarios.\n\nWHAT THE REGRESSION ACTUALLY DOES, because the acceptance rules out the cheap version -- \"a test\nthat only exercises normal exit reproduces nothing, because normal exit already works.\" Each of four\ncases writes the WEB spelling into `apps/web/next-env.d.ts`, starts a real desktop dev server through\nthe wrapper in its own process group, WAITS UNTIL NEXT HAS REWRITTEN THE FILE to name the desktop\ndistDir, and only then kills it. The four terminations are the four the acceptance names: SIGTERM,\nSIGINT and SIGKILL to the process group, and SIGKILL to the parent alone, which orphans the dev\nserver and is the case where no code of ours runs at all. After each, the set of tracked files with\nuncommitted changes must equal a baseline captured at start.\n\nTHE NON-VACUITY CHECK IS PART OF THE TEST, not something I ran by hand: if the rewrite never happens,\nthe case FAILS with \"this case proved nothing\", rather than passing against a dev server that did not\nstart. Measured: the rewrite lands 1214 ms after spawn.\n\nIT COMPARES AGAINST A BASELINE rather than demanding a clean checkout, because a developer running\n`npm run test:scripts` mid-change has a dirty tree and a test that failed for that reason gets turned\noff.\n\nPROVEN NON-VACUOUS BY MUTATION, both directions:\n  - `git add -f apps/web/next-env.d.ts`  -> 2 failed, 7 passed; the failure names the re-tracking and\n                                            says why no cleanup hook can close it.\n  - removing the `.gitignore` line       -> 1 failed, 8 passed.\n  - restoring either                     -> 9 passed.\n\n`build-target.test.ts` KEEPS PASSING as the acceptance requires, and it was UPDATED rather than left\nalone because its old assertion encoded the implementation: it read the literal string\n`LIBERTY_BUILD_TARGET:'desktop'` out of `scripts[\"build:desktop\"]`, which was only true while the\none-liner was pasted into package.json. The test caught the change immediately -- \"expected 'node\n../../scripts/desktop-target.mjs…' to contain ...\" -- and the replacement is strictly stronger: all\nthree `*:desktop` scripts must route through the one wrapper, the wrapper itself must set the\nvariable, and the plain `build` must contain neither. Three files covered where one was, and a\ndesktop script that quietly stopped routing through the wrapper is now a failure. Its other\nassertion, that no shipped module under `apps/web/src` names the variable, is untouched and still\npasses -- the wrapper lives in `scripts/`.\n\nONE DEFECT FOUND AND NOT FIXED HERE: `scripts/test-ai-control-plane.mjs` copies the repository per\nscenario and its exclusion list misses `apps/desktop/sidecar`, the 196 MB packaged tree PW-0102\nproduces. With a packaged tree present the suite fills the disk and dies mid-copy -- observed as\n`ENOSPC ... copyfile '.../apps/desktop/sidecar/node.exe'`. It is the same failure the list's own\n`target` entry was added for. Unrelated to a killed dev server, so it is proposed separately rather\nthan folded in."
         }
       },
       "implementationAgent": "claude-infra",
@@ -13010,7 +13106,7 @@
       "id": "PL-0724",
       "priority": "P2",
       "lane": "Player",
-      "status": "REVIEW",
+      "status": "DONE",
       "title": "The diagnostics switch actually switches diagnostics off",
       "dependencies": [
         "PL-0723"
@@ -13049,7 +13145,7 @@
       ],
       "acceptance": "PW-0308 REQUIRES 'a diagnostics and telemetry control that is honest about what it does', and half of that is deliverable without this task while the other half is not. The HONEST part -- putting `decidePlaybackTelemetry`'s real reasoning in front of the viewer instead of in a details element in the player -- is PW-0308's and is done there. The CONTROL is this task, because `player-surface.tsx` passes `enabled: true` as a LITERAL and there is no stored field for a viewer's answer.\n\ngpt-architect's round-110 instruction covers exactly this case: 'If persistence/API support does not exist: create the smallest backend/data task required. Do not fake persistence with local component state.' A toggle wired to component state would be the faked version -- it would look like a setting, survive nothing, and change no telemetry.\n\nREQUIRED: a stored per-profile diagnostics preference, added to the EXISTING preferences shape rather than to a new one. PL-0723 established the contract, the table, the repository and the endpoint; this is one more field through all four, and a second preferences mechanism beside it would be the duplication that task was careful to avoid.\nREQUIRED: `player-surface.tsx` passes the viewer's answer where it currently passes `true`, so turning it off ACTUALLY STOPS CMCD BEING SENT. That is the whole claim and it must be asserted, not described.\nREQUIRED: OFF IS HONOURED EVEN WHEN EVERYTHING ELSE WOULD HAVE ALLOWED IT. `decidePlaybackTelemetry` already answers `telemetry_disabled` for a stated opt-out and applies `cmcd: { enabled: false }` as a real instruction rather than an omission, because the controller replays its configuration history; a viewer's off must reach that branch.\nREQUIRED: the default when nothing is stored is the behaviour the product has today, so this task changes what a viewer CAN DO and not what an unconfigured profile does.\nREQUIRED: the setting cannot turn telemetry ON where the decision would otherwise refuse it. A viewer may decline; a viewer may not override `collector_path_not_first_party`, `session_id_not_transmittable` or any other safety refusal. Asserted, because 'the toggle wins' is the obvious implementation and it is the wrong one.\n\nMUST NOT: send anything a viewer declined. MUST NOT weaken the first-party collector check, the identifier transmittability checks or the allowlist. MUST NOT add a client-supplied collector path, endpoint or key.\n\nOUT OF SCOPE: what CMCD carries, the collector route, and any new telemetry.",
       "notes": "FILED IN ROUND 110 while building PW-0308's settings screen, on the finding that player-surface.tsx line ~352 passes `enabled: true` as a literal into decidePlaybackTelemetry, and that nothing stores a viewer's answer. PW-0308 depends on this task, so the settings screen cannot be marked complete while its diagnostics control is disclosure-only.\n\nBACKLOG rather than READY: it depends on PL-0723, which is in REVIEW. Its allowedPaths overlap PL-0723's in packages/*, which is correct and is why it must not start until that task closes -- the control plane will refuse the claim while PL-0723 is active, which is the enforcement working.\n\nLane is Player rather than Frontend because the load-bearing change is in the player surface and the property being protected is what leaves the device.",
-      "owner": "claude-frontend",
+      "owner": null,
       "gateResults": {
         "typecheck": {
           "status": "pass",
@@ -13064,11 +13160,68 @@
           "by": "claude-frontend",
           "commitSha": "2c7c53fc10cdbe68f722c5069cd641c23625a454",
           "evidence": "npx vitest run apps/web packages: 186 files, 3677 passed, 1 skipped, 0 failures.\n\nTHE CLAIM THE ACCEPTANCE SAYS \"must be asserted, not described\" IS apps/web/src/components/player/player-surface.test.tsx, 12 cases, new. apps/web runs vitest in a node environment with no DOM and no customElements, so PlayerSurface is NOT rendered there and is not mocked there either -- a test proving a mock does not send CMCD is a test about the mock. What is decidable without a browser is asserted and the rest is named as somebody else's:\n\n - A CONTROL CASE FIRST, and without it the next one proves nothing: with the same inputs and `enabled: true` the decision IS enabled and the config IS `cmcd.enabled === true`. Otherwise \"declining switches it off\" could be true of a configuration that was already off for an unrelated reason.\n - DECLINING produces `cmcd: { enabled: false }` as a STATED instruction, not an absent block. The helper that reads it distinguishes three states -- true, false and absent -- precisely because the controller replays its configuration history and an absent block leaves a previous value in force, so \"off\" and \"unspecified\" must never be conflated.\n - FOUR SAFETY REFUSALS ARE DRIVEN WITH THE VIEWER ALLOWING diagnostics (null session id, untransmittable session id, untransmittable content id, non-first-party collector). Each still refuses, and none reports `telemetry_disabled`, because the viewer did not opt out. The acceptance calls this out by name: \"'the toggle wins' is the obvious implementation and it is the wrong one\".\n - SOURCE RULES, because the wiring is one expression inside an effect this environment cannot run: the prop is passed where the literal was, and `enabled:\\s*true` appears NOWHERE in the file. The second is the one that matters -- the prop could be added, wired, and a later edit could reintroduce the literal elsewhere with every other assertion still passing.\n - THE TWO DEFAULTS ARE ASSERTED TOGETHER. The component defaults `diagnosticsAllowed = true` and `NO_MEDIA_PREFERENCES.playbackDiagnostics` is `true`; if they ever disagreed, whether a viewer got diagnostics would depend on which path reached them.\n - IT DOES NOT FETCH: a client component fetching a preference during player start would be a network call on the path to first frame.\n\nA CASE IN THAT FILE ASSERTS AN ABSENCE OF COVERAGE RATHER THAN FAKING IT. A first draft drove the fifth refusal, `client_key_allowlist_empty`, by passing `clientKeys: []`. It failed with the decision still enabled -- there is no such input; PlaybackTelemetryInput carries enabled, contentId, sessionId, collectorPath, batchSize and intervalSeconds, and the allowlist is internal to playbackTelemetryConfig. Recorded in the file rather than deleted, because had the expectation been `toBe(true)` it would have PASSED and I would have believed the allowlist was covered. That refusal is asserted nowhere -- telemetry-decision.test.ts does not name it either -- and the gap is stated rather than papered over.\n\nA RULE WAS CORRECTED, NOT RELAXED. migration-journal.test.ts required `CREATE TABLE` in every migration, which was a property of the only two that existed rather than of migrations; 0002 is an ALTER. The rule now requires a schema-CHANGING statement with comments stripped first, and a new case proves it still refuses the thing it was written for -- including a file whose PROSE contains \"CREATE TABLE\" while its body does nothing.\n\nA PREMISE WAS MADE EXPLICIT. handler.test.ts's \"IS NOT THE SAME AS WRITING EMPTY LISTS\" relied on CHOSEN differing from the neutral value only in the two lists, so emptying them was enough to make values coincide. CHOSEN.playbackDiagnostics is `false` and the neutral value is `true`, so the coincidence is gone and the field is now stated in that write. The fixture was NOT changed to match the default, because a fixture agreeing with the default in a field cannot catch a read that drops it."
+        },
+        "security-review": {
+          "status": "pass",
+          "at": "2026-10-04T16:05:52.280Z",
+          "by": "gpt-architect",
+          "commitSha": "1474d0b4ee33d9ce5fd5ab49bdefd8f0c415dc32",
+          "judgementCommitSha": "1474d0b4ee33d9ce5fd5ab49bdefd8f0c415dc32",
+          "judgementCommitVerified": true,
+          "transcribedBy": "claude-lead",
+          "evidence": "PASS at 1474d0b4ee33d9ce5fd5ab49bdefd8f0c415dc32. TRANSCRIBED BY claude-lead from gpt-architect's round-112 verdict, which states \"PL-0724 — SECURITY REVIEW PASS + APPROVED\" and \"Security verdict: PASS\".\n\nFINGERPRINT CURRENCY: HEAD is the published head the verdict names, the tracked tree is clean, and `git status --porcelain` over this task's allowedPaths plus reviewDependencies reports nothing.\n\nTHE ELEVEN PROPERTIES ACCEPTED, quoted rather than summarised because a security gate should say what it judged: the viewer preference is persisted; the default remains enabled unless the viewer explicitly chooses otherwise; declining results in an explicit cmcd.enabled=false instruction; absence and false are not conflated; the viewer preference cannot override transport/security refusal; invalid or untransmittable session and content identifiers still refuse; the non-first-party collector refusal still wins; the player does not fetch settings during startup; no security or rights control became user-disableable; and the existing telemetry decision remains the authority.\n\nTHE TEST GAP IS RULED ON, AND THE RULING IS THE PART I WOULD HAVE GOT WRONG ON MY OWN. \"The uncovered internal client-key-allowlist refusal is a test gap, not evidence that this task weakened it. Do not fabricate coverage for it.\" Round 111's suite recorded that gap in its own words -- a first draft had invented an option name, `clientKeys`, which would have PASSED while asserting nothing had the expectation been inverted -- and left it stated rather than papered over. The verdict confirms that was the right call and forbids the obvious repair of faking it.\n\n\"If useful, file a narrow follow-up test task for that refusal.\" Filed as PL-0731, scoped to telemetry-decision.ts's own suite, which can reach the allowlist that PlaybackTelemetryInput cannot."
         }
       },
-      "updatedAt": "2026-10-04T15:41:56.909Z",
+      "updatedAt": "2026-10-04T16:05:59.087Z",
       "implementationAgent": "claude-frontend",
-      "implementationBaseSha": "2c7c53fc10cdbe68f722c5069cd641c23625a454"
+      "implementationBaseSha": "2c7c53fc10cdbe68f722c5069cd641c23625a454",
+      "review": {
+        "taskId": "PL-0724",
+        "implementationAgent": "claude-frontend",
+        "implementationOwner": "claude-frontend",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "1474d0b4ee33d9ce5fd5ab49bdefd8f0c415dc32",
+        "reviewedBaseSha": "2c7c53fc10cdbe68f722c5069cd641c23625a454",
+        "reviewedTreeHash": "d3b16d28338e223ff20a4d9dfcc63c45761bb1355adaa9e44e0135e964250e22",
+        "reviewedFileCount": 26,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [
+          "apps/web/src/components/player/telemetry-decision.ts",
+          "apps/web/src/components/settings",
+          "apps/web/src/app/api/v1/profiles/preferences",
+          "docs/SECURITY.md"
+        ],
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-10-04T16:05:52.569Z",
+        "evidence": "APPROVED at 1474d0b4ee33d9ce5fd5ab49bdefd8f0c415dc32. TRANSCRIBED BY claude-lead from gpt-architect's round-112 verdict: \"PL-0724 — SECURITY REVIEW PASS + APPROVED. The diagnostics preference is accepted.\"\n\nFingerprint checked as above. The security-review gate recorded separately carries the eleven accepted properties and the ruling on the client-key-allowlist test gap.\n\nWHAT THIS TASK DELIVERED, for a reader who arrives at this record later: a stored per-profile diagnostics preference carried through the contract, the table, the repository and the endpoint PL-0723 established rather than through a second mechanism, and `player-surface.tsx` passing the viewer's answer where `enabled: true` had been a literal. The field can only subtract -- `decidePlaybackTelemetry` tests `!enabled` first, so `false` short-circuits and `true` merely declines to, with every safety refusal below it still running and still winning.\n\nAND ONE CONSEQUENCE THIS TASK CAUSED, which the same verdict resolves separately: adding a required field to the strict preferences contract broke the settings form's PUT, so its client had to change in the same commit, and that file is under PW-0308's surface. gpt-architect re-approved PW-0308 at the current fingerprint rather than asking for the change to be reverted."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PL-0724",
+          "implementationAgent": "claude-frontend",
+          "implementationOwner": "claude-frontend",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "1474d0b4ee33d9ce5fd5ab49bdefd8f0c415dc32",
+          "reviewedBaseSha": "2c7c53fc10cdbe68f722c5069cd641c23625a454",
+          "reviewedTreeHash": "d3b16d28338e223ff20a4d9dfcc63c45761bb1355adaa9e44e0135e964250e22",
+          "reviewedFileCount": 26,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "apps/web/src/components/player/telemetry-decision.ts",
+            "apps/web/src/components/settings",
+            "apps/web/src/app/api/v1/profiles/preferences",
+            "docs/SECURITY.md"
+          ],
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-10-04T16:05:52.569Z",
+          "evidence": "APPROVED at 1474d0b4ee33d9ce5fd5ab49bdefd8f0c415dc32. TRANSCRIBED BY claude-lead from gpt-architect's round-112 verdict: \"PL-0724 — SECURITY REVIEW PASS + APPROVED. The diagnostics preference is accepted.\"\n\nFingerprint checked as above. The security-review gate recorded separately carries the eleven accepted properties and the ruling on the client-key-allowlist test gap.\n\nWHAT THIS TASK DELIVERED, for a reader who arrives at this record later: a stored per-profile diagnostics preference carried through the contract, the table, the repository and the endpoint PL-0723 established rather than through a second mechanism, and `player-surface.tsx` passing the viewer's answer where `enabled: true` had been a literal. The field can only subtract -- `decidePlaybackTelemetry` tests `!enabled` first, so `false` short-circuits and `true` merely declines to, with every safety refusal below it still running and still winning.\n\nAND ONE CONSEQUENCE THIS TASK CAUSED, which the same verdict resolves separately: adding a required field to the strict preferences contract broke the settings form's PUT, so its client had to change in the same commit, and that file is under PW-0308's surface. gpt-architect re-approved PW-0308 at the current fingerprint rather than asking for the change to be reverted."
+        }
+      ],
+      "completedAt": "2026-10-04T16:05:59.088Z"
     },
     {
       "id": "PL-0725",
@@ -13351,7 +13504,7 @@
       "id": "PL-0728",
       "priority": "P2",
       "lane": "Test",
-      "status": "BACKLOG",
+      "status": "READY",
       "title": "A standing check for a test that is skipped in every configuration this repository runs",
       "dependencies": [
         "PL-0717"
@@ -13380,7 +13533,7 @@
       "id": "PL-0729",
       "priority": "P2",
       "lane": "Infra",
-      "status": "REVIEW",
+      "status": "DONE",
       "title": "The installed-tree verifier does not ask for the notices file the product promises",
       "dependencies": [],
       "allowedPaths": [
@@ -13409,10 +13562,59 @@
           "evidence": "THE VERIFIER NOW REQUIRES THE NOTICES FILE, AND ALL THREE OUTCOMES WERE DRIVEN AGAINST REAL SYNTHETIC INSTALL TREES.\n\nnode scripts/windows/verify-install.mjs against a tree built to the shape sidecar.rs describes -- liberty-desktop.exe, sidecar/node.exe, sidecar/server/liberty-sidecar.js, sidecar/server/liberty-sidecar-layout.json, a .next/static tree, and the notices file:\n\n  A. complete install                 -> exit 0, SIX present paths (was five), including\n                                         \"present: /tmp/i-ok/sidecar/THIRD-PARTY-NOTICES.md\",\n                                         and \"the installed tree carries everything the shell resolves.\"\n  B. the same tree minus the notices  -> exit 1, \"missing 1 required path(s)\" naming\n                                         /tmp/i-no/sidecar/THIRD-PARTY-NOTICES.md\n  C. notices present but ZERO BYTES   -> exit 1, \"... The About screen tells viewers this file is\n                                         here -- and it is present but EMPTY\"\n\nB and C are the point. An existence check alone would have passed C, and a zero-byte notices file discharges nothing -- the same report-success-over-an-empty-set shape this repository has now met four times, most recently in the generator that writes this very file (PW-0208, this round).\n\nTHE PATH IS DERIVED, WHICH THE ACCEPTANCE REQUIRED. `collect-notices.mjs` writes into the SIDECAR ROOT, and the root is taken as the first segment of SERVER_RELATIVE_PATH -- the same Rust constant this script already reads for the runtime and entry-point paths. A literal \"sidecar\" would have been a third written-down copy of a path, which this script's own header records being bitten by once and which PL-0727 had to repair this round when a fourth copy went stale in a test.\n\nTHE EMPTINESS CHECK IS OPT-IN PER ENTRY, and only the notices file opts in. The executable and the runtime are binaries whose emptiness fails far more loudly; the layout file is parsed by code that reports its own failure. Applying a size check to all five would have been a wider change than the finding supports.\n\nNOTHING ELSE CHANGED. The four existing required paths, the static-tree shape check and the non-install refusal are untouched: `node scripts/windows/verify-install.mjs /tmp` still exits 1 against a directory that is not an install, which is the negative the Windows workflow runs on every job before it trusts a pass.\n\nRELATED SUITE STILL GREEN: node --test scripts/windows/test-lifecycle.mjs, 32 tests, 32 pass -- including PL-0727's cross-check that this file's executable literal still agrees with the derived identity.\n\nWHAT THIS DOES NOT DO: it says nothing about what the notices file CONTAINS. The generator owns that and PW-0208 is being judged on it. This is about whether the artifact reached the machine, and until a Windows packaging run completes, it has still never been evaluated against a real installation -- it is now capable of answering, which is the whole change."
         }
       },
-      "owner": "claude-infra",
+      "owner": null,
       "implementationAgent": "claude-infra",
-      "updatedAt": "2026-10-04T15:51:57.341Z",
-      "implementationBaseSha": "9331f20f51cdbd352abd8e926586b5dc40a18214"
+      "updatedAt": "2026-10-04T16:05:33.076Z",
+      "implementationBaseSha": "9331f20f51cdbd352abd8e926586b5dc40a18214",
+      "review": {
+        "taskId": "PL-0729",
+        "implementationAgent": "claude-infra",
+        "implementationOwner": "claude-infra",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "1474d0b4ee33d9ce5fd5ab49bdefd8f0c415dc32",
+        "reviewedBaseSha": "9331f20f51cdbd352abd8e926586b5dc40a18214",
+        "reviewedTreeHash": "9876608d887eaa5d1a0e97b99efa5ce0033d1666437d00496b7fffbbed2d7e87",
+        "reviewedFileCount": 6,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [
+          "apps/desktop/scripts/collect-notices.mjs",
+          "apps/desktop/scripts/package-sidecar.mjs",
+          "apps/desktop/src-tauri/tauri.conf.json",
+          "docs/LICENSING.md",
+          "apps/web/src/components/settings/about-section.tsx"
+        ],
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-10-04T16:05:25.657Z",
+        "evidence": "APPROVED at 1474d0b4ee33d9ce5fd5ab49bdefd8f0c415dc32. TRANSCRIBED BY claude-lead from gpt-architect's round-112 verdict document. FINGERPRINT CURRENCY CHECKED RATHER THAN ASSUMED: HEAD is exactly the published head the verdict names, the tracked tree is clean, and `git status --porcelain` restricted to this task's allowedPaths plus its reviewDependencies reports nothing. No commit exists after the reviewed one.\n\nTHE VERDICT: \"The installed-tree verifier now checks the actual obligation the product tells the viewer exists\", with six accepted findings -- the notices path derived rather than hardcoded, a complete synthetic install succeeding, a missing notices file failing, a ZERO-BYTE notices file failing, and the existing runtime/static/install checks and the negative non-install case both intact.\n\nAND THE LIMIT IS STATED IN THE VERDICT ITSELF, which this record carries forward rather than quietly dropping: \"This task proves presence/non-empty capability of the verifier. It does NOT prove licence content correctness, which remains PW-0208.\" It also has still never run against a real installation -- it is now CAPABLE of answering that question, which is the whole change and is not the same as having answered it."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PL-0729",
+          "implementationAgent": "claude-infra",
+          "implementationOwner": "claude-infra",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "1474d0b4ee33d9ce5fd5ab49bdefd8f0c415dc32",
+          "reviewedBaseSha": "9331f20f51cdbd352abd8e926586b5dc40a18214",
+          "reviewedTreeHash": "9876608d887eaa5d1a0e97b99efa5ce0033d1666437d00496b7fffbbed2d7e87",
+          "reviewedFileCount": 6,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "apps/desktop/scripts/collect-notices.mjs",
+            "apps/desktop/scripts/package-sidecar.mjs",
+            "apps/desktop/src-tauri/tauri.conf.json",
+            "docs/LICENSING.md",
+            "apps/web/src/components/settings/about-section.tsx"
+          ],
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-10-04T16:05:25.657Z",
+          "evidence": "APPROVED at 1474d0b4ee33d9ce5fd5ab49bdefd8f0c415dc32. TRANSCRIBED BY claude-lead from gpt-architect's round-112 verdict document. FINGERPRINT CURRENCY CHECKED RATHER THAN ASSUMED: HEAD is exactly the published head the verdict names, the tracked tree is clean, and `git status --porcelain` restricted to this task's allowedPaths plus its reviewDependencies reports nothing. No commit exists after the reviewed one.\n\nTHE VERDICT: \"The installed-tree verifier now checks the actual obligation the product tells the viewer exists\", with six accepted findings -- the notices path derived rather than hardcoded, a complete synthetic install succeeding, a missing notices file failing, a ZERO-BYTE notices file failing, and the existing runtime/static/install checks and the negative non-install case both intact.\n\nAND THE LIMIT IS STATED IN THE VERDICT ITSELF, which this record carries forward rather than quietly dropping: \"This task proves presence/non-empty capability of the verifier. It does NOT prove licence content correctness, which remains PW-0208.\" It also has still never run against a real installation -- it is now CAPABLE of answering that question, which is the whole change and is not the same as having answered it."
+        }
+      ],
+      "completedAt": "2026-10-04T16:05:33.076Z"
     },
     {
       "id": "PL-0730",
@@ -13442,6 +13644,58 @@
       "owner": null,
       "implementationAgent": "claude-lead",
       "updatedAt": "2026-10-04T15:54:19.150Z"
+    },
+    {
+      "id": "PL-0731",
+      "priority": "P3",
+      "lane": "Player",
+      "status": "READY",
+      "title": "The empty client-key allowlist refusal is asserted by nobody",
+      "dependencies": [],
+      "allowedPaths": [
+        "apps/web/src/components/player/telemetry-decision.test.ts"
+      ],
+      "reviewDependencies": [
+        "apps/web/src/components/player/telemetry-decision.ts",
+        "apps/web/src/components/player/player-surface.test.tsx"
+      ],
+      "preferredAgent": "claude-media",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "unit"
+      ],
+      "acceptance": "FILED AT gpt-architect's ROUND-112 INVITATION: \"If useful, file a narrow follow-up test task for that refusal.\"\n\n`decidePlaybackTelemetry` has five refusal codes. Four -- session_id_unavailable, session_id_not_transmittable, content_id_not_transmittable and collector_path_not_first_party -- are asserted in player-surface.test.ts, each driven with the viewer ALLOWING diagnostics so that a viewer's yes is shown not to override them. The fifth, client_key_allowlist_empty, is asserted NOWHERE: not in player-surface.test.tsx and not in telemetry-decision.test.ts.\n\nWHY IT WAS NOT COVERED THERE, carried from the round-111 record so this task does not repeat the mistake: it is NOT REACHABLE from `PlaybackTelemetryInput`, which carries enabled, contentId, sessionId, collectorPath, batchSize and intervalSeconds. The allowlist is internal to `playbackTelemetryConfig`. A first draft tried `clientKeys: []`, which is not an input; the object accepted the unknown key silently and the decision stayed enabled. Had that draft's expectation been inverted it would have PASSED while asserting nothing.\n\nREQUIRED: the refusal is driven through whatever surface actually reaches the allowlist, in telemetry-decision.ts's own suite.\nREQUIRED: a CONTROL CASE beside it -- the same inputs with a non-empty allowlist producing an enabled decision -- so the refusal is shown to be caused by the allowlist and not by something incidental.\nREQUIRED: the refused decision still carries `cmcd: { enabled: false }` as a stated instruction, for the reason the other four do: the controller replays its configuration history and an absent block leaves a previous value in force.\nREQUIRED: if the refusal turns out to be unreachable without changing production code, SAY SO AND STOP. gpt-architect's verdict is explicit -- \"Do not fabricate coverage for it\" -- and an unreachable branch honestly reported is worth more than a test that reaches it by widening an input for the test's benefit.\n\nOUT OF SCOPE: changing what the allowlist contains or how it is built.",
+      "notes": "FILED ROUND 112 by claude-lead at gpt-architect's explicit invitation in the PL-0724 security verdict. Narrow by design: one test file.",
+      "gateResults": {}
+    },
+    {
+      "id": "PL-0732",
+      "priority": "P2",
+      "lane": "Frontend",
+      "status": "READY",
+      "title": "The diagnostics setting is stored, consumed, and reachable by nobody",
+      "dependencies": [],
+      "allowedPaths": [
+        "apps/web/src/components/settings/diagnostics-disclosure.tsx",
+        "apps/web/src/components/settings/settings.test.tsx",
+        "e2e/tests/settings.spec.ts"
+      ],
+      "reviewDependencies": [
+        "apps/web/src/components/settings/language-preferences.tsx",
+        "apps/web/src/app/api/v1/profiles/preferences",
+        "packages/contracts/src/domains/preferences.ts",
+        "apps/web/src/components/player/telemetry-decision.ts"
+      ],
+      "preferredAgent": "claude-frontend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "e2e"
+      ],
+      "acceptance": "PL-0724 IS DONE AND ITS TITLE IS \"The diagnostics switch actually switches diagnostics off\". THERE IS NO SWITCH. What exists is the stored per-profile field, `player-surface.tsx` consuming it, and `language-preferences.tsx` round-tripping it WITHOUT EXPOSING IT -- it keeps what it read and sends it back, deliberately, because that form does not own the setting. A viewer cannot set it by any means.\n\nThat is not a defect in PL-0724, whose acceptance required the stored field and the player consuming it and which gpt-architect approved on exactly those terms. It is the half nobody owns yet, and `diagnostics-disclosure.tsx` still tells the viewer \"This page reports what the product decides; it cannot yet change it\" and names PL-0724 as the control that will -- a sentence that is now stale in the way this repository keeps being bitten by.\n\nREQUIRED: the diagnostics section carries a real control that writes the stored field through the existing /api/v1/profiles/preferences endpoint. No second mechanism; PL-0723 established the shape and PL-0724 added the field to it.\nREQUIRED: turning it off is PROVEN to persist across a reload against a real production build and a real PostgreSQL, the way PW-0308's language cases are. The reload is the test; everything before it would pass against component state.\nREQUIRED: the disclosure text is corrected. It must stop promising a control that now exists, and it must keep reporting the REAL decision from `decidePlaybackTelemetry` rather than describing it -- that property is what PW-0308 was approved for and must not be lost to make room for a toggle.\nREQUIRED: the control cannot turn telemetry ON where the decision refuses it. A viewer may decline; a viewer may not override `collector_path_not_first_party` or any other safety refusal. Asserted, because \"the toggle wins\" is the obvious implementation and PL-0724's acceptance already named it as the wrong one.\nREQUIRED: `language-preferences.tsx` keeps round-tripping the field rather than fighting the new control for it -- or the two are reconciled deliberately, with the reason recorded. Two forms writing one field is how a viewer's choice gets silently reverted by saving something unrelated.\n\nOUT OF SCOPE: what CMCD carries, the collector route, and any new telemetry.",
+      "notes": "FILED ROUND 112 by claude-lead while confirming gpt-architect's PW-0308 re-approval clause \"diagnostics preference now persists\". It does persist, and nobody can choose it. Filed rather than folded into PW-0308 (approved, closing this round) or PL-0724 (approved and closed).",
+      "gateResults": {}
     }
   ]
 }

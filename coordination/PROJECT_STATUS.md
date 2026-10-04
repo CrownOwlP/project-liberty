@@ -1,18 +1,18 @@
 # Project Liberty - Project Status
 
-> Generated 2026-10-04T15:54:29.243Z from the AI control plane.
+> Generated 2026-10-04T16:09:57.564Z from the AI control plane.
 
-**Overall completion:** 106/129 executable tasks (82%)
+**Overall completion:** 111/131 executable tasks (85%)
 
 ## Status summary
 
-- **BACKLOG:** 7
-- **READY:** 3
+- **BACKLOG:** 5
+- **READY:** 7
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 0
-- **REVIEW:** 6
+- **REVIEW:** 1
 - **BLOCKED:** 7
-- **DONE:** 106
+- **DONE:** 111
 - **CANCELED:** 0
 - **SUPERSEDED:** 4
 
@@ -27,27 +27,25 @@
 - **M6 — Shared-Agent Automation Bridge:** COMPLETE, 3/3 (100%)
 - **EXT — External Licensed Integrations:** BLOCKED, 0/2 (0%), 2 blocked
 - **M7 — Windows Desktop Shell + Native Playback:** COMPLETE, 4/4 (100%)
-- **PW — undefined:** IN_PROGRESS, 21/32 (66%), 1 blocked
+- **PW — undefined:** IN_PROGRESS, 23/32 (72%), 1 blocked
 
 ## Active work
 
-- **PL-0717** [REVIEW] The fail-closed deployment path is asserted by nobody, because CI runs two of three configurations — owner: claude-test
 - **PW-0208** [REVIEW] An LGPL-compatible libmpv and FFmpeg the product may actually ship — owner: claude-infra
-- **PW-0308** [REVIEW] Settings a viewer can actually change — owner: claude-frontend
-- **PW-0602** [REVIEW] The automated half of the Windows matrix, running on Windows — owner: claude-test
-- **PL-0724** [REVIEW] The diagnostics switch actually switches diagnostics off — owner: claude-frontend
-- **PL-0729** [REVIEW] The installed-tree verifier does not ask for the notices file the product promises — owner: claude-infra
 
 ## Dispatch classification
 
-- **READY_AND_EXECUTABLE:** 3
+- **READY_AND_EXECUTABLE:** 7
 - **READY_BUT_EXTERNAL:** 0
 - **BLOCKED:** 7
-- **BACKLOG (dependency-gated):** 7
+- **BACKLOG (dependency-gated):** 5
 
 ## Recommended executable wave
 
-No conflict-free executable tasks can be assigned with current agent capacity.
+- **PW-0503** -> claude-test (P1/Test) Install, upgrade, uninstall, reinstall — tested, not assumed
+- **PW-0603** -> claude-test (P1/Test) The commander's run sheet, and the evidence it produces
+- **PL-0732** -> claude-frontend (P2/Frontend) The diagnostics setting is stored, consumed, and reachable by nobody
+- **PL-0731** -> claude-media (P3/Player) The empty client-key allowlist refusal is asserted by nobody
 
 ## Queued for external agents
 
@@ -75,10 +73,10 @@ UNBLOCK WHEN: the commander runs Experiment 1a on real Windows hardware and hand
 
 - **gpt-architect:** 0/6 active (external lane; not locally executable)
 - **claude-lead:** 0/2 active
-- **claude-frontend:** 2/2 active
+- **claude-frontend:** 0/2 active
 - **claude-backend:** 0/2 active
 - **claude-media:** 0/2 active
-- **claude-test:** 2/2 active
+- **claude-test:** 0/2 active
 - **claude-security:** 0/1 active
-- **claude-infra:** 2/2 active
+- **claude-infra:** 1/2 active
 - **human-commander:** 0/99 active (external lane; not locally executable)

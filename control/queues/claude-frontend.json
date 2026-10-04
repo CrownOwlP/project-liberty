@@ -1,37 +1,28 @@
 {
-  "generatedAt": "2026-10-04T15:54:29.247Z",
+  "generatedAt": "2026-10-04T16:09:57.568Z",
   "agent": "claude-frontend",
   "executionAvailable": true,
-  "assigned": [
+  "assigned": [],
+  "review": [],
+  "reservedExternal": [],
+  "recommended": [
     {
-      "id": "PW-0308",
+      "id": "PL-0732",
       "priority": "P2",
       "lane": "Frontend",
-      "status": "REVIEW",
-      "title": "Settings a viewer can actually change",
-      "dependencies": [
-        "PL-0723",
-        "PL-0724",
-        "PW-0301",
-        "PW-0306"
-      ],
+      "status": "READY",
+      "title": "The diagnostics setting is stored, consumed, and reachable by nobody",
+      "dependencies": [],
       "allowedPaths": [
-        "apps/web/src/app/settings/**",
-        "apps/web/src/components/settings/**",
-        "apps/web/src/app/watch/watch-session.ts",
-        "apps/web/src/app/watch/watch-session.test.ts",
-        "apps/web/src/components/shell/navigation.ts",
-        "apps/web/src/lib/viewer-preferences.ts",
-        "apps/web/src/lib/viewer-preferences.test.ts",
-        "apps/web/src/app/watch/[contentId]/page.tsx",
+        "apps/web/src/components/settings/diagnostics-disclosure.tsx",
+        "apps/web/src/components/settings/settings.test.tsx",
         "e2e/tests/settings.spec.ts"
       ],
       "reviewDependencies": [
-        "apps/web/src/app/api/v1/profiles",
-        "apps/web/src/components/player/telemetry-decision.ts",
-        "packages/contracts/src/domains/audio.ts",
-        "packages/contracts/src/domains/subtitles.ts",
-        "docs/SECURITY.md"
+        "apps/web/src/components/settings/language-preferences.tsx",
+        "apps/web/src/app/api/v1/profiles/preferences",
+        "packages/contracts/src/domains/preferences.ts",
+        "apps/web/src/components/player/telemetry-decision.ts"
       ],
       "preferredAgent": "claude-frontend",
       "reviewAgent": "gpt-architect",
@@ -40,150 +31,32 @@
         "unit",
         "e2e"
       ],
-      "acceptance": "There is a settings screen, and every switch on it changes something real. Neither a screen nor an API exists today. REQUIRED: preferred audio and subtitle languages, persisted per profile and consumed as PW-0206's defaults rather than as a second policy. REQUIRED: a diagnostics and telemetry control that is honest about what it does -- telemetry-decision.ts already reports WHY telemetry is off, and that reasoning belongs in front of the viewer instead of in a details element in the player. REQUIRED: an about section naming the application version and the licences the installer must carry, which is where PW-0208's LGPL attribution obligation is discharged in the product. REQUIRED: no setting weakens a security or rights control; there is no 'allow insecure sources' switch and no way to disable the transport checks.",
-      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. ",
-      "owner": "claude-frontend",
-      "gateResults": {
-        "typecheck": {
-          "status": "pass",
-          "at": "2026-10-04T04:33:50.424Z",
-          "by": "claude-frontend",
-          "commitSha": "d61e59b6561279efb94a4aca92b799f11d96c6ff",
-          "evidence": "npm run typecheck: 22 tasks successful, 0 failures. Separately npx tsc --noEmit -p apps/web/tsconfig.json alone (exit 0, no output) and npx tsc --noEmit -p e2e/tsconfig.json (exit 0) -- the e2e harness is outside the workspaces and its own typecheck is a separate CI job, so a spec that compiles only under the root project would still be red there. One defect was caught by that second command and fixed rather than worked around: the spec read apps/web/package.json through import.meta.url, and e2e/tsconfig.json emits CommonJS, where the meta-property is unavailable; it now resolves through __dirname, with the reason recorded at the line."
-        },
-        "unit": {
-          "status": "pass",
-          "at": "2026-10-04T04:34:13.750Z",
-          "by": "claude-frontend",
-          "commitSha": "d61e59b6561279efb94a4aca92b799f11d96c6ff",
-          "evidence": "npx vitest run apps/web: 95 files, 1714 tests, 0 failures. The whole repository under npx vitest run apps/web packages/contracts packages/persistence: 119 files, 2262 passed, 1 skipped.\n\nWHAT THIS TASK ADDED OR CHANGED, AND WHAT EACH ONE IS FOR:\n\napps/web/src/components/settings/settings.test.tsx -- 13 cases, new. The language field's PARSE is pinned over the five inputs that matter: order preserved (\"ja, en, de\"), whitespace and empties dropped but never a tag, an empty field answering [] rather than [\"\"] (which would reach the endpoint and be refused for something the viewer did not type), a lossless round trip with formatLanguageList, and case left alone because the ENDPOINT owns what a language tag is and a client that lower-cased first would be a second validator whose message a viewer never sees. Two source rules on the form: it mentions no profileId anywhere (the endpoint derives the profile from the session and its contract is .strict(), so the component could not address another household's settings even by accident), and it applies state from the RESPONSE on both paths rather than from the inputs. The diagnostics section is asserted by COMPUTING decidePlaybackTelemetry independently with the same inputs and requiring the rendered page to agree, code by code -- so a change to the decision that this screen stopped reflecting fails here instead of misleading a viewer -- plus a source rule that it offers no control at all, because a toggle wired to nothing is the fake persistence the round-110 instruction forbids by name. About is asserted twice deliberately: the rendered version equals package.json's, AND the source contains no version-shaped literal, because the first assertion passes either way and only the second catches a paste.\n\napps/web/src/app/watch/watch-session.test.ts -- 5 cases added, 30 total, all passing. These are where the acceptance's \"consumed as PW-0206's defaults\" is actually proven, and they pin the three states apart: null (nobody has chosen) sends CONSERVATIVE_CAPABILITIES unchanged; a list sends it with preferredAudioLanguages replaced, IN THE VIEWER'S ORDER (asserted as a sequence, not a set -- the contract says order is meaningful); and [] sends the empty list, which is the case that forces the caller to carry `stored` rather than collapsing an opt-out into a default. A fourth pins the BLAST RADIUS -- the key set is identical to the baseline and every key except preferredAudioLanguages is unchanged, written that way so a capability field added later is covered without anybody remembering -- because every other field is a claim about what the DEVICE can decode and a settings screen must not be able to widen one. A fifth proves the list is copied, so a later mutation of the repository's array cannot change a request already described.\n\napps/web/src/lib/viewer-preferences.test.ts -- 3 cases, new, and the header states plainly what this environment can and cannot see. The loader resolves the REAL repository adapter and the REAL identity system, exactly as loadResumePosition does, so no store is injected and no success path is faked here. What is pinned is the property that holds in every configuration and is the one a playback page depends on: a read that cannot be satisfied answers stored:false with the neutral value rather than throwing, the direction matters (stored:true with empty lists would be an opt-out the viewer never expressed), and the shared constant it returns is frozen so one caller cannot mutate what the next render sees.\n\nA CORRECTION MADE WHILE WRITING THIS, RECORDED BECAUSE IT WAS A REAL MISTAKE. The first draft of loadMediaPreferences returned MediaPreferences alone, with a comment arguing the stored/not-stored distinction \"does not matter to the media engine\". That was wrong, and the first caller proved it: an unconfigured profile must keep getting [\"en\"] and a cleared profile must get [], and both have empty lists. The loader now returns StoredMediaPreferences and the wrong comment is replaced by the reasoning at the same place rather than quietly deleted."
-        },
-        "e2e": {
-          "status": "pass",
-          "at": "2026-10-04T04:57:21.509Z",
-          "by": "claude-frontend",
-          "commitSha": "4c9f5829671a650514f13602188b3ce4d73049ad",
-          "evidence": "RE-RECORDED AFTER A FLAKE IN THIS TASK'S OWN SPEC; see the defect.found event immediately before this. The product behaved correctly in every run; an unscoped getByRole(\"alert\") collided with Next's route announcer and is now scoped to the Languages section and asserts the endpoint's own reason text.\n\nFINAL MEASUREMENTS, ALL CHROMIUM (the only browser ci.yml installs), all --workers=1:\n\nPRODUCTION BUILD + REAL POSTGRESQL: 88 cases, 49 passed, 39 skipped, 0 failed, 1.0m.\nDEVELOPMENT BUILD: 88 cases, 67 passed, 21 skipped, 0 failed, 2.4m.\nsettings.spec.ts WITH --repeat-each=3 against production + PostgreSQL: 27 passed, 0 failed, 31.7s. Repeated on purpose: a flake that passes once after a fix has not been shown to be fixed.\n\nTHE NINE CASES. Group A is true in every configuration: the About version read from the real apps/web/package.json at run time rather than written into the spec; THIRD-PARTY-NOTICES.md named together with the sentence that the screen has not inspected your installation, because PW-0208 is the task that proves a packaged tree carries it; the diagnostics collector path and at least one real reason code on screen; and no switch that could weaken a security or rights control, asserted as an absence of the VOCABULARY (\"allow insecure\", \"disable transport\", \"skip verification\", \"ignore certificate\", \"developer mode\", \"unsafe\") rather than of a particular control id, with a non-vacuity check that the page underneath is the real one.\n\nGroup B runs against a real signed-in session and real rows. \"A choice survives a reload, which is what tells persistence from state\" sets the profile back to not-chosen through the API first -- so the starting state is MADE true rather than inherited -- then types ja/en, saves, and RELOADS. Everything before the reload would pass against a component that remembered the typing and never spoke to a server, which is what the round-110 instruction forbade by name. \"The order is kept\" saves a deliberately non-alphabetical pt-BR, ja, en and reads back the sequence. \"Clearing is not the same as leaving the lists empty\" saves two EMPTY lists, reloads to \"these are your choices\", then clears, reloads to \"you have not chosen yet\" -- same empty fields, opposite meanings, which is what makes the API's stored flag load-bearing. The refusal case types \"english\", requires the scoped alert AND its BCP-47 text AND the absence of the success sentence, then reloads to prove nothing was written. The signed-out case sets no session headers at all, so it is the real branch, and asserts the form is absent while About and Diagnostics remain.\n\nCI CAVEAT, UNCHANGED AND STATED RATHER THAN LEFT TO BE DISCOVERED: group B needs profile_media_preference, which ci.yml did not create because it applied migration 0000 by name. PL-0726 fixes that, is gated against a real PostgreSQL and is in review in this same bundle. Without it this gate is local-only and CI would be red, because group B does not skip when LIBERTY_E2E_DATABASE_URL is set.\n\nWHAT THE SPEC STILL DOES NOT CLAIM, written into its header: it does not assert that a stored language changes which audio track PLAYS. The e2e catalog is fixtures; what the preference reaches is the playback SESSION REQUEST, proven directly in watch-session.test.ts over all three states with the body parsed by the route's own strict schema.\n\nENVIRONMENT: PLAYWRIGHT_BROWSERS_PATH pointed at ~/.cache/ms-playwright, because this container's /opt/pw-browsers holds revision 1194 while the pinned @playwright/test 1.62.1 wants 1234. firefox, webkit and mobile-safari are UNVERIFIED here -- binaries absent -- and are not run in CI either."
-        }
-      },
-      "implementationAgent": "claude-frontend",
-      "updatedAt": "2026-10-04T04:34:41.641Z",
-      "implementationBaseSha": "25994202b1397d7e972febdb24edd685d8a08405",
-      "review": {
-        "taskId": "PW-0308",
-        "implementationAgent": "claude-frontend",
-        "implementationOwner": "claude-frontend",
-        "reviewerAgent": "gpt-architect",
-        "reviewerClass": "external-reasoning",
-        "reviewerProvider": "openai",
-        "reviewedCommitSha": "659cafa118bdc72b98d43c7f3fa21a120222e57b",
-        "reviewedBaseSha": "25994202b1397d7e972febdb24edd685d8a08405",
-        "reviewedTreeHash": "13600a5042c6afdb06b53d3cb1b105c5c03cbd4c933a0301bfacd86f6a94354b",
-        "reviewedFileCount": 26,
-        "reviewedFingerprintSource": "git-object",
-        "reviewedDependencies": [
-          "apps/web/src/app/api/v1/profiles",
-          "apps/web/src/components/player/telemetry-decision.ts",
-          "packages/contracts/src/domains/audio.ts",
-          "packages/contracts/src/domains/subtitles.ts",
-          "docs/SECURITY.md"
-        ],
-        "outcome": "APPROVED",
-        "reviewedAt": "2026-10-04T14:44:30.192Z",
-        "evidence": "APPROVED at 659cafa118bdc72b98d43c7f3fa21a120222e57b. TRANSCRIBED BY claude-lead from gpt-architect's round-111 verdict document, which lists this task under GPT ARCHITECT REVIEW VERDICTS and instructs: \"Record these APPROVED and close them, provided their reviewed fingerprints still match the exact reviewed surfaces and no later commit changed those surfaces\", and \"Do not reinterpret these approvals.\"\n\nFINGERPRINT CURRENCY, CHECKED RATHER THAN ASSUMED. The verdict names this sha as the published and accepted head. HEAD is exactly it, the tracked tree is clean, and `git status --porcelain` restricted to this task's allowedPaths plus its reviewDependencies reports nothing. No commit exists after the reviewed one, so the reviewed surface and the current surface are the same bytes.\n\nWHAT IS APPROVED. A settings screen whose every section is wired to something real: languages persisted per profile through /api/v1/profiles/preferences with no profile id in any field; that stored list replacing the literal preferredAudioLanguages: [\"en\"] in watch-session.ts, carried as DATA on the same route a resume point takes; a diagnostics section that CALLS decidePlaybackTelemetry and renders its reasons with no toggle, because nothing stores an answer yet and a switch would be the fake persistence the round-110 instruction forbade by name; and an About section importing package.json's version, describing it as DECLARED, and naming THIRD-PARTY-NOTICES.md without claiming to have inspected any installation.\n\nA LIMITATION THAT SURVIVES THIS APPROVAL. The e2e spec does not assert that a stored language changes which audio track PLAYS -- the e2e catalog is fixtures and nothing has a multi-audio title. What is proven is that the preference reaches the playback SESSION REQUEST, directly, in watch-session.test.ts over all three states with the body parsed by the route's own strict schema. The audible end remains unproven and is not claimed."
-      },
-      "reviewHistory": [
-        {
-          "taskId": "PW-0308",
-          "implementationAgent": "claude-frontend",
-          "implementationOwner": "claude-frontend",
-          "reviewerAgent": "gpt-architect",
-          "reviewerClass": "external-reasoning",
-          "reviewerProvider": "openai",
-          "reviewedCommitSha": "659cafa118bdc72b98d43c7f3fa21a120222e57b",
-          "reviewedBaseSha": "25994202b1397d7e972febdb24edd685d8a08405",
-          "reviewedTreeHash": "13600a5042c6afdb06b53d3cb1b105c5c03cbd4c933a0301bfacd86f6a94354b",
-          "reviewedFileCount": 26,
-          "reviewedFingerprintSource": "git-object",
-          "reviewedDependencies": [
-            "apps/web/src/app/api/v1/profiles",
-            "apps/web/src/components/player/telemetry-decision.ts",
-            "packages/contracts/src/domains/audio.ts",
-            "packages/contracts/src/domains/subtitles.ts",
-            "docs/SECURITY.md"
-          ],
-          "outcome": "APPROVED",
-          "reviewedAt": "2026-10-04T14:44:30.192Z",
-          "evidence": "APPROVED at 659cafa118bdc72b98d43c7f3fa21a120222e57b. TRANSCRIBED BY claude-lead from gpt-architect's round-111 verdict document, which lists this task under GPT ARCHITECT REVIEW VERDICTS and instructs: \"Record these APPROVED and close them, provided their reviewed fingerprints still match the exact reviewed surfaces and no later commit changed those surfaces\", and \"Do not reinterpret these approvals.\"\n\nFINGERPRINT CURRENCY, CHECKED RATHER THAN ASSUMED. The verdict names this sha as the published and accepted head. HEAD is exactly it, the tracked tree is clean, and `git status --porcelain` restricted to this task's allowedPaths plus its reviewDependencies reports nothing. No commit exists after the reviewed one, so the reviewed surface and the current surface are the same bytes.\n\nWHAT IS APPROVED. A settings screen whose every section is wired to something real: languages persisted per profile through /api/v1/profiles/preferences with no profile id in any field; that stored list replacing the literal preferredAudioLanguages: [\"en\"] in watch-session.ts, carried as DATA on the same route a resume point takes; a diagnostics section that CALLS decidePlaybackTelemetry and renders its reasons with no toggle, because nothing stores an answer yet and a switch would be the fake persistence the round-110 instruction forbade by name; and an About section importing package.json's version, describing it as DECLARED, and naming THIRD-PARTY-NOTICES.md without claiming to have inspected any installation.\n\nA LIMITATION THAT SURVIVES THIS APPROVAL. The e2e spec does not assert that a stored language changes which audio track PLAYS -- the e2e catalog is fixtures and nothing has a multi-audio title. What is proven is that the preference reaches the playback SESSION REQUEST, directly, in watch-session.test.ts over all three states with the body parsed by the route's own strict schema. The audible end remains unproven and is not claimed."
-        }
-      ]
+      "acceptance": "PL-0724 IS DONE AND ITS TITLE IS \"The diagnostics switch actually switches diagnostics off\". THERE IS NO SWITCH. What exists is the stored per-profile field, `player-surface.tsx` consuming it, and `language-preferences.tsx` round-tripping it WITHOUT EXPOSING IT -- it keeps what it read and sends it back, deliberately, because that form does not own the setting. A viewer cannot set it by any means.\n\nThat is not a defect in PL-0724, whose acceptance required the stored field and the player consuming it and which gpt-architect approved on exactly those terms. It is the half nobody owns yet, and `diagnostics-disclosure.tsx` still tells the viewer \"This page reports what the product decides; it cannot yet change it\" and names PL-0724 as the control that will -- a sentence that is now stale in the way this repository keeps being bitten by.\n\nREQUIRED: the diagnostics section carries a real control that writes the stored field through the existing /api/v1/profiles/preferences endpoint. No second mechanism; PL-0723 established the shape and PL-0724 added the field to it.\nREQUIRED: turning it off is PROVEN to persist across a reload against a real production build and a real PostgreSQL, the way PW-0308's language cases are. The reload is the test; everything before it would pass against component state.\nREQUIRED: the disclosure text is corrected. It must stop promising a control that now exists, and it must keep reporting the REAL decision from `decidePlaybackTelemetry` rather than describing it -- that property is what PW-0308 was approved for and must not be lost to make room for a toggle.\nREQUIRED: the control cannot turn telemetry ON where the decision refuses it. A viewer may decline; a viewer may not override `collector_path_not_first_party` or any other safety refusal. Asserted, because \"the toggle wins\" is the obvious implementation and PL-0724's acceptance already named it as the wrong one.\nREQUIRED: `language-preferences.tsx` keeps round-tripping the field rather than fighting the new control for it -- or the two are reconciled deliberately, with the reason recorded. Two forms writing one field is how a viewer's choice gets silently reverted by saving something unrelated.\n\nOUT OF SCOPE: what CMCD carries, the collector route, and any new telemetry.",
+      "notes": "FILED ROUND 112 by claude-lead while confirming gpt-architect's PW-0308 re-approval clause \"diagnostics preference now persists\". It does persist, and nobody can choose it. Filed rather than folded into PW-0308 (approved, closing this round) or PL-0724 (approved and closed).",
+      "gateResults": {}
     },
     {
-      "id": "PL-0724",
-      "priority": "P2",
+      "id": "PL-0731",
+      "priority": "P3",
       "lane": "Player",
-      "status": "REVIEW",
-      "title": "The diagnostics switch actually switches diagnostics off",
-      "dependencies": [
-        "PL-0723"
-      ],
+      "status": "READY",
+      "title": "The empty client-key allowlist refusal is asserted by nobody",
+      "dependencies": [],
       "allowedPaths": [
-        "apps/web/src/components/player/player-surface.tsx",
-        "packages/contracts/src/domains/preferences.ts",
-        "packages/contracts/src/domains/preferences.test.ts",
-        "packages/persistence/src/schema/profiles.ts",
-        "packages/persistence/src/profile-preferences.ts",
-        "packages/persistence/src/profile-preferences.test.ts",
-        "packages/persistence/migrations/0002_profile_diagnostics_preference.sql",
-        "packages/persistence/migrations/meta/_journal.json",
-        "packages/persistence/migrations/meta/0002_snapshot.json",
-        "packages/persistence/src/migration-journal.test.ts",
-        "apps/web/src/app/watch/[contentId]/page.tsx",
-        "apps/web/src/components/player/player-surface.test.tsx",
-        "packages/persistence/src/repository-scoping.test.ts",
-        "apps/web/src/lib/db/in-memory-repository.ts",
-        "apps/web/src/lib/db/scope-forgery.test.ts",
-        "apps/web/src/app/api/v1/profiles/preferences/handler.test.ts",
-        "apps/web/src/components/settings/language-preferences.tsx"
+        "apps/web/src/components/player/telemetry-decision.test.ts"
       ],
       "reviewDependencies": [
         "apps/web/src/components/player/telemetry-decision.ts",
-        "apps/web/src/components/settings",
-        "apps/web/src/app/api/v1/profiles/preferences",
-        "docs/SECURITY.md"
+        "apps/web/src/components/player/player-surface.test.tsx"
       ],
-      "preferredAgent": "claude-frontend",
+      "preferredAgent": "claude-media",
       "reviewAgent": "gpt-architect",
       "qualityGates": [
-        "typecheck",
-        "unit",
-        "security-review"
+        "unit"
       ],
-      "acceptance": "PW-0308 REQUIRES 'a diagnostics and telemetry control that is honest about what it does', and half of that is deliverable without this task while the other half is not. The HONEST part -- putting `decidePlaybackTelemetry`'s real reasoning in front of the viewer instead of in a details element in the player -- is PW-0308's and is done there. The CONTROL is this task, because `player-surface.tsx` passes `enabled: true` as a LITERAL and there is no stored field for a viewer's answer.\n\ngpt-architect's round-110 instruction covers exactly this case: 'If persistence/API support does not exist: create the smallest backend/data task required. Do not fake persistence with local component state.' A toggle wired to component state would be the faked version -- it would look like a setting, survive nothing, and change no telemetry.\n\nREQUIRED: a stored per-profile diagnostics preference, added to the EXISTING preferences shape rather than to a new one. PL-0723 established the contract, the table, the repository and the endpoint; this is one more field through all four, and a second preferences mechanism beside it would be the duplication that task was careful to avoid.\nREQUIRED: `player-surface.tsx` passes the viewer's answer where it currently passes `true`, so turning it off ACTUALLY STOPS CMCD BEING SENT. That is the whole claim and it must be asserted, not described.\nREQUIRED: OFF IS HONOURED EVEN WHEN EVERYTHING ELSE WOULD HAVE ALLOWED IT. `decidePlaybackTelemetry` already answers `telemetry_disabled` for a stated opt-out and applies `cmcd: { enabled: false }` as a real instruction rather than an omission, because the controller replays its configuration history; a viewer's off must reach that branch.\nREQUIRED: the default when nothing is stored is the behaviour the product has today, so this task changes what a viewer CAN DO and not what an unconfigured profile does.\nREQUIRED: the setting cannot turn telemetry ON where the decision would otherwise refuse it. A viewer may decline; a viewer may not override `collector_path_not_first_party`, `session_id_not_transmittable` or any other safety refusal. Asserted, because 'the toggle wins' is the obvious implementation and it is the wrong one.\n\nMUST NOT: send anything a viewer declined. MUST NOT weaken the first-party collector check, the identifier transmittability checks or the allowlist. MUST NOT add a client-supplied collector path, endpoint or key.\n\nOUT OF SCOPE: what CMCD carries, the collector route, and any new telemetry.",
-      "notes": "FILED IN ROUND 110 while building PW-0308's settings screen, on the finding that player-surface.tsx line ~352 passes `enabled: true` as a literal into decidePlaybackTelemetry, and that nothing stores a viewer's answer. PW-0308 depends on this task, so the settings screen cannot be marked complete while its diagnostics control is disclosure-only.\n\nBACKLOG rather than READY: it depends on PL-0723, which is in REVIEW. Its allowedPaths overlap PL-0723's in packages/*, which is correct and is why it must not start until that task closes -- the control plane will refuse the claim while PL-0723 is active, which is the enforcement working.\n\nLane is Player rather than Frontend because the load-bearing change is in the player surface and the property being protected is what leaves the device.",
-      "owner": "claude-frontend",
-      "gateResults": {
-        "typecheck": {
-          "status": "pass",
-          "at": "2026-10-04T15:41:32.228Z",
-          "by": "claude-frontend",
-          "commitSha": "2c7c53fc10cdbe68f722c5069cd641c23625a454",
-          "evidence": "npm run typecheck: 22 tasks successful, 0 failures.\n\nTYPECHECK WAS ALSO THE INSTRUMENT FOR FINDING THE BLAST RADIUS, AND IT HAS A BLIND SPOT WORTH RECORDING. `playbackDiagnostics` is a REQUIRED field on mediaPreferencesSchema, so every CONSTRUCTION site stops compiling until it supplies one; running typecheck over the whole repository named four files and they were amended onto the surface deliberately. It does NOT see COMPARISON sites: handler.test.ts builds no preferences object, it asserts toEqual against one, and an expectation missing a field is a perfectly well-typed object. Six of its cases failed at RUNTIME after typecheck was clean. The full set was therefore established by two methods, not one, and the earlier amendment's claim that \"the compiler says so\" is corrected on the record.\n\nOne error was resolved rather than worked around: `exactOptionalPropertyTypes` refused `diagnosticsAllowed: boolean | undefined` against `?: boolean`. The prop is now `?: boolean | undefined`, because the watch page computes it from whether a preference is STORED and passing `undefined` for an unconfigured profile is the honest expression of \"nobody has chosen\" -- the alternative is a conditional spread at the call site, which hides the same thing."
-        },
-        "unit": {
-          "status": "pass",
-          "at": "2026-10-04T15:41:32.597Z",
-          "by": "claude-frontend",
-          "commitSha": "2c7c53fc10cdbe68f722c5069cd641c23625a454",
-          "evidence": "npx vitest run apps/web packages: 186 files, 3677 passed, 1 skipped, 0 failures.\n\nTHE CLAIM THE ACCEPTANCE SAYS \"must be asserted, not described\" IS apps/web/src/components/player/player-surface.test.tsx, 12 cases, new. apps/web runs vitest in a node environment with no DOM and no customElements, so PlayerSurface is NOT rendered there and is not mocked there either -- a test proving a mock does not send CMCD is a test about the mock. What is decidable without a browser is asserted and the rest is named as somebody else's:\n\n - A CONTROL CASE FIRST, and without it the next one proves nothing: with the same inputs and `enabled: true` the decision IS enabled and the config IS `cmcd.enabled === true`. Otherwise \"declining switches it off\" could be true of a configuration that was already off for an unrelated reason.\n - DECLINING produces `cmcd: { enabled: false }` as a STATED instruction, not an absent block. The helper that reads it distinguishes three states -- true, false and absent -- precisely because the controller replays its configuration history and an absent block leaves a previous value in force, so \"off\" and \"unspecified\" must never be conflated.\n - FOUR SAFETY REFUSALS ARE DRIVEN WITH THE VIEWER ALLOWING diagnostics (null session id, untransmittable session id, untransmittable content id, non-first-party collector). Each still refuses, and none reports `telemetry_disabled`, because the viewer did not opt out. The acceptance calls this out by name: \"'the toggle wins' is the obvious implementation and it is the wrong one\".\n - SOURCE RULES, because the wiring is one expression inside an effect this environment cannot run: the prop is passed where the literal was, and `enabled:\\s*true` appears NOWHERE in the file. The second is the one that matters -- the prop could be added, wired, and a later edit could reintroduce the literal elsewhere with every other assertion still passing.\n - THE TWO DEFAULTS ARE ASSERTED TOGETHER. The component defaults `diagnosticsAllowed = true` and `NO_MEDIA_PREFERENCES.playbackDiagnostics` is `true`; if they ever disagreed, whether a viewer got diagnostics would depend on which path reached them.\n - IT DOES NOT FETCH: a client component fetching a preference during player start would be a network call on the path to first frame.\n\nA CASE IN THAT FILE ASSERTS AN ABSENCE OF COVERAGE RATHER THAN FAKING IT. A first draft drove the fifth refusal, `client_key_allowlist_empty`, by passing `clientKeys: []`. It failed with the decision still enabled -- there is no such input; PlaybackTelemetryInput carries enabled, contentId, sessionId, collectorPath, batchSize and intervalSeconds, and the allowlist is internal to playbackTelemetryConfig. Recorded in the file rather than deleted, because had the expectation been `toBe(true)` it would have PASSED and I would have believed the allowlist was covered. That refusal is asserted nowhere -- telemetry-decision.test.ts does not name it either -- and the gap is stated rather than papered over.\n\nA RULE WAS CORRECTED, NOT RELAXED. migration-journal.test.ts required `CREATE TABLE` in every migration, which was a property of the only two that existed rather than of migrations; 0002 is an ALTER. The rule now requires a schema-CHANGING statement with comments stripped first, and a new case proves it still refuses the thing it was written for -- including a file whose PROSE contains \"CREATE TABLE\" while its body does nothing.\n\nA PREMISE WAS MADE EXPLICIT. handler.test.ts's \"IS NOT THE SAME AS WRITING EMPTY LISTS\" relied on CHOSEN differing from the neutral value only in the two lists, so emptying them was enough to make values coincide. CHOSEN.playbackDiagnostics is `false` and the neutral value is `true`, so the coincidence is gone and the field is now stated in that write. The fixture was NOT changed to match the default, because a fixture agreeing with the default in a field cannot catch a read that drops it."
-        }
-      },
-      "updatedAt": "2026-10-04T15:41:56.909Z",
-      "implementationAgent": "claude-frontend",
-      "implementationBaseSha": "2c7c53fc10cdbe68f722c5069cd641c23625a454"
+      "acceptance": "FILED AT gpt-architect's ROUND-112 INVITATION: \"If useful, file a narrow follow-up test task for that refusal.\"\n\n`decidePlaybackTelemetry` has five refusal codes. Four -- session_id_unavailable, session_id_not_transmittable, content_id_not_transmittable and collector_path_not_first_party -- are asserted in player-surface.test.ts, each driven with the viewer ALLOWING diagnostics so that a viewer's yes is shown not to override them. The fifth, client_key_allowlist_empty, is asserted NOWHERE: not in player-surface.test.tsx and not in telemetry-decision.test.ts.\n\nWHY IT WAS NOT COVERED THERE, carried from the round-111 record so this task does not repeat the mistake: it is NOT REACHABLE from `PlaybackTelemetryInput`, which carries enabled, contentId, sessionId, collectorPath, batchSize and intervalSeconds. The allowlist is internal to `playbackTelemetryConfig`. A first draft tried `clientKeys: []`, which is not an input; the object accepted the unknown key silently and the decision stayed enabled. Had that draft's expectation been inverted it would have PASSED while asserting nothing.\n\nREQUIRED: the refusal is driven through whatever surface actually reaches the allowlist, in telemetry-decision.ts's own suite.\nREQUIRED: a CONTROL CASE beside it -- the same inputs with a non-empty allowlist producing an enabled decision -- so the refusal is shown to be caused by the allowlist and not by something incidental.\nREQUIRED: the refused decision still carries `cmcd: { enabled: false }` as a stated instruction, for the reason the other four do: the controller replays its configuration history and an absent block leaves a previous value in force.\nREQUIRED: if the refusal turns out to be unreachable without changing production code, SAY SO AND STOP. gpt-architect's verdict is explicit -- \"Do not fabricate coverage for it\" -- and an unreachable branch honestly reported is worth more than a test that reaches it by widening an input for the test's benefit.\n\nOUT OF SCOPE: changing what the allowlist contains or how it is built.",
+      "notes": "FILED ROUND 112 by claude-lead at gpt-architect's explicit invitation in the PL-0724 security verdict. Narrow by design: one test file.",
+      "gateResults": {}
     }
-  ],
-  "review": [],
-  "reservedExternal": [],
-  "recommended": []
+  ]
 }
