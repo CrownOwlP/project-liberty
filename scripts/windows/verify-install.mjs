@@ -114,16 +114,65 @@ const required = [
     why:
       "the layout file the bootstrap reads to find the build; without it the sidecar exits " +
       "before it binds, with a diagnostic no user can act on"
+  },
+  {
+    /*
+     * THE ATTRIBUTION OBLIGATION, AS A FILE ON THE MACHINE (PL-0729).
+     *
+     * `docs/LICENSING.md` section 7 is explicit that an LGPL attribution
+     * obligation has to be satisfied by something the USER RECEIVES, not by
+     * a file in a repository. This script is the only check in the project
+     * that looks at a real installed tree on a real Windows machine, and it
+     * did not ask for this file -- so the one place the obligation could be
+     * verified was the one place that did not look.
+     *
+     * THE PRODUCT ALSO MAKES THE CLAIM OUT LOUD. The About section of the
+     * settings screen tells a viewer "The desktop installer carries those
+     * notices as THIRD-PARTY-NOTICES.md". It says in the next sentence that
+     * it has not inspected their installation, which was the honest thing to
+     * write and is not a substitute for somebody inspecting one.
+     *
+     * THE PATH IS DERIVED, NOT WRITTEN DOWN AGAIN. `collect-notices.mjs`
+     * writes into the SIDECAR ROOT, and that root is the first segment of
+     * `SERVER_RELATIVE_PATH` -- the same Rust constant this file already
+     * reads for the two paths above. A literal "sidecar" here would be the
+     * third copy of a path, which is the drift this script's own header
+     * records having been bitten by, and which PL-0727 had to repair when a
+     * fourth copy went stale in a test.
+     *
+     * NON-EMPTY, because a zero-byte file passes an existence check and
+     * discharges nothing. That is the same report-success-over-an-empty-set
+     * shape this repository has now met four times, most recently in the
+     * generator that writes this very file.
+     */
+    path: join(root, serverRelative.split("/")[0] ?? "", "THIRD-PARTY-NOTICES.md"),
+    nonEmpty: true,
+    why:
+      "THE THIRD-PARTY NOTICES, which is how this build's attribution obligations reach the " +
+      "person who received it. docs/LICENSING.md section 7: the obligation is met by something " +
+      "the user receives. The About screen tells viewers this file is here"
   }
 ];
 
 const missing = [];
 for (const entry of required) {
-  if (existsSync(entry.path)) {
-    console.log(`present: ${entry.path}`);
-  } else {
+  if (!existsSync(entry.path)) {
     missing.push(entry);
+    continue;
   }
+  /*
+   * AN ENTRY MAY REQUIRE CONTENT, NOT ONLY PRESENCE (PL-0729). Only the
+   * notices file asks for this today: the executable and the runtime are
+   * binaries whose emptiness would fail far more loudly, and the layout
+   * file is read by code that reports its own parse failure. A zero-byte
+   * notices file is the one of the five that would be silently accepted and
+   * discharge nothing.
+   */
+  if (entry.nonEmpty === true && statSync(entry.path).size === 0) {
+    missing.push({ ...entry, why: `${entry.why} -- and it is present but EMPTY` });
+    continue;
+  }
+  console.log(`present: ${entry.path}`);
 }
 
 /*

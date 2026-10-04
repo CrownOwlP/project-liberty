@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-04T15:50:27.654Z",
+  "generatedAt": "2026-10-04T15:52:12.998Z",
   "agent": "claude-infra",
   "executionAvailable": true,
   "assigned": [
@@ -86,6 +86,44 @@
           "evidence": "CHANGES REQUESTED at 659cafa118bdc72b98d43c7f3fa21a120222e57b. TRANSCRIBED BY claude-lead from gpt-architect's round-111 verdict document, which lists PW-0208 under \"NOT APPROVED YET\" and says: \"PW-0208 still requires stronger evidence about the contents of the actual Windows package/distribution tree.\"\n\nThe same document's section 3 states what that evidence has to cover, and it is quoted here in full rather than paraphrased, because it is the acceptance this task is now being measured against:\n\n  - actual libmpv/FFmpeg artifact included, if included\n  - exact provenance/version/pin\n  - build/configuration evidence available for what ships\n  - GPL components excluded where required by the selected LGPL distribution strategy\n  - THIRD-PARTY-NOTICES or equivalent actually present in the package tree\n  - Node licence actually present beside the shipped runtime where required\n  - dependency licence collection reflects the actual packaged dependencies\n  - written-offer/attribution material actually appears where the distribution strategy requires it\n  - strict notice generation fails on missing evidence rather than silently producing a green result\n\nAND THE BOUNDARY IT RESTATES, which this task's own acceptance already carries: \"Do NOT guess the H.264/HEVC patent decision. H.264/HEVC remains a commander/legal decision and must remain explicitly separate from the LGPL evidence. Do not enable patent-dependent functionality based on an assumption.\"\n\nWHAT THE VERDICT IS OBJECTING TO, read plainly: the distinction between evidence about SOURCE AND SCRIPTS and evidence about THE TREE THAT SHIPS. The recorded `build` gate is about what the packaging is configured to do. \"The actual Windows package/distribution tree\" is what came out of it, and the round-110 instruction said the same thing in fewer words -- \"Do not infer packaged contents solely from source intent.\"\n\nReturned to IN_PROGRESS. The gate results are discarded by `request-changes` as the control plane intends: the `build` gate described a tree, and the next one has to describe the tree that is actually inspected."
         }
       ]
+    },
+    {
+      "id": "PL-0729",
+      "priority": "P2",
+      "lane": "Infra",
+      "status": "REVIEW",
+      "title": "The installed-tree verifier does not ask for the notices file the product promises",
+      "dependencies": [],
+      "allowedPaths": [
+        "scripts/windows/verify-install.mjs"
+      ],
+      "reviewDependencies": [
+        "apps/desktop/scripts/collect-notices.mjs",
+        "apps/desktop/scripts/package-sidecar.mjs",
+        "apps/desktop/src-tauri/tauri.conf.json",
+        "docs/LICENSING.md",
+        "apps/web/src/components/settings/about-section.tsx"
+      ],
+      "preferredAgent": "claude-infra",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "unit"
+      ],
+      "acceptance": "scripts/windows/verify-install.mjs is the only check in this repository that inspects a REAL INSTALLED TREE on a real Windows machine. It requires four paths: the shell executable, the Node runtime from NODE_RELATIVE_PATH, the server entry from SERVER_RELATIVE_PATH, and liberty-sidecar-layout.json. THIRD-PARTY-NOTICES.md is not among them.\\n\\nThat file is how an LGPL attribution obligation reaches the person who received the binary -- docs/LICENSING.md section 7 says the obligation must be met by something the user receives -- and the product makes a claim about it in the UI: PW-0308's About section tells a viewer the installer carries it. Nothing checks either statement against an installation.\\n\\nREQUIRED: the verifier requires THIRD-PARTY-NOTICES.md in the installed tree, at the path packaging actually puts it, and fails when it is absent.\\nREQUIRED: it also fails on an EMPTY file. A zero-byte notices file satisfies an existence check and discharges nothing, and this repository has now met the report-success-over-an-empty-set shape three times (PL-0714, PL-0726, PW-0208's own generator).\\nREQUIRED: the path is DERIVED rather than written down a second time if anything already derives it. verify-install.mjs's own header records that a path written down in a third place had already drifted once, and PL-0727 was the correction when a fourth copy went stale.\\nREQUIRED: non-vacuity. The new requirement must be shown to FAIL against a directory that is an install minus the notices file, not merely to pass against one that has it.\\n\\nOUT OF SCOPE: what the notices file CONTAINS. The generator owns that and PW-0208 is judging it; this is about whether the artifact reached the machine.",
+      "notes": "FILED ROUND 111 by claude-infra during PW-0208. Not fixed there: scripts/windows/** is outside PW-0208's allowedPaths (apps/desktop/**, docs/LICENSING.md). scripts/windows/verify-install.mjs is reserved by no ACTIVE task -- PW-0501 and PW-0107 are DONE, PW-0502 and PW-0503 are READY and unowned, PL-0727 holds only test-lifecycle.mjs -- so this is actionable now, though it collides with PW-0502 and PW-0503's scripts/windows/** when either is claimed.",
+      "gateResults": {
+        "unit": {
+          "status": "pass",
+          "at": "2026-10-04T15:51:56.930Z",
+          "by": "claude-infra",
+          "commitSha": "9331f20f51cdbd352abd8e926586b5dc40a18214",
+          "evidence": "THE VERIFIER NOW REQUIRES THE NOTICES FILE, AND ALL THREE OUTCOMES WERE DRIVEN AGAINST REAL SYNTHETIC INSTALL TREES.\n\nnode scripts/windows/verify-install.mjs against a tree built to the shape sidecar.rs describes -- liberty-desktop.exe, sidecar/node.exe, sidecar/server/liberty-sidecar.js, sidecar/server/liberty-sidecar-layout.json, a .next/static tree, and the notices file:\n\n  A. complete install                 -> exit 0, SIX present paths (was five), including\n                                         \"present: /tmp/i-ok/sidecar/THIRD-PARTY-NOTICES.md\",\n                                         and \"the installed tree carries everything the shell resolves.\"\n  B. the same tree minus the notices  -> exit 1, \"missing 1 required path(s)\" naming\n                                         /tmp/i-no/sidecar/THIRD-PARTY-NOTICES.md\n  C. notices present but ZERO BYTES   -> exit 1, \"... The About screen tells viewers this file is\n                                         here -- and it is present but EMPTY\"\n\nB and C are the point. An existence check alone would have passed C, and a zero-byte notices file discharges nothing -- the same report-success-over-an-empty-set shape this repository has now met four times, most recently in the generator that writes this very file (PW-0208, this round).\n\nTHE PATH IS DERIVED, WHICH THE ACCEPTANCE REQUIRED. `collect-notices.mjs` writes into the SIDECAR ROOT, and the root is taken as the first segment of SERVER_RELATIVE_PATH -- the same Rust constant this script already reads for the runtime and entry-point paths. A literal \"sidecar\" would have been a third written-down copy of a path, which this script's own header records being bitten by once and which PL-0727 had to repair this round when a fourth copy went stale in a test.\n\nTHE EMPTINESS CHECK IS OPT-IN PER ENTRY, and only the notices file opts in. The executable and the runtime are binaries whose emptiness fails far more loudly; the layout file is parsed by code that reports its own failure. Applying a size check to all five would have been a wider change than the finding supports.\n\nNOTHING ELSE CHANGED. The four existing required paths, the static-tree shape check and the non-install refusal are untouched: `node scripts/windows/verify-install.mjs /tmp` still exits 1 against a directory that is not an install, which is the negative the Windows workflow runs on every job before it trusts a pass.\n\nRELATED SUITE STILL GREEN: node --test scripts/windows/test-lifecycle.mjs, 32 tests, 32 pass -- including PL-0727's cross-check that this file's executable literal still agrees with the derived identity.\n\nWHAT THIS DOES NOT DO: it says nothing about what the notices file CONTAINS. The generator owns that and PW-0208 is being judged on it. This is about whether the artifact reached the machine, and until a Windows packaging run completes, it has still never been evaluated against a real installation -- it is now capable of answering, which is the whole change."
+        }
+      },
+      "owner": "claude-infra",
+      "implementationAgent": "claude-infra",
+      "updatedAt": "2026-10-04T15:51:57.341Z",
+      "implementationBaseSha": "9331f20f51cdbd352abd8e926586b5dc40a18214"
     }
   ],
   "review": [],
@@ -120,32 +158,6 @@
       "acceptance": "The application can tell a user what version it is and can update itself safely, or states plainly that it cannot yet and why. REQUIRED: an update mechanism whose payloads are signature-verified -- an updater that fetches and executes an unverified binary is a remote code execution feature, and SECURITY.md's threat list already ranks unauthorized access above convenience. REQUIRED: the update endpoint is pinned and allowlisted like every other egress in this repository. REQUIRED: a rollback story, or a stated decision that there is none and what a user does instead. REQUIRED: the version is derived from one source shared with PW-0501. IF SIGNING IS UNAVAILABLE the update path must be disabled by default and say so, rather than shipping an unverified one -- an unsigned auto-updater is worse than no updater, and that dependency goes to LAST_MILE rather than being worked around.",
       "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. SURFACE NOTE: this task's allowedPaths name directories that do not exist yet. The evidence-based narrowing procedure applies to reconciling work already in history; for genuinely new work the surface is the smallest set of paths the acceptance can be satisfied within, and it is narrowed again from the diff before review if it turns out to be wider than what was written. ",
       "owner": null,
-      "gateResults": {}
-    },
-    {
-      "id": "PL-0729",
-      "priority": "P2",
-      "lane": "Infra",
-      "status": "READY",
-      "title": "The installed-tree verifier does not ask for the notices file the product promises",
-      "dependencies": [],
-      "allowedPaths": [
-        "scripts/windows/verify-install.mjs"
-      ],
-      "reviewDependencies": [
-        "apps/desktop/scripts/collect-notices.mjs",
-        "apps/desktop/scripts/package-sidecar.mjs",
-        "apps/desktop/src-tauri/tauri.conf.json",
-        "docs/LICENSING.md",
-        "apps/web/src/components/settings/about-section.tsx"
-      ],
-      "preferredAgent": "claude-infra",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "unit"
-      ],
-      "acceptance": "scripts/windows/verify-install.mjs is the only check in this repository that inspects a REAL INSTALLED TREE on a real Windows machine. It requires four paths: the shell executable, the Node runtime from NODE_RELATIVE_PATH, the server entry from SERVER_RELATIVE_PATH, and liberty-sidecar-layout.json. THIRD-PARTY-NOTICES.md is not among them.\\n\\nThat file is how an LGPL attribution obligation reaches the person who received the binary -- docs/LICENSING.md section 7 says the obligation must be met by something the user receives -- and the product makes a claim about it in the UI: PW-0308's About section tells a viewer the installer carries it. Nothing checks either statement against an installation.\\n\\nREQUIRED: the verifier requires THIRD-PARTY-NOTICES.md in the installed tree, at the path packaging actually puts it, and fails when it is absent.\\nREQUIRED: it also fails on an EMPTY file. A zero-byte notices file satisfies an existence check and discharges nothing, and this repository has now met the report-success-over-an-empty-set shape three times (PL-0714, PL-0726, PW-0208's own generator).\\nREQUIRED: the path is DERIVED rather than written down a second time if anything already derives it. verify-install.mjs's own header records that a path written down in a third place had already drifted once, and PL-0727 was the correction when a fourth copy went stale.\\nREQUIRED: non-vacuity. The new requirement must be shown to FAIL against a directory that is an install minus the notices file, not merely to pass against one that has it.\\n\\nOUT OF SCOPE: what the notices file CONTAINS. The generator owns that and PW-0208 is judging it; this is about whether the artifact reached the machine.",
-      "notes": "FILED ROUND 111 by claude-infra during PW-0208. Not fixed there: scripts/windows/** is outside PW-0208's allowedPaths (apps/desktop/**, docs/LICENSING.md). scripts/windows/verify-install.mjs is reserved by no ACTIVE task -- PW-0501 and PW-0107 are DONE, PW-0502 and PW-0503 are READY and unowned, PL-0727 holds only test-lifecycle.mjs -- so this is actionable now, though it collides with PW-0502 and PW-0503's scripts/windows/** when either is claimed.",
       "gateResults": {}
     }
   ]

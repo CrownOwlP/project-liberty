@@ -1,16 +1,16 @@
 # Project Liberty - Project Status
 
-> Generated 2026-10-04T15:50:27.646Z from the AI control plane.
+> Generated 2026-10-04T15:52:12.986Z from the AI control plane.
 
 **Overall completion:** 106/129 executable tasks (82%)
 
 ## Status summary
 
 - **BACKLOG:** 7
-- **READY:** 4
+- **READY:** 3
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 0
-- **REVIEW:** 5
+- **REVIEW:** 6
 - **BLOCKED:** 7
 - **DONE:** 106
 - **CANCELED:** 0
@@ -36,17 +36,18 @@
 - **PW-0308** [REVIEW] Settings a viewer can actually change — owner: claude-frontend
 - **PW-0602** [REVIEW] The automated half of the Windows matrix, running on Windows — owner: claude-test
 - **PL-0724** [REVIEW] The diagnostics switch actually switches diagnostics off — owner: claude-frontend
+- **PL-0729** [REVIEW] The installed-tree verifier does not ask for the notices file the product promises — owner: claude-infra
 
 ## Dispatch classification
 
-- **READY_AND_EXECUTABLE:** 4
+- **READY_AND_EXECUTABLE:** 3
 - **READY_BUT_EXTERNAL:** 0
 - **BLOCKED:** 7
 - **BACKLOG (dependency-gated):** 7
 
 ## Recommended executable wave
 
-- **PL-0729** -> claude-infra (P2/Infra) The installed-tree verifier does not ask for the notices file the product promises
+No conflict-free executable tasks can be assigned with current agent capacity.
 
 ## Queued for external agents
 
@@ -79,5 +80,5 @@ UNBLOCK WHEN: the commander runs Experiment 1a on real Windows hardware and hand
 - **claude-media:** 0/2 active
 - **claude-test:** 2/2 active
 - **claude-security:** 0/1 active
-- **claude-infra:** 1/2 active
+- **claude-infra:** 2/2 active
 - **human-commander:** 0/99 active (external lane; not locally executable)
