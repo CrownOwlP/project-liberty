@@ -40,6 +40,7 @@ export * from "./domains/audio";
 export * from "./domains/catalog";
 export * from "./domains/failover";
 export * from "./domains/playback";
+export * from "./domains/preferences";
 export * from "./domains/search";
 export * from "./domains/subtitles";
 export * from "./domains/title";

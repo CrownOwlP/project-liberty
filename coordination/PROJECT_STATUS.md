@@ -1,16 +1,16 @@
 # Project Liberty - Project Status
 
-> Generated 2026-10-04T03:22:33.120Z from the AI control plane.
+> Generated 2026-10-04T03:48:02.026Z from the AI control plane.
 
-**Overall completion:** 99/121 executable tasks (82%)
+**Overall completion:** 99/122 executable tasks (81%)
 
 ## Status summary
 
 - **BACKLOG:** 7
-- **READY:** 4
+- **READY:** 3
 - **CLAIMED:** 0
-- **IN_PROGRESS:** 0
-- **REVIEW:** 4
+- **IN_PROGRESS:** 1
+- **REVIEW:** 5
 - **BLOCKED:** 7
 - **DONE:** 99
 - **CANCELED:** 0
@@ -33,12 +33,14 @@
 
 - **PL-0714** [REVIEW] CI executes every script suite the repository declares, and a failing validate job says something — owner: claude-lead
 - **PW-0208** [REVIEW] An LGPL-compatible libmpv and FFmpeg the product may actually ship — owner: claude-infra
+- **PW-0308** [IN_PROGRESS] Settings a viewer can actually change — owner: claude-frontend
 - **PW-0602** [REVIEW] The automated half of the Windows matrix, running on Windows — owner: claude-test
 - **PL-0722** [REVIEW] Corrective: the rate-limit spec assumed a bucket no other worker had touched, and CI is red — owner: claude-test
+- **PL-0723** [REVIEW] A profile remembers which languages its viewer wants — owner: claude-backend
 
 ## Dispatch classification
 
-- **READY_AND_EXECUTABLE:** 4
+- **READY_AND_EXECUTABLE:** 3
 - **READY_BUT_EXTERNAL:** 0
 - **BLOCKED:** 7
 - **BACKLOG (dependency-gated):** 7
@@ -46,7 +48,6 @@
 ## Recommended executable wave
 
 - **PL-0721** -> claude-security (P1/Security) Trusted-proxy topology and how this deployment derives a client IP
-- **PW-0308** -> claude-frontend (P2/Frontend) Settings a viewer can actually change
 
 ## Queued for external agents
 
@@ -74,8 +75,8 @@ UNBLOCK WHEN: the commander runs Experiment 1a on real Windows hardware and hand
 
 - **gpt-architect:** 0/6 active (external lane; not locally executable)
 - **claude-lead:** 1/2 active
-- **claude-frontend:** 0/2 active
-- **claude-backend:** 0/2 active
+- **claude-frontend:** 1/2 active
+- **claude-backend:** 1/2 active
 - **claude-media:** 0/2 active
 - **claude-test:** 2/2 active
 - **claude-security:** 0/1 active

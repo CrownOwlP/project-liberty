@@ -1,15 +1,18 @@
 import type {
   addToWatchlist,
   createProfile,
+  forgetMediaPreferences,
   issueWriterLease,
   listContinueWatching,
   listProfilesForAccount,
   listWatchlist,
   loadProfileOwnership,
+  readMediaPreferences,
   readProgress,
   removeFromWatchlist,
   resolveLibertySession,
   selectActiveProfile,
+  writeMediaPreferences,
   writeProgress
 } from "@liberty/persistence";
 
@@ -122,6 +125,27 @@ export interface LibertyRepository {
    * Better Auth's own vocabulary.
    */
   readonly resolveSession: Bound<typeof resolveLibertySession>;
+
+  /* --- media preferences (PL-0723) --- */
+
+  /**
+   * What this profile has chosen, or the neutral value with `stored: false`.
+   *
+   * THE RETURN CARRIES `stored` AND THE PORT MUST NOT FLATTEN IT. "Never
+   * chosen" and "chose nothing" are different answers -- the first means the
+   * player keeps its existing fallback, the second is a viewer saying "do not
+   * prefer any language for me" -- and a port that returned bare values would
+   * make the distinction unavailable to every caller at once.
+   */
+  readonly readMediaPreferences: Bound<typeof readMediaPreferences>;
+  readonly writeMediaPreferences: Bound<typeof writeMediaPreferences>;
+  /**
+   * Reset to having chosen nothing, which DELETES rather than blanks.
+   *
+   * Kept distinct from writing empty lists for the reason above: blanking
+   * would take away the viewer's ability to express the other answer.
+   */
+  readonly forgetMediaPreferences: Bound<typeof forgetMediaPreferences>;
 
   /* --- progress (PL-0403) --- */
 

@@ -1,6 +1,10 @@
 import type { ProfileOwnership } from "@liberty/auth";
 import { isIssuedProfileScope, profileIdFromScope, scopeBelongsToSession } from "@liberty/auth";
 import {
+  NO_MEDIA_PREFERENCES,
+  type MediaPreferences
+} from "@liberty/contracts/domains/preferences";
+import {
   describeUnrepresentableInstant,
   isMintedProfileId,
   newProfileId,
@@ -201,6 +205,16 @@ export interface InMemoryStore {
   readonly selections: Map<string, SelectionRow>;
   readonly progress: Map<string, PlaybackProgressRow>;
   readonly watchlist: Map<string, WatchlistEntryRow>;
+  /**
+   * Media preferences, keyed by profile id (PL-0723).
+   *
+   * THE PRESENCE OF AN ENTRY IS THE DATA, exactly as the presence of a row is
+   * in PostgreSQL. A profile that has never chosen has no entry; one whose
+   * viewer cleared both lists has an entry holding two empty arrays. A `Map`
+   * reproduces that for free, which is why this is a map of stored values
+   * rather than a map of profile ids to arrays with a default.
+   */
+  readonly mediaPreferences: Map<string, MediaPreferences>;
 }
 
 export function createInMemoryStore(): InMemoryStore {
@@ -208,7 +222,8 @@ export function createInMemoryStore(): InMemoryStore {
     profiles: new Map(),
     selections: new Map(),
     progress: new Map(),
-    watchlist: new Map()
+    watchlist: new Map(),
+    mediaPreferences: new Map()
   };
 }
 
@@ -594,6 +609,76 @@ export function createInMemoryRepository(
     /* ----------------------------------------------------------------
      * Progress (PL-0403)
      * ---------------------------------------------------------------- */
+
+    /* ----------------------------------------------------------------
+     * MEDIA PREFERENCES (PL-0723)
+     *
+     * `profileIdFromScope` FIRST in every one, for the reason this file's
+     * header gives at length: the call is what consults the issuance registry,
+     * so a forged scope is refused before it can reach a key. A method that
+     * validated its input first would be one that did work on behalf of a
+     * capability nobody granted.
+     * ---------------------------------------------------------------- */
+
+    readMediaPreferences: async (input) => {
+      const profileId = profileIdFromScope(input.scope);
+      const stored = store.mediaPreferences.get(profileId);
+      if (stored === undefined) return { stored: false, preferences: NO_MEDIA_PREFERENCES };
+      /* Copied out, so a caller cannot reach into the store through the value
+       * it was handed -- the in-memory adapter's standing hazard, and the one
+       * PostgreSQL does not have. */
+      return {
+        stored: true,
+        preferences: {
+          preferredAudioLanguages: [...stored.preferredAudioLanguages],
+          preferredSubtitleLanguages: [...stored.preferredSubtitleLanguages],
+          subtitleMode: stored.subtitleMode,
+          hearingImpaired: stored.hearingImpaired
+        }
+      };
+    },
+
+    writeMediaPreferences: async (input) => {
+      const profileId = profileIdFromScope(input.scope);
+      /* A copy on the way IN as well, for the same reason in the other
+       * direction: a caller that keeps its array and mutates it later would
+       * otherwise be editing stored state. */
+      const next: MediaPreferences = {
+        preferredAudioLanguages: [...input.preferences.preferredAudioLanguages],
+        preferredSubtitleLanguages: [...input.preferences.preferredSubtitleLanguages],
+        subtitleMode: input.preferences.subtitleMode,
+        hearingImpaired: input.preferences.hearingImpaired
+      };
+      store.mediaPreferences.set(profileId, next);
+      return {
+        stored: true,
+        preferences: {
+          preferredAudioLanguages: [...next.preferredAudioLanguages],
+          preferredSubtitleLanguages: [...next.preferredSubtitleLanguages],
+          subtitleMode: next.subtitleMode,
+          hearingImpaired: next.hearingImpaired
+        }
+      };
+    },
+
+    forgetMediaPreferences: async (input) => {
+      /*
+       * THE ID ON ITS OWN LINE, AND scope-forgery.test.ts CAUGHT THE VERSION
+       * THAT WAS NOT. Written as
+       * `store.mediaPreferences.delete(profileIdFromScope(input.scope))` this
+       * reads as issuance-first and is not: JavaScript evaluates the member
+       * access `store.mediaPreferences.delete` BEFORE the argument, so with
+       * the forgery suite's refusing store the method failed with "reached the
+       * store" rather than with ForgedProfileScopeError -- it had touched
+       * storage on behalf of a capability nobody granted. "It refused" and "it
+       * refused before touching storage" are different guarantees and only the
+       * second is worth having.
+       */
+      const profileId = profileIdFromScope(input.scope);
+      /* DELETE, never "set to empty". Those are the two different answers the
+       * whole shape exists to keep apart. */
+      store.mediaPreferences.delete(profileId);
+    },
 
     issueWriterLease: async (input) => {
       // Issuance first; see the header. Ahead of `parseContentId` deliberately.

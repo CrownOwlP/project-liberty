@@ -1,4 +1,5 @@
 import {
+  boolean,
   foreignKey,
   index,
   pgTable,
@@ -174,5 +175,98 @@ export const activeProfileSelection = pgTable(
       name: "active_profile_selection_profile_owner_fk"
     }).onDelete("cascade"),
     index("active_profile_selection_profile_id_idx").on(table.profileId)
+  ]
+);
+
+/* -------------------------------------------------------------------------
+ * What a viewer has chosen, kept apart from who they are (PL-0723)
+ *
+ * ==========================================================================
+ * A TABLE RATHER THAN FOUR MORE COLUMNS ON `profile`
+ * ==========================================================================
+ *
+ * THE DECIDING REASON IS NOT TIDINESS. PL-0723's acceptance requires that
+ * "nothing chosen" is representable and is DIFFERENT from "an empty list
+ * chosen" -- a profile that has never opened the settings screen has
+ * expressed no opinion, and one whose viewer deliberately cleared the list
+ * has expressed a strong one. With a row, that distinction is free and
+ * unambiguous: no row means nobody has chosen, and a row holding `{}` means
+ * somebody chose nothing. With nullable columns it is carried by the
+ * difference between NULL and '{}', which is the sort of distinction that
+ * survives exactly as long as the first person who writes `COALESCE`.
+ *
+ * It is also the honest modelling. `profile` answers "who is watching" and
+ * its own comments defend keeping it minimal; a preference is not identity,
+ * it is a setting that happens to be keyed by one.
+ *
+ * ==========================================================================
+ * AND IT IS NOT A PLACE FOR CAPABILITIES
+ * ==========================================================================
+ *
+ * Every column here is a statement of TASTE. Nothing in this table may widen
+ * what a viewer is allowed to play, reach or decode, because every value in
+ * it arrives from a client: a capability-shaped column here would be an
+ * attacker-supplied capability. `maxRating` stays on `profile`, written
+ * through the profile API, for exactly that reason and is deliberately not
+ * mirrored here.
+ * ---------------------------------------------------------------------- */
+export const profileMediaPreference = pgTable(
+  "profile_media_preference",
+  {
+    /**
+     * ONE ROW PER PROFILE, enforced by making the foreign key the primary key
+     * rather than by a separate unique index. A profile with two preference
+     * rows has no defined answer, and the cheapest way to make that
+     * unrepresentable is to leave no column for a second one.
+     *
+     * `onDelete: "cascade"` for the reason the profile's own `userId` gives:
+     * a preference with no profile is personal data with no controller.
+     */
+    profileId: text("profile_id")
+      .notNull()
+      .references(() => profile.id, { onDelete: "cascade" }),
+  /**
+   * Ordered, most-preferred first. A Postgres array rather than a delimited
+   * string or a jsonb blob: the ordering is the only information these lists
+   * carry, an array preserves it natively, and a delimiter is a bug waiting
+   * for a tag that contains one.
+   *
+   * NOT NULL with an empty default would destroy the distinction this table
+   * exists for, so these are plain NOT NULL and the distinction is the row.
+   */
+    preferredAudioLanguages: text("preferred_audio_languages").array().notNull(),
+    preferredSubtitleLanguages: text("preferred_subtitle_languages").array().notNull(),
+  /**
+   * `auto` or `off`, as `subtitleModeSchema` in `@liberty/contracts` defines
+   * them. Stored as text rather than as a Postgres enum: the contract owns
+   * the value set, and a database enum would mean a migration every time that
+   * contract grew a mode, with the two definitions free to disagree in
+   * between.
+   */
+    subtitleMode: text("subtitle_mode").notNull(),
+    hearingImpaired: boolean("hearing_impaired").notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull()
+  },
+  (table) => [
+    /*
+     * DECLARED AS A TABLE-LEVEL KEY WITH AN EXPLICIT NAME, not as
+     * `.primaryKey()` on the column, and both halves are deliberate.
+     *
+     * TABLE-LEVEL because `profile-scoping.test.ts` reads
+     * `getTableConfig(table).primaryKeys` and asserts the key leads with
+     * `profile_id`; a column-level primary key does not appear there at all,
+     * so the automatic scoping check would have passed this table without
+     * examining it. The test found that on the first run.
+     *
+     * EXPLICITLY NAMED because of PL-0407. Drizzle's default name for a
+     * single-column table-level key is `<table>_<column>_pk`, while
+     * PostgreSQL names an unnamed one `<table>_pkey` -- and when the snapshot
+     * and the database disagreed about a key's NAME for three tables, nothing
+     * was wrong at runtime and the first generated migration touching one of
+     * them would have emitted `DROP CONSTRAINT` against a name no database
+     * has. Naming it here means the generated SQL, the snapshot and the
+     * database all say the same word.
+     */
+    primaryKey({ columns: [table.profileId], name: "profile_media_preference_pkey" })
   ]
 );

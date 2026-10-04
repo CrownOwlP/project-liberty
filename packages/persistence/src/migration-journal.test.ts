@@ -96,6 +96,19 @@ const EXPECTED_TABLES = [
   "active_profile_selection",
   "playback_progress",
   "profile",
+  /*
+   * ADDED BY PL-0723, AND THIS LIST IS MEANT TO BE EDITED EXACTLY HERE.
+   * The postcondition is not "there are eight tables"; it is "the migrations
+   * create precisely the set somebody reviewed", which is what makes a run
+   * that creates NONE -- the defect this file was written for -- impossible
+   * to mistake for success. Growing the set is a schema decision, and the
+   * moment to ask whether the new table earns its place. Asked and answered:
+   * profile_media_preference is keyed by profile_id, cascades from the
+   * profile, holds viewer preferences only, carries no capability or
+   * entitlement, and is registered in PROFILE_SCOPED_TABLES so the automatic
+   * scoping check covers it.
+   */
+  "profile_media_preference",
   "session",
   "user",
   "verification",
@@ -170,8 +183,8 @@ describe("the migration journal is what makes db:migrate do anything", () => {
   });
 });
 
-describe("the eight-table postcondition, kept after the repair", () => {
-  it("creates exactly the eight tables the identity and playback model needs", () => {
+describe("the exact-table-set postcondition, kept after the repair", () => {
+  it("creates exactly the tables the identity, playback and preference model needs", () => {
     const sql = sqlFiles()
       .map((name) => readFileSync(join(migrationsDir, name), "utf8"))
       .join("\n");

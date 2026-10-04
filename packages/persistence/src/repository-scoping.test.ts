@@ -26,6 +26,11 @@ import {
   writeProgress
 } from "./progress-repository";
 import {
+  forgetMediaPreferences,
+  readMediaPreferences,
+  writeMediaPreferences
+} from "./profile-preferences";
+import {
   addToWatchlist,
   listWatchlist,
   removeFromWatchlist,
@@ -199,6 +204,15 @@ const watchlistRow = { profileId: profileIdFromScope(scope), contentId: "the-nor
 
 const leaseRow = { epoch: 4, writerId: "writer_television" };
 
+const preferenceRow = {
+  profileId: profileIdFromScope(scope),
+  preferredAudioLanguages: ["ja", "en"],
+  preferredSubtitleLanguages: ["en"],
+  subtitleMode: "auto",
+  hearingImpaired: false,
+  updatedAt: INSTANT
+};
+
 /** Render one captured predicate to the SQL text that would be sent. */
 const render = (where: SQL): string => dialect.sqlToQuery(where).sql;
 
@@ -272,6 +286,38 @@ const calls: readonly {
     rows: [watchlistRow],
     run: (db) =>
       watchlistContains(db, { scope, contentIds: ["the-northstar-affair", "episode-2"] })
+  },
+  /*
+   * PREFERENCES (PL-0723). A settings row is not viewing history, but it is
+   * personal and it is keyed by profile, so the same question applies: a
+   * statement that forgot its predicate would render one household member's
+   * language settings on another's screen and let a write land on somebody
+   * else's profile.
+   */
+  {
+    name: "readMediaPreferences",
+    rows: [preferenceRow],
+    run: (db) => readMediaPreferences(db, { scope })
+  },
+  {
+    name: "writeMediaPreferences",
+    rows: [preferenceRow],
+    run: (db) =>
+      writeMediaPreferences(db, {
+        scope,
+        preferences: {
+          preferredAudioLanguages: ["ja", "en"],
+          preferredSubtitleLanguages: ["en"],
+          subtitleMode: "auto",
+          hearingImpaired: false
+        },
+        instant: INSTANT
+      })
+  },
+  {
+    name: "forgetMediaPreferences",
+    rows: [preferenceRow],
+    run: (db) => forgetMediaPreferences(db, { scope })
   }
 ];
 
@@ -281,12 +327,15 @@ describe("every repository statement is scoped to a profile", () => {
     // and forgetting to list it here is how the next unscoped query ships.
     expect(calls.map((call) => call.name).sort()).toEqual([
       "addToWatchlist",
+      "forgetMediaPreferences",
       "issueWriterLease",
       "listContinueWatching",
       "listWatchlist",
+      "readMediaPreferences",
       "readProgress",
       "removeFromWatchlist",
       "watchlistContains",
+      "writeMediaPreferences",
       "writeProgress"
     ]);
   });

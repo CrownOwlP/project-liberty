@@ -2,15 +2,18 @@ import {
   addToWatchlist,
   createDatabase,
   createProfile,
+  forgetMediaPreferences,
   issueWriterLease,
   listContinueWatching,
   listProfilesForAccount,
   listWatchlist,
   loadProfileOwnership,
+  readMediaPreferences,
   readProgress,
   removeFromWatchlist,
   resolveLibertySession,
   selectActiveProfile,
+  writeMediaPreferences,
   writeProgress,
   type DatabaseHandle
 } from "@liberty/persistence";
@@ -55,6 +58,9 @@ export function postgresRepositoryOver(handle: DatabaseHandle): LibertyRepositor
 
     loadProfileOwnership: (profileId) => loadProfileOwnership(db, profileId),
     listProfilesForAccount: (session) => listProfilesForAccount(db, session),
+    readMediaPreferences: (input) => readMediaPreferences(db, input),
+    writeMediaPreferences: (input) => writeMediaPreferences(db, input),
+    forgetMediaPreferences: (input) => forgetMediaPreferences(db, input),
     createProfile: (input) => createProfile(db, input),
     selectActiveProfile: (input) => selectActiveProfile(db, input),
     resolveSession: (account) => resolveLibertySession(db, account),

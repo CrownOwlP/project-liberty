@@ -207,7 +207,31 @@ const SCOPE_TAKING = {
    * what turns that from a discipline into a failure.
    */
   listContinueWatching: (repository: InMemoryRepository) =>
-    repository.listContinueWatching({ scope: forgedScope, limit: 20 })
+    repository.listContinueWatching({ scope: forgedScope, limit: 20 }),
+  /*
+   * MEDIA PREFERENCES (PL-0723), added with the port methods in the same
+   * change, for the reason stated just above. A settings row is not viewing
+   * history, but it is personal and it is keyed by profile: a forged scope
+   * that reached the read would hand one household member another's settings,
+   * and one that reached the write would let somebody edit a profile that is
+   * not theirs. The write is the sharper of the two and is why these are not
+   * treated as harmless.
+   */
+  readMediaPreferences: (repository: InMemoryRepository) =>
+    repository.readMediaPreferences({ scope: forgedScope }),
+  writeMediaPreferences: (repository: InMemoryRepository) =>
+    repository.writeMediaPreferences({
+      scope: forgedScope,
+      preferences: {
+        preferredAudioLanguages: ["ja"],
+        preferredSubtitleLanguages: ["ja"],
+        subtitleMode: "auto",
+        hearingImpaired: false
+      },
+      instant: INSTANT
+    }),
+  forgetMediaPreferences: (repository: InMemoryRepository) =>
+    repository.forgetMediaPreferences({ scope: forgedScope })
 } satisfies Record<string, (repository: InMemoryRepository) => Promise<unknown>>;
 
 /**
@@ -249,7 +273,10 @@ describe("the classification is complete, so a new method cannot slip past this 
   });
 
   it("the scope-taking list is not silently empty", () => {
-    expect(Object.keys(SCOPE_TAKING)).toHaveLength(8);
+    /* Written out rather than derived from the list it checks, which is the
+     * point: it fails separately from the classification above, so adding a
+     * method cannot be half-accounted-for. 8 -> 11 with PL-0723's three. */
+    expect(Object.keys(SCOPE_TAKING)).toHaveLength(11);
   });
 });
 

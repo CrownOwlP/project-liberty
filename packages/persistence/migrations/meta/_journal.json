@@ -8,6 +8,13 @@
       "when": 1787588559000,
       "tag": "0000_profile_scoped_identity",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1791084662080,
+      "tag": "0001_profile_media_preferences",
+      "breakpoints": true
     }
   ]
 }

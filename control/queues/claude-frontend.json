@@ -1,24 +1,24 @@
 {
-  "generatedAt": "2026-10-04T03:22:33.123Z",
+  "generatedAt": "2026-10-04T03:48:02.030Z",
   "agent": "claude-frontend",
   "executionAvailable": true,
-  "assigned": [],
-  "review": [],
-  "reservedExternal": [],
-  "recommended": [
+  "assigned": [
     {
       "id": "PW-0308",
       "priority": "P2",
       "lane": "Frontend",
-      "status": "READY",
+      "status": "IN_PROGRESS",
       "title": "Settings a viewer can actually change",
       "dependencies": [
+        "PL-0723",
         "PW-0301",
         "PW-0306"
       ],
       "allowedPaths": [
         "apps/web/src/app/settings/**",
-        "apps/web/src/components/settings/**"
+        "apps/web/src/components/settings/**",
+        "apps/web/src/app/watch/watch-session.ts",
+        "apps/web/src/app/watch/watch-session.test.ts"
       ],
       "reviewDependencies": [
         "apps/web/src/app/api/v1/profiles",
@@ -36,8 +36,14 @@
       ],
       "acceptance": "There is a settings screen, and every switch on it changes something real. Neither a screen nor an API exists today. REQUIRED: preferred audio and subtitle languages, persisted per profile and consumed as PW-0206's defaults rather than as a second policy. REQUIRED: a diagnostics and telemetry control that is honest about what it does -- telemetry-decision.ts already reports WHY telemetry is off, and that reasoning belongs in front of the viewer instead of in a details element in the player. REQUIRED: an about section naming the application version and the licences the installer must carry, which is where PW-0208's LGPL attribution obligation is discharged in the product. REQUIRED: no setting weakens a security or rights control; there is no 'allow insecure sources' switch and no way to disable the transport checks.",
       "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. ",
-      "owner": null,
-      "gateResults": {}
+      "owner": "claude-frontend",
+      "gateResults": {},
+      "implementationAgent": "claude-frontend",
+      "updatedAt": "2026-10-04T03:25:56.584383Z",
+      "implementationBaseSha": "25994202b1397d7e972febdb24edd685d8a08405"
     }
-  ]
+  ],
+  "review": [],
+  "reservedExternal": [],
+  "recommended": []
 }

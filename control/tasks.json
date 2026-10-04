@@ -10035,15 +10035,18 @@
       "id": "PW-0308",
       "priority": "P2",
       "lane": "Frontend",
-      "status": "READY",
+      "status": "IN_PROGRESS",
       "title": "Settings a viewer can actually change",
       "dependencies": [
+        "PL-0723",
         "PW-0301",
         "PW-0306"
       ],
       "allowedPaths": [
         "apps/web/src/app/settings/**",
-        "apps/web/src/components/settings/**"
+        "apps/web/src/components/settings/**",
+        "apps/web/src/app/watch/watch-session.ts",
+        "apps/web/src/app/watch/watch-session.test.ts"
       ],
       "reviewDependencies": [
         "apps/web/src/app/api/v1/profiles",
@@ -10061,8 +10064,11 @@
       ],
       "acceptance": "There is a settings screen, and every switch on it changes something real. Neither a screen nor an API exists today. REQUIRED: preferred audio and subtitle languages, persisted per profile and consumed as PW-0206's defaults rather than as a second policy. REQUIRED: a diagnostics and telemetry control that is honest about what it does -- telemetry-decision.ts already reports WHY telemetry is off, and that reasoning belongs in front of the viewer instead of in a details element in the player. REQUIRED: an about section naming the application version and the licences the installer must carry, which is where PW-0208's LGPL attribution obligation is discharged in the product. REQUIRED: no setting weakens a security or rights control; there is no 'allow insecure sources' switch and no way to disable the transport checks.",
       "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. ",
-      "owner": null,
-      "gateResults": {}
+      "owner": "claude-frontend",
+      "gateResults": {},
+      "implementationAgent": "claude-frontend",
+      "updatedAt": "2026-10-04T03:25:56.584383Z",
+      "implementationBaseSha": "25994202b1397d7e972febdb24edd685d8a08405"
     },
     {
       "id": "PW-0309",
@@ -12590,6 +12596,76 @@
       "updatedAt": "2026-10-04T03:15:46.512Z",
       "implementationAgent": "claude-test",
       "implementationBaseSha": "2cc6dfb5e9adec199093d9e892b5972f98a95886"
+    },
+    {
+      "id": "PL-0723",
+      "priority": "P1",
+      "lane": "Backend",
+      "status": "REVIEW",
+      "title": "A profile remembers which languages its viewer wants",
+      "dependencies": [],
+      "allowedPaths": [
+        "packages/persistence/src/schema/profiles.ts",
+        "packages/persistence/migrations/0001_profile_media_preferences.sql",
+        "packages/persistence/src/profile-preferences.ts",
+        "packages/persistence/src/profile-preferences.test.ts",
+        "packages/persistence/src/index.ts",
+        "packages/contracts/src/domains/preferences.ts",
+        "packages/contracts/src/domains/preferences.test.ts",
+        "packages/contracts/src/index.ts",
+        "apps/web/src/app/api/v1/profiles/preferences/route.ts",
+        "apps/web/src/app/api/v1/profiles/preferences/handler.ts",
+        "apps/web/src/app/api/v1/profiles/preferences/handler.test.ts",
+        "apps/web/src/app/api/v1/profiles/preferences/contract.ts",
+        "packages/persistence/migrations/meta/_journal.json",
+        "packages/persistence/migrations/meta/0001_snapshot.json",
+        "packages/persistence/src/schema/index.ts",
+        "packages/persistence/src/migration-journal.test.ts",
+        "packages/persistence/src/repository-scoping.test.ts",
+        "apps/web/src/lib/db/repository.ts",
+        "apps/web/src/lib/db/postgres-repository.ts",
+        "apps/web/src/lib/db/in-memory-repository.ts",
+        "apps/web/src/lib/db/in-memory-repository.test.ts",
+        "apps/web/src/lib/db/scope-forgery.test.ts"
+      ],
+      "reviewDependencies": [
+        "packages/contracts/src/domains/subtitles.ts",
+        "packages/contracts/src/domains/playback.ts",
+        "apps/web/src/app/api/v1/profiles/handler.ts",
+        "apps/web/src/app/api/v1/profiles/contract.ts",
+        "packages/persistence/src/profile-repository.ts",
+        "packages/persistence/migrations/0000_profile_scoped_identity.sql",
+        "docs/API_CONTRACTS.md"
+      ],
+      "preferredAgent": "claude-backend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "security-review"
+      ],
+      "acceptance": "PW-0308 REQUIRES PREFERRED AUDIO AND SUBTITLE LANGUAGES 'persisted per profile and consumed as PW-0206's defaults rather than as a second policy', AND THERE IS NOWHERE TO PUT THEM. The profile table carries id, userId, displayName, avatarKey and maxRating; there is no preferences column and no preferences endpoint. gpt-architect's round-110 instruction is explicit: create the smallest backend/data task required, and do not fake persistence with local component state.\n\nTHE SHAPE IS ALREADY DECIDED ELSEWHERE AND MUST NOT BE REINVENTED. `subtitlePolicySchema` in packages/contracts/src/domains/subtitles.ts already declares `mode` (auto/off), `preferredLanguages` -- 'Ordered, most-preferred first. Order is meaningful, not a set.' -- and `hearingImpaired`. `PlaybackCapabilities` already declares `preferredAudioLanguages`. This task stores VALUES for those existing fields. A second vocabulary for the same concepts is the 'duplicate language-selection policy' PW-0308 forbids by name.\n\nREQUIRED: a migration that adds the storage. It is additive, it has a default that means 'nothing chosen', and an existing profile keeps working without a backfill -- the 0000 migration's header explains why backfill is the expensive part of a schema decision, and there is nothing here to recover.\nREQUIRED: the stored shape is validated on the way IN by a zod contract, like every other contract in this repository, and reuses the subtitle and playback field names and semantics rather than paraphrasing them.\nREQUIRED: a language list is ORDERED and the order is preserved through write and read. A store that returns a set has destroyed the only information the field carries.\nREQUIRED: read and write endpoints under the profiles API, PROFILE-SCOPED through the same machinery every other profile-scoped route uses. A viewer must not be able to read or write another profile's preferences, and that must be asserted, not assumed.\nREQUIRED: 'nothing chosen' is representable and is the default, and is DIFFERENT from 'an empty list chosen'. The player's fallback behaviour depends on telling those apart.\nREQUIRED: unknown or unsupported language tags are refused at the boundary with a named reason, not stored and not silently dropped.\nREQUIRED: the fail-closed posture of the existing profiles routes is preserved -- a deployment with no identity system refuses rather than serving a default.\n\nMUST NOT: add any field that is not a viewer PREFERENCE. This is not a place to put capability claims, entitlements, rights state or anything a client could assert to widen what it may play. MUST NOT accept a client-supplied profile id in place of the session-scoped one. MUST NOT weaken or bypass the profile scoping in packages/auth's ProfileScope.\n\nOUT OF SCOPE: the settings SCREEN (PW-0308), the player consuming the defaults (PW-0308), and any preference beyond audio and subtitle language behaviour. Parental controls, playback quality caps and autoplay belong to whatever task argues for them.",
+      "notes": "FILED IN ROUND 110 at gpt-architect's instruction while PW-0308 was being started. The finding that created it: the profile table has no preferences storage, read from packages/persistence/src/schema/profiles.ts rather than assumed.\n\nThe more useful finding is what ALREADY EXISTS: subtitlePolicySchema, preferredAudioLanguages and tracks.ts's SubtitlePreferences all carry these concepts today, and apps/web/src/app/watch/watch-session.ts line 205 hardcodes preferredAudioLanguages: [\"en\"] in CONSERVATIVE_CAPABILITIES. That literal is what a stored preference replaces. Replacing it is PW-0308's, not this task's.\n\nConflict-checked in both fields in both directions at filing against PL-0714, PW-0208, PW-0602, PL-0722 and PW-0308. PW-0308 holds the settings tree and the watch route; this task holds persistence, contracts and the preferences endpoint. Disjoint.",
+      "owner": "claude-backend",
+      "gateResults": {
+        "typecheck": {
+          "status": "pass",
+          "at": "2026-10-04T03:47:39.795Z",
+          "by": "claude-backend",
+          "commitSha": "25994202b1397d7e972febdb24edd685d8a08405",
+          "evidence": "npm run typecheck at the repository root: 22 tasks successful, 22 total, exit 0. npm run repo:validate passes. The change spans three packages -- a contract in @liberty/contracts, storage and a repository in @liberty/persistence, and a port, two adapters and an endpoint in apps/web -- and the port is the reason the typecheck is worth more than usual here: LibertyRepository's members are declared as Bound<typeof fn> over the persistence functions, so the three new methods cannot drift from the package signatures, and the in-memory adapter failed to compile until it implemented all three. That is the type system enforcing adapter parity rather than a reviewer noticing."
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-10-04T03:47:39.922Z",
+          "by": "claude-backend",
+          "commitSha": "25994202b1397d7e972febdb24edd685d8a08405",
+          "evidence": "THE SUITES. packages/contracts: 255 tests, exit 0 -- 15 of them new in preferences.test.ts. packages/persistence: 301 tests (1 skipped), exit 0 -- profile-preferences.test.ts adds 12 and the two guard files gained coverage of the new table and the three new repository functions. apps/web: 92 files, 1686 tests, exit 0, up from 90/1659 -- the preferences endpoint's handler.test.ts adds 16 and the db suites now cover three more adapter methods.\n\nTHREE GUARDS IN THIS REPOSITORY CAUGHT THREE REAL MISTAKES WHILE THIS WAS BEING BUILT, AND NONE OF THEM WAS WEAKENED.\n\n(1) profile-scoping.test.ts refused the table. The first version declared the primary key with a column-level .primaryKey(), which does not appear in getTableConfig(table).primaryKeys at all -- so the automatic scoping check would have passed the table WITHOUT EXAMINING IT. It is now a table-level primaryKey() with an explicit name, which also satisfies PL-0407's rule that the snapshot, the generated SQL and the database must all say the same word for a constraint.\n\n(2) scope-forgery.test.ts refused forgetMediaPreferences. Written as store.mediaPreferences.delete(profileIdFromScope(input.scope)), the method READS AS issuance-first and is not: JavaScript evaluates the member access before the argument, so against that suite's refusing store it failed with \"reached the store\" instead of ForgedProfileScopeError -- it had touched storage on behalf of a capability nobody granted. The id is now derived on its own line first. \"It refused\" and \"it refused before touching storage\" are different guarantees and the suite exists to tell them apart.\n\n(3) migration-journal.test.ts refused the ninth table, by design. Its EXPECTED_TABLES is a reviewed postcondition that exists because a defect once made db:migrate create ZERO tables while printing success. The set was updated deliberately and the describe block renamed, because leaving it reading \"eight-table postcondition\" while asserting nine would be a comment that lies.\n\nTHE SCOPING ASSERTION WAS ALSO SEEN TO FAIL ON PURPOSE: with the .where() removed from readMediaPreferences, repository-scoping.test.ts fails with \"'readMediaPreferences' filters or writes profile_id in every statement\" and passes again when restored. That suite renders the captured predicates through Drizzle's own PgDialect, so what it checks is the SQL that would be sent.\n\nTHE MIGRATION WAS APPLIED TO A REAL POSTGRESQL, not only generated. A fresh database took 0000 then 0001 cleanly and reports nine tables. \\d profile_media_preference shows the columns, the text[] types, PRIMARY KEY btree (profile_id) named profile_media_preference_pkey, and the cascade. A real round trip stored ARRAY['ja','de','en'] and ARRAY['pt-BR','en'] and read back {ja,de,en} and {pt-BR,en} -- ORDER PRESERVED, which is the only information those lists carry. Deleting the profile left 0 preference rows, so the cascade is real rather than declared. The migration itself was GENERATED by drizzle-kit rather than hand-written, with the journal and 0001_snapshot.json it produced, for the reason PL-0407 records: a hand-written snapshot once disagreed with the reviewed migration about three constraint names, which would have emitted DROP CONSTRAINT against a name no database has."
+        }
+      },
+      "updatedAt": "2026-10-04T03:48:01.767Z",
+      "implementationAgent": "claude-backend",
+      "implementationBaseSha": "25994202b1397d7e972febdb24edd685d8a08405"
     }
   ]
 }

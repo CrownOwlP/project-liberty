@@ -15,6 +15,7 @@ export * from "./client";
 export * from "./contracts";
 export * from "./heartbeat";
 export * from "./profile-creation";
+export * from "./profile-preferences";
 export * from "./profile-repository";
 export * from "./progress-repository";
 export * from "./watchlist-mutation";
