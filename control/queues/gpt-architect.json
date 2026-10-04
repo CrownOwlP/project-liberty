@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-04T16:35:19.246Z",
+  "generatedAt": "2026-10-04T16:46:37.032Z",
   "agent": "gpt-architect",
   "executionAvailable": false,
   "assigned": [],
@@ -87,6 +87,37 @@
           "evidence": "CHANGES REQUESTED at 659cafa118bdc72b98d43c7f3fa21a120222e57b. TRANSCRIBED BY claude-lead from gpt-architect's round-111 verdict document, which lists PW-0208 under \"NOT APPROVED YET\" and says: \"PW-0208 still requires stronger evidence about the contents of the actual Windows package/distribution tree.\"\n\nThe same document's section 3 states what that evidence has to cover, and it is quoted here in full rather than paraphrased, because it is the acceptance this task is now being measured against:\n\n  - actual libmpv/FFmpeg artifact included, if included\n  - exact provenance/version/pin\n  - build/configuration evidence available for what ships\n  - GPL components excluded where required by the selected LGPL distribution strategy\n  - THIRD-PARTY-NOTICES or equivalent actually present in the package tree\n  - Node licence actually present beside the shipped runtime where required\n  - dependency licence collection reflects the actual packaged dependencies\n  - written-offer/attribution material actually appears where the distribution strategy requires it\n  - strict notice generation fails on missing evidence rather than silently producing a green result\n\nAND THE BOUNDARY IT RESTATES, which this task's own acceptance already carries: \"Do NOT guess the H.264/HEVC patent decision. H.264/HEVC remains a commander/legal decision and must remain explicitly separate from the LGPL evidence. Do not enable patent-dependent functionality based on an assumption.\"\n\nWHAT THE VERDICT IS OBJECTING TO, read plainly: the distinction between evidence about SOURCE AND SCRIPTS and evidence about THE TREE THAT SHIPS. The recorded `build` gate is about what the packaging is configured to do. \"The actual Windows package/distribution tree\" is what came out of it, and the round-110 instruction said the same thing in fewer words -- \"Do not infer packaged contents solely from source intent.\"\n\nReturned to IN_PROGRESS. The gate results are discarded by `request-changes` as the control plane intends: the `build` gate described a tree, and the next one has to describe the tree that is actually inspected."
         }
       ]
+    },
+    {
+      "id": "PW-0603",
+      "priority": "P1",
+      "lane": "Test",
+      "status": "REVIEW",
+      "title": "The commander's run sheet, and the evidence it produces",
+      "dependencies": [
+        "PW-0601",
+        "PW-0602"
+      ],
+      "allowedPaths": [
+        "docs/WINDOWS_CERTIFICATION.md",
+        "coordination/LAST_MILE.md"
+      ],
+      "reviewDependencies": [
+        "docs/TEST_MATRIX.md",
+        "docs/RELEASE_CRITERIA.md"
+      ],
+      "preferredAgent": "claude-test",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "architecture-review"
+      ],
+      "acceptance": "The commander can run the real-device half in one sitting and hand back evidence that is worth recording. REQUIRED: an ordered run sheet with a stated environment -- Windows build, GPU, driver, display, audio device -- because a pass on unrecorded hardware is not reproducible evidence. REQUIRED: for each row, the exact action, the expected result, and what to capture when it fails. REQUIRED: a defect report format that carries enough to reproduce: the reason trail the player already publishes, the log location PW-0501 establishes, and the version PW-0502 exposes. REQUIRED: the sheet is honest about how long it takes. THE RUN ITSELF IS A LAST_MILE ITEM and this task delivers the sheet, not the results; recording a pass nobody observed would be fabricating a gate result.",
+      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. SURFACE NOTE: this task's allowedPaths name directories that do not exist yet. The evidence-based narrowing procedure applies to reconciling work already in history; for genuinely new work the surface is the smallest set of paths the acceptance can be satisfied within, and it is narrowed again from the diff before review if it turns out to be wider than what was written. ",
+      "owner": "claude-test",
+      "gateResults": {},
+      "implementationAgent": "claude-test",
+      "updatedAt": "2026-10-04T16:46:36.643Z",
+      "implementationBaseSha": "567a08c566ae52358fa896809a00eb7878e8bea1"
     },
     {
       "id": "PL-0732",

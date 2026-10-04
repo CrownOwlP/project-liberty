@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-04T16:35:19.251Z",
+  "generatedAt": "2026-10-04T16:46:37.039Z",
   "agent": "claude-infra",
   "executionAvailable": true,
   "assigned": [
@@ -157,6 +157,34 @@
       "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. SURFACE NOTE: this task's allowedPaths name directories that do not exist yet. The evidence-based narrowing procedure applies to reconciling work already in history; for genuinely new work the surface is the smallest set of paths the acceptance can be satisfied within, and it is narrowed again from the diff before review if it turns out to be wider than what was written. ",
       "owner": null,
       "gateResults": {}
+    },
+    {
+      "id": "PL-0734",
+      "priority": "P2",
+      "lane": "Infra",
+      "status": "READY",
+      "title": "The logs directory the shell creates is written to by nothing, and the sidecar's stderr is discarded",
+      "dependencies": [],
+      "allowedPaths": [
+        "apps/desktop/src-tauri/src/windows_host.rs",
+        "apps/desktop/src-tauri/src/sidecar.rs",
+        "apps/desktop/sidecar-bootstrap/acceptance.mjs",
+        "docs/WINDOWS_CERTIFICATION.md"
+      ],
+      "reviewDependencies": [
+        "apps/desktop/src-tauri/src/failure.rs",
+        "apps/desktop/src-tauri/src/handshake.rs",
+        "apps/desktop/src-tauri/src/token.rs",
+        "apps/desktop/src-tauri/src/shell.rs"
+      ],
+      "preferredAgent": "claude-infra",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "unit",
+        "security-review"
+      ],
+      "acceptance": "FOUND WHILE WRITING PW-0603's RUN SHEET, not by looking for it. The certification document's defect-report format asked the commander for \"the log file (location established by PW-0501)\". There is no such file, and there is no code that could write one.\n\nMEASURED IN THE SHELL'S OWN SOURCE, three facts that together close the question:\n1. `windows_host.rs` calls `std::fs::create_dir_all` on data, cache and logs at first launch, and passes the logs path to the sidecar as LIBERTY_SIDECAR_LOG_DIR. The directory is real.\n2. NOTHING EVER WRITES INTO IT. A grep of apps/desktop/src-tauri/src/ for File::create, write_all, fs::write and OpenOptions returns nothing; every `write!` in the crate is a Display impl formatting an error string. The crate declares no `log` or `tracing` dependency and tauri.conf.json configures no plugins, so there is no logger to have been wired.\n3. THE SIDECAR'S OUTPUT IS DISCARDED. `command.stderr(Stdio::null())` -- a Node stack trace printed on the way down goes to the kernel's bit bucket. stdout is piped to a reader thread whose lines are consumed only by `await_handshake`; once the handshake resolves or the launch is abandoned the thread keeps draining the pipe and throwing each line away, by design, so the child never blocks.\n\nWHAT IS AND IS NOT LOST, because this is a diagnosability defect and inflating it would be the same error in the other direction. `failure.rs` already gives the viewer seven NAMED failure headlines covering the anticipated paths -- missing installation, unwritable profile, loopback not secured, unsafe start, service did not finish starting, service reported something unusable, service keeps stopping -- and the commander screenshots those. What is lost is the UNANTICIPATED failure: the sidecar starts, throws, prints the only explanation that exists to stderr, and exits, and the shell can say no more than \"the local service did not finish starting\". That is the whole of the evidence for a launch defect on a packaged build, on a machine no engineer can reach.\n\nREQUIRED: the sidecar's stderr is captured rather than discarded, and its stdout keeps being drained for the same reason it is drained today. A pipe that is read and then written to a file is still read; this must not reintroduce the full-pipe deadlock `windows_host.rs` already explains.\n\nREQUIRED: what is captured lands in the directory the shell ALREADY creates and already names to the sidecar -- %LOCALAPPDATA%\\app.projectliberty.desktop\\logs. Do not invent a second location, and do not make the layout depend on %LOCALAPPDATA% being read in a second place: sidecar.rs owns the SHAPE under a root the host supplies, and that division is deliberate.\n\nREQUIRED: bounded. An unbounded log on a long session is row E1's failure wearing a different hat. State the bound -- size, count or both -- and make it a tested property rather than a comment.\n\nREQUIRED: the handshake token NEVER reaches the file. `token.rs` mints the one secret this process owns, PW-0101 exists to keep it from another process on the same machine, and a log file in a world-readable profile directory that echoed a line containing it would hand it over. Prove this with a test, not with care.\n\nREQUIRED: a test that the file is actually written, driven through the same path a launch takes, and a test that a sidecar which exits noisily leaves its output behind. `sidecar-bootstrap/acceptance.mjs` already drives a real child and already sets LIBERTY_SIDECAR_LOG_DIR; that is the honest place to assert from, off Windows.\n\nREQUIRED: docs/WINDOWS_CERTIFICATION.md's \"There is no application log file\" subsection is rewritten to say where the log is, in the same edit. A stale subsection claiming the absence of a file that now exists is the exact failure this repository recorded in round 112 for diagnostics-disclosure.tsx.",
+      "notes": "FILED BY claude-test DURING PW-0603, round 112, classification A (product defect) under the round-112 directive's A-E scheme. It is a real defect in the shipped desktop shell, not a packaging or harness fault and not a CI condition.\n\nWHY P2 AND NOT P1, stated so gpt-architect can overrule it cheaply. The product works without this; what suffers is the evidence a failure leaves behind. Most rows the commander can run TODAY are install-path rows, and those already produce an msiexec /l*v log plus verify-install.mjs's own named refusal. The undiagnosable case is narrower: an unanticipated sidecar failure during launch (matrix rows A1, A2, A3b). That is squarely inside the round-112 directive's priority 1 -- desktop launch and runtime qualification -- which is the argument for P1, and the reason this reasoning is written down rather than left as a number. If the first RIG launch defect comes back with only a screenshot, that settles it.\n\nNOT DONE SPECULATIVELY. PW-0603 ships the sheet with the absence stated plainly and the report format limited to what actually exists, so the commander is never asked for a file that was never written. The sheet names this task, so closing this task has a documentation obligation attached to it, which is the REQUIRED clause above."
     }
   ]
 }

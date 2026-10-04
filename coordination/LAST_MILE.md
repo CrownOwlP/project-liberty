@@ -113,10 +113,36 @@ Owner-run and not delegable, because each needs the actual hardware:
 - Sleep/wake, long sessions, memory/CPU/GPU behaviour, clean install, upgrade,
   uninstall/reinstall.
 
-**Owner action:** run the sheet PW-0603 delivers, on a recorded environment
-(Windows build, GPU, driver, display, audio device), and hand back the results.
-A pass on unrecorded hardware is not reproducible evidence, and **no row of that
-matrix may be marked passed from this session.**
+**THE SHEET NOW EXISTS**, as *The run sheet (PW-0603)* in
+`docs/WINDOWS_CERTIFICATION.md`. Writing it changed what this item asks for, in
+two ways worth recording here rather than only there.
+
+**It is three hours, not seven, and that is a narrowing rather than a
+speed-up.** The entire playback block needs something to play, and a production
+deployment publishes **nothing** — no operator rights register (item 4) and no
+licensed provider (item 3). Sixteen playback rows, sleep/wake-mid-playback, and
+the whole four-hour long-session group are therefore not runnable today at any
+amount of effort. What the sheet claims is the true statement: **about three
+attended hours covers every row that can currently be run.** The rest is listed
+with the gate that releases it, so nobody sets aside an afternoon and finds out
+at row B1.
+
+**Experiment 1a is the third thing done, not the last.** The matrix lists it
+last; the sheet runs it immediately after first launch, because the whole choice
+of Tauri rests on it and a failure reverses D1 through architecture review. The
+sheet says to stop the sitting there.
+
+**Owner action:** work *The run sheet* in order, from Step 0, on a recorded
+environment (Windows build, GPU, driver, WebView2 runtime, display, audio
+device), and hand back the results. A pass on unrecorded hardware is not
+reproducible evidence, and **no row of that matrix may be marked passed from
+this session.**
+
+**Carry this expectation in:** a defect you hit will leave behind an installer
+log, a screenshot and whatever the window said — and nothing else. The shell
+creates a `logs` directory and nothing writes to it, and the sidecar's stderr is
+discarded outright. Found while writing the sheet and filed as **PL-0734**; the
+sheet's report format asks only for what actually exists.
 
 ## 8. Push access is now a build blocker, not an inconvenience
 

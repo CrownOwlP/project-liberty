@@ -147,21 +147,318 @@ the commander may not have), the lip-sync rig, and the signed update path
 (LAST_MILE 6). **They are listed rather than dropped**, because a matrix that
 omits what it cannot test reads as a matrix that passed.
 
+---
+
+# The run sheet (PW-0603)
+
+The matrix above is a **catalogue**: forty-one rows grouped by what they test.
+This section is the **procedure**: what the commander does, in order, in one
+sitting, and what to write down. The two are deliberately different documents
+in one file, because working down a catalogue in catalogue order is how a
+certification run goes wrong.
+
+**This section delivers the sheet, not the results.** No row below may be
+marked passed from the cloud engineering session, and a row recorded as passed
+without an environment block is not evidence.
+
+## Four things that are not obvious, and that the ordering exists for
+
+**1. Most of the matrix cannot be run today, and it is not a hardware
+problem.** The entire **B block** (sixteen playback rows) needs something to
+play, and a production deployment of this product publishes **nothing**: the
+catalog has no operator rights register, so every record is withheld by name
+(`docs/CATALOG_SOURCE.md`), and no licensed provider is configured (`PL-0302`,
+LAST_MILE 3). This is the system working as designed — a source knowing a work
+exists is not authorization to surface it — but it means a commander who sets
+aside an afternoon and starts at A1 discovers it at B1, three hours in. The
+sitting that is actually runnable today is **Session 1 below, and nothing
+else**. Everything else is listed in *Not runnable yet* with the gate that
+releases it.
+
+**2. G1 comes early, not at the end.** Experiment 1a is the last row of the
+last group in the matrix, and it is the **third thing done** here. The whole
+choice of Tauri (D1) rests on it, it has never been run, and a failure reverses
+that decision through architecture review rather than being worked around
+(`DESKTOP_PLAYBACK.md` §10). Running it at the end of a long sitting means
+either discovering at hour four that the architecture is wrong, or — worse —
+being tired enough to record a hopeful pass.
+
+**3. F3 and F4 come last, because they destroy everything the other rows
+need.** Uninstall and reinstall are the only rows that cannot be undone by
+closing a window. Run them after every other row on this machine has a result.
+
+**4. F5 can only be observed once.** SmartScreen and Defender warn on *first*
+run of an unsigned installer, and Windows remembers. If the install step is
+done without watching for it, the observation is gone until a different machine
+or a reset reputation cache. Capture it at the moment of install or not at all.
+
+## Before the sitting
+
+Have these in hand; each has cost a sitting when it was missing.
+
+- **A CI run that produced installers.** The `package` job of the *Windows
+  package* workflow must have **succeeded**, and its artifact
+  `liberty-windows-unsigned-<sha>` must still exist — retention is **14 days**.
+  Note the run id and the commit sha now; both go in the environment block.
+- **Administrator rights**, for the MSI and for Task Manager's handle counts.
+- **About half a gigabyte free** on the system drive, and a machine you are
+  willing to uninstall software from.
+- **An expectation that Windows will warn you.** The installer is unsigned and
+  will stay unsigned until an Authenticode certificate exists (LAST_MILE 6).
+  The warning is row F5, not a failure.
+- **The repository checkout, at the same commit as the artifact**, and `node`
+  on `PATH`. Steps 2 and 5 run `scripts\windows\verify-install.mjs`, which uses
+  **only Node builtins** — there is nothing to `npm install` — but it derives
+  the paths it checks from `apps/desktop/src-tauri/src/sidecar.rs` by reading
+  the Rust constants out of the source beside it. That is deliberate: the Rust
+  constant is the contract and a copy of it is how this check drifted before.
+  The consequence for the sitting is that the checkout must be **at the commit
+  the installer was built from**, or the verifier is checking one build's
+  layout against another build's expectations.
+
+## Step 0 — Record the environment (10 minutes)
+
+A RIG pass on unrecorded hardware is not evidence, so this is step zero rather
+than a footnote. Run this in **PowerShell** and paste the output into the
+report; it fills most of the block in *Recording an environment* above.
+
+```powershell
+$cv = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion'
+"Windows      : {0} {1} (build {2}.{3})" -f $cv.ProductName, $cv.DisplayVersion, $cv.CurrentBuildNumber, $cv.UBR
+
+Get-CimInstance Win32_VideoController |
+  Select-Object Name, DriverVersion, DriverDate,
+                CurrentHorizontalResolution, CurrentVerticalResolution, CurrentRefreshRate |
+  Format-List
+
+Get-CimInstance Win32_SoundDevice | Select-Object Name, Manufacturer | Format-List
+```
+
+The **WebView2 runtime version** is not in that output and matters more than
+most of what is: it is the browser engine the whole UI runs in, and it updates
+itself without asking.
+
+```powershell
+$k = 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
+(Get-ItemProperty $k -ErrorAction SilentlyContinue).pv
+```
+
+If that prints nothing, read the version from **Settings → Apps → Installed
+apps → Microsoft Edge WebView2 Runtime** and record where you got it. An empty
+result is itself worth recording — it may mean the runtime is per-user or
+absent, and "absent" is the explanation for a whole class of launch failure.
+
+Two fields the commands cannot answer, because Windows exposes them as a
+setting rather than a capability: **HDR** (Settings → System → Display → *Use
+HDR*; record on/off **and** whether the toggle exists at all) and **display
+scaling** (same page; record the percentage). Scaling is row G2's input.
+
+## Step 1 — Get the artifact and prove the bytes (15 minutes)
+
+1. Download `liberty-windows-unsigned-<sha>` from the CI run. It contains one
+   `.msi`, one `.exe` (NSIS), and `artifact-inventory.json`.
+2. Open `artifact-inventory.json`. It lists each artifact's `kind`, `name`,
+   `bytes` and `sha256`, produced by the same job that built them.
+3. Verify both files:
+
+   ```powershell
+   Get-FileHash -Algorithm SHA256 .\*.msi, .\*.exe | Format-List Path, Hash
+   ```
+
+   Compare each `Hash` to the matching `sha256` in the inventory, **case
+   insensitively** — `Get-FileHash` prints uppercase and the inventory is
+   lowercase. Compare the byte counts too.
+
+**Expected:** two files, both hashes matching. **If a hash does not match:**
+stop. Do not install it. That is a corrupted download or a wrong artifact, and
+either way nothing measured afterwards is attributable to the commit.
+
+**What this does not prove, stated so it is not over-read:** the inventory is a
+SHA-256 taken by the job that built the files. It proves the bytes you have are
+the bytes CI produced. It is **not a signature**, not a provenance attestation,
+and not evidence that the installer installs anything.
+
+**Install the MSI, not the NSIS executable**, unless you are specifically
+testing the per-user path. The rest of this sheet assumes the MSI's machine-wide
+layout: `C:\Program Files\Project Liberty`.
+
+## Step 2 — Clean install, watched (20 minutes) — rows F1, F5
+
+Run the MSI from an elevated prompt so the log is kept:
+
+```powershell
+msiexec /i ".\<the file>.msi" /l*v "$env:USERPROFILE\Desktop\liberty-install.log"
+```
+
+**Watch for the SmartScreen / Defender warning and record its exact wording and
+the exact button you pressed** (row F5). Screenshot it. This is the only chance.
+
+Then verify the installation is what it claims to be, rather than trusting that
+the installer said it finished. The repository ships the verifier CI uses:
+
+```powershell
+node scripts\windows\verify-install.mjs "C:\Program Files\Project Liberty"
+```
+
+**Expected:** exit code 0, having found the executable, the packaged Node
+runtime, the sidecar server entry and a **non-empty** `THIRD-PARTY-NOTICES.md`.
+**If it refuses:** record its message verbatim — it names the missing entry, and
+that message is the defect report. Do not launch the application; a partial
+install produces failures in every later row that are not those rows' failures.
+
+**F1 pass condition:** the MSI completes, the verifier exits 0, and
+`C:\Program Files\Project Liberty\liberty-desktop.exe` exists.
+
+## Step 3 — First launch, and the decision (45 minutes) — rows A1, G1
+
+**A1 — cold start.** Launch it. **Expected:** a window appears, the home screen
+renders, no error dialog. **Record the time from double-click to first paint**
+(a stopwatch is fine; the number is a baseline, not a threshold).
+
+Note what the home screen shows. On a correctly configured deployment with no
+rights register it will offer **no titles**, and that is item 1 above, not a
+failure of A1. A1 is about the window, the render and the absence of a crash.
+
+**G1 — Experiment 1a. This is the decision point of the entire sitting.**
+`DESKTOP_PLAYBACK.md` §10 specifies it. The question is whether a child HWND
+composites *beneath* a transparent WebView2 — whether native video can be drawn
+behind the web UI rather than inside it.
+
+**What to capture, whatever the answer:** a screenshot, the GPU and driver from
+Step 0, and a plain statement of what you saw — which layer was visible, which
+was not, and whether anything flickered or tore.
+
+**If it fails: stop the sitting and report it.** Do not work around it, do not
+try a different window style, and do not continue to Step 4. A failure here
+reverses decision D1 through architecture review, and three more hours of rows
+measured on an architecture that is about to change is three hours spent.
+
+## Step 4 — The rows that need no content (60 minutes)
+
+These are every remaining row that a catalog publishing nothing can still
+answer. Run them in this order; each leaves the app in the state the next one
+expects.
+
+| # | Action | Expected | Capture on failure |
+| --- | --- | --- | --- |
+| **A2** | Close the window. Launch again. | Second launch succeeds, same as A1. | Whether a `node.exe` from the app is still in Task Manager **before** the second launch — an orphaned sidecar holding the loopback port is the failure this row exists for. |
+| **A3** | Launch. End the `liberty-desktop.exe` **process tree** from Task Manager. Wait 10 s. | **No `node.exe` belonging to the app remains.** The Job Object (PW-0102) should have taken it with the shell. | The surviving process's PID, command line (Task Manager → Details → right-click → *Command line* column) and parent. A survivor here is a real defect. |
+| **A3b** | Launch again after A3. | Starts normally; no port conflict. | The error text, and whether `verify-install` still passes. |
+| **G2** | Set display scaling to 100%, then 125%, 150%, 200% (Settings → System → Display). Launch at each; visit home, search, settings. | No clipped text, no control pushed off-screen, no unreadable label. | A screenshot **per scaling level that fails**, with the level in the filename. |
+| **G3** | From the home screen, operate the whole app with **keyboard only** — Tab, Shift-Tab, Enter, Space, Escape. Reach every interactive element on home, search and settings. | Every control reachable and operable; focus always visible (PW-0310). | The element that cannot be reached, and the control you were on when focus was lost or trapped. |
+| **E2** | Leave the app open and idle on the home screen for 10 minutes. Task Manager → Details → CPU for `liberty-desktop.exe` and the app's `node.exe`. | Recorded. An idle media application should not be holding a core. | Record the number regardless; this row's output is a measurement, not a verdict. |
+| **C2** | Disable the network adapter. Launch the app. | Degraded mode that **names what is unavailable** (PW-0309) — not a blank window and not a spinner. | A screenshot of what it actually showed, and how long it showed it before settling. |
+
+Re-enable the network when C2 is done.
+
+## Step 5 — Uninstall and reinstall, last (30 minutes) — rows F3, F4
+
+Destructive. Everything above must have a result first.
+
+1. **Before uninstalling**, record what is in the user-data root so you can tell
+   what survives:
+
+   ```powershell
+   $root = "$env:LOCALAPPDATA\app.projectliberty.desktop"
+   Get-ChildItem -Recurse $root | Select-Object FullName, Length | Format-Table -AutoSize
+   ```
+
+   Expect `data`, `cache` and `logs` subdirectories, created by the application
+   at first launch. **The installer never created them**, which is why the next
+   expectation is what it is.
+
+2. **F3 — uninstall** through Settings → Apps → Installed apps.
+
+   **Expected:** `C:\Program Files\Project Liberty` is gone; **no** service, no
+   scheduled task, and no `node.exe` from the app in Task Manager. The user-data
+   root above **still exists, with its contents** — the uninstaller cannot
+   remove what it never created, so the honest answer to "what user data does
+   uninstall keep" is *all of it, there*.
+
+   **Capture on failure:** the surviving path, and for a surviving process its
+   PID and command line.
+
+3. **F4 — reinstall** the same MSI. **Expected:** succeeds; `verify-install`
+   exits 0 again; the application launches and the settings you chose earlier
+   are **still there**, because that state was in the user-data root.
+
+   **Capture on failure:** the installer's own log (`/l*v` as in Step 2) and
+   whether the user-data root was modified (compare against the listing in 1).
+
+## Not runnable yet, and exactly what releases each
+
+Listed so that the gap between "the matrix has forty-one rows" and "the sitting
+has about twenty" is visible rather than discovered.
+
+| Rows | Blocked on | Releases when |
+| --- | --- | --- |
+| **B1–B16** (all playback), **A6** (sleep/wake mid-playback), **A7/E1/E3/E4** (long session, memory, GPU, handles) | Nothing to play: no operator rights register and no licensed provider | `PL-0302`, LAST_MILE 3 and 4 |
+| **B11** multichannel, **B14** HDR | Hardware the commander may not have | A multichannel device / an HDR display — **skip honestly, do not mark failed** |
+| **B12** lip-sync | The external flash-and-blip rig | `docs/AV_SYNC_MEASUREMENT.md`. A browser cannot measure this and neither can an eyeball |
+| **D1–D4** live TV | Licensed live feed | `PL-0602` |
+| **F6** update check | Code signing | LAST_MILE 6. Until a certificate exists the update path is **disabled by default and says so** |
+| **F2** upgrade over a previous version | A genuine previous release to upgrade *from* | A second signed-or-not artifact from an earlier commit, kept deliberately. `PW-0505` |
+| Every **AUTO** row | Nothing — they run on `windows-latest` | They are not the commander's; do not run them by hand |
+
 ## Reporting a failure
 
-A defect report that cannot be reproduced costs more than no report. Include:
+A defect report that cannot be reproduced costs more than no report. Include,
+in this order:
 
-1. the environment block above, complete;
-2. the row number;
-3. **the playback reason trail** — the player already publishes it, and it is the
-   difference between "it stopped" and "candidate 2 failed with X and failover
-   found nothing";
-4. the log file (location established by PW-0501);
-5. the app version (About screen, PW-0308) and the CI artifact id.
+1. **The environment block from Step 0, complete.** Two runs that disagree are
+   two different machines until these fields say otherwise.
+2. **The row number** from the matrix, and which Step of this sheet you were in.
+3. **What you did, what you expected, what happened** — in that order, in three
+   sentences. The third one is the only one that is ever ambiguous later.
+4. **A screenshot**, for anything visual. G1, G2 and C2 are not describable.
+5. **The playback reason trail**, where playback was involved. The player
+   publishes it, and it is the difference between "it stopped" and "candidate 2
+   failed with X and failover found nothing".
+6. **The installer log**, for anything in Step 2 or Step 5 — that is what the
+   `/l*v` argument is for.
+7. **The application version** from the About screen, and the **CI run id** and
+   **commit sha** the artifact came from. Never "latest".
 
-## How long the rig half takes
+### There is no application log file, and the sheet will not pretend otherwise
 
-Honestly: the RIG rows are roughly **three to four hours of attended time**, and
-A7/E1 add four hours of mostly unattended playback that must be sampled at
-intervals. It is not a fifteen-minute pass, and planning it as one is how a
-certification run turns into a spot check.
+This document previously asked for "the log file (location established by
+PW-0501)". **No such file exists.** Checked rather than assumed, in the shell's
+own source:
+
+- the shell creates `%LOCALAPPDATA%\app.projectliberty.desktop\logs` at first
+  launch and passes it to the sidecar as `LIBERTY_SIDECAR_LOG_DIR`;
+- **nothing ever writes into it** — no file write exists anywhere in
+  `apps/desktop/src-tauri/src/`;
+- the sidecar's **stderr is discarded** (`stderr(Stdio::null())`), and its
+  stdout is read only until the handshake line arrives, after which the reader
+  thread keeps draining it **to nowhere** so the child does not block on a full
+  pipe.
+
+So a defect in a packaged build currently leaves behind the installer log, a
+screenshot, and whatever the UI said — and nothing else. This is a product
+defect, filed as **PL-0734**, and until it closes, items 1–7 above are the whole
+of what a report can carry. Asking the commander to attach a log that was never
+written is how a sheet trains people to stop reading it.
+
+## How long it takes, honestly
+
+| | |
+| --- | --- |
+| Step 0, environment | 10 min |
+| Step 1, artifact and hashes | 15 min |
+| Step 2, install, watched | 20 min |
+| Step 3, first launch and **G1** | 45 min |
+| Step 4, the content-free rows | 60 min |
+| Step 5, uninstall and reinstall | 30 min |
+| **One sitting, attended** | **about 3 hours** |
+
+Add the Step 0 scaling changes if the machine is not already at 100%, and add
+the download time for the artifact on a slow connection.
+
+**What that three hours does not include**, and did not shrink: the long-session
+rows (A7, E1, E3, E4) are four hours of mostly unattended playback sampled at
+0/1/2/4h, and they cannot start until there is something to play. They are a
+**second sitting**, not an extension of this one, and the earlier figure of
+"three to four hours attended plus four unattended" remains the right estimate
+for the whole matrix once `PL-0302` lands. What this sheet claims is narrower
+and true today: **three hours gets you every row that can currently be run.**
