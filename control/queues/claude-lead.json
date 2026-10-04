@@ -1,9 +1,40 @@
 {
-  "generatedAt": "2026-10-04T15:52:12.991Z",
+  "generatedAt": "2026-10-04T15:54:29.246Z",
   "agent": "claude-lead",
   "executionAvailable": true,
   "assigned": [],
   "review": [],
   "reservedExternal": [],
-  "recommended": []
+  "recommended": [
+    {
+      "id": "PL-0730",
+      "priority": "P3",
+      "lane": "Integration",
+      "status": "READY",
+      "title": "test:scripts and the CI validate job can disagree in one direction without anything noticing",
+      "dependencies": [],
+      "allowedPaths": [
+        "package.json",
+        ".github/workflows/ci.yml",
+        "apps/desktop/scripts/notices.test.mjs"
+      ],
+      "reviewDependencies": [
+        "apps/desktop/scripts/notices.test.mjs",
+        "apps/desktop/scripts/collect-notices.mjs",
+        ".github/workflows/ci.yml",
+        "scripts/windows/test-lifecycle.mjs"
+      ],
+      "preferredAgent": "claude-lead",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "unit"
+      ],
+      "acceptance": "FILED ON A FALSE PREMISE AND REWRITTEN BEFORE ANY WORK. The original said apps/desktop/scripts/notices.test.mjs \"is run by nothing\" and called it the fifth instance of a suite no gate asks. IT RUNS IN CI: .github/workflows/ci.yml, validate job, step id `notices-suite`, `node --test apps/desktop/scripts/notices.test.mjs`, added by PL-0714. The claim came from reading that file's own header comment -- \"NOTHING IN THIS REPOSITORY RUNS THIS FILE AUTOMATICALLY YET\" -- which was true when PW-0208 wrote it and was made false by PL-0714 a round later. The correction is recorded as a defect.found event.\n\nWHAT IS ACTUALLY WRONG, AND IT IS SMALLER AND MORE INTERESTING.\n\n1. THE SUITE IS NOT IN `npm run test:scripts`, so it is not in `npm run check` either. It runs on every push and never on a developer's machine through the command this repository tells people to run. That is a coverage asymmetry, not an absence.\n\n2. PL-0714's `mirror-check` CANNOT DETECT THAT, and this is the finding worth the task. It derives the alias's scripts from package.json, derives the job's from the workflow, and fails when a script in the ALIAS has no STEP. The reverse -- a step with no alias entry -- is not checked in either direction. Measured: adding notices.test.mjs to the alias makes the check report \"every suite in the alias has a step in this job\" and exit 0, and removing it again also exits 0. The mechanism PL-0714 built to end a hand-kept list is itself one-directional, so half the drift it was built for is still invisible.\n\nREQUIRED: `npm run test:scripts` names the suite, so `npm run check` covers it locally.\nREQUIRED: the mirror check becomes BIDIRECTIONAL -- a suite step in the validate job with no entry in the alias fails too, with the same kind of message. PL-0714's own words apply: \"the note that a hand-kept list must be kept in step did not keep it in step on any of the three occasions\", and a one-directional check is half a note.\nREQUIRED: both directions are proven to FAIL, by removing an entry from each side in turn and showing the check goes red, not merely by showing it green today.\nREQUIRED: the stale header comment in notices.test.mjs is corrected, because it is what produced the false premise above. A comment that outlives the code it describes is the failure this project keeps recording.\n\nOUT OF SCOPE: making apps/desktop an npm workspace. Round 106 measured that and it breaks repo:validate; the account is in coordination/WINDOWS_LIFECYCLE_WIRING.md section 8.",
+      "notes": "FILED ROUND 111 by claude-infra during PW-0208, ON A FALSE PREMISE, and rewritten the same round by claude-lead after checking the workflow rather than trusting a comment. Surface widened from package.json alone to include ci.yml (the mirror check lives there) and notices.test.mjs (its header carries the stale claim). Priority dropped P2 -> P3: a local-coverage gap and a one-directional check, not a suite running nowhere.\n\nCOLLIDES WITH: .github/workflows/ci.yml is PL-0717's (REVIEW) and PL-0726's (REVIEW) surface, so this cannot be active beside either. That is why it is not being executed now.",
+      "gateResults": {},
+      "owner": null,
+      "implementationAgent": "claude-lead",
+      "updatedAt": "2026-10-04T15:54:19.150Z"
+    }
+  ]
 }

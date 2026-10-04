@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-04T15:52:12.996Z",
+  "generatedAt": "2026-10-04T15:54:29.250Z",
   "agent": "claude-test",
   "executionAvailable": true,
   "assigned": [
@@ -221,31 +221,6 @@
           "evidence": "CHANGES REQUESTED at 835823561c69f5bbdebf19c637eeeabff19dacf7. Transcribed by claude-lead from gpt-architect's round-105 ruling, section 2, which is a request for changes in substance even though it does not use the word: 'The lifecycle harness architecture is accepted. DO NOT mark PW-0503 DONE merely to free the Test lane. Current Windows evidence establishes only part of the lifecycle matrix.' gpt's itemised verdict: F1 clean install PARTIAL PASS -- the MSI builds, installs and its installed tree is verified; still unverified is actual installed application launch and WebView runtime. F2 upgrade UNVERIFIED -- no real previous release has been exercised as an upgrade source, so user-data preservation across an actual upgrade remains unproven. F3 uninstall PARTIAL PASS -- msiexec uninstall executes; still to prove where automation permits are no orphaned service, no scheduled task, no orphaned node.exe, expected files removed, and documented user-data retention behaviour. F4 reinstall UNVERIFIED but AUTOMATABLE -- 'implement and execute this rather than classifying it as commander-only'. WHAT HAS CHANGED SINCE THAT VERDICT WAS WRITTEN, and it narrows the request rather than answering it: the IMPLEMENTATION of F3's residue classification and of F4 reinstall already exists in scripts/windows/lifecycle.mjs and residue.mjs at the commit above, with 30 cases behind the decisions, and F4 is already marked plannedAutomated with no manual portion. What does not exist is EXECUTION, and it cannot be created by any open task: no open task can write .github/workflows/windows.yml -- every writer is DONE and PW-0502, PW-0503 and PW-0602 hold it read-only. That is recorded as a board.sequencing_finding and needs a ruling on which task gets the write surface. Recorded so the task leaves REVIEW honestly rather than being completed on evidence gpt declined to accept."
         }
       ]
-    },
-    {
-      "id": "PL-0730",
-      "priority": "P2",
-      "lane": "Test",
-      "status": "READY",
-      "title": "The desktop notices suite is run by nothing, which is the fifth instance",
-      "dependencies": [],
-      "allowedPaths": [
-        "package.json"
-      ],
-      "reviewDependencies": [
-        "apps/desktop/scripts/notices.test.mjs",
-        "apps/desktop/scripts/collect-notices.mjs",
-        ".github/workflows/ci.yml",
-        "scripts/windows/test-lifecycle.mjs"
-      ],
-      "preferredAgent": "claude-test",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "unit"
-      ],
-      "acceptance": "apps/desktop/scripts/notices.test.mjs is 22 cases covering the licence-evidence verdicts, the rendered document, and -- added in round 111 -- the five refusals that stop the notices generator reporting success over a tree it found nothing in. NOTHING RUNS IT. apps/desktop has no package.json, so it is not an npm workspace and turbo never reaches it, and `npm run test:scripts` does not name it.\\n\\nTHIS IS THE FIFTH INSTANCE OF ONE DEFECT. scripts/test-validate-repo.mjs ran nowhere until PL-AI-0002; scripts/test-desktop-target.mjs and the 30-case Windows lifecycle suite ran nowhere until PL-0714; apps/web/src/components/player/tracks.ts was imported by nothing until PW-0306; three e2e titles were skipped in every configuration until PL-0717. Each time the thing existed, passed, and no gate asked it.\\n\\nREQUIRED: the suite runs where a gate asks it, which means `npm run test:scripts` and therefore package.json.\\nREQUIRED: it runs in CI. PL-0714 made the validate job mirror test:scripts BY A MECHANISM rather than by a hand-kept list; if that mechanism picks this up automatically, say so and prove it, and if it does not, that is a defect in the mechanism and belongs in this task's finding rather than being worked around with another hand-added step.\\nREQUIRED: evidence that it actually executed in CI, naming the case count -- not that a step was added.\\n\\nOUT OF SCOPE: changing what the suite asserts.",
-      "notes": "FILED ROUND 111 by claude-infra during PW-0208. package.json is outside PW-0208's surface. PL-0728 proposes the standing mechanical check that would have caught this and the four before it; this is the individual repair and that is the general one.",
-      "gateResults": {}
     }
   ]
 }
