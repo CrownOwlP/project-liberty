@@ -238,21 +238,98 @@ describe("identity is derived from the files the shell itself compiles", () => {
     assert.throws(() => locations(IDENTITY, {}), /ProgramFiles/);
   });
 
-  it("agrees with the install path the Windows workflow asserts", () => {
-    /*
-     * CROSS-CHECKED AGAINST THE OTHER COPY, which is the point of declaring
-     * `.github/workflows/windows.yml` as a review dependency. That workflow
-     * hard-codes `Program Files\Project Liberty`; if the product is ever
-     * renamed, the derived value here moves and the workflow's literal does
-     * not, and this is where that is noticed -- rather than on a runner, or
-     * on the commander's machine.
-     */
+  /* =======================================================================
+   * THE TWO PLACES THE DERIVED IDENTITY IS WRITTEN DOWN A SECOND TIME
+   *
+   * WHAT STOOD HERE AND WHY IT WAS WRONG (PL-0727). One case, "agrees with
+   * the install path the Windows workflow asserts", required that
+   * `.github/workflows/windows.yml` CONTAIN the literal
+   * `<productName>\<executable>`, on the premise its comment stated: "That
+   * workflow hard-codes Program Files\Project Liberty". CI #180's validate
+   * job went red on it, and nothing had been renamed.
+   *
+   * PW-0307 (commit 9c6abd4) deleted that literal deliberately. It replaced
+   * an inline `Test-Path` against a written-down executable path with `node
+   * scripts/windows/verify-install.mjs`, which DERIVES the paths it checks
+   * from `apps/desktop/src-tauri/src/sidecar.rs`. The block it removed
+   * explains why in its own words: the path had already drifted once because
+   * it was "written down in a third place".
+   *
+   * So the workflow moved to derivation -- which is better, and is what this
+   * check's own comment said it wanted -- and the check went on demanding
+   * the literal the move had removed. The sixth time a check in this
+   * repository has reported a fault that was not there, and the standing
+   * rule applies again: fix the check, do not restore what it misses.
+   * Restoring the literal would re-create the third copy PW-0307 removed.
+   *
+   * WHAT THE CHECK IS NOW. The correspondence is real; it moved. Two
+   * literals still exist and both are worth guarding:
+   *
+   *   - `windows.yml` still writes the PRODUCT NAME, in the install root it
+   *     prints before the harness runs;
+   *   - `verify-install.mjs` still writes the EXECUTABLE, in the first entry
+   *     of its required list, because no Rust constant carries it -- it
+   *     comes from Cargo.toml's binary name.
+   *
+   * Each is compared against the value derived from the files the shell
+   * compiles, so a rename fails here rather than on a runner.
+   * ==================================================================== */
+
+  /**
+   * Require a literal, or refuse saying which two things disagree.
+   *
+   * A FUNCTION RATHER THAN AN INLINE `assert.ok`, so the third case can hand
+   * it text that DISAGREES and prove it refuses. An `includes` against a
+   * string absent from both sides passes forever, which is exactly the shape
+   * of the check this replaces.
+   */
+  const mustMention = (text, literal, where) => {
+    if (!text.includes(literal)) {
+      throw new Error(
+        `${where} does not mention ${literal}, which is derived from the files the shell ` +
+          `compiles; one of the two has been renamed without the other`
+      );
+    }
+  };
+
+  it("the workflow's install root agrees with the derived product name", () => {
     const workflow = readFileSync(join(REPO_ROOT, ".github", "workflows", "windows.yml"), "utf8");
-    assert.ok(
-      workflow.includes(`"${IDENTITY.productName}\\${IDENTITY.executable}"`) ||
-        workflow.includes(`${IDENTITY.productName}\\${IDENTITY.executable}`),
-      `the Windows workflow does not mention ${IDENTITY.productName}\\${IDENTITY.executable}; one ` +
-        `of the two has been renamed without the other`
+    mustMention(workflow, `"${IDENTITY.productName}"`, ".github/workflows/windows.yml");
+  });
+
+  it("verify-install's executable agrees with the derived executable", () => {
+    /*
+     * THIS IS WHERE THE EXECUTABLE LITERAL LIVES NOW, and it is the one copy
+     * PW-0307 did not eliminate: `verify-install.mjs` derives the SIDECAR
+     * paths from `sidecar.rs` and then writes the shell's own filename out by
+     * hand. So this case is what keeps that copy honest, and it is the reason
+     * the executable's disappearance from the workflow is not an untested
+     * gap -- the correspondence is asserted here, against the file that still
+     * carries it.
+     */
+    const verify = readFileSync(join(REPO_ROOT, "scripts", "windows", "verify-install.mjs"), "utf8");
+    mustMention(verify, `"${IDENTITY.executable}"`, "scripts/windows/verify-install.mjs");
+  });
+
+  it("A CROSS-CHECK THAT CANNOT FAIL IS NOT A CROSS-CHECK", () => {
+    /*
+     * NON-VACUITY, ON THE REAL COMPARISON. Both cases above pass today; so
+     * would a check whose literal appeared in neither file, which is how the
+     * replaced case survived a deliberate removal for a whole round. This
+     * drives the same function with text that disagrees and requires the
+     * refusal.
+     */
+    assert.throws(
+      () => mustMention('Join-Path ${env:ProgramFiles} "Liberty Player"', `"${IDENTITY.productName}"`, "a renamed workflow"),
+      /has been renamed without the other/
+    );
+    assert.throws(
+      () => mustMention('path: join(root, "liberty-player.exe"),', `"${IDENTITY.executable}"`, "a renamed verifier"),
+      /has been renamed without the other/
+    );
+    /* AND IT ACCEPTS THE AGREEING CASE, so the rule is not simply "throw". */
+    assert.doesNotThrow(() =>
+      mustMention(`x = "${IDENTITY.productName}"`, `"${IDENTITY.productName}"`, "an agreeing file")
     );
   });
 });

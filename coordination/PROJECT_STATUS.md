@@ -1,18 +1,18 @@
 # Project Liberty - Project Status
 
-> Generated 2026-10-04T04:13:26.314Z from the AI control plane.
+> Generated 2026-10-04T04:23:39.494Z from the AI control plane.
 
-**Overall completion:** 99/124 executable tasks (80%)
+**Overall completion:** 100/126 executable tasks (79%)
 
 ## Status summary
 
-- **BACKLOG:** 8
-- **READY:** 3
+- **BACKLOG:** 7
+- **READY:** 5
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 1
 - **REVIEW:** 6
 - **BLOCKED:** 7
-- **DONE:** 99
+- **DONE:** 100
 - **CANCELED:** 0
 - **SUPERSEDED:** 4
 
@@ -31,20 +31,20 @@
 
 ## Active work
 
-- **PL-0714** [REVIEW] CI executes every script suite the repository declares, and a failing validate job says something — owner: claude-lead
 - **PW-0208** [REVIEW] An LGPL-compatible libmpv and FFmpeg the product may actually ship — owner: claude-infra
 - **PW-0308** [IN_PROGRESS] Settings a viewer can actually change — owner: claude-frontend
 - **PW-0602** [REVIEW] The automated half of the Windows matrix, running on Windows — owner: claude-test
 - **PL-0722** [REVIEW] Corrective: the rate-limit spec assumed a bucket no other worker had touched, and CI is red — owner: claude-test
 - **PL-0723** [REVIEW] A profile remembers which languages its viewer wants — owner: claude-backend
 - **PL-0725** [REVIEW] Corrective: the roving group sets state inside an effect, and repository lint is red — owner: claude-frontend
+- **PL-0727** [REVIEW] Corrective: the lifecycle cross-check demands a literal PW-0307 deliberately removed — owner: claude-infra
 
 ## Dispatch classification
 
-- **READY_AND_EXECUTABLE:** 3
+- **READY_AND_EXECUTABLE:** 5
 - **READY_BUT_EXTERNAL:** 0
 - **BLOCKED:** 7
-- **BACKLOG (dependency-gated):** 8
+- **BACKLOG (dependency-gated):** 7
 
 ## Recommended executable wave
 
@@ -75,11 +75,11 @@ UNBLOCK WHEN: the commander runs Experiment 1a on real Windows hardware and hand
 ## Agent capacity
 
 - **gpt-architect:** 0/6 active (external lane; not locally executable)
-- **claude-lead:** 1/2 active
+- **claude-lead:** 0/2 active
 - **claude-frontend:** 2/2 active
 - **claude-backend:** 1/2 active
 - **claude-media:** 0/2 active
 - **claude-test:** 2/2 active
 - **claude-security:** 0/1 active
-- **claude-infra:** 1/2 active
+- **claude-infra:** 2/2 active
 - **human-commander:** 0/99 active (external lane; not locally executable)

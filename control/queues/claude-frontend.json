@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-04T04:13:26.318Z",
+  "generatedAt": "2026-10-04T04:23:39.497Z",
   "agent": "claude-frontend",
   "executionAvailable": true,
   "assigned": [
@@ -23,7 +23,8 @@
         "apps/web/src/components/shell/navigation.ts",
         "apps/web/src/lib/viewer-preferences.ts",
         "apps/web/src/lib/viewer-preferences.test.ts",
-        "apps/web/src/app/watch/[contentId]/page.tsx"
+        "apps/web/src/app/watch/[contentId]/page.tsx",
+        "e2e/tests/settings.spec.ts"
       ],
       "reviewDependencies": [
         "apps/web/src/app/api/v1/profiles",

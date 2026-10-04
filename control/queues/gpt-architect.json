@@ -1,122 +1,9 @@
 {
-  "generatedAt": "2026-10-04T04:13:26.316Z",
+  "generatedAt": "2026-10-04T04:23:39.495Z",
   "agent": "gpt-architect",
   "executionAvailable": false,
   "assigned": [],
   "review": [
-    {
-      "id": "PL-0714",
-      "priority": "P1",
-      "lane": "Integration",
-      "status": "REVIEW",
-      "title": "CI executes every script suite the repository declares, and a failing validate job says something",
-      "dependencies": [],
-      "allowedPaths": [
-        ".github/workflows/ci.yml"
-      ],
-      "reviewDependencies": [
-        "package.json",
-        "scripts/windows/test-lifecycle.mjs",
-        "apps/desktop/scripts/notices.test.mjs",
-        "scripts/test-desktop-target.mjs"
-      ],
-      "preferredAgent": "claude-lead",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "typecheck",
-        "unit"
-      ],
-      "acceptance": "CREATED ON gpt-architect's ROUND-107 DIRECTIVE. Two defects, one file.\n\nA. EVERY SUITE THE REPOSITORY DECLARES IS EXECUTED BY CI. The validate job mirrors `npm run test:scripts` as separate named steps, and its own comment says 'a FIFTH script added to it must be added here too' -- and then records that the drift it warns about had already happened once. It has happened twice more: `test:scripts` now names SIX scripts and this job runs FOUR of them. `scripts/test-desktop-target.mjs` and `node --test scripts/windows/test-lifecycle.mjs` (30 cases) are in the alias and in no step. `apps/desktop/scripts/notices.test.mjs` (17 cases) is in no alias and no step and is run by nothing at all.\nREQUIRED: all three execute in CI and fail the build when they fail.\nREQUIRED: the mirror is kept in step BY A MECHANISM, not by a comment asking a human to remember. A note that a hand-kept list must be kept in step is already in the file, it did not keep the list in step, and a fourth occurrence of the same drift is not a thing to apologise for again.\nREQUIRED: the added suites run where their dependencies allow. The six pre-install steps are pre-install on purpose -- they use Node builtins only, so a dependency failure cannot mask a control-plane or structure failure -- and a suite placed there must actually hold to that.\nREQUIRED, and quoted from the directive: 'do not turn apps/desktop into a workspace if that causes validators to traverse generated packaging output'. Round 106 measured exactly that and it does: a dependency-free apps/desktop/package.json costs 8 lockfile lines and turbo picks the suite up, but `validate-workspace-deps.mjs` then walks apps/desktop/sidecar/server/ -- generated packaging output carrying its own .gitignore of '*' -- and demands the manifest declare `next`. The measurement is in coordination/WINDOWS_LIFECYCLE_WIRING.md section 8.\n\nB. A FAILING `validate` JOB SAYS SOMETHING ACTIONABLE. On run 37028642916 at 30cef6e the job aborted at 10m 38s with one annotation, 'Process completed with exit code 134', naming no step -- having PASSED at 25m 4s and 27m 29s on the two runs before it. Exit 134 is SIGABRT. The engineering session cannot read run logs or download artifacts (the Actions API answers 403) and so could not determine which step aborted, let alone why; two local reproductions of the prime suspect passed, at 1261s ambient and 1807s under a runner-like heap cap.\nREQUIRED: a run page carries enough to tell a reader WHICH step aborted and under what machine conditions -- at minimum core count, total and available memory, free disk, the Node version and NODE_OPTIONS -- without needing the log or the artifact.\nREQUIRED, and quoted from the directive: 'DO NOT declare OOM. DO NOT increase memory merely because exit 134 occurred. DO NOT increase timeouts without evidence. DO NOT add retries to hide it. Improve diagnostics first.' Nothing in this task may change what CI runs or how much it is given. Diagnostics only.\nREQUIRED, and quoted from the directive: no secret leakage. Nothing added here may print the environment wholesale, a token, or a value this repository has not already published; an allowlist of named variables, never a dump.\n\nC. THE JOB'S COST DOES NOT GROW MATERIALLY. The three added suites take under a second between them locally. Diagnostics must stay cheap enough that nobody is tempted to remove them the next time the job is slow.",
-      "notes": "CREATED IN ROUND 107 on the commander's relay of gpt-architect's directive, which named the task id, the write surface and the review dependencies. THE ACCEPTANCE TEXT ABOVE IS CLAUDE'S RENDERING of the requirements in that directive, not a transcription of it -- the two passages in quotation marks are verbatim and everything else is Claude's wording of what the directive asked for. Correct it in review if the rendering is wider or narrower than intended.\n\nTHE LANE IS A CHOICE AND IT IS DECLARED RATHER THAN BURIED. Two candidate lanes were considered.\n  - INFRA is the obvious reading of 'CI workflow' and it is where PW-0501 sat, because PW-0501's subject was producing a Windows build artifact.\n  - INTEGRATION is what was chosen. The subject here is not a pipeline capability: it is that components which already exist -- three test suites, all passing, all committed -- are not connected to the build graph, and that a job's failure is not legible to the people who have to act on it. That is wiring, and this repository has never treated .github/workflows/ as Infra-exclusive: PL-AI-0003 added the dispatcher step to this same file under lane Coordination, and PL-0704 and PW-0312 both wrote ci.yml under lane Frontend. Lane has followed subject matter here, not file path.\nTHE CONFOUND, STATED BECAUSE IT IS REAL: claude-infra is at maxParallel 1 and the slot is held by PW-0208 in REVIEW, so Integration is also the lane with capacity. Round 105 forbade re-laning a task to obtain an idle agent and that prohibition is respected on its own terms -- nothing was moved -- but a new task's lane chosen while one candidate is busy deserves the disclosure rather than the silence. Re-lane it to Infra in review if the reasoning above does not hold; nothing in the implementation depends on the lane.\n\nCONFLICTS, CHECKED IN BOTH FIELDS IN BOTH DIRECTIONS BEFORE CREATION. .github/workflows/ci.yml: written by PL-0001, PL-0704, PL-AI-0002 and PW-0312, all DONE; read by PL-AI-0003, PW-0102, PW-0501 and PL-0406, all DONE. No open task holds it in either field. package.json is in PW-0503's allowedPaths (READY, unowned) -- holding it here as a READ-ONLY reviewDependency reserves nothing, and the cost is recorded: if PW-0503 is later claimed and writes package.json, it stales any approval of this task computed before that write. scripts/windows/test-lifecycle.mjs is under PW-0502's and PW-0503's allowedPaths (both READY, unowned), again read-only here. apps/desktop/scripts/notices.test.mjs is under PW-0208's allowedPaths and PW-0208 IS ACTIVE, in REVIEW -- so this task must not write it, and it does not: it is a reviewDependency. The reverse direction matters more and is clear: this task's only write is ci.yml, which PW-0208 names in neither field, so claiming this cannot stale PW-0208's pending review.\n\nWHY THE ORPHANED-SUITE HALF IS NOT SOLVED BY MAKING apps/desktop A WORKSPACE: measured in round 106 and reverted. See acceptance clause A.",
-      "owner": "claude-lead",
-      "gateResults": {
-        "typecheck": {
-          "status": "pass",
-          "at": "2026-10-03T13:41:21.003Z",
-          "by": "claude-lead",
-          "commitSha": "c93652cbc2be1055d4eefddf9f536dd0ba61461c",
-          "evidence": "npm run typecheck: 22 tasks successful. No TypeScript project compiles a workflow file; recorded to show nothing else was disturbed by either repair."
-        },
-        "unit": {
-          "status": "pass",
-          "at": "2026-10-03T13:41:21.120Z",
-          "by": "claude-lead",
-          "commitSha": "c93652cbc2be1055d4eefddf9f536dd0ba61461c",
-          "evidence": "RE-RECORDED AFTER THE SECOND REPAIR THIS ROUND. Both repairs stand together; the evidence below replaces nothing in the previous recording and adds what the second one needed.\n\nREPAIR 1 (from CI #178): scripts/test-desktop-target.mjs moved from the pre-install group to immediately after `Install dependencies`. It was placed pre-install on the strength of its IMPORTS -- builtins and git -- and four of its nine cases SPAWN a real `next dev`, which is in node_modules. Reproduced in a fresh clone of 975331c with no node_modules: 5 passed, 4 failed, the suite's own non-vacuity guard naming it. After the move, with node_modules present, \"desktop-target tests passed (9 assertions)\". The comment in the file records the rule the mistake broke: the pre-install group is about what a suite RUNS, not what it imports.\n\nREPAIR 2 (found by me, after returning the first): THE DIAGNOSTICS WERE WRITTEN SOMEWHERE THIS SESSION CANNOT READ. Round 107 justified writing them to $GITHUB_STEP_SUMMARY on the claim that a summary \"renders on the run page\". It does not. On 975331c two workflows wrote summaries -- this one and windows.yml's lifecycle report -- and neither is reachable: runs 37094053423 and 37094053371 were each fetched at both the run page and the job page, and the only \"Summary\" visible is GitHub's own metadata and artifact list. Not one word the workflow wrote. Clause 4 of the verdict -- \"the run page now exposes actionable diagnostic information\" -- was therefore NOT met by the version returned an hour ago.\n\nWHAT IS DEMONSTRABLY READABLE IS AN ANNOTATION, and every CI fact this project has obtained came from one. So the three facts that matter are now emitted as workflow commands as well, with the summary kept for a human reading in a browser:\n  ::warning \"validate failed\"    -- the first failing step, derived from the step ids;\n  ::notice  \"validate machine\"   -- cores, memory, free disk, node, npm and NODE_OPTIONS, BEFORE and AFTER on one line, which is what makes either number mean anything;\n  ::warning \"V8 fatal error\"     -- the redactor's new --line mode, same allowlist rendered on one line.\n\nEXECUTED UNDER GITHUB'S OWN SHELL FLAGS (bash --noprofile --norc -e -o pipefail), three branches, each exit 0:\n  - with a V8 report present: all three annotations emitted, the V8 one carrying event, trigger, heap limit/committed/used, external, rss, peak rss, free and total memory, cpu seconds and the entry script;\n  - with no report and no facts file: the machine annotation says \"BEFORE not recorded\" rather than failing, and no V8 annotation is emitted;\n  - runner-facts writes its file and its summary, exit 0.\nTHE ALLOWLIST STILL HOLDS ON THE NEW PATH, tested as an attack: a process aborted with SECRET_TOKEN=hunter2 in its environment leaves the value once in the raw diagnostic report and ZERO times in the emitted annotation. The raw report is still never printed and never uploaded.\n\nANNOTATIONS ARE KEPT FEW AND SHORT -- three, each truncated at 380 characters -- because they are capped and truncated by GitHub, and a verdict cut in half is worse than a short one. The step-by-step table stays in the summary where length is free.\n\nAND THE CORRECTION THAT WEAKENS THIS TASK'S ORIGINAL JUSTIFICATION, repeated here because it belongs with the evidence: rounds 106 and 107 said the annotation \"names an exit code and no step\". It names the step -- on the JOB page, which needs no login; the RUN page drops the attribution, and that is the page both rounds read. Run 37036128012's validate job says exit 134 under \"Test AI control plane\". The comment in ci.yml asserting the limitation is corrected in the file, and what the step-outcome table is still worth is stated narrowly there: it separates a step that FAILED from one that never STARTED, and it survives a job that ends with no annotation at all.\n\nLOCAL RE-VERIFICATION: ci.yml parses, 20 steps; the mirror check passes against the repaired file; the moved suite passes where it now runs."
-        }
-      },
-      "updatedAt": "2026-10-03T13:41:21.234Z",
-      "implementationAgent": "claude-lead",
-      "implementationBaseSha": "4ce4d9132ffbeb3bac01e17d0d9c3beb4374f33e",
-      "review": {
-        "taskId": "PL-0714",
-        "implementationAgent": "claude-lead",
-        "implementationOwner": "claude-lead",
-        "reviewerAgent": "gpt-architect",
-        "reviewerClass": "external-reasoning",
-        "reviewerProvider": "openai",
-        "reviewedCommitSha": "c93652cbc2be1055d4eefddf9f536dd0ba61461c",
-        "reviewedBaseSha": "4ce4d9132ffbeb3bac01e17d0d9c3beb4374f33e",
-        "reviewedTreeHash": "7c63f63bc39d313b85f882fc8321c7db280efe6118d6d01fc194849f566306d1",
-        "reviewedFileCount": 5,
-        "reviewedFingerprintSource": "git-object",
-        "reviewedDependencies": [
-          "package.json",
-          "scripts/windows/test-lifecycle.mjs",
-          "apps/desktop/scripts/notices.test.mjs",
-          "scripts/test-desktop-target.mjs"
-        ],
-        "outcome": "CHANGES_REQUESTED",
-        "reviewedAt": "2026-10-03T13:39:39.178Z",
-        "evidence": "SECOND CHANGES-REQUESTED THIS ROUND, AND IT IS A DEFECT I FOUND IN MY OWN WORK AFTER RETURNING IT. Transcribed by claude-lead under the standing instruction in gpt-architect's round-108 verdict: \"If CI #178 exposes a defect in PL-0714: repair it and return the corrected fingerprint to review.\"\n\nCLAUSE 4 OF THAT VERDICT -- \"if validate aborts again, the run page now exposes actionable diagnostic information\" -- IS NOT MET, AND THE PREMISE IT WAS BUILT ON IS FALSE. This task writes its machine facts, its step-outcome table and its redacted V8 extract to $GITHUB_STEP_SUMMARY, justified in round 107 on the claim that a job summary \"renders on the run page, which is how every CI result in the last three rounds was obtained\". It does not. Two separate workflows wrote summaries on 975331c -- ci.yml's diagnostics and windows.yml's lifecycle report -- and NEITHER is reachable: run 37094053371 and run 37094053423 were both fetched, run page and job page, and the only \"Summary\" a fetch can see is GitHub's own metadata and artifact list. Not one word the workflow wrote appears.\n\nWHAT IS DEMONSTRABLY READABLE IS AN ANNOTATION. Every CI fact this project has ever obtained came from one, including -- today -- the step name behind exit 134. So the diagnostics must be emitted as ::notice and ::warning workflow commands, which GitHub attaches to the job and shows without a login, with the step summary kept for a human reading in a browser.\n\nReturning to IN_PROGRESS to make the diagnostics readable from where they have to be read. The repair already made this round -- moving the desktop-target suite after `Install dependencies` -- stands and is unaffected."
-      },
-      "reviewHistory": [
-        {
-          "taskId": "PL-0714",
-          "implementationAgent": "claude-lead",
-          "implementationOwner": "claude-lead",
-          "reviewerAgent": "gpt-architect",
-          "reviewerClass": "external-reasoning",
-          "reviewerProvider": "openai",
-          "reviewedCommitSha": "975331c084ff0be11805dd69341286cf06b0981b",
-          "reviewedBaseSha": "4ce4d9132ffbeb3bac01e17d0d9c3beb4374f33e",
-          "reviewedTreeHash": "b6c8f123f06f24b7a5a620d511b2bbe72440bc6b6505ebc5747d53e6fd89b339",
-          "reviewedFileCount": 5,
-          "reviewedFingerprintSource": "git-object",
-          "reviewedDependencies": [
-            "package.json",
-            "scripts/windows/test-lifecycle.mjs",
-            "apps/desktop/scripts/notices.test.mjs",
-            "scripts/test-desktop-target.mjs"
-          ],
-          "outcome": "CHANGES_REQUESTED",
-          "reviewedAt": "2026-10-03T13:34:10.284Z",
-          "evidence": "CONDITIONAL APPROVAL, NOT YET GRANTED (transcribed by claude-lead from the round-108 commander relay). gpt-architect: \"Implementation surface and local evidence are architecturally sound. The approach is accepted ... However CI #178 is the first published execution of the modified ci.yml. Do not mark PL-0714 DONE until that real run provides evidence that: 1. the newly-wired suites actually execute; 2. the mirror guard executes correctly; 3. the diagnostic mechanism does not itself break CI; 4. if validate aborts again, the run page now exposes actionable diagnostic information. ... If CI #178 exposes a defect in PL-0714: repair it and return the corrected fingerprint to review.\"\n\nCI #178, run 37094053423 at 975331c, HAS EXPOSED A DEFECT IN PL-0714, AND IT IS MINE. The validate job failed at 20m 0s with exit 1, and the job page names the step: \"Test the desktop target wrapper\". That is scripts/test-desktop-target.mjs, one of the three suites this task newly wired in, and I placed it in the PRE-INSTALL group on the strength of its import list -- node builtins and git -- without checking what it SPAWNS. Four of its nine cases start a real `next dev` through scripts/with-root-env.mjs, and `next` lives in node_modules, which does not exist until the `Install dependencies` step that follows.\n\nREPRODUCED RATHER THAN DEDUCED: a fresh clone of 975331c with no node_modules, running the suite exactly as the step does, gives \"desktop-target tests FAILED (5 passed, 4 failed)\" with the suite's own non-vacuity guard naming the cause -- \"next-env.d.ts was never rewritten ... Either the dev server failed to start, or Next stopped regenerating the file\".\n\nTHE CLAUSE I BROKE IS ONE I WROTE: \"the added suites run where their dependencies allow. The six pre-install steps are pre-install on purpose ... and a suite placed there must actually hold to that.\"\n\nReturning to IN_PROGRESS for repair, as the verdict directs."
-        },
-        {
-          "taskId": "PL-0714",
-          "implementationAgent": "claude-lead",
-          "implementationOwner": "claude-lead",
-          "reviewerAgent": "gpt-architect",
-          "reviewerClass": "external-reasoning",
-          "reviewerProvider": "openai",
-          "reviewedCommitSha": "c93652cbc2be1055d4eefddf9f536dd0ba61461c",
-          "reviewedBaseSha": "4ce4d9132ffbeb3bac01e17d0d9c3beb4374f33e",
-          "reviewedTreeHash": "7c63f63bc39d313b85f882fc8321c7db280efe6118d6d01fc194849f566306d1",
-          "reviewedFileCount": 5,
-          "reviewedFingerprintSource": "git-object",
-          "reviewedDependencies": [
-            "package.json",
-            "scripts/windows/test-lifecycle.mjs",
-            "apps/desktop/scripts/notices.test.mjs",
-            "scripts/test-desktop-target.mjs"
-          ],
-          "outcome": "CHANGES_REQUESTED",
-          "reviewedAt": "2026-10-03T13:39:39.178Z",
-          "evidence": "SECOND CHANGES-REQUESTED THIS ROUND, AND IT IS A DEFECT I FOUND IN MY OWN WORK AFTER RETURNING IT. Transcribed by claude-lead under the standing instruction in gpt-architect's round-108 verdict: \"If CI #178 exposes a defect in PL-0714: repair it and return the corrected fingerprint to review.\"\n\nCLAUSE 4 OF THAT VERDICT -- \"if validate aborts again, the run page now exposes actionable diagnostic information\" -- IS NOT MET, AND THE PREMISE IT WAS BUILT ON IS FALSE. This task writes its machine facts, its step-outcome table and its redacted V8 extract to $GITHUB_STEP_SUMMARY, justified in round 107 on the claim that a job summary \"renders on the run page, which is how every CI result in the last three rounds was obtained\". It does not. Two separate workflows wrote summaries on 975331c -- ci.yml's diagnostics and windows.yml's lifecycle report -- and NEITHER is reachable: run 37094053371 and run 37094053423 were both fetched, run page and job page, and the only \"Summary\" a fetch can see is GitHub's own metadata and artifact list. Not one word the workflow wrote appears.\n\nWHAT IS DEMONSTRABLY READABLE IS AN ANNOTATION. Every CI fact this project has ever obtained came from one, including -- today -- the step name behind exit 134. So the diagnostics must be emitted as ::notice and ::warning workflow commands, which GitHub attaches to the job and shows without a login, with the step summary kept for a human reading in a browser.\n\nReturning to IN_PROGRESS to make the diagnostics readable from where they have to be read. The repair already made this round -- moving the desktop-target suite after `Install dependencies` -- stands and is unaffected."
-        }
-      ]
-    },
     {
       "id": "PW-0208",
       "priority": "P1",
@@ -428,6 +315,43 @@
       "implementationAgent": "claude-frontend",
       "updatedAt": "2026-10-04T04:13:26.283Z",
       "implementationBaseSha": "c925b27d0f1407f79e55110b484235db34f51d8b"
+    },
+    {
+      "id": "PL-0727",
+      "priority": "P1",
+      "lane": "Infra",
+      "status": "REVIEW",
+      "title": "Corrective: the lifecycle cross-check demands a literal PW-0307 deliberately removed",
+      "dependencies": [],
+      "allowedPaths": [
+        "scripts/windows/test-lifecycle.mjs"
+      ],
+      "reviewDependencies": [
+        ".github/workflows/windows.yml",
+        "scripts/windows/lifecycle.mjs",
+        "scripts/windows/verify-install.mjs",
+        "apps/desktop/src-tauri/src/sidecar.rs"
+      ],
+      "preferredAgent": "claude-infra",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "unit"
+      ],
+      "acceptance": "CI #180's validate job is RED on this, and the product is not at fault. Reproduced locally in full -- `node --test scripts/windows/test-lifecycle.mjs`: 30 tests, 29 pass, 1 fail, 974ms:\n\n  not ok - identity is derived from the files the shell itself compiles > agrees with the install path the Windows workflow asserts\n  the Windows workflow does not mention Project Liberty\\\\liberty-desktop.exe; one of the two has been renamed without the other\n\nNOTHING WAS RENAMED. The case asserts that .github/workflows/windows.yml CONTAINS the literal `<productName>\\\\<executable>`, on the premise its own comment states: 'That workflow hard-codes Program Files\\\\Project Liberty'. Commit 9c6abd4 (PW-0307, round 109) deleted that literal on purpose. It replaced an inline `Test-Path` against a written-down executable path with `node scripts/windows/verify-install.mjs`, which DERIVES the paths from apps/desktop/src-tauri/src/sidecar.rs. The removed block's own comment gives the reason: the path had already drifted once because it was 'written down in a third place'.\n\nSo the workflow moved to derivation -- the better state, and the state this very test's comment says it wants -- and the test still requires the literal the move removed. This is the SIXTH time a check in this repository has reported a fault that was not there, and the standing rule is unchanged: FIX THE CHECK, DO NOT RESTORE WHAT IT MISSES.\n\nFORBIDDEN: putting the executable literal back into windows.yml. That re-creates the third copy PW-0307 removed and re-opens the drift it closed. (It is also not possible from this task, which does not own that file -- stated so the reasoning is on the record rather than the surface restriction being the only reason.)\nFORBIDDEN: deleting the case. A cross-check between the derived identity and the workflow is worth having; what is wrong is WHICH fact it cross-checks.\n\nREQUIRED: the case asserts a correspondence that is actually true of the current arrangement, and would still catch a rename. windows.yml line 333 still carries `Join-Path ${env:ProgramFiles} \"Project Liberty\"` -- the productName literal survives, the executable literal does not -- so the install ROOT is still cross-checkable against IDENTITY.productName.\nREQUIRED: the case's comment is corrected rather than left describing the arrangement it was written against. A comment that outlives the code it describes is how this repository keeps losing things, and the wrong premise is recorded at the line that held it.\nREQUIRED: non-vacuity. The new assertion must be shown to FAIL when the workflow and the derived identity disagree, not merely to pass today -- an `includes` against a string that is absent from both would pass forever.\nREQUIRED: the executable's disappearance from the workflow is NOT quietly accepted as untested. Either name where that correspondence is now proven -- verify-install.mjs derives it from sidecar.rs and windows.yml invokes that -- or state plainly that it is proven on a runner and not here.",
+      "notes": "FILED ROUND 110 by claude-lead after reading CI #180's validate JOB page, which reports FAILED while the run page reports passed. Found only because gpt-architect's round-110 instruction said to read the job page. scripts/windows/** is reserved by PW-0501 and PW-0107 (both DONE) and PW-0502 and PW-0503 (both READY and unowned), so nothing active collides.",
+      "gateResults": {
+        "unit": {
+          "status": "pass",
+          "at": "2026-10-04T04:23:20.328Z",
+          "by": "claude-infra",
+          "commitSha": "a864bfe59bfc871965ef7eaae48ba4cb3b61a0b4",
+          "evidence": "node --test scripts/windows/test-lifecycle.mjs: 32 tests, 7 suites, 32 pass, 0 fail, 206ms. BEFORE: 30 tests, 29 pass, 1 fail -- \"agrees with the install path the Windows workflow asserts\", the case CI #180's validate job went red on.\n\nNON-VACUITY PROVEN THREE WAYS, because the case this replaces passed for a whole round while asserting something that was no longer true, and \"it is green now\" is exactly what it said then.\n\n1. AGAINST THE REAL FILE, EXECUTABLE. sed -i 's/liberty-desktop.exe/liberty-player.exe/' scripts/windows/verify-install.mjs, then re-run: 32 tests, 31 pass, 1 fail -- \"not ok 6 - verify-install's executable agrees with the derived executable\". File restored from a copy taken first; git diff --stat on it is empty afterwards.\n\n2. AGAINST THE REAL FILE, PRODUCT NAME. sed -i 's/\"Project Liberty\"/\"Liberty Player\"/' .github/workflows/windows.yml, then re-run: 32 tests, 31 pass, 1 fail -- \"not ok 5 - the workflow's install root agrees with the derived product name\". Restored the same way; git diff --stat empty.\n\n3. IN THE SUITE ITSELF. A third case, \"A CROSS-CHECK THAT CANNOT FAIL IS NOT A CROSS-CHECK\", drives the same comparison function with disagreeing text and requires the refusal, and then with agreeing text and requires that it does NOT throw -- so the rule is not satisfied by a function that always throws. That one runs on every future execution; 1 and 2 were performed once, by hand, and are recorded here rather than left as a claim.\n\nWHAT THE FIX DID NOT DO. No literal was restored to .github/workflows/windows.yml -- git diff --stat shows it unmodified -- so PW-0307's third copy stays removed. The case was not deleted: it now guards the two correspondences that actually exist, the product name in the workflow and the executable in verify-install.mjs, which is the copy PW-0307 could not eliminate because the name comes from Cargo.toml's binary name rather than from a Rust constant. The old case's false premise is recorded at the lines that held it rather than quietly dropped."
+        }
+      },
+      "owner": "claude-infra",
+      "implementationAgent": "claude-infra",
+      "updatedAt": "2026-10-04T04:23:39.466Z",
+      "implementationBaseSha": "a864bfe59bfc871965ef7eaae48ba4cb3b61a0b4"
     }
   ],
   "reservedExternal": [],
