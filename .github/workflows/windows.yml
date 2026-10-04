@@ -259,13 +259,61 @@ jobs:
       # and deleting it with the rest would have quietly removed the one check
       # that keeps the positive check honest: a `verify-install.mjs` that
       # returned 0 unconditionally would make every F1 and F4 below a pass.
+      #
+      # ------------------------------------------------------------------
+      # AND IT COULD NOT SUCCEED, FOR TWO ROUNDS (PL-0733)
+      # ------------------------------------------------------------------
+      #
+      # Windows #16 failed here, and PW-0602's step-id diagnostics named it:
+      # "FIRST FAILING STEP: verifier-negative (failure). Everything after it
+      # did not run." Everything before it succeeded, `lifecycle` was skipped,
+      # and `upload-installers` was skipped -- so the harness this job exists
+      # to run has never run, behind a step that could not pass.
+      #
+      # REFUSING IS THIS STEP'S SUCCESS CASE. `node` exits 1 when the verifier
+      # does the right thing. PowerShell 7.4 stabilised
+      # `$PSNativeCommandUseErrorActionPreference`, which turns a native
+      # command's non-zero exit into a TERMINATING error under
+      # `$ErrorActionPreference = "Stop"` -- so on a runner where it is on, the
+      # `node` line threw before `$LASTEXITCODE` was ever read. The step failed
+      # when the verifier refused (PowerShell threw) and would have failed when
+      # it accepted (the explicit `throw`). There was no passing path.
+      #
+      # IT DID NOT REPRODUCE LOCALLY, WHICH IS WHY IT SURVIVED. This
+      # container's pwsh 7.4.6 defaults that preference to False and the step
+      # exits 0. Forcing it true reproduces the runner exactly:
+      # 'Program "node" ended with non-zero exit code: 1.'
+      #
+      # SO THE PREFERENCE IS PINNED HERE RATHER THAN INHERITED. A step whose
+      # correctness depends on an image's PowerShell configuration is one that
+      # breaks again when the image moves, and nothing in this repository can
+      # observe that from outside. `$ErrorActionPreference` stays `Stop` for
+      # everything else in the step; only the native-exit rule is overridden,
+      # and only because a non-zero exit is the ANSWER here rather than a
+      # failure.
+      #
+      # THE CHECK ITSELF IS UNCHANGED: accepting a non-install still throws.
+      # That is the whole point of the step and its comment above says why.
       - name: The install verifier refuses a directory that is not an install
         id: verifier
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
+          # See PL-0733 above. A non-zero exit from `node` is this step's
+          # success condition, so it must not be a terminating error.
+          $PSNativeCommandUseErrorActionPreference = $false
+
           node scripts/windows/verify-install.mjs "${env:TEMP}"
-          if ($LASTEXITCODE -eq 0) {
+          $code = $LASTEXITCODE
+
+          # REPORTED AS AN ANNOTATION, because annotations are the only CI
+          # channel the engineering session can read and the diagnosis above
+          # was reached by reproduction rather than by reading this runner's
+          # log. The next run says the exit code out loud, so it confirms or
+          # refutes that diagnosis without anybody needing a login.
+          Write-Host "::notice title=verifier-negative::verify-install exited $code against a directory that is not an install. Non-zero is correct here; 0 would mean it accepted one, and every lifecycle PASS below would be meaningless."
+
+          if ($code -eq 0) {
             throw "verify-install.mjs passed against a directory that is not an install; every lifecycle PASS below would be meaningless"
           }
           Write-Host "verify-install: correctly refused a non-install directory"

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-04T16:09:57.567Z",
+  "generatedAt": "2026-10-04T16:15:17.248Z",
   "agent": "gpt-architect",
   "executionAvailable": false,
   "assigned": [],
@@ -87,6 +87,42 @@
           "evidence": "CHANGES REQUESTED at 659cafa118bdc72b98d43c7f3fa21a120222e57b. TRANSCRIBED BY claude-lead from gpt-architect's round-111 verdict document, which lists PW-0208 under \"NOT APPROVED YET\" and says: \"PW-0208 still requires stronger evidence about the contents of the actual Windows package/distribution tree.\"\n\nThe same document's section 3 states what that evidence has to cover, and it is quoted here in full rather than paraphrased, because it is the acceptance this task is now being measured against:\n\n  - actual libmpv/FFmpeg artifact included, if included\n  - exact provenance/version/pin\n  - build/configuration evidence available for what ships\n  - GPL components excluded where required by the selected LGPL distribution strategy\n  - THIRD-PARTY-NOTICES or equivalent actually present in the package tree\n  - Node licence actually present beside the shipped runtime where required\n  - dependency licence collection reflects the actual packaged dependencies\n  - written-offer/attribution material actually appears where the distribution strategy requires it\n  - strict notice generation fails on missing evidence rather than silently producing a green result\n\nAND THE BOUNDARY IT RESTATES, which this task's own acceptance already carries: \"Do NOT guess the H.264/HEVC patent decision. H.264/HEVC remains a commander/legal decision and must remain explicitly separate from the LGPL evidence. Do not enable patent-dependent functionality based on an assumption.\"\n\nWHAT THE VERDICT IS OBJECTING TO, read plainly: the distinction between evidence about SOURCE AND SCRIPTS and evidence about THE TREE THAT SHIPS. The recorded `build` gate is about what the packaging is configured to do. \"The actual Windows package/distribution tree\" is what came out of it, and the round-110 instruction said the same thing in fewer words -- \"Do not infer packaged contents solely from source intent.\"\n\nReturned to IN_PROGRESS. The gate results are discarded by `request-changes` as the control plane intends: the `build` gate described a tree, and the next one has to describe the tree that is actually inspected."
         }
       ]
+    },
+    {
+      "id": "PL-0733",
+      "priority": "P0",
+      "lane": "Infra",
+      "status": "REVIEW",
+      "title": "Corrective: the Windows negative-verification step fails whether the check passes or not",
+      "dependencies": [],
+      "allowedPaths": [
+        ".github/workflows/windows.yml"
+      ],
+      "reviewDependencies": [
+        "scripts/windows/verify-install.mjs",
+        "scripts/windows/lifecycle.mjs",
+        "scripts/windows/installed-identity.mjs"
+      ],
+      "preferredAgent": "claude-infra",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "unit"
+      ],
+      "acceptance": "WINDOWS #16 (run 37215304869, head 1474d0b) FAILED AT `verifier-negative`, and PW-0602's step-id diagnostics named it: \"FIRST FAILING STEP: verifier-negative (failure). Everything after it did not run.\" Trail: everything before it success, lifecycle=skipped, upload-installers=skipped.\n\nTHE STEP CANNOT SUCCEED. It is:\n\n  $ErrorActionPreference = \"Stop\"\n  node scripts/windows/verify-install.mjs \"${env:TEMP}\"\n  if ($LASTEXITCODE -eq 0) { throw \"...\" }\n\nRefusing is this step's SUCCESS case, so `node` exits 1 when everything is right. PowerShell 7.4 stabilised `$PSNativeCommandUseErrorActionPreference`, which makes a native non-zero exit a TERMINATING error under `$ErrorActionPreference = \"Stop\"`. Where it is on, line 2 throws before line 3 runs. The step fails if the verifier refuses (PowerShell throws) and fails if it accepts (the explicit throw fires).\n\nREPRODUCED: the container's pwsh 7.4.6 defaults the preference to False and the step exits 0 -- which is why no local check caught it. Forcing it true gives exactly the runner's failure: 'Program \"node\" ended with non-zero exit code: 1.'\n\nREQUIRED: the step succeeds when the verifier REFUSES a non-install, and fails when it ACCEPTS one. Both directions, and the second is the one that matters -- this step exists because a verify-install.mjs that returned 0 unconditionally would make every lifecycle PASS meaningless.\n\nREQUIRED: the behaviour does not depend on the runner's default for that preference. A step whose correctness turns on an image's PowerShell configuration is a step that will break again when the image moves, and this project cannot observe that from here.\n\nREQUIRED: the step REPORTS THE EXIT CODE IT SAW, as an annotation. Annotations are the only CI channel this session can read, and the cause above is inferred from a reproduction rather than from the runner's log -- the next run must be able to confirm or refute it without a login.\n\nREQUIRED: no other step is touched, and nothing about what verify-install.mjs checks changes. This is a shell-semantics defect in one step.\n\nFORBIDDEN: deleting the negative check, or softening it to a warning. It is what keeps every positive lifecycle result honest, and its own comment says so.\n\nNOT IN SCOPE: why the lifecycle harness has never run. That is a consequence of this, and whether anything ELSE then fails is the next run's evidence.",
+      "notes": "FILED ROUND 112 by claude-lead from Windows #16's job page. Classification C (workflow/harness defect) under the round-112 scheme: not a product defect, not a defect in verify-install.mjs, and not caused by PL-0729 -- the verifier exited non-zero against a non-install both before and after that task, correctly.\n\nP0 because it blocks the entire Windows packaging and lifecycle path: lifecycle=skipped and upload-installers=skipped on every run that reaches it, so F1/F2/F3/F4 have never executed and no installer artifact has ever been published.\n\n.github/workflows/windows.yml is reserved by no ACTIVE task (PW-0501, PW-0602, PW-0107 all DONE).",
+      "gateResults": {
+        "unit": {
+          "status": "pass",
+          "at": "2026-10-04T16:14:59.916Z",
+          "by": "claude-infra",
+          "commitSha": "7fe96756b297f83c659a5d957b1b4522edf83901",
+          "evidence": "THE STEP WAS EXTRACTED FROM THE WORKFLOW AND DRIVEN IN BOTH DIRECTIONS UNDER BOTH PREFERENCE SETTINGS, so what was executed is the text CI will execute. Extracted with yaml.safe_load from jobs.package.steps[id=verifier].run, with only ${env:TEMP} parameterised so a second directory could be substituted.\n\nTHE DEFECT, REPRODUCED FIRST. The ORIGINAL step, against a non-install directory, with $PSNativeCommandUseErrorActionPreference forced true:\n\n  Program \"node\" ended with non-zero exit code: 1.\n  exit 1\n\nThat is the runner's failure, reproduced in this container. The `node` line threw before `$LASTEXITCODE` was read, so the step failed WHEN THE VERIFIER DID THE RIGHT THING. With the preference false -- this container's default -- the same original step exits 0, which is why no local check ever caught it and why it survived two rounds.\n\nTHE REPAIRED STEP, FOUR RUNS:\n\n  preference inherited TRUE   non-install dir  -> step exit 0, annotation \"verify-install exited 1\", \"correctly refused\"\n  preference inherited TRUE   complete install -> step exit 1, annotation \"verify-install exited 0\", threw \"passed against a directory that is not an install\"\n  preference inherited FALSE  non-install dir  -> step exit 0, annotation \"verify-install exited 1\", \"correctly refused\"\n  preference inherited FALSE  complete install -> step exit 1, annotation \"verify-install exited 0\", threw\n\nIDENTICAL UNDER BOTH, which is the requirement: the step's correctness no longer depends on the runner image's PowerShell configuration, which this repository cannot observe from outside and which is what moved under it.\n\nAND THE CHECK IS NOT WEAKENED -- THE SECOND ROW IS THE PROOF. The acceptance says the direction that matters is that the step FAILS when the verifier ACCEPTS a non-install, because a verify-install.mjs returning 0 unconditionally would make every lifecycle PASS meaningless. Driven against a COMPLETE synthetic install -- the one input where the verifier legitimately returns 0 -- the step throws, exactly as before. Nothing was deleted and nothing became a warning.\n\nTHE EXIT CODE IS NOW ANNOUNCED, as the acceptance required, because the diagnosis above came from a reproduction rather than from the runner's log and annotations are the only CI channel this session can read. The next Windows run states the code out loud whichever way it goes, so it confirms or refutes the diagnosis without a login.\n\nNOTHING ELSE MOVED. `git diff` over .github/workflows/windows.yml is confined to this one step. The workflow parses: yaml.safe_load reports jobs package and e2e-desktop. All eight pwsh blocks were parse-checked with [System.Management.Automation.Language.Parser]::ParseFile -- the new step parses clean, and the only two that do not are the step-trail block and the annotation publisher, both of which contain ${{ }} Actions expressions that PowerShell cannot parse and GitHub substitutes before the shell sees them; with those substituted, both parse.\n\nWHAT THIS DOES NOT PROVE. That the lifecycle harness then succeeds. It has never run -- `lifecycle=skipped` on every observed Windows run -- so whether F1/F2/F3/F4 pass is the NEXT run's evidence and is deliberately not claimed here. What this task removes is the step that made reaching them impossible."
+        }
+      },
+      "owner": "claude-infra",
+      "implementationAgent": "claude-infra",
+      "updatedAt": "2026-10-04T16:15:00.313Z",
+      "implementationBaseSha": "7fe96756b297f83c659a5d957b1b4522edf83901"
     }
   ],
   "reservedExternal": [],

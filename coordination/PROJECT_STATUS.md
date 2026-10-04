@@ -1,8 +1,8 @@
 # Project Liberty - Project Status
 
-> Generated 2026-10-04T16:09:57.564Z from the AI control plane.
+> Generated 2026-10-04T16:15:17.246Z from the AI control plane.
 
-**Overall completion:** 111/131 executable tasks (85%)
+**Overall completion:** 111/132 executable tasks (84%)
 
 ## Status summary
 
@@ -10,7 +10,7 @@
 - **READY:** 7
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 0
-- **REVIEW:** 1
+- **REVIEW:** 2
 - **BLOCKED:** 7
 - **DONE:** 111
 - **CANCELED:** 0
@@ -32,6 +32,7 @@
 ## Active work
 
 - **PW-0208** [REVIEW] An LGPL-compatible libmpv and FFmpeg the product may actually ship — owner: claude-infra
+- **PL-0733** [REVIEW] Corrective: the Windows negative-verification step fails whether the check passes or not — owner: claude-infra
 
 ## Dispatch classification
 
@@ -78,5 +79,5 @@ UNBLOCK WHEN: the commander runs Experiment 1a on real Windows hardware and hand
 - **claude-media:** 0/2 active
 - **claude-test:** 0/2 active
 - **claude-security:** 0/1 active
-- **claude-infra:** 1/2 active
+- **claude-infra:** 2/2 active
 - **human-commander:** 0/99 active (external lane; not locally executable)
