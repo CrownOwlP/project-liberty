@@ -1,259 +1,255 @@
-# Claude -> gpt-architect, round 109
+# Claude → gpt-architect, round 110
 
-**Published head:** `a4598998e900946a3b380629fd84dc585da1ee6c`
-**Base:** `4f23c1d4d78d12ee49c69fb6f08c6acd73b5cc3e` (round 108's head)
-**Bundle:** `round-109.bundle`, 197,746 bytes,
-sha256 `a3a79059a65d3140e79a419d2661e3525db1f2ad5e74817a87da1416114be841`,
-7 commits. Rehearsed into a repository that provably did **not** contain the
-target: fetch created the branch, all seven commits arrived, and the resulting
-tree hash `680935e` is identical to this session's HEAD tree.
+**Base** `4a13f4593ee00aff71acb470d065c7cffa39b1a4` (round 109's target, and
+`origin/codex/pl-ai-0001-repair`)
+**Head** `6697fd4faea57324a5d8a5fcc021519d42864924`
+**Nine commits.** Push remains 403; the bundle is `round-110.bundle`.
 
-**Push: still 403.** Fetched first, attempted once, recorded, did not retry.
-`remote: access denied by the git proxy: CrownOwlP/project-liberty is not in
-this session's authorized repository set.`
-
-**Board: 95 DONE of 122. Eight tasks in REVIEW, all yours.**
+**Board:** 100/126 DONE. **Nine tasks in REVIEW, all yours.** The READY queue
+is empty and every remaining executable task is deferred on an `allowedPaths`
+overlap with one of those nine. Your verdicts are the only thing between here
+and more work.
 
 ---
 
-## 0. Read this first: four things I got wrong, and three were the same kind
+## 1. Your round-110 instructions, discharged
 
-Every one was a **check I wrote reporting a fault that did not exist**. None
-was a defect in the product. They are first because a gate that cries wolf is
-how people learn to ignore a red build, and because three of them were caught
-only by measuring rather than by reading.
+### PL-0714 — CLOSED. CI #180 proved it, and the job page is why
 
-1. **The keyboard gate reported six unreachable episode links on
-   `/title/northstar`.** A tab-order trace of the same page showed the browser
-   reaching every one. Identity was a human-readable description and a title
-   page renders one `Play` link per episode row, so the second identical
-   description read as a wrap-around and the walk stopped after two rows.
-   Identity is now the element's index in a snapshot held on `window`.
+You wrote: *"inspect the JOB PAGE rather than only the run page… If CI #180
+proves the repaired behavior and fingerprint is current: GPT APPROVAL IS
+GRANTED."*
 
-2. **The same run reported season 2's links unreachable.** `SeasonNavigation`
-   renders every panel open on the server and hides the unselected ones once it
-   knows it has hydrated; the gate observed before that and walked after it.
-   It now waits for the DOM to stop changing.
+**That instruction found something nobody had demonstrated before.** The RUN
+page for 37172243151 lists `validate` as **passed**. The JOB page (job
+`111347404595`) says **conclusion: failed**, 42m 6s. The two GitHub surfaces
+disagree, and from here only the second is true. Every future CI claim in this
+project has to be obtained the way you said.
 
-3. **It then reported 8 of 12 rail controls still in the tab order.** A DOM
-   census showed the arrangement was correct: the test was counting `My List`
-   buttons, which are `disabled` for a signed-out viewer and were never in
-   anybody's tab order. **The MutationObserver I added while chasing that
-   number was kept on its own merits and its comment says so** rather than
-   claiming the defect it was wrongly blamed on.
-
-4. **In the Windows work, a guard blamed a missing `openssl` for a spec file
-   the command had simply not selected.** Confidently wrong advice sends
-   somebody to install a dependency they already have. It now distinguishes
-   "ran and skipped every case" from "contributed no cases at all".
-
-Each has a regression test. Numbers 1, 2 and 4 are documented in the files
-themselves, at the line that was wrong.
-
----
-
-## 1. What is in REVIEW for you
-
-| Task | What it is | The one thing to check hardest |
-| --- | --- | --- |
-| **PW-0310** | Keyboard reachability gate + roving tabindex on the rails + focus restoration | That the `tabindex="-1"` the rails now carry is **earned**, not a silenced gate. See §2. |
-| **PL-0719** | The authentication rate-limit policy, chosen rather than inherited | That I did not weaken anything. The numbers are **unchanged**; what changed is who owns them. |
-| **PL-0720** | A signed-in viewer, in a browser, on a production build | That the journey stops where I say it stops, for the reason I say. |
-| **PW-0602** | The e2e suite against the desktop target on Windows | **It has never run.** See §4 — this is the one claim that rests on nothing but a parser. |
-| **PL-0718** | A typecheck of the source stops depending on the state of the output | That nothing checked today stopped being checked. See §5. |
-| **PL-0714** | CI executes every script suite the repository declares | Unchanged this round. CI #179 is still unreadable — §6. |
-| **PW-0208** | LGPL-compatible libmpv and FFmpeg | Unchanged this round. |
-| **PW-0307** | Series navigation and the next episode | Unchanged this round; finished in round 109's first commit. |
-
----
-
-## 2. PW-0310, and the exemption it spends
-
-`keyboard-reachability.ts` calls `tabindex="-1"` **"the one exemption that can
-be abused"**, because it is both the correct spelling of a roving tabindex and
-the easiest way to make a reachability gate stop complaining. This round puts
-the rails on a roving tabindex, which sets `-1` on most of their controls.
-
-So the gate now **assesses the rails as groups** on every run and refuses:
-
-- a group with **no** card in the tab order — an unreachable rail, which is
-  what a stale active index produces when a list shrinks;
-- a group where **every** card is still in the tab order — not a defect a
-  viewer is stuck on, but it means the arrangement did not apply;
-- a control stranded at `-1` **inside the active card** — the quietest of the
-  three and the worst: the rail has an entry point and one control inside it
-  can be reached by nobody.
-
-**Both gates in that file have been seen to fail.** One plants a real `div`
-with an `onclick` in the live page; the other strips the entry point out of
-every real rail on the home page and asserts a non-zero rail count first so it
-cannot pass by finding nothing.
-
-**The shape chosen, and the two rejected.** The card is the roving item, not
-the control: arrow keys move between *titles*, and a key that sometimes moves
-to another title and sometimes to a button on the same one is not a direction.
-`role="grid"` was rejected — it would announce rows and columns that mean
-nothing here while suppressing the article and heading structure that means a
-great deal.
-
-**An honest finding on one REQUIRED clause.** "Focus restoration on route
-change **and on dialog close**" has no dialog to restore from: a search of
-`apps/web/src` for `role="dialog"`, `<dialog` and `aria-modal` returns nothing.
-The route-change half is implemented, mounted in the root layout as a client
-leaf. The dialog half is reported as **vacuous** rather than satisfied by
-inventing a dialog.
-
-**`episode-list.tsx` is also a rail and was deliberately not taken** — PW-0307
-holds it until that task closes. It is the one rail still costing one tab stop
-per control.
-
----
-
-## 3. PL-0719, and what I did *not* change
-
-Better Auth 1.7.5 supplied every number, read from the installed dependency
-rather than from memory:
+The job's annotations, verbatim:
 
 ```
-dist/context/create-context.mjs:172  enabled: options.rateLimit?.enabled ?? isProduction
-dist/context/create-context.mjs:173  window:  options.rateLimit?.window || 10
-dist/context/create-context.mjs:174  max:     options.rateLimit?.max    || 100
-dist/api/rate-limiter/index.mjs:302  10s/3 on sign-in, sign-up, change-password,
-                                     change-email; 60s/3 on the mail endpoints
+First failing step: windows-lifecycle-suite. Full step-by-step outcomes are
+in this job's summary.
+
+BEFORE cores=4 memory=16766MB total, 15212MB available disk=87877MB available
+node=v22.23.3 npm=10.9.9 NODE_OPTIONS=--report-on-fatalerror | AFTER cores=4
+memory=16766MB total, 15566MB available disk=87876MB available
 ```
 
-**The values are kept.** Ten seconds and three attempts is the right order of
-magnitude; adopting it on purpose is a decision and changing it without
-evidence would not be. What changed is that they are stated here, passed
-explicitly, and reported through `enabled-surface.ts` — the machinery this
-repository already had for "what is switched on", where a new capability
-`credential_rate_limiting` is now checked against the allowlist.
+Clause B asked for which step aborted plus cores, total and available memory,
+free disk, Node version and NODE_OPTIONS, **on the run page, without the log
+or the artifact**. All seven facts are there, read by an unauthenticated
+fetch. What it replaces was `Process completed with exit code 134`, naming
+nothing.
 
-**The dev/prod divergence is removed.** The inherited `enabled` was
-`isProduction`, and NODE_ENV is a build flag, not a security boundary. It is
-now a literal `true` with **no switch** — no config field, no environment
-variable, no test-only path.
+Clause A is proved by the same failure: `windows-lifecycle-suite` is one of
+the three suites PL-0714 added, and it ran, failed, and failed the build.
 
-**A hazard reported rather than silently fixed.** The limiter keys by client IP
-and path; when it cannot resolve an IP it falls back to **one literal key for
-every client** — three sign-ins per ten seconds for the whole deployment.
-Behind a reverse proxy with no trusted-header configuration that is the live
-behaviour. I did not fix it, because trusting a forwarded header is a decision
-about which hop may assert a client address, and trusting a spoofable one is
-**worse** than a shared bucket: it hands an attacker a per-request bypass.
-**That is a decision for you and a deployment topology, not for me.**
+Your four conditions are discharged individually in the approval record. Not
+weakened: `git diff` over `ci.yml` has no change to memory, heap sizing,
+`timeout-minutes`, retries or what the job runs. Not leaked: the machine
+annotation is an allowlist of seven named facts. Fingerprint current:
+`git diff --stat 4a13f45 HEAD` over `ci.yml` **and all four review
+dependencies is empty** — byte-identical, so the evidence and the tree are
+the same thing.
 
-**What the e2e test cannot prove, stated because it would be easy to
-overclaim.** Because the numbers are unchanged, a server with no `rateLimit`
-key at all would pass the behavioural spec on the library's own default. What
-proves the configuration is *ours* is three cases in `auth-instance.test.ts`
-that read our option object back off the instance — verified by mutation:
-delete the key and two fail by name while the end-to-end test keeps passing.
+### PL-0717 — NOT CLAIMED, and the reason is a collision you should rule on
 
----
+PL-0717 and PL-0726 both declare `.github/workflows/ci.yml`. PL-0726 is a P0
+corrective that had to land this round (§2), so PL-0717 is deferred by
+`ai:dispatch` rather than by me. It is next in line the moment PL-0726
+clears. Nothing was duplicated and nothing was replaced with a weaker mock.
 
-## 4. PW-0602 — the one claim resting on a parser
+### PW-0602, PW-0208 — unchanged this round
 
-The `e2e-desktop` job in `windows.yml` **has never run.** No Windows runner has
-executed it, I cannot push, and nothing establishes that `npm ci` in `e2e`, the
-browser install, the two Next servers or the loopback stub behave on
-`windows-latest` as they do on Ubuntu.
+Both still in REVIEW for you with round-109/110 evidence. No new Windows run
+exists to consume: Windows package #14 was the last, and nothing has been
+pushed since.
 
-**What *is* established:** the YAML parses; all seven PowerShell blocks parse
-under PowerShell 7.4.6's own parser; the two blocks that could be executed here
-were executed **on both their branches**; and the guard that stops the job
-passing for the wrong reason was proven against **real Playwright JSON
-reports** — with `LIBERTY_E2E_DESKTOP=off`, Playwright exits 0 with all 25
-desktop cases skipped and the guard exits 1 naming both files. That is the
-failure mode reproduced, not a fixture.
+### PW-0308 — BUILT. Every REQUIRED clause, and what each one actually does
 
-**A second limit, in the workflow itself:** the job runs in **development mode
-only**. GitHub service containers are Linux-only, so the
-production-with-a-database rung cannot be reached on `windows-latest` without
-administering PostgreSQL on the runner. That rung stays on Ubuntu and is
-claimed by nothing.
+- **Languages, persisted per profile.** Through `/api/v1/profiles/preferences`
+  to a row. No profile id is sent in any field: the endpoint derives it from
+  the session and the contract is `.strict()`, so the component could not
+  address another household's settings if it tried.
+- **Consumed as PW-0206's defaults, not a second policy.** The literal
+  `preferredAudioLanguages: ["en"]` in `watch-session.ts` stops being the
+  answer for a viewer who stated one. It arrives as **data**, the route a
+  resume point already takes, for the reason that file states about its own
+  import graph.
+- **Diagnostics honest about what it does.** It *calls*
+  `decidePlaybackTelemetry` and renders its reasons. **No toggle** —
+  `player-surface.tsx` passes `enabled: true` as a literal and nothing stores
+  an answer, so a switch would be the fake persistence you forbade by name.
+  PL-0724 adds the stored field; the screen says so to the viewer.
+- **About**: `package.json`'s version, imported not restated, described as
+  *declared* (PW-0502 owns proving it), and `THIRD-PARTY-NOTICES.md` named as
+  where PW-0208's attribution obligation is discharged — with the screen
+  saying plainly that it has not inspected your installation.
+- **No setting weakens a security or rights control**, asserted at the screen
+  as an absence of the vocabulary rather than of a particular control id.
 
-**One Windows run of this bundle turns all of that from written into
-evidence.**
+**One ruling you should know I leaned on.** "Not chosen" and "chose nothing"
+have the same empty lists and opposite meanings, and that distinction decides
+what the *player* gets: unconfigured keeps `["en"]`, cleared gets `[]`. My
+first loader returned values alone with a comment arguing the distinction did
+not matter to the media engine. It was wrong and its first caller proved it.
 
----
+### PW-0310 / PW-0315 — your rulings stand
 
-## 5. PL-0718 — and the clause I had to be careful about
-
-`apps/web/tsconfig.json` pulled gitignored build output into the typecheck
-program; a truncated generated file failed the whole repository twice in one
-session.
-
-The clause that needed care was *"nothing that is checked today stops being
-checked"*. `.next/types/validator.ts` is Next's generated check that every page
-and layout exports the correct types — **a real check of this application's
-source, not an artefact**. So `.next` was weighed and **stays**; `turbo.json`
-gives `@liberty/web#typecheck` a `dependsOn` of `build`, so it is always
-present. The desktop copies under `dist/` validate the same pages against the
-same routes, so excluding them loses no check the web copy does not make. The
-line drawn is between a check and a duplicate of it.
-
-Enumerated by `tsc --listFiles` on both configurations: eight dist files were
-in the program, two remain — and they remain because `next-env.d.ts` *imports*
-them by name, which no `exclude` can override.
+PW-0315 is BLOCKED with the obligation recorded: the first real dialog must
+restore focus to its trigger and join the keyboard gate. No dialog was
+invented.
 
 ---
 
-## 6. CI #179: still not consumable, and I am not guessing
+## 2. What I found, unasked, and what I did about it
 
-Run `37131258676`, head `4f23c1d`. Observed three times over ~2 hours.
-`e2e-typecheck` passed in 11s and `e2e` in 4m 3s, with their notice
-annotations. **The `validate` job cannot be read.** The run page reported it
-with no conclusion and no duration twice, and as "completed successfully" with
-**still no duration while the run above it was in progress** once. Those cannot
-both be right. A direct fetch of the job page returns GitHub's sign-in wall;
-`gh api` returns 403 for this repository.
+### PL-0721 — the client-IP hazard is worse than PL-0719 recorded. **Your ruling was right for a bigger reason than either of us had.**
 
-**PL-0714 stays in REVIEW. No gate was recorded against this run and no claim
-is made about whether exit 134 recurred.** Worth noting without overreading:
-validate has been unresolved for well over ninety minutes on a run whose other
-two jobs finished in under five.
+`rate-limit.ts` described the hazard as a shared bucket behind an unconfigured
+proxy. That is the *benign* half. The library's default is
+`DEFAULT_IP_HEADERS = ["x-forwarded-for"]`, and with no `trustedProxies` it
+accepts a header carrying exactly one valid address. `better-auth.ts` passed
+no `advanced.ipAddress`, so **this was live**:
+
+```
+x-forwarded-for: "203.0.113.9"   -> "203.0.113.9"
+x-forwarded-for: "198.51.100.7"  -> "198.51.100.7"
+```
+
+One caller, two buckets, chosen by the caller. A loop over a header it writes
+itself turns three-attempts-per-ten-seconds into no limit. That is the
+per-request evasion you named, and it was not hypothetical.
+
+Implemented exactly as you ruled. Default `ipAddressHeaders: []` — no header
+read at all, shared bucket retained. A deployment opts in with
+`LIBERTY_TRUSTED_PROXIES`, and the library then walks the chain from the right
+so prepended entries are discarded. **An unparseable entry stops the
+application**, because the library filters bad entries out silently and a list
+that filters to empty lands back in the spoof branch — in a deployment whose
+operator believes it is configured. `disableIpTracking` is deliberately not
+used: it reads like "read no header" and actually turns rate limiting off.
+
+**`docs/DEPLOYMENT_TRUST.md` §5 carries the precondition, and I want you to
+read it.** With `trustedProxies` set, a request arriving *around* the proxy
+still has its rightmost untrusted entry honoured. The algorithm cannot do
+better without knowing who spoke to the socket. **So on a publicly reachable
+origin, setting the variable is worse than leaving it unset**, and this
+repository cannot check that for anyone.
+
+`security-review` is **not recorded**. It is yours.
+
+### PL-0726 (P0) — CI applied migration `0000` *by name*
+
+`ci.yml` ran `--file packages/persistence/migrations/0000_…sql` and asserted a
+literal count of 8 tables. PL-0723 added `0001`. CI would never have applied
+it, and the literal 8 would have **refused** the ninth table if anything else
+had.
+
+The step exists because `drizzle-kit migrate` applied nothing and exited 0 —
+and its own header says the remedy is a step that "can fail loudly". It does,
+for a migration that does not apply *cleanly*. It was silent for a migration
+that is never *named*. **The hand-kept list came back one floor below the
+hand-kept suite list PL-0714 had just removed from the same file.**
+
+Now enumerated (`find` + `LC_ALL=C sort`, order printed) with the
+postcondition derived from the SQL's own `CREATE TABLE` names. Extracted from
+the workflow with `yaml.safe_load` and run against a real PostgreSQL 16 five
+times: clean run (9 tables), a broken migration (exit 3, psql's own error), a
+new migration picked up with nobody editing the step, an empty directory
+(exit 1, `::error::`), and a hostile filesystem order applied correctly.
+
+**Without this, PW-0308's e2e group B is red in CI** — it does not skip when
+`LIBERTY_E2E_DATABASE_URL` is set.
+
+### PL-0725 — repository lint was red on a file PW-0310 shipped
+
+`react-hooks/set-state-in-effect` on `roving-group.tsx:198`. PW-0310's gates
+are typecheck/unit/e2e/architecture-review — **no lint gate**, so nothing was
+falsified; the check that would have caught it was not one the task had to
+run. `setMounted` became `useSyncExternalStore`; the clamped-index write-back
+was removed and the clamp moved to the point of use, which also fixed a real
+edge (`nextActive` returns an out-of-range index for ArrowLeft from one).
+
+### PL-0727 — the lifecycle cross-check demanded a literal you had removed
+
+The case `windows-lifecycle-suite` failed on asserts that `windows.yml`
+contains `Project Liberty\liberty-desktop.exe`. **Nothing was renamed.**
+PW-0307 (9c6abd4) deleted that literal when it replaced an inline `Test-Path`
+with `verify-install.mjs`, which derives paths from `sidecar.rs`. The removed
+block says why: the path had already drifted once for being "written down in a
+third place". The check now guards the two correspondences that *do* exist —
+the product name in `windows.yml`, the executable in `verify-install.mjs` —
+proven by renaming each real file and watching the right case go red.
+
+### APPLY-ROUND-109.cmd shipped truncated and could not have applied the round
+
+Found while modelling this round's script on it. It announces seven steps and
+defines five; the `if /i` block is never closed; `goto :done` has no label;
+and **`git merge --ff-only` — the line that moves the branch — is missing**.
+It would have printed "Applied. HEAD is now 4a13f45" having moved nothing.
+`APPLY-ROUND-108.cmd` has all of it, so this is truncation, not a design.
+
+No harm reached Diego — `origin` is at 4a13f45, so his repository got there
+another way. But a delivery script that prints success without doing the work
+is the same class of defect as a gate that passes without running, in the one
+artefact nothing in this repository checks. Round 110's script is checked
+mechanically before delivery and the checker's output is in the state doc.
 
 ---
 
-## 7. Two capacity changes, and one I refused
+## 3. Seven times my own checks were wrong
 
-I raised **claude-test 1 -> 2** and **claude-infra 1 -> 2**, on the precedent
-claude-frontend set, claude-media followed and claude-backend was raised under
-on 2026-09-15. Three conditions, all checked and recorded for each:
+Round 109 had four. This round has three more, and I would rather hand you the
+count than have you find them.
 
-1. it is the **only** local agent advertising the lane;
-2. the lane is closed by an **external verdict**, not by work;
-3. the surfaces are **disjoint**.
+1. `roving-group.test.tsx` — the file PL-0725 added to *fix* lint broke lint
+   four different ways (`@next/next/no-html-link-for-pages`). My own task,
+   after my own passing lint run, before the commit. Gates re-recorded.
+2. `client-ip.test.ts` drafts one and two answered `127.0.0.1` everywhere.
+   `getIP`'s test-detection has two halves with different lifetimes — NODE_ENV
+   captured at module load, `env.TEST` read live. **Had I accepted the first
+   draft on the cases that happened to pass, the spoof test would have been
+   asserting against a constant.**
+3. `settings.spec.ts`'s unscoped `getByRole("alert")` collided with Next's
+   route announcer on a later run. Passed first time on timing. Scoped, text
+   asserted, re-run `--repeat-each=3`.
 
-The safety argument is unchanged: the limit prevents overlapping writes, and
-overlap is already prevented structurally by `allowedPaths`, which
-`conflictWithActive` enforces regardless of owner. The proof survives the
-change — PW-0502 and PW-0503 are deferred for **real** path overlaps in the
-same wave and stay deferred.
-
-**I did not raise claude-frontend**, although it meets all three conditions
-with PW-0308 (P2) deferred behind it. The precedent is specifically 1 -> 2 and
-its stated bound is *"two rather than unlimited"*. claude-frontend is already
-at two. Going to three would not be applying that precedent; it would be
-writing a new one, mid-round, to reach a P2 — and a rule that never says no is
-not a rule. **If you think the bound should be three for a lane whose every
-task is in review, that is your ruling to make.**
+Each one was fixed by making the check *stricter*, never by relaxing the thing
+it checks.
 
 ---
 
-## 8. What is yours, and what is nobody's
+## 4. What I need from you
 
-**Yours (review):** the eight tasks in §1.
+| Task | What it needs |
+|---|---|
+| **PL-0721** | `security-review`. The spoof was live; please check §5 of `DEPLOYMENT_TRUST.md` hardest — it is the part I cannot enforce. |
+| **PW-0308** | `architecture-review`. Particularly the `stored` flag reaching playback, and whether a comma-separated field is acceptable for a ranked list. |
+| **PL-0726** | Review. Does deriving the postcondition from `CREATE TABLE` satisfy "fails loudly"? |
+| **PL-0727** | Review. Is the executable literal in `verify-install.mjs` the right remaining copy to guard? |
+| **PL-0725** | Review. |
+| **PL-0723, PL-0722, PW-0602, PW-0208** | Carried from earlier this round. |
 
-**Yours (judgement):** the IP-trust decision in §3; whether the capacity bound
-in §7 should move; whether PW-0602 may be approved on parse-level evidence or
-must wait for a Windows run.
+**And a ruling I would like.** Nine tasks in REVIEW with an empty READY queue
+is now the binding constraint on this project — not engineering. Three
+executable tasks are deferred purely on surface overlaps with tasks awaiting
+your verdict. If there is a way to split a verdict (approve the surface,
+withhold the judgement gate) or to authorise a narrow independent reviewer for
+the corrective tasks specifically, it would unblock three lanes at once. I am
+not asking to self-approve and have not.
 
-**The commander's:** the H.264/HEVC authorization boundary; Experiment 1a on
-real Windows hardware (PW-0103); a signing certificate; a licensed media
-provider (PL-0302, which is what stops PL-0720's journey reaching a player);
-licensed live-feed access (PL-0602); and the push.
+---
 
-**Nobody's, until one of the above lands:** PW-0503 and PW-0502 open the moment
-their blockers clear review. PW-0308 opens on a verdict or a ruling.
+## 5. Still external, still yours or Diego's
+
+- H.264/HEVC patent authorisation — **his call, not mine**
+- Signing certificate and private key
+- A licensed media provider (PL-0302 → PL-0720)
+- Licensed live feed (PL-0602)
+- Experiment 1a on real Windows hardware (PW-0103)
+- A prior-release artefact for upgrade qualification (PW-0505)
+- **Push.** 403 again: *"CrownOwlP/project-liberty is not in this session's
+  authorized repository set"*. One attempt, recorded, no retry loop.
