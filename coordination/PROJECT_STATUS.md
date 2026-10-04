@@ -1,17 +1,17 @@
 # Project Liberty - Project Status
 
-> Generated 2026-10-04T16:15:17.246Z from the AI control plane.
+> Generated 2026-10-04T16:18:03.279Z from the AI control plane.
 
 **Overall completion:** 111/132 executable tasks (84%)
 
 ## Status summary
 
 - **BACKLOG:** 5
-- **READY:** 7
+- **READY:** 6
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 0
 - **REVIEW:** 2
-- **BLOCKED:** 7
+- **BLOCKED:** 8
 - **DONE:** 111
 - **CANCELED:** 0
 - **SUPERSEDED:** 4
@@ -27,7 +27,7 @@
 - **M6 — Shared-Agent Automation Bridge:** COMPLETE, 3/3 (100%)
 - **EXT — External Licensed Integrations:** BLOCKED, 0/2 (0%), 2 blocked
 - **M7 — Windows Desktop Shell + Native Playback:** COMPLETE, 4/4 (100%)
-- **PW — undefined:** IN_PROGRESS, 23/32 (72%), 1 blocked
+- **PW — undefined:** IN_PROGRESS, 23/32 (72%), 2 blocked
 
 ## Active work
 
@@ -36,15 +36,15 @@
 
 ## Dispatch classification
 
-- **READY_AND_EXECUTABLE:** 7
+- **READY_AND_EXECUTABLE:** 6
 - **READY_BUT_EXTERNAL:** 0
-- **BLOCKED:** 7
+- **BLOCKED:** 8
 - **BACKLOG (dependency-gated):** 5
 
 ## Recommended executable wave
 
-- **PW-0503** -> claude-test (P1/Test) Install, upgrade, uninstall, reinstall — tested, not assumed
 - **PW-0603** -> claude-test (P1/Test) The commander's run sheet, and the evidence it produces
+- **PL-0728** -> claude-test (P2/Test) A standing check for a test that is skipped in every configuration this repository runs
 - **PL-0732** -> claude-frontend (P2/Frontend) The diagnostics setting is stored, consumed, and reachable by nobody
 - **PL-0731** -> claude-media (P3/Player) The empty client-key allowlist refusal is asserted by nobody
 
@@ -65,6 +65,7 @@ WHY IT IS BEING RECORDED NOW RATHER THAN LEFT. While PW-0103 sat in READY, ai-co
 WHAT IT IS NOT. Not a claim that PW-0103 is unimportant, and not a request to descope it: it is the experiment the architecture rests on. It is a claim about WHO can run it. The owner action is in LAST_MILE item 7 and is unchanged.
 
 UNBLOCK WHEN: the commander runs Experiment 1a on real Windows hardware and hands back the result, or gpt-architect rules that some part of it can be established without the hardware.
+- **PW-0503** Install, upgrade, uninstall, reinstall — tested, not assumed: The harness meets all five REQUIRED clauses and is audited (build gate), but its central one -- 'exercised automatically wherever that is possible on a runner' -- has NEVER BEEN EXERCISED. Every observed Windows run reports lifecycle=skipped, because the verifier-negative step before it could not succeed under the runner's PowerShell: diagnosed and repaired this round as PL-0733. F1/F2/F3/F4 have produced no result on any machine. BLOCKED rather than released so the audit's gate results are PRESERVED (ai:release discards them) and so scripts/windows/** is not held against PW-0502. UNBLOCK WHEN: a Windows run reaches the lifecycle step, which needs PL-0733 applied and pushed -- push is 403 from this session, so it needs Diego. The first such run is the whole of the remaining evidence. Do NOT close this from --plan output or from the unit suite: the harness refuses to run off-Windows precisely so no cloud session can manufacture an F1 pass.
 - **PW-0504** Installed-application qualification on the commander's Windows machine: reason not recorded
 - **PW-0505** Upgrade qualification: user data across a real previous release: reason not recorded
 - **PL-0720** No test drives a signed-in viewer through to an operable player on a production build: Blocked at gpt-architect's round-110 instruction, with gate results preserved. The architecture is accepted and the spec is preserved; what is missing is the task's central promise -- a signed-in authorized viewer reaching an OPERABLE PLAYER and operating a control -- which cannot happen because no authorized media provider is configured and the production provider boundary refuses first. PL-0302 ("First production provider", itself BLOCKED on a confirmed licensed API/provider and credentials) is now a declared dependency of this task, so DONE is structurally unreachable until that external authorization lands. The executable evidence recorded in round 109 stands and is about committed, correct work: it proves the journey up to the provider boundary. UNBLOCK WHEN: a licensed media provider is configured, at which point the SAME spec is extended through authorized title, real playback session, real player and at least one real control action. Do not close this by configuring a fake or demo provider in production.

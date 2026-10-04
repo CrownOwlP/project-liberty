@@ -1,91 +1,11 @@
 {
-  "generatedAt": "2026-10-04T16:15:17.252Z",
+  "generatedAt": "2026-10-04T16:18:03.286Z",
   "agent": "claude-test",
   "executionAvailable": true,
   "assigned": [],
   "review": [],
   "reservedExternal": [],
   "recommended": [
-    {
-      "id": "PW-0503",
-      "priority": "P1",
-      "lane": "Test",
-      "status": "READY",
-      "title": "Install, upgrade, uninstall, reinstall — tested, not assumed",
-      "dependencies": [
-        "PW-0501"
-      ],
-      "allowedPaths": [
-        "scripts/windows/**",
-        "e2e/windows/**",
-        "package.json"
-      ],
-      "reviewDependencies": [
-        ".github/workflows/windows.yml",
-        "apps/desktop",
-        "docs/TEST_MATRIX.md",
-        "docs/WINDOWS_CERTIFICATION.md"
-      ],
-      "preferredAgent": "claude-test",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "build",
-        "unit"
-      ],
-      "acceptance": "The installer's lifecycle is exercised automatically wherever that is possible on a runner, and everything that is not is named for the commander's machine. REQUIRED: clean install on a machine that has never had the application, then launch. REQUIRED: upgrade over a previous version with user data preserved, which is the one a release breaks most often and nobody tests. REQUIRED: uninstall leaves no service, no scheduled task and no orphaned node.exe, and states exactly what user data it keeps or removes. REQUIRED: reinstall after uninstall. REQUIRED: each case is marked automated or commander-machine, with the reason, so the split is visible rather than implied.",
-      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. SURFACE NOTE: this task's allowedPaths name directories that do not exist yet. The evidence-based narrowing procedure applies to reconciling work already in history; for genuinely new work the surface is the smallest set of paths the acceptance can be satisfied within, and it is narrowed again from the diff before review if it turns out to be wider than what was written. ",
-      "owner": null,
-      "gateResults": {},
-      "implementationAgent": "claude-test",
-      "updatedAt": "2026-10-02T15:00:45.316Z",
-      "implementationBaseSha": "643dbeb8230b53b86ddee9281458eb07528a0c17",
-      "review": {
-        "taskId": "PW-0503",
-        "implementationAgent": "claude-test",
-        "implementationOwner": "claude-test",
-        "reviewerAgent": "gpt-architect",
-        "reviewerClass": "external-reasoning",
-        "reviewerProvider": "openai",
-        "reviewedCommitSha": "64a76b3992bd8917391547207a29d08cb7ace8be",
-        "reviewedBaseSha": "643dbeb8230b53b86ddee9281458eb07528a0c17",
-        "reviewedTreeHash": "337e4d1b43a7bee3bc38038a56b2bf8d1424879e705ec9f301bbc05a36a9e9e3",
-        "reviewedFileCount": 40,
-        "reviewedFingerprintSource": "git-object",
-        "reviewedDependencies": [
-          ".github/workflows/windows.yml",
-          "apps/desktop",
-          "docs/TEST_MATRIX.md",
-          "docs/WINDOWS_CERTIFICATION.md"
-        ],
-        "outcome": "CHANGES_REQUESTED",
-        "reviewedAt": "2026-10-02T15:00:39.136Z",
-        "evidence": "CHANGES REQUESTED at 835823561c69f5bbdebf19c637eeeabff19dacf7. Transcribed by claude-lead from gpt-architect's round-105 ruling, section 2, which is a request for changes in substance even though it does not use the word: 'The lifecycle harness architecture is accepted. DO NOT mark PW-0503 DONE merely to free the Test lane. Current Windows evidence establishes only part of the lifecycle matrix.' gpt's itemised verdict: F1 clean install PARTIAL PASS -- the MSI builds, installs and its installed tree is verified; still unverified is actual installed application launch and WebView runtime. F2 upgrade UNVERIFIED -- no real previous release has been exercised as an upgrade source, so user-data preservation across an actual upgrade remains unproven. F3 uninstall PARTIAL PASS -- msiexec uninstall executes; still to prove where automation permits are no orphaned service, no scheduled task, no orphaned node.exe, expected files removed, and documented user-data retention behaviour. F4 reinstall UNVERIFIED but AUTOMATABLE -- 'implement and execute this rather than classifying it as commander-only'. WHAT HAS CHANGED SINCE THAT VERDICT WAS WRITTEN, and it narrows the request rather than answering it: the IMPLEMENTATION of F3's residue classification and of F4 reinstall already exists in scripts/windows/lifecycle.mjs and residue.mjs at the commit above, with 30 cases behind the decisions, and F4 is already marked plannedAutomated with no manual portion. What does not exist is EXECUTION, and it cannot be created by any open task: no open task can write .github/workflows/windows.yml -- every writer is DONE and PW-0502, PW-0503 and PW-0602 hold it read-only. That is recorded as a board.sequencing_finding and needs a ruling on which task gets the write surface. Recorded so the task leaves REVIEW honestly rather than being completed on evidence gpt declined to accept."
-      },
-      "reviewHistory": [
-        {
-          "taskId": "PW-0503",
-          "implementationAgent": "claude-test",
-          "implementationOwner": "claude-test",
-          "reviewerAgent": "gpt-architect",
-          "reviewerClass": "external-reasoning",
-          "reviewerProvider": "openai",
-          "reviewedCommitSha": "64a76b3992bd8917391547207a29d08cb7ace8be",
-          "reviewedBaseSha": "643dbeb8230b53b86ddee9281458eb07528a0c17",
-          "reviewedTreeHash": "337e4d1b43a7bee3bc38038a56b2bf8d1424879e705ec9f301bbc05a36a9e9e3",
-          "reviewedFileCount": 40,
-          "reviewedFingerprintSource": "git-object",
-          "reviewedDependencies": [
-            ".github/workflows/windows.yml",
-            "apps/desktop",
-            "docs/TEST_MATRIX.md",
-            "docs/WINDOWS_CERTIFICATION.md"
-          ],
-          "outcome": "CHANGES_REQUESTED",
-          "reviewedAt": "2026-10-02T15:00:39.136Z",
-          "evidence": "CHANGES REQUESTED at 835823561c69f5bbdebf19c637eeeabff19dacf7. Transcribed by claude-lead from gpt-architect's round-105 ruling, section 2, which is a request for changes in substance even though it does not use the word: 'The lifecycle harness architecture is accepted. DO NOT mark PW-0503 DONE merely to free the Test lane. Current Windows evidence establishes only part of the lifecycle matrix.' gpt's itemised verdict: F1 clean install PARTIAL PASS -- the MSI builds, installs and its installed tree is verified; still unverified is actual installed application launch and WebView runtime. F2 upgrade UNVERIFIED -- no real previous release has been exercised as an upgrade source, so user-data preservation across an actual upgrade remains unproven. F3 uninstall PARTIAL PASS -- msiexec uninstall executes; still to prove where automation permits are no orphaned service, no scheduled task, no orphaned node.exe, expected files removed, and documented user-data retention behaviour. F4 reinstall UNVERIFIED but AUTOMATABLE -- 'implement and execute this rather than classifying it as commander-only'. WHAT HAS CHANGED SINCE THAT VERDICT WAS WRITTEN, and it narrows the request rather than answering it: the IMPLEMENTATION of F3's residue classification and of F4 reinstall already exists in scripts/windows/lifecycle.mjs and residue.mjs at the commit above, with 30 cases behind the decisions, and F4 is already marked plannedAutomated with no manual portion. What does not exist is EXECUTION, and it cannot be created by any open task: no open task can write .github/workflows/windows.yml -- every writer is DONE and PW-0502, PW-0503 and PW-0602 hold it read-only. That is recorded as a board.sequencing_finding and needs a ruling on which task gets the write surface. Recorded so the task leaves REVIEW honestly rather than being completed on evidence gpt declined to accept."
-        }
-      ]
-    },
     {
       "id": "PW-0603",
       "priority": "P1",
