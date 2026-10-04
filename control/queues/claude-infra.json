@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-04T04:23:39.500Z",
+  "generatedAt": "2026-10-04T04:33:43.133Z",
   "agent": "claude-infra",
   "executionAvailable": true,
   "assigned": [
@@ -84,31 +84,6 @@
   "review": [],
   "reservedExternal": [],
   "recommended": [
-    {
-      "id": "PL-0726",
-      "priority": "P0",
-      "lane": "Infra",
-      "status": "READY",
-      "title": "Corrective: CI applies migration 0000 by name, so every later migration is silently absent",
-      "dependencies": [],
-      "allowedPaths": [
-        ".github/workflows/ci.yml"
-      ],
-      "reviewDependencies": [
-        "packages/persistence/migrations",
-        "packages/persistence/migrations/meta/_journal.json",
-        "e2e/tests/settings.spec.ts",
-        "apps/web/src/app/api/v1/profiles/preferences"
-      ],
-      "preferredAgent": "claude-infra",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "e2e"
-      ],
-      "acceptance": "THE STEP. .github/workflows/ci.yml's 'Apply the repository migration' runs\n\n  psql \"$LIBERTY_E2E_POSTGRES_URL\" --set ON_ERROR_STOP=1 --quiet --file packages/persistence/migrations/0000_profile_scoped_identity.sql\n\nand then asserts a count of exactly 8 tables. The filename is a LITERAL and the 8 is a LITERAL. packages/persistence/migrations/ now holds 0001_profile_media_preferences.sql (PL-0723, committed c925b27). CI will never apply it, and the count would REFUSE the ninth table if something else did.\n\nWHY THIS IS THE SAME DEFECT TWICE. That step exists because `drizzle-kit migrate` applied nothing and exited 0 -- a silent failure -- and its own header says the remedy is a step that 'can fail loudly'. It fails loudly for a migration that does not apply cleanly. It is SILENT for a migration that is never named. The hand-kept list came back, which is also the thing PL-0714's clause A had to fix in the suite list four steps above it.\n\nCONSEQUENCE, MEASURED RATHER THAN FEARED: /api/v1/profiles/preferences reads and writes profile_media_preference. On CI's database that relation does not exist, LIBERTY_E2E_DATABASE_URL is set so DATABASE_SESSION_SKIP_REASON is null and nothing skips, and e2e/tests/settings.spec.ts group B therefore goes red in CI while passing locally -- this round's second local-green/CI-red after PL-0722.\n\nREQUIRED: every committed migration is applied, in order, BY A MECHANISM rather than by a list somebody remembers to extend. PL-0714's clause A says it for the suite list in the same file and the words transfer unchanged: 'a note that a hand-kept list must be kept in step is already in the file, it did not keep the list in step'.\n\nREQUIRED: the loud-failure property survives. The step must still fail when a migration does not apply, and the post-condition must still fail when the schema is not what the migrations describe -- so a literal 8 becomes something derived, not something deleted. Dropping the count to accommodate a ninth table would remove the only check that a partial application is caught.\n\nREQUIRED: ordering is lexical by filename and that is asserted, because 0002 applied before 0001 would succeed on an empty database and corrupt an upgrade.\n\nFORBIDDEN: switching to `drizzle-kit migrate`. It is the command whose silent no-op this step was written to route around, and packages/persistence/migrations/meta/_journal.json now exists (PL-0723 generated it) -- which CHANGES the behaviour but does not re-establish the loud failure this file needs. Reconsider it in a task that owns packages/persistence and can prove the new behaviour; do not swap it in here on the strength of the journal's existence.\n\nNOT IN SCOPE: anything else in ci.yml.",
-      "notes": "FILED ROUND 110 by claude-lead during PW-0308's e2e work, as defect.found. Not fixed inside PW-0308 because .github/workflows/ci.yml belongs to PL-0714 and PL-0717; PL-0714 is now DONE, so the surface is free for this task but still collides with PL-0717 -- they must not be active at once.",
-      "gateResults": {}
-    },
     {
       "id": "PW-0502",
       "priority": "P1",

@@ -75,7 +75,7 @@ REQUIRED: it is proven under PARALLELISM, not only serially. A green --workers=1
 REQUIRED: any wait it performs is BOUNDED and fails with a message naming the bucket contention, so a future genuine failure is not mistaken for this one.
 
 MUST NOT: weaken, widen, disable or reconfigure the rate-limit policy. MUST NOT add retries to the Playwright configuration -- `retries: 0` is argued for at length and a retry here would convert a real race into a green mark. MUST NOT serialise the whole suite to make one spec easier. MUST NOT mark the test skipped, or assert something weaker that happens to always hold. |
-| PL-0726 | P0 | Infra | READY | - | - | Corrective: CI applies migration 0000 by name, so every later migration is silently absent | THE STEP. .github/workflows/ci.yml's 'Apply the repository migration' runs
+| PL-0726 | P0 | Integration | REVIEW | claude-lead | - | Corrective: CI applies migration 0000 by name, so every later migration is silently absent | THE STEP. .github/workflows/ci.yml's 'Apply the repository migration' runs
 
   psql "$LIBERTY_E2E_POSTGRES_URL" --set ON_ERROR_STOP=1 --quiet --file packages/persistence/migrations/0000_profile_scoped_identity.sql
 

@@ -1153,21 +1153,88 @@ jobs:
         id: migrate
         run: |
           set -euo pipefail
-          psql "$LIBERTY_E2E_POSTGRES_URL" \
-            --set ON_ERROR_STOP=1 \
-            --quiet \
-            --file packages/persistence/migrations/0000_profile_scoped_identity.sql
-          # The four Better Auth tables plus the four Liberty ones. A count
-          # rather than a spot check, so a partially applied migration fails
-          # here instead of becoming a confusing 500 three steps later.
-          applied=$(psql "$LIBERTY_E2E_POSTGRES_URL" --tuples-only --no-align --command \
-            "select count(*) from information_schema.tables
-             where table_schema = 'public'
-               and table_name in ('user','session','account','verification',
-                                  'profile','active_profile_selection',
-                                  'playback_progress','watchlist_entry')")
-          echo "migration created $applied of 8 expected tables"
-          test "$applied" -eq 8
+
+          # ===============================================================
+          # EVERY MIGRATION, IN ORDER, BY ENUMERATION (PL-0726)
+          # ===============================================================
+          #
+          # WHAT THIS REPLACES AND WHY. This step used to name
+          # `0000_profile_scoped_identity.sql` as a literal and then assert a
+          # literal count of 8 tables. It was written that way to route around
+          # `drizzle-kit migrate`, which read a journal that did not exist and
+          # so APPLIED NOTHING AND EXITED 0 -- a silent failure -- and its
+          # comment said the remedy was a step that "can fail loudly". It does
+          # fail loudly for a migration that does not apply CLEANLY. It was
+          # SILENT for a migration that is never named, and PL-0723 added
+          # `0001_profile_media_preferences.sql`, which CI then never applied
+          # and whose table the literal 8 would have REFUSED if anything else
+          # had. The hand-kept list came back; the same defect, one floor down.
+          #
+          # So the list is enumerated rather than typed. `LC_ALL=C sort` makes
+          # the order byte-lexical and independent of the runner's locale,
+          # which matters because the numeric prefixes are what encode
+          # dependency: 0002 applied before 0001 would succeed on an empty
+          # database and corrupt an upgrade.
+          mapfile -t migrations < <(
+            LC_ALL=C find packages/persistence/migrations -maxdepth 1 -name '*.sql' -print | LC_ALL=C sort
+          )
+
+          # NON-VACUITY, FIRST. An empty glob applying nothing and exiting 0 is
+          # precisely the failure this whole step exists to prevent, and it is
+          # the one shape that would otherwise pass every check below.
+          if [ "${#migrations[@]}" -eq 0 ]; then
+            echo "::error::no migrations found under packages/persistence/migrations; this step would have applied nothing and passed"
+            exit 1
+          fi
+
+          # THE ORDER IS PRINTED, because a run that applied them in the wrong
+          # order must be diagnosable from the run page rather than from a
+          # schema three steps later.
+          printf 'applying %d migration(s) in this order:\n' "${#migrations[@]}"
+          printf '  %s\n' "${migrations[@]}"
+
+          for migration in "${migrations[@]}"; do
+            psql "$LIBERTY_E2E_POSTGRES_URL" \
+              --set ON_ERROR_STOP=1 \
+              --quiet \
+              --file "$migration"
+          done
+
+          # ===============================================================
+          # THE POSTCONDITION, DERIVED FROM THE SQL RATHER THAN TYPED
+          # ===============================================================
+          #
+          # The count is gone and what replaces it is stronger, not weaker: the
+          # names of the tables the migrations say they create, each checked to
+          # exist. A literal count caught a partial application and nothing
+          # else -- it could not tell WHICH table was missing, and it refused a
+          # correct schema that had grown. This catches a partial application,
+          # names the casualty, and grows with the migrations on its own.
+          expected=$(
+            grep -ho 'CREATE TABLE "[^"]*"' "${migrations[@]}" |
+              sed 's/.*"\(.*\)"/\1/' | LC_ALL=C sort -u
+          )
+          if [ -z "$expected" ]; then
+            echo "::error::the migrations declare no CREATE TABLE; the postcondition below would check nothing"
+            exit 1
+          fi
+
+          missing=""
+          while IFS= read -r table; do
+            present=$(psql "$LIBERTY_E2E_POSTGRES_URL" --tuples-only --no-align --command \
+              "select count(*) from information_schema.tables
+               where table_schema = 'public' and table_name = '$table'")
+            if [ "$present" -ne 1 ]; then
+              missing="$missing $table"
+            fi
+          done <<< "$expected"
+
+          declared=$(printf '%s\n' "$expected" | wc -l | tr -d ' ')
+          if [ -n "$missing" ]; then
+            echo "::error::the migrations declare $declared table(s); these are not in the database after applying them:$missing"
+            exit 1
+          fi
+          echo "migrations applied; all $declared declared table(s) are present"
       - name: Run the suite in production mode
         id: production
         if: ${{ steps.browsers.outcome == 'success' && steps.migrate.outcome == 'success' }}
