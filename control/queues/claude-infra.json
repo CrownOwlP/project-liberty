@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-04T04:57:51.077Z",
+  "generatedAt": "2026-10-04T15:08:04.678Z",
   "agent": "claude-infra",
   "executionAvailable": true,
   "assigned": [
@@ -42,43 +42,6 @@
       "implementationAgent": "claude-infra",
       "updatedAt": "2026-10-02T15:52:13.908Z",
       "implementationBaseSha": "9ac755ba7a3b4945b54b729f9a7a7569c7d990e2"
-    },
-    {
-      "id": "PL-0727",
-      "priority": "P1",
-      "lane": "Infra",
-      "status": "REVIEW",
-      "title": "Corrective: the lifecycle cross-check demands a literal PW-0307 deliberately removed",
-      "dependencies": [],
-      "allowedPaths": [
-        "scripts/windows/test-lifecycle.mjs"
-      ],
-      "reviewDependencies": [
-        ".github/workflows/windows.yml",
-        "scripts/windows/lifecycle.mjs",
-        "scripts/windows/verify-install.mjs",
-        "apps/desktop/src-tauri/src/sidecar.rs"
-      ],
-      "preferredAgent": "claude-infra",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "unit"
-      ],
-      "acceptance": "CI #180's validate job is RED on this, and the product is not at fault. Reproduced locally in full -- `node --test scripts/windows/test-lifecycle.mjs`: 30 tests, 29 pass, 1 fail, 974ms:\n\n  not ok - identity is derived from the files the shell itself compiles > agrees with the install path the Windows workflow asserts\n  the Windows workflow does not mention Project Liberty\\\\liberty-desktop.exe; one of the two has been renamed without the other\n\nNOTHING WAS RENAMED. The case asserts that .github/workflows/windows.yml CONTAINS the literal `<productName>\\\\<executable>`, on the premise its own comment states: 'That workflow hard-codes Program Files\\\\Project Liberty'. Commit 9c6abd4 (PW-0307, round 109) deleted that literal on purpose. It replaced an inline `Test-Path` against a written-down executable path with `node scripts/windows/verify-install.mjs`, which DERIVES the paths from apps/desktop/src-tauri/src/sidecar.rs. The removed block's own comment gives the reason: the path had already drifted once because it was 'written down in a third place'.\n\nSo the workflow moved to derivation -- the better state, and the state this very test's comment says it wants -- and the test still requires the literal the move removed. This is the SIXTH time a check in this repository has reported a fault that was not there, and the standing rule is unchanged: FIX THE CHECK, DO NOT RESTORE WHAT IT MISSES.\n\nFORBIDDEN: putting the executable literal back into windows.yml. That re-creates the third copy PW-0307 removed and re-opens the drift it closed. (It is also not possible from this task, which does not own that file -- stated so the reasoning is on the record rather than the surface restriction being the only reason.)\nFORBIDDEN: deleting the case. A cross-check between the derived identity and the workflow is worth having; what is wrong is WHICH fact it cross-checks.\n\nREQUIRED: the case asserts a correspondence that is actually true of the current arrangement, and would still catch a rename. windows.yml line 333 still carries `Join-Path ${env:ProgramFiles} \"Project Liberty\"` -- the productName literal survives, the executable literal does not -- so the install ROOT is still cross-checkable against IDENTITY.productName.\nREQUIRED: the case's comment is corrected rather than left describing the arrangement it was written against. A comment that outlives the code it describes is how this repository keeps losing things, and the wrong premise is recorded at the line that held it.\nREQUIRED: non-vacuity. The new assertion must be shown to FAIL when the workflow and the derived identity disagree, not merely to pass today -- an `includes` against a string that is absent from both would pass forever.\nREQUIRED: the executable's disappearance from the workflow is NOT quietly accepted as untested. Either name where that correspondence is now proven -- verify-install.mjs derives it from sidecar.rs and windows.yml invokes that -- or state plainly that it is proven on a runner and not here.",
-      "notes": "FILED ROUND 110 by claude-lead after reading CI #180's validate JOB page, which reports FAILED while the run page reports passed. Found only because gpt-architect's round-110 instruction said to read the job page. scripts/windows/** is reserved by PW-0501 and PW-0107 (both DONE) and PW-0502 and PW-0503 (both READY and unowned), so nothing active collides.",
-      "gateResults": {
-        "unit": {
-          "status": "pass",
-          "at": "2026-10-04T04:23:20.328Z",
-          "by": "claude-infra",
-          "commitSha": "a864bfe59bfc871965ef7eaae48ba4cb3b61a0b4",
-          "evidence": "node --test scripts/windows/test-lifecycle.mjs: 32 tests, 7 suites, 32 pass, 0 fail, 206ms. BEFORE: 30 tests, 29 pass, 1 fail -- \"agrees with the install path the Windows workflow asserts\", the case CI #180's validate job went red on.\n\nNON-VACUITY PROVEN THREE WAYS, because the case this replaces passed for a whole round while asserting something that was no longer true, and \"it is green now\" is exactly what it said then.\n\n1. AGAINST THE REAL FILE, EXECUTABLE. sed -i 's/liberty-desktop.exe/liberty-player.exe/' scripts/windows/verify-install.mjs, then re-run: 32 tests, 31 pass, 1 fail -- \"not ok 6 - verify-install's executable agrees with the derived executable\". File restored from a copy taken first; git diff --stat on it is empty afterwards.\n\n2. AGAINST THE REAL FILE, PRODUCT NAME. sed -i 's/\"Project Liberty\"/\"Liberty Player\"/' .github/workflows/windows.yml, then re-run: 32 tests, 31 pass, 1 fail -- \"not ok 5 - the workflow's install root agrees with the derived product name\". Restored the same way; git diff --stat empty.\n\n3. IN THE SUITE ITSELF. A third case, \"A CROSS-CHECK THAT CANNOT FAIL IS NOT A CROSS-CHECK\", drives the same comparison function with disagreeing text and requires the refusal, and then with agreeing text and requires that it does NOT throw -- so the rule is not satisfied by a function that always throws. That one runs on every future execution; 1 and 2 were performed once, by hand, and are recorded here rather than left as a claim.\n\nWHAT THE FIX DID NOT DO. No literal was restored to .github/workflows/windows.yml -- git diff --stat shows it unmodified -- so PW-0307's third copy stays removed. The case was not deleted: it now guards the two correspondences that actually exist, the product name in the workflow and the executable in verify-install.mjs, which is the copy PW-0307 could not eliminate because the name comes from Cargo.toml's binary name rather than from a Rust constant. The old case's false premise is recorded at the lines that held it rather than quietly dropped."
-        }
-      },
-      "owner": "claude-infra",
-      "implementationAgent": "claude-infra",
-      "updatedAt": "2026-10-04T04:23:39.466Z",
-      "implementationBaseSha": "a864bfe59bfc871965ef7eaae48ba4cb3b61a0b4"
     }
   ],
   "review": [],

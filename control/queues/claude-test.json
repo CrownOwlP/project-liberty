@@ -1,8 +1,48 @@
 {
-  "generatedAt": "2026-10-04T04:57:51.076Z",
+  "generatedAt": "2026-10-04T15:08:04.676Z",
   "agent": "claude-test",
   "executionAvailable": true,
   "assigned": [
+    {
+      "id": "PL-0717",
+      "priority": "P1",
+      "lane": "Test",
+      "status": "REVIEW",
+      "title": "The fail-closed deployment path is asserted by nobody, because CI runs two of three configurations",
+      "dependencies": [
+        "PL-0714"
+      ],
+      "allowedPaths": [
+        ".github/workflows/ci.yml"
+      ],
+      "reviewDependencies": [
+        "e2e/src/env.ts",
+        "e2e/tests/playback-session.api.spec.ts",
+        "e2e/tests/watchlist.spec.ts",
+        "e2e/playwright.config.ts",
+        "docs/TEST_MATRIX.md"
+      ],
+      "preferredAgent": "claude-test",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "e2e"
+      ],
+      "acceptance": "FOUND BY MEASUREMENT IN ROUND 108: the development and production suites were both run to completion and their SKIP LISTS intersected. Five e2e titles are skipped in BOTH, so no configuration this repository executes ever runs them. Two are media-rig rows that correctly need the commander's hardware. THE OTHER THREE ASSERT A FAIL-CLOSED SECURITY BEHAVIOUR: 'a deployment with no identity system - fails closed with 503 and names the operator's remedy', '- publishes nothing only a resolver could know' (playback-session.api.spec.ts), and 'a deployment with no identity system refuses honestly rather than showing an empty list' (watchlist.spec.ts).\n\nThey need PRODUCTION MODE WITH NO DATABASE -- the third configuration. ci.yml runs exactly two: development, and production with PostgreSQL. The tests are not broken: run locally in that third configuration the full chromium+api suite gives 62 passed / 56 skipped / 0 failed.\n\nREQUIRED: the third configuration runs in CI and fails the build when it fails.\nREQUIRED: the cost is stated rather than absorbed. A third suite run adds to every push; the acceptance is that the fail-closed path is covered, not that it is covered in the most expensive available way. If a narrower invocation -- the three titles, or the two specs -- buys the same coverage for less, take it and say why.\nREQUIRED: the three titles actually EXECUTE in the new configuration. Evidence is the run naming them as passed, not a count that went up.\nREQUIRED: the two media-rig titles stay skipped and stay reasoned. They are RIG rows in PW-0601's matrix and must not be made to look covered.\nREQUIRED: no existing configuration loses coverage, and no skip loses its reason.\n\nOUT OF SCOPE: changing what the three tests assert, and relaxing any of them to make a cheaper configuration reach them.",
+      "notes": "CREATED IN ROUND 108. DEPENDS ON PL-0714 because that task owns .github/workflows/ci.yml and is in REVIEW; editing the file from here while it is an active surface would be the overlapping-surface collision the operating model forbids. Sequenced, not blocked.\n\nTHE PATTERN THIS IS THE FOURTH INSTANCE OF, recorded so the next one is found by a check rather than by accident: scripts/test-validate-repo.mjs ran nowhere until PL-AI-0002; scripts/test-desktop-target.mjs and the 30-case Windows lifecycle suite ran nowhere until PL-0714; apps/web/src/components/player/tracks.ts was imported by nothing until PW-0306 wired it. Each time the thing existed, passed, and no gate asked it. A standing mechanical check for 'skipped in every configuration we run' would have found all four, and proposing one is a reasonable thing for this task's implementation to consider -- the measurement that found this was two suite runs and a set intersection.\n\nCONFLICT-CHECKED IN BOTH FIELDS IN BOTH DIRECTIONS AT FILING: .github/workflows/ci.yml is held by PL-0714 (REVIEW) and by PL-0001, PL-0704, PL-AI-0002 and PW-0312, all DONE. The dependency on PL-0714 is what keeps the two from being active together. The reviewDependencies are read-only here: e2e/tests/watchlist.spec.ts belongs to PL-0715 (REVIEW) and is NOT written by this task.",
+      "owner": "claude-test",
+      "gateResults": {
+        "e2e": {
+          "status": "pass",
+          "at": "2026-10-04T15:06:56.504Z",
+          "by": "claude-test",
+          "commitSha": "659cafa118bdc72b98d43c7f3fa21a120222e57b",
+          "evidence": "THE THIRD CONFIGURATION RUNS, THE THREE TITLES EXECUTE IN IT, AND THE GUARD THAT SAYS SO WAS PROVEN TO REFUSE.\n\nMEASURED FIRST, DECIDED SECOND. All three configurations were run to completion locally with a JSON reporter and their executed sets compared:\n\n  development              ran 122  skipped 29   274.8s\n  production + PostgreSQL  ran 100  skipped 51    99.0s\n  production, NO database  ran  71  skipped 80    75.4s\n\nTests the third configuration runs that NEITHER other one does -- computed as C minus (A union B), not asserted -- are EXACTLY three:\n  [api]      playback-session.api.spec.ts > a deployment with no identity system > fails closed with 503 and names the operator's remedy\n  [api]      playback-session.api.spec.ts > a deployment with no identity system > publishes nothing only a resolver could know\n  [chromium] watchlist.spec.ts > a deployment with no identity system refuses honestly rather than showing an empty list\n\nTests skipped in ALL THREE once this step exists: exactly two, both media-rig rows. They are RIG rows in PW-0601's matrix, they need the commander's hardware, and they remain skipped with their reasons intact -- which the acceptance requires and which this measurement confirms rather than hopes.\n\nTHE NARROW INVOCATION WAS CONSIDERED AND REJECTED, WITH THE REASON. The acceptance invites naming the two spec files if that buys the same coverage for less. It was measured: the dominant cost is the production build, which either invocation pays and turbo serves from cache in this job, leaving 75 seconds of test time. Against that, naming two files would put a hand-maintained list of what matters into this workflow -- the same defect PL-0714 removed from the suite steps above it and PL-0726 removed from the migration step below it, in this very file, this round and last. A future test that became third-configuration-only would be covered by the whole-suite step and missed by the narrow one, silently, which is precisely how these three were lost for eight rounds.\n\nTHE RUN. `npm test -- --project=api --project=chromium --reporter=list,json,html` with LIBERTY_E2E_WEB_MODE=production and NO LIBERTY_E2E_DATABASE_URL. The absence is the configuration: src/env.ts derives the auth secret from that variable's presence, so a production run without it IS a deployment with no identity system. Nothing is stubbed and no test is told it is special.\n\n`html` IS NAMED ON THE COMMAND LINE DELIBERATELY, and finding out why was a defect caught before commit: --reporter on the CLI REPLACES the config's reporter list rather than adding to it, so the first draft wrote no e2e/playwright-report at all and the upload step would have archived nothing. Verified after the fix: both /tmp/verify-reporters.json and e2e/playwright-report/index.html are produced.\n\nTHE GUARD, AND THE FIVE WAYS IT WAS PROVEN TO REFUSE. The acceptance says evidence must be \"the run naming them as passed, not a count that went up\", so a step reads the JSON report and requires all three BY NAME, each present and each \"expected\". It was extracted from the workflow with yaml.safe_load -- so what was executed is the text CI will execute -- and driven against real reports:\n\n  A. the real third-configuration report      -> exit 0, three \"ran and passed\" notices naming each title and its project\n  B. the real production+PostgreSQL report    -> exit 1, three errors, each saying the title is \"skipped\", not \"expected\"\n  C. the real development report              -> exit 1, three errors\n  D. a report with one title renamed          -> exit 1, \"No test matching ... is in the report at all. It was renamed or deleted\"\n  E. no report file at all                    -> exit 1, \"whether these three ran is unknown -- which is not the same as them having run\"\n\nB and C are the important ones: the guard is driven against the two configurations CI ACTUALLY RUNS TODAY and goes red on both. It would have caught the original defect. A sixth case arrived unplanned while verifying the reporters -- a run of only playback-session.api.spec.ts -- and it refused on the missing watchlist title.\n\nThe step also emits the suite counts as an annotation, because annotations are the only CI channel this session can read.\n\nNOTHING WAS WEAKENED. No test was changed, no assertion relaxed, no skip removed, no retry added, no timeout raised. The two existing suite steps are untouched -- `git diff` over this file is confined to the inserted block -- so no existing configuration loses coverage."
+        }
+      },
+      "updatedAt": "2026-10-04T15:06:56.962Z",
+      "implementationAgent": "claude-test",
+      "implementationBaseSha": "659cafa118bdc72b98d43c7f3fa21a120222e57b"
+    },
     {
       "id": "PW-0602",
       "priority": "P1",
@@ -97,86 +137,11 @@
           "evidence": "CHANGES REQUESTED at 4a13f4593ee00aff71acb470d065c7cffa39b1a4, under gpt-architect's own round-110 condition, transcribed by claude-test. The reviewer wrote: \"Do NOT approve PW-0602 from parser-only evidence if Windows #14 has not proven the new job\", and required that for lifecycle \"every observable row\" be verified as PASS, FAIL, NOT-RUN with an exact reason, then classified as (A) workflow/harness defect, (B) product defect, (C) commander-only row or (D) genuinely unsupported CI row.\n\nWHAT WINDOWS #14 (run 37172243171, head 4a13f45) PROVED, AND IT IS THE HALF THIS TASK WAS WRITTEN FOR. The e2e-desktop job CONCLUDED SUCCESS in 3m 35s. Its annotations read \"openssl=C:\\Program Files\\OpenSSL\\bin\\openssl.exe; mode=development; database=none\" and \"expected=118 unexpected=0 flaky=0 skipped=24 duration=134.8s\". Success is the load-bearing fact: the job contains the non-vacuity guard as a FAILING step, so a run in which the desktop axis had skipped could not have concluded success. The desktop axis therefore genuinely executed on a Windows runner, on the first attempt, with retries still at zero and the same two projects CI runs. PW-0602's first REQUIRED clause is met.\n\nWHY THIS CANNOT BE APPROVED ANYWAY. The package job CONCLUDED FAILURE with \"Process completed with exit code 1\", and the only other annotation is the lifecycle publisher's own notice: \"NO REPORT WAS PRODUCED. The harness writes nothing when it refuses (wrong platform, missing or bad --msi), which is a fault in this workflow rather than in the product.\"\n\nTHAT NOTICE CANNOT SUPPORT THE CLASSIFICATION THE REVIEWER ASKED FOR, and that is the finding. The publisher runs on `!cancelled()`, so it emits that sentence whenever no report file exists -- which is equally true if the Tauri build failed, if the inventory step threw \"no msi in the inventory\", if the install-verifier negative check failed, or if the harness itself refused. Only two of the package job's fourteen steps carry an `id`, so nothing on the run page names the step that exited 1. A reader is therefore invited to conclude \"the harness refused over a bad --msi\" when the evidence does not establish it. That is the same defect this session has now corrected three times in its own instruments: a diagnostic confidently naming a cause it has not measured.\n\nThis is category A -- a workflow/harness defect -- but it is specifically a defect in the workflow's ABILITY TO BE DIAGNOSED, and it must be fixed before any row is classified, because classifying from this annotation would be guessing. Windows #13 at 4f23c1d recorded F1 PASS, F3 PASS, F4 PASS and F2 not-run, so the package job REGRESSED between 4f23c1d and 4a13f45 and the cause is not yet known.\n\nREQUIRED BEFORE RE-REVIEW: every step in the package job carries an id; a failure-diagnostics step names the first failing step and its outcome on the run page, in the annotation channel, as ci.yml's own failure-diagnostics already does; and the \"NO REPORT\" message stops asserting a cause it cannot know."
         }
       ]
-    },
-    {
-      "id": "PL-0722",
-      "priority": "P0",
-      "lane": "Test",
-      "status": "REVIEW",
-      "title": "Corrective: the rate-limit spec assumed a bucket no other worker had touched, and CI is red",
-      "dependencies": [],
-      "allowedPaths": [
-        "e2e/tests/auth-rate-limit.spec.ts"
-      ],
-      "reviewDependencies": [
-        "e2e/src/identity.ts",
-        "packages/auth/src/rate-limit.ts",
-        "e2e/playwright.config.ts",
-        "e2e/tests/watchlist.spec.ts"
-      ],
-      "preferredAgent": "claude-test",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "typecheck",
-        "e2e"
-      ],
-      "acceptance": "CI #180 (run 37172243151) IS RED ON A TEST THIS PROJECT SHIPPED IN ROUND 109, and the product is not at fault. The e2e job failed with one error:\n\n  [chromium] > tests/auth-rate-limit.spec.ts:94:7 > the credential endpoint under repeated attempts > THE FOURTH ATTEMPT IS REFUSED AS THROTTLED, NOT AS A WRONG PASSWORD\n\nREPRODUCED HERE, NOT GUESSED. Running the same two projects with --workers=4 against a real production build and a real PostgreSQL reproduces it exactly, with the spec's own message: 'expected credential rejections followed by a throttled refusal, got [{\"status\":429,...},{\"status\":429,...},{\"status\":429,...},{\"status\":429,...}]'. All four attempts were throttled.\n\nTHE CAUSE. better-auth keys each rate-limit bucket by CLIENT IP AND PATH. Every Playwright worker shares one IP, and `playwright.config.ts` sets fullyParallel with no worker cap, so every spec that signs in -- the watchlist cases, the production-journey cases, `establishSession` itself -- draws from the SAME /sign-in/email bucket this spec is trying to measure. The spec's header already identified that hazard and guarded the EXIT, draining the window in afterAll so it could not poison later specs. It did not guard the ENTRANCE: it assumed it arrived at a bucket nobody had touched, and under parallelism that is simply not true.\n\nTHIS IS A DEFECT IN THE MEASUREMENT, NOT IN THE PRODUCT. The limiter did exactly what PL-0719 says it should: four rapid attempts from one address were refused. A spec that reports that as a failure is the fourth instance this project has seen of a new check crying wolf, and the rule is the same -- fix the check, do not relax the control.\n\nREQUIRED: the spec no longer depends on the state of the bucket when it starts. It must OBSERVE its way to a known state rather than assume one.\nREQUIRED: both facts are still proven, and still proven to be DIFFERENT facts -- a credential rejection and a throttled refusal. Dropping either, or collapsing them into 'some refusal happened', would discard the entire reason PL-0715 and PL-0719 exist.\nREQUIRED: it still proves the 429 carries a usable X-Retry-After.\nREQUIRED: it still drains the window before it finishes, so it cannot poison the specs that follow it.\nREQUIRED: it is proven under PARALLELISM, not only serially. A green --workers=1 run is what hid this; the evidence must be a run with several workers, in the production configuration, which is what CI does.\nREQUIRED: any wait it performs is BOUNDED and fails with a message naming the bucket contention, so a future genuine failure is not mistaken for this one.\n\nMUST NOT: weaken, widen, disable or reconfigure the rate-limit policy. MUST NOT add retries to the Playwright configuration -- `retries: 0` is argued for at length and a retry here would convert a real race into a green mark. MUST NOT serialise the whole suite to make one spec easier. MUST NOT mark the test skipped, or assert something weaker that happens to always hold.",
-      "notes": "FILED IN ROUND 110 the moment CI #180 was read. PL-0719 is DONE and gpt-architect approved it; this corrective does not reopen that verdict, which was about the POLICY and the product configuration, both of which are untouched and correct. What is wrong is one end-to-end spec delivered alongside it.\n\nP0 because CI is red and a red CI that everybody knows is 'just the flaky auth test' is how a real failure gets ignored.\n\nConflict-checked in both fields in both directions at filing. The single allowedPath is e2e/tests/auth-rate-limit.spec.ts, which PL-0719 held and released on completion; no active task names it. Active tasks are PL-0714 (.github/workflows/ci.yml), PW-0208 (apps/desktop/**, docs/LICENSING.md) and PW-0602 (e2e/windows/**, .github/workflows/windows.yml).",
-      "owner": "claude-test",
-      "gateResults": {
-        "typecheck": {
-          "status": "pass",
-          "at": "2026-10-04T03:15:46.110Z",
-          "by": "claude-test",
-          "commitSha": "2cc6dfb5e9adec199093d9e892b5972f98a95886",
-          "evidence": "npx tsc --noEmit in e2e/: exit 0, no output. The single changed file is e2e/tests/auth-rate-limit.spec.ts, this task's only allowedPath. No product file and no configuration was touched -- in particular playwright.config.ts is unchanged, so retries remain 0 and fullyParallel remains on."
-        },
-        "e2e": {
-          "status": "pass",
-          "at": "2026-10-04T03:15:46.234Z",
-          "by": "claude-test",
-          "commitSha": "2cc6dfb5e9adec199093d9e892b5972f98a95886",
-          "evidence": "THE FAILURE WAS REPRODUCED BEFORE IT WAS FIXED, AND THE FIX WAS VERIFIED UNDER THE SAME CONDITIONS.\n\nBEFORE. npx playwright test --project=api --project=chromium --workers=4, production build, real PostgreSQL on 127.0.0.1:5433: 1 failed, 89 passed. The failure is CI #180's, verbatim, with the spec's own message: 'expected credential rejections followed by a throttled refusal, got [{\"status\":429,\"retryAfter\":\"7\"},{\"status\":429,\"retryAfter\":\"7\"},{\"status\":429,\"retryAfter\":\"7\"},{\"status\":429,\"retryAfter\":\"7\"}]'. All four attempts throttled, because another worker reached the shared /sign-in/email bucket first.\n\nAFTER, TWICE, same command and configuration: 91 passed, 0 failed (45.1s), and again 91 passed, 0 failed (36.7s). The repaired case takes 8.7s and 9.7s respectively rather than 102ms, which is the waiting-out of contention doing its job and is the visible cost of the repair.\n\nWHAT CHANGED, AND WHAT DELIBERATELY DID NOT. The spec no longer assumes it arrives at an untouched bucket; `aCredentialRejection` retries past throttling, BOUNDED at four windows, and returns only once it has actually seen the endpoint examine a credential. The burst then runs from a bucket known to have had room a moment earlier, and a burst of maxRequests+1 in one breath cannot be absorbed by a limit of maxRequests per window however much room there was -- so the throttled refusal is guaranteed whatever other workers are doing. Both facts are still required and still required to be DIFFERENT facts; the X-Retry-After assertion is unchanged; the afterAll drain is unchanged. What was dropped is the assertion that the two refusals appear in a particular order WITHIN ONE ARRAY, because under contention that array's first entry says more about another worker's timing than about this product. The control itself is untouched: no policy value, no configuration, no retry setting, no skip.\n\nTHE MECHANISM IN CI IS NOT ONLY PARALLELISM, which is worth recording because it changes what a reader should expect. Playwright defaults to half the cores, so a 2-core GitHub runner runs ONE worker and the suite is sequential there. The bucket is nonetheless contended, because it is a 10-second window and the spec file executed immediately after other files that sign in for real. The repair handles both causes because it observes the state rather than reasoning about who else is running.\n\nONE THING I FOUND BY OVER-PARALLELISING, REPORTED AS AN ARTEFACT RATHER THAN A DEFECT. The DEVELOPMENT suite at --workers=4 on this 2-core container fails 6 cases with 'SyntaxError: Unexpected token <, \"<!DOCTYPE\"' -- the Next dev server returning an error page under on-demand compilation load. At --workers=1, which is what a 2-core CI runner actually uses, the same suite is 118 passed / 24 skipped, which matches CI #180's own development notice exactly. So this is a capacity limit of `next dev` on a small machine, not a product fault, and not caused by this change: auth-rate-limit.spec.ts skips entirely in development."
-        }
-      },
-      "updatedAt": "2026-10-04T03:15:46.512Z",
-      "implementationAgent": "claude-test",
-      "implementationBaseSha": "2cc6dfb5e9adec199093d9e892b5972f98a95886"
     }
   ],
   "review": [],
   "reservedExternal": [],
   "recommended": [
-    {
-      "id": "PL-0717",
-      "priority": "P1",
-      "lane": "Test",
-      "status": "READY",
-      "title": "The fail-closed deployment path is asserted by nobody, because CI runs two of three configurations",
-      "dependencies": [
-        "PL-0714"
-      ],
-      "allowedPaths": [
-        ".github/workflows/ci.yml"
-      ],
-      "reviewDependencies": [
-        "e2e/src/env.ts",
-        "e2e/tests/playback-session.api.spec.ts",
-        "e2e/tests/watchlist.spec.ts",
-        "e2e/playwright.config.ts",
-        "docs/TEST_MATRIX.md"
-      ],
-      "preferredAgent": "claude-test",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "e2e"
-      ],
-      "acceptance": "FOUND BY MEASUREMENT IN ROUND 108: the development and production suites were both run to completion and their SKIP LISTS intersected. Five e2e titles are skipped in BOTH, so no configuration this repository executes ever runs them. Two are media-rig rows that correctly need the commander's hardware. THE OTHER THREE ASSERT A FAIL-CLOSED SECURITY BEHAVIOUR: 'a deployment with no identity system - fails closed with 503 and names the operator's remedy', '- publishes nothing only a resolver could know' (playback-session.api.spec.ts), and 'a deployment with no identity system refuses honestly rather than showing an empty list' (watchlist.spec.ts).\n\nThey need PRODUCTION MODE WITH NO DATABASE -- the third configuration. ci.yml runs exactly two: development, and production with PostgreSQL. The tests are not broken: run locally in that third configuration the full chromium+api suite gives 62 passed / 56 skipped / 0 failed.\n\nREQUIRED: the third configuration runs in CI and fails the build when it fails.\nREQUIRED: the cost is stated rather than absorbed. A third suite run adds to every push; the acceptance is that the fail-closed path is covered, not that it is covered in the most expensive available way. If a narrower invocation -- the three titles, or the two specs -- buys the same coverage for less, take it and say why.\nREQUIRED: the three titles actually EXECUTE in the new configuration. Evidence is the run naming them as passed, not a count that went up.\nREQUIRED: the two media-rig titles stay skipped and stay reasoned. They are RIG rows in PW-0601's matrix and must not be made to look covered.\nREQUIRED: no existing configuration loses coverage, and no skip loses its reason.\n\nOUT OF SCOPE: changing what the three tests assert, and relaxing any of them to make a cheaper configuration reach them.",
-      "notes": "CREATED IN ROUND 108. DEPENDS ON PL-0714 because that task owns .github/workflows/ci.yml and is in REVIEW; editing the file from here while it is an active surface would be the overlapping-surface collision the operating model forbids. Sequenced, not blocked.\n\nTHE PATTERN THIS IS THE FOURTH INSTANCE OF, recorded so the next one is found by a check rather than by accident: scripts/test-validate-repo.mjs ran nowhere until PL-AI-0002; scripts/test-desktop-target.mjs and the 30-case Windows lifecycle suite ran nowhere until PL-0714; apps/web/src/components/player/tracks.ts was imported by nothing until PW-0306 wired it. Each time the thing existed, passed, and no gate asked it. A standing mechanical check for 'skipped in every configuration we run' would have found all four, and proposing one is a reasonable thing for this task's implementation to consider -- the measurement that found this was two suite runs and a set intersection.\n\nCONFLICT-CHECKED IN BOTH FIELDS IN BOTH DIRECTIONS AT FILING: .github/workflows/ci.yml is held by PL-0714 (REVIEW) and by PL-0001, PL-0704, PL-AI-0002 and PW-0312, all DONE. The dependency on PL-0714 is what keeps the two from being active together. The reviewDependencies are read-only here: e2e/tests/watchlist.spec.ts belongs to PL-0715 (REVIEW) and is NOT written by this task.",
-      "owner": null,
-      "gateResults": {},
-      "updatedAt": "2026-10-03T14:30:00.000000Z"
-    },
     {
       "id": "PW-0503",
       "priority": "P1",

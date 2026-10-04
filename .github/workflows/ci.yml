@@ -1280,3 +1280,160 @@ jobs:
           path: e2e/playwright-report
           retention-days: 14
           if-no-files-found: warn
+      # ==================================================================
+      # THE THIRD CONFIGURATION: PRODUCTION WITH NO DATABASE (PL-0717)
+      # ==================================================================
+      #
+      # WHAT WAS WRONG. This job ran two configurations and the repository has
+      # three. Round 108 ran the development and production suites to
+      # completion and INTERSECTED THEIR SKIP LISTS: five titles were skipped
+      # in both, so no configuration anyone executed ever ran them. Two are
+      # media-rig rows that correctly need the commander's hardware. The other
+      # three assert the FAIL-CLOSED SECURITY BEHAVIOUR of a deployment with no
+      # identity system -- a 503 that names the operator's remedy, a refusal
+      # that publishes nothing only a resolver could know, and a watchlist that
+      # says so rather than showing an empty list.
+      #
+      # Those three were not broken. They were invisible. That is the fourth
+      # time this repository has found "the thing exists, it passes, and no
+      # gate asks it", after test-validate-repo.mjs, test-desktop-target.mjs
+      # and the Windows lifecycle suite.
+      #
+      # THE CONFIGURATION IS THE ABSENCE OF A DATABASE, and that is the whole
+      # mechanism: `src/env.ts` derives the auth secret from
+      # LIBERTY_E2E_DATABASE_URL's presence, so a production run without it is
+      # a deployment with no identity system -- which is the state those three
+      # tests describe. Nothing is stubbed and no test is told it is special.
+      #
+      # ------------------------------------------------------------------
+      # WHY THE WHOLE SUITE AND NOT THE TWO SPEC FILES, MEASURED
+      # ------------------------------------------------------------------
+      #
+      # The task's acceptance invites a narrower invocation if it buys the
+      # same coverage for less. All three configurations were run locally to
+      # completion with a JSON reporter and the sets compared:
+      #
+      #   development             ran 122  skipped 29  275s
+      #   production + Postgres   ran 100  skipped 51   99s
+      #   production, no database ran  71  skipped 80   75s
+      #
+      #   tests this configuration runs that NEITHER other one does: exactly 3
+      #     [api]      ... no identity system > fails closed with 503 ...
+      #     [api]      ... no identity system > publishes nothing only a resolver could know
+      #     [chromium] ... no identity system refuses honestly rather than showing an empty list
+      #
+      #   tests skipped in all three once this exists: exactly 2, both
+      #   media-rig rows, which are RIG rows in PW-0601's matrix and must stay
+      #   skipped and reasoned.
+      #
+      # So the narrow invocation was measured rather than assumed, and it is
+      # NOT taken. The dominant cost is the production build, which either
+      # invocation pays and which turbo serves from cache here; the remaining
+      # test time is 75 seconds. Against that, naming two spec files would put
+      # a HAND-MAINTAINED LIST of what matters into this file -- and a
+      # hand-maintained list in this very job is the defect PL-0714 removed
+      # from the suite steps above and PL-0726 removed from the migration step
+      # below. A third test that becomes third-configuration-only would be
+      # covered by this step and missed by that one, silently, which is
+      # exactly how the three titles got lost in the first place.
+      - name: Run the suite in production mode with no database
+        id: failclosed
+        if: ${{ !cancelled() && steps.browsers.outcome == 'success' }}
+        working-directory: e2e
+        env:
+          LIBERTY_E2E_WEB_MODE: production
+          # NO LIBERTY_E2E_DATABASE_URL, and its absence is the configuration.
+          # Spelled out because an empty assignment here would look like a
+          # mistake somebody should fix, and fixing it would delete the only
+          # coverage these three tests have.
+          PLAYWRIGHT_JSON_OUTPUT_NAME: ${{ runner.temp }}/failclosed-report.json
+        # `--reporter` on the command line REPLACES the config's list rather
+        # than adding to it, so `html` is named here deliberately: without it
+        # `e2e/playwright-report` is never written and the upload step below
+        # would quietly archive nothing. `json` is what the guard reads.
+        run: npm test -- --project=api --project=chromium --reporter=list,json,html
+      # ------------------------------------------------------------------
+      # AND THE THREE TITLES ACTUALLY RAN
+      # ------------------------------------------------------------------
+      #
+      # The acceptance is explicit that "evidence is the run naming them as
+      # passed, not a count that went up". A green step above proves only that
+      # nothing failed, and a test that SKIPS does not fail -- which is the
+      # precise way these three went unnoticed for eight rounds. So the report
+      # is read and the three are required BY NAME, each one present and each
+      # one passed.
+      #
+      # It also fails when a title DISAPPEARS, which is the other direction of
+      # the same mistake: renaming or deleting one of these tests must break
+      # this step rather than quietly reduce what the third configuration is
+      # for. The titles are matched as substrings so ordinary editing of the
+      # describe blocks around them does not produce a false red.
+      #
+      # `!cancelled()` rather than on success: a suite that FAILED still
+      # answers "did these three execute", and a job red for two reasons
+      # should say both.
+      - name: The fail-closed titles actually executed
+        id: failclosedguard
+        if: ${{ !cancelled() && steps.failclosed.outcome != 'skipped' }}
+        env:
+          REPORT: ${{ runner.temp }}/failclosed-report.json
+        run: |
+          set -euo pipefail
+          node --input-type=module -e '
+            import { readFileSync } from "node:fs";
+            const WANTED = [
+              "fails closed with 503 and names the operator'"'"'s remedy",
+              "publishes nothing only a resolver could know",
+              "refuses honestly rather than showing an empty list"
+            ];
+            const path = process.env.REPORT;
+            let report;
+            try {
+              report = JSON.parse(readFileSync(path, "utf8"));
+            } catch (cause) {
+              console.log(`::error title=fail-closed guard::No JSON report at ${path}. The suite did not get far enough to write one, so whether these three ran is unknown -- which is not the same as them having run. ${cause.message}`);
+              process.exit(1);
+            }
+            const seen = [];
+            const walk = (suites, trail) => {
+              for (const suite of suites ?? []) {
+                const here = [...trail, suite.title ?? ""];
+                for (const spec of suite.specs ?? []) {
+                  const name = [...here, spec.title].filter(Boolean).join(" > ");
+                  for (const test of spec.tests ?? []) {
+                    seen.push({ name, project: test.projectName ?? "?", status: test.status });
+                  }
+                }
+                walk(suite.suites, here);
+              }
+            };
+            walk(report.suites, []);
+            let bad = 0;
+            for (const wanted of WANTED) {
+              const hits = seen.filter((t) => t.name.includes(wanted));
+              if (hits.length === 0) {
+                console.log(`::error title=fail-closed guard::No test matching "${wanted}" is in the report at all. It was renamed or deleted; this configuration exists for these three and nothing else runs them.`);
+                bad += 1;
+                continue;
+              }
+              for (const hit of hits) {
+                if (hit.status === "expected") {
+                  console.log(`::notice title=fail-closed guard::ran and passed [${hit.project}] ${hit.name}`);
+                } else {
+                  console.log(`::error title=fail-closed guard::[${hit.project}] ${hit.name} is "${hit.status}", not "expected". A skip here means the fail-closed path is uncovered in every configuration this repository runs.`);
+                  bad += 1;
+                }
+              }
+            }
+            const s = report.stats ?? {};
+            console.log(`::notice title=fail-closed suite::expected=${s.expected} unexpected=${s.unexpected} flaky=${s.flaky} skipped=${s.skipped} duration=${Math.round((s.duration ?? 0) / 1000)}s`);
+            if (bad > 0) process.exit(1);
+          '
+      - name: Upload the fail-closed report
+        if: ${{ !cancelled() && steps.browsers.outcome == 'success' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-failclosed
+          path: e2e/playwright-report
+          retention-days: 14
+          if-no-files-found: warn

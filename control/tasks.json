@@ -8197,7 +8197,7 @@
       "id": "PL-0717",
       "priority": "P1",
       "lane": "Test",
-      "status": "READY",
+      "status": "REVIEW",
       "title": "The fail-closed deployment path is asserted by nobody, because CI runs two of three configurations",
       "dependencies": [
         "PL-0714"
@@ -8219,9 +8219,19 @@
       ],
       "acceptance": "FOUND BY MEASUREMENT IN ROUND 108: the development and production suites were both run to completion and their SKIP LISTS intersected. Five e2e titles are skipped in BOTH, so no configuration this repository executes ever runs them. Two are media-rig rows that correctly need the commander's hardware. THE OTHER THREE ASSERT A FAIL-CLOSED SECURITY BEHAVIOUR: 'a deployment with no identity system - fails closed with 503 and names the operator's remedy', '- publishes nothing only a resolver could know' (playback-session.api.spec.ts), and 'a deployment with no identity system refuses honestly rather than showing an empty list' (watchlist.spec.ts).\n\nThey need PRODUCTION MODE WITH NO DATABASE -- the third configuration. ci.yml runs exactly two: development, and production with PostgreSQL. The tests are not broken: run locally in that third configuration the full chromium+api suite gives 62 passed / 56 skipped / 0 failed.\n\nREQUIRED: the third configuration runs in CI and fails the build when it fails.\nREQUIRED: the cost is stated rather than absorbed. A third suite run adds to every push; the acceptance is that the fail-closed path is covered, not that it is covered in the most expensive available way. If a narrower invocation -- the three titles, or the two specs -- buys the same coverage for less, take it and say why.\nREQUIRED: the three titles actually EXECUTE in the new configuration. Evidence is the run naming them as passed, not a count that went up.\nREQUIRED: the two media-rig titles stay skipped and stay reasoned. They are RIG rows in PW-0601's matrix and must not be made to look covered.\nREQUIRED: no existing configuration loses coverage, and no skip loses its reason.\n\nOUT OF SCOPE: changing what the three tests assert, and relaxing any of them to make a cheaper configuration reach them.",
       "notes": "CREATED IN ROUND 108. DEPENDS ON PL-0714 because that task owns .github/workflows/ci.yml and is in REVIEW; editing the file from here while it is an active surface would be the overlapping-surface collision the operating model forbids. Sequenced, not blocked.\n\nTHE PATTERN THIS IS THE FOURTH INSTANCE OF, recorded so the next one is found by a check rather than by accident: scripts/test-validate-repo.mjs ran nowhere until PL-AI-0002; scripts/test-desktop-target.mjs and the 30-case Windows lifecycle suite ran nowhere until PL-0714; apps/web/src/components/player/tracks.ts was imported by nothing until PW-0306 wired it. Each time the thing existed, passed, and no gate asked it. A standing mechanical check for 'skipped in every configuration we run' would have found all four, and proposing one is a reasonable thing for this task's implementation to consider -- the measurement that found this was two suite runs and a set intersection.\n\nCONFLICT-CHECKED IN BOTH FIELDS IN BOTH DIRECTIONS AT FILING: .github/workflows/ci.yml is held by PL-0714 (REVIEW) and by PL-0001, PL-0704, PL-AI-0002 and PW-0312, all DONE. The dependency on PL-0714 is what keeps the two from being active together. The reviewDependencies are read-only here: e2e/tests/watchlist.spec.ts belongs to PL-0715 (REVIEW) and is NOT written by this task.",
-      "owner": null,
-      "gateResults": {},
-      "updatedAt": "2026-10-03T14:30:00.000000Z"
+      "owner": "claude-test",
+      "gateResults": {
+        "e2e": {
+          "status": "pass",
+          "at": "2026-10-04T15:06:56.504Z",
+          "by": "claude-test",
+          "commitSha": "659cafa118bdc72b98d43c7f3fa21a120222e57b",
+          "evidence": "THE THIRD CONFIGURATION RUNS, THE THREE TITLES EXECUTE IN IT, AND THE GUARD THAT SAYS SO WAS PROVEN TO REFUSE.\n\nMEASURED FIRST, DECIDED SECOND. All three configurations were run to completion locally with a JSON reporter and their executed sets compared:\n\n  development              ran 122  skipped 29   274.8s\n  production + PostgreSQL  ran 100  skipped 51    99.0s\n  production, NO database  ran  71  skipped 80    75.4s\n\nTests the third configuration runs that NEITHER other one does -- computed as C minus (A union B), not asserted -- are EXACTLY three:\n  [api]      playback-session.api.spec.ts > a deployment with no identity system > fails closed with 503 and names the operator's remedy\n  [api]      playback-session.api.spec.ts > a deployment with no identity system > publishes nothing only a resolver could know\n  [chromium] watchlist.spec.ts > a deployment with no identity system refuses honestly rather than showing an empty list\n\nTests skipped in ALL THREE once this step exists: exactly two, both media-rig rows. They are RIG rows in PW-0601's matrix, they need the commander's hardware, and they remain skipped with their reasons intact -- which the acceptance requires and which this measurement confirms rather than hopes.\n\nTHE NARROW INVOCATION WAS CONSIDERED AND REJECTED, WITH THE REASON. The acceptance invites naming the two spec files if that buys the same coverage for less. It was measured: the dominant cost is the production build, which either invocation pays and turbo serves from cache in this job, leaving 75 seconds of test time. Against that, naming two files would put a hand-maintained list of what matters into this workflow -- the same defect PL-0714 removed from the suite steps above it and PL-0726 removed from the migration step below it, in this very file, this round and last. A future test that became third-configuration-only would be covered by the whole-suite step and missed by the narrow one, silently, which is precisely how these three were lost for eight rounds.\n\nTHE RUN. `npm test -- --project=api --project=chromium --reporter=list,json,html` with LIBERTY_E2E_WEB_MODE=production and NO LIBERTY_E2E_DATABASE_URL. The absence is the configuration: src/env.ts derives the auth secret from that variable's presence, so a production run without it IS a deployment with no identity system. Nothing is stubbed and no test is told it is special.\n\n`html` IS NAMED ON THE COMMAND LINE DELIBERATELY, and finding out why was a defect caught before commit: --reporter on the CLI REPLACES the config's reporter list rather than adding to it, so the first draft wrote no e2e/playwright-report at all and the upload step would have archived nothing. Verified after the fix: both /tmp/verify-reporters.json and e2e/playwright-report/index.html are produced.\n\nTHE GUARD, AND THE FIVE WAYS IT WAS PROVEN TO REFUSE. The acceptance says evidence must be \"the run naming them as passed, not a count that went up\", so a step reads the JSON report and requires all three BY NAME, each present and each \"expected\". It was extracted from the workflow with yaml.safe_load -- so what was executed is the text CI will execute -- and driven against real reports:\n\n  A. the real third-configuration report      -> exit 0, three \"ran and passed\" notices naming each title and its project\n  B. the real production+PostgreSQL report    -> exit 1, three errors, each saying the title is \"skipped\", not \"expected\"\n  C. the real development report              -> exit 1, three errors\n  D. a report with one title renamed          -> exit 1, \"No test matching ... is in the report at all. It was renamed or deleted\"\n  E. no report file at all                    -> exit 1, \"whether these three ran is unknown -- which is not the same as them having run\"\n\nB and C are the important ones: the guard is driven against the two configurations CI ACTUALLY RUNS TODAY and goes red on both. It would have caught the original defect. A sixth case arrived unplanned while verifying the reporters -- a run of only playback-session.api.spec.ts -- and it refused on the missing watchlist title.\n\nThe step also emits the suite counts as an annotation, because annotations are the only CI channel this session can read.\n\nNOTHING WAS WEAKENED. No test was changed, no assertion relaxed, no skip removed, no retry added, no timeout raised. The two existing suite steps are untouched -- `git diff` over this file is confined to the inserted block -- so no existing configuration loses coverage."
+        }
+      },
+      "updatedAt": "2026-10-04T15:06:56.962Z",
+      "implementationAgent": "claude-test",
+      "implementationBaseSha": "659cafa118bdc72b98d43c7f3fa21a120222e57b"
     },
     {
       "id": "PL-0718",
@@ -10119,7 +10129,55 @@
       },
       "implementationAgent": "claude-frontend",
       "updatedAt": "2026-10-04T04:34:41.641Z",
-      "implementationBaseSha": "25994202b1397d7e972febdb24edd685d8a08405"
+      "implementationBaseSha": "25994202b1397d7e972febdb24edd685d8a08405",
+      "review": {
+        "taskId": "PW-0308",
+        "implementationAgent": "claude-frontend",
+        "implementationOwner": "claude-frontend",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "659cafa118bdc72b98d43c7f3fa21a120222e57b",
+        "reviewedBaseSha": "25994202b1397d7e972febdb24edd685d8a08405",
+        "reviewedTreeHash": "13600a5042c6afdb06b53d3cb1b105c5c03cbd4c933a0301bfacd86f6a94354b",
+        "reviewedFileCount": 26,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [
+          "apps/web/src/app/api/v1/profiles",
+          "apps/web/src/components/player/telemetry-decision.ts",
+          "packages/contracts/src/domains/audio.ts",
+          "packages/contracts/src/domains/subtitles.ts",
+          "docs/SECURITY.md"
+        ],
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-10-04T14:44:30.192Z",
+        "evidence": "APPROVED at 659cafa118bdc72b98d43c7f3fa21a120222e57b. TRANSCRIBED BY claude-lead from gpt-architect's round-111 verdict document, which lists this task under GPT ARCHITECT REVIEW VERDICTS and instructs: \"Record these APPROVED and close them, provided their reviewed fingerprints still match the exact reviewed surfaces and no later commit changed those surfaces\", and \"Do not reinterpret these approvals.\"\n\nFINGERPRINT CURRENCY, CHECKED RATHER THAN ASSUMED. The verdict names this sha as the published and accepted head. HEAD is exactly it, the tracked tree is clean, and `git status --porcelain` restricted to this task's allowedPaths plus its reviewDependencies reports nothing. No commit exists after the reviewed one, so the reviewed surface and the current surface are the same bytes.\n\nWHAT IS APPROVED. A settings screen whose every section is wired to something real: languages persisted per profile through /api/v1/profiles/preferences with no profile id in any field; that stored list replacing the literal preferredAudioLanguages: [\"en\"] in watch-session.ts, carried as DATA on the same route a resume point takes; a diagnostics section that CALLS decidePlaybackTelemetry and renders its reasons with no toggle, because nothing stores an answer yet and a switch would be the fake persistence the round-110 instruction forbade by name; and an About section importing package.json's version, describing it as DECLARED, and naming THIRD-PARTY-NOTICES.md without claiming to have inspected any installation.\n\nA LIMITATION THAT SURVIVES THIS APPROVAL. The e2e spec does not assert that a stored language changes which audio track PLAYS -- the e2e catalog is fixtures and nothing has a multi-audio title. What is proven is that the preference reaches the playback SESSION REQUEST, directly, in watch-session.test.ts over all three states with the body parsed by the route's own strict schema. The audible end remains unproven and is not claimed."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PW-0308",
+          "implementationAgent": "claude-frontend",
+          "implementationOwner": "claude-frontend",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "659cafa118bdc72b98d43c7f3fa21a120222e57b",
+          "reviewedBaseSha": "25994202b1397d7e972febdb24edd685d8a08405",
+          "reviewedTreeHash": "13600a5042c6afdb06b53d3cb1b105c5c03cbd4c933a0301bfacd86f6a94354b",
+          "reviewedFileCount": 26,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "apps/web/src/app/api/v1/profiles",
+            "apps/web/src/components/player/telemetry-decision.ts",
+            "packages/contracts/src/domains/audio.ts",
+            "packages/contracts/src/domains/subtitles.ts",
+            "docs/SECURITY.md"
+          ],
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-10-04T14:44:30.192Z",
+          "evidence": "APPROVED at 659cafa118bdc72b98d43c7f3fa21a120222e57b. TRANSCRIBED BY claude-lead from gpt-architect's round-111 verdict document, which lists this task under GPT ARCHITECT REVIEW VERDICTS and instructs: \"Record these APPROVED and close them, provided their reviewed fingerprints still match the exact reviewed surfaces and no later commit changed those surfaces\", and \"Do not reinterpret these approvals.\"\n\nFINGERPRINT CURRENCY, CHECKED RATHER THAN ASSUMED. The verdict names this sha as the published and accepted head. HEAD is exactly it, the tracked tree is clean, and `git status --porcelain` restricted to this task's allowedPaths plus its reviewDependencies reports nothing. No commit exists after the reviewed one, so the reviewed surface and the current surface are the same bytes.\n\nWHAT IS APPROVED. A settings screen whose every section is wired to something real: languages persisted per profile through /api/v1/profiles/preferences with no profile id in any field; that stored list replacing the literal preferredAudioLanguages: [\"en\"] in watch-session.ts, carried as DATA on the same route a resume point takes; a diagnostics section that CALLS decidePlaybackTelemetry and renders its reasons with no toggle, because nothing stores an answer yet and a switch would be the fake persistence the round-110 instruction forbade by name; and an About section importing package.json's version, describing it as DECLARED, and naming THIRD-PARTY-NOTICES.md without claiming to have inspected any installation.\n\nA LIMITATION THAT SURVIVES THIS APPROVAL. The e2e spec does not assert that a stored language changes which audio track PLAYS -- the e2e catalog is fixtures and nothing has a multi-audio title. What is proven is that the preference reaches the playback SESSION REQUEST, directly, in watch-session.test.ts over all three states with the body parsed by the route's own strict schema. The audible end remains unproven and is not claimed."
+        }
+      ]
     },
     {
       "id": "PW-0309",
@@ -12573,7 +12631,7 @@
       "id": "PL-0721",
       "priority": "P1",
       "lane": "Security",
-      "status": "REVIEW",
+      "status": "DONE",
       "title": "Trusted-proxy topology and how this deployment derives a client IP",
       "dependencies": [],
       "allowedPaths": [
@@ -12599,7 +12657,7 @@
       ],
       "acceptance": "THE HAZARD, AND THE RULING THAT CREATED THIS TASK. PL-0719 found that better-auth keys each rate-limit bucket by client IP and path, and that when it cannot resolve a client IP it falls back to a SINGLE LITERAL KEY for every caller -- three sign-ins per ten seconds for the entire deployment. Behind a reverse proxy with no trusted-header configuration, that is the live behaviour.\n\nPL-0719 reported it rather than fixing it, and gpt-architect's round-110 security review confirmed that was correct and ruled: DO NOT trust X-Forwarded-For, Forwarded, X-Real-IP or similar headers by default; a shared fallback bucket when the client IP cannot be trusted is SAFER than accepting a spoofable header that gives an attacker per-request rate-limit evasion.\n\nSO THIS TASK IS NOT 'TURN ON FORWARDED HEADERS'. It is: decide, write down and enforce WHICH HOP MAY ASSERT A CLIENT ADDRESS, so that forwarded-client-IP semantics are enabled only where a deployment has explicitly defined that.\n\nREQUIRED: the trusted-proxy topology is STATED IN THIS REPOSITORY -- which proxy hops are trusted, how they are identified, and what the default is when nothing is configured. The default must remain not-trusting, because that is the direction in which being wrong is survivable.\nREQUIRED: an untrusted forwarded header is IGNORED, not merged, not partially honoured and not logged as if it were the client. A header from an untrusted hop is an attacker-supplied string.\nREQUIRED: the direct-client case -- no proxy at all -- derives the address from the connection and is tested.\nREQUIRED: the proxied case, with a configured trusted hop, derives the client address correctly and is tested, including a chain longer than one hop.\nREQUIRED: A SPOOF TEST. A caller that supplies its own X-Forwarded-For must NOT be able to change which bucket it lands in. This is the test the whole task exists for and it must be seen to fail against a naive implementation.\nREQUIRED: A RATE-LIMIT IDENTITY TEST. Two callers the policy should treat as distinct get distinct buckets, and one caller cannot become many by varying a header.\nREQUIRED: the shared-bucket fallback remains reachable and is still correct when no trusted topology is configured. Removing it in favour of trusting something is the failure this task exists to prevent.\n\nMUST NOT: trust any forwarded header by default, under any configuration shortcut, environment-variable convenience or development-only carve-out. MUST NOT weaken, widen or disable the rate-limit policy PL-0719 established; this task changes WHO a request is attributed to, never how many requests are allowed. MUST NOT introduce a header or parameter that lets a caller nominate its own identity for any purpose.\n\nOUT OF SCOPE: geo-IP, IP reputation, blocklists, and any other use of a client address beyond rate-limit identity. Deriving the address correctly is this task; what else might be done with it is not.",
       "notes": "FILED IN ROUND 110 at gpt-architect's explicit instruction in the PL-0719 security verdict: \"Create a separate deployment-security task if one does not already exist: define trusted-proxy topology and client-IP derivation. Only enable forwarded-client-IP semantics when the deployment explicitly defines which proxy hop is trusted.\" The verdict states the follow-up does NOT block PL-0719, which is DONE.\n\nBoard searched before filing: no task names a proxy, a forwarded header or client-IP derivation in acceptance or notes. PL-0719 (DONE) owns the rate-limit POLICY and names this hazard; it is listed here as a review dependency rather than an allowed path, so this task can be read against it without reserving it.\n\nConflict-checked in both fields in both directions at filing. Active tasks are PL-0714 (.github/workflows/ci.yml), PW-0208 (apps/desktop/**, docs/LICENSING.md), PW-0602 (e2e/windows/**, .github/workflows/windows.yml) and PL-0720 (one e2e spec). None names anything under packages/auth or docs/DEPLOYMENT_TRUST.md. packages/auth/src/better-auth.ts and index.ts were PL-0719's and PL-0719 is now DONE.\n\nP1 and not P0: the current behaviour FAILS CLOSED -- a shared bucket is restrictive, not permissive -- so nothing is open today. What is missing is the topology decision, and the danger is that somebody closes the availability gap by trusting a spoofable header, which would be strictly worse than the gap.",
-      "owner": "claude-security",
+      "owner": null,
       "gateResults": {
         "typecheck": {
           "status": "pass",
@@ -12614,17 +12672,76 @@
           "by": "claude-security",
           "commitSha": "4c9f5829671a650514f13602188b3ce4d73049ad",
           "evidence": "npx vitest run packages/auth: 6 files, 108 tests, 0 failures, of which client-ip.test.ts is 26 new cases. Repository-wide: npx vitest run packages/auth apps/web gives 101 files, 1822 tests, 0 failures.\n\nEVERY CASE DRIVES THE REAL LIBRARY. The suite imports `getIP` from `better-auth/api` -- the same function `resolveRateLimitConfig` calls to build the bucket key -- and hands it the options `clientIpDerivation` produces. A suite that re-implemented the derivation and compared the two would pass forever while the library did something else, which is the exact failure `rate-limit.ts` was written to end.\n\nTHE DEFECT IS REPRODUCED BEFORE IT IS FIXED. 'UNCONFIGURED, THE LIBRARY LETS A CALLER PICK ITS OWN BUCKET' passes `{}` -- what this product passed until now -- and asserts that x-forwarded-for: 203.0.113.9 resolves to 203.0.113.9 and 198.51.100.7 resolves to 198.51.100.7. One caller, two buckets, chosen by the caller. The next case asserts both are null under the configured default. So the suite shows the hole and the patch in the same file rather than only asserting that things are fine now.\n\nTHE ACCEPTANCE'S REQUIRED CASES, EACH BY NAME:\n - direct client, no proxy: resolves no address, which is the shared-bucket fallback the acceptance requires remain reachable;\n - untrusted forwarded header IGNORED: six headers at once (x-forwarded-for, x-real-ip, forwarded, cf-connecting-ip, true-client-ip, x-client-ip) all answer null -- not merged, not partially honoured;\n - proxied case: '203.0.113.9, 10.0.0.1' -> 203.0.113.9;\n - chain longer than one hop: '203.0.113.9, 10.0.0.1, 10.1.2.3' -> 203.0.113.9;\n - THE SPOOF TEST: '9.9.9.9, 203.0.113.9, 10.0.0.1' -> 203.0.113.9, and explicitly not 9.9.9.9, which is what a leftmost-token implementation returns;\n - RATE-LIMIT IDENTITY, both halves: one caller prepending four different values lands on one address (a Set of the four answers has size one), and two genuinely different clients behind the same proxy get two different addresses -- the second is not redundant, because a derivation answering one constant would pass every spoof assertion and give a household and an attacker the same bucket.\n\nA STRUCTURAL CASE GUARDS THE TRAP: `clientIpDerivation(DIRECT_TOPOLOGY)` must OMIT trustedProxies, not supply []. Asserted with `'trustedProxies' in derivation === false`, so a later tidy-up to an empty array fails here instead of silently re-enabling the spoof.\n\nTHE PARSER IS PROVEN TO BE A SUBSET OF THE LIBRARY'S, not merely stricter in principle. Six accepted forms -- 10.0.0.0/8, 172.16.0.0/12, a bare 192.168.1.1, 2001:db8::/32, fd00::/8 and a fully-expanded IPv6 address -- are each driven through the real getIP as the rightmost hop of a chain, and the client in front of them must resolve. If the library had discarded the entry, the chain would resolve to the proxy itself and the case fails. That closes the drift where an entry this module accepts is silently filtered out, which could empty the list and restore the spoof in a deployment that believes it is configured. Nine rejected forms are asserted to REFUSE rather than fall back to direct, including the subtle ones: 010.0.0.1 (octal to some parsers), a %eth0 zone index, /33 and /129 prefixes, an empty element in the list, and a nine-group IPv6 address.\n\nA DEFECT IN THE SUITE ITSELF, FOUND AND FIXED BEFORE IT COULD MISLEAD. getIP ends with `if (isTest() || isDevelopment()) return LOCALHOST_IP`, and the two halves have different lifetimes: NODE_ENV is captured at MODULE LOAD, while `env.TEST` is re-read on every call. The first draft set NODE_ENV around each call, which does nothing, and three cases answered 127.0.0.1. The second draft loaded the module through a dynamic import with NODE_ENV pinned -- but restored the runner's TEST=true in a finally before any call, so isTest() was still true. The third draft spans both: NODE_ENV set before evaluation, TEST absent at call time. Had the first draft been accepted on the strength of the cases that happened to pass, the spoof test would have been asserting against a constant. The asymmetry is written into the file's header.\n\nAND THE DEVELOPMENT FALLBACK IS ASSERTED RATHER THAN LEFT TO BE DISCOVERED: a separately-evaluated development module answers 127.0.0.1 for every caller, header or no header. It is SAFE -- one constant is the shared bucket and nothing can influence it -- but it is why a developer cannot observe either the defect or the fix locally, and 'I tested it and the header did nothing' is a conclusion somebody would otherwise draw about production. That case also re-checks the production module afterwards, so a vi.resetModules that had replaced the shared one would fail loudly instead of turning the whole file into a statement about development."
+        },
+        "security-review": {
+          "status": "pass",
+          "at": "2026-10-04T14:43:54.019Z",
+          "by": "gpt-architect",
+          "commitSha": "659cafa118bdc72b98d43c7f3fa21a120222e57b",
+          "judgementCommitSha": "659cafa118bdc72b98d43c7f3fa21a120222e57b",
+          "judgementCommitVerified": true,
+          "transcribedBy": "claude-lead",
+          "evidence": "APPROVED at 659cafa118bdc72b98d43c7f3fa21a120222e57b. TRANSCRIBED BY claude-lead from gpt-architect's round-111 verdict document, which lists \"PL-0721  APPROVED\" under GPT ARCHITECT REVIEW VERDICTS and instructs: \"Record these APPROVED and close them, provided their reviewed fingerprints still match the exact reviewed surfaces and no later commit changed those surfaces\" and \"Do not reinterpret these approvals.\"\n\nWHY THIS IS RECORDED AS security-review RATHER THAN AS THE approve RECORD ALONE. PL-0721's required gates are typecheck, unit and security-review. The first two are recorded and executable. security-review is a judgement gate the implementer may not record, and the instruction is to CLOSE this task -- which invariant 7 makes impossible while a required gate is unrecorded. PL-0721 is a security task whose reviewer is gpt-architect, so gpt-architect's approval of it IS the security verdict the gate names. Transcribing it is the documented path (CLAUDE.md, \"A judgement gate is not a check the implementer runs\"), and the alternative readings are both worse: leaving the gate unrecorded would refuse an instruction to close, and closing without it would be the self-approval the control plane exists to refuse.\n\nFINGERPRINT CURRENCY, CHECKED NOT ASSUMED. The verdict names 659cafa118bdc72b98d43c7f3fa21a120222e57b as the published/accepted head. HEAD is exactly that sha, the tracked tree is clean, and `git status --porcelain` over this task's allowedPaths plus reviewDependencies -- packages/auth/src/client-ip.ts, client-ip.test.ts, better-auth.ts, index.ts, docs/DEPLOYMENT_TRUST.md, plus rate-limit.ts, enabled-surface.ts, auth-instance.ts, docs/ARCHITECTURE.md and e2e/tests/auth-rate-limit.spec.ts -- reports nothing. No commit exists after the reviewed one.\n\nWHAT THE VERDICT DOES NOT SAY, recorded so this gate is not read as covering more than it does. It makes no ruling on docs/DEPLOYMENT_TRUST.md section 5 -- the precondition that configuring LIBERTY_TRUSTED_PROXIES is sound only while the origin cannot be reached around the proxy -- which the round-110 handoff asked gpt-architect to examine hardest. That precondition is a deployment fact this repository cannot enforce; it remains stated in the document and unenforced by code, exactly as shipped, and this approval does not change that."
         }
       },
-      "updatedAt": "2026-10-04T04:57:26.511Z",
+      "updatedAt": "2026-10-04T14:44:37.147Z",
       "implementationAgent": "claude-security",
-      "implementationBaseSha": "4c9f5829671a650514f13602188b3ce4d73049ad"
+      "implementationBaseSha": "4c9f5829671a650514f13602188b3ce4d73049ad",
+      "review": {
+        "taskId": "PL-0721",
+        "implementationAgent": "claude-security",
+        "implementationOwner": "claude-security",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "659cafa118bdc72b98d43c7f3fa21a120222e57b",
+        "reviewedBaseSha": "4c9f5829671a650514f13602188b3ce4d73049ad",
+        "reviewedTreeHash": "8c3a73db7bd3b90b5e6472433398c1832498ab9d38f88e0398481c0964b06076",
+        "reviewedFileCount": 10,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [
+          "packages/auth/src/rate-limit.ts",
+          "packages/auth/src/enabled-surface.ts",
+          "apps/web/src/lib/session/auth-instance.ts",
+          "docs/ARCHITECTURE.md",
+          "e2e/tests/auth-rate-limit.spec.ts"
+        ],
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-10-04T14:44:30.357Z",
+        "evidence": "APPROVED at 659cafa118bdc72b98d43c7f3fa21a120222e57b. TRANSCRIBED BY claude-lead from gpt-architect's round-111 verdict document, which lists this task under GPT ARCHITECT REVIEW VERDICTS and instructs: \"Record these APPROVED and close them, provided their reviewed fingerprints still match the exact reviewed surfaces and no later commit changed those surfaces\", and \"Do not reinterpret these approvals.\"\n\nFINGERPRINT CURRENCY, CHECKED RATHER THAN ASSUMED. The verdict names this sha as the published and accepted head. HEAD is exactly it, the tracked tree is clean, and `git status --porcelain` restricted to this task's allowedPaths plus its reviewDependencies reports nothing. No commit exists after the reviewed one, so the reviewed surface and the current surface are the same bytes.\n\nWHAT IS APPROVED. The trusted-proxy topology and client-IP derivation gpt-architect's round-110 ruling ordered: no forwarded header read by default (ipAddressHeaders: []), opt-in via LIBERTY_TRUSTED_PROXIES, chain walked from the right so prepended entries are discarded, an unparseable entry refusing to start rather than falling back, and disableIpTracking deliberately unused because it disables rate limiting rather than header reading.\n\nTHE HAZARD THIS CLOSED WAS LIVE, not hypothetical: with no advanced.ipAddress configured the library accepted a single-valued X-Forwarded-For, so one caller could choose its own rate-limit bucket and get unbounded credential attempts. Reproduced against the real getIP in client-ip.test.ts before the fix is asserted.\n\nThe security-review gate recorded separately carries what this verdict does NOT rule on."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PL-0721",
+          "implementationAgent": "claude-security",
+          "implementationOwner": "claude-security",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "659cafa118bdc72b98d43c7f3fa21a120222e57b",
+          "reviewedBaseSha": "4c9f5829671a650514f13602188b3ce4d73049ad",
+          "reviewedTreeHash": "8c3a73db7bd3b90b5e6472433398c1832498ab9d38f88e0398481c0964b06076",
+          "reviewedFileCount": 10,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "packages/auth/src/rate-limit.ts",
+            "packages/auth/src/enabled-surface.ts",
+            "apps/web/src/lib/session/auth-instance.ts",
+            "docs/ARCHITECTURE.md",
+            "e2e/tests/auth-rate-limit.spec.ts"
+          ],
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-10-04T14:44:30.357Z",
+          "evidence": "APPROVED at 659cafa118bdc72b98d43c7f3fa21a120222e57b. TRANSCRIBED BY claude-lead from gpt-architect's round-111 verdict document, which lists this task under GPT ARCHITECT REVIEW VERDICTS and instructs: \"Record these APPROVED and close them, provided their reviewed fingerprints still match the exact reviewed surfaces and no later commit changed those surfaces\", and \"Do not reinterpret these approvals.\"\n\nFINGERPRINT CURRENCY, CHECKED RATHER THAN ASSUMED. The verdict names this sha as the published and accepted head. HEAD is exactly it, the tracked tree is clean, and `git status --porcelain` restricted to this task's allowedPaths plus its reviewDependencies reports nothing. No commit exists after the reviewed one, so the reviewed surface and the current surface are the same bytes.\n\nWHAT IS APPROVED. The trusted-proxy topology and client-IP derivation gpt-architect's round-110 ruling ordered: no forwarded header read by default (ipAddressHeaders: []), opt-in via LIBERTY_TRUSTED_PROXIES, chain walked from the right so prepended entries are discarded, an unparseable entry refusing to start rather than falling back, and disableIpTracking deliberately unused because it disables rate limiting rather than header reading.\n\nTHE HAZARD THIS CLOSED WAS LIVE, not hypothetical: with no advanced.ipAddress configured the library accepted a single-valued X-Forwarded-For, so one caller could choose its own rate-limit bucket and get unbounded credential attempts. Reproduced against the real getIP in client-ip.test.ts before the fix is asserted.\n\nThe security-review gate recorded separately carries what this verdict does NOT rule on."
+        }
+      ],
+      "completedAt": "2026-10-04T14:44:37.147Z"
     },
     {
       "id": "PL-0722",
       "priority": "P0",
       "lane": "Test",
-      "status": "REVIEW",
+      "status": "DONE",
       "title": "Corrective: the rate-limit spec assumed a bucket no other worker had touched, and CI is red",
       "dependencies": [],
       "allowedPaths": [
@@ -12644,7 +12761,7 @@
       ],
       "acceptance": "CI #180 (run 37172243151) IS RED ON A TEST THIS PROJECT SHIPPED IN ROUND 109, and the product is not at fault. The e2e job failed with one error:\n\n  [chromium] > tests/auth-rate-limit.spec.ts:94:7 > the credential endpoint under repeated attempts > THE FOURTH ATTEMPT IS REFUSED AS THROTTLED, NOT AS A WRONG PASSWORD\n\nREPRODUCED HERE, NOT GUESSED. Running the same two projects with --workers=4 against a real production build and a real PostgreSQL reproduces it exactly, with the spec's own message: 'expected credential rejections followed by a throttled refusal, got [{\"status\":429,...},{\"status\":429,...},{\"status\":429,...},{\"status\":429,...}]'. All four attempts were throttled.\n\nTHE CAUSE. better-auth keys each rate-limit bucket by CLIENT IP AND PATH. Every Playwright worker shares one IP, and `playwright.config.ts` sets fullyParallel with no worker cap, so every spec that signs in -- the watchlist cases, the production-journey cases, `establishSession` itself -- draws from the SAME /sign-in/email bucket this spec is trying to measure. The spec's header already identified that hazard and guarded the EXIT, draining the window in afterAll so it could not poison later specs. It did not guard the ENTRANCE: it assumed it arrived at a bucket nobody had touched, and under parallelism that is simply not true.\n\nTHIS IS A DEFECT IN THE MEASUREMENT, NOT IN THE PRODUCT. The limiter did exactly what PL-0719 says it should: four rapid attempts from one address were refused. A spec that reports that as a failure is the fourth instance this project has seen of a new check crying wolf, and the rule is the same -- fix the check, do not relax the control.\n\nREQUIRED: the spec no longer depends on the state of the bucket when it starts. It must OBSERVE its way to a known state rather than assume one.\nREQUIRED: both facts are still proven, and still proven to be DIFFERENT facts -- a credential rejection and a throttled refusal. Dropping either, or collapsing them into 'some refusal happened', would discard the entire reason PL-0715 and PL-0719 exist.\nREQUIRED: it still proves the 429 carries a usable X-Retry-After.\nREQUIRED: it still drains the window before it finishes, so it cannot poison the specs that follow it.\nREQUIRED: it is proven under PARALLELISM, not only serially. A green --workers=1 run is what hid this; the evidence must be a run with several workers, in the production configuration, which is what CI does.\nREQUIRED: any wait it performs is BOUNDED and fails with a message naming the bucket contention, so a future genuine failure is not mistaken for this one.\n\nMUST NOT: weaken, widen, disable or reconfigure the rate-limit policy. MUST NOT add retries to the Playwright configuration -- `retries: 0` is argued for at length and a retry here would convert a real race into a green mark. MUST NOT serialise the whole suite to make one spec easier. MUST NOT mark the test skipped, or assert something weaker that happens to always hold.",
       "notes": "FILED IN ROUND 110 the moment CI #180 was read. PL-0719 is DONE and gpt-architect approved it; this corrective does not reopen that verdict, which was about the POLICY and the product configuration, both of which are untouched and correct. What is wrong is one end-to-end spec delivered alongside it.\n\nP0 because CI is red and a red CI that everybody knows is 'just the flaky auth test' is how a real failure gets ignored.\n\nConflict-checked in both fields in both directions at filing. The single allowedPath is e2e/tests/auth-rate-limit.spec.ts, which PL-0719 held and released on completion; no active task names it. Active tasks are PL-0714 (.github/workflows/ci.yml), PW-0208 (apps/desktop/**, docs/LICENSING.md) and PW-0602 (e2e/windows/**, .github/workflows/windows.yml).",
-      "owner": "claude-test",
+      "owner": null,
       "gateResults": {
         "typecheck": {
           "status": "pass",
@@ -12661,15 +12778,62 @@
           "evidence": "THE FAILURE WAS REPRODUCED BEFORE IT WAS FIXED, AND THE FIX WAS VERIFIED UNDER THE SAME CONDITIONS.\n\nBEFORE. npx playwright test --project=api --project=chromium --workers=4, production build, real PostgreSQL on 127.0.0.1:5433: 1 failed, 89 passed. The failure is CI #180's, verbatim, with the spec's own message: 'expected credential rejections followed by a throttled refusal, got [{\"status\":429,\"retryAfter\":\"7\"},{\"status\":429,\"retryAfter\":\"7\"},{\"status\":429,\"retryAfter\":\"7\"},{\"status\":429,\"retryAfter\":\"7\"}]'. All four attempts throttled, because another worker reached the shared /sign-in/email bucket first.\n\nAFTER, TWICE, same command and configuration: 91 passed, 0 failed (45.1s), and again 91 passed, 0 failed (36.7s). The repaired case takes 8.7s and 9.7s respectively rather than 102ms, which is the waiting-out of contention doing its job and is the visible cost of the repair.\n\nWHAT CHANGED, AND WHAT DELIBERATELY DID NOT. The spec no longer assumes it arrives at an untouched bucket; `aCredentialRejection` retries past throttling, BOUNDED at four windows, and returns only once it has actually seen the endpoint examine a credential. The burst then runs from a bucket known to have had room a moment earlier, and a burst of maxRequests+1 in one breath cannot be absorbed by a limit of maxRequests per window however much room there was -- so the throttled refusal is guaranteed whatever other workers are doing. Both facts are still required and still required to be DIFFERENT facts; the X-Retry-After assertion is unchanged; the afterAll drain is unchanged. What was dropped is the assertion that the two refusals appear in a particular order WITHIN ONE ARRAY, because under contention that array's first entry says more about another worker's timing than about this product. The control itself is untouched: no policy value, no configuration, no retry setting, no skip.\n\nTHE MECHANISM IN CI IS NOT ONLY PARALLELISM, which is worth recording because it changes what a reader should expect. Playwright defaults to half the cores, so a 2-core GitHub runner runs ONE worker and the suite is sequential there. The bucket is nonetheless contended, because it is a 10-second window and the spec file executed immediately after other files that sign in for real. The repair handles both causes because it observes the state rather than reasoning about who else is running.\n\nONE THING I FOUND BY OVER-PARALLELISING, REPORTED AS AN ARTEFACT RATHER THAN A DEFECT. The DEVELOPMENT suite at --workers=4 on this 2-core container fails 6 cases with 'SyntaxError: Unexpected token <, \"<!DOCTYPE\"' -- the Next dev server returning an error page under on-demand compilation load. At --workers=1, which is what a 2-core CI runner actually uses, the same suite is 118 passed / 24 skipped, which matches CI #180's own development notice exactly. So this is a capacity limit of `next dev` on a small machine, not a product fault, and not caused by this change: auth-rate-limit.spec.ts skips entirely in development."
         }
       },
-      "updatedAt": "2026-10-04T03:15:46.512Z",
+      "updatedAt": "2026-10-04T14:44:37.499Z",
       "implementationAgent": "claude-test",
-      "implementationBaseSha": "2cc6dfb5e9adec199093d9e892b5972f98a95886"
+      "implementationBaseSha": "2cc6dfb5e9adec199093d9e892b5972f98a95886",
+      "review": {
+        "taskId": "PL-0722",
+        "implementationAgent": "claude-test",
+        "implementationOwner": "claude-test",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "659cafa118bdc72b98d43c7f3fa21a120222e57b",
+        "reviewedBaseSha": "2cc6dfb5e9adec199093d9e892b5972f98a95886",
+        "reviewedTreeHash": "15c21e1ff0f927ace87f4ed5d94d1fa5951efa004414f5550db68b92f74cf40c",
+        "reviewedFileCount": 5,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [
+          "e2e/src/identity.ts",
+          "packages/auth/src/rate-limit.ts",
+          "e2e/playwright.config.ts",
+          "e2e/tests/watchlist.spec.ts"
+        ],
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-10-04T14:44:30.555Z",
+        "evidence": "APPROVED at 659cafa118bdc72b98d43c7f3fa21a120222e57b. TRANSCRIBED BY claude-lead from gpt-architect's round-111 verdict document, which lists this task under GPT ARCHITECT REVIEW VERDICTS and instructs: \"Record these APPROVED and close them, provided their reviewed fingerprints still match the exact reviewed surfaces and no later commit changed those surfaces\", and \"Do not reinterpret these approvals.\"\n\nFINGERPRINT CURRENCY, CHECKED RATHER THAN ASSUMED. The verdict names this sha as the published and accepted head. HEAD is exactly it, the tracked tree is clean, and `git status --porcelain` restricted to this task's allowedPaths plus its reviewDependencies reports nothing. No commit exists after the reviewed one, so the reviewed surface and the current surface are the same bytes.\n\nWHAT IS APPROVED. The corrective that stopped e2e/tests/auth-rate-limit.spec.ts assuming it arrived at a rate-limit bucket nobody had touched. Under fullyParallel every worker shares one client IP and therefore one /sign-in/email bucket, so CI #180's red was the limiter working correctly and the spec mis-reporting it. The spec now OBSERVES its way to a known state rather than assuming one, and still proves both facts separately -- a credential rejection and a throttled refusal are different things and neither was collapsed into \"some refusal happened\". The limiter itself was not touched."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PL-0722",
+          "implementationAgent": "claude-test",
+          "implementationOwner": "claude-test",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "659cafa118bdc72b98d43c7f3fa21a120222e57b",
+          "reviewedBaseSha": "2cc6dfb5e9adec199093d9e892b5972f98a95886",
+          "reviewedTreeHash": "15c21e1ff0f927ace87f4ed5d94d1fa5951efa004414f5550db68b92f74cf40c",
+          "reviewedFileCount": 5,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "e2e/src/identity.ts",
+            "packages/auth/src/rate-limit.ts",
+            "e2e/playwright.config.ts",
+            "e2e/tests/watchlist.spec.ts"
+          ],
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-10-04T14:44:30.555Z",
+          "evidence": "APPROVED at 659cafa118bdc72b98d43c7f3fa21a120222e57b. TRANSCRIBED BY claude-lead from gpt-architect's round-111 verdict document, which lists this task under GPT ARCHITECT REVIEW VERDICTS and instructs: \"Record these APPROVED and close them, provided their reviewed fingerprints still match the exact reviewed surfaces and no later commit changed those surfaces\", and \"Do not reinterpret these approvals.\"\n\nFINGERPRINT CURRENCY, CHECKED RATHER THAN ASSUMED. The verdict names this sha as the published and accepted head. HEAD is exactly it, the tracked tree is clean, and `git status --porcelain` restricted to this task's allowedPaths plus its reviewDependencies reports nothing. No commit exists after the reviewed one, so the reviewed surface and the current surface are the same bytes.\n\nWHAT IS APPROVED. The corrective that stopped e2e/tests/auth-rate-limit.spec.ts assuming it arrived at a rate-limit bucket nobody had touched. Under fullyParallel every worker shares one client IP and therefore one /sign-in/email bucket, so CI #180's red was the limiter working correctly and the spec mis-reporting it. The spec now OBSERVES its way to a known state rather than assuming one, and still proves both facts separately -- a credential rejection and a throttled refusal are different things and neither was collapsed into \"some refusal happened\". The limiter itself was not touched."
+        }
+      ],
+      "completedAt": "2026-10-04T14:44:37.499Z"
     },
     {
       "id": "PL-0723",
       "priority": "P1",
       "lane": "Backend",
-      "status": "REVIEW",
+      "status": "DONE",
       "title": "A profile remembers which languages its viewer wants",
       "dependencies": [],
       "allowedPaths": [
@@ -12714,7 +12878,7 @@
       ],
       "acceptance": "PW-0308 REQUIRES PREFERRED AUDIO AND SUBTITLE LANGUAGES 'persisted per profile and consumed as PW-0206's defaults rather than as a second policy', AND THERE IS NOWHERE TO PUT THEM. The profile table carries id, userId, displayName, avatarKey and maxRating; there is no preferences column and no preferences endpoint. gpt-architect's round-110 instruction is explicit: create the smallest backend/data task required, and do not fake persistence with local component state.\n\nTHE SHAPE IS ALREADY DECIDED ELSEWHERE AND MUST NOT BE REINVENTED. `subtitlePolicySchema` in packages/contracts/src/domains/subtitles.ts already declares `mode` (auto/off), `preferredLanguages` -- 'Ordered, most-preferred first. Order is meaningful, not a set.' -- and `hearingImpaired`. `PlaybackCapabilities` already declares `preferredAudioLanguages`. This task stores VALUES for those existing fields. A second vocabulary for the same concepts is the 'duplicate language-selection policy' PW-0308 forbids by name.\n\nREQUIRED: a migration that adds the storage. It is additive, it has a default that means 'nothing chosen', and an existing profile keeps working without a backfill -- the 0000 migration's header explains why backfill is the expensive part of a schema decision, and there is nothing here to recover.\nREQUIRED: the stored shape is validated on the way IN by a zod contract, like every other contract in this repository, and reuses the subtitle and playback field names and semantics rather than paraphrasing them.\nREQUIRED: a language list is ORDERED and the order is preserved through write and read. A store that returns a set has destroyed the only information the field carries.\nREQUIRED: read and write endpoints under the profiles API, PROFILE-SCOPED through the same machinery every other profile-scoped route uses. A viewer must not be able to read or write another profile's preferences, and that must be asserted, not assumed.\nREQUIRED: 'nothing chosen' is representable and is the default, and is DIFFERENT from 'an empty list chosen'. The player's fallback behaviour depends on telling those apart.\nREQUIRED: unknown or unsupported language tags are refused at the boundary with a named reason, not stored and not silently dropped.\nREQUIRED: the fail-closed posture of the existing profiles routes is preserved -- a deployment with no identity system refuses rather than serving a default.\n\nMUST NOT: add any field that is not a viewer PREFERENCE. This is not a place to put capability claims, entitlements, rights state or anything a client could assert to widen what it may play. MUST NOT accept a client-supplied profile id in place of the session-scoped one. MUST NOT weaken or bypass the profile scoping in packages/auth's ProfileScope.\n\nOUT OF SCOPE: the settings SCREEN (PW-0308), the player consuming the defaults (PW-0308), and any preference beyond audio and subtitle language behaviour. Parental controls, playback quality caps and autoplay belong to whatever task argues for them.",
       "notes": "FILED IN ROUND 110 at gpt-architect's instruction while PW-0308 was being started. The finding that created it: the profile table has no preferences storage, read from packages/persistence/src/schema/profiles.ts rather than assumed.\n\nThe more useful finding is what ALREADY EXISTS: subtitlePolicySchema, preferredAudioLanguages and tracks.ts's SubtitlePreferences all carry these concepts today, and apps/web/src/app/watch/watch-session.ts line 205 hardcodes preferredAudioLanguages: [\"en\"] in CONSERVATIVE_CAPABILITIES. That literal is what a stored preference replaces. Replacing it is PW-0308's, not this task's.\n\nConflict-checked in both fields in both directions at filing against PL-0714, PW-0208, PW-0602, PL-0722 and PW-0308. PW-0308 holds the settings tree and the watch route; this task holds persistence, contracts and the preferences endpoint. Disjoint.",
-      "owner": "claude-backend",
+      "owner": null,
       "gateResults": {
         "typecheck": {
           "status": "pass",
@@ -12729,17 +12893,80 @@
           "by": "claude-backend",
           "commitSha": "25994202b1397d7e972febdb24edd685d8a08405",
           "evidence": "THE SUITES. packages/contracts: 255 tests, exit 0 -- 15 of them new in preferences.test.ts. packages/persistence: 301 tests (1 skipped), exit 0 -- profile-preferences.test.ts adds 12 and the two guard files gained coverage of the new table and the three new repository functions. apps/web: 92 files, 1686 tests, exit 0, up from 90/1659 -- the preferences endpoint's handler.test.ts adds 16 and the db suites now cover three more adapter methods.\n\nTHREE GUARDS IN THIS REPOSITORY CAUGHT THREE REAL MISTAKES WHILE THIS WAS BEING BUILT, AND NONE OF THEM WAS WEAKENED.\n\n(1) profile-scoping.test.ts refused the table. The first version declared the primary key with a column-level .primaryKey(), which does not appear in getTableConfig(table).primaryKeys at all -- so the automatic scoping check would have passed the table WITHOUT EXAMINING IT. It is now a table-level primaryKey() with an explicit name, which also satisfies PL-0407's rule that the snapshot, the generated SQL and the database must all say the same word for a constraint.\n\n(2) scope-forgery.test.ts refused forgetMediaPreferences. Written as store.mediaPreferences.delete(profileIdFromScope(input.scope)), the method READS AS issuance-first and is not: JavaScript evaluates the member access before the argument, so against that suite's refusing store it failed with \"reached the store\" instead of ForgedProfileScopeError -- it had touched storage on behalf of a capability nobody granted. The id is now derived on its own line first. \"It refused\" and \"it refused before touching storage\" are different guarantees and the suite exists to tell them apart.\n\n(3) migration-journal.test.ts refused the ninth table, by design. Its EXPECTED_TABLES is a reviewed postcondition that exists because a defect once made db:migrate create ZERO tables while printing success. The set was updated deliberately and the describe block renamed, because leaving it reading \"eight-table postcondition\" while asserting nine would be a comment that lies.\n\nTHE SCOPING ASSERTION WAS ALSO SEEN TO FAIL ON PURPOSE: with the .where() removed from readMediaPreferences, repository-scoping.test.ts fails with \"'readMediaPreferences' filters or writes profile_id in every statement\" and passes again when restored. That suite renders the captured predicates through Drizzle's own PgDialect, so what it checks is the SQL that would be sent.\n\nTHE MIGRATION WAS APPLIED TO A REAL POSTGRESQL, not only generated. A fresh database took 0000 then 0001 cleanly and reports nine tables. \\d profile_media_preference shows the columns, the text[] types, PRIMARY KEY btree (profile_id) named profile_media_preference_pkey, and the cascade. A real round trip stored ARRAY['ja','de','en'] and ARRAY['pt-BR','en'] and read back {ja,de,en} and {pt-BR,en} -- ORDER PRESERVED, which is the only information those lists carry. Deleting the profile left 0 preference rows, so the cascade is real rather than declared. The migration itself was GENERATED by drizzle-kit rather than hand-written, with the journal and 0001_snapshot.json it produced, for the reason PL-0407 records: a hand-written snapshot once disagreed with the reviewed migration about three constraint names, which would have emitted DROP CONSTRAINT against a name no database has."
+        },
+        "security-review": {
+          "status": "pass",
+          "at": "2026-10-04T14:43:54.959Z",
+          "by": "gpt-architect",
+          "commitSha": "659cafa118bdc72b98d43c7f3fa21a120222e57b",
+          "judgementCommitSha": "659cafa118bdc72b98d43c7f3fa21a120222e57b",
+          "judgementCommitVerified": true,
+          "transcribedBy": "claude-lead",
+          "evidence": "APPROVED at 659cafa118bdc72b98d43c7f3fa21a120222e57b. TRANSCRIBED BY claude-lead from gpt-architect's round-111 verdict document, which lists \"PL-0723  APPROVED\" under GPT ARCHITECT REVIEW VERDICTS, with the same instruction to record and close subject to fingerprint currency, and \"Do not reinterpret these approvals.\"\n\nWHY security-review AND NOT ONLY approve. PL-0723's required gates are typecheck, unit and security-review; the first two are recorded. The task adds a profile-scoped table and three repository methods, which is why a security gate was required of it in the first place -- the ProfileScope capability and the scope-forgery suite are the controls it had to satisfy. gpt-architect is its reviewAgent, so its approval is that verdict, and closing the task as instructed is impossible without the gate recorded.\n\nFINGERPRINT CURRENCY. HEAD is 659cafa118bdc72b98d43c7f3fa21a120222e57b, the tracked tree is clean, and `git status --porcelain` over this task's twenty-two allowedPaths and its reviewDependencies reports nothing changed. No commit exists after the reviewed one.\n\nWHAT THE EXECUTABLE EVIDENCE UNDER THIS GATE ALREADY SHOWED, named here because a judgement gate should say what it is judging: profile-scoping.test.ts was extended to the new table and the primary key was moved from column level to table level so getTableConfig().primaryKeys would actually see it; scope-forgery.test.ts classifies all three new methods as SCOPE-TAKING with real forgery invocations and its completeness count went 8 to 11; and forgetMediaPreferences derives the profile id on its own line so the refusing store is reached before the store is touched."
         }
       },
-      "updatedAt": "2026-10-04T03:48:01.767Z",
+      "updatedAt": "2026-10-04T14:44:37.856Z",
       "implementationAgent": "claude-backend",
-      "implementationBaseSha": "25994202b1397d7e972febdb24edd685d8a08405"
+      "implementationBaseSha": "25994202b1397d7e972febdb24edd685d8a08405",
+      "review": {
+        "taskId": "PL-0723",
+        "implementationAgent": "claude-backend",
+        "implementationOwner": "claude-backend",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "659cafa118bdc72b98d43c7f3fa21a120222e57b",
+        "reviewedBaseSha": "25994202b1397d7e972febdb24edd685d8a08405",
+        "reviewedTreeHash": "d3840a66aa8b8d7b98a0f642113d57c94aebe9bae407edcd7cbe59c9b16bb5fb",
+        "reviewedFileCount": 29,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [
+          "packages/contracts/src/domains/subtitles.ts",
+          "packages/contracts/src/domains/playback.ts",
+          "apps/web/src/app/api/v1/profiles/handler.ts",
+          "apps/web/src/app/api/v1/profiles/contract.ts",
+          "packages/persistence/src/profile-repository.ts",
+          "packages/persistence/migrations/0000_profile_scoped_identity.sql",
+          "docs/API_CONTRACTS.md"
+        ],
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-10-04T14:44:30.743Z",
+        "evidence": "APPROVED at 659cafa118bdc72b98d43c7f3fa21a120222e57b. TRANSCRIBED BY claude-lead from gpt-architect's round-111 verdict document, which lists this task under GPT ARCHITECT REVIEW VERDICTS and instructs: \"Record these APPROVED and close them, provided their reviewed fingerprints still match the exact reviewed surfaces and no later commit changed those surfaces\", and \"Do not reinterpret these approvals.\"\n\nFINGERPRINT CURRENCY, CHECKED RATHER THAN ASSUMED. The verdict names this sha as the published and accepted head. HEAD is exactly it, the tracked tree is clean, and `git status --porcelain` restricted to this task's allowedPaths plus its reviewDependencies reports nothing. No commit exists after the reviewed one, so the reviewed surface and the current surface are the same bytes.\n\nWHAT IS APPROVED. A profile_media_preference table, its contract, its three scope-taking repository methods and the /api/v1/profiles/preferences endpoint, with the stored/not-stored distinction carried in the response because a cleared profile and an unconfigured one have the same empty lists and opposite meanings. No profile id is accepted anywhere on the route; the profile is derived from the session.\n\nThe security-review gate recorded separately names the scoping evidence."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PL-0723",
+          "implementationAgent": "claude-backend",
+          "implementationOwner": "claude-backend",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "659cafa118bdc72b98d43c7f3fa21a120222e57b",
+          "reviewedBaseSha": "25994202b1397d7e972febdb24edd685d8a08405",
+          "reviewedTreeHash": "d3840a66aa8b8d7b98a0f642113d57c94aebe9bae407edcd7cbe59c9b16bb5fb",
+          "reviewedFileCount": 29,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "packages/contracts/src/domains/subtitles.ts",
+            "packages/contracts/src/domains/playback.ts",
+            "apps/web/src/app/api/v1/profiles/handler.ts",
+            "apps/web/src/app/api/v1/profiles/contract.ts",
+            "packages/persistence/src/profile-repository.ts",
+            "packages/persistence/migrations/0000_profile_scoped_identity.sql",
+            "docs/API_CONTRACTS.md"
+          ],
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-10-04T14:44:30.743Z",
+          "evidence": "APPROVED at 659cafa118bdc72b98d43c7f3fa21a120222e57b. TRANSCRIBED BY claude-lead from gpt-architect's round-111 verdict document, which lists this task under GPT ARCHITECT REVIEW VERDICTS and instructs: \"Record these APPROVED and close them, provided their reviewed fingerprints still match the exact reviewed surfaces and no later commit changed those surfaces\", and \"Do not reinterpret these approvals.\"\n\nFINGERPRINT CURRENCY, CHECKED RATHER THAN ASSUMED. The verdict names this sha as the published and accepted head. HEAD is exactly it, the tracked tree is clean, and `git status --porcelain` restricted to this task's allowedPaths plus its reviewDependencies reports nothing. No commit exists after the reviewed one, so the reviewed surface and the current surface are the same bytes.\n\nWHAT IS APPROVED. A profile_media_preference table, its contract, its three scope-taking repository methods and the /api/v1/profiles/preferences endpoint, with the stored/not-stored distinction carried in the response because a cleared profile and an unconfigured one have the same empty lists and opposite meanings. No profile id is accepted anywhere on the route; the profile is derived from the session.\n\nThe security-review gate recorded separately names the scoping evidence."
+        }
+      ],
+      "completedAt": "2026-10-04T14:44:37.856Z"
     },
     {
       "id": "PL-0724",
       "priority": "P2",
       "lane": "Player",
-      "status": "BACKLOG",
+      "status": "READY",
       "title": "The diagnostics switch actually switches diagnostics off",
       "dependencies": [
         "PL-0723"
@@ -12779,7 +13006,7 @@
       "id": "PL-0725",
       "priority": "P1",
       "lane": "Frontend",
-      "status": "REVIEW",
+      "status": "DONE",
       "title": "Corrective: the roving group sets state inside an effect, and repository lint is red",
       "dependencies": [],
       "allowedPaths": [
@@ -12832,16 +13059,63 @@
           "evidence": "npx playwright test tests/keyboard-reachability.spec.ts --project=chromium --workers=1 against a real next dev server on port 3177 (LIBERTY_E2E_WEB_MODE=development): 10 passed, 0 failed, 42.4s. The ten include the two PLANTED-FAILURE cases -- 'THE GATE ITSELF FAILS WHEN SOMETHING IS UNREACHABLE' and 'THE ROVING-GROUP CHECK ITSELF FAILS WHEN A RAIL LOSES ITS ENTRY POINT' -- so the suite is proven non-vacuous in the same run, and 'ARROW KEYS MOVE ALONG A RAIL, and Tab then leaves it', which is the behaviour this change refactored. CHROMIUM ONLY, AND THAT IS THE WHOLE GATE SURFACE, NOT A NARROWING: ci.yml's e2e job runs 'npx playwright install chromium' and nothing else. The firefox, webkit and mobile-safari projects are UNVERIFIED here -- their browser binaries are absent from this container (browserType.launch: Executable doesn't exist at /root/.cache/ms-playwright/firefox-1538/firefox/firefox) and they are not run in CI either. Note on the run: PLAYWRIGHT_BROWSERS_PATH had to be pointed at ~/.cache/ms-playwright, because the container's /opt/pw-browsers holds revision 1194 while the pinned @playwright/test 1.62.1 wants 1234; that is an environment fact about this container, not a change to the pinned version."
         }
       },
-      "owner": "claude-frontend",
+      "owner": null,
       "implementationAgent": "claude-frontend",
-      "updatedAt": "2026-10-04T04:13:26.283Z",
-      "implementationBaseSha": "c925b27d0f1407f79e55110b484235db34f51d8b"
+      "updatedAt": "2026-10-04T14:44:38.171Z",
+      "implementationBaseSha": "c925b27d0f1407f79e55110b484235db34f51d8b",
+      "review": {
+        "taskId": "PL-0725",
+        "implementationAgent": "claude-frontend",
+        "implementationOwner": "claude-frontend",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "659cafa118bdc72b98d43c7f3fa21a120222e57b",
+        "reviewedBaseSha": "c925b27d0f1407f79e55110b484235db34f51d8b",
+        "reviewedTreeHash": "a256dc3761f4d96f758bad6503e259bb74087df9c2183145d47a78f068d60376",
+        "reviewedFileCount": 6,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [
+          "apps/web/src/lib/a11y/roving.ts",
+          "apps/web/src/lib/a11y/roving.test.ts",
+          "e2e/tests/keyboard-reachability.spec.ts",
+          "apps/web/eslint.config.mjs"
+        ],
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-10-04T14:44:30.919Z",
+        "evidence": "APPROVED at 659cafa118bdc72b98d43c7f3fa21a120222e57b. TRANSCRIBED BY claude-lead from gpt-architect's round-111 verdict document, which lists this task under GPT ARCHITECT REVIEW VERDICTS and instructs: \"Record these APPROVED and close them, provided their reviewed fingerprints still match the exact reviewed surfaces and no later commit changed those surfaces\", and \"Do not reinterpret these approvals.\"\n\nFINGERPRINT CURRENCY, CHECKED RATHER THAN ASSUMED. The verdict names this sha as the published and accepted head. HEAD is exactly it, the tracked tree is clean, and `git status --porcelain` restricted to this task's allowedPaths plus its reviewDependencies reports nothing. No commit exists after the reviewed one, so the reviewed surface and the current surface are the same bytes.\n\nWHAT IS APPROVED. The corrective for repository lint being red on a file PW-0310 shipped. setMounted-in-an-effect became useSyncExternalStore; the clamped-index write-back was removed and the clamp moved to every point of use, which also fixed a real edge the write-back had been hiding -- nextActive returns an out-of-range index for ArrowLeft from one. No eslint-disable and no config change. The hydration guard gained the assertion it never had: roving-group.test.tsx covers the SERVER render, which neither roving.test.ts (pure module) nor the keyboard e2e (post-hydration only) could see."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PL-0725",
+          "implementationAgent": "claude-frontend",
+          "implementationOwner": "claude-frontend",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "659cafa118bdc72b98d43c7f3fa21a120222e57b",
+          "reviewedBaseSha": "c925b27d0f1407f79e55110b484235db34f51d8b",
+          "reviewedTreeHash": "a256dc3761f4d96f758bad6503e259bb74087df9c2183145d47a78f068d60376",
+          "reviewedFileCount": 6,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "apps/web/src/lib/a11y/roving.ts",
+            "apps/web/src/lib/a11y/roving.test.ts",
+            "e2e/tests/keyboard-reachability.spec.ts",
+            "apps/web/eslint.config.mjs"
+          ],
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-10-04T14:44:30.919Z",
+          "evidence": "APPROVED at 659cafa118bdc72b98d43c7f3fa21a120222e57b. TRANSCRIBED BY claude-lead from gpt-architect's round-111 verdict document, which lists this task under GPT ARCHITECT REVIEW VERDICTS and instructs: \"Record these APPROVED and close them, provided their reviewed fingerprints still match the exact reviewed surfaces and no later commit changed those surfaces\", and \"Do not reinterpret these approvals.\"\n\nFINGERPRINT CURRENCY, CHECKED RATHER THAN ASSUMED. The verdict names this sha as the published and accepted head. HEAD is exactly it, the tracked tree is clean, and `git status --porcelain` restricted to this task's allowedPaths plus its reviewDependencies reports nothing. No commit exists after the reviewed one, so the reviewed surface and the current surface are the same bytes.\n\nWHAT IS APPROVED. The corrective for repository lint being red on a file PW-0310 shipped. setMounted-in-an-effect became useSyncExternalStore; the clamped-index write-back was removed and the clamp moved to every point of use, which also fixed a real edge the write-back had been hiding -- nextActive returns an out-of-range index for ArrowLeft from one. No eslint-disable and no config change. The hydration guard gained the assertion it never had: roving-group.test.tsx covers the SERVER render, which neither roving.test.ts (pure module) nor the keyboard e2e (post-hydration only) could see."
+        }
+      ],
+      "completedAt": "2026-10-04T14:44:38.171Z"
     },
     {
       "id": "PL-0726",
       "priority": "P0",
       "lane": "Integration",
-      "status": "REVIEW",
+      "status": "DONE",
       "title": "Corrective: CI applies migration 0000 by name, so every later migration is silently absent",
       "dependencies": [],
       "allowedPaths": [
@@ -12869,16 +13143,63 @@
           "evidence": "THE STEP WAS EXTRACTED FROM THE WORKFLOW AND RUN AGAINST A REAL POSTGRESQL 16, five times, on fresh databases. Extracted with `yaml.safe_load` and taking `jobs.e2e.steps[id=migrate].run` verbatim, so what was executed is the text CI will execute, not a paraphrase of it. The workflow also parses: yaml.safe_load succeeds and reports jobs validate, e2e-typecheck, e2e.\n\nA. CLEAN RUN, fresh database. exit 0.\n   \"applying 2 migration(s) in this order:\n      packages/persistence/migrations/0000_profile_scoped_identity.sql\n      packages/persistence/migrations/0001_profile_media_preferences.sql\n    migrations applied; all 9 declared table(s) are present\"\n   NINE, not eight. 0001's profile_media_preference is applied and accepted -- the two things the old step could not do. Confirmed independently: \\d profile_media_preference shows the table with its primary key on profile_id.\n\nB. LOUD FAILURE IS PRESERVED. A probe migration 0002 referencing a table that does not exist: exit 3, with\n   \"psql:packages/persistence/migrations/0002_broken_probe.sql:1: ERROR: relation \\\"absent_table\\\" does not exist\".\n   ON_ERROR_STOP and set -euo pipefail still stop the job on a migration that does not apply cleanly. Probe deleted; git status on packages/persistence is clean.\n\nC. A NEW MIGRATION IS PICKED UP WITH NOBODY EDITING THIS STEP. A probe 0002 creating probe_table: exit 0, the order line lists three files, \"all 10 declared table(s) are present\", and information_schema reports probe_table present (count 1). This is the property the task asked for -- by a mechanism, not by a list somebody remembers to extend -- demonstrated rather than argued.\n\nD. NON-VACUITY: AN EMPTY DIRECTORY MUST FAIL. Run from a scratch tree whose packages/persistence/migrations is empty: exit 1, with\n   \"::error::no migrations found under packages/persistence/migrations; this step would have applied nothing and passed\".\n   This is the exact failure shape the whole step exists to prevent -- `drizzle-kit migrate` applying nothing and exiting 0 -- and it is the one shape every other check here would have let through.\n\nE. ORDERING IS LEXICAL AND IS PROVEN AGAINST A HOSTILE FILESYSTEM ORDER. Three probe files written in the order 0002_c, 0000_a, 0001_b, so `ls -U` (directory order) reports 0002_c, 0001_b, 0000_a. The step printed:\n      0000_a.sql / 0001_b.sql / 0002_c.sql\n   LC_ALL=C sort, so the runner's locale cannot change it. 0002 before 0001 would succeed on an empty database and corrupt an upgrade, which is why this is asserted rather than assumed.\n\nF. THE POSTCONDITION NAMES ITS CASUALTY. Against a database with 0001's table dropped, the check loop produced\n   \"::error::the migrations declare 9 table(s); these are not in the database after applying them: profile_media_preference\".\n   The literal count it replaces could only ever say a number was wrong. This is strictly stronger, not weaker: it still catches a partial application, it names which table, and it grows with the migrations. The derivation itself has a non-vacuity guard -- migrations declaring no CREATE TABLE is an error, not a silently empty check.\n\nNOT DONE, DELIBERATELY: `drizzle-kit migrate` was not reinstated. PL-0723 generated meta/_journal.json, so it would now do something -- but \"does something\" is not \"fails loudly\", and this is not the task that can prove its behaviour. The acceptance forbids the swap here and names where to reconsider it.\n\nNOTHING ELSE IN ci.yml CHANGED: git diff is confined to this one step."
         }
       },
-      "owner": "claude-lead",
+      "owner": null,
       "implementationAgent": "claude-lead",
-      "updatedAt": "2026-10-04T04:33:43.099Z",
-      "implementationBaseSha": "f7da49bf7190096acbca64aa12f97885b59d2e4f"
+      "updatedAt": "2026-10-04T14:44:38.514Z",
+      "implementationBaseSha": "f7da49bf7190096acbca64aa12f97885b59d2e4f",
+      "review": {
+        "taskId": "PL-0726",
+        "implementationAgent": "claude-lead",
+        "implementationOwner": "claude-lead",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "659cafa118bdc72b98d43c7f3fa21a120222e57b",
+        "reviewedBaseSha": "f7da49bf7190096acbca64aa12f97885b59d2e4f",
+        "reviewedTreeHash": "85178f4f701d6b74e8ff81410733edfc3839aee573e91829c225c516b514193a",
+        "reviewedFileCount": 11,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [
+          "packages/persistence/migrations",
+          "packages/persistence/migrations/meta/_journal.json",
+          "e2e/tests/settings.spec.ts",
+          "apps/web/src/app/api/v1/profiles/preferences"
+        ],
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-10-04T14:44:31.104Z",
+        "evidence": "APPROVED at 659cafa118bdc72b98d43c7f3fa21a120222e57b. TRANSCRIBED BY claude-lead from gpt-architect's round-111 verdict document, which lists this task under GPT ARCHITECT REVIEW VERDICTS and instructs: \"Record these APPROVED and close them, provided their reviewed fingerprints still match the exact reviewed surfaces and no later commit changed those surfaces\", and \"Do not reinterpret these approvals.\"\n\nFINGERPRINT CURRENCY, CHECKED RATHER THAN ASSUMED. The verdict names this sha as the published and accepted head. HEAD is exactly it, the tracked tree is clean, and `git status --porcelain` restricted to this task's allowedPaths plus its reviewDependencies reports nothing. No commit exists after the reviewed one, so the reviewed surface and the current surface are the same bytes.\n\nWHAT IS APPROVED. CI applying every committed migration in lexical order rather than the one somebody typed, with the postcondition derived from the migrations' own CREATE TABLE names instead of a literal count of 8. PL-0723's 0001 would never have been applied and the literal would have REFUSED its table. Both halves carry a non-vacuity guard, because the failure this step exists to prevent is \"applied nothing and passed\". Proven against a real PostgreSQL 16 five ways, including an empty directory refusing and a hostile filesystem order applied correctly. drizzle-kit migrate was deliberately not reinstated."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PL-0726",
+          "implementationAgent": "claude-lead",
+          "implementationOwner": "claude-lead",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "659cafa118bdc72b98d43c7f3fa21a120222e57b",
+          "reviewedBaseSha": "f7da49bf7190096acbca64aa12f97885b59d2e4f",
+          "reviewedTreeHash": "85178f4f701d6b74e8ff81410733edfc3839aee573e91829c225c516b514193a",
+          "reviewedFileCount": 11,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "packages/persistence/migrations",
+            "packages/persistence/migrations/meta/_journal.json",
+            "e2e/tests/settings.spec.ts",
+            "apps/web/src/app/api/v1/profiles/preferences"
+          ],
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-10-04T14:44:31.104Z",
+          "evidence": "APPROVED at 659cafa118bdc72b98d43c7f3fa21a120222e57b. TRANSCRIBED BY claude-lead from gpt-architect's round-111 verdict document, which lists this task under GPT ARCHITECT REVIEW VERDICTS and instructs: \"Record these APPROVED and close them, provided their reviewed fingerprints still match the exact reviewed surfaces and no later commit changed those surfaces\", and \"Do not reinterpret these approvals.\"\n\nFINGERPRINT CURRENCY, CHECKED RATHER THAN ASSUMED. The verdict names this sha as the published and accepted head. HEAD is exactly it, the tracked tree is clean, and `git status --porcelain` restricted to this task's allowedPaths plus its reviewDependencies reports nothing. No commit exists after the reviewed one, so the reviewed surface and the current surface are the same bytes.\n\nWHAT IS APPROVED. CI applying every committed migration in lexical order rather than the one somebody typed, with the postcondition derived from the migrations' own CREATE TABLE names instead of a literal count of 8. PL-0723's 0001 would never have been applied and the literal would have REFUSED its table. Both halves carry a non-vacuity guard, because the failure this step exists to prevent is \"applied nothing and passed\". Proven against a real PostgreSQL 16 five ways, including an empty directory refusing and a hostile filesystem order applied correctly. drizzle-kit migrate was deliberately not reinstated."
+        }
+      ],
+      "completedAt": "2026-10-04T14:44:38.514Z"
     },
     {
       "id": "PL-0727",
       "priority": "P1",
       "lane": "Infra",
-      "status": "REVIEW",
+      "status": "DONE",
       "title": "Corrective: the lifecycle cross-check demands a literal PW-0307 deliberately removed",
       "dependencies": [],
       "allowedPaths": [
@@ -12906,10 +13227,86 @@
           "evidence": "node --test scripts/windows/test-lifecycle.mjs: 32 tests, 7 suites, 32 pass, 0 fail, 206ms. BEFORE: 30 tests, 29 pass, 1 fail -- \"agrees with the install path the Windows workflow asserts\", the case CI #180's validate job went red on.\n\nNON-VACUITY PROVEN THREE WAYS, because the case this replaces passed for a whole round while asserting something that was no longer true, and \"it is green now\" is exactly what it said then.\n\n1. AGAINST THE REAL FILE, EXECUTABLE. sed -i 's/liberty-desktop.exe/liberty-player.exe/' scripts/windows/verify-install.mjs, then re-run: 32 tests, 31 pass, 1 fail -- \"not ok 6 - verify-install's executable agrees with the derived executable\". File restored from a copy taken first; git diff --stat on it is empty afterwards.\n\n2. AGAINST THE REAL FILE, PRODUCT NAME. sed -i 's/\"Project Liberty\"/\"Liberty Player\"/' .github/workflows/windows.yml, then re-run: 32 tests, 31 pass, 1 fail -- \"not ok 5 - the workflow's install root agrees with the derived product name\". Restored the same way; git diff --stat empty.\n\n3. IN THE SUITE ITSELF. A third case, \"A CROSS-CHECK THAT CANNOT FAIL IS NOT A CROSS-CHECK\", drives the same comparison function with disagreeing text and requires the refusal, and then with agreeing text and requires that it does NOT throw -- so the rule is not satisfied by a function that always throws. That one runs on every future execution; 1 and 2 were performed once, by hand, and are recorded here rather than left as a claim.\n\nWHAT THE FIX DID NOT DO. No literal was restored to .github/workflows/windows.yml -- git diff --stat shows it unmodified -- so PW-0307's third copy stays removed. The case was not deleted: it now guards the two correspondences that actually exist, the product name in the workflow and the executable in verify-install.mjs, which is the copy PW-0307 could not eliminate because the name comes from Cargo.toml's binary name rather than from a Rust constant. The old case's false premise is recorded at the lines that held it rather than quietly dropped."
         }
       },
-      "owner": "claude-infra",
+      "owner": null,
       "implementationAgent": "claude-infra",
-      "updatedAt": "2026-10-04T04:23:39.466Z",
-      "implementationBaseSha": "a864bfe59bfc871965ef7eaae48ba4cb3b61a0b4"
+      "updatedAt": "2026-10-04T14:44:38.865Z",
+      "implementationBaseSha": "a864bfe59bfc871965ef7eaae48ba4cb3b61a0b4",
+      "review": {
+        "taskId": "PL-0727",
+        "implementationAgent": "claude-infra",
+        "implementationOwner": "claude-infra",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "659cafa118bdc72b98d43c7f3fa21a120222e57b",
+        "reviewedBaseSha": "a864bfe59bfc871965ef7eaae48ba4cb3b61a0b4",
+        "reviewedTreeHash": "72ce6d1c7774726067becdd0fea1af2e174ea339d7dbc494f68a2be3737d24ed",
+        "reviewedFileCount": 5,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [
+          ".github/workflows/windows.yml",
+          "scripts/windows/lifecycle.mjs",
+          "scripts/windows/verify-install.mjs",
+          "apps/desktop/src-tauri/src/sidecar.rs"
+        ],
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-10-04T14:44:31.268Z",
+        "evidence": "APPROVED at 659cafa118bdc72b98d43c7f3fa21a120222e57b. TRANSCRIBED BY claude-lead from gpt-architect's round-111 verdict document, which lists this task under GPT ARCHITECT REVIEW VERDICTS and instructs: \"Record these APPROVED and close them, provided their reviewed fingerprints still match the exact reviewed surfaces and no later commit changed those surfaces\", and \"Do not reinterpret these approvals.\"\n\nFINGERPRINT CURRENCY, CHECKED RATHER THAN ASSUMED. The verdict names this sha as the published and accepted head. HEAD is exactly it, the tracked tree is clean, and `git status --porcelain` restricted to this task's allowedPaths plus its reviewDependencies reports nothing. No commit exists after the reviewed one, so the reviewed surface and the current surface are the same bytes.\n\nWHAT IS APPROVED. The corrective for the lifecycle cross-check that made CI #180's validate job red. It demanded a literal PW-0307 had deliberately removed from windows.yml when it replaced an inline Test-Path with verify-install.mjs, which derives paths from sidecar.rs. Nothing had been renamed. The literal was NOT restored -- that would re-create the third copy PW-0307 removed -- and the case was not deleted. It now guards the two correspondences that do exist, the product name in windows.yml and the executable in verify-install.mjs, each proven to fail by renaming the real file and watching the right case go red."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PL-0727",
+          "implementationAgent": "claude-infra",
+          "implementationOwner": "claude-infra",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "659cafa118bdc72b98d43c7f3fa21a120222e57b",
+          "reviewedBaseSha": "a864bfe59bfc871965ef7eaae48ba4cb3b61a0b4",
+          "reviewedTreeHash": "72ce6d1c7774726067becdd0fea1af2e174ea339d7dbc494f68a2be3737d24ed",
+          "reviewedFileCount": 5,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            ".github/workflows/windows.yml",
+            "scripts/windows/lifecycle.mjs",
+            "scripts/windows/verify-install.mjs",
+            "apps/desktop/src-tauri/src/sidecar.rs"
+          ],
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-10-04T14:44:31.268Z",
+          "evidence": "APPROVED at 659cafa118bdc72b98d43c7f3fa21a120222e57b. TRANSCRIBED BY claude-lead from gpt-architect's round-111 verdict document, which lists this task under GPT ARCHITECT REVIEW VERDICTS and instructs: \"Record these APPROVED and close them, provided their reviewed fingerprints still match the exact reviewed surfaces and no later commit changed those surfaces\", and \"Do not reinterpret these approvals.\"\n\nFINGERPRINT CURRENCY, CHECKED RATHER THAN ASSUMED. The verdict names this sha as the published and accepted head. HEAD is exactly it, the tracked tree is clean, and `git status --porcelain` restricted to this task's allowedPaths plus its reviewDependencies reports nothing. No commit exists after the reviewed one, so the reviewed surface and the current surface are the same bytes.\n\nWHAT IS APPROVED. The corrective for the lifecycle cross-check that made CI #180's validate job red. It demanded a literal PW-0307 had deliberately removed from windows.yml when it replaced an inline Test-Path with verify-install.mjs, which derives paths from sidecar.rs. Nothing had been renamed. The literal was NOT restored -- that would re-create the third copy PW-0307 removed -- and the case was not deleted. It now guards the two correspondences that do exist, the product name in windows.yml and the executable in verify-install.mjs, each proven to fail by renaming the real file and watching the right case go red."
+        }
+      ],
+      "completedAt": "2026-10-04T14:44:38.866Z"
+    },
+    {
+      "id": "PL-0728",
+      "priority": "P2",
+      "lane": "Test",
+      "status": "BACKLOG",
+      "title": "A standing check for a test that is skipped in every configuration this repository runs",
+      "dependencies": [
+        "PL-0717"
+      ],
+      "allowedPaths": [
+        "scripts/assert-no-row-runs-nowhere.mjs",
+        "scripts/assert-no-row-runs-nowhere.test.mjs"
+      ],
+      "reviewDependencies": [
+        ".github/workflows/ci.yml",
+        "e2e/playwright.config.ts",
+        "e2e/src/env.ts",
+        "docs/TEST_MATRIX.md",
+        "package.json"
+      ],
+      "preferredAgent": "claude-test",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "unit"
+      ],
+      "acceptance": "THIS REPOSITORY HAS FOUND THE SAME DEFECT FOUR TIMES AND EACH TIME BY ACCIDENT. A thing exists, it passes, and no gate asks it: scripts/test-validate-repo.mjs until PL-AI-0002; scripts/test-desktop-target.mjs and the 30-case Windows lifecycle suite until PL-0714; components/player/tracks.ts until PW-0306; and the three fail-closed e2e titles until PL-0717, which found them by running two suites to completion and intersecting their skip lists by hand.\\n\\nREQUIRED: that intersection is computed by a script rather than by somebody remembering to think of it. It reads the JSON reports the e2e job produces for each configuration and reports every test skipped in ALL of them.\\nREQUIRED: an ALLOWLIST of rows that legitimately run nowhere, declared and reasoned. Today it is exactly two, both media-rig rows, which need hardware no CI runner has. A row that must stay uncovered is a decision somebody records; a row that DRIFTS into being uncovered is a defect, and the allowlist is what distinguishes them.\\nREQUIRED: the check FAILS the build on an unlisted row. A warning inside a passing pipeline is how all four of the originals survived every gate this repository runs -- validate-workspace-deps.mjs says exactly that about itself and is right.\\nREQUIRED: non-vacuity. The check must be shown to FAIL against the reports as they were BEFORE PL-0717 -- where the three fail-closed titles were skipped in both configurations -- not merely to pass against today's.\\nREQUIRED: it runs somewhere a gate asks it, which means `npm run test:scripts` and therefore package.json. A check for things nothing runs that nothing runs would be the joke it sounds like.\\n\\nOUT OF SCOPE: deciding whether any particular row SHOULD be covered. The check reports and refuses; what to do about a row it names is the owning task's judgement.",
+      "notes": "FILED ROUND 111 by claude-test while implementing PL-0717, whose own notes proposed it. Filed rather than folded in, because PL-0717's surface is .github/workflows/ci.yml alone and this needs a script file plus package.json. BACKLOG rather than READY: it depends on PL-0717, which is what first made a configuration write a JSON report at all, and the check wants one from every configuration.\\n\\nThe allowedPaths entries are provisional -- the implementer should settle the script's home (scripts/ beside its siblings looks right) and correct them deliberately before starting.",
+      "gateResults": {}
     }
   ]
 }

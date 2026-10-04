@@ -1,8 +1,8 @@
 # Project Liberty - Project Status
 
-> Generated 2026-10-04T04:57:51.071Z from the AI control plane.
+> Generated 2026-10-04T15:08:04.668Z from the AI control plane.
 
-**Overall completion:** 100/126 executable tasks (79%)
+**Overall completion:** 106/127 executable tasks (83%)
 
 ## Status summary
 
@@ -10,9 +10,9 @@
 - **READY:** 3
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 0
-- **REVIEW:** 9
+- **REVIEW:** 4
 - **BLOCKED:** 7
-- **DONE:** 100
+- **DONE:** 106
 - **CANCELED:** 0
 - **SUPERSEDED:** 4
 
@@ -31,15 +31,10 @@
 
 ## Active work
 
+- **PL-0717** [REVIEW] The fail-closed deployment path is asserted by nobody, because CI runs two of three configurations — owner: claude-test
 - **PW-0208** [REVIEW] An LGPL-compatible libmpv and FFmpeg the product may actually ship — owner: claude-infra
 - **PW-0308** [REVIEW] Settings a viewer can actually change — owner: claude-frontend
 - **PW-0602** [REVIEW] The automated half of the Windows matrix, running on Windows — owner: claude-test
-- **PL-0721** [REVIEW] Trusted-proxy topology and how this deployment derives a client IP — owner: claude-security
-- **PL-0722** [REVIEW] Corrective: the rate-limit spec assumed a bucket no other worker had touched, and CI is red — owner: claude-test
-- **PL-0723** [REVIEW] A profile remembers which languages its viewer wants — owner: claude-backend
-- **PL-0725** [REVIEW] Corrective: the roving group sets state inside an effect, and repository lint is red — owner: claude-frontend
-- **PL-0726** [REVIEW] Corrective: CI applies migration 0000 by name, so every later migration is silently absent — owner: claude-lead
-- **PL-0727** [REVIEW] Corrective: the lifecycle cross-check demands a literal PW-0307 deliberately removed — owner: claude-infra
 
 ## Dispatch classification
 
@@ -50,7 +45,7 @@
 
 ## Recommended executable wave
 
-No conflict-free executable tasks can be assigned with current agent capacity.
+- **PL-0724** -> claude-frontend (P2/Player) The diagnostics switch actually switches diagnostics off
 
 ## Queued for external agents
 
@@ -77,11 +72,11 @@ UNBLOCK WHEN: the commander runs Experiment 1a on real Windows hardware and hand
 ## Agent capacity
 
 - **gpt-architect:** 0/6 active (external lane; not locally executable)
-- **claude-lead:** 1/2 active
-- **claude-frontend:** 2/2 active
-- **claude-backend:** 1/2 active
+- **claude-lead:** 0/2 active
+- **claude-frontend:** 1/2 active
+- **claude-backend:** 0/2 active
 - **claude-media:** 0/2 active
 - **claude-test:** 2/2 active
-- **claude-security:** 1/1 active
-- **claude-infra:** 2/2 active
+- **claude-security:** 0/1 active
+- **claude-infra:** 1/2 active
 - **human-commander:** 0/99 active (external lane; not locally executable)

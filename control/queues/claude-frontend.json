@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-04T04:57:51.074Z",
+  "generatedAt": "2026-10-04T15:08:04.672Z",
   "agent": "claude-frontend",
   "executionAvailable": true,
   "assigned": [
@@ -68,72 +68,99 @@
       },
       "implementationAgent": "claude-frontend",
       "updatedAt": "2026-10-04T04:34:41.641Z",
-      "implementationBaseSha": "25994202b1397d7e972febdb24edd685d8a08405"
-    },
+      "implementationBaseSha": "25994202b1397d7e972febdb24edd685d8a08405",
+      "review": {
+        "taskId": "PW-0308",
+        "implementationAgent": "claude-frontend",
+        "implementationOwner": "claude-frontend",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "659cafa118bdc72b98d43c7f3fa21a120222e57b",
+        "reviewedBaseSha": "25994202b1397d7e972febdb24edd685d8a08405",
+        "reviewedTreeHash": "13600a5042c6afdb06b53d3cb1b105c5c03cbd4c933a0301bfacd86f6a94354b",
+        "reviewedFileCount": 26,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [
+          "apps/web/src/app/api/v1/profiles",
+          "apps/web/src/components/player/telemetry-decision.ts",
+          "packages/contracts/src/domains/audio.ts",
+          "packages/contracts/src/domains/subtitles.ts",
+          "docs/SECURITY.md"
+        ],
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-10-04T14:44:30.192Z",
+        "evidence": "APPROVED at 659cafa118bdc72b98d43c7f3fa21a120222e57b. TRANSCRIBED BY claude-lead from gpt-architect's round-111 verdict document, which lists this task under GPT ARCHITECT REVIEW VERDICTS and instructs: \"Record these APPROVED and close them, provided their reviewed fingerprints still match the exact reviewed surfaces and no later commit changed those surfaces\", and \"Do not reinterpret these approvals.\"\n\nFINGERPRINT CURRENCY, CHECKED RATHER THAN ASSUMED. The verdict names this sha as the published and accepted head. HEAD is exactly it, the tracked tree is clean, and `git status --porcelain` restricted to this task's allowedPaths plus its reviewDependencies reports nothing. No commit exists after the reviewed one, so the reviewed surface and the current surface are the same bytes.\n\nWHAT IS APPROVED. A settings screen whose every section is wired to something real: languages persisted per profile through /api/v1/profiles/preferences with no profile id in any field; that stored list replacing the literal preferredAudioLanguages: [\"en\"] in watch-session.ts, carried as DATA on the same route a resume point takes; a diagnostics section that CALLS decidePlaybackTelemetry and renders its reasons with no toggle, because nothing stores an answer yet and a switch would be the fake persistence the round-110 instruction forbade by name; and an About section importing package.json's version, describing it as DECLARED, and naming THIRD-PARTY-NOTICES.md without claiming to have inspected any installation.\n\nA LIMITATION THAT SURVIVES THIS APPROVAL. The e2e spec does not assert that a stored language changes which audio track PLAYS -- the e2e catalog is fixtures and nothing has a multi-audio title. What is proven is that the preference reaches the playback SESSION REQUEST, directly, in watch-session.test.ts over all three states with the body parsed by the route's own strict schema. The audible end remains unproven and is not claimed."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PW-0308",
+          "implementationAgent": "claude-frontend",
+          "implementationOwner": "claude-frontend",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "659cafa118bdc72b98d43c7f3fa21a120222e57b",
+          "reviewedBaseSha": "25994202b1397d7e972febdb24edd685d8a08405",
+          "reviewedTreeHash": "13600a5042c6afdb06b53d3cb1b105c5c03cbd4c933a0301bfacd86f6a94354b",
+          "reviewedFileCount": 26,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "apps/web/src/app/api/v1/profiles",
+            "apps/web/src/components/player/telemetry-decision.ts",
+            "packages/contracts/src/domains/audio.ts",
+            "packages/contracts/src/domains/subtitles.ts",
+            "docs/SECURITY.md"
+          ],
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-10-04T14:44:30.192Z",
+          "evidence": "APPROVED at 659cafa118bdc72b98d43c7f3fa21a120222e57b. TRANSCRIBED BY claude-lead from gpt-architect's round-111 verdict document, which lists this task under GPT ARCHITECT REVIEW VERDICTS and instructs: \"Record these APPROVED and close them, provided their reviewed fingerprints still match the exact reviewed surfaces and no later commit changed those surfaces\", and \"Do not reinterpret these approvals.\"\n\nFINGERPRINT CURRENCY, CHECKED RATHER THAN ASSUMED. The verdict names this sha as the published and accepted head. HEAD is exactly it, the tracked tree is clean, and `git status --porcelain` restricted to this task's allowedPaths plus its reviewDependencies reports nothing. No commit exists after the reviewed one, so the reviewed surface and the current surface are the same bytes.\n\nWHAT IS APPROVED. A settings screen whose every section is wired to something real: languages persisted per profile through /api/v1/profiles/preferences with no profile id in any field; that stored list replacing the literal preferredAudioLanguages: [\"en\"] in watch-session.ts, carried as DATA on the same route a resume point takes; a diagnostics section that CALLS decidePlaybackTelemetry and renders its reasons with no toggle, because nothing stores an answer yet and a switch would be the fake persistence the round-110 instruction forbade by name; and an About section importing package.json's version, describing it as DECLARED, and naming THIRD-PARTY-NOTICES.md without claiming to have inspected any installation.\n\nA LIMITATION THAT SURVIVES THIS APPROVAL. The e2e spec does not assert that a stored language changes which audio track PLAYS -- the e2e catalog is fixtures and nothing has a multi-audio title. What is proven is that the preference reaches the playback SESSION REQUEST, directly, in watch-session.test.ts over all three states with the body parsed by the route's own strict schema. The audible end remains unproven and is not claimed."
+        }
+      ]
+    }
+  ],
+  "review": [],
+  "reservedExternal": [],
+  "recommended": [
     {
-      "id": "PL-0725",
-      "priority": "P1",
-      "lane": "Frontend",
-      "status": "REVIEW",
-      "title": "Corrective: the roving group sets state inside an effect, and repository lint is red",
-      "dependencies": [],
+      "id": "PL-0724",
+      "priority": "P2",
+      "lane": "Player",
+      "status": "READY",
+      "title": "The diagnostics switch actually switches diagnostics off",
+      "dependencies": [
+        "PL-0723"
+      ],
       "allowedPaths": [
-        "apps/web/src/lib/a11y/roving-group.tsx",
-        "apps/web/src/lib/a11y/roving-group.test.tsx"
+        "apps/web/src/components/player/player-surface.tsx",
+        "packages/contracts/src/domains/preferences.ts",
+        "packages/contracts/src/domains/preferences.test.ts",
+        "packages/persistence/src/schema/profiles.ts",
+        "packages/persistence/src/profile-preferences.ts",
+        "packages/persistence/src/profile-preferences.test.ts",
+        "packages/persistence/migrations/0002_profile_diagnostics_preference.sql",
+        "packages/persistence/migrations/meta/_journal.json",
+        "packages/persistence/migrations/meta/0002_snapshot.json",
+        "packages/persistence/src/migration-journal.test.ts"
       ],
       "reviewDependencies": [
-        "apps/web/src/lib/a11y/roving.ts",
-        "apps/web/src/lib/a11y/roving.test.ts",
-        "e2e/tests/keyboard-reachability.spec.ts",
-        "apps/web/eslint.config.mjs"
+        "apps/web/src/components/player/telemetry-decision.ts",
+        "apps/web/src/components/settings",
+        "apps/web/src/app/api/v1/profiles/preferences",
+        "docs/SECURITY.md"
       ],
       "preferredAgent": "claude-frontend",
       "reviewAgent": "gpt-architect",
       "qualityGates": [
         "typecheck",
-        "lint",
         "unit",
-        "e2e"
+        "security-review"
       ],
-      "acceptance": "`npm run lint` FAILS AT THE REPOSITORY LEVEL on a file PW-0310 shipped in round 109:\n\n  apps/web/src/lib/a11y/roving-group.tsx:198:5\n  error  Calling setState synchronously within an effect can trigger cascading renders  react-hooks/set-state-in-effect\n\nConfirmed to pre-exist this round's work: stashing the working-tree change and re-running eslint against the COMMITTED file reproduces the same error at the same line. PW-0310's declared gates are typecheck, unit, e2e and architecture-review -- there is no lint gate on it -- so no gate was falsified; the check that would have caught this was not among the ones the task had to run.\n\nTHERE ARE TWO setState CALLS IN THAT EFFECT AND THEY ARE DIFFERENT PROBLEMS. `setMounted(true)` is a hydration guard: the first client render must reproduce the server's markup, so the arrow-key instruction in `aria-description` may only appear once the keys actually work. `setActive(settled)` writes a CLAMPED index back into state when a shrinking rail has left the stored index past the end.\n\nREQUIRED: the lint error is gone and `npm run lint` is green at the repository level.\nREQUIRED: the hydration guard still holds -- the server render must still carry no `aria-description`, and the client must still gain one. Announcing 'use the arrow keys' on a page where nothing is listening for them is a false promise to a screen-reader user, and deleting the guard to satisfy a lint rule would make that promise.\nREQUIRED: a stale active index still cannot send focus to a card that is not there. If the write-back is removed, the clamp must move to every point of use -- note that `nextActive` is NOT safe against an out-of-range `current`: ArrowLeft from index 7 in a 3-card rail returns 6.\nREQUIRED: the keyboard e2e gate (`e2e/tests/keyboard-reachability.spec.ts`, including its two planted-failure cases) still passes against a real browser. A refactor of focus management that is only unit-tested is not evidenced.\n\nFORBIDDEN: an eslint-disable comment, a rule downgrade or removal in the eslint config, or any change that makes the command green without changing the behaviour the rule is objecting to. The rule is right: a synchronous setState in an effect is an extra render pass on every mount, and the rule cannot tell this one from a cascade.\nNOT IN SCOPE: the two pre-existing lint WARNINGS elsewhere in apps/web (`_omitted` and `WatchlistEntryRow` unused). They are warnings, they are not this file, and bundling them here would widen a corrective task into a cleanup.",
-      "notes": "FILED ROUND 110 by claude-lead after `npm run lint` failed during PW-0308's gate sequence. Filed rather than fixed inside PW-0308 because apps/web/src/lib/a11y/** is PW-0310's surface and PW-0310 is DONE: reaching into a closed task's files from an in-progress one would be the silent surface broadening the standing constraints forbid.",
-      "gateResults": {
-        "typecheck": {
-          "status": "pass",
-          "at": "2026-10-04T04:12:54.497Z",
-          "by": "claude-frontend",
-          "commitSha": "c925b27d0f1407f79e55110b484235db34f51d8b",
-          "evidence": "npm run typecheck -- 22 tasks successful, 0 failures, at the working tree containing the roving-group change. Also npx tsc --noEmit -p apps/web/tsconfig.json alone: exit 0, no output."
-        },
-        "lint": {
-          "status": "pass",
-          "at": "2026-10-04T04:48:40.869Z",
-          "by": "claude-frontend",
-          "commitSha": "4c9f5829671a650514f13602188b3ce4d73049ad",
-          "evidence": "RE-RECORDED AFTER AN AMENDMENT TO THIS TASK'S OWN NEW TEST FILE; see the defect.found event. npm run lint: exit 0, '2 problems (0 errors, 2 warnings)'. BEFORE the original fix: 1 error, react-hooks/set-state-in-effect at roving-group.tsx:198. BETWEEN the two: 4 errors, @next/next/no-html-link-for-pages in roving-group.test.tsx, introduced by this task after its first lint run and fixed by pointing the test's anchors at a .invalid host. The two surviving warnings are the pre-existing unused '_omitted' and 'WatchlistEntryRow', out of scope by the acceptance. NO SUPPRESSION: no new eslint-disable anywhere in the repository and apps/web/eslint.config.mjs is unmodified."
-        },
-        "unit": {
-          "status": "pass",
-          "at": "2026-10-04T04:48:41.119Z",
-          "by": "claude-frontend",
-          "commitSha": "4c9f5829671a650514f13602188b3ce4d73049ad",
-          "evidence": "RE-RECORDED AFTER THE SAME AMENDMENT. npx vitest run apps/web: 95 files, 1714 tests, 0 failures, with roving-group.test.tsx's 7 cases among them and unchanged in substance -- only the href values in three render cases moved, and the case that asserts the rendered href asserts the new value, so it did not become vacuous. Repository-wide at the amended tree: npx vitest run packages/auth apps/web gives 101 files, 1822 tests, 0 failures."
-        },
-        "e2e": {
-          "status": "pass",
-          "at": "2026-10-04T04:13:06.972Z",
-          "by": "claude-frontend",
-          "commitSha": "c925b27d0f1407f79e55110b484235db34f51d8b",
-          "evidence": "npx playwright test tests/keyboard-reachability.spec.ts --project=chromium --workers=1 against a real next dev server on port 3177 (LIBERTY_E2E_WEB_MODE=development): 10 passed, 0 failed, 42.4s. The ten include the two PLANTED-FAILURE cases -- 'THE GATE ITSELF FAILS WHEN SOMETHING IS UNREACHABLE' and 'THE ROVING-GROUP CHECK ITSELF FAILS WHEN A RAIL LOSES ITS ENTRY POINT' -- so the suite is proven non-vacuous in the same run, and 'ARROW KEYS MOVE ALONG A RAIL, and Tab then leaves it', which is the behaviour this change refactored. CHROMIUM ONLY, AND THAT IS THE WHOLE GATE SURFACE, NOT A NARROWING: ci.yml's e2e job runs 'npx playwright install chromium' and nothing else. The firefox, webkit and mobile-safari projects are UNVERIFIED here -- their browser binaries are absent from this container (browserType.launch: Executable doesn't exist at /root/.cache/ms-playwright/firefox-1538/firefox/firefox) and they are not run in CI either. Note on the run: PLAYWRIGHT_BROWSERS_PATH had to be pointed at ~/.cache/ms-playwright, because the container's /opt/pw-browsers holds revision 1194 while the pinned @playwright/test 1.62.1 wants 1234; that is an environment fact about this container, not a change to the pinned version."
-        }
-      },
-      "owner": "claude-frontend",
-      "implementationAgent": "claude-frontend",
-      "updatedAt": "2026-10-04T04:13:26.283Z",
-      "implementationBaseSha": "c925b27d0f1407f79e55110b484235db34f51d8b"
+      "acceptance": "PW-0308 REQUIRES 'a diagnostics and telemetry control that is honest about what it does', and half of that is deliverable without this task while the other half is not. The HONEST part -- putting `decidePlaybackTelemetry`'s real reasoning in front of the viewer instead of in a details element in the player -- is PW-0308's and is done there. The CONTROL is this task, because `player-surface.tsx` passes `enabled: true` as a LITERAL and there is no stored field for a viewer's answer.\n\ngpt-architect's round-110 instruction covers exactly this case: 'If persistence/API support does not exist: create the smallest backend/data task required. Do not fake persistence with local component state.' A toggle wired to component state would be the faked version -- it would look like a setting, survive nothing, and change no telemetry.\n\nREQUIRED: a stored per-profile diagnostics preference, added to the EXISTING preferences shape rather than to a new one. PL-0723 established the contract, the table, the repository and the endpoint; this is one more field through all four, and a second preferences mechanism beside it would be the duplication that task was careful to avoid.\nREQUIRED: `player-surface.tsx` passes the viewer's answer where it currently passes `true`, so turning it off ACTUALLY STOPS CMCD BEING SENT. That is the whole claim and it must be asserted, not described.\nREQUIRED: OFF IS HONOURED EVEN WHEN EVERYTHING ELSE WOULD HAVE ALLOWED IT. `decidePlaybackTelemetry` already answers `telemetry_disabled` for a stated opt-out and applies `cmcd: { enabled: false }` as a real instruction rather than an omission, because the controller replays its configuration history; a viewer's off must reach that branch.\nREQUIRED: the default when nothing is stored is the behaviour the product has today, so this task changes what a viewer CAN DO and not what an unconfigured profile does.\nREQUIRED: the setting cannot turn telemetry ON where the decision would otherwise refuse it. A viewer may decline; a viewer may not override `collector_path_not_first_party`, `session_id_not_transmittable` or any other safety refusal. Asserted, because 'the toggle wins' is the obvious implementation and it is the wrong one.\n\nMUST NOT: send anything a viewer declined. MUST NOT weaken the first-party collector check, the identifier transmittability checks or the allowlist. MUST NOT add a client-supplied collector path, endpoint or key.\n\nOUT OF SCOPE: what CMCD carries, the collector route, and any new telemetry.",
+      "notes": "FILED IN ROUND 110 while building PW-0308's settings screen, on the finding that player-surface.tsx line ~352 passes `enabled: true` as a literal into decidePlaybackTelemetry, and that nothing stores a viewer's answer. PW-0308 depends on this task, so the settings screen cannot be marked complete while its diagnostics control is disclosure-only.\n\nBACKLOG rather than READY: it depends on PL-0723, which is in REVIEW. Its allowedPaths overlap PL-0723's in packages/*, which is correct and is why it must not start until that task closes -- the control plane will refuse the claim while PL-0723 is active, which is the enforcement working.\n\nLane is Player rather than Frontend because the load-bearing change is in the player surface and the property being protected is what leaves the device.",
+      "owner": null,
+      "gateResults": {},
+      "updatedAt": "2026-10-04T03:50:48.371895Z"
     }
-  ],
-  "review": [],
-  "reservedExternal": [],
-  "recommended": []
+  ]
 }

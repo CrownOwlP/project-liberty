@@ -1,9 +1,49 @@
 {
-  "generatedAt": "2026-10-04T04:57:51.073Z",
+  "generatedAt": "2026-10-04T15:08:04.670Z",
   "agent": "gpt-architect",
   "executionAvailable": false,
   "assigned": [],
   "review": [
+    {
+      "id": "PL-0717",
+      "priority": "P1",
+      "lane": "Test",
+      "status": "REVIEW",
+      "title": "The fail-closed deployment path is asserted by nobody, because CI runs two of three configurations",
+      "dependencies": [
+        "PL-0714"
+      ],
+      "allowedPaths": [
+        ".github/workflows/ci.yml"
+      ],
+      "reviewDependencies": [
+        "e2e/src/env.ts",
+        "e2e/tests/playback-session.api.spec.ts",
+        "e2e/tests/watchlist.spec.ts",
+        "e2e/playwright.config.ts",
+        "docs/TEST_MATRIX.md"
+      ],
+      "preferredAgent": "claude-test",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "e2e"
+      ],
+      "acceptance": "FOUND BY MEASUREMENT IN ROUND 108: the development and production suites were both run to completion and their SKIP LISTS intersected. Five e2e titles are skipped in BOTH, so no configuration this repository executes ever runs them. Two are media-rig rows that correctly need the commander's hardware. THE OTHER THREE ASSERT A FAIL-CLOSED SECURITY BEHAVIOUR: 'a deployment with no identity system - fails closed with 503 and names the operator's remedy', '- publishes nothing only a resolver could know' (playback-session.api.spec.ts), and 'a deployment with no identity system refuses honestly rather than showing an empty list' (watchlist.spec.ts).\n\nThey need PRODUCTION MODE WITH NO DATABASE -- the third configuration. ci.yml runs exactly two: development, and production with PostgreSQL. The tests are not broken: run locally in that third configuration the full chromium+api suite gives 62 passed / 56 skipped / 0 failed.\n\nREQUIRED: the third configuration runs in CI and fails the build when it fails.\nREQUIRED: the cost is stated rather than absorbed. A third suite run adds to every push; the acceptance is that the fail-closed path is covered, not that it is covered in the most expensive available way. If a narrower invocation -- the three titles, or the two specs -- buys the same coverage for less, take it and say why.\nREQUIRED: the three titles actually EXECUTE in the new configuration. Evidence is the run naming them as passed, not a count that went up.\nREQUIRED: the two media-rig titles stay skipped and stay reasoned. They are RIG rows in PW-0601's matrix and must not be made to look covered.\nREQUIRED: no existing configuration loses coverage, and no skip loses its reason.\n\nOUT OF SCOPE: changing what the three tests assert, and relaxing any of them to make a cheaper configuration reach them.",
+      "notes": "CREATED IN ROUND 108. DEPENDS ON PL-0714 because that task owns .github/workflows/ci.yml and is in REVIEW; editing the file from here while it is an active surface would be the overlapping-surface collision the operating model forbids. Sequenced, not blocked.\n\nTHE PATTERN THIS IS THE FOURTH INSTANCE OF, recorded so the next one is found by a check rather than by accident: scripts/test-validate-repo.mjs ran nowhere until PL-AI-0002; scripts/test-desktop-target.mjs and the 30-case Windows lifecycle suite ran nowhere until PL-0714; apps/web/src/components/player/tracks.ts was imported by nothing until PW-0306 wired it. Each time the thing existed, passed, and no gate asked it. A standing mechanical check for 'skipped in every configuration we run' would have found all four, and proposing one is a reasonable thing for this task's implementation to consider -- the measurement that found this was two suite runs and a set intersection.\n\nCONFLICT-CHECKED IN BOTH FIELDS IN BOTH DIRECTIONS AT FILING: .github/workflows/ci.yml is held by PL-0714 (REVIEW) and by PL-0001, PL-0704, PL-AI-0002 and PW-0312, all DONE. The dependency on PL-0714 is what keeps the two from being active together. The reviewDependencies are read-only here: e2e/tests/watchlist.spec.ts belongs to PL-0715 (REVIEW) and is NOT written by this task.",
+      "owner": "claude-test",
+      "gateResults": {
+        "e2e": {
+          "status": "pass",
+          "at": "2026-10-04T15:06:56.504Z",
+          "by": "claude-test",
+          "commitSha": "659cafa118bdc72b98d43c7f3fa21a120222e57b",
+          "evidence": "THE THIRD CONFIGURATION RUNS, THE THREE TITLES EXECUTE IN IT, AND THE GUARD THAT SAYS SO WAS PROVEN TO REFUSE.\n\nMEASURED FIRST, DECIDED SECOND. All three configurations were run to completion locally with a JSON reporter and their executed sets compared:\n\n  development              ran 122  skipped 29   274.8s\n  production + PostgreSQL  ran 100  skipped 51    99.0s\n  production, NO database  ran  71  skipped 80    75.4s\n\nTests the third configuration runs that NEITHER other one does -- computed as C minus (A union B), not asserted -- are EXACTLY three:\n  [api]      playback-session.api.spec.ts > a deployment with no identity system > fails closed with 503 and names the operator's remedy\n  [api]      playback-session.api.spec.ts > a deployment with no identity system > publishes nothing only a resolver could know\n  [chromium] watchlist.spec.ts > a deployment with no identity system refuses honestly rather than showing an empty list\n\nTests skipped in ALL THREE once this step exists: exactly two, both media-rig rows. They are RIG rows in PW-0601's matrix, they need the commander's hardware, and they remain skipped with their reasons intact -- which the acceptance requires and which this measurement confirms rather than hopes.\n\nTHE NARROW INVOCATION WAS CONSIDERED AND REJECTED, WITH THE REASON. The acceptance invites naming the two spec files if that buys the same coverage for less. It was measured: the dominant cost is the production build, which either invocation pays and turbo serves from cache in this job, leaving 75 seconds of test time. Against that, naming two files would put a hand-maintained list of what matters into this workflow -- the same defect PL-0714 removed from the suite steps above it and PL-0726 removed from the migration step below it, in this very file, this round and last. A future test that became third-configuration-only would be covered by the whole-suite step and missed by the narrow one, silently, which is precisely how these three were lost for eight rounds.\n\nTHE RUN. `npm test -- --project=api --project=chromium --reporter=list,json,html` with LIBERTY_E2E_WEB_MODE=production and NO LIBERTY_E2E_DATABASE_URL. The absence is the configuration: src/env.ts derives the auth secret from that variable's presence, so a production run without it IS a deployment with no identity system. Nothing is stubbed and no test is told it is special.\n\n`html` IS NAMED ON THE COMMAND LINE DELIBERATELY, and finding out why was a defect caught before commit: --reporter on the CLI REPLACES the config's reporter list rather than adding to it, so the first draft wrote no e2e/playwright-report at all and the upload step would have archived nothing. Verified after the fix: both /tmp/verify-reporters.json and e2e/playwright-report/index.html are produced.\n\nTHE GUARD, AND THE FIVE WAYS IT WAS PROVEN TO REFUSE. The acceptance says evidence must be \"the run naming them as passed, not a count that went up\", so a step reads the JSON report and requires all three BY NAME, each present and each \"expected\". It was extracted from the workflow with yaml.safe_load -- so what was executed is the text CI will execute -- and driven against real reports:\n\n  A. the real third-configuration report      -> exit 0, three \"ran and passed\" notices naming each title and its project\n  B. the real production+PostgreSQL report    -> exit 1, three errors, each saying the title is \"skipped\", not \"expected\"\n  C. the real development report              -> exit 1, three errors\n  D. a report with one title renamed          -> exit 1, \"No test matching ... is in the report at all. It was renamed or deleted\"\n  E. no report file at all                    -> exit 1, \"whether these three ran is unknown -- which is not the same as them having run\"\n\nB and C are the important ones: the guard is driven against the two configurations CI ACTUALLY RUNS TODAY and goes red on both. It would have caught the original defect. A sixth case arrived unplanned while verifying the reporters -- a run of only playback-session.api.spec.ts -- and it refused on the missing watchlist title.\n\nThe step also emits the suite counts as an annotation, because annotations are the only CI channel this session can read.\n\nNOTHING WAS WEAKENED. No test was changed, no assertion relaxed, no skip removed, no retry added, no timeout raised. The two existing suite steps are untouched -- `git diff` over this file is confined to the inserted block -- so no existing configuration loses coverage."
+        }
+      },
+      "updatedAt": "2026-10-04T15:06:56.962Z",
+      "implementationAgent": "claude-test",
+      "implementationBaseSha": "659cafa118bdc72b98d43c7f3fa21a120222e57b"
+    },
     {
       "id": "PW-0208",
       "priority": "P1",
@@ -109,7 +149,55 @@
       },
       "implementationAgent": "claude-frontend",
       "updatedAt": "2026-10-04T04:34:41.641Z",
-      "implementationBaseSha": "25994202b1397d7e972febdb24edd685d8a08405"
+      "implementationBaseSha": "25994202b1397d7e972febdb24edd685d8a08405",
+      "review": {
+        "taskId": "PW-0308",
+        "implementationAgent": "claude-frontend",
+        "implementationOwner": "claude-frontend",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "659cafa118bdc72b98d43c7f3fa21a120222e57b",
+        "reviewedBaseSha": "25994202b1397d7e972febdb24edd685d8a08405",
+        "reviewedTreeHash": "13600a5042c6afdb06b53d3cb1b105c5c03cbd4c933a0301bfacd86f6a94354b",
+        "reviewedFileCount": 26,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [
+          "apps/web/src/app/api/v1/profiles",
+          "apps/web/src/components/player/telemetry-decision.ts",
+          "packages/contracts/src/domains/audio.ts",
+          "packages/contracts/src/domains/subtitles.ts",
+          "docs/SECURITY.md"
+        ],
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-10-04T14:44:30.192Z",
+        "evidence": "APPROVED at 659cafa118bdc72b98d43c7f3fa21a120222e57b. TRANSCRIBED BY claude-lead from gpt-architect's round-111 verdict document, which lists this task under GPT ARCHITECT REVIEW VERDICTS and instructs: \"Record these APPROVED and close them, provided their reviewed fingerprints still match the exact reviewed surfaces and no later commit changed those surfaces\", and \"Do not reinterpret these approvals.\"\n\nFINGERPRINT CURRENCY, CHECKED RATHER THAN ASSUMED. The verdict names this sha as the published and accepted head. HEAD is exactly it, the tracked tree is clean, and `git status --porcelain` restricted to this task's allowedPaths plus its reviewDependencies reports nothing. No commit exists after the reviewed one, so the reviewed surface and the current surface are the same bytes.\n\nWHAT IS APPROVED. A settings screen whose every section is wired to something real: languages persisted per profile through /api/v1/profiles/preferences with no profile id in any field; that stored list replacing the literal preferredAudioLanguages: [\"en\"] in watch-session.ts, carried as DATA on the same route a resume point takes; a diagnostics section that CALLS decidePlaybackTelemetry and renders its reasons with no toggle, because nothing stores an answer yet and a switch would be the fake persistence the round-110 instruction forbade by name; and an About section importing package.json's version, describing it as DECLARED, and naming THIRD-PARTY-NOTICES.md without claiming to have inspected any installation.\n\nA LIMITATION THAT SURVIVES THIS APPROVAL. The e2e spec does not assert that a stored language changes which audio track PLAYS -- the e2e catalog is fixtures and nothing has a multi-audio title. What is proven is that the preference reaches the playback SESSION REQUEST, directly, in watch-session.test.ts over all three states with the body parsed by the route's own strict schema. The audible end remains unproven and is not claimed."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PW-0308",
+          "implementationAgent": "claude-frontend",
+          "implementationOwner": "claude-frontend",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "659cafa118bdc72b98d43c7f3fa21a120222e57b",
+          "reviewedBaseSha": "25994202b1397d7e972febdb24edd685d8a08405",
+          "reviewedTreeHash": "13600a5042c6afdb06b53d3cb1b105c5c03cbd4c933a0301bfacd86f6a94354b",
+          "reviewedFileCount": 26,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "apps/web/src/app/api/v1/profiles",
+            "apps/web/src/components/player/telemetry-decision.ts",
+            "packages/contracts/src/domains/audio.ts",
+            "packages/contracts/src/domains/subtitles.ts",
+            "docs/SECURITY.md"
+          ],
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-10-04T14:44:30.192Z",
+          "evidence": "APPROVED at 659cafa118bdc72b98d43c7f3fa21a120222e57b. TRANSCRIBED BY claude-lead from gpt-architect's round-111 verdict document, which lists this task under GPT ARCHITECT REVIEW VERDICTS and instructs: \"Record these APPROVED and close them, provided their reviewed fingerprints still match the exact reviewed surfaces and no later commit changed those surfaces\", and \"Do not reinterpret these approvals.\"\n\nFINGERPRINT CURRENCY, CHECKED RATHER THAN ASSUMED. The verdict names this sha as the published and accepted head. HEAD is exactly it, the tracked tree is clean, and `git status --porcelain` restricted to this task's allowedPaths plus its reviewDependencies reports nothing. No commit exists after the reviewed one, so the reviewed surface and the current surface are the same bytes.\n\nWHAT IS APPROVED. A settings screen whose every section is wired to something real: languages persisted per profile through /api/v1/profiles/preferences with no profile id in any field; that stored list replacing the literal preferredAudioLanguages: [\"en\"] in watch-session.ts, carried as DATA on the same route a resume point takes; a diagnostics section that CALLS decidePlaybackTelemetry and renders its reasons with no toggle, because nothing stores an answer yet and a switch would be the fake persistence the round-110 instruction forbade by name; and an About section importing package.json's version, describing it as DECLARED, and naming THIRD-PARTY-NOTICES.md without claiming to have inspected any installation.\n\nA LIMITATION THAT SURVIVES THIS APPROVAL. The e2e spec does not assert that a stored language changes which audio track PLAYS -- the e2e catalog is fixtures and nothing has a multi-audio title. What is proven is that the preference reaches the playback SESSION REQUEST, directly, in watch-session.test.ts over all three states with the body parsed by the route's own strict schema. The audible end remains unproven and is not claimed."
+        }
+      ]
     },
     {
       "id": "PW-0602",
@@ -205,308 +293,6 @@
           "evidence": "CHANGES REQUESTED at 4a13f4593ee00aff71acb470d065c7cffa39b1a4, under gpt-architect's own round-110 condition, transcribed by claude-test. The reviewer wrote: \"Do NOT approve PW-0602 from parser-only evidence if Windows #14 has not proven the new job\", and required that for lifecycle \"every observable row\" be verified as PASS, FAIL, NOT-RUN with an exact reason, then classified as (A) workflow/harness defect, (B) product defect, (C) commander-only row or (D) genuinely unsupported CI row.\n\nWHAT WINDOWS #14 (run 37172243171, head 4a13f45) PROVED, AND IT IS THE HALF THIS TASK WAS WRITTEN FOR. The e2e-desktop job CONCLUDED SUCCESS in 3m 35s. Its annotations read \"openssl=C:\\Program Files\\OpenSSL\\bin\\openssl.exe; mode=development; database=none\" and \"expected=118 unexpected=0 flaky=0 skipped=24 duration=134.8s\". Success is the load-bearing fact: the job contains the non-vacuity guard as a FAILING step, so a run in which the desktop axis had skipped could not have concluded success. The desktop axis therefore genuinely executed on a Windows runner, on the first attempt, with retries still at zero and the same two projects CI runs. PW-0602's first REQUIRED clause is met.\n\nWHY THIS CANNOT BE APPROVED ANYWAY. The package job CONCLUDED FAILURE with \"Process completed with exit code 1\", and the only other annotation is the lifecycle publisher's own notice: \"NO REPORT WAS PRODUCED. The harness writes nothing when it refuses (wrong platform, missing or bad --msi), which is a fault in this workflow rather than in the product.\"\n\nTHAT NOTICE CANNOT SUPPORT THE CLASSIFICATION THE REVIEWER ASKED FOR, and that is the finding. The publisher runs on `!cancelled()`, so it emits that sentence whenever no report file exists -- which is equally true if the Tauri build failed, if the inventory step threw \"no msi in the inventory\", if the install-verifier negative check failed, or if the harness itself refused. Only two of the package job's fourteen steps carry an `id`, so nothing on the run page names the step that exited 1. A reader is therefore invited to conclude \"the harness refused over a bad --msi\" when the evidence does not establish it. That is the same defect this session has now corrected three times in its own instruments: a diagnostic confidently naming a cause it has not measured.\n\nThis is category A -- a workflow/harness defect -- but it is specifically a defect in the workflow's ABILITY TO BE DIAGNOSED, and it must be fixed before any row is classified, because classifying from this annotation would be guessing. Windows #13 at 4f23c1d recorded F1 PASS, F3 PASS, F4 PASS and F2 not-run, so the package job REGRESSED between 4f23c1d and 4a13f45 and the cause is not yet known.\n\nREQUIRED BEFORE RE-REVIEW: every step in the package job carries an id; a failure-diagnostics step names the first failing step and its outcome on the run page, in the annotation channel, as ci.yml's own failure-diagnostics already does; and the \"NO REPORT\" message stops asserting a cause it cannot know."
         }
       ]
-    },
-    {
-      "id": "PL-0721",
-      "priority": "P1",
-      "lane": "Security",
-      "status": "REVIEW",
-      "title": "Trusted-proxy topology and how this deployment derives a client IP",
-      "dependencies": [],
-      "allowedPaths": [
-        "packages/auth/src/client-ip.ts",
-        "packages/auth/src/client-ip.test.ts",
-        "packages/auth/src/better-auth.ts",
-        "packages/auth/src/index.ts",
-        "docs/DEPLOYMENT_TRUST.md"
-      ],
-      "reviewDependencies": [
-        "packages/auth/src/rate-limit.ts",
-        "packages/auth/src/enabled-surface.ts",
-        "apps/web/src/lib/session/auth-instance.ts",
-        "docs/ARCHITECTURE.md",
-        "e2e/tests/auth-rate-limit.spec.ts"
-      ],
-      "preferredAgent": "claude-security",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "typecheck",
-        "unit",
-        "security-review"
-      ],
-      "acceptance": "THE HAZARD, AND THE RULING THAT CREATED THIS TASK. PL-0719 found that better-auth keys each rate-limit bucket by client IP and path, and that when it cannot resolve a client IP it falls back to a SINGLE LITERAL KEY for every caller -- three sign-ins per ten seconds for the entire deployment. Behind a reverse proxy with no trusted-header configuration, that is the live behaviour.\n\nPL-0719 reported it rather than fixing it, and gpt-architect's round-110 security review confirmed that was correct and ruled: DO NOT trust X-Forwarded-For, Forwarded, X-Real-IP or similar headers by default; a shared fallback bucket when the client IP cannot be trusted is SAFER than accepting a spoofable header that gives an attacker per-request rate-limit evasion.\n\nSO THIS TASK IS NOT 'TURN ON FORWARDED HEADERS'. It is: decide, write down and enforce WHICH HOP MAY ASSERT A CLIENT ADDRESS, so that forwarded-client-IP semantics are enabled only where a deployment has explicitly defined that.\n\nREQUIRED: the trusted-proxy topology is STATED IN THIS REPOSITORY -- which proxy hops are trusted, how they are identified, and what the default is when nothing is configured. The default must remain not-trusting, because that is the direction in which being wrong is survivable.\nREQUIRED: an untrusted forwarded header is IGNORED, not merged, not partially honoured and not logged as if it were the client. A header from an untrusted hop is an attacker-supplied string.\nREQUIRED: the direct-client case -- no proxy at all -- derives the address from the connection and is tested.\nREQUIRED: the proxied case, with a configured trusted hop, derives the client address correctly and is tested, including a chain longer than one hop.\nREQUIRED: A SPOOF TEST. A caller that supplies its own X-Forwarded-For must NOT be able to change which bucket it lands in. This is the test the whole task exists for and it must be seen to fail against a naive implementation.\nREQUIRED: A RATE-LIMIT IDENTITY TEST. Two callers the policy should treat as distinct get distinct buckets, and one caller cannot become many by varying a header.\nREQUIRED: the shared-bucket fallback remains reachable and is still correct when no trusted topology is configured. Removing it in favour of trusting something is the failure this task exists to prevent.\n\nMUST NOT: trust any forwarded header by default, under any configuration shortcut, environment-variable convenience or development-only carve-out. MUST NOT weaken, widen or disable the rate-limit policy PL-0719 established; this task changes WHO a request is attributed to, never how many requests are allowed. MUST NOT introduce a header or parameter that lets a caller nominate its own identity for any purpose.\n\nOUT OF SCOPE: geo-IP, IP reputation, blocklists, and any other use of a client address beyond rate-limit identity. Deriving the address correctly is this task; what else might be done with it is not.",
-      "notes": "FILED IN ROUND 110 at gpt-architect's explicit instruction in the PL-0719 security verdict: \"Create a separate deployment-security task if one does not already exist: define trusted-proxy topology and client-IP derivation. Only enable forwarded-client-IP semantics when the deployment explicitly defines which proxy hop is trusted.\" The verdict states the follow-up does NOT block PL-0719, which is DONE.\n\nBoard searched before filing: no task names a proxy, a forwarded header or client-IP derivation in acceptance or notes. PL-0719 (DONE) owns the rate-limit POLICY and names this hazard; it is listed here as a review dependency rather than an allowed path, so this task can be read against it without reserving it.\n\nConflict-checked in both fields in both directions at filing. Active tasks are PL-0714 (.github/workflows/ci.yml), PW-0208 (apps/desktop/**, docs/LICENSING.md), PW-0602 (e2e/windows/**, .github/workflows/windows.yml) and PL-0720 (one e2e spec). None names anything under packages/auth or docs/DEPLOYMENT_TRUST.md. packages/auth/src/better-auth.ts and index.ts were PL-0719's and PL-0719 is now DONE.\n\nP1 and not P0: the current behaviour FAILS CLOSED -- a shared bucket is restrictive, not permissive -- so nothing is open today. What is missing is the topology decision, and the danger is that somebody closes the availability gap by trusting a spoofable header, which would be strictly worse than the gap.",
-      "owner": "claude-security",
-      "gateResults": {
-        "typecheck": {
-          "status": "pass",
-          "at": "2026-10-04T04:49:13.557Z",
-          "by": "claude-security",
-          "commitSha": "4c9f5829671a650514f13602188b3ce4d73049ad",
-          "evidence": "npm run typecheck: 22 tasks successful, 0 failures. npx tsc --noEmit -p packages/auth/tsconfig.json alone: exit 0.\n\nONE ERROR WAS CAUGHT AND IS WORTH RECORDING, because the fix is load-bearing rather than cosmetic. Under exactOptionalPropertyTypes the vendor's advanced.ipAddress wants MUTABLE arrays, and client-ip.ts publishes readonly ones so nothing downstream can edit a trusted-hop list. better-auth.ts now copies at the boundary -- and the same helper is where `trustedProxies` is OMITTED rather than set to undefined for the direct topology. That omission is not a type nicety: the library branches on `trustedProxies.length > 0`, so an empty array selects the branch that accepts a single-valued X-Forwarded-For from anybody."
-        },
-        "unit": {
-          "status": "pass",
-          "at": "2026-10-04T04:49:13.817Z",
-          "by": "claude-security",
-          "commitSha": "4c9f5829671a650514f13602188b3ce4d73049ad",
-          "evidence": "npx vitest run packages/auth: 6 files, 108 tests, 0 failures, of which client-ip.test.ts is 26 new cases. Repository-wide: npx vitest run packages/auth apps/web gives 101 files, 1822 tests, 0 failures.\n\nEVERY CASE DRIVES THE REAL LIBRARY. The suite imports `getIP` from `better-auth/api` -- the same function `resolveRateLimitConfig` calls to build the bucket key -- and hands it the options `clientIpDerivation` produces. A suite that re-implemented the derivation and compared the two would pass forever while the library did something else, which is the exact failure `rate-limit.ts` was written to end.\n\nTHE DEFECT IS REPRODUCED BEFORE IT IS FIXED. 'UNCONFIGURED, THE LIBRARY LETS A CALLER PICK ITS OWN BUCKET' passes `{}` -- what this product passed until now -- and asserts that x-forwarded-for: 203.0.113.9 resolves to 203.0.113.9 and 198.51.100.7 resolves to 198.51.100.7. One caller, two buckets, chosen by the caller. The next case asserts both are null under the configured default. So the suite shows the hole and the patch in the same file rather than only asserting that things are fine now.\n\nTHE ACCEPTANCE'S REQUIRED CASES, EACH BY NAME:\n - direct client, no proxy: resolves no address, which is the shared-bucket fallback the acceptance requires remain reachable;\n - untrusted forwarded header IGNORED: six headers at once (x-forwarded-for, x-real-ip, forwarded, cf-connecting-ip, true-client-ip, x-client-ip) all answer null -- not merged, not partially honoured;\n - proxied case: '203.0.113.9, 10.0.0.1' -> 203.0.113.9;\n - chain longer than one hop: '203.0.113.9, 10.0.0.1, 10.1.2.3' -> 203.0.113.9;\n - THE SPOOF TEST: '9.9.9.9, 203.0.113.9, 10.0.0.1' -> 203.0.113.9, and explicitly not 9.9.9.9, which is what a leftmost-token implementation returns;\n - RATE-LIMIT IDENTITY, both halves: one caller prepending four different values lands on one address (a Set of the four answers has size one), and two genuinely different clients behind the same proxy get two different addresses -- the second is not redundant, because a derivation answering one constant would pass every spoof assertion and give a household and an attacker the same bucket.\n\nA STRUCTURAL CASE GUARDS THE TRAP: `clientIpDerivation(DIRECT_TOPOLOGY)` must OMIT trustedProxies, not supply []. Asserted with `'trustedProxies' in derivation === false`, so a later tidy-up to an empty array fails here instead of silently re-enabling the spoof.\n\nTHE PARSER IS PROVEN TO BE A SUBSET OF THE LIBRARY'S, not merely stricter in principle. Six accepted forms -- 10.0.0.0/8, 172.16.0.0/12, a bare 192.168.1.1, 2001:db8::/32, fd00::/8 and a fully-expanded IPv6 address -- are each driven through the real getIP as the rightmost hop of a chain, and the client in front of them must resolve. If the library had discarded the entry, the chain would resolve to the proxy itself and the case fails. That closes the drift where an entry this module accepts is silently filtered out, which could empty the list and restore the spoof in a deployment that believes it is configured. Nine rejected forms are asserted to REFUSE rather than fall back to direct, including the subtle ones: 010.0.0.1 (octal to some parsers), a %eth0 zone index, /33 and /129 prefixes, an empty element in the list, and a nine-group IPv6 address.\n\nA DEFECT IN THE SUITE ITSELF, FOUND AND FIXED BEFORE IT COULD MISLEAD. getIP ends with `if (isTest() || isDevelopment()) return LOCALHOST_IP`, and the two halves have different lifetimes: NODE_ENV is captured at MODULE LOAD, while `env.TEST` is re-read on every call. The first draft set NODE_ENV around each call, which does nothing, and three cases answered 127.0.0.1. The second draft loaded the module through a dynamic import with NODE_ENV pinned -- but restored the runner's TEST=true in a finally before any call, so isTest() was still true. The third draft spans both: NODE_ENV set before evaluation, TEST absent at call time. Had the first draft been accepted on the strength of the cases that happened to pass, the spoof test would have been asserting against a constant. The asymmetry is written into the file's header.\n\nAND THE DEVELOPMENT FALLBACK IS ASSERTED RATHER THAN LEFT TO BE DISCOVERED: a separately-evaluated development module answers 127.0.0.1 for every caller, header or no header. It is SAFE -- one constant is the shared bucket and nothing can influence it -- but it is why a developer cannot observe either the defect or the fix locally, and 'I tested it and the header did nothing' is a conclusion somebody would otherwise draw about production. That case also re-checks the production module afterwards, so a vi.resetModules that had replaced the shared one would fail loudly instead of turning the whole file into a statement about development."
-        }
-      },
-      "updatedAt": "2026-10-04T04:57:26.511Z",
-      "implementationAgent": "claude-security",
-      "implementationBaseSha": "4c9f5829671a650514f13602188b3ce4d73049ad"
-    },
-    {
-      "id": "PL-0722",
-      "priority": "P0",
-      "lane": "Test",
-      "status": "REVIEW",
-      "title": "Corrective: the rate-limit spec assumed a bucket no other worker had touched, and CI is red",
-      "dependencies": [],
-      "allowedPaths": [
-        "e2e/tests/auth-rate-limit.spec.ts"
-      ],
-      "reviewDependencies": [
-        "e2e/src/identity.ts",
-        "packages/auth/src/rate-limit.ts",
-        "e2e/playwright.config.ts",
-        "e2e/tests/watchlist.spec.ts"
-      ],
-      "preferredAgent": "claude-test",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "typecheck",
-        "e2e"
-      ],
-      "acceptance": "CI #180 (run 37172243151) IS RED ON A TEST THIS PROJECT SHIPPED IN ROUND 109, and the product is not at fault. The e2e job failed with one error:\n\n  [chromium] > tests/auth-rate-limit.spec.ts:94:7 > the credential endpoint under repeated attempts > THE FOURTH ATTEMPT IS REFUSED AS THROTTLED, NOT AS A WRONG PASSWORD\n\nREPRODUCED HERE, NOT GUESSED. Running the same two projects with --workers=4 against a real production build and a real PostgreSQL reproduces it exactly, with the spec's own message: 'expected credential rejections followed by a throttled refusal, got [{\"status\":429,...},{\"status\":429,...},{\"status\":429,...},{\"status\":429,...}]'. All four attempts were throttled.\n\nTHE CAUSE. better-auth keys each rate-limit bucket by CLIENT IP AND PATH. Every Playwright worker shares one IP, and `playwright.config.ts` sets fullyParallel with no worker cap, so every spec that signs in -- the watchlist cases, the production-journey cases, `establishSession` itself -- draws from the SAME /sign-in/email bucket this spec is trying to measure. The spec's header already identified that hazard and guarded the EXIT, draining the window in afterAll so it could not poison later specs. It did not guard the ENTRANCE: it assumed it arrived at a bucket nobody had touched, and under parallelism that is simply not true.\n\nTHIS IS A DEFECT IN THE MEASUREMENT, NOT IN THE PRODUCT. The limiter did exactly what PL-0719 says it should: four rapid attempts from one address were refused. A spec that reports that as a failure is the fourth instance this project has seen of a new check crying wolf, and the rule is the same -- fix the check, do not relax the control.\n\nREQUIRED: the spec no longer depends on the state of the bucket when it starts. It must OBSERVE its way to a known state rather than assume one.\nREQUIRED: both facts are still proven, and still proven to be DIFFERENT facts -- a credential rejection and a throttled refusal. Dropping either, or collapsing them into 'some refusal happened', would discard the entire reason PL-0715 and PL-0719 exist.\nREQUIRED: it still proves the 429 carries a usable X-Retry-After.\nREQUIRED: it still drains the window before it finishes, so it cannot poison the specs that follow it.\nREQUIRED: it is proven under PARALLELISM, not only serially. A green --workers=1 run is what hid this; the evidence must be a run with several workers, in the production configuration, which is what CI does.\nREQUIRED: any wait it performs is BOUNDED and fails with a message naming the bucket contention, so a future genuine failure is not mistaken for this one.\n\nMUST NOT: weaken, widen, disable or reconfigure the rate-limit policy. MUST NOT add retries to the Playwright configuration -- `retries: 0` is argued for at length and a retry here would convert a real race into a green mark. MUST NOT serialise the whole suite to make one spec easier. MUST NOT mark the test skipped, or assert something weaker that happens to always hold.",
-      "notes": "FILED IN ROUND 110 the moment CI #180 was read. PL-0719 is DONE and gpt-architect approved it; this corrective does not reopen that verdict, which was about the POLICY and the product configuration, both of which are untouched and correct. What is wrong is one end-to-end spec delivered alongside it.\n\nP0 because CI is red and a red CI that everybody knows is 'just the flaky auth test' is how a real failure gets ignored.\n\nConflict-checked in both fields in both directions at filing. The single allowedPath is e2e/tests/auth-rate-limit.spec.ts, which PL-0719 held and released on completion; no active task names it. Active tasks are PL-0714 (.github/workflows/ci.yml), PW-0208 (apps/desktop/**, docs/LICENSING.md) and PW-0602 (e2e/windows/**, .github/workflows/windows.yml).",
-      "owner": "claude-test",
-      "gateResults": {
-        "typecheck": {
-          "status": "pass",
-          "at": "2026-10-04T03:15:46.110Z",
-          "by": "claude-test",
-          "commitSha": "2cc6dfb5e9adec199093d9e892b5972f98a95886",
-          "evidence": "npx tsc --noEmit in e2e/: exit 0, no output. The single changed file is e2e/tests/auth-rate-limit.spec.ts, this task's only allowedPath. No product file and no configuration was touched -- in particular playwright.config.ts is unchanged, so retries remain 0 and fullyParallel remains on."
-        },
-        "e2e": {
-          "status": "pass",
-          "at": "2026-10-04T03:15:46.234Z",
-          "by": "claude-test",
-          "commitSha": "2cc6dfb5e9adec199093d9e892b5972f98a95886",
-          "evidence": "THE FAILURE WAS REPRODUCED BEFORE IT WAS FIXED, AND THE FIX WAS VERIFIED UNDER THE SAME CONDITIONS.\n\nBEFORE. npx playwright test --project=api --project=chromium --workers=4, production build, real PostgreSQL on 127.0.0.1:5433: 1 failed, 89 passed. The failure is CI #180's, verbatim, with the spec's own message: 'expected credential rejections followed by a throttled refusal, got [{\"status\":429,\"retryAfter\":\"7\"},{\"status\":429,\"retryAfter\":\"7\"},{\"status\":429,\"retryAfter\":\"7\"},{\"status\":429,\"retryAfter\":\"7\"}]'. All four attempts throttled, because another worker reached the shared /sign-in/email bucket first.\n\nAFTER, TWICE, same command and configuration: 91 passed, 0 failed (45.1s), and again 91 passed, 0 failed (36.7s). The repaired case takes 8.7s and 9.7s respectively rather than 102ms, which is the waiting-out of contention doing its job and is the visible cost of the repair.\n\nWHAT CHANGED, AND WHAT DELIBERATELY DID NOT. The spec no longer assumes it arrives at an untouched bucket; `aCredentialRejection` retries past throttling, BOUNDED at four windows, and returns only once it has actually seen the endpoint examine a credential. The burst then runs from a bucket known to have had room a moment earlier, and a burst of maxRequests+1 in one breath cannot be absorbed by a limit of maxRequests per window however much room there was -- so the throttled refusal is guaranteed whatever other workers are doing. Both facts are still required and still required to be DIFFERENT facts; the X-Retry-After assertion is unchanged; the afterAll drain is unchanged. What was dropped is the assertion that the two refusals appear in a particular order WITHIN ONE ARRAY, because under contention that array's first entry says more about another worker's timing than about this product. The control itself is untouched: no policy value, no configuration, no retry setting, no skip.\n\nTHE MECHANISM IN CI IS NOT ONLY PARALLELISM, which is worth recording because it changes what a reader should expect. Playwright defaults to half the cores, so a 2-core GitHub runner runs ONE worker and the suite is sequential there. The bucket is nonetheless contended, because it is a 10-second window and the spec file executed immediately after other files that sign in for real. The repair handles both causes because it observes the state rather than reasoning about who else is running.\n\nONE THING I FOUND BY OVER-PARALLELISING, REPORTED AS AN ARTEFACT RATHER THAN A DEFECT. The DEVELOPMENT suite at --workers=4 on this 2-core container fails 6 cases with 'SyntaxError: Unexpected token <, \"<!DOCTYPE\"' -- the Next dev server returning an error page under on-demand compilation load. At --workers=1, which is what a 2-core CI runner actually uses, the same suite is 118 passed / 24 skipped, which matches CI #180's own development notice exactly. So this is a capacity limit of `next dev` on a small machine, not a product fault, and not caused by this change: auth-rate-limit.spec.ts skips entirely in development."
-        }
-      },
-      "updatedAt": "2026-10-04T03:15:46.512Z",
-      "implementationAgent": "claude-test",
-      "implementationBaseSha": "2cc6dfb5e9adec199093d9e892b5972f98a95886"
-    },
-    {
-      "id": "PL-0723",
-      "priority": "P1",
-      "lane": "Backend",
-      "status": "REVIEW",
-      "title": "A profile remembers which languages its viewer wants",
-      "dependencies": [],
-      "allowedPaths": [
-        "packages/persistence/src/schema/profiles.ts",
-        "packages/persistence/migrations/0001_profile_media_preferences.sql",
-        "packages/persistence/src/profile-preferences.ts",
-        "packages/persistence/src/profile-preferences.test.ts",
-        "packages/persistence/src/index.ts",
-        "packages/contracts/src/domains/preferences.ts",
-        "packages/contracts/src/domains/preferences.test.ts",
-        "packages/contracts/src/index.ts",
-        "apps/web/src/app/api/v1/profiles/preferences/route.ts",
-        "apps/web/src/app/api/v1/profiles/preferences/handler.ts",
-        "apps/web/src/app/api/v1/profiles/preferences/handler.test.ts",
-        "apps/web/src/app/api/v1/profiles/preferences/contract.ts",
-        "packages/persistence/migrations/meta/_journal.json",
-        "packages/persistence/migrations/meta/0001_snapshot.json",
-        "packages/persistence/src/schema/index.ts",
-        "packages/persistence/src/migration-journal.test.ts",
-        "packages/persistence/src/repository-scoping.test.ts",
-        "apps/web/src/lib/db/repository.ts",
-        "apps/web/src/lib/db/postgres-repository.ts",
-        "apps/web/src/lib/db/in-memory-repository.ts",
-        "apps/web/src/lib/db/in-memory-repository.test.ts",
-        "apps/web/src/lib/db/scope-forgery.test.ts"
-      ],
-      "reviewDependencies": [
-        "packages/contracts/src/domains/subtitles.ts",
-        "packages/contracts/src/domains/playback.ts",
-        "apps/web/src/app/api/v1/profiles/handler.ts",
-        "apps/web/src/app/api/v1/profiles/contract.ts",
-        "packages/persistence/src/profile-repository.ts",
-        "packages/persistence/migrations/0000_profile_scoped_identity.sql",
-        "docs/API_CONTRACTS.md"
-      ],
-      "preferredAgent": "claude-backend",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "typecheck",
-        "unit",
-        "security-review"
-      ],
-      "acceptance": "PW-0308 REQUIRES PREFERRED AUDIO AND SUBTITLE LANGUAGES 'persisted per profile and consumed as PW-0206's defaults rather than as a second policy', AND THERE IS NOWHERE TO PUT THEM. The profile table carries id, userId, displayName, avatarKey and maxRating; there is no preferences column and no preferences endpoint. gpt-architect's round-110 instruction is explicit: create the smallest backend/data task required, and do not fake persistence with local component state.\n\nTHE SHAPE IS ALREADY DECIDED ELSEWHERE AND MUST NOT BE REINVENTED. `subtitlePolicySchema` in packages/contracts/src/domains/subtitles.ts already declares `mode` (auto/off), `preferredLanguages` -- 'Ordered, most-preferred first. Order is meaningful, not a set.' -- and `hearingImpaired`. `PlaybackCapabilities` already declares `preferredAudioLanguages`. This task stores VALUES for those existing fields. A second vocabulary for the same concepts is the 'duplicate language-selection policy' PW-0308 forbids by name.\n\nREQUIRED: a migration that adds the storage. It is additive, it has a default that means 'nothing chosen', and an existing profile keeps working without a backfill -- the 0000 migration's header explains why backfill is the expensive part of a schema decision, and there is nothing here to recover.\nREQUIRED: the stored shape is validated on the way IN by a zod contract, like every other contract in this repository, and reuses the subtitle and playback field names and semantics rather than paraphrasing them.\nREQUIRED: a language list is ORDERED and the order is preserved through write and read. A store that returns a set has destroyed the only information the field carries.\nREQUIRED: read and write endpoints under the profiles API, PROFILE-SCOPED through the same machinery every other profile-scoped route uses. A viewer must not be able to read or write another profile's preferences, and that must be asserted, not assumed.\nREQUIRED: 'nothing chosen' is representable and is the default, and is DIFFERENT from 'an empty list chosen'. The player's fallback behaviour depends on telling those apart.\nREQUIRED: unknown or unsupported language tags are refused at the boundary with a named reason, not stored and not silently dropped.\nREQUIRED: the fail-closed posture of the existing profiles routes is preserved -- a deployment with no identity system refuses rather than serving a default.\n\nMUST NOT: add any field that is not a viewer PREFERENCE. This is not a place to put capability claims, entitlements, rights state or anything a client could assert to widen what it may play. MUST NOT accept a client-supplied profile id in place of the session-scoped one. MUST NOT weaken or bypass the profile scoping in packages/auth's ProfileScope.\n\nOUT OF SCOPE: the settings SCREEN (PW-0308), the player consuming the defaults (PW-0308), and any preference beyond audio and subtitle language behaviour. Parental controls, playback quality caps and autoplay belong to whatever task argues for them.",
-      "notes": "FILED IN ROUND 110 at gpt-architect's instruction while PW-0308 was being started. The finding that created it: the profile table has no preferences storage, read from packages/persistence/src/schema/profiles.ts rather than assumed.\n\nThe more useful finding is what ALREADY EXISTS: subtitlePolicySchema, preferredAudioLanguages and tracks.ts's SubtitlePreferences all carry these concepts today, and apps/web/src/app/watch/watch-session.ts line 205 hardcodes preferredAudioLanguages: [\"en\"] in CONSERVATIVE_CAPABILITIES. That literal is what a stored preference replaces. Replacing it is PW-0308's, not this task's.\n\nConflict-checked in both fields in both directions at filing against PL-0714, PW-0208, PW-0602, PL-0722 and PW-0308. PW-0308 holds the settings tree and the watch route; this task holds persistence, contracts and the preferences endpoint. Disjoint.",
-      "owner": "claude-backend",
-      "gateResults": {
-        "typecheck": {
-          "status": "pass",
-          "at": "2026-10-04T03:47:39.795Z",
-          "by": "claude-backend",
-          "commitSha": "25994202b1397d7e972febdb24edd685d8a08405",
-          "evidence": "npm run typecheck at the repository root: 22 tasks successful, 22 total, exit 0. npm run repo:validate passes. The change spans three packages -- a contract in @liberty/contracts, storage and a repository in @liberty/persistence, and a port, two adapters and an endpoint in apps/web -- and the port is the reason the typecheck is worth more than usual here: LibertyRepository's members are declared as Bound<typeof fn> over the persistence functions, so the three new methods cannot drift from the package signatures, and the in-memory adapter failed to compile until it implemented all three. That is the type system enforcing adapter parity rather than a reviewer noticing."
-        },
-        "unit": {
-          "status": "pass",
-          "at": "2026-10-04T03:47:39.922Z",
-          "by": "claude-backend",
-          "commitSha": "25994202b1397d7e972febdb24edd685d8a08405",
-          "evidence": "THE SUITES. packages/contracts: 255 tests, exit 0 -- 15 of them new in preferences.test.ts. packages/persistence: 301 tests (1 skipped), exit 0 -- profile-preferences.test.ts adds 12 and the two guard files gained coverage of the new table and the three new repository functions. apps/web: 92 files, 1686 tests, exit 0, up from 90/1659 -- the preferences endpoint's handler.test.ts adds 16 and the db suites now cover three more adapter methods.\n\nTHREE GUARDS IN THIS REPOSITORY CAUGHT THREE REAL MISTAKES WHILE THIS WAS BEING BUILT, AND NONE OF THEM WAS WEAKENED.\n\n(1) profile-scoping.test.ts refused the table. The first version declared the primary key with a column-level .primaryKey(), which does not appear in getTableConfig(table).primaryKeys at all -- so the automatic scoping check would have passed the table WITHOUT EXAMINING IT. It is now a table-level primaryKey() with an explicit name, which also satisfies PL-0407's rule that the snapshot, the generated SQL and the database must all say the same word for a constraint.\n\n(2) scope-forgery.test.ts refused forgetMediaPreferences. Written as store.mediaPreferences.delete(profileIdFromScope(input.scope)), the method READS AS issuance-first and is not: JavaScript evaluates the member access before the argument, so against that suite's refusing store it failed with \"reached the store\" instead of ForgedProfileScopeError -- it had touched storage on behalf of a capability nobody granted. The id is now derived on its own line first. \"It refused\" and \"it refused before touching storage\" are different guarantees and the suite exists to tell them apart.\n\n(3) migration-journal.test.ts refused the ninth table, by design. Its EXPECTED_TABLES is a reviewed postcondition that exists because a defect once made db:migrate create ZERO tables while printing success. The set was updated deliberately and the describe block renamed, because leaving it reading \"eight-table postcondition\" while asserting nine would be a comment that lies.\n\nTHE SCOPING ASSERTION WAS ALSO SEEN TO FAIL ON PURPOSE: with the .where() removed from readMediaPreferences, repository-scoping.test.ts fails with \"'readMediaPreferences' filters or writes profile_id in every statement\" and passes again when restored. That suite renders the captured predicates through Drizzle's own PgDialect, so what it checks is the SQL that would be sent.\n\nTHE MIGRATION WAS APPLIED TO A REAL POSTGRESQL, not only generated. A fresh database took 0000 then 0001 cleanly and reports nine tables. \\d profile_media_preference shows the columns, the text[] types, PRIMARY KEY btree (profile_id) named profile_media_preference_pkey, and the cascade. A real round trip stored ARRAY['ja','de','en'] and ARRAY['pt-BR','en'] and read back {ja,de,en} and {pt-BR,en} -- ORDER PRESERVED, which is the only information those lists carry. Deleting the profile left 0 preference rows, so the cascade is real rather than declared. The migration itself was GENERATED by drizzle-kit rather than hand-written, with the journal and 0001_snapshot.json it produced, for the reason PL-0407 records: a hand-written snapshot once disagreed with the reviewed migration about three constraint names, which would have emitted DROP CONSTRAINT against a name no database has."
-        }
-      },
-      "updatedAt": "2026-10-04T03:48:01.767Z",
-      "implementationAgent": "claude-backend",
-      "implementationBaseSha": "25994202b1397d7e972febdb24edd685d8a08405"
-    },
-    {
-      "id": "PL-0725",
-      "priority": "P1",
-      "lane": "Frontend",
-      "status": "REVIEW",
-      "title": "Corrective: the roving group sets state inside an effect, and repository lint is red",
-      "dependencies": [],
-      "allowedPaths": [
-        "apps/web/src/lib/a11y/roving-group.tsx",
-        "apps/web/src/lib/a11y/roving-group.test.tsx"
-      ],
-      "reviewDependencies": [
-        "apps/web/src/lib/a11y/roving.ts",
-        "apps/web/src/lib/a11y/roving.test.ts",
-        "e2e/tests/keyboard-reachability.spec.ts",
-        "apps/web/eslint.config.mjs"
-      ],
-      "preferredAgent": "claude-frontend",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "typecheck",
-        "lint",
-        "unit",
-        "e2e"
-      ],
-      "acceptance": "`npm run lint` FAILS AT THE REPOSITORY LEVEL on a file PW-0310 shipped in round 109:\n\n  apps/web/src/lib/a11y/roving-group.tsx:198:5\n  error  Calling setState synchronously within an effect can trigger cascading renders  react-hooks/set-state-in-effect\n\nConfirmed to pre-exist this round's work: stashing the working-tree change and re-running eslint against the COMMITTED file reproduces the same error at the same line. PW-0310's declared gates are typecheck, unit, e2e and architecture-review -- there is no lint gate on it -- so no gate was falsified; the check that would have caught this was not among the ones the task had to run.\n\nTHERE ARE TWO setState CALLS IN THAT EFFECT AND THEY ARE DIFFERENT PROBLEMS. `setMounted(true)` is a hydration guard: the first client render must reproduce the server's markup, so the arrow-key instruction in `aria-description` may only appear once the keys actually work. `setActive(settled)` writes a CLAMPED index back into state when a shrinking rail has left the stored index past the end.\n\nREQUIRED: the lint error is gone and `npm run lint` is green at the repository level.\nREQUIRED: the hydration guard still holds -- the server render must still carry no `aria-description`, and the client must still gain one. Announcing 'use the arrow keys' on a page where nothing is listening for them is a false promise to a screen-reader user, and deleting the guard to satisfy a lint rule would make that promise.\nREQUIRED: a stale active index still cannot send focus to a card that is not there. If the write-back is removed, the clamp must move to every point of use -- note that `nextActive` is NOT safe against an out-of-range `current`: ArrowLeft from index 7 in a 3-card rail returns 6.\nREQUIRED: the keyboard e2e gate (`e2e/tests/keyboard-reachability.spec.ts`, including its two planted-failure cases) still passes against a real browser. A refactor of focus management that is only unit-tested is not evidenced.\n\nFORBIDDEN: an eslint-disable comment, a rule downgrade or removal in the eslint config, or any change that makes the command green without changing the behaviour the rule is objecting to. The rule is right: a synchronous setState in an effect is an extra render pass on every mount, and the rule cannot tell this one from a cascade.\nNOT IN SCOPE: the two pre-existing lint WARNINGS elsewhere in apps/web (`_omitted` and `WatchlistEntryRow` unused). They are warnings, they are not this file, and bundling them here would widen a corrective task into a cleanup.",
-      "notes": "FILED ROUND 110 by claude-lead after `npm run lint` failed during PW-0308's gate sequence. Filed rather than fixed inside PW-0308 because apps/web/src/lib/a11y/** is PW-0310's surface and PW-0310 is DONE: reaching into a closed task's files from an in-progress one would be the silent surface broadening the standing constraints forbid.",
-      "gateResults": {
-        "typecheck": {
-          "status": "pass",
-          "at": "2026-10-04T04:12:54.497Z",
-          "by": "claude-frontend",
-          "commitSha": "c925b27d0f1407f79e55110b484235db34f51d8b",
-          "evidence": "npm run typecheck -- 22 tasks successful, 0 failures, at the working tree containing the roving-group change. Also npx tsc --noEmit -p apps/web/tsconfig.json alone: exit 0, no output."
-        },
-        "lint": {
-          "status": "pass",
-          "at": "2026-10-04T04:48:40.869Z",
-          "by": "claude-frontend",
-          "commitSha": "4c9f5829671a650514f13602188b3ce4d73049ad",
-          "evidence": "RE-RECORDED AFTER AN AMENDMENT TO THIS TASK'S OWN NEW TEST FILE; see the defect.found event. npm run lint: exit 0, '2 problems (0 errors, 2 warnings)'. BEFORE the original fix: 1 error, react-hooks/set-state-in-effect at roving-group.tsx:198. BETWEEN the two: 4 errors, @next/next/no-html-link-for-pages in roving-group.test.tsx, introduced by this task after its first lint run and fixed by pointing the test's anchors at a .invalid host. The two surviving warnings are the pre-existing unused '_omitted' and 'WatchlistEntryRow', out of scope by the acceptance. NO SUPPRESSION: no new eslint-disable anywhere in the repository and apps/web/eslint.config.mjs is unmodified."
-        },
-        "unit": {
-          "status": "pass",
-          "at": "2026-10-04T04:48:41.119Z",
-          "by": "claude-frontend",
-          "commitSha": "4c9f5829671a650514f13602188b3ce4d73049ad",
-          "evidence": "RE-RECORDED AFTER THE SAME AMENDMENT. npx vitest run apps/web: 95 files, 1714 tests, 0 failures, with roving-group.test.tsx's 7 cases among them and unchanged in substance -- only the href values in three render cases moved, and the case that asserts the rendered href asserts the new value, so it did not become vacuous. Repository-wide at the amended tree: npx vitest run packages/auth apps/web gives 101 files, 1822 tests, 0 failures."
-        },
-        "e2e": {
-          "status": "pass",
-          "at": "2026-10-04T04:13:06.972Z",
-          "by": "claude-frontend",
-          "commitSha": "c925b27d0f1407f79e55110b484235db34f51d8b",
-          "evidence": "npx playwright test tests/keyboard-reachability.spec.ts --project=chromium --workers=1 against a real next dev server on port 3177 (LIBERTY_E2E_WEB_MODE=development): 10 passed, 0 failed, 42.4s. The ten include the two PLANTED-FAILURE cases -- 'THE GATE ITSELF FAILS WHEN SOMETHING IS UNREACHABLE' and 'THE ROVING-GROUP CHECK ITSELF FAILS WHEN A RAIL LOSES ITS ENTRY POINT' -- so the suite is proven non-vacuous in the same run, and 'ARROW KEYS MOVE ALONG A RAIL, and Tab then leaves it', which is the behaviour this change refactored. CHROMIUM ONLY, AND THAT IS THE WHOLE GATE SURFACE, NOT A NARROWING: ci.yml's e2e job runs 'npx playwright install chromium' and nothing else. The firefox, webkit and mobile-safari projects are UNVERIFIED here -- their browser binaries are absent from this container (browserType.launch: Executable doesn't exist at /root/.cache/ms-playwright/firefox-1538/firefox/firefox) and they are not run in CI either. Note on the run: PLAYWRIGHT_BROWSERS_PATH had to be pointed at ~/.cache/ms-playwright, because the container's /opt/pw-browsers holds revision 1194 while the pinned @playwright/test 1.62.1 wants 1234; that is an environment fact about this container, not a change to the pinned version."
-        }
-      },
-      "owner": "claude-frontend",
-      "implementationAgent": "claude-frontend",
-      "updatedAt": "2026-10-04T04:13:26.283Z",
-      "implementationBaseSha": "c925b27d0f1407f79e55110b484235db34f51d8b"
-    },
-    {
-      "id": "PL-0726",
-      "priority": "P0",
-      "lane": "Integration",
-      "status": "REVIEW",
-      "title": "Corrective: CI applies migration 0000 by name, so every later migration is silently absent",
-      "dependencies": [],
-      "allowedPaths": [
-        ".github/workflows/ci.yml"
-      ],
-      "reviewDependencies": [
-        "packages/persistence/migrations",
-        "packages/persistence/migrations/meta/_journal.json",
-        "e2e/tests/settings.spec.ts",
-        "apps/web/src/app/api/v1/profiles/preferences"
-      ],
-      "preferredAgent": "claude-lead",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "e2e"
-      ],
-      "acceptance": "THE STEP. .github/workflows/ci.yml's 'Apply the repository migration' runs\n\n  psql \"$LIBERTY_E2E_POSTGRES_URL\" --set ON_ERROR_STOP=1 --quiet --file packages/persistence/migrations/0000_profile_scoped_identity.sql\n\nand then asserts a count of exactly 8 tables. The filename is a LITERAL and the 8 is a LITERAL. packages/persistence/migrations/ now holds 0001_profile_media_preferences.sql (PL-0723, committed c925b27). CI will never apply it, and the count would REFUSE the ninth table if something else did.\n\nWHY THIS IS THE SAME DEFECT TWICE. That step exists because `drizzle-kit migrate` applied nothing and exited 0 -- a silent failure -- and its own header says the remedy is a step that 'can fail loudly'. It fails loudly for a migration that does not apply cleanly. It is SILENT for a migration that is never named. The hand-kept list came back, which is also the thing PL-0714's clause A had to fix in the suite list four steps above it.\n\nCONSEQUENCE, MEASURED RATHER THAN FEARED: /api/v1/profiles/preferences reads and writes profile_media_preference. On CI's database that relation does not exist, LIBERTY_E2E_DATABASE_URL is set so DATABASE_SESSION_SKIP_REASON is null and nothing skips, and e2e/tests/settings.spec.ts group B therefore goes red in CI while passing locally -- this round's second local-green/CI-red after PL-0722.\n\nREQUIRED: every committed migration is applied, in order, BY A MECHANISM rather than by a list somebody remembers to extend. PL-0714's clause A says it for the suite list in the same file and the words transfer unchanged: 'a note that a hand-kept list must be kept in step is already in the file, it did not keep the list in step'.\n\nREQUIRED: the loud-failure property survives. The step must still fail when a migration does not apply, and the post-condition must still fail when the schema is not what the migrations describe -- so a literal 8 becomes something derived, not something deleted. Dropping the count to accommodate a ninth table would remove the only check that a partial application is caught.\n\nREQUIRED: ordering is lexical by filename and that is asserted, because 0002 applied before 0001 would succeed on an empty database and corrupt an upgrade.\n\nFORBIDDEN: switching to `drizzle-kit migrate`. It is the command whose silent no-op this step was written to route around, and packages/persistence/migrations/meta/_journal.json now exists (PL-0723 generated it) -- which CHANGES the behaviour but does not re-establish the loud failure this file needs. Reconsider it in a task that owns packages/persistence and can prove the new behaviour; do not swap it in here on the strength of the journal's existence.\n\nNOT IN SCOPE: anything else in ci.yml.",
-      "notes": "FILED ROUND 110 by claude-lead during PW-0308's e2e work, as defect.found. Not fixed inside PW-0308 because .github/workflows/ci.yml belongs to PL-0714 and PL-0717; PL-0714 is now DONE, so the surface is free for this task but still collides with PL-0717 -- they must not be active at once.\n\nROUTED TO claude-lead IN LANE Integration, matching PL-0714 -- the task that wrote the step this one corrects, in the same file, under the same owner. The lane was initially filed as Infra, which claude-lead does not advertise; corrected rather than left as a warning, because a board that warns on every validate run is a board people stop reading.",
-      "gateResults": {
-        "e2e": {
-          "status": "pass",
-          "at": "2026-10-04T04:33:23.996Z",
-          "by": "claude-lead",
-          "commitSha": "f7da49bf7190096acbca64aa12f97885b59d2e4f",
-          "evidence": "THE STEP WAS EXTRACTED FROM THE WORKFLOW AND RUN AGAINST A REAL POSTGRESQL 16, five times, on fresh databases. Extracted with `yaml.safe_load` and taking `jobs.e2e.steps[id=migrate].run` verbatim, so what was executed is the text CI will execute, not a paraphrase of it. The workflow also parses: yaml.safe_load succeeds and reports jobs validate, e2e-typecheck, e2e.\n\nA. CLEAN RUN, fresh database. exit 0.\n   \"applying 2 migration(s) in this order:\n      packages/persistence/migrations/0000_profile_scoped_identity.sql\n      packages/persistence/migrations/0001_profile_media_preferences.sql\n    migrations applied; all 9 declared table(s) are present\"\n   NINE, not eight. 0001's profile_media_preference is applied and accepted -- the two things the old step could not do. Confirmed independently: \\d profile_media_preference shows the table with its primary key on profile_id.\n\nB. LOUD FAILURE IS PRESERVED. A probe migration 0002 referencing a table that does not exist: exit 3, with\n   \"psql:packages/persistence/migrations/0002_broken_probe.sql:1: ERROR: relation \\\"absent_table\\\" does not exist\".\n   ON_ERROR_STOP and set -euo pipefail still stop the job on a migration that does not apply cleanly. Probe deleted; git status on packages/persistence is clean.\n\nC. A NEW MIGRATION IS PICKED UP WITH NOBODY EDITING THIS STEP. A probe 0002 creating probe_table: exit 0, the order line lists three files, \"all 10 declared table(s) are present\", and information_schema reports probe_table present (count 1). This is the property the task asked for -- by a mechanism, not by a list somebody remembers to extend -- demonstrated rather than argued.\n\nD. NON-VACUITY: AN EMPTY DIRECTORY MUST FAIL. Run from a scratch tree whose packages/persistence/migrations is empty: exit 1, with\n   \"::error::no migrations found under packages/persistence/migrations; this step would have applied nothing and passed\".\n   This is the exact failure shape the whole step exists to prevent -- `drizzle-kit migrate` applying nothing and exiting 0 -- and it is the one shape every other check here would have let through.\n\nE. ORDERING IS LEXICAL AND IS PROVEN AGAINST A HOSTILE FILESYSTEM ORDER. Three probe files written in the order 0002_c, 0000_a, 0001_b, so `ls -U` (directory order) reports 0002_c, 0001_b, 0000_a. The step printed:\n      0000_a.sql / 0001_b.sql / 0002_c.sql\n   LC_ALL=C sort, so the runner's locale cannot change it. 0002 before 0001 would succeed on an empty database and corrupt an upgrade, which is why this is asserted rather than assumed.\n\nF. THE POSTCONDITION NAMES ITS CASUALTY. Against a database with 0001's table dropped, the check loop produced\n   \"::error::the migrations declare 9 table(s); these are not in the database after applying them: profile_media_preference\".\n   The literal count it replaces could only ever say a number was wrong. This is strictly stronger, not weaker: it still catches a partial application, it names which table, and it grows with the migrations. The derivation itself has a non-vacuity guard -- migrations declaring no CREATE TABLE is an error, not a silently empty check.\n\nNOT DONE, DELIBERATELY: `drizzle-kit migrate` was not reinstated. PL-0723 generated meta/_journal.json, so it would now do something -- but \"does something\" is not \"fails loudly\", and this is not the task that can prove its behaviour. The acceptance forbids the swap here and names where to reconsider it.\n\nNOTHING ELSE IN ci.yml CHANGED: git diff is confined to this one step."
-        }
-      },
-      "owner": "claude-lead",
-      "implementationAgent": "claude-lead",
-      "updatedAt": "2026-10-04T04:33:43.099Z",
-      "implementationBaseSha": "f7da49bf7190096acbca64aa12f97885b59d2e4f"
-    },
-    {
-      "id": "PL-0727",
-      "priority": "P1",
-      "lane": "Infra",
-      "status": "REVIEW",
-      "title": "Corrective: the lifecycle cross-check demands a literal PW-0307 deliberately removed",
-      "dependencies": [],
-      "allowedPaths": [
-        "scripts/windows/test-lifecycle.mjs"
-      ],
-      "reviewDependencies": [
-        ".github/workflows/windows.yml",
-        "scripts/windows/lifecycle.mjs",
-        "scripts/windows/verify-install.mjs",
-        "apps/desktop/src-tauri/src/sidecar.rs"
-      ],
-      "preferredAgent": "claude-infra",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "unit"
-      ],
-      "acceptance": "CI #180's validate job is RED on this, and the product is not at fault. Reproduced locally in full -- `node --test scripts/windows/test-lifecycle.mjs`: 30 tests, 29 pass, 1 fail, 974ms:\n\n  not ok - identity is derived from the files the shell itself compiles > agrees with the install path the Windows workflow asserts\n  the Windows workflow does not mention Project Liberty\\\\liberty-desktop.exe; one of the two has been renamed without the other\n\nNOTHING WAS RENAMED. The case asserts that .github/workflows/windows.yml CONTAINS the literal `<productName>\\\\<executable>`, on the premise its own comment states: 'That workflow hard-codes Program Files\\\\Project Liberty'. Commit 9c6abd4 (PW-0307, round 109) deleted that literal on purpose. It replaced an inline `Test-Path` against a written-down executable path with `node scripts/windows/verify-install.mjs`, which DERIVES the paths from apps/desktop/src-tauri/src/sidecar.rs. The removed block's own comment gives the reason: the path had already drifted once because it was 'written down in a third place'.\n\nSo the workflow moved to derivation -- the better state, and the state this very test's comment says it wants -- and the test still requires the literal the move removed. This is the SIXTH time a check in this repository has reported a fault that was not there, and the standing rule is unchanged: FIX THE CHECK, DO NOT RESTORE WHAT IT MISSES.\n\nFORBIDDEN: putting the executable literal back into windows.yml. That re-creates the third copy PW-0307 removed and re-opens the drift it closed. (It is also not possible from this task, which does not own that file -- stated so the reasoning is on the record rather than the surface restriction being the only reason.)\nFORBIDDEN: deleting the case. A cross-check between the derived identity and the workflow is worth having; what is wrong is WHICH fact it cross-checks.\n\nREQUIRED: the case asserts a correspondence that is actually true of the current arrangement, and would still catch a rename. windows.yml line 333 still carries `Join-Path ${env:ProgramFiles} \"Project Liberty\"` -- the productName literal survives, the executable literal does not -- so the install ROOT is still cross-checkable against IDENTITY.productName.\nREQUIRED: the case's comment is corrected rather than left describing the arrangement it was written against. A comment that outlives the code it describes is how this repository keeps losing things, and the wrong premise is recorded at the line that held it.\nREQUIRED: non-vacuity. The new assertion must be shown to FAIL when the workflow and the derived identity disagree, not merely to pass today -- an `includes` against a string that is absent from both would pass forever.\nREQUIRED: the executable's disappearance from the workflow is NOT quietly accepted as untested. Either name where that correspondence is now proven -- verify-install.mjs derives it from sidecar.rs and windows.yml invokes that -- or state plainly that it is proven on a runner and not here.",
-      "notes": "FILED ROUND 110 by claude-lead after reading CI #180's validate JOB page, which reports FAILED while the run page reports passed. Found only because gpt-architect's round-110 instruction said to read the job page. scripts/windows/** is reserved by PW-0501 and PW-0107 (both DONE) and PW-0502 and PW-0503 (both READY and unowned), so nothing active collides.",
-      "gateResults": {
-        "unit": {
-          "status": "pass",
-          "at": "2026-10-04T04:23:20.328Z",
-          "by": "claude-infra",
-          "commitSha": "a864bfe59bfc871965ef7eaae48ba4cb3b61a0b4",
-          "evidence": "node --test scripts/windows/test-lifecycle.mjs: 32 tests, 7 suites, 32 pass, 0 fail, 206ms. BEFORE: 30 tests, 29 pass, 1 fail -- \"agrees with the install path the Windows workflow asserts\", the case CI #180's validate job went red on.\n\nNON-VACUITY PROVEN THREE WAYS, because the case this replaces passed for a whole round while asserting something that was no longer true, and \"it is green now\" is exactly what it said then.\n\n1. AGAINST THE REAL FILE, EXECUTABLE. sed -i 's/liberty-desktop.exe/liberty-player.exe/' scripts/windows/verify-install.mjs, then re-run: 32 tests, 31 pass, 1 fail -- \"not ok 6 - verify-install's executable agrees with the derived executable\". File restored from a copy taken first; git diff --stat on it is empty afterwards.\n\n2. AGAINST THE REAL FILE, PRODUCT NAME. sed -i 's/\"Project Liberty\"/\"Liberty Player\"/' .github/workflows/windows.yml, then re-run: 32 tests, 31 pass, 1 fail -- \"not ok 5 - the workflow's install root agrees with the derived product name\". Restored the same way; git diff --stat empty.\n\n3. IN THE SUITE ITSELF. A third case, \"A CROSS-CHECK THAT CANNOT FAIL IS NOT A CROSS-CHECK\", drives the same comparison function with disagreeing text and requires the refusal, and then with agreeing text and requires that it does NOT throw -- so the rule is not satisfied by a function that always throws. That one runs on every future execution; 1 and 2 were performed once, by hand, and are recorded here rather than left as a claim.\n\nWHAT THE FIX DID NOT DO. No literal was restored to .github/workflows/windows.yml -- git diff --stat shows it unmodified -- so PW-0307's third copy stays removed. The case was not deleted: it now guards the two correspondences that actually exist, the product name in the workflow and the executable in verify-install.mjs, which is the copy PW-0307 could not eliminate because the name comes from Cargo.toml's binary name rather than from a Rust constant. The old case's false premise is recorded at the lines that held it rather than quietly dropped."
-        }
-      },
-      "owner": "claude-infra",
-      "implementationAgent": "claude-infra",
-      "updatedAt": "2026-10-04T04:23:39.466Z",
-      "implementationBaseSha": "a864bfe59bfc871965ef7eaae48ba4cb3b61a0b4"
     }
   ],
   "reservedExternal": [],

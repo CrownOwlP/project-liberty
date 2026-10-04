@@ -1,46 +1,8 @@
 {
-  "generatedAt": "2026-10-04T04:57:51.074Z",
+  "generatedAt": "2026-10-04T15:08:04.672Z",
   "agent": "claude-lead",
   "executionAvailable": true,
-  "assigned": [
-    {
-      "id": "PL-0726",
-      "priority": "P0",
-      "lane": "Integration",
-      "status": "REVIEW",
-      "title": "Corrective: CI applies migration 0000 by name, so every later migration is silently absent",
-      "dependencies": [],
-      "allowedPaths": [
-        ".github/workflows/ci.yml"
-      ],
-      "reviewDependencies": [
-        "packages/persistence/migrations",
-        "packages/persistence/migrations/meta/_journal.json",
-        "e2e/tests/settings.spec.ts",
-        "apps/web/src/app/api/v1/profiles/preferences"
-      ],
-      "preferredAgent": "claude-lead",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "e2e"
-      ],
-      "acceptance": "THE STEP. .github/workflows/ci.yml's 'Apply the repository migration' runs\n\n  psql \"$LIBERTY_E2E_POSTGRES_URL\" --set ON_ERROR_STOP=1 --quiet --file packages/persistence/migrations/0000_profile_scoped_identity.sql\n\nand then asserts a count of exactly 8 tables. The filename is a LITERAL and the 8 is a LITERAL. packages/persistence/migrations/ now holds 0001_profile_media_preferences.sql (PL-0723, committed c925b27). CI will never apply it, and the count would REFUSE the ninth table if something else did.\n\nWHY THIS IS THE SAME DEFECT TWICE. That step exists because `drizzle-kit migrate` applied nothing and exited 0 -- a silent failure -- and its own header says the remedy is a step that 'can fail loudly'. It fails loudly for a migration that does not apply cleanly. It is SILENT for a migration that is never named. The hand-kept list came back, which is also the thing PL-0714's clause A had to fix in the suite list four steps above it.\n\nCONSEQUENCE, MEASURED RATHER THAN FEARED: /api/v1/profiles/preferences reads and writes profile_media_preference. On CI's database that relation does not exist, LIBERTY_E2E_DATABASE_URL is set so DATABASE_SESSION_SKIP_REASON is null and nothing skips, and e2e/tests/settings.spec.ts group B therefore goes red in CI while passing locally -- this round's second local-green/CI-red after PL-0722.\n\nREQUIRED: every committed migration is applied, in order, BY A MECHANISM rather than by a list somebody remembers to extend. PL-0714's clause A says it for the suite list in the same file and the words transfer unchanged: 'a note that a hand-kept list must be kept in step is already in the file, it did not keep the list in step'.\n\nREQUIRED: the loud-failure property survives. The step must still fail when a migration does not apply, and the post-condition must still fail when the schema is not what the migrations describe -- so a literal 8 becomes something derived, not something deleted. Dropping the count to accommodate a ninth table would remove the only check that a partial application is caught.\n\nREQUIRED: ordering is lexical by filename and that is asserted, because 0002 applied before 0001 would succeed on an empty database and corrupt an upgrade.\n\nFORBIDDEN: switching to `drizzle-kit migrate`. It is the command whose silent no-op this step was written to route around, and packages/persistence/migrations/meta/_journal.json now exists (PL-0723 generated it) -- which CHANGES the behaviour but does not re-establish the loud failure this file needs. Reconsider it in a task that owns packages/persistence and can prove the new behaviour; do not swap it in here on the strength of the journal's existence.\n\nNOT IN SCOPE: anything else in ci.yml.",
-      "notes": "FILED ROUND 110 by claude-lead during PW-0308's e2e work, as defect.found. Not fixed inside PW-0308 because .github/workflows/ci.yml belongs to PL-0714 and PL-0717; PL-0714 is now DONE, so the surface is free for this task but still collides with PL-0717 -- they must not be active at once.\n\nROUTED TO claude-lead IN LANE Integration, matching PL-0714 -- the task that wrote the step this one corrects, in the same file, under the same owner. The lane was initially filed as Infra, which claude-lead does not advertise; corrected rather than left as a warning, because a board that warns on every validate run is a board people stop reading.",
-      "gateResults": {
-        "e2e": {
-          "status": "pass",
-          "at": "2026-10-04T04:33:23.996Z",
-          "by": "claude-lead",
-          "commitSha": "f7da49bf7190096acbca64aa12f97885b59d2e4f",
-          "evidence": "THE STEP WAS EXTRACTED FROM THE WORKFLOW AND RUN AGAINST A REAL POSTGRESQL 16, five times, on fresh databases. Extracted with `yaml.safe_load` and taking `jobs.e2e.steps[id=migrate].run` verbatim, so what was executed is the text CI will execute, not a paraphrase of it. The workflow also parses: yaml.safe_load succeeds and reports jobs validate, e2e-typecheck, e2e.\n\nA. CLEAN RUN, fresh database. exit 0.\n   \"applying 2 migration(s) in this order:\n      packages/persistence/migrations/0000_profile_scoped_identity.sql\n      packages/persistence/migrations/0001_profile_media_preferences.sql\n    migrations applied; all 9 declared table(s) are present\"\n   NINE, not eight. 0001's profile_media_preference is applied and accepted -- the two things the old step could not do. Confirmed independently: \\d profile_media_preference shows the table with its primary key on profile_id.\n\nB. LOUD FAILURE IS PRESERVED. A probe migration 0002 referencing a table that does not exist: exit 3, with\n   \"psql:packages/persistence/migrations/0002_broken_probe.sql:1: ERROR: relation \\\"absent_table\\\" does not exist\".\n   ON_ERROR_STOP and set -euo pipefail still stop the job on a migration that does not apply cleanly. Probe deleted; git status on packages/persistence is clean.\n\nC. A NEW MIGRATION IS PICKED UP WITH NOBODY EDITING THIS STEP. A probe 0002 creating probe_table: exit 0, the order line lists three files, \"all 10 declared table(s) are present\", and information_schema reports probe_table present (count 1). This is the property the task asked for -- by a mechanism, not by a list somebody remembers to extend -- demonstrated rather than argued.\n\nD. NON-VACUITY: AN EMPTY DIRECTORY MUST FAIL. Run from a scratch tree whose packages/persistence/migrations is empty: exit 1, with\n   \"::error::no migrations found under packages/persistence/migrations; this step would have applied nothing and passed\".\n   This is the exact failure shape the whole step exists to prevent -- `drizzle-kit migrate` applying nothing and exiting 0 -- and it is the one shape every other check here would have let through.\n\nE. ORDERING IS LEXICAL AND IS PROVEN AGAINST A HOSTILE FILESYSTEM ORDER. Three probe files written in the order 0002_c, 0000_a, 0001_b, so `ls -U` (directory order) reports 0002_c, 0001_b, 0000_a. The step printed:\n      0000_a.sql / 0001_b.sql / 0002_c.sql\n   LC_ALL=C sort, so the runner's locale cannot change it. 0002 before 0001 would succeed on an empty database and corrupt an upgrade, which is why this is asserted rather than assumed.\n\nF. THE POSTCONDITION NAMES ITS CASUALTY. Against a database with 0001's table dropped, the check loop produced\n   \"::error::the migrations declare 9 table(s); these are not in the database after applying them: profile_media_preference\".\n   The literal count it replaces could only ever say a number was wrong. This is strictly stronger, not weaker: it still catches a partial application, it names which table, and it grows with the migrations. The derivation itself has a non-vacuity guard -- migrations declaring no CREATE TABLE is an error, not a silently empty check.\n\nNOT DONE, DELIBERATELY: `drizzle-kit migrate` was not reinstated. PL-0723 generated meta/_journal.json, so it would now do something -- but \"does something\" is not \"fails loudly\", and this is not the task that can prove its behaviour. The acceptance forbids the swap here and names where to reconsider it.\n\nNOTHING ELSE IN ci.yml CHANGED: git diff is confined to this one step."
-        }
-      },
-      "owner": "claude-lead",
-      "implementationAgent": "claude-lead",
-      "updatedAt": "2026-10-04T04:33:43.099Z",
-      "implementationBaseSha": "f7da49bf7190096acbca64aa12f97885b59d2e4f"
-    }
-  ],
+  "assigned": [],
   "review": [],
   "reservedExternal": [],
   "recommended": []
