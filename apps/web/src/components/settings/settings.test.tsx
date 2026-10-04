@@ -134,15 +134,86 @@ describe("the diagnostics section reports the real decision", () => {
     expect(html).toContain(CMCD_COLLECTOR_PATH);
   });
 
-  it("offers no control, because nothing would store what it was told", async () => {
+  it("STAYS A SERVER COMPONENT WITH NO CONTROL IN IT, now for a different reason", async () => {
     /*
-     * A toggle wired to nothing would look like a setting, survive nothing and
-     * change no telemetry -- the "fake persistence with local component state"
-     * that is forbidden by name. The control arrives with PL-0724, which adds
-     * the stored field; until then this section is disclosure and says so.
+     * THIS RULE IS OLDER THAN THE REASON IT NOW HAS. It was written when a
+     * toggle here would have been wired to nothing -- the "fake persistence
+     * with local component state" forbidden by name -- and it survived
+     * PL-0724 shipping the stored field and PL-0732 shipping the control,
+     * because the control did NOT go here.
+     *
+     * WHAT IT GUARDS NOW. This section must keep reporting what
+     * `decidePlaybackTelemetry` actually decides, to a viewer who may not be
+     * signed in and so has no profile to store anything on. A control here
+     * would also be a SECOND WRITER of a row the preferences form already
+     * replaces wholesale on every save, which is the silent-revert hazard
+     * PL-0732 exists to avoid. Either way the answer is the same: no control
+     * in this file.
      */
     const source = await sourceOf("./diagnostics-disclosure.tsx");
     expect(source).not.toMatch(/<input|<button|<select|useState|"use client"/);
+  });
+
+  it("no longer promises a control that does not exist", async () => {
+    /*
+     * The old copy said "it cannot yet change it" and named PL-0724 as the
+     * control being built. PL-0724 closed, the control exists, and that
+     * sentence became the stale-comment failure this repository keeps
+     * recording -- found, this time, while confirming a different task.
+     */
+    const source = await sourceOf("./diagnostics-disclosure.tsx");
+    expect(source).not.toMatch(/cannot yet change it/);
+  });
+});
+
+describe("one form owns the preferences row, control included", () => {
+  /*
+   * THE HAZARD THESE GUARD, STATED ONCE. `PUT /api/v1/profiles/preferences`
+   * takes the WHOLE preferences object -- the request schema IS
+   * `mediaPreferencesSchema`, strict and complete -- so every write is a full
+   * replacement. Two forms over that row means the second one to save sends
+   * whatever it read on mount and silently reverts the first. These are the
+   * assertions that notice if somebody later adds the obvious second writer.
+   */
+
+  it("the diagnostics control is in the preferences form", async () => {
+    const source = await sourceOf("./language-preferences.tsx");
+    expect(source).toMatch(/name="playbackDiagnostics"/);
+    expect(source).toMatch(/type="checkbox"/);
+    expect(source).toMatch(/checked=\{playbackDiagnostics\}/);
+  });
+
+  it("and it is bound to the same state the write body sends", async () => {
+    /*
+     * NOT A SEPARATE PIECE OF STATE. A control with its own `useState` that
+     * happened to be initialised from the same read would drift from the
+     * value actually written the moment anything else touched either one.
+     * `setPlaybackDiagnostics` must be the only setter, and `apply` -- which
+     * runs on every response -- must be one of its callers, so the control
+     * always shows what the server last confirmed.
+     */
+    const source = await sourceOf("./language-preferences.tsx");
+    const setters = source.match(/setPlaybackDiagnostics\(/g) ?? [];
+    expect(setters.length).toBeGreaterThanOrEqual(2);
+    expect(source).toMatch(/setPlaybackDiagnostics\(preferences\.playbackDiagnostics\)/);
+    expect(source).toMatch(/playbackDiagnostics\n?\s*\}\)/);
+  });
+
+  it("NOTHING ELSE WRITES THE FIELD, which is the whole point", async () => {
+    /*
+     * The structural assertion. Any OTHER component under settings/ that
+     * posted this field would be the second writer, and the symptom would be
+     * a viewer's diagnostics choice reverting when they saved a language --
+     * no error, nothing logged. Checked across the directory rather than in
+     * one file, because the hazard is precisely that it appears somewhere
+     * else.
+     */
+    const others = ["./diagnostics-disclosure.tsx", "./about-section.tsx"];
+    for (const file of others) {
+      const source = await sourceOf(file);
+      expect(source, file).not.toMatch(/playbackDiagnostics/);
+      expect(source, file).not.toMatch(/\bfetch\(/);
+    }
   });
 });
 

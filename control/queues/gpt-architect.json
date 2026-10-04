@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-04T16:18:03.281Z",
+  "generatedAt": "2026-10-04T16:35:19.246Z",
   "agent": "gpt-architect",
   "executionAvailable": false,
   "assigned": [],
@@ -87,6 +87,61 @@
           "evidence": "CHANGES REQUESTED at 659cafa118bdc72b98d43c7f3fa21a120222e57b. TRANSCRIBED BY claude-lead from gpt-architect's round-111 verdict document, which lists PW-0208 under \"NOT APPROVED YET\" and says: \"PW-0208 still requires stronger evidence about the contents of the actual Windows package/distribution tree.\"\n\nThe same document's section 3 states what that evidence has to cover, and it is quoted here in full rather than paraphrased, because it is the acceptance this task is now being measured against:\n\n  - actual libmpv/FFmpeg artifact included, if included\n  - exact provenance/version/pin\n  - build/configuration evidence available for what ships\n  - GPL components excluded where required by the selected LGPL distribution strategy\n  - THIRD-PARTY-NOTICES or equivalent actually present in the package tree\n  - Node licence actually present beside the shipped runtime where required\n  - dependency licence collection reflects the actual packaged dependencies\n  - written-offer/attribution material actually appears where the distribution strategy requires it\n  - strict notice generation fails on missing evidence rather than silently producing a green result\n\nAND THE BOUNDARY IT RESTATES, which this task's own acceptance already carries: \"Do NOT guess the H.264/HEVC patent decision. H.264/HEVC remains a commander/legal decision and must remain explicitly separate from the LGPL evidence. Do not enable patent-dependent functionality based on an assumption.\"\n\nWHAT THE VERDICT IS OBJECTING TO, read plainly: the distinction between evidence about SOURCE AND SCRIPTS and evidence about THE TREE THAT SHIPS. The recorded `build` gate is about what the packaging is configured to do. \"The actual Windows package/distribution tree\" is what came out of it, and the round-110 instruction said the same thing in fewer words -- \"Do not infer packaged contents solely from source intent.\"\n\nReturned to IN_PROGRESS. The gate results are discarded by `request-changes` as the control plane intends: the `build` gate described a tree, and the next one has to describe the tree that is actually inspected."
         }
       ]
+    },
+    {
+      "id": "PL-0732",
+      "priority": "P2",
+      "lane": "Frontend",
+      "status": "REVIEW",
+      "title": "The diagnostics setting is stored, consumed, and reachable by nobody",
+      "dependencies": [],
+      "allowedPaths": [
+        "apps/web/src/components/settings/diagnostics-disclosure.tsx",
+        "apps/web/src/components/settings/settings.test.tsx",
+        "e2e/tests/settings.spec.ts",
+        "apps/web/src/components/settings/language-preferences.tsx"
+      ],
+      "reviewDependencies": [
+        "apps/web/src/app/api/v1/profiles/preferences",
+        "packages/contracts/src/domains/preferences.ts",
+        "apps/web/src/components/player/telemetry-decision.ts"
+      ],
+      "preferredAgent": "claude-frontend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "e2e"
+      ],
+      "acceptance": "PL-0724 IS DONE AND ITS TITLE IS \"The diagnostics switch actually switches diagnostics off\". THERE IS NO SWITCH. What exists is the stored per-profile field, `player-surface.tsx` consuming it, and `language-preferences.tsx` round-tripping it WITHOUT EXPOSING IT -- it keeps what it read and sends it back, deliberately, because that form does not own the setting. A viewer cannot set it by any means.\n\nThat is not a defect in PL-0724, whose acceptance required the stored field and the player consuming it and which gpt-architect approved on exactly those terms. It is the half nobody owns yet, and `diagnostics-disclosure.tsx` still tells the viewer \"This page reports what the product decides; it cannot yet change it\" and names PL-0724 as the control that will -- a sentence that is now stale in the way this repository keeps being bitten by.\n\nREQUIRED: the diagnostics section carries a real control that writes the stored field through the existing /api/v1/profiles/preferences endpoint. No second mechanism; PL-0723 established the shape and PL-0724 added the field to it.\nREQUIRED: turning it off is PROVEN to persist across a reload against a real production build and a real PostgreSQL, the way PW-0308's language cases are. The reload is the test; everything before it would pass against component state.\nREQUIRED: the disclosure text is corrected. It must stop promising a control that now exists, and it must keep reporting the REAL decision from `decidePlaybackTelemetry` rather than describing it -- that property is what PW-0308 was approved for and must not be lost to make room for a toggle.\nREQUIRED: the control cannot turn telemetry ON where the decision refuses it. A viewer may decline; a viewer may not override `collector_path_not_first_party` or any other safety refusal. Asserted, because \"the toggle wins\" is the obvious implementation and PL-0724's acceptance already named it as the wrong one.\nREQUIRED: `language-preferences.tsx` keeps round-tripping the field rather than fighting the new control for it -- or the two are reconciled deliberately, with the reason recorded. Two forms writing one field is how a viewer's choice gets silently reverted by saving something unrelated.\n\nOUT OF SCOPE: what CMCD carries, the collector route, and any new telemetry.",
+      "notes": "FILED ROUND 112 by claude-lead while confirming gpt-architect's PW-0308 re-approval clause \"diagnostics preference now persists\". It does persist, and nobody can choose it. Filed rather than folded into PW-0308 (approved, closing this round) or PL-0724 (approved and closed).",
+      "gateResults": {
+        "typecheck": {
+          "status": "pass",
+          "at": "2026-10-04T16:33:39.862Z",
+          "by": "claude-frontend",
+          "commitSha": "a78fa309c454dbd5b29a47f3e647fe1d76848429",
+          "evidence": "npm run typecheck at the working tree containing all four surface files: 22 successful, 22 total (@liberty/web a cache MISS, so it really re-ran against the edited components). Includes the e2e harness, where the new diagnosticsControl() helper and two cases compile."
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-10-04T16:33:44.978Z",
+          "by": "claude-frontend",
+          "commitSha": "a78fa309c454dbd5b29a47f3e647fe1d76848429",
+          "evidence": "npm test across the workspace: 22 successful, 22 total, 0 cached. apps/web 1730 passed, which includes settings.test.tsx at 17 cases -- the new describe('one form owns the preferences row, control included') with its three cases, the renamed server-component rule, and 'no longer promises a control that does not exist' asserting the stale PL-0724 sentence is gone from diagnostics-disclosure.tsx."
+        },
+        "e2e": {
+          "status": "pass",
+          "at": "2026-10-04T16:33:51.954Z",
+          "by": "claude-frontend",
+          "commitSha": "a78fa309c454dbd5b29a47f3e647fe1d76848429",
+          "evidence": "Real production build (next build + next start) against real PostgreSQL on 127.0.0.1:5433, chromium: 11 passed, then 33 passed at --repeat-each=3, flaky=0. The two new cases are 'DIAGNOSTICS CAN BE TURNED OFF, AND IT SURVIVES A RELOAD' and 'saving a language does not revert the diagnostics choice'; both reload the page, so component state cannot satisfy them. NON-VACUITY MEASURED, NOT ASSERTED: with the PUT body mutated to send a literal playbackDiagnostics: true -- the exact lost-update shape a second writer produces -- both cases go RED (the second one on its named message, 'saving a language reverted the diagnostics choice', locator resolved to an input still carrying checked). Mutant reverted and the full file re-run green before this gate was recorded."
+        }
+      },
+      "owner": "claude-frontend",
+      "implementationAgent": "claude-frontend",
+      "updatedAt": "2026-10-04T16:33:55.664Z",
+      "implementationBaseSha": "a78fa309c454dbd5b29a47f3e647fe1d76848429"
     },
     {
       "id": "PL-0733",

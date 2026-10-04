@@ -347,6 +347,11 @@ function languages(page: Page) {
   return page.locator('section[aria-labelledby="settings-languages"]');
 }
 
+/** The diagnostics checkbox, which lives in the preferences form (PL-0732). */
+function diagnosticsControl(page: Page) {
+  return page.getByLabel("Allow playback diagnostics");
+}
+
 function audioField(page: Page) {
   return page.getByLabel("Preferred audio languages");
 }
@@ -445,6 +450,71 @@ test.describe("the language form, against a real session and a real database", (
     await page.reload();
     await expect(page.getByText(/have not chosen yet/i)).toBeVisible();
     await expect(audioField(page)).toHaveValue("");
+  });
+
+  test("DIAGNOSTICS CAN BE TURNED OFF, AND IT SURVIVES A RELOAD", async ({ page }) => {
+    /*
+     * PL-0732. PL-0724 shipped the stored field and the player consuming it,
+     * and left the product with a setting no viewer could reach -- found
+     * while confirming it persisted. This is the case that says a viewer can
+     * now reach it.
+     *
+     * THE RELOAD IS THE TEST, for the reason the language cases give:
+     * everything before it would pass against a checkbox that remembered
+     * nothing, which is the "fake persistence with local component state"
+     * forbidden by name.
+     */
+    const headers = await session(page.request);
+    await selectAProfile(page.request, headers);
+    await forgetPreferences(page.request, headers);
+    await page.setExtraHTTPHeaders(headers);
+
+    await page.goto(SETTINGS);
+
+    /* IT STARTS ALLOWED, which is the neutral value and the behaviour the
+     * product had before the setting existed. Asserted rather than assumed,
+     * because a control defaulting to off would be this task silently opting
+     * every viewer out of something they never declined. */
+    const allow = diagnosticsControl(page);
+    await expect(allow).toBeChecked();
+
+    await allow.uncheck();
+    await page.getByRole("button", { name: "Save" }).click();
+    await expect(page.getByText(/these are your choices/i)).toBeVisible();
+
+    await page.reload();
+    await expect(diagnosticsControl(page)).not.toBeChecked();
+  });
+
+  test("saving a language does not revert the diagnostics choice", async ({ page }) => {
+    /*
+     * THE HAZARD THIS TASK'S DESIGN EXISTS TO AVOID, driven end to end. The
+     * endpoint replaces the WHOLE preferences object on every write, so two
+     * forms over this row would mean the second save silently undoing the
+     * first. One form owns it -- and this is the case that would catch
+     * somebody later adding the obvious second writer in the Diagnostics
+     * section, where the control looks like it belongs.
+     */
+    const headers = await session(page.request);
+    await selectAProfile(page.request, headers);
+    await forgetPreferences(page.request, headers);
+    await page.setExtraHTTPHeaders(headers);
+
+    await page.goto(SETTINGS);
+    await diagnosticsControl(page).uncheck();
+    await page.getByRole("button", { name: "Save" }).click();
+    await expect(page.getByText(/these are your choices/i)).toBeVisible();
+
+    /* Now change something unrelated and save again. */
+    await page.reload();
+    await audioField(page).fill("ja, en");
+    await page.getByRole("button", { name: "Save" }).click();
+    await expect(page.getByText(/these are your choices/i)).toBeVisible();
+
+    await page.reload();
+    await expect(audioField(page)).toHaveValue("ja, en");
+    await expect(diagnosticsControl(page), "saving a language reverted the diagnostics choice")
+      .not.toBeChecked();
   });
 
   test("a language tag the contract refuses is reported, not silently dropped", async ({

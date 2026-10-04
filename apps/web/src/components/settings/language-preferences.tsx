@@ -85,6 +85,7 @@ export function LanguagePreferences() {
   const subtitleFieldId = useId();
   const modeFieldId = useId();
   const hearingFieldId = useId();
+  const diagnosticsFieldId = useId();
 
   const [phase, setPhase] = useState<Phase>({ kind: "loading" });
   const [audio, setAudio] = useState("");
@@ -92,18 +93,19 @@ export function LanguagePreferences() {
   const [mode, setMode] = useState<MediaPreferences["subtitleMode"]>("auto");
   const [hearingImpaired, setHearingImpaired] = useState(false);
   /*
-   * A FIELD THIS FORM CARRIES AND DOES NOT CONTROL (PL-0724).
+   * A FIELD THIS FORM NOW CONTROLS (PL-0724 put it here; PL-0732 exposed it).
    *
-   * The write body is `mediaPreferencesSchema`, strict and complete, so a PUT
-   * that omitted `playbackDiagnostics` would be refused outright. This form
-   * has no control for it -- the diagnostics section is disclosure-only and
-   * says so -- and the only correct thing an uninvolved form can do with a
-   * field it does not own is HAND BACK WHAT IT WAS GIVEN.
+   * WHAT THIS COMMENT USED TO SAY, because the reasoning is still why the
+   * state is in this file: "A FIELD THIS FORM CARRIES AND DOES NOT CONTROL.
+   * ... the only correct thing an uninvolved form can do with a field it does
+   * not own is HAND BACK WHAT IT WAS GIVEN." That was right while nothing
+   * could set it. PL-0724 shipped the stored field and the player consuming
+   * it, and left the product with a setting no viewer could reach.
    *
-   * Held in state rather than read from a ref or recomputed, so that the
-   * value sent is provably the value the last response carried: saving a
-   * language must not be able to change whether a viewer allows diagnostics,
-   * in either direction.
+   * The control is below rather than in the Diagnostics section, and the
+   * reason is at the control: this endpoint replaces the whole preferences
+   * object on every write, so a second form over the same row would silently
+   * revert this value whenever somebody saved a language.
    */
   const [playbackDiagnostics, setPlaybackDiagnostics] = useState(
     NO_MEDIA_PREFERENCES.playbackDiagnostics
@@ -295,6 +297,47 @@ export function LanguagePreferences() {
           <p className={styles.hint}>
             These carry speaker names and sound description. This chooses WHICH subtitles you
             get, not whether subtitles appear.
+          </p>
+        </div>
+
+        {/*
+          THE DIAGNOSTICS CONTROL, AND WHY IT IS IN THIS FORM (PL-0732).
+          ------------------------------------------------------------------
+          It looks like it belongs in the Diagnostics section, next to the
+          disclosure that explains it. Putting it there would create TWO
+          INDEPENDENT WRITERS OF ONE ROW, and this endpoint takes the WHOLE
+          preferences object on every write -- `putPreferencesRequestSchema`
+          is `mediaPreferencesSchema`, strict and complete -- so every PUT is
+          a full replacement.
+
+          The failure that produces is not a race, it is arithmetic: a viewer
+          turns diagnostics off, that form writes `false`; this form is still
+          holding `true` from its own mount-time read; the viewer saves a
+          language and the whole object goes back with `true`. The setting
+          reverts, nothing errors, and nothing notices.
+
+          So one form owns the row. The state was already here -- PL-0724 put
+          it here so a form that did not own the setting could not change it
+          -- and this makes it visible rather than adding a second writer.
+        */}
+        <div className={styles.field}>
+          <label htmlFor={diagnosticsFieldId} className={styles.checkboxLabel}>
+            <input
+              id={diagnosticsFieldId}
+              name="playbackDiagnostics"
+              type="checkbox"
+              checked={playbackDiagnostics}
+              disabled={busy}
+              onChange={(event) => setPlaybackDiagnostics(event.target.checked)}
+            />
+            Allow playback diagnostics
+          </label>
+          <p className={styles.hint}>
+            How long a stream took to start and which quality it settled on, sent to this
+            application and nowhere else. Turning this off stops it being sent. Leaving it on
+            is permission, not a guarantee — the Diagnostics section below reports what this
+            build would actually do and why, and several checks can still decide to send
+            nothing.
           </p>
         </div>
 

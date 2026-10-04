@@ -26,20 +26,29 @@ import styles from "./settings.module.css";
  * changes with it.
  *
  * ==========================================================================
- * WHAT IT DELIBERATELY DOES NOT DO: PRETEND TO BE A SWITCH
+ * IT STILL IS NOT THE SWITCH, AND NOW THAT IS A LAYOUT FACT RATHER THAN A
+ * MISSING FEATURE
  * ==========================================================================
  *
- * `player-surface.tsx` passes `enabled: true` as a LITERAL, and nothing stores
- * a viewer's answer. A toggle here would therefore be a control wired to
- * nothing -- it would look like a setting, survive nothing, and change no
- * telemetry -- which is exactly the "fake persistence with local component
- * state" gpt-architect's round-110 instruction forbids by name.
+ * WHAT THIS BLOCK USED TO SAY, kept because the reasoning is why the control
+ * took two tasks to arrive: "`player-surface.tsx` passes `enabled: true` as a
+ * LITERAL, and nothing stores a viewer's answer. A toggle here would
+ * therefore be a control wired to nothing ... which is exactly the 'fake
+ * persistence with local component state' gpt-architect's round-110
+ * instruction forbids by name." PL-0724 then shipped the stored field and the
+ * player consuming it -- and left the product with a setting no viewer could
+ * reach, which PL-0732 found while confirming that it persisted.
  *
- * So the honest half ships now and the control is PL-0724, which adds the
- * stored field through the existing preferences shape and passes it where the
- * literal is today. PW-0308 depends on it, so this screen cannot be called
- * finished while this section is disclosure-only. The text below says that to
- * the viewer rather than implying a choice they do not have.
+ * THE CONTROL IS IN THE PREFERENCES FORM, NOT HERE, and that is deliberate:
+ * this endpoint replaces the WHOLE preferences object on every write, so a
+ * second form over the same row would silently revert the setting whenever
+ * somebody saved a language. One form owns the row. The reasoning is written
+ * out at the control itself.
+ *
+ * THIS SECTION KEEPS THE JOB IT WAS APPROVED FOR: reporting what
+ * `decidePlaybackTelemetry` ACTUALLY decides, from the function rather than
+ * from prose about it, to a viewer who may not be signed in and therefore has
+ * no profile to store anything on.
  *
  * ==========================================================================
  * SERVER-RENDERED, AND THAT MATTERS HERE
@@ -115,9 +124,10 @@ export function DiagnosticsDisclosure() {
       </ul>
 
       <p className={styles.hint}>
-        This page reports what the product decides; it cannot yet change it. A switch that did
-        not actually stop diagnostics being sent would be worse than none, so the control is
-        being built with the stored setting behind it rather than ahead of it.
+        The switch is above, under Languages — one form writes all of your preferences, so
+        saving one of them cannot quietly change another. Turning it off stops diagnostics
+        being sent. Leaving it on does not force anything: this section reports what the
+        build would actually do, and the checks listed here still decide.
       </p>
     </section>
   );
