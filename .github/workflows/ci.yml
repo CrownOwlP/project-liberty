@@ -376,6 +376,20 @@ jobs:
       - name: Test the installer's third-party notices
         id: notices-suite
         run: node --test apps/desktop/scripts/notices.test.mjs
+      # The suite for the check that finds rows no configuration executes
+      # (PL-0728). The CHECK itself runs in the `e2e` job, where the reports
+      # it intersects exist; this is its 14-case suite, and it belongs here
+      # because that is where `npm run test:scripts` is mirrored.
+      #
+      # Its central case is the non-vacuity one the acceptance asked for by
+      # name: the check is driven against the two-configuration report shape
+      # this repository had BEFORE PL-0717, where the three fail-closed
+      # titles were skipped in both, and is shown to FAIL and to name all
+      # three. A guard that has only ever been seen agreeing with a fixed
+      # tree is a guard nobody has tested.
+      - name: Test the runs-nowhere check
+        id: runs-nowhere-suite
+        run: node --test scripts/assert-no-row-runs-nowhere.test.mjs
 
       # ====================================================================
       # THE MIRROR IS NOW CHECKED BY A MACHINE (PL-0714)
@@ -1245,7 +1259,20 @@ jobs:
           # derives the auth secret from this variable's presence, so there is
           # no run in which a store is configured and a secret is not.
           LIBERTY_E2E_DATABASE_URL: ${{ env.LIBERTY_E2E_POSTGRES_URL }}
-        run: npm test -- --project=api --project=chromium
+          # READ BY `runs-nowhere` AT THE END OF THIS JOB (PL-0728). Each
+          # configuration writes its own JSON report, because the check that
+          # finds rows nobody executes is an INTERSECTION and an intersection
+          # needs every side of it. Before PL-0728 only the fail-closed step
+          # wrote one, which is why the three fail-closed titles had to be
+          # found by running two suites locally and comparing skip lists by
+          # hand.
+          PLAYWRIGHT_JSON_OUTPUT_NAME: ${{ runner.temp }}/production-report.json
+        # `--reporter` on the command line REPLACES the config's list rather
+        # than adding to it, so every reporter this job depends on is named:
+        # `github` turns a failure into an annotation (the only channel a
+        # reader without a login has), `html` writes `e2e/playwright-report`
+        # for the upload step below, and `json` is the file above.
+        run: npm test -- --project=api --project=chromium --reporter=github,list,json,html
       # Uploaded between the two runs, not after both: the HTML reporter writes
       # to one directory and the development run overwrites it.
       - name: Upload the production report
@@ -1271,7 +1298,8 @@ jobs:
           # the existing development capability/rules." A development process
           # resolves an identity from headers and never consults a session
           # store, and running it that way is how that stays true.
-        run: npm test -- --project=api --project=chromium
+          PLAYWRIGHT_JSON_OUTPUT_NAME: ${{ runner.temp }}/development-report.json
+        run: npm test -- --project=api --project=chromium --reporter=github,list,json,html
       - name: Upload the development report
         if: ${{ !cancelled() && steps.browsers.outcome == 'success' }}
         uses: actions/upload-artifact@v4
@@ -1351,7 +1379,14 @@ jobs:
         # than adding to it, so `html` is named here deliberately: without it
         # `e2e/playwright-report` is never written and the upload step below
         # would quietly archive nothing. `json` is what the guard reads.
-        run: npm test -- --project=api --project=chromium --reporter=list,json,html
+        #
+        # `github` RESTORED BY PL-0728, which is a correction rather than a
+        # preference. The config's CI list is `[github, list, html]`; this
+        # override dropped `github`, so a FAILURE in the one configuration
+        # that exists to cover the fail-closed path produced no annotation --
+        # and an annotation is the only part of a CI run a reader without a
+        # login can see. The three steps now name the same four reporters.
+        run: npm test -- --project=api --project=chromium --reporter=github,list,json,html
       # ------------------------------------------------------------------
       # AND THE THREE TITLES ACTUALLY RAN
       # ------------------------------------------------------------------
@@ -1437,3 +1472,44 @@ jobs:
           path: e2e/playwright-report
           retention-days: 14
           if-no-files-found: warn
+      # ==================================================================
+      # AND NO ROW IS SKIPPED BY ALL THREE (PL-0728)
+      # ==================================================================
+      #
+      # The guard above asks about three titles somebody thought of. This
+      # asks the general question those three are an instance of: is there
+      # ANY row that every configuration skips? Such a row is green in every
+      # report and counted in none of them, and nothing else in this pipeline
+      # tells it apart from a row that passed.
+      #
+      # This repository has found that defect four times -- test-validate-repo
+      # (PL-AI-0002), test-desktop-target and the Windows lifecycle suite
+      # (PL-0714), tracks.ts (PW-0306), and the three fail-closed titles
+      # (PL-0717) -- and four times BY ACCIDENT. PL-0717 found its three by
+      # running two suites locally and intersecting the skip lists by hand.
+      # This is that intersection, run every time, so the fifth does not
+      # depend on anybody thinking of it again.
+      #
+      # THE ALLOWLIST LIVES IN THE SCRIPT, not here, and is exactly two rows
+      # today, both needing a media rig. A row that must run nowhere is a
+      # decision somebody records; a row that DRIFTS into running nowhere is
+      # a defect. The script also fails on an allowlist entry that matches
+      # nothing, because an exemption that outlives its reason is inherited
+      # by whatever lands on that title next -- the one-directional failure
+      # round 111 measured in PL-0714's own mirror-check.
+      #
+      # `!cancelled()` and `outcome != 'skipped'` rather than success: a
+      # suite that FAILED still answers "did any row run nowhere", and a job
+      # red for two reasons should say both.
+      - name: No row is skipped by every configuration
+        id: runsnowhere
+        if: >-
+          ${{ !cancelled()
+              && steps.production.outcome != 'skipped'
+              && steps.development.outcome != 'skipped'
+              && steps.failclosed.outcome != 'skipped' }}
+        run: |
+          node scripts/assert-no-row-runs-nowhere.mjs \
+            "${RUNNER_TEMP}/production-report.json" \
+            "${RUNNER_TEMP}/development-report.json" \
+            "${RUNNER_TEMP}/failclosed-report.json"

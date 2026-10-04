@@ -1,11 +1,38 @@
 {
-  "generatedAt": "2026-10-04T16:46:37.033Z",
+  "generatedAt": "2026-10-04T17:45:46.563Z",
   "agent": "claude-lead",
   "executionAvailable": true,
   "assigned": [],
   "review": [],
   "reservedExternal": [],
   "recommended": [
+    {
+      "id": "PL-0735",
+      "priority": "P0",
+      "lane": "Integration",
+      "status": "READY",
+      "title": "CI's validate job no longer finishes: the control-plane suite spends its time in one inner loop",
+      "dependencies": [],
+      "allowedPaths": [
+        "scripts/ai-control-plane.mjs",
+        "scripts/review-surface.mjs",
+        "scripts/test-ai-control-plane.mjs",
+        ".github/workflows/ci.yml"
+      ],
+      "reviewDependencies": [
+        "control/tasks.json",
+        "control/policies.json",
+        "control/agents.json"
+      ],
+      "preferredAgent": "claude-lead",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "unit",
+        "architecture-review"
+      ],
+      "acceptance": "CI's `validate` JOB HAS STOPPED FINISHING, AND NOBODY NOTICED BECAUSE A HANG LOOKS LIKE A SLOW RUNNER. CI #181 was still in progress after 1h45m; CI #182 (run 37215304871, head 1474d0b) was still in progress after an hour with e2e and e2e-typecheck both long since SUCCEEDED. Both read from the job page, not the run page.\n\nDIAGNOSED, NOT GUESSED. `node scripts/test-ai-control-plane.mjs` -- a validate-job step -- does not finish in five minutes on a CLEAN CHECKOUT of 1474d0b in a fresh git worktree with no node_modules, which is the CI condition (the suite runs BEFORE `npm ci` in that job). Sampling its children shows each spawned `node scripts/ai-control-plane.mjs <command>` taking 10-16 SECONDS. There are 73 scenarios and several commands each.\n\nTHE HOT PATH, FROM A --cpu-prof OF ONE `status` INSIDE A FIXTURE REPO (10.1s wall, 9.9s USER -- pure computation, no I/O and no network): `normalizePrefix` at scripts/review-surface.mjs:41 dominates, with its four `.replace()` regexes visible as separate entries, under `dfs` at ai-control-plane.mjs:449.\n\nTHE CAUSE IS AN INNER LOOP, and it is three lines. `pathsOverlap(aPaths, bPaths)` calls `normalizePrefix(aRaw)` INSIDE the `bPaths` loop, so a pure function of a small fixed set of declared path strings runs |A|x|B| times per comparison instead of |A|+|B|. `dfs` calls `pathsOverlap` once per (candidate, already-chosen) pair at every node of a search whose budget is 300,000 nodes.\n\nIT IS NOT A CODE REGRESSION. `git log -S` puts both `pathsOverlap` and `const budget = 300000` in f984ab4, the first control-plane commit, unchanged since. What changed is the BOARD: the cost scales with the number of dispatch candidates, and the suite's fixtures are RESET boards where nearly every task is READY. The live repository runs the same command in 0.11s with 137 tasks, because few of them are candidates. Same code, same file size, 100x apart -- the variable is candidate count. The project grew into this.\n\nREQUIRED: the redundant work is removed without changing a single answer. Memoising `normalizePrefix` by its argument takes that one `status` from 10.1s to 2.0s, MEASURED, and `status`, `dispatch` and `ready` produce byte-identical output afterwards except for the generated timestamp -- also measured, by diff. That is the floor, not the target; the remaining 2s is the dfs itself and is worth looking at, but a 5x for a memo on a pure function is the obvious first move.\n\nREQUIRED: the answer is PROVEN unchanged rather than asserted. A performance change to the scheduler that quietly altered a wave would be far worse than the slowness. Diff the output of `status`, `dispatch`, `ready` and `queue` for every agent, before and after, on BOTH the live board and a reset fixture.\n\nREQUIRED: the validate job's steps get `timeout-minutes`. THIS IS THE PART THAT MATTERS MOST, because the performance fix removes today's hang and the timeout removes the whole class. A step that hangs currently burns GitHub's six-hour default and reports 'in progress' the entire time -- indistinguishable, to the only readable channel this project has (annotations), from a queued runner. A bounded step turns a hang into a RED with a named step, which is the difference between finding this in one round and finding it in three.\n\nREQUIRED: the suite reports progress. 9,570 lines and 73 scenarios print exactly one line, at the end, on success. A suite that says nothing until it is finished cannot be diagnosed when it does not finish -- the scenario that hangs had to be found by sampling child processes from outside. Name each scenario as it starts.\n\nOUT OF SCOPE: changing the dfs budget, the wave algorithm, or any scheduling decision. This task makes the same computation cheaper and makes a hang visible. A different wave is a different task and needs a verdict.",
+      "notes": "FILED BY claude-test DURING PL-0728, round 112, classification C (workflow/harness defect) under the round-112 directive's A-E scheme: it is the project's own control-plane tooling and its CI job, not the product.\n\nP0 BECAUSE IT GATES EVERYTHING ELSE. While `validate` cannot finish, no CI run can confirm lint, typecheck, the unit suites, the build, the control-plane suite, the repo validator or the notices suite. Every task closed in rounds 111 and 112 rests on LOCAL evidence plus a green `e2e` job, and that is now a stated fact rather than an assumption. It also means the round-112 directive's instruction to consume CI #182 can be answered only in part, and this is why.\n\nFOUND BY ACCIDENT, AGAIN, AND THE ACCIDENT IS THE POINT. PL-0728 added a suite to `npm run test:scripts`; running the alias to check the addition is what surfaced a hang that two CI runs had already been showing as 'in progress'. The fifth entry in this repository's 'a thing exists and no gate asks it' list is not a test that runs nowhere -- it is a GATE THAT NEVER FINISHES, which is the same failure one level up: a step that neither passes nor fails asserts nothing, and a pipeline waiting on it looks busy rather than broken. That is the argument for the `timeout-minutes` clause being REQUIRED rather than a nicety.\n\nSURFACE COLLISION, STATED: `.github/workflows/ci.yml` is held by PL-0728 (IN_PROGRESS, claude-test) for the runs-nowhere step. This task must take it after PL-0728 releases it. The performance fix in scripts/ai-control-plane.mjs and scripts/review-surface.mjs collides with nothing active."
+    },
     {
       "id": "PL-0730",
       "priority": "P3",

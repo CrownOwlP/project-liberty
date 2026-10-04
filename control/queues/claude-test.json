@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-04T16:46:37.038Z",
+  "generatedAt": "2026-10-04T17:45:46.566Z",
   "agent": "claude-test",
   "executionAvailable": true,
   "assigned": [
@@ -33,30 +33,26 @@
       "implementationAgent": "claude-test",
       "updatedAt": "2026-10-04T16:46:36.643Z",
       "implementationBaseSha": "567a08c566ae52358fa896809a00eb7878e8bea1"
-    }
-  ],
-  "review": [],
-  "reservedExternal": [],
-  "recommended": [
+    },
     {
       "id": "PL-0728",
       "priority": "P2",
       "lane": "Test",
-      "status": "READY",
+      "status": "REVIEW",
       "title": "A standing check for a test that is skipped in every configuration this repository runs",
       "dependencies": [
         "PL-0717"
       ],
       "allowedPaths": [
         "scripts/assert-no-row-runs-nowhere.mjs",
-        "scripts/assert-no-row-runs-nowhere.test.mjs"
+        "scripts/assert-no-row-runs-nowhere.test.mjs",
+        "package.json",
+        ".github/workflows/ci.yml"
       ],
       "reviewDependencies": [
-        ".github/workflows/ci.yml",
         "e2e/playwright.config.ts",
         "e2e/src/env.ts",
-        "docs/TEST_MATRIX.md",
-        "package.json"
+        "docs/TEST_MATRIX.md"
       ],
       "preferredAgent": "claude-test",
       "reviewAgent": "gpt-architect",
@@ -65,7 +61,22 @@
       ],
       "acceptance": "THIS REPOSITORY HAS FOUND THE SAME DEFECT FOUR TIMES AND EACH TIME BY ACCIDENT. A thing exists, it passes, and no gate asks it: scripts/test-validate-repo.mjs until PL-AI-0002; scripts/test-desktop-target.mjs and the 30-case Windows lifecycle suite until PL-0714; components/player/tracks.ts until PW-0306; and the three fail-closed e2e titles until PL-0717, which found them by running two suites to completion and intersecting their skip lists by hand.\\n\\nREQUIRED: that intersection is computed by a script rather than by somebody remembering to think of it. It reads the JSON reports the e2e job produces for each configuration and reports every test skipped in ALL of them.\\nREQUIRED: an ALLOWLIST of rows that legitimately run nowhere, declared and reasoned. Today it is exactly two, both media-rig rows, which need hardware no CI runner has. A row that must stay uncovered is a decision somebody records; a row that DRIFTS into being uncovered is a defect, and the allowlist is what distinguishes them.\\nREQUIRED: the check FAILS the build on an unlisted row. A warning inside a passing pipeline is how all four of the originals survived every gate this repository runs -- validate-workspace-deps.mjs says exactly that about itself and is right.\\nREQUIRED: non-vacuity. The check must be shown to FAIL against the reports as they were BEFORE PL-0717 -- where the three fail-closed titles were skipped in both configurations -- not merely to pass against today's.\\nREQUIRED: it runs somewhere a gate asks it, which means `npm run test:scripts` and therefore package.json. A check for things nothing runs that nothing runs would be the joke it sounds like.\\n\\nOUT OF SCOPE: deciding whether any particular row SHOULD be covered. The check reports and refuses; what to do about a row it names is the owning task's judgement.",
       "notes": "FILED ROUND 111 by claude-test while implementing PL-0717, whose own notes proposed it. Filed rather than folded in, because PL-0717's surface is .github/workflows/ci.yml alone and this needs a script file plus package.json. BACKLOG rather than READY: it depends on PL-0717, which is what first made a configuration write a JSON report at all, and the check wants one from every configuration.\\n\\nThe allowedPaths entries are provisional -- the implementer should settle the script's home (scripts/ beside its siblings looks right) and correct them deliberately before starting.",
-      "gateResults": {}
+      "gateResults": {
+        "unit": {
+          "status": "pass",
+          "at": "2026-10-04T17:45:41.070Z",
+          "by": "claude-test",
+          "commitSha": "a8d951f172c0a5dacc17cab5819cfc8691cf2571",
+          "evidence": "node --test scripts/assert-no-row-runs-nowhere.test.mjs: 14 tests, 14 pass, 0 fail. NON-VACUITY IS THE CENTRAL CASE AND IT IS DRIVEN TWICE, once on fixtures and once on real reports. (a) The case named \"NON-VACUITY: it fails against the reports as they were before PL-0717\" builds the two-configuration shape this repository had before PL-0717, with the three fail-closed titles skipped in both, and asserts exit 1 naming all three -- and asserts the two allowlisted media-rig rows are NOT named. A companion case adds the third configuration and the identical reports go green, so the check is not simply hostile to those titles. (b) Against REAL Playwright JSON reports produced locally this round from all three configurations (production+PostgreSQL 51 skipped, development 31 skipped, production-no-database 82 skipped, 153 rows each): three reports gives exit 0, excusing exactly the two media-rig rows; the same two pre-PL-0717 reports alone gives exit 1 naming exactly the three fail-closed titles PL-0717 found by hand. The allowlist is baked into the script with no override flag, so the tests use the real media-rig identities. CI WIRING VERIFIED LOCALLY: PL-0714 mirror-check, extracted from the workflow and run here, reports \"test:scripts names 7 suite(s)\" and \"every suite in the alias has a step in this job\"; the workflow still parses (validate 21 steps, e2e-typecheck 4, e2e 14); repo:validate passes. NOT RUN, AND WHY: the test:scripts alias as a whole does not complete -- scripts/test-ai-control-plane.mjs hangs, which is PL-0735, filed P0 this round after being found by this very command. That hang predates this task, reproduces on a clean worktree of 1474d0b, and is why CI validate has been in progress for over an hour on runs 181 and 182. The six pre-existing suites in the alias are therefore unverified by me today; the one this task adds is verified directly."
+        }
+      },
+      "owner": "claude-test",
+      "implementationAgent": "claude-test",
+      "updatedAt": "2026-10-04T17:45:46.321Z",
+      "implementationBaseSha": "a8d951f172c0a5dacc17cab5819cfc8691cf2571"
     }
-  ]
+  ],
+  "review": [],
+  "reservedExternal": [],
+  "recommended": []
 }

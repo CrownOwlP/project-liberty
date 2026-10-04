@@ -1,8 +1,8 @@
 # Project Liberty - Project Status
 
-> Generated 2026-10-04T16:46:37.029Z from the AI control plane.
+> Generated 2026-10-04T17:45:46.561Z from the AI control plane.
 
-**Overall completion:** 111/133 executable tasks (83%)
+**Overall completion:** 111/134 executable tasks (83%)
 
 ## Status summary
 
@@ -10,7 +10,7 @@
 - **READY:** 5
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 0
-- **REVIEW:** 4
+- **REVIEW:** 5
 - **BLOCKED:** 8
 - **DONE:** 111
 - **CANCELED:** 0
@@ -33,6 +33,7 @@
 
 - **PW-0208** [REVIEW] An LGPL-compatible libmpv and FFmpeg the product may actually ship — owner: claude-infra
 - **PW-0603** [REVIEW] The commander's run sheet, and the evidence it produces — owner: claude-test
+- **PL-0728** [REVIEW] A standing check for a test that is skipped in every configuration this repository runs — owner: claude-test
 - **PL-0732** [REVIEW] The diagnostics setting is stored, consumed, and reachable by nobody — owner: claude-frontend
 - **PL-0733** [REVIEW] Corrective: the Windows negative-verification step fails whether the check passes or not — owner: claude-infra
 
@@ -45,7 +46,6 @@
 
 ## Recommended executable wave
 
-- **PL-0728** -> claude-test (P2/Test) A standing check for a test that is skipped in every configuration this repository runs
 - **PL-0731** -> claude-media (P3/Player) The empty client-key allowlist refusal is asserted by nobody
 
 ## Queued for external agents
@@ -78,7 +78,7 @@ UNBLOCK WHEN: the commander runs Experiment 1a on real Windows hardware and hand
 - **claude-frontend:** 1/2 active
 - **claude-backend:** 0/2 active
 - **claude-media:** 0/2 active
-- **claude-test:** 1/2 active
+- **claude-test:** 2/2 active
 - **claude-security:** 0/1 active
 - **claude-infra:** 2/2 active
 - **human-commander:** 0/99 active (external lane; not locally executable)
