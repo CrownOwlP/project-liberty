@@ -1,16 +1,16 @@
 # Project Liberty - Project Status
 
-> Generated 2026-10-04T04:34:41.667Z from the AI control plane.
+> Generated 2026-10-04T04:57:51.071Z from the AI control plane.
 
 **Overall completion:** 100/126 executable tasks (79%)
 
 ## Status summary
 
 - **BACKLOG:** 7
-- **READY:** 4
+- **READY:** 3
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 0
-- **REVIEW:** 8
+- **REVIEW:** 9
 - **BLOCKED:** 7
 - **DONE:** 100
 - **CANCELED:** 0
@@ -34,6 +34,7 @@
 - **PW-0208** [REVIEW] An LGPL-compatible libmpv and FFmpeg the product may actually ship — owner: claude-infra
 - **PW-0308** [REVIEW] Settings a viewer can actually change — owner: claude-frontend
 - **PW-0602** [REVIEW] The automated half of the Windows matrix, running on Windows — owner: claude-test
+- **PL-0721** [REVIEW] Trusted-proxy topology and how this deployment derives a client IP — owner: claude-security
 - **PL-0722** [REVIEW] Corrective: the rate-limit spec assumed a bucket no other worker had touched, and CI is red — owner: claude-test
 - **PL-0723** [REVIEW] A profile remembers which languages its viewer wants — owner: claude-backend
 - **PL-0725** [REVIEW] Corrective: the roving group sets state inside an effect, and repository lint is red — owner: claude-frontend
@@ -42,14 +43,14 @@
 
 ## Dispatch classification
 
-- **READY_AND_EXECUTABLE:** 4
+- **READY_AND_EXECUTABLE:** 3
 - **READY_BUT_EXTERNAL:** 0
 - **BLOCKED:** 7
 - **BACKLOG (dependency-gated):** 7
 
 ## Recommended executable wave
 
-- **PL-0721** -> claude-security (P1/Security) Trusted-proxy topology and how this deployment derives a client IP
+No conflict-free executable tasks can be assigned with current agent capacity.
 
 ## Queued for external agents
 
@@ -81,6 +82,6 @@ UNBLOCK WHEN: the commander runs Experiment 1a on real Windows hardware and hand
 - **claude-backend:** 1/2 active
 - **claude-media:** 0/2 active
 - **claude-test:** 2/2 active
-- **claude-security:** 0/1 active
+- **claude-security:** 1/1 active
 - **claude-infra:** 2/2 active
 - **human-commander:** 0/99 active (external lane; not locally executable)

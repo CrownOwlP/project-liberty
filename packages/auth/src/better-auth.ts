@@ -7,6 +7,12 @@ import {
   findSurfaceViolations
 } from "./enabled-surface";
 import {
+  TRUSTED_PROXIES_VARIABLE,
+  clientIpDerivation,
+  resolveTrustedProxyTopology,
+  type ClientIpDerivation
+} from "./client-ip";
+import {
   AUTH_RATE_LIMIT_RULES,
   AUTH_RATE_LIMIT_STORAGE,
   DEFAULT_RATE_LIMIT
@@ -86,6 +92,22 @@ export interface CreateLibertyAuthInput {
     readonly subject: string;
     readonly url: string;
   }) => Promise<void>;
+  /**
+   * Where the trusted-proxy topology is read from (PL-0721).
+   *
+   * Defaults to `process.env`, so a caller that does not care passes nothing
+   * and gets the deployment's own answer. It is a PARAMETER so that the
+   * resolution is testable without mutating the process, and because a
+   * composition root that wants to supply the topology from somewhere else
+   * should not have to write it into the environment to do so.
+   *
+   * It is NOT part of `LibertyAuthConfig`, and that is a surface decision
+   * rather than an oversight: `config.ts` is the validated contract for what
+   * an OPERATOR supplies about this deployment's identity, and the hop list
+   * is validated by `client-ip.ts` with rules the generic schema has no way
+   * to express. Folding it in would mean two validators for one field.
+   */
+  readonly env?: Readonly<Record<string, string | undefined>>;
 }
 
 /**
@@ -130,8 +152,58 @@ export type LibertyAuth = ReturnType<typeof createLibertyAuth>;
  * Naming it re-widens `Auth`'s invariant parameter and stops compiling; the
  * inferred type is the honest one and is what `LibertyAuth` reads back.
  */
+/**
+ * `ClientIpDerivation` in the shape the vendor's options object demands.
+ *
+ * The vendor types these as MUTABLE arrays, and `client-ip.ts` publishes
+ * `readonly` ones because nothing downstream has any business editing a
+ * trusted-hop list. Copying is the honest reconciliation of the two: the
+ * library gets an array it is free to own, and the policy module's value is
+ * not reachable through it.
+ *
+ * `trustedProxies` is OMITTED rather than set to `undefined` when the
+ * topology is direct, and the difference is load-bearing twice over: the
+ * package compiles under `exactOptionalPropertyTypes`, and -- the reason
+ * that matters -- the library branches on `trustedProxies.length > 0`, so an
+ * empty array would select the branch that accepts a single-valued
+ * `X-Forwarded-For` from anybody.
+ */
+function mutableIpAddress(derivation: ClientIpDerivation): {
+  ipAddressHeaders: string[];
+  trustedProxies?: string[];
+} {
+  const headers = [...derivation.ipAddressHeaders];
+  if (derivation.trustedProxies === undefined) return { ipAddressHeaders: headers };
+  return { ipAddressHeaders: headers, trustedProxies: [...derivation.trustedProxies] };
+}
+
 export function createLibertyAuth(input: CreateLibertyAuthInput) {
   const { config, database, schema, sendMail } = input;
+
+  /*
+   * WHICH HOP MAY ASSERT A CLIENT ADDRESS (PL-0721), RESOLVED BEFORE ANYTHING
+   * IS BUILT.
+   *
+   * IT THROWS, AND THAT IS THE POINT. Every other failure in this package
+   * returns problems rather than throwing, and this one cannot: the only
+   * other thing to do with an unparseable hop list is to carry on with some
+   * other topology, and "some other topology" means a deployment whose
+   * operator configured a trusted proxy runs with a posture they did not
+   * choose. Worse, the library filters unparseable entries out SILENTLY, so
+   * carrying on with the list as given could empty it -- and an empty
+   * `trustedProxies` falls into the branch that accepts a single-valued
+   * `X-Forwarded-For` from anybody, which is the spoof this whole mechanism
+   * exists to close. A deployment that cannot say who it trusts must not
+   * start.
+   */
+  const topology = resolveTrustedProxyTopology(input.env ?? process.env);
+  if (!topology.ok) {
+    throw new Error(
+      `${TRUSTED_PROXIES_VARIABLE} does not describe a trusted-proxy topology, and a ` +
+        "deployment that cannot say which hop may assert a client address must not start: " +
+        topology.problems.join("; ")
+    );
+  }
 
   return betterAuth({
     // `pg` because the ruling is PostgreSQL. The adapter's `provider` is what
@@ -224,7 +296,31 @@ export function createLibertyAuth(input: CreateLibertyAuthInput) {
         // table. `crypto.randomUUID` is available on Node 22, which
         // `package.json` already requires at the root.
         generateId: () => crypto.randomUUID()
-      }
+      },
+
+      /*
+       * CLIENT-ADDRESS DERIVATION, STATED RATHER THAN INHERITED (PL-0721).
+       *
+       * This key used to be absent, and absence was not neutral. The
+       * library's own default is `ipAddressHeaders: ["x-forwarded-for"]`
+       * with no trusted hop, and in that state it accepts a header carrying
+       * one valid address -- so any caller could choose its own rate-limit
+       * bucket by writing a header, and get an unbounded number of
+       * three-attempt windows out of the credential limit `rate-limit.ts`
+       * owns. `client-ip.ts` has the measurement.
+       *
+       * The default here reads NO header at all. A deployment opts in to
+       * forwarded-client-IP semantics by naming its hops, which is exactly
+       * gpt-architect's round-110 ruling: only enable this "when the
+       * deployment explicitly defines which proxy hop is trusted".
+       *
+       * `disableIpTracking` IS DELIBERATELY NOT USED. It reads like the way
+       * to say "read no header", and it is not: `resolveRateLimitConfig`
+       * returns `null` when it is set and no address resolves, which turns
+       * rate limiting OFF. An empty header list reaches the same "no
+       * address" state down the path that keeps the shared bucket.
+       */
+      ipAddress: mutableIpAddress(clientIpDerivation(topology.topology))
     }
   });
 }

@@ -330,6 +330,23 @@ async function forgetPreferences(
   expect(response.status(), await response.text()).toBe(200);
 }
 
+/**
+ * The Languages section, as a container to look inside.
+ *
+ * SCOPED, AND NOT FOR TIDINESS. `page.getByRole("alert")` matched TWO
+ * elements on a later run of this file: the form's own refusal, and Next's
+ * `__next-route-announcer__`, which is a `role="alert"` live region the
+ * framework inserts and which is empty most of the time. Playwright's strict
+ * mode failed the case, correctly -- an unscoped alert query was asserting
+ * "some alert exists", which is not what this test means, and it passed the
+ * first time only because of when the announcer happened to be in the DOM.
+ * An order-dependent assertion is a CI failure waiting for a different
+ * machine.
+ */
+function languages(page: Page) {
+  return page.locator('section[aria-labelledby="settings-languages"]');
+}
+
 function audioField(page: Page) {
   return page.getByLabel("Preferred audio languages");
 }
@@ -449,7 +466,15 @@ test.describe("the language form, against a real session and a real database", (
     await audioField(page).fill("english");
     await page.getByRole("button", { name: "Save" }).click();
 
-    await expect(page.getByRole("alert")).toBeVisible();
+    const refusal = languages(page).getByRole("alert");
+    await expect(refusal).toBeVisible();
+    /*
+     * AND IT IS THE ENDPOINT'S OWN REASON, not any message the component
+     * might show. The contract's `language_tag_unusable` is the one a viewer
+     * can cause by typing and the one a UI must explain, so the text that
+     * reaches the screen has to be that one rather than a generic failure.
+     */
+    await expect(refusal).toContainText(/BCP-47 language tag/i);
     await expect(page.getByText(/these are your choices/i)).toHaveCount(0);
 
     /* AND NOTHING WAS STORED. The alert could be shown by a client that wrote

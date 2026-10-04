@@ -25,18 +25,30 @@ import { RovingGroup } from "./roving-group";
 
 const INSTRUCTION = /arrow keys/i;
 
+/*
+ * OFF-SITE HREFS, FOR A LINT RULE RATHER THAN FOR REALISM. A rail's cards link
+ * to `/title/<id>`, and `@next/next/no-html-link-for-pages` refuses a raw `<a>`
+ * pointing at a route this application serves -- correctly, for product code.
+ * Here the children are only something focusable to arrange, and importing
+ * `next/link` would drag the router into a server-render assertion that is not
+ * about routing at all. A `.invalid` host (RFC 2606) can never resolve, so
+ * nothing here can be mistaken for a real destination.
+ */
+const ONE = "https://cards.invalid/one";
+const TWO = "https://cards.invalid/two";
+
 describe("what the server sends, before anything can listen for a key", () => {
   it("renders the group and its children", () => {
     const html = renderToStaticMarkup(
       <RovingGroup as="ul" itemNoun="titles on the Trending rail">
         <li>
-          <a href="/title/one">One</a>
+          <a href={ONE}>One</a>
         </li>
       </RovingGroup>
     );
 
     expect(html).toContain('data-testid="roving-group"');
-    expect(html).toContain('href="/title/one"');
+    expect(html).toContain(`href="${ONE}"`);
   });
 
   it("promises no arrow keys on a page where nothing is listening for them", () => {
@@ -51,7 +63,7 @@ describe("what the server sends, before anything can listen for a key", () => {
     const html = renderToStaticMarkup(
       <RovingGroup as="ul" itemNoun="titles on the Trending rail">
         <li>
-          <a href="/title/one">One</a>
+          <a href={ONE}>One</a>
         </li>
       </RovingGroup>
     );
@@ -70,10 +82,10 @@ describe("what the server sends, before anything can listen for a key", () => {
     const html = renderToStaticMarkup(
       <RovingGroup as="ul" itemNoun="titles on the Trending rail">
         <li>
-          <a href="/title/one">One</a>
+          <a href={ONE}>One</a>
         </li>
         <li>
-          <a href="/title/two">Two</a>
+          <a href={TWO}>Two</a>
         </li>
       </RovingGroup>
     );

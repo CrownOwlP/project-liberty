@@ -11,6 +11,15 @@
  * ---------------------------------------------------------------------- */
 
 export * from "./authorization";
+/*
+ * `./client-ip` IS SAFE TO STAR-EXPORT (PL-0721). It defines no vendor type
+ * and holds no secret: a topology, a parser for it, and the two shapes a
+ * caller needs to report or apply it. The one thing a consumer could do with
+ * it that matters is call `resolveTrustedProxyTopology` -- which is how the
+ * composition root would report the posture it is running under, and is the
+ * reason this is exported rather than kept internal to `better-auth.ts`.
+ */
+export * from "./client-ip";
 export * from "./config";
 export * from "./enabled-surface";
 export * from "./rate-limit";
