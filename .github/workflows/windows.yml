@@ -138,6 +138,7 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        id: checkout
 
       # THE NODE THAT SHIPS INSIDE THE APPLICATION COMES FROM HERE, and that is
       # the answer `package-sidecar.mjs` demands in its own header: "which one
@@ -150,6 +151,7 @@ jobs:
       # the published checksum; that is the provenance, and it is better than
       # any binary this repository could vendor.
       - uses: actions/setup-node@v4
+        id: node
         with:
           node-version-file: .nvmrc
           cache: npm
@@ -159,15 +161,18 @@ jobs:
       # is recorded against what was built, and `stable` means the toolchain
       # that produced a passing result can change with no commit saying so.
       - name: Install the pinned Rust toolchain
+        id: rust
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: "1.90.0"
 
       - uses: Swatinem/rust-cache@v2
+        id: rustcache
         with:
           workspaces: apps/desktop/src-tauri
 
       - name: Install dependencies
+        id: install
         run: npm ci --no-audit --no-fund
 
       # ==================================================================
@@ -180,9 +185,11 @@ jobs:
       # build` with a variable bolted on here instead would exercise a private
       # arrangement that only works in CI.
       - name: Build the application server for the desktop target
+        id: webbuild
         run: npm run build:desktop --workspace @liberty/web
 
       - name: Lay out the packaged sidecar
+        id: sidecar
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
@@ -212,6 +219,7 @@ jobs:
       # lockfile is the better long-term home and is blocked only on the root
       # manifest surface; it is raised rather than quietly preferred.
       - name: Build the Windows installers
+        id: bundle
         working-directory: apps/desktop
         run: npx --yes "@tauri-apps/cli@${{ env.TAURI_CLI_VERSION }}" build
 
@@ -252,6 +260,7 @@ jobs:
       # that keeps the positive check honest: a `verify-install.mjs` that
       # returned 0 unconditionally would make every F1 and F4 below a pass.
       - name: The install verifier refuses a directory that is not an install
+        id: verifier
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
@@ -358,6 +367,7 @@ jobs:
       # checked and one that has to be taken on trust, and taking Windows
       # evidence on trust is the one thing this project forbids outright.
       - name: Publish the lifecycle report to the run summary
+        id: publish
         if: ${{ !cancelled() }}
         shell: pwsh
         run: |
@@ -413,11 +423,21 @@ jobs:
             # from a failing one. The harness refuses rather than reports when
             # it cannot run, so saying "no report" beats rendering an empty
             # table that looks like a clean machine.
-            Annotate "warning" "Windows lifecycle" ("NO REPORT WAS PRODUCED. The harness writes nothing when it refuses " +
-              "(wrong platform, missing or bad --msi), which is a fault in this workflow rather than in the product.")
-            $lines += "**No report was produced.** The harness exits 2 and writes nothing when it refuses"
-            $lines += "(wrong platform, missing or bad ``--msi``). Read the ``Observe the installer lifecycle"
-            $lines += "harness`` step: a refusal is a fault in this workflow, not in the product."
+            # CORRECTED IN ROUND 110. This used to assert that the harness
+            # had refused over a bad --msi. It does not know that: the report
+            # is equally absent when the Tauri bundle failed, when the
+            # inventory held no msi, or when the verifier check failed, and in
+            # Windows #14 that wording invited exactly the wrong conclusion.
+            # The step that actually failed is named by "Which step failed".
+            Annotate "warning" "Windows lifecycle" ("NO REPORT WAS PRODUCED, AND THIS MESSAGE DOES NOT KNOW WHY. " +
+              "The report is absent whenever the job did not reach a completed harness run: the bundle may have " +
+              "failed, the inventory may have held no msi, the verifier check may have failed, or the harness " +
+              "may have refused. Read the 'windows package failed' annotation, which names the failing step.")
+            $lines += "**No report was produced, and this section does not know why.**"
+            $lines += "The report is absent whenever the job did not reach a completed harness run: the"
+            $lines += "bundle may have failed, the inventory may have held no ``msi``, the verifier check"
+            $lines += "may have failed, or the harness may have refused. The ``Which step failed`` step"
+            $lines += "names the step that actually stopped the job."
             $lines -join "`n" | Out-File -Append -Encoding utf8 $out
             exit 0
           }
@@ -495,6 +515,7 @@ jobs:
           $text | Out-File -Append -Encoding utf8 $out
 
       - name: Upload the unsigned installers and their inventory
+        id: uploadinstallers
         uses: actions/upload-artifact@v4
         with:
           # UNSIGNED IS IN THE NAME, so a consumer cannot mistake this for a
@@ -511,6 +532,7 @@ jobs:
       # the step above failed -- and `if: always()` on an upload is not
       # `continue-on-error`: the job's result is unchanged.
       - name: Upload the installer logs
+        id: uploadlogs
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
         with:
@@ -525,6 +547,90 @@ jobs:
             windows-lifecycle-report.json
           if-no-files-found: ignore
           retention-days: 14
+
+      # ==================================================================
+      # WHICH STEP ACTUALLY FAILED (PW-0602, round 110)
+      # ==================================================================
+      #
+      # A CORRECTION RATHER THAN AN ADDITION. Windows #14 failed this job with
+      # "Process completed with exit code 1" and nothing else, because only two
+      # of its fourteen steps carried an `id`. The only other annotation was
+      # the lifecycle publisher's "NO REPORT WAS PRODUCED", which then invited
+      # the reader to conclude the harness had refused over a bad --msi -- a
+      # cause it had not measured and could not know, since the report is
+      # equally absent when the Tauri bundle fails, when the inventory holds no
+      # msi, or when the verifier check fails.
+      #
+      # So this names the step. Same mechanism `ci.yml` already uses for its
+      # validate job and for the same reason: the agent session that maintains
+      # this workflow cannot read run logs or download artifacts -- the Actions
+      # API answers 403 and artifact download needs authentication -- and
+      # annotations are the one channel it CAN read.
+      #
+      # `failure()` rather than `always()`: on a green run there is no first
+      # failing step, and an annotation saying so would be noise on every
+      # successful build.
+      - name: Which step failed
+        if: ${{ failure() }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Continue"
+          function Annotate([string] $level, [string] $title, [string] $message) {
+            $flat = ($message -replace '\r?\n', ' ') -replace '::', ' - '
+            if ($flat.Length -gt 380) { $flat = $flat.Substring(0, 380) + "..." }
+            Write-Host "::${level} title=${title}::${flat}"
+          }
+
+          # IN EXECUTION ORDER, so "the first one that is not success" really
+          # is the step that stopped the job. A hashtable would not preserve
+          # that and the answer would depend on enumeration order.
+          $steps = @(
+            @{ name = "checkout";           outcome = "${{ steps.checkout.outcome }}" }
+            @{ name = "setup-node";         outcome = "${{ steps.node.outcome }}" }
+            @{ name = "rust-toolchain";     outcome = "${{ steps.rust.outcome }}" }
+            @{ name = "rust-cache";         outcome = "${{ steps.rustcache.outcome }}" }
+            @{ name = "npm-ci";             outcome = "${{ steps.install.outcome }}" }
+            @{ name = "build-desktop-web";  outcome = "${{ steps.webbuild.outcome }}" }
+            @{ name = "package-sidecar";    outcome = "${{ steps.sidecar.outcome }}" }
+            @{ name = "tauri-bundle";       outcome = "${{ steps.bundle.outcome }}" }
+            @{ name = "artifact-inventory"; outcome = "${{ steps.inventory.outcome }}" }
+            @{ name = "verifier-negative";  outcome = "${{ steps.verifier.outcome }}" }
+            @{ name = "lifecycle";          outcome = "${{ steps.lifecycle.outcome }}" }
+            @{ name = "publish-report";     outcome = "${{ steps.publish.outcome }}" }
+            @{ name = "upload-installers";  outcome = "${{ steps.uploadinstallers.outcome }}" }
+            @{ name = "upload-logs";        outcome = "${{ steps.uploadlogs.outcome }}" }
+          )
+
+          $trail = ($steps | ForEach-Object {
+            $o = if ([string]::IsNullOrEmpty($_.outcome)) { "not-reached" } else { $_.outcome }
+            "$($_.name)=$o"
+          }) -join " "
+
+          $failed = $steps | Where-Object {
+            $_.outcome -and $_.outcome -ne "success" -and $_.outcome -ne "skipped"
+          } | Select-Object -First 1
+
+          if ($null -eq $failed) {
+            Annotate "warning" "windows package failed" "The job failed but no step reports a non-success outcome, so the failure is in the runner or in something this list does not name. Trail: $trail"
+          } else {
+            Annotate "error" "windows package failed" "FIRST FAILING STEP: $($failed.name) ($($failed.outcome)). Everything after it did not run. Trail: $trail"
+          }
+
+          # WHAT THE BUNDLE ACTUALLY PRODUCED. "tauri-bundle=success" and
+          # "there is an msi where the inventory looks for one" are different
+          # claims, and conflating them is how the previous message went wrong.
+          $bundleRoot = "apps/desktop/src-tauri/target/release/bundle"
+          if (Test-Path $bundleRoot) {
+            $found = Get-ChildItem $bundleRoot -Recurse -Include *.msi, *.exe -ErrorAction SilentlyContinue |
+              ForEach-Object { $_.FullName }
+            if ($found) {
+              Annotate "notice" "windows package artifacts" ("bundle holds: " + ($found -join "; "))
+            } else {
+              Annotate "warning" "windows package artifacts" "The bundle directory exists but holds no .msi or .exe at any depth, so nothing downstream had an installer to work with."
+            }
+          } else {
+            Annotate "warning" "windows package artifacts" "No $bundleRoot at all, so the bundle step did not get far enough to create one."
+          }
 
   # =======================================================================
   # THE E2E SUITE AGAINST THE DESKTOP TARGET, ON WINDOWS (PW-0602)
