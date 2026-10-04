@@ -60,7 +60,14 @@
  * be a roving tabindex at all.
  * ---------------------------------------------------------------------- */
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode
+} from "react";
 
 import {
   cardOwning,
@@ -115,6 +122,31 @@ export interface RovingGroupProps {
   readonly itemNoun: string;
 }
 
+/* -------------------------------------------------------------------------
+ * "Has this hydrated yet", asked without storing an answer
+ *
+ * A store that never emits. `subscribeToNothing` returns an unsubscribe that
+ * has nothing to undo, so React subscribes once and is never told of a change
+ * -- which is correct, because hydrating happens once and cannot un-happen.
+ *
+ * DEFINED AT MODULE SCOPE so the three function identities are stable across
+ * renders. Inline arrows would be new functions every render, and React would
+ * tear down and re-create the subscription each time.
+ * ---------------------------------------------------------------------- */
+function subscribeToNothing(): () => void {
+  return function unsubscribeFromNothing(): void {
+    /* Nothing was subscribed to. */
+  };
+}
+
+function onTheClient(): boolean {
+  return true;
+}
+
+function onTheServer(): boolean {
+  return false;
+}
+
 export function RovingGroup({ as, className, children, itemNoun }: RovingGroupProps) {
   const container = useRef<HTMLElement | null>(null);
   const [active, setActive] = useState(0);
@@ -122,8 +154,18 @@ export function RovingGroup({ as, className, children, itemNoun }: RovingGroupPr
    * MOUNTED, NOT "is this the browser". The first client render must produce
    * the server's markup or React replaces the subtree, so the arrangement is
    * applied in an effect and this flag is what makes the first pass a no-op.
+   *
+   * `useSyncExternalStore` RATHER THAN A FLAG SET IN AN EFFECT. The first
+   * draft was `useState(false)` with `setMounted(true)` at the top of the
+   * effect below, which `react-hooks/set-state-in-effect` refuses -- rightly:
+   * a synchronous setState in an effect is a second render pass on every
+   * mount, and the rule cannot tell this one from a cascade. This hook asks
+   * the question directly instead: the server snapshot is `false`, the client
+   * snapshot is `true`, the store never changes, and React does the
+   * hydration-safe switch itself. Same two renders, no state, and nothing for
+   * a later edit to accidentally make conditional.
    */
-  const [mounted, setMounted] = useState(false);
+  const mounted = useSyncExternalStore(subscribeToNothing, onTheClient, onTheServer);
 
   /** The cards, and the controls inside each, as the DOM has them right now. */
   const read = useCallback((): { cards: HTMLElement[]; controls: HTMLElement[][] } => {
@@ -195,12 +237,18 @@ export function RovingGroup({ as, className, children, itemNoun }: RovingGroupPr
    * neither is one it ever writes, so the loop cannot close.
    */
   useEffect(() => {
-    setMounted(true);
-    const settled = apply();
-    if (settled !== null && settled !== active) {
-      setActive(settled);
-      return;
-    }
+    /*
+     * `apply()` CLAMPS, AND NOTHING WRITES THE CLAMP BACK INTO STATE. An
+     * earlier draft did: it compared the settled index against `active` and
+     * called `setActive` when a shrinking rail had left the stored index past
+     * the end. `react-hooks/set-state-in-effect` refuses that, and the rule is
+     * right that the write was unnecessary -- `active` is a REQUEST, and every
+     * place it is used clamps it against the count the DOM has at that moment.
+     * `apply` always did; `onKeyDown` now does too, which also fixes a real
+     * edge the old code only papered over, since ArrowLeft from an
+     * out-of-range index returned another out-of-range index.
+     */
+    apply();
     const root = container.current;
     if (root === null) return;
     const observer = new MutationObserver(() => {
@@ -220,7 +268,8 @@ export function RovingGroup({ as, className, children, itemNoun }: RovingGroupPr
   const onKeyDown = (event: React.KeyboardEvent<HTMLElement>): void => {
     if (!isGroupKey(event.key)) return;
     const { controls } = read();
-    const target = nextActive(event.key, active, controls.length);
+    /* Clamped, because `active` may name a card the rail no longer has. */
+    const target = nextActive(event.key, clampActive(active, controls.length), controls.length);
     if (target === null) return;
     /*
      * PREVENTED EVEN WHEN THE ACTIVE CARD DOES NOT MOVE. At the last card

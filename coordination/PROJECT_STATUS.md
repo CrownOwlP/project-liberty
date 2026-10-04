@@ -1,16 +1,16 @@
 # Project Liberty - Project Status
 
-> Generated 2026-10-04T03:48:02.026Z from the AI control plane.
+> Generated 2026-10-04T04:13:26.314Z from the AI control plane.
 
-**Overall completion:** 99/122 executable tasks (81%)
+**Overall completion:** 99/124 executable tasks (80%)
 
 ## Status summary
 
-- **BACKLOG:** 7
+- **BACKLOG:** 8
 - **READY:** 3
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 1
-- **REVIEW:** 5
+- **REVIEW:** 6
 - **BLOCKED:** 7
 - **DONE:** 99
 - **CANCELED:** 0
@@ -37,13 +37,14 @@
 - **PW-0602** [REVIEW] The automated half of the Windows matrix, running on Windows — owner: claude-test
 - **PL-0722** [REVIEW] Corrective: the rate-limit spec assumed a bucket no other worker had touched, and CI is red — owner: claude-test
 - **PL-0723** [REVIEW] A profile remembers which languages its viewer wants — owner: claude-backend
+- **PL-0725** [REVIEW] Corrective: the roving group sets state inside an effect, and repository lint is red — owner: claude-frontend
 
 ## Dispatch classification
 
 - **READY_AND_EXECUTABLE:** 3
 - **READY_BUT_EXTERNAL:** 0
 - **BLOCKED:** 7
-- **BACKLOG (dependency-gated):** 7
+- **BACKLOG (dependency-gated):** 8
 
 ## Recommended executable wave
 
@@ -75,7 +76,7 @@ UNBLOCK WHEN: the commander runs Experiment 1a on real Windows hardware and hand
 
 - **gpt-architect:** 0/6 active (external lane; not locally executable)
 - **claude-lead:** 1/2 active
-- **claude-frontend:** 1/2 active
+- **claude-frontend:** 2/2 active
 - **claude-backend:** 1/2 active
 - **claude-media:** 0/2 active
 - **claude-test:** 2/2 active

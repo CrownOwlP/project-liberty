@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-04T03:48:02.030Z",
+  "generatedAt": "2026-10-04T04:13:26.318Z",
   "agent": "claude-frontend",
   "executionAvailable": true,
   "assigned": [
@@ -11,6 +11,7 @@
       "title": "Settings a viewer can actually change",
       "dependencies": [
         "PL-0723",
+        "PL-0724",
         "PW-0301",
         "PW-0306"
       ],
@@ -18,7 +19,11 @@
         "apps/web/src/app/settings/**",
         "apps/web/src/components/settings/**",
         "apps/web/src/app/watch/watch-session.ts",
-        "apps/web/src/app/watch/watch-session.test.ts"
+        "apps/web/src/app/watch/watch-session.test.ts",
+        "apps/web/src/components/shell/navigation.ts",
+        "apps/web/src/lib/viewer-preferences.ts",
+        "apps/web/src/lib/viewer-preferences.test.ts",
+        "apps/web/src/app/watch/[contentId]/page.tsx"
       ],
       "reviewDependencies": [
         "apps/web/src/app/api/v1/profiles",
@@ -39,8 +44,70 @@
       "owner": "claude-frontend",
       "gateResults": {},
       "implementationAgent": "claude-frontend",
-      "updatedAt": "2026-10-04T03:25:56.584383Z",
+      "updatedAt": "2026-10-04T03:53:59.025478Z",
       "implementationBaseSha": "25994202b1397d7e972febdb24edd685d8a08405"
+    },
+    {
+      "id": "PL-0725",
+      "priority": "P1",
+      "lane": "Frontend",
+      "status": "REVIEW",
+      "title": "Corrective: the roving group sets state inside an effect, and repository lint is red",
+      "dependencies": [],
+      "allowedPaths": [
+        "apps/web/src/lib/a11y/roving-group.tsx",
+        "apps/web/src/lib/a11y/roving-group.test.tsx"
+      ],
+      "reviewDependencies": [
+        "apps/web/src/lib/a11y/roving.ts",
+        "apps/web/src/lib/a11y/roving.test.ts",
+        "e2e/tests/keyboard-reachability.spec.ts",
+        "apps/web/eslint.config.mjs"
+      ],
+      "preferredAgent": "claude-frontend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "lint",
+        "unit",
+        "e2e"
+      ],
+      "acceptance": "`npm run lint` FAILS AT THE REPOSITORY LEVEL on a file PW-0310 shipped in round 109:\n\n  apps/web/src/lib/a11y/roving-group.tsx:198:5\n  error  Calling setState synchronously within an effect can trigger cascading renders  react-hooks/set-state-in-effect\n\nConfirmed to pre-exist this round's work: stashing the working-tree change and re-running eslint against the COMMITTED file reproduces the same error at the same line. PW-0310's declared gates are typecheck, unit, e2e and architecture-review -- there is no lint gate on it -- so no gate was falsified; the check that would have caught this was not among the ones the task had to run.\n\nTHERE ARE TWO setState CALLS IN THAT EFFECT AND THEY ARE DIFFERENT PROBLEMS. `setMounted(true)` is a hydration guard: the first client render must reproduce the server's markup, so the arrow-key instruction in `aria-description` may only appear once the keys actually work. `setActive(settled)` writes a CLAMPED index back into state when a shrinking rail has left the stored index past the end.\n\nREQUIRED: the lint error is gone and `npm run lint` is green at the repository level.\nREQUIRED: the hydration guard still holds -- the server render must still carry no `aria-description`, and the client must still gain one. Announcing 'use the arrow keys' on a page where nothing is listening for them is a false promise to a screen-reader user, and deleting the guard to satisfy a lint rule would make that promise.\nREQUIRED: a stale active index still cannot send focus to a card that is not there. If the write-back is removed, the clamp must move to every point of use -- note that `nextActive` is NOT safe against an out-of-range `current`: ArrowLeft from index 7 in a 3-card rail returns 6.\nREQUIRED: the keyboard e2e gate (`e2e/tests/keyboard-reachability.spec.ts`, including its two planted-failure cases) still passes against a real browser. A refactor of focus management that is only unit-tested is not evidenced.\n\nFORBIDDEN: an eslint-disable comment, a rule downgrade or removal in the eslint config, or any change that makes the command green without changing the behaviour the rule is objecting to. The rule is right: a synchronous setState in an effect is an extra render pass on every mount, and the rule cannot tell this one from a cascade.\nNOT IN SCOPE: the two pre-existing lint WARNINGS elsewhere in apps/web (`_omitted` and `WatchlistEntryRow` unused). They are warnings, they are not this file, and bundling them here would widen a corrective task into a cleanup.",
+      "notes": "FILED ROUND 110 by claude-lead after `npm run lint` failed during PW-0308's gate sequence. Filed rather than fixed inside PW-0308 because apps/web/src/lib/a11y/** is PW-0310's surface and PW-0310 is DONE: reaching into a closed task's files from an in-progress one would be the silent surface broadening the standing constraints forbid.",
+      "gateResults": {
+        "typecheck": {
+          "status": "pass",
+          "at": "2026-10-04T04:12:54.497Z",
+          "by": "claude-frontend",
+          "commitSha": "c925b27d0f1407f79e55110b484235db34f51d8b",
+          "evidence": "npm run typecheck -- 22 tasks successful, 0 failures, at the working tree containing the roving-group change. Also npx tsc --noEmit -p apps/web/tsconfig.json alone: exit 0, no output."
+        },
+        "lint": {
+          "status": "pass",
+          "at": "2026-10-04T04:12:54.755Z",
+          "by": "claude-frontend",
+          "commitSha": "c925b27d0f1407f79e55110b484235db34f51d8b",
+          "evidence": "npm run lint -- exit 0. BEFORE: the same command exited 1 with 'apps/web/src/lib/a11y/roving-group.tsx:198:5 error Calling setState synchronously within an effect can trigger cascading renders react-hooks/set-state-in-effect'. AFTER: '2 problems (0 errors, 2 warnings)' -- the two surviving warnings are the pre-existing unused '_omitted' and 'WatchlistEntryRow', which the acceptance puts out of scope by name. NO SUPPRESSION WAS USED: the repository contains no new eslint-disable comment and apps/web/eslint.config.mjs is unmodified (git status shows it untouched)."
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-10-04T04:13:06.692Z",
+          "by": "claude-frontend",
+          "commitSha": "c925b27d0f1407f79e55110b484235db34f51d8b",
+          "evidence": "npx vitest run apps/web -- 95 files, 1714 tests, 0 failures. Includes the new apps/web/src/lib/a11y/roving-group.test.tsx (7 tests), which asserts the half neither existing suite could see: the SERVER render carries no aria-description, no arrow-key instruction and no tabindex, for both the ul and div shapes. Its three source rules carry non-vacuity checks -- the effect-body rule asserts the effect was actually found before asserting what is absent from it, so a refactor that renamed the effect fails loudly rather than passing emptily. roving.test.ts (17 tests) and keyboard-reachability.test.ts (25 tests) unchanged and passing."
+        },
+        "e2e": {
+          "status": "pass",
+          "at": "2026-10-04T04:13:06.972Z",
+          "by": "claude-frontend",
+          "commitSha": "c925b27d0f1407f79e55110b484235db34f51d8b",
+          "evidence": "npx playwright test tests/keyboard-reachability.spec.ts --project=chromium --workers=1 against a real next dev server on port 3177 (LIBERTY_E2E_WEB_MODE=development): 10 passed, 0 failed, 42.4s. The ten include the two PLANTED-FAILURE cases -- 'THE GATE ITSELF FAILS WHEN SOMETHING IS UNREACHABLE' and 'THE ROVING-GROUP CHECK ITSELF FAILS WHEN A RAIL LOSES ITS ENTRY POINT' -- so the suite is proven non-vacuous in the same run, and 'ARROW KEYS MOVE ALONG A RAIL, and Tab then leaves it', which is the behaviour this change refactored. CHROMIUM ONLY, AND THAT IS THE WHOLE GATE SURFACE, NOT A NARROWING: ci.yml's e2e job runs 'npx playwright install chromium' and nothing else. The firefox, webkit and mobile-safari projects are UNVERIFIED here -- their browser binaries are absent from this container (browserType.launch: Executable doesn't exist at /root/.cache/ms-playwright/firefox-1538/firefox/firefox) and they are not run in CI either. Note on the run: PLAYWRIGHT_BROWSERS_PATH had to be pointed at ~/.cache/ms-playwright, because the container's /opt/pw-browsers holds revision 1194 while the pinned @playwright/test 1.62.1 wants 1234; that is an environment fact about this container, not a change to the pinned version."
+        }
+      },
+      "owner": "claude-frontend",
+      "implementationAgent": "claude-frontend",
+      "updatedAt": "2026-10-04T04:13:26.283Z",
+      "implementationBaseSha": "c925b27d0f1407f79e55110b484235db34f51d8b"
     }
   ],
   "review": [],
