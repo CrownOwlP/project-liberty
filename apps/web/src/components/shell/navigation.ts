@@ -61,7 +61,13 @@ export const PRIMARY_NAVIGATION: readonly NavigationEntry[] = [
    */
   live("watchlist", "Watchlist", "/watchlist"),
   planned("live", "Live TV", "live acquisition is PL-0602, blocked on licensed feed access"),
-  planned("settings", "Settings", "PW-0308")
+  /*
+   * THE SAME ONE-FIELD MIGRATION PW-0304 PERFORMED, performed again (PW-0308).
+   * This read `planned("settings", "Settings", "PW-0308")` -- a non-link
+   * naming the task that would build the screen. The screen exists, so the
+   * field is deleted and nothing else about this module changed.
+   */
+  live("settings", "Settings", "/settings")
 ];
 
 /** Whether an entry is currently reachable. Used by the renderer; here so the rule is one place. */

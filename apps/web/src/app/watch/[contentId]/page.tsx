@@ -11,6 +11,7 @@ import {
   isRestartRequested,
   loadResumePosition
 } from "../../../lib/continue-watching";
+import { loadMediaPreferences } from "../../../lib/viewer-preferences";
 import { findDemoSeriesForEpisode } from "../../title/demo-title-details";
 import { nextUpFor, type NextUp } from "../../../lib/next-episode";
 
@@ -150,7 +151,37 @@ async function PlaybackBody({
    */
   const resumeAtSeconds = restart ? null : await loadResumePosition(inbound, contentId);
 
-  const result = await loadPlaybackSession(contentId, { headers: inbound }, undefined, resumeAtSeconds);
+  /*
+   * THE VIEWER'S PREFERRED AUDIO LANGUAGES, RESOLVED HERE FOR THE SAME REASON
+   * (PW-0308).
+   *
+   * `watch-session.ts` cannot read a profile store without importing one, and
+   * its suite asserts its import graph. A stored preference is data, exactly
+   * like a resume point, so it is loaded on this side and handed down.
+   *
+   * `stored` DECIDES WHETHER ANYTHING IS HANDED DOWN AT ALL. A profile nobody
+   * has configured sends `null`, and the session request carries the
+   * conservative default it has always carried. A profile that cleared its
+   * lists sends `[]`, which is a real instruction and not an absence. The two
+   * are indistinguishable in `preferences` alone, which is why the loader
+   * reports the flag.
+   *
+   * `restart` DOES NOT SHORT-CIRCUIT THIS the way it does the resume read.
+   * Starting over is a request to ignore where you were, not to ignore what
+   * language you speak.
+   */
+  const chosen = await loadMediaPreferences(inbound);
+  const preferredAudioLanguages = chosen.stored
+    ? chosen.preferences.preferredAudioLanguages
+    : null;
+
+  const result = await loadPlaybackSession(
+    contentId,
+    { headers: inbound },
+    undefined,
+    resumeAtSeconds,
+    preferredAudioLanguages
+  );
 
   if (result.status === "error") {
     return (

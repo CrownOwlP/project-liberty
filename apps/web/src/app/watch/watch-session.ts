@@ -508,7 +508,34 @@ export async function loadPlaybackSession(
    * suite asserts what it is allowed to name. A resume point is data; making it
    * an import would have been a dependency.
    */
-  resumeAtSeconds: number | null = null
+  resumeAtSeconds: number | null = null,
+  /**
+   * The audio languages this profile prefers, most-preferred first, or `null`
+   * for "nobody has chosen" (PW-0308).
+   *
+   * `null` AND `[]` ARE DIFFERENT ANSWERS AND BOTH ARE REACHABLE. `null` means
+   * no stored preference -- an unconfigured profile, no identity system, a
+   * failed read -- and gets `CONSERVATIVE_CAPABILITIES.preferredAudioLanguages`,
+   * which is what every viewer got before this parameter existed. `[]` means a
+   * viewer cleared their lists, which is a stated preference for no ordering at
+   * all, and it is passed through as the empty list. Collapsing them would
+   * either re-default a viewer who opted out or change the product's default
+   * for everybody who has not opened the settings screen.
+   *
+   * PASSED IN AS DATA FOR THE SAME REASON THE RESUME POINT IS. Reading the
+   * profile store from here would mean importing `lib/viewer-preferences.ts`
+   * and through it the request-context and repository graph, and this file's
+   * own suite asserts what it is allowed to name.
+   *
+   * IT REPLACES ONE LITERAL AND INVENTS NOTHING. Only
+   * `preferredAudioLanguages` is sourced from the viewer; every other field of
+   * `CONSERVATIVE_CAPABILITIES` is a claim about what the DEVICE can decode,
+   * which a settings screen does not know and must not be allowed to widen. A
+   * preference list is an ordering hint -- the engine falls back on its own
+   * when nothing matches -- so nothing here can make an undecodable candidate
+   * eligible.
+   */
+  preferredAudioLanguages: readonly string[] | null = null
 ): Promise<WatchSessionResult> {
   /*
    * Checked before the route is called. An id that is not normalized cannot
@@ -522,10 +549,21 @@ export async function loadPlaybackSession(
   const headers = new Headers(context.headers);
   headers.set("content-type", "application/json");
 
+  /*
+   * THE DEVICE PROFILE, WITH THE ONE FIELD A VIEWER OWNS. Spread first so the
+   * codec and height claims are literally the reviewed ones, then the single
+   * override -- which makes it impossible for this expression to widen a
+   * capability by accident, and obvious on sight which field is viewer input.
+   */
+  const capabilities: PlaybackCapabilities =
+    preferredAudioLanguages === null
+      ? CONSERVATIVE_CAPABILITIES
+      : { ...CONSERVATIVE_CAPABILITIES, preferredAudioLanguages: [...preferredAudioLanguages] };
+
   const request = new Request(new URL(PLAYBACK_SESSION_ROUTE, IN_PROCESS_ORIGIN), {
     method: "POST",
     headers,
-    body: JSON.stringify({ contentId, capabilities: CONSERVATIVE_CAPABILITIES })
+    body: JSON.stringify({ contentId, capabilities })
   });
 
   let payload: unknown;

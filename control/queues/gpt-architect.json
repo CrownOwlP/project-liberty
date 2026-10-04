@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-04T04:33:43.129Z",
+  "generatedAt": "2026-10-04T04:34:41.670Z",
   "agent": "gpt-architect",
   "executionAvailable": false,
   "assigned": [],
@@ -43,6 +43,73 @@
       "implementationAgent": "claude-infra",
       "updatedAt": "2026-10-02T15:52:13.908Z",
       "implementationBaseSha": "9ac755ba7a3b4945b54b729f9a7a7569c7d990e2"
+    },
+    {
+      "id": "PW-0308",
+      "priority": "P2",
+      "lane": "Frontend",
+      "status": "REVIEW",
+      "title": "Settings a viewer can actually change",
+      "dependencies": [
+        "PL-0723",
+        "PL-0724",
+        "PW-0301",
+        "PW-0306"
+      ],
+      "allowedPaths": [
+        "apps/web/src/app/settings/**",
+        "apps/web/src/components/settings/**",
+        "apps/web/src/app/watch/watch-session.ts",
+        "apps/web/src/app/watch/watch-session.test.ts",
+        "apps/web/src/components/shell/navigation.ts",
+        "apps/web/src/lib/viewer-preferences.ts",
+        "apps/web/src/lib/viewer-preferences.test.ts",
+        "apps/web/src/app/watch/[contentId]/page.tsx",
+        "e2e/tests/settings.spec.ts"
+      ],
+      "reviewDependencies": [
+        "apps/web/src/app/api/v1/profiles",
+        "apps/web/src/components/player/telemetry-decision.ts",
+        "packages/contracts/src/domains/audio.ts",
+        "packages/contracts/src/domains/subtitles.ts",
+        "docs/SECURITY.md"
+      ],
+      "preferredAgent": "claude-frontend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "e2e"
+      ],
+      "acceptance": "There is a settings screen, and every switch on it changes something real. Neither a screen nor an API exists today. REQUIRED: preferred audio and subtitle languages, persisted per profile and consumed as PW-0206's defaults rather than as a second policy. REQUIRED: a diagnostics and telemetry control that is honest about what it does -- telemetry-decision.ts already reports WHY telemetry is off, and that reasoning belongs in front of the viewer instead of in a details element in the player. REQUIRED: an about section naming the application version and the licences the installer must carry, which is where PW-0208's LGPL attribution obligation is discharged in the product. REQUIRED: no setting weakens a security or rights control; there is no 'allow insecure sources' switch and no way to disable the transport checks.",
+      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. ",
+      "owner": "claude-frontend",
+      "gateResults": {
+        "typecheck": {
+          "status": "pass",
+          "at": "2026-10-04T04:33:50.424Z",
+          "by": "claude-frontend",
+          "commitSha": "d61e59b6561279efb94a4aca92b799f11d96c6ff",
+          "evidence": "npm run typecheck: 22 tasks successful, 0 failures. Separately npx tsc --noEmit -p apps/web/tsconfig.json alone (exit 0, no output) and npx tsc --noEmit -p e2e/tsconfig.json (exit 0) -- the e2e harness is outside the workspaces and its own typecheck is a separate CI job, so a spec that compiles only under the root project would still be red there. One defect was caught by that second command and fixed rather than worked around: the spec read apps/web/package.json through import.meta.url, and e2e/tsconfig.json emits CommonJS, where the meta-property is unavailable; it now resolves through __dirname, with the reason recorded at the line."
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-10-04T04:34:13.750Z",
+          "by": "claude-frontend",
+          "commitSha": "d61e59b6561279efb94a4aca92b799f11d96c6ff",
+          "evidence": "npx vitest run apps/web: 95 files, 1714 tests, 0 failures. The whole repository under npx vitest run apps/web packages/contracts packages/persistence: 119 files, 2262 passed, 1 skipped.\n\nWHAT THIS TASK ADDED OR CHANGED, AND WHAT EACH ONE IS FOR:\n\napps/web/src/components/settings/settings.test.tsx -- 13 cases, new. The language field's PARSE is pinned over the five inputs that matter: order preserved (\"ja, en, de\"), whitespace and empties dropped but never a tag, an empty field answering [] rather than [\"\"] (which would reach the endpoint and be refused for something the viewer did not type), a lossless round trip with formatLanguageList, and case left alone because the ENDPOINT owns what a language tag is and a client that lower-cased first would be a second validator whose message a viewer never sees. Two source rules on the form: it mentions no profileId anywhere (the endpoint derives the profile from the session and its contract is .strict(), so the component could not address another household's settings even by accident), and it applies state from the RESPONSE on both paths rather than from the inputs. The diagnostics section is asserted by COMPUTING decidePlaybackTelemetry independently with the same inputs and requiring the rendered page to agree, code by code -- so a change to the decision that this screen stopped reflecting fails here instead of misleading a viewer -- plus a source rule that it offers no control at all, because a toggle wired to nothing is the fake persistence the round-110 instruction forbids by name. About is asserted twice deliberately: the rendered version equals package.json's, AND the source contains no version-shaped literal, because the first assertion passes either way and only the second catches a paste.\n\napps/web/src/app/watch/watch-session.test.ts -- 5 cases added, 30 total, all passing. These are where the acceptance's \"consumed as PW-0206's defaults\" is actually proven, and they pin the three states apart: null (nobody has chosen) sends CONSERVATIVE_CAPABILITIES unchanged; a list sends it with preferredAudioLanguages replaced, IN THE VIEWER'S ORDER (asserted as a sequence, not a set -- the contract says order is meaningful); and [] sends the empty list, which is the case that forces the caller to carry `stored` rather than collapsing an opt-out into a default. A fourth pins the BLAST RADIUS -- the key set is identical to the baseline and every key except preferredAudioLanguages is unchanged, written that way so a capability field added later is covered without anybody remembering -- because every other field is a claim about what the DEVICE can decode and a settings screen must not be able to widen one. A fifth proves the list is copied, so a later mutation of the repository's array cannot change a request already described.\n\napps/web/src/lib/viewer-preferences.test.ts -- 3 cases, new, and the header states plainly what this environment can and cannot see. The loader resolves the REAL repository adapter and the REAL identity system, exactly as loadResumePosition does, so no store is injected and no success path is faked here. What is pinned is the property that holds in every configuration and is the one a playback page depends on: a read that cannot be satisfied answers stored:false with the neutral value rather than throwing, the direction matters (stored:true with empty lists would be an opt-out the viewer never expressed), and the shared constant it returns is frozen so one caller cannot mutate what the next render sees.\n\nA CORRECTION MADE WHILE WRITING THIS, RECORDED BECAUSE IT WAS A REAL MISTAKE. The first draft of loadMediaPreferences returned MediaPreferences alone, with a comment arguing the stored/not-stored distinction \"does not matter to the media engine\". That was wrong, and the first caller proved it: an unconfigured profile must keep getting [\"en\"] and a cleared profile must get [], and both have empty lists. The loader now returns StoredMediaPreferences and the wrong comment is replaced by the reasoning at the same place rather than quietly deleted."
+        },
+        "e2e": {
+          "status": "pass",
+          "at": "2026-10-04T04:34:37.663Z",
+          "by": "claude-frontend",
+          "commitSha": "d61e59b6561279efb94a4aca92b799f11d96c6ff",
+          "evidence": "TWO CONFIGURATIONS, BOTH FULL SUITES, BOTH CHROMIUM (the only browser ci.yml installs).\n\nPRODUCTION BUILD + REAL POSTGRESQL (LIBERTY_E2E_DATABASE_URL=postgres://postgres@127.0.0.1:5433/lib_wl, port 3177, --workers=1): 88 cases, 49 passed, 39 skipped, 0 failed, 1.1m.\nDEVELOPMENT BUILD (LIBERTY_E2E_WEB_MODE=development): 88 cases, 67 passed, 21 skipped, 0 failed, 2.4m.\n\ne2e/tests/settings.spec.ts ALONE against production + PostgreSQL: 9 passed, 0 failed, 1.1m. All nine, named:\n\nGROUP A, true in every configuration -- the About section names the version apps/web/package.json declares (READ FROM THE REAL FILE at run time, not written into the spec, so it cannot rot at the next release); it names THIRD-PARTY-NOTICES.md AND carries the sentence that it does not inspect your installation, because PW-0208 is the task that proves a packaged tree really carries it and a screen that claimed otherwise would make the attribution problem worse; the diagnostics section shows the collector path and at least one real reason code; and the screen offers no switch that could weaken a security or rights control -- asserted as an absence of the VOCABULARY (\"allow insecure\", \"disable transport\", \"skip verification\", \"ignore certificate\", \"developer mode\", \"unsafe\") rather than of a particular control id, because that defect would arrive under a name nobody has chosen yet, with a non-vacuity check that the page under those assertions is the real one.\n\nGROUP B, against a real signed-in session and real rows -- \"a choice survives a reload, WHICH IS WHAT TELLS PERSISTENCE FROM STATE\": the profile is put back to not-chosen through the API first so the starting state is made true rather than inherited, then ja/en is typed, saved, AND THE PAGE RELOADED, and the values are still there. Everything before the reload would pass against a component that remembered the typing and never spoke to a server, which is exactly what the round-110 instruction forbade. \"the order is kept\" saves a deliberately non-alphabetical pt-BR, ja, en and reads back the sequence, because a store that round-tripped the membership would satisfy a careless test and hand the media engine a different answer. \"clearing is not the same as leaving the lists empty\" saves two EMPTY lists, reloads and gets \"these are your choices\", then clears, reloads and gets \"you have not chosen yet\" -- same empty fields, opposite meanings, which is what makes the API's `stored` flag load-bearing rather than decorative. \"a language tag the contract refuses is reported, not silently dropped\" types \"english\", requires the alert AND the absence of the success sentence, then RELOADS to prove nothing was stored -- the alert alone could be shown by a client that wrote anyway. \"a viewer who is not signed in is offered the way in\" sets no session headers at all, so it is the real signed-out branch, and asserts the languages form is absent while About and Diagnostics are still present, because hiding an attribution obligation behind a sign-in withholds it from the person least able to go looking for it.\n\nA PRECONDITION THAT HAD TO BE FIXED FIRST, AND IS NOT PAPERED OVER HERE. The local database did not have profile_media_preference, because .github/workflows/ci.yml applied migration 0000 BY NAME and PL-0723 added 0001. It was applied by hand to run the above, and the underlying defect is PL-0726, which is fixed, gated against a real PostgreSQL and in review in this same bundle. WITHOUT PL-0726 THIS GATE WOULD BE LOCAL-ONLY AND CI WOULD BE RED -- group B does not skip, since LIBERTY_E2E_DATABASE_URL is set and DATABASE_SESSION_SKIP_REASON is therefore null. Stated rather than left for CI to discover.\n\nWHAT THIS SPEC DOES NOT CLAIM, written into its header: it does not assert that a stored language changes which audio track PLAYS. The e2e catalog is fixtures and nothing here has a multi-audio title, so an audible claim would be an inference. What the preference actually reaches is the playback SESSION REQUEST, and that is proven directly in watch-session.test.ts over all three states with the body parsed by the route's own strict schema.\n\nENVIRONMENT NOTE, NOT A CHANGE TO ANYTHING PINNED: PLAYWRIGHT_BROWSERS_PATH had to be pointed at ~/.cache/ms-playwright, because this container's /opt/pw-browsers holds revision 1194 while the pinned @playwright/test 1.62.1 wants 1234. firefox, webkit and mobile-safari are UNVERIFIED here -- their binaries are absent from the container -- and are not run in CI either, which installs chromium and nothing else."
+        }
+      },
+      "implementationAgent": "claude-frontend",
+      "updatedAt": "2026-10-04T04:34:41.641Z",
+      "implementationBaseSha": "25994202b1397d7e972febdb24edd685d8a08405"
     },
     {
       "id": "PW-0602",

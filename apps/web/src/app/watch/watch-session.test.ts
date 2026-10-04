@@ -172,6 +172,103 @@ describe("what the route will not accept", () => {
     expect(body).toEqual({ contentId: CONTENT_ID, capabilities: CONSERVATIVE_CAPABILITIES });
   });
 
+  /* =========================================================================
+   * THE VIEWER'S PREFERRED AUDIO LANGUAGES (PW-0308)
+   *
+   * The clause is that a stored preference is "consumed as PW-0206's defaults
+   * rather than as a second policy", and the whole of consuming it is that the
+   * literal `["en"]` in `CONSERVATIVE_CAPABILITIES` stops being the answer for
+   * a viewer who stated one. These four pin the three states apart and pin the
+   * blast radius to one field.
+   * ====================================================================== */
+
+  async function capabilitiesSentFor(
+    preferred: readonly string[] | null
+  ): Promise<Record<string, unknown>> {
+    const { issue, seen } = answering(
+      grantedSession(issued(), playbackReason("session_issued", "granted"))
+    );
+    await loadPlaybackSession(CONTENT_ID, {}, issue, null, preferred);
+    const body = JSON.parse(await (seen[0] as Request).text()) as {
+      capabilities: Record<string, unknown>;
+    };
+    return body.capabilities;
+  }
+
+  it("sends the conservative default when nobody has chosen", async () => {
+    /*
+     * `null` IS THE UNCONFIGURED PROFILE, and it must send exactly what every
+     * viewer got before preferences existed. A settings screen that changed
+     * playback for people who never opened it would be a regression dressed as
+     * a feature.
+     */
+    expect(await capabilitiesSentFor(null)).toEqual(CONSERVATIVE_CAPABILITIES);
+  });
+
+  it("sends the viewer's languages, in their order, when they chose some", async () => {
+    /*
+     * ORDER IS THE INFORMATION. The contract says the list is "most-preferred
+     * first. Order is meaningful, not a set", so this asserts the sequence and
+     * not the membership -- a re-sorted list would satisfy a set comparison and
+     * would hand the engine a different answer.
+     */
+    expect(await capabilitiesSentFor(["ja", "en"])).toEqual({
+      ...CONSERVATIVE_CAPABILITIES,
+      preferredAudioLanguages: ["ja", "en"]
+    });
+  });
+
+  it("sends an empty list when the viewer chose to prefer nothing", async () => {
+    /*
+     * `[]` IS A STATED PREFERENCE, NOT AN ABSENCE, and this is the test that
+     * forces the caller's `stored` flag to exist: if the empty list were
+     * treated as "unchosen" here it would be quietly replaced by `["en"]` and
+     * a viewer who cleared their lists would keep getting English.
+     */
+    expect(await capabilitiesSentFor([])).toEqual({
+      ...CONSERVATIVE_CAPABILITIES,
+      preferredAudioLanguages: []
+    });
+  });
+
+  it("lets a preference change nothing except the language ordering", async () => {
+    /*
+     * THE BLAST RADIUS. Every other field of `CONSERVATIVE_CAPABILITIES` is a
+     * claim about what the DEVICE can decode; a viewer preference must not be
+     * able to widen one, because a widened codec claim is a decode failure the
+     * viewer watches happen. Asserted as "the key set is identical and only
+     * this key differs" rather than by naming today's three fields, so a field
+     * added later is covered without anybody remembering to come back.
+     */
+    const sent = await capabilitiesSentFor(["de"]);
+    const baseline = CONSERVATIVE_CAPABILITIES as unknown as Record<string, unknown>;
+
+    expect(Object.keys(sent).sort()).toEqual(Object.keys(baseline).sort());
+    for (const key of Object.keys(baseline)) {
+      if (key === "preferredAudioLanguages") continue;
+      expect(sent[key], key).toEqual(baseline[key]);
+    }
+  });
+
+  it("cannot hand the route a mutable alias of the caller's list", async () => {
+    /*
+     * The caller's array comes from a repository read. Copying it means a later
+     * mutation of that array -- by anything, for any reason -- cannot change a
+     * request that has already been described.
+     */
+    const chosen = ["ja", "en"];
+    const { issue, seen } = answering(
+      grantedSession(issued(), playbackReason("session_issued", "granted"))
+    );
+    await loadPlaybackSession(CONTENT_ID, {}, issue, null, chosen);
+    chosen.push("fr");
+
+    const body = JSON.parse(await (seen[0] as Request).text()) as {
+      capabilities: { preferredAudioLanguages: string[] };
+    };
+    expect(body.capabilities.preferredAudioLanguages).toEqual(["ja", "en"]);
+  });
+
   it("forwards the caller's headers without reading or filtering them", async () => {
     /*
      * §8: the desktop proxy "forwards an authenticated caller identity -- the

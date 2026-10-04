@@ -1,0 +1,92 @@
+/* -------------------------------------------------------------------------
+ * The settings screen (PW-0308).
+ *
+ * Tokens only, no literal colours: `globals.css` owns the palette and
+ * `title-styles.test.ts` is the reason this is a rule rather than a habit.
+ * ---------------------------------------------------------------------- */
+
+.form {
+  display: grid;
+  gap: 18px;
+  max-width: 48rem;
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+}
+
+.field label {
+  font-weight: 600;
+}
+
+.field input[type="text"],
+.field input:not([type]),
+.field select {
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: inherit;
+  font: inherit;
+  min-width: 0;
+}
+
+/* The checkbox sits WITH its words rather than above them: a tick box whose
+ * label is on the line above is one people miss, and the whole label is a
+ * click target this way. */
+.checkboxLabel {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-weight: 600;
+}
+
+.hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.notice {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* A definition list, because that is what "this fact, that value" is. */
+.facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 18px;
+  margin: 0;
+}
+
+.facts dt {
+  color: var(--muted);
+}
+
+.facts dd {
+  margin: 0;
+}
+
+.reasons {
+  margin: 10px 0 0;
+  padding-left: 1.1rem;
+  display: grid;
+  gap: 6px;
+}
+
+.reasonCode {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85rem;
+  color: var(--muted);
+}

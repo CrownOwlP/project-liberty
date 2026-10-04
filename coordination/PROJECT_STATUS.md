@@ -1,6 +1,6 @@
 # Project Liberty - Project Status
 
-> Generated 2026-10-04T04:33:43.127Z from the AI control plane.
+> Generated 2026-10-04T04:34:41.667Z from the AI control plane.
 
 **Overall completion:** 100/126 executable tasks (79%)
 
@@ -9,8 +9,8 @@
 - **BACKLOG:** 7
 - **READY:** 4
 - **CLAIMED:** 0
-- **IN_PROGRESS:** 1
-- **REVIEW:** 7
+- **IN_PROGRESS:** 0
+- **REVIEW:** 8
 - **BLOCKED:** 7
 - **DONE:** 100
 - **CANCELED:** 0
@@ -32,7 +32,7 @@
 ## Active work
 
 - **PW-0208** [REVIEW] An LGPL-compatible libmpv and FFmpeg the product may actually ship — owner: claude-infra
-- **PW-0308** [IN_PROGRESS] Settings a viewer can actually change — owner: claude-frontend
+- **PW-0308** [REVIEW] Settings a viewer can actually change — owner: claude-frontend
 - **PW-0602** [REVIEW] The automated half of the Windows matrix, running on Windows — owner: claude-test
 - **PL-0722** [REVIEW] Corrective: the rate-limit spec assumed a bucket no other worker had touched, and CI is red — owner: claude-test
 - **PL-0723** [REVIEW] A profile remembers which languages its viewer wants — owner: claude-backend
