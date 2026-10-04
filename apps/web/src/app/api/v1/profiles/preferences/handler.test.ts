@@ -105,7 +105,13 @@ const CHOSEN = {
   preferredAudioLanguages: ["ja", "en"],
   preferredSubtitleLanguages: ["en"],
   subtitleMode: "auto" as const,
-  hearingImpaired: false
+  hearingImpaired: false,
+  /* `false`, deliberately NOT the neutral value (PL-0724). This is the
+   * object a viewer is supposed to have CHOSEN, and every other field in it
+   * differs from `NO_MEDIA_PREFERENCES` for the same reason: a fixture that
+   * matched the default in a field would let a read that silently dropped
+   * that field still pass. */
+  playbackDiagnostics: false
 };
 
 describe("reading a profile that has chosen nothing", () => {
@@ -124,7 +130,8 @@ describe("reading a profile that has chosen nothing", () => {
       preferredAudioLanguages: [],
       preferredSubtitleLanguages: [],
       subtitleMode: "auto",
-      hearingImpaired: false
+      hearingImpaired: false,
+      playbackDiagnostics: true
     });
   });
 
@@ -193,7 +200,30 @@ describe("forgetting", () => {
   it("IS NOT THE SAME AS WRITING EMPTY LISTS", async () => {
     const options = await readyContext();
     await handleWritePreferences(
-      putRequest({ ...CHOSEN, preferredAudioLanguages: [], preferredSubtitleLanguages: [] }),
+      /*
+       * EVERY FIELD SET TO ITS NEUTRAL VALUE, AND `playbackDiagnostics` IS
+       * NOW NAMED AMONG THEM (PL-0724).
+       *
+       * This case's whole claim is "identical values, different answers": a
+       * profile that deliberately chose the defaults and a profile that
+       * chose nothing look the same in `preferences` and are told apart only
+       * by `stored`. That requires the written object to BE the neutral
+       * value in every field, which it used to be by coincidence -- `CHOSEN`
+       * differed from the default only in the two lists, so emptying them
+       * was enough.
+       *
+       * `CHOSEN.playbackDiagnostics` is `false` and the neutral value is
+       * `true`, so the coincidence is gone and the field has to be stated.
+       * Written out rather than the alternative of making `CHOSEN` match the
+       * default here, because a fixture that agreed with the default in a
+       * field could not catch a read that silently dropped that field.
+       */
+      putRequest({
+        ...CHOSEN,
+        preferredAudioLanguages: [],
+        preferredSubtitleLanguages: [],
+        playbackDiagnostics: true
+      }),
       options
     );
     const beforeForget = await decision(await handleReadPreferences(getRequest(), options));

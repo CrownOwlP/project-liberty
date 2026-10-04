@@ -137,7 +137,29 @@ export const mediaPreferencesSchema = z
      * the same distinction in the same words, and the exception where it does
      * affect visibility is documented there, not here.
      */
-    hearingImpaired: z.boolean()
+    hearingImpaired: z.boolean(),
+    /**
+     * Whether this viewer allows playback diagnostics to be reported
+     * (PL-0724).
+     *
+     * `true` IS THE DEFAULT AND THAT IS NOT AN OPINION ABOUT PRIVACY, it is
+     * the rule `NO_MEDIA_PREFERENCES` follows for every field here: the
+     * neutral value is whatever the product did before preferences existed.
+     * `player-surface.tsx` passed `enabled: true` as a literal, so an
+     * unconfigured profile must keep getting that. This task changes what a
+     * viewer CAN DO, not what happens to a viewer who has done nothing.
+     *
+     * IT CAN ONLY EVER SUBTRACT. `decidePlaybackTelemetry` tests `!enabled`
+     * FIRST and returns `telemetry_disabled` before any other branch, so
+     * `false` here is a short-circuit. `true` is not a permission: it only
+     * means "do not short-circuit", and every safety refusal below it --
+     * `collector_path_not_first_party`, `session_id_not_transmittable`,
+     * `content_id_not_transmittable`, `client_key_allowlist_empty` -- still
+     * runs and still wins. A viewer may decline; a viewer cannot override a
+     * refusal, and the ordering in that function is what makes that
+     * structural rather than remembered.
+     */
+    playbackDiagnostics: z.boolean()
   })
   .strict();
 
@@ -160,7 +182,16 @@ export const NO_MEDIA_PREFERENCES: MediaPreferences = Object.freeze({
   preferredAudioLanguages: Object.freeze([]) as readonly string[] as string[],
   preferredSubtitleLanguages: Object.freeze([]) as readonly string[] as string[],
   subtitleMode: "auto",
-  hearingImpaired: false
+  hearingImpaired: false,
+  /*
+   * `true`, and it is the one field here whose neutral value is not the
+   * falsy one. The neutral value is defined as "the behaviour the product
+   * had before preferences existed", and that was an unconditional
+   * `enabled: true` in `player-surface.tsx`. Writing `false` would make this
+   * task change what every unconfigured profile does, which its acceptance
+   * forbids in terms.
+   */
+  playbackDiagnostics: true
 });
 
 /**

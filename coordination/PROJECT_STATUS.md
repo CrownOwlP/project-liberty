@@ -1,16 +1,16 @@
 # Project Liberty - Project Status
 
-> Generated 2026-10-04T15:08:04.668Z from the AI control plane.
+> Generated 2026-10-04T15:41:56.958Z from the AI control plane.
 
 **Overall completion:** 106/127 executable tasks (83%)
 
 ## Status summary
 
 - **BACKLOG:** 7
-- **READY:** 3
+- **READY:** 2
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 0
-- **REVIEW:** 4
+- **REVIEW:** 5
 - **BLOCKED:** 7
 - **DONE:** 106
 - **CANCELED:** 0
@@ -35,17 +35,18 @@
 - **PW-0208** [REVIEW] An LGPL-compatible libmpv and FFmpeg the product may actually ship — owner: claude-infra
 - **PW-0308** [REVIEW] Settings a viewer can actually change — owner: claude-frontend
 - **PW-0602** [REVIEW] The automated half of the Windows matrix, running on Windows — owner: claude-test
+- **PL-0724** [REVIEW] The diagnostics switch actually switches diagnostics off — owner: claude-frontend
 
 ## Dispatch classification
 
-- **READY_AND_EXECUTABLE:** 3
+- **READY_AND_EXECUTABLE:** 2
 - **READY_BUT_EXTERNAL:** 0
 - **BLOCKED:** 7
 - **BACKLOG (dependency-gated):** 7
 
 ## Recommended executable wave
 
-- **PL-0724** -> claude-frontend (P2/Player) The diagnostics switch actually switches diagnostics off
+No conflict-free executable tasks can be assigned with current agent capacity.
 
 ## Queued for external agents
 
@@ -73,7 +74,7 @@ UNBLOCK WHEN: the commander runs Experiment 1a on real Windows hardware and hand
 
 - **gpt-architect:** 0/6 active (external lane; not locally executable)
 - **claude-lead:** 0/2 active
-- **claude-frontend:** 1/2 active
+- **claude-frontend:** 2/2 active
 - **claude-backend:** 0/2 active
 - **claude-media:** 0/2 active
 - **claude-test:** 2/2 active

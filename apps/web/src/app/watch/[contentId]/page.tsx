@@ -335,7 +335,36 @@ async function PlaybackBody({
     nextUp = null;
   }
 
-  return <PlayerSurface session={result.session} policy={result.policy} nextUp={nextUp} />;
+  /*
+   * WHETHER THIS VIEWER ALLOWS PLAYBACK DIAGNOSTICS (PL-0724).
+   *
+   * Off the read this function already performed for the audio languages, so
+   * the control costs no extra query. `PlayerSurface` is a client component
+   * and the answer is a row on a profile; handing it down is the same route
+   * `nextUp` above takes, and for the same reason -- a client that had to
+   * fetch it would be making a network call during player start, for a
+   * setting.
+   *
+   * `chosen.stored` DECIDES WHETHER TO SPEAK AT ALL. An unconfigured profile
+   * passes nothing, and the component's default is the `true` that used to be
+   * a literal there, so a viewer who has never opened the settings screen gets
+   * exactly what they got yesterday. Reading
+   * `chosen.preferences.playbackDiagnostics` unconditionally would reach the
+   * same answer today -- `NO_MEDIA_PREFERENCES` is `true` -- and would make
+   * the two defaults silently load-bearing on each other.
+   */
+  const diagnosticsAllowed = chosen.stored
+    ? chosen.preferences.playbackDiagnostics
+    : undefined;
+
+  return (
+    <PlayerSurface
+      session={result.session}
+      policy={result.policy}
+      nextUp={nextUp}
+      diagnosticsAllowed={diagnosticsAllowed}
+    />
+  );
 }
 
 export default async function WatchPage({

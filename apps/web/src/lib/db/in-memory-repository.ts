@@ -633,7 +633,8 @@ export function createInMemoryRepository(
           preferredAudioLanguages: [...stored.preferredAudioLanguages],
           preferredSubtitleLanguages: [...stored.preferredSubtitleLanguages],
           subtitleMode: stored.subtitleMode,
-          hearingImpaired: stored.hearingImpaired
+          hearingImpaired: stored.hearingImpaired,
+          playbackDiagnostics: stored.playbackDiagnostics
         }
       };
     },
@@ -647,7 +648,8 @@ export function createInMemoryRepository(
         preferredAudioLanguages: [...input.preferences.preferredAudioLanguages],
         preferredSubtitleLanguages: [...input.preferences.preferredSubtitleLanguages],
         subtitleMode: input.preferences.subtitleMode,
-        hearingImpaired: input.preferences.hearingImpaired
+        hearingImpaired: input.preferences.hearingImpaired,
+        playbackDiagnostics: input.preferences.playbackDiagnostics
       };
       store.mediaPreferences.set(profileId, next);
       return {
@@ -656,7 +658,8 @@ export function createInMemoryRepository(
           preferredAudioLanguages: [...next.preferredAudioLanguages],
           preferredSubtitleLanguages: [...next.preferredSubtitleLanguages],
           subtitleMode: next.subtitleMode,
-          hearingImpaired: next.hearingImpaired
+          hearingImpaired: next.hearingImpaired,
+          playbackDiagnostics: next.playbackDiagnostics
         }
       };
     },

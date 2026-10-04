@@ -91,6 +91,23 @@ export function LanguagePreferences() {
   const [subtitles, setSubtitles] = useState("");
   const [mode, setMode] = useState<MediaPreferences["subtitleMode"]>("auto");
   const [hearingImpaired, setHearingImpaired] = useState(false);
+  /*
+   * A FIELD THIS FORM CARRIES AND DOES NOT CONTROL (PL-0724).
+   *
+   * The write body is `mediaPreferencesSchema`, strict and complete, so a PUT
+   * that omitted `playbackDiagnostics` would be refused outright. This form
+   * has no control for it -- the diagnostics section is disclosure-only and
+   * says so -- and the only correct thing an uninvolved form can do with a
+   * field it does not own is HAND BACK WHAT IT WAS GIVEN.
+   *
+   * Held in state rather than read from a ref or recomputed, so that the
+   * value sent is provably the value the last response carried: saving a
+   * language must not be able to change whether a viewer allows diagnostics,
+   * in either direction.
+   */
+  const [playbackDiagnostics, setPlaybackDiagnostics] = useState(
+    NO_MEDIA_PREFERENCES.playbackDiagnostics
+  );
 
   const apply = useCallback((body: PreferencesEnvelope) => {
     const preferences = body.preferences ?? NO_MEDIA_PREFERENCES;
@@ -98,6 +115,7 @@ export function LanguagePreferences() {
     setSubtitles(formatLanguageList(preferences.preferredSubtitleLanguages));
     setMode(preferences.subtitleMode);
     setHearingImpaired(preferences.hearingImpaired);
+    setPlaybackDiagnostics(preferences.playbackDiagnostics);
   }, []);
 
   useEffect(() => {
@@ -141,7 +159,9 @@ export function LanguagePreferences() {
           preferredAudioLanguages: parseLanguageList(audio),
           preferredSubtitleLanguages: parseLanguageList(subtitles),
           subtitleMode: mode,
-          hearingImpaired
+          hearingImpaired,
+          /* Returned unchanged; see the state declaration above. */
+          playbackDiagnostics
         })
       });
       const body = (await response.json()) as PreferencesEnvelope;

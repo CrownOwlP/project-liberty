@@ -1,0 +1,1 @@
+ALTER TABLE "profile_media_preference" ADD COLUMN "playback_diagnostics" boolean DEFAULT true NOT NULL;

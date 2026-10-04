@@ -1,50 +1,9 @@
 {
-  "generatedAt": "2026-10-04T15:08:04.675Z",
+  "generatedAt": "2026-10-04T15:41:56.969Z",
   "agent": "claude-media",
   "executionAvailable": true,
   "assigned": [],
   "review": [],
   "reservedExternal": [],
-  "recommended": [
-    {
-      "id": "PL-0724",
-      "priority": "P2",
-      "lane": "Player",
-      "status": "READY",
-      "title": "The diagnostics switch actually switches diagnostics off",
-      "dependencies": [
-        "PL-0723"
-      ],
-      "allowedPaths": [
-        "apps/web/src/components/player/player-surface.tsx",
-        "packages/contracts/src/domains/preferences.ts",
-        "packages/contracts/src/domains/preferences.test.ts",
-        "packages/persistence/src/schema/profiles.ts",
-        "packages/persistence/src/profile-preferences.ts",
-        "packages/persistence/src/profile-preferences.test.ts",
-        "packages/persistence/migrations/0002_profile_diagnostics_preference.sql",
-        "packages/persistence/migrations/meta/_journal.json",
-        "packages/persistence/migrations/meta/0002_snapshot.json",
-        "packages/persistence/src/migration-journal.test.ts"
-      ],
-      "reviewDependencies": [
-        "apps/web/src/components/player/telemetry-decision.ts",
-        "apps/web/src/components/settings",
-        "apps/web/src/app/api/v1/profiles/preferences",
-        "docs/SECURITY.md"
-      ],
-      "preferredAgent": "claude-frontend",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "typecheck",
-        "unit",
-        "security-review"
-      ],
-      "acceptance": "PW-0308 REQUIRES 'a diagnostics and telemetry control that is honest about what it does', and half of that is deliverable without this task while the other half is not. The HONEST part -- putting `decidePlaybackTelemetry`'s real reasoning in front of the viewer instead of in a details element in the player -- is PW-0308's and is done there. The CONTROL is this task, because `player-surface.tsx` passes `enabled: true` as a LITERAL and there is no stored field for a viewer's answer.\n\ngpt-architect's round-110 instruction covers exactly this case: 'If persistence/API support does not exist: create the smallest backend/data task required. Do not fake persistence with local component state.' A toggle wired to component state would be the faked version -- it would look like a setting, survive nothing, and change no telemetry.\n\nREQUIRED: a stored per-profile diagnostics preference, added to the EXISTING preferences shape rather than to a new one. PL-0723 established the contract, the table, the repository and the endpoint; this is one more field through all four, and a second preferences mechanism beside it would be the duplication that task was careful to avoid.\nREQUIRED: `player-surface.tsx` passes the viewer's answer where it currently passes `true`, so turning it off ACTUALLY STOPS CMCD BEING SENT. That is the whole claim and it must be asserted, not described.\nREQUIRED: OFF IS HONOURED EVEN WHEN EVERYTHING ELSE WOULD HAVE ALLOWED IT. `decidePlaybackTelemetry` already answers `telemetry_disabled` for a stated opt-out and applies `cmcd: { enabled: false }` as a real instruction rather than an omission, because the controller replays its configuration history; a viewer's off must reach that branch.\nREQUIRED: the default when nothing is stored is the behaviour the product has today, so this task changes what a viewer CAN DO and not what an unconfigured profile does.\nREQUIRED: the setting cannot turn telemetry ON where the decision would otherwise refuse it. A viewer may decline; a viewer may not override `collector_path_not_first_party`, `session_id_not_transmittable` or any other safety refusal. Asserted, because 'the toggle wins' is the obvious implementation and it is the wrong one.\n\nMUST NOT: send anything a viewer declined. MUST NOT weaken the first-party collector check, the identifier transmittability checks or the allowlist. MUST NOT add a client-supplied collector path, endpoint or key.\n\nOUT OF SCOPE: what CMCD carries, the collector route, and any new telemetry.",
-      "notes": "FILED IN ROUND 110 while building PW-0308's settings screen, on the finding that player-surface.tsx line ~352 passes `enabled: true` as a literal into decidePlaybackTelemetry, and that nothing stores a viewer's answer. PW-0308 depends on this task, so the settings screen cannot be marked complete while its diagnostics control is disclosure-only.\n\nBACKLOG rather than READY: it depends on PL-0723, which is in REVIEW. Its allowedPaths overlap PL-0723's in packages/*, which is correct and is why it must not start until that task closes -- the control plane will refuse the claim while PL-0723 is active, which is the enforcement working.\n\nLane is Player rather than Frontend because the load-bearing change is in the player surface and the property being protected is what leaves the device.",
-      "owner": null,
-      "gateResults": {},
-      "updatedAt": "2026-10-04T03:50:48.371895Z"
-    }
-  ]
+  "recommended": []
 }

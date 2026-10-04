@@ -15,6 +15,13 @@
       "when": 1791084662080,
       "tag": "0001_profile_media_preferences",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791126621405,
+      "tag": "0002_profile_diagnostics_preference",
+      "breakpoints": true
     }
   ]
 }

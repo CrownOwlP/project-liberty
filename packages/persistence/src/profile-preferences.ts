@@ -94,7 +94,8 @@ export async function readMediaPreferences(
        * "auto" and telling the viewer their choice was honoured.
        */
       subtitleMode: row.subtitleMode as MediaPreferences["subtitleMode"],
-      hearingImpaired: row.hearingImpaired
+      hearingImpaired: row.hearingImpaired,
+      playbackDiagnostics: row.playbackDiagnostics
     }
   };
 }
@@ -128,6 +129,7 @@ export async function writeMediaPreferences(
     preferredSubtitleLanguages: [...input.preferences.preferredSubtitleLanguages],
     subtitleMode: input.preferences.subtitleMode,
     hearingImpaired: input.preferences.hearingImpaired,
+    playbackDiagnostics: input.preferences.playbackDiagnostics,
     updatedAt: input.instant
   };
 
@@ -141,6 +143,15 @@ export async function writeMediaPreferences(
         preferredSubtitleLanguages: values.preferredSubtitleLanguages,
         subtitleMode: values.subtitleMode,
         hearingImpaired: values.hearingImpaired,
+        /*
+         * NAMED IN THE CONFLICT UPDATE, like every other field (PL-0724).
+         * The column has a database DEFAULT for migration 0002's backfill,
+         * and a field omitted here would quietly keep its previous value on
+         * an upsert -- so a viewer who declined diagnostics and then changed
+         * a language would have the decline silently preserved rather than
+         * written, which looks identical until the two disagree.
+         */
+        playbackDiagnostics: values.playbackDiagnostics,
         updatedAt: values.updatedAt
       }
     })
@@ -166,7 +177,8 @@ export async function writeMediaPreferences(
       preferredAudioLanguages: [...row.preferredAudioLanguages],
       preferredSubtitleLanguages: [...row.preferredSubtitleLanguages],
       subtitleMode: row.subtitleMode as MediaPreferences["subtitleMode"],
-      hearingImpaired: row.hearingImpaired
+      hearingImpaired: row.hearingImpaired,
+      playbackDiagnostics: row.playbackDiagnostics
     }
   };
 }

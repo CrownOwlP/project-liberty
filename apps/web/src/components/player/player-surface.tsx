@@ -118,6 +118,34 @@ export interface PlayerSurfaceProps {
   readonly nextUp?: NextUp | null;
   /** The attempt budget, supplied by the server so both agree on one policy. */
   readonly policy: FailoverPolicy;
+  /**
+   * Whether this viewer allows playback diagnostics to be reported (PL-0724).
+   *
+   * RESOLVED ON THE SERVER AND HANDED DOWN, the route `nextUp` above takes
+   * and the route `resumeAtSeconds` and `preferredAudioLanguages` take into
+   * `watch-session.ts`. This is a client component; the answer is a row on a
+   * profile. The alternatives were a fetch during player start -- a network
+   * round trip racing playback, for a setting -- or a second preferences
+   * mechanism, which PL-0724's own acceptance forbids by name.
+   *
+   * DEFAULTS TO `true`, WHICH IS NOT A POLICY CHOICE MADE HERE. It is the
+   * literal this parameter replaces: `decidePlaybackTelemetry` was called
+   * with `enabled: true` unconditionally, so a caller that says nothing --
+   * the unit suite, and any future caller -- must get what the product did
+   * before this setting existed. `NO_MEDIA_PREFERENCES.playbackDiagnostics`
+   * is `true` for the same reason and the two must not drift apart.
+   *
+   * `true` IS NOT A PERMISSION. It only means "do not short-circuit".
+   * `decidePlaybackTelemetry` tests `!enabled` first and every safety
+   * refusal below it still runs and still wins, so this prop can subtract
+   * and can never add.
+   */
+  /* `| undefined` explicitly, because `exactOptionalPropertyTypes` is on:
+   * the page computes this from whether a preference is stored and passes
+   * `undefined` for an unconfigured profile, which is the honest way to
+   * say "nobody has chosen" and must not have to be written as a
+   * conditional spread at the call site. */
+  readonly diagnosticsAllowed?: boolean | undefined;
 }
 
 /**
@@ -288,7 +316,12 @@ const STOP_REASON_COPY: Readonly<Record<PlaybackStopReason, string>> = {
     "We stopped after the attempt budget ran out. There were still streams left to try."
 };
 
-export function PlayerSurface({ session, policy, nextUp = null }: PlayerSurfaceProps) {
+export function PlayerSurface({
+  session,
+  policy,
+  nextUp = null,
+  diagnosticsAllowed = true
+}: PlayerSurfaceProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const [view, setView] = useState<PlayerView | null>(null);
   const [diagnostics, setDiagnostics] = useState<DiagnosticsView | null>(null);
@@ -349,7 +382,23 @@ export function PlayerSurface({ session, policy, nextUp = null }: PlayerSurfaceP
      * absent, and the decision turns that into a stated refusal.
      */
     const telemetry = decidePlaybackTelemetry({
-      enabled: true,
+      /*
+       * THE VIEWER'S ANSWER, WHERE A LITERAL `true` USED TO BE (PL-0724).
+       *
+       * This is the whole of the control. `decidePlaybackTelemetry` tests
+       * `!enabled` FIRST and returns `telemetry_disabled`, whose config is
+       * `{ cmcd: { enabled: false } }` -- a real instruction rather than an
+       * omission, because `configureEngine` replays its configuration
+       * history onto every player and an absent block would leave a previous
+       * value in force. So a viewer who declines actually stops CMCD being
+       * sent, including across a failover that rebuilds the engine.
+       *
+       * AND IT CANNOT TURN ANYTHING ON. Passing `true` only declines to
+       * short-circuit; the session-id, content-id, first-party-collector and
+       * allowlist refusals all come after it and all still apply. "The
+       * toggle wins" is the obvious implementation and is the wrong one.
+       */
+      enabled: diagnosticsAllowed,
       contentId: session.contentId,
       sessionId: mintTelemetrySessionId(globalThis.crypto),
       collectorPath: CMCD_COLLECTOR_PATH,
@@ -607,7 +656,33 @@ export function PlayerSurface({ session, policy, nextUp = null }: PlayerSurfaceP
        * CDM session, and keeps downloading a video nobody is watching. */
       video.remove();
     };
-  }, [session, policy]);
+    /*
+     * `diagnosticsAllowed` IS A DEPENDENCY (PL-0724), and the cost of that is
+     * real and is accepted.
+     *
+     * Omitting it is what `react-hooks/exhaustive-deps` objected to, and the
+     * rule is right about the consequence: this effect reads the prop to
+     * configure telemetry, so an effect that did not re-run when it changed
+     * would leave a viewer who declined still reporting until something else
+     * rebuilt the player. PL-0724's acceptance says a viewer's off "must
+     * reach that branch", and a stale closure is one of the ways it would
+     * not.
+     *
+     * WHAT IT COSTS. This effect owns the whole player: re-running it tears
+     * the element down and builds a new session. Today that cost is never
+     * paid, because the value comes from a SERVER render -- the watch page
+     * reads the profile once per request -- so a change to the setting
+     * arrives as a new page, not as a new prop on a mounted component.
+     *
+     * It is listed anyway rather than suppressed. The alternative is a
+     * disable comment asserting "this cannot change", which is a claim about
+     * every future caller of this component rather than about today's one,
+     * and the day somebody renders it from a client component that can
+     * change the prop is the day telemetry quietly stops honouring the
+     * setting. A correct rebuild is a worse-performing outcome than a stale
+     * one only until the stale one is wrong.
+     */
+  }, [session, policy, diagnosticsAllowed]);
 
   return (
     <section className="player-card">

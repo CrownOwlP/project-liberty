@@ -226,7 +226,8 @@ const SCOPE_TAKING = {
         preferredAudioLanguages: ["ja"],
         preferredSubtitleLanguages: ["ja"],
         subtitleMode: "auto",
-        hearingImpaired: false
+        hearingImpaired: false,
+        playbackDiagnostics: true
       },
       instant: INSTANT
     }),

@@ -245,6 +245,22 @@ export const profileMediaPreference = pgTable(
    */
     subtitleMode: text("subtitle_mode").notNull(),
     hearingImpaired: boolean("hearing_impaired").notNull(),
+  /**
+   * Whether this viewer allows playback diagnostics to be reported
+   * (PL-0724).
+   *
+   * NOT NULL WITH A `true` DEFAULT, and the default is here rather than only
+   * in the contract for one reason: migration 0002 adds this column to rows
+   * that already exist, and those rows belong to viewers who configured
+   * languages before diagnostics was a setting. Without a default the
+   * migration could not add a NOT NULL column at all; with `false` it would
+   * silently opt those viewers out of something they never declined. `true`
+   * is what the product did for them yesterday.
+   *
+   * The DEFAULT is for the backfill. Every write from the application
+   * supplies the value explicitly, so nothing depends on it at runtime.
+   */
+    playbackDiagnostics: boolean("playback_diagnostics").notNull().default(true),
     updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull()
   },
   (table) => [

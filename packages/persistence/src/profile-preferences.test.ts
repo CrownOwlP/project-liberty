@@ -79,6 +79,7 @@ const storedRow = {
   preferredSubtitleLanguages: ["pt-BR", "en"],
   subtitleMode: "off",
   hearingImpaired: true,
+  playbackDiagnostics: false,
   updatedAt: INSTANT
 };
 
@@ -119,7 +120,8 @@ describe("reading a profile that has chosen", () => {
         preferredAudioLanguages: ["ja", "de", "en"],
         preferredSubtitleLanguages: ["pt-BR", "en"],
         subtitleMode: "off",
-        hearingImpaired: true
+        hearingImpaired: true,
+        playbackDiagnostics: false
       }
     });
   });
@@ -163,7 +165,8 @@ describe("writing", () => {
         preferredAudioLanguages: ["ja", "en"],
         preferredSubtitleLanguages: [],
         subtitleMode: "auto",
-        hearingImpaired: false
+        hearingImpaired: false,
+        playbackDiagnostics: true
       },
       instant: INSTANT
     });
@@ -173,6 +176,7 @@ describe("writing", () => {
       preferredSubtitleLanguages: [],
       subtitleMode: "auto",
       hearingImpaired: false,
+      playbackDiagnostics: true,
       updatedAt: INSTANT
     });
   });
@@ -190,7 +194,8 @@ describe("writing", () => {
         preferredAudioLanguages: ["fr"],
         preferredSubtitleLanguages: ["fr"],
         subtitleMode: "auto",
-        hearingImpaired: false
+        hearingImpaired: false,
+        playbackDiagnostics: true
       },
       instant: INSTANT
     });

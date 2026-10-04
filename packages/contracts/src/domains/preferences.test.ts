@@ -23,6 +23,7 @@ function preferences(over: Record<string, unknown> = {}) {
     preferredSubtitleLanguages: ["en"],
     subtitleMode: "auto",
     hearingImpaired: false,
+    playbackDiagnostics: true,
     ...over
   };
 }
@@ -164,8 +165,30 @@ describe("the value a profile that has chosen nothing is handed", () => {
       preferredAudioLanguages: [],
       preferredSubtitleLanguages: [],
       subtitleMode: "auto",
-      hearingImpaired: false
+      hearingImpaired: false,
+      /*
+       * `true`, AND IT IS THE EXCEPTION THAT PROVES THE RULE (PL-0724). Every
+       * other field here is the falsy or empty value, and it would be easy to
+       * read "neutral" as "off". It does not mean off: it means the behaviour
+       * the product had before preferences existed, and for diagnostics that
+       * was `player-surface.tsx` passing `enabled: true` as a literal. A
+       * `false` here would make adding a SETTING change what every profile
+       * that never opened it does.
+       */
+      playbackDiagnostics: true
     });
+  });
+
+  it("declines nothing on its own, which is what makes it the pre-preferences behaviour", () => {
+    /*
+     * Stated as its own case because the assertion above compares a whole
+     * object and a reader skimming it could take the `true` for a typo. The
+     * neutral value must not DECLINE anything: a viewer who has never opened
+     * the settings screen has not opted out of diagnostics, and treating
+     * silence as an opt-out would be this task inventing a decision on their
+     * behalf in the opposite direction from the one it is accused of.
+     */
+    expect(NO_MEDIA_PREFERENCES.playbackDiagnostics).toBe(true);
   });
 
   it("is itself a valid preferences object", () => {

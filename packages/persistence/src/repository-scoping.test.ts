@@ -210,6 +210,7 @@ const preferenceRow = {
   preferredSubtitleLanguages: ["en"],
   subtitleMode: "auto",
   hearingImpaired: false,
+  playbackDiagnostics: true,
   updatedAt: INSTANT
 };
 
@@ -309,7 +310,8 @@ const calls: readonly {
           preferredAudioLanguages: ["ja", "en"],
           preferredSubtitleLanguages: ["en"],
           subtitleMode: "auto",
-          hearingImpaired: false
+          hearingImpaired: false,
+          playbackDiagnostics: true
         },
         instant: INSTANT
       })

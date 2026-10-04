@@ -138,13 +138,63 @@ describe("the migration journal is what makes db:migrate do anything", () => {
     expect(journal.entries.length).toBeGreaterThan(0);
   });
 
-  it("names a real SQL file for every entry, and that file creates tables", () => {
+  it("names a real SQL file for every entry, and that file changes the schema", () => {
+    /*
+     * WHAT THIS RULE USED TO SAY AND WHY IT CHANGED (PL-0724). It required
+     * `CREATE TABLE` in every migration, which was true of the only two that
+     * existed and is not a property of migrations. `0002_profile_diagnostics_
+     * preference.sql` adds a column to a table 0001 created, so it is an
+     * ALTER and nothing else -- and the rule failed it.
+     *
+     * The rule is RELAXED IN ONE DIRECTION AND NOT WEAKENED, which is the
+     * distinction worth getting right. What it was actually defending against
+     * is a journal entry naming a file that does nothing: drizzle-kit reports
+     * success over an empty or commentary-only migration, which is the same
+     * silent no-op the test above this one exists for. So the requirement is
+     * now that the file carries a schema-CHANGING statement, which an ALTER
+     * is and a file of comments is not. Accepting `CREATE TABLE` alone would
+     * have meant every future column addition had to edit this line, and the
+     * edit somebody makes under time pressure is the one that deletes the
+     * check.
+     *
+     * COMMENTS ARE STRIPPED FIRST, because every migration in this repository
+     * opens with a prose header explaining itself, and a header mentioning
+     * the words "create table" would satisfy a naive match while the file
+     * below it did nothing at all.
+     */
+    const DDL = /\b(create|alter|drop)\s+(table|index|type|schema)\b/i;
     for (const entry of readJournal().entries) {
       const file = join(migrationsDir, `${entry.tag}.sql`);
       const sql = readFileSync(file, "utf8");
       expect(sql.length, `${entry.tag}.sql is empty`).toBeGreaterThan(0);
-      expect(sql, `${entry.tag}.sql contains no CREATE TABLE`).toMatch(/create table/i);
+      const executable = sql.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*--.*$/gm, "");
+      expect(
+        executable,
+        `${entry.tag}.sql carries no schema-changing statement outside its comments, so the ` +
+          `journal names a file whose application would be a silent no-op`
+      ).toMatch(DDL);
     }
+  });
+
+  it("THAT RULE REFUSES A MIGRATION THAT ONLY TALKS ABOUT CHANGING THE SCHEMA", () => {
+    /*
+     * NON-VACUITY, and it guards the exact hole the relaxation above could
+     * have opened. The rule now accepts more kinds of file than it did, so
+     * the thing to prove is that it still rejects the kind it was written
+     * for -- including the nastiest version, a file whose PROSE contains the
+     * very words being matched.
+     */
+    const DDL = /\b(create|alter|drop)\s+(table|index|type|schema)\b/i;
+    const strip = (sql: string): string =>
+      sql.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*--.*$/gm, "");
+
+    expect(strip("/* This migration will CREATE TABLE widgets later. */\n")).not.toMatch(DDL);
+    expect(strip("-- ALTER TABLE profile ADD COLUMN nickname text;\n")).not.toMatch(DDL);
+    expect(strip("\n\n   \n")).not.toMatch(DDL);
+    /* And it accepts both real shapes, so it has not become a rule that
+     * refuses everything. */
+    expect(strip('CREATE TABLE "widget" (id text);')).toMatch(DDL);
+    expect(strip('ALTER TABLE "widget" ADD COLUMN "flag" boolean NOT NULL;')).toMatch(DDL);
   });
 
   it("references every SQL file on disk, so no migration can be orphaned", () => {
