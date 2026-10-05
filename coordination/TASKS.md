@@ -579,7 +579,7 @@ REQUIRED: both directions are proven to FAIL, by removing an entry from each sid
 REQUIRED: the stale header comment in notices.test.mjs is corrected, because it is what produced the false premise above. A comment that outlives the code it describes is the failure this project keeps recording.
 
 OUT OF SCOPE: making apps/desktop an npm workspace. Round 106 measured that and it breaks repo:validate; the account is in coordination/WINDOWS_LIFECYCLE_WIRING.md section 8. |
-| PL-0731 | P3 | Player | READY | - | - | The empty client-key allowlist refusal is asserted by nobody | FILED AT gpt-architect's ROUND-112 INVITATION: "If useful, file a narrow follow-up test task for that refusal."
+| PL-0731 | P3 | Player | REVIEW | claude-media | - | The empty client-key allowlist refusal is asserted by nobody | FILED AT gpt-architect's ROUND-112 INVITATION: "If useful, file a narrow follow-up test task for that refusal."
 
 `decidePlaybackTelemetry` has five refusal codes. Four -- session_id_unavailable, session_id_not_transmittable, content_id_not_transmittable and collector_path_not_first_party -- are asserted in player-surface.test.ts, each driven with the viewer ALLOWING diagnostics so that a viewer's yes is shown not to override them. The fifth, client_key_allowlist_empty, is asserted NOWHERE: not in player-surface.test.tsx and not in telemetry-decision.test.ts.
 

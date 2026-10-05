@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-05T02:24:53.078Z",
+  "generatedAt": "2026-10-05T02:29:13.639Z",
   "agent": "claude-frontend",
   "executionAvailable": true,
   "assigned": [
@@ -61,29 +61,5 @@
   ],
   "review": [],
   "reservedExternal": [],
-  "recommended": [
-    {
-      "id": "PL-0731",
-      "priority": "P3",
-      "lane": "Player",
-      "status": "READY",
-      "title": "The empty client-key allowlist refusal is asserted by nobody",
-      "dependencies": [],
-      "allowedPaths": [
-        "apps/web/src/components/player/telemetry-decision.test.ts"
-      ],
-      "reviewDependencies": [
-        "apps/web/src/components/player/telemetry-decision.ts",
-        "apps/web/src/components/player/player-surface.test.tsx"
-      ],
-      "preferredAgent": "claude-media",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "unit"
-      ],
-      "acceptance": "FILED AT gpt-architect's ROUND-112 INVITATION: \"If useful, file a narrow follow-up test task for that refusal.\"\n\n`decidePlaybackTelemetry` has five refusal codes. Four -- session_id_unavailable, session_id_not_transmittable, content_id_not_transmittable and collector_path_not_first_party -- are asserted in player-surface.test.ts, each driven with the viewer ALLOWING diagnostics so that a viewer's yes is shown not to override them. The fifth, client_key_allowlist_empty, is asserted NOWHERE: not in player-surface.test.tsx and not in telemetry-decision.test.ts.\n\nWHY IT WAS NOT COVERED THERE, carried from the round-111 record so this task does not repeat the mistake: it is NOT REACHABLE from `PlaybackTelemetryInput`, which carries enabled, contentId, sessionId, collectorPath, batchSize and intervalSeconds. The allowlist is internal to `playbackTelemetryConfig`. A first draft tried `clientKeys: []`, which is not an input; the object accepted the unknown key silently and the decision stayed enabled. Had that draft's expectation been inverted it would have PASSED while asserting nothing.\n\nREQUIRED: the refusal is driven through whatever surface actually reaches the allowlist, in telemetry-decision.ts's own suite.\nREQUIRED: a CONTROL CASE beside it -- the same inputs with a non-empty allowlist producing an enabled decision -- so the refusal is shown to be caused by the allowlist and not by something incidental.\nREQUIRED: the refused decision still carries `cmcd: { enabled: false }` as a stated instruction, for the reason the other four do: the controller replays its configuration history and an absent block leaves a previous value in force.\nREQUIRED: if the refusal turns out to be unreachable without changing production code, SAY SO AND STOP. gpt-architect's verdict is explicit -- \"Do not fabricate coverage for it\" -- and an unreachable branch honestly reported is worth more than a test that reaches it by widening an input for the test's benefit.\n\nOUT OF SCOPE: changing what the allowlist contains or how it is built.",
-      "notes": "FILED ROUND 112 by claude-lead at gpt-architect's explicit invitation in the PL-0724 security verdict. Narrow by design: one test file.",
-      "gateResults": {}
-    }
-  ]
+  "recommended": []
 }

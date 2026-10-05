@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { CMCD_DISABLED, isFirstPartyCollectorPath } from "./telemetry";
 import {
   CMCD_COLLECTOR_PATH,
@@ -173,5 +173,136 @@ describe("minting a session id", () => {
       }
     };
     expect(mintTelemetrySessionId(source)).toBe(SESSION_ID);
+  });
+});
+
+describe("the fifth refusal, which nothing reached until now (PL-0731)", () => {
+  /* ------------------------------------------------------------------------
+   * WHY THIS NEEDED ITS OWN TASK, AND ITS OWN TECHNIQUE
+   * ------------------------------------------------------------------------
+   *
+   * `client_key_allowlist_empty` is the one refusal `decidePlaybackTelemetry`
+   * can return that NO INPUT PRODUCES. The other five are decided from
+   * `PlaybackTelemetryInput` -- enabled, contentId, sessionId, collectorPath --
+   * and the suite above drives each by varying one of them. This one is
+   * decided by `CMCD_V2_CLIENT_SAFE_KEYS`, which `@liberty/observability`
+   * COMPUTES at module load from the v2 key registry, and which no caller
+   * passes in.
+   *
+   * A round-111 draft tried to reach it by passing `clientKeys: []` to the
+   * decision. There is no such option: the object accepted the unknown key in
+   * silence and the decision stayed enabled. That draft is recorded in
+   * `player-surface.test.tsx` rather than deleted, because had its expectation
+   * been inverted it would have PASSED while asserting nothing at all.
+   *
+   * SO THE SEAM IS THE MODULE, NOT THE ARGUMENT. The allowlist arrives by
+   * import, so the import is where it is replaced -- the real
+   * `decidePlaybackTelemetry`, the real `playbackTelemetryConfig`, the real
+   * guards, with one derived constant substituted. Nothing in production
+   * changed to make this reachable, which is the condition the task set: if
+   * reaching it had required widening an input "for the test", the honest
+   * answer was to report the branch as unreachable and stop.
+   *
+   * WHAT IT IS GUARDING. shaka-player's `CmcdManager` substitutes
+   * `allKeysForVersion_(2)` for an EMPTY `includeKeys`, and that expansion
+   * contains `url` and `nor`. So an allowlist that derived down to nothing
+   * would not send nothing -- it would send everything, including the keys
+   * that carry the media address. The refusal is the fail-closed on that, and
+   * until this test nothing anywhere exercised it: `telemetry.test.ts` asserts
+   * the allowlist is NON-empty, which is the opposite case.
+   * --------------------------------------------------------------------- */
+
+  afterEach(() => {
+    /* The mock is per-test and must not leak into the file's other cases,
+     * which assert against the REAL allowlist two describes above. */
+    vi.doUnmock("@liberty/observability");
+    vi.resetModules();
+  });
+
+  /** A fresh module graph, optionally with the derived allowlist emptied. */
+  async function decideWith(keys: readonly string[]) {
+    vi.resetModules();
+    vi.doMock("@liberty/observability", async () => {
+      const actual =
+        await vi.importActual<typeof import("@liberty/observability")>("@liberty/observability");
+      return { ...actual, CMCD_V2_CLIENT_SAFE_KEYS: keys };
+    });
+    const module = await import("./telemetry-decision");
+    return module.decidePlaybackTelemetry({
+      enabled: true,
+      contentId: CONTENT_ID,
+      sessionId: SESSION_ID,
+      collectorPath: module.CMCD_COLLECTOR_PATH,
+      ...module.PLAYBACK_TELEMETRY_DEFAULTS
+    });
+  }
+
+  it("CONTROL: the identical inputs decide ENABLED when the allowlist has keys", async () => {
+    /*
+     * WITHOUT THIS THE NEXT CASE PROVES NOTHING. Re-importing through a mocked
+     * module graph could fail for reasons that have nothing to do with the
+     * allowlist -- a guard rejecting these identifiers, the collector path
+     * resolving differently -- and "it refused" would then be true of a
+     * configuration that was already refusing. This drives the SAME path with
+     * a NON-EMPTY allowlist and requires it to reach enabled.
+     */
+    const decision = await decideWith(["br", "bl", "d", "ot", "sid", "cid"]);
+
+    expect(decision.enabled).toBe(true);
+    expect(decision.reasons[0].code).toBe("cmcd_configured");
+  });
+
+  it("refuses with `client_key_allowlist_empty` when the allowlist derives to nothing", async () => {
+    const decision = await decideWith([]);
+
+    expect(decision.enabled).toBe(false);
+    expect(decision.reasons.map((reason) => reason.code)).toContain("client_key_allowlist_empty");
+  });
+
+  it("and it is the ALLOWLIST that caused it, not the viewer and not an identifier", async () => {
+    /*
+     * The reason code is what an operator reads. A fail-closed reported as
+     * `telemetry_disabled` would send somebody to look at a viewer's setting,
+     * and one reported as an identifier problem would send them to the catalog
+     * -- when the thing that is wrong is the key registry in
+     * `@liberty/observability`.
+     */
+    const decision = await decideWith([]);
+    /*
+     * NON-VACUITY, AND IT WAS MISSING. A first version of this case asserted
+     * only the ABSENCES below, and a mutation probe caught it: with the
+     * fail-closed removed from `playbackTelemetryConfig` the decision came
+     * back ENABLED, carrying `cmcd_configured` -- and every "not.toContain"
+     * here was still satisfied, so the case stayed green while the refusal it
+     * describes had stopped happening. An assertion that only names what must
+     * be absent passes hardest when nothing is there at all.
+     */
+    expect(decision.enabled).toBe(false);
+    expect(decision.reasons.map((reason) => reason.code)).toContain("client_key_allowlist_empty");
+
+    const codes = decision.reasons.map((reason) => reason.code);
+
+    expect(codes).not.toContain("telemetry_disabled");
+    expect(codes).not.toContain("session_id_unavailable");
+    expect(codes).not.toContain("session_id_not_transmittable");
+    expect(codes).not.toContain("content_id_not_transmittable");
+    expect(codes).not.toContain("collector_path_not_first_party");
+  });
+
+  it("applies a stated `enabled: false`, like the other four refusals", async () => {
+    /*
+     * The same property the case above asserts for the input-reachable
+     * refusals, and it matters most here: `PlaybackController` replays its
+     * configuration history onto every player it builds, so a decision that
+     * merely said nothing about CMCD would leave a previously configured value
+     * in force. A player rebuilt by a failover, on a deployment whose key
+     * registry had derived down to nothing, would then keep reporting -- with
+     * every v2 key, because that is what Shaka substitutes for an empty list.
+     * The difference between `undefined` and `false` is the whole refusal.
+     */
+    const decision = await decideWith([]);
+
+    expect(decision.config).toEqual(CMCD_DISABLED);
+    expect(CMCD_DISABLED).toEqual({ cmcd: { enabled: false } });
   });
 });
