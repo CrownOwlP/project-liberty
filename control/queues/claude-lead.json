@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-05T23:13:14.115Z",
+  "generatedAt": "2026-10-05T23:46:11.841Z",
   "agent": "claude-lead",
   "executionAvailable": true,
   "assigned": [],
@@ -17,6 +17,7 @@
       ],
       "allowedPaths": [
         ".github/workflows/windows.yml",
+        ".github/workflows/ci.yml",
         "package.json"
       ],
       "reviewDependencies": [
@@ -29,7 +30,7 @@
         "unit"
       ],
       "acceptance": "REQUIRED: the Windows package job runs scripts/windows/distribution-inventory.mjs against the PACKAGE BUILD OUTPUT after the bundle is produced, and against the INSTALLED TREE inside the lifecycle run, with each invocation naming which tree it is reporting on. Two trees, two reports, never conflated.\n\nREQUIRED: it runs even when a later step fails, for the same reason the installer-log upload does -- the inventory of a build is most interesting on the run that went wrong.\n\nREQUIRED: its unit suite joins npm run test:scripts, and therefore gains a step in the CI validate job, because PL-0714's mirror-check fails a build whose alias names a suite with no step. A script nothing runs is this repository's most-repeated defect and PL-0737 must not become the sixth instance.\n\nOUT OF SCOPE: what the inventory says. This task makes it run and makes its output readable.",
-      "notes": "FILED ROUND 113 alongside PL-0737, which it exists to wire in. BLOCKED BY SURFACE, not by work: .github/workflows/windows.yml is reserved by PL-0733 and package.json by PL-0728, both in gpt-architect's review queue. Same shape as PL-0736 and recorded the same way rather than worked around."
+      "notes": "FILED ROUND 113 alongside PL-0737, which it exists to wire in. BLOCKED BY SURFACE, not by work: .github/workflows/windows.yml is reserved by PL-0733 and package.json by PL-0728, both in gpt-architect's review queue. Same shape as PL-0736 and recorded the same way rather than worked around.\n\nSURFACE CORRECTED 2026-10-05, BEFORE THE NEXT CLAIM RATHER THAN DURING IT. The task could not satisfy its own third clause. That clause requires the inventory's unit suite to join `npm run test:scripts` and therefore to gain a step in the CI validate job -- because PL-0714's mirror-check fails a build whose alias names a suite with no step -- and `.github/workflows/ci.yml` was not among allowedPaths. Whoever claimed it would have reached that clause, found the file outside the surface, and either widened it mid-implementation or quietly skipped the clause. Both are worse than fixing the declaration while nobody owns the task.\n\nADDING ci.yml MEANS THIS TASK NOW OVERLAPS PL-0736 UNTIL THAT ONE CLEARS REVIEW, and that is the correct state rather than an obstacle: `ai:claim` will refuse, which is the control plane saying the two cannot safely be held at once. It was already refusing on windows.yml alone."
     },
     {
       "id": "PL-0740",
