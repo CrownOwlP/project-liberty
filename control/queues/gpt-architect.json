@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-05T02:57:55.435Z",
+  "generatedAt": "2026-10-05T03:06:07.534Z",
   "agent": "gpt-architect",
   "executionAvailable": false,
   "assigned": [],
@@ -14,10 +14,13 @@
         "PW-0102"
       ],
       "allowedPaths": [
-        "apps/desktop/**",
+        "apps/desktop/scripts/collect-notices.mjs",
+        "apps/desktop/scripts/notices.test.mjs",
+        "apps/desktop/scripts/package-sidecar.mjs",
         "docs/LICENSING.md"
       ],
       "reviewDependencies": [
+        "apps/desktop/**",
         "docs/DESKTOP_PLAYBACK.md",
         "docs/CONTENT_RIGHTS.md",
         "README.md"
@@ -87,6 +90,52 @@
           "evidence": "CHANGES REQUESTED at 659cafa118bdc72b98d43c7f3fa21a120222e57b. TRANSCRIBED BY claude-lead from gpt-architect's round-111 verdict document, which lists PW-0208 under \"NOT APPROVED YET\" and says: \"PW-0208 still requires stronger evidence about the contents of the actual Windows package/distribution tree.\"\n\nThe same document's section 3 states what that evidence has to cover, and it is quoted here in full rather than paraphrased, because it is the acceptance this task is now being measured against:\n\n  - actual libmpv/FFmpeg artifact included, if included\n  - exact provenance/version/pin\n  - build/configuration evidence available for what ships\n  - GPL components excluded where required by the selected LGPL distribution strategy\n  - THIRD-PARTY-NOTICES or equivalent actually present in the package tree\n  - Node licence actually present beside the shipped runtime where required\n  - dependency licence collection reflects the actual packaged dependencies\n  - written-offer/attribution material actually appears where the distribution strategy requires it\n  - strict notice generation fails on missing evidence rather than silently producing a green result\n\nAND THE BOUNDARY IT RESTATES, which this task's own acceptance already carries: \"Do NOT guess the H.264/HEVC patent decision. H.264/HEVC remains a commander/legal decision and must remain explicitly separate from the LGPL evidence. Do not enable patent-dependent functionality based on an assumption.\"\n\nWHAT THE VERDICT IS OBJECTING TO, read plainly: the distinction between evidence about SOURCE AND SCRIPTS and evidence about THE TREE THAT SHIPS. The recorded `build` gate is about what the packaging is configured to do. \"The actual Windows package/distribution tree\" is what came out of it, and the round-110 instruction said the same thing in fewer words -- \"Do not infer packaged contents solely from source intent.\"\n\nReturned to IN_PROGRESS. The gate results are discarded by `request-changes` as the control plane intends: the `build` gate described a tree, and the next one has to describe the tree that is actually inspected."
         }
       ]
+    },
+    {
+      "id": "PW-0502",
+      "priority": "P1",
+      "lane": "Infra",
+      "status": "REVIEW",
+      "title": "Updates, and a version the application can prove",
+      "dependencies": [
+        "PW-0501"
+      ],
+      "allowedPaths": [
+        "scripts/validate-repo.mjs",
+        "scripts/test-validate-repo.mjs",
+        "docs/RELEASE.md",
+        "apps/desktop/src-tauri/tauri.conf.json"
+      ],
+      "reviewDependencies": [
+        ".github/workflows/windows.yml",
+        "docs/SECURITY.md",
+        "docs/RELEASE_CRITERIA.md",
+        "apps/desktop/src-tauri/Cargo.toml",
+        "apps/web/package.json",
+        "scripts/windows/artifact-inventory.mjs"
+      ],
+      "preferredAgent": "claude-infra",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "build",
+        "architecture-review",
+        "security-review"
+      ],
+      "acceptance": "The application can tell a user what version it is and can update itself safely, or states plainly that it cannot yet and why. REQUIRED: an update mechanism whose payloads are signature-verified -- an updater that fetches and executes an unverified binary is a remote code execution feature, and SECURITY.md's threat list already ranks unauthorized access above convenience. REQUIRED: the update endpoint is pinned and allowlisted like every other egress in this repository. REQUIRED: a rollback story, or a stated decision that there is none and what a user does instead. REQUIRED: the version is derived from one source shared with PW-0501. IF SIGNING IS UNAVAILABLE the update path must be disabled by default and say so, rather than shipping an unverified one -- an unsigned auto-updater is worse than no updater, and that dependency goes to LAST_MILE rather than being worked around.",
+      "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. SURFACE NOTE: this task's allowedPaths name directories that do not exist yet. The evidence-based narrowing procedure applies to reconciling work already in history; for genuinely new work the surface is the smallest set of paths the acceptance can be satisfied within, and it is narrowed again from the diff before review if it turns out to be wider than what was written. ",
+      "owner": "claude-infra",
+      "gateResults": {
+        "build": {
+          "status": "pass",
+          "at": "2026-10-05T03:05:48.476Z",
+          "by": "claude-infra",
+          "commitSha": "7d6dbcdf6985b9b74d82ae0c7c2bcb49730f4c53",
+          "evidence": "THE EXECUTABLE CLAUSES ARE DONE AND THE SIGNING-DEPENDENT ONES ARE STATED, which is what the acceptance conditional asks for: \"IF SIGNING IS UNAVAILABLE the update path must be disabled by default and say so, rather than shipping an unverified one\". Signing is unavailable (LAST_MILE 6), so that branch of the acceptance is the one in force and it is satisfied, not deferred.\n\nTHE DEFECT THIS FOUND, MEASURED. The repository has TWO independent version sources and nothing reconciled them. apps/desktop/src-tauri/Cargo.toml [package] version is what Tauri names the installer from -- confirmed against reality, not inferred: Windows #16 and #17 both produced Project Liberty_0.1.0_x64_en-US.msi, and tauri.conf.json declares no version so Tauri fell back to Cargo. apps/web/package.json version is what the About screen SHOWS A USER (PW-0308 renders it; settings.test.tsx asserts it is read, not pasted). Both read 0.1.0 today by coincidence of nobody having bumped either. The day one moves and the other does not, the About screen names a build that is not the build installed, and every defect report from it cites the wrong version -- while PW-0603 run sheet asks the commander for exactly that number and PW-0501 inventory identifies the build by the installer filename.\n\nWHAT LANDED. checkVersionAuthority in scripts/validate-repo.mjs: the two must agree; tauri.conf.json must not carry a THIRD value, because Tauri uses it when present and falls back when absent, so a value there does not disagree with Cargo, it silently OVERRIDES it; and no updater may be configured while no signing key exists. It runs in CI validate job BEFORE npm ci and in repo:validate locally, so a half-done bump is caught on the machine that made it. No package.json or workflow edit was needed, which matters because both are reserved by tasks in review.\n\nPROVEN BY DRIVING EACH REFUSAL AGAINST THE REAL REPOSITORY, then reverting: bumping apps/web alone to 0.2.0 fails naming both numbers; adding version 9.9.9 to tauri.conf.json fails naming the override; adding a plugins.updater fails naming the remote-code-execution path. Tree restored clean each time, confirmed by git diff --stat.\n\nSUITE AND MUTATION. scripts/test-validate-repo.mjs gains 9 cases and reports 29 assertion groups passing; the whole file including its siblings is green (27 + 21 + 29). Mutation-tested per refusal: disabling the version-disagreement branch reddens 2 cases, disabling the updater branch reddens 1. Both mutants reverted and 29 re-run green. One case exists only to prove the [package] anchoring -- a pattern that merely looked for version = \"...\" would match the serde dependency line present in every Cargo.toml, compare serde version to the web app, fail on a correct repository and be deleted within a day.\n\ncargo check on the desktop crate: exit 0, so the tauri.conf.json edits did not break the build.\n\ndocs/RELEASE.md states the boundary part by part -- version authority DONE, installed-version evidence DONE, update discovery NONE, download NONE, signature verification IMPOSSIBLE TODAY, application NONE, rollback NONE -- with the four things that must all exist before an updater can be built honestly, and the note that the first of them is not an engineering task. The rollback section states the real alternative rather than implying one: uninstall and install the previous MSI, which preserves user data because the installer never created the user-data root, with two honest caveats (CI artifacts expire at 14 days so keeping the old MSI is the user problem, and downgrading across a migration is untested).\n\nNOT CLAIMED, and these are the acceptance remaining clauses verbatim: signature-verified payloads, a pinned allowlisted update endpoint, and a rollback mechanism. All three are downstream of an Authenticode certificate and a decision about where its private key lives. That is LAST_MILE item 6 and an owner decision, and building any of the three before it would mean shipping the unverified updater the acceptance forbids by name."
+        }
+      },
+      "implementationAgent": "claude-infra",
+      "updatedAt": "2026-10-05T03:05:48.656Z",
+      "implementationBaseSha": "7d6dbcdf6985b9b74d82ae0c7c2bcb49730f4c53"
     },
     {
       "id": "PW-0603",

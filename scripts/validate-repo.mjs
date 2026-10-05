@@ -245,6 +245,141 @@ export function checkInstructionFiles(root, allowlist = INSTRUCTION_FILE_ALLOWLI
   return errors;
 }
 
+/* ---------------------------------------------------------------------------
+ * ONE VERSION, AND IT MUST BE ONE (PW-0502)
+ *
+ * ==========================================================================
+ * THERE ARE TWO VERSION SOURCES AND NOTHING RECONCILED THEM
+ * ==========================================================================
+ *
+ * `apps/desktop/src-tauri/Cargo.toml` carries the version Tauri names the
+ * installer from -- Windows #16 and #17 both produced
+ * `Project Liberty_0.1.0_x64_en-US.msi`, and that `0.1.0` is the Cargo
+ * package version, because `tauri.conf.json` declares no `version` of its own
+ * and Tauri falls back to Cargo's.
+ *
+ * `apps/web/package.json` carries the version the APPLICATION SHOWS A USER.
+ * PW-0308's About section renders `packageJson.version` from that file, and
+ * `settings.test.tsx` asserts it is read rather than pasted.
+ *
+ * Both say `0.1.0` today, by coincidence of nobody having bumped either. The
+ * day one moves and the other does not, the About screen states a version
+ * that is not the version of the thing installed -- and every defect report
+ * from that build names the wrong one. PW-0603's run sheet asks the commander
+ * for "Liberty version: from the About screen — never 'latest'", and
+ * PW-0501's artifact inventory identifies a build by the installer's name.
+ * Those two answers have to be the same answer.
+ *
+ * ==========================================================================
+ * WHY A VALIDATOR CHECK AND NOT A BUILD STEP
+ * ==========================================================================
+ *
+ * This file already runs in CI's `validate` job BEFORE `npm ci`, already
+ * performs cross-file consistency checks of exactly this kind, and already
+ * has a mirrored suite with its own CI step. A check for "two files must
+ * agree" belongs with `checkWorkspaceDependencies` rather than in a packaging
+ * script that only a Windows runner reaches -- the disagreement is authored
+ * on any machine and should be caught on the machine that authored it.
+ *
+ * NOT DEDUPLICATED INTO ONE FILE, and that is deliberate rather than lazy.
+ * Cargo must have a version in its own manifest and npm must have one in
+ * its own; neither tool reads the other's. What can be removed is not the
+ * second copy, it is the SILENCE between them.
+ * ------------------------------------------------------------------------ */
+function checkVersionAuthority(root) {
+  const errors = [];
+
+  const cargoPath = path.join(root, "apps/desktop/src-tauri/Cargo.toml");
+  const webPath = path.join(root, "apps/web/package.json");
+  const confPath = path.join(root, "apps/desktop/src-tauri/tauri.conf.json");
+  if (!fs.existsSync(cargoPath) || !fs.existsSync(webPath)) return errors;
+
+  const cargo = fs.readFileSync(cargoPath, "utf8");
+  /* The `[package]` table's own version, not a dependency's. Anchored to the
+   * section so a `[dependencies] serde = { version = "..." }` cannot match. */
+  const packageSection = /^\[package\]([\s\S]*?)(?=^\[|\Z)/m.exec(cargo)?.[1] ?? "";
+  const cargoVersion = /^\s*version\s*=\s*"([^"]+)"/m.exec(packageSection)?.[1] ?? null;
+  if (!cargoVersion) {
+    errors.push(
+      "apps/desktop/src-tauri/Cargo.toml has no [package] version, so the installer Tauri builds " +
+        "would be named from nothing and no build could be identified afterwards"
+    );
+    return errors;
+  }
+
+  let webVersion = null;
+  try {
+    webVersion = JSON.parse(fs.readFileSync(webPath, "utf8")).version ?? null;
+  } catch {
+    /* A malformed apps/web/package.json is already reported by the JSON scan
+     * in main(); saying it twice helps nobody. */
+    return errors;
+  }
+  if (!webVersion) {
+    errors.push("apps/web/package.json has no version, and the About screen renders it to a user");
+    return errors;
+  }
+
+  if (cargoVersion !== webVersion) {
+    errors.push(
+      `version disagreement: apps/desktop/src-tauri/Cargo.toml says ${cargoVersion} and ` +
+        `apps/web/package.json says ${webVersion}. The first names the installer Tauri builds; the ` +
+        `second is what the About screen shows a user. A build whose screen and whose filename ` +
+        `disagree cannot be identified from a defect report. Bump both, or neither.`
+    );
+  }
+
+  /*
+   * A THIRD SOURCE IS WORSE THAN TWO. If `tauri.conf.json` grows a `version`,
+   * it WINS over Cargo's -- quietly, with no error anywhere -- so the field is
+   * either absent or in agreement. Absent is what the repository has and what
+   * the comment above describes.
+   */
+  if (fs.existsSync(confPath)) {
+    try {
+      const conf = JSON.parse(fs.readFileSync(confPath, "utf8"));
+      if (conf.version !== undefined && conf.version !== cargoVersion) {
+        errors.push(
+          `apps/desktop/src-tauri/tauri.conf.json declares version ${String(conf.version)}, which ` +
+            `OVERRIDES the Cargo version ${cargoVersion} that everything else is derived from. ` +
+            `Remove it, or make all three agree.`
+        );
+      }
+
+      /*
+       * AND NO UPDATER WHILE THERE IS NO SIGNING KEY.
+       *
+       * PW-0502's acceptance: "an updater that fetches and executes an
+       * unverified binary is a remote code execution feature", and "IF
+       * SIGNING IS UNAVAILABLE the update path must be disabled by default
+       * and say so". No Authenticode certificate exists -- LAST_MILE item 6,
+       * an owner decision this session cannot make -- so the honest state is
+       * no updater at all.
+       *
+       * Today that is true by ABSENCE, which is not the same as being
+       * decided: nothing would notice the day somebody enabled one. This
+       * makes the absence an assertion, so enabling an updater before the
+       * signing story exists turns the build red rather than shipping a
+       * remote-code-execution path by default.
+       */
+      const updater = conf.plugins?.updater;
+      if (updater && updater.active !== false) {
+        errors.push(
+          "apps/desktop/src-tauri/tauri.conf.json configures an updater while no Authenticode " +
+            "signing key exists (LAST_MILE 6). An updater that fetches and executes an unverified " +
+            "binary is a remote-code-execution feature. Disable it, or land signature verification " +
+            "and the pinned, allowlisted update endpoint PW-0502 requires first. docs/RELEASE.md " +
+            "states the boundary."
+        );
+      }
+    } catch {
+      /* Reported by the JSON scan in main(). */
+    }
+  }
+
+  return errors;
+}
+
 function main() {
   const root = process.cwd();
   const quick = process.argv.includes("--quick");
@@ -287,6 +422,12 @@ function main() {
    * that cannot see part of the tree has to say so, not report a pass over the
    * part it could see.
    */
+  /* Runs in --quick too, for the reason the two below do: a version bumped in
+   * one file and not the other is introduced mid-session by whoever is doing
+   * the bumping, and a control that only fires in the slow path would not see
+   * it until after that session had finished. It reads two small files. */
+  errors.push(...checkVersionAuthority(root));
+
   try {
     errors.push(...checkWorkspaceDependencies(root));
     errors.push(...checkTurboGraph(root, listWorkspaceDirectories));
@@ -319,4 +460,4 @@ function main() {
 // import; still a plain script when invoked directly.
 if (process.argv[1] && path.resolve(process.argv[1]) === import.meta.filename) main();
 
-export { INSTRUCTION_BASENAMES, INSTRUCTION_FILE_ALLOWLIST, PRUNED_DIRECTORIES };
+export { INSTRUCTION_BASENAMES, INSTRUCTION_FILE_ALLOWLIST, PRUNED_DIRECTORIES, checkVersionAuthority };

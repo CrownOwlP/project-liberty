@@ -1,16 +1,16 @@
 # Project Liberty - Project Status
 
-> Generated 2026-10-05T02:57:55.434Z from the AI control plane.
+> Generated 2026-10-05T03:06:07.529Z from the AI control plane.
 
 **Overall completion:** 111/138 executable tasks (80%)
 
 ## Status summary
 
 - **BACKLOG:** 6
-- **READY:** 5
+- **READY:** 4
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 0
-- **REVIEW:** 8
+- **REVIEW:** 9
 - **BLOCKED:** 8
 - **DONE:** 111
 - **CANCELED:** 0
@@ -32,6 +32,7 @@
 ## Active work
 
 - **PW-0208** [REVIEW] An LGPL-compatible libmpv and FFmpeg the product may actually ship — owner: claude-infra
+- **PW-0502** [REVIEW] Updates, and a version the application can prove — owner: claude-infra
 - **PW-0603** [REVIEW] The commander's run sheet, and the evidence it produces — owner: claude-test
 - **PL-0728** [REVIEW] A standing check for a test that is skipped in every configuration this repository runs — owner: claude-test
 - **PL-0731** [REVIEW] The empty client-key allowlist refusal is asserted by nobody — owner: claude-media
@@ -42,7 +43,7 @@
 
 ## Dispatch classification
 
-- **READY_AND_EXECUTABLE:** 5
+- **READY_AND_EXECUTABLE:** 4
 - **READY_BUT_EXTERNAL:** 0
 - **BLOCKED:** 8
 - **BACKLOG (dependency-gated):** 6
@@ -83,5 +84,5 @@ UNBLOCK WHEN: the commander runs Experiment 1a on real Windows hardware and hand
 - **claude-media:** 1/2 active
 - **claude-test:** 2/2 active
 - **claude-security:** 0/1 active
-- **claude-infra:** 2/2 active
+- **claude-infra:** 3/3 active
 - **human-commander:** 0/99 active (external lane; not locally executable)

@@ -8,6 +8,7 @@ import {
   INSTRUCTION_FILE_ALLOWLIST,
   PRUNED_DIRECTORIES,
   checkInstructionFiles,
+  checkVersionAuthority,
   findInstructionFiles
 } from "./validate-repo.mjs";
 
@@ -388,6 +389,118 @@ for (const suite of ["scripts/test-validate-workspace-deps.mjs", "scripts/test-v
     failures.push(`${suite} exited ${result.status}:\n${result.stdout}${result.stderr}`);
   }
 }
+
+// ---------------------------------------------------------------------------
+// One version, and it must be one (PW-0502)
+// ---------------------------------------------------------------------------
+
+/**
+ * A repository with the two version sources set as given.
+ *
+ * SHAPED LIKE THE REAL ONE: a `[package]` table in Cargo.toml with a
+ * `[dependencies]` table after it, because the check anchors to the first
+ * section and a fixture without the second would not exercise that anchoring.
+ */
+function versionFixture({ cargo = "0.1.0", web = "0.1.0", conf = {} } = {}) {
+  return fixture({
+    "apps/desktop/src-tauri/Cargo.toml":
+      `[package]\nname = "liberty-desktop"\nversion = "${cargo}"\nedition = "2021"\n\n` +
+      `[dependencies]\nserde = { version = "=1.0.228" }\n`,
+    "apps/web/package.json": JSON.stringify({ name: "@liberty/web", version: web }, null, 2),
+    "apps/desktop/src-tauri/tauri.conf.json": JSON.stringify(conf, null, 2)
+  });
+}
+
+test("agreeing versions pass, which is the state the repository is in", () => {
+  assert.deepEqual(checkVersionAuthority(versionFixture()), []);
+});
+
+test("THE HAZARD: one bumped and the other not", () => {
+  /*
+   * The real shape of this mistake. `apps/web/package.json` is what the About
+   * screen renders to a user; `Cargo.toml` is what Tauri names the installer
+   * from -- Windows #16 and #17 both produced
+   * `Project Liberty_0.1.0_x64_en-US.msi` from it. Bumping the one you are
+   * looking at is the obvious thing to do and nothing said otherwise.
+   */
+  const errors = checkVersionAuthority(versionFixture({ web: "0.2.0" }));
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /version disagreement/);
+  assert.match(errors[0], /0\.1\.0/);
+  assert.match(errors[0], /0\.2\.0/);
+});
+
+test("it reads the [package] version, not a dependency's", () => {
+  /*
+   * NON-VACUITY FOR THE ANCHORING. `[dependencies] serde = { version = ... }`
+   * is in every Cargo.toml, appears before nothing, and a pattern that simply
+   * looked for `version = "..."` would find whichever came first and compare
+   * serde's version to the web app's. It would then fail on a correct
+   * repository and be deleted within a day.
+   */
+  assert.deepEqual(checkVersionAuthority(versionFixture({ cargo: "0.1.0", web: "0.1.0" })), []);
+  const errors = checkVersionAuthority(versionFixture({ cargo: "7.7.7", web: "0.1.0" }));
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /7\.7\.7/, "it compared something other than the [package] version");
+});
+
+test("a THIRD source in tauri.conf.json is refused, because it wins silently", () => {
+  /*
+   * Tauri uses `tauri.conf.json`'s `version` when present and falls back to
+   * Cargo's when absent. So a value here does not disagree with Cargo, it
+   * OVERRIDES it -- with no warning from any tool -- and the repository would
+   * then have a version nobody who looked at Cargo.toml would predict.
+   */
+  const errors = checkVersionAuthority(versionFixture({ conf: { version: "9.9.9" } }));
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /OVERRIDES the Cargo version/);
+});
+
+test("and an AGREEING third source is allowed, because it is not a lie", () => {
+  assert.deepEqual(checkVersionAuthority(versionFixture({ conf: { version: "0.1.0" } })), []);
+});
+
+test("an updater configured with no signing key is refused", () => {
+  /*
+   * PW-0502: "an updater that fetches and executes an unverified binary is a
+   * remote code execution feature", and "IF SIGNING IS UNAVAILABLE the update
+   * path must be disabled by default and say so". No Authenticode certificate
+   * exists (LAST_MILE 6), so the honest state is no updater -- and until now
+   * that was true only by ABSENCE, which nothing would have noticed somebody
+   * ending.
+   */
+  const errors = checkVersionAuthority(
+    versionFixture({ conf: { plugins: { updater: { endpoints: ["https://example.test/u"] } } } })
+  );
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /remote-code-execution feature/);
+});
+
+test("an explicitly disabled updater is allowed, because that is the decision stated", () => {
+  assert.deepEqual(
+    checkVersionAuthority(versionFixture({ conf: { plugins: { updater: { active: false } } } })),
+    []
+  );
+});
+
+test("a missing [package] version is refused rather than skipped", () => {
+  const root = fixture({
+    "apps/desktop/src-tauri/Cargo.toml": `[package]\nname = "liberty-desktop"\n`,
+    "apps/web/package.json": JSON.stringify({ version: "0.1.0" })
+  });
+  const errors = checkVersionAuthority(root);
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /no \[package\] version/);
+});
+
+test("a repository without the desktop app at all is not an error", () => {
+  /*
+   * The check must not fail a tree that has no Tauri shell -- the bootstrap
+   * fixture `scripts/bootstrap-ai-project.mjs` produces is one, and so is
+   * every fixture in this file that is about something else.
+   */
+  assert.deepEqual(checkVersionAuthority(fixture({ "README.md": "hi\n" })), []);
+});
 
 if (failures.length) {
   console.error(`validate-repo tests FAILED (${passed} passed, ${failures.length} failed):`);
