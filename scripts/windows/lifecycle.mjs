@@ -98,14 +98,121 @@ function requireValue(flag, value) {
   return value;
 }
 
+/*
+ * A DEADLINE ON EVERY msiexec INVOCATION (PL-0745).
+ *
+ * Found by PL-0736 while bounding the STEP that contains these calls. Windows
+ * Installer serialises on the `_MSIExecute` mutex, and a process holding it --
+ * an unattended-install service, a previous msiexec that has not exited, a
+ * repair triggered by something else on the machine -- makes the next
+ * invocation WAIT. Not fail. Wait. There was no deadline anywhere in the chain
+ * that decides F1, F3 and F4.
+ *
+ * HOW 3 MINUTES WAS DERIVED, and the arithmetic is the point. A silent
+ * install, uninstall or reinstall of this MSI is seconds of work, so any of
+ * these numbers is far above "slow". The ceiling is what fixes it: PL-0736 put
+ * a 15-minute `timeout-minutes` on the whole step, and there are FOUR
+ * invocations. At 3 minutes each the pathological case -- all four stalling --
+ * spends 12 minutes and still leaves time for the observation queries and the
+ * report to be written, so the harness reports rather than the step dying with
+ * nothing to say. At 5 minutes each it would be 20, the step bound would fire
+ * first, and this deadline would have bought nothing.
+ */
+const MSIEXEC_TIMEOUT_MS = 180_000;
+
+/**
+ * The spawn options, hoisted out so the DEADLINE ITSELF IS TESTABLE.
+ *
+ * `classifyInvocation` can be driven with synthetic results all day and would
+ * go on passing if someone deleted `timeout` from this object -- `timedOut`
+ * would simply never become true again, on a Windows machine nobody here can
+ * run. The one assertion that catches that is on the options, so they are a
+ * value rather than an object literal buried in a call.
+ */
+export const MSIEXEC_SPAWN_OPTIONS = Object.freeze({
+  encoding: "utf8",
+  windowsHide: true,
+  timeout: MSIEXEC_TIMEOUT_MS,
+  /* SIGKILL, not the default SIGTERM: the thing being killed is a process
+   * that is already not responding. */
+  killSignal: "SIGKILL"
+});
+
 function msiexec(args, logName) {
-  const result = spawnSync("msiexec.exe", args, { encoding: "utf8", windowsHide: true });
+  const result = spawnSync("msiexec.exe", args, MSIEXEC_SPAWN_OPTIONS);
+  /*
+   * THREE OUTCOMES WORE ONE FACE BEFORE THIS. Verified against a real child in
+   * this container rather than assumed: on timeout `status` is null and
+   * `error.code` is ETIMEDOUT; when the binary is absent `status` is ALSO null
+   * and `error.code` is ENOENT; an ordinary failure has a number and no error.
+   * The old code tested `status !== 0`, so a stall and a missing msiexec.exe
+   * both arrived as a bare `fail` with `status: null` and nothing to read.
+   */
+  const code = result.error?.code;
   return {
     command: `msiexec.exe ${args.join(" ")}`,
     status: result.status,
     log: logName,
-    stderr: (result.stderr ?? "").slice(0, 2000)
+    stderr: (result.stderr ?? "").slice(0, 2000),
+    timedOut: code === "ETIMEDOUT",
+    timeoutMs: MSIEXEC_TIMEOUT_MS,
+    spawnError: code !== undefined && code !== "ETIMEDOUT" ? `${code}: ${result.error.message}`.slice(0, 500) : null
   };
+}
+
+/**
+ * What an invocation means, as a decision separate from making it.
+ *
+ * `null` means "nothing to record, carry on and judge the real thing". Pure,
+ * exported and tested, because the alternative -- a stall quietly becoming a
+ * pass or quietly becoming nothing -- is not something a Windows runner would
+ * tell us about.
+ *
+ * A STALL IS RECORDED AS `fail`, DELIBERATELY, AND THAT IS NOT THE END STATE.
+ * It is not a pass, and it is not `not-run`: in this harness `not-run` means
+ * "the evidence does not exist" -- F2 has no previous release to upgrade from
+ * -- and a stall means "we did not find out", which must never read as a
+ * deliberate skip. A distinct `stalled` outcome would say that better, and the
+ * detail below already carries `timedOut` and `timeoutMs` so one can be split
+ * out mechanically. It is NOT introduced here because the annotation emitter
+ * in `.github/workflows/windows.yml` raises a warning for `fail` and a notice
+ * for everything else, so a new string would land on the run page looking
+ * benign -- and that file is reserved by PL-0736, which is in review. Doing it
+ * in two halves, with the quiet half first, is how a gate stops gating.
+ */
+export function classifyInvocation(result) {
+  if (result.timedOut) {
+    return {
+      outcome: "fail",
+      reason:
+        `msiexec did not return within ${result.timeoutMs} ms and was killed. THIS IS A STALL, ` +
+        `NOT AN INSTALLER DEFECT: Windows Installer serialises on the _MSIExecute mutex, so ` +
+        `another install, repair or uninstall holding it makes this invocation wait rather than ` +
+        `fail. Look for a concurrent msiexec or an unattended-install service before looking at ` +
+        `the MSI. Nothing was learned about this case either way.`
+    };
+  }
+  if (result.spawnError !== null) {
+    return {
+      outcome: "fail",
+      reason: `msiexec.exe could not be started at all (${result.spawnError}). This is the machine, not the package.`
+    };
+  }
+  if (result.status !== 0) {
+    return { outcome: "fail", reason: `msiexec exited ${result.status}` };
+  }
+  return { outcome: null, reason: null };
+}
+
+/**
+ * Whether the run failed, as a decision rather than an expression buried in a
+ * return statement.
+ *
+ * Exported so the gate itself is testable. A harness whose exit code is
+ * computed inline is a harness whose exit code is verified by reading it.
+ */
+export function jobFailed(results) {
+  return results.some((entry) => entry.outcome === "fail");
 }
 
 function powershell(script) {
@@ -246,7 +353,8 @@ function main() {
       ["/i", options.msi, "/qn", "/norestart", "/l*v", "lifecycle-install.log"],
       "lifecycle-install.log"
     );
-    if (install.status !== 0) record("F1", "fail", install);
+    const verdict = classifyInvocation(install);
+    if (verdict.outcome !== null) record("F1", verdict.outcome, { install, reason: verdict.reason });
     else {
       const verified = verifyInstalledTree(where);
       record("F1", verified.status === 0 ? "pass" : "fail", {
@@ -276,7 +384,8 @@ function main() {
       ["/i", options.msi, "/qn", "/norestart", "/l*v", "lifecycle-upgrade.log"],
       "lifecycle-upgrade.log"
     );
-    if (upgrade.status !== 0) record("F2", "fail", upgrade);
+    const verdict = classifyInvocation(upgrade);
+    if (verdict.outcome !== null) record("F2", verdict.outcome, { upgrade, reason: verdict.reason });
     else {
       const preservation = upgradePreservedUserData(before, readUserData(where.userDataRoot));
       record("F2", preservation.preserved ? "pass" : "fail", { upgrade, preservation });
@@ -288,8 +397,10 @@ function main() {
     ["/x", options.msi, "/qn", "/norestart", "/l*v", "lifecycle-uninstall.log"],
     "lifecycle-uninstall.log"
   );
-  if (uninstall.status !== 0) record("F3", "fail", uninstall);
-  else {
+  const uninstallVerdict = classifyInvocation(uninstall);
+  if (uninstallVerdict.outcome !== null) {
+    record("F3", uninstallVerdict.outcome, { uninstall, reason: uninstallVerdict.reason });
+  } else {
     const residue = classifyResidue(observe(where), identity);
     record("F3", residue.clean ? "pass" : "fail", { uninstall, residue });
   }
@@ -299,8 +410,10 @@ function main() {
     ["/i", options.msi, "/qn", "/norestart", "/l*v", "lifecycle-reinstall.log"],
     "lifecycle-reinstall.log"
   );
-  if (reinstall.status !== 0) record("F4", "fail", reinstall);
-  else {
+  const reinstallVerdict = classifyInvocation(reinstall);
+  if (reinstallVerdict.outcome !== null) {
+    record("F4", reinstallVerdict.outcome, { reinstall, reason: reinstallVerdict.reason });
+  } else {
     const verified = verifyInstalledTree(where);
     record("F4", verified.status === 0 ? "pass" : "fail", { reinstall, verify: verified });
   }
@@ -333,7 +446,7 @@ function main() {
   writeFileSync(options.out, `${JSON.stringify(report, null, 2)}\n`, "utf8");
   console.log(`lifecycle: wrote ${options.out}`);
 
-  return results.some((entry) => entry.outcome === "fail") ? 1 : 0;
+  return jobFailed(results) ? 1 : 0;
 }
 
 /*
@@ -358,4 +471,4 @@ if (invokedDirectly) {
   }
 }
 
-export { MARKER_NAME, parseArguments, readUserData };
+export { MARKER_NAME, MSIEXEC_TIMEOUT_MS, parseArguments, readUserData };

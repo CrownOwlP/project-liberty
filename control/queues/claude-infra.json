@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-05T14:50:48.835Z",
+  "generatedAt": "2026-10-05T23:11:26.716Z",
   "agent": "claude-infra",
   "executionAvailable": true,
   "assigned": [
@@ -29,16 +29,12 @@
       "implementationAgent": "claude-infra",
       "updatedAt": "2026-10-05T14:50:48.526Z",
       "implementationBaseSha": "723c95488b8d64205676055ed0a638f8cb9d76dc"
-    }
-  ],
-  "review": [],
-  "reservedExternal": [],
-  "recommended": [
+    },
     {
       "id": "PL-0745",
       "priority": "P2",
       "lane": "Infra",
-      "status": "READY",
+      "status": "REVIEW",
       "title": "Every msiexec call in the lifecycle harness can wait forever",
       "dependencies": [],
       "allowedPaths": [
@@ -56,8 +52,25 @@
         "architecture-review"
       ],
       "acceptance": "FOUND BY PL-0736 WHILE BOUNDING THE STEP THAT CONTAINS IT. `lifecycle.mjs` calls `spawnSync(\"msiexec.exe\", args, { encoding: \"utf8\", windowsHide: true })` four times -- install, upgrade, uninstall, reinstall -- and passes no `timeout`. Windows Installer serialises on the `_MSIExecute` mutex and a holder makes the next invocation WAIT rather than fail, so there is no deadline anywhere in the chain that decides F1, F3 and F4.\n\nPL-0736 put a 15-minute `timeout-minutes` on the step. That is an OUTER bound and deliberately not the fix: when it fires, the whole step dies and the report says nothing about which case stalled or why.\n\nREQUIRED: a `timeout` on each msiexec invocation, and a timed-out case REPORTED as a case outcome with its own reason, not collapsed into a crash. The harness already distinguishes exit 1 (a real case failure) from exit 2 (a refusal over arguments or platform) precisely so a configuration mistake is not filed as a product defect; a stall is a third thing and must not be filed as either.\n\nREQUIRED: the bound is per-invocation and derived. A silent install of this MSI is seconds of work.\n\nREQUIRED: a timed-out case is NEVER recorded as pass, and never as not-run with a reason that reads like a deliberate skip -- F2's `not-run` means 'the evidence does not exist', and a stall means 'we did not find out'.\n\nOUT OF SCOPE: changing what any case does, and the step-level bound PL-0736 added, which stays as the outer limit.",
-      "notes": "P2 rather than P1 because the outer bound now exists, so the failure mode is 'the step dies at 15 minutes with a poor message' rather than 'the job burns an hour'. It is still a real defect: the message is what a person reads at 2am."
-    },
+      "notes": "P2 rather than P1 because the outer bound now exists, so the failure mode is 'the step dies at 15 minutes with a poor message' rather than 'the job burns an hour'. It is still a real defect: the message is what a person reads at 2am.",
+      "owner": "claude-infra",
+      "implementationAgent": "claude-infra",
+      "updatedAt": "2026-10-05T23:11:26.450Z",
+      "implementationBaseSha": "e0442bd0122cffd34e334fc40d57d9ca5378e057",
+      "gateResults": {
+        "unit": {
+          "status": "pass",
+          "at": "2026-10-05T23:11:26.194Z",
+          "by": "claude-infra",
+          "commitSha": "e0442bd0122cffd34e334fc40d57d9ca5378e057",
+          "evidence": "node --test scripts/windows/test-lifecycle.mjs: 42 tests, 42 pass (was 33; this task adds 9). Full npm run test:scripts: green, rc=0. repo:validate: passed.\n\nTWO CASES RUN A REAL CHILD RATHER THAN ASSERTING A BELIEF ABOUT spawnSync. The whole repair rests on Node's timeout semantics, so they are exercised: a child that sleeps 60s with timeout 250 returns status null and error.code ETIMEDOUT; a missing binary returns status null and error.code ENOENT. THAT PAIR IS THE DEFECT -- the old code tested status !== 0, so a stall and an absent msiexec.exe both arrived as a bare fail with status: null and nothing to read.\n\nMUTATION-TESTED, five ways this repair could be undone:\n  no-timeout        (delete timeout from the spawn options)   -> 1 test fails\n  stall-is-notrun   (a stall recorded as not-run)             -> 2 tests fail\n  gate-off          (jobFailed returns false)                 -> 2 tests fail\n  spawn-as-stall    (a spawn failure dressed as a timeout)    -> 1 test fails\n  timeout-too-long  (180s -> 300s)                            -> 1 test fails\n\nThe first and last are the ones worth naming. no-timeout is the mutant every other case in this block would survive, because they drive classifyInvocation with synthetic results and would keep passing while timedOut quietly never became true again on a machine nobody in this container can run; it is caught only because the spawn options are a frozen exported value with an assertion on them. timeout-too-long is caught because the step bound arithmetic is ASSERTED rather than left in a comment: four invocations at 300s is 20 minutes against PL-0736's 15-minute timeout-minutes, so the step would die with no report and the deadline would have bought nothing.\n\nNOT CLAIMED: nothing here runs msiexec, and no Windows machine was involved. What is tested is the decision -- what an invocation means -- which is the same division the rest of this harness keeps between residue.mjs deciding and msiexec measuring."
+        }
+      }
+    }
+  ],
+  "review": [],
+  "reservedExternal": [],
+  "recommended": [
     {
       "id": "PL-0746",
       "priority": "P3",

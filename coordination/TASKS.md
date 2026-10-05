@@ -615,7 +615,7 @@ REQUIRED: becoming a source remains `defineStremioSource`, unchanged, with an ex
 REQUIRED: every refusal is a typed reason, never a throw, matching the convention the rest of this directory already holds.
 
 OUT OF SCOPE, and deliberately so: the settings UI, any API route, any persistence of user-added sources, and profile/repository scoping for them. Those are PL-0744 and they carry questions this task must not answer by accident -- whose rights declaration a user-added source carries, and whether a non-operator may add one at all. |
-| PL-0745 | P2 | Infra | READY | - | - | Every msiexec call in the lifecycle harness can wait forever | FOUND BY PL-0736 WHILE BOUNDING THE STEP THAT CONTAINS IT. `lifecycle.mjs` calls `spawnSync("msiexec.exe", args, { encoding: "utf8", windowsHide: true })` four times -- install, upgrade, uninstall, reinstall -- and passes no `timeout`. Windows Installer serialises on the `_MSIExecute` mutex and a holder makes the next invocation WAIT rather than fail, so there is no deadline anywhere in the chain that decides F1, F3 and F4.
+| PL-0745 | P2 | Infra | REVIEW | claude-infra | - | Every msiexec call in the lifecycle harness can wait forever | FOUND BY PL-0736 WHILE BOUNDING THE STEP THAT CONTAINS IT. `lifecycle.mjs` calls `spawnSync("msiexec.exe", args, { encoding: "utf8", windowsHide: true })` four times -- install, upgrade, uninstall, reinstall -- and passes no `timeout`. Windows Installer serialises on the `_MSIExecute` mutex and a holder makes the next invocation WAIT rather than fail, so there is no deadline anywhere in the chain that decides F1, F3 and F4.
 
 PL-0736 put a 15-minute `timeout-minutes` on the step. That is an OUTER bound and deliberately not the fix: when it fires, the whole step dies and the report says nothing about which case stalled or why.
 
@@ -714,18 +714,23 @@ REQUIRED: the refused decision still carries `cmcd: { enabled: false }` as a sta
 REQUIRED: if the refusal turns out to be unreachable without changing production code, SAY SO AND STOP. gpt-architect's verdict is explicit -- "Do not fabricate coverage for it" -- and an unreachable branch honestly reported is worth more than a test that reaches it by widening an input for the test's benefit.
 
 OUT OF SCOPE: changing what the allowlist contains or how it is built. |
-| PL-0744 | P3 | Frontend | BACKLOG | - | - | Add-by-URL has no surface, and the rights question behind it is unanswered | THE UI HALF OF THE DIRECTIVE'S PRIORITY 5: ADD-ONS -> ADD BY URL -> paste a manifest URL -> validate -> preview (name, version, declared resources) -> rights declaration -> save/enable. PL-0743 supplies everything up to the preview.
+| PL-0744 | P3 | Frontend | BACKLOG | - | - | Add-by-URL has no surface, and it may only have one where the user IS the operator | THE UI HALF OF THE DIRECTIVE'S PRIORITY 5: ADD-ONS -> ADD BY URL -> paste a manifest URL -> validate -> preview (name, version, declared resources) -> rights declaration -> save/enable. PL-0743 supplies everything up to the preview.
 
-THIS TASK IS BLOCKED ON A DECISION, NOT ON CODE, AND MUST NOT BE STARTED BEFORE IT. Product invariant 1 is that only licensed, user-owned or public-domain content may enter playback resolution, and `defineStremioSource` enforces it by requiring an OPERATOR declaration with an auditable basis. A user pasting a URL into a settings page is not the operator. So:
+THE RIGHTS DECISION IS MADE. Filed with four open questions; the commander answered them on 2026-10-05 by choosing LOCAL / SELF-HOSTED DEPLOYMENTS ONLY, and this acceptance is narrowed to that answer. The other three models are recorded in the notes with why they were not chosen, because a decision whose alternatives are forgotten gets re-litigated by the next person who finds the surface inconvenient.
 
-  (a) Whose declaration does a user-added source carry? If the user's, invariant 1 is now satisfied by an unauditable assertion from an anonymous party. If the operator's, the operator is declaring rights over a URL they have never seen.
-  (b) May a non-operator add one at all, or is this an operator-only surface gated by a role that does not yet exist?
-  (c) Is a user-added source scoped to the profile that added it, and what happens to resolution for other profiles?
-  (d) Persistence: a new table, a migration, and the repository/profile scoping the rest of the platform already enforces.
+WHAT THAT DECIDES, AND WHY IT IS THE SMALL CHANGE. Product invariant 1 is satisfied today by an OPERATOR's declaration with an auditable basis, and `defineStremioSource` enforces it. The objection to Add-by-URL was that a user pasting a URL into settings is not the operator. On a local, self-hosted deployment they are: one person runs the process and uses it. So the contract is not weakened, no role concept is invented, and no declaration becomes unauditable. The feature simply does not exist on a hosted instance.
 
-None of these is a frontend question and none may be settled by whoever writes the form. Route them to gpt-architect and the commander first.
+REQUIRED: the surface is gated on the deployment being local, using the EXISTING determination -- `isLocalDeployment()` / `localDeploymentFor(environment)` in `apps/web/src/app/api/deployment-environment.ts`. Not a new flag, not an environment-variable read, and not `NODE_ENV`: that file records that a `NODE_ENV !== "production"` denylist was already removed once, and reintroducing the shape beside it would be the two-classifiers defect again.
 
-REQUIRED when it does proceed: the preview must be visibly NOT an authorization in the UI itself, not merely in the types. A user must perform a distinct, deliberate rights declaration, and 'save' must be unreachable without it. |
+REQUIRED: THE GATE IS SERVER-SIDE AND THE API ROUTE ENFORCES IT INDEPENDENTLY. A settings section that renders conditionally is a hint, not a control -- the route is reachable without the page. A non-local deployment must refuse the route itself, fail-closed, before any URL is read.
+
+REQUIRED: the preview must be visibly NOT an authorization in the UI, not merely in the types. The user performs a distinct, deliberate rights declaration with a basis, and `save` is unreachable without it. The preview's own `authorizationNote` travels to the client and is shown, rather than being paraphrased in the component -- a second wording is a second thing that can drift from the one the SDK guarantees.
+
+REQUIRED: becoming a source remains `defineStremioSource`, unchanged, on the server. No path may construct an authorized source from a preview.
+
+REQUIRED: loopback addons still need BOTH keys. A local deployment satisfies one of url-policy's two loopback conditions; the source must still opt in. This task must not collapse them -- url-policy.ts states that the two-key rule exists precisely so that 'this deployment is local' is not read as 'any local address is fair game'.
+
+OUT OF SCOPE: hosted deployments, any operator/admin role, and multi-profile scoping of user-added sources. The chosen model removes the need for all three, and reintroducing any of them is a new decision, not an implementation detail. |
 | PL-0746 | P3 | Infra | READY | - | - | desktop-shell-ci.yml is the one workflow with no timeout at all | FOUND BY PL-0736, OUTSIDE ITS SURFACE. That task's acceptance names `ci.yml` and `windows.yml` and its allowedPaths hold exactly those two, so this file was not touched -- but the audit that produced the bounds read every workflow, and `windows-shell` is now the only job in this repository with no `timeout-minutes`, job-level or step-level.
 
 Its shape is the one most likely to stall: `dtolnay/rust-toolchain`, a Swatinem cache restore, and `cargo test`/`clippy`/`build --release` on a Windows runner, all of which reach the network and the first of which is the single slowest minute this repository spends.

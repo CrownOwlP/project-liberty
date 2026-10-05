@@ -52,7 +52,13 @@ import {
   namesTheProduct,
   upgradePreservedUserData
 } from "./residue.mjs";
-import { parseArguments } from "./lifecycle.mjs";
+import {
+  MSIEXEC_SPAWN_OPTIONS,
+  MSIEXEC_TIMEOUT_MS,
+  classifyInvocation,
+  jobFailed,
+  parseArguments
+} from "./lifecycle.mjs";
 
 const IDENTITY = readIdentity();
 const HERE = join(REPO_ROOT, "scripts", "windows");
@@ -490,5 +496,139 @@ describe("an upgrade is judged on CONTENT, not on a directory still existing", (
     const verdict = upgradePreservedUserData({ "data/db": "rows" }, {});
     assert.equal(verdict.preserved, false);
     assert.deepEqual(verdict.missing, ["data/db"]);
+  });
+});
+
+describe("an msiexec that never returns (PL-0745)", () => {
+  /*
+   * WHY THIS BLOCK EXISTS. `lifecycle.mjs` called `spawnSync("msiexec.exe")`
+   * four times with no `timeout`, and Windows Installer serialises on the
+   * `_MSIExecute` mutex -- a process holding it makes the next invocation
+   * WAIT rather than fail. The step that decides F1, F3 and F4 had no
+   * deadline anywhere in its chain.
+   *
+   * None of these cases runs msiexec; no Windows machine is needed for any of
+   * them, which is the same division the rest of this file keeps. What IS
+   * exercised for real is Node's timeout behaviour, because the whole repair
+   * rests on it and asserting a belief about `spawnSync` back to myself would
+   * prove nothing.
+   */
+
+  it("NODE REALLY BEHAVES THIS WAY -- a timed-out child, not a stubbed one", () => {
+    const timedOut = spawnSync(process.execPath, ["-e", "setTimeout(() => {}, 60_000)"], {
+      encoding: "utf8",
+      timeout: 250,
+      killSignal: "SIGKILL"
+    });
+    assert.equal(timedOut.status, null, "a killed child has no exit status");
+    assert.equal(timedOut.error?.code, "ETIMEDOUT");
+  });
+
+  it("AND SO DOES A MISSING BINARY, WHICH IS THE TRAP", () => {
+    /*
+     * The reason the old code could not tell these apart: a timeout and an
+     * absent executable BOTH produce `status: null`. `status !== 0` reported
+     * each as a bare fail with nothing to read, so "the installer is broken"
+     * and "msiexec is not on this machine" looked identical in the report.
+     */
+    const missing = spawnSync("definitely-not-a-real-binary-pl0745", [], {
+      encoding: "utf8",
+      timeout: 250
+    });
+    assert.equal(missing.status, null, "the trap: this is null too");
+    assert.equal(missing.error?.code, "ENOENT");
+  });
+
+  it("a stall is a FAIL whose reason says it is a stall, not an installer defect", () => {
+    const verdict = classifyInvocation({
+      status: null,
+      timedOut: true,
+      timeoutMs: 180_000,
+      spawnError: null
+    });
+    assert.equal(verdict.outcome, "fail");
+    assert.match(verdict.reason, /THIS IS A STALL, NOT AN INSTALLER DEFECT/);
+    assert.match(verdict.reason, /_MSIExecute/);
+    // "we did not find out" is the claim, and it must be in the text a person
+    // reads rather than inferable from the absence of one.
+    assert.match(verdict.reason, /Nothing was learned about this case/);
+  });
+
+  it("A STALL IS NEVER A PASS AND NEVER A not-run", () => {
+    /*
+     * The two outcomes that would let a release through or read as a
+     * deliberate skip. `not-run` in this harness means the evidence does not
+     * exist -- F2 has no previous release -- and a stall means nobody found
+     * out, which is a different sentence entirely.
+     */
+    const verdict = classifyInvocation({ status: null, timedOut: true, timeoutMs: 1, spawnError: null });
+    assert.notEqual(verdict.outcome, "pass");
+    assert.notEqual(verdict.outcome, "not-run");
+    assert.equal(jobFailed([{ outcome: verdict.outcome }]), true, "a stall must fail the job");
+  });
+
+  it("a missing msiexec blames the machine, not the package", () => {
+    const verdict = classifyInvocation({
+      status: null,
+      timedOut: false,
+      timeoutMs: 180_000,
+      spawnError: "ENOENT: spawnSync msiexec.exe ENOENT"
+    });
+    assert.equal(verdict.outcome, "fail");
+    assert.match(verdict.reason, /could not be started at all/);
+    assert.match(verdict.reason, /the machine, not the package/);
+    assert.doesNotMatch(verdict.reason, /stall/i, "a spawn failure must not be dressed as a timeout");
+  });
+
+  it("an ordinary non-zero exit still reports its code", () => {
+    const verdict = classifyInvocation({ status: 1603, timedOut: false, timeoutMs: 180_000, spawnError: null });
+    assert.equal(verdict.outcome, "fail");
+    assert.match(verdict.reason, /exited 1603/);
+  });
+
+  it("a success records nothing, so the real check still decides the case", () => {
+    const verdict = classifyInvocation({ status: 0, timedOut: false, timeoutMs: 180_000, spawnError: null });
+    assert.equal(verdict.outcome, null);
+    assert.equal(verdict.reason, null);
+  });
+
+  it("the gate is the gate: any fail fails, and nothing else does", () => {
+    assert.equal(jobFailed([{ outcome: "pass" }, { outcome: "not-run" }]), false);
+    assert.equal(jobFailed([{ outcome: "pass" }, { outcome: "fail" }]), true);
+    assert.equal(jobFailed([]), false);
+  });
+
+  it("THE DEADLINE IS ACTUALLY WIRED INTO THE SPAWN", () => {
+    /*
+     * The case that catches the repair being undone. Every other test here
+     * drives `classifyInvocation` with a synthetic result, and all of them
+     * would keep passing if `timeout` were deleted from the spawn options --
+     * `timedOut` would just never become true again, on a machine nobody in
+     * this container can run.
+     */
+    assert.equal(MSIEXEC_SPAWN_OPTIONS.timeout, MSIEXEC_TIMEOUT_MS);
+    assert.ok(MSIEXEC_SPAWN_OPTIONS.timeout > 0, "a zero or absent timeout is no timeout");
+    assert.equal(MSIEXEC_SPAWN_OPTIONS.killSignal, "SIGKILL");
+    assert.ok(Object.isFrozen(MSIEXEC_SPAWN_OPTIONS), "nothing may relax the deadline at runtime");
+  });
+
+  it("THE DEADLINE FITS INSIDE THE STEP BOUND, which is the whole derivation", () => {
+    /*
+     * PL-0736 put `timeout-minutes: 15` on the step. There are four msiexec
+     * invocations. If four stalls could outlast the step, the step would die
+     * with no report and this deadline would have bought nothing -- so the
+     * arithmetic is asserted rather than left in a comment where it can drift
+     * away from the number above it.
+     */
+    const INVOCATIONS = 4;
+    const STEP_BOUND_MS = 15 * 60 * 1000;
+    const worstCase = MSIEXEC_TIMEOUT_MS * INVOCATIONS;
+    assert.ok(
+      worstCase < STEP_BOUND_MS,
+      `four stalls would take ${worstCase} ms against a ${STEP_BOUND_MS} ms step bound`
+    );
+    // And with room left for the observation queries and writing the report,
+    // because reporting is the point of surviving at all.
+    assert.ok(STEP_BOUND_MS - worstCase >= 120_000, "too little slack left to write the report");
   });
 });
