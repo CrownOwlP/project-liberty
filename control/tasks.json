@@ -13891,6 +13891,94 @@
       ],
       "acceptance": "REQUIRED: the jobs in ci.yml and windows.yml get `timeout-minutes`, per step where a step has a credible hang and per job otherwise. THE CLASS, NOT THE INSTANCE. PL-0735 fixes the one step that hangs today; this makes the NEXT one visible. A step with no bound burns GitHub's six-hour default and reports 'in progress' the entire time -- indistinguishable, to the only readable channel this project has (annotations, because job logs need a login), from a runner that is merely queued. That is how CI #181 and #182 both sat unfinished without anyone treating it as a failure.\n\nREQUIRED: each bound is derived from an OBSERVED duration and the derivation is written beside it. A number somebody felt was generous is a number somebody will raise the first time it fires. Observed today: e2e 5m 8s, e2e-typecheck 12s, and the Windows e2e-desktop job 3m 25s.\n\nREQUIRED: the bound is not so tight that a slow runner reads as a defect. A timeout that fires on a cold cache teaches people to re-run rather than to read, which costs more than the hang.\n\nOUT OF SCOPE: the control-plane performance work, which is PL-0735, and any change to what the steps do.",
       "notes": "SPLIT OUT OF PL-0735 in round 112, carrying its clause verbatim. PL-0735 was filed holding ci.yml and `ai:claim` refused it on an overlap with PL-0728, which is in REVIEW for the rest of the round. Keeping both halves in one task meant neither landed; this one is BACKLOG until ci.yml frees.\n\nClassification C (workflow/harness defect) under the round-112 directive's A-E scheme, same as PL-0735. P1 rather than P0 because PL-0735 removes the hang that exists; this prevents the one that does not exist yet."
+    },
+    {
+      "id": "PL-0737",
+      "priority": "P1",
+      "lane": "Integration",
+      "status": "REVIEW",
+      "title": "The distribution evidence PW-0208 needs is not readable from any CI run",
+      "dependencies": [],
+      "allowedPaths": [
+        "scripts/windows/distribution-inventory.mjs",
+        "scripts/windows/distribution-inventory.test.mjs"
+      ],
+      "reviewDependencies": [
+        "apps/desktop/scripts/notices.mjs",
+        "apps/desktop/scripts/package-sidecar.mjs",
+        "scripts/windows/verify-install.mjs",
+        "docs/LICENSING.md"
+      ],
+      "preferredAgent": "claude-lead",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "unit"
+      ],
+      "acceptance": "PW-0208 HAS BEEN IN REVIEW FOR THREE ROUNDS WAITING FOR EVIDENCE THAT NO CI RUN CAN DELIVER TO A READER HERE. Its nine bullets are about what the installer actually ships. Windows #16 and #17 both built a real MSI and a real NSIS installer, and in both the upload step was skipped behind the verifier-negative failure -- but even a SUCCESSFUL upload would not help: a GitHub artifact needs a login to download, and this session has none. Annotations are the only channel it can read. So the evidence has to be PRINTED by the run, not archived by it.\n\nWHAT THE INVENTORY MUST ESTABLISH, and the three trees must never be conflated -- SOURCE INTENT, PACKAGE BUILD OUTPUT, INSTALLED TREE. This script reports on whichever tree it is pointed at and SAYS WHICH, because evidence from one is not evidence about another.\n\nREQUIRED: every native binary in the tree is enumerated -- .dll, .exe, .so, .dylib, .node -- with size and sha256. A licence argument about binaries begins with knowing which binaries there are.\nREQUIRED: libmpv and FFmpeg are reported PRESENT or ABSENT by name, matched on the filenames those projects actually ship (mpv, libmpv, avcodec, avformat, avutil, swresample, swscale, postproc, avfilter, avdevice, ffmpeg, ffprobe), not by a single guessed string. Today the honest answer is ABSENT -- apps/desktop/scripts/notices.mjs says so in its own header and package-sidecar.mjs copies only the Node runtime and the standalone server -- and a check that can only report presence would never notice the day that changes.\nREQUIRED: THIRD-PARTY-NOTICES.md is reported present, with byte size and the number of components it names. Present-and-empty is the failure PW-0208 already closed one hole against; present-and-stale is the next one.\nREQUIRED: the Node runtime's own licence is reported present or absent, because node.exe is shipped and its licence travels with it.\nREQUIRED: THE CONTRADICTION CHECK, which is the point of the whole script and the only thing in it that can fail a build. If any libmpv or FFmpeg binary IS present while the notices document still says no shipped component is LGPL, that is a shipped LGPL binary with no written offer and no attribution -- exactly the trap docs/DESKTOP_PLAYBACK.md section 9 names and RESEARCH_PLAYBACK.md already found elsewhere ('every prebuilt ffprobe on npm is a GPL-3.0 binary, and several declare otherwise'). Exit non-zero. The inverse is also a contradiction and also fails: the notices claiming an LGPL component that no binary in the tree corresponds to.\nREQUIRED: everything else is REPORTED, not enforced. A script that fails a build over an unexpected DLL would be unusable the first time a legitimate one arrived, and the judgement about what may ship is gpt-architect's and the commander's, not a script's.\nREQUIRED: the output is emitted as GitHub ::notice:: lines when running under a runner, so it is readable without a login, AND as plain text otherwise, so it is usable locally. The whole reason this task exists is that evidence nobody can read is not evidence.\nREQUIRED: a unit suite over fixture trees, including a tree with an FFmpeg DLL and notices that deny it, shown to FAIL. A contradiction check that has never been seen to fire is a check about nothing.\n\nOUT OF SCOPE, EXPLICITLY: H.264/HEVC patent authorisation. This script reports file names and hashes. It says nothing about whether a decoder may lawfully be distributed, it must not be cited as bearing on that, and it must not cause any decoder to be enabled. That is a commander and counsel decision and no amount of packaging evidence moves it.\n\nOUT OF SCOPE: wiring it into the Windows workflow and into npm run test:scripts. Both files are reserved by tasks in gpt-architect's review queue -- .github/workflows/windows.yml by PL-0733, package.json by PL-0728 -- so that is PL-0738, filed alongside this and blocked on those surfaces. This task delivers the script and its suite; a script nothing runs is this repository's most-repeated defect, and PL-0738 is the entry that keeps it from becoming the sixth instance.",
+      "notes": "FILED ROUND 113 by claude-lead. The direct cause is the round-113 directive's instruction: 'If Windows #17 does not expose enough artifact evidence, improve the workflow so the NEXT run exposes exactly what gpt-architect needs.' #17 did not, and it would not have even if it had reached its upload step.\n\nTHE FINDING THAT SHAPED IT. libmpv and FFmpeg are NOT in the product today. notices.mjs states it in its own header -- 'libmpv and FFmpeg are not in this document because they are not in the product' -- and package-sidecar.mjs copies the Node runtime and the Next standalone server and nothing else. So most of PW-0208's nine bullets are currently questions about a component that does not exist in the build, and the valuable thing is not a one-off answer but a STANDING check that notices the day it does, which is the day the obligations attach.\n\nSURFACE IS DELIBERATELY TWO FILES UNDER scripts/windows/, which nothing active reserves. The precedent for splitting the wiring out is PL-0735/PL-0736 in round 112, where ai:claim refused a P0 on a real overlap and the half that could land did.",
+      "owner": "claude-lead",
+      "implementationAgent": "claude-lead",
+      "updatedAt": "2026-10-05T02:57:36.369Z",
+      "implementationBaseSha": "01a96ce48150784786ad418e4c89aaeb2a285bee",
+      "gateResults": {
+        "unit": {
+          "status": "pass",
+          "at": "2026-10-05T02:57:36.233Z",
+          "by": "claude-lead",
+          "commitSha": "01a96ce48150784786ad418e4c89aaeb2a285bee",
+          "evidence": "node --test scripts/windows/distribution-inventory.test.mjs: 17 tests, 17 pass, 0 fail.\n\nIT FOUND A REAL DEFECT ON ITS FIRST REAL RUN, which is the evidence that matters more than the suite. Pointed at a real packaged sidecar, the script refused: the generated THIRD-PARTY-NOTICES.md declares three (L)GPL components in its own table -- the two @img/sharp-libvips builds at LGPL-3.0-or-later and @img/sharp-wasm32 -- each with Licence text shipped = **none found**, while the written-offer section of the same document says \"No component shipped in this build is LGPL today.\" Filed as PL-0739. The script was written to catch a hypothetical and caught an actual one.\n\nTHE CHECKS, AND WHAT EACH IS WORTH. Everything is REPORTED -- every native binary with size and sha256, libmpv/FFmpeg present or ABSENT by name, the notices file with byte size and component count, the Node runtime and its licence -- because what may ship is a licensing judgement and not a script. Exactly three things REFUSE: an libmpv/FFmpeg binary while the notices deny LGPL; notices claiming a live LGPL component no binary corresponds to; and the document contradicting its own table, which is the one that fired.\n\nTHREE TREES NEVER CONFLATED. --kind is required with no default and is printed first: SOURCE INTENT, PACKAGE BUILD OUTPUT, INSTALLED TREE. A test drives all three and another proves the script refuses to run without being told which.\n\nMUTATION-TESTED, BOTH REFUSAL BRANCHES SEPARATELY. Disabling the libmpv/FFmpeg contradiction: cases 4 and 5 go red. Disabling the document-internal contradiction: cases 15 and 17 go red. Both mutants reverted and 17/17 re-run green.\n\nTHE CARE THAT MAKES IT REAL RATHER THAN DECORATIVE. FFmpeg does not ship a file called ffmpeg in a library build -- it ships avcodec-61.dll, avformat-61.dll, avutil-59.dll -- and libmpv ships libmpv-2.dll or mpv-2.dll. A check grepping for \"ffmpeg\" would report ABSENT over a tree full of FFmpeg and pass forever. Eight real filenames are asserted to match and a plausible non-match (helper.node) is asserted not to. Likewise the document check reads TABLE ROWS, not the document, because the written-offer prose says the word LGPL three times by design; a grep would fire every build and be switched off within a week, and there is a test for exactly that.\n\nOUTPUT IS ANNOTATIONS ON A RUNNER AND PLAIN TEXT OTHERWISE, asserted by a test, because the entire reason this task exists is that a GitHub artifact needs a login this session does not have -- evidence nobody can read is not evidence.\n\nNOT CLAIMED: anything about the WINDOWS packaged tree. The real reading was a Linux-built tree, and the script labelled it as such. That gap closes when PL-0738 wires it into the Windows job. H.264/HEVC patent authorisation is addressed by nothing here and the script says so in its own output, with a test that it does."
+        }
+      }
+    },
+    {
+      "id": "PL-0738",
+      "priority": "P2",
+      "lane": "Integration",
+      "status": "BACKLOG",
+      "title": "The distribution inventory runs nowhere until the Windows workflow calls it",
+      "dependencies": [
+        "PL-0737"
+      ],
+      "allowedPaths": [
+        ".github/workflows/windows.yml",
+        "package.json"
+      ],
+      "reviewDependencies": [
+        "scripts/windows/distribution-inventory.mjs",
+        "scripts/windows/distribution-inventory.test.mjs"
+      ],
+      "preferredAgent": "claude-lead",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "unit"
+      ],
+      "acceptance": "REQUIRED: the Windows package job runs scripts/windows/distribution-inventory.mjs against the PACKAGE BUILD OUTPUT after the bundle is produced, and against the INSTALLED TREE inside the lifecycle run, with each invocation naming which tree it is reporting on. Two trees, two reports, never conflated.\n\nREQUIRED: it runs even when a later step fails, for the same reason the installer-log upload does -- the inventory of a build is most interesting on the run that went wrong.\n\nREQUIRED: its unit suite joins npm run test:scripts, and therefore gains a step in the CI validate job, because PL-0714's mirror-check fails a build whose alias names a suite with no step. A script nothing runs is this repository's most-repeated defect and PL-0737 must not become the sixth instance.\n\nOUT OF SCOPE: what the inventory says. This task makes it run and makes its output readable.",
+      "notes": "FILED ROUND 113 alongside PL-0737, which it exists to wire in. BLOCKED BY SURFACE, not by work: .github/workflows/windows.yml is reserved by PL-0733 and package.json by PL-0728, both in gpt-architect's review queue. Same shape as PL-0736 and recorded the same way rather than worked around."
+    },
+    {
+      "id": "PL-0739",
+      "priority": "P1",
+      "lane": "Infra",
+      "status": "READY",
+      "title": "THIRD-PARTY-NOTICES.md contradicts itself: the table declares LGPL components the written offer denies",
+      "dependencies": [],
+      "allowedPaths": [
+        "apps/desktop/scripts/notices.mjs",
+        "apps/desktop/scripts/notices.test.mjs",
+        "docs/LICENSING.md"
+      ],
+      "reviewDependencies": [
+        "apps/desktop/scripts/collect-notices.mjs",
+        "scripts/windows/distribution-inventory.mjs"
+      ],
+      "preferredAgent": "claude-infra",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "unit",
+        "rights-review"
+      ],
+      "acceptance": "MEASURED ON A REAL PACKAGED SIDECAR, NOT REASONED ABOUT. Running apps/desktop/scripts/collect-notices.mjs against the packaged tree produced a document that says, in its own component table:\n\n  | `@img/sharp-libvips-linux-x64`     | 1.3.2  | LGPL-3.0-or-later                         | **none found** |\n  | `@img/sharp-libvips-linuxmusl-x64` | 1.3.2  | LGPL-3.0-or-later                         | **none found** |\n  | `@img/sharp-wasm32`                | 0.35.3 | Apache-2.0 AND LGPL-3.0-or-later AND MIT  | **none found** |\n\nand then says, forty lines later in the same generated file:\n\n  **No component shipped in this build is LGPL today.** The obligation is stated in advance because the component that will carry it - libmpv, with FFmpeg - is specified and not yet built.\n\nBOTH SENTENCES ARE IN ONE DOCUMENT THE INSTALLER SHIPS. Three LGPL-3.0-or-later components are in the table, their 'Licence text shipped' column says **none found**, and the written offer beneath them denies that any LGPL component exists.\n\nHOW IT HAPPENED, which is the part worth fixing rather than the sentence. The denial is a STATIC STRING in notices.mjs, written when the only LGPL component anyone anticipated was libmpv. It is not derived from the table it sits under, so the table can fill with LGPL rows beneath a sentence swearing there are none -- and it did. sharp arrives as Next's image-optimisation dependency and carries prebuilt libvips, which is LGPL-3.0-or-later. Nobody added it deliberately and nobody noticed.\n\nREQUIRED: the written-offer section is DERIVED FROM THE TABLE, not asserted beside it. If the table has an (L)GPL row the document must say so and the offer must be live; if it has none the document may say none. A generated document must not be able to contradict its own data.\nREQUIRED: the three sharp rows are resolved on their merits, and the resolution is a decision somebody records rather than a string edit. Either the LGPL licence text ships (today it is **none found**, which is its own obligation unmet), or sharp is excluded from the packaged sidecar if the product does not use Next image optimisation, or the written offer becomes real for libvips. Three different answers, three different amounts of work, and this task must not pick the cheapest one silently.\nREQUIRED: a test that the generator CANNOT emit a denial over a table containing an (L)GPL row. Driven with a fixture that has one, shown to fail before the fix.\nREQUIRED: whatever is decided about sharp, the LGPL rows' '**none found**' licence-text column is addressed. Shipping an LGPL binary with neither its licence text nor a working written offer is the concrete obligation, and it is unmet today independently of the contradictory sentence.\n\nNOT IN SCOPE: libmpv and FFmpeg, which remain absent from the product and are PW-0208's subject. This task is about a component that is ALREADY SHIPPING and was not noticed.\nNOT IN SCOPE: H.264/HEVC patent authorisation, which no packaging evidence bears on.",
+      "notes": "FOUND IN ROUND 113 BY POINTING PL-0737's new inventory at a real tree, on its first real run, which is the strongest argument for that task that could exist. It was not found by reading notices.mjs -- that file's own header says 'libmpv and FFmpeg are not in this document because they are not in the product', which is true and was never the problem.\n\nSCOPE CAVEAT, STATED SO THE REVIEWER DOES NOT HAVE TO ASK. The tree measured was built on Linux, so the rows name the linux and linuxmusl sharp variants. A Windows runner installs @img/sharp-libvips-win32-x64, which carries the SAME LGPL-3.0-or-later. Whether the Windows packaged sidecar contains it is not established here and will be, automatically, the first time PL-0738 wires the inventory into the Windows job -- the check is already written and already fires on exactly this shape.\n\nBLOCKED BY SURFACE: apps/desktop/** is reserved by PW-0208, in gpt-architect's review queue. This is material to that review rather than independent of it -- PW-0208 is about shipping an LGPL binary lawfully, and the product is already shipping one.\n\nGates include rights-review, not just unit, because the decision about sharp is a rights decision and product invariant 6 puts it with the reviewer rather than the implementer."
     }
   ]
 }

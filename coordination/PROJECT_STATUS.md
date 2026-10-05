@@ -1,16 +1,16 @@
 # Project Liberty - Project Status
 
-> Generated 2026-10-05T02:49:20.550Z from the AI control plane.
+> Generated 2026-10-05T02:57:55.434Z from the AI control plane.
 
-**Overall completion:** 111/135 executable tasks (82%)
+**Overall completion:** 111/138 executable tasks (80%)
 
 ## Status summary
 
-- **BACKLOG:** 5
-- **READY:** 4
+- **BACKLOG:** 6
+- **READY:** 5
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 0
-- **REVIEW:** 7
+- **REVIEW:** 8
 - **BLOCKED:** 8
 - **DONE:** 111
 - **CANCELED:** 0
@@ -38,13 +38,14 @@
 - **PL-0732** [REVIEW] The diagnostics setting is stored, consumed, and reachable by nobody — owner: claude-frontend
 - **PL-0733** [REVIEW] Corrective: the Windows negative-verification step fails whether the check passes or not — owner: claude-infra
 - **PL-0735** [REVIEW] CI's validate job no longer finishes: the control-plane suite spends its time in one inner loop — owner: claude-lead
+- **PL-0737** [REVIEW] The distribution evidence PW-0208 needs is not readable from any CI run — owner: claude-lead
 
 ## Dispatch classification
 
-- **READY_AND_EXECUTABLE:** 4
+- **READY_AND_EXECUTABLE:** 5
 - **READY_BUT_EXTERNAL:** 0
 - **BLOCKED:** 8
-- **BACKLOG (dependency-gated):** 5
+- **BACKLOG (dependency-gated):** 6
 
 ## Recommended executable wave
 
@@ -76,7 +77,7 @@ UNBLOCK WHEN: the commander runs Experiment 1a on real Windows hardware and hand
 ## Agent capacity
 
 - **gpt-architect:** 0/6 active (external lane; not locally executable)
-- **claude-lead:** 1/2 active
+- **claude-lead:** 2/2 active
 - **claude-frontend:** 1/2 active
 - **claude-backend:** 0/2 active
 - **claude-media:** 1/2 active

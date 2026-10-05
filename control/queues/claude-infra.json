@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-05T02:49:20.556Z",
+  "generatedAt": "2026-10-05T02:57:55.441Z",
   "agent": "claude-infra",
   "executionAvailable": true,
   "assigned": [
@@ -180,6 +180,31 @@
       ],
       "acceptance": "REQUIRED: the jobs in ci.yml and windows.yml get `timeout-minutes`, per step where a step has a credible hang and per job otherwise. THE CLASS, NOT THE INSTANCE. PL-0735 fixes the one step that hangs today; this makes the NEXT one visible. A step with no bound burns GitHub's six-hour default and reports 'in progress' the entire time -- indistinguishable, to the only readable channel this project has (annotations, because job logs need a login), from a runner that is merely queued. That is how CI #181 and #182 both sat unfinished without anyone treating it as a failure.\n\nREQUIRED: each bound is derived from an OBSERVED duration and the derivation is written beside it. A number somebody felt was generous is a number somebody will raise the first time it fires. Observed today: e2e 5m 8s, e2e-typecheck 12s, and the Windows e2e-desktop job 3m 25s.\n\nREQUIRED: the bound is not so tight that a slow runner reads as a defect. A timeout that fires on a cold cache teaches people to re-run rather than to read, which costs more than the hang.\n\nOUT OF SCOPE: the control-plane performance work, which is PL-0735, and any change to what the steps do.",
       "notes": "SPLIT OUT OF PL-0735 in round 112, carrying its clause verbatim. PL-0735 was filed holding ci.yml and `ai:claim` refused it on an overlap with PL-0728, which is in REVIEW for the rest of the round. Keeping both halves in one task meant neither landed; this one is BACKLOG until ci.yml frees.\n\nClassification C (workflow/harness defect) under the round-112 directive's A-E scheme, same as PL-0735. P1 rather than P0 because PL-0735 removes the hang that exists; this prevents the one that does not exist yet."
+    },
+    {
+      "id": "PL-0739",
+      "priority": "P1",
+      "lane": "Infra",
+      "status": "READY",
+      "title": "THIRD-PARTY-NOTICES.md contradicts itself: the table declares LGPL components the written offer denies",
+      "dependencies": [],
+      "allowedPaths": [
+        "apps/desktop/scripts/notices.mjs",
+        "apps/desktop/scripts/notices.test.mjs",
+        "docs/LICENSING.md"
+      ],
+      "reviewDependencies": [
+        "apps/desktop/scripts/collect-notices.mjs",
+        "scripts/windows/distribution-inventory.mjs"
+      ],
+      "preferredAgent": "claude-infra",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "unit",
+        "rights-review"
+      ],
+      "acceptance": "MEASURED ON A REAL PACKAGED SIDECAR, NOT REASONED ABOUT. Running apps/desktop/scripts/collect-notices.mjs against the packaged tree produced a document that says, in its own component table:\n\n  | `@img/sharp-libvips-linux-x64`     | 1.3.2  | LGPL-3.0-or-later                         | **none found** |\n  | `@img/sharp-libvips-linuxmusl-x64` | 1.3.2  | LGPL-3.0-or-later                         | **none found** |\n  | `@img/sharp-wasm32`                | 0.35.3 | Apache-2.0 AND LGPL-3.0-or-later AND MIT  | **none found** |\n\nand then says, forty lines later in the same generated file:\n\n  **No component shipped in this build is LGPL today.** The obligation is stated in advance because the component that will carry it - libmpv, with FFmpeg - is specified and not yet built.\n\nBOTH SENTENCES ARE IN ONE DOCUMENT THE INSTALLER SHIPS. Three LGPL-3.0-or-later components are in the table, their 'Licence text shipped' column says **none found**, and the written offer beneath them denies that any LGPL component exists.\n\nHOW IT HAPPENED, which is the part worth fixing rather than the sentence. The denial is a STATIC STRING in notices.mjs, written when the only LGPL component anyone anticipated was libmpv. It is not derived from the table it sits under, so the table can fill with LGPL rows beneath a sentence swearing there are none -- and it did. sharp arrives as Next's image-optimisation dependency and carries prebuilt libvips, which is LGPL-3.0-or-later. Nobody added it deliberately and nobody noticed.\n\nREQUIRED: the written-offer section is DERIVED FROM THE TABLE, not asserted beside it. If the table has an (L)GPL row the document must say so and the offer must be live; if it has none the document may say none. A generated document must not be able to contradict its own data.\nREQUIRED: the three sharp rows are resolved on their merits, and the resolution is a decision somebody records rather than a string edit. Either the LGPL licence text ships (today it is **none found**, which is its own obligation unmet), or sharp is excluded from the packaged sidecar if the product does not use Next image optimisation, or the written offer becomes real for libvips. Three different answers, three different amounts of work, and this task must not pick the cheapest one silently.\nREQUIRED: a test that the generator CANNOT emit a denial over a table containing an (L)GPL row. Driven with a fixture that has one, shown to fail before the fix.\nREQUIRED: whatever is decided about sharp, the LGPL rows' '**none found**' licence-text column is addressed. Shipping an LGPL binary with neither its licence text nor a working written offer is the concrete obligation, and it is unmet today independently of the contradictory sentence.\n\nNOT IN SCOPE: libmpv and FFmpeg, which remain absent from the product and are PW-0208's subject. This task is about a component that is ALREADY SHIPPING and was not noticed.\nNOT IN SCOPE: H.264/HEVC patent authorisation, which no packaging evidence bears on.",
+      "notes": "FOUND IN ROUND 113 BY POINTING PL-0737's new inventory at a real tree, on its first real run, which is the strongest argument for that task that could exist. It was not found by reading notices.mjs -- that file's own header says 'libmpv and FFmpeg are not in this document because they are not in the product', which is true and was never the problem.\n\nSCOPE CAVEAT, STATED SO THE REVIEWER DOES NOT HAVE TO ASK. The tree measured was built on Linux, so the rows name the linux and linuxmusl sharp variants. A Windows runner installs @img/sharp-libvips-win32-x64, which carries the SAME LGPL-3.0-or-later. Whether the Windows packaged sidecar contains it is not established here and will be, automatically, the first time PL-0738 wires the inventory into the Windows job -- the check is already written and already fires on exactly this shape.\n\nBLOCKED BY SURFACE: apps/desktop/** is reserved by PW-0208, in gpt-architect's review queue. This is material to that review rather than independent of it -- PW-0208 is about shipping an LGPL binary lawfully, and the product is already shipping one.\n\nGates include rights-review, not just unit, because the decision about sharp is a rights decision and product invariant 6 puts it with the reviewer rather than the implementer."
     },
     {
       "id": "PL-0734",
