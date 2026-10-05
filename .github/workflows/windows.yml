@@ -401,6 +401,34 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
+          # ==============================================================
+          # THE SAME TRAP AS `verifier-negative`, ONE STEP LATER (PL-0733)
+          # ==============================================================
+          #
+          # `lifecycle.mjs` EXITS NON-ZERO ON PURPOSE, and the switch below
+          # exists to say which non-zero: 1 is a real case failure, 2 is a
+          # refusal over arguments or platform, and the comment on that
+          # switch says collapsing them "is how a configuration mistake gets
+          # filed as a product defect".
+          #
+          # On the runner they were collapsed. PowerShell 7.4 makes a native
+          # non-zero exit a TERMINATING error under `ErrorActionPreference =
+          # "Stop"`, so `& node ...` below threw at its own line: `$code` was
+          # never captured, the switch never ran, and the named throw never
+          # ran. The step failed with `Program "node" ended with non-zero
+          # exit code: 1` and nothing else.
+          #
+          # That had never been observed because no run has ever REACHED this
+          # step -- every one of them died at `verifier-negative` first. The
+          # next run is the first that gets here, and it would have been the
+          # first lifecycle result in the project's history arriving with its
+          # diagnosis stripped off.
+          #
+          # Found by auditing every `shell: pwsh` step in this file for the
+          # mechanism after Windows #17, rather than by waiting to be bitten
+          # by it a second time. Reproduced on pwsh 7.4.6 with the runner's
+          # setting forced on; see PL-0733's gate evidence.
+          $PSNativeCommandUseErrorActionPreference = $false
 
           $inventory = Get-Content artifact-inventory.json | ConvertFrom-Json
           $msi = $inventory.artifacts | Where-Object { $_.kind -eq "msi" }

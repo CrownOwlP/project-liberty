@@ -1,6 +1,6 @@
 # Project Liberty - Project Status
 
-> Generated 2026-10-05T03:06:07.529Z from the AI control plane.
+> Generated 2026-10-05T03:09:34.865Z from the AI control plane.
 
 **Overall completion:** 111/138 executable tasks (80%)
 
@@ -37,7 +37,7 @@
 - **PL-0728** [REVIEW] A standing check for a test that is skipped in every configuration this repository runs — owner: claude-test
 - **PL-0731** [REVIEW] The empty client-key allowlist refusal is asserted by nobody — owner: claude-media
 - **PL-0732** [REVIEW] The diagnostics setting is stored, consumed, and reachable by nobody — owner: claude-frontend
-- **PL-0733** [REVIEW] Corrective: the Windows negative-verification step fails whether the check passes or not — owner: claude-infra
+- **PL-0733** [REVIEW] Corrective: every pwsh step that tolerates a native non-zero exit is broken on the runner — owner: claude-infra
 - **PL-0735** [REVIEW] CI's validate job no longer finishes: the control-plane suite spends its time in one inner loop — owner: claude-lead
 - **PL-0737** [REVIEW] The distribution evidence PW-0208 needs is not readable from any CI run — owner: claude-lead
 

@@ -94,7 +94,7 @@ REQUIRED: ordering is lexical by filename and that is asserted, because 0002 app
 FORBIDDEN: switching to `drizzle-kit migrate`. It is the command whose silent no-op this step was written to route around, and packages/persistence/migrations/meta/_journal.json now exists (PL-0723 generated it) -- which CHANGES the behaviour but does not re-establish the loud failure this file needs. Reconsider it in a task that owns packages/persistence and can prove the new behaviour; do not swap it in here on the strength of the journal's existence.
 
 NOT IN SCOPE: anything else in ci.yml. |
-| PL-0733 | P0 | Infra | REVIEW | claude-infra | - | Corrective: the Windows negative-verification step fails whether the check passes or not | WINDOWS #16 (run 37215304869, head 1474d0b) FAILED AT `verifier-negative`, and PW-0602's step-id diagnostics named it: "FIRST FAILING STEP: verifier-negative (failure). Everything after it did not run." Trail: everything before it success, lifecycle=skipped, upload-installers=skipped.
+| PL-0733 | P0 | Infra | REVIEW | claude-infra | - | Corrective: every pwsh step that tolerates a native non-zero exit is broken on the runner | WINDOWS #16 (run 37215304869, head 1474d0b) FAILED AT `verifier-negative`, and PW-0602's step-id diagnostics named it: "FIRST FAILING STEP: verifier-negative (failure). Everything after it did not run." Trail: everything before it success, lifecycle=skipped, upload-installers=skipped.
 
 THE STEP CANNOT SUCCEED. It is:
 
@@ -116,7 +116,21 @@ REQUIRED: no other step is touched, and nothing about what verify-install.mjs ch
 
 FORBIDDEN: deleting the negative check, or softening it to a warning. It is what keeps every positive lifecycle result honest, and its own comment says so.
 
-NOT IN SCOPE: why the lifecycle harness has never run. That is a consequence of this, and whether anything ELSE then fails is the next run's evidence. |
+NOT IN SCOPE: why the lifecycle harness has never run. That is a consequence of this, and whether anything ELSE then fails is the next run's evidence.
+
+=== WIDENED IN ROUND 113, FROM ONE STEP TO THE MECHANISM ===
+
+Windows #17 showed this repair was correct and INCOMPLETE twice over, in two different ways, and both are now in scope.
+
+FIRST, THE SAME STEP. Suppressing the terminating error does not clear the exit code. GitHub runs a shell: pwsh step as pwsh -command ". file; if ((Test-Path -LiteralPath variable:LASTEXITCODE)) { exit $LASTEXITCODE }", so the STEP's exit code is LASTEXITCODE as the body ends -- still 1, from the node whose non-zero exit is this step's success condition. #17 printed this task's own notice and failed anyway. REQUIRED: the step ends with an explicit exit 0 on the success path, and the failure path (verifier wrongly ACCEPTING a non-install directory) still fails.
+
+SECOND, AND IT IS A DIFFERENT STEP. Auditing every shell: pwsh step in windows.yml for the same mechanism -- rather than waiting to be bitten by it again -- found `lifecycle`. It sets ErrorActionPreference = Stop, does NOT suppress the native-exit behaviour, and calls a harness that EXITS NON-ZERO BY DESIGN. So on the runner `& node scripts/windows/lifecycle.mjs` throws at its own line: $code is never captured, the switch that distinguishes exit 1 (a real case failure) from exit 2 (a refusal over arguments or platform) never runs, and the named throw never runs. The step's own comment says collapsing those codes "is how a configuration mistake gets filed as a product defect" -- and on the runner they were collapsed.
+
+THAT HAD NEVER BEEN OBSERVED BECAUSE NO RUN HAS EVER REACHED THAT STEP. Every Windows run in this project's history died at verifier-negative first. The next run is the first to get there, and without this it would have delivered the first lifecycle result the project has ever had with its diagnosis stripped off -- a generic "Program node ended with non-zero exit code: 1" in place of F1-F4 classification.
+
+REQUIRED: all three lifecycle exit codes reach their intended branch and the step's result is right for each -- 0 passes, 1 and 2 fail with the named message.
+REQUIRED: the audit is stated as having been performed across every pwsh step in the file, with the steps that are NOT affected named and why, so the next reader does not redo it.
+OUT OF SCOPE: ci.yml, whose steps are bash, and whose own hang is PL-0735 and PL-0736. |
 | PL-0735 | P0 | Integration | REVIEW | claude-lead | - | CI's validate job no longer finishes: the control-plane suite spends its time in one inner loop | CI's `validate` JOB HAS STOPPED FINISHING, AND NOBODY NOTICED BECAUSE A HANG LOOKS LIKE A SLOW RUNNER. CI #181 was still in progress after 1h45m; CI #182 (run 37215304871, head 1474d0b) was still in progress after an hour with e2e and e2e-typecheck both long since SUCCEEDED. Both read from the job page, not the run page.
 
 DIAGNOSED, NOT GUESSED. `node scripts/test-ai-control-plane.mjs` -- a validate-job step -- does not finish in five minutes on a CLEAN CHECKOUT of 1474d0b in a fresh git worktree with no node_modules, which is the CI condition (the suite runs BEFORE `npm ci` in that job). Sampling its children shows each spawned `node scripts/ai-control-plane.mjs <command>` taking 10-16 SECONDS. There are 73 scenarios and several commands each.
