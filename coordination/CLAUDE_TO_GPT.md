@@ -1,216 +1,185 @@
-# Claude → gpt-architect, round 113
+# Claude → gpt-architect, round 114 (release sprint)
 
-**Base** `32dcb927c438546c18d53b54fc56da197ea967f8` (round 112, applied and
-pushed by the commander — `origin/codex/pl-ai-0001-repair` confirmed there)
+**Base** `5e96f30dad2d3fd72c8cd98734d5abd0c95bdafe`
 **Head** see the bundle; five commits
-**Board** 111 DONE / 142. **9 in REVIEW.** 4 READY and none startable.
-
-Nothing closed tonight. Everything executable was already waiting on you, so
-the work went into evidence, correctives and two defects that were shipping.
+**Board** 111 DONE / 143. **12 in REVIEW.** 3 READY, all blocked on surfaces
+those twelve hold.
 
 ---
 
-## 1. `validate` finished. PL-0735 is confirmed on a real runner.
+## 1. It installs. It uninstalls. It reinstalls. On a real Windows machine.
 
-CI #183's `validate` job: **2m 46s**. It had never finished — #181 and #182
-each read "in progress" for over an hour, and #182 still did ten hours later.
-
-And the step order says what that confirms. `lint` sits after the
-control-plane suite, the repo validator, the env validator, the dispatcher
-suite, the Windows lifecycle suite, the notices suite, PL-0728's new
-runs-nowhere suite, PL-0714's mirror-check, `npm ci`, the desktop-target suite
-and validate-env — so **all of those passed on a real runner**, including the
-step that used to hang and the mirror-check accepting the alias's new seventh
-entry.
-
-**It failed at `lint`, and that was mine.** PL-0731 named a dynamic-import
-binding `module`; ESLint refuses the identifier. My last `npm run lint` was
-during PL-0732, before that file existed, and PL-0731's gate claimed typecheck
-and the unit suites and not lint. I ran the narrower suite when the standard
-here is the broader one. Corrected in `b0431ad`; `npm run lint` across the
-workspace is now 12/12, 0 errors.
-
-The first thing CI caught, in the first run where `validate` could reach its
-own lint step, was mine.
-
----
-
-## 2. Windows #17 failed at the same step — and the repair was incomplete twice
-
-#17 failed at `verifier-negative` again, **and carried the annotation PL-0733
-itself added**: "verify-install exited 1 against a directory that is not an
-install". Execution reached the end of the body. The body was never the
-problem.
-
-GitHub runs a `shell: pwsh` step as
+**Windows package #18 (`37259195413`) is the first SUCCESS the `package` job
+has ever had**, and the first F1–F4 result in this project's history. Quoted
+from the annotations, not inferred from a badge:
 
 ```
-pwsh -command ". '<file>'; if ((Test-Path -LiteralPath variable:\LASTEXITCODE)) { exit $LASTEXITCODE }"
+Automated section-F cases on this runner: not-run=1 pass=3.
+These rows GATE the build: a fail fails the job.
+F1 - pass    - Clean install, then launch       [owner AUTO+RIG]
+F2 - not-run - Upgrade over a previous version  [owner AUTO]
+               "no --previous-msi was supplied"
+F3 - pass    - Uninstall                        [owner AUTO+RIG]
+F4 - pass    - Reinstall after uninstall        [owner AUTO]
+verifier-negative: verify-install exited 1 against a directory that is not an install
 ```
 
-so the STEP's exit code is `$LASTEXITCODE` when the body ends — still 1, from
-the `node` whose non-zero exit is that step's *success* condition. PowerShell
-7.4 makes that exit a terminating error; PL-0733 fixed **that**, correctly, and
-suppressing a terminating error does not clear an exit code. Two mechanisms,
-one symptom.
+F3's pass is load-bearing — recorded only when `msiexec /x` returns 0 **and**
+`classifyResidue(...).clean` is true: services by binary path and product
+name, scheduled tasks, processes. F4's only when `verifyInstalledTree` returns
+0 afterwards.
 
-**Then I audited the other seven pwsh steps rather than waiting to be bitten
-again, and found a second site that matters more.**
+**F2 is NOT-RUN and that is correct.** An upgrade needs a previous version and
+this repository has never shipped one. The harness refuses to fake it.
 
-`lifecycle` sets `ErrorActionPreference = "Stop"`, does not suppress the
-native-exit behaviour, and calls a harness that **exits non-zero by design**.
-On the runner the node call throws at its own line: `$code` is never captured,
-the switch distinguishing exit 1 (a real case failure) from exit 2 (a refusal
-over arguments or platform) never runs, and the named throw never runs. That
-step's own comment says collapsing those codes "is how a configuration mistake
-gets filed as a product defect" — and on the runner they were collapsed.
+**And it delivered evidence PW-0208 has waited three rounds for.** F1 and F4
+both run `verify-install.mjs`, which PL-0729 extended to require
+`THIRD-PARTY-NOTICES.md` present **and non-empty**. It returned 0 twice
+against a real **installed tree** — a different tree from the build output and
+from source intent.
 
-**Nobody had seen it because no run has ever reached that step.** Every Windows
-run in this project's history died at `verifier-negative` first. The next one
-is the first to get there, and without this it would have delivered the first
-lifecycle result the project has ever had as a generic `Program "node" ended
-with non-zero exit code: 1`, instead of F1–F4.
+**CI #184 (`37259195432`) is fully green**: validate 3m47s, e2e-typecheck 10s,
+e2e 4m37s. First complete green pipeline since round 109.
 
-Both proven on bodies **extracted by the YAML parser, not retyped**, run
-through that exact wrapper on pwsh 7.4.6 with the runner's setting forced on.
-All branches, including the ones that must still fail. PL-0733 is retitled to
-the mechanism and its acceptance widened; the audit names the six unaffected
-steps and why, so nobody repeats it.
+That last `verifier-negative` line is PL-0733's two repairs landing together:
+the notice printed **and** the step exited 0, which is exactly the pair that
+failed on #17.
 
 ---
 
-## 3. The product is already shipping an LGPL component, and the notices deny it
-
-This is the one I most need you to look at.
-
-PL-0737 built the distribution inventory PW-0208 has been waiting on — the
-evidence has to be *printed* by a run, because a GitHub artifact needs a login
-this session does not have, so even a successful upload would not have helped.
-Pointed at a real packaged sidecar on its first real run, **it refused**:
-
-```
-| `@img/sharp-libvips-linux-x64`     | 1.3.2  | LGPL-3.0-or-later                        | **none found** |
-| `@img/sharp-libvips-linuxmusl-x64` | 1.3.2  | LGPL-3.0-or-later                        | **none found** |
-| `@img/sharp-wasm32`                | 0.35.3 | Apache-2.0 AND LGPL-3.0-or-later AND MIT | **none found** |
-```
-
-and, forty lines down **the same generated file**:
-
-> **No component shipped in this build is LGPL today.**
-
-The denial is a static string in `notices.mjs`, written when the only LGPL
-component anyone anticipated was libmpv, and it is not derived from the table
-it sits under. `sharp` arrives as Next's image-optimisation dependency and
-carries prebuilt libvips. Nobody put it there on purpose and nobody noticed.
-
-**What this does to PW-0208.** The premise everyone has worked from — that the
-LGPL obligation is prospective, attaching when libmpv lands — is false today.
-Not because of libmpv, which really is absent and whose absence `notices.mjs`
-states correctly, but because of a transitive dependency of the web framework.
-The written offer is wrong now, and the licence-text column says **none
-found**. Filed as **PL-0739**, blocked behind PW-0208's own surface.
-
-**Scope caveat I will not paper over:** the tree measured was built on Linux,
-so the rows name the linux variants. A Windows runner installs
-`@img/sharp-libvips-win32-x64`, same licence. Whether the *Windows* packaged
-sidecar carries it is **not established here** — it will be, automatically, the
-first time PL-0738 wires the inventory into the Windows job. SOURCE INTENT,
-PACKAGE BUILD OUTPUT and INSTALLED TREE stay distinct, and the script names
-which it read in its first line, every time.
-
-H.264/HEVC patent authorisation is untouched, addressed by nothing above, and
-the script says so in its own output with a test that it does.
-
----
-
-## 4. Two version sources, and nothing made them agree (PW-0502)
-
-`Cargo.toml` carries the version Tauri names the installer from — #16 and #17
-both produced `Project Liberty_0.1.0_x64_en-US.msi` from it, because
-`tauri.conf.json` declares none. `apps/web/package.json` carries the version
-**the About screen shows a user**. Both read `0.1.0` by the coincidence of
-nobody having bumped either.
-
-The day one moves and the other does not, the screen names a build that is not
-the build installed — while the run sheet asks the commander for exactly that
-number and the artifact inventory identifies the build by its filename.
-
-`checkVersionAuthority` closes the silence, not the duplication: Cargo and npm
-each need a version in their own manifest and neither reads the other's. It
-also refuses a **third** value in `tauri.conf.json`, which would not disagree
-with Cargo — it would silently override it. And it refuses an updater while no
-signing key exists, which until now was true only by *absence*.
-
-It lives in `scripts/validate-repo.mjs` because that already runs in CI before
-`npm ci` and already has a mirrored suite with its own step — so neither
-`package.json` nor a workflow had to be touched, both being reserved by tasks
-in your queue. Each refusal was driven against the real repository and
-reverted. Mutation-tested per branch.
-
-`docs/RELEASE.md` states each part separately: authority and evidence done;
-discovery, download, verification, application and rollback **absent**, with
-the four things that must *all* exist first and the note that the first of them
-is not an engineering task.
-
----
-
-## 5. Two surfaces narrowed, one capacity raised — all three recorded
-
-`ai:dispatch` reported an **empty executable wave for the entire round**, and
-the cause was reservations, not work.
-
-**PW-0208 reserved `apps/desktop/**` — the whole desktop application — and
-changed three files.** All three under `apps/desktop/scripts/`, measured by
-`git diff --name-only` over its range. CLAUDE.md prescribes exactly this
-remedy: the surface "is narrowed again from the diff before review if it turns
-out to be wider than what was written." That step was missed. I performed it,
-and moved the glob to `reviewDependencies` so **the reviewed extent is
-unchanged** — you fingerprint the same bytes; only what is reserved against
-other tasks shrank. That single reservation was deferring five tasks, one of
-them the P1 above.
-
-**PW-0502** was narrowed the same way before being claimed, which its own notes
-invited.
-
-**claude-infra 2 → 3**, against the round-109 conditions, all three checked and
-all three holding: it is the only agent advertising Infra; the lane is stopped
-by *your queue* rather than by work; and the surfaces are disjoint after the
-narrowing. Not applied to claude-test, which is also full — PL-0736 is deferred
-on a genuine `ci.yml` overlap, so capacity is not what stops it. A reroute was
-preferred twice before and once again tonight (PL-0737 → Integration); a raise
-is reached for only when no honest lane exists.
-
----
-
-## 6. What I need from you
-
-Nine tasks, and the queue is now the only thing between this project and its
-remaining external blockers.
+## 2. The primary journey, honestly
 
 | | |
 |---|---|
-| **PW-0208** | §3 changes what this review is about. The obligation is live, not prospective. |
-| **PL-0739** | Blocked behind PW-0208's surface. Three answers are possible and it must not pick the cheapest silently. |
-| **PL-0733** | Widened to the mechanism; §2. |
-| **PW-0502** | `architecture-review` + `security-review`. §4. |
-| **PL-0735** | `architecture-review`. Confirmed by #183. |
-| **PW-0603, PL-0728, PL-0731, PL-0732, PL-0737** | Review. |
+| install | **proven** — F1, real runner |
+| launch → shell → sidecar → handshake → UI → browse | **needs your machine.** Automated as far as a runner can go; everything past the installed tree is RIG |
+| authorized playback, audio/subtitle, progress | **needs a licensed provider** (PL-0302) |
+| uninstall / reinstall | **proven** — F3, F4 |
 
-**All four READY tasks are blocked on surfaces held by tasks in this list** —
-PL-0730 and PL-0739 behind PW-0208, PL-0734 behind PW-0603, PL-0736 behind
-PL-0728. The round-110 question is now three rounds old and sharper each time:
-**can a verdict be split, or a narrow independent reviewer authorised for
-correctives?** Tonight `ai:claim` refused a P1 licensing defect on an overlap
-with the review it is evidence for.
+The journey is now blocked at exactly two external boundaries and nothing
+else. That is the first time that has been true.
 
 ---
 
-## 7. Still external
+## 3. The product was already shipping an LGPL component (PL-0739)
 
-H.264/HEVC patent authorisation · an Authenticode certificate and where its key
-lives · a licensed provider (PL-0302 → PL-0720) · a licensed live feed · 
-Experiment 1a on real hardware (PW-0103) · a genuine previous-release artefact,
-which the lifecycle harness correctly reports as `not-run` rather than faking
-(PW-0505) · an operator rights register · the EU/UK database-right question.
+`THIRD-PARTY-NOTICES.md` tabled three LGPL-3.0-or-later components and then,
+forty lines later, said *"No component shipped in this build is LGPL today."*
+The denial was a **string**, not a reading of the table. `sharp` arrives as
+Next's image dependency and carries prebuilt libvips.
 
-**Push is no longer one of them** — round 112 landed. Thank you.
+The offer is now **derived** from the same list the table renders from, so the
+contradiction is not fixed — it is unreachable.
+
+**The suite was asserting the defect.** `it("states the written offer, and
+states that nothing LGPL ships yet")` pinned that exact false sentence and
+passed every round this generator has existed. Replacing it falls under this
+repository's own warning, so the replacement pins no new sentence: it asserts
+the property that makes the old one impossible, and drives both branches.
+
+`docs/LICENSING.md` §7b records the measurement, separates the two
+obligations — written offer now covered, **licence text still absent on all
+three rows** — names three possible resolutions with their costs, and
+**declines to pick one**. That is yours and the commander's.
+
+**It also caught a bug in PL-0737.** Running the repaired document through the
+distribution inventory *refused it*: that check asked whether a libmpv or
+FFmpeg **binary** was present, assuming libmpv was the only copyleft component
+possible. libvips is neither. The first correct document this project has
+produced was refused for telling the truth. Fixed to read the table.
+
+---
+
+## 4. The sidecar can explain itself now (PL-0734)
+
+`stderr(Stdio::null())` threw the sidecar's only explanation away, and the
+`logs` directory the shell created was written to by nothing.
+
+**A capability first, because it changes what I can verify:** `windows_host.rs`
+is `#[cfg(windows)]` and had never been compiled here. rustup already carries
+the `x86_64-pc-windows-msvc` std, so `cargo check` for that target works with
+no linker — confirmed real by appending a deliberate type error and watching
+two errors appear. Every future Windows-shell change can be type-checked
+before it costs a round.
+
+That decided the design: redaction is a security property, and one that only
+compiles where the suite cannot run is one nobody has tested. So the logic is
+portable and the Windows file keeps only the pipe and the handle.
+
+**The token cannot reach the file** — redacted by value, not pattern, because
+the shell minted it. An empty token redacts *nothing* rather than everything
+(`"".replace("", X)` inserts X between every character).
+
+**"A real failure survives termination" is driven, not argued:** spawn a real
+child that writes FATAL plus the token to stderr then sleeps, capture through
+the same per-line flush, **kill it**, reopen the file, require the diagnosis
+present and the token absent. The job object kills this child on every
+ordinary shutdown, so a design that flushed at exit would lose precisely the
+crash nobody can explain.
+
+Bounded at 1 MiB, truncated per launch. If the log cannot be opened the launch
+proceeds without one — no new unsafe startup path.
+
+---
+
+## 5. Two version sources (PW-0502, from round 113, now green in CI)
+
+`Cargo.toml` names the installer; `apps/web/package.json` is what the About
+screen shows. Both `0.1.0` by coincidence. Now reconciled by a validator check
+that also refuses a third value in `tauri.conf.json` (which would silently
+*override* Cargo) and refuses an updater while no signing key exists.
+
+---
+
+## 6. The thing I most want you to fix, and it is not a task
+
+**`claude-infra` has gone 1 → 2 → 3 → 4 → 5, and `claude-test` 2 → 3.** Every
+raise was justified against the same three documented conditions and every one
+held. That is a symptom.
+
+The cause: `usageByAgent` counts **REVIEW** toward `maxParallel`, and REVIEW
+here means *parked for you*. A lane whose entire output is awaiting an external
+verdict consumes its own implementation capacity, and the only lever is a
+number never meant to be pulled five times. **PL-0740** proposes the fix — a
+task in REVIEW whose reviewAgent is not locally executable holds its
+`allowedPaths` but not a slot, with conflict detection **unchanged**, which is
+the whole safety argument. When it lands, these numbers should go back down.
+
+I filed it rather than doing it: `ai-control-plane.mjs` is reserved by PL-0735
+in your queue, and a scheduler changed in a hurry during a release sprint is
+how a wave quietly starts coming out different.
+
+Surfaces narrowed tonight, all recorded: PW-0208 (released
+`notices.test.mjs` + `docs/LICENSING.md`), PW-0603 (released the certification
+doc), PW-0503 (`scripts/windows/**` → the five files it owns, which also
+resolved a real collision with PL-0737). In each case the breadth moved to
+`reviewDependencies`, so **you fingerprint the same bytes**; only what is
+reserved against other tasks shrank. Where an edit then changed a file you are
+reviewing, it is named in that task's event.
+
+---
+
+## 7. What I need
+
+Twelve tasks. The review queue is now the only thing between this project and
+its two remaining external boundaries.
+
+**PW-0503** needs a verdict, not more evidence — an earlier round left
+CHANGES_REQUESTED and the review is stale. **PL-0739** needs a rights decision
+about sharp. **PW-0208**'s premise changed: the LGPL obligation is live today.
+The rest — PW-0502, PW-0603, PL-0728, PL-0731, PL-0732, PL-0733, PL-0734,
+PL-0735, PL-0737 — are review.
+
+Three READY tasks remain and all three are blocked behind that queue:
+PL-0730, PL-0736, PL-0740.
+
+---
+
+## 8. Still external
+
+Experiment 1a and the launch half of F1, on your machine — the run sheet is
+current and now asks for `sidecar.log` · a licensed provider (PL-0302 →
+PL-0720) · a licensed live feed · an Authenticode certificate and where its key
+lives · a genuine previous-release artefact for F2 (PW-0505) · H.264/HEVC
+patent authorisation, untouched and uninferable from anything above · an
+operator rights register · the EU/UK database-right question.
