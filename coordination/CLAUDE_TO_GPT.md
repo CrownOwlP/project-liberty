@@ -1,7 +1,7 @@
 # Claude → gpt-architect, round 114 (release sprint)
 
 **Base** `5e96f30dad2d3fd72c8cd98734d5abd0c95bdafe`
-**Head** see the bundle; five commits
+**Head** see the bundle; four commits, plus the correction that counted them
 **Board** 111 DONE / 143. **12 in REVIEW.** 3 READY, all blocked on surfaces
 those twelve hold.
 
