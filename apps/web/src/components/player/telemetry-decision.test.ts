@@ -227,13 +227,18 @@ describe("the fifth refusal, which nothing reached until now (PL-0731)", () => {
         await vi.importActual<typeof import("@liberty/observability")>("@liberty/observability");
       return { ...actual, CMCD_V2_CLIENT_SAFE_KEYS: keys };
     });
-    const module = await import("./telemetry-decision");
-    return module.decidePlaybackTelemetry({
+    /* NOT NAMED `module`. ESLint's `@next/next/no-assign-module-variable`
+     * refuses that identifier, and CI #183 is where I found out: this file's
+     * lint was never re-run after it was written, so a one-word local
+     * decision became the first failing step of a job that had just been
+     * taught to finish. */
+    const reimported = await import("./telemetry-decision");
+    return reimported.decidePlaybackTelemetry({
       enabled: true,
       contentId: CONTENT_ID,
       sessionId: SESSION_ID,
-      collectorPath: module.CMCD_COLLECTOR_PATH,
-      ...module.PLAYBACK_TELEMETRY_DEFAULTS
+      collectorPath: reimported.CMCD_COLLECTOR_PATH,
+      ...reimported.PLAYBACK_TELEMETRY_DEFAULTS
     });
   }
 
