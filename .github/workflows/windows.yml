@@ -318,6 +318,37 @@ jobs:
           }
           Write-Host "verify-install: correctly refused a non-install directory"
 
+          # ==============================================================
+          # AND THE STEP MUST EXIT 0, WHICH THE LINE ABOVE DOES NOT DO.
+          # ==============================================================
+          #
+          # WINDOWS #17 IS WHY THIS LINE EXISTS. PL-0733's repair above was
+          # correct and INCOMPLETE: the run printed its notice --
+          # "verify-install exited 1 against a directory that is not an
+          # install" -- and then failed anyway, at the same step, with the
+          # same `verifier-negative (failure)`. Execution had reached the
+          # end of the body; the body was not the problem.
+          #
+          # GitHub runs a `shell: pwsh` step as
+          #   pwsh -command ". '<file>'; if ((Test-Path -LiteralPath
+          #                 variable:\LASTEXITCODE)) { exit $LASTEXITCODE }"
+          # so the STEP's exit code is `$LASTEXITCODE` as it stands when the
+          # body ends -- and `$LASTEXITCODE` is still 1, set by the `node`
+          # above, whose non-zero exit is this step's SUCCESS condition.
+          # `$PSNativeCommandUseErrorActionPreference = $false` stops that
+          # exit becoming a terminating error. It does not clear it.
+          #
+          # Two distinct mechanisms, one symptom, and the first fix only
+          # addressed the first of them.
+          #
+          # REPRODUCED, not reasoned about: pwsh 7.4.6, the body above run
+          # through that exact wrapper. With the node child exiting 1 the
+          # step exits 1 without this line and 0 with it; with the child
+          # exiting 0 -- the verifier wrongly ACCEPTING a non-install -- the
+          # throw fires and the step exits 1 either way, which is the half
+          # that must not regress.
+          exit 0
+
       # ==================================================================
       # THE LIFECYCLE HARNESS, OBSERVED BEFORE IT IS TRUSTED (PW-0602)
       # ==================================================================
