@@ -216,8 +216,17 @@ jobs:
           # `lib /NAME:` must name and what ships beside the exe, and the name
           # has changed across mpv releases (mpv-1.dll -> libmpv-2.dll), so it
           # is derived rather than written down.
-          $dll = Get-ChildItem -Path mpv-dev -Recurse -Filter "*mpv*.dll" | Select-Object -First 1
-          if ($null -eq $dll) { throw "The package contains no mpv runtime DLL, so there is nothing to link against or to hand over." }
+          # Sorted and preference-ordered rather than "first match wins", so
+          # the choice is reproducible across runs and across package layouts.
+          # `libmpv-N.dll` is the client library; anything else matching *mpv*
+          # is a player binary or a plugin and would link but never load.
+          $candidates = @(Get-ChildItem -Path mpv-dev -Recurse -Filter "*mpv*.dll" | Sort-Object FullName)
+          if ($candidates.Count -eq 0) { throw "The package contains no mpv DLL at all, so there is nothing to link against or to hand over." }
+          $dll = $candidates | Where-Object { $_.Name -match '^libmpv-\d+\.dll$' } | Select-Object -First 1
+          if ($null -eq $dll) { $dll = $candidates[0] }
+          if ($candidates.Count -gt 1) {
+            Write-Host "NOTE: $($candidates.Count) mpv DLLs in the package; chose $($dll.Name). The others: $(($candidates | Where-Object { $_.FullName -ne $dll.FullName } | ForEach-Object { $_.Name }) -join ', ')"
+          }
           Write-Host "runtime dll: $($dll.Name)"
 
           # A .def is PREFERRED when present -- it is the publisher's own
