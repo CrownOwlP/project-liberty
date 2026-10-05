@@ -308,6 +308,63 @@ until the H.264/HEVC decision is made.
 
 ---
 
+## 7b. A copyleft component is ALREADY SHIPPING, and it is not libmpv (PL-0739)
+
+Everything above this section is about a component that is **not in the
+product yet**. This one is.
+
+**Measured, on a real packaged sidecar**, by pointing
+`scripts/windows/distribution-inventory.mjs` at it. `collect-notices.mjs`
+enumerates the packaged `node_modules` and reports:
+
+| Package | Version | Declared licence | Licence text shipped |
+| --- | --- | --- | --- |
+| `@img/sharp-libvips-linux-x64` | 1.3.2 | LGPL-3.0-or-later | **none found** |
+| `@img/sharp-libvips-linuxmusl-x64` | 1.3.2 | LGPL-3.0-or-later | **none found** |
+| `@img/sharp-wasm32` | 0.35.3 | Apache-2.0 AND LGPL-3.0-or-later AND MIT | **none found** |
+
+`sharp` is Next.js's image-optimisation dependency and bundles prebuilt
+**libvips**, which is LGPL. Nobody chose it; it arrived transitively, and
+until PL-0739 the generated notices *denied* that anything LGPL shipped —
+the denial was a fixed string rather than a reading of that table. The
+written offer is now derived from the table and says the obligation is live.
+
+**Two obligations, and they are separate.** The written offer in
+`THIRD-PARTY-NOTICES.md` now covers the first. The second — that the licence
+**text** travels with the binary — is **unmet**: all three rows say *none
+found*.
+
+### What has not been decided, and must not be decided by a script
+
+Three resolutions are possible and they cost very different amounts. **This
+document does not pick one**, and the generator deliberately cannot:
+
+1. **Ship the licence text** for the libvips components, and keep the written
+   offer live. Smallest change; leaves the product distributing an LGPL
+   library and owing corresponding source on request.
+2. **Exclude `sharp` from the packaged sidecar** if the product does not use
+   Next's image optimisation. Removes the obligation rather than satisfying
+   it. Needs someone to establish that nothing in `apps/web` depends on it —
+   which is a measurement, not an assumption.
+3. **Keep it and make the offer real**, with corresponding source for the
+   exact libvips revision shipped, as §4 already requires for libmpv.
+
+### Scope limits on the evidence above
+
+- The tree measured was built **on Linux**, so the rows name the `linux` and
+  `linuxmusl` variants. A Windows runner installs
+  `@img/sharp-libvips-win32-x64`, which carries the **same** licence. Whether
+  the *Windows* packaged sidecar contains it is **not established here** and
+  will be, automatically, once PL-0738 wires the inventory into the Windows
+  job.
+- `SOURCE INTENT`, `PACKAGE BUILD OUTPUT` and `INSTALLED TREE` are different
+  trees and this is evidence about one of them.
+- This section reports a **declared licence string and a shipped-text
+  absence**. It makes no judgement about whether any licence is satisfied,
+  and nothing here bears on §6's patent position, which is untouched.
+
+---
+
 ## 8. What is verified, and what is not
 
 **Verified here:** the flag sets in §2 against FFmpeg's and mpv's own licensing

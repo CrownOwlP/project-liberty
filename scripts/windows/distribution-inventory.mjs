@@ -263,10 +263,33 @@ if (family.length > 0 && noticesDenyLgpl) {
       `obligation in the installer rather than in a README nobody ships (PW-0208, docs/LICENSING.md §2).`
   );
 }
-if (family.length === 0 && notices !== null && !noticesDenyLgpl && /LGPL/i.test(notices)) {
+/*
+ * AN ATTRIBUTION FOR A COMPONENT NOTHING BACKS, read from the TABLE.
+ *
+ * THIS BRANCH WAS WRONG WHEN FIRST WRITTEN, and the repaired notices
+ * document is what proved it. It used to ask "does the document treat the
+ * LGPL obligation as live while no libmpv or FFmpeg BINARY is present", on
+ * the assumption that libmpv was the only copyleft component this product
+ * could ever have. `@img/sharp-libvips-*` is LGPL-3.0-or-later, is not
+ * libmpv or FFmpeg, and ships as a `.node` addon rather than a DLL with a
+ * recognisable name -- so the first correct document this project has ever
+ * generated was refused by this check for telling the truth.
+ *
+ * The question is not which binaries are present. It is whether the
+ * document's own table names a component the obligation can attach to.
+ */
+const copyleftRows =
+  notices === null
+    ? []
+    : notices
+        .split("\n")
+        .filter((line) => line.startsWith("| ") && !line.startsWith("| ---") && !line.startsWith("| Package "))
+        .filter((line) => /\bL?GPL\b/i.test(line));
+if (notices !== null && !noticesDenyLgpl && /\bL?GPL\b/i.test(notices) && copyleftRows.length === 0 && family.length === 0) {
   problems.push(
-    `${NOTICES_FILE} discusses LGPL obligations as live, but no libmpv or FFmpeg binary is in this ` +
-      `tree. An attribution for a component nobody ships is a false statement in the other direction.`
+    `${NOTICES_FILE} treats a copyleft obligation as live, but neither its own component table nor ` +
+      `this tree contains anything it could attach to. An attribution for a component nobody ships ` +
+      `is a false statement in the other direction.`
   );
 }
 
@@ -299,10 +322,7 @@ if (notices !== null && noticesDenyLgpl) {
   /* Table rows only -- `| name | version | licence | text |` -- so the prose
    * ABOUT the LGPL obligation, which legitimately says "LGPL" several times,
    * cannot make this fire. */
-  const lgplRows = notices
-    .split("\n")
-    .filter((line) => line.startsWith("| ") && !line.startsWith("| ---") && !line.startsWith("| Package "))
-    .filter((line) => /\bL?GPL\b/i.test(line));
+  const lgplRows = copyleftRows;
   if (lgplRows.length > 0) {
     problems.push(
       `${NOTICES_FILE} CONTRADICTS ITSELF: its own component table declares ${lgplRows.length} ` +
@@ -325,11 +345,28 @@ if (problems.length > 0) {
   process.exit(1);
 }
 
+/*
+ * THE COPYLEFT INVENTORY IS REPORTED EVEN WHEN NOTHING IS WRONG, because it
+ * is the evidence PW-0208 is waiting on. A check that only speaks up on
+ * failure leaves a reviewer asking "and what DOES it ship?" every time.
+ */
+if (copyleftRows.length === 0) {
+  report(`copyleft components declared in ${NOTICES_FILE}: NONE.`);
+} else {
+  report(`copyleft components declared in ${NOTICES_FILE}: ${copyleftRows.length}`);
+  for (const row of copyleftRows) report(`  ${row.trim()}`);
+}
+
 report(
-  family.length === 0
-    ? `agreement: no libmpv/FFmpeg binary, and ${NOTICES_FILE} ${
-        notices === null ? "is absent so claims nothing" : noticesDenyLgpl ? "says so" : "makes no live LGPL claim"
-      }.`
-    : `agreement: libmpv/FFmpeg present and ${NOTICES_FILE} does not deny shipping an LGPL component.`
+  `agreement: libmpv/FFmpeg ${family.length === 0 ? "ABSENT" : "PRESENT"}; ` +
+    `${NOTICES_FILE} ${
+      notices === null
+        ? "is absent, so it claims nothing"
+        : noticesDenyLgpl
+          ? "denies shipping any copyleft component"
+          : copyleftRows.length === 0
+            ? "makes no copyleft claim"
+            : `declares ${copyleftRows.length} copyleft component(s) and a live offer`
+    }. No contradiction between them.`
 );
 report("H.264/HEVC patent authorisation is NOT addressed by any line above and cannot be inferred from it.");

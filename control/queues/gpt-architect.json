@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-05T03:09:34.867Z",
+  "generatedAt": "2026-10-05T03:31:21.925Z",
   "agent": "gpt-architect",
   "executionAvailable": false,
   "assigned": [],
@@ -15,11 +15,11 @@
       ],
       "allowedPaths": [
         "apps/desktop/scripts/collect-notices.mjs",
-        "apps/desktop/scripts/notices.test.mjs",
-        "apps/desktop/scripts/package-sidecar.mjs",
-        "docs/LICENSING.md"
+        "apps/desktop/scripts/package-sidecar.mjs"
       ],
       "reviewDependencies": [
+        "docs/LICENSING.md",
+        "apps/desktop/scripts/notices.test.mjs",
         "apps/desktop/**",
         "docs/DESKTOP_PLAYBACK.md",
         "docs/CONTENT_RIGHTS.md",
@@ -409,6 +409,44 @@
           "by": "claude-lead",
           "commitSha": "01a96ce48150784786ad418e4c89aaeb2a285bee",
           "evidence": "node --test scripts/windows/distribution-inventory.test.mjs: 17 tests, 17 pass, 0 fail.\n\nIT FOUND A REAL DEFECT ON ITS FIRST REAL RUN, which is the evidence that matters more than the suite. Pointed at a real packaged sidecar, the script refused: the generated THIRD-PARTY-NOTICES.md declares three (L)GPL components in its own table -- the two @img/sharp-libvips builds at LGPL-3.0-or-later and @img/sharp-wasm32 -- each with Licence text shipped = **none found**, while the written-offer section of the same document says \"No component shipped in this build is LGPL today.\" Filed as PL-0739. The script was written to catch a hypothetical and caught an actual one.\n\nTHE CHECKS, AND WHAT EACH IS WORTH. Everything is REPORTED -- every native binary with size and sha256, libmpv/FFmpeg present or ABSENT by name, the notices file with byte size and component count, the Node runtime and its licence -- because what may ship is a licensing judgement and not a script. Exactly three things REFUSE: an libmpv/FFmpeg binary while the notices deny LGPL; notices claiming a live LGPL component no binary corresponds to; and the document contradicting its own table, which is the one that fired.\n\nTHREE TREES NEVER CONFLATED. --kind is required with no default and is printed first: SOURCE INTENT, PACKAGE BUILD OUTPUT, INSTALLED TREE. A test drives all three and another proves the script refuses to run without being told which.\n\nMUTATION-TESTED, BOTH REFUSAL BRANCHES SEPARATELY. Disabling the libmpv/FFmpeg contradiction: cases 4 and 5 go red. Disabling the document-internal contradiction: cases 15 and 17 go red. Both mutants reverted and 17/17 re-run green.\n\nTHE CARE THAT MAKES IT REAL RATHER THAN DECORATIVE. FFmpeg does not ship a file called ffmpeg in a library build -- it ships avcodec-61.dll, avformat-61.dll, avutil-59.dll -- and libmpv ships libmpv-2.dll or mpv-2.dll. A check grepping for \"ffmpeg\" would report ABSENT over a tree full of FFmpeg and pass forever. Eight real filenames are asserted to match and a plausible non-match (helper.node) is asserted not to. Likewise the document check reads TABLE ROWS, not the document, because the written-offer prose says the word LGPL three times by design; a grep would fire every build and be switched off within a week, and there is a test for exactly that.\n\nOUTPUT IS ANNOTATIONS ON A RUNNER AND PLAIN TEXT OTHERWISE, asserted by a test, because the entire reason this task exists is that a GitHub artifact needs a login this session does not have -- evidence nobody can read is not evidence.\n\nNOT CLAIMED: anything about the WINDOWS packaged tree. The real reading was a Linux-built tree, and the script labelled it as such. That gap closes when PL-0738 wires it into the Windows job. H.264/HEVC patent authorisation is addressed by nothing here and the script says so in its own output, with a test that it does."
+        }
+      }
+    },
+    {
+      "id": "PL-0739",
+      "priority": "P1",
+      "lane": "Infra",
+      "status": "REVIEW",
+      "title": "THIRD-PARTY-NOTICES.md contradicts itself: the table declares LGPL components the written offer denies",
+      "dependencies": [],
+      "allowedPaths": [
+        "apps/desktop/scripts/notices.mjs",
+        "apps/desktop/scripts/notices.test.mjs",
+        "docs/LICENSING.md"
+      ],
+      "reviewDependencies": [
+        "apps/desktop/scripts/collect-notices.mjs",
+        "scripts/windows/distribution-inventory.mjs"
+      ],
+      "preferredAgent": "claude-infra",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "unit",
+        "rights-review"
+      ],
+      "acceptance": "MEASURED ON A REAL PACKAGED SIDECAR, NOT REASONED ABOUT. Running apps/desktop/scripts/collect-notices.mjs against the packaged tree produced a document that says, in its own component table:\n\n  | `@img/sharp-libvips-linux-x64`     | 1.3.2  | LGPL-3.0-or-later                         | **none found** |\n  | `@img/sharp-libvips-linuxmusl-x64` | 1.3.2  | LGPL-3.0-or-later                         | **none found** |\n  | `@img/sharp-wasm32`                | 0.35.3 | Apache-2.0 AND LGPL-3.0-or-later AND MIT  | **none found** |\n\nand then says, forty lines later in the same generated file:\n\n  **No component shipped in this build is LGPL today.** The obligation is stated in advance because the component that will carry it - libmpv, with FFmpeg - is specified and not yet built.\n\nBOTH SENTENCES ARE IN ONE DOCUMENT THE INSTALLER SHIPS. Three LGPL-3.0-or-later components are in the table, their 'Licence text shipped' column says **none found**, and the written offer beneath them denies that any LGPL component exists.\n\nHOW IT HAPPENED, which is the part worth fixing rather than the sentence. The denial is a STATIC STRING in notices.mjs, written when the only LGPL component anyone anticipated was libmpv. It is not derived from the table it sits under, so the table can fill with LGPL rows beneath a sentence swearing there are none -- and it did. sharp arrives as Next's image-optimisation dependency and carries prebuilt libvips, which is LGPL-3.0-or-later. Nobody added it deliberately and nobody noticed.\n\nREQUIRED: the written-offer section is DERIVED FROM THE TABLE, not asserted beside it. If the table has an (L)GPL row the document must say so and the offer must be live; if it has none the document may say none. A generated document must not be able to contradict its own data.\nREQUIRED: the three sharp rows are resolved on their merits, and the resolution is a decision somebody records rather than a string edit. Either the LGPL licence text ships (today it is **none found**, which is its own obligation unmet), or sharp is excluded from the packaged sidecar if the product does not use Next image optimisation, or the written offer becomes real for libvips. Three different answers, three different amounts of work, and this task must not pick the cheapest one silently.\nREQUIRED: a test that the generator CANNOT emit a denial over a table containing an (L)GPL row. Driven with a fixture that has one, shown to fail before the fix.\nREQUIRED: whatever is decided about sharp, the LGPL rows' '**none found**' licence-text column is addressed. Shipping an LGPL binary with neither its licence text nor a working written offer is the concrete obligation, and it is unmet today independently of the contradictory sentence.\n\nNOT IN SCOPE: libmpv and FFmpeg, which remain absent from the product and are PW-0208's subject. This task is about a component that is ALREADY SHIPPING and was not noticed.\nNOT IN SCOPE: H.264/HEVC patent authorisation, which no packaging evidence bears on.",
+      "notes": "FOUND IN ROUND 113 BY POINTING PL-0737's new inventory at a real tree, on its first real run, which is the strongest argument for that task that could exist. It was not found by reading notices.mjs -- that file's own header says 'libmpv and FFmpeg are not in this document because they are not in the product', which is true and was never the problem.\n\nSCOPE CAVEAT, STATED SO THE REVIEWER DOES NOT HAVE TO ASK. The tree measured was built on Linux, so the rows name the linux and linuxmusl sharp variants. A Windows runner installs @img/sharp-libvips-win32-x64, which carries the SAME LGPL-3.0-or-later. Whether the Windows packaged sidecar contains it is not established here and will be, automatically, the first time PL-0738 wires the inventory into the Windows job -- the check is already written and already fires on exactly this shape.\n\nBLOCKED BY SURFACE: apps/desktop/** is reserved by PW-0208, in gpt-architect's review queue. This is material to that review rather than independent of it -- PW-0208 is about shipping an LGPL binary lawfully, and the product is already shipping one.\n\nGates include rights-review, not just unit, because the decision about sharp is a rights decision and product invariant 6 puts it with the reviewer rather than the implementer.",
+      "owner": "claude-infra",
+      "implementationAgent": "claude-infra",
+      "updatedAt": "2026-10-05T03:31:05.483Z",
+      "implementationBaseSha": "5e96f30dad2d3fd72c8cd98734d5abd0c95bdafe",
+      "gateResults": {
+        "unit": {
+          "status": "pass",
+          "at": "2026-10-05T03:31:05.340Z",
+          "by": "claude-infra",
+          "commitSha": "5e96f30dad2d3fd72c8cd98734d5abd0c95bdafe",
+          "evidence": "THE CONTRADICTION IS NOT FIXED, IT IS UNREACHABLE. The written offer is now DERIVED from the same sorted entry list the table is rendered from, by copyleftEntries(). A sentence and a table cannot disagree when one is computed from the other, which is what the acceptance asked for: \"Prove the document cannot contradict its own table.\"\n\nnode --test apps/desktop/scripts/notices.test.mjs: 25 tests, 25 pass (was 22).\n\nTHE TEST THAT ASSERTED THE DEFECT IS GONE, AND LOUDLY. The suite contained it(\"states the written offer, and states that nothing LGPL ships yet\") asserting /No component shipped in this build is LGPL today/. It passed every round this generator has existed, because the sentence it pinned was a string rather than a reading of the table -- so that assertion is part of why nobody noticed. This repository standing warning applies to replacing it (\"updating an expected value to match reality is byte-for-byte indistinguishable from updating it to match a regression\"), so the replacement does NOT pin a new sentence: it asserts the PROPERTY that makes the old one impossible, and drives BOTH branches of the derivation.\n\nFOUR CASES NOW COVER IT. No copyleft row -> the offer says it has nothing to attach to, and the old sentence is asserted ABSENT. A copyleft row -> the offer says live, names the component, and flags that no licence text ships with it. A conjunction (Apache-2.0 AND LGPL-3.0-or-later AND MIT, which is literally @img/sharp-wasm32) counts, because the obligation does -- a matcher that only took a bare LGPL string would have been accurate about two of the three real components, which is harder to spot than being wrong about all three. And a permissive table does NOT trigger it, which is the non-vacuity for the word-boundary matcher.\n\nMUTATION-TESTED, TWO WAYS. Removing the derivation (copyleft = []) reddens 2 cases. Narrowing the matcher to an exact LGPL-3.0-or-later so the conjunction is missed reddens 1. Both reverted, 25/25 green.\n\nVERIFIED AGAINST THE REAL TREE, not a fixture. Regenerating over the actual packaged sidecar now produces: \"The offer above is live: 3 component(s) in the table declare a copyleft licence\", naming @img/sharp-libvips-linux-x64 1.3.2, @img/sharp-libvips-linuxmusl-x64 1.3.2 and @img/sharp-wasm32 0.35.3, each marked \"no licence text ships with it\".\n\nAND IT CAUGHT A BUG IN PL-0737, which is the best evidence either check works. Cross-checking the repaired document through scripts/windows/distribution-inventory.mjs REFUSED IT -- that script \"attribution for a component nobody ships\" branch asked whether a libmpv or FFmpeg BINARY was present, on the assumption libmpv was the only copyleft component possible. libvips is LGPL, is not libmpv or FFmpeg, and ships as a .node addon. So the first correct document this project has ever generated was refused for telling the truth. The branch now reads the document TABLE instead of the binary list; two cases added there, including non-vacuity that a live offer with nothing in the table to attach to is still refused. That suite is 19/19.\n\nNO LEGAL CONCLUSION DRAWN, which the directive required. docs/LICENSING.md section 7b records the measurement, states that the written offer is now covered and the licence-TEXT obligation is NOT, names three possible resolutions with their differing costs, and explicitly declines to pick one. The scope limits are stated: the tree measured was Linux-built so the rows name linux variants; a Windows runner installs @img/sharp-libvips-win32-x64 with the same licence; whether the WINDOWS packaged sidecar carries it is not established here and will be once PL-0738 wires the inventory into that job. Section 6 patent position is untouched and nothing here bears on it."
         }
       }
     }

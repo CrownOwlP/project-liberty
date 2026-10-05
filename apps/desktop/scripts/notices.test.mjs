@@ -157,11 +157,98 @@ describe("the document the installer carries", () => {
     assert.doesNotMatch(withText, /No `LICENSE` accompanied this binary/);
   });
 
-  it("states the written offer, and states that nothing LGPL ships yet", () => {
+  it("THE OFFER IS DERIVED FROM THE TABLE, so the document cannot contradict itself", () => {
+    /*
+     * ==================================================================
+     * THIS CASE USED TO ASSERT THE DEFECT (PL-0739)
+     * ==================================================================
+     *
+     * It read:
+     *
+     *   assert.match(document, /No component shipped in this build is LGPL today/);
+     *
+     * and it passed for every round this generator has existed, because the
+     * sentence it pinned was a STRING in `renderNotices` rather than a
+     * reading of the table above it. Run against a real packaged sidecar,
+     * the generator produced a document whose own table said
+     *
+     *   | `@img/sharp-libvips-linux-x64` | 1.3.2 | LGPL-3.0-or-later | **none found** |
+     *
+     * three times over, and then denied it forty lines later. `sharp`
+     * arrives as Next's image-optimisation dependency and carries prebuilt
+     * libvips. Nobody added it deliberately and nobody noticed -- and this
+     * assertion is part of why nobody noticed.
+     *
+     * THE REPOSITORY'S OWN WARNING APPLIES TO THIS EDIT, which is why it is
+     * this loud: "updating an expected value to match reality is
+     * byte-for-byte indistinguishable from updating it to match a
+     * regression". So the replacement does NOT pin a new sentence. It
+     * asserts the PROPERTY that makes the old sentence impossible to get
+     * wrong again -- the offer is computed from the same list the table is
+     * rendered from, and both branches of that computation are driven here.
+     */
     const document = renderNotices(entries, runtime);
     assert.match(document, /## Written offer/);
     assert.match(document, /three years/);
-    assert.match(document, /No component shipped in this build is LGPL today/);
+
+    /* No copyleft row in `entries`, so the offer must say it has nothing to
+     * attach to -- and must NOT be phrased as a standing promise about the
+     * product's future, which is what made the old sentence outlive its
+     * truth. */
+    assert.match(document, /No component in the table above declares a copyleft licence/);
+    assert.doesNotMatch(document, /No component shipped in this build is LGPL today/);
+  });
+
+  it("and when the table HAS a copyleft row, the same document says the offer is live", () => {
+    /*
+     * THE OTHER BRANCH, AND THE ONE THAT WAS FALSE IN PRODUCTION. Driven
+     * with the real shape: a declared LGPL licence and no licence text
+     * shipped, which is exactly what the three sharp rows look like.
+     */
+    const libvips = licenceEvidence(
+      "@img/sharp-libvips-win32-x64",
+      "1.3.2",
+      { license: "LGPL-3.0-or-later" },
+      []
+    );
+    const document = renderNotices([...entries, libvips], runtime);
+
+    assert.match(document, /The offer above is live: 1 component\(s\)/);
+    assert.match(document, /@img\/sharp-libvips-win32-x64/);
+    assert.doesNotMatch(document, /No component in the table above declares a copyleft licence/);
+    /* The second, separate obligation: the licence TEXT must travel with the
+     * binary, and the three real rows all say **none found**. */
+    assert.match(document, /no licence text ships with it/);
+  });
+
+  it("a conjunction containing a copyleft term counts, because the obligation does", () => {
+    /*
+     * `@img/sharp-wasm32` declares `Apache-2.0 AND LGPL-3.0-or-later AND
+     * MIT`. A matcher that only recognised a bare `LGPL-3.0-or-later` would
+     * have missed one of the three components actually shipping, and the
+     * document would have been accurate about two of them -- which is a
+     * harder error to spot than being wrong about all three.
+     */
+    const dual = licenceEvidence(
+      "@img/sharp-wasm32",
+      "0.35.3",
+      { license: "Apache-2.0 AND LGPL-3.0-or-later AND MIT" },
+      []
+    );
+    assert.match(renderNotices([dual], runtime), /The offer above is live: 1 component\(s\)/);
+  });
+
+  it("a permissive licence that merely CONTAINS the letters is not copyleft", () => {
+    /*
+     * NON-VACUITY FOR THE MATCHER. The word-boundary test is what keeps this
+     * from firing on an invented `GPL-ish` or on prose; without it the check
+     * would declare an offer live over a table of MIT packages and be
+     * switched off the first time somebody read the document.
+     */
+    const mit = licenceEvidence("ordinary", "1.0.0", { license: "MIT" }, ["LICENSE"]);
+    const apache = licenceEvidence("other", "2.0.0", { license: "Apache-2.0" }, ["LICENSE"]);
+    const document = renderNotices([mit, apache], runtime);
+    assert.match(document, /No component in the table above declares a copyleft licence/);
   });
 
   it("survives a package name containing a table separator", () => {

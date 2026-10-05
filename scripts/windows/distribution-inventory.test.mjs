@@ -87,7 +87,8 @@ test("the tree as it ships today is reported, and agrees with itself", () => {
   assert.match(out, /libmpv \/ FFmpeg: ABSENT/);
   assert.match(out, /THIRD-PARTY-NOTICES\.md: present/);
   assert.match(out, /2 component row\(s\)/);
-  assert.match(out, /agreement: no libmpv\/FFmpeg binary/);
+  assert.match(out, /agreement: libmpv\/FFmpeg ABSENT/);
+  assert.match(out, /copyleft components declared in THIRD-PARTY-NOTICES\.md: NONE/);
 });
 
 test("it names which of the three trees it read, every time", () => {
@@ -191,7 +192,7 @@ test("the two together agree, and that is the state after libmpv lands", () => {
   );
   assert.equal(code, 0, out);
   assert.match(out, /libmpv \/ FFmpeg: PRESENT/);
-  assert.match(out, /agreement: libmpv\/FFmpeg present/);
+  assert.match(out, /agreement: libmpv\/FFmpeg PRESENT/);
 });
 
 test("an absent notices file is reported, not guessed at", () => {
@@ -319,4 +320,58 @@ test("a GPL row is caught as well as an LGPL one", () => {
   assert.equal(code, 1);
   assert.match(err, /CONTRADICTS ITSELF/);
   assert.match(err, /GPL-3\.0/);
+});
+
+test("THE REAL REPAIRED DOCUMENT PASSES, and the first version of this check refused it", () => {
+  /*
+   * THE CASE THAT CAUGHT A BUG IN THIS SCRIPT. The "attribution for a
+   * component nobody ships" branch used to ask whether a libmpv or FFmpeg
+   * BINARY was present, on the assumption that libmpv was the only copyleft
+   * component this product could ever have.
+   *
+   * `@img/sharp-libvips-*` is LGPL-3.0-or-later, is not libmpv or FFmpeg, and
+   * ships as a `.node` addon rather than a DLL with a recognisable name. So
+   * when PL-0739 made the generator tell the truth -- a live offer naming
+   * three copyleft components -- this script REFUSED THE FIRST CORRECT
+   * DOCUMENT THE PROJECT HAS EVER PRODUCED.
+   *
+   * The question was never which binaries are present. It is whether the
+   * document's own table names something the obligation can attach to.
+   */
+  const { code, out } = run(
+    todaysTree({
+      "sidecar/server/THIRD-PARTY-NOTICES.md": noticesDocument({
+        rows: 2,
+        denyLgpl: false,
+        extra:
+          "| `@img/sharp-libvips-win32-x64` | 1.3.2 | LGPL-3.0-or-later | **none found** |\n\n" +
+          "**The offer above is live: 1 component(s) in the table declare a copyleft licence.**\n" +
+          "Where a component above is licensed under the LGPL, you are entitled to the complete\n" +
+          "corresponding source for that component."
+      })
+    })
+  );
+  assert.equal(code, 0, out);
+  assert.match(out, /declares 1 copyleft component\(s\) and a live offer/);
+  assert.match(out, /sharp-libvips-win32-x64/);
+});
+
+test("but a live offer with NOTHING in the table to attach to is still refused", () => {
+  /*
+   * NON-VACUITY FOR THE REPAIRED BRANCH. Loosening it must not delete it: a
+   * document that talks about a live copyleft obligation while its own table
+   * names no copyleft component, and no such binary is present either, is
+   * attributing something nobody ships.
+   */
+  const { code, err } = run(
+    todaysTree({
+      "sidecar/server/THIRD-PARTY-NOTICES.md": noticesDocument({
+        rows: 2,
+        denyLgpl: false,
+        extra: "**The offer above is live.** Where a component is licensed under the LGPL you are entitled to source."
+      })
+    })
+  );
+  assert.equal(code, 1);
+  assert.match(err, /neither its own component table nor this tree contains anything/);
 });

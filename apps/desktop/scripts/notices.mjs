@@ -124,6 +124,51 @@ function escapePipes(value) {
  * timestamp for the same reason: a notices file whose only change is the hour
  * it was built teaches people to ignore its changes.
  */
+/**
+ * The entries whose DECLARED licence is a copyleft one carrying obligations.
+ *
+ * ==========================================================================
+ * THIS EXISTS BECAUSE THE DOCUMENT CONTRADICTED ITSELF IN PRODUCTION
+ * ==========================================================================
+ *
+ * The written offer below used to end with a fixed sentence: "No component
+ * shipped in this build is LGPL today", written when the only copyleft
+ * component anyone anticipated was libmpv. It was a STRING, not a reading of
+ * the table above it, so the table could fill with LGPL rows underneath a
+ * sentence swearing there were none.
+ *
+ * It did. Run against a real packaged sidecar, this generator produced a
+ * document whose table said
+ *
+ *   | `@img/sharp-libvips-linux-x64` | 1.3.2 | LGPL-3.0-or-later | **none found** |
+ *
+ * three times over, and then denied it forty lines later. `sharp` arrives as
+ * Next's image-optimisation dependency and carries prebuilt libvips. Nobody
+ * added it deliberately and nobody noticed.
+ *
+ * So the offer is DERIVED now, and the contradiction is not fixed, it is
+ * unreachable: the same list that renders the table decides what the offer
+ * says. A sentence and a table cannot disagree when one is computed from the
+ * other.
+ *
+ * ==========================================================================
+ * WHAT THIS DOES NOT DO
+ * ==========================================================================
+ *
+ * It reads the DECLARED licence string and nothing else. It does not decide
+ * whether a licence is satisfied, whether a component may ship, or what any
+ * obligation requires — those are questions for whoever reviews distribution,
+ * and `docs/LICENSING.md` is where the answers go. Matching on the declared
+ * string is deliberately crude and deliberately WIDE: `Apache-2.0 AND
+ * LGPL-3.0-or-later AND MIT` counts, because a conjunction containing a
+ * copyleft term carries that term's obligations.
+ */
+export function copyleftEntries(entries) {
+  return [...entries]
+    .filter((entry) => typeof entry.declared === "string" && /\bL?GPL\b/i.test(entry.declared))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
 export function renderNotices(entries, runtime) {
   const sorted = [...entries].sort((a, b) => a.name.localeCompare(b.name));
   const attention = needsAttention(sorted);
@@ -196,13 +241,41 @@ export function renderNotices(entries, runtime) {
     "corresponding source for that component, at the exact revision shipped, together with",
     "the scripts used to build it. Project Liberty will supply it for three years from the",
     "date this build was distributed. The build configuration those scripts must reproduce",
-    "is specified in `docs/LICENSING.md` §2.",
-    "",
-    "**No component shipped in this build is LGPL today.** The obligation is stated in",
-    "advance because the component that will carry it — libmpv, with FFmpeg — is specified",
-    "and not yet built, and an offer added at the same time as the binary is an offer nobody",
-    "checked."
+    "is specified in `docs/LICENSING.md` §2."
   );
+  lines.push("");
+
+  /*
+   * DERIVED FROM THE TABLE, NOT ASSERTED BESIDE IT. See `copyleftEntries`.
+   * Both branches read the same list the table above was rendered from, so
+   * this paragraph cannot describe a different build than the rows do.
+   */
+  const copyleft = copyleftEntries(sorted);
+  if (copyleft.length === 0) {
+    lines.push(
+      "**No component in the table above declares a copyleft licence**, so the offer has",
+      "nothing to attach to in this build. It is stated in advance rather than added later",
+      "because an offer written at the same moment as the binary is an offer nobody checked."
+    );
+  } else {
+    lines.push(
+      `**The offer above is live: ${copyleft.length} component(s) in the table declare a copyleft licence.**`
+    );
+    lines.push("");
+    for (const entry of copyleft) {
+      lines.push(
+        `- \`${escapePipes(entry.name)}\` ${entry.version ?? ""} — ${escapePipes(entry.declared)}` +
+          `${entry.files.length === 0 ? " — **no licence text ships with it**" : ""}`.trimEnd()
+      );
+    }
+    lines.push("");
+    lines.push(
+      "A component listed here with **no licence text** has an unmet obligation that is",
+      "separate from this offer: the licence text itself must travel with the binary. Both",
+      "are distribution questions for `docs/LICENSING.md` and for whoever reviews it, not",
+      "something this generator decides."
+    );
+  }
   lines.push("");
   return `${lines.join("\n")}\n`;
 }
