@@ -126,7 +126,21 @@ const GIT_ISOLATION_ENV = {
  * "the output was long". 64 MB matches the ceiling
  * scripts/ai-control-plane.mjs already uses for its own `git ls-tree`.
  */
-const CHILD_TIMEOUT_MS = 10 * 60 * 1000;
+/*
+ * PER-CHILD BOUND, TIGHTENED FROM TEN MINUTES TO TWO (PL-0735).
+ *
+ * Ten minutes was never reached by the slowness this task fixed: before it,
+ * a single control-plane invocation against a reset board took 6-10 SECONDS
+ * and there are hundreds of them, so the suite took hours while no individual
+ * child ever timed out. A bound no failure can reach is not a bound.
+ *
+ * Two minutes is chosen from the observed figure, not from taste: one
+ * `status` against a 58-candidate reset board is now 0.17s, so this is about
+ * three orders of magnitude of headroom -- generous enough that a cold cache
+ * or a loaded runner cannot trip it, tight enough that a genuinely wedged
+ * child is a named failure in two minutes rather than ten.
+ */
+const CHILD_TIMEOUT_MS = 2 * 60 * 1000;
 const CHILD_MAX_BUFFER = 64 * 1024 * 1024;
 
 /**
@@ -157,6 +171,7 @@ function childEnv(env) {
  * stderr -- would silently never match.
  */
 function runCombined(cwd, script, args = [], env = {}) {
+  const started = Date.now();
   const result = spawnSync(process.execPath, [script, ...args], {
     cwd,
     encoding: "utf8",
@@ -164,6 +179,7 @@ function runCombined(cwd, script, args = [], env = {}) {
     timeout: CHILD_TIMEOUT_MS,
     maxBuffer: CHILD_MAX_BUFFER,
   });
+  noteChild([script, ...args], Date.now() - started);
   return `${result.stdout ?? ""}${result.stderr ?? ""}`;
 }
 
@@ -172,15 +188,66 @@ const temp = fs.mkdtempSync(path.join(os.tmpdir(), "liberty-control-plane-"));
 const CLI = "scripts/ai-control-plane.mjs";
 let repoSeq = 0;
 
+/* ---------------------------------------------------------------------------
+ * Saying where it is (PL-0735)
+ *
+ * This file is 9,500 lines and 73 scenarios and used to print exactly ONE
+ * line, at the end, on success. When it stopped finishing -- which it did, in
+ * CI, for at least two runs that read as "in progress" for over an hour --
+ * there was nothing to read. The scenario that was spinning had to be found
+ * by sampling the process table from outside the run.
+ *
+ * So: each scenario names itself as it starts, with elapsed time, and any
+ * child command that takes longer than a second says so. Neither is a test.
+ * Both exist so that the NEXT time this does not finish, the log says where
+ * it stopped instead of requiring somebody to be at a terminal with `ps`.
+ * ------------------------------------------------------------------------ */
+const SUITE_STARTED = Date.now();
+/** Seconds since the suite started, for a line that has to stay scannable. */
+function elapsed() {
+  return `${((Date.now() - SUITE_STARTED) / 1000).toFixed(1)}s`;
+}
+let currentScenario = "(before the first scenario)";
+function scenario(label) {
+  currentScenario = label;
+  console.log(`[${elapsed().padStart(7)}] ${label}`);
+}
+/*
+ * A command slow enough to be worth seeing.
+ *
+ * ONE SECOND IS NOT AN ARBITRARY LINE. After this task a control-plane
+ * invocation against the worst board this suite builds is 0.17s, so a second
+ * is already six times the worst observed case: anything over it is a
+ * regression of the exact kind that produced PL-0735, and will appear in the
+ * log of the run that introduces it rather than three rounds later.
+ */
+const SLOW_CHILD_MS = 1000;
+const slowest = [];
+function noteChild(args, ms) {
+  const command = Array.isArray(args) ? args.join(" ") : String(args);
+  slowest.push({ command, ms });
+  if (ms >= SLOW_CHILD_MS) {
+    console.log(`[${elapsed().padStart(7)}]   slow child ${(ms / 1000).toFixed(1)}s: ${command}`);
+  }
+}
+
 function run(cwd, script, args = [], env = {}) {
-  return execFileSync(process.execPath, [script, ...args], {
-    cwd,
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"],
-    env: childEnv(env),
-    timeout: CHILD_TIMEOUT_MS,
-    maxBuffer: CHILD_MAX_BUFFER,
-  });
+  const started = Date.now();
+  try {
+    return execFileSync(process.execPath, [script, ...args], {
+      cwd,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+      env: childEnv(env),
+      timeout: CHILD_TIMEOUT_MS,
+      maxBuffer: CHILD_MAX_BUFFER,
+    });
+  } finally {
+    /* In a `finally` because `runFail` drives this helper through its THROWING
+     * path deliberately, and a refusal that took too long is exactly as worth
+     * seeing as a success that did. */
+    noteChild([script, ...args], Date.now() - started);
+  }
 }
 function runFail(cwd, args, matcher, env = {}) {
   let failed = false;
@@ -1116,6 +1183,7 @@ try {
    * 0. Test isolation: scenarios must not depend on live runtime state,
    *    and must never mutate the real control/tasks.json.
    * ------------------------------------------------------------------- */
+  scenario("0. Test isolation: scenarios must not depend on live runtime state");
   {
     const repo = freshRepo();
     const tasks = tasksOf(repo);
@@ -1254,6 +1322,7 @@ try {
   /* ---------------------------------------------------------------------
    * 1. Happy path: independent approval by the designated reviewer.
    * ------------------------------------------------------------------- */
+  scenario("1. Happy path: independent approval by the designated reviewer");
   {
     const repo = freshRepo();
     run(repo, CLI, ["validate"]);
@@ -1317,6 +1386,7 @@ try {
   /* ---------------------------------------------------------------------
    * 2. Self-approval must fail.
    * ------------------------------------------------------------------- */
+  scenario("2. Self-approval must fail");
   {
     const repo = freshRepo();
     implementToReview(repo);
@@ -1338,6 +1408,7 @@ try {
    * 3. Automatic reviewer substitution must fail.
    *    A different Claude agent may not stand in for gpt-architect.
    * ------------------------------------------------------------------- */
+  scenario("3. Automatic reviewer substitution must fail");
   {
     const repo = freshRepo();
     implementToReview(repo);
@@ -1357,6 +1428,7 @@ try {
   /* ---------------------------------------------------------------------
    * 4. Stale approval must fail: code changed after the review.
    * ------------------------------------------------------------------- */
+  scenario("4. Stale approval must fail: code changed after the review");
   {
     const repo = freshRepo();
     implementToReview(repo);
@@ -1407,6 +1479,7 @@ try {
   /* ---------------------------------------------------------------------
    * 5. CHANGES_REQUESTED must block DONE and return the task to IN_PROGRESS.
    * ------------------------------------------------------------------- */
+  scenario("5. CHANGES_REQUESTED must block DONE and return the task to IN_PROGRESS");
   {
     const repo = freshRepo();
     implementToReview(repo);
@@ -1433,6 +1506,7 @@ try {
   /* ---------------------------------------------------------------------
    * 6. Gate evidence remains mandatory (no silent bypass).
    * ------------------------------------------------------------------- */
+  scenario("6. Gate evidence remains mandatory (no silent bypass)");
   {
     const repo = freshRepo();
     run(repo, CLI, ["claim", "PL-AI-0001", "claude-lead"]);
@@ -1490,6 +1564,7 @@ try {
    *    behaved identically. A scenario about the planner must not be a hostage
    *    to the project's task list.
    * ------------------------------------------------------------------- */
+  scenario("7. Dispatch planning: a maximum conflict-free wave, and an external lane");
   {
     const repo = freshRepo();
     const fixtures = waveFixtureTasks();
@@ -1604,6 +1679,7 @@ try {
    *    Same frozen fixture set as scenario 7, so the claim side and the plan
    *    side cannot disagree about what "the wave" was.
    * ------------------------------------------------------------------- */
+  scenario("8. --apply claims exactly the planned executable wave, and nothing else");
   {
     const repo = freshRepo();
     useFixtureTaskSet(repo, ...waveFixtureTasks());
@@ -1643,6 +1719,7 @@ try {
   /* ---------------------------------------------------------------------
    * 9. Handoff bus: GPT <-> Claude with no human in the loop.
    * ------------------------------------------------------------------- */
+  scenario("9. Handoff bus: GPT <-> Claude with no human in the loop");
   {
     const SHA = "a".repeat(40);
     const repo = freshRepo();
@@ -1874,6 +1951,7 @@ try {
   /* ---------------------------------------------------------------------
    * 9b. Stale decisions and reviewer substitution cannot cross the bus.
    * ------------------------------------------------------------------- */
+  scenario("9b. Stale decisions and reviewer substitution cannot cross the bus");
   {
     const OLD = "b".repeat(40);
     const MOVED = "c".repeat(40);
@@ -1980,6 +2058,7 @@ try {
   /* ---------------------------------------------------------------------
    * 9c. changes_requested and out-of-state decisions.
    * ------------------------------------------------------------------- */
+  scenario("9c. changes_requested and out-of-state decisions");
   {
     const SHA = "d".repeat(40);
     const repo = freshRepo();
@@ -2096,6 +2175,7 @@ try {
   /* ---------------------------------------------------------------------
    * 9d. Informational traffic is acknowledged without moving task state.
    * ------------------------------------------------------------------- */
+  scenario("9d. Informational traffic is acknowledged without moving task state");
   {
     const repo = freshRepo();
 
@@ -2150,6 +2230,7 @@ try {
   /* ---------------------------------------------------------------------
    * 9e. Audit events are emitted only after the durable commit.
    * ------------------------------------------------------------------- */
+  scenario("9e. Audit events are emitted only after the durable commit");
   {
     const SHA = "e".repeat(40);
     const repo = freshRepo();
@@ -2245,6 +2326,7 @@ try {
   /* ---------------------------------------------------------------------
    * 9f. Crash AFTER claim, BEFORE task save -> redo, losing nothing.
    * ------------------------------------------------------------------- */
+  scenario("9f. Crash AFTER claim, BEFORE task save -> redo, losing nothing");
   {
     const SHA = "f".repeat(40);
     const repo = freshRepo();
@@ -2298,6 +2380,7 @@ try {
   /* ---------------------------------------------------------------------
    * 9g. Crash AFTER task save, BEFORE acknowledgement -> finish, never redo.
    * ------------------------------------------------------------------- */
+  scenario("9g. Crash AFTER task save, BEFORE acknowledgement -> finish, never redo");
   {
     const SHA = "1".repeat(40);
     const repo = freshRepo();
@@ -2367,6 +2450,7 @@ try {
   /* ---------------------------------------------------------------------
    * 9h. Recovery is isolated by journal owner AND message recipient.
    * ------------------------------------------------------------------- */
+  scenario("9h. Recovery is isolated by journal owner AND message recipient");
   {
     const repo = freshRepo();
     const ownedByClaude = publish(repo, [
@@ -2457,6 +2541,7 @@ try {
   /* ---------------------------------------------------------------------
    * 9i. Malformed peer messages are isolated, not fatal.
    * ------------------------------------------------------------------- */
+  scenario("9i. Malformed peer messages are isolated, not fatal");
   {
     const repo = freshRepo();
     const lane = path.join(repo, "coordination", "agent-bus", "gpt-to-claude");
@@ -2592,6 +2677,7 @@ try {
    * 9i. Quarantine: a permanently-invalid message is rejected once, never
    *     acknowledged, never blocks valid traffic, and never wedges the queue.
    * ------------------------------------------------------------------- */
+  scenario("9i. Quarantine: a permanently-invalid message is rejected once, never");
   {
     const SHA = "2".repeat(40);
     const repo = freshRepo();
@@ -2730,6 +2816,7 @@ try {
   /* ---------------------------------------------------------------------
    * 9j. Audit exactly-once across the emit -> crash -> recover window.
    * ------------------------------------------------------------------- */
+  scenario("9j. Audit exactly-once across the emit -> crash -> recover window");
   {
     const SHA = "3".repeat(40);
     const repo = freshRepo();
@@ -2818,6 +2905,7 @@ try {
   /* ---------------------------------------------------------------------
    * 9k. Malformed peer files are quarantined, not silently dropped.
    * ------------------------------------------------------------------- */
+  scenario("9k. Malformed peer files are quarantined, not silently dropped");
   {
     const repo = freshRepo();
     const lane = path.join(repo, "coordination", "agent-bus", "gpt-to-claude");
@@ -2941,6 +3029,7 @@ try {
   /* ---------------------------------------------------------------------
    * 9l. Fingerprints are canonical git content, not platform-dependent bytes.
    * ------------------------------------------------------------------- */
+  scenario("9l. Fingerprints are canonical git content, not platform-dependent bytes");
   {
     const repo = freshRepo();
     const gitEnv = {
@@ -3016,6 +3105,7 @@ try {
   /* ---------------------------------------------------------------------
    * 9m. Review-base contract: fail closed, never fall back to the parent.
    * ------------------------------------------------------------------- */
+  scenario("9m. Review-base contract: fail closed, never fall back to the parent");
   {
     const START = "7".repeat(40);
     const HEAD1 = "8".repeat(40);
@@ -3168,6 +3258,7 @@ try {
    *     by anything incidental. The positive control at the end closes the other
    *     half: once a base exists, the same command publishes.
    * ------------------------------------------------------------------- */
+  scenario("9n. --base auto fails closed when no base can be established");
   {
     const START = "a0".repeat(20);
     const SHA = "a1".repeat(20);
@@ -3274,6 +3365,7 @@ try {
    *     Creation-time checks only bind our own producer; a peer-authored file
    *     is untrusted and may be hand-written, stale, or replayed.
    * ------------------------------------------------------------------- */
+  scenario("9o. Inbound review decisions are range-checked on RECEIPT");
   {
     const START = "b1".repeat(20);
     const HEAD = "b2".repeat(20);
@@ -3338,6 +3430,7 @@ try {
    * 9p. A legacy no-base request is handled once and never wedges the worker,
    *     and a valid request behind it still gets through.
    * ------------------------------------------------------------------- */
+  scenario("9p. A legacy no-base request is handled once and never wedges the worker");
   {
     const START = "c1".repeat(20);
     const HEAD = "c2".repeat(20);
@@ -3405,6 +3498,7 @@ try {
    *     PL-AI-0001 completes, successor work on those paths must not make
    *     validation declare the finished task broken.
    * ------------------------------------------------------------------- */
+  scenario("9q. A DONE task proves its own history; it does not write-lock its paths");
   {
     const SHA = "d1".repeat(20);
     const repo = freshRepo();
@@ -3470,6 +3564,7 @@ try {
    *     reviewedFingerprintSource field carry canonical hashes. They must be
    *     fully verified, not silently demoted to structural-only checks.
    * ------------------------------------------------------------------- */
+  scenario("9r. Fingerprint provenance compatibility for historical DONE records");
   {
     const repo = freshRepo();
     const gitEnv = {
@@ -3614,6 +3709,7 @@ try {
    *     model review and stranding the task. Both sides now use the shared
    *     validator, which requires the expected base EXACTLY.
    * ------------------------------------------------------------------- */
+  scenario("9s. A WIDENED base is rejected exactly like a narrowed one");
   {
     const OLDER = "e1".repeat(20);
     const START = "e2".repeat(20);
@@ -3668,6 +3764,7 @@ try {
    *     Gating on PL-AI-0002 being IN_PROGRESS switched the factory off the
    *     moment it became ready to run.
    * ------------------------------------------------------------------- */
+  scenario("9t. The orchestrator stays enabled after its own bootstrap completes");
   {
     const SHA = "f1".repeat(20);
     const repo = freshRepo();
@@ -3724,6 +3821,7 @@ try {
    *     These are the paths that stop unseen code being approved, so static
    *     inspection is not sufficient evidence for them.
    * ------------------------------------------------------------------- */
+  scenario("9u. Reviewer safety mechanisms, executed without an API key");
   {
     const {
       buildReviewChunks,
@@ -3878,6 +3976,7 @@ try {
   /* ---------------------------------------------------------------------
    * 9v. Model filesystem boundary and orchestration self-modification guard.
    * ------------------------------------------------------------------- */
+  scenario("9v. Model filesystem boundary and orchestration self-modification guard");
   {
     const SHA = "b7".repeat(20);
     const repo = freshRepo();
@@ -3981,6 +4080,7 @@ try {
    *     scenarios, which pin PL-AI-0001 and PL-AI-0002 because
    *     orchestrator-gate.mjs names that pair as its activation contract.)
    * ------------------------------------------------------------------- */
+  scenario("9w. Orchestration paths are refused for autonomous selection");
   {
     const SHA = "b8".repeat(20);
     const repo = freshRepo();
@@ -4070,6 +4170,7 @@ try {
    *     finalize, and no unit test caught it because the failure only appears
    *     when the passes run in sequence against real dirt.
    * ------------------------------------------------------------------- */
+  scenario("9x. End-to-end staging transaction, in the real workflow order");
   {
     const repo = freshRepo();
     const gitEnv = {
@@ -4194,6 +4295,7 @@ try {
   /* ---------------------------------------------------------------------
    * 9y. A GPT quarantine is publishable in control mode.
    * ------------------------------------------------------------------- */
+  scenario("9y. A GPT quarantine is publishable in control mode");
   {
     const repo = freshRepo();
     const lane = busFile(repo, "gpt-to-claude");
@@ -4302,6 +4404,7 @@ try {
    *     credentials. git is the immutable copy: the model can write the tree
    *     but cannot commit, so HEAD is authoritative.
    * ------------------------------------------------------------------- */
+  scenario("9z. A model cannot substitute the code that polices it");
   {
     const repo = freshRepo();
     const gitEnv = {
@@ -4404,6 +4507,7 @@ try {
   /* ---------------------------------------------------------------------
    * 9aa. Control-output and protected path sets cannot drift.
    * ------------------------------------------------------------------- */
+  scenario("9aa. Control-output and protected path sets cannot drift");
   {
     const { CONTROL_OUTPUT_PATHS } = await import("../scripts/cloud/control-paths.mjs");
     const { PROTECTED_PATHS } = await import("../scripts/cloud/protect-state.mjs");
@@ -4428,6 +4532,7 @@ try {
    *      `node scripts/cloud/trusted-runtime.mjs --verify` breaks loudly
    *      instead of silently asserting a boundary that is not there.
    * ------------------------------------------------------------------- */
+  scenario("9ab. The trusted runtime refuses to certify itself from the workspace");
   {
     const repo = freshRepo();
     const gitEnv = {
@@ -4503,6 +4608,7 @@ try {
    *      reusable repository write credential sitting in a directory the model
    *      can Read, while the workflow's own comments claimed none was exposed.
    * ------------------------------------------------------------------- */
+  scenario("9ac. A persisted git credential halts the privileged steps");
   {
     const repo = freshRepo();
     const gitEnv = {
@@ -4567,6 +4673,7 @@ try {
    *      and then be refused completion forever by the worker meant to complete
    *      it. Two tables encoding one policy always drift.
    * ------------------------------------------------------------------- */
+  scenario("9ad. Both gate runners classify and execute gates identically");
   {
     const { classifyGate, GATE_EXECUTORS } =
       await import("../scripts/cloud/gate-registry.mjs");
@@ -4621,6 +4728,7 @@ try {
    *      forever. The regression asserts the whole ordered sequence, not the
    *      individual steps, because each step in isolation was already correct.
    * ------------------------------------------------------------------- */
+  scenario("9ae. Approval -> durable publish -> completion -> fresh gate, in order");
   {
     /*
      * Deliberately NOT a git repository, matching the other bus scenarios. The
@@ -4737,6 +4845,7 @@ try {
    *      This asserts the property that actually closes it: the configuration
    *      is not present when the model starts, and comes back afterwards.
    * ------------------------------------------------------------------- */
+  scenario("9af. Removing Bash does not remove code execution; hooks do that");
   {
     const repo = freshRepo();
     const gitEnv = {
@@ -4914,6 +5023,7 @@ try {
    *      it ever executes, so the assertion is about what actually happened,
    *      not about what the checker printed.
    * ------------------------------------------------------------------- */
+  scenario("9ag. The gate runner must not execute definitions the model rewrote");
   {
     const repo = freshRepo();
     const gitEnv = {
@@ -5001,6 +5111,7 @@ try {
    *      secret, so the absence of an env block there is a security property and
    *      is asserted as one rather than left to reviewer memory.
    * ------------------------------------------------------------------- */
+  scenario("9ah. The gate step carries no credential worth stealing");
   {
     const workflow = fs.readFileSync(
       path.join(source, ".github", "workflows", "agent-claude-worker.yml"),
@@ -5187,6 +5298,7 @@ try {
    *      producing job cannot widen its scope by asserting that it did not.
    *      This exercises export, verify and apply the way the jobs do.
    * ------------------------------------------------------------------- */
+  scenario("9ai. The patch is the only thing that crosses a trust boundary");
   {
     const repo = freshRepo();
     const gitEnv = {
@@ -5384,6 +5496,7 @@ try {
    *      DISJOINT allowedPaths that declare the SAME reviewDependencies must be
    *      claimable and active at the same time.
    * ------------------------------------------------------------------- */
+  scenario("9aj. A shared review dependency does not serialise two lanes");
   {
     const repo = freshRepo();
     seedSharedVocabulary(repo);
@@ -5434,6 +5547,7 @@ try {
    *      edit to a shared schema no longer invalidating the reviews that relied
    *      on it. Neither task may write the file that breaks them.
    * ------------------------------------------------------------------- */
+  scenario("9ak. Changing the shared dependency invalidates BOTH approvals");
   {
     const repo = freshRepo();
     seedSharedVocabulary(repo);
@@ -5508,6 +5622,7 @@ try {
    *      them right now; if declaring one also granted write or staging rights,
    *      two tasks could edit the same file with neither owning it.
    * ------------------------------------------------------------------- */
+  scenario("9al. Reviewing a file grants no right to touch it");
   {
     const repo = freshRepo();
     const gitEnv = {
@@ -5620,6 +5735,7 @@ try {
    *      package-wide mutex it replaced, because every declared dependency
    *      would reserve a path nobody is writing.
    * ------------------------------------------------------------------- */
+  scenario("9am. Overlapping reviewDependencies are never a claim conflict --");
   {
     const seed = (repo) => {
       writeFixtureFile(repo, "fixtures/rd/shared/rights.ts", "export type R = 1;\n");
@@ -5686,6 +5802,7 @@ try {
    *      able to write a file its own fingerprint did not cover could change its
    *      approved content without invalidating the approval.
    * ------------------------------------------------------------------- */
+  scenario("9an. allowedPaths is always inside the reviewed surface");
   {
     const repo = freshRepo();
     writeFixtureFile(repo, "fixtures/rd/shared/rights.ts", "export type R = 1;\n");
@@ -5779,6 +5896,7 @@ try {
    *      wording on failure -- otherwise this change silently invalidates every
    *      approval already recorded.
    * ------------------------------------------------------------------- */
+  scenario("9ao. Legacy tasks fingerprint exactly what they always did");
   {
     const repo = freshRepo();
     writeFixtureFile(repo, "fixtures/rd/legacy/a.ts", "export const a = 1;\n");
@@ -5903,6 +6021,7 @@ try {
    *      equality, and reverting the worker to changed-file selection breaks it
    *      on the two files below that the range never touches.
    * ------------------------------------------------------------------- */
+  scenario("9ap. The reviewer is shown exactly what its approval binds to");
   {
     const { classifyReviewPath, reviewSurfaceLabel } = await import(
       "../scripts/review-surface.mjs"
@@ -6250,6 +6369,7 @@ try {
    *      is under test is "an unowned task refuses gates", which is a property
    *      of the command, not of whatever status PL-0103 holds today.
    * ------------------------------------------------------------------- */
+  scenario("9aq. A gate result is only recordable where work is actually happening");
   {
     const repo = freshRepo();
     addFixtureTasks(
@@ -6359,6 +6479,7 @@ try {
    *      -- possibly a different agent, certainly a different implementation
    *      round -- inherits passing evidence for work that no longer exists.
    * ------------------------------------------------------------------- */
+  scenario("9ar. Returning a task to a queue discards its gate evidence, and the");
   {
     const repo = freshRepo();
     addFixtureTasks(
@@ -6448,6 +6569,7 @@ try {
    *      the approval would bind to bytes the reviewer was never shown, which is
    *      the same defect pointing the other way.
    * ------------------------------------------------------------------- */
+  scenario("9as. A declared protection may never be accepted and then discarded");
   {
     const repo = freshRepo();
     writeFixtureFile(repo, "fixtures/rd/g/own.ts", "export const own = 1;\n");
@@ -6593,6 +6715,7 @@ try {
    *      any forty hex characters would only have moved the lie into the
    *      argument.
    * ------------------------------------------------------------------- */
+  scenario("9at. Provenance reconciliation cannot be reached by accident, and its");
   {
     const repo = freshRepo();
     addFixtureTasks(
@@ -6924,6 +7047,7 @@ try {
    *      validator all produce the reconciled range, and that a narrowed range
    *      over the same task is still refused afterwards.
    * ------------------------------------------------------------------- */
+  scenario("9au. A reconciled base is what the first review range actually uses, and");
   {
     const repo = freshRepo();
     addFixtureTasks(
@@ -7121,6 +7245,7 @@ try {
    *      base commit changed under the reviewed surface and decides what it
    *      means. That is the assertion this scenario now makes.
    * ------------------------------------------------------------------- */
+  scenario("9av. What the base commit itself touched is REPORTED, never adjudicated");
   {
     const repo = freshRepo();
     addFixtureTasks(
@@ -7279,6 +7404,7 @@ try {
    *      see that this range opens at a commit which already contains part of the
    *      work. The refusal is gone; the fact it was reacting to is not.
    * ------------------------------------------------------------------- */
+  scenario("9aw. The root commit: the base the removed heuristic could never accept");
   {
     const repo = freshRepo();
     addFixtureTasks(
@@ -7349,6 +7475,7 @@ try {
    *      the file under the spelling the base itself used and the published
    *      counts mean the same thing on every machine that re-derives them.
    * ------------------------------------------------------------------- */
+  scenario("9ax. Two ways a diff can lie about what a commit touched");
   {
     /* --- the merge half ------------------------------------------------ */
     const repo = freshRepo();
@@ -7464,6 +7591,7 @@ try {
    *      Scoped to allowedPaths, like every other dirty-tree check here, so
    *      unrelated dirt cannot block a legitimate reconciliation.
    * ------------------------------------------------------------------- */
+  scenario("9ay. \"Never for uncommitted work\" is enforced, not merely documented");
   {
     const repo = freshRepo();
     addFixtureTasks(
@@ -7527,6 +7655,7 @@ try {
    *      No git here on purpose: these are argument-shape decisions and must fire
    *      before any history is consulted.
    * ------------------------------------------------------------------- */
+  scenario("9az. A value flag that arrives empty is refused, not read as absent");
   {
     const repo = freshRepo();
     addFixtureTasks(
@@ -7605,6 +7734,7 @@ try {
    *      DETECTABLE, so this pins both directions: an honest record validates
    *      cleanly, and each way of forging one is named.
    * ------------------------------------------------------------------- */
+  scenario("9ba. The provenance record is verified, not read back");
   {
     const repo = freshRepo();
     addFixtureTasks(
@@ -7833,6 +7963,7 @@ try {
    *      file never received, and a retry appended a second one. These events
    *      carry no deterministic id, so nothing would deduplicate them.
    * ------------------------------------------------------------------- */
+  scenario("9bb. The published window keeps the end the reviewer is sent to, and the");
   {
     const repo = freshRepo();
     addFixtureTasks(
@@ -7940,6 +8071,7 @@ try {
    *      honestly is what unlocked self-approval, and saying nothing left the
    *      owner correctly blocked.
    * ------------------------------------------------------------------- */
+  scenario("9bc. --implementation-agent adds an implementer; it can never remove one");
   {
     const repo = freshRepo();
     addFixtureTasks(
@@ -8037,6 +8169,7 @@ try {
    *      justified keeping it, so the preservation is recorded rather than
    *      assumed.
    * ------------------------------------------------------------------- */
+  scenario("9bd. A base survives a release only while the implementation it names");
   {
     /* ---- A. the observed case: an abandoned round that wrote nothing ---- */
     const repo = freshRepo();
@@ -8372,6 +8505,7 @@ try {
    *      decide whether a published provenance field is discarded is a way to
    *      discard one.
    * ------------------------------------------------------------------- */
+  scenario("9be. The same fail-towards-keeping rule where there is no git at all");
   {
     const repo = freshRepo();
     addFixtureTasks(
@@ -8408,6 +8542,7 @@ try {
   /* ---------------------------------------------------------------------
    * 10. Bootstrap into a new project still works.
    * ------------------------------------------------------------------- */
+  scenario("10. Bootstrap into a new project still works");
   {
     const repo = freshRepo();
     const child = path.join(temp, "child-project");
@@ -8478,6 +8613,7 @@ try {
    *      currently has exactly zero such edges, so a scenario reading it would
    *      pass by being inert and would keep passing after a regression.
    * ------------------------------------------------------------------- */
+  scenario("10s. A dependency on a superseded task is refused, and the rule is proved");
   {
     const repo = freshRepo();
     const superseded = (id, overrides = {}) =>
@@ -8627,6 +8763,7 @@ try {
    *      candidates for this status and none has been transitioned, so a
    *      scenario reading live data would pass by being inert.
    * ------------------------------------------------------------------- */
+  scenario("10t. SUPERSEDED: a terminal state that is TRUE, and the four ways it could");
   {
     const repo = freshRepo();
     const tasksFile = path.join(repo, "control", "tasks.json");
@@ -9527,6 +9664,7 @@ try {
    *     This now also guards coordination/agent-bus, so a test that forgets
    *     freshRepo() cannot publish a real handoff message.
    * ------------------------------------------------------------------- */
+  scenario("11. The live repository state must be untouched by the whole run");
   assert.equal(
     fs.readFileSync(liveTasksPath, "utf8"),
     liveTasksBefore,
@@ -9540,7 +9678,20 @@ try {
     "running the test suite must not mutate any live control/ or coordination/ file",
   );
 
-  console.log("AI control plane tests passed (73 scenarios).");
+  const total = slowest.reduce((sum, c) => sum + c.ms, 0);
+  slowest.sort((a, b) => b.ms - a.ms);
+  console.log(
+    `AI control plane tests passed (73 scenarios) in ${elapsed()}; ` +
+      `${slowest.length} child commands totalling ${(total / 1000).toFixed(1)}s.`,
+  );
+  /*
+   * THE FIVE SLOWEST, EVERY RUN, GREEN OR NOT. A suite whose cost is almost
+   * entirely spawned commands should say which ones; PL-0735 existed because
+   * that number was invisible until it was measured from outside.
+   */
+  for (const child of slowest.slice(0, 5)) {
+    console.log(`  ${(child.ms / 1000).toFixed(2)}s  ${child.command}`);
+  }
 } finally {
   /*
    * Cleanup must never replace the result.

@@ -441,10 +441,34 @@ function planExecutableWave(d, classification) {
         a.id.localeCompare(b.id),
     );
 
+  /*
+   * THE OVERLAP ANSWERS, COMPUTED ONCE (PL-0735).
+   *
+   * `dfs` below asks "does candidate i overlap anything already chosen" at
+   * every node of a search budgeted to 300,000 of them, and each ask was
+   * recomputing `pathsOverlap` over the same pair of path lists it had
+   * already compared -- the answer cannot change during a plan, because
+   * neither task's `allowedPaths` does. This is that constant table: one
+   * O(candidates^2) pass up front, then an array lookup per question.
+   *
+   * It is the second half of the same fix as the memo in
+   * `review-surface.mjs`, and it is the half that removes the repetition
+   * rather than making each repeat cheaper. Together they take one `status`
+   * against a reset board from 10.1s to well under a second, with every
+   * command's output byte-identical -- which is the property that matters,
+   * since a performance change to the scheduler that quietly altered a wave
+   * would be far worse than the slowness it fixed.
+   */
+  const overlaps = candidates.map((a) =>
+    candidates.map((b) => pathsOverlap(a.allowedPaths, b.allowedPaths)),
+  );
+
   let best = [];
   let nodes = 0;
   let exhausted = false;
   const budget = 300000;
+  /* Shadows `chosen`, pushed and popped with it; see the overlap test below. */
+  const chosenIndices = [];
 
   function dfs(i, chosen, usage) {
     if (exhausted) return;
@@ -460,9 +484,13 @@ function planExecutableWave(d, classification) {
       return;
     }
     const task = candidates[i];
-    if (
-      !chosen.some((c) => pathsOverlap(task.allowedPaths, c.task.allowedPaths))
-    ) {
+    /* The same question `pathsOverlap(task.allowedPaths, c.task.allowedPaths)`
+     * asked before, read from the table built above. `chosenIndices` shadows
+     * `chosen` so the entries pushed onto the wave stay exactly
+     * `{ task, agent }` -- a planner that returned an extra bookkeeping field
+     * would be a different return value, and this change is required to have
+     * none. */
+    if (!chosenIndices.some((j) => overlaps[i][j])) {
       const options = agents
         .filter(
           (a) =>
@@ -477,7 +505,9 @@ function planExecutableWave(d, classification) {
       for (const agent of options) {
         usage.set(agent.id, (usage.get(agent.id) ?? 0) + 1);
         chosen.push({ task, agent });
+        chosenIndices.push(i);
         dfs(i + 1, chosen, usage);
+        chosenIndices.pop();
         chosen.pop();
         usage.set(agent.id, usage.get(agent.id) - 1);
         if (exhausted) return;

@@ -38,12 +38,45 @@
  * being filtered out of the diff -- the exact divergence this module exists to
  * make impossible.
  */
+const PREFIX_CACHE = new Map();
+
 export function normalizePrefix(pattern) {
-  return pattern
+  /*
+   * MEMOISED, AND THE CACHE IS THE FIX FOR PL-0735 RATHER THAN A TIDY-UP.
+   *
+   * This is a pure function of a string, and its argument domain is tiny and
+   * fixed: the path globs declared in `control/tasks.json`. It was being
+   * called from inside `pathsOverlap`'s INNER loop, so comparing two tasks of
+   * |A| and |B| declared paths ran it |A|x|B| times instead of |A|+|B| -- and
+   * the dispatch planner calls `pathsOverlap` once per (candidate, chosen)
+   * pair at every node of a search whose budget is 300,000 nodes.
+   *
+   * MEASURED, because "this looks quadratic" is a guess: one
+   * `ai-control-plane.mjs status` against a RESET board took 10.1s wall and
+   * 9.9s user, and a --cpu-prof attributed the majority to this function and
+   * its four regexes. With this cache it is 2.0s, and `status`, `dispatch`,
+   * `ready` and every agent's `queue` are byte-identical before and after.
+   *
+   * WHY IT WAS NEVER SLOW BEFORE. The cost scales with the number of DISPATCH
+   * CANDIDATES, not with the size of the file. The live board runs the same
+   * command in 0.11s with the same 139 tasks, because few of them are
+   * candidates at once. The control-plane TEST SUITE plans over reset boards
+   * where nearly every task is one, and that is where CI spent its hours.
+   *
+   * UNBOUNDED ON PURPOSE. The keys are declared path globs read from a file
+   * that is kilobytes long, and every process here is a short-lived CLI
+   * invocation. An eviction policy would be more code than the thing it
+   * bounds, and a wrong one would reintroduce the cost silently.
+   */
+  const cached = PREFIX_CACHE.get(pattern);
+  if (cached !== undefined) return cached;
+  const prefix = pattern
     .replace(/\\/g, "/")
     .replace(/\*\*.*$/, "")
     .replace(/\*.*$/, "")
     .replace(/\/$/, "");
+  PREFIX_CACHE.set(pattern, prefix);
+  return prefix;
 }
 
 /**
