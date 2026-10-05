@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-05T23:11:26.714Z",
+  "generatedAt": "2026-10-05T23:13:14.115Z",
   "agent": "gpt-architect",
   "executionAvailable": false,
   "assigned": [],
@@ -156,6 +156,32 @@
           "evidence": "node --test scripts/windows/test-lifecycle.mjs: 42 tests, 42 pass (was 33; this task adds 9). Full npm run test:scripts: green, rc=0. repo:validate: passed.\n\nTWO CASES RUN A REAL CHILD RATHER THAN ASSERTING A BELIEF ABOUT spawnSync. The whole repair rests on Node's timeout semantics, so they are exercised: a child that sleeps 60s with timeout 250 returns status null and error.code ETIMEDOUT; a missing binary returns status null and error.code ENOENT. THAT PAIR IS THE DEFECT -- the old code tested status !== 0, so a stall and an absent msiexec.exe both arrived as a bare fail with status: null and nothing to read.\n\nMUTATION-TESTED, five ways this repair could be undone:\n  no-timeout        (delete timeout from the spawn options)   -> 1 test fails\n  stall-is-notrun   (a stall recorded as not-run)             -> 2 tests fail\n  gate-off          (jobFailed returns false)                 -> 2 tests fail\n  spawn-as-stall    (a spawn failure dressed as a timeout)    -> 1 test fails\n  timeout-too-long  (180s -> 300s)                            -> 1 test fails\n\nThe first and last are the ones worth naming. no-timeout is the mutant every other case in this block would survive, because they drive classifyInvocation with synthetic results and would keep passing while timedOut quietly never became true again on a machine nobody in this container can run; it is caught only because the spawn options are a frozen exported value with an assertion on them. timeout-too-long is caught because the step bound arithmetic is ASSERTED rather than left in a comment: four invocations at 300s is 20 minutes against PL-0736's 15-minute timeout-minutes, so the step would die with no report and the deadline would have bought nothing.\n\nNOT CLAIMED: nothing here runs msiexec, and no Windows machine was involved. What is tested is the decision -- what an invocation means -- which is the same division the rest of this harness keeps between residue.mjs deciding and msiexec measuring."
         }
       }
+    },
+    {
+      "id": "PL-0746",
+      "priority": "P3",
+      "lane": "Infra",
+      "status": "REVIEW",
+      "title": "desktop-shell-ci.yml is the one workflow with no timeout at all",
+      "dependencies": [],
+      "allowedPaths": [
+        ".github/workflows/desktop-shell-ci.yml"
+      ],
+      "reviewDependencies": [
+        ".github/workflows/ci.yml",
+        ".github/workflows/windows.yml"
+      ],
+      "preferredAgent": "claude-infra",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "architecture-review"
+      ],
+      "acceptance": "FOUND BY PL-0736, OUTSIDE ITS SURFACE. That task's acceptance names `ci.yml` and `windows.yml` and its allowedPaths hold exactly those two, so this file was not touched -- but the audit that produced the bounds read every workflow, and `windows-shell` is now the only job in this repository with no `timeout-minutes`, job-level or step-level.\n\nIts shape is the one most likely to stall: `dtolnay/rust-toolchain`, a Swatinem cache restore, and `cargo test`/`clippy`/`build --release` on a Windows runner, all of which reach the network and the first of which is the single slowest minute this repository spends.\n\nREQUIRED: a job bound derived from an observed duration, with the derivation written beside it, in the same form `ci.yml` now uses.\n\nREQUIRED: generous. A Windows Rust release build on a cold cache is genuinely long, and a bound that fires on one teaches people to re-run rather than to read.\n\nOUT OF SCOPE: anything the job does, and the new `experiment-1a.yml`, which was written with `timeout-minutes: 45` already on it.",
+      "notes": "P3 because this job is not on the release path -- `windows.yml` is what produces installers -- and because a six-hour stall here is visible as an unfinished run rather than as a wrong answer. Recorded now so it is written down rather than remembered.",
+      "owner": "claude-infra",
+      "implementationAgent": "claude-infra",
+      "updatedAt": "2026-10-05T23:13:13.744Z",
+      "implementationBaseSha": "66b6ca269c5e29292230b4bf41902c7b58d669f7"
     }
   ],
   "reservedExternal": [],

@@ -65,6 +65,33 @@ jobs:
     # the shell is the one thing ubuntu cannot answer for.
     runs-on: windows-latest
 
+    # ------------------------------------------------------------------------
+    # PL-0746. THIS WAS THE LAST UNBOUNDED JOB IN THE REPOSITORY.
+    #
+    # PL-0736 put bounds on `ci.yml` and `windows.yml`; its acceptance named
+    # those two files and its allowedPaths held exactly those two, so the audit
+    # that produced them could see this gap and not close it. A job with no
+    # bound burns GitHub's SIX-HOUR default and reports "in progress" the whole
+    # time, which through annotations -- the only channel this project can read
+    # without a login -- is indistinguishable from a runner that is merely
+    # queued. That is how CI #181 and #182 both sat unfinished with nobody
+    # treating either as a failure.
+    #
+    # This job's shape is the one most likely to stall: a toolchain install, a
+    # cache restore and three cargo invocations on a Windows runner, every one
+    # of which reaches the network, and the first of which is the single
+    # slowest minute this repository spends.
+    #
+    # DERIVED, and generously. Its neighbours are the comparison this file can
+    # honestly make: `windows.yml`'s package job allows 60 minutes for strictly
+    # more work -- the same Rust release build PLUS a web build, a sidecar
+    # layout, a Tauri bundle and a full install/uninstall/reinstall lifecycle
+    # -- and has twice finished inside it (Windows #18, #19). This job is that
+    # job's first third, so 40 minutes is well above anything it does and well
+    # below six hours. A bound that fires on a cold cache teaches people to
+    # re-run rather than to read, and that costs more than the hang.
+    timeout-minutes: 40
+
     defaults:
       run:
         working-directory: apps/desktop/src-tauri

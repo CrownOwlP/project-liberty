@@ -14811,7 +14811,7 @@
       "id": "PL-0746",
       "priority": "P3",
       "lane": "Infra",
-      "status": "READY",
+      "status": "REVIEW",
       "title": "desktop-shell-ci.yml is the one workflow with no timeout at all",
       "dependencies": [],
       "allowedPaths": [
@@ -14827,7 +14827,11 @@
         "architecture-review"
       ],
       "acceptance": "FOUND BY PL-0736, OUTSIDE ITS SURFACE. That task's acceptance names `ci.yml` and `windows.yml` and its allowedPaths hold exactly those two, so this file was not touched -- but the audit that produced the bounds read every workflow, and `windows-shell` is now the only job in this repository with no `timeout-minutes`, job-level or step-level.\n\nIts shape is the one most likely to stall: `dtolnay/rust-toolchain`, a Swatinem cache restore, and `cargo test`/`clippy`/`build --release` on a Windows runner, all of which reach the network and the first of which is the single slowest minute this repository spends.\n\nREQUIRED: a job bound derived from an observed duration, with the derivation written beside it, in the same form `ci.yml` now uses.\n\nREQUIRED: generous. A Windows Rust release build on a cold cache is genuinely long, and a bound that fires on one teaches people to re-run rather than to read.\n\nOUT OF SCOPE: anything the job does, and the new `experiment-1a.yml`, which was written with `timeout-minutes: 45` already on it.",
-      "notes": "P3 because this job is not on the release path -- `windows.yml` is what produces installers -- and because a six-hour stall here is visible as an unfinished run rather than as a wrong answer. Recorded now so it is written down rather than remembered."
+      "notes": "P3 because this job is not on the release path -- `windows.yml` is what produces installers -- and because a six-hour stall here is visible as an unfinished run rather than as a wrong answer. Recorded now so it is written down rather than remembered.",
+      "owner": "claude-infra",
+      "implementationAgent": "claude-infra",
+      "updatedAt": "2026-10-05T23:13:13.744Z",
+      "implementationBaseSha": "66b6ca269c5e29292230b4bf41902c7b58d669f7"
     }
   ]
 }

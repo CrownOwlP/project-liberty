@@ -1,16 +1,16 @@
 # Project Liberty - Project Status
 
-> Generated 2026-10-05T23:11:26.712Z from the AI control plane.
+> Generated 2026-10-05T23:13:14.113Z from the AI control plane.
 
 **Overall completion:** 121/145 executable tasks (83%)
 
 ## Status summary
 
 - **BACKLOG:** 6
-- **READY:** 4
+- **READY:** 3
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 1
-- **REVIEW:** 4
+- **REVIEW:** 5
 - **BLOCKED:** 9
 - **DONE:** 121
 - **CANCELED:** 0
@@ -36,10 +36,11 @@
 - **PL-0742** [IN_PROGRESS] Experiment 1a exists as a specification and not as something anyone can run — owner: claude-media
 - **PL-0743** [REVIEW] A pasted addon manifest URL has no safe path into the adapter — owner: claude-backend
 - **PL-0745** [REVIEW] Every msiexec call in the lifecycle harness can wait forever — owner: claude-infra
+- **PL-0746** [REVIEW] desktop-shell-ci.yml is the one workflow with no timeout at all — owner: claude-infra
 
 ## Dispatch classification
 
-- **READY_AND_EXECUTABLE:** 4
+- **READY_AND_EXECUTABLE:** 3
 - **READY_BUT_EXTERNAL:** 0
 - **BLOCKED:** 9
 - **BACKLOG (dependency-gated):** 6
@@ -47,7 +48,6 @@
 ## Recommended executable wave
 
 - **PL-0740** -> claude-lead (P2/Integration) A task parked for an external reviewer consumes local implementation capacity
-- **PL-0746** -> claude-infra (P3/Infra) desktop-shell-ci.yml is the one workflow with no timeout at all
 
 ## Queued for external agents
 
@@ -98,5 +98,5 @@ STILL MEASURABLE WITHOUT THAT DECISION, and NOT blocked by it: whether @img/shar
 - **claude-media:** 1/2 active
 - **claude-test:** 1/3 active
 - **claude-security:** 0/1 active
-- **claude-infra:** 2/5 active
+- **claude-infra:** 3/5 active
 - **human-commander:** 0/99 active (external lane; not locally executable)
