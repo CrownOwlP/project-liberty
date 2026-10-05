@@ -16,6 +16,53 @@ through architecture review, not to work around it here.
 
 ---
 
+## The whole run, in four commands
+
+Everything below assumes the artifact has been unzipped to **`D:\exp-1a\`**.
+Any folder works; that one is used throughout so the commands can be copied
+rather than adapted. Keep `exp-1a.exe` and the mpv DLL **in the same folder** —
+the executable loads that DLL by name from its own directory, so moving either
+one alone produces a startup failure that looks like a code fault and is not.
+
+```bat
+cd /d D:\exp-1a
+collect-evidence.cmd
+exp-1a.exe "D:\clips\your-4k60-hevc-or-av1.mkv"
+```
+
+1. **`cd /d D:\exp-1a`** — the exe must run from its own folder.
+2. **`collect-evidence.cmd`** — writes `exp-1a-evidence.txt` beside itself:
+   Windows build, GPU and driver, displays, DPI scaling, WebView2 version. It
+   starts nothing and changes nothing, and it **cannot observe any of the seven
+   criteria** — it records the machine, not the experiment. Run it first so the
+   machine is recorded even if the next command fails.
+3. **`exp-1a.exe "<your clip>"`** — substitute your own file. With no argument
+   it prints what it wants and exits 2 rather than opening an empty window, so
+   **double-clicking the exe does nothing useful**.
+4. Fill in **`RESULTS-TEMPLATE.md`** and send it back.
+
+`exp-1a.exe` is **UNSIGNED**, so SmartScreen will warn. That warning is
+correct: nothing has signed this and this project holds no Authenticode
+certificate.
+
+### If something goes wrong, send back these four
+
+Four files, and nothing needs to be summarised or interpreted first — a
+description of a failure is worth much less than the failure.
+
+| file | where | why |
+|---|---|---|
+| `exp-1a-evidence.txt` | beside the exe, from step 2 | the machine it happened on |
+| `RESULTS-TEMPLATE.md` | filled in as far as you got | which criterion, and what you saw |
+| `PROVENANCE.txt` | in the unzipped folder | which exe and which mpv build |
+| a screenshot or short clip | — | for criteria 2, 4 and 5 a picture settles in one second what paragraphs cannot |
+
+Plus whatever the console printed, if it printed anything. If the window never
+appeared at all, say so in as many words — "nothing happened" is a specific,
+useful result and is not the same as a crash.
+
+---
+
 ## What you need, and what you do not
 
 **You do not need:** Rust, a C toolchain, Visual Studio, an mpv build, or any
