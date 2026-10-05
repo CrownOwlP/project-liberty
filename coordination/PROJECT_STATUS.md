@@ -1,16 +1,16 @@
 # Project Liberty - Project Status
 
-> Generated 2026-10-05T14:43:09.688Z from the AI control plane.
+> Generated 2026-10-05T14:50:48.829Z from the AI control plane.
 
-**Overall completion:** 121/143 executable tasks (85%)
+**Overall completion:** 121/145 executable tasks (83%)
 
 ## Status summary
 
 - **BACKLOG:** 6
-- **READY:** 4
+- **READY:** 5
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 1
-- **REVIEW:** 2
+- **REVIEW:** 3
 - **BLOCKED:** 9
 - **DONE:** 121
 - **CANCELED:** 0
@@ -31,21 +31,23 @@
 
 ## Active work
 
+- **PL-0736** [REVIEW] A CI step that hangs reports 'in progress' for six hours instead of failing — owner: claude-infra
 - **PL-0741** [REVIEW] The commander's qualification evidence is collected by hand, one command at a time — owner: claude-test
 - **PL-0742** [IN_PROGRESS] Experiment 1a exists as a specification and not as something anyone can run — owner: claude-media
 - **PL-0743** [REVIEW] A pasted addon manifest URL has no safe path into the adapter — owner: claude-backend
 
 ## Dispatch classification
 
-- **READY_AND_EXECUTABLE:** 4
+- **READY_AND_EXECUTABLE:** 5
 - **READY_BUT_EXTERNAL:** 0
 - **BLOCKED:** 9
 - **BACKLOG (dependency-gated):** 6
 
 ## Recommended executable wave
 
-- **PL-0736** -> claude-infra (P1/Infra) A CI step that hangs reports 'in progress' for six hours instead of failing
 - **PL-0740** -> claude-lead (P2/Integration) A task parked for an external reviewer consumes local implementation capacity
+- **PL-0745** -> claude-infra (P2/Infra) Every msiexec call in the lifecycle harness can wait forever
+- **PL-0746** -> claude-infra (P3/Infra) desktop-shell-ci.yml is the one workflow with no timeout at all
 
 ## Queued for external agents
 
@@ -96,5 +98,5 @@ STILL MEASURABLE WITHOUT THAT DECISION, and NOT blocked by it: whether @img/shar
 - **claude-media:** 1/2 active
 - **claude-test:** 1/3 active
 - **claude-security:** 0/1 active
-- **claude-infra:** 0/5 active
+- **claude-infra:** 1/5 active
 - **human-commander:** 0/99 active (external lane; not locally executable)

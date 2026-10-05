@@ -396,8 +396,35 @@ jobs:
       # upgrade, needs a previous release this repository has never shipped;
       # it is PW-0505 and the harness reports it `not-run` with that reason,
       # never as passed.
+      # ====================================================================
+      # THE ONE STEP IN THIS FILE WITH A CREDIBLE UNBOUNDED HANG (PL-0736)
+      # ====================================================================
+      #
+      # `lifecycle.mjs` calls `spawnSync("msiexec.exe", ...)` four times with
+      # NO `timeout` option. Windows Installer serialises on the `_MSIExecute`
+      # mutex, and a process holding it -- an unattended-install service, a
+      # previous msiexec that has not exited, a repair triggered by something
+      # else on the runner -- makes the next invocation WAIT, not fail. That is
+      # a hang with no deadline anywhere in the chain, in the step that decides
+      # F1, F3 and F4.
+      #
+      # HOW THIS BOUND WAS DERIVED, including the part that is NOT an
+      # observation. The step's own duration cannot be read: job logs need a
+      # login and annotations, the only channel this project can read, do not
+      # carry step timings. What IS observed is that the whole job -- including
+      # a Rust release build, which dominates it -- completed twice inside its
+      # 60-minute bound, on Windows #18 (37259195413) and #19 (37260995361).
+      # A silent install, uninstall and reinstall of a local MSI is seconds of
+      # work; 15 minutes is far above anything that is merely slow and far
+      # below the 60 this job would otherwise spend discovering the mutex.
+      #
+      # THIS IS THE OUTER BOUND, NOT THE FIX. The right place for a deadline on
+      # msiexec is the `spawnSync` call, where the harness could report WHICH
+      # case stalled and against which mutex instead of losing the whole step.
+      # `scripts/windows/` is outside this task's surface; filed as PL-0745.
       - name: Exercise the installer lifecycle (PW-0503 harness, PW-0602 gate)
         id: lifecycle
+        timeout-minutes: 15
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"

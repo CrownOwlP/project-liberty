@@ -14383,7 +14383,7 @@
       "id": "PL-0736",
       "priority": "P1",
       "lane": "Infra",
-      "status": "READY",
+      "status": "REVIEW",
       "title": "A CI step that hangs reports 'in progress' for six hours instead of failing",
       "dependencies": [],
       "allowedPaths": [
@@ -14400,7 +14400,11 @@
         "architecture-review"
       ],
       "acceptance": "REQUIRED: the jobs in ci.yml and windows.yml get `timeout-minutes`, per step where a step has a credible hang and per job otherwise. THE CLASS, NOT THE INSTANCE. PL-0735 fixes the one step that hangs today; this makes the NEXT one visible. A step with no bound burns GitHub's six-hour default and reports 'in progress' the entire time -- indistinguishable, to the only readable channel this project has (annotations, because job logs need a login), from a runner that is merely queued. That is how CI #181 and #182 both sat unfinished without anyone treating it as a failure.\n\nREQUIRED: each bound is derived from an OBSERVED duration and the derivation is written beside it. A number somebody felt was generous is a number somebody will raise the first time it fires. Observed today: e2e 5m 8s, e2e-typecheck 12s, and the Windows e2e-desktop job 3m 25s.\n\nREQUIRED: the bound is not so tight that a slow runner reads as a defect. A timeout that fires on a cold cache teaches people to re-run rather than to read, which costs more than the hang.\n\nOUT OF SCOPE: the control-plane performance work, which is PL-0735, and any change to what the steps do.",
-      "notes": "SPLIT OUT OF PL-0735 in round 112, carrying its clause verbatim. PL-0735 was filed holding ci.yml and `ai:claim` refused it on an overlap with PL-0728, which is in REVIEW for the rest of the round. Keeping both halves in one task meant neither landed; this one is BACKLOG until ci.yml frees.\n\nClassification C (workflow/harness defect) under the round-112 directive's A-E scheme, same as PL-0735. P1 rather than P0 because PL-0735 removes the hang that exists; this prevents the one that does not exist yet."
+      "notes": "SPLIT OUT OF PL-0735 in round 112, carrying its clause verbatim. PL-0735 was filed holding ci.yml and `ai:claim` refused it on an overlap with PL-0728, which is in REVIEW for the rest of the round. Keeping both halves in one task meant neither landed; this one is BACKLOG until ci.yml frees.\n\nClassification C (workflow/harness defect) under the round-112 directive's A-E scheme, same as PL-0735. P1 rather than P0 because PL-0735 removes the hang that exists; this prevents the one that does not exist yet.",
+      "owner": "claude-infra",
+      "implementationAgent": "claude-infra",
+      "updatedAt": "2026-10-05T14:50:48.526Z",
+      "implementationBaseSha": "723c95488b8d64205676055ed0a638f8cb9d76dc"
     },
     {
       "id": "PL-0737",
@@ -14764,6 +14768,52 @@
       ],
       "acceptance": "THE UI HALF OF THE DIRECTIVE'S PRIORITY 5: ADD-ONS -> ADD BY URL -> paste a manifest URL -> validate -> preview (name, version, declared resources) -> rights declaration -> save/enable. PL-0743 supplies everything up to the preview.\n\nTHIS TASK IS BLOCKED ON A DECISION, NOT ON CODE, AND MUST NOT BE STARTED BEFORE IT. Product invariant 1 is that only licensed, user-owned or public-domain content may enter playback resolution, and `defineStremioSource` enforces it by requiring an OPERATOR declaration with an auditable basis. A user pasting a URL into a settings page is not the operator. So:\n\n  (a) Whose declaration does a user-added source carry? If the user's, invariant 1 is now satisfied by an unauditable assertion from an anonymous party. If the operator's, the operator is declaring rights over a URL they have never seen.\n  (b) May a non-operator add one at all, or is this an operator-only surface gated by a role that does not yet exist?\n  (c) Is a user-added source scoped to the profile that added it, and what happens to resolution for other profiles?\n  (d) Persistence: a new table, a migration, and the repository/profile scoping the rest of the platform already enforces.\n\nNone of these is a frontend question and none may be settled by whoever writes the form. Route them to gpt-architect and the commander first.\n\nREQUIRED when it does proceed: the preview must be visibly NOT an authorization in the UI itself, not merely in the types. A user must perform a distinct, deliberate rights declaration, and 'save' must be unreachable without it.",
       "notes": "Filed with PL-0743 so the deferred half is written down rather than remembered. It is P3 because the primary release journey does not pass through it: a user who cannot add a Stremio addon can still install, launch, browse and play from a configured source."
+    },
+    {
+      "id": "PL-0745",
+      "priority": "P2",
+      "lane": "Infra",
+      "status": "READY",
+      "title": "Every msiexec call in the lifecycle harness can wait forever",
+      "dependencies": [],
+      "allowedPaths": [
+        "scripts/windows/lifecycle.mjs",
+        "scripts/windows/test-lifecycle.mjs"
+      ],
+      "reviewDependencies": [
+        ".github/workflows/windows.yml",
+        "scripts/windows/lifecycle-cases.mjs"
+      ],
+      "preferredAgent": "claude-infra",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "unit",
+        "architecture-review"
+      ],
+      "acceptance": "FOUND BY PL-0736 WHILE BOUNDING THE STEP THAT CONTAINS IT. `lifecycle.mjs` calls `spawnSync(\"msiexec.exe\", args, { encoding: \"utf8\", windowsHide: true })` four times -- install, upgrade, uninstall, reinstall -- and passes no `timeout`. Windows Installer serialises on the `_MSIExecute` mutex and a holder makes the next invocation WAIT rather than fail, so there is no deadline anywhere in the chain that decides F1, F3 and F4.\n\nPL-0736 put a 15-minute `timeout-minutes` on the step. That is an OUTER bound and deliberately not the fix: when it fires, the whole step dies and the report says nothing about which case stalled or why.\n\nREQUIRED: a `timeout` on each msiexec invocation, and a timed-out case REPORTED as a case outcome with its own reason, not collapsed into a crash. The harness already distinguishes exit 1 (a real case failure) from exit 2 (a refusal over arguments or platform) precisely so a configuration mistake is not filed as a product defect; a stall is a third thing and must not be filed as either.\n\nREQUIRED: the bound is per-invocation and derived. A silent install of this MSI is seconds of work.\n\nREQUIRED: a timed-out case is NEVER recorded as pass, and never as not-run with a reason that reads like a deliberate skip -- F2's `not-run` means 'the evidence does not exist', and a stall means 'we did not find out'.\n\nOUT OF SCOPE: changing what any case does, and the step-level bound PL-0736 added, which stays as the outer limit.",
+      "notes": "P2 rather than P1 because the outer bound now exists, so the failure mode is 'the step dies at 15 minutes with a poor message' rather than 'the job burns an hour'. It is still a real defect: the message is what a person reads at 2am."
+    },
+    {
+      "id": "PL-0746",
+      "priority": "P3",
+      "lane": "Infra",
+      "status": "READY",
+      "title": "desktop-shell-ci.yml is the one workflow with no timeout at all",
+      "dependencies": [],
+      "allowedPaths": [
+        ".github/workflows/desktop-shell-ci.yml"
+      ],
+      "reviewDependencies": [
+        ".github/workflows/ci.yml",
+        ".github/workflows/windows.yml"
+      ],
+      "preferredAgent": "claude-infra",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "architecture-review"
+      ],
+      "acceptance": "FOUND BY PL-0736, OUTSIDE ITS SURFACE. That task's acceptance names `ci.yml` and `windows.yml` and its allowedPaths hold exactly those two, so this file was not touched -- but the audit that produced the bounds read every workflow, and `windows-shell` is now the only job in this repository with no `timeout-minutes`, job-level or step-level.\n\nIts shape is the one most likely to stall: `dtolnay/rust-toolchain`, a Swatinem cache restore, and `cargo test`/`clippy`/`build --release` on a Windows runner, all of which reach the network and the first of which is the single slowest minute this repository spends.\n\nREQUIRED: a job bound derived from an observed duration, with the derivation written beside it, in the same form `ci.yml` now uses.\n\nREQUIRED: generous. A Windows Rust release build on a cold cache is genuinely long, and a bound that fires on one teaches people to re-run rather than to read.\n\nOUT OF SCOPE: anything the job does, and the new `experiment-1a.yml`, which was written with `timeout-minutes: 45` already on it.",
+      "notes": "P3 because this job is not on the release path -- `windows.yml` is what produces installers -- and because a six-hour stall here is visible as an unfinished run rather than as a wrong answer. Recorded now so it is written down rather than remembered."
     }
   ]
 }

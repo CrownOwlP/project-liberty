@@ -1,9 +1,36 @@
 {
-  "generatedAt": "2026-10-05T14:43:09.690Z",
+  "generatedAt": "2026-10-05T14:50:48.831Z",
   "agent": "gpt-architect",
   "executionAvailable": false,
   "assigned": [],
   "review": [
+    {
+      "id": "PL-0736",
+      "priority": "P1",
+      "lane": "Infra",
+      "status": "REVIEW",
+      "title": "A CI step that hangs reports 'in progress' for six hours instead of failing",
+      "dependencies": [],
+      "allowedPaths": [
+        ".github/workflows/ci.yml",
+        ".github/workflows/windows.yml"
+      ],
+      "reviewDependencies": [
+        "scripts/test-ai-control-plane.mjs",
+        "package.json"
+      ],
+      "preferredAgent": "claude-infra",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "architecture-review"
+      ],
+      "acceptance": "REQUIRED: the jobs in ci.yml and windows.yml get `timeout-minutes`, per step where a step has a credible hang and per job otherwise. THE CLASS, NOT THE INSTANCE. PL-0735 fixes the one step that hangs today; this makes the NEXT one visible. A step with no bound burns GitHub's six-hour default and reports 'in progress' the entire time -- indistinguishable, to the only readable channel this project has (annotations, because job logs need a login), from a runner that is merely queued. That is how CI #181 and #182 both sat unfinished without anyone treating it as a failure.\n\nREQUIRED: each bound is derived from an OBSERVED duration and the derivation is written beside it. A number somebody felt was generous is a number somebody will raise the first time it fires. Observed today: e2e 5m 8s, e2e-typecheck 12s, and the Windows e2e-desktop job 3m 25s.\n\nREQUIRED: the bound is not so tight that a slow runner reads as a defect. A timeout that fires on a cold cache teaches people to re-run rather than to read, which costs more than the hang.\n\nOUT OF SCOPE: the control-plane performance work, which is PL-0735, and any change to what the steps do.",
+      "notes": "SPLIT OUT OF PL-0735 in round 112, carrying its clause verbatim. PL-0735 was filed holding ci.yml and `ai:claim` refused it on an overlap with PL-0728, which is in REVIEW for the rest of the round. Keeping both halves in one task meant neither landed; this one is BACKLOG until ci.yml frees.\n\nClassification C (workflow/harness defect) under the round-112 directive's A-E scheme, same as PL-0735. P1 rather than P0 because PL-0735 removes the hang that exists; this prevents the one that does not exist yet.",
+      "owner": "claude-infra",
+      "implementationAgent": "claude-infra",
+      "updatedAt": "2026-10-05T14:50:48.526Z",
+      "implementationBaseSha": "723c95488b8d64205676055ed0a638f8cb9d76dc"
+    },
     {
       "id": "PL-0741",
       "priority": "P1",

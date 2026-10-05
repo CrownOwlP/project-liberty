@@ -132,6 +132,23 @@ jobs:
   # one is not.
   validate:
     runs-on: ubuntu-latest
+    # ------------------------------------------------------------------------
+    # PL-0736. THE CLASS, NOT THE INSTANCE.
+    #
+    # A job with no bound burns GitHub's SIX-HOUR default and reports "in
+    # progress" the whole time. To the only channel this project can read
+    # without a login -- annotations -- that is indistinguishable from a runner
+    # that is merely queued, which is exactly how CI #181 and #182 both sat
+    # unfinished with nobody treating either as a failure. PL-0735 removed the
+    # hang that existed; this makes the next one visible.
+    #
+    # DERIVED, not chosen: this job ran 3m47s end to end on CI #184
+    # (37259195432), the first fully green pipeline since round 109 -- install,
+    # the script suites, lint, typecheck, unit tests and build. 25 minutes is
+    # roughly six times that, which is the slack a cold npm cache and a slow
+    # runner need. A bound that fires on a cold cache teaches people to re-run
+    # rather than to read, and that costs more than the hang does.
+    timeout-minutes: 25
     # Pinned rather than left to the documented default. turbo.json lists this in
     # globalEnv, so while it is unset it hashes as ABSENT into a build cache that
     # is shared between runs, and one entry can then serve builds that meant
@@ -301,11 +318,29 @@ jobs:
       # script to the alias and forgetting the step is a red build, not a suite
       # that runs nowhere. Add your step wherever it belongs; the check is what
       # remembers, not you.
+      # THESE TWO GET THEIR OWN BOUNDS, and nothing else in this job does.
+      #
+      # The acceptance asks for per-step where a step has a CREDIBLE hang, and
+      # this pair is where the one real hang in this repository's history
+      # happened: PL-0735's conflict detection was quadratic in the task count,
+      # so it did not fail, it simply stopped finishing. A job-level bound would
+      # have caught that six hours late and named the whole job; a step-level
+      # one names the script.
+      #
+      # DERIVED from measurements taken after PL-0735 landed, in this container,
+      # on the current 147-task board: `ai-validate` 3.1s (it was 6.318s before),
+      # and the full `npm run test:scripts` alias -- of which `ai-suite` is one
+      # member -- 164.8s, against 20 minutes or more before. The bounds are two
+      # orders of magnitude above the observed figure for the first and roughly
+      # four times the whole alias for the second, because what they are
+      # catching is "stopped finishing", not "was slower today".
       - name: Validate AI control plane
         id: ai-validate
+        timeout-minutes: 5
         run: node scripts/ai-control-plane.mjs validate
       - name: Test AI control plane
         id: ai-suite
+        timeout-minutes: 10
         run: node scripts/test-ai-control-plane.mjs
       # Three checks, one step, and deliberately not three steps.
       #
@@ -855,6 +890,13 @@ jobs:
   # job is red for a product reason, or has not finished.
   e2e-typecheck:
     runs-on: ubuntu-latest
+    # DERIVED: 10s on CI #184, 12s on the run recorded in PL-0736's acceptance.
+    # Almost all of either figure is `npm ci`; the typecheck itself is seconds.
+    # 10 minutes is the bound because the install is what could plausibly stall
+    # -- a registry that accepts the connection and then sends nothing is the
+    # ordinary way a job of this shape stops finishing, and it is the case a
+    # six-hour default handles worst.
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
