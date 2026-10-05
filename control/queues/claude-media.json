@@ -1,44 +1,8 @@
 {
-  "generatedAt": "2026-10-05T03:44:21.441Z",
+  "generatedAt": "2026-10-05T14:07:33.845Z",
   "agent": "claude-media",
   "executionAvailable": true,
-  "assigned": [
-    {
-      "id": "PL-0731",
-      "priority": "P3",
-      "lane": "Player",
-      "status": "REVIEW",
-      "title": "The empty client-key allowlist refusal is asserted by nobody",
-      "dependencies": [],
-      "allowedPaths": [
-        "apps/web/src/components/player/telemetry-decision.test.ts"
-      ],
-      "reviewDependencies": [
-        "apps/web/src/components/player/telemetry-decision.ts",
-        "apps/web/src/components/player/player-surface.test.tsx"
-      ],
-      "preferredAgent": "claude-media",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "unit"
-      ],
-      "acceptance": "FILED AT gpt-architect's ROUND-112 INVITATION: \"If useful, file a narrow follow-up test task for that refusal.\"\n\n`decidePlaybackTelemetry` has five refusal codes. Four -- session_id_unavailable, session_id_not_transmittable, content_id_not_transmittable and collector_path_not_first_party -- are asserted in player-surface.test.ts, each driven with the viewer ALLOWING diagnostics so that a viewer's yes is shown not to override them. The fifth, client_key_allowlist_empty, is asserted NOWHERE: not in player-surface.test.tsx and not in telemetry-decision.test.ts.\n\nWHY IT WAS NOT COVERED THERE, carried from the round-111 record so this task does not repeat the mistake: it is NOT REACHABLE from `PlaybackTelemetryInput`, which carries enabled, contentId, sessionId, collectorPath, batchSize and intervalSeconds. The allowlist is internal to `playbackTelemetryConfig`. A first draft tried `clientKeys: []`, which is not an input; the object accepted the unknown key silently and the decision stayed enabled. Had that draft's expectation been inverted it would have PASSED while asserting nothing.\n\nREQUIRED: the refusal is driven through whatever surface actually reaches the allowlist, in telemetry-decision.ts's own suite.\nREQUIRED: a CONTROL CASE beside it -- the same inputs with a non-empty allowlist producing an enabled decision -- so the refusal is shown to be caused by the allowlist and not by something incidental.\nREQUIRED: the refused decision still carries `cmcd: { enabled: false }` as a stated instruction, for the reason the other four do: the controller replays its configuration history and an absent block leaves a previous value in force.\nREQUIRED: if the refusal turns out to be unreachable without changing production code, SAY SO AND STOP. gpt-architect's verdict is explicit -- \"Do not fabricate coverage for it\" -- and an unreachable branch honestly reported is worth more than a test that reaches it by widening an input for the test's benefit.\n\nOUT OF SCOPE: changing what the allowlist contains or how it is built.",
-      "notes": "FILED ROUND 112 by claude-lead at gpt-architect's explicit invitation in the PL-0724 security verdict. Narrow by design: one test file.",
-      "gateResults": {
-        "unit": {
-          "status": "pass",
-          "at": "2026-10-05T02:28:59.395Z",
-          "by": "claude-media",
-          "commitSha": "f3bd9cd7c5c85ffe9553f8e79f0286862c905e2b",
-          "evidence": "THE FIFTH REFUSAL IS NOW REACHED THROUGH REAL PRODUCTION CODE. telemetry-decision.test.ts: 15 passed (was 11); the whole player directory: 23 files, 424 passed; apps/web typecheck clean.\n\nTHE SURFACE THAT ACTUALLY REACHES IT, which is the clause the task turned on. client_key_allowlist_empty is decided by CMCD_V2_CLIENT_SAFE_KEYS, which observability COMPUTES at module load from the v2 key registry and which no caller passes. It is therefore not reachable from PlaybackTelemetryInput -- confirmed again here, and the round-111 draft that tried clientKeys: [] is recorded in player-surface.test.tsx rather than deleted. So the seam is the IMPORT: vi.resetModules + vi.doMock over the observability package with importActual spreading every other export, then a dynamic import of telemetry-decision. The real decidePlaybackTelemetry, the real playbackTelemetryConfig and the real guards all run; one derived constant is substituted. NO PRODUCTION CODE WAS CHANGED to make this reachable, which was the task condition -- had reaching it required widening an input for the test, the required answer was to report the branch unreachable and stop.\n\nCONTROL CASE, AND IT IS LOAD-BEARING. The same inputs through the same mocked module graph with a NON-EMPTY allowlist decide ENABLED with cmcd_configured. Without it, refused would be true of a configuration that was already refusing for some unrelated reason -- a guard rejecting these identifiers, the collector path resolving differently through the re-imported graph.\n\nMUTATION-TESTED, AND THE PROBE CAUGHT A WEAK ASSERTION OF MY OWN. With the fail-closed removed from playbackTelemetryConfig (the empty-includeKeys guard made a no-op), the first version of this work had only TWO of three cases go red: the case asserting that the OTHER four reason codes are absent stayed green, because with the decision enabled every not.toContain was still satisfied. An assertion that names only what must be absent passes hardest when nothing is there at all. It now asserts the refusal happened first, and under the same mutant all THREE substantive cases fail. Mutant reverted; telemetry.ts shows no diff.\n\nSTATED enabled: false, not an absent block, asserted here for the same reason as the other four: PlaybackController replays its configuration history onto every player it builds, so a decision that said nothing about CMCD would leave a previous value in force -- and on a deployment whose registry derived to nothing, Shaka substitutes allKeysForVersion_(2) for an empty includeKeys, which contains url and nor. An empty allowlist does not send nothing, it sends everything.\n\nALSO ESTABLISHED, and it corrects a comment rather than a behaviour: telemetry-decision.test.ts header said telemetry.test.ts already pins that an empty allowlist fails closed. It does not. That file asserts the allowlist is NON-empty, which is the opposite case. Until this task nothing anywhere drove the empty one."
-        }
-      },
-      "owner": "claude-media",
-      "implementationAgent": "claude-media",
-      "updatedAt": "2026-10-05T02:28:59.535Z",
-      "implementationBaseSha": "f3bd9cd7c5c85ffe9553f8e79f0286862c905e2b"
-    }
-  ],
+  "assigned": [],
   "review": [],
   "reservedExternal": [],
   "recommended": []

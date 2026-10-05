@@ -9232,7 +9232,7 @@
       "id": "PW-0208",
       "priority": "P1",
       "lane": "Infra",
-      "status": "REVIEW",
+      "status": "BLOCKED",
       "title": "An LGPL-compatible libmpv and FFmpeg the product may actually ship",
       "dependencies": [
         "PW-0102"
@@ -9268,7 +9268,7 @@
         }
       },
       "implementationAgent": "claude-infra",
-      "updatedAt": "2026-10-04T15:50:07.535Z",
+      "updatedAt": "2026-10-05T14:07:33.686Z",
       "implementationBaseSha": "9ac755ba7a3b4945b54b729f9a7a7569c7d990e2",
       "review": {
         "taskId": "PW-0208",
@@ -9277,19 +9277,22 @@
         "reviewerAgent": "gpt-architect",
         "reviewerClass": "external-reasoning",
         "reviewerProvider": "openai",
-        "reviewedCommitSha": "e933a44fd414594050b281be3430e7451a069cfc",
+        "reviewedCommitSha": "4a9560a719601727c6052e173009cc4569d8d9a1",
         "reviewedBaseSha": "9ac755ba7a3b4945b54b729f9a7a7569c7d990e2",
-        "reviewedTreeHash": "168697b492e2e2f7324acfba4c1f413328cdc55cf9851488e2dedbde990f06d7",
-        "reviewedFileCount": 35,
+        "reviewedTreeHash": "3accb256a41529c7c0c0257a7aa58b26d99e5a34d4e1934b4f8d9c92de481ea0",
+        "reviewedFileCount": 36,
         "reviewedFingerprintSource": "git-object",
         "reviewedDependencies": [
+          "docs/LICENSING.md",
+          "apps/desktop/scripts/notices.test.mjs",
+          "apps/desktop/**",
           "docs/DESKTOP_PLAYBACK.md",
           "docs/CONTENT_RIGHTS.md",
           "README.md"
         ],
         "outcome": "CHANGES_REQUESTED",
-        "reviewedAt": "2026-10-04T15:44:06.986Z",
-        "evidence": "CHANGES REQUESTED at 659cafa118bdc72b98d43c7f3fa21a120222e57b. TRANSCRIBED BY claude-lead from gpt-architect's round-111 verdict document, which lists PW-0208 under \"NOT APPROVED YET\" and says: \"PW-0208 still requires stronger evidence about the contents of the actual Windows package/distribution tree.\"\n\nThe same document's section 3 states what that evidence has to cover, and it is quoted here in full rather than paraphrased, because it is the acceptance this task is now being measured against:\n\n  - actual libmpv/FFmpeg artifact included, if included\n  - exact provenance/version/pin\n  - build/configuration evidence available for what ships\n  - GPL components excluded where required by the selected LGPL distribution strategy\n  - THIRD-PARTY-NOTICES or equivalent actually present in the package tree\n  - Node licence actually present beside the shipped runtime where required\n  - dependency licence collection reflects the actual packaged dependencies\n  - written-offer/attribution material actually appears where the distribution strategy requires it\n  - strict notice generation fails on missing evidence rather than silently producing a green result\n\nAND THE BOUNDARY IT RESTATES, which this task's own acceptance already carries: \"Do NOT guess the H.264/HEVC patent decision. H.264/HEVC remains a commander/legal decision and must remain explicitly separate from the LGPL evidence. Do not enable patent-dependent functionality based on an assumption.\"\n\nWHAT THE VERDICT IS OBJECTING TO, read plainly: the distinction between evidence about SOURCE AND SCRIPTS and evidence about THE TREE THAT SHIPS. The recorded `build` gate is about what the packaging is configured to do. \"The actual Windows package/distribution tree\" is what came out of it, and the round-110 instruction said the same thing in fewer words -- \"Do not infer packaged contents solely from source intent.\"\n\nReturned to IN_PROGRESS. The gate results are discarded by `request-changes` as the control plane intends: the `build` gate described a tree, and the next one has to describe the tree that is actually inspected."
+        "reviewedAt": "2026-10-05T14:07:11.175Z",
+        "evidence": "CHANGES_REQUESTED at 4a9560a719601727c6052e173009cc4569d8d9a1. gpt-architect round-115, transcribed by claude-lead. DO NOT PASS ARCHITECTURE REVIEW.\n\nDo not close PW-0208 from the current successful installer. Liberty still does NOT ship libmpv or FFmpeg, so the central task claim -- that the exact libmpv/FFmpeg binaries the installer ships are reproducibly LGPL-compatible, pinned, configured and evidenced -- CANNOT YET BE TRUE.\n\nThe successful Windows installer proves useful distribution facts, including installed-tree notices. It does not substitute for the actual native media binaries.\n\nOnce authorization is resolved, the acceptance still requires: exact pinned libmpv/FFmpeg binaries; reproducible build/configure flags; the required GPL exclusions; SBOM/provenance; and an actual Windows package-tree inventory.\n\nLGPL COMPLIANCE MUST NOT BE TREATED AS PATENT AUTHORIZATION. H.264/HEVC authorization and patent decisions remain separate and are not addressed by any packaging evidence."
       },
       "reviewHistory": [
         {
@@ -9312,8 +9315,33 @@
           "outcome": "CHANGES_REQUESTED",
           "reviewedAt": "2026-10-04T15:44:06.986Z",
           "evidence": "CHANGES REQUESTED at 659cafa118bdc72b98d43c7f3fa21a120222e57b. TRANSCRIBED BY claude-lead from gpt-architect's round-111 verdict document, which lists PW-0208 under \"NOT APPROVED YET\" and says: \"PW-0208 still requires stronger evidence about the contents of the actual Windows package/distribution tree.\"\n\nThe same document's section 3 states what that evidence has to cover, and it is quoted here in full rather than paraphrased, because it is the acceptance this task is now being measured against:\n\n  - actual libmpv/FFmpeg artifact included, if included\n  - exact provenance/version/pin\n  - build/configuration evidence available for what ships\n  - GPL components excluded where required by the selected LGPL distribution strategy\n  - THIRD-PARTY-NOTICES or equivalent actually present in the package tree\n  - Node licence actually present beside the shipped runtime where required\n  - dependency licence collection reflects the actual packaged dependencies\n  - written-offer/attribution material actually appears where the distribution strategy requires it\n  - strict notice generation fails on missing evidence rather than silently producing a green result\n\nAND THE BOUNDARY IT RESTATES, which this task's own acceptance already carries: \"Do NOT guess the H.264/HEVC patent decision. H.264/HEVC remains a commander/legal decision and must remain explicitly separate from the LGPL evidence. Do not enable patent-dependent functionality based on an assumption.\"\n\nWHAT THE VERDICT IS OBJECTING TO, read plainly: the distinction between evidence about SOURCE AND SCRIPTS and evidence about THE TREE THAT SHIPS. The recorded `build` gate is about what the packaging is configured to do. \"The actual Windows package/distribution tree\" is what came out of it, and the round-110 instruction said the same thing in fewer words -- \"Do not infer packaged contents solely from source intent.\"\n\nReturned to IN_PROGRESS. The gate results are discarded by `request-changes` as the control plane intends: the `build` gate described a tree, and the next one has to describe the tree that is actually inspected."
+        },
+        {
+          "taskId": "PW-0208",
+          "implementationAgent": "claude-infra",
+          "implementationOwner": "claude-infra",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "4a9560a719601727c6052e173009cc4569d8d9a1",
+          "reviewedBaseSha": "9ac755ba7a3b4945b54b729f9a7a7569c7d990e2",
+          "reviewedTreeHash": "3accb256a41529c7c0c0257a7aa58b26d99e5a34d4e1934b4f8d9c92de481ea0",
+          "reviewedFileCount": 36,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "docs/LICENSING.md",
+            "apps/desktop/scripts/notices.test.mjs",
+            "apps/desktop/**",
+            "docs/DESKTOP_PLAYBACK.md",
+            "docs/CONTENT_RIGHTS.md",
+            "README.md"
+          ],
+          "outcome": "CHANGES_REQUESTED",
+          "reviewedAt": "2026-10-05T14:07:11.175Z",
+          "evidence": "CHANGES_REQUESTED at 4a9560a719601727c6052e173009cc4569d8d9a1. gpt-architect round-115, transcribed by claude-lead. DO NOT PASS ARCHITECTURE REVIEW.\n\nDo not close PW-0208 from the current successful installer. Liberty still does NOT ship libmpv or FFmpeg, so the central task claim -- that the exact libmpv/FFmpeg binaries the installer ships are reproducibly LGPL-compatible, pinned, configured and evidenced -- CANNOT YET BE TRUE.\n\nThe successful Windows installer proves useful distribution facts, including installed-tree notices. It does not substitute for the actual native media binaries.\n\nOnce authorization is resolved, the acceptance still requires: exact pinned libmpv/FFmpeg binaries; reproducible build/configure flags; the required GPL exclusions; SBOM/provenance; and an actual Windows package-tree inventory.\n\nLGPL COMPLIANCE MUST NOT BE TREATED AS PATENT AUTHORIZATION. H.264/HEVC authorization and patent decisions remain separate and are not addressed by any packaging evidence."
         }
-      ]
+      ],
+      "blocker": "BLOCKED ON THE COMMANDER/LEGAL CODEC-DISTRIBUTION DECISION, at gpt-architect's round-115 instruction: 'reclassify/BLOCK PW-0208 on the commander/legal codec-distribution decision rather than spending another engineering round pretending the external decision can be solved in code.'\n\nTHE PLAIN FACT: Liberty does not ship libmpv or FFmpeg. Not 'not yet verified' -- not present. apps/desktop/scripts/notices.mjs says so in its own header, package-sidecar.mjs copies only the Node runtime and the Next standalone server, and PL-0737's inventory reports libmpv/FFmpeg ABSENT against every tree it has been pointed at. So this task's central claim -- that the exact binaries the installer ships are reproducibly LGPL-compatible, pinned, configured and evidenced -- cannot be true of a binary that is not there, and no amount of further engineering makes it true.\n\nWHAT THE SUCCESSFUL INSTALLER DID PROVE, and it is kept rather than discarded: THIRD-PARTY-NOTICES.md is present and NON-EMPTY in the real INSTALLED TREE on Windows, verified twice by verify-install.mjs inside Windows #19's F1 and F4. That is a real distribution fact about a real tree. It is not a substitute for the native media binaries.\n\nUNBLOCK WHEN: the commander resolves codec distribution authorization. Then the acceptance still requires, in full -- exact pinned libmpv/FFmpeg binaries; reproducible build and configure flags; the GPL exclusions the LGPL strategy requires; SBOM/provenance; and an actual Windows package-tree inventory, which PL-0737 can now produce.\n\nLGPL COMPLIANCE IS NOT PATENT AUTHORIZATION, and nothing in the packaging evidence bears on H.264/HEVC. docs/LICENSING.md section 6 is unchanged and must not be read as softened by any of the above."
     },
     {
       "id": "PW-0301",
@@ -11130,7 +11158,7 @@
       "id": "PW-0502",
       "priority": "P1",
       "lane": "Infra",
-      "status": "REVIEW",
+      "status": "DONE",
       "title": "Updates, and a version the application can prove",
       "dependencies": [
         "PW-0501"
@@ -11158,7 +11186,7 @@
       ],
       "acceptance": "The application can tell a user what version it is and can update itself safely, or states plainly that it cannot yet and why. REQUIRED: an update mechanism whose payloads are signature-verified -- an updater that fetches and executes an unverified binary is a remote code execution feature, and SECURITY.md's threat list already ranks unauthorized access above convenience. REQUIRED: the update endpoint is pinned and allowlisted like every other egress in this repository. REQUIRED: a rollback story, or a stated decision that there is none and what a user does instead. REQUIRED: the version is derived from one source shared with PW-0501. IF SIGNING IS UNAVAILABLE the update path must be disabled by default and say so, rather than shipping an unverified one -- an unsigned auto-updater is worse than no updater, and that dependency goes to LAST_MILE rather than being worked around.",
       "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. SURFACE NOTE: this task's allowedPaths name directories that do not exist yet. The evidence-based narrowing procedure applies to reconciling work already in history; for genuinely new work the surface is the smallest set of paths the acceptance can be satisfied within, and it is narrowed again from the diff before review if it turns out to be wider than what was written. ",
-      "owner": "claude-infra",
+      "owner": null,
       "gateResults": {
         "build": {
           "status": "pass",
@@ -11166,17 +11194,88 @@
           "by": "claude-infra",
           "commitSha": "7d6dbcdf6985b9b74d82ae0c7c2bcb49730f4c53",
           "evidence": "THE EXECUTABLE CLAUSES ARE DONE AND THE SIGNING-DEPENDENT ONES ARE STATED, which is what the acceptance conditional asks for: \"IF SIGNING IS UNAVAILABLE the update path must be disabled by default and say so, rather than shipping an unverified one\". Signing is unavailable (LAST_MILE 6), so that branch of the acceptance is the one in force and it is satisfied, not deferred.\n\nTHE DEFECT THIS FOUND, MEASURED. The repository has TWO independent version sources and nothing reconciled them. apps/desktop/src-tauri/Cargo.toml [package] version is what Tauri names the installer from -- confirmed against reality, not inferred: Windows #16 and #17 both produced Project Liberty_0.1.0_x64_en-US.msi, and tauri.conf.json declares no version so Tauri fell back to Cargo. apps/web/package.json version is what the About screen SHOWS A USER (PW-0308 renders it; settings.test.tsx asserts it is read, not pasted). Both read 0.1.0 today by coincidence of nobody having bumped either. The day one moves and the other does not, the About screen names a build that is not the build installed, and every defect report from it cites the wrong version -- while PW-0603 run sheet asks the commander for exactly that number and PW-0501 inventory identifies the build by the installer filename.\n\nWHAT LANDED. checkVersionAuthority in scripts/validate-repo.mjs: the two must agree; tauri.conf.json must not carry a THIRD value, because Tauri uses it when present and falls back when absent, so a value there does not disagree with Cargo, it silently OVERRIDES it; and no updater may be configured while no signing key exists. It runs in CI validate job BEFORE npm ci and in repo:validate locally, so a half-done bump is caught on the machine that made it. No package.json or workflow edit was needed, which matters because both are reserved by tasks in review.\n\nPROVEN BY DRIVING EACH REFUSAL AGAINST THE REAL REPOSITORY, then reverting: bumping apps/web alone to 0.2.0 fails naming both numbers; adding version 9.9.9 to tauri.conf.json fails naming the override; adding a plugins.updater fails naming the remote-code-execution path. Tree restored clean each time, confirmed by git diff --stat.\n\nSUITE AND MUTATION. scripts/test-validate-repo.mjs gains 9 cases and reports 29 assertion groups passing; the whole file including its siblings is green (27 + 21 + 29). Mutation-tested per refusal: disabling the version-disagreement branch reddens 2 cases, disabling the updater branch reddens 1. Both mutants reverted and 29 re-run green. One case exists only to prove the [package] anchoring -- a pattern that merely looked for version = \"...\" would match the serde dependency line present in every Cargo.toml, compare serde version to the web app, fail on a correct repository and be deleted within a day.\n\ncargo check on the desktop crate: exit 0, so the tauri.conf.json edits did not break the build.\n\ndocs/RELEASE.md states the boundary part by part -- version authority DONE, installed-version evidence DONE, update discovery NONE, download NONE, signature verification IMPOSSIBLE TODAY, application NONE, rollback NONE -- with the four things that must all exist before an updater can be built honestly, and the note that the first of them is not an engineering task. The rollback section states the real alternative rather than implying one: uninstall and install the previous MSI, which preserves user data because the installer never created the user-data root, with two honest caveats (CI artifacts expire at 14 days so keeping the old MSI is the user problem, and downgrading across a migration is untested).\n\nNOT CLAIMED, and these are the acceptance remaining clauses verbatim: signature-verified payloads, a pinned allowlisted update endpoint, and a rollback mechanism. All three are downstream of an Authenticode certificate and a decision about where its private key lives. That is LAST_MILE item 6 and an owner decision, and building any of the three before it would mean shipping the unverified updater the acceptance forbids by name."
+        },
+        "architecture-review": {
+          "status": "pass",
+          "at": "2026-10-05T14:06:28.819Z",
+          "by": "gpt-architect",
+          "commitSha": "4a9560a719601727c6052e173009cc4569d8d9a1",
+          "judgementCommitSha": "4a9560a719601727c6052e173009cc4569d8d9a1",
+          "judgementCommitVerified": true,
+          "transcribedBy": "claude-lead",
+          "evidence": "APPROVED at 4a9560a719601727c6052e173009cc4569d8d9a1. gpt-architect round-115 verdict, transcribed. ARCHITECTURE-REVIEW PASS. The acceptance's signing-unavailable branch is the branch currently in force, and the task satisfies it: a standing version-authority invariant, a refusal to configure an updater without a signing key, release documentation stating that signature verification, update download and application are unavailable rather than pretending otherwise, and a documented manual rollback path with its limitations. This does NOT claim an updater currently exists."
+        },
+        "security-review": {
+          "status": "pass",
+          "at": "2026-10-05T14:06:29.108Z",
+          "by": "gpt-architect",
+          "commitSha": "4a9560a719601727c6052e173009cc4569d8d9a1",
+          "judgementCommitSha": "4a9560a719601727c6052e173009cc4569d8d9a1",
+          "judgementCommitVerified": true,
+          "transcribedBy": "claude-lead",
+          "evidence": "APPROVED at 4a9560a719601727c6052e173009cc4569d8d9a1. gpt-architect round-115 verdict, transcribed. SECURITY-REVIEW PASS. The outcome satisfies 'disabled by default and say why' WITHOUT creating an unsigned remote-code-execution or update path. The validator refusal makes the absence of an updater an assertion rather than an accident, so enabling one before signature verification exists turns the build red."
         }
       },
       "implementationAgent": "claude-infra",
-      "updatedAt": "2026-10-05T03:05:48.656Z",
-      "implementationBaseSha": "7d6dbcdf6985b9b74d82ae0c7c2bcb49730f4c53"
+      "updatedAt": "2026-10-05T14:06:57.744Z",
+      "implementationBaseSha": "7d6dbcdf6985b9b74d82ae0c7c2bcb49730f4c53",
+      "review": {
+        "taskId": "PW-0502",
+        "implementationAgent": "claude-infra",
+        "implementationOwner": "claude-infra",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "4a9560a719601727c6052e173009cc4569d8d9a1",
+        "reviewedBaseSha": "7d6dbcdf6985b9b74d82ae0c7c2bcb49730f4c53",
+        "reviewedTreeHash": "7e6df9b930cce74ef8bfebb73007e7a77ad9dc3ad5a485dbcac28fe7b95c3ae8",
+        "reviewedFileCount": 10,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [
+          ".github/workflows/windows.yml",
+          "docs/SECURITY.md",
+          "docs/RELEASE_CRITERIA.md",
+          "apps/desktop/src-tauri/Cargo.toml",
+          "apps/web/package.json",
+          "scripts/windows/artifact-inventory.mjs"
+        ],
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-10-05T14:06:51.154Z",
+        "evidence": "APPROVED at 4a9560a719601727c6052e173009cc4569d8d9a1. gpt-architect round-115, transcribed by claude-lead. architecture-review and security-review PASS recorded separately. Satisfies the acceptance's signing-unavailable branch without creating an unsigned update path, and does not claim an updater exists."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PW-0502",
+          "implementationAgent": "claude-infra",
+          "implementationOwner": "claude-infra",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "4a9560a719601727c6052e173009cc4569d8d9a1",
+          "reviewedBaseSha": "7d6dbcdf6985b9b74d82ae0c7c2bcb49730f4c53",
+          "reviewedTreeHash": "7e6df9b930cce74ef8bfebb73007e7a77ad9dc3ad5a485dbcac28fe7b95c3ae8",
+          "reviewedFileCount": 10,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            ".github/workflows/windows.yml",
+            "docs/SECURITY.md",
+            "docs/RELEASE_CRITERIA.md",
+            "apps/desktop/src-tauri/Cargo.toml",
+            "apps/web/package.json",
+            "scripts/windows/artifact-inventory.mjs"
+          ],
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-10-05T14:06:51.154Z",
+          "evidence": "APPROVED at 4a9560a719601727c6052e173009cc4569d8d9a1. gpt-architect round-115, transcribed by claude-lead. architecture-review and security-review PASS recorded separately. Satisfies the acceptance's signing-unavailable branch without creating an unsigned update path, and does not claim an updater exists."
+        }
+      ],
+      "completedAt": "2026-10-05T14:06:57.745Z"
     },
     {
       "id": "PW-0503",
       "priority": "P1",
       "lane": "Test",
-      "status": "REVIEW",
+      "status": "DONE",
       "title": "Install, upgrade, uninstall, reinstall — tested, not assumed",
       "dependencies": [
         "PW-0501"
@@ -11205,7 +11304,7 @@
       ],
       "acceptance": "The installer's lifecycle is exercised automatically wherever that is possible on a runner, and everything that is not is named for the commander's machine. REQUIRED: clean install on a machine that has never had the application, then launch. REQUIRED: upgrade over a previous version with user data preserved, which is the one a release breaks most often and nobody tests. REQUIRED: uninstall leaves no service, no scheduled task and no orphaned node.exe, and states exactly what user data it keeps or removes. REQUIRED: reinstall after uninstall. REQUIRED: each case is marked automated or commander-machine, with the reason, so the split is visible rather than implied.",
       "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. SURFACE NOTE: this task's allowedPaths name directories that do not exist yet. The evidence-based narrowing procedure applies to reconciling work already in history; for genuinely new work the surface is the smallest set of paths the acceptance can be satisfied within, and it is narrowed again from the diff before review if it turns out to be wider than what was written. ",
-      "owner": "claude-test",
+      "owner": null,
       "gateResults": {
         "unit": {
           "status": "pass",
@@ -11223,7 +11322,7 @@
         }
       },
       "implementationAgent": "claude-test",
-      "updatedAt": "2026-10-05T03:43:50.488Z",
+      "updatedAt": "2026-10-05T14:06:57.218Z",
       "implementationBaseSha": "643dbeb8230b53b86ddee9281458eb07528a0c17",
       "review": {
         "taskId": "PW-0503",
@@ -11232,20 +11331,23 @@
         "reviewerAgent": "gpt-architect",
         "reviewerClass": "external-reasoning",
         "reviewerProvider": "openai",
-        "reviewedCommitSha": "64a76b3992bd8917391547207a29d08cb7ace8be",
+        "reviewedCommitSha": "4a9560a719601727c6052e173009cc4569d8d9a1",
         "reviewedBaseSha": "643dbeb8230b53b86ddee9281458eb07528a0c17",
-        "reviewedTreeHash": "337e4d1b43a7bee3bc38038a56b2bf8d1424879e705ec9f301bbc05a36a9e9e3",
-        "reviewedFileCount": 40,
+        "reviewedTreeHash": "d430287c7662960ca68bb209fd15c8ffa5a8474ae45642357992f4391fdc77ea",
+        "reviewedFileCount": 43,
         "reviewedFingerprintSource": "git-object",
         "reviewedDependencies": [
           ".github/workflows/windows.yml",
           "apps/desktop",
           "docs/TEST_MATRIX.md",
-          "docs/WINDOWS_CERTIFICATION.md"
+          "docs/WINDOWS_CERTIFICATION.md",
+          "package.json",
+          "scripts/windows/verify-install.mjs",
+          "scripts/windows/artifact-inventory.mjs"
         ],
-        "outcome": "CHANGES_REQUESTED",
-        "reviewedAt": "2026-10-02T15:00:39.136Z",
-        "evidence": "CHANGES REQUESTED at 835823561c69f5bbdebf19c637eeeabff19dacf7. Transcribed by claude-lead from gpt-architect's round-105 ruling, section 2, which is a request for changes in substance even though it does not use the word: 'The lifecycle harness architecture is accepted. DO NOT mark PW-0503 DONE merely to free the Test lane. Current Windows evidence establishes only part of the lifecycle matrix.' gpt's itemised verdict: F1 clean install PARTIAL PASS -- the MSI builds, installs and its installed tree is verified; still unverified is actual installed application launch and WebView runtime. F2 upgrade UNVERIFIED -- no real previous release has been exercised as an upgrade source, so user-data preservation across an actual upgrade remains unproven. F3 uninstall PARTIAL PASS -- msiexec uninstall executes; still to prove where automation permits are no orphaned service, no scheduled task, no orphaned node.exe, expected files removed, and documented user-data retention behaviour. F4 reinstall UNVERIFIED but AUTOMATABLE -- 'implement and execute this rather than classifying it as commander-only'. WHAT HAS CHANGED SINCE THAT VERDICT WAS WRITTEN, and it narrows the request rather than answering it: the IMPLEMENTATION of F3's residue classification and of F4 reinstall already exists in scripts/windows/lifecycle.mjs and residue.mjs at the commit above, with 30 cases behind the decisions, and F4 is already marked plannedAutomated with no manual portion. What does not exist is EXECUTION, and it cannot be created by any open task: no open task can write .github/workflows/windows.yml -- every writer is DONE and PW-0502, PW-0503 and PW-0602 hold it read-only. That is recorded as a board.sequencing_finding and needs a ruling on which task gets the write surface. Recorded so the task leaves REVIEW honestly rather than being completed on evidence gpt declined to accept."
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-10-05T14:06:50.636Z",
+        "evidence": "APPROVED at 4a9560a719601727c6052e173009cc4569d8d9a1. gpt-architect round-115, transcribed by claude-lead. The automatable lifecycle contract is proven on a real Windows runner: Windows #19 (run 37260995361, package SUCCESS 6m1s) reports F1 automated install/verify half PASS, F3 PASS, F4 PASS, and F2 correctly NOT-RUN because no previous release exists. Independently reconfirmed from the job page before transcription. The remaining external pieces are already separated into successor tasks -- PW-0504 for commander-machine launch/WebView/real-user evidence and PW-0505 for upgrade from a genuine previous release -- and this task is explicitly NOT to be kept open for work those own. Existing build and unit gates preserved."
       },
       "reviewHistory": [
         {
@@ -11269,8 +11371,34 @@
           "outcome": "CHANGES_REQUESTED",
           "reviewedAt": "2026-10-02T15:00:39.136Z",
           "evidence": "CHANGES REQUESTED at 835823561c69f5bbdebf19c637eeeabff19dacf7. Transcribed by claude-lead from gpt-architect's round-105 ruling, section 2, which is a request for changes in substance even though it does not use the word: 'The lifecycle harness architecture is accepted. DO NOT mark PW-0503 DONE merely to free the Test lane. Current Windows evidence establishes only part of the lifecycle matrix.' gpt's itemised verdict: F1 clean install PARTIAL PASS -- the MSI builds, installs and its installed tree is verified; still unverified is actual installed application launch and WebView runtime. F2 upgrade UNVERIFIED -- no real previous release has been exercised as an upgrade source, so user-data preservation across an actual upgrade remains unproven. F3 uninstall PARTIAL PASS -- msiexec uninstall executes; still to prove where automation permits are no orphaned service, no scheduled task, no orphaned node.exe, expected files removed, and documented user-data retention behaviour. F4 reinstall UNVERIFIED but AUTOMATABLE -- 'implement and execute this rather than classifying it as commander-only'. WHAT HAS CHANGED SINCE THAT VERDICT WAS WRITTEN, and it narrows the request rather than answering it: the IMPLEMENTATION of F3's residue classification and of F4 reinstall already exists in scripts/windows/lifecycle.mjs and residue.mjs at the commit above, with 30 cases behind the decisions, and F4 is already marked plannedAutomated with no manual portion. What does not exist is EXECUTION, and it cannot be created by any open task: no open task can write .github/workflows/windows.yml -- every writer is DONE and PW-0502, PW-0503 and PW-0602 hold it read-only. That is recorded as a board.sequencing_finding and needs a ruling on which task gets the write surface. Recorded so the task leaves REVIEW honestly rather than being completed on evidence gpt declined to accept."
+        },
+        {
+          "taskId": "PW-0503",
+          "implementationAgent": "claude-test",
+          "implementationOwner": "claude-test",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "4a9560a719601727c6052e173009cc4569d8d9a1",
+          "reviewedBaseSha": "643dbeb8230b53b86ddee9281458eb07528a0c17",
+          "reviewedTreeHash": "d430287c7662960ca68bb209fd15c8ffa5a8474ae45642357992f4391fdc77ea",
+          "reviewedFileCount": 43,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            ".github/workflows/windows.yml",
+            "apps/desktop",
+            "docs/TEST_MATRIX.md",
+            "docs/WINDOWS_CERTIFICATION.md",
+            "package.json",
+            "scripts/windows/verify-install.mjs",
+            "scripts/windows/artifact-inventory.mjs"
+          ],
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-10-05T14:06:50.636Z",
+          "evidence": "APPROVED at 4a9560a719601727c6052e173009cc4569d8d9a1. gpt-architect round-115, transcribed by claude-lead. The automatable lifecycle contract is proven on a real Windows runner: Windows #19 (run 37260995361, package SUCCESS 6m1s) reports F1 automated install/verify half PASS, F3 PASS, F4 PASS, and F2 correctly NOT-RUN because no previous release exists. Independently reconfirmed from the job page before transcription. The remaining external pieces are already separated into successor tasks -- PW-0504 for commander-machine launch/WebView/real-user evidence and PW-0505 for upgrade from a genuine previous release -- and this task is explicitly NOT to be kept open for work those own. Existing build and unit gates preserved."
         }
-      ]
+      ],
+      "completedAt": "2026-10-05T14:06:57.218Z"
     },
     {
       "id": "PW-0504",
@@ -11534,7 +11662,7 @@
       "id": "PW-0603",
       "priority": "P1",
       "lane": "Test",
-      "status": "REVIEW",
+      "status": "DONE",
       "title": "The commander's run sheet, and the evidence it produces",
       "dependencies": [
         "PW-0601",
@@ -11555,11 +11683,67 @@
       ],
       "acceptance": "The commander can run the real-device half in one sitting and hand back evidence that is worth recording. REQUIRED: an ordered run sheet with a stated environment -- Windows build, GPU, driver, display, audio device -- because a pass on unrecorded hardware is not reproducible evidence. REQUIRED: for each row, the exact action, the expected result, and what to capture when it fails. REQUIRED: a defect report format that carries enough to reproduce: the reason trail the player already publishes, the log location PW-0501 establishes, and the version PW-0502 exposes. REQUIRED: the sheet is honest about how long it takes. THE RUN ITSELF IS A LAST_MILE ITEM and this task delivers the sheet, not the results; recording a pass nobody observed would be fabricating a gate result.",
       "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. SURFACE NOTE: this task's allowedPaths name directories that do not exist yet. The evidence-based narrowing procedure applies to reconciling work already in history; for genuinely new work the surface is the smallest set of paths the acceptance can be satisfied within, and it is narrowed again from the diff before review if it turns out to be wider than what was written. ",
-      "owner": "claude-test",
-      "gateResults": {},
+      "owner": null,
+      "gateResults": {
+        "architecture-review": {
+          "status": "pass",
+          "at": "2026-10-05T14:06:29.284Z",
+          "by": "gpt-architect",
+          "commitSha": "4a9560a719601727c6052e173009cc4569d8d9a1",
+          "judgementCommitSha": "4a9560a719601727c6052e173009cc4569d8d9a1",
+          "judgementCommitVerified": true,
+          "transcribedBy": "claude-lead",
+          "evidence": "APPROVED at 4a9560a719601727c6052e173009cc4569d8d9a1. gpt-architect round-115 verdict, transcribed. ARCHITECTURE-REVIEW PASS. The commander run sheet is now an actual procedure: environment block, ordered actions, expected results, failure captures, the player reason trail, the installer log, sidecar.log, the About-screen version, artifact/run/commit identity, and an honest attended-session duration. It correctly places Experiment 1a early and tells the commander to STOP rather than work around a failed compositing result. This task delivers the RUN SHEET; it does not need to contain the hardware results themselves."
+        }
+      },
       "implementationAgent": "claude-test",
-      "updatedAt": "2026-10-04T16:46:36.643Z",
-      "implementationBaseSha": "567a08c566ae52358fa896809a00eb7878e8bea1"
+      "updatedAt": "2026-10-05T14:06:57.922Z",
+      "implementationBaseSha": "567a08c566ae52358fa896809a00eb7878e8bea1",
+      "review": {
+        "taskId": "PW-0603",
+        "implementationAgent": "claude-test",
+        "implementationOwner": "claude-test",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "4a9560a719601727c6052e173009cc4569d8d9a1",
+        "reviewedBaseSha": "567a08c566ae52358fa896809a00eb7878e8bea1",
+        "reviewedTreeHash": "deca5b0360a605cf32bb5bea860914581ea657e0e17c36eaf2f0bc0832c6541c",
+        "reviewedFileCount": 4,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [
+          "docs/WINDOWS_CERTIFICATION.md",
+          "docs/TEST_MATRIX.md",
+          "docs/RELEASE_CRITERIA.md"
+        ],
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-10-05T14:06:51.300Z",
+        "evidence": "APPROVED at 4a9560a719601727c6052e173009cc4569d8d9a1. gpt-architect round-115, transcribed by claude-lead. architecture-review PASS recorded separately. The task delivers the run sheet; the hardware results belong to PW-0504 and PW-0103."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PW-0603",
+          "implementationAgent": "claude-test",
+          "implementationOwner": "claude-test",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "4a9560a719601727c6052e173009cc4569d8d9a1",
+          "reviewedBaseSha": "567a08c566ae52358fa896809a00eb7878e8bea1",
+          "reviewedTreeHash": "deca5b0360a605cf32bb5bea860914581ea657e0e17c36eaf2f0bc0832c6541c",
+          "reviewedFileCount": 4,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "docs/WINDOWS_CERTIFICATION.md",
+            "docs/TEST_MATRIX.md",
+            "docs/RELEASE_CRITERIA.md"
+          ],
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-10-05T14:06:51.300Z",
+          "evidence": "APPROVED at 4a9560a719601727c6052e173009cc4569d8d9a1. gpt-architect round-115, transcribed by claude-lead. architecture-review PASS recorded separately. The task delivers the run sheet; the hardware results belong to PW-0504 and PW-0103."
+        }
+      ],
+      "completedAt": "2026-10-05T14:06:57.922Z"
     },
     {
       "id": "PW-0402",
@@ -13545,7 +13729,7 @@
       "id": "PL-0728",
       "priority": "P2",
       "lane": "Test",
-      "status": "REVIEW",
+      "status": "DONE",
       "title": "A standing check for a test that is skipped in every configuration this repository runs",
       "dependencies": [
         "PL-0717"
@@ -13577,10 +13761,55 @@
           "evidence": "node --test scripts/assert-no-row-runs-nowhere.test.mjs: 14 tests, 14 pass, 0 fail. NON-VACUITY IS THE CENTRAL CASE AND IT IS DRIVEN TWICE, once on fixtures and once on real reports. (a) The case named \"NON-VACUITY: it fails against the reports as they were before PL-0717\" builds the two-configuration shape this repository had before PL-0717, with the three fail-closed titles skipped in both, and asserts exit 1 naming all three -- and asserts the two allowlisted media-rig rows are NOT named. A companion case adds the third configuration and the identical reports go green, so the check is not simply hostile to those titles. (b) Against REAL Playwright JSON reports produced locally this round from all three configurations (production+PostgreSQL 51 skipped, development 31 skipped, production-no-database 82 skipped, 153 rows each): three reports gives exit 0, excusing exactly the two media-rig rows; the same two pre-PL-0717 reports alone gives exit 1 naming exactly the three fail-closed titles PL-0717 found by hand. The allowlist is baked into the script with no override flag, so the tests use the real media-rig identities. CI WIRING VERIFIED LOCALLY: PL-0714 mirror-check, extracted from the workflow and run here, reports \"test:scripts names 7 suite(s)\" and \"every suite in the alias has a step in this job\"; the workflow still parses (validate 21 steps, e2e-typecheck 4, e2e 14); repo:validate passes. NOT RUN, AND WHY: the test:scripts alias as a whole does not complete -- scripts/test-ai-control-plane.mjs hangs, which is PL-0735, filed P0 this round after being found by this very command. That hang predates this task, reproduces on a clean worktree of 1474d0b, and is why CI validate has been in progress for over an hour on runs 181 and 182. The six pre-existing suites in the alias are therefore unverified by me today; the one this task adds is verified directly."
         }
       },
-      "owner": "claude-test",
+      "owner": null,
       "implementationAgent": "claude-test",
-      "updatedAt": "2026-10-04T17:45:46.321Z",
-      "implementationBaseSha": "a8d951f172c0a5dacc17cab5819cfc8691cf2571"
+      "updatedAt": "2026-10-05T14:06:58.348Z",
+      "implementationBaseSha": "a8d951f172c0a5dacc17cab5819cfc8691cf2571",
+      "review": {
+        "taskId": "PL-0728",
+        "implementationAgent": "claude-test",
+        "implementationOwner": "claude-test",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "4a9560a719601727c6052e173009cc4569d8d9a1",
+        "reviewedBaseSha": "a8d951f172c0a5dacc17cab5819cfc8691cf2571",
+        "reviewedTreeHash": "f384307b150d399032f420d57cf701366be4ef6c86e462f726c784337dfa20ad",
+        "reviewedFileCount": 7,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [
+          "e2e/playwright.config.ts",
+          "e2e/src/env.ts",
+          "docs/TEST_MATRIX.md"
+        ],
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-10-05T14:06:51.660Z",
+        "evidence": "APPROVED at 4a9560a719601727c6052e173009cc4569d8d9a1. gpt-architect round-115, transcribed by claude-lead. The runs-nowhere guard is a standing gate: CI #185 contains successful checks for 'Test the runs-nowhere check' and 'Every suite in npm run test:scripts has a step in this job'. The suite includes the pre-PL-0717 non-vacuity case."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PL-0728",
+          "implementationAgent": "claude-test",
+          "implementationOwner": "claude-test",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "4a9560a719601727c6052e173009cc4569d8d9a1",
+          "reviewedBaseSha": "a8d951f172c0a5dacc17cab5819cfc8691cf2571",
+          "reviewedTreeHash": "f384307b150d399032f420d57cf701366be4ef6c86e462f726c784337dfa20ad",
+          "reviewedFileCount": 7,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "e2e/playwright.config.ts",
+            "e2e/src/env.ts",
+            "docs/TEST_MATRIX.md"
+          ],
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-10-05T14:06:51.660Z",
+          "evidence": "APPROVED at 4a9560a719601727c6052e173009cc4569d8d9a1. gpt-architect round-115, transcribed by claude-lead. The runs-nowhere guard is a standing gate: CI #185 contains successful checks for 'Test the runs-nowhere check' and 'Every suite in npm run test:scripts has a step in this job'. The suite includes the pre-PL-0717 non-vacuity case."
+        }
+      ],
+      "completedAt": "2026-10-05T14:06:58.349Z"
     },
     {
       "id": "PL-0729",
@@ -13702,7 +13931,7 @@
       "id": "PL-0731",
       "priority": "P3",
       "lane": "Player",
-      "status": "REVIEW",
+      "status": "DONE",
       "title": "The empty client-key allowlist refusal is asserted by nobody",
       "dependencies": [],
       "allowedPaths": [
@@ -13728,16 +13957,59 @@
           "evidence": "THE FIFTH REFUSAL IS NOW REACHED THROUGH REAL PRODUCTION CODE. telemetry-decision.test.ts: 15 passed (was 11); the whole player directory: 23 files, 424 passed; apps/web typecheck clean.\n\nTHE SURFACE THAT ACTUALLY REACHES IT, which is the clause the task turned on. client_key_allowlist_empty is decided by CMCD_V2_CLIENT_SAFE_KEYS, which observability COMPUTES at module load from the v2 key registry and which no caller passes. It is therefore not reachable from PlaybackTelemetryInput -- confirmed again here, and the round-111 draft that tried clientKeys: [] is recorded in player-surface.test.tsx rather than deleted. So the seam is the IMPORT: vi.resetModules + vi.doMock over the observability package with importActual spreading every other export, then a dynamic import of telemetry-decision. The real decidePlaybackTelemetry, the real playbackTelemetryConfig and the real guards all run; one derived constant is substituted. NO PRODUCTION CODE WAS CHANGED to make this reachable, which was the task condition -- had reaching it required widening an input for the test, the required answer was to report the branch unreachable and stop.\n\nCONTROL CASE, AND IT IS LOAD-BEARING. The same inputs through the same mocked module graph with a NON-EMPTY allowlist decide ENABLED with cmcd_configured. Without it, refused would be true of a configuration that was already refusing for some unrelated reason -- a guard rejecting these identifiers, the collector path resolving differently through the re-imported graph.\n\nMUTATION-TESTED, AND THE PROBE CAUGHT A WEAK ASSERTION OF MY OWN. With the fail-closed removed from playbackTelemetryConfig (the empty-includeKeys guard made a no-op), the first version of this work had only TWO of three cases go red: the case asserting that the OTHER four reason codes are absent stayed green, because with the decision enabled every not.toContain was still satisfied. An assertion that names only what must be absent passes hardest when nothing is there at all. It now asserts the refusal happened first, and under the same mutant all THREE substantive cases fail. Mutant reverted; telemetry.ts shows no diff.\n\nSTATED enabled: false, not an absent block, asserted here for the same reason as the other four: PlaybackController replays its configuration history onto every player it builds, so a decision that said nothing about CMCD would leave a previous value in force -- and on a deployment whose registry derived to nothing, Shaka substitutes allKeysForVersion_(2) for an empty includeKeys, which contains url and nor. An empty allowlist does not send nothing, it sends everything.\n\nALSO ESTABLISHED, and it corrects a comment rather than a behaviour: telemetry-decision.test.ts header said telemetry.test.ts already pins that an empty allowlist fails closed. It does not. That file asserts the allowlist is NON-empty, which is the opposite case. Until this task nothing anywhere drove the empty one."
         }
       },
-      "owner": "claude-media",
+      "owner": null,
       "implementationAgent": "claude-media",
-      "updatedAt": "2026-10-05T02:28:59.535Z",
-      "implementationBaseSha": "f3bd9cd7c5c85ffe9553f8e79f0286862c905e2b"
+      "updatedAt": "2026-10-05T14:06:58.471Z",
+      "implementationBaseSha": "f3bd9cd7c5c85ffe9553f8e79f0286862c905e2b",
+      "review": {
+        "taskId": "PL-0731",
+        "implementationAgent": "claude-media",
+        "implementationOwner": "claude-media",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "4a9560a719601727c6052e173009cc4569d8d9a1",
+        "reviewedBaseSha": "f3bd9cd7c5c85ffe9553f8e79f0286862c905e2b",
+        "reviewedTreeHash": "5aaa5dc09d41e37af0dd27ac476e8604df5bafa72b3b93983b4dc5009063b988",
+        "reviewedFileCount": 3,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [
+          "apps/web/src/components/player/telemetry-decision.ts",
+          "apps/web/src/components/player/player-surface.test.tsx"
+        ],
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-10-05T14:06:51.777Z",
+        "evidence": "APPROVED at 4a9560a719601727c6052e173009cc4569d8d9a1. gpt-architect round-115, transcribed by claude-lead. A narrow coverage task, not a production-code change. The empty client-key allowlist refusal is exercised through the actual module seam, there is a non-empty control case, the test asserts CMCD is explicitly disabled on refusal, and it was mutation-tested."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PL-0731",
+          "implementationAgent": "claude-media",
+          "implementationOwner": "claude-media",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "4a9560a719601727c6052e173009cc4569d8d9a1",
+          "reviewedBaseSha": "f3bd9cd7c5c85ffe9553f8e79f0286862c905e2b",
+          "reviewedTreeHash": "5aaa5dc09d41e37af0dd27ac476e8604df5bafa72b3b93983b4dc5009063b988",
+          "reviewedFileCount": 3,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "apps/web/src/components/player/telemetry-decision.ts",
+            "apps/web/src/components/player/player-surface.test.tsx"
+          ],
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-10-05T14:06:51.777Z",
+          "evidence": "APPROVED at 4a9560a719601727c6052e173009cc4569d8d9a1. gpt-architect round-115, transcribed by claude-lead. A narrow coverage task, not a production-code change. The empty client-key allowlist refusal is exercised through the actual module seam, there is a non-empty control case, the test asserts CMCD is explicitly disabled on refusal, and it was mutation-tested."
+        }
+      ],
+      "completedAt": "2026-10-05T14:06:58.471Z"
     },
     {
       "id": "PL-0732",
       "priority": "P2",
       "lane": "Frontend",
-      "status": "REVIEW",
+      "status": "DONE",
       "title": "The diagnostics setting is stored, consumed, and reachable by nobody",
       "dependencies": [],
       "allowedPaths": [
@@ -13783,16 +14055,61 @@
           "evidence": "Real production build (next build + next start) against real PostgreSQL on 127.0.0.1:5433, chromium: 11 passed, then 33 passed at --repeat-each=3, flaky=0. The two new cases are 'DIAGNOSTICS CAN BE TURNED OFF, AND IT SURVIVES A RELOAD' and 'saving a language does not revert the diagnostics choice'; both reload the page, so component state cannot satisfy them. NON-VACUITY MEASURED, NOT ASSERTED: with the PUT body mutated to send a literal playbackDiagnostics: true -- the exact lost-update shape a second writer produces -- both cases go RED (the second one on its named message, 'saving a language reverted the diagnostics choice', locator resolved to an input still carrying checked). Mutant reverted and the full file re-run green before this gate was recorded."
         }
       },
-      "owner": "claude-frontend",
+      "owner": null,
       "implementationAgent": "claude-frontend",
-      "updatedAt": "2026-10-04T16:33:55.664Z",
-      "implementationBaseSha": "a78fa309c454dbd5b29a47f3e647fe1d76848429"
+      "updatedAt": "2026-10-05T14:06:58.201Z",
+      "implementationBaseSha": "a78fa309c454dbd5b29a47f3e647fe1d76848429",
+      "review": {
+        "taskId": "PL-0732",
+        "implementationAgent": "claude-frontend",
+        "implementationOwner": "claude-frontend",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "4a9560a719601727c6052e173009cc4569d8d9a1",
+        "reviewedBaseSha": "a78fa309c454dbd5b29a47f3e647fe1d76848429",
+        "reviewedTreeHash": "292309bcc47ab7dc009516dce3f96af406f37e1590b1f586c6b57385efecb0f0",
+        "reviewedFileCount": 10,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [
+          "apps/web/src/app/api/v1/profiles/preferences",
+          "packages/contracts/src/domains/preferences.ts",
+          "apps/web/src/components/player/telemetry-decision.ts"
+        ],
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-10-05T14:06:51.544Z",
+        "evidence": "APPROVED at 4a9560a719601727c6052e173009cc4569d8d9a1. gpt-architect round-115, transcribed by claude-lead. The diagnostics control uses the existing stored preference, preserves the safety decision as authoritative, persists across reload, and carries typecheck, unit and e2e evidence. Exact-head CI is green."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PL-0732",
+          "implementationAgent": "claude-frontend",
+          "implementationOwner": "claude-frontend",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "4a9560a719601727c6052e173009cc4569d8d9a1",
+          "reviewedBaseSha": "a78fa309c454dbd5b29a47f3e647fe1d76848429",
+          "reviewedTreeHash": "292309bcc47ab7dc009516dce3f96af406f37e1590b1f586c6b57385efecb0f0",
+          "reviewedFileCount": 10,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "apps/web/src/app/api/v1/profiles/preferences",
+            "packages/contracts/src/domains/preferences.ts",
+            "apps/web/src/components/player/telemetry-decision.ts"
+          ],
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-10-05T14:06:51.544Z",
+          "evidence": "APPROVED at 4a9560a719601727c6052e173009cc4569d8d9a1. gpt-architect round-115, transcribed by claude-lead. The diagnostics control uses the existing stored preference, preserves the safety decision as authoritative, persists across reload, and carries typecheck, unit and e2e evidence. Exact-head CI is green."
+        }
+      ],
+      "completedAt": "2026-10-05T14:06:58.201Z"
     },
     {
       "id": "PL-0733",
       "priority": "P0",
       "lane": "Infra",
-      "status": "REVIEW",
+      "status": "DONE",
       "title": "Corrective: every pwsh step that tolerates a native non-zero exit is broken on the runner",
       "dependencies": [],
       "allowedPaths": [
@@ -13819,16 +14136,61 @@
           "evidence": "TWO SITES OF ONE MECHANISM, BOTH REPRODUCED AND BOTH FIXED, after an audit of every pwsh step in windows.yml rather than a second wait to be bitten.\n\nSITE 1, verifier-negative -- the exit code, not the terminating error. Windows #17 printed this task own notice (\"verify-install exited 1 against a directory that is not an install\") and failed anyway, which proved execution reached the end of the body. GitHub runs a shell: pwsh step as pwsh -command \". file; if ((Test-Path -LiteralPath variable:LASTEXITCODE)) { exit $LASTEXITCODE }\", so the STEP exit code is LASTEXITCODE when the body ends -- still 1 from the node whose non-zero exit is this step success condition. Suppressing a terminating error does not clear an exit code. Fixed with an explicit exit 0.\nPROVEN on the real step body, EXTRACTED BY THE YAML PARSER rather than retyped, with only the node call swapped for a controllable exit, through that exact wrapper on pwsh 7.4.6: child exits 1 -> step exit 0 and \"correctly refused a non-install directory\" printed; child exits 0 (verifier wrongly ACCEPTS) -> step exit 1 and the throw fires. NON-VACUITY: the same harness on the body WITHOUT the new line gives step exit 1 on the first case while printing the success text, which is exactly what #17 did.\n\nSITE 2, lifecycle -- found by the audit, and the more consequential of the two. It sets ErrorActionPreference = Stop, does NOT suppress the native-exit behaviour, and calls a harness that exits non-zero BY DESIGN. On the runner the node call throws at its own line, so $code is never captured, the switch distinguishing exit 1 (a real case failure) from exit 2 (a refusal over arguments or platform) never runs, and the named throw never runs. That step own comment says collapsing those codes \"is how a configuration mistake gets filed as a product defect\" -- and on the runner they were collapsed.\nTHIS HAD NEVER BEEN OBSERVED BECAUSE NO RUN HAS EVER REACHED THAT STEP. Every Windows run in this project history died at verifier-negative first. The next one is the first to get there, and without this it would have delivered the first lifecycle result the project has ever had as a generic \"Program node ended with non-zero exit code: 1\" instead of F1-F4 classification.\nPROVEN the same way, on the extracted body with the runner setting forced on: harness exits 0 -> \"lifecycle: every automated case passed\", step exit 0; exits 1 -> \"lifecycle: at least one automated case FAILED -- read the report below\", named throw, step exit 1; exits 2 -> \"lifecycle: REFUSED to run (arguments or platform). This is a wiring fault in this workflow, not a product failure.\", named throw, step exit 1. NON-VACUITY: before the fix, same setting, it died at the node line with NativeCommandExitException and NO classification line at all.\n\nTHE AUDIT ITSELF, so nobody repeats it. All eight pwsh steps in windows.yml were parsed, not read. AFFECTED: verifier, lifecycle. NOT AFFECTED and why: sidecar and inventory call natives whose non-zero exit SHOULD fail the step, so the terminating error is correct there; openssl ends with a native call whose success is required; publish, \"which step failed\" and the e2e-desktop annotator invoke no native commands.\n\nSTILL UNPROVEN AND SAID SO: that either step passes on a real Windows runner. This container is Linux with pwsh 7.4.6 and the runner setting forced on to match what PL-0733 originally established. What is proven is the wrapper contract and every branch of both bodies under it. The next Windows run is the evidence, and PW-0602 step-id diagnostics will name the step and the code if it is wrong again."
         }
       },
-      "owner": "claude-infra",
+      "owner": null,
       "implementationAgent": "claude-infra",
-      "updatedAt": "2026-10-04T16:15:00.313Z",
-      "implementationBaseSha": "7fe96756b297f83c659a5d957b1b4522edf83901"
+      "updatedAt": "2026-10-05T14:06:57.348Z",
+      "implementationBaseSha": "7fe96756b297f83c659a5d957b1b4522edf83901",
+      "review": {
+        "taskId": "PL-0733",
+        "implementationAgent": "claude-infra",
+        "implementationOwner": "claude-infra",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "4a9560a719601727c6052e173009cc4569d8d9a1",
+        "reviewedBaseSha": "7fe96756b297f83c659a5d957b1b4522edf83901",
+        "reviewedTreeHash": "7c067bcdd6f7546a83bc71a3f7c2e4fd500ec8c35d6f77d13079ae4d16a8c5f1",
+        "reviewedFileCount": 4,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [
+          "scripts/windows/verify-install.mjs",
+          "scripts/windows/lifecycle.mjs",
+          "scripts/windows/installed-identity.mjs"
+        ],
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-10-05T14:06:50.762Z",
+        "evidence": "APPROVED at 4a9560a719601727c6052e173009cc4569d8d9a1. gpt-architect round-115, transcribed by claude-lead. Windows #19 directly proves both repaired PowerShell paths: verifier-negative now SUCCEEDS when the verifier correctly refuses a non-install directory (annotation: 'verify-install exited 1 against a directory that is not an install', step green), and the lifecycle harness reaches its own exit-code classification and completes rather than being intercepted by PowerShell native-command semantics -- which is why F1/F2/F3/F4 have readable per-row results at all."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PL-0733",
+          "implementationAgent": "claude-infra",
+          "implementationOwner": "claude-infra",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "4a9560a719601727c6052e173009cc4569d8d9a1",
+          "reviewedBaseSha": "7fe96756b297f83c659a5d957b1b4522edf83901",
+          "reviewedTreeHash": "7c067bcdd6f7546a83bc71a3f7c2e4fd500ec8c35d6f77d13079ae4d16a8c5f1",
+          "reviewedFileCount": 4,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "scripts/windows/verify-install.mjs",
+            "scripts/windows/lifecycle.mjs",
+            "scripts/windows/installed-identity.mjs"
+          ],
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-10-05T14:06:50.762Z",
+          "evidence": "APPROVED at 4a9560a719601727c6052e173009cc4569d8d9a1. gpt-architect round-115, transcribed by claude-lead. Windows #19 directly proves both repaired PowerShell paths: verifier-negative now SUCCEEDS when the verifier correctly refuses a non-install directory (annotation: 'verify-install exited 1 against a directory that is not an install', step green), and the lifecycle harness reaches its own exit-code classification and completes rather than being intercepted by PowerShell native-command semantics -- which is why F1/F2/F3/F4 have readable per-row results at all."
+        }
+      ],
+      "completedAt": "2026-10-05T14:06:57.348Z"
     },
     {
       "id": "PL-0734",
       "priority": "P2",
       "lane": "Infra",
-      "status": "REVIEW",
+      "status": "DONE",
       "title": "The logs directory the shell creates is written to by nothing, and the sidecar's stderr is discarded",
       "dependencies": [],
       "allowedPaths": [
@@ -13852,9 +14214,9 @@
       ],
       "acceptance": "FOUND WHILE WRITING PW-0603's RUN SHEET, not by looking for it. The certification document's defect-report format asked the commander for \"the log file (location established by PW-0501)\". There is no such file, and there is no code that could write one.\n\nMEASURED IN THE SHELL'S OWN SOURCE, three facts that together close the question:\n1. `windows_host.rs` calls `std::fs::create_dir_all` on data, cache and logs at first launch, and passes the logs path to the sidecar as LIBERTY_SIDECAR_LOG_DIR. The directory is real.\n2. NOTHING EVER WRITES INTO IT. A grep of apps/desktop/src-tauri/src/ for File::create, write_all, fs::write and OpenOptions returns nothing; every `write!` in the crate is a Display impl formatting an error string. The crate declares no `log` or `tracing` dependency and tauri.conf.json configures no plugins, so there is no logger to have been wired.\n3. THE SIDECAR'S OUTPUT IS DISCARDED. `command.stderr(Stdio::null())` -- a Node stack trace printed on the way down goes to the kernel's bit bucket. stdout is piped to a reader thread whose lines are consumed only by `await_handshake`; once the handshake resolves or the launch is abandoned the thread keeps draining the pipe and throwing each line away, by design, so the child never blocks.\n\nWHAT IS AND IS NOT LOST, because this is a diagnosability defect and inflating it would be the same error in the other direction. `failure.rs` already gives the viewer seven NAMED failure headlines covering the anticipated paths -- missing installation, unwritable profile, loopback not secured, unsafe start, service did not finish starting, service reported something unusable, service keeps stopping -- and the commander screenshots those. What is lost is the UNANTICIPATED failure: the sidecar starts, throws, prints the only explanation that exists to stderr, and exits, and the shell can say no more than \"the local service did not finish starting\". That is the whole of the evidence for a launch defect on a packaged build, on a machine no engineer can reach.\n\nREQUIRED: the sidecar's stderr is captured rather than discarded, and its stdout keeps being drained for the same reason it is drained today. A pipe that is read and then written to a file is still read; this must not reintroduce the full-pipe deadlock `windows_host.rs` already explains.\n\nREQUIRED: what is captured lands in the directory the shell ALREADY creates and already names to the sidecar -- %LOCALAPPDATA%\\app.projectliberty.desktop\\logs. Do not invent a second location, and do not make the layout depend on %LOCALAPPDATA% being read in a second place: sidecar.rs owns the SHAPE under a root the host supplies, and that division is deliberate.\n\nREQUIRED: bounded. An unbounded log on a long session is row E1's failure wearing a different hat. State the bound -- size, count or both -- and make it a tested property rather than a comment.\n\nREQUIRED: the handshake token NEVER reaches the file. `token.rs` mints the one secret this process owns, PW-0101 exists to keep it from another process on the same machine, and a log file in a world-readable profile directory that echoed a line containing it would hand it over. Prove this with a test, not with care.\n\nREQUIRED: a test that the file is actually written, driven through the same path a launch takes, and a test that a sidecar which exits noisily leaves its output behind. `sidecar-bootstrap/acceptance.mjs` already drives a real child and already sets LIBERTY_SIDECAR_LOG_DIR; that is the honest place to assert from, off Windows.\n\nREQUIRED: docs/WINDOWS_CERTIFICATION.md's \"There is no application log file\" subsection is rewritten to say where the log is, in the same edit. A stale subsection claiming the absence of a file that now exists is the exact failure this repository recorded in round 112 for diagnostics-disclosure.tsx.",
       "notes": "FILED BY claude-test DURING PW-0603, round 112, classification A (product defect) under the round-112 directive's A-E scheme. It is a real defect in the shipped desktop shell, not a packaging or harness fault and not a CI condition.\n\nWHY P2 AND NOT P1, stated so gpt-architect can overrule it cheaply. The product works without this; what suffers is the evidence a failure leaves behind. Most rows the commander can run TODAY are install-path rows, and those already produce an msiexec /l*v log plus verify-install.mjs's own named refusal. The undiagnosable case is narrower: an unanticipated sidecar failure during launch (matrix rows A1, A2, A3b). That is squarely inside the round-112 directive's priority 1 -- desktop launch and runtime qualification -- which is the argument for P1, and the reason this reasoning is written down rather than left as a number. If the first RIG launch defect comes back with only a screenshot, that settles it.\n\nNOT DONE SPECULATIVELY. PW-0603 ships the sheet with the absence stated plainly and the report format limited to what actually exists, so the commander is never asked for a file that was never written. The sheet names this task, so closing this task has a documentation obligation attached to it, which is the REQUIRED clause above.",
-      "owner": "claude-infra",
+      "owner": null,
       "implementationAgent": "claude-infra",
-      "updatedAt": "2026-10-05T03:39:35.249Z",
+      "updatedAt": "2026-10-05T14:06:57.478Z",
       "implementationBaseSha": "504da24626c502438ed053aa5dfa196cf858cd4d",
       "gateResults": {
         "unit": {
@@ -13863,14 +14225,71 @@
           "by": "claude-infra",
           "commitSha": "504da24626c502438ed053aa5dfa196cf858cd4d",
           "evidence": "THE SIDECAR CAN NOW EXPLAIN ITSELF. cargo test: 61 passed (53 pre-existing + 8 new in sidecar_log, +1 integration = 9 in that module, 0 failed). cargo check --target x86_64-pc-windows-msvc: clean, no warnings.\n\nA CAPABILITY UNLOCKED FOR THE WHOLE WINDOWS LANE, worth recording on its own: windows_host.rs is cfg(windows) and has never been compiled by this session. rustup already has the x86_64-pc-windows-msvc std, so cargo CHECK for that target works here -- no linker needed. Verified it really compiles the file rather than hitting a cache, by appending a deliberate type error and watching it produce 2 errors, then restoring. Every future change to the Windows shell can be type-checked before it costs a round.\n\nTHE DESIGN, AND WHY THE LOGIC IS NOT IN THE WINDOWS FILE. Redaction is a SECURITY property, and a security property that only compiles on a platform the suite cannot run is one nobody has tested. So sidecar_log.rs is portable and holds everything that can be wrong -- what is redacted, how much is kept, what a line looks like -- and windows_host.rs keeps only the pipe and the file handle.\n\nWHAT CHANGED. stderr(Stdio::null()) becomes stderr(Stdio::piped()). Both streams drain into one writer thread that owns the SidecarLog, so the budget and the redaction apply in exactly one place, and append to %LOCALAPPDATA%\\\\<identifier>\\\\logs\\\\sidecar.log LINE BY LINE as the child runs. The stdout reader keeps feeding the handshake channel AND the log, and keeps logging after the handshake gives up -- which is when the interesting output of a failed start arrives.\n\nTHE TOKEN CANNOT REACH THE FILE, and the redaction is exact rather than heuristic because the shell minted the value. Established first that it should not be there at all: token.rs sends it through the ENVIRONMENT, never the command line, and the handshake line carries only {host, port}. Redacted anyway, because a Node crash can print its environment and this file lands in a world-readable profile directory. Tested: every occurrence in a line and across lines; the rest of the line survives, or the redaction destroys the diagnosis it was meant to preserve; and an EMPTY token redacts NOTHING rather than everything, because \"\".replace(\"\", X) inserts X between every character and would turn a log into confetti. No environment is ever dumped.\n\n\"A REAL FAILURE SURVIVES PROCESS TERMINATION\", which is the clause that matters, is proven by driving a REAL CHILD rather than by argument: spawn sh -c that writes FATAL plus the token to stderr and then sleeps, capture one line through the same accumulator with the same per-line flush, KILL the child so it never reaches any exit path of its own, reopen the file and require the diagnosis present, the token absent and the redaction marker present. It runs on Linux and the arrangement under test is the ORDER of operations, which is identical on both platforms.\n\nBOUNDED, NOT UNBOUNDED. 1 MiB per run, then it stops and writes a truncation notice; the matrix row E1 calls unbounded growth a failure even without a crash. Truncated per launch rather than appended across them, so the file is about the run just performed. A cap rather than rotation: the first megabyte of a failing start contains the failure, and rotation is more machinery than the thing it bounds.\n\nNO NEW UNSAFE STARTUP PATH, which the acceptance forbids by name. If the log cannot be opened the launch proceeds with no log and the shell says so on its own stdout; a write failure stops the logging, never the launch. A shell that refused to start because it could not write a diagnostic would have turned an observability gap into an outage.\n\nMUTATION-TESTED, BOTH PROPERTIES. Removing the redaction reddens the token cases. Removing the budget check reddens 2. Both reverted; 9/9 green.\n\nSTATED, NOT GLOSSED: none of this has run on Windows. What is proven is the portable logic, the termination-survival ORDER against a real killed child, and that the Windows file type-checks for its real target. The next Windows run is the evidence.\n\ndocs/WINDOWS_CERTIFICATION.md is corrected in the same change, which its acceptance required: the subsection that told the commander there is no log file now says where it is, what is in it, that the token appears redacted by design, and that an ABSENT file is itself a finding to record. The defect-report format gains it as item 7."
+        },
+        "security-review": {
+          "status": "pass",
+          "at": "2026-10-05T14:06:27.394Z",
+          "by": "gpt-architect",
+          "commitSha": "4a9560a719601727c6052e173009cc4569d8d9a1",
+          "judgementCommitSha": "4a9560a719601727c6052e173009cc4569d8d9a1",
+          "judgementCommitVerified": true,
+          "transcribedBy": "claude-lead",
+          "evidence": "APPROVED at 4a9560a719601727c6052e173009cc4569d8d9a1. gpt-architect round-115 verdict, transcribed. SECURITY-REVIEW PASS. The sidecar logger captures stdout and stderr, does not reintroduce the pipe deadlock the original reader thread was written to avoid, writes to the existing local log directory rather than inventing a location, caps each run at 1 MiB, redacts the exact launch token, and proves a real killed child's diagnosis survives on disk. Desktop shell #9 (run 37260995288, SUCCESS at this sha) additionally proves the changed Windows-only shell compiles, tests and passes clippy on Windows. NON-BLOCKING WORDING NOTE carried from the verdict: two independently drained OS pipes cannot strictly guarantee global stdout/stderr chronology, so certification text saying streams are interleaved 'in the order they were printed' is stronger than the mechanism guarantees; correct opportunistically, do NOT reopen this release task for wording alone. Transcribed by claude-lead because the GitHub write integration returns 403 and every judgement gate in this project is typed from a ChatGPT review session."
         }
-      }
+      },
+      "review": {
+        "taskId": "PL-0734",
+        "implementationAgent": "claude-infra",
+        "implementationOwner": "claude-infra",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "4a9560a719601727c6052e173009cc4569d8d9a1",
+        "reviewedBaseSha": "504da24626c502438ed053aa5dfa196cf858cd4d",
+        "reviewedTreeHash": "5b88e616b9e8cf06ea5fb16ea0800540c4f8d7601edba03dc1f92903a18aca60",
+        "reviewedFileCount": 9,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [
+          "apps/desktop/src-tauri/src/failure.rs",
+          "apps/desktop/src-tauri/src/handshake.rs",
+          "apps/desktop/src-tauri/src/token.rs",
+          "apps/desktop/src-tauri/src/shell.rs"
+        ],
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-10-05T14:06:50.901Z",
+        "evidence": "APPROVED at 4a9560a719601727c6052e173009cc4569d8d9a1. gpt-architect round-115, transcribed by claude-lead. security-review PASS recorded separately. Desktop shell #9 (run 37260995288, SUCCESS) proves the changed Windows-only shell compiles, tests and passes clippy on Windows."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PL-0734",
+          "implementationAgent": "claude-infra",
+          "implementationOwner": "claude-infra",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "4a9560a719601727c6052e173009cc4569d8d9a1",
+          "reviewedBaseSha": "504da24626c502438ed053aa5dfa196cf858cd4d",
+          "reviewedTreeHash": "5b88e616b9e8cf06ea5fb16ea0800540c4f8d7601edba03dc1f92903a18aca60",
+          "reviewedFileCount": 9,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "apps/desktop/src-tauri/src/failure.rs",
+            "apps/desktop/src-tauri/src/handshake.rs",
+            "apps/desktop/src-tauri/src/token.rs",
+            "apps/desktop/src-tauri/src/shell.rs"
+          ],
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-10-05T14:06:50.901Z",
+          "evidence": "APPROVED at 4a9560a719601727c6052e173009cc4569d8d9a1. gpt-architect round-115, transcribed by claude-lead. security-review PASS recorded separately. Desktop shell #9 (run 37260995288, SUCCESS) proves the changed Windows-only shell compiles, tests and passes clippy on Windows."
+        }
+      ],
+      "completedAt": "2026-10-05T14:06:57.478Z"
     },
     {
       "id": "PL-0735",
       "priority": "P0",
       "lane": "Integration",
-      "status": "REVIEW",
+      "status": "DONE",
       "title": "CI's validate job no longer finishes: the control-plane suite spends its time in one inner loop",
       "dependencies": [],
       "allowedPaths": [
@@ -13891,9 +14310,9 @@
       ],
       "acceptance": "CI's `validate` JOB HAS STOPPED FINISHING, AND NOBODY NOTICED BECAUSE A HANG LOOKS LIKE A SLOW RUNNER. CI #181 was still in progress after 1h45m; CI #182 (run 37215304871, head 1474d0b) was still in progress after an hour with e2e and e2e-typecheck both long since SUCCEEDED. Both read from the job page, not the run page.\n\nDIAGNOSED, NOT GUESSED. `node scripts/test-ai-control-plane.mjs` -- a validate-job step -- does not finish in five minutes on a CLEAN CHECKOUT of 1474d0b in a fresh git worktree with no node_modules, which is the CI condition (the suite runs BEFORE `npm ci` in that job). Sampling its children shows each spawned `node scripts/ai-control-plane.mjs <command>` taking 10-16 SECONDS. There are 73 scenarios and several commands each.\n\nTHE HOT PATH, FROM A --cpu-prof OF ONE `status` INSIDE A FIXTURE REPO (10.1s wall, 9.9s USER -- pure computation, no I/O and no network): `normalizePrefix` at scripts/review-surface.mjs:41 dominates, with its four `.replace()` regexes visible as separate entries, under `dfs` at ai-control-plane.mjs:449.\n\nTHE CAUSE IS AN INNER LOOP, and it is three lines. `pathsOverlap(aPaths, bPaths)` calls `normalizePrefix(aRaw)` INSIDE the `bPaths` loop, so a pure function of a small fixed set of declared path strings runs |A|x|B| times per comparison instead of |A|+|B|. `dfs` calls `pathsOverlap` once per (candidate, already-chosen) pair at every node of a search whose budget is 300,000 nodes.\n\nIT IS NOT A CODE REGRESSION. `git log -S` puts both `pathsOverlap` and `const budget = 300000` in f984ab4, the first control-plane commit, unchanged since. What changed is the BOARD: the cost scales with the number of dispatch candidates, and the suite's fixtures are RESET boards where nearly every task is READY. The live repository runs the same command in 0.11s with 137 tasks, because few of them are candidates. Same code, same file size, 100x apart -- the variable is candidate count. The project grew into this.\n\nREQUIRED: the redundant work is removed without changing a single answer. Memoising `normalizePrefix` by its argument takes that one `status` from 10.1s to 2.0s, MEASURED, and `status`, `dispatch` and `ready` produce byte-identical output afterwards except for the generated timestamp -- also measured, by diff. That is the floor, not the target; the remaining 2s is the dfs itself and is worth looking at, but a 5x for a memo on a pure function is the obvious first move.\n\nREQUIRED: the answer is PROVEN unchanged rather than asserted. A performance change to the scheduler that quietly altered a wave would be far worse than the slowness. Diff the output of `status`, `dispatch`, `ready` and `queue` for every agent, before and after, on BOTH the live board and a reset fixture.\n\nMOVED OUT, NOT DROPPED: the `timeout-minutes` clause is now PL-0736. It needs .github/workflows/ci.yml, which PL-0728 holds in REVIEW for the whole of round 112, and the control plane refused this task's claim on exactly that overlap -- the mechanism working. Keeping the two in one task meant NEITHER landed this round, and the half that is startable now is the half that unhangs CI today. PL-0736 carries the clause verbatim and the argument for it, which has not weakened: the performance fix removes today's hang and the timeout removes the class.\n\nREQUIRED: the suite reports progress. 9,570 lines and 73 scenarios print exactly one line, at the end, on success. A suite that says nothing until it is finished cannot be diagnosed when it does not finish -- the scenario that hangs had to be found by sampling child processes from outside. Name each scenario as it starts.\n\nOUT OF SCOPE: changing the dfs budget, the wave algorithm, or any scheduling decision. This task makes the same computation cheaper and makes a hang visible. A different wave is a different task and needs a verdict.",
       "notes": "FILED BY claude-test DURING PL-0728, round 112, classification C (workflow/harness defect) under the round-112 directive's A-E scheme: it is the project's own control-plane tooling and its CI job, not the product.\n\nP0 BECAUSE IT GATES EVERYTHING ELSE. While `validate` cannot finish, no CI run can confirm lint, typecheck, the unit suites, the build, the control-plane suite, the repo validator or the notices suite. Every task closed in rounds 111 and 112 rests on LOCAL evidence plus a green `e2e` job, and that is now a stated fact rather than an assumption. It also means the round-112 directive's instruction to consume CI #182 can be answered only in part, and this is why.\n\nFOUND BY ACCIDENT, AGAIN, AND THE ACCIDENT IS THE POINT. PL-0728 added a suite to `npm run test:scripts`; running the alias to check the addition is what surfaced a hang that two CI runs had already been showing as 'in progress'. The fifth entry in this repository's 'a thing exists and no gate asks it' list is not a test that runs nowhere -- it is a GATE THAT NEVER FINISHES, which is the same failure one level up: a step that neither passes nor fails asserts nothing, and a pipeline waiting on it looks busy rather than broken. That is the argument for the `timeout-minutes` clause being REQUIRED rather than a nicety.\n\nSPLIT ON A REAL REFUSAL, NOT A PREFERENCE. This task was filed holding .github/workflows/ci.yml and `ai:claim` refused it: \"PL-0735 paths overlap active task PL-0728 owned by claude-test\". PL-0728 is in REVIEW awaiting gpt-architect, so that file is locked for the rest of round 112, and releasing PL-0728 would discard its gate results. The timeout clause left for PL-0736 and this task kept the part that unhangs CI today. Recorded rather than quietly re-scoped, because splitting a P0's acceptance to make it startable is exactly the move that deserves a reviewer's attention.",
-      "owner": "claude-lead",
+      "owner": null,
       "implementationAgent": "claude-lead",
-      "updatedAt": "2026-10-05T02:24:52.897Z",
+      "updatedAt": "2026-10-05T14:06:57.608Z",
       "implementationBaseSha": "cea2fbcc3c51ffc08c60626132a76dc8d02fc0ac",
       "gateResults": {
         "unit": {
@@ -13902,8 +14321,63 @@
           "by": "claude-lead",
           "commitSha": "cea2fbcc3c51ffc08c60626132a76dc8d02fc0ac",
           "evidence": "THE SUITE NOW FINISHES, WHICH IS THE WHOLE CLAIM. node scripts/test-ai-control-plane.mjs: \"AI control plane tests passed (73 scenarios) in 137.0s\". Before this change the same command did not complete in 20 minutes on this container and had not completed in over an hour on CI runs 181 and 182. npm run test:scripts -- the full alias, seven suites -- now completes in 3m04s with every suite green, including PL-0728 new 14-case suite; that alias had never been observed completing. repo:validate passes and ai-control-plane validate reports 139 tasks, 9 agents.\n\nTHE MEASUREMENT, ON THE BOARD THAT ACTUALLY EXERCISES THE PATH. A reset fixture built the way the suite builds one (58 READY candidates, 73 BACKLOG, 8 BLOCKED): one status command took 6.318s BEFORE and 0.168s AFTER, a factor of 38. On the LIVE board the same command is 0.088s before and 0.096s after -- unchanged, because the live board has few simultaneous dispatch candidates and never paid the cost. That asymmetry is the diagnosis restated as a measurement: the cost scales with candidates, not with file size.\n\nTHE ANSWER IS PROVEN UNCHANGED, NOT ASSERTED, which matters more than the speed -- a scheduler change that quietly altered a wave would be far worse than the slowness. status, dispatch, ready and queue for all nine agents were captured before and after on BOTH boards: 12 outputs x 2 boards = 24 comparisons, all byte-identical once the generated timestamp line is excluded, 0 real differences. The planner entries were deliberately kept as exactly {task, agent}: a first draft carried the candidate index on the chosen entry and was rewritten to use a shadow array, because a planner returning an extra bookkeeping field is a different return value.\n\nWHAT CHANGED, IN TWO PLACES. (1) normalizePrefix in scripts/review-surface.mjs is memoised by argument -- a pure function over the small fixed set of declared path globs, which pathsOverlap was calling from its INNER loop, so comparing two tasks ran it |A|x|B| times instead of |A|+|B|. (2) planExecutableWave precomputes the pairwise overlap table over its candidates once, instead of recomputing the same pair at every node of a 300,000-node search. Neither changes a decision; both remove repetition of work whose answer cannot change during a plan.\n\nCORROBORATION THAT THE DIAGNOSIS WAS RIGHT. The instrumented run reports 644 child commands totalling 92.0s. At the 6-10s per command measured before the fix, those same 644 commands are 64 to 107 minutes of child time alone -- which is the hour-plus CI runs 181 and 182 spent showing in progress.\n\nDIAGNOSABILITY, the second half of the task. All 71 numbered scenarios now print their name with elapsed time as they start, so a future hang says where it stopped instead of needing ps from outside -- which is how this one had to be found. Every child command is timed; one over 1s prints a line (nothing did: the slowest was 0.76s, six times under the threshold), and the five slowest print at the end of every run. CHILD_TIMEOUT_MS is tightened from 10 minutes to 2: ten minutes was never reached by this defect, because no individual child was slow enough, and a bound no failure can reach is not a bound."
+        },
+        "architecture-review": {
+          "status": "pass",
+          "at": "2026-10-05T14:06:28.603Z",
+          "by": "gpt-architect",
+          "commitSha": "4a9560a719601727c6052e173009cc4569d8d9a1",
+          "judgementCommitSha": "4a9560a719601727c6052e173009cc4569d8d9a1",
+          "judgementCommitVerified": true,
+          "transcribedBy": "claude-lead",
+          "evidence": "APPROVED at 4a9560a719601727c6052e173009cc4569d8d9a1. gpt-architect round-115 verdict, transcribed. ARCHITECTURE-REVIEW PASS. The scheduler optimisation removes repeated pure work without changing the scheduling contract. Before/after comparisons cover status, dispatch, ready and queue on both the live and the reset board. CI #185 (run 37260995294, SUCCESS at this sha) proves full control-plane validation completes. No DFS budget and no scheduling policy decision was altered."
         }
-      }
+      },
+      "review": {
+        "taskId": "PL-0735",
+        "implementationAgent": "claude-lead",
+        "implementationOwner": "claude-lead",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "4a9560a719601727c6052e173009cc4569d8d9a1",
+        "reviewedBaseSha": "cea2fbcc3c51ffc08c60626132a76dc8d02fc0ac",
+        "reviewedTreeHash": "bcbe409b2cfd03fccfbe76752fc73185051fd69ea49da471bff29915299af709",
+        "reviewedFileCount": 5,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [
+          "control/tasks.json",
+          "control/policies.json",
+          "control/agents.json"
+        ],
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-10-05T14:06:51.024Z",
+        "evidence": "APPROVED at 4a9560a719601727c6052e173009cc4569d8d9a1. gpt-architect round-115, transcribed by claude-lead. architecture-review PASS recorded separately. CI #185 (run 37260995294, SUCCESS) proves full control-plane validation completes."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PL-0735",
+          "implementationAgent": "claude-lead",
+          "implementationOwner": "claude-lead",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "4a9560a719601727c6052e173009cc4569d8d9a1",
+          "reviewedBaseSha": "cea2fbcc3c51ffc08c60626132a76dc8d02fc0ac",
+          "reviewedTreeHash": "bcbe409b2cfd03fccfbe76752fc73185051fd69ea49da471bff29915299af709",
+          "reviewedFileCount": 5,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "control/tasks.json",
+            "control/policies.json",
+            "control/agents.json"
+          ],
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-10-05T14:06:51.024Z",
+          "evidence": "APPROVED at 4a9560a719601727c6052e173009cc4569d8d9a1. gpt-architect round-115, transcribed by claude-lead. architecture-review PASS recorded separately. CI #185 (run 37260995294, SUCCESS) proves full control-plane validation completes."
+        }
+      ],
+      "completedAt": "2026-10-05T14:06:57.608Z"
     },
     {
       "id": "PL-0736",
@@ -13932,7 +14406,7 @@
       "id": "PL-0737",
       "priority": "P1",
       "lane": "Integration",
-      "status": "REVIEW",
+      "status": "DONE",
       "title": "The distribution evidence PW-0208 needs is not readable from any CI run",
       "dependencies": [],
       "allowedPaths": [
@@ -13952,9 +14426,9 @@
       ],
       "acceptance": "PW-0208 HAS BEEN IN REVIEW FOR THREE ROUNDS WAITING FOR EVIDENCE THAT NO CI RUN CAN DELIVER TO A READER HERE. Its nine bullets are about what the installer actually ships. Windows #16 and #17 both built a real MSI and a real NSIS installer, and in both the upload step was skipped behind the verifier-negative failure -- but even a SUCCESSFUL upload would not help: a GitHub artifact needs a login to download, and this session has none. Annotations are the only channel it can read. So the evidence has to be PRINTED by the run, not archived by it.\n\nWHAT THE INVENTORY MUST ESTABLISH, and the three trees must never be conflated -- SOURCE INTENT, PACKAGE BUILD OUTPUT, INSTALLED TREE. This script reports on whichever tree it is pointed at and SAYS WHICH, because evidence from one is not evidence about another.\n\nREQUIRED: every native binary in the tree is enumerated -- .dll, .exe, .so, .dylib, .node -- with size and sha256. A licence argument about binaries begins with knowing which binaries there are.\nREQUIRED: libmpv and FFmpeg are reported PRESENT or ABSENT by name, matched on the filenames those projects actually ship (mpv, libmpv, avcodec, avformat, avutil, swresample, swscale, postproc, avfilter, avdevice, ffmpeg, ffprobe), not by a single guessed string. Today the honest answer is ABSENT -- apps/desktop/scripts/notices.mjs says so in its own header and package-sidecar.mjs copies only the Node runtime and the standalone server -- and a check that can only report presence would never notice the day that changes.\nREQUIRED: THIRD-PARTY-NOTICES.md is reported present, with byte size and the number of components it names. Present-and-empty is the failure PW-0208 already closed one hole against; present-and-stale is the next one.\nREQUIRED: the Node runtime's own licence is reported present or absent, because node.exe is shipped and its licence travels with it.\nREQUIRED: THE CONTRADICTION CHECK, which is the point of the whole script and the only thing in it that can fail a build. If any libmpv or FFmpeg binary IS present while the notices document still says no shipped component is LGPL, that is a shipped LGPL binary with no written offer and no attribution -- exactly the trap docs/DESKTOP_PLAYBACK.md section 9 names and RESEARCH_PLAYBACK.md already found elsewhere ('every prebuilt ffprobe on npm is a GPL-3.0 binary, and several declare otherwise'). Exit non-zero. The inverse is also a contradiction and also fails: the notices claiming an LGPL component that no binary in the tree corresponds to.\nREQUIRED: everything else is REPORTED, not enforced. A script that fails a build over an unexpected DLL would be unusable the first time a legitimate one arrived, and the judgement about what may ship is gpt-architect's and the commander's, not a script's.\nREQUIRED: the output is emitted as GitHub ::notice:: lines when running under a runner, so it is readable without a login, AND as plain text otherwise, so it is usable locally. The whole reason this task exists is that evidence nobody can read is not evidence.\nREQUIRED: a unit suite over fixture trees, including a tree with an FFmpeg DLL and notices that deny it, shown to FAIL. A contradiction check that has never been seen to fire is a check about nothing.\n\nOUT OF SCOPE, EXPLICITLY: H.264/HEVC patent authorisation. This script reports file names and hashes. It says nothing about whether a decoder may lawfully be distributed, it must not be cited as bearing on that, and it must not cause any decoder to be enabled. That is a commander and counsel decision and no amount of packaging evidence moves it.\n\nOUT OF SCOPE: wiring it into the Windows workflow and into npm run test:scripts. Both files are reserved by tasks in gpt-architect's review queue -- .github/workflows/windows.yml by PL-0733, package.json by PL-0728 -- so that is PL-0738, filed alongside this and blocked on those surfaces. This task delivers the script and its suite; a script nothing runs is this repository's most-repeated defect, and PL-0738 is the entry that keeps it from becoming the sixth instance.",
       "notes": "FILED ROUND 113 by claude-lead. The direct cause is the round-113 directive's instruction: 'If Windows #17 does not expose enough artifact evidence, improve the workflow so the NEXT run exposes exactly what gpt-architect needs.' #17 did not, and it would not have even if it had reached its upload step.\n\nTHE FINDING THAT SHAPED IT. libmpv and FFmpeg are NOT in the product today. notices.mjs states it in its own header -- 'libmpv and FFmpeg are not in this document because they are not in the product' -- and package-sidecar.mjs copies the Node runtime and the Next standalone server and nothing else. So most of PW-0208's nine bullets are currently questions about a component that does not exist in the build, and the valuable thing is not a one-off answer but a STANDING check that notices the day it does, which is the day the obligations attach.\n\nSURFACE IS DELIBERATELY TWO FILES UNDER scripts/windows/, which nothing active reserves. The precedent for splitting the wiring out is PL-0735/PL-0736 in round 112, where ai:claim refused a P0 on a real overlap and the half that could land did.",
-      "owner": "claude-lead",
+      "owner": null,
       "implementationAgent": "claude-lead",
-      "updatedAt": "2026-10-05T02:57:36.369Z",
+      "updatedAt": "2026-10-05T14:06:58.049Z",
       "implementationBaseSha": "01a96ce48150784786ad418e4c89aaeb2a285bee",
       "gateResults": {
         "unit": {
@@ -13964,13 +14438,60 @@
           "commitSha": "01a96ce48150784786ad418e4c89aaeb2a285bee",
           "evidence": "node --test scripts/windows/distribution-inventory.test.mjs: 17 tests, 17 pass, 0 fail.\n\nIT FOUND A REAL DEFECT ON ITS FIRST REAL RUN, which is the evidence that matters more than the suite. Pointed at a real packaged sidecar, the script refused: the generated THIRD-PARTY-NOTICES.md declares three (L)GPL components in its own table -- the two @img/sharp-libvips builds at LGPL-3.0-or-later and @img/sharp-wasm32 -- each with Licence text shipped = **none found**, while the written-offer section of the same document says \"No component shipped in this build is LGPL today.\" Filed as PL-0739. The script was written to catch a hypothetical and caught an actual one.\n\nTHE CHECKS, AND WHAT EACH IS WORTH. Everything is REPORTED -- every native binary with size and sha256, libmpv/FFmpeg present or ABSENT by name, the notices file with byte size and component count, the Node runtime and its licence -- because what may ship is a licensing judgement and not a script. Exactly three things REFUSE: an libmpv/FFmpeg binary while the notices deny LGPL; notices claiming a live LGPL component no binary corresponds to; and the document contradicting its own table, which is the one that fired.\n\nTHREE TREES NEVER CONFLATED. --kind is required with no default and is printed first: SOURCE INTENT, PACKAGE BUILD OUTPUT, INSTALLED TREE. A test drives all three and another proves the script refuses to run without being told which.\n\nMUTATION-TESTED, BOTH REFUSAL BRANCHES SEPARATELY. Disabling the libmpv/FFmpeg contradiction: cases 4 and 5 go red. Disabling the document-internal contradiction: cases 15 and 17 go red. Both mutants reverted and 17/17 re-run green.\n\nTHE CARE THAT MAKES IT REAL RATHER THAN DECORATIVE. FFmpeg does not ship a file called ffmpeg in a library build -- it ships avcodec-61.dll, avformat-61.dll, avutil-59.dll -- and libmpv ships libmpv-2.dll or mpv-2.dll. A check grepping for \"ffmpeg\" would report ABSENT over a tree full of FFmpeg and pass forever. Eight real filenames are asserted to match and a plausible non-match (helper.node) is asserted not to. Likewise the document check reads TABLE ROWS, not the document, because the written-offer prose says the word LGPL three times by design; a grep would fire every build and be switched off within a week, and there is a test for exactly that.\n\nOUTPUT IS ANNOTATIONS ON A RUNNER AND PLAIN TEXT OTHERWISE, asserted by a test, because the entire reason this task exists is that a GitHub artifact needs a login this session does not have -- evidence nobody can read is not evidence.\n\nNOT CLAIMED: anything about the WINDOWS packaged tree. The real reading was a Linux-built tree, and the script labelled it as such. That gap closes when PL-0738 wires it into the Windows job. H.264/HEVC patent authorisation is addressed by nothing here and the script says so in its own output, with a test that it does."
         }
-      }
+      },
+      "review": {
+        "taskId": "PL-0737",
+        "implementationAgent": "claude-lead",
+        "implementationOwner": "claude-lead",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "4a9560a719601727c6052e173009cc4569d8d9a1",
+        "reviewedBaseSha": "01a96ce48150784786ad418e4c89aaeb2a285bee",
+        "reviewedTreeHash": "79ce4f80157c45896072e5948d538bb98509e0c1c1175a6b05c8985deb40986a",
+        "reviewedFileCount": 6,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [
+          "apps/desktop/scripts/notices.mjs",
+          "apps/desktop/scripts/package-sidecar.mjs",
+          "scripts/windows/verify-install.mjs",
+          "docs/LICENSING.md"
+        ],
+        "outcome": "APPROVED",
+        "reviewedAt": "2026-10-05T14:06:51.421Z",
+        "evidence": "APPROVED at 4a9560a719601727c6052e173009cc4569d8d9a1. gpt-architect round-115, transcribed by claude-lead. This task owns the distribution-inventory script and fixture suite; workflow wiring was explicitly split into PL-0738. The script labels SOURCE INTENT / PACKAGE BUILD OUTPUT / INSTALLED TREE, enumerates native binaries with hashes, recognises the real libmpv/FFmpeg filename families, reports notices and runtime evidence, fails contradictions and emits runner-readable output. Its first real use found the sharp/libvips contradiction, which demonstrates the check is non-vacuous."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PL-0737",
+          "implementationAgent": "claude-lead",
+          "implementationOwner": "claude-lead",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "4a9560a719601727c6052e173009cc4569d8d9a1",
+          "reviewedBaseSha": "01a96ce48150784786ad418e4c89aaeb2a285bee",
+          "reviewedTreeHash": "79ce4f80157c45896072e5948d538bb98509e0c1c1175a6b05c8985deb40986a",
+          "reviewedFileCount": 6,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "apps/desktop/scripts/notices.mjs",
+            "apps/desktop/scripts/package-sidecar.mjs",
+            "scripts/windows/verify-install.mjs",
+            "docs/LICENSING.md"
+          ],
+          "outcome": "APPROVED",
+          "reviewedAt": "2026-10-05T14:06:51.421Z",
+          "evidence": "APPROVED at 4a9560a719601727c6052e173009cc4569d8d9a1. gpt-architect round-115, transcribed by claude-lead. This task owns the distribution-inventory script and fixture suite; workflow wiring was explicitly split into PL-0738. The script labels SOURCE INTENT / PACKAGE BUILD OUTPUT / INSTALLED TREE, enumerates native binaries with hashes, recognises the real libmpv/FFmpeg filename families, reports notices and runtime evidence, fails contradictions and emits runner-readable output. Its first real use found the sharp/libvips contradiction, which demonstrates the check is non-vacuous."
+        }
+      ],
+      "completedAt": "2026-10-05T14:06:58.050Z"
     },
     {
       "id": "PL-0738",
       "priority": "P2",
       "lane": "Integration",
-      "status": "BACKLOG",
+      "status": "READY",
       "title": "The distribution inventory runs nowhere until the Windows workflow calls it",
       "dependencies": [
         "PL-0737"
@@ -13995,7 +14516,7 @@
       "id": "PL-0739",
       "priority": "P1",
       "lane": "Infra",
-      "status": "REVIEW",
+      "status": "BLOCKED",
       "title": "THIRD-PARTY-NOTICES.md contradicts itself: the table declares LGPL components the written offer denies",
       "dependencies": [],
       "allowedPaths": [
@@ -14017,7 +14538,7 @@
       "notes": "FOUND IN ROUND 113 BY POINTING PL-0737's new inventory at a real tree, on its first real run, which is the strongest argument for that task that could exist. It was not found by reading notices.mjs -- that file's own header says 'libmpv and FFmpeg are not in this document because they are not in the product', which is true and was never the problem.\n\nSCOPE CAVEAT, STATED SO THE REVIEWER DOES NOT HAVE TO ASK. The tree measured was built on Linux, so the rows name the linux and linuxmusl sharp variants. A Windows runner installs @img/sharp-libvips-win32-x64, which carries the SAME LGPL-3.0-or-later. Whether the Windows packaged sidecar contains it is not established here and will be, automatically, the first time PL-0738 wires the inventory into the Windows job -- the check is already written and already fires on exactly this shape.\n\nBLOCKED BY SURFACE: apps/desktop/** is reserved by PW-0208, in gpt-architect's review queue. This is material to that review rather than independent of it -- PW-0208 is about shipping an LGPL binary lawfully, and the product is already shipping one.\n\nGates include rights-review, not just unit, because the decision about sharp is a rights decision and product invariant 6 puts it with the reviewer rather than the implementer.",
       "owner": "claude-infra",
       "implementationAgent": "claude-infra",
-      "updatedAt": "2026-10-05T03:31:05.483Z",
+      "updatedAt": "2026-10-05T14:07:33.568Z",
       "implementationBaseSha": "5e96f30dad2d3fd72c8cd98734d5abd0c95bdafe",
       "gateResults": {
         "unit": {
@@ -14027,7 +14548,50 @@
           "commitSha": "5e96f30dad2d3fd72c8cd98734d5abd0c95bdafe",
           "evidence": "THE CONTRADICTION IS NOT FIXED, IT IS UNREACHABLE. The written offer is now DERIVED from the same sorted entry list the table is rendered from, by copyleftEntries(). A sentence and a table cannot disagree when one is computed from the other, which is what the acceptance asked for: \"Prove the document cannot contradict its own table.\"\n\nnode --test apps/desktop/scripts/notices.test.mjs: 25 tests, 25 pass (was 22).\n\nTHE TEST THAT ASSERTED THE DEFECT IS GONE, AND LOUDLY. The suite contained it(\"states the written offer, and states that nothing LGPL ships yet\") asserting /No component shipped in this build is LGPL today/. It passed every round this generator has existed, because the sentence it pinned was a string rather than a reading of the table -- so that assertion is part of why nobody noticed. This repository standing warning applies to replacing it (\"updating an expected value to match reality is byte-for-byte indistinguishable from updating it to match a regression\"), so the replacement does NOT pin a new sentence: it asserts the PROPERTY that makes the old one impossible, and drives BOTH branches of the derivation.\n\nFOUR CASES NOW COVER IT. No copyleft row -> the offer says it has nothing to attach to, and the old sentence is asserted ABSENT. A copyleft row -> the offer says live, names the component, and flags that no licence text ships with it. A conjunction (Apache-2.0 AND LGPL-3.0-or-later AND MIT, which is literally @img/sharp-wasm32) counts, because the obligation does -- a matcher that only took a bare LGPL string would have been accurate about two of the three real components, which is harder to spot than being wrong about all three. And a permissive table does NOT trigger it, which is the non-vacuity for the word-boundary matcher.\n\nMUTATION-TESTED, TWO WAYS. Removing the derivation (copyleft = []) reddens 2 cases. Narrowing the matcher to an exact LGPL-3.0-or-later so the conjunction is missed reddens 1. Both reverted, 25/25 green.\n\nVERIFIED AGAINST THE REAL TREE, not a fixture. Regenerating over the actual packaged sidecar now produces: \"The offer above is live: 3 component(s) in the table declare a copyleft licence\", naming @img/sharp-libvips-linux-x64 1.3.2, @img/sharp-libvips-linuxmusl-x64 1.3.2 and @img/sharp-wasm32 0.35.3, each marked \"no licence text ships with it\".\n\nAND IT CAUGHT A BUG IN PL-0737, which is the best evidence either check works. Cross-checking the repaired document through scripts/windows/distribution-inventory.mjs REFUSED IT -- that script \"attribution for a component nobody ships\" branch asked whether a libmpv or FFmpeg BINARY was present, on the assumption libmpv was the only copyleft component possible. libvips is LGPL, is not libmpv or FFmpeg, and ships as a .node addon. So the first correct document this project has ever generated was refused for telling the truth. The branch now reads the document TABLE instead of the binary list; two cases added there, including non-vacuity that a live offer with nothing in the table to attach to is still refused. That suite is 19/19.\n\nNO LEGAL CONCLUSION DRAWN, which the directive required. docs/LICENSING.md section 7b records the measurement, states that the written offer is now covered and the licence-TEXT obligation is NOT, names three possible resolutions with their differing costs, and explicitly declines to pick one. The scope limits are stated: the tree measured was Linux-built so the rows name linux variants; a Windows runner installs @img/sharp-libvips-win32-x64 with the same licence; whether the WINDOWS packaged sidecar carries it is not established here and will be once PL-0738 wires the inventory into that job. Section 6 patent position is untouched and nothing here bears on it."
         }
-      }
+      },
+      "review": {
+        "taskId": "PL-0739",
+        "implementationAgent": "claude-infra",
+        "implementationOwner": "claude-infra",
+        "reviewerAgent": "gpt-architect",
+        "reviewerClass": "external-reasoning",
+        "reviewerProvider": "openai",
+        "reviewedCommitSha": "4a9560a719601727c6052e173009cc4569d8d9a1",
+        "reviewedBaseSha": "5e96f30dad2d3fd72c8cd98734d5abd0c95bdafe",
+        "reviewedTreeHash": "de764ae2dc44ac3bee4c25670af3bb802b20cffcdae487dafc06c705b5c8b55d",
+        "reviewedFileCount": 5,
+        "reviewedFingerprintSource": "git-object",
+        "reviewedDependencies": [
+          "apps/desktop/scripts/collect-notices.mjs",
+          "scripts/windows/distribution-inventory.mjs"
+        ],
+        "outcome": "CHANGES_REQUESTED",
+        "reviewedAt": "2026-10-05T14:07:11.048Z",
+        "evidence": "CHANGES_REQUESTED at 4a9560a719601727c6052e173009cc4569d8d9a1. gpt-architect round-115, transcribed by claude-lead. DO NOT PASS RIGHTS REVIEW.\n\nThe contradiction repair itself is CORRECT: the written-offer prose is now derived from the same entries used to render the table, and tests cover both branches.\n\nBut the acceptance also requires RESOLUTION of the already-shipping sharp/libvips LGPL rows and the missing licence-text / source-offer obligation. docs/LICENSING.md currently ADMITS that obligation remains unresolved. That honesty is correct and it is not task completion.\n\nWindows #19 reporting '29 package(s), 0 with no licence evidence' does NOT prove that every LGPL row includes its required licence text.\n\nREQUIRED CORRECTION: (1) establish against the ACTUAL Windows package/installed tree whether @img/sharp-libvips-win32-x64 ships; (2) establish whether the relevant licence text accompanies it; (3) record the selected product/rights resolution -- ship the required licence/source-offer material, OR remove sharp/libvips only if measurement proves Liberty does not need it; (4) do NOT allow an engineer to silently make a legal/licensing decision.\n\nIf commander or counsel input is required, BLOCK explicitly on that decision so it stops consuming implementation capacity."
+      },
+      "reviewHistory": [
+        {
+          "taskId": "PL-0739",
+          "implementationAgent": "claude-infra",
+          "implementationOwner": "claude-infra",
+          "reviewerAgent": "gpt-architect",
+          "reviewerClass": "external-reasoning",
+          "reviewerProvider": "openai",
+          "reviewedCommitSha": "4a9560a719601727c6052e173009cc4569d8d9a1",
+          "reviewedBaseSha": "5e96f30dad2d3fd72c8cd98734d5abd0c95bdafe",
+          "reviewedTreeHash": "de764ae2dc44ac3bee4c25670af3bb802b20cffcdae487dafc06c705b5c8b55d",
+          "reviewedFileCount": 5,
+          "reviewedFingerprintSource": "git-object",
+          "reviewedDependencies": [
+            "apps/desktop/scripts/collect-notices.mjs",
+            "scripts/windows/distribution-inventory.mjs"
+          ],
+          "outcome": "CHANGES_REQUESTED",
+          "reviewedAt": "2026-10-05T14:07:11.048Z",
+          "evidence": "CHANGES_REQUESTED at 4a9560a719601727c6052e173009cc4569d8d9a1. gpt-architect round-115, transcribed by claude-lead. DO NOT PASS RIGHTS REVIEW.\n\nThe contradiction repair itself is CORRECT: the written-offer prose is now derived from the same entries used to render the table, and tests cover both branches.\n\nBut the acceptance also requires RESOLUTION of the already-shipping sharp/libvips LGPL rows and the missing licence-text / source-offer obligation. docs/LICENSING.md currently ADMITS that obligation remains unresolved. That honesty is correct and it is not task completion.\n\nWindows #19 reporting '29 package(s), 0 with no licence evidence' does NOT prove that every LGPL row includes its required licence text.\n\nREQUIRED CORRECTION: (1) establish against the ACTUAL Windows package/installed tree whether @img/sharp-libvips-win32-x64 ships; (2) establish whether the relevant licence text accompanies it; (3) record the selected product/rights resolution -- ship the required licence/source-offer material, OR remove sharp/libvips only if measurement proves Liberty does not need it; (4) do NOT allow an engineer to silently make a legal/licensing decision.\n\nIf commander or counsel input is required, BLOCK explicitly on that decision so it stops consuming implementation capacity."
+        }
+      ],
+      "blocker": "BLOCKED ON A RIGHTS DECISION THAT IS NOT ENGINEERING, at gpt-architect's round-115 instruction: 'If commander/counsel input is required, BLOCK PL-0739 explicitly on that decision after recording this verdict so it stops consuming implementation capacity.'\n\nWHAT IS DONE AND STAYS DONE: the contradiction repair. The written offer is derived from the same entry list the table is rendered from, so the document cannot deny its own rows; both branches are tested and mutation-tested; the suite case that USED to assert the false sentence is gone. gpt-architect accepted that half explicitly.\n\nWHAT IS NOT DONE, AND WHY NO ENGINEER MAY DECIDE IT: three components already shipping declare a copyleft licence (@img/sharp-libvips-linux-x64 and -linuxmusl-x64 at LGPL-3.0-or-later, @img/sharp-wasm32 at Apache-2.0 AND LGPL-3.0-or-later AND MIT) and all three report **none found** for shipped licence text. The resolution is one of three, and they cost very different amounts: ship the licence text and keep the offer live; exclude sharp from the packaged sidecar IF measurement proves Liberty does not use Next image optimisation; or make the written offer real with corresponding source for the exact libvips revision. That is a licensing decision about what the product distributes, not a code change, and product invariant 6 puts it with the reviewer and the commander.\n\nUNBLOCK WHEN: the commander or counsel selects a resolution. The engineering half of each option is small and specified in docs/LICENSING.md section 7b.\n\nSTILL MEASURABLE WITHOUT THAT DECISION, and NOT blocked by it: whether @img/sharp-libvips-win32-x64 actually ships in the WINDOWS package and installed trees, and whether licence text accompanies it. That is clauses 1 and 2 of the correction, it is pure measurement, and it belongs to PL-0738 wiring the distribution inventory into the Windows job -- where the answer arrives automatically rather than by anyone asserting it."
     },
     {
       "id": "PL-0740",
