@@ -30,6 +30,7 @@ pub mod handshake;
 pub mod job;
 pub mod shell;
 pub mod sidecar;
+pub mod sidecar_log;
 pub mod supervision;
 pub mod token;
 

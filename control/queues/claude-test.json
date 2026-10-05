@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-05T03:31:21.928Z",
+  "generatedAt": "2026-10-05T03:39:53.266Z",
   "agent": "claude-test",
   "executionAvailable": true,
   "assigned": [
@@ -14,10 +14,10 @@
         "PW-0602"
       ],
       "allowedPaths": [
-        "docs/WINDOWS_CERTIFICATION.md",
         "coordination/LAST_MILE.md"
       ],
       "reviewDependencies": [
+        "docs/WINDOWS_CERTIFICATION.md",
         "docs/TEST_MATRIX.md",
         "docs/RELEASE_CRITERIA.md"
       ],

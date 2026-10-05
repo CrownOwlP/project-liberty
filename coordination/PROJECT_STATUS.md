@@ -1,8 +1,8 @@
 # Project Liberty - Project Status
 
-> Generated 2026-10-05T03:31:21.923Z from the AI control plane.
+> Generated 2026-10-05T03:39:53.261Z from the AI control plane.
 
-**Overall completion:** 111/138 executable tasks (80%)
+**Overall completion:** 111/139 executable tasks (80%)
 
 ## Status summary
 
@@ -10,7 +10,7 @@
 - **READY:** 3
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 0
-- **REVIEW:** 10
+- **REVIEW:** 11
 - **BLOCKED:** 8
 - **DONE:** 111
 - **CANCELED:** 0
@@ -38,6 +38,7 @@
 - **PL-0731** [REVIEW] The empty client-key allowlist refusal is asserted by nobody — owner: claude-media
 - **PL-0732** [REVIEW] The diagnostics setting is stored, consumed, and reachable by nobody — owner: claude-frontend
 - **PL-0733** [REVIEW] Corrective: every pwsh step that tolerates a native non-zero exit is broken on the runner — owner: claude-infra
+- **PL-0734** [REVIEW] The logs directory the shell creates is written to by nothing, and the sidecar's stderr is discarded — owner: claude-infra
 - **PL-0735** [REVIEW] CI's validate job no longer finishes: the control-plane suite spends its time in one inner loop — owner: claude-lead
 - **PL-0737** [REVIEW] The distribution evidence PW-0208 needs is not readable from any CI run — owner: claude-lead
 - **PL-0739** [REVIEW] THIRD-PARTY-NOTICES.md contradicts itself: the table declares LGPL components the written offer denies — owner: claude-infra
@@ -85,5 +86,5 @@ UNBLOCK WHEN: the commander runs Experiment 1a on real Windows hardware and hand
 - **claude-media:** 1/2 active
 - **claude-test:** 2/2 active
 - **claude-security:** 0/1 active
-- **claude-infra:** 4/4 active
+- **claude-infra:** 5/5 active
 - **human-commander:** 0/99 active (external lane; not locally executable)

@@ -416,29 +416,39 @@ in this order:
    failed with X and failover found nothing".
 6. **The installer log**, for anything in Step 2 or Step 5 — that is what the
    `/l*v` argument is for.
-7. **The application version** from the About screen, and the **CI run id** and
+7. **`sidecar.log`**, for anything in Step 3, 4 or 5 — see below for where it
+   is and what is in it. This is the one that was missing until PL-0734.
+8. **The application version** from the About screen, and the **CI run id** and
    **commit sha** the artifact came from. Never "latest".
 
-### There is no application log file, and the sheet will not pretend otherwise
+### The application log, and what it does and does not contain
 
-This document previously asked for "the log file (location established by
-PW-0501)". **No such file exists.** Checked rather than assumed, in the shell's
-own source:
+**`%LOCALAPPDATA%\app.projectliberty.desktop\logs\sidecar.log`** — attach it
+to any report from Step 3, 4 or 5.
 
-- the shell creates `%LOCALAPPDATA%\app.projectliberty.desktop\logs` at first
-  launch and passes it to the sidecar as `LIBERTY_SIDECAR_LOG_DIR`;
-- **nothing ever writes into it** — no file write exists anywhere in
-  `apps/desktop/src-tauri/src/`;
-- the sidecar's **stderr is discarded** (`stderr(Stdio::null())`), and its
-  stdout is read only until the handshake line arrives, after which the reader
-  thread keeps draining it **to nowhere** so the child does not block on a full
-  pipe.
+This sheet previously said there was no such file, and it was right. The shell
+created that directory and nothing wrote into it; the sidecar's stderr was
+discarded outright (`Stdio::null()`), so a Node stack trace printed on the way
+down went nowhere. PL-0734 closed that. What you now get:
 
-So a defect in a packaged build currently leaves behind the installer log, a
-screenshot, and whatever the UI said — and nothing else. This is a product
-defect, filed as **PL-0734**, and until it closes, items 1–7 above are the whole
-of what a report can carry. Asking the commander to attach a log that was never
-written is how a sheet trains people to stop reading it.
+- **both streams**, tagged `[out]` and `[err]`, interleaved in the order they
+  were printed — which is usually the diagnosis;
+- **written as the child runs**, not at exit. The shell's job object kills the
+  sidecar when the shell goes, and a killed process never reaches an exit
+  path, so anything buffered until then would be exactly the crash you are
+  trying to report;
+- **truncated per launch**, so the file is about the run you just did. Copy it
+  before relaunching;
+- **capped at 1 MB**, and it says so at the bottom if it hit the cap.
+
+**The launch token is redacted** — replaced by value, not by pattern, because
+the shell minted it. If you see `[redacted: launch token]` in the file that is
+the protection working, not a fault.
+
+**If the file is absent**, the shell could not open it and said so on its own
+stdout; the launch continues regardless, because a shell that refused to start
+because it could not write a diagnostic would be worse than the gap. Record its
+absence — that is itself a finding.
 
 ## How long it takes, honestly
 

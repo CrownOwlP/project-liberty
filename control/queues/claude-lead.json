@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-05T03:31:21.926Z",
+  "generatedAt": "2026-10-05T03:39:53.264Z",
   "agent": "claude-lead",
   "executionAvailable": true,
   "assigned": [
@@ -84,6 +84,30 @@
   "review": [],
   "reservedExternal": [],
   "recommended": [
+    {
+      "id": "PL-0740",
+      "priority": "P2",
+      "lane": "Integration",
+      "status": "READY",
+      "title": "A task parked for an external reviewer consumes local implementation capacity",
+      "dependencies": [],
+      "allowedPaths": [
+        "scripts/ai-control-plane.mjs",
+        "scripts/test-ai-control-plane.mjs"
+      ],
+      "reviewDependencies": [
+        "control/agents.json",
+        "control/policies.json"
+      ],
+      "preferredAgent": "claude-lead",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "unit",
+        "architecture-review"
+      ],
+      "acceptance": "claude-infra's maxParallel has gone 1 -> 2 (round 109) -> 3 (round 113) -> 4 -> 5 (round 114). Every raise was justified against the same three documented conditions and every one of them held. That is the symptom, not the cause.\n\nTHE CAUSE: usageByAgent counts REVIEW toward maxParallel, and REVIEW here usually means 'parked for gpt-architect', who is not a locally executable agent. So a lane whose entire output is awaiting an EXTERNAL verdict consumes its own implementation capacity, and the only lever available is a number that was never meant to be pulled five times.\n\nREQUIRED: a task in REVIEW whose reviewAgent is not locally executable does not count toward its owner's maxParallel. It still holds its allowedPaths -- CONFLICT DETECTION MUST NOT CHANGE, and that is the whole safety argument for the capacity limit being loosenable at all: overlap is prevented structurally by allowedPaths regardless of owner or count.\nREQUIRED: 'locally executable' is read from the registry, not hard-coded to gpt-architect.\nREQUIRED: a task in REVIEW with a LOCAL reviewAgent still counts, because that reviewer is real work this organisation has to do.\nREQUIRED: the capacity raises this defect forced are reconsidered once it lands. If the right number for claude-infra is 2, it should go back to 2.\nREQUIRED: driven by a scenario over FIXTURES, not the live board, per this suite's own standing rule, and shown to fail before the change.\n\nOUT OF SCOPE: changing activeStatuses, which conflict detection reads. Only the capacity computation moves.",
+      "notes": "FILED ROUND 114 during the release sprint, at the moment a fifth raise became the alternative to leaving PL-0734 -- item 2 on the release-impact list, directly on the launch path -- unstarted. Filed rather than fixed on the spot because scripts/ai-control-plane.mjs is reserved by PL-0735 in review, and because a control-plane change made in a hurry during a release sprint is how a scheduler quietly starts producing different waves."
+    },
     {
       "id": "PL-0730",
       "priority": "P3",

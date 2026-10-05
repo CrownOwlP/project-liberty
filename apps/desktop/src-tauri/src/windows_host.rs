@@ -25,6 +25,8 @@
 
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
+use std::fs::OpenOptions;
+use std::io::Write;
 use std::process::{Child as StdChild, Command, Stdio};
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::time::Duration;
@@ -36,6 +38,7 @@ use crate::job::KillOnCloseJob;
 use crate::job::JobError;
 use crate::shell::{Child, HandshakeOutcome, ShellHost};
 use crate::sidecar::WritableDirectories;
+use crate::sidecar_log::SidecarLog;
 use crate::sidecar::{launch_arguments, SidecarLaunch};
 
 /// The event the failure window listens for.
@@ -142,7 +145,14 @@ impl ShellHost for WindowsHost {
          */
         command.envs(launch.env.iter().map(|(name, value)| (name, value)));
         command.stdout(Stdio::piped());
-        command.stderr(Stdio::null());
+        /*
+         * STDERR IS CAPTURED, NOT DISCARDED (PL-0734). It used to be
+         * `Stdio::null()`, which meant a Node stack trace printed on the way
+         * down went to the kernel's bit bucket -- and on a packaged build, on
+         * a machine no engineer can reach, that was the entire explanation
+         * for an unanticipated startup failure.
+         */
+        command.stderr(Stdio::piped());
         command.stdin(Stdio::null());
 
         let mut process = command
@@ -161,14 +171,96 @@ impl ShellHost for WindowsHost {
             .stdout
             .take()
             .ok_or_else(|| "the sidecar was started with no stdout pipe".to_string())?;
+        let stderr = process
+            .stderr
+            .take()
+            .ok_or_else(|| "the sidecar was started with no stderr pipe".to_string())?;
+
+        /*
+         * ONE LOG FILE, TRUNCATED PER LAUNCH, WRITTEN AS THE CHILD RUNS.
+         *
+         * APPENDED LINE BY LINE RATHER THAN AT EXIT, and that is the whole
+         * requirement: the job object kills this child when the shell goes,
+         * and a killed process never reaches an exit path. Anything buffered
+         * until then is exactly the output of the crash nobody can explain.
+         *
+         * BEST EFFORT, NEVER FATAL. If the file cannot be opened the launch
+         * proceeds with no log. A shell that refused to start because it
+         * could not write a diagnostic would have turned an observability
+         * gap into an outage -- a new unsafe startup path, which this task
+         * is forbidden to create.
+         *
+         * TRUNCATED per launch (`.truncate(true)`) rather than appended
+         * across them: the question this file answers is "why did THIS start
+         * fail", and a reader handed six runs interleaved has to work out
+         * which lines are theirs first.
+         */
+        let log_path = launch.writable.logs.join("sidecar.log");
+        let mut sink = OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(&log_path)
+            .ok();
+        if sink.is_none() {
+            // Said on stdout rather than swallowed: the person reading a
+            // console knows why the file they were told to attach is absent.
+            eprintln!("liberty: no sidecar log; {} could not be opened", log_path.display());
+        }
+
+        let token = launch
+            .env
+            .iter()
+            .find(|(name, _)| name == crate::sidecar::TOKEN_VAR)
+            .map(|(_, value)| value.clone())
+            .unwrap_or_default();
+        let mut log = SidecarLog::new(&token);
+        log.note(&format!("launching {}", launch.node.display()));
+
         let (sender, lines) = mpsc::channel();
+        let (log_tx, log_rx) = mpsc::channel::<(String, String)>();
+
+        /*
+         * THE WRITER IS ITS OWN THREAD so neither reader blocks on disk, and
+         * it owns the `SidecarLog` so the budget and the redaction are
+         * applied in exactly one place.
+         */
+        std::thread::spawn(move || {
+            let flush = |log: &mut SidecarLog, sink: &mut Option<std::fs::File>| {
+                let pending = log.take();
+                if pending.is_empty() {
+                    return;
+                }
+                if let Some(file) = sink.as_mut() {
+                    // A write failure stops the logging, never the launch.
+                    let _ = file.write_all(pending.as_bytes());
+                    let _ = file.flush();
+                }
+            };
+            flush(&mut log, &mut sink);
+            while let Ok((stream, line)) = log_rx.recv() {
+                log.line(&stream, &line);
+                flush(&mut log, &mut sink);
+            }
+        });
+
+        let out_log = log_tx.clone();
         std::thread::spawn(move || {
             for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+                let _ = out_log.send(("out".to_string(), line.clone()));
                 if sender.send(line).is_err() {
                     // The receiver is gone: the launch was abandoned. Keep
-                    // draining so the child never blocks on a full pipe.
+                    // draining so the child never blocks on a full pipe --
+                    // and keep LOGGING, because the interesting output of a
+                    // failed start arrives after the handshake gave up.
                     continue;
                 }
+            }
+        });
+
+        std::thread::spawn(move || {
+            for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+                let _ = log_tx.send(("err".to_string(), line));
             }
         });
 

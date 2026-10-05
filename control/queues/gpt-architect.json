@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-05T03:31:21.925Z",
+  "generatedAt": "2026-10-05T03:39:53.263Z",
   "agent": "gpt-architect",
   "executionAvailable": false,
   "assigned": [],
@@ -148,10 +148,10 @@
         "PW-0602"
       ],
       "allowedPaths": [
-        "docs/WINDOWS_CERTIFICATION.md",
         "coordination/LAST_MILE.md"
       ],
       "reviewDependencies": [
+        "docs/WINDOWS_CERTIFICATION.md",
         "docs/TEST_MATRIX.md",
         "docs/RELEASE_CRITERIA.md"
       ],
@@ -336,6 +336,48 @@
       "implementationBaseSha": "7fe96756b297f83c659a5d957b1b4522edf83901"
     },
     {
+      "id": "PL-0734",
+      "priority": "P2",
+      "lane": "Infra",
+      "status": "REVIEW",
+      "title": "The logs directory the shell creates is written to by nothing, and the sidecar's stderr is discarded",
+      "dependencies": [],
+      "allowedPaths": [
+        "apps/desktop/src-tauri/src/sidecar_log.rs",
+        "apps/desktop/src-tauri/src/windows_host.rs",
+        "apps/desktop/src-tauri/src/lib.rs",
+        "apps/desktop/sidecar-bootstrap/acceptance.mjs",
+        "docs/WINDOWS_CERTIFICATION.md"
+      ],
+      "reviewDependencies": [
+        "apps/desktop/src-tauri/src/failure.rs",
+        "apps/desktop/src-tauri/src/handshake.rs",
+        "apps/desktop/src-tauri/src/token.rs",
+        "apps/desktop/src-tauri/src/shell.rs"
+      ],
+      "preferredAgent": "claude-infra",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "unit",
+        "security-review"
+      ],
+      "acceptance": "FOUND WHILE WRITING PW-0603's RUN SHEET, not by looking for it. The certification document's defect-report format asked the commander for \"the log file (location established by PW-0501)\". There is no such file, and there is no code that could write one.\n\nMEASURED IN THE SHELL'S OWN SOURCE, three facts that together close the question:\n1. `windows_host.rs` calls `std::fs::create_dir_all` on data, cache and logs at first launch, and passes the logs path to the sidecar as LIBERTY_SIDECAR_LOG_DIR. The directory is real.\n2. NOTHING EVER WRITES INTO IT. A grep of apps/desktop/src-tauri/src/ for File::create, write_all, fs::write and OpenOptions returns nothing; every `write!` in the crate is a Display impl formatting an error string. The crate declares no `log` or `tracing` dependency and tauri.conf.json configures no plugins, so there is no logger to have been wired.\n3. THE SIDECAR'S OUTPUT IS DISCARDED. `command.stderr(Stdio::null())` -- a Node stack trace printed on the way down goes to the kernel's bit bucket. stdout is piped to a reader thread whose lines are consumed only by `await_handshake`; once the handshake resolves or the launch is abandoned the thread keeps draining the pipe and throwing each line away, by design, so the child never blocks.\n\nWHAT IS AND IS NOT LOST, because this is a diagnosability defect and inflating it would be the same error in the other direction. `failure.rs` already gives the viewer seven NAMED failure headlines covering the anticipated paths -- missing installation, unwritable profile, loopback not secured, unsafe start, service did not finish starting, service reported something unusable, service keeps stopping -- and the commander screenshots those. What is lost is the UNANTICIPATED failure: the sidecar starts, throws, prints the only explanation that exists to stderr, and exits, and the shell can say no more than \"the local service did not finish starting\". That is the whole of the evidence for a launch defect on a packaged build, on a machine no engineer can reach.\n\nREQUIRED: the sidecar's stderr is captured rather than discarded, and its stdout keeps being drained for the same reason it is drained today. A pipe that is read and then written to a file is still read; this must not reintroduce the full-pipe deadlock `windows_host.rs` already explains.\n\nREQUIRED: what is captured lands in the directory the shell ALREADY creates and already names to the sidecar -- %LOCALAPPDATA%\\app.projectliberty.desktop\\logs. Do not invent a second location, and do not make the layout depend on %LOCALAPPDATA% being read in a second place: sidecar.rs owns the SHAPE under a root the host supplies, and that division is deliberate.\n\nREQUIRED: bounded. An unbounded log on a long session is row E1's failure wearing a different hat. State the bound -- size, count or both -- and make it a tested property rather than a comment.\n\nREQUIRED: the handshake token NEVER reaches the file. `token.rs` mints the one secret this process owns, PW-0101 exists to keep it from another process on the same machine, and a log file in a world-readable profile directory that echoed a line containing it would hand it over. Prove this with a test, not with care.\n\nREQUIRED: a test that the file is actually written, driven through the same path a launch takes, and a test that a sidecar which exits noisily leaves its output behind. `sidecar-bootstrap/acceptance.mjs` already drives a real child and already sets LIBERTY_SIDECAR_LOG_DIR; that is the honest place to assert from, off Windows.\n\nREQUIRED: docs/WINDOWS_CERTIFICATION.md's \"There is no application log file\" subsection is rewritten to say where the log is, in the same edit. A stale subsection claiming the absence of a file that now exists is the exact failure this repository recorded in round 112 for diagnostics-disclosure.tsx.",
+      "notes": "FILED BY claude-test DURING PW-0603, round 112, classification A (product defect) under the round-112 directive's A-E scheme. It is a real defect in the shipped desktop shell, not a packaging or harness fault and not a CI condition.\n\nWHY P2 AND NOT P1, stated so gpt-architect can overrule it cheaply. The product works without this; what suffers is the evidence a failure leaves behind. Most rows the commander can run TODAY are install-path rows, and those already produce an msiexec /l*v log plus verify-install.mjs's own named refusal. The undiagnosable case is narrower: an unanticipated sidecar failure during launch (matrix rows A1, A2, A3b). That is squarely inside the round-112 directive's priority 1 -- desktop launch and runtime qualification -- which is the argument for P1, and the reason this reasoning is written down rather than left as a number. If the first RIG launch defect comes back with only a screenshot, that settles it.\n\nNOT DONE SPECULATIVELY. PW-0603 ships the sheet with the absence stated plainly and the report format limited to what actually exists, so the commander is never asked for a file that was never written. The sheet names this task, so closing this task has a documentation obligation attached to it, which is the REQUIRED clause above.",
+      "owner": "claude-infra",
+      "implementationAgent": "claude-infra",
+      "updatedAt": "2026-10-05T03:39:35.249Z",
+      "implementationBaseSha": "504da24626c502438ed053aa5dfa196cf858cd4d",
+      "gateResults": {
+        "unit": {
+          "status": "pass",
+          "at": "2026-10-05T03:39:35.099Z",
+          "by": "claude-infra",
+          "commitSha": "504da24626c502438ed053aa5dfa196cf858cd4d",
+          "evidence": "THE SIDECAR CAN NOW EXPLAIN ITSELF. cargo test: 61 passed (53 pre-existing + 8 new in sidecar_log, +1 integration = 9 in that module, 0 failed). cargo check --target x86_64-pc-windows-msvc: clean, no warnings.\n\nA CAPABILITY UNLOCKED FOR THE WHOLE WINDOWS LANE, worth recording on its own: windows_host.rs is cfg(windows) and has never been compiled by this session. rustup already has the x86_64-pc-windows-msvc std, so cargo CHECK for that target works here -- no linker needed. Verified it really compiles the file rather than hitting a cache, by appending a deliberate type error and watching it produce 2 errors, then restoring. Every future change to the Windows shell can be type-checked before it costs a round.\n\nTHE DESIGN, AND WHY THE LOGIC IS NOT IN THE WINDOWS FILE. Redaction is a SECURITY property, and a security property that only compiles on a platform the suite cannot run is one nobody has tested. So sidecar_log.rs is portable and holds everything that can be wrong -- what is redacted, how much is kept, what a line looks like -- and windows_host.rs keeps only the pipe and the file handle.\n\nWHAT CHANGED. stderr(Stdio::null()) becomes stderr(Stdio::piped()). Both streams drain into one writer thread that owns the SidecarLog, so the budget and the redaction apply in exactly one place, and append to %LOCALAPPDATA%\\\\<identifier>\\\\logs\\\\sidecar.log LINE BY LINE as the child runs. The stdout reader keeps feeding the handshake channel AND the log, and keeps logging after the handshake gives up -- which is when the interesting output of a failed start arrives.\n\nTHE TOKEN CANNOT REACH THE FILE, and the redaction is exact rather than heuristic because the shell minted the value. Established first that it should not be there at all: token.rs sends it through the ENVIRONMENT, never the command line, and the handshake line carries only {host, port}. Redacted anyway, because a Node crash can print its environment and this file lands in a world-readable profile directory. Tested: every occurrence in a line and across lines; the rest of the line survives, or the redaction destroys the diagnosis it was meant to preserve; and an EMPTY token redacts NOTHING rather than everything, because \"\".replace(\"\", X) inserts X between every character and would turn a log into confetti. No environment is ever dumped.\n\n\"A REAL FAILURE SURVIVES PROCESS TERMINATION\", which is the clause that matters, is proven by driving a REAL CHILD rather than by argument: spawn sh -c that writes FATAL plus the token to stderr and then sleeps, capture one line through the same accumulator with the same per-line flush, KILL the child so it never reaches any exit path of its own, reopen the file and require the diagnosis present, the token absent and the redaction marker present. It runs on Linux and the arrangement under test is the ORDER of operations, which is identical on both platforms.\n\nBOUNDED, NOT UNBOUNDED. 1 MiB per run, then it stops and writes a truncation notice; the matrix row E1 calls unbounded growth a failure even without a crash. Truncated per launch rather than appended across them, so the file is about the run just performed. A cap rather than rotation: the first megabyte of a failing start contains the failure, and rotation is more machinery than the thing it bounds.\n\nNO NEW UNSAFE STARTUP PATH, which the acceptance forbids by name. If the log cannot be opened the launch proceeds with no log and the shell says so on its own stdout; a write failure stops the logging, never the launch. A shell that refused to start because it could not write a diagnostic would have turned an observability gap into an outage.\n\nMUTATION-TESTED, BOTH PROPERTIES. Removing the redaction reddens the token cases. Removing the budget check reddens 2. Both reverted; 9/9 green.\n\nSTATED, NOT GLOSSED: none of this has run on Windows. What is proven is the portable logic, the termination-survival ORDER against a real killed child, and that the Windows file type-checks for its real target. The next Windows run is the evidence.\n\ndocs/WINDOWS_CERTIFICATION.md is corrected in the same change, which its acceptance required: the subsection that told the commander there is no log file now says where it is, what is in it, that the token appears redacted by design, and that an ABSENT file is itself a finding to record. The defect-report format gains it as item 7."
+        }
+      }
+    },
+    {
       "id": "PL-0735",
       "priority": "P0",
       "lane": "Integration",
@@ -453,6 +495,30 @@
   ],
   "reservedExternal": [],
   "recommended": [
+    {
+      "id": "PL-0740",
+      "priority": "P2",
+      "lane": "Integration",
+      "status": "READY",
+      "title": "A task parked for an external reviewer consumes local implementation capacity",
+      "dependencies": [],
+      "allowedPaths": [
+        "scripts/ai-control-plane.mjs",
+        "scripts/test-ai-control-plane.mjs"
+      ],
+      "reviewDependencies": [
+        "control/agents.json",
+        "control/policies.json"
+      ],
+      "preferredAgent": "claude-lead",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "unit",
+        "architecture-review"
+      ],
+      "acceptance": "claude-infra's maxParallel has gone 1 -> 2 (round 109) -> 3 (round 113) -> 4 -> 5 (round 114). Every raise was justified against the same three documented conditions and every one of them held. That is the symptom, not the cause.\n\nTHE CAUSE: usageByAgent counts REVIEW toward maxParallel, and REVIEW here usually means 'parked for gpt-architect', who is not a locally executable agent. So a lane whose entire output is awaiting an EXTERNAL verdict consumes its own implementation capacity, and the only lever available is a number that was never meant to be pulled five times.\n\nREQUIRED: a task in REVIEW whose reviewAgent is not locally executable does not count toward its owner's maxParallel. It still holds its allowedPaths -- CONFLICT DETECTION MUST NOT CHANGE, and that is the whole safety argument for the capacity limit being loosenable at all: overlap is prevented structurally by allowedPaths regardless of owner or count.\nREQUIRED: 'locally executable' is read from the registry, not hard-coded to gpt-architect.\nREQUIRED: a task in REVIEW with a LOCAL reviewAgent still counts, because that reviewer is real work this organisation has to do.\nREQUIRED: the capacity raises this defect forced are reconsidered once it lands. If the right number for claude-infra is 2, it should go back to 2.\nREQUIRED: driven by a scenario over FIXTURES, not the live board, per this suite's own standing rule, and shown to fail before the change.\n\nOUT OF SCOPE: changing activeStatuses, which conflict detection reads. Only the capacity computation moves.",
+      "notes": "FILED ROUND 114 during the release sprint, at the moment a fifth raise became the alternative to leaving PL-0734 -- item 2 on the release-impact list, directly on the launch path -- unstarted. Filed rather than fixed on the spot because scripts/ai-control-plane.mjs is reserved by PL-0735 in review, and because a control-plane change made in a hurry during a release sprint is how a scheduler quietly starts producing different waves."
+    },
     {
       "id": "PL-0730",
       "priority": "P3",
