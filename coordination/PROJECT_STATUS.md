@@ -1,16 +1,16 @@
 # Project Liberty - Project Status
 
-> Generated 2026-10-05T14:15:13.724Z from the AI control plane.
+> Generated 2026-10-05T14:43:09.688Z from the AI control plane.
 
-**Overall completion:** 121/141 executable tasks (86%)
+**Overall completion:** 121/143 executable tasks (85%)
 
 ## Status summary
 
-- **BACKLOG:** 5
+- **BACKLOG:** 6
 - **READY:** 4
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 1
-- **REVIEW:** 1
+- **REVIEW:** 2
 - **BLOCKED:** 9
 - **DONE:** 121
 - **CANCELED:** 0
@@ -33,13 +33,14 @@
 
 - **PL-0741** [REVIEW] The commander's qualification evidence is collected by hand, one command at a time — owner: claude-test
 - **PL-0742** [IN_PROGRESS] Experiment 1a exists as a specification and not as something anyone can run — owner: claude-media
+- **PL-0743** [REVIEW] A pasted addon manifest URL has no safe path into the adapter — owner: claude-backend
 
 ## Dispatch classification
 
 - **READY_AND_EXECUTABLE:** 4
 - **READY_BUT_EXTERNAL:** 0
 - **BLOCKED:** 9
-- **BACKLOG (dependency-gated):** 5
+- **BACKLOG (dependency-gated):** 6
 
 ## Recommended executable wave
 
@@ -91,7 +92,7 @@ STILL MEASURABLE WITHOUT THAT DECISION, and NOT blocked by it: whether @img/shar
 - **gpt-architect:** 0/6 active (external lane; not locally executable)
 - **claude-lead:** 0/2 active
 - **claude-frontend:** 0/2 active
-- **claude-backend:** 0/2 active
+- **claude-backend:** 1/2 active
 - **claude-media:** 1/2 active
 - **claude-test:** 1/3 active
 - **claude-security:** 0/1 active

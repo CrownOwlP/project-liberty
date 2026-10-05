@@ -11,6 +11,12 @@
  * onto every candidate, never inferred from anything an addon returns, and a
  * source that fails the declaration gate produces no candidates at all.
  *
+ * `add-by-url.ts` (PL-0743) is the thin path from a URL a person pasted to a
+ * PREVIEW of what the addon claims to be. It adds no protocol code and no
+ * second transport. A preview is not an authorization and cannot become one:
+ * only `defineStremioSource` produces something playback may use, and it still
+ * requires an explicit operator declaration with an auditable basis.
+ *
  * The catalog half of the protocol is deliberately NOT implemented yet. Mapping
  * a Stremio meta object onto `CatalogItem` means supplying `genre`,
  * `releaseYear` and the kind-specific runtime/episode invariants the contract
@@ -90,6 +96,14 @@ export type {
   StremioStream,
   StremioStreamResponse
 } from "./protocol";
+
+export { normalizeAddonUrl, previewStremioAddon } from "./add-by-url";
+export type {
+  AddByUrlRejectionReason,
+  AddByUrlResult,
+  NormalizeResult,
+  StremioAddonPreview
+} from "./add-by-url";
 
 export { checkUrl, classifyHost } from "./url-policy";
 export type { HostClass, UrlCheckResult, UrlPolicyOptions, UrlRejectionReason } from "./url-policy";

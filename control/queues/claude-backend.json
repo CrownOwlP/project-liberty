@@ -1,8 +1,59 @@
 {
-  "generatedAt": "2026-10-05T14:15:14.428Z",
+  "generatedAt": "2026-10-05T14:43:09.691Z",
   "agent": "claude-backend",
   "executionAvailable": true,
-  "assigned": [],
+  "assigned": [
+    {
+      "id": "PL-0743",
+      "priority": "P2",
+      "lane": "Provider",
+      "status": "REVIEW",
+      "title": "A pasted addon manifest URL has no safe path into the adapter",
+      "dependencies": [],
+      "allowedPaths": [
+        "packages/provider-sdk/src/stremio/add-by-url.ts",
+        "packages/provider-sdk/src/stremio/add-by-url.test.ts",
+        "packages/provider-sdk/src/stremio/index.ts"
+      ],
+      "reviewDependencies": [
+        "packages/provider-sdk/src/stremio/url-policy.ts",
+        "packages/provider-sdk/src/stremio/http.ts",
+        "packages/provider-sdk/src/stremio/source.ts",
+        "packages/provider-sdk/src/stremio/protocol.ts",
+        "docs/CONTENT_RIGHTS.md"
+      ],
+      "preferredAgent": "claude-backend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "security-review",
+        "rights-review"
+      ],
+      "acceptance": "FILED UNDER gpt-architect's ROUND-115 SECTION 6, WHICH BEGINS BY FORBIDDING THE OBVIOUS IMPLEMENTATION: \"A repository audit found that Liberty ALREADY contains a substantial Stremio stream adapter under packages/provider-sdk/src/stremio/. DO NOT BUILD ANOTHER STREMIO CLIENT.\" This is a thin path ONTO that adapter and adds no protocol code, no second transport and no second rights model.\n\nWHAT IS MISSING TODAY. Every piece of the flow exists except the first step and the shape that carries it. `checkUrl` validates, `fetchJson` resolves-and-pins and fetches, `parseStremioManifest` parses, `defineStremioSource` gates rights. Nothing accepts a `stremio://` URL -- the scheme has zero occurrences in the repository -- and nothing produces an object a UI can show a human BEFORE a source exists.\n\nREQUIRED: `stremio://` is normalised to `https://` BEFORE the URL and network policy run, never after. A policy that runs on a scheme it does not recognise rejects a legitimate paste; a policy that runs after an unvalidated rewrite is a policy that judged a different URL than the one fetched. The normalisation is a scheme swap and nothing else -- it must not rewrite a host, a port or a path, and `stremio://` pointing at a loopback or private host is subject to exactly the same refusals as `https://` pointing there.\n\nREQUIRED: the fetch goes through the EXISTING pinned transport in http.ts. Add-by-URL is precisely the transition url-policy.ts names -- \"the moment this becomes the general server-side client for arbitrary operator- or user-configured addons, host-string checks are no longer a control at all\" -- and the reason this task is safe to write is that PL-0710 already landed resolve-and-pin. No code path here may reach the network any other way.\n\nREQUIRED: the result is a PREVIEW, and the type must make it impossible to mistake for an authorization. Name, version and declared resources, taken from the parsed manifest. It carries no `ContentRights`, is not branded `RIGHTS_DECLARED`, and cannot be handed to `createStremioProvider`. Section 7 of the directive is the invariant: \"Stremio protocol compatibility is NOT playback authorization. A pasted URL must NEVER automatically become an authorized production source.\"\n\nREQUIRED: becoming a source remains `defineStremioSource`, unchanged, with an explicit operator `rights` and `rightsBasis`. The preview feeds the form; it does not substitute for it, and nothing in it may be defaulted into a rights basis.\n\nREQUIRED: every refusal is a typed reason, never a throw, matching the convention the rest of this directory already holds.\n\nOUT OF SCOPE, and deliberately so: the settings UI, any API route, any persistence of user-added sources, and profile/repository scoping for them. Those are PL-0744 and they carry questions this task must not answer by accident -- whose rights declaration a user-added source carries, and whether a non-operator may add one at all.",
+      "notes": "SPLIT FROM THE DIRECTIVE'S PRIORITY 5 ON PURPOSE. The directive describes the whole flow ADD-ONS -> ADD BY URL -> paste -> validate -> preview -> rights declaration -> save/enable. The SDK half is thin, reuses the existing adapter entirely and is the piece every possible UI shape needs. The UI half is a settings surface, an API route, a schema change and a rights-ownership question, which is not thin, is not release-critical for the primary journey, and would pull a security and rights review into a release sprint in order to ship a feature nobody has asked to use yet.",
+      "owner": "claude-backend",
+      "implementationAgent": "claude-backend",
+      "updatedAt": "2026-10-05T14:43:09.416Z",
+      "implementationBaseSha": "bde36ea9426796effa739972397f60b18accb5c3",
+      "gateResults": {
+        "typecheck": {
+          "status": "pass",
+          "at": "2026-10-05T14:42:48.137Z",
+          "by": "claude-backend",
+          "commitSha": "bde36ea9426796effa739972397f60b18accb5c3",
+          "evidence": "npm run typecheck in packages/provider-sdk (tsc --noEmit): clean. Caught a real defect first -- one normalizeAddonUrl call site still passed a single argument after the signature took the UrlPolicyOptions, TS2554 at add-by-url.test.ts:118. Repository-wide npm run lint: 12/12 tasks successful, 0 errors (2 pre-existing unused-import warnings in apps/web, untouched by this task)."
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-10-05T14:42:48.411Z",
+          "by": "claude-backend",
+          "commitSha": "bde36ea9426796effa739972397f60b18accb5c3",
+          "evidence": "npx vitest run in packages/provider-sdk: 13 files, 310 tests, all pass. add-by-url.test.ts contributes 22, and they were MUTATION-TESTED rather than merely observed green:\n\n(1) MUTANT 'the convenience hole' -- make a stremio:// paste skip checkUrl (if (!checked.ok && !normalizedFromStremioScheme)). FIVE tests fail, including every identity case that runs the same host through both spellings and requires the outcomes to match. This is the defect the feature could most plausibly have shipped with.\n(2) MUTANT 'unanchored regex' -- /stremio:\\/\\//i instead of /^stremio:\\/\\//i, so a stremio:// inside a query parameter gets rewritten. 1 test fails.\n(3) MUTANT 'weakened note' -- replace the authorizationNote text with 'ok to use'. 1 test fails.\n\nUnder mutant (1) the rebinding case still PASSED, correctly: that defence lives in http.ts and the mutant did not touch it. The layering is asserted, not assumed.\n\nNOT CLAIMED: no test here opens a real socket. resolve-and-pin.test.ts and pinned-transport.test.ts own that, and this file reuses their rig shape so that only the resolver and the transport port are doubles -- every refusal observed is produced by the production checkUrl / authoriseResolvedTarget path."
+        }
+      }
+    }
+  ],
   "review": [],
   "reservedExternal": [],
   "recommended": []
