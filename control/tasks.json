@@ -11176,21 +11176,26 @@
       "id": "PW-0503",
       "priority": "P1",
       "lane": "Test",
-      "status": "BLOCKED",
+      "status": "REVIEW",
       "title": "Install, upgrade, uninstall, reinstall — tested, not assumed",
       "dependencies": [
         "PW-0501"
       ],
       "allowedPaths": [
-        "scripts/windows/**",
-        "e2e/windows/**",
-        "package.json"
+        "scripts/windows/lifecycle.mjs",
+        "scripts/windows/lifecycle-cases.mjs",
+        "scripts/windows/installed-identity.mjs",
+        "scripts/windows/residue.mjs",
+        "scripts/windows/test-lifecycle.mjs"
       ],
       "reviewDependencies": [
         ".github/workflows/windows.yml",
         "apps/desktop",
         "docs/TEST_MATRIX.md",
-        "docs/WINDOWS_CERTIFICATION.md"
+        "docs/WINDOWS_CERTIFICATION.md",
+        "package.json",
+        "scripts/windows/verify-install.mjs",
+        "scripts/windows/artifact-inventory.mjs"
       ],
       "preferredAgent": "claude-test",
       "reviewAgent": "gpt-architect",
@@ -11202,23 +11207,23 @@
       "notes": "PROPOSED FOR gpt-architect RULING, round 80. Created unowned as part of the WINDOWS PRODUCT COMPLETION phase board so the proposal is machine-readable rather than prose, and NOT claimed before the verdict. SURFACE NOTE: this task's allowedPaths name directories that do not exist yet. The evidence-based narrowing procedure applies to reconciling work already in history; for genuinely new work the surface is the smallest set of paths the acceptance can be satisfied within, and it is narrowed again from the diff before review if it turns out to be wider than what was written. ",
       "owner": "claude-test",
       "gateResults": {
-        "build": {
-          "status": "pass",
-          "at": "2026-10-04T16:18:02.461Z",
-          "by": "claude-test",
-          "commitSha": "20c12faa087f2755fafe6d96facf95c016bf296e",
-          "evidence": "npm run build (turbo): 12 tasks successful, 0 failures.\n\nAND THE EVIDENCE THAT MATTERS FOR THIS TASK IS THE MATRIX ITSELF, which `--plan` renders on any platform precisely so the split can be audited without Windows:\n\n  id   owner      automated  outstanding for the commander                       blocked\n  F1   AUTO+RIG   yes        launching the application and seeing a window       -\n  F2   AUTO       yes        -                                                   -\n  F3   AUTO+RIG   yes        confirming on a machine with real user data         -\n  F4   AUTO       yes        -                                                   -\n  F5   RIG        no         SmartScreen/Defender wording on first run           -\n  F6   BLOCKED    no         -                                                   Needs signing (LAST_MILE 6)\n\nTHE FIVE REQUIRED CLAUSES, EACH AGAINST THAT TABLE:\n  \"clean install ... then launch\" -- F1, split: install and verify is automated, LAUNCH IS NOT, and the reason is in PROCEDURES rather than implied: a windows-latest runner has no interactive desktop session, so an automated launch \"would either hang or prove something smaller than it claimed\". That half is PW-0504's and is named as outstanding.\n  \"upgrade over a previous version with user data preserved\" -- F2, implemented, writing a marker file before the upgrade and asserting the user-data root survived it by CONTENT rather than by directory existence.\n  \"uninstall leaves no service, no scheduled task and no orphaned node.exe, and states exactly what user data it keeps or removes\" -- F3, via residue.mjs.\n  \"reinstall after uninstall\" -- F4.\n  \"each case is marked automated or commander-machine, with the reason\" -- satisfied BY CONSTRUCTION and enforced: the owner is read from docs/WINDOWS_CERTIFICATION.md rather than restated here, `planFor` THROWS when the document owns a case as automatable and the harness has no procedure for it, and `parseCertificationSection` throws when the section parses to zero rows -- \"a matrix that parsed to nothing would make every case pass vacuously\".\n\nTHE HARNESS REFUSES TO RUN WHERE IT CANNOT OBSERVE, verified on this box: `node scripts/windows/lifecycle.mjs --msi ... ` exits 2 with \"refusing to run on linux ... A run here would not be a weaker result, it would be a different one wearing the same name.\" That refusal is the reason no cloud session can ever manufacture an F1 pass.\n\nnode --test scripts/windows/test-lifecycle.mjs: 32 tests, 32 pass, covering the matrix parse, the owner vocabulary, the procedure/owner conjunction, the residue classification, the upgrade content check and PL-0727's derived-identity cross-checks.\n\nWHAT IS NOT PROVEN, AND IS WHY THIS TASK IS NOT BEING CLOSED. The acceptance says the lifecycle is \"exercised automatically wherever that is possible on a runner\", and IT NEVER HAS BEEN. Every observed Windows run reports `lifecycle=skipped`, because the `verifier-negative` step before it could not succeed -- diagnosed and repaired this round as PL-0733. So F1, F2, F3 and F4 have produced no result on any machine, and the automated half of this task's acceptance is unevidenced. Claiming it from a plan rendering would be exactly the collapse the harness's own refusal exists to prevent.\n\nF2 ALSO CARRIES A SECOND, HONEST LIMIT even once the harness runs: with no --previous-msi it reports not-run with a stated reason -- \"an upgrade needs a previous version to upgrade FROM and this repository has never shipped one\" -- rather than passing. A genuine previous-release artifact is PW-0505's, and PW-0505 is BLOCKED on exactly that."
-        },
         "unit": {
           "status": "pass",
-          "at": "2026-10-04T16:18:02.862Z",
+          "at": "2026-10-05T03:43:44.909Z",
           "by": "claude-test",
-          "commitSha": "20c12faa087f2755fafe6d96facf95c016bf296e",
-          "evidence": "node --test scripts/windows/test-lifecycle.mjs: 32 tests, 7 suites, 32 pass, 0 fail. Unchanged by this task -- no code was written for PW-0503 this round, because the harness its acceptance describes already exists and was audited against the five REQUIRED clauses rather than rebuilt. The audit is in the build gate. This suite also runs in CI's validate job as a named step (PL-0714), so it is not a suite nobody asks."
+          "commitSha": "7e8c44e64b9ec5a9ab115d5cbbdeaeaba497350b",
+          "evidence": "node --test scripts/windows/test-lifecycle.mjs: 32 tests, 32 pass, 0 fail -- the platform-independent half of the harness (the section-F plan parser, the installed-identity derivation, the residue classifier, and the harness own refusal to run off win32). scripts/windows/lifecycle.mjs --plan exits 0 and enumerates F1-F6 with owners.\n\nThis gate is unchanged in substance from the round-112 audit; ai:unblock discarded it and it is re-recorded. The evidence that CHANGED is in the build gate."
+        },
+        "build": {
+          "status": "pass",
+          "at": "2026-10-05T03:43:45.054Z",
+          "by": "claude-test",
+          "commitSha": "7e8c44e64b9ec5a9ab115d5cbbdeaeaba497350b",
+          "evidence": "WINDOWS PACKAGE #18 (run 37259195413, head 5e96f30) EXERCISED THE HARNESS ON A REAL WINDOWS RUNNER. This is the evidence this task has been blocked on since round 112, and it is the first F1-F4 result in the project history. package job: SUCCESS, 6m 26s -- also a first.\n\nQUOTED FROM THE JOB ANNOTATIONS, not inferred from a badge:\n  \"Automated section-F cases on this runner: not-run=1 pass=3. These rows GATE the build: a fail fails the job.\"\n  F1 - PASS - Clean install, then launch [owner AUTO+RIG], install command status 0\n  F2 - NOT-RUN - Upgrade over a previous version [owner AUTO], \"no --previous-msi was supplied\"\n  F3 - PASS - Uninstall [owner AUTO+RIG], msiexec uninstall status 0\n  F4 - PASS - Reinstall after uninstall [owner AUTO], status 0\n\nAGAINST THE FIVE REQUIRED CLAUSES, one at a time.\n(1) \"clean install on a machine that has never had the application, then launch\" -- the automated half PASSES: msiexec /i status 0 followed by verifyInstalledTree. The LAUNCH half is RIG by the harness own plan (\"automatedPortion: install and verify the installed tree; manualPortion: launching the application and seeing a window\") and is named as such in the annotation owner tag, which is clause 5 working.\n(2) \"upgrade over a previous version with user data preserved\" -- NOT-RUN, with the reason. This is the clause the directive forbids faking, and the harness refuses to: an upgrade needs a previous version to upgrade FROM and this repository has never shipped one. Recorded as not-run rather than pass or fail, because nothing about the product failed. It stays outstanding for PW-0505 and needs a genuine previous-release artifact, which is an external boundary.\n(3) \"uninstall leaves no service, no scheduled task and no orphaned node.exe, and states exactly what user data it keeps\" -- F3 PASS, and the pass is load-bearing: the harness records F3 as pass ONLY when msiexec /x returns 0 AND classifyResidue(observe(where), identity).clean is true, which checks services by binary path and by product name, scheduled tasks, and processes. A dirty residue is recorded as FAIL.\n(4) \"reinstall after uninstall\" -- F4 PASS, and it is also only recorded pass when verifyInstalledTree returns 0 afterwards, so the reinstalled tree was verified rather than assumed.\n(5) \"each case is marked automated or commander-machine, with the reason\" -- the annotations carry [owner AUTO] and [owner AUTO+RIG] per row and the not-run reason verbatim.\n\nA SECOND RESULT WORTH NAMING, because it is evidence PW-0208 has been waiting on and it arrived here. F1 and F4 both pass through verifyInstalledTree, which is scripts/windows/verify-install.mjs -- the check PL-0729 extended to require THIRD-PARTY-NOTICES.md present AND NON-EMPTY. It returned 0 TWICE against a real installed tree on a real Windows machine. So the notices file is present and non-empty in the INSTALLED TREE, which is a different tree from the package build output and from source intent, and is the strongest form of that evidence.\n\nWHAT THIS STILL DOES NOT SHOW: what is inside the installers. The package job succeeded so upload-installers ran, but a GitHub artifact needs a login this session does not have, and a successful run produces no step-trail annotation to read an inventory from. PL-0737 built the inventory for exactly this and PL-0738 wires it in; until then the CONTENTS of the MSI remain unobserved from here."
         }
       },
       "implementationAgent": "claude-test",
-      "updatedAt": "2026-10-04T16:18:03.227Z",
+      "updatedAt": "2026-10-05T03:43:50.488Z",
       "implementationBaseSha": "643dbeb8230b53b86ddee9281458eb07528a0c17",
       "review": {
         "taskId": "PW-0503",
@@ -11265,8 +11270,7 @@
           "reviewedAt": "2026-10-02T15:00:39.136Z",
           "evidence": "CHANGES REQUESTED at 835823561c69f5bbdebf19c637eeeabff19dacf7. Transcribed by claude-lead from gpt-architect's round-105 ruling, section 2, which is a request for changes in substance even though it does not use the word: 'The lifecycle harness architecture is accepted. DO NOT mark PW-0503 DONE merely to free the Test lane. Current Windows evidence establishes only part of the lifecycle matrix.' gpt's itemised verdict: F1 clean install PARTIAL PASS -- the MSI builds, installs and its installed tree is verified; still unverified is actual installed application launch and WebView runtime. F2 upgrade UNVERIFIED -- no real previous release has been exercised as an upgrade source, so user-data preservation across an actual upgrade remains unproven. F3 uninstall PARTIAL PASS -- msiexec uninstall executes; still to prove where automation permits are no orphaned service, no scheduled task, no orphaned node.exe, expected files removed, and documented user-data retention behaviour. F4 reinstall UNVERIFIED but AUTOMATABLE -- 'implement and execute this rather than classifying it as commander-only'. WHAT HAS CHANGED SINCE THAT VERDICT WAS WRITTEN, and it narrows the request rather than answering it: the IMPLEMENTATION of F3's residue classification and of F4 reinstall already exists in scripts/windows/lifecycle.mjs and residue.mjs at the commit above, with 30 cases behind the decisions, and F4 is already marked plannedAutomated with no manual portion. What does not exist is EXECUTION, and it cannot be created by any open task: no open task can write .github/workflows/windows.yml -- every writer is DONE and PW-0502, PW-0503 and PW-0602 hold it read-only. That is recorded as a board.sequencing_finding and needs a ruling on which task gets the write surface. Recorded so the task leaves REVIEW honestly rather than being completed on evidence gpt declined to accept."
         }
-      ],
-      "blocker": "The harness meets all five REQUIRED clauses and is audited (build gate), but its central one -- 'exercised automatically wherever that is possible on a runner' -- has NEVER BEEN EXERCISED. Every observed Windows run reports lifecycle=skipped, because the verifier-negative step before it could not succeed under the runner's PowerShell: diagnosed and repaired this round as PL-0733. F1/F2/F3/F4 have produced no result on any machine. BLOCKED rather than released so the audit's gate results are PRESERVED (ai:release discards them) and so scripts/windows/** is not held against PW-0502. UNBLOCK WHEN: a Windows run reaches the lifecycle step, which needs PL-0733 applied and pushed -- push is 403 from this session, so it needs Diego. The first such run is the whole of the remaining evidence. Do NOT close this from --plan output or from the unit suite: the harness refuses to run off-Windows precisely so no cloud session can manufacture an F1 pass."
+      ]
     },
     {
       "id": "PW-0504",
