@@ -1,0 +1,265 @@
+name: Experiment 1a harness
+
+# ============================================================================
+# PL-0742 — BUILD THE EXPERIMENT 1a HARNESS SO THE COMMANDER DOES NOT HAVE TO
+# ============================================================================
+#
+# `docs/DESKTOP_PLAYBACK.md` §10 describes Experiment 1a — the compositing
+# proof that decision D1 (Tauri) has rested on since round 1 and that has never
+# been run. It needs a Windows machine with a real GPU, an attended session and
+# somebody to look at a window. None of those exist in CI or in the cloud
+# engineering session, so the experiment itself cannot happen here.
+#
+# WHAT CAN HAPPEN HERE IS EVERYTHING ELSE. The reason 1a has not run is not
+# that nobody wanted to look at a window; it is that running it has so far
+# meant installing Rust, building or assembling libmpv, resolving a native link
+# against an import library that does not ship in the dev package in MSVC form,
+# and becoming the build server for a throwaway. This job does all of that and
+# hands back a directory the commander can double-click.
+#
+# ----------------------------------------------------------------------------
+# WHY A `cargo check` WOULD NOT HAVE BEEN ENOUGH, FOR THIS ONE
+# ----------------------------------------------------------------------------
+#
+# The engineering session CAN type-check this crate for
+# `x86_64-pc-windows-msvc` — rustup carries that std and `check` does not link
+# — and it does, every round. But the entire subject of the dependency is a
+# NATIVE library: `libmpv2-sys` emits `cargo:rustc-link-lib=mpv` and nothing
+# more, so whether a build succeeds is decided at the link step that `check`
+# skips. Handing over a binary that was only type-checked would be handing over
+# a hope. This job LINKS it.
+#
+# ----------------------------------------------------------------------------
+# WHAT THIS JOB DOES NOT PROVE, AND NO GATE MAY CLAIM FROM IT
+# ----------------------------------------------------------------------------
+#
+#   - It does not prove Experiment 1a passes. It does not run the binary. A
+#     green run here means the harness BUILDS. Every one of §10's seven pass
+#     criteria is something a person has to look at on real hardware, and
+#     `experiments/exp-1a/README.md` says so in the same words.
+#   - It proves nothing about hardware decode, compositing, hit-testing,
+#     resize, per-monitor DPI, or the OS/GPU/DPI matrix.
+#   - It is NOT the LGPL libmpv build of §9. It downloads a third-party,
+#     GPL-licensed mpv development package to link against, because §10 says
+#     this experiment has "no LGPL build" on purpose: mixing the two would mean
+#     a failure could be the compositing or could be our own libmpv build, and
+#     the experiment exists to remove exactly that ambiguity.
+#   - The artifact it produces is therefore NOT DISTRIBUTABLE and not a
+#     release candidate. It is a throwaway for one machine. It says nothing
+#     about codec patent authorization, which is untouched and uninferable
+#     from anything here.
+#
+# No `continue-on-error`, no `|| true`, consistent with this repository's other
+# workflows. Every step either succeeds or fails the job.
+
+on:
+  workflow_dispatch:
+    inputs:
+      mpv_dev_url:
+        description: >-
+          Optional direct URL to an mpv x86_64 DEVELOPMENT package (.7z)
+          containing mpv.def and the runtime DLL. Leave empty to resolve the
+          latest published package automatically.
+        required: false
+        type: string
+  push:
+    # The crate is a throwaway and is not a workspace member, so nothing else
+    # in the repository can break it and it can break nothing else. Running on
+    # every push would spend a Windows minute on commits that cannot affect it.
+    paths:
+      - "experiments/exp-1a/**"
+      - ".github/workflows/experiment-1a.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Link the harness against a real libmpv
+    runs-on: windows-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: experiments/exp-1a
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # The same pin `desktop-shell-ci.yml` uses, and the same reasoning:
+      # `stable` means the toolchain that produced a passing result can change
+      # under the next run with no commit saying so. 1.90.0 is also the highest
+      # MSRV in this crate's locked graph, which `Cargo.toml` states.
+      - name: Install the pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.90.0"
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: experiments/exp-1a
+
+      # ----------------------------------------------------------------------
+      # THE NATIVE LIBRARY
+      # ----------------------------------------------------------------------
+      #
+      # The published mpv development packages are built with MinGW and ship
+      # `libmpv.dll.a`, which the MSVC linker cannot read. They also ship
+      # `mpv.def`, which is the module definition the DLL was exported from,
+      # and `lib.exe` turns that into the `mpv.lib` import library MSVC needs.
+      # This is the step that a person would otherwise have to discover.
+      - name: Fetch an mpv development package
+        id: mpv
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $url = "${{ inputs.mpv_dev_url }}"
+          if ([string]::IsNullOrWhiteSpace($url)) {
+            # Resolved at job time rather than pinned in this file. A pinned
+            # URL would be reproducible and is the normal preference, but these
+            # packages are dated snapshots that are pruned, so a pin here goes
+            # stale into a 404 and the next person has to debug a workflow
+            # instead of running an experiment. The resolved identity is
+            # RECORDED instead -- url, asset name and SHA-256 all travel in the
+            # artifact -- so the binary handed over can always say what is
+            # inside it.
+            $api = "https://api.github.com/repos/shinchiro/mpv-winbuild-cmake/releases/latest"
+            $headers = @{ "User-Agent" = "project-liberty-exp1a"; "Authorization" = "Bearer ${{ github.token }}" }
+            $release = Invoke-RestMethod -Uri $api -Headers $headers
+            $asset = $release.assets |
+              Where-Object { $_.name -match '^mpv-dev-x86_64-\d' } |
+              Sort-Object name -Descending |
+              Select-Object -First 1
+            if ($null -eq $asset) {
+              throw "No mpv-dev-x86_64 asset in $($release.tag_name). Re-run this workflow with the mpv_dev_url input pointing at a development package."
+            }
+            $url = $asset.browser_download_url
+          }
+          Write-Host "mpv development package: $url"
+          New-Item -ItemType Directory -Force -Path mpv-dev | Out-Null
+          Invoke-WebRequest -Uri $url -OutFile mpv-dev.7z
+          $sha = (Get-FileHash -Algorithm SHA256 mpv-dev.7z).Hash.ToLower()
+          Write-Host "sha256: $sha"
+          7z x mpv-dev.7z -ompv-dev -y | Out-Null
+
+          # Derive both names rather than hardcoding them: the runtime DLL has
+          # been renamed across mpv releases (mpv-1.dll -> libmpv-2.dll), and
+          # `lib /NAME:` must match the DLL the process will actually load at
+          # runtime or the import table points at a file that is not there.
+          $def = Get-ChildItem -Path mpv-dev -Recurse -Filter "*.def" | Select-Object -First 1
+          if ($null -eq $def) { throw "The package contains no .def file, so no MSVC import library can be produced from it." }
+          $dll = Get-ChildItem -Path mpv-dev -Recurse -Filter "*mpv*.dll" |
+            Where-Object { $_.Name -notmatch 'mpv\.com$' } | Select-Object -First 1
+          if ($null -eq $dll) { throw "The package contains no mpv runtime DLL." }
+          Write-Host "def: $($def.FullName)"
+          Write-Host "dll: $($dll.Name)"
+
+          "url=$url"           | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "sha256=$sha"        | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "def=$($def.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "dll=$($dll.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "dllname=$($dll.Name)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          exit 0  # PL-0733: a pwsh step's exit code is $LASTEXITCODE at body end
+
+      # `lib.exe` is located through vswhere rather than by bringing in another
+      # third-party action, so this file's `uses:` set stays the one the rest
+      # of the repository already audits.
+      - name: Build an MSVC import library from mpv.def
+        id: implib
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          if (-not (Test-Path -LiteralPath $vswhere)) { throw "vswhere.exe is not on this runner; the MSVC toolchain cannot be located." }
+          $vsroot = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if ([string]::IsNullOrWhiteSpace($vsroot)) { throw "vswhere found no Visual Studio installation carrying the VC x64 tools." }
+          $lib = Get-ChildItem -Path "$vsroot\VC\Tools\MSVC" -Recurse -Filter "lib.exe" |
+            Where-Object { $_.FullName -match 'Hostx64\\x64' } | Select-Object -First 1
+          if ($null -eq $lib) { throw "lib.exe was not found under $vsroot." }
+
+          New-Item -ItemType Directory -Force -Path implib | Out-Null
+          & $lib.FullName "/def:${{ steps.mpv.outputs.def }}" "/name:${{ steps.mpv.outputs.dllname }}" "/out:implib\mpv.lib" "/MACHINE:X64"
+          if ($LASTEXITCODE -ne 0) { throw "lib.exe exited $LASTEXITCODE" }
+          if (-not (Test-Path -LiteralPath "implib\mpv.lib")) { throw "lib.exe reported success and produced no mpv.lib" }
+          "dir=$((Resolve-Path implib).Path)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          exit 0  # PL-0733: a pwsh step's exit code is $LASTEXITCODE at body end
+
+      # ----------------------------------------------------------------------
+      # THE BUILD
+      # ----------------------------------------------------------------------
+      #
+      # `--locked` on every cargo step, for the reason desktop-shell-ci.yml
+      # gives: without it Cargo may quietly update the lockfile to satisfy a
+      # resolution, which would mean CI verifying a graph that is not the
+      # committed one.
+      - name: Clippy, warnings denied
+        run: cargo clippy --locked --all-targets -- -D warnings
+
+      - name: Build the harness, linking against libmpv
+        shell: pwsh
+        env:
+          RUSTFLAGS: -L native=${{ steps.implib.outputs.dir }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          cargo build --locked --release
+          if ($LASTEXITCODE -ne 0) { throw "cargo build exited $LASTEXITCODE" }
+          exit 0  # PL-0733: a pwsh step's exit code is $LASTEXITCODE at body end
+
+      # A build that produced no binary is a build that failed quietly, and
+      # this is the one claim the artifact rests on.
+      - name: Assemble the hand-over directory
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $exe = "target\release\exp-1a.exe"
+          if (-not (Test-Path -LiteralPath $exe)) { throw "cargo reported success and produced no $exe" }
+
+          New-Item -ItemType Directory -Force -Path out | Out-Null
+          Copy-Item $exe out\
+          Copy-Item "${{ steps.mpv.outputs.dll }}" out\
+          Copy-Item README.md out\
+          Copy-Item RESULTS-TEMPLATE.md out\
+          Copy-Item collect-evidence.cmd out\
+          Copy-Item collect-evidence.ps1 out\
+
+          # The provenance file travels INSIDE the directory, not only in this
+          # log, because the directory is what gets unzipped onto a machine six
+          # weeks from now and the log is what nobody can open without a login.
+          $lines = @(
+            "Experiment 1a harness - what is in this directory and where it came from",
+            "",
+            "Built by .github/workflows/experiment-1a.yml",
+            "  repository   ${{ github.repository }}",
+            "  commit       ${{ github.sha }}",
+            "  run          ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+            "  built at     $([DateTimeOffset]::UtcNow.ToString('u'))",
+            "",
+            "exp-1a.exe",
+            "  sha256       $((Get-FileHash -Algorithm SHA256 $exe).Hash.ToLower())",
+            "  UNSIGNED. SmartScreen will warn. That warning is correct: nothing has",
+            "  signed this and this project holds no Authenticode certificate.",
+            "",
+            "$((Get-Item '${{ steps.mpv.outputs.dll }}').Name)",
+            "  source       ${{ steps.mpv.outputs.url }}",
+            "  archive sha  ${{ steps.mpv.outputs.sha256 }}",
+            "  dll sha256   $((Get-FileHash -Algorithm SHA256 '${{ steps.mpv.outputs.dll }}').Hash.ToLower())",
+            "",
+            "  THIS IS A THIRD-PARTY, GPL-LICENSED mpv BUILD. It is here because",
+            "  docs/DESKTOP_PLAYBACK.md section 10 specifies this experiment with",
+            "  'no LGPL build' on purpose, so that a compositing failure cannot be",
+            "  confused with a fault in our own libmpv. It is NOT the section 9 LGPL",
+            "  build, it is NOT a component of Project Liberty, it must NOT be",
+            "  redistributed as part of any Liberty artifact, and nothing about it",
+            "  bears on codec patent authorization."
+          )
+          $lines | Out-File -FilePath out\PROVENANCE.txt -Encoding utf8
+          Get-Content out\PROVENANCE.txt
+          exit 0  # PL-0733: a pwsh step's exit code is $LASTEXITCODE at body end
+
+      - name: Upload the harness
+        uses: actions/upload-artifact@v4
+        with:
+          name: exp-1a-harness-${{ github.sha }}
+          path: experiments/exp-1a/out/
+          if-no-files-found: error
+          retention-days: 90

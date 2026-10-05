@@ -1,0 +1,36 @@
+# EXPERIMENT 1a — THROWAWAY. Not a workspace member, not shipped, not product
+# code. docs/DESKTOP_PLAYBACK.md §10 asks for "under 300 lines of Rust" and
+# "no Next.js, no adapter, no product code, no DRM routing, no packaging, no
+# LGPL build", because every one of those would make a failure ambiguous.
+[package]
+name = "exp-1a"
+version = "0.0.0"
+edition = "2021"
+publish = false
+# The highest MSRV in the locked graph is tauri's 1.90, which is also the
+# toolchain `desktop-shell-ci.yml` pins. Stating it keeps Cargo's MSRV-aware
+# resolver from selecting a dependency the CI toolchain cannot build.
+rust-version = "1.90"
+
+[[bin]]
+name = "exp-1a"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "=2.7.0", features = [] }
+
+[dependencies]
+serde = { version = "=1.0.228", features = ["derive"] }
+serde_json = "=1.0.145"
+tauri = { version = "=2.12.0", features = [] }
+
+# WINDOWS ONLY, like the shell this experiment is about. libmpv2 TYPE-CHECKS
+# without the native library (cargo check does not link), so the code below is
+# verified in CI and locally before it ever reaches a machine with mpv on it.
+[target.'cfg(windows)'.dependencies]
+libmpv2 = "=6.0.0"
+windows-sys = { version = "=0.59.0", features = [
+  "Win32_Foundation",
+  "Win32_Graphics_Gdi",
+  "Win32_UI_WindowsAndMessaging",
+] }

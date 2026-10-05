@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Experiment 1a</title>
+<link rel="stylesheet" href="app.css" />
+<!-- EXTERNAL, not inline. tauri.conf.json sets `default-src 'self'`, and an
+     inline script under it would depend on Tauri's nonce injection firing
+     for an embedded asset. If that ever did not fire, the button would stop
+     working and the property table would stop updating -- which is exactly
+     what pass criteria 3 and 6 FAILING looks like. The experiment cannot
+     afford a plumbing fault that imitates its own result. -->
+<script src="app.js" defer></script>
+</head>
+<body>
+  <div class="panel">
+    <h1>Experiment 1a — the gradient above should TINT the video, not hide it<span class="spin"></span></h1>
+    <button id="pause">Pause / resume</button>
+    <table id="props"><tbody></tbody></table>
+    <div class="err" id="err"></div>
+  </div>
+</body>
+</html>

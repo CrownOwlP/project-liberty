@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "The experiment's single window invokes exactly one command. Tauri v2 denies invoke without a capability, and a denied toggle_pause would look identical to the child HWND eating the click - which is one of the pass criteria. So this grants core:default and nothing else.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

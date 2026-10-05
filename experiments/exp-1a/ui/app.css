@@ -1,0 +1,31 @@
+/* TRANSPARENT ALL THE WAY DOWN. If any layer paints an opaque background
+   the video is hidden and the experiment answers the wrong question. */
+html, body { margin: 0; height: 100%; background: transparent; overflow: hidden;
+  font: 13px/1.5 ui-monospace, Consolas, monospace; color: #fff; }
+/* §10 step 1: a SEMI-TRANSPARENT GRADIENT PANEL. The pass criterion is that
+   this TINTS the video rather than hiding it. */
+.panel { position: absolute; inset: 24px 24px auto 24px; padding: 18px 20px;
+  border-radius: 12px; border: 1px solid rgba(255,255,255,.35);
+  background: linear-gradient(135deg, rgba(90,140,255,.45), rgba(255,90,180,.30));
+  backdrop-filter: blur(2px); }
+h1 { margin: 0 0 10px; font-size: 15px; letter-spacing: .02em; }
+button { font: inherit; font-size: 16px; padding: 12px 28px; cursor: pointer;
+  border-radius: 8px; border: 1px solid rgba(255,255,255,.6);
+  background: rgba(0,0,0,.45); color: #fff; }
+button:active { transform: translateY(1px); }
+/* A CSS-animated spinner, per the spec: if compositing stalls under video,
+   a still spinner says so at a glance. */
+.spin { width: 22px; height: 22px; border-radius: 50%; display: inline-block;
+  border: 3px solid rgba(255,255,255,.25); border-top-color: #fff;
+  animation: r .9s linear infinite; vertical-align: middle; margin-left: 12px; }
+@keyframes r { to { transform: rotate(360deg); } }
+/* BOUNDED ON PURPOSE. `track-list` comes back as one long string, and an
+   unbounded panel would grow until it covered the window -- which would
+   look exactly like criterion 2 failing. The experiment cannot afford a
+   layout accident that imitates its own result. */
+table { border-collapse: collapse; margin-top: 12px; width: 100%; }
+td { padding: 1px 14px 1px 0; vertical-align: top; }
+td:first-child { opacity: .75; white-space: pre; }
+td:last-child { white-space: pre-wrap; word-break: break-all; }
+.panel { max-height: 55vh; overflow: auto; }
+.err { color: #ffd0d0; margin-top: 8px; }

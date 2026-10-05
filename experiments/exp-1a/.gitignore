@@ -1,0 +1,11 @@
+# tauri-build regenerates this from tauri.conf.json on every build.
+/gen/
+/target/
+# Produced by a run, on the machine that ran it. The RESULT belongs in the
+# thread, not in the repository.
+/exp-1a-evidence.txt
+# CI's working directories for the native library and the hand-over bundle.
+/mpv-dev/
+/mpv-dev.7z
+/implib/
+/out/
