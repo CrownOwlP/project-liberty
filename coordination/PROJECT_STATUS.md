@@ -1,8 +1,8 @@
 # Project Liberty - Project Status
 
-> Generated 2026-10-05T14:07:33.841Z from the AI control plane.
+> Generated 2026-10-05T14:13:07.452Z from the AI control plane.
 
-**Overall completion:** 121/139 executable tasks (87%)
+**Overall completion:** 121/140 executable tasks (86%)
 
 ## Status summary
 
@@ -10,7 +10,7 @@
 - **READY:** 4
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 0
-- **REVIEW:** 0
+- **REVIEW:** 1
 - **BLOCKED:** 9
 - **DONE:** 121
 - **CANCELED:** 0
@@ -31,7 +31,7 @@
 
 ## Active work
 
-No tasks are currently claimed, in progress, or in review.
+- **PL-0741** [REVIEW] The commander's qualification evidence is collected by hand, one command at a time — owner: claude-test
 
 ## Dispatch classification
 
@@ -92,7 +92,7 @@ STILL MEASURABLE WITHOUT THAT DECISION, and NOT blocked by it: whether @img/shar
 - **claude-frontend:** 0/2 active
 - **claude-backend:** 0/2 active
 - **claude-media:** 0/2 active
-- **claude-test:** 0/3 active
+- **claude-test:** 1/3 active
 - **claude-security:** 0/1 active
 - **claude-infra:** 0/5 active
 - **human-commander:** 0/99 active (external lane; not locally executable)

@@ -216,42 +216,43 @@ Have these in hand; each has cost a sitting when it was missing.
   the installer was built from**, or the verifier is checking one build's
   layout against another build's expectations.
 
-## Step 0 — Record the environment (10 minutes)
+## Step 0 — Record the environment (2 minutes, one command)
 
-A RIG pass on unrecorded hardware is not evidence, so this is step zero rather
-than a footnote. Run this in **PowerShell** and paste the output into the
-report; it fills most of the block in *Recording an environment* above.
+**You do not type any of this by hand.** After Step 2 installs the
+application and Step 3 launches it, one command collects every machine-
+readable fact this matrix asks for:
 
-```powershell
-$cv = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion'
-"Windows      : {0} {1} (build {2}.{3})" -f $cv.ProductName, $cv.DisplayVersion, $cv.CurrentBuildNumber, $cv.UBR
-
-Get-CimInstance Win32_VideoController |
-  Select-Object Name, DriverVersion, DriverDate,
-                CurrentHorizontalResolution, CurrentVerticalResolution, CurrentRefreshRate |
-  Format-List
-
-Get-CimInstance Win32_SoundDevice | Select-Object Name, Manufacturer | Format-List
+```
+node scripts\windows\qualify.mjs
 ```
 
-The **WebView2 runtime version** is not in that output and matters more than
-most of what is: it is the browser engine the whole UI runs in, and it updates
-itself without asking.
+It writes `liberty-qualification.json` beside you and prints a short summary.
+Send that **one file** back with your notes. It records the Windows build,
+GPU and driver, WebView2 runtime, display, audio and scaling; where the
+application installed and whether `verify-install` accepts that tree; whether
+`liberty-desktop.exe` and a `node.exe` are running; and whether `sidecar.log`
+exists, how big it is, whether the handshake line is in it, and its tail.
 
-```powershell
-$k = 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
-(Get-ItemProperty $k -ErrorAction SilentlyContinue).pv
-```
+**An unavailable reading is recorded, not dropped.** If the WebView2 registry
+key does not answer — common when the runtime is installed per-user — the
+report says *why* rather than omitting the field. Treat `unavailable` as a
+prompt to look in **Settings → Apps → Microsoft Edge WebView2 Runtime** and
+add the version to your notes; it is not proof of absence.
 
-If that prints nothing, read the version from **Settings → Apps → Installed
-apps → Microsoft Edge WebView2 Runtime** and record where you got it. An empty
-result is itself worth recording — it may mean the runtime is per-user or
-absent, and "absent" is the explanation for a whole class of launch failure.
+**It deliberately claims nothing it cannot see,** and the file says so inside
+itself. It cannot tell anyone that a window appeared, that WebView2 *rendered*
+Liberty, that anything played, or what SmartScreen said. A WebView2 version is
+not a render. Those rows are yours and they are the reason this sitting needs
+a person at all.
 
-Two fields the commands cannot answer, because Windows exposes them as a
-setting rather than a capability: **HDR** (Settings → System → Display → *Use
-HDR*; record on/off **and** whether the toggle exists at all) and **display
-scaling** (same page; record the percentage). Scaling is row G2's input.
+**It runs on Windows only**, and refuses elsewhere with a reason, because
+every reading in it is a Windows fact.
+
+Two things still need your eyes, because Windows exposes them as settings
+rather than as facts a script can read reliably: **HDR** (Settings → System →
+Display → *Use HDR* — record on/off **and** whether the toggle exists at all)
+and whether the **scaling** percentage the report captured matches what that
+page shows.
 
 ## Step 1 — Get the artifact and prove the bytes (15 minutes)
 
@@ -405,8 +406,9 @@ has about twenty" is visible rather than discovered.
 A defect report that cannot be reproduced costs more than no report. Include,
 in this order:
 
-1. **The environment block from Step 0, complete.** Two runs that disagree are
-   two different machines until these fields say otherwise.
+1. **`liberty-qualification.json` from Step 0.** One file, collected by
+   `node scripts\windows\qualify.mjs`, carrying the whole environment block.
+   Two runs that disagree are two different machines until those fields say so.
 2. **The row number** from the matrix, and which Step of this sheet you were in.
 3. **What you did, what you expected, what happened** — in that order, in three
    sentences. The third one is the only one that is ever ambiguous later.

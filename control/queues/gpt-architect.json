@@ -1,9 +1,49 @@
 {
-  "generatedAt": "2026-10-05T14:07:33.842Z",
+  "generatedAt": "2026-10-05T14:13:07.453Z",
   "agent": "gpt-architect",
   "executionAvailable": false,
   "assigned": [],
-  "review": [],
+  "review": [
+    {
+      "id": "PL-0741",
+      "priority": "P1",
+      "lane": "Test",
+      "status": "REVIEW",
+      "title": "The commander's qualification evidence is collected by hand, one command at a time",
+      "dependencies": [],
+      "allowedPaths": [
+        "scripts/windows/qualify.mjs",
+        "scripts/windows/qualify.test.mjs",
+        "docs/WINDOWS_CERTIFICATION.md"
+      ],
+      "reviewDependencies": [
+        "scripts/windows/installed-identity.mjs",
+        "scripts/windows/verify-install.mjs",
+        "apps/desktop/src-tauri/src/sidecar.rs",
+        "coordination/LAST_MILE.md"
+      ],
+      "preferredAgent": "claude-test",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "unit"
+      ],
+      "acceptance": "PW-0504 is the OBSERVATION and stays blocked on hardware. This is the PREPARATION, which is engineering, and gpt-architect's round-115 section 4 asks for it by name: 'First prepare the smallest deterministic qualification package/checklist... Prepare this so Diego's part is minimal.'\n\nTODAY THE RUN SHEET ASKS THE COMMANDER TO TYPE POWERSHELL AND PASTE OUTPUT. Step 0 alone is three separate snippets plus two settings pages read by eye, and every later row asks him to notice and copy something. Each hand-copied field is a field that can be wrong, missing, or from the wrong machine, and 'a RIG pass on unrecorded hardware is not evidence' is this document's own rule.\n\nREQUIRED: one command Diego runs AFTER installing and launching, which collects everything collectable without him transcribing anything -- the environment block the matrix specifies (Windows build, GPU and driver, WebView2 runtime, display, audio), the installed tree's location and whether verify-install accepts it, whether sidecar.log exists with its size and tail, whether a liberty-desktop.exe process and its node.exe child are running, and whether the handshake line is present in the log.\nREQUIRED: it writes ONE file he sends back, and prints a short human summary so he can see whether it worked before sending it.\nREQUIRED: ABSENCE IS RECORDED, NOT SKIPPED. A missing sidecar.log, an unresolvable WebView2 version or a process that is not running are findings the report must state explicitly -- the run sheet already says an absent log is itself a finding, and a collector that silently omitted it would undo that.\nREQUIRED: IT CLAIMS NOTHING IT CANNOT SEE. It must not report that WebView2 rendered the application, that playback worked, or that the window appeared. Those are the commander's eyes and the report must say so where it would otherwise be read as covering them. gpt's round-105 section 9: do not collapse those claims.\nREQUIRED: NO SECRETS. It must not capture the launch token, environment dumps, or anything from the handshake line beyond host and port.\nREQUIRED: testable off Windows. Every platform fact arrives through an injected reader, the way installed-identity.mjs takes `env` as a parameter, so the composition and the absence-handling have a suite on this machine. The Windows commands themselves cannot be executed here and that limit is stated rather than glossed.\nREQUIRED: the run sheet's Step 0 and its report format point at the command instead of listing snippets to retype, and the rows only a person can judge stay a person's.\n\nOUT OF SCOPE: marking any PW-0504 row passed. This task delivers the collector; the evidence is still the commander's to produce.",
+      "notes": "FILED ROUND 115 under gpt-architect's instruction to minimise the commander's work before asking for it. The one-command shape is chosen because the alternative already exists and is the problem: the run sheet is correct and it is long, and length is what makes a qualification session get abbreviated.\n\nScope held deliberately narrow. This does not automate judgement -- G1's compositing result, G2's scaling, the SmartScreen wording, whether a window actually appeared -- only the facts a machine can read about itself.",
+      "owner": "claude-test",
+      "implementationAgent": "claude-test",
+      "updatedAt": "2026-10-05T14:12:51.889Z",
+      "implementationBaseSha": "bab637fe5c2982796cb8957ecbc513d0773bf42e",
+      "gateResults": {
+        "unit": {
+          "status": "pass",
+          "at": "2026-10-05T14:12:51.740Z",
+          "by": "claude-test",
+          "commitSha": "bab637fe5c2982796cb8957ecbc513d0773bf42e",
+          "evidence": "node --test scripts/windows/qualify.test.mjs: 15 tests, 15 pass, 0 fail. node --check clean. repo:validate passes.\n\nWHAT IT REPLACES. The run sheet Step 0 was three PowerShell snippets to retype plus two settings pages read by eye, and every later row asked the commander to notice and copy something. It is now one command -- node scripts\\windows\\qualify.mjs -- that writes one file he sends back. The matrix own rule is \"a RIG pass on unrecorded hardware is not evidence\", and every hand-copied field was a field that could be wrong, missing, or quietly from the wrong machine.\n\nWHAT IT COLLECTS: the environment block the matrix specifies (Windows build, GPU and driver, WebView2 runtime, display, audio, scaling); where the application installed and whether the REAL verify-install.mjs accepts that tree; whether liberty-desktop.exe and node.exe are running; and whether sidecar.log exists, its size, whether the handshake line is present, and its tail.\n\nIT CLAIMS NOTHING IT CANNOT SEE, and the disclaimer travels INSIDE the JSON rather than only in a covering message, because the file is what gets pasted into a thread six weeks later. Tested: the notCovered list names the window appearing, WebView2 RENDERING (a runtime version is not a render), playback, SmartScreen wording, and rows G1/G2/G3. gpt round-105 section 9 forbids collapsing those claims and this is the mechanism that keeps them apart.\n\nABSENCE IS A FINDING, NOT A GAP, which is the property most likely to cost a session if wrong. A reading returns {value} or {unavailable: why}, never a bare null. The WebView2 case is tested specifically because its Evergreen registry key is ABSENT whenever the runtime is per-user, which is common -- and WebView2 is the engine the entire UI runs in, so it is the single worst field to lose silently. An absent sidecar.log is recorded with the sentence that it is itself a finding. A verifier that REFUSES is recorded as a refusal rather than crashing the collector.\n\nNO SECRETS, tested bluntly because this file gets pasted into a chat: only host and port are taken from the handshake line, never the line itself; a full report built with LIBERTY_SIDECAR_TOKEN set is asserted not to contain the token value or even the variable NAME; the log tail is bounded at 16 KiB while the true size is still reported.\n\nMUTATION-TESTED, both properties that matter. Making a failed reading return {} instead of an absence reddens 4 cases. Echoing the whole handshake line instead of host:port reddens 1. Both reverted; 15/15 green.\n\nSTATED, NOT GLOSSED: none of the PowerShell in this file has been executed. Every reading is a Windows fact and this container is Linux; the script refuses to run off win32 with a reason rather than producing a report that would be a different thing wearing the same name. What is proven here is the composition, the absence-handling, the bounding and the redaction, all through injected readers -- the same pattern installed-identity.mjs uses with env. The first real run is the commander, and the summary it prints exists so he can see it worked before sending.\n\nOUT OF SCOPE AND NOT DONE: no PW-0504 row is marked passed. This delivers the collector; the evidence is still the commander to produce."
+        }
+      }
+    }
+  ],
   "reservedExternal": [],
   "recommended": [
     {
