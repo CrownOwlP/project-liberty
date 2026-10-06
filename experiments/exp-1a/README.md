@@ -45,17 +45,26 @@ exp-1a.exe "D:\clips\your-4k60-hevc-or-av1.mkv"
 correct: nothing has signed this and this project holds no Authenticode
 certificate.
 
-### If something goes wrong, send back these four
+### If something goes wrong, send back these five
 
-Four files, and nothing needs to be summarised or interpreted first — a
+Five files, and nothing needs to be summarised or interpreted first — a
 description of a failure is worth much less than the failure.
 
 | file | where | why |
 |---|---|---|
+| **`exp-1a-diagnostic.log`** | **beside the exe, written every run** | **mpv's own account of what it did. This is the first thing to send** |
 | `exp-1a-evidence.txt` | beside the exe, from step 2 | the machine it happened on |
 | `RESULTS-TEMPLATE.md` | filled in as far as you got | which criterion, and what you saw |
 | `PROVENANCE.txt` | in the unzipped folder | which exe and which mpv build |
 | a screenshot or short clip | — | for criteria 2, 4 and 5 a picture settles in one second what paragraphs cannot |
+
+**`exp-1a-diagnostic.log` is new (PL-0748)** and exists because the first real
+run rendered a window, rendered the overlay, played nothing, and could not say
+why — `terminal=no` was silencing mpv and nothing was draining its event
+queue. The log now carries mpv's verbose output, every event it emits, the
+exact file string that was passed and whether it resolved on disk. If the
+overlay shows a red bar, that text is in there too, with everything that led
+up to it.
 
 Plus whatever the console printed, if it printed anything. If the window never
 appeared at all, say so in as many words — "nothing happened" is a specific,

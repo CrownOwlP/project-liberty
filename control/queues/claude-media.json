@@ -1,8 +1,45 @@
 {
-  "generatedAt": "2026-10-06T00:52:10.256Z",
+  "generatedAt": "2026-10-06T01:21:44.864Z",
   "agent": "claude-media",
   "executionAvailable": true,
-  "assigned": [],
+  "assigned": [
+    {
+      "id": "PL-0748",
+      "priority": "P0",
+      "lane": "Player",
+      "status": "REVIEW",
+      "title": "Experiment 1a runs, renders and loads nothing: the harness cannot say why",
+      "dependencies": [],
+      "allowedPaths": [
+        "experiments/**",
+        ".github/workflows/experiment-1a.yml"
+      ],
+      "reviewDependencies": [
+        "docs/DESKTOP_PLAYBACK.md"
+      ],
+      "preferredAgent": "claude-media",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "build",
+        "architecture-review"
+      ],
+      "acceptance": "FIRST REAL RUN ON THE COMMANDER'S MACHINE, 2026-10-06. exp-1a.exe launches, the Tauri/WebView2 UI renders and the gradient overlay renders -- so the window, the webview and the overlay all work. But NO VIDEO APPEARS, track-list is [], time-pos does not advance, several properties read <Raw(-10)>, and the console prints nothing.\n\nREAD THE SYMPTOMS BEFORE CHANGING ANYTHING. Raw(-10) is MPV_ERROR_PROPERTY_UNAVAILABLE, which is the ORDINARY answer for time-pos, avsync and hwdec-current when nothing is playing -- it is not property misuse. An empty track-list from a responding core means mpv is alive and idle. Taken together the harness is in the state 'initialised, nothing loaded', and the console says nothing because terminal=no suppresses exactly the output that would explain it.\n\nTWO HYPOTHESES ARE ALREADY DEAD, by reading libmpv2 6.0.0's source rather than guessing. (a) The path is not mangled by spaces: Mpv::command builds a NUL-terminated argv and calls mpv_command, not mpv_command_string, so 'C:\\Users\\Diego C\\...' is passed as one argument. (b) loadfile did not return an error: start() propagates one through setup(), which would have aborted the window, and the window rendered.\n\nREQUIRED: the harness can distinguish, from its own output, between -- loadfile accepted but playback failed; an mpv event or error after load; property access misuse; and video-output / child-HWND failure. It must not be necessary to guess which.\n\nREQUIRED: mpv's own log is captured. libmpv2 does not wrap mpv_request_log_messages -- its docs call it unimplemented -- but Mpv::ctx is public, so the sys call is available. This is the single highest-value signal and terminal=no is currently throwing it away.\n\nREQUIRED: the event queue is drained and every event recorded. The harness never called wait_event, so MPV_EVENT_END_FILE -- which is how a file that fails to open reports itself -- was discarded unread. Event derives Debug; recording it verbatim is both minimal and complete.\n\nREQUIRED: idle-active, core-idle, path, filename, video-params, track count, vo-configured and hwdec-current are observed, and an unavailable property is recorded as unavailable IN WORDS rather than as Raw(-10).\n\nREQUIRED: the loadfile call records the exact string passed, whether that path exists on disk and its size, so 'we passed the wrong string' and 'mpv refused the right one' are different lines.\n\nREQUIRED: all of it persists to a small text log beside the exe, and the final error is surfaced in the overlay. The commander must not have to read a console that terminal=no has silenced.\n\nREQUIRED: DIAGNOSTIC ONLY. No product integration, no new dependency beyond the sys crate already in the lockfile, and no change to the compositing arrangement under test.\n\nMUST NOT: mark Experiment 1a PASS, mark PW-0103 PASS, or change decision D1. The experiment has not produced a result yet -- it has produced a harness that cannot explain itself, which is a defect in the harness and not evidence about compositing.",
+      "notes": "FILED 2026-10-06 from the commander's first real run. PL-0742 is DONE and stays DONE: it claimed the harness builds, links and was delivered verified, and all of that remains true. This is the next defect, found by running the thing -- which is what the artifact was for.",
+      "owner": "claude-media",
+      "implementationAgent": "claude-media",
+      "updatedAt": "2026-10-06T01:21:44.559Z",
+      "implementationBaseSha": "da4485acbf86423a15704410efbaa51c8c23ec1a",
+      "gateResults": {
+        "build": {
+          "status": "pass",
+          "at": "2026-10-06T01:21:44.273Z",
+          "by": "claude-media",
+          "commitSha": "da4485acbf86423a15704410efbaa51c8c23ec1a",
+          "evidence": "cargo clippy --locked --all-targets -D warnings: clean for BOTH x86_64-pc-windows-msvc and the host. repo:validate passed.\n\nTHE WINDOWS MODULE IS REALLY BEING CHECKED, proved rather than assumed: a deliberate type annotation error inserted inside the new drain() produced 4 errors for the Windows target, and was then reverted. Every line of the new instrumentation lives behind #[cfg(windows)] and would otherwise be invisible to a check run here.\n\nTHE LOCKFILE MOVED BY EXACTLY ONE LINE. libmpv2-sys went from a transitive dependency to a direct one, so \"libmpv2-sys\" was added to exp-1a's dependency list and nothing else: a diff of the before and after locks is a single added line, and a version comparison across every package reports moved: none, added: none, removed: none. --locked is honoured again.\n\nNOT CLAIMED, and this is the whole point of the round: that any of this fixes anything. Nothing here has run. The build gate says the instrumented harness compiles and links for Windows; whether it explains the failure is what the next run on the commander's machine determines. Experiment 1a is not PASS, PW-0103 is untouched and D1 is unchanged."
+        }
+      }
+    }
+  ],
   "review": [],
   "reservedExternal": [],
   "recommended": []

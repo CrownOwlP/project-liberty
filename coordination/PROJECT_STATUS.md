@@ -1,8 +1,8 @@
 # Project Liberty - Project Status
 
-> Generated 2026-10-06T00:52:10.252Z from the AI control plane.
+> Generated 2026-10-06T01:21:44.859Z from the AI control plane.
 
-**Overall completion:** 122/146 executable tasks (84%)
+**Overall completion:** 122/147 executable tasks (83%)
 
 ## Status summary
 
@@ -10,7 +10,7 @@
 - **READY:** 2
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 0
-- **REVIEW:** 6
+- **REVIEW:** 7
 - **BLOCKED:** 9
 - **DONE:** 122
 - **CANCELED:** 0
@@ -37,6 +37,7 @@
 - **PL-0743** [REVIEW] A pasted addon manifest URL has no safe path into the adapter — owner: claude-backend
 - **PL-0745** [REVIEW] Every msiexec call in the lifecycle harness can wait forever — owner: claude-infra
 - **PL-0746** [REVIEW] desktop-shell-ci.yml is the one workflow with no timeout at all — owner: claude-infra
+- **PL-0748** [REVIEW] Experiment 1a runs, renders and loads nothing: the harness cannot say why — owner: claude-media
 
 ## Dispatch classification
 
@@ -95,7 +96,7 @@ STILL MEASURABLE WITHOUT THAT DECISION, and NOT blocked by it: whether @img/shar
 - **claude-lead:** 0/2 capacity in use, 1 active (1 parked for an external reviewer)
 - **claude-frontend:** 0/2 capacity in use
 - **claude-backend:** 0/2 capacity in use, 1 active (1 parked for an external reviewer)
-- **claude-media:** 0/2 capacity in use
+- **claude-media:** 0/2 capacity in use, 1 active (1 parked for an external reviewer)
 - **claude-test:** 0/3 capacity in use, 1 active (1 parked for an external reviewer)
 - **claude-security:** 0/1 capacity in use
 - **claude-infra:** 0/5 capacity in use, 3 active (3 parked for an external reviewer)

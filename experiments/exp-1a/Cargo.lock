@@ -736,6 +736,7 @@ name = "exp-1a"
 version = "0.0.0"
 dependencies = [
  "libmpv2",
+ "libmpv2-sys",
  "serde",
  "serde_json",
  "tauri",

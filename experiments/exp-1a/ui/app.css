@@ -29,3 +29,14 @@ td:first-child { opacity: .75; white-space: pre; }
 td:last-child { white-space: pre-wrap; word-break: break-all; }
 .panel { max-height: 55vh; overflow: auto; }
 .err { color: #ffd0d0; margin-top: 8px; }
+
+/* PL-0748 — the diagnostic surface. Deliberately the loudest thing in the
+   panel: the previous run rendered perfectly and explained nothing. */
+.diagnosis { margin: 10px 0; padding: 8px 10px; border-radius: 6px;
+  background: rgba(150,20,20,.78); border: 1px solid rgba(255,160,160,.8);
+  font-weight: 600; white-space: pre-wrap; word-break: break-word; }
+.events { margin: 10px 0 0; padding: 8px 10px; max-height: 22vh; overflow: auto;
+  background: rgba(0,0,0,.45); border-radius: 6px; font-size: 11px;
+  white-space: pre-wrap; word-break: break-all; opacity: .9; }
+.logpath { margin-top: 6px; font-size: 11px; opacity: .7;
+  word-break: break-all; }
