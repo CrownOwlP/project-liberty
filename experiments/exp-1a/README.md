@@ -16,29 +16,79 @@ through architecture review, not to work around it here.
 
 ---
 
-## What changed since your last run (PL-0749)
+## What changed since your last run (PL-0750)
 
-Your run was not a failure of this experiment — it was a failure of one line
-in it. The diagnostic log was decisive: the file opened, HEVC was detected,
-mpv initialised, D3D11 came up on the RTX 3050, `d3d11va` hardware decoding
-was active, the VO reported `gpu-next 1920x1080 d3d11[nv12]`, the first frame
-rendered and playback completed. Everything worked. And mpv reported
-**`Window size: 1x1`**.
+**Your last run produced the most useful result this experiment has had, and
+it is a failure.** Everything beneath the webview now works and is proven to
+work:
 
-`create_child` built the video window at the right size and then, one
-statement later, called `SetWindowPos` with `cx=0, cy=0` and without
-`SWP_NOSIZE` — so it was resized to nothing before mpv ever saw it. `fit_child`
-would have corrected it, but it was wired only to resize and DPI events, and
-you never resized the window.
+| | |
+|---|---|
+| child HWND geometry | **1280x720** — the `1x1` defect is gone |
+| the HEVC file | opens |
+| D3D11 on the RTX 3050 | initialises |
+| `d3d11va` hardware decode | active |
+| the video output | `gpu-next` at 1280x720 |
+| the first frame | reported shown |
+| the Pause button | reaches mpv |
 
-Fixed: the real client dimensions are passed, and `fit_child` now runs once
-immediately after mpv initialises instead of waiting for an event that may
-never arrive. Nothing else changed — same child HWND, same z-order, same
-transparency, same mpv properties, same logging.
+So **criterion 1 (hardware decode) passes** and **criterion 3 (click and
+control) passes**. And you still saw no video at all — only the UI. That is
+**criterion 2 (compositing) failing**, and overall **Experiment 1a is NOT
+PASS**.
 
-**This still proves nothing about the seven criteria.** It means the video has
-somewhere to be drawn. Whether it composites correctly beneath the overlay is
-what you are about to find out.
+What that combination rules out is almost everything. mpv decoded on the GPU,
+configured a video output on a correctly-sized child window, and says it put a
+frame on the screen. The child window is in the right place at the right size.
+The only thing left between a frame mpv has drawn and an eye that cannot see
+it is **what is painted on top of it**.
+
+### What is painted on top of it
+
+Tauri's `transparent: true` makes the **top-level window** layered. It does
+*not* stop the WebView2 control inside that window from painting **its own
+default background** — an opaque white — across its entire surface. The video
+child sits at `HWND_BOTTOM`, behind that surface. An opaque WebView2
+background hides it completely, and reports nothing while doing so: no error,
+no event, no dropped frame. UI visible, video invisible, every component
+insisting it is fine. Which is exactly what you saw.
+
+### What this build does about it
+
+It takes the fallback this README has named since the first version: it
+reaches the underlying WebView2 controller through Tauri's `with_webview`,
+queries it for `ICoreWebView2Controller2`, and calls
+`put_DefaultBackgroundColor` with a fully transparent colour — `A=0, R=0,
+G=0, B=0`. That is Microsoft's own API for this exact problem.
+
+**Nothing else changed.** Same child HWND, same `HWND_BOTTOM`, same
+`WS_CLIPSIBLINGS`, same mpv properties, same geometry, same diagnostics.
+
+`ICoreWebView2Controller2` is a *later revision* of the controller Tauri hands
+out, so the harness has to ask for it rather than assume it. The first lines
+of `exp-1a-diagnostic.log` now say which of three things happened, and the
+distinction matters:
+
+- **`WebView2 DefaultBackgroundColor set to ARGB(0, 0, 0, 0)`** — the
+  background was cleared. If video still does not appear after this line, the
+  arrangement itself does not work.
+- **`WebView2 put_DefaultBackgroundColor FAILED: ...`** — the call was made
+  and refused.
+- **`WebView2 ICoreWebView2Controller2 is NOT AVAILABLE ...`** — your
+  installed WebView2 runtime is older than this API. That is a **runtime
+  version result, not a compositing result**; updating the WebView2 Evergreen
+  runtime and re-running is the next step, and Experiment 1a should not be
+  recorded either way on it.
+
+### This is the last corrective round
+
+If video still does not show beneath the webview after explicit WebView2
+transparency, **Experiment 1a is recorded FAIL** and decision D1 (native
+playback architecture) goes back to gpt-architect. No further workaround
+layers — no DWM tricks, no layered-window games, no moving mpv into its own
+top-level window. At that point "the Tauri arrangement does not support the
+compositing this product needs" is the honest finding, and it is worth more
+than another round of patches.
 
 ---
 
@@ -84,9 +134,12 @@ description of a failure is worth much less than the failure.
 | `PROVENANCE.txt` | in the unzipped folder | which exe and which mpv build |
 | a screenshot or short clip | — | for criteria 2, 4 and 5 a picture settles in one second what paragraphs cannot |
 
-**`exp-1a-diagnostic.log` is new (PL-0748)** and exists because the first real
-run rendered a window, rendered the overlay, played nothing, and could not say
-why — `terminal=no` was silencing mpv and nothing was draining its event
+**`exp-1a-diagnostic.log` is the first thing to look at and the first thing to
+send.** Its opening lines now report whether the WebView2 background was
+actually cleared (PL-0750) — read those before anything else, because a run
+where the clear failed says nothing about compositing. It exists at all
+because the first real run rendered a window, rendered the overlay, played
+nothing, and could not say why — `terminal=no` was silencing mpv and nothing was draining its event
 queue. The log now carries mpv's verbose output, every event it emits, the
 exact file string that was passed and whether it resolved on disk. If the
 overlay shows a red bar, that text is in there too, with everything that led
@@ -199,10 +252,14 @@ Two deviations from §10's text, both deliberate and both recorded here:
 - **Tauri 2.12.0, not 2.11.5.** That is the version `apps/desktop/src-tauri`
   pins. Testing the version the product actually uses is a stronger result
   than testing the version the document happened to name.
-- **§10 step 2's fallback is not pre-built.** The harness reaches webview
-  transparency through Tauri's `transparent: true`. If criterion 2 fails
-  *specifically* as "the whole top-level window is translucent" rather than
-  "the panel is opaque", the documented next move is to call
-  `ICoreWebView2Controller2::put_DefaultBackgroundColor(0,0,0,0)` through the
-  underlying controller. Building that path speculatively would have added a
-  second variable to a failure.
+- **§10 step 2's fallback is now built (PL-0750), because a real run
+  demanded it.** Through PL-0749 the harness reached webview transparency
+  through Tauri's `transparent: true` alone, and that was the right call at
+  the time: building the fallback speculatively would have added a second
+  variable to a failure. The Round-123 run removed the speculation. Criterion
+  2 failed with mpv fully exonerated, which is the precise condition the
+  fallback exists for, so the harness now also calls
+  `ICoreWebView2Controller2::put_DefaultBackgroundColor(0, 0, 0, 0)` through
+  the underlying controller. It is reached by querying the controller Tauri
+  returns for the later interface, and all three outcomes — set, refused,
+  interface unavailable — are named in the diagnostic log.

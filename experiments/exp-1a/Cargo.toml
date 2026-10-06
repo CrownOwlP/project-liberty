@@ -41,3 +41,14 @@ windows-sys = { version = "=0.59.0", features = [
   "Win32_Graphics_Gdi",
   "Win32_UI_WindowsAndMessaging",
 ] }
+# PL-0750. §10 step 2's documented fallback. Tauri's `transparent: true` makes
+# the TOP-LEVEL window layered; it does not stop the WebView2 control inside
+# it painting its own opaque default background over the child HWND behind it.
+# `ICoreWebView2Controller2::put_DefaultBackgroundColor` is Microsoft's own
+# answer to that, and reaching it needs the type (`webview2-com`) and the
+# `Interface::cast` that queries for the later interface revision
+# (`windows-core`). BOTH ARE ALREADY IN Cargo.lock AT THESE EXACT VERSIONS as
+# tauri's own dependencies, so `--locked` resolves with no version moving --
+# the same bar libmpv2-sys met in PL-0748.
+webview2-com = "=0.39.1"
+windows-core = "=0.62.2"

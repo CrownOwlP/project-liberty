@@ -1,8 +1,8 @@
 # Project Liberty - Project Status
 
-> Generated 2026-10-06T01:48:00.167Z from the AI control plane.
+> Generated 2026-10-06T02:18:05.867Z from the AI control plane.
 
-**Overall completion:** 122/148 executable tasks (82%)
+**Overall completion:** 122/149 executable tasks (82%)
 
 ## Status summary
 
@@ -11,7 +11,7 @@
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 0
 - **REVIEW:** 7
-- **BLOCKED:** 10
+- **BLOCKED:** 11
 - **DONE:** 122
 - **CANCELED:** 0
 - **SUPERSEDED:** 4
@@ -37,13 +37,13 @@
 - **PL-0743** [REVIEW] A pasted addon manifest URL has no safe path into the adapter — owner: claude-backend
 - **PL-0745** [REVIEW] Every msiexec call in the lifecycle harness can wait forever — owner: claude-infra
 - **PL-0746** [REVIEW] desktop-shell-ci.yml is the one workflow with no timeout at all — owner: claude-infra
-- **PL-0749** [REVIEW] The video child HWND is resized to zero the instant after it is created — owner: claude-media
+- **PL-0750** [REVIEW] WebView2 paints an opaque background over the video: criterion 2 fails while mpv is blameless — owner: claude-media
 
 ## Dispatch classification
 
 - **READY_AND_EXECUTABLE:** 2
 - **READY_BUT_EXTERNAL:** 0
-- **BLOCKED:** 10
+- **BLOCKED:** 11
 - **BACKLOG (dependency-gated):** 7
 
 ## Recommended executable wave
@@ -100,6 +100,17 @@ WHAT WAS TRIED FIRST AND REFUSED. `release` is not permitted from REVIEW -- the 
 THE COST, STATED: unblocking later discards gate results, so PL-0748's `build` gate will need re-recording. It is mine, it is one clippy run, and it is truthfully re-recordable. No review provenance is lost because no verdict exists yet.
 
 UNBLOCK WHEN: PL-0749 (the geometry fix) has cleared the file, or gpt-architect's verdict on this task arrives -- whichever is first. This task's own work needs nothing further.
+- **PL-0749** The video child HWND is resized to zero the instant after it is created: PARKED TO SEQUENCE THE FINAL EXPERIMENT 1A FIX ON THE SAME FILE. This reason says what is true rather than dressing it up.
+
+PL-0749 IS NOT BLOCKED ON ANYTHING IT NEEDS, AND ITS FIX WAS CORRECT. The commander ran the corrected harness on real hardware and the geometry defect is gone: the child HWND is 1280x720, the local HEVC file opens, D3D11 comes up on an RTX 3050, d3d11va hardware decoding is active, the VO reports gpu-next at 1280x720, the first video frame is reported shown, and the Pause button reaches mpv. Criterion 1 (hardware decode) and criterion 3 (click/control) both pass. The one-line SetWindowPos defect this task was filed against is demonstrably fixed. What the task awaits is gpt-architect's architecture-review verdict, nothing else.
+
+WHY IT IS BEING PARKED ANYWAY. The same run shows NO VIDEO at all -- only the WebView UI -- so criterion 2 (compositing) fails and Experiment 1a is NOT PASS. mpv is exonerated; the failure is isolated to WebView2 painting an opaque background over the child HWND beneath it. The fix is the fallback already documented in experiments/exp-1a/README.md section 10 step 2, and it lands in experiments/exp-1a/src/main.rs -- the file PL-0749 holds. Two tasks cannot hold one file, so they must be sequential, and the commander has directed that this is the FINAL corrective round before Experiment 1a is recorded FAIL and D1 returns to architecture review.
+
+WHAT WAS TRIED FIRST AND REFUSED. release is not permitted from REVIEW, and that refusal is correct -- it protects work under review from being mutated underneath its reviewer. Of the remaining exits from REVIEW: DONE needs the verdict; CANCELED would assert there is no work to evidence, which is false and would discard a proven fix; request-changes records a REVIEWER asking for changes, and gpt-architect has asked for none, so recording it would be fabricating a verdict. block preserves gate results and is the least destructive of the four.
+
+THE COST, STATED PLAINLY: unblocking later discards gate results, so PL-0749's build gate will need re-recording. It is mine, it is one clippy run, and it is truthfully re-recordable. No review provenance is lost because no verdict exists yet. This is now the second experiments/** task parked this way (PL-0748 is the first) and that is a real debt on the board, not a tidy outcome -- both need gpt-architect's verdict and both will need their build gate re-run after unblocking.
+
+UNBLOCK WHEN: PL-0750 (the WebView2 transparency fallback) has cleared the file, or gpt-architect's verdict on this task arrives -- whichever is first. This task's own work needs nothing further.
 
 ## Agent capacity
 

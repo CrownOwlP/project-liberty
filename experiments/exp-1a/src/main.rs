@@ -103,6 +103,80 @@ mod experiment {
         DefWindowProcW(h, m, w, l)
     }
 
+    /// § step 2's FALLBACK, taken in PL-0750 because the Round-123 run forced
+    /// it. **This is the last corrective layer this experiment gets.**
+    ///
+    /// That run exonerated everything below the webview: the file opened, mpv
+    /// initialised, D3D11 came up on an RTX 3050, `d3d11va` was active, the VO
+    /// reported `gpu-next` at the child's real 1280x720, the first frame was
+    /// reported shown, and the Pause button reached mpv. The commander still
+    /// saw no video — only the UI. That leaves exactly one thing between a
+    /// frame mpv has drawn and an eye that cannot see it, and it is what is
+    /// painted on top.
+    ///
+    /// Tauri's `transparent: true` makes the TOP-LEVEL window layered. It does
+    /// NOT stop the WebView2 control inside that window from painting its own
+    /// default background — an opaque white — across its whole surface. The
+    /// video child sits at `HWND_BOTTOM`, behind that surface, so an opaque
+    /// background hides it completely and reports nothing: no error, no event,
+    /// no missing frame. UI visible, video invisible, everything "working".
+    ///
+    /// `ICoreWebView2Controller2::put_DefaultBackgroundColor` is Microsoft's
+    /// own answer. It is a LATER REVISION of the controller Tauri hands out,
+    /// so it has to be queried for rather than assumed — a WebView2 runtime
+    /// that predates it will fail the cast, and that is a real outcome on a
+    /// real machine, not a theoretical one. All three outcomes get their own
+    /// line in the diagnostic log, because the whole lesson of the last three
+    /// rounds is that a harness which cannot say what happened costs a round.
+    fn clear_webview_background(window: &tauri::WebviewWindow, diag: &Arc<Diag>) {
+        use webview2_com::Microsoft::Web::WebView2::Win32::{
+            ICoreWebView2Controller2, COREWEBVIEW2_COLOR,
+        };
+        use windows_core::Interface;
+
+        // The closure runs on the thread that owns the webview and must be
+        // `Send + 'static`, so the log goes in with it rather than a result
+        // coming back out.
+        let inside = Arc::clone(diag);
+        let dispatched = window.with_webview(move |webview| {
+            match webview.controller().cast::<ICoreWebView2Controller2>() {
+                Ok(controller) => {
+                    let clear = COREWEBVIEW2_COLOR {
+                        A: 0,
+                        R: 0,
+                        G: 0,
+                        B: 0,
+                    };
+                    match unsafe { controller.SetDefaultBackgroundColor(clear) } {
+                        Ok(()) => inside.say(
+                            "WebView2 DefaultBackgroundColor set to ARGB(0, 0, 0, 0). The webview \
+                             is no longer painting a background of its own, so the video child \
+                             beneath it should now show through wherever the HTML is transparent.",
+                        ),
+                        Err(error) => inside.say(&format!(
+                            "WebView2 put_DefaultBackgroundColor FAILED: {error}. The webview is \
+                             still painting an opaque background over the video child and \
+                             criterion 2 CANNOT pass on this run."
+                        )),
+                    }
+                }
+                Err(error) => inside.say(&format!(
+                    "WebView2 ICoreWebView2Controller2 is NOT AVAILABLE on this machine: {error}. \
+                     The installed WebView2 runtime predates DefaultBackgroundColor, so its \
+                     background cannot be cleared and criterion 2 CANNOT pass on this runtime. \
+                     This is a runtime-version result, NOT a result about the compositing \
+                     arrangement — report it as such rather than as an Experiment 1a failure."
+                )),
+            }
+        });
+        if let Err(error) = dispatched {
+            diag.say(&format!(
+                "WebView2 with_webview could not reach the webview at all: {error}. The background \
+                 was never touched and criterion 2 CANNOT pass on this run."
+            ));
+        }
+    }
+
     /// § step 3 — a SIBLING child HWND under the top-level window, below the
     /// webview in z-order.
     ///
@@ -505,9 +579,17 @@ mod experiment {
                 let parent = window.hwnd()?.0 as HWND;
                 let diag = std::sync::Arc::new(Diag::open());
                 diag.say(&format!(
-                    "exp-1a diagnostic log (PL-0748). {}",
+                    "exp-1a diagnostic log (PL-0750). {}",
                     diag.path.as_deref().unwrap_or("(no path)")
                 ));
+                /*
+                 * PL-0750. BEFORE THE CHILD EXISTS, because this is about
+                 * what the webview paints rather than about what is behind
+                 * it, and doing it first means the very first paint after the
+                 * child appears is already a transparent one. §10 step 2's
+                 * documented fallback; the last corrective layer.
+                 */
+                clear_webview_background(&window, &diag);
                 let child = unsafe { create_child(parent, &diag) }.map_err(std::io::Error::other)?;
                 let mpv = start(child, &file, &diag).map_err(std::io::Error::other)?;
                 /*
