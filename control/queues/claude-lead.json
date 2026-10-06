@@ -1,8 +1,46 @@
 {
-  "generatedAt": "2026-10-06T00:26:40.369Z",
+  "generatedAt": "2026-10-06T00:40:24.975Z",
   "agent": "claude-lead",
   "executionAvailable": true,
-  "assigned": [],
+  "assigned": [
+    {
+      "id": "PL-0740",
+      "priority": "P2",
+      "lane": "Integration",
+      "status": "REVIEW",
+      "title": "A task parked for an external reviewer consumes local implementation capacity",
+      "dependencies": [],
+      "allowedPaths": [
+        "scripts/ai-control-plane.mjs",
+        "scripts/test-ai-control-plane.mjs"
+      ],
+      "reviewDependencies": [
+        "control/agents.json",
+        "control/policies.json"
+      ],
+      "preferredAgent": "claude-lead",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "unit",
+        "architecture-review"
+      ],
+      "acceptance": "claude-infra's maxParallel has gone 1 -> 2 (round 109) -> 3 (round 113) -> 4 -> 5 (round 114). Every raise was justified against the same three documented conditions and every one of them held. That is the symptom, not the cause.\n\nTHE CAUSE: usageByAgent counts REVIEW toward maxParallel, and REVIEW here usually means 'parked for gpt-architect', who is not a locally executable agent. So a lane whose entire output is awaiting an EXTERNAL verdict consumes its own implementation capacity, and the only lever available is a number that was never meant to be pulled five times.\n\nREQUIRED: a task in REVIEW whose reviewAgent is not locally executable does not count toward its owner's maxParallel. It still holds its allowedPaths -- CONFLICT DETECTION MUST NOT CHANGE, and that is the whole safety argument for the capacity limit being loosenable at all: overlap is prevented structurally by allowedPaths regardless of owner or count.\nREQUIRED: 'locally executable' is read from the registry, not hard-coded to gpt-architect.\nREQUIRED: a task in REVIEW with a LOCAL reviewAgent still counts, because that reviewer is real work this organisation has to do.\nREQUIRED: the capacity raises this defect forced are reconsidered once it lands. If the right number for claude-infra is 2, it should go back to 2.\nREQUIRED: driven by a scenario over FIXTURES, not the live board, per this suite's own standing rule, and shown to fail before the change.\n\nOUT OF SCOPE: changing activeStatuses, which conflict detection reads. Only the capacity computation moves.",
+      "notes": "FILED ROUND 114 during the release sprint, at the moment a fifth raise became the alternative to leaving PL-0734 -- item 2 on the release-impact list, directly on the launch path -- unstarted. Filed rather than fixed on the spot because scripts/ai-control-plane.mjs is reserved by PL-0735 in review, and because a control-plane change made in a hurry during a release sprint is how a scheduler quietly starts producing different waves.",
+      "owner": "claude-lead",
+      "implementationAgent": "claude-lead",
+      "updatedAt": "2026-10-06T00:40:24.662Z",
+      "implementationBaseSha": "a82feb15a6f6fd36f205a9bd2b5f169374957120",
+      "gateResults": {
+        "unit": {
+          "status": "pass",
+          "at": "2026-10-06T00:40:24.401Z",
+          "by": "claude-lead",
+          "commitSha": "a82feb15a6f6fd36f205a9bd2b5f169374957120",
+          "evidence": "node scripts/test-ai-control-plane.mjs: 72 scenarios, all pass, 133.9s. repo:validate passed. ai:validate: 150 tasks, 9 agents, no errors.\n\nSHOWN TO FAIL BEFORE THE CHANGE, as the acceptance requires and not merely asserted. With scenario 10u in place and scripts/ai-control-plane.mjs stashed back to its pre-change state, the suite stopped at:\n\n  [ 148.6s] 10u. A lane parked for an EXTERNAL reviewer does not spend its own capacity\n  AI control plane error: claude-lead is at maxParallel 2\n\nThat message IS the defect: claude-lead held two tasks in REVIEW for gpt-architect -- an agent this repository cannot run -- and could not claim a third with entirely disjoint paths. The implementation was then restored and the file compared byte-for-byte against the copy taken before stashing.\n\nOVER FROZEN FIXTURES, never the live board, per this suite's standing rule. claude-lead's real maxParallel is 2 today and borrowing it would make the scenario a bet on that staying true.\n\nFOUR CASES, and the three that are not the headline are the ones that keep this safe:\n  1. two REVIEWs for gpt-architect (external) + one READY -> the claim now succeeds.\n  2. two REVIEWs for claude-test (LOCAL) + one READY -> still refused at maxParallel 2. That review is work this organisation owes; the slot is honest.\n  3. two REVIEWs naming \"gpt-architekt\", which is in no registry -> still refused. A typo in a field must not silently buy capacity, and this is the direction of error that is cheap to write and expensive to find.\n  4. a REVIEW parked externally whose paths overlap a READY candidate -> STILL REFUSED, with \"PL-CAP-0032 paths overlap active task PL-CAP-0031 owned by claude-lead\".\n\nCase 4 is the whole safety argument. conflictWithActive still reads active(), untouched, so a task in REVIEW keeps its allowedPaths reserved exactly as before; activeStatuses is unchanged. Overlap is prevented structurally by declared paths regardless of owner or count, which is precisely why capacity can be relaxed without two agents ever writing the same file. Re-proved against the LIVE board as well: PL-0738 and PL-0730 are both still refused on their real overlap with PL-0736.\n\nLOCAL EXECUTABILITY IS READ FROM THE REGISTRY, not hard-coded: consumesCapacity asks agentExecutable(reviewer, d), the same question dispatch already asks, which resolves through the adapter serving that agent's kind.\n\nTWO NUMBERS WHERE THERE WAS ONE, because they are now two facts. The status report would otherwise have shown capacity falling with no explanation of where the work went. It now reads, against the live board: \"claude-infra: 0/5 capacity in use, 3 active (3 parked for an external reviewer)\" -- which is the five-raise situation, stated.\n\nFOUND WHILE DOING THIS, recorded as its own defect.found: the suite's summary line carried a hand-typed \"(73 scenarios)\" and was wrong by two -- 71 call sites existed, 72 now. A false number inside a PASSING suite's own report. The count is derived in scenario() now and cannot drift.\n\nNOT DONE, AND SPLIT OUT AS PL-0747: the acceptance's final clause, reconsidering the raises. control/agents.json is in this task's reviewDependencies and not its allowedPaths, so this task cannot write it -- and the clause itself says \"once it lands\", which has not happened. Judging whether 2 is right for claude-infra needs the board observed under the new accounting, and lowering numbers in the same commit that changes how they are counted would put two decisions under one review."
+        }
+      }
+    }
+  ],
   "review": [],
   "reservedExternal": [],
   "recommended": [
@@ -31,30 +69,6 @@
       ],
       "acceptance": "REQUIRED: the Windows package job runs scripts/windows/distribution-inventory.mjs against the PACKAGE BUILD OUTPUT after the bundle is produced, and against the INSTALLED TREE inside the lifecycle run, with each invocation naming which tree it is reporting on. Two trees, two reports, never conflated.\n\nREQUIRED: it runs even when a later step fails, for the same reason the installer-log upload does -- the inventory of a build is most interesting on the run that went wrong.\n\nREQUIRED: its unit suite joins npm run test:scripts, and therefore gains a step in the CI validate job, because PL-0714's mirror-check fails a build whose alias names a suite with no step. A script nothing runs is this repository's most-repeated defect and PL-0737 must not become the sixth instance.\n\nOUT OF SCOPE: what the inventory says. This task makes it run and makes its output readable.",
       "notes": "FILED ROUND 113 alongside PL-0737, which it exists to wire in. BLOCKED BY SURFACE, not by work: .github/workflows/windows.yml is reserved by PL-0733 and package.json by PL-0728, both in gpt-architect's review queue. Same shape as PL-0736 and recorded the same way rather than worked around.\n\nSURFACE CORRECTED 2026-10-05, BEFORE THE NEXT CLAIM RATHER THAN DURING IT. The task could not satisfy its own third clause. That clause requires the inventory's unit suite to join `npm run test:scripts` and therefore to gain a step in the CI validate job -- because PL-0714's mirror-check fails a build whose alias names a suite with no step -- and `.github/workflows/ci.yml` was not among allowedPaths. Whoever claimed it would have reached that clause, found the file outside the surface, and either widened it mid-implementation or quietly skipped the clause. Both are worse than fixing the declaration while nobody owns the task.\n\nADDING ci.yml MEANS THIS TASK NOW OVERLAPS PL-0736 UNTIL THAT ONE CLEARS REVIEW, and that is the correct state rather than an obstacle: `ai:claim` will refuse, which is the control plane saying the two cannot safely be held at once. It was already refusing on windows.yml alone."
-    },
-    {
-      "id": "PL-0740",
-      "priority": "P2",
-      "lane": "Integration",
-      "status": "READY",
-      "title": "A task parked for an external reviewer consumes local implementation capacity",
-      "dependencies": [],
-      "allowedPaths": [
-        "scripts/ai-control-plane.mjs",
-        "scripts/test-ai-control-plane.mjs"
-      ],
-      "reviewDependencies": [
-        "control/agents.json",
-        "control/policies.json"
-      ],
-      "preferredAgent": "claude-lead",
-      "reviewAgent": "gpt-architect",
-      "qualityGates": [
-        "unit",
-        "architecture-review"
-      ],
-      "acceptance": "claude-infra's maxParallel has gone 1 -> 2 (round 109) -> 3 (round 113) -> 4 -> 5 (round 114). Every raise was justified against the same three documented conditions and every one of them held. That is the symptom, not the cause.\n\nTHE CAUSE: usageByAgent counts REVIEW toward maxParallel, and REVIEW here usually means 'parked for gpt-architect', who is not a locally executable agent. So a lane whose entire output is awaiting an EXTERNAL verdict consumes its own implementation capacity, and the only lever available is a number that was never meant to be pulled five times.\n\nREQUIRED: a task in REVIEW whose reviewAgent is not locally executable does not count toward its owner's maxParallel. It still holds its allowedPaths -- CONFLICT DETECTION MUST NOT CHANGE, and that is the whole safety argument for the capacity limit being loosenable at all: overlap is prevented structurally by allowedPaths regardless of owner or count.\nREQUIRED: 'locally executable' is read from the registry, not hard-coded to gpt-architect.\nREQUIRED: a task in REVIEW with a LOCAL reviewAgent still counts, because that reviewer is real work this organisation has to do.\nREQUIRED: the capacity raises this defect forced are reconsidered once it lands. If the right number for claude-infra is 2, it should go back to 2.\nREQUIRED: driven by a scenario over FIXTURES, not the live board, per this suite's own standing rule, and shown to fail before the change.\n\nOUT OF SCOPE: changing activeStatuses, which conflict detection reads. Only the capacity computation moves.",
-      "notes": "FILED ROUND 114 during the release sprint, at the moment a fifth raise became the alternative to leaving PL-0734 -- item 2 on the release-impact list, directly on the launch path -- unstarted. Filed rather than fixed on the spot because scripts/ai-control-plane.mjs is reserved by PL-0735 in review, and because a control-plane change made in a hurry during a release sprint is how a scheduler quietly starts producing different waves."
     },
     {
       "id": "PL-0730",

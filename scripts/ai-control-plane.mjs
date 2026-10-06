@@ -233,13 +233,79 @@ function capabilityScore(agent, task) {
   if (task.lane === "Coordination" && agent.id === "claude-lead") score += 30;
   return score;
 }
-function usageByAgent(tasks, policies) {
+/**
+ * Whether a task consumes its owner's CAPACITY, which is not the same question
+ * as whether it is active (PL-0740).
+ *
+ * THE DEFECT THIS SEPARATES. `maxParallel` exists to stop one agent holding
+ * more concurrent work than it can do. Counting every active task against it
+ * conflated that with path ownership, and the symptom was visible: claude-infra
+ * went 1 -> 2 -> 3 -> 4 -> 5 across rounds 109 to 114, every raise justified
+ * against the same three documented conditions and every one of them holding.
+ * Five justified raises of one number is not five coincidences; it is a
+ * measurement telling you the number is standing in for something else.
+ *
+ * What it was standing in for: a task in REVIEW whose reviewAgent is
+ * gpt-architect is not work this organisation can do. It is parked on a
+ * verdict that arrives from outside, through a repository, on someone else's
+ * schedule. The lane has finished its part and is holding a slot for a queue it
+ * cannot drain. So the only lever left was a limit that was never meant to be
+ * pulled five times, and pulling it is how a safety number becomes a formality.
+ *
+ * A REVIEW WITH A LOCAL REVIEWER STILL COUNTS, and that is not a technicality:
+ * that review is real work somebody here has to perform, and the slot is
+ * honest.
+ *
+ * WHAT DELIBERATELY DOES NOT MOVE, and this is the whole safety argument for
+ * the limit being loosenable at all: `conflictWithActive` still reads
+ * `active()`, so a task in REVIEW keeps its `allowedPaths` reserved exactly as
+ * before. Overlap is prevented STRUCTURALLY, by declared paths, regardless of
+ * owner or count -- which is why capacity can be relaxed without two agents
+ * ever writing the same file. `activeStatuses` is untouched.
+ *
+ * FAIL SAFE, TWICE OVER. A task with no reviewAgent, or one naming an agent not
+ * in the registry, counts. Not counting it would mean a typo in a field
+ * silently buys capacity, and the direction of that error is the wrong one.
+ */
+function consumesCapacity(task, policies, d) {
+  if (!active(task, policies)) return false;
+  if (task.status !== "REVIEW") return true;
+  if (!task.reviewAgent) return true;
+  const reviewer = (d?.agentDoc?.agents ?? []).find(
+    (a) => a.id === task.reviewAgent,
+  );
+  if (!reviewer) return true;
+  /* Read from the registry, never hard-coded to gpt-architect: the question is
+   * whether the adapter serving this reviewer's kind can run commands and edit
+   * files here, which is the same question dispatch already asks. */
+  return agentExecutable(reviewer, d);
+}
+
+/**
+ * Capacity in use, per agent.
+ *
+ * `d` is required rather than optional. An earlier draft defaulted it, which
+ * made a caller that forgot to pass it count every REVIEW -- the old behaviour,
+ * restored silently, in the one function whose whole purpose is to stop doing
+ * that.
+ */
+function usageByAgent(tasks, policies, d) {
   const usage = new Map();
   for (const task of tasks) {
-    if (task.owner && active(task, policies))
+    if (task.owner && consumesCapacity(task, policies, d))
       usage.set(task.owner, (usage.get(task.owner) ?? 0) + 1);
   }
   return usage;
+}
+
+/** Active tasks per agent, for REPORTING. Capacity is a different number now. */
+function activeByAgent(tasks, policies) {
+  const counts = new Map();
+  for (const task of tasks) {
+    if (task.owner && active(task, policies))
+      counts.set(task.owner, (counts.get(task.owner) ?? 0) + 1);
+  }
+  return counts;
 }
 function conflictWithActive(task, tasks, policies) {
   return tasks
@@ -432,7 +498,7 @@ function greedyWave(candidates, agents, baseUsage) {
 function planExecutableWave(d, classification) {
   const tasks = d.taskDoc.tasks;
   const agents = executableAgents(d);
-  const baseUsage = usageByAgent(tasks, d.policies);
+  const baseUsage = usageByAgent(tasks, d.policies, d);
   const candidates = classification.readyAndExecutable
     .filter((t) => !conflictWithActive(t, tasks, d.policies))
     .sort(
@@ -3247,10 +3313,24 @@ function renderStatus(d) {
         `- **${t.id}** ${t.title}: ${t.blocker ?? "reason not recorded"}`,
       );
   lines.push("", "## Agent capacity", "");
-  const usage = usageByAgent(tasks, policies);
+  /*
+   * TWO NUMBERS, BECAUSE THEY ARE NOW TWO FACTS (PL-0740). Capacity in use is
+   * what `maxParallel` governs; active tasks is how many the agent owns. They
+   * differ exactly when a task sits in REVIEW for an external reviewer, and a
+   * report showing only the first would read as though work had vanished.
+   */
+  const usage = usageByAgent(tasks, policies, d);
+  const activeCounts = activeByAgent(tasks, policies);
   for (const a of agents) {
+    const used = usage.get(a.id) ?? 0;
+    const owned = activeCounts.get(a.id) ?? 0;
+    const parked = owned - used;
     lines.push(
-      `- **${a.id}:** ${usage.get(a.id) ?? 0}/${a.maxParallel} active${agentExecutable(a, d) ? "" : " (external lane; not locally executable)"}`,
+      `- **${a.id}:** ${used}/${a.maxParallel} capacity in use` +
+        (parked > 0
+          ? `, ${owned} active (${parked} parked for an external reviewer)`
+          : "") +
+        (agentExecutable(a, d) ? "" : " (external lane; not locally executable)"),
     );
   }
   return lines.join("\n") + "\n";
@@ -3423,7 +3503,7 @@ try {
       throw new Error(
         `${agentId} does not advertise capability for lane ${task.lane}`,
       );
-    const usage = usageByAgent(d.taskDoc.tasks, d.policies).get(agentId) ?? 0;
+    const usage = usageByAgent(d.taskDoc.tasks, d.policies, d).get(agentId) ?? 0;
     if (usage >= agent.maxParallel)
       throw new Error(`${agentId} is at maxParallel ${agent.maxParallel}`);
     const conflict = conflictWithActive(task, d.taskDoc.tasks, d.policies);

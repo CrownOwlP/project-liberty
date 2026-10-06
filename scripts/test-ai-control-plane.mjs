@@ -208,8 +208,18 @@ function elapsed() {
   return `${((Date.now() - SUITE_STARTED) / 1000).toFixed(1)}s`;
 }
 let currentScenario = "(before the first scenario)";
+/*
+ * COUNTED, NOT WRITTEN DOWN. The summary line used to carry a hand-typed
+ * scenario count, and adding scenario 10u made it say 73 when there were 74 --
+ * a number in a passing suite's own report, quietly wrong. This repository has
+ * recorded that failure under several names ("the note that a hand-kept list
+ * must be kept in step did not keep it in step on any of the three
+ * occasions"); a counter is three lines and cannot drift.
+ */
+let scenarioCount = 0;
 function scenario(label) {
   currentScenario = label;
+  scenarioCount += 1;
   console.log(`[${elapsed().padStart(7)}] ${label}`);
 }
 /*
@@ -9664,6 +9674,178 @@ try {
    *     This now also guards coordination/agent-bus, so a test that forgets
    *     freshRepo() cannot publish a real handoff message.
    * ------------------------------------------------------------------- */
+  scenario("10u. A lane parked for an EXTERNAL reviewer does not spend its own capacity");
+  {
+    /*
+     * PL-0740. The defect was visible as a number being pulled: claude-infra's
+     * maxParallel went 1 -> 2 -> 3 -> 4 -> 5 across rounds 109 to 114, every
+     * raise justified against the same three documented conditions, every one
+     * of them holding. Five justified raises of one safety limit is a
+     * measurement, not five coincidences.
+     *
+     * What it measured: a task in REVIEW for gpt-architect is parked on a
+     * verdict that arrives from outside this repository, on someone else's
+     * schedule. The lane has finished its part and cannot drain that queue, yet
+     * the slot stayed spent -- so the only lever left was the limit itself.
+     *
+     * OVER FIXTURES, NEVER THE LIVE BOARD. claude-lead's real maxParallel is 2
+     * today and this scenario would silently stop testing anything the moment
+     * somebody changed it; the fixtures below pin the whole situation.
+     */
+    const repo = freshRepo();
+    const cap = (id, overrides = {}) =>
+      fixtureTask(id, {
+        lane: "Coordination",
+        preferredAgent: "claude-lead",
+        acceptance: "fixture task used by the PL-0740 capacity regressions",
+        ...overrides,
+      });
+
+    /*
+     * claude-lead's maxParallel is 2. Two tasks are parked in REVIEW for
+     * gpt-architect -- who is external -- and one candidate is READY. Under the
+     * old accounting the two parked tasks spent both slots and the claim was
+     * refused at maxParallel. Paths are disjoint throughout, so NOTHING here
+     * turns on conflict detection; that is asserted separately below.
+     */
+    useFixtureTaskSet(
+      repo,
+      cap("PL-CAP-0001", {
+        title: "PL-CAP-0001 parked for an external reviewer",
+        status: "REVIEW",
+        owner: "claude-lead",
+        implementationAgent: "claude-lead",
+        reviewAgent: "gpt-architect",
+        allowedPaths: ["fixtures/cap/one/**"],
+      }),
+      cap("PL-CAP-0002", {
+        title: "PL-CAP-0002 also parked for an external reviewer",
+        status: "REVIEW",
+        owner: "claude-lead",
+        implementationAgent: "claude-lead",
+        reviewAgent: "gpt-architect",
+        allowedPaths: ["fixtures/cap/two/**"],
+      }),
+      cap("PL-CAP-0003", {
+        title: "PL-CAP-0003 the candidate those two used to block",
+        status: "READY",
+        allowedPaths: ["fixtures/cap/three/**"],
+      }),
+    );
+
+    /* --- THE CLAIM THAT USED TO BE REFUSED ------------------------------- */
+    run(repo, CLI, ["claim", "PL-CAP-0003", "claude-lead"]);
+    assert.equal(
+      taskOf(repo, "PL-CAP-0003").status,
+      "CLAIMED",
+      "a lane holding only externally-parked reviews must have capacity to claim",
+    );
+
+    /* --- A LOCAL REVIEWER STILL SPENDS A SLOT, which is the other half --- */
+    const localRepo = freshRepo();
+    useFixtureTaskSet(
+      localRepo,
+      cap("PL-CAP-0011", {
+        title: "PL-CAP-0011 in review for a LOCAL reviewer",
+        status: "REVIEW",
+        owner: "claude-lead",
+        implementationAgent: "claude-lead",
+        /* claude-test is locally executable: that review is work this
+         * organisation still owes, so the slot is honest. */
+        reviewAgent: "claude-test",
+        allowedPaths: ["fixtures/cap/local-one/**"],
+      }),
+      cap("PL-CAP-0012", {
+        title: "PL-CAP-0012 also in review for a LOCAL reviewer",
+        status: "REVIEW",
+        owner: "claude-lead",
+        implementationAgent: "claude-lead",
+        reviewAgent: "claude-test",
+        allowedPaths: ["fixtures/cap/local-two/**"],
+      }),
+      cap("PL-CAP-0013", {
+        title: "PL-CAP-0013 must NOT be claimable past a real queue",
+        status: "READY",
+        allowedPaths: ["fixtures/cap/local-three/**"],
+      }),
+    );
+    runFail(
+      localRepo,
+      ["claim", "PL-CAP-0013", "claude-lead"],
+      /claude-lead is at maxParallel 2/,
+      {},
+    );
+
+    /* --- FAIL SAFE: an unknown reviewer counts -------------------------- */
+    const unknownRepo = freshRepo();
+    useFixtureTaskSet(
+      unknownRepo,
+      cap("PL-CAP-0021", {
+        title: "PL-CAP-0021 reviewAgent names nobody in the registry",
+        status: "REVIEW",
+        owner: "claude-lead",
+        implementationAgent: "claude-lead",
+        reviewAgent: "gpt-architekt",
+        allowedPaths: ["fixtures/cap/unknown-one/**"],
+      }),
+      cap("PL-CAP-0022", {
+        title: "PL-CAP-0022 reviewAgent names nobody in the registry",
+        status: "REVIEW",
+        owner: "claude-lead",
+        implementationAgent: "claude-lead",
+        reviewAgent: "gpt-architekt",
+        allowedPaths: ["fixtures/cap/unknown-two/**"],
+      }),
+      cap("PL-CAP-0023", {
+        title: "PL-CAP-0023 a typo must not buy capacity",
+        status: "READY",
+        allowedPaths: ["fixtures/cap/unknown-three/**"],
+      }),
+    );
+    /*
+     * A misspelled reviewer is the case where the WRONG direction of error is
+     * cheap to write and expensive to find. Counting it keeps a typo from
+     * silently raising a limit.
+     */
+    runFail(
+      unknownRepo,
+      ["claim", "PL-CAP-0023", "claude-lead"],
+      /claude-lead is at maxParallel 2/,
+      {},
+    );
+
+    /* --- CONFLICT DETECTION DID NOT MOVE, and this is the safety argument */
+    const pathRepo = freshRepo();
+    useFixtureTaskSet(
+      pathRepo,
+      cap("PL-CAP-0031", {
+        title: "PL-CAP-0031 parked externally, still holding its paths",
+        status: "REVIEW",
+        owner: "claude-lead",
+        implementationAgent: "claude-lead",
+        reviewAgent: "gpt-architect",
+        allowedPaths: ["fixtures/cap/shared/**"],
+      }),
+      cap("PL-CAP-0032", {
+        title: "PL-CAP-0032 overlaps it, and must still be refused",
+        status: "READY",
+        allowedPaths: ["fixtures/cap/shared/deeper/**"],
+      }),
+    );
+    /*
+     * THE WHOLE REASON CAPACITY MAY BE RELAXED AT ALL. Overlap is prevented
+     * structurally by declared paths, regardless of owner or count. If freeing
+     * the slot had also freed the path, this change would have traded a
+     * scheduling annoyance for two agents writing the same file.
+     */
+    runFail(
+      pathRepo,
+      ["claim", "PL-CAP-0032", "claude-lead"],
+      /PL-CAP-0032 paths overlap active task PL-CAP-0031 owned by claude-lead/,
+      {},
+    );
+  }
+
   scenario("11. The live repository state must be untouched by the whole run");
   assert.equal(
     fs.readFileSync(liveTasksPath, "utf8"),
@@ -9681,7 +9863,7 @@ try {
   const total = slowest.reduce((sum, c) => sum + c.ms, 0);
   slowest.sort((a, b) => b.ms - a.ms);
   console.log(
-    `AI control plane tests passed (73 scenarios) in ${elapsed()}; ` +
+    `AI control plane tests passed (${scenarioCount} scenarios) in ${elapsed()}; ` +
       `${slowest.length} child commands totalling ${(total / 1000).toFixed(1)}s.`,
   );
   /*

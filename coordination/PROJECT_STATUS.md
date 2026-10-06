@@ -1,16 +1,16 @@
 # Project Liberty - Project Status
 
-> Generated 2026-10-06T00:26:40.367Z from the AI control plane.
+> Generated 2026-10-06T00:40:24.969Z from the AI control plane.
 
-**Overall completion:** 121/145 executable tasks (83%)
+**Overall completion:** 121/146 executable tasks (83%)
 
 ## Status summary
 
-- **BACKLOG:** 6
-- **READY:** 3
+- **BACKLOG:** 7
+- **READY:** 2
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 0
-- **REVIEW:** 6
+- **REVIEW:** 7
 - **BLOCKED:** 9
 - **DONE:** 121
 - **CANCELED:** 0
@@ -32,6 +32,7 @@
 ## Active work
 
 - **PL-0736** [REVIEW] A CI step that hangs reports 'in progress' for six hours instead of failing — owner: claude-infra
+- **PL-0740** [REVIEW] A task parked for an external reviewer consumes local implementation capacity — owner: claude-lead
 - **PL-0741** [REVIEW] The commander's qualification evidence is collected by hand, one command at a time — owner: claude-test
 - **PL-0742** [REVIEW] Experiment 1a exists as a specification and not as something anyone can run — owner: claude-media
 - **PL-0743** [REVIEW] A pasted addon manifest URL has no safe path into the adapter — owner: claude-backend
@@ -40,14 +41,14 @@
 
 ## Dispatch classification
 
-- **READY_AND_EXECUTABLE:** 3
+- **READY_AND_EXECUTABLE:** 2
 - **READY_BUT_EXTERNAL:** 0
 - **BLOCKED:** 9
-- **BACKLOG (dependency-gated):** 6
+- **BACKLOG (dependency-gated):** 7
 
 ## Recommended executable wave
 
-- **PL-0740** -> claude-lead (P2/Integration) A task parked for an external reviewer consumes local implementation capacity
+No conflict-free executable tasks can be assigned with current agent capacity.
 
 ## Queued for external agents
 
@@ -91,12 +92,12 @@ STILL MEASURABLE WITHOUT THAT DECISION, and NOT blocked by it: whether @img/shar
 
 ## Agent capacity
 
-- **gpt-architect:** 0/6 active (external lane; not locally executable)
-- **claude-lead:** 0/2 active
-- **claude-frontend:** 0/2 active
-- **claude-backend:** 1/2 active
-- **claude-media:** 1/2 active
-- **claude-test:** 1/3 active
-- **claude-security:** 0/1 active
-- **claude-infra:** 3/5 active
-- **human-commander:** 0/99 active (external lane; not locally executable)
+- **gpt-architect:** 0/6 capacity in use (external lane; not locally executable)
+- **claude-lead:** 0/2 capacity in use, 1 active (1 parked for an external reviewer)
+- **claude-frontend:** 0/2 capacity in use
+- **claude-backend:** 0/2 capacity in use, 1 active (1 parked for an external reviewer)
+- **claude-media:** 0/2 capacity in use, 1 active (1 parked for an external reviewer)
+- **claude-test:** 0/3 capacity in use, 1 active (1 parked for an external reviewer)
+- **claude-security:** 0/1 capacity in use
+- **claude-infra:** 0/5 capacity in use, 3 active (3 parked for an external reviewer)
+- **human-commander:** 0/99 capacity in use (external lane; not locally executable)

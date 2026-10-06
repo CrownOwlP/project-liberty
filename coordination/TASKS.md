@@ -589,7 +589,7 @@ REQUIRED: it runs even when a later step fails, for the same reason the installe
 REQUIRED: its unit suite joins npm run test:scripts, and therefore gains a step in the CI validate job, because PL-0714's mirror-check fails a build whose alias names a suite with no step. A script nothing runs is this repository's most-repeated defect and PL-0737 must not become the sixth instance.
 
 OUT OF SCOPE: what the inventory says. This task makes it run and makes its output readable. |
-| PL-0740 | P2 | Integration | READY | - | - | A task parked for an external reviewer consumes local implementation capacity | claude-infra's maxParallel has gone 1 -> 2 (round 109) -> 3 (round 113) -> 4 -> 5 (round 114). Every raise was justified against the same three documented conditions and every one of them held. That is the symptom, not the cause.
+| PL-0740 | P2 | Integration | REVIEW | claude-lead | - | A task parked for an external reviewer consumes local implementation capacity | claude-infra's maxParallel has gone 1 -> 2 (round 109) -> 3 (round 113) -> 4 -> 5 (round 114). Every raise was justified against the same three documented conditions and every one of them held. That is the symptom, not the cause.
 
 THE CAUSE: usageByAgent counts REVIEW toward maxParallel, and REVIEW here usually means 'parked for gpt-architect', who is not a locally executable agent. So a lane whose entire output is awaiting an EXTERNAL verdict consumes its own implementation capacity, and the only lever available is a number that was never meant to be pulled five times.
 
@@ -740,3 +740,14 @@ REQUIRED: a job bound derived from an observed duration, with the derivation wri
 REQUIRED: generous. A Windows Rust release build on a cold cache is genuinely long, and a bound that fires on one teaches people to re-run rather than to read.
 
 OUT OF SCOPE: anything the job does, and the new `experiment-1a.yml`, which was written with `timeout-minutes: 45` already on it. |
+| PL-0747 | P3 | Coordination | BACKLOG | - | - | The capacity raises PL-0740's defect forced have not been reconsidered | THE LAST REQUIRED CLAUSE OF PL-0740, SPLIT OUT RATHER THAN TAKEN. That clause reads: 'the capacity raises this defect forced are reconsidered once it lands. If the right number for claude-infra is 2, it should go back to 2.' PL-0740's allowedPaths are the two script files; control/agents.json is in its reviewDependencies, which is read-only. So the task could not satisfy its own final clause.
+
+IT WAS NOT FIXED BY WIDENING PL-0740 MID-IMPLEMENTATION, and the reason is in the clause itself: 'ONCE IT LANDS'. Whether 2 is the right number for claude-infra is a judgement about how much concurrent work a lane should hold under the NEW accounting, and that cannot be judged from the board as it stood before the change was even reviewed. Lowering the numbers in the same commit that changes how they are counted would also make a single review responsible for two different decisions.
+
+THE HISTORY, so whoever takes this does not have to reconstruct it: claude-infra went 1 (original) -> 2 (round 109) -> 3 (round 113) -> 4 -> 5 (round 114). claude-test went 2 -> 3. Every raise was justified against the same three documented conditions and every one of them held at the time. PL-0740 removed the cause.
+
+REQUIRED: each raised limit is revisited against the board as it behaves AFTER PL-0740, and the reasoning recorded per agent in the notes field that already carries the raise history -- the existing claude-infra note is the model, and it must be extended rather than replaced, because the record of why a number moved is the only thing that stops it moving again for the same reason.
+
+REQUIRED: a number is lowered only where the observed board supports it. Lowering every raise back to its original value because the cause is gone would be as unmeasured as raising it was justified.
+
+OUT OF SCOPE: the capacity computation itself, which is PL-0740, and anything in control/policies.json. |
