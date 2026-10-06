@@ -1,8 +1,8 @@
 # Project Liberty - Project Status
 
-> Generated 2026-10-06T00:40:24.969Z from the AI control plane.
+> Generated 2026-10-06T00:52:10.252Z from the AI control plane.
 
-**Overall completion:** 121/146 executable tasks (83%)
+**Overall completion:** 122/146 executable tasks (84%)
 
 ## Status summary
 
@@ -10,9 +10,9 @@
 - **READY:** 2
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 0
-- **REVIEW:** 7
+- **REVIEW:** 6
 - **BLOCKED:** 9
-- **DONE:** 121
+- **DONE:** 122
 - **CANCELED:** 0
 - **SUPERSEDED:** 4
 
@@ -34,7 +34,6 @@
 - **PL-0736** [REVIEW] A CI step that hangs reports 'in progress' for six hours instead of failing — owner: claude-infra
 - **PL-0740** [REVIEW] A task parked for an external reviewer consumes local implementation capacity — owner: claude-lead
 - **PL-0741** [REVIEW] The commander's qualification evidence is collected by hand, one command at a time — owner: claude-test
-- **PL-0742** [REVIEW] Experiment 1a exists as a specification and not as something anyone can run — owner: claude-media
 - **PL-0743** [REVIEW] A pasted addon manifest URL has no safe path into the adapter — owner: claude-backend
 - **PL-0745** [REVIEW] Every msiexec call in the lifecycle harness can wait forever — owner: claude-infra
 - **PL-0746** [REVIEW] desktop-shell-ci.yml is the one workflow with no timeout at all — owner: claude-infra
@@ -96,7 +95,7 @@ STILL MEASURABLE WITHOUT THAT DECISION, and NOT blocked by it: whether @img/shar
 - **claude-lead:** 0/2 capacity in use, 1 active (1 parked for an external reviewer)
 - **claude-frontend:** 0/2 capacity in use
 - **claude-backend:** 0/2 capacity in use, 1 active (1 parked for an external reviewer)
-- **claude-media:** 0/2 capacity in use, 1 active (1 parked for an external reviewer)
+- **claude-media:** 0/2 capacity in use
 - **claude-test:** 0/3 capacity in use, 1 active (1 parked for an external reviewer)
 - **claude-security:** 0/1 capacity in use
 - **claude-infra:** 0/5 capacity in use, 3 active (3 parked for an external reviewer)
