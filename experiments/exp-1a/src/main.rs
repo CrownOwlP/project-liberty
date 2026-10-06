@@ -111,7 +111,7 @@ mod experiment {
     /// failure that is really a painting bug — exactly the ambiguity this
     /// experiment cannot afford. `HWND_BOTTOM` puts mpv UNDER the webview,
     /// which is the entire arrangement under test.
-    pub unsafe fn create_child(parent: HWND) -> Result<HWND, String> {
+    pub unsafe fn create_child(parent: HWND, diag: &Diag) -> Result<HWND, String> {
         let class = wide("LibertyExp1aVideo");
         let mut wc: WNDCLASSEXW = std::mem::zeroed();
         wc.cbSize = std::mem::size_of::<WNDCLASSEXW>() as u32;
@@ -122,6 +122,28 @@ mod experiment {
 
         let mut rect = std::mem::zeroed();
         GetClientRect(parent, &mut rect);
+        let width = rect.right - rect.left;
+        let height = rect.bottom - rect.top;
+
+        /*
+         * PL-0749. Recorded because the fix below cannot cover one case: if
+         * the top-level window is not realised at Tauri `setup()` time,
+         * GetClientRect legitimately answers zero, the child is created at
+         * zero, and the symptom is identical to the bug being fixed. If that
+         * is what happens, this line says so instead of the next run looking
+         * like the last one.
+         */
+        diag.say(&format!(
+            "parent client rect at create: {width}x{height}"
+        ));
+        if width <= 0 || height <= 0 {
+            diag.say(
+                "WARNING: the parent client area is ZERO at creation time. The child \
+                 will be created with no area and mpv will report 1x1 even though the \
+                 SetWindowPos defect below is fixed. fit_child after mpv init is the \
+                 recovery for this.",
+            );
+        }
 
         let child = CreateWindowExW(
             0,
@@ -130,8 +152,8 @@ mod experiment {
             WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS,
             0,
             0,
-            rect.right - rect.left,
-            rect.bottom - rect.top,
+            width,
+            height,
             parent,
             std::ptr::null_mut(),
             std::ptr::null_mut(),
@@ -140,22 +162,58 @@ mod experiment {
         if child.is_null() {
             return Err("CreateWindowExW returned null for the video child".into());
         }
-        SetWindowPos(child, HWND_BOTTOM, 0, 0, 0, 0, SWP_NOACTIVATE | SWP_SHOWWINDOW);
-        Ok(child)
-    }
 
-    /// Keeps the video child exactly over the client area. §10's resize and
-    /// per-monitor-DPI criteria are about whether this stays true.
-    pub unsafe fn fit_child(parent: HWND, child: HWND) {
-        let mut rect = std::mem::zeroed();
-        GetClientRect(parent, &mut rect);
+        /*
+         * THE DEFECT PL-0749 EXISTS FOR, AND IT COST A WHOLE ROUND.
+         *
+         * This call used to pass cx=0, cy=0 WITHOUT SWP_NOSIZE. SetWindowPos
+         * honours a size it is given unless told not to, so the child created
+         * at the client size one statement earlier was immediately resized to
+         * nothing. mpv surfaces a zero-area window as "Window size: 1x1" --
+         * which is exactly what the commander's log reported, under an
+         * otherwise perfect run: file opened, HEVC detected, D3D11 up,
+         * d3d11va decoding, gpu-next reporting 1920x1080 d3d11[nv12], first
+         * frame rendered, playback completed. Everything worked and it was
+         * drawn into a window with no area.
+         *
+         * The real dimensions are passed rather than SWP_NOSIZE added. Both
+         * fix it; this one leaves no `0, 0, 0, 0` in the source for the next
+         * reader to have to reason about, and it states the intent -- put the
+         * video child at the origin, at the client size, at the bottom of the
+         * z-order -- in the call itself.
+         */
         SetWindowPos(
             child,
             HWND_BOTTOM,
             0,
             0,
-            rect.right - rect.left,
-            rect.bottom - rect.top,
+            width,
+            height,
+            SWP_NOACTIVATE | SWP_SHOWWINDOW,
+        );
+        Ok(child)
+    }
+
+    /// Keeps the video child exactly over the client area. §10's resize and
+    /// per-monitor-DPI criteria are about whether this stays true.
+    pub unsafe fn fit_child(parent: HWND, child: HWND, diag: Option<&Diag>) {
+        let mut rect = std::mem::zeroed();
+        GetClientRect(parent, &mut rect);
+        let width = rect.right - rect.left;
+        let height = rect.bottom - rect.top;
+        /* `Some` only for the one call made deliberately after mpv init; the
+         * resize and DPI handlers pass None, because a log line per drag
+         * would bury the three lines that matter. */
+        if let Some(diag) = diag {
+            diag.say(&format!("fit_child: parent client rect is {width}x{height}"));
+        }
+        SetWindowPos(
+            child,
+            HWND_BOTTOM,
+            0,
+            0,
+            width,
+            height,
             SWP_NOACTIVATE | SWP_SHOWWINDOW,
         );
     }
@@ -450,8 +508,19 @@ mod experiment {
                     "exp-1a diagnostic log (PL-0748). {}",
                     diag.path.as_deref().unwrap_or("(no path)")
                 ));
-                let child = unsafe { create_child(parent) }.map_err(std::io::Error::other)?;
+                let child = unsafe { create_child(parent, &diag) }.map_err(std::io::Error::other)?;
                 let mpv = start(child, &file, &diag).map_err(std::io::Error::other)?;
+                /*
+                 * PL-0749. ONCE, HERE, RATHER THAN WAITING FOR AN EVENT THAT
+                 * MAY NEVER COME. fit_child was wired only to Resized and
+                 * ScaleFactorChanged, and the commander never resized the
+                 * window -- so the geometry set at creation was the geometry
+                 * for the whole run, and when that was wrong nothing ever
+                 * corrected it. Running it after mpv is up also re-reads the
+                 * client rect at a moment when the top-level window is
+                 * certainly realised.
+                 */
+                unsafe { fit_child(parent, child, Some(&diag)) };
                 let player = std::sync::Arc::new(Player(Mutex::new(mpv)));
                 app.manage(player.clone());
                 poll(app.handle().clone(), player, diag);
@@ -476,7 +545,7 @@ mod experiment {
                         tauri::WindowEvent::Resized(_) | tauri::WindowEvent::ScaleFactorChanged { .. }
                     ) {
                         if let Ok(h) = handle.hwnd() {
-                            unsafe { fit_child(h.0 as HWND, child_handle as HWND) };
+                            unsafe { fit_child(h.0 as HWND, child_handle as HWND, None) };
                         }
                     }
                 });

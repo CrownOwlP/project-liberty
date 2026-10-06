@@ -16,6 +16,32 @@ through architecture review, not to work around it here.
 
 ---
 
+## What changed since your last run (PL-0749)
+
+Your run was not a failure of this experiment — it was a failure of one line
+in it. The diagnostic log was decisive: the file opened, HEVC was detected,
+mpv initialised, D3D11 came up on the RTX 3050, `d3d11va` hardware decoding
+was active, the VO reported `gpu-next 1920x1080 d3d11[nv12]`, the first frame
+rendered and playback completed. Everything worked. And mpv reported
+**`Window size: 1x1`**.
+
+`create_child` built the video window at the right size and then, one
+statement later, called `SetWindowPos` with `cx=0, cy=0` and without
+`SWP_NOSIZE` — so it was resized to nothing before mpv ever saw it. `fit_child`
+would have corrected it, but it was wired only to resize and DPI events, and
+you never resized the window.
+
+Fixed: the real client dimensions are passed, and `fit_child` now runs once
+immediately after mpv initialises instead of waiting for an event that may
+never arrive. Nothing else changed — same child HWND, same z-order, same
+transparency, same mpv properties, same logging.
+
+**This still proves nothing about the seven criteria.** It means the video has
+somewhere to be drawn. Whether it composites correctly beneath the overlay is
+what you are about to find out.
+
+---
+
 ## The whole run, in four commands
 
 Everything below assumes the artifact has been unzipped to **`D:\exp-1a\`**.

@@ -1,8 +1,8 @@
 # Project Liberty - Project Status
 
-> Generated 2026-10-06T01:21:44.859Z from the AI control plane.
+> Generated 2026-10-06T01:48:00.167Z from the AI control plane.
 
-**Overall completion:** 122/147 executable tasks (83%)
+**Overall completion:** 122/148 executable tasks (82%)
 
 ## Status summary
 
@@ -11,7 +11,7 @@
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 0
 - **REVIEW:** 7
-- **BLOCKED:** 9
+- **BLOCKED:** 10
 - **DONE:** 122
 - **CANCELED:** 0
 - **SUPERSEDED:** 4
@@ -37,13 +37,13 @@
 - **PL-0743** [REVIEW] A pasted addon manifest URL has no safe path into the adapter — owner: claude-backend
 - **PL-0745** [REVIEW] Every msiexec call in the lifecycle harness can wait forever — owner: claude-infra
 - **PL-0746** [REVIEW] desktop-shell-ci.yml is the one workflow with no timeout at all — owner: claude-infra
-- **PL-0748** [REVIEW] Experiment 1a runs, renders and loads nothing: the harness cannot say why — owner: claude-media
+- **PL-0749** [REVIEW] The video child HWND is resized to zero the instant after it is created — owner: claude-media
 
 ## Dispatch classification
 
 - **READY_AND_EXECUTABLE:** 2
 - **READY_BUT_EXTERNAL:** 0
-- **BLOCKED:** 9
+- **BLOCKED:** 10
 - **BACKLOG (dependency-gated):** 7
 
 ## Recommended executable wave
@@ -89,6 +89,17 @@ WHAT IS NOT DONE, AND WHY NO ENGINEER MAY DECIDE IT: three components already sh
 UNBLOCK WHEN: the commander or counsel selects a resolution. The engineering half of each option is small and specified in docs/LICENSING.md section 7b.
 
 STILL MEASURABLE WITHOUT THAT DECISION, and NOT blocked by it: whether @img/sharp-libvips-win32-x64 actually ships in the WINDOWS package and installed trees, and whether licence text accompanies it. That is clauses 1 and 2 of the correction, it is pure measurement, and it belongs to PL-0738 wiring the distribution inventory into the Windows job -- where the answer arrives automatically rather than by anyone asserting it.
+- **PL-0748** Experiment 1a runs, renders and loads nothing: the harness cannot say why: PARKED TO SEQUENCE A P0 FIX ON THE SAME FILE, and this reason says exactly what is true rather than dressing it up.
+
+PL-0748 IS NOT BLOCKED ON ANYTHING IT NEEDS. Its engineering is complete and, better than that, PROVEN: the commander ran the instrumented harness and the log was decisive -- file opened, HEVC detected, mpv initialised, D3D11 up on an RTX 3050, d3d11va active, "VO: [gpu-next] 1920x1080 d3d11[nv12]", first frame rendered, playback completed, and "Window size: 1x1". The instrumentation did precisely the job it was written for. What it awaits is gpt-architect's architecture-review verdict, nothing else.
+
+WHY IT IS BEING PARKED ANYWAY. That decisive log points at a one-line geometry defect in experiments/exp-1a/src/main.rs -- create_child calls SetWindowPos with cx=0, cy=0 and without SWP_NOSIZE, so the child HWND created at the client size is immediately resized to zero. PL-0748 holds that file. Two tasks cannot hold one file, so they must be sequential, and the P0 fix is what the release path needs now.
+
+WHAT WAS TRIED FIRST AND REFUSED. `release` is not permitted from REVIEW -- the control plane protects work under review from being mutated underneath its reviewer, which is correct. Of the remaining exits: DONE needs the verdict; CANCELED would say there is no work to evidence, which is false; and `request-changes` records a REVIEWER asking for changes, which gpt-architect has not done and which would be fabricating a verdict. `block` preserves gate results and is the least destructive of the four.
+
+THE COST, STATED: unblocking later discards gate results, so PL-0748's `build` gate will need re-recording. It is mine, it is one clippy run, and it is truthfully re-recordable. No review provenance is lost because no verdict exists yet.
+
+UNBLOCK WHEN: PL-0749 (the geometry fix) has cleared the file, or gpt-architect's verdict on this task arrives -- whichever is first. This task's own work needs nothing further.
 
 ## Agent capacity
 
