@@ -14665,7 +14665,7 @@
       "id": "PL-0742",
       "priority": "P0",
       "lane": "Player",
-      "status": "IN_PROGRESS",
+      "status": "REVIEW",
       "title": "Experiment 1a exists as a specification and not as something anyone can run",
       "dependencies": [],
       "allowedPaths": [
@@ -14687,8 +14687,17 @@
       "notes": "FILED ROUND 115. The enabling discovery is that libmpv2 6.0.0 TYPE-CHECKS for x86_64-pc-windows-msvc in this container with no native library present -- cargo check does not link -- so real mpv code can be written and verified here before it ever reaches a runner. The same trick that made PL-0734 verifiable.\n\nLinking is the part that still needs CI: the job must fetch a prebuilt libmpv for Windows. That dependency is for the EXPERIMENT ONLY and must not be read as a production distribution decision -- gpt's section 10 draws that line explicitly, and PW-0208 is blocked on precisely the decision it would pre-empt.",
       "owner": "claude-media",
       "implementationAgent": "claude-media",
-      "updatedAt": "2026-10-05T14:15:13.338Z",
-      "implementationBaseSha": "5afd852d0a8b74263e20ca5505abdc249302d799"
+      "updatedAt": "2026-10-06T00:26:40.095Z",
+      "implementationBaseSha": "5afd852d0a8b74263e20ca5505abdc249302d799",
+      "gateResults": {
+        "build": {
+          "status": "pass",
+          "at": "2026-10-06T00:26:32.349Z",
+          "by": "claude-media",
+          "commitSha": "fa2cecba86b5e3fe0524563899fd2c44a09c3aa0",
+          "evidence": "WINDOWS CI BUILT AND LINKED THE HARNESS, AND THE DELIVERED ARTIFACT IS INTERNALLY VERIFIED. Verified against the real bytes, not the green badge, per the commander's recorded decision (decision.recorded, 2026-10-05).\n\nTHE RUN\n  workflow   Experiment 1a harness #2\n  run id     37387699199\n  job        112025065918  -- \"Link the harness against a real libmpv\", SUCCESS, 7m 02s\n  head       b53946bb5a129e877b51ecd50acfc4e2da2b38e7\n  steps      fetch 3s / import-library 1s / clippy 2m 00s / LINK 3m 57s / assemble 1s / upload 5s\n\nTHE ARTIFACT\n  name       exp-1a-harness-b53946bb5a129e877b51ecd50acfc4e2da2b38e7\n  sha256     584a052822aeea0a600c4412073c6241b1ad0034f7cc4efbb96169403016eded  (50,687,910 bytes)\n             COMPUTED from the downloaded file and EQUAL to the digest GitHub published.\n\nFILE HASHES, each computed here from the extracted bytes and compared against the digest PROVENANCE.txt recorded at build time. Two independently produced numbers, equal:\n  exp-1a.exe    657c306ee2c014e54d5d794c3085fc451ac9785f6649a5b1ed2fa685241c878c   (8,924,160 bytes)\n  libmpv-2.dll  704b75444726add17add8278a9cb5031ad20f01718989d8fe8dd34a1c2faab8c   (120,863,744 bytes)\n  mpv archive   7d9dd506da6b77e6054f56052f7423d9f7eed764f85154a6221925aba37dbfb2   == the pin in .github/workflows/experiment-1a.yml, character for character\n\nASSOCIATION: PROVENANCE.txt names commit b53946bb5a129e877b51ecd50acfc4e2da2b38e7 and run 37387699199 explicitly. All seven required members present: exp-1a.exe, libmpv-2.dll, PROVENANCE.txt, README.md, RESULTS-TEMPLATE.md, collect-evidence.cmd, collect-evidence.ps1. 15 of 15 checks passed, 0 failed.\n\nTHE LINK ITSELF, PROVEN FROM THE BINARY RATHER THAN FROM CARGO'S EXIT CODE. This gate's central claim is that the harness linked against real libmpv, and an exit code is the weakest possible evidence for it, so the PE import directory was parsed directly:\n  exp-1a.exe is PE32+ x86-64, 6 sections, and its import table names libmpv-2.dll among 24 imported modules.\n  libmpv-2.dll is PE32+ x86-64 and exports 206 symbols, including every client-API function the harness calls: mpv_create, mpv_initialize, mpv_set_property, mpv_get_property, mpv_command.\nThe import table references the DLL; the DLL provides the symbols; the DLL ships beside the exe.\n\nTHE VERIFIER WAS PROVEN BEFORE IT TOUCHED THIS ARTIFACT. Run first against a synthetic artifact, which caught a defect that would otherwise have surfaced here: the digest lookups used re.search without re.MULTILINE, so every anchored pattern returned None and it reported \"recorded=False\" rather than comparing anything. Then driven against five deliberately corrupted artifacts and each refused: exe bytes changed, mpv DLL missing, wrong commit in PROVENANCE, mpv digest not the pin, GPL warning stripped. Procedure and source are in the project at claude/pl-0742-build-gate-procedure.md.\n\nLICENSING SEPARATION TRAVELS IN THE ARTIFACT: the shipped PROVENANCE.txt carries the \"THIRD-PARTY, GPL-LICENSED mpv BUILD\" paragraph and the UNSIGNED notice. The mpv DLL is explicitly not the section 9 LGPL build, not a Liberty component, must not be redistributed in a Liberty artifact, and bears on no codec patent authorization.\n\nWHAT THIS GATE DOES NOT ESTABLISH, and nothing downstream may read into it: EXPERIMENT 1a IS NOT PASS. PW-0103 IS NOT PASS. Nothing here shows a child HWND compositing beneath a transparent WebView2, hardware decode, hit-testing, resize or per-monitor DPI behaviour. Nothing here ran the binary at all. All seven criteria in experiments/exp-1a/README.md are observations a person makes on real hardware, and D1 remains unproven.\n\nONE KNOWN, NON-BLOCKING GAP IN THE HANDOFF: the README inside this artifact is the version at b53946b, which predates the handoff audit in 46c2065. The shipped copy lacks the unzip location, the evidence-collector step and the \"what to send back\" list. The commander's repository already holds the improved copy at experiments/exp-1a/README.md. This does not affect what was built or linked, and does not justify a rebuild on its own."
+        }
+      }
     },
     {
       "id": "PL-0743",

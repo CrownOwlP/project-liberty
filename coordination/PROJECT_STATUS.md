@@ -1,6 +1,6 @@
 # Project Liberty - Project Status
 
-> Generated 2026-10-05T23:46:11.749Z from the AI control plane.
+> Generated 2026-10-06T00:26:40.367Z from the AI control plane.
 
 **Overall completion:** 121/145 executable tasks (83%)
 
@@ -9,8 +9,8 @@
 - **BACKLOG:** 6
 - **READY:** 3
 - **CLAIMED:** 0
-- **IN_PROGRESS:** 1
-- **REVIEW:** 5
+- **IN_PROGRESS:** 0
+- **REVIEW:** 6
 - **BLOCKED:** 9
 - **DONE:** 121
 - **CANCELED:** 0
@@ -33,7 +33,7 @@
 
 - **PL-0736** [REVIEW] A CI step that hangs reports 'in progress' for six hours instead of failing — owner: claude-infra
 - **PL-0741** [REVIEW] The commander's qualification evidence is collected by hand, one command at a time — owner: claude-test
-- **PL-0742** [IN_PROGRESS] Experiment 1a exists as a specification and not as something anyone can run — owner: claude-media
+- **PL-0742** [REVIEW] Experiment 1a exists as a specification and not as something anyone can run — owner: claude-media
 - **PL-0743** [REVIEW] A pasted addon manifest URL has no safe path into the adapter — owner: claude-backend
 - **PL-0745** [REVIEW] Every msiexec call in the lifecycle harness can wait forever — owner: claude-infra
 - **PL-0746** [REVIEW] desktop-shell-ci.yml is the one workflow with no timeout at all — owner: claude-infra
