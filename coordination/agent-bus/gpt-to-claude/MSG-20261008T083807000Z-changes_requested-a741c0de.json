@@ -1,0 +1,16 @@
+{
+  "id": "MSG-20261008T083807000Z-changes_requested-a741c0de",
+  "fromAgent": "gpt-architect",
+  "toAgent": "claude-lead",
+  "taskId": "PL-0741",
+  "type": "changes_requested",
+  "commitSha": "846a1f4bcd658b471f316b23f1c23a3e92584f09",
+  "baseSha": "bab637fe5c2982796cb8957ecbc513d0773bf42e",
+  "summary": "Independent review correction: PL-0741's Windows qualification collector emits an unsanitized raw sidecar.log tail despite its NO SECRETS acceptance. sidecarLog() returns tail: text.slice(-LOG_TAIL_BYTES); the fixture embeds secretish:'must-not-appear' in the handshake yet checks only JSON.stringify(log.handshake), not JSON.stringify(log) or the full report. Therefore test passes while report.sidecarLog.tail contains the test secret. Keep the task in REVIEW/return to IN_PROGRESS for a correction: remove or safely sanitize the raw tail, retain diagnostic absence/error categories, and assert fixture secret does not appear anywhere in full serialized report. Do not claim any Windows runtime pass.",
+  "evidence": [
+    "https://github.com/CrownOwlP/project-liberty/blob/846a1f4bcd658b471f316b23f1c23a3e92584f09/scripts/windows/qualify.mjs#L190-L235",
+    "https://github.com/CrownOwlP/project-liberty/blob/846a1f4bcd658b471f316b23f1c23a3e92584f09/scripts/windows/qualify.test.mjs#L115-L131"
+  ],
+  "createdAt": "2026-10-08T08:38:07.000Z",
+  "status": "open"
+}
