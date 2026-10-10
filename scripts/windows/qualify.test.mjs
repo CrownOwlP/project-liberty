@@ -13,7 +13,15 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { collect, environment, installation, processes, sidecarLog, summarise } from "./qualify.mjs";
+import {
+  classifyLog,
+  collect,
+  environment,
+  installation,
+  processes,
+  sidecarLog,
+  summarise
+} from "./qualify.mjs";
 
 const IDENTITY = Object.freeze({
   productName: "Project Liberty",
@@ -112,37 +120,134 @@ test("an absent sidecar.log is a FINDING, with the reason spelled out", () => {
   assert.match(log.note, /ABSENT\. This is itself a finding/);
 });
 
+/*
+ * THE FIXTURE, AND IT IS DELIBERATELY ADVERSARIAL NOW.
+ *
+ * PL-0741 round 2, after gpt-architect's CHANGES_REQUESTED against 846a1f4.
+ * The old fixture put its secret only in the handshake line, and the old
+ * assertion checked only `JSON.stringify(log.handshake)` -- one subtree of the
+ * object the collector returns. So it passed while `log.tail` beside it
+ * carried the same bytes. Two things changed: the secret is now in THREE
+ * places, including lines the handshake logic never looks at, and every
+ * assertion is against the WHOLE serialised object.
+ */
+const SECRET = "must-not-appear";
+const LEAKY_LOG =
+  "[out] starting\n" +
+  `[out] argv: --token=${SECRET}\n` +
+  `[out] liberty-sidecar-ready {"host":"127.0.0.1","port":49871,"secretish":"${SECRET}"}\n` +
+  `[err] Error: connect ECONNREFUSED https://user:${SECRET}@example.invalid/\n` +
+  "[out] ready\n";
+
 test("the handshake is reported as host:port and nothing else", () => {
-  /*
-   * NO SECRETS. The line is JSON and could grow fields. Only the origin is
-   * taken, because that is the diagnostic value — and a collector that
-   * echoed the whole line would undo the care the shell takes redacting its
-   * own log.
-   */
-  const text =
-    "[out] starting\n" +
-    '[out] liberty-sidecar-ready {"host":"127.0.0.1","port":49871,"secretish":"must-not-appear"}\n' +
-    "[out] ready\n";
-  const log = sidecarLog({ userDataRoot: "C:\\u" }, () => text, () => true, () => ({ size: text.length }));
+  const log = sidecarLog(
+    { userDataRoot: "C:\\u" },
+    () => LEAKY_LOG,
+    () => true,
+    () => ({ size: LEAKY_LOG.length })
+  );
   assert.equal(log.present, true);
   assert.equal(log.handshake.seen, true);
   assert.equal(log.handshake.origin, "127.0.0.1:49871");
-  assert.ok(!JSON.stringify(log.handshake).includes("must-not-appear"));
 });
 
-test("NO HANDSHAKE is the diagnosis, and it says why the tail matters", () => {
-  const text = "[err] Error: EADDRINUSE\n[err]     at Server.setupListenHandle\n";
+test("NO SECRETS: nothing from the log appears anywhere in what sidecarLog returns", () => {
+  /*
+   * THE ASSERTION THAT WAS MISSING. `JSON.stringify(log)` -- the whole object,
+   * not a subtree of it. The fixture hides the same string in an argv line, in
+   * the handshake JSON and in a URL inside a stack-adjacent error line, so a
+   * collector that quoted ANY window of the file fails this.
+   */
+  const log = sidecarLog(
+    { userDataRoot: "C:\\u" },
+    () => LEAKY_LOG,
+    () => true,
+    () => ({ size: LEAKY_LOG.length })
+  );
+  const serialised = JSON.stringify(log);
+  assert.ok(!serialised.includes(SECRET), `the secret survived into: ${serialised}`);
+  // And nothing else from the log either: no field may quote the file.
+  assert.ok(!serialised.includes("argv:"), "an argv line reached the report");
+  assert.ok(!serialised.includes("example.invalid"), "a URL from the log reached the report");
+  assert.ok(!serialised.includes("[out]"), "a raw log line reached the report");
+});
+
+test("NO HANDSHAKE is the diagnosis, and the classifier says why", () => {
+  /*
+   * The diagnostic value the raw tail had is kept -- "the port was taken" is
+   * still in the report -- but as a verdict from the signature table in
+   * qualify.mjs rather than as bytes from the file.
+   */
+  const text = "[err] Error: EADDRINUSE 127.0.0.1:49871\n[err]     at Server.setupListenHandle\n";
   const log = sidecarLog({ userDataRoot: "C:\\u" }, () => text, () => true, () => ({ size: text.length }));
   assert.equal(log.handshake.seen, false);
   assert.match(log.handshake.note, /did not report a bound port/);
-  assert.match(log.tail, /EADDRINUSE/);
+  assert.deepEqual(
+    log.diagnosis.signatures.map((s) => s.id),
+    ["port-in-use"]
+  );
+  assert.match(log.diagnosis.signatures[0].means, /already taken/);
+  // The port number is content. It must not be in the report.
+  assert.ok(!JSON.stringify(log).includes("49871"), "the log's own port number reached the report");
 });
 
-test("the tail is bounded, so a huge log does not become the report", () => {
+test("an UNRECOGNISED failure says so rather than looking clean", () => {
+  /*
+   * The dangerous failure mode of an allowlist: a real error nobody wrote a
+   * signature for comes back as an empty list, which reads like "no problem".
+   * The note has to distinguish them, so it is asserted.
+   */
+  const text = "[err] Error: something nobody has a pattern for yet\n";
+  const log = sidecarLog({ userDataRoot: "C:\\u" }, () => text, () => true, () => ({ size: text.length }));
+  assert.deepEqual(log.diagnosis.signatures, []);
+  assert.match(log.diagnosis.note, /NO RECOGNISED FAILURE SIGNATURE/);
+  assert.match(log.diagnosis.note, /not the same as 'no\s+error'/);
+  assert.equal(log.diagnosis.errorLines, 1, "the shape of the log is still counted");
+});
+
+test("every signature in the table is reachable, and each means something", () => {
+  /*
+   * A table nobody checks grows a dead entry. This drives one line through
+   * each pattern rather than trusting that they were written correctly.
+   */
+  const samples = {
+    "port-in-use": "Error: listen EADDRINUSE",
+    "address-unavailable": "Error: listen EADDRNOTAVAIL",
+    "permission-denied": "Error: EACCES permission denied",
+    "file-missing": "Error: ENOENT no such file",
+    "module-missing": "Error: Cannot find module 'next'",
+    "module-format": "Error [ERR_REQUIRE_ESM]: require() of ES Module",
+    "native-module-failed": "Error: The specified module could not be found.",
+    "node-not-found": "'node' is not recognized as an internal or external command",
+    "unhandled-error": "UnhandledPromiseRejection: ...",
+    fatal: "FATAL ERROR: Reached heap limit"
+  };
+  for (const [id, line] of Object.entries(samples)) {
+    const found = classifyLog(`[err] ${line}\n`).signatures;
+    assert.ok(
+      found.some((s) => s.id === id),
+      `no signature matched the sample for ${id}: ${JSON.stringify(found.map((s) => s.id))}`
+    );
+    for (const s of found) {
+      assert.ok(s.means.length > 20, `${s.id} has no usable explanation`);
+    }
+  }
+});
+
+test("a huge log does not become the report, and the true size is still reported", () => {
   const text = `${"z".repeat(200_000)}\n`;
   const log = sidecarLog({ userDataRoot: "C:\\u" }, () => text, () => true, () => ({ size: text.length }));
-  assert.ok(log.tail.length <= 16 * 1024, `tail was ${log.tail.length} bytes`);
+  // The examined WINDOW is bounded, and the report carries the window's size
+  // rather than the window.
+  assert.ok(log.diagnosis.bytesExamined <= 16 * 1024, `examined ${log.diagnosis.bytesExamined} bytes`);
   assert.equal(log.bytes, text.length, "the true size is still reported");
+  // The report itself stays small whatever the log does, because its size no
+  // longer depends on the file's content at all.
+  assert.ok(
+    JSON.stringify(log).length < 4 * 1024,
+    `the log's report grew to ${JSON.stringify(log).length} bytes`
+  );
+  assert.ok(!JSON.stringify(log).includes("zzzz"), "the log's content reached the report");
 });
 
 test("THE REPORT CARRIES WHAT IT DOES NOT COVER, inside the file", () => {
@@ -194,10 +299,19 @@ test("the summary shows an unavailable reading rather than hiding it", () => {
   assert.match(text, /does NOT establish/);
 });
 
-test("nothing in a full report mentions a token or an environment dump", () => {
+test("nothing in a full report mentions a token, an environment dump, or the log's own bytes", () => {
   /*
    * A blunt check, and worth having bluntly: this file is going to be pasted
    * into a chat.
+   *
+   * PL-0741 ROUND 2 STRENGTHENED THIS TEST, AND THIS IS WHERE THE HOLE WAS.
+   * It already asserted on the WHOLE serialised report -- but it fed
+   * `sidecarLog` a CLEAN fixture, so it could never have caught the raw
+   * `tail`. The secret was in a different test's fixture and that test
+   * asserted only on `log.handshake`. Between them, two tests that each looked
+   * right left the leak uncovered. The log fixture here is now the adversarial
+   * one, which is what gpt-architect asked for: the fixture secret must not
+   * appear anywhere in the full serialized report.
    */
   const report = collect({
     run: runner(ANSWERS),
@@ -205,14 +319,22 @@ test("nothing in a full report mentions a token or an environment dump", () => {
     env: { ...ENV, LIBERTY_SIDECAR_TOKEN: "0123456789abcdef".repeat(4) },
     runVerifier: () => "ok",
     io: {
-      readFile: () => "[out] liberty-sidecar-ready {\"host\":\"127.0.0.1\",\"port\":1}\n",
+      readFile: () => LEAKY_LOG,
       exists: () => true,
-      stat: () => ({ size: 64 })
+      stat: () => ({ size: LEAKY_LOG.length })
     }
   });
   const serialised = JSON.stringify(report);
   assert.ok(!serialised.includes("0123456789abcdef"), "a token-shaped value reached the report");
   assert.ok(!serialised.includes("LIBERTY_SIDECAR_TOKEN"), "an environment variable name reached the report");
+  assert.ok(!serialised.includes(SECRET), "the log fixture's secret reached the report");
+  assert.ok(!serialised.includes("example.invalid"), "a URL from the log reached the report");
+  assert.ok(!serialised.includes("[out]"), "a raw log line reached the report");
+  // The human-readable summary is derived from the report and is what actually
+  // gets pasted, so it is checked rather than assumed clean.
+  const text = summarise(report);
+  assert.ok(!text.includes(SECRET), "the log fixture's secret reached the human summary");
+  assert.ok(!text.includes("0123456789abcdef"), "a token-shaped value reached the human summary");
 });
 
 test("processes are reported, and the node count is not judged", () => {

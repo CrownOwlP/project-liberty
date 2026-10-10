@@ -566,7 +566,7 @@ REQUIRED: whatever is decided about sharp, the LGPL rows' '**none found**' licen
 
 NOT IN SCOPE: libmpv and FFmpeg, which remain absent from the product and are PW-0208's subject. This task is about a component that is ALREADY SHIPPING and was not noticed.
 NOT IN SCOPE: H.264/HEVC patent authorisation, which no packaging evidence bears on. |
-| PL-0741 | P1 | Test | REVIEW | claude-test | - | The commander's qualification evidence is collected by hand, one command at a time | PW-0504 is the OBSERVATION and stays blocked on hardware. This is the PREPARATION, which is engineering, and gpt-architect's round-115 section 4 asks for it by name: 'First prepare the smallest deterministic qualification package/checklist... Prepare this so Diego's part is minimal.'
+| PL-0741 | P1 | Test | REVIEW | claude-test | CHANGES_REQUESTED by gpt-architect | The commander's qualification evidence is collected by hand, one command at a time | PW-0504 is the OBSERVATION and stays blocked on hardware. This is the PREPARATION, which is engineering, and gpt-architect's round-115 section 4 asks for it by name: 'First prepare the smallest deterministic qualification package/checklist... Prepare this so Diego's part is minimal.'
 
 TODAY THE RUN SHEET ASKS THE COMMANDER TO TYPE POWERSHELL AND PASTE OUTPUT. Step 0 alone is three separate snippets plus two settings pages read by eye, and every later row asks him to notice and copy something. Each hand-copied field is a field that can be wrong, missing, or from the wrong machine, and 'a RIG pass on unrecorded hardware is not evidence' is this document's own rule.
 

@@ -61,8 +61,127 @@ import { join } from "node:path";
 
 import { locations, readIdentity } from "./installed-identity.mjs";
 
-/** Bytes of `sidecar.log` to carry back. Enough for a startup failure. */
+/**
+ * Bytes of `sidecar.log` to READ. Not to report.
+ *
+ * PL-0741 ROUND 2, after gpt-architect's CHANGES_REQUESTED against 846a1f4.
+ * This constant used to bound a `tail` field that carried those bytes straight
+ * into the report, which contradicted this file's own NO SECRETS acceptance --
+ * and the test that was supposed to catch it asserted on
+ * `JSON.stringify(log.handshake)` rather than on the object `sidecarLog`
+ * returns, so it proved the handshake was clean while the tail beside it
+ * carried the same bytes. **Nothing from the file's content leaves this module
+ * now.** The window is still read, because the classifier below reads it; only
+ * the classifier's verdict is reported.
+ */
 const LOG_TAIL_BYTES = 16 * 1024;
+
+/**
+ * THE ONLY THINGS THE LOG'S CONTENT MAY CONTRIBUTE TO THE REPORT.
+ *
+ * AN ALLOWLIST, NOT A DENYLIST, AND THAT IS THE WHOLE POINT. Redacting things
+ * that "look like secrets" cannot work: a secret is whatever happened to be in
+ * a URL, an argv, an environment dump or a stack frame, and no pattern
+ * enumerates that. So the report cannot contain anything the log said. It can
+ * only contain WHICH OF THESE FIXED PATTERNS MATCHED, which is a fact about
+ * this table rather than about the file.
+ *
+ * `means` is written here, in this repository, for a reader six weeks from now
+ * who has the report and not the machine. Each entry is a real way the sidecar
+ * fails to start on Windows; this is the diagnostic value the raw tail had,
+ * minus the bytes.
+ */
+const LOG_SIGNATURES = [
+  {
+    id: "port-in-use",
+    pattern: /\bEADDRINUSE\b/,
+    means:
+      "the port the sidecar tried to bind was already taken. portpicker should make this " +
+      "impossible, so if it appears, something else on the machine grabbed the port between " +
+      "the pick and the bind, or a previous sidecar never exited."
+  },
+  {
+    id: "address-unavailable",
+    pattern: /\bEADDRNOTAVAIL\b/,
+    means: "the sidecar could not bind to 127.0.0.1 at all, which points at the network stack or a policy."
+  },
+  {
+    id: "permission-denied",
+    pattern: /\b(EACCES|EPERM)\b/,
+    means:
+      "the sidecar was refused access to a file, a directory or a port. On a per-machine install " +
+      "this usually means the user profile cannot write where the shell expected."
+  },
+  {
+    id: "file-missing",
+    pattern: /\bENOENT\b/,
+    means: "something the sidecar opened does not exist. Most often an incomplete packaged tree."
+  },
+  {
+    id: "module-missing",
+    pattern: /\b(MODULE_NOT_FOUND|ERR_MODULE_NOT_FOUND)\b|Cannot find (module|package)/,
+    means:
+      "the Next standalone tree is incomplete: a module it requires was not packaged. This is a " +
+      "packaging defect, not a machine problem."
+  },
+  {
+    id: "module-format",
+    pattern: /\b(ERR_REQUIRE_ESM|ERR_UNSUPPORTED_ESM_URL_SCHEME|ERR_UNKNOWN_FILE_EXTENSION)\b/,
+    means: "a CommonJS/ESM mismatch in the packaged tree. Also a packaging defect."
+  },
+  {
+    id: "native-module-failed",
+    pattern: /\bERR_DLOPEN_FAILED\b|The specified module could not be found/,
+    means:
+      "a native addon loaded but its own DLL did not. The usual cause is a missing Visual C++ " +
+      "runtime or a native dependency that was not packaged beside it."
+  },
+  {
+    id: "node-not-found",
+    pattern: /is not recognized as an internal or external command|cannot find the path specified/i,
+    means: "node.exe itself was not where the shell looked for it. The sidecar never started."
+  },
+  {
+    id: "unhandled-error",
+    pattern: /\bUnhandledPromiseRejection\b|Unhandled '?error'? event|\bunhandledRejection\b/,
+    means: "the sidecar threw during startup and nothing caught it."
+  },
+  {
+    id: "fatal",
+    pattern: /FATAL ERROR|JavaScript heap out of memory/,
+    means: "the Node process died rather than exiting. Memory or a V8 fault."
+  }
+];
+
+/**
+ * Classify the log's tail WITHOUT quoting it.
+ *
+ * Returns counts, which are facts about shape rather than content, and the
+ * signatures from the table above that matched. `lines` and `errorLines` are
+ * safe because `[err]` is a prefix THE SHELL writes, not something the log's
+ * subject chose.
+ */
+export function classifyLog(text) {
+  const window = text.slice(-LOG_TAIL_BYTES);
+  const lines = window.split("\n").filter((line) => line.trim().length > 0);
+  const signatures = LOG_SIGNATURES.filter((signature) => signature.pattern.test(window)).map(
+    ({ id, means }) => ({ id, means })
+  );
+  return {
+    linesExamined: lines.length,
+    errorLines: lines.filter((line) => line.startsWith("[err]")).length,
+    bytesExamined: window.length,
+    signatures,
+    note:
+      signatures.length > 0
+        ? "The signatures above are the only content this report takes from sidecar.log. Read the " +
+          "file on the machine, at the path above, for anything more."
+        : "NO RECOGNISED FAILURE SIGNATURE in the examined window. That is not the same as 'no " +
+          "error': it means nothing in scripts/windows/qualify.mjs's signature table matched. " +
+          "Read sidecar.log on the machine, at the path above, and if its failure is one this " +
+          "table should know about, add it there."
+  };
+}
 
 /** The handshake prefix, which must equal `HANDSHAKE_PREFIX` in the shell. */
 const HANDSHAKE_PREFIX = "liberty-sidecar-ready";
@@ -228,9 +347,17 @@ export function sidecarLog(where, readFile = readFileSync, exists = existsSync, 
           seen: false,
           note:
             "No handshake line in the log. The sidecar did not report a bound port, so the shell had " +
-            "nothing to point the webview at. The tail below is the most likely explanation."
+            "nothing to point the webview at. `diagnosis.signatures` below is the classifier's best " +
+            "account of why; the log itself is on the machine at the path above."
         },
-    tail: text.slice(-LOG_TAIL_BYTES)
+    /*
+     * NOT A TAIL. PL-0741 round 2: this field used to be
+     * `text.slice(-LOG_TAIL_BYTES)`, which put the log's own bytes -- any
+     * token, URL or argv in them -- into a report that gets pasted into a
+     * thread. `classifyLog` reads the same window and reports only which
+     * entries of a fixed table matched, so no content crosses out of here.
+     */
+    diagnosis: classifyLog(text)
   };
 }
 

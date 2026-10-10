@@ -231,7 +231,21 @@ Send that **one file** back with your notes. It records the Windows build,
 GPU and driver, WebView2 runtime, display, audio and scaling; where the
 application installed and whether `verify-install` accepts that tree; whether
 `liberty-desktop.exe` and a `node.exe` are running; and whether `sidecar.log`
-exists, how big it is, whether the handshake line is in it, and its tail.
+exists, how big it is, whether the handshake line is in it, and **a
+classification of what went wrong in it — not its contents.**
+
+**The report never quotes `sidecar.log`,** and that is deliberate rather than
+cautious. An earlier version carried the last 16 KB of the file verbatim, which
+put whatever happened to be in it — a token in a URL, an argv, an environment
+dump — into a file written to be pasted into a chat. What the report carries
+now is which entries of a fixed signature table in `scripts/windows/qualify.mjs`
+matched, each with a plain-English explanation written in this repository, plus
+line and byte counts. An **allowlist, not a redactor**: a redactor has to
+predict what a secret looks like, and nothing can. If the failure is one the
+table does not recognise, the report says exactly that in those words rather
+than looking clean — and **the log itself is still on the machine**, at the path
+the report prints, so nothing diagnostic is lost; it just does not travel
+unless you choose to send it.
 
 **An unavailable reading is recorded, not dropped.** If the WebView2 registry
 key does not answer — common when the runtime is installed per-user — the
