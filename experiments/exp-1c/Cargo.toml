@@ -1,0 +1,82 @@
+# EXPERIMENT 1c — THROWAWAY. Not a workspace member, not shipped, not product
+# code. Nothing in Project Liberty imports it.
+#
+# Experiment 1a's arrangement -- a child HWND beneath a WINDOWED WebView2
+# controller -- failed visible composition on real hardware with mpv fully
+# exonerated (docs/DESKTOP_PLAYBACK.md §1, "What happened when we built it").
+# This is the replacement arrangement: one DirectComposition visual tree with
+# mpv's composition swapchain below and WebView2's composition visual above,
+# so that NEITHER layer owns a window and neither can occlude the other by
+# window z-order.
+#
+# NO TAURI, and that is structural rather than a preference. Composition
+# hosting is a CREATION-TIME decision: the webview must be created through
+# ICoreWebView2Environment3::CreateCoreWebView2CompositionController instead
+# of CreateCoreWebView2Controller. wry -- and therefore Tauri -- always
+# creates a windowed controller and hands it out afterwards through
+# with_webview; there is no post-hoc conversion. That is why
+# tauri-apps/wry#1762, which adds exactly this, is a change INSIDE wry. So
+# this experiment owns its window, its message loop and its webview creation.
+[package]
+name = "exp-1c"
+version = "0.0.0"
+edition = "2021"
+publish = false
+# Matches exp-1a and the toolchain desktop-shell-ci.yml pins, so the
+# MSRV-aware resolver cannot select something CI's toolchain cannot build.
+rust-version = "1.90"
+
+[[bin]]
+name = "exp-1c"
+path = "src/main.rs"
+
+# WINDOWS ONLY, like the shell this experiment is about. Everything below is
+# behind `cfg(windows)` in the source as well, so a check on another host
+# compiles an empty program rather than silently skipping the real one -- see
+# the `#[cfg(not(windows))] fn main` in src/main.rs.
+[target.'cfg(windows)'.dependencies]
+# Already in exp-1a's lockfile at these exact versions. Pinned with `=` so a
+# patch release cannot move the surface this experiment reports on.
+libmpv2 = "=6.0.0"
+# mpv's own log is the signal that explained Experiment 1a, and libmpv2's docs
+# call mpv_request_log_messages "unimplemented". Mpv::ctx is public, so the sys
+# call is reachable.
+libmpv2-sys = "=4.0.1"
+# The WebView2 COM surface. ICoreWebView2Environment3::CreateCoreWebView2-
+# CompositionController, ICoreWebView2CompositionController::SetRootVisualTarget
+# / SendMouseInput / add_CursorChanged, ICoreWebView2Controller2::SetDefault-
+# BackgroundColor and ICoreWebView2Controller3::SetRasterizationScale all live
+# in webview2-com-sys 0.39.1's bindings; webview2-com 0.39.1 adds the
+# completion-handler and event-handler wrappers, so there are no hand-written
+# COM vtables anywhere in this experiment.
+webview2-com = "=0.39.1"
+windows-core = "=0.62.2"
+windows = { version = "=0.62.2", features = [
+  "Win32_Foundation",
+  "Win32_System_Com",
+  "Win32_System_LibraryLoader",
+  # The whole point: the visual tree both layers live in.
+  "Win32_Graphics_DirectComposition",
+  # IDXGIDevice, to create the DComp device against a real D3D device rather
+  # than relying on the optional-NULL behaviour of DCompositionCreateDevice,
+  # and IDXGISwapChain to type mpv's composition swapchain pointer.
+  "Win32_Graphics_Dxgi",
+  "Win32_Graphics_Dxgi_Common",
+  # One D3D11 device, created solely to back the DComp device. mpv keeps its
+  # own; DirectComposition does not require them to be the same.
+  "Win32_Graphics_Direct3D",
+  "Win32_Graphics_Direct3D11",
+  "Win32_Graphics_Gdi",
+  "Win32_UI_WindowsAndMessaging",
+  # Per-monitor DPI v2, which is criterion 6. A composition-hosted webview has
+  # no window of its own, so WebView2 cannot detect a scale change for itself
+  # and the host must set the rasterization scale.
+  "Win32_UI_HiDpi",
+  # WM_MOUSELEAVE lives in Win32_UI_Controls and TrackMouseEvent/TME_LEAVE in
+  # Win32_UI_Input_KeyboardAndMouse. Without the leave event the webview's
+  # :hover states STICK after the pointer leaves the window, which is a visible
+  # artefact that could be misread as a compositing fault -- so it is worth two
+  # feature flags to get right rather than to leave out.
+  "Win32_UI_Controls",
+  "Win32_UI_Input_KeyboardAndMouse",
+] }

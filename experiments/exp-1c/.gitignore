@@ -1,0 +1,13 @@
+/target/
+# Produced by a run, on the machine that ran it. The RESULT belongs in the
+# thread, not in the repository.
+/exp-1c-evidence.txt
+/exp-1c-diagnostic.log
+# WebView2's per-run user-data folder, created beside the exe so a throwaway
+# leaves nothing in the commander's profile.
+/exp-1c-webview2/
+# CI's working directories for the native library and the hand-over bundle.
+/mpv-dev/
+/mpv-dev.7z
+/implib/
+/out/

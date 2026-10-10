@@ -90,6 +90,56 @@ efficient**, because the ANGLE and multi-stage compose pipeline *"inhibits full 
 That is a measured verdict against the render-API-into-a-texture approach, from a shipping product,
 on our exact platform.
 
+### What happened when we built it — Experiment 1a, 2026-10-06 to 2026-10-10
+
+**The arrangement in the diagram above was built and run on real hardware three times, and it did
+not composite.** The evidence is recorded here rather than left in the experiment's own README,
+because §1's argument rests on it.
+
+What the third run (PL-0750, commit `846a1f4`) proved, all of it from the harness's own diagnostic
+log plus the commander's eyes on the screen:
+
+| | |
+| --- | --- |
+| the local HEVC file | opens |
+| mpv initialisation | succeeds |
+| D3D11 on an NVIDIA RTX 3050 | initialises |
+| `hwdec-current` | `d3d11va` — hardware decode **active** |
+| the video output | `gpu-next`, 1280x720 |
+| the first video frame | reported **shown** by mpv |
+| the child HWND | 1280x720, correct, at `HWND_BOTTOM` |
+| the HTML Pause button | reaches mpv and toggles `pause` |
+| `put_DefaultBackgroundColor(0,0,0,0)` | **accepted, and reported successful** |
+| **what the commander saw** | **the WebView UI, and no video at all** |
+
+So against §10's criteria: criterion 1 (hardware decode) **PASS**, criterion 3 (click and control)
+**PASS**, criterion 2 (compositing) **FAIL**, criteria 4–7 **unobserved** because they sit behind
+criterion 2. **Experiment 1a is NOT PASS.**
+
+Two earlier runs are worth recording because each one removed a different explanation. The first
+(PL-0748) showed only that the harness could not explain itself — `terminal=no` was silencing mpv
+and nothing drained its event queue; the fix was instrumentation, not architecture. The second
+(PL-0749) found a one-line geometry defect: `SetWindowPos` was called with `cx=0, cy=0` and without
+`SWP_NOSIZE`, resizing the child to nothing one statement after creating it at the right size. Only
+after both were fixed did the third run isolate the remaining question — and the answer was that
+nothing below the webview was wrong.
+
+**What this result does and does not establish.** It establishes that *this* arrangement — a sibling
+child HWND at `HWND_BOTTOM` beneath a **windowed** WebView2 controller, made transparent through
+`put_DefaultBackgroundColor` — did not show video on one Windows machine with one GPU. It does
+**not** establish that WebView2 cannot composite, that Tauri is the wrong shell, that
+DirectComposition will work, or that Stremio's shipping arrangement is broken.
+
+**And the Stremio citation above is still true**, which is the uncomfortable part. A shipping
+product sets `wid`, uses `vo=gpu-next,gpu`, `gpu-context=d3d11`, `hwdec=auto`, and calls
+`put_default_background_color` with `a: 0` — the same four things this harness did. **The difference
+between their result and ours is not explained.** Candidate differences not yet tested: Stremio uses
+wry/tao directly rather than Tauri, so the window styles, the webview's own parenting and the
+message loop are not identical; their window may be composed differently with respect to DWM; and
+the harness's own HTML, CSP and layering are its own. An unexplained divergence from a shipping
+product is a finding in its own right, and it is the reason the verdict above is scoped to the
+arrangement as *this harness built it* rather than to the arrangement in principle.
+
 ### Why Chromium cannot
 
 Four options, all of them dead ends:
@@ -138,15 +188,49 @@ Two further costs, neither of which changes the decision but both of which are r
   lesson to carry is not the CVE but its class, and it argues for §2's `frontendDist` path over a
   widened remote capability.
 
-One alternative is deliberately deferred rather than rejected. mpv 0.41.0 added
-`--d3d11-output-mode=composition`, which creates a D3D11 swapchain **with no window** and exposes its
-address through the `display-swapchain` property (`--d3d11-composition-size=<WxH>` sets the size);
-mpv's docs say *"If you want to use the D3D11 GPU backend in WinUI applications, you need to set this
-to composition."* It is the modern DirectComposition-visual path and is strictly better than `wid`
-for advanced compositing — but it requires host code that can build a DComp visual tree, and it is
-**not** what Stremio ships. Treat it as a v2 optimisation with `wid` proven first, not as the v1
-plan, and note that it is plausible in Rust and essentially impossible from an Electron main process,
-which is one more reason the shell choice does not turn on it.
+One alternative was deliberately deferred rather than rejected, and **the deferral has now been
+superseded by evidence** — recorded as superseded rather than quietly rewritten, because the
+reasoning for it was sound when it was written.
+
+> *As written on 2026-09-15:* mpv 0.41.0 added `--d3d11-output-mode=composition`, which creates a
+> D3D11 swapchain **with no window** and exposes its address through the `display-swapchain` property
+> (`--d3d11-composition-size=<WxH>` sets the size); mpv's docs say *"If you want to use the D3D11 GPU
+> backend in WinUI applications, you need to set this to composition."* It is the modern
+> DirectComposition-visual path and is strictly better than `wid` for advanced compositing — but it
+> requires host code that can build a DComp visual tree, and it is **not** what Stremio ships. Treat
+> it as a v2 optimisation with `wid` proven first, not as the v1 plan.
+
+The condition that deferral rested on was *"with `wid` proven first"*. **`wid` was tried and was not
+proven** — see the Experiment 1a result above. So the composition path is no longer a v2
+optimisation; it is the candidate replacement, and the one stated obstacle to it — *"it requires host
+code that can build a DComp visual tree"* — is simply the work. That work is **PL-0752, Experiment
+1c**, and the three facts it needs were verified against source before any code was written:
+
+- `--d3d11-output-mode=composition`, `--d3d11-composition-size=<WxH>` and the `display-swapchain`
+  property are all present **at the exact mpv commit this project already pins**, `c152964208`
+  (`video/out/d3d11/context.c`, `options/options.c`, `player/command.c`), so neither the pin nor its
+  digest has to move.
+- `ICoreWebView2Environment3::CreateCoreWebView2CompositionController` and
+  `ICoreWebView2CompositionController`'s `SetRootVisualTarget`, `SendMouseInput`, `SendPointerInput`
+  and `add_CursorChanged` are present in the already-locked `webview2-com-sys` 0.39.1.
+- `DCompositionCreateDevice`, `IDCompositionDevice`, `IDCompositionTarget::SetRoot` and
+  `IDCompositionVisual::SetContent`/`AddVisual` are present in the already-locked `windows` 0.62.2
+  behind feature `Win32_Graphics_DirectComposition`.
+
+**One structural fact decides where that host code lives, and it is worth stating plainly: composition
+hosting is a creation-time decision.** The webview must be created through
+`CreateCoreWebView2CompositionController` *instead of* `CreateCoreWebView2Controller`. wry and
+therefore Tauri always create a **windowed** controller and hand it out afterwards through
+`with_webview`; there is no post-hoc conversion from one to the other. That is why
+[tauri-apps/wry#1762](https://github.com/tauri-apps/wry/pull/1762), which adds exactly this, is a
+change *inside wry* rather than something an application can add from outside. Experiment 1c
+therefore owns its own window and its own webview creation. It does not rewrite the Liberty
+application, and it does not vendor that PR — the PR is a fork of wry 0.55.1, is unverified by CI by
+its own account, and its touch, pen and OLE drag-drop paths are explicitly best-effort or untested.
+What it is cited for is its input-forwarding map, which production use did exercise.
+
+Note also that the composition path is plausible in Rust and essentially impossible from an Electron
+main process, which is one more reason the shell choice does not turn on it.
 
 Tauri 3.0 is **13% complete with no due date, last touched 2026-06-18**, and its planned breaking
 items are mostly Linux. Nothing suggests a forcing function inside our horizon; building on Tauri 2
@@ -1224,20 +1308,34 @@ product code, no DRM routing, no packaging, no LGPL build.**
    `track-list`; forward to JS; render them live in the overlay.
 6. Wire the HTML button to a command that toggles `pause`.
 
-**Pass criteria — all must hold:**
+**Pass criteria — all must hold. RESULT RECORDED 2026-10-10: Experiment 1a is NOT PASS.**
 
-- [ ] Video plays **hardware-decoded** — Task Manager GPU "Video Decode" above zero **and**
-      `mpv_get_property("hwdec-current")` ≠ `"no"`
-- [ ] HTML UI is **visibly composited over** the video with real alpha — the gradient tints the
-      video rather than hiding it
-- [ ] The HTML button **receives clicks** and pauses playback — hit-testing is not eaten by the child
-      HWND
-- [ ] **Resize and drag keep video and UI locked together** — no tearing, no lag, no letterbox
-      flicker; drag fast between two monitors
-- [ ] **Per-monitor DPI change** (drag onto a 150%-scaled display) breaks neither layout nor video
-      geometry
-- [ ] `avsync` and `time-pos` stream to the JS layer at a usable rate
-- [ ] All of the above on the matrix below
+| | criterion | result | on what evidence |
+| --- | --- | --- | --- |
+| 1 | Video plays **hardware-decoded** — Task Manager GPU "Video Decode" above zero **and** `hwdec-current` ≠ `"no"` | **PASS** | `hwdec-current` = `d3d11va`; D3D11 up on an RTX 3050; `gpu-next` at 1280x720; mpv reported the first frame shown |
+| 2 | HTML UI is **visibly composited over** the video with real alpha — the gradient tints the video rather than hiding it | **FAIL** | the commander saw the WebView UI and **no video at all**, with `put_DefaultBackgroundColor(0,0,0,0)` accepted and reported successful |
+| 3 | The HTML button **receives clicks** and pauses playback — hit-testing is not eaten by the child HWND | **PASS** | the Pause button reached mpv and toggled `pause` |
+| 4 | **Resize and drag keep video and UI locked together** | **UNOBSERVED** | behind criterion 2 — there was nothing visible to keep locked |
+| 5 | **Per-monitor DPI change** breaks neither layout nor video geometry | **UNOBSERVED** | behind criterion 2 |
+| 6 | `avsync` and `time-pos` stream to the JS layer at a usable rate | **UNOBSERVED** | the overlay rendered the property table, but a telemetry rate was never measured against visible playback |
+| 7 | All of the above on the matrix below | **UNMET** | one machine, one GPU, one DPI setting. See below |
+
+**The matrix is unmet and nothing above may be read as covering it.** The run was a single Windows
+machine with a single NVIDIA dGPU at a single scaling. Windows 10 22H2, an Intel or AMD iGPU, a
+hybrid-graphics laptop and a drag between differently-scaled monitors were all untested. Criterion 1
+passing on one NVIDIA dGPU is one cell of that table, not the row.
+
+**The scope of the failure, stated precisely.** Criterion 2 failed for *the arrangement this harness
+built* — a sibling child HWND at `HWND_BOTTOM` beneath a **windowed** WebView2 controller. It is not
+a finding that WebView2 cannot composite, nor that Tauri is the wrong shell, nor that
+DirectComposition will work. §1's "What happened when we built it" carries the full evidence and the
+unexplained divergence from Stremio's shipping result.
+
+**The replacement is Experiment 1c (PL-0752)**, specified in that task rather than here: one host
+window, one DirectComposition device and target, one visual tree with mpv's **composition**
+swapchain below and WebView2's composition visual above, so that neither layer owns a window and
+neither can occlude the other by window z-order. Decision D1 itself has been referred back to
+gpt-architect (PL-0751) and is **not** changed by this recording.
 
 **The matrix, and it is the part most likely to be skipped:**
 
@@ -1251,7 +1349,24 @@ product code, no DRM routing, no packaging, no LGPL build.**
 `native-windows-gui` directly, Stremio-style — still Rust, still not Electron, because the Electron
 path fails for reasons 1a would not even get to test.
 
+> **1a did fail, and this paragraph is now live rather than hypothetical.** Two things about it have
+> to be said carefully. First, the pivot it names is *not* the only option on the table: Experiment
+> 1c tests whether the compositing approach can be fixed without changing the shell library at all,
+> and it is cheaper than a pivot, so it goes first. Second, the result does **not** establish the
+> condition the reversal table in §11 attaches to this pivot — "Tauri's window lifecycle cannot host
+> a sibling child HWND beneath the webview" — because nothing in the three runs isolated Tauri's
+> window lifecycle as the cause. A child HWND *was* created, *was* sized correctly and *did* receive
+> mpv's frames; what did not happen is that anyone saw them. Choosing between 1c and the pivot is
+> gpt-architect's call under PL-0751, not this document's.
+
 ### Experiment 1b — the sidecar. After 1a passes, not before. ~2 days.
+
+> **Still not started, and the precondition has not moved.** 1a did not pass. 1b's step 6 —
+> "confirm transparency and mpv `wid` still composite with the http-origin page loaded" — is written
+> against an arrangement that does not composite even without the sidecar, so running 1b now would
+> test nothing. If Experiment 1c succeeds, 1b's step 6 has to be rewritten against the composition
+> arrangement before 1b is worth starting; its other six steps are unaffected by any of this and
+> remain valid as written.
 
 1. `output: 'standalone'` build of the existing app; `node.exe` plus the tree as Tauri resources.
 2. `portpicker` → spawn → **sidecar reports its actually-bound port on stdout** → mutate
@@ -1293,6 +1408,50 @@ compositing proof. Counsel review is queued behind the SBOM, not behind the prot
 The reviewer's standing complaint on this project is documents that claim more than their evidence.
 Both research reports carry this section; it is carried forward here rather than dropped.
 
+### The largest claim in this document was tested on 2026-10-10 and FAILED
+
+The entry below under *"Not verified, and flagged where it is used"* called the Tauri-hosted child
+HWND beneath the webview **"the single largest unverified claim in this document."** It has now been
+tested on real hardware, three times, and the arrangement did not composite visibly. **Experiment 1a
+is NOT PASS.** §1's *"What happened when we built it"* carries the evidence per criterion; §10
+carries the result against the pass criteria; the entry below records what is and is not now settled.
+
+Two things follow for this section specifically. **§1's core argument is no longer fully supported by
+its own evidence** — the Stremio citation stands, our reproduction of it does not, and the divergence
+is unexplained. And **decision D1 has been referred back to gpt-architect** (PL-0751) rather than
+changed here, because recording that an experiment failed and choosing a new architecture are two
+different acts and product invariant 6 puts the second with the reviewer.
+
+### Verified on real hardware 2026-10-06 to 2026-10-10 (commander's machine, Windows, RTX 3050)
+
+That mpv 6.0.0 via `libmpv2`, configured with `wid`, `vo=gpu-next,gpu`, `gpu-context=d3d11`,
+`hwdec=auto`, opens a local HEVC file, initialises D3D11 on an NVIDIA RTX 3050, reports
+`hwdec-current` = `d3d11va`, brings up `gpu-next` at the child window's real size, and reports the
+first video frame shown. That an HTML button in a Tauri webview reaches a Rust command and toggles
+mpv's `pause`. That `ICoreWebView2Controller2::put_DefaultBackgroundColor(0,0,0,0)`, reached through
+Tauri's `with_webview` and a cast of the controller it returns, is accepted and returns success.
+**And that none of that is sufficient to make the video visible beneath a windowed WebView2
+controller.**
+
+### Verified against primary sources on 2026-10-10
+
+That `--d3d11-output-mode=composition`, `--d3d11-composition-size=<WxH>` and the `display-swapchain`
+property all exist at the exact mpv commit this project pins, `c152964208`, by reading
+`video/out/d3d11/context.c` (the `d3d11-output-mode` option and
+`.window = ctx->opts.composition ? NULL : vo_w32_hwnd(ctx->vo)`), `options/options.c`
+(`d3d11-composition-size`) and `player/command.c` (`{"display-swapchain", …}` returning the pointer
+as an `int64`) **at that ref**, not at master. That
+`ICoreWebView2Environment3::CreateCoreWebView2CompositionController` and
+`ICoreWebView2CompositionController`'s `SetRootVisualTarget`, `SendMouseInput`, `SendPointerInput`
+and `add_CursorChanged` exist in the locked `webview2-com-sys` 0.39.1 bindings, and that
+`webview2-com` 0.39.1 ships the matching completion-handler and `CursorChanged` closure wrappers.
+That `DCompositionCreateDevice`, `IDCompositionDevice::CreateTargetForHwnd`/`CreateVisual`/`Commit`,
+`IDCompositionTarget::SetRoot` and `IDCompositionVisual::SetContent`/`AddVisual` exist in the locked
+`windows` 0.62.2 behind `Win32_Graphics_DirectComposition`. That `tauri-apps/wry#1762` adds
+composition hosting *inside* wry by creating the controller through
+`CreateCoreWebView2CompositionController`, that it is a fork of wry 0.55.1, and that it describes
+itself as unverified by CI with best-effort touch/pen and untested OLE drag-drop.
+
 ### Verified against primary sources on 2026-09-15
 
 All npm and crates version numbers and publish dates; Electron's release schedule and EOL table;
@@ -1316,10 +1475,17 @@ any DRM field in `packages/contracts/src/domains/playback.ts`; `EngineUnavailabl
 
 ### Not verified, and flagged where it is used
 
-- **Whether Tauri's window lifecycle** — as opposed to raw wry or a direct `webview2` host — cleanly
-  permits a sibling child HWND beneath the webview. `tauri-plugin-libmpv` claims Windows is "fully
-  tested"; **Stremio deliberately does not use Tauri**. This is precisely what experiment 1a exists
-  to settle, and it is the single largest unverified claim in this document.
+- ~~**Whether Tauri's window lifecycle** — as opposed to raw wry or a direct `webview2` host —
+  cleanly permits a sibling child HWND beneath the webview.~~ **TESTED 2026-10-10: the arrangement
+  does not composite visibly.** But read the result at its real width, because the distinction
+  matters for what happens next. What was settled: a child HWND created under a Tauri window, sized
+  correctly, at `HWND_BOTTOM`, receiving hardware-decoded mpv frames, beneath a **windowed** WebView2
+  controller whose `DefaultBackgroundColor` was successfully set to `A=0`, **is not visible**. What
+  was **not** settled: *why*. Nothing in the three runs isolated Tauri's window lifecycle as the
+  cause — the child HWND was created and did everything asked of it. `tauri-plugin-libmpv` still
+  claims Windows is "fully tested" and that claim is now in tension with this result; **Stremio
+  deliberately does not use Tauri** and Stremio's arrangement demonstrably works. That divergence is
+  the live unknown and it is now the single largest unexplained fact in this document.
 - **Whether the `frontendDist` mutation makes `is_local_url()` true in practice.** It is public API
   that mechanically produces the right result, not a documented pattern. Experiment 1b step 3.
 - **Tauri plus Next.js 16 App Router in practice.** The official guide is still Next 14-era.
@@ -1343,7 +1509,9 @@ any DRM field in `packages/contracts/src/domains/playback.ts`; `EngineUnavailabl
 
 | If this turns out to be true | Then | Which decision |
 | --- | --- | --- |
-| Experiment 1a shows **Tauri's window lifecycle cannot host a sibling child HWND beneath the webview** | Drop Tauri-the-framework for **wry/tao or `webview2` + `native-windows-gui` directly**, Stremio-style. Still Rust, still not Electron | D1 (partially — the shell library, not the compositing approach) |
+| ~~Experiment 1a shows **Tauri's window lifecycle cannot host a sibling child HWND beneath the webview**~~ **1a FAILED 2026-10-10, but on the compositing approach rather than demonstrably on the window lifecycle — so this row's condition is NOT established** | The named pivot stays on the table and is **not** triggered yet. Experiment 1c (PL-0752) tests whether the compositing approach can be fixed with the shell library unchanged, and is cheaper, so it goes first | D1 — **referred back to gpt-architect** under PL-0751, not changed |
+| **Experiment 1c shows mpv's composition swapchain and WebView2's composition visual DO composite in one DComp tree** | D1 survives, and §1's diagram is replaced: no child HWND, no `wid`, one visual tree. The shell library question becomes whether Tauri can be made to create a composition controller, or whether the experiment's minimal host grows into the shell | D1 (the compositing approach, and possibly the shell library) |
+| **Experiment 1c also fails** | Two layers in one DWM surface has then failed twice by two different mechanisms, and the pivot named above becomes the live option rather than a contingency. At that point the honest reading is that the remaining paths are raw wry/tao with the wry#1762 approach vendored and maintained, or a direct `webview2` + `native-windows-gui` host, Stremio-style | D1 |
 | **A maintained Electron↔libmpv compositing solution ships** — a supported API to place a native surface beneath web content, or demonstrated DirectComposition interop with Chromium's visual tree | Electron becomes viable, the Next-preservation argument dominates, and Electron probably wins | D1 |
 | **DRM turns out to be required for the majority of the first-party catalogue**, not a minority | mpv is disqualified as the *primary* adapter. Shaka/EME becomes the default path, native playback becomes secondary for owned and local media — which weakens the whole reason to leave the browser engine | D4 |
 | **Counsel rejects LGPL libmpv distribution**, or the statically-linked LGPLv3 FFmpeg proves unacceptable | mpv is out entirely. Reconsider **Media Foundation** (native, no licence issue, far weaker format support) or a commercially licensed SDK. **This is why §9 starts now** | D4, D5 |

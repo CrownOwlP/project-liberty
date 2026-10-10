@@ -1,8 +1,8 @@
 # Project Liberty - Project Status
 
-> Generated 2026-10-06T02:18:05.867Z from the AI control plane.
+> Generated 2026-10-10T15:37:17.748Z from the AI control plane.
 
-**Overall completion:** 122/149 executable tasks (82%)
+**Overall completion:** 122/151 executable tasks (81%)
 
 ## Status summary
 
@@ -10,8 +10,8 @@
 - **READY:** 2
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 0
-- **REVIEW:** 7
-- **BLOCKED:** 11
+- **REVIEW:** 8
+- **BLOCKED:** 12
 - **DONE:** 122
 - **CANCELED:** 0
 - **SUPERSEDED:** 4
@@ -37,13 +37,14 @@
 - **PL-0743** [REVIEW] A pasted addon manifest URL has no safe path into the adapter — owner: claude-backend
 - **PL-0745** [REVIEW] Every msiexec call in the lifecycle harness can wait forever — owner: claude-infra
 - **PL-0746** [REVIEW] desktop-shell-ci.yml is the one workflow with no timeout at all — owner: claude-infra
-- **PL-0750** [REVIEW] WebView2 paints an opaque background over the video: criterion 2 fails while mpv is blameless — owner: claude-media
+- **PL-0751** [REVIEW] Experiment 1a FAILED on real hardware and D1 still reads as if it had not been tested — owner: claude-lead
+- **PL-0752** [REVIEW] Experiment 1c: can mpv composite beneath WebView2 in one DirectComposition visual tree — owner: claude-media
 
 ## Dispatch classification
 
 - **READY_AND_EXECUTABLE:** 2
 - **READY_BUT_EXTERNAL:** 0
-- **BLOCKED:** 11
+- **BLOCKED:** 12
 - **BACKLOG (dependency-gated):** 7
 
 ## Recommended executable wave
@@ -111,11 +112,26 @@ WHAT WAS TRIED FIRST AND REFUSED. release is not permitted from REVIEW, and that
 THE COST, STATED PLAINLY: unblocking later discards gate results, so PL-0749's build gate will need re-recording. It is mine, it is one clippy run, and it is truthfully re-recordable. No review provenance is lost because no verdict exists yet. This is now the second experiments/** task parked this way (PL-0748 is the first) and that is a real debt on the board, not a tidy outcome -- both need gpt-architect's verdict and both will need their build gate re-run after unblocking.
 
 UNBLOCK WHEN: PL-0750 (the WebView2 transparency fallback) has cleared the file, or gpt-architect's verdict on this task arrives -- whichever is first. This task's own work needs nothing further.
+- **PL-0750** WebView2 paints an opaque background over the video: criterion 2 fails while mpv is blameless: PARKED TO SEQUENCE THE REPLACEMENT EXPERIMENT ON THE SAME PATH. Its hypothesis was tested on real hardware and DISPROVED, which is a result, not a failure of the work.
+
+WHAT THE COMMANDER'S RUN ESTABLISHED. The explicit WebView2 transparency call SUCCEEDED -- put_DefaultBackgroundColor(0,0,0,0) was accepted, so the fallback this task existed to take was taken and reported working. The video still did not appear. Combined with PL-0749's run, which proved child HWND geometry at 1280x720, HEVC open, D3D11 on an RTX 3050, d3d11va active, VO gpu-next at 1280x720, first frame reported shown and the Pause button reaching mpv, the conclusion is forced and it is about the ARRANGEMENT rather than about any defect in this task: a child HWND beneath a WINDOWED WebView2 controller does not composite visibly, and no transparency flag on the webview changes that.
+
+THE ENGINEERING OF THIS TASK IS COMPLETE AND CORRECT. It called the documented Microsoft API, reported that the call succeeded, and distinguished that outcome from a refused call and from a runtime too old to offer the interface. It did exactly what it was filed to do. What it awaits is gpt-architect's architecture-review verdict, nothing else.
+
+WHY IT IS BEING PARKED. The commander's terminal condition has fired: Experiment 1a is recorded FAIL, decision D1 returns to gpt-architect, and NO FURTHER WORKAROUND LAYERS go on this arrangement. The replacement is a different arrangement -- DirectComposition visual hosting, Experiment 1c -- and it lands under experiments/, which this task holds. Two tasks cannot hold one path, so they must be sequential.
+
+WHAT WAS TRIED FIRST AND REFUSED, unchanged from PL-0748 and PL-0749. release is not permitted from REVIEW and that refusal is correct. DONE needs the verdict. CANCELED would assert there is no work to evidence, which is false. request-changes records a REVIEWER asking for changes that gpt-architect has not asked for. block preserves gate results and is the least destructive of the four.
+
+THE COST, AND IT IS NOW THE THIRD TIME. Unblocking discards gate results, so this task's build gate will need re-recording -- one clippy run, mine, truthfully re-recordable, no review provenance lost because no verdict exists yet. PL-0748, PL-0749 and PL-0750 are now ALL parked or parked-pending on one path, each proven by the run that found the next thing, none of them with a verdict. That is real debt and it is stated here rather than tidied away.
+
+THE UNDERLYING CAUSE, STATED ONCE AND NOT FIXED HERE. Every one of these tasks declared allowedPaths "experiments/**" when its actual write surface was one experiment directory. pathsOverlap treats "experiments" as a prefix of "experiments/exp-1c", so a broad declaration reserves every future experiment. PL-0752 declares "experiments/exp-1c/**" instead, which is the honest surface and stops the next round inheriting this. Narrowing the three parked tasks' declarations is NOT done here: they are in REVIEW or were, and allowedPaths is part of the surface a verdict fingerprints, so changing it under a reviewer is the thing the lock exists to prevent.
+
+UNBLOCK WHEN: gpt-architect's verdict on this task arrives, or Experiment 1c has cleared the path -- whichever is first. This task's own work needs nothing further.
 
 ## Agent capacity
 
 - **gpt-architect:** 0/6 capacity in use (external lane; not locally executable)
-- **claude-lead:** 0/2 capacity in use, 1 active (1 parked for an external reviewer)
+- **claude-lead:** 0/2 capacity in use, 2 active (2 parked for an external reviewer)
 - **claude-frontend:** 0/2 capacity in use
 - **claude-backend:** 0/2 capacity in use, 1 active (1 parked for an external reviewer)
 - **claude-media:** 0/2 capacity in use, 1 active (1 parked for an external reviewer)

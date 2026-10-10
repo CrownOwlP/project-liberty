@@ -1,0 +1,465 @@
+name: Experiment 1c harness
+
+# ============================================================================
+# PL-0752 — BUILD THE EXPERIMENT 1c HARNESS SO THE COMMANDER DOES NOT HAVE TO
+# ============================================================================
+#
+# EXPERIMENT 1a FAILED. Three runs on the commander's hardware proved the
+# arrangement in `docs/DESKTOP_PLAYBACK.md` §1 — a child HWND beneath a
+# WINDOWED WebView2 controller — does not composite visibly, with mpv fully
+# exonerated: HEVC open, D3D11 on an RTX 3050, `d3d11va` active, `gpu-next` at
+# the child's real size, first frame reported shown, Pause reaching mpv, and
+# `put_DefaultBackgroundColor(0,0,0,0)` accepted. The commander saw no video.
+#
+# Experiment 1c is the replacement arrangement: ONE DirectComposition visual
+# tree, with mpv's composition swapchain below and WebView2's composition
+# visual above, so that neither layer owns a window and neither can occlude the
+# other by window z-order. It needs a Windows machine with a real GPU, an
+# attended session and somebody to look at a window, so the experiment itself
+# still cannot happen here.
+#
+# WHAT CAN HAPPEN HERE IS EVERYTHING ELSE, which is the whole reason this file
+# exists: nobody should have to install Rust, assemble libmpv, resolve a native
+# link against an import library that the dev package does not ship in MSVC
+# form, and become the build server for a throwaway. This job does all of that
+# and hands back a directory the commander can double-click.
+#
+# ----------------------------------------------------------------------------
+# WHY A `cargo check` WOULD NOT BE ENOUGH, AND THIS IS SHARPER FOR 1c THAN 1a
+# ----------------------------------------------------------------------------
+#
+# The engineering session CAN type-check this crate for
+# `x86_64-pc-windows-msvc` — rustup carries that std and `check` does not link
+# — and it does, every round. But the subject of the dependency is NATIVE:
+# `libmpv2-sys` emits `cargo:rustc-link-lib=mpv` and nothing more, so whether a
+# build succeeds is decided at the link step `check` skips. 1c additionally
+# links `dcomp.dll` for DirectComposition and `WebView2LoaderStatic` for the
+# WebView2 COM surface, neither of which a host-target check touches. Handing
+# over a type-checked binary would be handing over a hope. This job LINKS it.
+#
+# ----------------------------------------------------------------------------
+# WHAT THIS JOB DOES NOT PROVE, AND NO GATE MAY CLAIM FROM IT
+# ----------------------------------------------------------------------------
+#
+#   - It does not prove Experiment 1c passes. It does not run the binary. A
+#     green run here means the harness BUILDS AND LINKS. Every one of the eight
+#     pass criteria is something a person has to look at on real hardware, and
+#     `experiments/exp-1c/README.md` says so in the same words.
+#   - It proves nothing about whether the video is VISIBLE, whether the
+#     gradient tints it, hardware decode, hit-testing, resize, per-monitor DPI,
+#     telemetry, shutdown, or the OS/GPU/DPI matrix.
+#   - It cannot detect the two runtime preconditions that would make a run
+#     unjudgeable rather than failing: a WebView2 Evergreen runtime too old to
+#     offer `ICoreWebView2Environment3`, and a libmpv build without
+#     `--d3d11-output-mode=composition`. The harness reports both by name at
+#     runtime; CI cannot see either.
+#   - It is NOT the LGPL libmpv build of §9. It downloads a PINNED,
+#     digest-verified third-party GPL-licensed mpv development package to link
+#     against, because §10 specifies this experiment with "no LGPL build" on
+#     purpose: mixing the two would mean a failure could be the compositing or
+#     could be our own libmpv build, and the experiment exists to remove
+#     exactly that ambiguity.
+#   - The artifact it produces is therefore NOT DISTRIBUTABLE and not a release
+#     candidate. It is a throwaway for one machine. It says nothing about codec
+#     patent authorization, which is untouched and uninferable from anything
+#     here.
+#
+# No `continue-on-error`, no `|| true`, consistent with this repository's other
+# workflows. Every step either succeeds or fails the job.
+#
+# ----------------------------------------------------------------------------
+# THE NATIVE-LIBRARY MACHINERY IS EXPERIMENT 1a's, UNCHANGED AND ON PURPOSE
+# ----------------------------------------------------------------------------
+#
+# The pin, the digest gate, the `dumpbin /EXPORTS` import-library derivation,
+# the 40-symbol floor, the `mpv_create` assertion and the deterministic DLL
+# choice below are all carried over from `experiment-1a.yml` byte for byte.
+# They were each written in response to a specific failure:
+#
+# Experiment 1a's run #1 (37376560317) failed at the fetch step, before
+# anything compiled, on an ASSUMPTION rather than a tool: it required a `.def`
+# file in the package and current mpv dev packages no longer ship one. The
+# package is now PINNED by URL and SHA-256, both values copied from that run's
+# own output — CI measured them; nobody guessed them — and the digest is a
+# GATE rather than a print, because printing a hash is not verifying it. The
+# export list is read from the DLL with `dumpbin /EXPORTS`, which is the
+# authoritative source in any case: a `.def` is a claim about the DLL and the
+# export directory IS the DLL. A shipped `.def` is still preferred when present.
+#
+# **THE PIN IS THE SAME COMMIT, AND THAT IS LOAD-BEARING FOR 1c.**
+# `--d3d11-output-mode=composition`, `--d3d11-composition-size` and the
+# `display-swapchain` property were each verified present in mpv's source AT
+# THIS EXACT REF (`c152964208`) — `video/out/d3d11/context.c`,
+# `options/options.c` and `player/command.c` respectively — before any of this
+# experiment was written. So the pin does NOT move for 1c, and the digest does
+# not change. If a future round ever needs a newer mpv, the override inputs
+# below still refuse to run without a digest.
+
+on:
+  workflow_dispatch:
+    inputs:
+      mpv_dev_url:
+        description: >-
+          Override the pinned mpv x86_64 DEVELOPMENT package (.7z). Leave
+          empty to use the pin in this file. Supplying this REQUIRES
+          mpv_dev_sha256; an unverified package is refused.
+        required: false
+        type: string
+      mpv_dev_sha256:
+        description: >-
+          SHA-256 of the package named above, lowercase hex. Required with
+          mpv_dev_url. The pinned package carries its own digest.
+        required: false
+        type: string
+  push:
+    # The crate is a throwaway and is not a workspace member, so nothing else
+    # in the repository can break it and it can break nothing else. Running on
+    # every push would spend a Windows minute on commits that cannot affect it.
+    paths:
+      - "experiments/exp-1c/**"
+      - ".github/workflows/experiment-1c.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Link the 1c harness against a real libmpv
+    runs-on: windows-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: experiments/exp-1c
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # The same pin `desktop-shell-ci.yml` uses, and the same reasoning:
+      # `stable` means the toolchain that produced a passing result can change
+      # under the next run with no commit saying so. 1.90.0 is also the highest
+      # MSRV in this crate's locked graph, which `Cargo.toml` states.
+      - name: Install the pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.90.0"
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: experiments/exp-1c
+
+      # ----------------------------------------------------------------------
+      # THE NATIVE LIBRARY
+      # ----------------------------------------------------------------------
+      #
+      # The published mpv development packages are built with MinGW and ship
+      # `libmpv.dll.a`, which the MSVC linker cannot read. They also ship
+      # `mpv.def`, which is the module definition the DLL was exported from,
+      # and `lib.exe` turns that into the `mpv.lib` import library MSVC needs.
+      # This is the step that a person would otherwise have to discover.
+      - name: Fetch the pinned mpv development package
+        id: mpv
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          # ================================================================
+          # PINNED AND HASH-VERIFIED, AND BOTH VALUES ARE FIRST-HAND
+          # ================================================================
+          #
+          # Run #1 (37376560317, job 111986931721) resolved the latest release
+          # at job time and PRINTED what it got before failing further down.
+          # The URL and the digest below are copied from that job's own
+          # output, so neither is a value anyone guessed -- CI measured them.
+          #
+          # Resolving at job time was the previous design and it is now gone.
+          # It made every run depend on a release feed answering the same way
+          # twice, which is the opposite of what this workflow is for: the
+          # artifact it hands over has to be something whose contents can be
+          # named months later.
+          #
+          # THE DIGEST IS A GATE, NOT A LABEL. The old step hashed the
+          # download and printed the hash. Printing is not verifying. If the
+          # bytes do not match, nothing is extracted and the job stops.
+          $PINNED_URL = "https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/20261005/mpv-dev-x86_64-20261005-git-c152964208.7z"
+          $PINNED_SHA = "7d9dd506da6b77e6054f56052f7423d9f7eed764f85154a6221925aba37dbfb2"
+
+          $url = "${{ inputs.mpv_dev_url }}"
+          $expected = "${{ inputs.mpv_dev_sha256 }}"
+          if ([string]::IsNullOrWhiteSpace($url)) {
+            $url = $PINNED_URL
+            $expected = $PINNED_SHA
+            Write-Host "Using the pinned package."
+          } else {
+            # An override NEVER skips verification. A workflow input that could
+            # turn the digest check off would make the check decorative, since
+            # the easiest way past a failing gate is always the flag that
+            # disables it.
+            if ([string]::IsNullOrWhiteSpace($expected)) {
+              throw "mpv_dev_url was supplied without mpv_dev_sha256. An unverified package will not be linked into an artifact that is handed to someone else. Compute the digest and pass both."
+            }
+            Write-Host "Using an overridden package supplied by whoever started this run."
+          }
+          $expected = $expected.Trim().ToLower()
+
+          Write-Host "mpv development package: $url"
+          Write-Host "expected sha256:         $expected"
+
+          New-Item -ItemType Directory -Force -Path mpv-dev | Out-Null
+          try {
+            Invoke-WebRequest -Uri $url -OutFile mpv-dev.7z
+          } catch {
+            # The pinned snapshot is dated and this publisher prunes old ones.
+            # Saying so here is the difference between a five-minute fix and an
+            # afternoon, so the remedy is in the error rather than in a comment
+            # nobody reads at the point of failure.
+            throw "Could not download $url -- $($_.Exception.Message). If this is a 404 the pinned snapshot has been pruned; re-run this workflow from the Actions tab supplying mpv_dev_url and mpv_dev_sha256 for a current mpv-dev-x86_64 package, then commit those two values as the new pin."
+          }
+
+          $actual = (Get-FileHash -Algorithm SHA256 mpv-dev.7z).Hash.ToLower()
+          Write-Host "actual sha256:           $actual"
+          if ($actual -ne $expected) {
+            throw "DIGEST MISMATCH. Expected $expected, got $actual. Nothing has been extracted and nothing will be linked. Either the publisher replaced the file behind a stable URL, or this download is not what it claims to be; both are reasons to stop rather than to continue."
+          }
+          Write-Host "digest verified."
+
+          7z x mpv-dev.7z -ompv-dev -y | Out-Null
+
+          # The extracted tree, printed. Run #1 failed on an assumption about
+          # this layout that nobody could check without a login, and the one
+          # thing that would have made it a five-minute fix is the file list.
+          Write-Host "--- package contents ---"
+          Get-ChildItem -Path mpv-dev -Recurse -File |
+            ForEach-Object { Write-Host ("  {0}  ({1} bytes)" -f $_.FullName.Substring((Resolve-Path mpv-dev).Path.Length + 1), $_.Length) }
+          Write-Host "------------------------"
+
+          # THE RUNTIME DLL IS THE REQUIRED PART, not the .def. It is what
+          # `lib /NAME:` must name and what ships beside the exe, and the name
+          # has changed across mpv releases (mpv-1.dll -> libmpv-2.dll), so it
+          # is derived rather than written down.
+          # Sorted and preference-ordered rather than "first match wins", so
+          # the choice is reproducible across runs and across package layouts.
+          # `libmpv-N.dll` is the client library; anything else matching *mpv*
+          # is a player binary or a plugin and would link but never load.
+          $candidates = @(Get-ChildItem -Path mpv-dev -Recurse -Filter "*mpv*.dll" | Sort-Object FullName)
+          if ($candidates.Count -eq 0) { throw "The package contains no mpv DLL at all, so there is nothing to link against or to hand over." }
+          $dll = $candidates | Where-Object { $_.Name -match '^libmpv-\d+\.dll$' } | Select-Object -First 1
+          if ($null -eq $dll) { $dll = $candidates[0] }
+          if ($candidates.Count -gt 1) {
+            Write-Host "NOTE: $($candidates.Count) mpv DLLs in the package; chose $($dll.Name). The others: $(($candidates | Where-Object { $_.FullName -ne $dll.FullName } | ForEach-Object { $_.Name }) -join ', ')"
+          }
+          Write-Host "runtime dll: $($dll.Name)"
+
+          # A .def is PREFERRED when present -- it is the publisher's own
+          # statement of what the DLL exports. Run #1 established that current
+          # packages no longer ship one, so its absence is ordinary now and the
+          # next step derives the exports from the DLL instead.
+          $def = Get-ChildItem -Path mpv-dev -Recurse -Filter "*.def" | Select-Object -First 1
+          $defPath = if ($null -eq $def) { "" } else { $def.FullName }
+          if ($defPath -eq "") {
+            Write-Host "no .def in the package; the export list will be read from the DLL."
+          } else {
+            Write-Host "def: $defPath"
+          }
+
+          "url=$url"             | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "sha256=$actual"       | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "def=$defPath"         | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "dll=$($dll.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "dllname=$($dll.Name)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          exit 0  # PL-0733: a pwsh step's exit code is $LASTEXITCODE at body end
+
+      # ====================================================================
+      # THE IMPORT LIBRARY, WHICH IS THE WHOLE REASON THIS IS HARD
+      # ====================================================================
+      #
+      # The published mpv development packages are built with MinGW and ship
+      # `libmpv.dll.a`, which the MSVC linker cannot read. MSVC needs an
+      # `mpv.lib`, and `lib.exe` builds one from a module definition.
+      #
+      # RUN #1 FAILED HERE, on an assumption rather than on a tool. The
+      # previous version required a `.def` in the package and threw when it
+      # found none -- current packages do not ship one. The export list is now
+      # read from the DLL itself with `dumpbin /EXPORTS`, which is the
+      # authoritative source anyway: a `.def` is a claim about the DLL, and
+      # the DLL's export directory is the DLL.
+      #
+      # A shipped `.def` is still preferred when one is present, because it is
+      # the publisher's own statement and costs nothing to use.
+      #
+      # `dumpbin` and `lib` are located through vswhere rather than by adding
+      # another third-party action, so this file's `uses:` set stays the one
+      # the rest of the repository already audits.
+      - name: Build an MSVC import library for libmpv
+        id: implib
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          if (-not (Test-Path -LiteralPath $vswhere)) { throw "vswhere.exe is not on this runner; the MSVC toolchain cannot be located." }
+          $vsroot = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if ([string]::IsNullOrWhiteSpace($vsroot)) { throw "vswhere found no Visual Studio installation carrying the VC x64 tools." }
+          $lib = Get-ChildItem -Path "$vsroot\VC\Tools\MSVC" -Recurse -Filter "lib.exe" |
+            Where-Object { $_.FullName -match 'Hostx64\\x64' } | Select-Object -First 1
+          if ($null -eq $lib) { throw "lib.exe was not found under $vsroot." }
+          $tooldir = Split-Path -Parent $lib.FullName
+          # dumpbin lives beside lib.exe and loads its own DLLs from there, so
+          # the directory goes on PATH rather than the executable being called
+          # by a bare full path.
+          $env:PATH = "$tooldir;$env:PATH"
+          Write-Host "MSVC tools: $tooldir"
+
+          New-Item -ItemType Directory -Force -Path implib | Out-Null
+          $defPath = "${{ steps.mpv.outputs.def }}"
+          $dllName = "${{ steps.mpv.outputs.dllname }}"
+
+          if ([string]::IsNullOrWhiteSpace($defPath)) {
+            Write-Host "Deriving the export list from $dllName with dumpbin."
+            $raw = & dumpbin /EXPORTS "${{ steps.mpv.outputs.dll }}" 2>&1 | Out-String
+            if ($LASTEXITCODE -ne 0) { throw "dumpbin exited $LASTEXITCODE`n$raw" }
+
+            # dumpbin's export table is four columns -- ordinal, hint, RVA,
+            # name -- and only rows matching that exact shape are taken. A
+            # looser pattern would sweep in the header and summary lines and
+            # produce a .def full of words that are not symbols, which
+            # lib.exe accepts and which then fails at link time with an error
+            # naming a symbol nobody wrote.
+            $names = @()
+            foreach ($line in ($raw -split "`r?`n")) {
+              if ($line -match '^\s+\d+\s+[0-9A-Fa-f]+\s+[0-9A-Fa-f]{8}\s+(\S+)\s*$') {
+                $names += $Matches[1]
+              }
+            }
+            $names = $names | Sort-Object -Unique
+
+            # A FLOOR, NOT A NON-EMPTY CHECK. dumpbin changing its output
+            # format would yield a handful of accidental matches rather than
+            # zero, and a .def with four symbols in it links fine right up
+            # until the first call that is not one of them. libmpv's client
+            # API is some dozens of exports; 40 is comfortably below the real
+            # number and far above anything a parse accident produces.
+            if ($names.Count -lt 40) {
+              throw "Parsed only $($names.Count) exports from $dllName, which is too few to be the libmpv client API -- the dumpbin output format has probably changed. Raw output follows.`n$raw"
+            }
+            Write-Host "parsed $($names.Count) exports, including: $(($names | Select-Object -First 5) -join ', ') ..."
+            if ($names -notcontains "mpv_create") {
+              throw "The export list has $($names.Count) entries but no mpv_create, so whatever was parsed is not the libmpv client API."
+            }
+
+            $defPath = "implib\mpv.def"
+            @("EXPORTS") + $names | Out-File -FilePath $defPath -Encoding ascii
+          } else {
+            Write-Host "Using the .def shipped in the package: $defPath"
+          }
+
+          # `/NAME:` must be the DLL the process will actually load at runtime.
+          # Give it anything else and the import table points at a file that is
+          # not there -- a clean link and a failure at startup.
+          & lib "/def:$defPath" "/name:$dllName" "/out:implib\mpv.lib" "/MACHINE:X64"
+          if ($LASTEXITCODE -ne 0) { throw "lib.exe exited $LASTEXITCODE" }
+          if (-not (Test-Path -LiteralPath "implib\mpv.lib")) { throw "lib.exe reported success and produced no mpv.lib" }
+          Write-Host "import library: $((Resolve-Path 'implib\mpv.lib').Path)"
+          "dir=$((Resolve-Path implib).Path)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          exit 0  # PL-0733: a pwsh step's exit code is $LASTEXITCODE at body end
+
+      # ----------------------------------------------------------------------
+      # THE BUILD
+      # ----------------------------------------------------------------------
+      #
+      # `--locked` on every cargo step, for the reason desktop-shell-ci.yml
+      # gives: without it Cargo may quietly update the lockfile to satisfy a
+      # resolution, which would mean CI verifying a graph that is not the
+      # committed one.
+      - name: Clippy, warnings denied
+        run: cargo clippy --locked --all-targets -- -D warnings
+
+      - name: Build the harness, linking against libmpv
+        shell: pwsh
+        env:
+          RUSTFLAGS: -L native=${{ steps.implib.outputs.dir }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          cargo build --locked --release
+          if ($LASTEXITCODE -ne 0) { throw "cargo build exited $LASTEXITCODE" }
+          exit 0  # PL-0733: a pwsh step's exit code is $LASTEXITCODE at body end
+
+      # A build that produced no binary is a build that failed quietly, and
+      # this is the one claim the artifact rests on.
+      - name: Assemble the hand-over directory
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $exe = "target\release\exp-1c.exe"
+          if (-not (Test-Path -LiteralPath $exe)) { throw "cargo reported success and produced no $exe" }
+
+          New-Item -ItemType Directory -Force -Path out | Out-Null
+          Copy-Item $exe out\
+          Copy-Item "${{ steps.mpv.outputs.dll }}" out\
+          Copy-Item README.md out\
+          Copy-Item RESULTS-TEMPLATE.md out\
+          Copy-Item collect-evidence.cmd out\
+          Copy-Item collect-evidence.ps1 out\
+
+          # The provenance file travels INSIDE the directory, not only in this
+          # log, because the directory is what gets unzipped onto a machine six
+          # weeks from now and the log is what nobody can open without a login.
+          $lines = @(
+            "Experiment 1c harness - what is in this directory and where it came from",
+            "",
+            "Built by .github/workflows/experiment-1c.yml",
+            "  repository   ${{ github.repository }}",
+            "  commit       ${{ github.sha }}",
+            "  run          ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+            "  built at     $([DateTimeOffset]::UtcNow.ToString('u'))",
+            "",
+            "exp-1c.exe",
+            "  sha256       $((Get-FileHash -Algorithm SHA256 $exe).Hash.ToLower())",
+            "  UNSIGNED. SmartScreen will warn. That warning is correct: nothing has",
+            "  signed this and this project holds no Authenticode certificate.",
+            "",
+            "$((Get-Item '${{ steps.mpv.outputs.dll }}').Name)",
+            "  source       ${{ steps.mpv.outputs.url }}",
+            "  archive sha  ${{ steps.mpv.outputs.sha256 }}",
+            "  dll sha256   $((Get-FileHash -Algorithm SHA256 '${{ steps.mpv.outputs.dll }}').Hash.ToLower())",
+            "",
+            "  THIS IS A THIRD-PARTY, GPL-LICENSED mpv BUILD. It is here because",
+            "  docs/DESKTOP_PLAYBACK.md section 10 specifies this experiment with",
+            "  'no LGPL build' on purpose, so that a compositing failure cannot be",
+            "  confused with a fault in our own libmpv. It is NOT the section 9 LGPL",
+            "  build, it is NOT a component of Project Liberty, it must NOT be",
+            "  redistributed as part of any Liberty artifact, and nothing about it",
+            "  bears on codec patent authorization.",
+            "",
+            "WHAT THIS BINARY TESTS",
+            "  One DirectComposition visual tree: mpv's COMPOSITION swapchain",
+            "  (--d3d11-output-mode=composition) as the bottom visual's content, and",
+            "  WebView2's composition visual (CreateCoreWebView2CompositionController +",
+            "  SetRootVisualTarget) above it. Neither layer owns a window. This is NOT",
+            "  Experiment 1a's arrangement, which was a child HWND beneath a WINDOWED",
+            "  WebView2 controller and which FAILED on real hardware.",
+            "",
+            "TWO RUNTIME PRECONDITIONS CI CANNOT CHECK, both reported by name in",
+            "exp-1c-diagnostic.log on the machine that runs this:",
+            "  1. The WebView2 Evergreen runtime must offer ICoreWebView2Environment3.",
+            "     Composition hosting does not exist below environment version 3.",
+            "  2. The libmpv next to this exe must support --d3d11-output-mode=",
+            "     composition (mpv 0.41.0+). The pinned package above does; a",
+            "     substituted one might not.",
+            "  A run that fails either is a RUNTIME VERSION result and NOT a result",
+            "  about compositing. Do not record Experiment 1c either way on one.",
+            "",
+            "A GREEN BUILD IS NOT A PASS. This job did not run the binary. All eight",
+            "pass criteria are things a person has to look at, and the OS/GPU/DPI",
+            "matrix in docs/DESKTOP_PLAYBACK.md section 10 is unmet by one machine."
+          )
+          $lines | Out-File -FilePath out\PROVENANCE.txt -Encoding utf8
+          Get-Content out\PROVENANCE.txt
+          exit 0  # PL-0733: a pwsh step's exit code is $LASTEXITCODE at body end
+
+      - name: Upload the harness
+        uses: actions/upload-artifact@v4
+        with:
+          name: exp-1c-harness-${{ github.sha }}
+          path: experiments/exp-1c/out/
+          if-no-files-found: error
+          retention-days: 90

@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Experiment 1c</title>
+<style>
+  /* TRANSPARENT ALL THE WAY DOWN. If any of these three were opaque the video
+     would be hidden by the page rather than by the compositing arrangement,
+     and the experiment would be measuring its own HTML. */
+  html, body { margin: 0; height: 100%; background: transparent; }
+
+  /* CRITERION 2 IS THIS ELEMENT. A translucent gradient across the whole
+     viewport. If composition works the video underneath is visibly TINTED by
+     it -- magenta at the top left, cyan at the bottom right -- and the moving
+     picture still shows through. If the video is hidden, or if the tint is
+     flat colour over black, criterion 2 has failed. */
+  #tint {
+    position: fixed; inset: 0; pointer-events: none;
+    background: linear-gradient(135deg,
+      rgba(255, 0, 170, 0.35) 0%,
+      rgba(255, 0, 170, 0.10) 40%,
+      rgba(0, 220, 255, 0.10) 60%,
+      rgba(0, 220, 255, 0.35) 100%);
+  }
+
+  /* A hard-edged frame, so "the video is there but offset" and "there is no
+     video" look different. The video should fill this exactly. */
+  #frame {
+    position: fixed; inset: 8px; pointer-events: none;
+    border: 2px dashed rgba(255, 255, 255, 0.55);
+  }
+
+  .panel {
+    position: fixed; left: 24px; top: 24px; max-width: 46ch;
+    padding: 14px 16px; border-radius: 10px;
+    background: rgba(8, 10, 18, 0.55);
+    backdrop-filter: blur(6px);
+    color: #eef2ff; font: 13px/1.5 system-ui, Segoe UI, sans-serif;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  }
+  h1 { margin: 0 0 6px; font-size: 14px; letter-spacing: .01em; }
+  .hint { margin: 0 0 10px; color: #a8b3cf; font-size: 12px; }
+  button {
+    font: inherit; padding: 7px 14px; border-radius: 7px; cursor: pointer;
+    border: 1px solid rgba(255,255,255,.35);
+    background: rgba(255,255,255,.12); color: inherit;
+  }
+  button:hover { background: rgba(255,255,255,.22); }
+  button:active { transform: translateY(1px); }
+
+  /* Criterion 3 has a second half: the click must reach the HOST, not just
+     the page. This counter proves the page saw the click even if mpv did
+     not, which separates "input never arrived" from "input arrived and mpv
+     refused". */
+  .clicks { margin-top: 8px; color: #a8b3cf; font-size: 12px; }
+
+  table { margin-top: 10px; border-collapse: collapse; font-size: 12px; }
+  td { padding: 1px 10px 1px 0; vertical-align: top; }
+  td:first-child { color: #93a0bd; white-space: nowrap; }
+  td:last-child { font-variant-numeric: tabular-nums; }
+
+  /* A CSS animation, so a frozen compositor is visible at a glance: if this
+     stops spinning the whole webview has stalled, which is a different
+     failure from the video not appearing. */
+  .spin {
+    display: inline-block; width: 10px; height: 10px; margin-left: 8px;
+    border: 2px solid rgba(255,255,255,.3); border-top-color: #fff;
+    border-radius: 50%; animation: spin 1s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .bad { margin-top: 10px; padding: 8px 10px; border-radius: 6px;
+         background: rgba(190, 30, 50, .85); font-size: 12px; }
+</style>
+</head>
+<body>
+  <div id="tint"></div>
+  <div id="frame"></div>
+
+  <div class="panel">
+    <h1>Experiment 1c — DirectComposition<span class="spin"></span></h1>
+    <p class="hint">
+      The magenta-to-cyan wash should <strong>tint</strong> the moving picture,
+      not cover it. The dashed frame is where the video should sit.
+    </p>
+    <button id="pause">Pause / resume</button>
+    <div class="clicks">clicks seen by this page: <span id="clicks">0</span></div>
+    <div class="bad" id="bad" hidden></div>
+    <table><tbody id="props"></tbody></table>
+  </div>
+
+<script>
+  // No framework, no bundler, no network. Inline is safe here because this
+  // page is navigated to with NavigateToString and there is no CSP to satisfy
+  // -- unlike Experiment 1a, which loaded from a Tauri asset origin under
+  // `default-src 'self'` and therefore had to keep its script external.
+  var clicks = 0;
+  var host = (window.chrome && window.chrome.webview) || null;
+
+  document.getElementById('pause').addEventListener('click', function () {
+    clicks += 1;
+    document.getElementById('clicks').textContent = String(clicks);
+    if (host) { host.postMessage('toggle-pause'); }
+  });
+
+  if (!host) {
+    var bad = document.getElementById('bad');
+    bad.hidden = false;
+    bad.textContent =
+      'window.chrome.webview is missing, so this page cannot reach the host. '
+      + 'Criteria 3 and 7 cannot be observed on this run.';
+  } else {
+    host.addEventListener('message', function (event) {
+      var data = event.data || {};
+      if (data.error) {
+        var bad = document.getElementById('bad');
+        bad.hidden = false;
+        bad.textContent = data.error;
+      }
+      var rows = data.props;
+      if (!rows) { return; }
+      var body = document.getElementById('props');
+      // Nodes, not innerHTML: mpv property values are external strings and
+      // this page should not be the place that learns why that matters.
+      while (body.firstChild) { body.removeChild(body.firstChild); }
+      for (var i = 0; i < rows.length; i += 1) {
+        var tr = document.createElement('tr');
+        var name = document.createElement('td');
+        name.textContent = rows[i][0];
+        var value = document.createElement('td');
+        value.textContent = rows[i][1];
+        tr.appendChild(name);
+        tr.appendChild(value);
+        body.appendChild(tr);
+      }
+    });
+  }
+</script>
+</body>
+</html>
