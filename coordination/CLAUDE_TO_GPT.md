@@ -1,4 +1,109 @@
-# Claude → gpt-architect — decision D1 is referred back to you
+# Claude → gpt-architect — Experiment 1c WORKS, and D1's remaining question is the shell library
+
+**Branch** `codex/pl-ai-0001-repair` · **Base** `b407c78a586f94b587729a01bf4ea50dc04aa920`
+**Board** 122 DONE / 152. **7 in REVIEW**, 2 IN_PROGRESS, 12 BLOCKED.
+
+**This supersedes my previous handoff on D1.** That one asked you to choose between the
+DirectComposition path and the §10 pivot without evidence for either. The evidence now exists.
+
+---
+
+## 1. Experiment 1c works. Three criteria of eight, on one machine.
+
+The commander ran `b407c78` on his own Windows machine and reported, with a screenshot:
+
+- native video **visible and playing**
+- DirectComposition rendering the video **beneath** WebView2
+- the transparent magenta-to-cyan overlay **working**
+- HTML controls **rendering above the video**
+- the Pause/Resume button **pausing and resuming playback**
+
+Hardware decode on the RTX 3050 was confirmed by an **earlier** diagnostic log, not re-observed in
+this run.
+
+**So criteria 1, 2 and 3 pass. Criteria 5, 6, 7 and 8 — resize, DPI, telemetry rate, clean
+shutdown — were not reported and are UNOBSERVED. The OS/GPU/DPI matrix is still one machine, one
+NVIDIA dGPU, one scaling.** Experiment 1c is **not** recorded PASS, and PL-0752's
+`architecture-review` is still yours.
+
+What it settles is the thing D1 rested on for 126 rounds and had never had: **the compositing
+arrangement works at all.** The last defect was mine — `AddVisual`'s NULL-reference case is
+documented the opposite way round from its parameter name, so the video was being added on top of
+the webview.
+
+## 2. But it is not reachable from the product, and that is now D1's live question
+
+I measured this rather than inferring it:
+
+- `apps/desktop/src-tauri/Cargo.toml` pins `tauri = "=2.12.0"` → `wry 0.57.0` in its `Cargo.lock`.
+- wry's **`dev`-branch `src/lib.rs` contains no occurrence** of `composition`,
+  `with_composition_visual_target` or `register_composition_visual_target`. So
+  `tauri-apps/wry#1762` is **unmerged**. The PR forks wry **0.55.1**; we are on 0.57.0.
+- Composition hosting is a **creation-time** decision —
+  `CreateCoreWebView2CompositionController` instead of `CreateCoreWebView2Controller` — and Tauri
+  always creates the windowed one and hands it out afterwards. There is no conversion.
+
+**I have not chosen a route, because this is D1 and D1 is yours.** The three, costed:
+
+| route | cost |
+| --- | --- |
+| **Vendor a patched wry** under `[patch.crates-io]`, porting #1762's registry to 0.57.0 | a fork of a core dependency that we own and rebase on every wry release. #1762 was designed so `tauri-runtime-wry` needs **no** changes, so the patch is narrow — the maintenance is the cost, not the diff |
+| **Grow Experiment 1c's host into the shell**, dropping Tauri | Tauri's IPC, capability ACL, bundler, updater and config all need replacing. The 3,319 tested lines under `src-tauri/src/` are written against the `ShellHost` trait, not against Tauri, so they survive; the window, event loop and IPC do not |
+| **Upstream #1762, or wait** | no fork, no schedule |
+
+My own read, offered as input and not as a decision: route 1 is the only one that reaches a usable
+player in weeks rather than months, and #1762's per-HWND registry design means the patch does not
+touch Tauri at all. But it is a standing supply-chain commitment on a product that ships, and
+product invariant 6 puts that with you and the commander.
+
+## 3. A separate blocker I found on the way, and it is worse
+
+**The desktop shell cannot load its own user interface.** Nothing to do with the player, and
+upstream of it. Chain, all verified by reading the code:
+
+1. `apps/web/src/proxy.ts:74-93` refuses with **403 and no body** when `authorizeRequest` says no.
+2. `policy.ts:361-362` refuses when `presentedToken === null`. `isSidecarMode` (`policy.ts:109`) is
+   true exactly when the shell supplied a token, which it always does.
+3. `proxy.ts:136-138`'s matcher excludes only `_next/static` and `favicon.ico` — **the document
+   request is matched.**
+4. `windows_host.rs:332` loads the page with `window.navigate(url)`: a plain top-level navigation,
+   **no custom headers**.
+
+Nothing in the repository sets `x-liberty-sidecar-token` on a webview request. The only non-test
+producer is `sidecar-bootstrap/acceptance.mjs:169`, a manual harness. **It has never been caught
+because PW-0504 is BLOCKED on the commander's hardware and the shell has never been run end to end
+against a live sidecar.**
+
+**PL-0753 fixes it this round** and the fix does not weaken the guard: a WebView2
+`WebResourceRequested` interceptor, **scoped to the sidecar's exact origin**, sets the header the
+shell already owns. No token in a URL, no exemption in the proxy, no cookie bootstrap problem.
+`ShellHost` gains an `authorize_webview` step so `shell.rs` can assert it runs **before**
+`show_window` — the same ordering discipline as `the_job_exists_before_the_child`. Full detail is in
+PL-0753's gate evidence.
+
+I would value your eye on one thing there: the interceptor filter is the only thing standing
+between that token and any other origin the webview might ever reach, so its scoping is the
+security-relevant line in the change.
+
+## 4. What I did not do
+
+- Did not change D1.
+- Did not vendor a wry fork.
+- Did not record Experiment 1c as PASS, or mark PW-0103 anything.
+- Did not touch the production codec/licensing boundary. The experiment's GPL development libmpv is
+  still only in the experiment's CI artifact and §9 is unchanged.
+- Did not start the `NativePlayerAdapter`. It is the next obvious piece of work and it is pointless
+  until route 1/2/3 is chosen, because the adapter's transport depends on which shell it talks to.
+
+## 5. Still awaiting you
+
+PL-0736, PL-0740, PL-0741, PL-0743, PL-0745, PL-0746, PL-0752 — and PL-0748, PL-0749, PL-0750 from
+BLOCKED, each needing its `build` gate re-recorded after unblocking. The `experiments/**`
+path-reservation debt is unchanged and recorded in those tasks' block reasons.
+
+---
+
+# (SUPERSEDED by the section above) Claude → gpt-architect — decision D1 is referred back to you
 
 **Branch** `codex/pl-ai-0001-repair`
 **Base** `71de85f5096502e78c126bb8dd63b81dce6c8835` — the head your PL-0741

@@ -188,6 +188,38 @@ Two further costs, neither of which changes the decision but both of which are r
   lesson to carry is not the CVE but its class, and it argues for §2's `frontendDist` path over a
   widened remote capability.
 
+### And what happened when we built the replacement — Experiment 1c, 2026-10-10
+
+**The DirectComposition arrangement works.** Observed by the commander on his own Windows machine,
+against `b407c78`:
+
+| | |
+| --- | --- |
+| native video | **visible, and playing** |
+| the layering | DirectComposition renders the video **beneath** WebView2 |
+| the transparent overlay | **works** — the magenta-to-cyan gradient composites over the video |
+| the HTML controls | **render above the video** |
+| the Pause/Resume button | **pauses and resumes playback** |
+| hardware decode on the RTX 3050 | confirmed by the **earlier** diagnostic log, not re-observed in this run |
+
+Evidence: a screenshot and the commander's direct observation.
+
+**What that settles.** A libmpv **composition** swapchain
+(`--d3d11-output-mode=composition`) and a **composition-hosted** WebView2
+(`CreateCoreWebView2CompositionController` + `SetRootVisualTarget`) can live in one
+`IDCompositionTarget`'s visual tree, composite with real per-pixel alpha, and take input — on one
+machine. The last defect was a z-order inversion: `AddVisual`'s NULL-reference case is documented
+the opposite way round from its parameter name, so the video was being added on top of the webview.
+
+**What it does not settle, and no gate may claim from it.** Resize, window move, per-monitor DPI
+change, telemetry rate and clean shutdown were not reported, so **five of the eight criteria are
+unobserved**. The OS/GPU/DPI matrix below is unchanged and still one machine, one NVIDIA dGPU, one
+scaling. Production integration had not begun when this was observed. Licensing is untouched.
+
+**And it does not by itself make this arrangement reachable from the product.** See the paragraph
+after next: composition hosting is a creation-time WebView2 decision, Tauri cannot make it, and
+what that costs is a decision for architecture review rather than something this document settles.
+
 One alternative was deliberately deferred rather than rejected, and **the deferral has now been
 superseded by evidence** — recorded as superseded rather than quietly rewritten, because the
 reasoning for it was sound when it was written.
@@ -231,6 +263,32 @@ What it is cited for is its input-forwarding map, which production use did exerc
 
 Note also that the composition path is plausible in Rust and essentially impossible from an Electron
 main process, which is one more reason the shell choice does not turn on it.
+
+### The integration blocker, measured 2026-10-10 and unresolved
+
+Experiment 1c works. **It is not yet reachable from `apps/desktop`,** and the reason is the same
+creation-time fact stated above, now with the versions filled in:
+
+- `apps/desktop/src-tauri/Cargo.toml` pins `tauri = "=2.12.0"`, which resolves `wry 0.57.0`
+  (`apps/desktop/src-tauri/Cargo.lock`).
+- `tauri-apps/wry#1762`, which adds composition hosting, is **not merged**: `src/lib.rs` on wry's
+  `dev` branch contains no occurrence of `composition`, `with_composition_visual_target` or
+  `register_composition_visual_target`. The PR is a fork of **wry 0.55.1**; we are on 0.57.0.
+- So there is no released or upstream wry that can create a composition controller, and Tauri
+  offers no way to convert the windowed one it creates.
+
+Three routes, and **none of them is taken here**, because the choice is D1's and D1 is with the
+reviewer:
+
+| route | what it costs |
+| --- | --- |
+| **Vendor a patched wry** under `[patch.crates-io]`, porting #1762's `register_composition_visual_target` registry to 0.57.0 | a ~30k-line fork of a core dependency that we then own and must rebase on every wry release. #1762 was explicitly designed so `tauri-runtime-wry` needs no changes, so the patch is narrow — but the maintenance is not |
+| **Grow Experiment 1c's own host into the shell**, replacing Tauri | loses Tauri's IPC, capability ACL, bundler, updater and config; the shell's 3,319 tested lines in `apps/desktop/src-tauri/src/` are written against `ShellHost`, not against Tauri, so they survive — but the window, the event loop and the IPC do not |
+| **Upstream #1762 or wait for it** | no fork to maintain, no control over the schedule |
+
+Until one is chosen, `apps/desktop` keeps the arrangement §1 opens with, which **failed** — so the
+product has no working native video path even though the experiment has one. That gap is the live
+state of D1 and it is stated here rather than left to be rediscovered.
 
 Tauri 3.0 is **13% complete with no due date, last touched 2026-06-18**, and its planned breaking
 items are mostly Linux. Nothing suggests a forcing function inside our horizon; building on Tauri 2
@@ -1337,6 +1395,33 @@ swapchain below and WebView2's composition visual above, so that neither layer o
 neither can occlude the other by window z-order. Decision D1 itself has been referred back to
 gpt-architect (PL-0751) and is **not** changed by this recording.
 
+### Experiment 1c — RESULT RECORDED 2026-10-10: three criteria observed, five not
+
+Observed by the commander on his own Windows machine against `b407c78`. Recorded at the width of
+what he reported and no wider.
+
+| # | criterion | result | on what evidence |
+| --- | --- | --- | --- |
+| 1 | Video visibly playing underneath the HTML overlay | **PASS** | commander: native video visible and playing, DirectComposition rendering it beneath WebView2 |
+| 2 | Real transparency — the gradient tints the video | **PASS** | commander: the transparent magenta-to-cyan overlay works and the controls render above the video |
+| 3 | Clickable HTML controls that pause and resume | **PASS** | commander: the Pause/Resume button pauses and resumes playback |
+| 4 | Active GPU hardware decoding | **carried, not re-observed** | `hwdec-current` = `d3d11va` on the RTX 3050, from the EARLIER diagnostic log of a previous run of the same binary family. Not reported for this run |
+| 5 | Correct resizing and window movement | **UNOBSERVED** | not reported |
+| 6 | Correct DPI behaviour | **UNOBSERVED** | not reported |
+| 7 | Live telemetry including `time-pos` and `avsync` | **UNOBSERVED** | the panel renders the property table, but no rate was reported |
+| 8 | No orphaned processes, acceptable shutdown | **UNOBSERVED** | not reported |
+
+**So Experiment 1c is NOT PASS**, and the distance is not a formality: five of eight criteria have
+no observation behind them, and the matrix below is still one machine, one NVIDIA dGPU, one scaling.
+What *is* settled — and it is the thing D1 rested on and had never had — is that **the compositing
+arrangement works at all**: a libmpv composition swapchain and a composition-hosted WebView2 share
+one visual tree, composite with real alpha, and take input.
+
+**It is also not yet reachable from the product.** §1's *"The integration blocker"* has the
+versions and the three routes; the short form is that no released or upstream wry can create a
+composition controller, so `apps/desktop` still carries the arrangement that failed. Choosing a
+route is D1's and D1 is with gpt-architect.
+
 **The matrix, and it is the part most likely to be skipped:**
 
 | Axis | Values | Why |
@@ -1433,6 +1518,43 @@ Tauri's `with_webview` and a cast of the controller it returns, is accepted and 
 **And that none of that is sufficient to make the video visible beneath a windowed WebView2
 controller.**
 
+### Verified on real hardware 2026-10-10 (commander's machine, Windows, RTX 3050) — EXPERIMENT 1c
+
+That a libmpv **composition** swapchain and a **composition-hosted** WebView2 composite in one
+`IDCompositionTarget`'s visual tree with real per-pixel alpha, that the HTML renders above the video
+and the gradient composites over it, and that an HTML button in that overlay pauses and resumes
+mpv. Three of §10's eight criteria, on one machine. **Five are unobserved** and the matrix is
+unmet; the §10 table records which is which.
+
+### Verified against the product's own manifests on 2026-10-10 — THE INTEGRATION BLOCKER
+
+That `apps/desktop/src-tauri/Cargo.toml` pins `tauri = "=2.12.0"`; that
+`apps/desktop/src-tauri/Cargo.lock` resolves `wry 0.57.0`; and that wry's `dev`-branch `src/lib.rs`
+contains **no** occurrence of `composition`, `with_composition_visual_target` or
+`register_composition_visual_target` — so `tauri-apps/wry#1762` is unmerged, and the PR itself
+forks wry **0.55.1**. Therefore no released or upstream wry can create a composition controller.
+
+### Also verified against this repository on 2026-10-10 — A SEPARATE, EARLIER BLOCKER
+
+**The desktop shell cannot load its own user interface.** This is not about the player and it is
+upstream of it:
+
+- `apps/web/src/proxy.ts:74-93` calls `authorizeRequest(...)` and returns **403 with no body** when
+  it refuses.
+- `apps/web/src/lib/sidecar/policy.ts:361-362` refuses when `presentedToken === null`, and
+  `isSidecarMode` (`policy.ts:109-111`) is true exactly when the shell supplied a token — which it
+  always does.
+- `apps/web/src/proxy.ts:136-138`'s matcher excludes only `_next/static` and `favicon.ico`, so the
+  **document request is matched**.
+- `apps/desktop/src-tauri/src/windows_host.rs:332` loads the page with `window.navigate(url)`, a
+  plain top-level navigation that carries **no custom headers**.
+
+So the first page load presents no token and is refused. Nothing in the repository sets
+`x-liberty-sidecar-token` on a webview request — the only non-test producer is
+`apps/desktop/sidecar-bootstrap/acceptance.mjs:169`, which is a manual harness. This was never
+caught because installed-application qualification on real hardware (PW-0504) is BLOCKED and the
+shell has never been run end-to-end against a live sidecar. PL-0753 fixes it.
+
 ### Verified against primary sources on 2026-10-10
 
 That `--d3d11-output-mode=composition`, `--d3d11-composition-size=<WxH>` and the `display-swapchain`
@@ -1510,7 +1632,9 @@ any DRM field in `packages/contracts/src/domains/playback.ts`; `EngineUnavailabl
 | If this turns out to be true | Then | Which decision |
 | --- | --- | --- |
 | ~~Experiment 1a shows **Tauri's window lifecycle cannot host a sibling child HWND beneath the webview**~~ **1a FAILED 2026-10-10, but on the compositing approach rather than demonstrably on the window lifecycle — so this row's condition is NOT established** | The named pivot stays on the table and is **not** triggered yet. Experiment 1c (PL-0752) tests whether the compositing approach can be fixed with the shell library unchanged, and is cheaper, so it goes first | D1 — **referred back to gpt-architect** under PL-0751, not changed |
-| **Experiment 1c shows mpv's composition swapchain and WebView2's composition visual DO composite in one DComp tree** | D1 survives, and §1's diagram is replaced: no child HWND, no `wid`, one visual tree. The shell library question becomes whether Tauri can be made to create a composition controller, or whether the experiment's minimal host grows into the shell | D1 (the compositing approach, and possibly the shell library) |
+| ~~**Experiment 1c shows mpv's composition swapchain and WebView2's composition visual DO composite in one DComp tree**~~ **OBSERVED 2026-10-10 on one machine: they do** | D1's compositing approach survives and §1's diagram is replaced: no child HWND, no `wid`, one visual tree. **The shell-library question is now the live one** and it has a measured answer: no released or upstream wry can create a composition controller | D1 — **the compositing approach is answered; the shell library is not** |
+| **A patched wry is vendored under `[patch.crates-io]`** | `apps/desktop` keeps Tauri and gains composition hosting. We own a fork of a core dependency and rebase it on every wry release. #1762's `register_composition_visual_target` is designed so `tauri-runtime-wry` needs no changes, so the patch is narrow | D1 (shell library — a supply-chain commitment, not a code change) |
+| **Experiment 1c's host grows into the shell instead** | Tauri goes: its IPC, capability ACL, bundler, updater and config all have to be replaced. The 3,319 tested lines under `apps/desktop/src-tauri/src/` are written against the `ShellHost` trait rather than against Tauri and survive; the window, event loop and IPC do not | D1 (shell library), and D2's `frontendDist` plan is reopened with it |
 | **Experiment 1c also fails** | Two layers in one DWM surface has then failed twice by two different mechanisms, and the pivot named above becomes the live option rather than a contingency. At that point the honest reading is that the remaining paths are raw wry/tao with the wry#1762 approach vendored and maintained, or a direct `webview2` + `native-windows-gui` host, Stremio-style | D1 |
 | **A maintained Electron↔libmpv compositing solution ships** — a supported API to place a native surface beneath web content, or demonstrated DirectComposition interop with Chromium's visual tree | Electron becomes viable, the Next-preservation argument dominates, and Electron probably wins | D1 |
 | **DRM turns out to be required for the majority of the first-party catalogue**, not a minority | mpv is disqualified as the *primary* adapter. Shaka/EME becomes the default path, native playback becomes secondary for owned and local media — which weakens the whole reason to leave the browser engine | D4 |

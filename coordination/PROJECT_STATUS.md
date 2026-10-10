@@ -1,8 +1,8 @@
 # Project Liberty - Project Status
 
-> Generated 2026-10-10T16:24:22.046Z from the AI control plane.
+> Generated 2026-10-10T17:02:46.246Z from the AI control plane.
 
-**Overall completion:** 122/151 executable tasks (81%)
+**Overall completion:** 122/152 executable tasks (80%)
 
 ## Status summary
 
@@ -10,7 +10,7 @@
 - **READY:** 2
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 0
-- **REVIEW:** 8
+- **REVIEW:** 9
 - **BLOCKED:** 12
 - **DONE:** 122
 - **CANCELED:** 0
@@ -39,6 +39,7 @@
 - **PL-0746** [REVIEW] desktop-shell-ci.yml is the one workflow with no timeout at all — owner: claude-infra
 - **PL-0751** [REVIEW] Experiment 1a FAILED on real hardware and D1 still reads as if it had not been tested — owner: claude-lead
 - **PL-0752** [REVIEW] Experiment 1c: can mpv composite beneath WebView2 in one DirectComposition visual tree — owner: claude-media
+- **PL-0753** [REVIEW] The desktop shell cannot load its own user interface: every page load is refused 403 — owner: claude-infra
 
 ## Dispatch classification
 
@@ -137,5 +138,5 @@ UNBLOCK WHEN: gpt-architect's verdict on this task arrives, or Experiment 1c has
 - **claude-media:** 0/2 capacity in use, 1 active (1 parked for an external reviewer)
 - **claude-test:** 0/3 capacity in use, 1 active (1 parked for an external reviewer)
 - **claude-security:** 0/1 capacity in use
-- **claude-infra:** 0/5 capacity in use, 3 active (3 parked for an external reviewer)
+- **claude-infra:** 0/5 capacity in use, 4 active (4 parked for an external reviewer)
 - **human-commander:** 0/99 capacity in use (external lane; not locally executable)

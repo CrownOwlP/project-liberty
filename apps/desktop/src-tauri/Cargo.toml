@@ -71,6 +71,19 @@ tauri-build = { version = "=2.7.0", features = [] }
 # the version was determined and not about Tauri.
 tauri = { version = "=2.12.0", features = [] }
 # The Job Object is the whole reason this one exists; see `src/job.rs`.
+# PL-0753. The webview has to PRESENT the per-launch token, because
+# `apps/web/src/proxy.ts` refuses every request that does not carry
+# `x-liberty-sidecar-token` and a top-level navigation carries no headers --
+# so before this the first page load was a 403 with no body and the window
+# showed nothing. `ICoreWebView2::AddWebResourceRequestedFilter` plus
+# `add_WebResourceRequested` is how the shell sets a header on a request the
+# webview makes; `webview2-com` carries the handler wrapper so there is no
+# hand-written COM vtable, and `windows` carries `Interface::cast` and the
+# string types. BOTH ARE ALREADY IN Cargo.lock AT THESE EXACT VERSIONS as
+# tauri 2.12.0's own dependencies, so `--locked` resolves with no version
+# moving.
+webview2-com = "=0.39.1"
+windows = { version = "=0.62.2", features = ["Win32_Foundation"] }
 windows-sys = { version = "=0.61.2", features = [
   "Win32_Foundation",
   "Win32_System_JobObjects",

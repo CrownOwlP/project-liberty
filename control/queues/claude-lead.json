@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-10T16:24:22.050Z",
+  "generatedAt": "2026-10-10T17:02:46.250Z",
   "agent": "claude-lead",
   "executionAvailable": true,
   "assigned": [
@@ -63,7 +63,7 @@
       "notes": "FILED 2026-10-10 on the commander's instruction after the third real-hardware run. This task is documentation and referral ONLY -- it writes no code and makes no architecture decision. The replacement experiment is PL-0752 and is deliberately a separate task with a separate path, so that a failure of the new experiment cannot retroactively muddy the recording of the old one's result.",
       "owner": "claude-lead",
       "implementationAgent": "claude-lead",
-      "updatedAt": "2026-10-10T15:22:00.254Z",
+      "updatedAt": "2026-10-10T16:56:07.311Z",
       "implementationBaseSha": "71de85f5096502e78c126bb8dd63b81dce6c8835"
     }
   ],

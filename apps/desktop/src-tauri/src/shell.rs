@@ -52,10 +52,29 @@ pub enum HandshakeOutcome {
 
 /// Everything the assembly needs the platform to do.
 ///
-/// NOTHING IN THIS TRAIT TAKES A TOKEN. The token reaches the child inside
+/// EXACTLY ONE METHOD IN THIS TRAIT TAKES A TOKEN, and it is named for what it
+/// does with it.
+///
+/// This comment used to read "NOTHING IN THIS TRAIT TAKES A TOKEN", and that
+/// was true and was wrong. The token reaches the child inside
 /// `SidecarLaunch.env`, which `plan_launch` built and which `launch_arguments`
-/// is asserted never to expose. A `spawn(&SidecarLaunch)` cannot accidentally
-/// put it on a command line, because the command line is not a parameter.
+/// is asserted never to expose -- that part is unchanged, and a
+/// `spawn(&SidecarLaunch)` still cannot accidentally put it on a command line,
+/// because the command line is not a parameter.
+///
+/// What the old comment hid is that the WEBVIEW also has to present that token
+/// and nothing gave it one. `apps/web/src/proxy.ts` refuses every request that
+/// does not carry `x-liberty-sidecar-token`, the matcher excludes only Next's
+/// immutable static output, and `show_window` loads the page with a plain
+/// top-level navigation that carries no headers. So the first page load was
+/// refused with 403 and no body and the window showed nothing. A property
+/// stated as "nothing takes a token" is comfortable; it was also the shape of
+/// the bug.
+///
+/// `authorize_webview` is therefore the one place a token crosses this trait,
+/// its name says so, and `start_once` calls it immediately before
+/// `show_window` so the ordering is a tested property rather than a line
+/// position in the Windows host.
 pub trait ShellHost {
     type Proc: Child;
 
@@ -98,6 +117,23 @@ pub trait ShellHost {
     fn kill(&mut self, child: &mut Self::Proc);
 
     fn await_handshake(&mut self, child: &mut Self::Proc, within: Duration) -> HandshakeOutcome;
+
+    /// Make the webview present `token` on its requests to `origin`, and to
+    /// nowhere else.
+    ///
+    /// CALLED BEFORE `show_window`, AND THAT ORDER IS LOAD-BEARING. Request
+    /// interception applies to requests issued after it is installed, so a
+    /// filter added after the navigation does not cover the document request
+    /// it was added for. `start_once` orders the two calls and
+    /// `the_webview_is_authorized_before_it_is_pointed_at_anything` asserts it.
+    ///
+    /// SCOPED TO `origin`, AND THAT IS THE SECURITY-RELEVANT LINE OF THE WHOLE
+    /// MECHANISM. `origin` comes from the child's own handshake, which
+    /// `handshake::parse` has already refused unless the host is a loopback
+    /// literal. The implementation must attach the token to that origin and to
+    /// nothing else: a filter that matched every URL would hand a per-launch
+    /// secret to every host the webview ever reached.
+    fn authorize_webview(&mut self, origin: &str, token: &str) -> Result<(), String>;
 
     /// Point the webview at the origin and make the window visible. The window
     /// is created hidden, so this is the only thing that shows it.
@@ -270,6 +306,19 @@ fn start_once<H: ShellHost>(
              * already refused any host that is not loopback.
              */
             let origin = ready.origin();
+            /*
+             * BEFORE THE NAVIGATION, NOT AFTER IT. The page the webview is
+             * about to load is refused unless it presents the token this
+             * launch minted, and a request interceptor installed after the
+             * document request has gone out does not apply to it. A failure
+             * here is a startup failure rather than something to carry on
+             * past: carrying on would open the window on a 403 with no
+             * explanation, which is the exact state this step exists to end.
+             */
+            if let Err(detail) = host.authorize_webview(&origin, &token) {
+                host.kill(&mut child);
+                return Err(StartupFailure::BadHandshake(detail));
+            }
             if let Err(detail) = host.show_window(&origin) {
                 host.kill(&mut child);
                 return Err(StartupFailure::BadHandshake(detail));
@@ -322,6 +371,7 @@ mod tests {
         Assign,
         Kill,
         AwaitHandshake,
+        AuthorizeWebview { origin: String, token: String },
         ShowWindow(String),
         SurfaceFailure(String),
         AwaitExit,
@@ -333,6 +383,7 @@ mod tests {
 
     struct Fake {
         calls: RefCell<Vec<Call>>,
+        authorize: Result<(), String>,
         resource_dir: Result<PathBuf, String>,
         data_dir: Result<PathBuf, String>,
         create_directories: Result<(), String>,
@@ -358,6 +409,7 @@ mod tests {
                     host: "127.0.0.1".into(),
                     port: 41999,
                 })]),
+                authorize: Ok(()),
                 show: Ok(()),
                 runs: RefCell::new(vec![Duration::from_secs(3600)]),
                 spawn_ok: true,
@@ -379,6 +431,7 @@ mod tests {
                     Call::Assign => "assign",
                     Call::Kill => "kill",
                     Call::AwaitHandshake => "await_handshake",
+                    Call::AuthorizeWebview { .. } => "authorize_webview",
                     Call::ShowWindow(_) => "show_window",
                     Call::SurfaceFailure(_) => "surface_failure",
                     Call::AwaitExit => "await_exit",
@@ -439,6 +492,14 @@ mod tests {
                 queued[0].clone()
             }
         }
+        fn authorize_webview(&mut self, origin: &str, token: &str) -> Result<(), String> {
+            self.calls.borrow_mut().push(Call::AuthorizeWebview {
+                origin: origin.to_string(),
+                token: token.to_string(),
+            });
+            self.authorize.clone()
+        }
+
         fn show_window(&mut self, origin: &str) -> Result<(), String> {
             self.calls.borrow_mut().push(Call::ShowWindow(origin.to_string()));
             self.show.clone()
@@ -521,6 +582,142 @@ mod tests {
             spawn.1.iter().any(|(name, value)| name == "LIBERTY_SIDECAR_TOKEN" && value == TOKEN),
             "the token must travel in the environment"
         );
+    }
+
+    #[test]
+    fn the_webview_is_authorized_before_it_is_pointed_at_anything() {
+        /*
+         * THE ORDER IS THE WHOLE PROPERTY. `apps/web/src/proxy.ts` refuses
+         * every request that does not carry `x-liberty-sidecar-token`, and its
+         * matcher excludes only Next's immutable static output -- so the
+         * DOCUMENT request is refused too. WebView2's request interception
+         * applies to requests issued after it is installed, so an interceptor
+         * added after the navigation does not cover the navigation. Before
+         * this step existed the window opened on a 403 with no body.
+         */
+        let mut fake = Fake::new();
+        assert_eq!(run_shell(&mut fake, &mint_ok), ShellOutcome::Stopped);
+
+        let names = fake.names();
+        let authorize = names
+            .iter()
+            .position(|n| *n == "authorize_webview")
+            .unwrap_or_else(|| panic!("the webview was never authorized: {names:?}"));
+        let show = names
+            .iter()
+            .position(|n| *n == "show_window")
+            .unwrap_or_else(|| panic!("the window was never shown: {names:?}"));
+        assert!(
+            authorize < show,
+            "the webview must be authorized before it is navigated: {names:?}"
+        );
+    }
+
+    #[test]
+    fn the_webview_is_authorized_for_the_origin_the_child_reported_and_with_the_minted_token() {
+        /*
+         * NOT A GUESS AND NOT A CONSTANT. The origin comes from the child's own
+         * handshake -- there is no port this process chose -- and the token is
+         * the one this launch minted. An implementation that authorized some
+         * other origin would be handing a per-launch secret to a host the
+         * child never named, which is the one thing the scoping exists to
+         * prevent.
+         */
+        let mut fake = Fake::new();
+        assert_eq!(run_shell(&mut fake, &mint_ok), ShellOutcome::Stopped);
+
+        let (origin, token) = fake
+            .calls()
+            .into_iter()
+            .find_map(|c| match c {
+                Call::AuthorizeWebview { origin, token } => Some((origin, token)),
+                _ => None,
+            })
+            .expect("the webview was authorized");
+
+        // The Fake's handshake reports 127.0.0.1:41999.
+        assert_eq!(origin, "http://127.0.0.1:41999");
+        assert_eq!(token, mint_ok().expect("a token"));
+
+        // And the same origin is the one navigated to, so the authorization
+        // cannot be scoped to somewhere the navigation does not go.
+        let shown = fake
+            .calls()
+            .into_iter()
+            .find_map(|c| match c {
+                Call::ShowWindow(url) => Some(url),
+                _ => None,
+            })
+            .expect("the window was shown");
+        assert_eq!(shown, origin);
+    }
+
+    #[test]
+    fn a_webview_that_cannot_be_authorized_refuses_to_start_rather_than_showing_a_refusal() {
+        /*
+         * Carrying on would open the window on a 403 with no body, which is
+         * indistinguishable from the application being broken and is what this
+         * whole step exists to end. The child is killed rather than left
+         * running behind a window nobody can use.
+         */
+        let mut fake = Fake::new();
+        fake.authorize = Err("the webview could not be reached".into());
+        let outcome = run_shell(&mut fake, &mint_ok);
+
+        assert_eq!(outcome, ShellOutcome::FailedToStart);
+        let names = fake.names();
+        assert!(
+            !names.contains(&"show_window"),
+            "no window may be shown on an unauthorized webview: {names:?}"
+        );
+        assert!(names.contains(&"kill"), "the child must be killed: {names:?}");
+        assert!(names.contains(&"surface_failure"), "{names:?}");
+    }
+
+    #[test]
+    fn the_token_still_never_reaches_the_spawn_arguments_now_that_a_method_takes_one() {
+        /*
+         * `authorize_webview` is the ONE place a token crosses this trait, and
+         * adding it must not have loosened the older property beside it. This
+         * is deliberately redundant with `the_token_never_reaches_the_spawn_-
+         * arguments`: that test guards `spawn`, and this one guards the claim
+         * that the new method is the only addition.
+         */
+        let mut fake = Fake::new();
+        assert_eq!(run_shell(&mut fake, &mint_ok), ShellOutcome::Stopped);
+        let token = mint_ok().expect("a token");
+
+        for call in fake.calls() {
+            match call {
+                // The one method that is supposed to have it.
+                Call::AuthorizeWebview { .. } => {}
+                Call::Spawn { args, env } => {
+                    assert!(
+                        !args.iter().any(|a| a.contains(&token)),
+                        "the token reached argv: {args:?}"
+                    );
+                    // It DOES belong in the environment; that is how the child
+                    // gets it. Asserted positively so a silent removal fails.
+                    assert!(
+                        env.iter().any(|(_, value)| value == &token),
+                        "the child was not given the token at all"
+                    );
+                }
+                Call::CreateDirectories(paths) => assert!(
+                    !paths.iter().any(|p| p.to_string_lossy().contains(&token)),
+                    "the token reached a path: {paths:?}"
+                ),
+                Call::ShowWindow(url) => assert!(
+                    !url.contains(&token),
+                    "the token reached the navigated URL: {url}"
+                ),
+                Call::SurfaceFailure(text) => assert!(
+                    !text.contains(&token),
+                    "the token reached a user-visible message: {text}"
+                ),
+                _ => {}
+            }
+        }
     }
 
     #[test]

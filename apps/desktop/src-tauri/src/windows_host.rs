@@ -48,6 +48,96 @@ use crate::sidecar::{launch_arguments, SidecarLaunch};
 /// have something to say.
 pub const FAILURE_EVENT: &str = "liberty://startup-failure";
 
+/// How long to wait for the webview thread to install the credential header.
+///
+/// Short on purpose. This runs between the handshake and the navigation, with
+/// the user looking at nothing, and the event loop it waits on has only just
+/// been asked to do one small thing. A wedge here is a startup failure with a
+/// sentence in it, not a shell that never returns.
+const AUTHORIZE_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// The header `apps/web/src/lib/sidecar/policy.ts` requires. Deliberately not
+/// `Authorization`: that name invites a proxy, a logger or a library to treat
+/// it as a bearer token for somewhere else.
+const SIDECAR_TOKEN_HEADER: &str = "x-liberty-sidecar-token";
+
+/// Make the webview present `token` on requests whose URI starts with
+/// `expected_prefix`, by intercepting them.
+///
+/// SPLIT OUT OF THE TRAIT METHOD SO THE COM SEQUENCE READS IN ONE PLACE, and
+/// because everything in here is a call into WebView2 -- the part of this file
+/// the module header says no test in this repository can exercise.
+///
+/// TWO LAYERS OF SCOPING, AND THE SECOND IS NOT REDUNDANT. `filter` is what
+/// WebView2 matches on, and its wildcard semantics are Microsoft's rather than
+/// ours; `expected_prefix` is re-checked inside the handler against the URI the
+/// request actually carries. A credential is worth one string comparison per
+/// request to be certain it is not leaving for somewhere the child never named.
+fn install_token_header(
+    webview: &tauri::webview::PlatformWebview,
+    filter: &str,
+    expected_prefix: &str,
+    token: &str,
+) -> Result<(), String> {
+    use webview2_com::Microsoft::Web::WebView2::Win32::{
+        ICoreWebView2, COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL,
+    };
+    use webview2_com::WebResourceRequestedEventHandler;
+    use windows::core::{HSTRING, PCWSTR};
+
+    let core: ICoreWebView2 = unsafe { webview.controller().CoreWebView2() }
+        .map_err(|error| format!("the webview has no CoreWebView2: {error}"))?;
+
+    let filter_wide = HSTRING::from(filter);
+    unsafe {
+        core.AddWebResourceRequestedFilter(
+            PCWSTR(filter_wide.as_ptr()),
+            COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL,
+        )
+    }
+    .map_err(|error| format!("the request filter for the sidecar origin was refused: {error}"))?;
+
+    let expected_prefix = expected_prefix.to_string();
+    let token = HSTRING::from(token);
+    let header = HSTRING::from(SIDECAR_TOKEN_HEADER);
+    let mut registration = 0i64;
+
+    let handler = WebResourceRequestedEventHandler::create(Box::new(move |_sender, args| {
+        let Some(args) = args else {
+            return Ok(());
+        };
+        let request = unsafe { args.Request() }?;
+
+        /*
+         * THE SECOND SCOPING CHECK. If the URI cannot be read, or does not
+         * start with the origin the child reported, the request is passed
+         * through UNTOUCHED. Not refused -- refusing other origins is not this
+         * handler's job and would break the webview for everything else -- just
+         * not given the credential.
+         */
+        /* `Uri` writes into an out-parameter and the CALLER OWNS the string.
+         * `take_pwstr` is webview2-com's own reader for exactly that: it reads
+         * and then frees with CoTaskMemFree. `string_from_pcwstr` beside it
+         * only reads, so using that one would leak a string per request --
+         * and this handler runs on every request the page makes. */
+        let mut uri = windows::core::PWSTR::null();
+        unsafe { request.Uri(&mut uri) }?;
+        let uri = webview2_com::take_pwstr(uri);
+        if !uri.starts_with(&expected_prefix) {
+            return Ok(());
+        }
+
+        let headers = unsafe { request.Headers() }?;
+        unsafe { headers.SetHeader(PCWSTR(header.as_ptr()), PCWSTR(token.as_ptr())) }?;
+        Ok(())
+    }));
+
+    unsafe { core.add_WebResourceRequested(&handler, &mut registration) }
+        .map_err(|error| format!("the request interceptor was refused: {error}"))?;
+
+    Ok(())
+}
+
 pub struct WindowsChild {
     process: StdChild,
     /// Lines the reader thread has produced, in order.
@@ -316,6 +406,68 @@ impl ShellHost for WindowsHost {
                      */
                     return HandshakeOutcome::ChildExited;
                 }
+            }
+        }
+    }
+
+    fn authorize_webview(&mut self, origin: &str, token: &str) -> Result<(), String> {
+        /*
+         * WHY THIS EXISTS AT ALL. `apps/web/src/proxy.ts` refuses every request
+         * that does not carry `x-liberty-sidecar-token`, and its matcher
+         * excludes only Next's immutable static output -- so the DOCUMENT
+         * request is refused too. `show_window` below loads the page with a
+         * plain top-level navigation, which carries no headers. Before this
+         * method the window opened on a 403 with no body.
+         *
+         * WHY INTERCEPTION AND NOT SOMETHING SIMPLER. A query parameter would
+         * put a per-launch secret in a URL, in history and in any log that
+         * records one. A cookie cannot be set before the first request, which
+         * is the one that is refused. Exempting document requests in the proxy
+         * would weaken the guard for every caller, not just this one. This is
+         * the shell presenting a credential it minted, on requests it can see,
+         * to an origin the child named -- which is what the handshake was for.
+         */
+        let window = self
+            .app
+            .get_webview_window("main")
+            .ok_or_else(|| "the main window does not exist".to_string())?;
+
+        /*
+         * SCOPED TO THIS ORIGIN AND NOTHING ELSE. This filter is the only thing
+         * standing between a per-launch secret and every other host the webview
+         * might ever reach, so it is built from the origin the CHILD reported --
+         * `handshake::parse` has already refused any host that is not a loopback
+         * literal -- and never from a wildcard.
+         */
+        let filter = format!("{origin}/*");
+        let expected_prefix = format!("{origin}/");
+        let token = token.to_string();
+
+        /*
+         * `with_webview` DISPATCHES TO THE THREAD THAT OWNS THE WEBVIEW, and
+         * this method runs on the shell thread `lib.rs` spawned. So the result
+         * comes back over a channel: without it this would return Ok before the
+         * filter existed, and `start_once`'s ordering guarantee would be a
+         * comment rather than a fact. The timeout is here because a wedged
+         * event loop must not wedge the shell -- it becomes a startup failure
+         * with a sentence in it, like every other failure on this path.
+         */
+        let (tx, rx) = mpsc::channel::<Result<(), String>>();
+        window
+            .with_webview(move |webview| {
+                let outcome = install_token_header(&webview, &filter, &expected_prefix, &token);
+                let _ = tx.send(outcome);
+            })
+            .map_err(|error| format!("the webview could not be reached: {error}"))?;
+
+        match rx.recv_timeout(AUTHORIZE_TIMEOUT) {
+            Ok(result) => result,
+            Err(RecvTimeoutError::Timeout) => Err(format!(
+                "the webview did not accept the sidecar credential within {} seconds",
+                AUTHORIZE_TIMEOUT.as_secs()
+            )),
+            Err(RecvTimeoutError::Disconnected) => {
+                Err("the webview thread ended before accepting the sidecar credential".to_string())
             }
         }
     }
