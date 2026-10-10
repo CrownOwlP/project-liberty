@@ -6,6 +6,92 @@ Project Liberty imports it, and it is not shipped.
 
 ---
 
+## What changed since your last run — the z-order was inverted
+
+**Your run found a defect in my code, and it is a one-line class of mistake
+with a two-line fix.** What you saw: video visible and playing, hardware decode
+on the RTX 3050, the DirectComposition tree built, mpv's swapchain attached,
+the WebView2 composition controller initialised — **and no HTML at all.** No
+text, no gradient, no dashed frame, no button.
+
+That is exactly what a webview rendered *underneath* an opaque video swapchain
+looks like, and that is what was happening.
+
+### The documentation says the opposite of what the parameter name suggests
+
+`IDCompositionVisual::AddVisual(visual, insertAbove, referenceVisual)`, from
+Microsoft's own Remarks:
+
+> *"If the referenceVisual parameter is NULL, the specified visual is rendered
+> above or below all children of the parent visual, depending on the value of
+> the insertAbove parameter. **If insertAbove is TRUE, the new child visual is
+> above no sibling, therefore it is rendered below all of its siblings.**
+> Conversely, if insertAbove is FALSE, the visual is below no sibling,
+> therefore it is rendered above all of its siblings."*
+
+With a NULL reference the flag is **inverted relative to its own name**. The
+previous code called `AddVisual(video, false, None)` and
+`AddVisual(web, true, None)` — which puts the video on top and the webview
+below it. The comment above those two lines asserted the opposite, and I wrote
+it without checking the documentation, in a comment that called this *"the one
+thing this experiment must get right"*.
+
+**Fixed, and in a form that cannot go wrong the same way:** the video is added
+with `insertAbove = true` and a NULL reference (documented as *"rendered below
+all of its siblings"*), and the webview is added with an **explicit reference
+visual** — `AddVisual(web, true, Some(video))` — where the parameter means
+exactly what its name says, *"TRUE to place the new child visual in front of
+the visual specified by referenceVisual"*, with no NULL special case to misread.
+
+### Two more omissions, both found in Microsoft's reference, both closed
+
+Neither is speculative — each is a documented requirement the harness was not
+meeting, and each could produce the same empty-overlay symptom on its own:
+
+1. **No `Commit` after `SetRootVisualTarget`.** The reference is explicit:
+   *"The app needs to commit on its device setting the RootVisualTarget
+   property."* The harness committed only when mpv's swapchain arrived, about a
+   second later — and not at all if it never arrived. Now it commits
+   immediately, and logs it.
+2. **`IsVisible` was never set.** `ICoreWebView2Controller`'s reference says
+   *"If IsVisible is set to FALSE, the WebView2 is transparent and is not
+   rendered"* and **does not document a default** for a composition-hosted
+   controller. The harness now **reads** `IsVisible` and logs the value it
+   found *before* setting it — which settles on your machine what the
+   documentation does not say — and then sets it to `true` regardless.
+
+### And the diagnostic the first run was missing
+
+`NavigateToString` returning `Ok` means the navigation was **queued**, exactly
+as `loadfile` does for mpv — a distinction Experiment 1a already lost a round
+to. Three different causes produced one symptom and nothing could tell them
+apart. Now they are three different log lines:
+
+- `NavigationCompleted: the page LOADED` — or `DID NOT LOAD` with the
+  `WebErrorStatus` number.
+- `DOMContentLoaded: the document was parsed`.
+- **`the page reported itself ALIVE`**, posted by the page's own script, and
+  carrying `innerWidth`, `innerHeight`, `devicePixelRatio` and the panel's
+  measured height. A `0x0` viewport is a bounds or rasterization-scale fault
+  and looks nothing like a z-order fault.
+
+**The video renderer is untouched.** Same mpv properties, same composition
+swapchain, same `SetContent`, same attach logic. The part of the run that
+worked was left exactly as it was.
+
+### There are now three possible outcomes, and the third one is new
+
+With the webview genuinely on top for the first time, the experiment's real
+question finally gets asked:
+
+| what you see | what it means |
+|---|---|
+| video, **tinted** by the gradient, HTML over it | **this is the pass.** Both layers composite with real alpha |
+| HTML and **no video** | the webview's visual is opaque despite `DefaultBackgroundColor A=0`. A *new* and very informative failure — it would mean composition hosting ignores the transparency, not that the layering is wrong |
+| still no HTML | the z-order was not the (only) cause. The new log lines say which of navigation, script, viewport or visibility failed |
+
+---
+
 ## Why there is a 1c at all
 
 **Experiment 1a failed.** It asked whether a child HWND running libmpv can
@@ -75,7 +161,7 @@ exactly this, is a change *inside* wry rather than something an app can do from
 outside.
 
 So this experiment owns its window, its message loop and its webview creation.
-Measured rather than estimated: **1,482 lines of Rust** (1,040 once comments
+Measured rather than estimated: **1,651 lines of Rust** (1,123 once comments
 and blanks are removed) in six files, and **24 packages in the whole locked
 dependency graph** against Experiment 1a's 419 — dropping Tauri is most of
 that. Experiment 1a was 672 lines, so 1c is roughly twice the code and a
@@ -156,6 +242,16 @@ judge the arrangement at all:
 | `ICoreWebView2Environment3 is NOT AVAILABLE` | the WebView2 Evergreen runtime predates composition hosting | update the runtime, re-run. **Not a 1c result** |
 | `mpv has not published a composition swapchain after 50 polls` | either no video output came up — check `current-vo` and `vo-configured` in the panel and mpv's own log lines above — or this libmpv predates `--d3d11-output-mode` | **Not a 1c result** |
 | `DCompositionCreateDevice failed` | DirectComposition is unavailable on this machine | **Not a 1c result** |
+
+**And four lines to read even when nothing says `FAIL`**, because they are what
+settle an empty overlay:
+
+| the log says | what it tells you |
+|---|---|
+| `IsVisible READ AS false BEFORE being set` | the webview was never going to render and that was the whole problem. `true` means it was already meant to be rendering, so look at the next three |
+| `NavigationCompleted: the page LOADED` | the document loaded. If it says `DID NOT LOAD`, the `WebErrorStatus` number is the answer and an empty window is a navigation failure, **not** a compositing result |
+| `DOMContentLoaded: the document was parsed` | the HTML parsed. Absent on an older runtime, which the line above it says |
+| `the page reported itself ALIVE: {...}` | the page's own script ran. Check `innerWidth`/`innerHeight` in that line: `0x0` is a bounds or scale fault, `1280x720`-ish means the page had somewhere to draw and the problem is further down the stack |
 
 A run with **no `FAIL` line and still no video** is the real result this
 experiment exists to produce, and it is the one that sends decision D1 to the

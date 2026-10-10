@@ -20,9 +20,36 @@ at all:
 | `ICoreWebView2Environment3 is NOT AVAILABLE` | the WebView2 Evergreen runtime is too old for composition hosting. **Update it and re-run.** Do not record 1c either way |
 | `mpv has not published a composition swapchain` | either no video output came up, or this libmpv predates `--d3d11-output-mode=composition`. Do not record 1c either way |
 | `DCompositionCreateDevice failed` | DirectComposition is unavailable on this machine. Do not record 1c either way |
-| no `FAIL` line at all, and still no video | **that is the real result this experiment exists to produce.** Say so plainly |
+| no `FAIL` line at all, and still neither layer visible | **that is the real result this experiment exists to produce.** Say so plainly |
 
 First FAIL line (or "none"):
+
+```
+```
+
+## Then these four lines, whether or not anything said FAIL
+
+They are what settle an empty overlay, and three of them are new this round.
+Paste each verbatim.
+
+`IsVisible READ AS ...` (this is the one that would have explained the last run
+on its own):
+
+```
+```
+
+`NavigationCompleted: ...`:
+
+```
+```
+
+`DOMContentLoaded: ...` (or the line saying `ICoreWebView2_2 unavailable`):
+
+```
+```
+
+`the page reported itself ALIVE: {...}` — the `innerWidth`/`innerHeight` in it
+matter: `0` means the page had no area to draw in:
 
 ```
 ```
@@ -64,15 +91,19 @@ NOT-TESTED and say why here.
 | 7 | **Live telemetry** — `time-pos` advances and `avsync` is present in the panel at a usable rate | | |
 | 8 | **Clean shutdown** — close the window; no `exp-1c.exe` and no `msedgewebview2.exe` left in Task Manager | | |
 
-Criterion 2 is the one to be most careful about, because there are three
+Criterion 2 is the one to be most careful about, because there are now **four**
 different-looking outcomes and only one of them is a pass:
 
 - the video shows and is **tinted** magenta at the top left, cyan at the bottom
-  right → **PASS**
-- the video shows but the gradient is **invisible** → the page is drawing but
+  right, with the HTML over it → **PASS**
+- **HTML visible but no video** → new this round, and informative: the
+  webview's visual is opaque despite `DefaultBackgroundColor A=0`. It would
+  mean composition hosting ignores the transparency rather than that the
+  layering is wrong. **FAIL**, and say explicitly that you could see the HTML
+- the video shows but the gradient is **invisible** → the page is drawing and
   its alpha is being discarded. **FAIL**, and say so
-- **no video at all**, gradient over black → the same symptom Experiment 1a
-  produced. **FAIL**
+- **neither layer visible** → **FAIL**, and the four log lines above say which
+  stage stopped
 
 The dashed frame 8px inside the window is there so "the video is present but
 offset or wrongly scaled" and "there is no video" look different. Say which.

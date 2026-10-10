@@ -120,17 +120,34 @@ pub fn run(file: &str) -> Result<(), String> {
     }
 
     let tree = Tree::create(hwnd, &diag)?;
-    let web = Web::create(hwnd, &tree.web, width, height, scale, &diag)?;
+    let web = Web::create(hwnd, &tree, width, height, scale, &diag)?;
 
     let toggle_requested = std::rc::Rc::new(std::cell::Cell::new(false));
     {
         let flag = std::rc::Rc::clone(&toggle_requested);
         let diag_for_handler = std::rc::Rc::clone(&diag);
         web.on_web_message(&diag, move |message| {
-            if message == "toggle-pause" {
+            /*
+             * The page now posts JSON so it can report more than one thing.
+             * Matched by substring rather than parsed, because this experiment
+             * has 24 crates in its whole graph and that is a property worth
+             * keeping: the two shapes the page can send are known and small,
+             * and adding serde to a throwaway to read them would not be.
+             */
+            if message.contains("\"toggle-pause\"") {
                 diag_for_handler
                     .say("the page asked for toggle-pause (criterion 3: input arrived)");
                 flag.set(true);
+            } else if message.contains("\"page-alive\"") {
+                /*
+                 * THE SIGNAL THE FIRST RUN LACKED. A successful
+                 * NavigationCompleted proves the document loaded; this proves
+                 * the page's own SCRIPT ran, and it carries the viewport size,
+                 * so "rendered into a zero-area viewport" and "rendered
+                 * correctly but hidden behind the video" become different
+                 * lines instead of the same empty window.
+                 */
+                diag_for_handler.ok(&format!("the page reported itself ALIVE: {message}"));
             } else {
                 diag_for_handler.say(&format!(
                     "the page posted an unexpected message: {message:?}"
@@ -138,6 +155,8 @@ pub fn run(file: &str) -> Result<(), String> {
             }
         })?;
     }
+    // BEFORE navigate, so the first navigation cannot complete unobserved.
+    web.on_load(&diag, std::rc::Rc::clone(&diag))?;
     web.navigate(&diag)?;
 
     let mpv = player::start(file, width, height, &diag)?;

@@ -97,10 +97,32 @@
   var clicks = 0;
   var host = (window.chrome && window.chrome.webview) || null;
 
+  // THE PAGE SAYS IT IS ALIVE, which the host logs.
+  //
+  // "NavigationCompleted succeeded" proves the document loaded. It does not
+  // prove this script ran, and neither proves the page has any area to draw
+  // in. So the page reports its own viewport: a 0x0 viewport is a bounds or
+  // rasterization-scale fault and looks nothing like a z-order fault, and the
+  // first run had no way to tell them apart.
+  if (host) {
+    var announce = function (when) {
+      host.postMessage(JSON.stringify({
+        kind: 'page-alive',
+        when: when,
+        innerWidth: window.innerWidth,
+        innerHeight: window.innerHeight,
+        devicePixelRatio: window.devicePixelRatio,
+        panelHeight: (document.querySelector('.panel') || {}).offsetHeight || 0
+      }));
+    };
+    announce('script-start');
+    window.addEventListener('load', function () { announce('window-load'); });
+  }
+
   document.getElementById('pause').addEventListener('click', function () {
     clicks += 1;
     document.getElementById('clicks').textContent = String(clicks);
-    if (host) { host.postMessage('toggle-pause'); }
+    if (host) { host.postMessage(JSON.stringify({ kind: 'toggle-pause' })); }
   });
 
   if (!host) {

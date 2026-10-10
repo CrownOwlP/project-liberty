@@ -111,20 +111,49 @@ impl Tree {
         diag.ok("three visuals created");
 
         /*
-         * Z-ORDER, AND IT IS THE ONE THING THIS EXPERIMENT MUST GET RIGHT.
-         * `AddVisual(visual, insertAbove, referenceVisual)` with a NULL
-         * reference inserts at the bottom when `insertAbove` is false and at
-         * the top when it is true. So: video at the bottom, web above it.
-         * Getting these two the wrong way round would hide the video and
-         * produce a result indistinguishable from Experiment 1a's failure,
-         * which is why it is spelled out rather than left to argument order.
+         * Z-ORDER, AND THE FIRST VERSION OF THIS FILE GOT IT EXACTLY
+         * BACKWARDS -- which is why the commander's first run showed video
+         * playing and no HTML at all.
+         *
+         * MICROSOFT'S OWN REMARKS ON `IDCompositionVisual::AddVisual`, and
+         * they are worth quoting because they are the opposite of what the
+         * parameter name suggests:
+         *
+         *   "If the referenceVisual parameter is NULL, the specified visual is
+         *    rendered above or below all children of the parent visual,
+         *    depending on the value of the insertAbove parameter. If
+         *    insertAbove is TRUE, the new child visual is above no sibling,
+         *    therefore it is rendered BELOW all of its siblings. Conversely,
+         *    if insertAbove is FALSE, the visual is below no sibling,
+         *    therefore it is rendered ABOVE all of its siblings."
+         *
+         * So with a NULL reference the flag is INVERTED relative to its own
+         * name. The previous code called `AddVisual(video, false, None)` and
+         * `AddVisual(web, true, None)`, which put the OPAQUE VIDEO SWAPCHAIN
+         * ON TOP and the webview underneath it. The old comment here asserted
+         * the opposite and was written without checking the documentation --
+         * in a comment that called this "the one thing this experiment must
+         * get right".
+         *
+         * TWO CHANGES, SO THIS CANNOT GO WRONG THE SAME WAY AGAIN. The video
+         * is added with `insertAbove = true` and a NULL reference, which under
+         * the quoted semantics means "below all siblings". The web visual is
+         * added with an EXPLICIT reference visual, where the parameter means
+         * exactly what its name says -- "TRUE to place the new child visual in
+         * front of the visual specified by the referenceVisual parameter" --
+         * and there is no counterintuitive NULL case to misread.
          */
-        diag.step("attach video BELOW and web ABOVE in the root visual");
-        unsafe { root.AddVisual(&video, false, None) }
-            .map_err(|e| format!("AddVisual(video, bottom) failed: {e}"))?;
-        unsafe { root.AddVisual(&web, true, None) }
-            .map_err(|e| format!("AddVisual(web, top) failed: {e}"))?;
-        diag.ok("video is the bottom child, web is the top child");
+        diag.step("attach video BELOW and web IN FRONT OF it in the root visual");
+        unsafe { root.AddVisual(&video, true, None) }
+            .map_err(|e| format!("AddVisual(video, below all siblings) failed: {e}"))?;
+        unsafe { root.AddVisual(&web, true, Some(&video)) }
+            .map_err(|e| format!("AddVisual(web, in front of video) failed: {e}"))?;
+        diag.ok(
+            "video was added with insertAbove=true and a NULL reference, which Microsoft \
+             documents as 'rendered below all of its siblings'; web was added with \
+             insertAbove=true and video as the REFERENCE visual, which means 'in front of \
+             video'. The webview is the top layer.",
+        );
 
         diag.step("SetRoot + Commit");
         unsafe { target.SetRoot(&root) }.map_err(|e| format!("SetRoot failed: {e}"))?;
@@ -174,5 +203,23 @@ impl Tree {
 
     pub fn commit(&self) -> Result<(), String> {
         unsafe { self.device.Commit() }.map_err(|e| format!("Commit failed: {e}"))
+    }
+
+    /// Commit, and say so in the log.
+    ///
+    /// Microsoft's `RootVisualTarget` reference is explicit that this is
+    /// required and the harness was not doing it: *"The app needs to commit on
+    /// its device setting the RootVisualTarget property."* Before this, the
+    /// next `Commit` happened only when mpv's swapchain arrived — about a
+    /// second later, and not at all if it never arrived, which would have left
+    /// the webview unattached for a reason no log line named.
+    pub fn commit_named(&self, what: &str, diag: &Diag) {
+        match self.commit() {
+            Ok(()) => diag.ok(&format!("IDCompositionDevice::Commit after {what}")),
+            Err(error) => diag.fail(&format!(
+                "Commit after {what} FAILED: {error}. Anything set since the last successful \
+                 commit is not on screen."
+            )),
+        }
     }
 }

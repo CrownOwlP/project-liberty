@@ -27,16 +27,17 @@
 //! none of the eight criteria is about touch. Leaving it out is honest; a
 //! half-working path that nobody tested would be a second variable.
 
+use crate::dcomp::Tree;
 use crate::diag::Diag;
 use std::sync::mpsc;
 use webview2_com::Microsoft::Web::WebView2::Win32::*;
 use webview2_com::{
     CreateCoreWebView2CompositionControllerCompletedHandler,
-    CreateCoreWebView2EnvironmentCompletedHandler, WebMessageReceivedEventHandler,
+    CreateCoreWebView2EnvironmentCompletedHandler, DOMContentLoadedEventHandler,
+    NavigationCompletedEventHandler, WebMessageReceivedEventHandler,
 };
 use windows::core::{Interface, HSTRING, PCWSTR};
 use windows::Win32::Foundation::{E_POINTER, HWND, POINT, RECT};
-use windows::Win32::Graphics::DirectComposition::IDCompositionVisual;
 
 /// The HTML. Embedded in the exe and navigated to with `NavigateToString`
 /// rather than loaded from a file, so there is no file path to get wrong, no
@@ -67,7 +68,7 @@ impl Web {
     /// machine. It is only safe because nothing else is running yet.
     pub fn create(
         hwnd: HWND,
-        visual: &IDCompositionVisual,
+        tree: &Tree,
         width: i32,
         height: i32,
         dpi_scale: f32,
@@ -149,13 +150,23 @@ impl Web {
         diag.ok("ICoreWebView2CompositionController created -- the webview has NO window");
 
         diag.step("SetRootVisualTarget(the TOP visual of the DComp tree)");
-        unsafe { composition.SetRootVisualTarget(visual) }.map_err(|e| {
+        unsafe { composition.SetRootVisualTarget(&tree.web) }.map_err(|e| {
             format!(
                 "SetRootVisualTarget failed: {e}. The webview exists but is not attached to the \
                  visual tree, so nothing it renders can appear."
             )
         })?;
         diag.ok("the webview now renders into the top visual");
+        /*
+         * REQUIRED, AND THE HARNESS WAS NOT DOING IT. Microsoft's
+         * RootVisualTarget reference: "The app needs to commit on its device
+         * setting the RootVisualTarget property", and their sample calls
+         * Commit immediately after. Before this the next commit came only when
+         * mpv's swapchain arrived -- about a second later, and never at all if
+         * it did not arrive -- which would leave the webview unattached for a
+         * reason no log line named.
+         */
+        tree.commit_named("SetRootVisualTarget", diag);
 
         diag.step("query the composition controller for ICoreWebView2Controller");
         let controller: ICoreWebView2Controller = composition.cast().map_err(|e| {
@@ -237,6 +248,34 @@ impl Web {
             )),
         }
 
+        /*
+         * IsVisible WAS NEVER SET, AND ITS DEFAULT IS NOT DOCUMENTED.
+         * ICoreWebView2Controller's reference says only that "If IsVisible is
+         * set to FALSE, the WebView2 is transparent and is not rendered" and
+         * states no default for a composition-hosted controller. An invisible
+         * webview and a webview hidden behind the video produce the SAME
+         * symptom -- video playing, no HTML -- so this reads the value first
+         * and logs it, which settles on the commander's machine what the
+         * documentation does not say, and then sets it regardless.
+         */
+        diag.step("ICoreWebView2Controller::IsVisible");
+        let mut visible = windows::core::BOOL(0);
+        match unsafe { controller.IsVisible(&mut visible) } {
+            Ok(()) => diag.say(&format!(
+                "  ..  IsVisible READ AS {} BEFORE being set. If that is false, it was the \
+                 whole problem; if true, the webview was already meant to be rendering.",
+                visible.as_bool()
+            )),
+            Err(e) => diag.fail(&format!("could not READ IsVisible: {e}")),
+        }
+        match unsafe { controller.SetIsVisible(true) } {
+            Ok(()) => diag.ok("IsVisible set to true"),
+            Err(e) => diag.fail(&format!(
+                "SetIsVisible(true) FAILED: {e}. The webview will not render and criterion 2 \
+                 CANNOT pass."
+            )),
+        }
+
         diag.step(&format!("SetBounds 0,0 {width}x{height}"));
         unsafe {
             controller.SetBounds(RECT {
@@ -270,6 +309,70 @@ impl Web {
                 std::ptr::null_mut(),
             )),
         })
+    }
+
+    /// Report whether the page actually loaded.
+    ///
+    /// THE DIAGNOSTIC THE FIRST RUN DID NOT HAVE. `NavigateToString` returning
+    /// `Ok` means the navigation was QUEUED, exactly as `loadfile` does for
+    /// mpv -- and Experiment 1a already cost a round to that distinction. A
+    /// page that never loaded, a page that loaded but whose script never ran,
+    /// and a page that rendered but is not visible all look identical from
+    /// outside: an empty window. These make them three different log lines.
+    ///
+    /// Installed BEFORE `navigate`, so the first navigation cannot complete
+    /// before anything is listening.
+    pub fn on_load(&self, diag: &Diag, log: std::rc::Rc<Diag>) -> Result<(), String> {
+        diag.step("add_NavigationCompleted + add_DOMContentLoaded");
+
+        let navigated = std::rc::Rc::clone(&log);
+        let mut token = 0i64;
+        let handler = NavigationCompletedEventHandler::create(Box::new(move |_sender, args| {
+            let Some(args) = args else {
+                navigated.fail("NavigationCompleted fired with no args");
+                return Ok(());
+            };
+            let mut ok = windows::core::BOOL(0);
+            let _ = unsafe { args.IsSuccess(&mut ok) };
+            if ok.as_bool() {
+                navigated.ok("NavigationCompleted: the page LOADED");
+            } else {
+                let mut status = COREWEBVIEW2_WEB_ERROR_STATUS::default();
+                let _ = unsafe { args.WebErrorStatus(&mut status) };
+                navigated.fail(&format!(
+                    "NavigationCompleted: the page DID NOT LOAD. WebErrorStatus = {}. Nothing \
+                     was rendered, so an empty window here is a navigation failure and NOT a \
+                     compositing result.",
+                    status.0
+                ));
+            }
+            Ok(())
+        }));
+        unsafe { self.core.add_NavigationCompleted(&handler, &mut token) }
+            .map_err(|e| format!("add_NavigationCompleted failed: {e}"))?;
+
+        // DOMContentLoaded lives on ICoreWebView2_2. A runtime too old to offer
+        // it is not a failure -- NavigationCompleted above is the load signal
+        // that matters -- so this is reported and not propagated.
+        match self.core.cast::<ICoreWebView2_2>() {
+            Ok(core2) => {
+                let dom = std::rc::Rc::clone(&log);
+                let mut dom_token = 0i64;
+                let dom_handler = DOMContentLoadedEventHandler::create(Box::new(move |_s, _a| {
+                    dom.ok("DOMContentLoaded: the document was parsed");
+                    Ok(())
+                }));
+                match unsafe { core2.add_DOMContentLoaded(&dom_handler, &mut dom_token) } {
+                    Ok(()) => diag.ok("both load handlers installed"),
+                    Err(e) => diag.fail(&format!("add_DOMContentLoaded failed: {e}")),
+                }
+            }
+            Err(e) => diag.say(&format!(
+                "  ..  ICoreWebView2_2 unavailable ({e}), so DOMContentLoaded is not observed. \
+                 NavigationCompleted still is."
+            )),
+        }
+        Ok(())
     }
 
     /// Navigate to the embedded page. Separate from `create` so the host can
