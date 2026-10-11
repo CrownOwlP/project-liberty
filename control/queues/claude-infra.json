@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-11T16:04:41.346Z",
+  "generatedAt": "2026-10-11T16:04:48.845Z",
   "agent": "claude-infra",
   "executionAvailable": true,
   "assigned": [
@@ -186,6 +186,35 @@
           "evidence": "INTEGRATION, at 51081a8b285839caed934f3cdba7fa6754e7660f. THIS GATE REPLACES THE ONE RECORDED AGAINST 9e5b734.\n\nA NESTED LINK WAS PUT INTO THE REAL BUILD OUTPUT AND PACKAGED, which is the end-to-end case the failing test was a fixture for. An absolute link was created inside the traced package itself -- standalone/node_modules/pg/vendored-pool -> standalone/node_modules/pg-pool -- and packaging ran:\n\n  package-sidecar: standalone/apps/web: will materialise dist/desktop/node_modules/pg-587764f78a6c7a9c -> .../standalone/node_modules/pg (traced_package)\n  package-sidecar: standalone/node_modules: will materialise pg/vendored-pool -> .../standalone/node_modules/pg-pool (traced_package)\n  package-sidecar:   nested apps/web/dist/desktop/standalone/node_modules/pg/vendored-pool -> .../pg-pool (traced_package)\n  package-sidecar: 2 link(s) in the build output, 2 materialisation(s) applied, 0 link(s) left in the packaged tree\n  # tests 20 / # pass 20 / # fail 0\n  ok    every symlink in the packaged tree resolves inside it   (the tree contains no symlinks at all)\n  packaged-server-smoke: 6 check(s) passed\n\nAfterwards, in the packaged tree: `find apps/desktop/sidecar -type l` returned 0, and sidecar/server/node_modules/pg/vendored-pool is a REAL DIRECTORY whose package.json begins {\"name\":\"pg-pool\",\"version\":\"3.14.0\",...}. So the nested dependency arrived as files, in one pass, with its bytes -- which is precisely what a silent drop would have failed and what the old test could not tell apart from a dereference. The fixture was then removed and the build output restored.\n\nTHE FOUR INVARIANTS THE COMMANDER NAMED, EACH RE-VERIFIED AT THIS COMMIT.\n  1. No links in the final package: `find apps/desktop/sidecar -type l` -> 0, and the independent post-copy walk in package-sidecar.mjs refuses ANY symlink, which is stricter than PL-0755's original rule.\n  2. External-target security restrictions: unchanged for the alias, and now EXTENDED to nested links. \"refuses a NESTED link that leaves the repository, which cpSync would have followed\" asserts the refusal and asserts the alias is still a link afterwards, so packaging stops rather than shipping a half-materialised tree.\n  3. Original dependency preservation: the copy is taken BEFORE anything is deleted, the link is removed on its own via unlink with an rmdir fallback (neither can recurse), and the target is asserted to still exist afterwards. \"removes a link without recursing, whichever call the platform needs\" and \"replaces it with real files and LEAVES THE TARGET ALONE\" both pin it.\n  4. Relocated authenticated HTTP 200: packaged-server-smoke.mjs is BYTE-UNCHANGED by this round and still passes all six checks -- the tree relocated outside the repository, containment, 16 external specifiers across 148 chunks all resolving, the sidecar starting, /api/health at 200, and / at 200 with 15378 bytes of HTML behind the token header and a matching Host.\n\nTHE REGRESSION SUITE IS 20 TESTS, UP FROM 15, AND NO EXPECTED VALUE WAS ADJUSTED TO GO GREEN. The platform-dependent assertion was not retuned; the behaviour it measured was removed. The replacement asserts, after ONE materialisation: zero links under the alias directory; that the nested entry is not a link and IS a directory; that its package.json names pg-pool; that a file two levels deeper has its exact bytes; and that the copier reported the one nested link it followed, with its target and its classification. Five tests are new: that one, the nested escape refusal, the cycle refusal, a loses-nothing walk over a three-level tree, and two for the coverage helper -- including one that asserts it reports exactly which path a partial copy is missing.\n\nNOT CLAIMED, AND THE COMMANDER'S WORDING IS THE RIGHT STANDARD HERE. That the Windows package job passes: it has failed twice on this task and both times the failure was in something I could not run. What changed this round is that the thing it failed on -- a count that depended on how a filesystem copies a nested link -- no longer exists in the code, so there is no platform-specific number left to be wrong about. That is a reason to expect a different outcome, not evidence of one. And that the installed MSI launches: PW-0504, unobservable from here, and still the only thing that can close any of this."
         }
       }
+    },
+    {
+      "id": "PL-0757",
+      "priority": "P2",
+      "lane": "Infra",
+      "status": "IN_PROGRESS",
+      "title": "The product readiness instrument reports two built surfaces as absent",
+      "dependencies": [],
+      "allowedPaths": [
+        "control/product-readiness.json",
+        "coordination/PRODUCT_READINESS.md"
+      ],
+      "reviewDependencies": [
+        "scripts/product-readiness.mjs",
+        "apps/web/src/components/player/controls/player-controls.tsx",
+        "apps/web/src/app/settings/page.tsx",
+        "apps/web/src/components/shell/navigation.ts"
+      ],
+      "preferredAgent": "claude-infra",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "repo-validate"
+      ],
+      "acceptance": "THE INSTRUMENT IS THE PROJECT'S ANSWER TO \"HOW FAR ALONG IS THIS\", AND THREE OF ITS productUi ROWS ARE WRONG ABOUT THE REPOSITORY.\n\nplayer-controls reads state: absent, note \"The browser's native <video> chrome. No play, seek, volume, fullscreen, subtitle, audio or quality control.\" Six of those seven exist: apps/web/src/components/player/controls/player-controls.tsx and controls-state.ts carry play/pause, seek, volume and mute, fullscreen, an audio-track menu and a subtitle menu, with keyboard operation, and e2e/tests/player-controls.spec.ts holds 12 browser tests over them. The seventh -- quality or rendition selection -- is genuinely absent: nothing in apps/web/src mentions selectVariantTrack or any quality selector, and web-player-adapter.ts collapses variants to one entry per language. So the row is partial, and the note must say which clause survives rather than being flipped wholesale.\n\nsettings reads state: absent, note \"No screen and no API\". Both halves are false: apps/web/src/app/settings/page.tsx renders language preferences, a diagnostics disclosure and an about section, and apps/web/src/app/api/v1/profiles/preferences carries route, handler, contract and tests. Partial rather than present, because playback and subtitle preferences, the add-by-URL surface (PL-0744) and the third-party licences screen (PW-0314) are all still missing.\n\nlive-guide-ui reads state: absent -- which is RIGHT -- with the note \"the home nav Live link points at a fragment\", which has not been true since PW-0301 removed the four fragment anchors. The entry is a planned() non-link naming PL-0602 and its blocker. The state does not move; the stated reason must stop being a defect this project already fixed.\n\nREQUIRED: EVERY CORRECTION CITES THE FILE THAT MAKES IT TRUE, in the row's own evidence field, and distinguishes -- as rounds 107's corrections did in their own notes -- between the instrument having been wrong and the product having moved. These three are both: player-controls and settings were built and the instrument was never updated.\n\nREQUIRED: coordination/PRODUCT_READINESS.md IS REGENERATED, NOT EDITED. Its own header says so: it is rendered by scripts/product-readiness.mjs from the JSON. Editing the markdown would make the generated view disagree with its source until the next person runs the generator.\n\nMUST NOT: move a row to present because something exists. partial is the honest state for a surface with a named missing clause, and the clause has to be named. An instrument that rounds up is worse than one that is stale, because nobody re-checks a green row.",
+      "notes": "FILED 2026-10-11 during the round-130 sprint, from reconnaissance over the PW-03xx series for Lane B. The commander asked for progress estimates supported by repository evidence; this file IS the estimate, and two of its rows understate what is built while a third gives a reason that no longer holds.",
+      "owner": "claude-infra",
+      "implementationAgent": "claude-infra",
+      "updatedAt": "2026-10-11T05:29:11.802Z",
+      "implementationBaseSha": "cf14b584b334b31a5112e26d9e4e008515b0a3a5"
     }
   ],
   "review": [],

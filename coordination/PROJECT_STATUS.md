@@ -1,8 +1,8 @@
 # Project Liberty - Project Status
 
-> Generated 2026-10-11T16:04:41.341Z from the AI control plane.
+> Generated 2026-10-11T16:04:48.837Z from the AI control plane.
 
-**Overall completion:** 122/155 executable tasks (79%)
+**Overall completion:** 122/156 executable tasks (78%)
 
 ## Status summary
 
@@ -10,7 +10,7 @@
 - **READY:** 2
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 1
-- **REVIEW:** 10
+- **REVIEW:** 11
 - **BLOCKED:** 13
 - **DONE:** 122
 - **CANCELED:** 0
@@ -41,7 +41,8 @@
 - **PL-0752** [REVIEW] Experiment 1c: can mpv composite beneath WebView2 in one DirectComposition visual tree — owner: claude-media
 - **PL-0754** [REVIEW] The installed MSI never starts its sidecar, and the splash spins forever instead of saying so — owner: claude-infra
 - **PL-0755** [REVIEW] The installed application answers Internal Server Error: the packaged tree points at the build machine — owner: claude-infra
-- **PL-0756** [IN_PROGRESS] There is no way to browse the catalog: home shows two rails and search needs you to know the answer — owner: claude-frontend
+- **PL-0756** [REVIEW] There is no way to browse the catalog: home shows two rails and search needs you to know the answer — owner: claude-frontend
+- **PL-0757** [IN_PROGRESS] The product readiness instrument reports two built surfaces as absent — owner: claude-infra
 
 ## Dispatch classification
 
@@ -148,10 +149,10 @@ UNBLOCK WHEN: gpt-architect's security-review arrives, or PL-0754 has cleared th
 
 - **gpt-architect:** 0/6 capacity in use (external lane; not locally executable)
 - **claude-lead:** 0/2 capacity in use, 2 active (2 parked for an external reviewer)
-- **claude-frontend:** 1/2 capacity in use
+- **claude-frontend:** 0/2 capacity in use, 1 active (1 parked for an external reviewer)
 - **claude-backend:** 0/2 capacity in use, 1 active (1 parked for an external reviewer)
 - **claude-media:** 0/2 capacity in use, 1 active (1 parked for an external reviewer)
 - **claude-test:** 0/3 capacity in use, 1 active (1 parked for an external reviewer)
 - **claude-security:** 0/1 capacity in use
-- **claude-infra:** 0/5 capacity in use, 5 active (5 parked for an external reviewer)
+- **claude-infra:** 1/5 capacity in use, 6 active (5 parked for an external reviewer)
 - **human-commander:** 0/99 capacity in use (external lane; not locally executable)
