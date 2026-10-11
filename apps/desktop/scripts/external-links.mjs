@@ -61,7 +61,7 @@
  * inside it, and `package-sidecar.mjs` separately refuses to ship a tree
  * containing ANY link at all, which is stricter than what it refused before.
  * ---------------------------------------------------------------------- */
-import { cpSync, existsSync, lstatSync, readdirSync, readlinkSync, realpathSync, renameSync, rmdirSync, statSync, unlinkSync } from "node:fs";
+import { copyFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readlinkSync, realpathSync, renameSync, rmdirSync, statSync, unlinkSync } from "node:fs";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 
 /** The directory name that marks a dependency tree, on every platform. */
@@ -261,6 +261,149 @@ export function removeLinkOnly(link) {
 }
 
 /**
+ * Copy a tree, replacing every link it contains with what that link points at.
+ *
+ * WHY THIS IS HAND-WRITTEN RATHER THAN `cpSync` (PL-0755, round 130A3).
+ *
+ * `cpSync` DOES NOT HAVE DEFINED BEHAVIOUR FOR A NESTED LINK ACROSS PLATFORMS,
+ * and this project has now been bitten by that twice from opposite directions.
+ * Measured on node v22.22.2 on Linux: copying a directory that contains
+ * `vendored -> ../other`, with `dereference: false` AND with `dereference:
+ * true`, produces a destination where `lstat(vendored).isSymbolicLink()` is
+ * still TRUE -- the option selects the stat applied to the copy ROOT and says
+ * nothing about entries inside it. On the Windows runner the same operation
+ * over a directory JUNCTION left NO link behind, which is either a dereference
+ * or a silent drop and the build log cannot tell which.
+ *
+ * Either reading is a problem. If it dereferences, the number of passes needed
+ * to reach a fixed point is platform-dependent, which is what turned the
+ * Windows job red on a fixture that had measured Linux. If it DROPS, then the
+ * packaged dependency is missing a subdirectory and the "no links in the
+ * packaged tree" invariant is satisfied VACUOUSLY -- by content that was
+ * thrown away. That is the worse failure and nothing would have caught it:
+ * every check this script runs would have passed over a tree with a hole in it.
+ *
+ * So the copy is performed here, one entry at a time, and the result contains
+ * no link BY CONSTRUCTION on every platform:
+ *
+ *   - a file is copied;
+ *   - a directory is created and walked;
+ *   - a link is RESOLVED, CLASSIFIED by the same policy its parent was, and
+ *     then the target is copied in its place -- so a nested link out of the
+ *     repository is refused rather than followed, which `cpSync` would have
+ *     done silently;
+ *   - and every entry present in the source is present in the destination,
+ *     because the destination is built from the walk.
+ *
+ * CYCLES ARE BOUNDED, because a link chain can rejoin itself. Each resolved
+ * target is remembered along the current path and re-entering one is refused by
+ * name; depth is capped as well, so a pathological tree fails loudly instead of
+ * filling a disk.
+ */
+const MAX_MATERIALISE_DEPTH = 64;
+
+function copyMaterialised(source, destination, { repoRoot, standaloneRoot, seen, depth, report }) {
+  if (depth > MAX_MATERIALISE_DEPTH) {
+    throw new Error(
+      `gave up at depth ${depth} copying ${source}. A dependency tree this deep is more likely a ` +
+        `link chain than a package.`
+    );
+  }
+
+  const stats = lstatSync(source);
+
+  if (stats.isSymbolicLink()) {
+    const verdict = classifyLink({ link: source, repoRoot, standaloneRoot });
+    if (!verdict.ok) {
+      throw new Error(`a nested link may not be followed: [${verdict.reason}] ${verdict.detail}`);
+    }
+    const real = verdict.target;
+    if (seen.includes(real)) {
+      throw new Error(
+        `${source} resolves to ${real}, which is already being copied on this path ` +
+          `(${seen.join(" -> ")}). That is a cycle, not a dependency.`
+      );
+    }
+    report.nested.push({ at: source, target: real, reason: verdict.reason });
+    copyMaterialised(real, destination, {
+      repoRoot,
+      standaloneRoot,
+      seen: [...seen, real],
+      depth: depth + 1,
+      report
+    });
+    return;
+  }
+
+  if (stats.isDirectory()) {
+    mkdirSync(destination, { recursive: true });
+    for (const entry of readdirSync(source)) {
+      copyMaterialised(join(source, entry), join(destination, entry), {
+        repoRoot,
+        standaloneRoot,
+        seen,
+        depth: depth + 1,
+        report
+      });
+    }
+    report.directories += 1;
+    return;
+  }
+
+  if (stats.isFile()) {
+    mkdirSync(dirname(destination), { recursive: true });
+    copyFileSync(source, destination);
+    report.files += 1;
+    return;
+  }
+
+  throw new Error(
+    `${source} is neither a file, a directory nor a link (mode ${stats.mode.toString(8)}). ` +
+      `Nothing in a package should be, and copying it would be guessing.`
+  );
+}
+
+/**
+ * Every path inside `root`, relative, so two trees can be compared.
+ *
+ * Links are reported by their own path and not descended into, because the
+ * comparison this feeds asks whether the COPY covers the SOURCE, and a link in
+ * the source becomes a real subtree in the copy -- which is the whole point.
+ */
+export function pathsUnder(root, prefix = "", found = []) {
+  for (const entry of readdirSync(join(root, prefix), { withFileTypes: true })) {
+    const rel = prefix === "" ? entry.name : `${prefix}/${entry.name}`;
+    found.push(rel);
+    if (entry.isSymbolicLink()) continue;
+    if (entry.isDirectory()) pathsUnder(root, rel, found);
+  }
+  return found;
+}
+
+/**
+ * Which paths of `target` are absent from `copy`.
+ *
+ * EXPORTED AND TESTED DIRECTLY, because the one place it is CALLED cannot fail.
+ * `materialiseLink` builds its destination from a walk of the source, so a
+ * missing path is impossible by construction there -- a mutation that deletes
+ * that call site changes no test result, which is a surviving mutant and is
+ * recorded as one rather than dressed up.
+ *
+ * It is kept anyway, and the reason is this round. The previous implementation
+ * copied with `cpSync`, whose nested-link behaviour differs between platforms,
+ * and on Windows it left no link behind -- which is either a dereference or a
+ * SILENT DROP, and the build log cannot say which. A dropped entry satisfies
+ * every link check there is. So this is the postcondition that makes "no links
+ * in the packaged tree" mean "and nothing was lost getting there", and it is
+ * what will fail if somebody later puts `cpSync` back for speed. Its logic is
+ * tested here; only its unreachability at the call site is untested, which is
+ * the correct shape for a postcondition.
+ */
+export function missingPathsIn(target, copy) {
+  return pathsUnder(target).filter((rel) => !existsSync(join(copy, rel)));
+}
+
+/**
  * Replace a link with a real copy of what it points at.
  *
  * ORDERED SO THE TARGET IS READ BEFORE ANYTHING IS DELETED. The copy is
@@ -268,13 +411,25 @@ export function removeLinkOnly(link) {
  * is renamed into its place. A sequence that deleted first would, on any
  * mistake in `removeLinkOnly`, destroy the dependency it was about to read.
  *
- * AND THE TARGET IS CHECKED AFTERWARDS. If it is gone, the packaged tree is
- * still complete -- the copy was already taken -- but the CHECKOUT has been
- * damaged, and that is not something to discover later as a mysterious build
- * failure. It throws, loudly, naming the path.
+ * AND TWO THINGS ARE CHECKED AFTERWARDS, both of which exist because a check
+ * that only looks for links can be satisfied by a tree with a hole in it:
+ *
+ *   - the TARGET still exists. If it is gone, the packaged tree is still
+ *     complete -- the copy was already taken -- but the CHECKOUT has been
+ *     damaged, and that is not something to discover later as a mysterious
+ *     build failure.
+ *   - every path in the target is present in the copy. The copy is built from a
+ *     walk of the source, so this cannot fail by construction today; it is here
+ *     because the previous implementation COULD lose an entry silently on a
+ *     platform whose copy semantics differed, and the assertion is what makes
+ *     "no links in the packaged tree" mean something.
  */
-export function materialiseLink(link) {
-  const target = realpathSync(link);
+export function materialiseLink(link, { repoRoot, standaloneRoot }) {
+  const verdict = classifyLink({ link, repoRoot, standaloneRoot });
+  if (!verdict.ok) {
+    throw new Error(`refusing to materialise: [${verdict.reason}] ${verdict.detail}`);
+  }
+  const target = verdict.target;
   const asDirectory = statSync(target).isDirectory();
   const staging = `${link}${STAGING_SUFFIX}`;
 
@@ -285,7 +440,15 @@ export function materialiseLink(link) {
     );
   }
 
-  cpSync(target, staging, asDirectory ? { recursive: true } : {});
+  const report = { files: 0, directories: 0, nested: [] };
+  copyMaterialised(target, staging, {
+    repoRoot,
+    standaloneRoot,
+    seen: [target],
+    depth: 0,
+    report
+  });
+
   const how = removeLinkOnly(link);
   renameSync(staging, link);
 
@@ -297,5 +460,16 @@ export function materialiseLink(link) {
     );
   }
 
-  return { target, how, asDirectory };
+  if (asDirectory) {
+    const missing = missingPathsIn(target, link);
+    if (missing.length > 0) {
+      throw new Error(
+        `the copy of ${target} at ${link} is MISSING ${missing.length} path(s), starting with ` +
+          `${missing[0]}. A dependency with a hole in it satisfies every link check and fails at ` +
+          `runtime on a user's machine.`
+      );
+    }
+  }
+
+  return { target, how, asDirectory, ...report };
 }

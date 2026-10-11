@@ -35,6 +35,8 @@ import {
   isInside,
   isUnderNodeModules,
   materialiseLink,
+  missingPathsIn,
+  pathsUnder,
   removeLinkOnly,
   symlinksUnder
 } from "./external-links.mjs";
@@ -74,8 +76,8 @@ function repository({ pkg = "pg" } = {}) {
   return { root, standaloneRoot, aliasDir, hoisted, traced };
 }
 
-const classify = (repo, link) =>
-  classifyLink({ link, repoRoot: repo.root, standaloneRoot: repo.standaloneRoot });
+const roots = (repo) => ({ repoRoot: repo.root, standaloneRoot: repo.standaloneRoot });
+const classify = (repo, link) => classifyLink({ link, ...roots(repo) });
 
 describe("the link a build leaves for an externalised package", () => {
   it("accepts the RELATIVE link Linux produces, which lands inside the build output", () => {
@@ -199,7 +201,7 @@ describe("materialising a link", () => {
     const link = join(repo.aliasDir, "pg-587764f78a6c7a9c");
     linkDir(repo.hoisted, link);
 
-    const result = materialiseLink(link);
+    const result = materialiseLink(link, roots(repo));
     assert.equal(result.target, repo.hoisted);
     assert.equal(result.asDirectory, true);
 
@@ -217,7 +219,7 @@ describe("materialising a link", () => {
     const repo = repository();
     const link = join(repo.aliasDir, "pg-587764f78a6c7a9c");
     linkDir(repo.hoisted, link);
-    materialiseLink(link);
+    materialiseLink(link, roots(repo));
     assert.equal(existsSync(`${link}${STAGING_SUFFIX}`), false);
     assert.deepEqual(
       readdirSync(repo.aliasDir).filter((name) => name.endsWith(STAGING_SUFFIX)),
@@ -230,7 +232,7 @@ describe("materialising a link", () => {
     const link = join(repo.aliasDir, "pg-587764f78a6c7a9c");
     linkDir(repo.hoisted, link);
     mkdirSync(`${link}${STAGING_SUFFIX}`);
-    assert.throws(() => materialiseLink(link), /did not finish/);
+    assert.throws(() => materialiseLink(link, roots(repo)), /did not finish/);
   });
 
   it("removes a link without recursing, whichever call the platform needs", () => {
@@ -243,27 +245,124 @@ describe("materialising a link", () => {
     assert.ok(existsSync(join(repo.hoisted, "lib", "index.js")), "the target must survive");
   });
 
-  it("reaches a fixed point when materialising one link exposes another", () => {
+  it("materialises a NESTED link too, in one pass, on every platform", () => {
     /*
-     * A copied package may itself contain a link. One pass is not enough, and
-     * the loop in `package-sidecar.mjs` is what handles it; this pins the
-     * underlying fact that a second pass has something to find.
+     * THE TEST THIS REPLACES ASSERTED A MECHANISM AND IT WAS PLATFORM-SPECIFIC.
+     *
+     * It copied with `cpSync` and then asserted that exactly ONE link remained
+     * -- the nested one, carried into the copy as a link -- so a second pass
+     * was needed. That is measured behaviour on Linux (node v22.22.2: a nested
+     * link survives a copy with `dereference: false` AND with `dereference:
+     * true`). On the Windows runner the same copy over a junction left ZERO
+     * links, and the Windows package job went red on the count.
+     *
+     * Either reading of that is a problem: if Windows dereferences, the pass
+     * count is platform-dependent; if it DROPS the entry, the packaged
+     * dependency has a hole in it and "no links in the packaged tree" is
+     * satisfied by content that was thrown away.
+     *
+     * So the copy no longer goes through `cpSync`. `copyMaterialised` walks the
+     * source and resolves every link it meets, which makes the result
+     * link-free BY CONSTRUCTION in ONE pass -- and this test asserts the
+     * property rather than the route: no links left, and the nested content
+     * present as real files with its bytes intact.
      */
     const repo = repository();
     const nested = join(repo.root, "node_modules", "pg-pool");
-    mkdirSync(nested, { recursive: true });
+    mkdirSync(join(nested, "deep"), { recursive: true });
     writeFileSync(join(nested, "package.json"), '{"name":"pg-pool"}\n');
+    writeFileSync(join(nested, "deep", "pool.js"), "module.exports = 1;\n");
     linkDir(nested, join(repo.hoisted, "vendored"));
 
     const link = join(repo.aliasDir, "pg-587764f78a6c7a9c");
     linkDir(repo.hoisted, link);
 
-    materialiseLink(link);
-    const remaining = symlinksUnder(repo.aliasDir);
-    assert.equal(remaining.length, 1, "the copy carries the nested link, so a second pass is needed");
-    assert.equal(classify(repo, remaining[0]).ok, true);
-    materialiseLink(remaining[0]);
+    const result = materialiseLink(link, roots(repo));
+
+    /* One pass, no second round, on whatever filesystem this is. */
     assert.deepEqual(symlinksUnder(repo.aliasDir), []);
+
+    /* And the nested content is really there, which is the half the old test
+     * never checked and the half a silent drop would have failed. */
+    assert.equal(lstatSync(join(link, "vendored")).isSymbolicLink(), false);
+    assert.equal(lstatSync(join(link, "vendored")).isDirectory(), true);
+    assert.match(readFileSync(join(link, "vendored", "package.json"), "utf8"), /pg-pool/);
+    assert.equal(readFileSync(join(link, "vendored", "deep", "pool.js"), "utf8"), "module.exports = 1;\n");
+
+    /* The copier reports what it followed, so a build log records it. */
+    assert.equal(result.nested.length, 1);
+    assert.equal(result.nested[0].target, nested);
+    assert.equal(result.nested[0].reason, "traced_package");
+  });
+
+  it("refuses a NESTED link that leaves the repository, which cpSync would have followed", () => {
+    const repo = repository();
+    const elsewhere = mkdtempSync(join(tmpdir(), "liberty-elsewhere-"));
+    scratch.push(elsewhere);
+    const store = join(elsewhere, "node_modules", "evil");
+    mkdirSync(store, { recursive: true });
+    writeFileSync(join(store, "package.json"), '{"name":"evil"}\n');
+    linkDir(store, join(repo.hoisted, "vendored"));
+
+    const link = join(repo.aliasDir, "pg-587764f78a6c7a9c");
+    linkDir(repo.hoisted, link);
+
+    assert.throws(() => materialiseLink(link, roots(repo)), /outside_the_repository/);
+    /* And nothing was moved: the alias is still a link, so packaging will stop
+     * rather than ship a half-materialised tree. */
+    assert.equal(lstatSync(link).isSymbolicLink(), true);
+  });
+
+  it("refuses a cycle instead of copying until the disk fills", () => {
+    const repo = repository();
+    /* `self` points at the package that contains it. */
+    linkDir(repo.hoisted, join(repo.hoisted, "self"));
+    const link = join(repo.aliasDir, "pg-587764f78a6c7a9c");
+    linkDir(repo.hoisted, link);
+    assert.throws(() => materialiseLink(link, roots(repo)), /cycle/);
+  });
+
+  it("loses nothing: every path in the target is present in the copy", () => {
+    const repo = repository();
+    mkdirSync(join(repo.hoisted, "a", "b", "c"), { recursive: true });
+    writeFileSync(join(repo.hoisted, "a", "b", "c", "deep.txt"), "deep\n");
+    writeFileSync(join(repo.hoisted, "a", "top.txt"), "top\n");
+    const link = join(repo.aliasDir, "pg-587764f78a6c7a9c");
+    linkDir(repo.hoisted, link);
+
+    materialiseLink(link, roots(repo));
+    for (const rel of ["package.json", "lib/index.js", "a/top.txt", "a/b/c/deep.txt"]) {
+      assert.ok(existsSync(join(link, ...rel.split("/"))), `${rel} is missing from the copy`);
+    }
+    assert.equal(readFileSync(join(link, "a", "b", "c", "deep.txt"), "utf8"), "deep\n");
+  });
+});
+
+describe("the copy-coverage postcondition", () => {
+  it("enumerates a tree, naming a link by its own path and not descending it", () => {
+    const repo = repository();
+    mkdirSync(join(repo.hoisted, "a", "b"), { recursive: true });
+    writeFileSync(join(repo.hoisted, "a", "b", "deep.txt"), "x\n");
+    linkDir(join(repo.root, "node_modules"), join(repo.hoisted, "ln"));
+    const paths = pathsUnder(repo.hoisted).sort();
+    assert.deepEqual(paths, ["a", "a/b", "a/b/deep.txt", "lib", "lib/index.js", "ln", "package.json"].sort());
+  });
+
+  it("reports exactly what a copy is missing", () => {
+    const repo = repository();
+    mkdirSync(join(repo.hoisted, "a"), { recursive: true });
+    writeFileSync(join(repo.hoisted, "a", "kept.txt"), "k\n");
+    writeFileSync(join(repo.hoisted, "a", "lost.txt"), "l\n");
+
+    const partial = join(repo.root, "partial");
+    mkdirSync(join(partial, "a", ""), { recursive: true });
+    mkdirSync(join(partial, "lib"), { recursive: true });
+    writeFileSync(join(partial, "package.json"), "{}\n");
+    writeFileSync(join(partial, "lib", "index.js"), "\n");
+    writeFileSync(join(partial, "a", "kept.txt"), "k\n");
+
+    assert.deepEqual(missingPathsIn(repo.hoisted, partial), ["a/lost.txt"]);
+    assert.deepEqual(missingPathsIn(repo.hoisted, repo.hoisted), []);
   });
 });
 

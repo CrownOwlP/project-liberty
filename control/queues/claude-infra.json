@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-11T15:23:45.457Z",
+  "generatedAt": "2026-10-11T16:03:25.993Z",
   "agent": "claude-infra",
   "executionAvailable": true,
   "assigned": [
@@ -143,7 +143,7 @@
       "id": "PL-0755",
       "priority": "P0",
       "lane": "Infra",
-      "status": "REVIEW",
+      "status": "IN_PROGRESS",
       "title": "The installed application answers Internal Server Error: the packaged tree points at the build machine",
       "dependencies": [],
       "allowedPaths": [
@@ -168,7 +168,7 @@
       "notes": "FILED 2026-10-11 from the commander's round-130 report against f60f2fa. The P0 of the accelerated parallel sprint. Reproduced on Linux before any code changed, by hiding the symlink's target and booting the packaged tree: the error text matched the commander's log verbatim -- Failed to load external module pg-587764f78a6c7a9c: ERR_MODULE_NOT_FOUND, imported from [turbopack]_runtime.js. The repository's existing packaged-sidecar acceptance harness passed the whole time. | FILED 2026-10-11 from the commander's round-130A report: CI SUCCESS, desktop shell SUCCESS, Windows package FAILURE at the sidecar step. The refusal was my own check from PL-0755, firing correctly by its own rule on a layout its rule should never have refused. GitHub API access is not enabled for this session, so the run log could not be read; the diagnosis rests on the pasted refusal text, on the link shapes reproduced locally, and on what a Windows directory junction can and cannot store.",
       "owner": "claude-infra",
       "implementationAgent": "claude-infra",
-      "updatedAt": "2026-10-11T15:23:45.086Z",
+      "updatedAt": "2026-10-11T16:03:25.945Z",
       "implementationBaseSha": "f60f2fa1ed64cb60a1046cb28ad340565c4772f2",
       "gateResults": {
         "build": {

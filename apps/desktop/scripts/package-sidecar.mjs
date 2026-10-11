@@ -477,7 +477,20 @@ for (let pass = 0; ; pass += 1) {
       );
     }
     try {
-      materialiseLink(link);
+      const done = materialiseLink(link, { repoRoot, standaloneRoot: standalone });
+      /*
+       * THE NESTED LINKS ARE NAMED, because they are the ones nobody looked at.
+       * Round 130A3's Windows failure was a fixture that assumed how a nested
+       * link is copied; the copier now resolves each one itself and says so, so
+       * the build log records what was followed rather than leaving it to be
+       * inferred from a count.
+       */
+      for (const nested of done.nested) {
+        console.log(
+          `package-sidecar:   nested ${relative(repoRoot, nested.at)} -> ` +
+            `${relative(repoRoot, nested.target)} (${nested.reason})`
+        );
+      }
     } catch (error) {
       fail(`could not materialise ${link}: ${error.message}`);
     }
