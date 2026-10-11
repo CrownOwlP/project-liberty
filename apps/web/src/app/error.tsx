@@ -2,6 +2,10 @@
 
 import { AppShell } from "../components/shell/app-shell";
 import { useEffect } from "react";
+import {
+  describeClientFailure,
+  reportClientFailure
+} from "../lib/diagnostics/client-failure";
 
 /**
  * Route-segment error boundary. `loadHomeCatalog` already converts expected
@@ -17,8 +21,21 @@ export default function HomeError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  /*
+   * THE `console.error` HERE WENT NOWHERE (PL-0759). In the installed
+   * application the webview's console is not captured by anything, so this
+   * boundary was as silent as the global one. The report below reaches the
+   * sidecar's stderr and therefore the log file the operator pastes; the
+   * console call is kept for a developer who has devtools open.
+   */
   useEffect(() => {
-    console.error("home route failed to render", error);
+    const report = describeClientFailure(
+      "route-error",
+      error,
+      typeof window === "undefined" ? "/" : window.location.pathname
+    );
+    console.error("home route failed to render", report);
+    reportClientFailure(report);
   }, [error]);
 
   return (

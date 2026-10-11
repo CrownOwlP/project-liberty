@@ -15,6 +15,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import { listeningPortOnce } from "./lib/sidecar/listener";
+import { describeRefusal, refusalLogLines } from "./lib/diagnostics/refusal-log";
 import {
   SIDECAR_TOKEN_HEADER,
   authorizeRequest,
@@ -81,6 +82,30 @@ export function proxy(request: NextRequest): NextResponse {
   );
 
   if (!decision.ok) {
+    /*
+     * THE REFUSAL IS NOW WRITTEN DOWN, ON THIS SIDE ONLY (PL-0759).
+     *
+     * The response below is unchanged: 403, no body, no reason, because
+     * `authorizeRequest` returns one code for every failure so the wire cannot
+     * be used as an oracle. What was missing is that a refusal left no trace at
+     * ALL -- not in the log the shell captures, not anywhere -- so "does the
+     * installed WebView get 200 or 403" was unanswerable from the machine that
+     * served it. `refusalLogLines` records the method, the path, and whether a
+     * token header and a Host header were present; no header value, and not
+     * which check failed.
+     */
+    for (const line of refusalLogLines(
+      describeRefusal({
+        method: request.method,
+        pathname: request.nextUrl.pathname,
+        tokenHeaderPresent: request.headers.get(SIDECAR_TOKEN_HEADER) !== null,
+        hostHeaderPresent: request.headers.get("host") !== null
+      }),
+      Date.now()
+    )) {
+      console.error(line);
+    }
+
     /*
      * 403 with no body and no detail. The refusal reason is deliberately absent
      * from the response: `authorizeRequest` returns one code for every failure

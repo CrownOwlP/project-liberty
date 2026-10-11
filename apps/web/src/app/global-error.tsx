@@ -1,7 +1,13 @@
 "use client";
 
+import { useEffect } from "react";
+import {
+  describeClientFailure,
+  reportClientFailure
+} from "../lib/diagnostics/client-failure";
+
 /*
- * The LAST resort (PW-0301).
+ * The LAST resort (PW-0301), which until PL-0759 could not say what it caught.
  *
  * `app/error.tsx` cannot catch a failure in the root layout itself, because it
  * renders INSIDE that layout. `global-error.tsx` replaces the whole document,
@@ -11,7 +17,47 @@
  *
  * There was no such boundary. A throw in the root layout produced a blank page.
  */
-export default function GlobalError({ reset }: { readonly reset: () => void }) {
+export default function GlobalError({
+  error,
+  reset
+}: {
+  /*
+   * NEXT HAS ALWAYS PASSED THIS AND THIS COMPONENT NEVER DECLARED IT.
+   *
+   * The signature was `{ reset }`, so the error was dropped at the parameter
+   * list -- which is why the body below could claim the log had the detail
+   * while nothing anywhere received it. The installed Windows application
+   * showed this screen for three rounds and reported nothing.
+   */
+  readonly error: Error & { digest?: string };
+  readonly reset: () => void;
+}) {
+  /*
+   * REPORTED FROM AN EFFECT, so it happens once per caught failure and never
+   * during render. `window.location.pathname` is read here rather than passed,
+   * because this boundary has replaced the document and has no router context
+   * to ask; `describeClientFailure` strips the query before it travels.
+   *
+   * THE IMPORTS ARE THE RISK AND THEY ARE BOUNDED. This file must not import
+   * the shell, the stylesheet, or anything that could be what just failed.
+   * `react` is already the thing rendering this component, and
+   * `lib/diagnostics/client-failure` imports nothing at all -- no React, no
+   * CSS, no contract package -- and swallows every failure of its own. A
+   * reporter that could throw in here would turn a diagnosable failure back
+   * into the blank page this boundary exists to replace.
+   */
+  useEffect(() => {
+    const report = describeClientFailure(
+      "global-error",
+      error,
+      typeof window === "undefined" ? "/" : window.location.pathname
+    );
+    /* Visible in the webview's own console as well, for a developer who has it
+     * open; the POST is what reaches the file an operator can paste. */
+    console.error("liberty: the application frame failed to render", report);
+    reportClientFailure(report);
+  }, [error]);
+
   return (
     <html lang="en">
       <body
@@ -30,14 +76,34 @@ export default function GlobalError({ reset }: { readonly reset: () => void }) {
             Project Liberty could not start this page
           </h1>
           {/*
-            * NO ERROR TEXT. A root-layout failure can carry a stack trace, and a
-            * digest is the only thing safe to surface; here even that is omitted
-            * because this boundary cannot rely on the redaction the rest of the
-            * application does. The log has it.
+            * STILL NO ERROR TEXT, AND NOW THE DIGEST IS SHOWN (PL-0759).
+            *
+            * The reasoning this replaces was half right: a root-layout failure
+            * can carry a stack trace, and a digest is the only thing safe to
+            * surface. It then omitted the digest too and told the reader the log
+            * had the detail. The log had nothing, because nothing wrote it.
+            *
+            * A digest is Next's own correlation id -- lowercase hex, no message,
+            * no path, no user data -- and it is checked against that shape
+            * before it is reported. Showing it is what lets an operator quote
+            * one line that matches a line in the log. When Next did not mint one
+            * (a purely client-side throw), the sentence says so rather than
+            * leaving a blank where a reference should be.
             */}
           <p style={{ color: "#9aa5b5", margin: "0 0 1.5rem" }}>
             Something failed before the application frame could render. Reloading
-            usually clears it. If it does not, the application log has the detail.
+            usually clears it. If it does not, the application log now records
+            this failure.
+          </p>
+          <p
+            style={{
+              color: "#6b7280",
+              margin: "0 0 1.5rem",
+              fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+              fontSize: "0.8rem"
+            }}
+          >
+            {error.digest ? `Reference: ${error.digest}` : "No reference was issued for this failure."}
           </p>
           <button
             type="button"

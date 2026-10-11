@@ -1,8 +1,43 @@
 {
-  "generatedAt": "2026-10-11T16:04:23.254Z",
+  "generatedAt": "2026-10-11T17:22:01.137Z",
   "agent": "claude-frontend",
   "executionAvailable": true,
-  "assigned": [],
+  "assigned": [
+    {
+      "id": "PL-0759",
+      "priority": "P0",
+      "lane": "Frontend",
+      "status": "IN_PROGRESS",
+      "title": "The screen the operator is looking at is the only one that cannot say what failed",
+      "dependencies": [],
+      "allowedPaths": [
+        "apps/web/src/app/global-error.tsx",
+        "apps/web/src/app/error.tsx",
+        "apps/web/src/app/error-boundaries.test.tsx",
+        "apps/web/src/lib/diagnostics",
+        "apps/web/src/app/api/v1/diagnostics",
+        "apps/web/src/proxy.ts"
+      ],
+      "reviewDependencies": [
+        "apps/web/src/lib/sidecar/policy.ts",
+        "apps/desktop/src-tauri/src/sidecar_log.rs",
+        "apps/desktop/src-tauri/src/windows_host.rs",
+        "apps/desktop/scripts/packaged-server-smoke.mjs"
+      ],
+      "preferredAgent": "claude-frontend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit"
+      ],
+      "acceptance": "THE SYMPTOM, FROM THE OPERATOR'S INSTALLED MSI AT f02703e. Windows package, desktop shell and CI all pass. The MSI installs, the native window opens, the bundled node starts, and the handshake completes -- liberty-sidecar-ready {\"host\":\"127.0.0.1\",\"port\":62699}, followed by \"catalog metadata source: none requested\", which proves instrumentation ran to completion and the sidecar process is healthy. The window then displays:\n\n  Project Liberty could not start this page\n  Something failed before the application frame could render.\n\nTHAT TEXT IS apps/web/src/app/global-error.tsx, AND IT IS THE ONE SCREEN IN THIS APPLICATION THAT CANNOT SAY WHAT WENT WRONG. The component's signature was `{ reset }` -- it never declared Next's `error` argument, so the error was dropped at the parameter list. It logged nothing. It showed no digest. And its own comment said \"The log has it\", which was FALSE: nothing anywhere wrote it. Three rounds of Windows work were spent guessing at a failure that was reporting itself to nobody.\n\nWHAT ITS PRESENCE ALREADY TELLS US, AND IT NARROWS THE PROBLEM A LOT. global-error renders only when the render fails at or above the root layout. For the operator to be looking at it, the window had ALREADY navigated to the sidecar origin, the document request had ALREADY passed the 403 request guard, and Next had ALREADY served HTML. So this is not PL-0753's class and not the shell's supervision path -- surface_failure drives the bundled splash, which contains none of this text. It is a render or hydration failure inside the application.\n\nWHAT THIS TASK DOES NOT DO, STATED FIRST BECAUSE IT IS THE HONEST SHAPE OF IT: it does not fix the render failure. The failure cannot be identified from this session. The packaged production artifact was booted here and GET / answers 200 with the real application -- the app shell, the skip link, the navigation including Browse, 2 inline scripts and 10 script tags all carrying a CSP nonce. So the defect does not reproduce on Linux from the same tree, and nothing records it on Windows. This task makes it RECORD ITSELF, which is the only thing that can end the guessing.\n\nREQUIRED: THE BOUNDARY RECEIVES THE ERROR AND SURFACES THE DIGEST. The existing reasoning was half right -- a root-layout failure can carry a stack trace and a digest is the only thing safe to show. It then omitted the digest too. A digest is Next's own correlation id, lowercase hex, no message and no path; showing it is what lets an operator quote one line that matches a line in the log. When Next minted none, the page says so rather than leaving a blank where a reference should be.\n\nREQUIRED: THE REPORT REACHES THE FILE THE OPERATOR ALREADY PASTES. The Rust shell captures the sidecar's stdout and stderr, redacts tokens, budget-caps the volume and writes %LOCALAPPDATA%\\app.projectliberty.desktop\\logs\\sidecar.log. A browser-side failure had no route into it -- console.error in the page goes to the webview's console, which nothing captures. One POST to a local diagnostics route closes the gap and adds no file, no port and no new place to look.\n\nREQUIRED: NO MESSAGE AND NO STACK CROSS THAT BOUNDARY. A message from a server component can carry a file path, a connection string, a query or a token; a stack carries build paths. The report is five bounded fields -- boundary, pathname with the query and fragment REMOVED, digest matched against lowercase hex, error name matched against an identifier pattern, and hadMessage as a BOOLEAN so a reader can tell an error that said nothing from one whose text was withheld. The server re-sanitises with the same rules rather than believing a body because it came from our own page.\n\nREQUIRED: THE REPORTER CANNOT BE THE FAILURE. It is called from the last-resort boundary, which must not import the shell, the stylesheet, or anything that could be what just failed. The module imports NOTHING -- no React, no CSS, no contract package -- is total against anything JavaScript can throw including a throwing getter, and swallows every failure of its own.\n\nREQUIRED: A REFUSAL LEAVES A TRACE. The request guard answers 403 with no body and no reason, deliberately, so the wire cannot be used as an oracle for which check failed -- and the consequence nobody accounted for is that a refusal left no trace ANYWHERE, which is why \"does the installed WebView get 200 or 403\" was unanswerable from the machine that served it. The wire is unchanged. The server-side log records the method, the path without its query, and whether a token header and a Host header were PRESENT -- no header value, and not which check failed. Between them those separate a webview that never attaches the token from one that attaches it to some requests and not others, from a Host mismatch, from a request that is not ours.\n\nREQUIRED: BOTH LOGS ARE BUDGETED. One refused page load is dozens of refusals and a remount loop reports continuously; the line that matters is the first one. The budget keeps the first few per window, drops the rest, and says once per window how many it dropped -- so the log states that it stopped recording rather than appearing to say the failures stopped.\n\nMUST NOT: weaken the request guard, change what the wire says, widen what the 403 reveals, or record any header value, token, query string or user data.\n\nMUST NOT: claim the startup failure is fixed. It is not diagnosed. What this earns is that the next MSI run will say what failed, in the file the operator already sends.",
+      "notes": "FILED 2026-10-11 from the Wave 131 operator report. Two recon findings were checked and REJECTED before this was written: that the packaged proxy fails to forward a CSP nonce (the live packaged response carries a nonce on all 12 script tags), and that the homepage is served as an error page on Linux (it is the real application, 200). Both came from subagent reads of prerendered build output rather than of a live response.",
+      "owner": "claude-frontend",
+      "implementationAgent": "claude-frontend",
+      "updatedAt": "2026-10-11T17:22:00.780Z",
+      "implementationBaseSha": "f02703e88c8bbe4dc8c5141b3b21bd4b7b50fdc0"
+    }
+  ],
   "review": [],
   "reservedExternal": [],
   "recommended": []

@@ -62,6 +62,19 @@ const LAYOUT_FILE = "liberty-sidecar-layout.json";
  * 16 Turbopack server build rather than numbers chosen to pass: the framework
  * itself is imported through `.external.js` paths, and there are many of them.
  */
+/*
+ * WHAT A WORKING HOMEPAGE CONTAINS, and every one of these is emitted by
+ * `AppShell` rather than by a page -- so a route that fell back to an error
+ * boundary cannot produce them. Kept as literal strings rather than imported,
+ * because this script runs against a PACKAGED tree that carries no TypeScript.
+ * If `AppShell`'s markup changes, this list is the thing to change with it, and
+ * a stale entry fails loudly rather than passing quietly.
+ */
+const APPLICATION_FRAME_MARKERS = ["skip-link", 'class="shell"', 'id="main"'];
+
+/** The error boundary's own headline. Its presence in a 200 is the symptom. */
+const ERROR_PAGE_HEADLINE = "could not start this page";
+
 const MINIMUM_SPECIFIERS = 8;
 const MINIMUM_FRAMEWORK_SPECIFIERS = 3;
 
@@ -390,6 +403,54 @@ if (copied) {
       if (path === "/" && !res.body.includes("<html")) {
         fail("the homepage is a document", `200 but the body carries no <html (${res.body.length} bytes)`);
         continue;
+      }
+      /*
+       * AND THE HOMEPAGE IS THE APPLICATION, NOT ITS ERROR PAGE (round 131A).
+       *
+       * THE DEFECT THIS CLOSES IS THIS CHECK'S OWN. `200` plus `<html` was the
+       * whole assertion, and `app/global-error.tsx` answers both: it is a
+       * complete HTML document, served with a 200 on a client-side escalation.
+       * The installed Windows application displayed "Project Liberty could not
+       * start this page" while this test reported six green checks, because the
+       * only question it asked was whether bytes arrived.
+       *
+       * That is the third time in this series that an assertion has been
+       * satisfied without the thing working -- after a symlink that resolved
+       * only on the build machine, and a "no links" invariant a dropped
+       * directory would have satisfied. The pattern is an absence or a shape
+       * standing in for a presence, so this names what must BE there:
+       * `AppShell`'s skip link and its main frame, which no error boundary
+       * renders -- `global-error.tsx` must not import the shell, and
+       * `shell-usage.test.ts` exempts it from the rule that every other route
+       * does -- and it refuses the error page's own headline by name.
+       */
+      if (path === "/") {
+        const absent = APPLICATION_FRAME_MARKERS.filter((marker) => !res.body.includes(marker));
+        if (absent.length > 0) {
+          fail(
+            "the homepage is the application and not an error page",
+            `200, ${res.body.length} bytes, but the body is missing ${JSON.stringify(absent)}. ` +
+              `Those come from AppShell, which no error boundary renders.` +
+              (res.body.includes(ERROR_PAGE_HEADLINE)
+                ? ` The body IS the global error page: it contains "${ERROR_PAGE_HEADLINE}".`
+                : "")
+          );
+          continue;
+        }
+        if (res.body.includes(ERROR_PAGE_HEADLINE)) {
+          fail(
+            "the homepage is the application and not an error page",
+            `200 and the application frame is present, but the body also contains ` +
+              `"${ERROR_PAGE_HEADLINE}" -- the error boundary's headline must not be in a working page.`
+          );
+          continue;
+        }
+        /* STATED, not merely not-failed: a check that only speaks when it is
+         * unhappy is one nobody knows they have. */
+        note(
+          "the homepage is the application and not an error page",
+          `carries ${APPLICATION_FRAME_MARKERS.join(", ")} and not "${ERROR_PAGE_HEADLINE}"`
+        );
       }
       note(`the relocated sidecar answers ${path} with 200`, `${res.body.length} bytes`);
     }
