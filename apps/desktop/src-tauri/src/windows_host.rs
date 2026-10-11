@@ -305,7 +305,22 @@ impl ShellHost for WindowsHost {
             .map(|(_, value)| value.clone())
             .unwrap_or_default();
         let mut log = SidecarLog::new(&token);
+        /*
+         * THE ARGUMENTS, NOT JUST THE EXECUTABLE. This line used to print only
+         * `launch.node`, and that is why the commander's installed-build
+         * failure cost a round: node died resolving its main script and the log
+         * did not say what script it had been given. The argv is one element
+         * (`launch_arguments` returns exactly the server path) and the token is
+         * provably not among them -- `the_token_never_reaches_the_spawn_-
+         * arguments` asserts it, and now that the argv is written to a file a
+         * person pastes into a thread, that property is load-bearing rather
+         * than incidental.
+         */
+        let arguments = launch_arguments(launch);
         log.note(&format!("launching {}", launch.node.display()));
+        log.note(&format!("  argv: {arguments:?}"));
+        log.note(&format!("  server: {}", launch.server.display()));
+        log.note(&format!("  cwd for the child: {}", launch.writable.data.display()));
 
         let (sender, lines) = mpsc::channel();
         let (log_tx, log_rx) = mpsc::channel::<(String, String)>();
@@ -499,15 +514,40 @@ impl ShellHost for WindowsHost {
          * exits is indistinguishable, to a user, from one that never ran -- and
          * that is the "it just doesn't open" report nobody can act on.
          */
-        let _ = self.app.emit(
-            FAILURE_EVENT,
-            serde_json::json!({
-                "headline": report.headline,
-                "detail": report.detail,
-                "retryMayHelp": report.retry_may_help,
-            }),
-        );
+        let payload = serde_json::json!({
+            "headline": report.headline,
+            "detail": report.detail,
+            "retryMayHelp": report.retry_may_help,
+        });
+
+        /*
+         * THE EVENT IS NOT ENOUGH, AND THE COMMANDER'S INSTALLED BUILD IS THE
+         * PROOF. `apps/desktop/dist/index.html` registers its handler with
+         * `await listen(FAILURE_EVENT, ...)`. That await resolves
+         * asynchronously, and a sidecar that dies in milliseconds reaches this
+         * function before it does. Tauri does not replay events, so the report
+         * was emitted into nothing and the splash spun forever -- which means
+         * the supervision machinery worked exactly as written and the only
+         * thing that failed was delivery.
+         *
+         * So the state is WRITTEN ONTO THE PAGE as well as announced. `eval`
+         * needs no subscriber: it sets a global the page reads on load, and
+         * calls the renderer if one is already there. Belt and braces on
+         * purpose -- the event keeps working for a page that was listening,
+         * and the global catches the page that was not.
+         */
+        let _ = self.app.emit(FAILURE_EVENT, &payload);
+
         if let Some(window) = self.app.get_webview_window("main") {
+            /* `serde_json::to_string` of a JSON value cannot fail, but the
+             * result is still handled rather than unwrapped: this function's
+             * whole job is to be the thing that does not panic. */
+            if let Ok(json) = serde_json::to_string(&payload) {
+                let script = format!(
+                    "window.__libertyStartupFailure = {json};                      if (typeof window.__libertyShowStartupFailure === 'function') {{                        window.__libertyShowStartupFailure(window.__libertyStartupFailure);                      }}"
+                );
+                let _ = window.eval(&script);
+            }
             let _ = window.show();
         }
     }

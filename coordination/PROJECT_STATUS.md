@@ -1,8 +1,8 @@
 # Project Liberty - Project Status
 
-> Generated 2026-10-10T17:02:46.246Z from the AI control plane.
+> Generated 2026-10-11T03:23:24.060Z from the AI control plane.
 
-**Overall completion:** 122/152 executable tasks (80%)
+**Overall completion:** 122/153 executable tasks (80%)
 
 ## Status summary
 
@@ -11,7 +11,7 @@
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 0
 - **REVIEW:** 9
-- **BLOCKED:** 12
+- **BLOCKED:** 13
 - **DONE:** 122
 - **CANCELED:** 0
 - **SUPERSEDED:** 4
@@ -39,13 +39,13 @@
 - **PL-0746** [REVIEW] desktop-shell-ci.yml is the one workflow with no timeout at all — owner: claude-infra
 - **PL-0751** [REVIEW] Experiment 1a FAILED on real hardware and D1 still reads as if it had not been tested — owner: claude-lead
 - **PL-0752** [REVIEW] Experiment 1c: can mpv composite beneath WebView2 in one DirectComposition visual tree — owner: claude-media
-- **PL-0753** [REVIEW] The desktop shell cannot load its own user interface: every page load is refused 403 — owner: claude-infra
+- **PL-0754** [REVIEW] The installed MSI never starts its sidecar, and the splash spins forever instead of saying so — owner: claude-infra
 
 ## Dispatch classification
 
 - **READY_AND_EXECUTABLE:** 2
 - **READY_BUT_EXTERNAL:** 0
-- **BLOCKED:** 12
+- **BLOCKED:** 13
 - **BACKLOG (dependency-gated):** 7
 
 ## Recommended executable wave
@@ -128,6 +128,19 @@ THE COST, AND IT IS NOW THE THIRD TIME. Unblocking discards gate results, so thi
 THE UNDERLYING CAUSE, STATED ONCE AND NOT FIXED HERE. Every one of these tasks declared allowedPaths "experiments/**" when its actual write surface was one experiment directory. pathsOverlap treats "experiments" as a prefix of "experiments/exp-1c", so a broad declaration reserves every future experiment. PL-0752 declares "experiments/exp-1c/**" instead, which is the honest surface and stops the next round inheriting this. Narrowing the three parked tasks' declarations is NOT done here: they are in REVIEW or were, and allowedPaths is part of the surface a verdict fingerprints, so changing it under a reviewer is the thing the lock exists to prevent.
 
 UNBLOCK WHEN: gpt-architect's verdict on this task arrives, or Experiment 1c has cleared the path -- whichever is first. This task's own work needs nothing further.
+- **PL-0753** The desktop shell cannot load its own user interface: every page load is refused 403: PARKED TO SEQUENCE A SECOND STARTUP DEFECT IN THE SAME DIRECTORY, and its own fix cannot be observed until that one lands.
+
+PL-0753 IS COMPLETE AND ITS FIX IS CORRECT AS FAR AS ANYTHING CAN TELL. It removed a total blocker: proxy.ts refuses every request without x-liberty-sidecar-token, the matcher excludes only _next/static and favicon.ico so the document request was refused too, and window.navigate carries no headers. The shell now presents the credential through a WebView2 request interceptor scoped to the origin the child reported. 66 tests pass, six mutants were caught, and the Windows-only code was proved compiled. What it awaits is gpt-architect's security-review, nothing else.
+
+AND ITS FIX HAS NEVER RUN, FOR A REASON THAT IS NOW KNOWN. The commander's installed MSI never gets as far as loading a page: bundled node.exe dies resolving its main script, so no sidecar handshake ever happens, so show_window is never reached, so the interceptor PL-0753 installs has never been exercised on a real machine. The two defects are one startup failure in two parts, and this one is in front.
+
+WHY IT IS BEING PARKED. PL-0754 fixes the sidecar launch path and the lost failure report, and both land in apps/desktop/src-tauri/src/. PL-0753 declared allowedPaths as apps/desktop/src-tauri/src/** -- the whole directory -- so one task holds it and two tasks cannot. PL-0754 declares the three files it actually touches instead, so the next round in this directory does not inherit the same lock. PL-0753's declaration is NOT narrowed: allowedPaths is part of the surface a verdict fingerprints and changing it under a reviewer is what the lock exists to prevent.
+
+WHAT WAS TRIED FIRST AND REFUSED. release is not permitted from REVIEW. DONE needs the verdict. CANCELED would assert there is no work to evidence, which is false. request-changes would record gpt-architect asking for changes he has not asked for. Reopening with `start` -- which is what PL-0751 and PL-0752 legitimately used -- would be wrong here: those tasks had their OWN acceptance unmet, and PL-0753's is met. The new defect is a different subject in the same directory, not a correction to this one. block preserves gate results and is the least destructive remaining option.
+
+THE COST, STATED: unblocking discards gate results, so PL-0753's build and unit gates will need re-recording. Both are mine, both are one command, both are truthfully re-recordable. No review provenance is lost because no verdict exists yet -- and the security-review it is waiting for is the gate most worth not disturbing, which is why nothing about its evidence is being touched.
+
+UNBLOCK WHEN: gpt-architect's security-review arrives, or PL-0754 has cleared the directory -- whichever is first. This task's own work needs nothing further.
 
 ## Agent capacity
 

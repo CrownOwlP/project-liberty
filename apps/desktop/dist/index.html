@@ -79,11 +79,38 @@
         document.getElementById("retry").hidden = !retryMayHelp;
         document.getElementById("failure").hidden = false;
       };
+      /*
+       * TWO WAYS IN, AND THE SECOND IS THE ONE THAT WAS MISSING.
+       *
+       * `await listen(...)` resolves asynchronously. A sidecar that dies in
+       * milliseconds reaches the shell's surface_failure BEFORE it does, and
+       * Tauri does not replay events -- so the report was emitted into nothing
+       * and this page sat on "Preparing the local service" forever. The
+       * supervision machinery had worked; only delivery failed.
+       *
+       * The shell now also writes the report straight onto this page with
+       * `eval`, which needs no subscriber. It sets `__libertyStartupFailure`
+       * and calls `__libertyShowStartupFailure` if that exists yet. So:
+       * publish the renderer FIRST, then read anything that arrived before we
+       * were ready, and only then subscribe for anything still to come.
+       */
+      window.__libertyShowStartupFailure = show;
+      if (window.__libertyStartupFailure) {
+        show(window.__libertyStartupFailure);
+      }
       try {
         const { listen } = await import("@tauri-apps/api/event");
         await listen("liberty://startup-failure", (event) => show(event.payload ?? {}));
+        /* Once more, in case it landed between the read above and the
+         * subscription completing. `show` is idempotent -- it only sets text
+         * and toggles hidden -- so running it twice is harmless and running it
+         * zero times is the bug this replaces. */
+        if (window.__libertyStartupFailure) {
+          show(window.__libertyStartupFailure);
+        }
       } catch {
-        /* No Tauri API: this page was opened outside the shell. Nothing to do. */
+        /* No Tauri API: this page was opened outside the shell. The eval path
+         * above still works, because it does not depend on the API. */
       }
     </script>
   </body>

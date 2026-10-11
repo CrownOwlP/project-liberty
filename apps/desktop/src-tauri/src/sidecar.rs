@@ -206,6 +206,87 @@ pub const TOKEN_MIN_CHARS: usize = 64;
 ///
 /// `exists` is injected so the existence checks can be exercised without laying
 /// out a fake install tree. In production it is `Path::exists`.
+/// Join a `/`-separated relative path onto a root using the PLATFORM
+/// separator, one component at a time.
+///
+/// `Path::join` with `"sidecar/node.exe"` stores that string verbatim, so on
+/// Windows the result is `C:\...\Liberty\sidecar/node.exe` -- mixed
+/// separators. Win32 tolerates that on an ordinary path because it normalises
+/// separators itself, but it does NOT normalise anything under an
+/// extended-length `\\?\` prefix, which Microsoft documents: there a forward
+/// slash is an ordinary filename character. And Node's module resolver reasons
+/// about Windows roots with its own regex rather than through the Win32 parser.
+///
+/// The constants keep their forward slashes because they are also BUNDLE
+/// paths, which `package-sidecar.mjs` asserts against and where a forward
+/// slash is correct. The conversion belongs here, at the point the string
+/// becomes a filesystem path.
+fn join_relative(root: &Path, relative: &str) -> PathBuf {
+    /*
+     * NO EMPTY-COMPONENT FILTER, AND THAT IS A DELIBERATE DELETION. One was
+     * written here first, guarding against a constant later spelled
+     * "/sidecar/x" or "sidecar//x". A mutation test then showed that removing
+     * it changed nothing: `Path::new("")` is not absolute, so `join("")`
+     * cannot discard the root, and it only ever appends a separator that
+     * `components()` normalises away. An untestable guard with a confident
+     * comment is worse than no guard, so it is gone -- and
+     * `an_empty_component_cannot_discard_the_root` locks the behaviour that
+     * made it unnecessary.
+     */
+    relative
+        .split('/')
+        .fold(root.to_path_buf(), |path, part| path.join(part))
+}
+
+/// Remove a Windows extended-length prefix from a DRIVE-LETTER path.
+///
+/// WHY. `\\?\C:\x` and `C:\x` name the same file to Win32, but not to
+/// everything that reads a path as a string. Node's `resolveMainPath` resolves
+/// the main module through `Module._findPath`, which calls `fs.realpathSync`,
+/// which splits the root with
+/// `/^(?:[a-zA-Z]:|[\\/]{2}[^\\/]+[\\/][^\\/]+)?[\\/]*/` and `lstat`s
+/// whatever that matched -- a regex over separators, not a device-path parser.
+/// The commander's installed build died in exactly that call.
+///
+/// THE UNC FORM IS LEFT ALONE, DELIBERATELY. The plain equivalent of
+/// `\\?\UNC\server\share` is `\\server\share`, not what you get by
+/// deleting four characters, and a prefix removal that produced
+/// `UNC\server\share` would silently name something else. A path this does
+/// not recognise is returned unchanged, which is the safe direction: at worst
+/// it stays as it arrived.
+///
+/// THE COST, AND IT IS REAL. The prefix exists to escape `MAX_PATH`, and
+/// removing it reintroduces that limit for these two paths. Accepted, because
+/// Node cannot consume the prefixed form at all -- so the alternative is not a
+/// longer path, it is no launch -- and because the installer's own location is
+/// far under the limit.
+/// The four characters Windows puts in front of a path to switch off
+/// normalisation: backslash, backslash, question mark, backslash.
+///
+/// A named constant because it is the one string in this file that cannot
+/// be read at a glance, and because getting it wrong produces a function
+/// that silently normalises nothing -- which a test caught here rather
+/// than an installed build catching it again.
+const EXTENDED_LENGTH_PREFIX: &str = "\\\\?\\";
+
+pub fn without_extended_length_prefix(path: &Path) -> PathBuf {
+    let text = path.to_string_lossy();
+    let Some(rest) = text.strip_prefix(EXTENDED_LENGTH_PREFIX) else {
+        return path.to_path_buf();
+    };
+    // `C:` and nothing shorter. A drive letter, a colon, then a separator or
+    // the end of the string.
+    let mut characters = rest.chars();
+    let is_drive = matches!(characters.next(), Some(letter) if letter.is_ascii_alphabetic())
+        && characters.next() == Some(':')
+        && matches!(characters.next(), None | Some('\\') | Some('/'));
+    if is_drive {
+        PathBuf::from(rest)
+    } else {
+        path.to_path_buf()
+    }
+}
+
 pub fn plan_launch(
     resource_dir: &Path,
     writable_root: &Path,
@@ -224,14 +305,22 @@ pub fn plan_launch(
         ));
     }
 
-    let node = resource_dir.join(NODE_RELATIVE_PATH);
+    /*
+     * NORMALISED ONCE, HERE, so every path derived below is plain. Doing it at
+     * the two join sites instead would leave the writable roots prefixed, and
+     * those become environment variables the child joins paths onto.
+     */
+    let resource_dir = &without_extended_length_prefix(resource_dir);
+    let writable_root = &without_extended_length_prefix(writable_root);
+
+    let node = join_relative(resource_dir, NODE_RELATIVE_PATH);
     if !exists(&node) {
         return Err(LaunchError::Missing {
             what: "Node runtime",
             at: node,
         });
     }
-    let server = resource_dir.join(SERVER_RELATIVE_PATH);
+    let server = join_relative(resource_dir, SERVER_RELATIVE_PATH);
     if !exists(&server) {
         return Err(LaunchError::Missing {
             what: "application server",
@@ -247,9 +336,9 @@ pub fn plan_launch(
      * state on a first launch. Creating it is `create_writable_directories`'
      * job, called by the host before the spawn -- this function stays pure.
      */
-    let data = writable_root.join(DATA_RELATIVE_PATH);
-    let cache = writable_root.join(CACHE_RELATIVE_PATH);
-    let logs = writable_root.join(LOG_RELATIVE_PATH);
+    let data = join_relative(writable_root, DATA_RELATIVE_PATH);
+    let cache = join_relative(writable_root, CACHE_RELATIVE_PATH);
+    let logs = join_relative(writable_root, LOG_RELATIVE_PATH);
 
     Ok(SidecarLaunch {
         node,
@@ -310,11 +399,369 @@ pub fn launch_arguments(launch: &SidecarLaunch) -> Vec<String> {
     vec![launch.server.to_string_lossy().into_owned()]
 }
 
+/// Tests that run the ACTUAL Node runtime, not a mock.
+///
+/// WHY THIS MODULE EXISTS AT ALL. Every ordering and planning test in this
+/// crate passed while the installed application could not start: bundled
+/// `node.exe` was launched and died resolving its own main script. A mocked
+/// `ShellHost` records that `spawn` was called with some argv; it cannot
+/// discover that the argv is one Node refuses. So this module hands a real
+/// `node` a real script at an installed-style path and asserts it runs.
+///
+/// IT REQUIRES `node` ON PATH AND SAYS SO LOUDLY IF ABSENT, rather than
+/// skipping. `desktop-shell-ci.yml` runs on `windows-latest`, which has Node;
+/// a test that quietly passed when the runtime was missing would be the same
+/// class of mistake as the one it exists to catch.
+#[cfg(test)]
+mod real_node {
+    use super::*;
+    use std::process::Command;
+
+    /// Long enough and hex, so `plan_launch` accepts it. Its own module's
+    /// copy is private to that module.
+    const TOKEN: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+    /// An installed-style directory: spaces in two components, like
+    /// `C:\Program Files\Project Liberty`.
+    fn script_at_a_spaced_path() -> (tempdir::Guard, PathBuf) {
+        let guard = tempdir::Guard::new("liberty sidecar test");
+        let nested = guard.path().join("Program Files").join("Project Liberty");
+        let server = join_relative(&nested, SERVER_RELATIVE_PATH);
+        std::fs::create_dir_all(server.parent().expect("a parent")).expect("create the tree");
+        /* The script prints the handshake prefix so this exercises the same
+         * contract the shell reads, not merely "node exited 0". */
+        std::fs::write(
+            &server,
+            format!("process.stdout.write('{}' + ' ok\\n');", HANDSHAKE_SENTINEL),
+        )
+        .expect("write the script");
+        (guard, server)
+    }
+
+    /// The handshake prefix, duplicated here ON PURPOSE as a literal rather
+    /// than imported, so that a change to the real constant has to be made
+    /// deliberately in two places instead of silently passing a test that
+    /// moved with it.
+    const HANDSHAKE_SENTINEL: &str = "liberty-sidecar-ready";
+
+    fn node() -> String {
+        std::env::var("LIBERTY_TEST_NODE").unwrap_or_else(|_| "node".to_string())
+    }
+
+    fn run(script: &Path) -> Result<std::process::Output, std::io::Error> {
+        Command::new(node())
+            .arg(script.as_os_str())
+            .output()
+    }
+
+    #[test]
+    fn the_real_node_runs_our_entry_point_from_an_installed_style_path_with_spaces() {
+        let (_guard, server) = script_at_a_spaced_path();
+        let output = run(&server).unwrap_or_else(|error| {
+            panic!(
+                "could not run `{}`: {error}. This test needs Node on PATH (or \
+                 LIBERTY_TEST_NODE set) -- it exists because a mocked host cannot \
+                 discover that a path is one Node refuses.",
+                node()
+            )
+        });
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            output.status.success(),
+            "node refused the entry point at {}\nstderr: {stderr}",
+            server.display()
+        );
+        assert!(
+            String::from_utf8_lossy(&output.stdout).contains(HANDSHAKE_SENTINEL),
+            "the script ran but said nothing the shell would recognise"
+        );
+    }
+
+    #[test]
+    fn the_planned_server_path_is_the_one_node_accepts() {
+        /*
+         * END TO END THROUGH THE PLANNER. Not a hand-built path: the argument
+         * is whatever `plan_launch` plus `launch_arguments` would really hand
+         * the child, which is the pair that was wrong.
+         */
+        let (_guard, server) = script_at_a_spaced_path();
+        let resources = server
+            .parent()
+            .and_then(|p| p.parent())
+            .and_then(|p| p.parent())
+            .expect("the resource root")
+            .to_path_buf();
+        std::fs::create_dir_all(join_relative(&resources, NODE_RELATIVE_PATH).parent().unwrap())
+            .expect("the node directory");
+        std::fs::write(join_relative(&resources, NODE_RELATIVE_PATH), b"not a real exe")
+            .expect("a stand-in for node.exe, so the existence check passes");
+
+        let launch = plan_launch(&resources, _guard.path(), TOKEN, &|path| path.exists())
+            .expect("the plan");
+        let arguments = launch_arguments(&launch);
+        assert_eq!(arguments.len(), 1, "one argument: {arguments:?}");
+
+        let output = Command::new(node())
+            .arg(&arguments[0])
+            .output()
+            .unwrap_or_else(|error| panic!("could not run `{}`: {error}", node()));
+        assert!(
+            output.status.success(),
+            "node refused the PLANNED path {:?}\nstderr: {}",
+            arguments[0],
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    /// The Windows-only half: the extended-length prefix is what the
+    /// commander's build died on, and only Windows can show it.
+    #[cfg(windows)]
+    #[test]
+    fn node_is_given_the_plain_path_and_not_the_extended_length_one() {
+        let (_guard, server) = script_at_a_spaced_path();
+
+        /* The prefixed form, built the way Windows itself produces one. */
+        let prefixed = PathBuf::from(format!(r"\?\{}", server.display()));
+        let plain = without_extended_length_prefix(&prefixed);
+        assert_eq!(
+            plain, server,
+            "the prefix must come off and nothing else may change"
+        );
+
+        /* The plain form runs. This is the assertion that matters. */
+        let good = run(&plain).unwrap_or_else(|error| panic!("could not run node: {error}"));
+        assert!(
+            good.status.success(),
+            "node refused the normalised path\nstderr: {}",
+            String::from_utf8_lossy(&good.stderr)
+        );
+
+        /*
+         * AND THE PREFIXED FORM IS RECORDED RATHER THAN ASSERTED TO FAIL.
+         * The commander's log shows Node failing on a device path, but this
+         * test does not claim to know that every Node version on every
+         * Windows build refuses every such path -- that would be asserting a
+         * third party's bug as a contract. What it does is print the outcome,
+         * so a CI log carries the observation; and the assertion above is the
+         * property this code actually owns.
+         */
+        match run(&prefixed) {
+            Ok(output) if output.status.success() => {
+                println!(
+                    "note: this Node accepted the extended-length form too. The fix is still \
+                     correct -- it just is not load-bearing on this runtime."
+                );
+            }
+            Ok(output) => println!(
+                "note: this Node REFUSED the extended-length form, which is the failure the \
+                 installed build hit.\nstderr: {}",
+                String::from_utf8_lossy(&output.stderr)
+            ),
+            Err(error) => println!("note: the prefixed form could not even be spawned: {error}"),
+        }
+    }
+
+    /// A temporary directory with a name of our choosing, and no dependency
+    /// added to a crate that ships.
+    mod tempdir {
+        pub struct Guard(std::path::PathBuf);
+
+        impl Guard {
+            pub fn new(label: &str) -> Self {
+                let unique = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_nanos())
+                    .unwrap_or(0);
+                let path = std::env::temp_dir().join(format!("{label} {unique}"));
+                std::fs::create_dir_all(&path).expect("a temporary directory");
+                Self(path)
+            }
+            pub fn path(&self) -> &std::path::Path {
+                &self.0
+            }
+        }
+
+        impl Drop for Guard {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     const TOKEN: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+    #[test]
+    fn an_extended_length_drive_prefix_is_removed_and_nothing_else_is() {
+        // The form Windows itself produces, and the form Node's module
+        // resolver reasons about with a regex over separators.
+        assert_eq!(
+            without_extended_length_prefix(Path::new(r"\\?\C:\Program Files\Liberty")),
+            PathBuf::from(r"C:\Program Files\Liberty")
+        );
+        // A bare drive root.
+        assert_eq!(
+            without_extended_length_prefix(Path::new(r"\\?\C:\")),
+            PathBuf::from(r"C:\")
+        );
+        // Already plain: unchanged, byte for byte.
+        assert_eq!(
+            without_extended_length_prefix(Path::new(r"C:\Program Files\Liberty")),
+            PathBuf::from(r"C:\Program Files\Liberty")
+        );
+    }
+
+    #[test]
+    fn a_unc_extended_length_path_is_left_exactly_as_it_arrived() {
+        /*
+         * THE ONE THAT WOULD BE A SILENT MISDIRECTION. The plain equivalent of
+         * \\?\UNC\server\share is \\server\share, NOT what you get by
+         * deleting four characters -- that would be UNC\server\share, a
+         * relative path naming something else entirely. Unrecognised forms are
+         * returned untouched, which is the safe direction.
+         */
+        for raw in [
+            r"\\?\UNC\fileserver\media\Liberty",
+            r"\\?\Volume{b75e2c83-0000-0000-0000-602f00000000}\Liberty",
+            r"\\fileserver\media\Liberty",
+        ] {
+            assert_eq!(
+                without_extended_length_prefix(Path::new(raw)),
+                PathBuf::from(raw),
+                "{raw} must not be rewritten"
+            );
+        }
+    }
+
+    #[test]
+    fn a_relative_path_written_with_forward_slashes_is_joined_with_the_platform_separator() {
+        /*
+         * `Path::join("sidecar/node.exe")` stores that string verbatim, so on
+         * Windows the result carries a forward slash into a path Win32 will
+         * not normalise under an extended-length prefix. Asserted through
+         * `components()` so this means the same thing on both platforms: the
+         * relative part must arrive as TWO components, not one.
+         */
+        let joined = join_relative(Path::new("ROOT"), "sidecar/server/liberty-sidecar.js");
+        let tail: Vec<_> = joined
+            .components()
+            .skip(1)
+            .map(|c| c.as_os_str().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(tail, vec!["sidecar", "server", "liberty-sidecar.js"]);
+        /*
+         * WINDOWS ONLY, AND THE REASON MATTERS. On Linux `/` IS the platform
+         * separator, so asserting its absence would assert the opposite of
+         * the property. The platform-independent property is the one above:
+         * the relative part arrives as SEPARATE COMPONENTS rather than one
+         * filename with slashes in it.
+         */
+        #[cfg(windows)]
+        assert!(
+            !joined.to_string_lossy().contains('/'),
+            "the forward slash survived into the path: {}",
+            joined.display()
+        );
+    }
+
+    #[test]
+    fn an_empty_component_cannot_discard_the_root() {
+        /*
+         * THE FILTER IN `join_relative` IS NOT DECORATION. `Path::join` with an
+         * absolute component REPLACES the path, so a constant someone later
+         * writes as "/sidecar/node.exe" would silently resolve against the
+         * filesystem root instead of the install directory -- and a doubled
+         * slash would leave an empty component behind. A mutation test found
+         * that removing the filter was undetected, which made this test the
+         * answer rather than the filter being removed.
+         */
+        for relative in ["/sidecar/node.exe", "sidecar//node.exe", "sidecar/node.exe/"] {
+            let joined = join_relative(Path::new("ROOT"), relative);
+            let parts: Vec<_> = joined
+                .components()
+                .map(|c| c.as_os_str().to_string_lossy().into_owned())
+                .collect();
+            assert_eq!(
+                parts,
+                vec!["ROOT", "sidecar", "node.exe"],
+                "{relative} did not join cleanly: {}",
+                joined.display()
+            );
+        }
+    }
+
+    #[test]
+    fn the_planned_paths_carry_no_forward_slash_and_no_prefix() {
+        // Through the real planner, from a prefixed root, which is what Tauri
+        // can hand us.
+        let launch = plan_launch(
+            Path::new(r"\\?\C:\Program Files\Liberty"),
+            Path::new(r"\\?\C:\Users\viewer\AppData\Local\Project Liberty"),
+            TOKEN,
+            &everything_exists,
+        )
+        .expect("the plan");
+
+        /*
+         * THE PLATFORM-INDEPENDENT HALF, and it is the one that catches a
+         * revert to `Path::join`. The forward-slash assertions below only fire
+         * on Windows, so on Linux they would let the original defect back in
+         * unnoticed -- a mutation test found exactly that. Component counts
+         * mean the same thing everywhere.
+         */
+        let tail: Vec<_> = launch
+            .server
+            .components()
+            .rev()
+            .take(3)
+            .map(|c| c.as_os_str().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(
+            tail,
+            vec!["liberty-sidecar.js", "server", "sidecar"],
+            "the relative part must arrive as separate components, not one \
+             filename with slashes in it: {}",
+            launch.server.display()
+        );
+
+        for (what, path) in [
+            ("node", &launch.node),
+            ("server", &launch.server),
+            ("data", &launch.writable.data),
+            ("cache", &launch.writable.cache),
+            ("logs", &launch.writable.logs),
+        ] {
+            let text = path.to_string_lossy();
+            assert!(
+                !text.starts_with(EXTENDED_LENGTH_PREFIX),
+                "{what} kept the extended-length prefix: {text}"
+            );
+            // Windows only, for the reason given in the join test above.
+            #[cfg(windows)]
+            assert!(
+                !text.contains('/'),
+                "{what} kept a forward slash: {text}"
+            );
+        }
+        // And the environment the child reads, which is where the writable
+        // paths actually travel.
+        for (name, value) in &launch.env {
+            assert!(
+                !value.starts_with(EXTENDED_LENGTH_PREFIX),
+                "{name} carries an extended-length prefix: {value}"
+            );
+            #[cfg(windows)]
+            assert!(
+                !value.contains('/'),
+                "{name} carries a forward slash: {value}"
+            );
+
+        }
+    }
 
     fn everything_exists(_: &Path) -> bool {
         true
