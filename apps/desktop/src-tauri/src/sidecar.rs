@@ -520,8 +520,26 @@ mod real_node {
     fn node_is_given_the_plain_path_and_not_the_extended_length_one() {
         let (_guard, server) = script_at_a_spaced_path();
 
-        /* The prefixed form, built the way Windows itself produces one. */
-        let prefixed = PathBuf::from(format!(r"\?\{}", server.display()));
+        /*
+         * BUILT FROM THE CONSTANT, NOT FROM A TYPED LITERAL, and that is the
+         * whole correction. This line previously read
+         * `format!(r"\?\{}", ...)` -- a THREE-character prefix where an
+         * extended-length prefix is four. So it built a near-miss that is not
+         * an extended-length path at all, `without_extended_length_prefix`
+         * correctly declined to strip it, and the assertion below failed on
+         * windows-latest while the production code was right.
+         *
+         * Sharing `EXTENDED_LENGTH_PREFIX` makes that class of mistake
+         * impossible: the test and the thing it tests now have one source of
+         * truth, and if the constant itself were ever wrong,
+         * `the_extended_length_prefix_is_exactly_four_characters` and the
+         * drive and UNC tests would all fail first -- on every platform,
+         * rather than only where it happens to matter.
+         */
+        let prefixed = PathBuf::from(format!(
+            "{EXTENDED_LENGTH_PREFIX}{}",
+            server.display()
+        ));
         let plain = without_extended_length_prefix(&prefixed);
         assert_eq!(
             plain, server,
@@ -594,6 +612,105 @@ mod tests {
     use super::*;
 
     const TOKEN: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+    #[test]
+    fn the_extended_length_prefix_is_exactly_four_characters() {
+        /*
+         * THE TEST THIS ROUND EXISTS FOR, and it is written to be
+         * escape-proof. An extended-length prefix is four characters:
+         * backslash, backslash, question mark, backslash. Round 128 shipped a
+         * Windows-only fixture that typed THREE of them, which no Linux test
+         * could see and which cost a CI round. Round 128 had also already
+         * mangled this very constant once, caught by the drive test below.
+         *
+         * So this asserts the constant WITHOUT writing another escaped
+         * literal: a length, and four characters named through
+         * `char::from_u32` rather than spelled. A backslash is U+005C and a
+         * question mark is U+003F. Nothing here can be collapsed by whatever
+         * writes this file.
+         */
+        let backslash = char::from_u32(0x5C).expect("U+005C is a character");
+        let question = char::from_u32(0x3F).expect("U+003F is a character");
+
+        assert_eq!(
+            EXTENDED_LENGTH_PREFIX.chars().count(),
+            4,
+            "an extended-length prefix is four characters, not {}: {EXTENDED_LENGTH_PREFIX:?}",
+            EXTENDED_LENGTH_PREFIX.chars().count()
+        );
+        assert_eq!(
+            EXTENDED_LENGTH_PREFIX.chars().collect::<Vec<char>>(),
+            vec![backslash, backslash, question, backslash],
+            "the constant is not the prefix Windows uses: {EXTENDED_LENGTH_PREFIX:?}"
+        );
+    }
+
+    #[test]
+    fn the_constant_built_prefix_is_the_one_the_function_strips() {
+        /*
+         * THE HOLE THAT LET ROUND 128'S FIXTURE ESCAPE TO WINDOWS CI.
+         *
+         * The drive test below proves the strip works, but it types its own
+         * prefix. The Windows-only real-node test builds one from the
+         * constant. Nothing joined the two, so a constant and a literal could
+         * disagree and only windows-latest would find out.
+         *
+         * This closes it: the input is built from EXTENDED_LENGTH_PREFIX and a
+         * Windows-shaped drive tail, and the whole chain -- constant, prefix
+         * recognition, drive check, strip -- is asserted on EVERY platform.
+         * What remains genuinely Windows-only is the other half of that test:
+         * whether the real Node then accepts the result.
+         *
+         * The tail is assembled from named characters rather than written with
+         * escapes, for the same reason as the two tests around it.
+         */
+        let b = String::from(char::from_u32(0x5C).expect("U+005C"));
+        let tail = format!("C:{b}Program Files{b}Project Liberty{b}sidecar{b}node.exe");
+        let prefixed = format!("{EXTENDED_LENGTH_PREFIX}{tail}");
+
+        assert_eq!(
+            without_extended_length_prefix(Path::new(&prefixed)),
+            PathBuf::from(&tail),
+            "a path built from the constant must be stripped back to the tail"
+        );
+        // And the input really did carry the prefix, so a constant that had
+        // collapsed to nothing could not make this pass vacuously.
+        assert!(
+            prefixed.len() == tail.len() + 4,
+            "the constant contributed {} characters, not 4",
+            prefixed.len() - tail.len()
+        );
+    }
+
+    #[test]
+    fn a_near_miss_prefix_is_not_treated_as_an_extended_length_path() {
+        /*
+         * THE EXACT SHAPES THAT BROKE ROUND 128'S FIXTURE, now pinned as
+         * behaviour. None of these is an extended-length prefix, so none may
+         * be stripped -- and being left untouched is what the Windows CI
+         * failure was actually reporting, correctly, about a bad fixture.
+         *
+         * Built by concatenation from named characters for the same reason as
+         * the test above: no escaped literal to collapse.
+         */
+        let b = String::from(char::from_u32(0x5C).expect("U+005C"));
+        let q = String::from(char::from_u32(0x3F).expect("U+003F"));
+        let tail = format!("C:{b}Program Files{b}Liberty");
+
+        for near_miss in [
+            format!("{b}{q}{b}{tail}"),      // three characters: the round-128 fixture
+            format!("{b}{b}{q}{tail}"),      // no separator after the question mark
+            format!("{b}{b}{b}{q}{b}{tail}"), // one too many leading backslashes
+            format!("{q}{b}{tail}"),         // no leading backslashes at all
+        ] {
+            let path = Path::new(&near_miss);
+            assert_eq!(
+                without_extended_length_prefix(path),
+                PathBuf::from(&near_miss),
+                "{near_miss:?} is not an extended-length path and must be left alone"
+            );
+        }
+    }
 
     #[test]
     fn an_extended_length_drive_prefix_is_removed_and_nothing_else_is() {
