@@ -144,6 +144,15 @@ describe("the navigation model", () => {
     expect(fragments).toEqual([]);
   });
 
+  it("marks the two kind-locked routes as themselves, not as browse", () => {
+    /* `/movies` and `/tv` are the browse surface with the kind fixed by the
+     * path, but they are separate destinations in the nav and the highlight has
+     * to agree with that -- a viewer on /movies is not "in Browse". */
+    expect(activeEntryId("/movies")).toBe("movies");
+    expect(activeEntryId("/tv")).toBe("tv");
+    expect(activeEntryId("/browse")).toBe("browse");
+  });
+
   it("marks the entry a path is inside, longest match first", () => {
     expect(activeEntryId("/")).toBe("home");
     expect(activeEntryId("/search")).toBe("search");

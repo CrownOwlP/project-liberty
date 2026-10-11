@@ -8,6 +8,9 @@ import type {
 import { NonDeploymentEnvironment } from "../api/deployment-environment";
 import {
   BROWSABLE_KINDS,
+  KIND_LOCKED_PATHS,
+  MOVIES_PATH,
+  TV_PATH,
   BROWSE_GENRE_MAX_LENGTH,
   UNFILTERED,
   browseCatalog,
@@ -281,6 +284,62 @@ describe("buildBrowseHref", () => {
         kind: url.searchParams.get("kind") ?? undefined,
         genre: url.searchParams.get("genre") ?? undefined
       })
+    ).toEqual(asked);
+  });
+});
+
+describe("the routes whose path fixes the kind", () => {
+  it("pairs each locked route with its kind, once", () => {
+    expect([...KIND_LOCKED_PATHS.entries()]).toEqual([
+      ["/movies", "movie"],
+      ["/tv", "series"]
+    ]);
+  });
+
+  it("lets the path win over the query, so a stale link cannot contradict the heading", () => {
+    /* `/movies?kind=series` is a stale link or somebody poking at the surface.
+     * Honouring it would serve series under a path and a heading that both say
+     * films. */
+    expect(readBrowseFilters({ kind: "series" }, "movie")).toEqual({ kind: "movie", genre: null });
+    expect(readBrowseFilters({ kind: "movie" }, "series")).toEqual({ kind: "series", genre: null });
+  });
+
+  it("still reads the genre on a locked route", () => {
+    expect(readBrowseFilters({ kind: "series", genre: "Drama" }, "movie")).toEqual({
+      kind: "movie",
+      genre: "Drama"
+    });
+  });
+
+  it("leaves /browse choosing for itself", () => {
+    expect(readBrowseFilters({ kind: "series" })).toEqual({ kind: "series", genre: null });
+  });
+
+  it("does not repeat a locked kind in the query it builds", () => {
+    /* Two sources of truth for one filter is a shareable link that can
+     * contradict its own path. */
+    expect(buildBrowseHref({ kind: "movie", genre: null }, MOVIES_PATH)).toBe("/movies");
+    expect(buildBrowseHref({ kind: "movie", genre: "Drama" }, MOVIES_PATH)).toBe(
+      "/movies?genre=Drama"
+    );
+    expect(buildBrowseHref({ kind: "series", genre: null }, TV_PATH)).toBe("/tv");
+  });
+
+  it("still emits a kind that the route does NOT fix", () => {
+    expect(buildBrowseHref({ kind: "series", genre: null }, MOVIES_PATH)).toBe("/movies?kind=series");
+  });
+
+  it("is unchanged for /browse", () => {
+    expect(buildBrowseHref({ kind: "movie", genre: null })).toBe("/browse?kind=movie");
+    expect(buildBrowseHref(UNFILTERED)).toBe("/browse");
+  });
+
+  it("round-trips a locked route's own address back to the same filters", () => {
+    const asked = { kind: "series" as const, genre: "Science fiction" };
+    const url = new URL(buildBrowseHref(asked, TV_PATH), "https://example.invalid");
+    expect(url.pathname).toBe(TV_PATH);
+    expect(
+      readBrowseFilters({ genre: url.searchParams.get("genre") ?? undefined }, "series")
     ).toEqual(asked);
   });
 });

@@ -58,6 +58,28 @@ const KIND_FILTERS: ReadonlyArray<BrowseKindFilter> = ["all", "movie", "series"]
  */
 export const BROWSE_GENRE_MAX_LENGTH = 64;
 
+/*
+ * THE THREE ROUTES THIS MODULE SERVES, AND WHICH KIND EACH FIXES (Wave 131B).
+ *
+ * `/browse` lets the viewer choose; `/movies` and `/tv` are the same surface
+ * with the kind decided by the path. They exist because "Movies" and "TV Shows"
+ * are what a viewer looks for in a navigation bar -- a kind dropdown on one
+ * page is a filter, and a named destination is a place -- and because the
+ * machinery was already here: one loader, one grid, one empty-state vocabulary.
+ *
+ * A MAP RATHER THAN THREE PAGES THAT KNOW THEIR OWN KIND, so the pairing is
+ * stated once and `buildBrowseHref` can tell which query parameter a given
+ * route must NOT emit.
+ */
+export const BROWSE_PATH = "/browse";
+export const MOVIES_PATH = "/movies";
+export const TV_PATH = "/tv";
+
+export const KIND_LOCKED_PATHS: ReadonlyMap<string, Exclude<BrowseKindFilter, "all">> = new Map([
+  [MOVIES_PATH, "movie"],
+  [TV_PATH, "series"]
+]);
+
 export interface BrowseFilters {
   readonly kind: BrowseKindFilter;
   /** The exact genre to show, or `null` for every genre. */
@@ -236,9 +258,19 @@ export function readBrowseGenreParam(value: string | string[] | undefined): stri
 
 /** Both filters, read from one search-params object. */
 export function readBrowseFilters(
-  params: Record<string, string | string[] | undefined>
+  params: Record<string, string | string[] | undefined>,
+  lockedKind: Exclude<BrowseKindFilter, "all"> | null = null
 ): BrowseFilters {
-  return { kind: readBrowseKindParam(params.kind), genre: readBrowseGenreParam(params.genre) };
+  /*
+   * A LOCKED KIND WINS OVER THE QUERY, and it is not a courtesy. `/movies?kind=series`
+   * is either a stale link or someone poking at the surface; honouring the query
+   * would serve series under a path and a heading that both say films. The path
+   * is the statement.
+   */
+  return {
+    kind: lockedKind ?? readBrowseKindParam(params.kind),
+    genre: readBrowseGenreParam(params.genre)
+  };
 }
 
 /**
@@ -249,11 +281,20 @@ export function readBrowseFilters(
  * values are omitted entirely, so the unfiltered page is `/browse` and not
  * `/browse?kind=all&genre=`.
  */
-export function buildBrowseHref(filters: BrowseFilters): string {
+export function buildBrowseHref(filters: BrowseFilters, basePath: string = BROWSE_PATH): string {
   const parts: string[] = [];
-  if (filters.kind !== "all") parts.push(`kind=${encodeURIComponent(filters.kind)}`);
+  /*
+   * A ROUTE THAT FIXES THE KIND DOES NOT REPEAT IT IN THE QUERY. `/movies`
+   * already says `kind=movie`; emitting it as well would produce two sources of
+   * truth for one filter and a shareable link that contradicts its own path if
+   * somebody edited one of them.
+   */
+  const lockedKind = KIND_LOCKED_PATHS.get(basePath) ?? null;
+  if (filters.kind !== "all" && filters.kind !== lockedKind) {
+    parts.push(`kind=${encodeURIComponent(filters.kind)}`);
+  }
   if (filters.genre !== null) parts.push(`genre=${encodeURIComponent(filters.genre)}`);
-  return parts.length === 0 ? "/browse" : `/browse?${parts.join("&")}`;
+  return parts.length === 0 ? basePath : `${basePath}?${parts.join("&")}`;
 }
 
 /**

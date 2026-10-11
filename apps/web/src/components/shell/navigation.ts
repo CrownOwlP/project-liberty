@@ -75,6 +75,21 @@ export const PRIMARY_NAVIGATION: readonly NavigationEntry[] = [
    * somebody wants to rewrite that claim rather than contradict it.
    */
   live("browse", "Browse", "/browse"),
+  /*
+   * FILMS AND SERIES AS DESTINATIONS (Wave 131B).
+   *
+   * `/browse` has a kind dropdown, which is the right control for somebody
+   * already browsing and the wrong one for somebody who arrived wanting films.
+   * These two routes are the same surface with the kind fixed by the path, so
+   * the nav can offer the two things a viewer actually scans for without a
+   * second implementation behind either.
+   *
+   * "TV Shows" rather than "Series" HERE and "Series" in the heading: this list
+   * is scanned, and "TV Shows" is the phrase; the page then uses the word the
+   * rest of the application uses for the kind.
+   */
+  live("movies", "Movies", "/movies"),
+  live("tv", "TV Shows", "/tv"),
   live("watchlist", "Watchlist", "/watchlist"),
   planned("live", "Live TV", "live acquisition is PL-0602, blocked on licensed feed access"),
   /*

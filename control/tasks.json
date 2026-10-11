@@ -15352,7 +15352,7 @@
       "id": "PL-0756",
       "priority": "P1",
       "lane": "Frontend",
-      "status": "REVIEW",
+      "status": "IN_PROGRESS",
       "title": "There is no way to browse the catalog: home shows two rails and search needs you to know the answer",
       "dependencies": [],
       "allowedPaths": [
@@ -15381,7 +15381,7 @@
       "notes": "FILED 2026-10-11 as Lane B of the commander's round-130 accelerated sprint. Reconnaissance over the PW-03xx series found every approved screen DONE except live TV, the licences page and a dialog-focus task -- and found no task at all for the catalog surface the product spec names, which is why this exists rather than being claimed. The stale productUi instrument in control/product-readiness.json (settings and player-controls recorded absent while both are built) is reported to the commander rather than edited from here.",
       "owner": "claude-frontend",
       "implementationAgent": "claude-frontend",
-      "updatedAt": "2026-10-11T05:28:04.002Z",
+      "updatedAt": "2026-10-11T17:31:28.881Z",
       "implementationBaseSha": "b0f22cf69537531c2aca968ce1ecfef57f3aebc3",
       "gateResults": {
         "typecheck": {

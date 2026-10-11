@@ -1,4 +1,4 @@
-import type { BrowseFilters, BrowseGenreFacet, BrowseKindFilter } from "../../app/browse/browse";
+import { BROWSE_PATH, type BrowseFilters, type BrowseGenreFacet, type BrowseKindFilter } from "../../app/browse/browse";
 import styles from "./browse.module.css";
 
 /* -------------------------------------------------------------------------
@@ -34,9 +34,28 @@ export interface BrowseFilterBarProps {
   genres: readonly BrowseGenreFacet[];
   /** The one sentence describing what is below, derived on the server. */
   summary: string;
+  /**
+   * Where the form submits. The route it is rendered on, so a filtered view
+   * stays on the page the viewer is reading instead of bouncing to `/browse`.
+   */
+  action?: string;
+  /**
+   * Set on a route whose path fixes the kind (`/movies`, `/tv`). The kind
+   * control is then NOT RENDERED AT ALL rather than rendered and disabled: a
+   * disabled select is a control that says "you may not choose", and here
+   * there is nothing to choose -- the viewer already chose by arriving. The
+   * heading above says which kind, so nothing is hidden by leaving it out.
+   */
+  lockedKind?: Exclude<BrowseKindFilter, "all"> | null;
 }
 
-export function BrowseFilterBar({ filters, genres, summary }: BrowseFilterBarProps) {
+export function BrowseFilterBar({
+  filters,
+  genres,
+  summary,
+  action = BROWSE_PATH,
+  lockedKind = null
+}: BrowseFilterBarProps) {
   /*
    * A SELECTED GENRE THE FACETS DO NOT OFFER IS STILL SHOWN.
    *
@@ -51,24 +70,26 @@ export function BrowseFilterBar({ filters, genres, summary }: BrowseFilterBarPro
   const offered = genres.some((facet) => facet.genre.toLowerCase() === selected?.toLowerCase());
 
   return (
-    <form action="/browse" className={styles.filters} method="get">
-      <div className={styles.field}>
-        <label className={styles.label} htmlFor="browse-kind">
-          Show
-        </label>
-        <select
-          className={styles.select}
-          defaultValue={filters.kind}
-          id="browse-kind"
-          name="kind"
-        >
-          {(Object.keys(KIND_LABEL) as BrowseKindFilter[]).map((kind) => (
-            <option key={kind} value={kind}>
-              {KIND_LABEL[kind]}
-            </option>
-          ))}
-        </select>
-      </div>
+    <form action={action} className={styles.filters} method="get">
+      {lockedKind === null && (
+        <div className={styles.field}>
+          <label className={styles.label} htmlFor="browse-kind">
+            Show
+          </label>
+          <select
+            className={styles.select}
+            defaultValue={filters.kind}
+            id="browse-kind"
+            name="kind"
+          >
+            {(Object.keys(KIND_LABEL) as BrowseKindFilter[]).map((kind) => (
+              <option key={kind} value={kind}>
+                {KIND_LABEL[kind]}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       <div className={styles.field}>
         <label className={styles.label} htmlFor="browse-genre">
