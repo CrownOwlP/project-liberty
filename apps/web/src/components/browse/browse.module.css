@@ -1,0 +1,127 @@
+/*
+ * Scoped to the browse surface (PL-0756).
+ *
+ * A CSS module rather than additions to `globals.css`, for the reason
+ * `search.module.css` gives: the filter bar and the title grid are the only
+ * things this surface needs that the catalog surface does not already provide,
+ * and a module keeps them from becoming global class names every future surface
+ * has to avoid colliding with. Everything already global -- .shell, .section,
+ * .section-head, .card, .state-panel, .button, .button-secondary,
+ * .visually-hidden -- is reused as-is so the surfaces cannot drift apart.
+ */
+
+.heading {
+  margin: 0;
+  font-size: 28px;
+  line-height: 1.15;
+  letter-spacing: -0.03em;
+}
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.label {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/*
+ * THE RESTING BOUNDARY, at the same contrast the search field argues for and
+ * for the same reason.
+ *
+ * `var(--border)` is rgba(255,255,255,0.09), which over this control's own
+ * `var(--surface)` fill (#10141d) renders as #262931 -- 1.27:1 against that
+ * fill. SC 1.4.11 (AA) asks for 3:1 on the visual information needed to
+ * identify a component, and a form control's boundary is the canonical example.
+ * `#6b7280` is the literal `search.module.css` measured for exactly this pair:
+ *
+ *   #6b7280 (L 0.16719) on #10141d (L 0.00699, the control's fill) -> 3.81:1
+ *   #6b7280 (L 0.16719) on #06080d (L 0.00241, the page behind)    -> 4.14:1
+ *
+ * OPAQUE, and not a higher-alpha white, because an rgba boundary's ratio is a
+ * function of whatever it is composited over -- so those numbers would quietly
+ * stop being true the day this control moves onto a panel.
+ *
+ * THE LITERAL IS DUPLICATED FROM `search.module.css` AND THAT IS THE SMALLER
+ * COST. Raising the global `--border` token is another task's surface
+ * (`globals.css`) and that token is worn by the hero, the posters, the state
+ * panels and the topbar pill, so moving it to satisfy two form controls would
+ * restyle every one of them from inside a browse feature. Two measured literals
+ * are recoverable; a global restyle nobody measured is not. It becomes a token
+ * when somebody measures those surfaces too.
+ */
+.select {
+  padding: 10px 12px;
+  border: 1px solid #6b7280;
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  max-width: 100%;
+}
+
+/*
+ * Focus is never removed, only replaced -- and the two controls on this surface
+ * show it the same way rather than one of them taking whatever the user agent
+ * picks against a dark background.
+ */
+.select:focus-visible,
+.submit:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/*
+ * The summary takes the whole row below the controls, so changing a filter
+ * cannot reflow the controls themselves.
+ */
+.summary {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/*
+ * A GRID AND NOT THE HOME RAIL. `.rail` is a horizontal scroller, which is the
+ * right shape for "here are eight new films" and the wrong one for "here is the
+ * catalog": a viewer cannot see how much there is, and reaching the end means
+ * scrolling sideways through everything in between. Five across matches the
+ * search results grid so the two discovery surfaces look like one product.
+ */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cell {
+  min-width: 0;
+}
+
+@media (max-width: 900px) {
+  .grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .select {
+    width: 100%;
+  }
+
+  .field {
+    flex: 1 1 100%;
+  }
+}

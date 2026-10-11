@@ -1,8 +1,45 @@
 {
-  "generatedAt": "2026-10-11T16:04:23.254Z",
+  "generatedAt": "2026-10-11T16:04:41.344Z",
   "agent": "claude-frontend",
   "executionAvailable": true,
-  "assigned": [],
+  "assigned": [
+    {
+      "id": "PL-0756",
+      "priority": "P1",
+      "lane": "Frontend",
+      "status": "IN_PROGRESS",
+      "title": "There is no way to browse the catalog: home shows two rails and search needs you to know the answer",
+      "dependencies": [],
+      "allowedPaths": [
+        "apps/web/src/app/browse",
+        "apps/web/src/components/browse",
+        "apps/web/src/components/shell/navigation.ts",
+        "apps/web/src/components/shell/shell-usage.test.ts",
+        "apps/web/src/components/profiles/profile-ui.test.tsx"
+      ],
+      "reviewDependencies": [
+        "apps/web/src/lib/catalog.ts",
+        "apps/web/src/lib/catalog-source.ts",
+        "apps/web/src/app/search/search.ts",
+        "apps/web/src/app/search/page.tsx",
+        "apps/web/src/components/catalog-card.tsx",
+        "docs/PRODUCT_SPEC.md",
+        "docs/CATALOG_SOURCE.md"
+      ],
+      "preferredAgent": "claude-frontend",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "unit"
+      ],
+      "acceptance": "THE GAP. docs/PRODUCT_SPEC.md names \"Home/catalog/search\" among the MVP capabilities. Home and search exist; there is no catalog surface. Browsing is currently two home rails -- RAIL_DEFINITIONS in lib/catalog.ts, films and series, newest first -- plus a search box that requires the viewer to already know what they are looking for. A viewer who wants to see what is in the catalog, or everything in one genre, has nowhere to go. /browse, /catalog, components/browse and any live-TV route do not exist in apps/web/src/app.\n\nREQUIRED: A BROWSE SURFACE THAT READS THE SAME PORT THROUGH THE SAME GATES. The catalog metadata port (lib/catalog-source-registry.ts), then selectDeclaredItems, then isSurfaceable, then the browsable-kind allowlist -- the order home and search both already apply, and in that order, so a record whose rights basis the source did not declare is never reachable from this surface either. No new provider, no new fixture, no second catalog read path.\n\nREQUIRED: THE FACETS ARE DERIVED FROM WHAT SURVIVED THE RIGHTS GATE, NOT FROM THE RECORDS. A genre list is published to the reader. Deriving it before the gate would let a withheld record contribute a genre name -- disclosing that the catalog holds something of that kind while refusing to show it, which is a rights leak through a filter control rather than through a card. The facet list must be computed from the surfaced items only, and a test must pin that ORDERING. The test needs a cast to do it, and the cast is itself the finding: contentRightsSchema admits only the three playable values, so every schema-valid CatalogItem is surfaceable and the union cannot express a withheld one -- the real withholding happens upstream in selectDeclaredItems, which refuses a record before it becomes an item at all. The ordering is still load-bearing against the rights vocabulary being widened later, which is the only way it can regress, and the test says so rather than implying the type system proves it.\n\nREQUIRED: 'YOUR FILTERS MATCHED NOTHING' AND 'THE CATALOG HAS NOTHING' ARE DIFFERENT PAGES. This is the collapse app/search/search.ts documents at length and lib/catalog.ts carries a cause field for. An empty browse result must say which of the two it is, and the cause must come from the catalog rather than be inferred from the length of a filtered array, because both states legitimately produce an empty array.\n\nREQUIRED: DETERMINISTIC ORDER WITH A FINAL TIEBREAK, AND NO localeCompare. Same catalog and same filters in, same list out, on any host. localeCompare without an explicit locale uses the host's collation, which is the defect already removed from candidate ranking in @liberty/media-engine and from search's result sort; buildHomeCatalog still has it and is not this task's surface. id decides last, so the sort can never fall back on the order the catalog arrived in.\n\nREQUIRED: THE FILTERS LIVE IN THE URL AND WORK WITHOUT JAVASCRIPT. A GET form and search params, so a filtered view is shareable and bookmarkable and so the surface is complete before hydration. Parameters arrive as untrusted input and are read defensively: a repeated parameter takes its first value rather than being joined, an unrecognised value falls back to the unfiltered default, and nothing malformed produces a 500 -- the rules readSearchQueryParam already states for q.\n\nREQUIRED: THE NAVIGATION ENTRY, AND A GUARD THAT THE PROMISE IN THAT FILE IS KEPT. navigation.ts's header says \"every entry goes somewhere that exists\" and nothing checks it: the existing test only asserts that a live href starts with a slash. A live entry whose route file is absent is exactly the dead link that file was written to remove, so the guard must resolve each live href to a page under apps/web/src/app and fail when one is missing.\n\nMUST NOT: add a play affordance to a browse card, imply a resolvable stream from an item being visible, or weaken any rights gate. Browse is discovery; a stream is resolved through authorized provider adapters at playback time.\n\nMUST NOT: add an HTTP contract or a route handler. docs/API_CONTRACTS.md requires schemas in @liberty/contracts before a route exists, and it lists no browse route among the planned contracts. This value is computed in the server render and nothing transports it, so a wire contract would be contract machinery with no transport. GET /api/v1/search is the planned route that would change that, and it is not this task.\n\nMUST NOT: claim e2e coverage that was not run. The Playwright suite cannot be executed in this session; the surface is covered by vitest, the route is reachable through the navigation guard, and the e2e spec is deliberately left to a task that can run it rather than shipped unexecuted into a 45-minute job.\n\nREQUIRED, ADDED MID-IMPLEMENTATION AND DELIBERATELY RATHER THAN QUIETLY: a brittle count in a test that is not this surface's must become the property it stands for. apps/web/src/components/profiles/profile-ui.test.tsx asserts PRIMARY_NAVIGATION has LENGTH 5 to mean \"identity is not a content destination\", and the line beside it already asserts that properly by checking /profiles is absent. The count is a proxy that fails on every legitimate nav addition -- it failed on this one -- and replacing it with the property removes a false alarm without removing a guard. The file was added to allowedPaths for this and nothing else; the /profiles assertion stays.",
+      "notes": "FILED 2026-10-11 as Lane B of the commander's round-130 accelerated sprint. Reconnaissance over the PW-03xx series found every approved screen DONE except live TV, the licences page and a dialog-focus task -- and found no task at all for the catalog surface the product spec names, which is why this exists rather than being claimed. The stale productUi instrument in control/product-readiness.json (settings and player-controls recorded absent while both are built) is reported to the commander rather than edited from here.",
+      "owner": "claude-frontend",
+      "implementationAgent": "claude-frontend",
+      "updatedAt": "2026-10-11T05:12:12.480Z",
+      "implementationBaseSha": "b0f22cf69537531c2aca968ce1ecfef57f3aebc3"
+    }
+  ],
   "review": [],
   "reservedExternal": [],
   "recommended": []

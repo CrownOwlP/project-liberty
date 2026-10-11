@@ -97,6 +97,47 @@ describe("the navigation model", () => {
     expect(search?.href).toBe("/search");
   });
 
+  it("links only to routes that actually exist, which nothing checked before", () => {
+    /*
+     * THE PROMISE IN THIS MODULE'S HEADER, ENFORCED (PL-0756).
+     *
+     * It says "every entry goes somewhere that exists" and explains that a dead
+     * link is worse than an absent one, because it teaches a viewer the feature
+     * is broken rather than absent. The assertion above only checks that a live
+     * href STARTS WITH a slash -- which `/browse` satisfied before the route
+     * existed, and which every typo satisfies. The four fragment anchors this
+     * file replaced were dead links too; the guard that was supposed to stop
+     * them coming back could not tell a destination from a string.
+     *
+     * Resolved against the filesystem rather than against a list, so adding a
+     * nav entry and forgetting the page fails here instead of in somebody's
+     * browser. Only static paths are resolvable this way, and every entry in
+     * `PRIMARY_NAVIGATION` is static -- a dynamic one would need the segment
+     * pattern and is refused below rather than silently excused, because an
+     * exemption nobody notices is how this guard would stop guarding.
+     */
+    const pages = routeFiles(APP_DIR);
+    /* Non-vacuity: a walker that resolved nothing would satisfy the loop below
+     * for every entry, which is the characteristic failure of this guard. */
+    expect(pages).toContain(join(APP_DIR, 'page.tsx'));
+
+    const missing: string[] = [];
+    for (const entry of PRIMARY_NAVIGATION) {
+      const href = entry.href;
+      if (href === null) continue;
+      expect(href, `${entry.id} has a dynamic path; this guard cannot resolve one`).not.toMatch(
+        /[[\]]/
+      );
+      const segments = href.split("/").filter((segment) => segment !== "");
+      const page = join(APP_DIR, ...segments, "page.tsx");
+      if (!pages.includes(page)) missing.push(`${entry.id} -> ${href}`);
+    }
+    expect(
+      missing,
+      "a navigation entry points at a route with no page.tsx; build it or mark the entry planned"
+    ).toEqual([]);
+  });
+
   it("contains no fragment anchors", () => {
     /* The four it replaced were `#featured` and `#catalog` three times. */
     const fragments = PRIMARY_NAVIGATION.filter((entry) => entry.href?.includes("#"));
