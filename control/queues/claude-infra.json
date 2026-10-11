@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-11T16:04:48.845Z",
+  "generatedAt": "2026-10-11T16:04:54.752Z",
   "agent": "claude-infra",
   "executionAvailable": true,
   "assigned": [
@@ -191,7 +191,7 @@
       "id": "PL-0757",
       "priority": "P2",
       "lane": "Infra",
-      "status": "IN_PROGRESS",
+      "status": "REVIEW",
       "title": "The product readiness instrument reports two built surfaces as absent",
       "dependencies": [],
       "allowedPaths": [
@@ -213,8 +213,17 @@
       "notes": "FILED 2026-10-11 during the round-130 sprint, from reconnaissance over the PW-03xx series for Lane B. The commander asked for progress estimates supported by repository evidence; this file IS the estimate, and two of its rows understate what is built while a third gives a reason that no longer holds.",
       "owner": "claude-infra",
       "implementationAgent": "claude-infra",
-      "updatedAt": "2026-10-11T05:29:11.802Z",
-      "implementationBaseSha": "cf14b584b334b31a5112e26d9e4e008515b0a3a5"
+      "updatedAt": "2026-10-11T05:30:28.859Z",
+      "implementationBaseSha": "cf14b584b334b31a5112e26d9e4e008515b0a3a5",
+      "gateResults": {
+        "repo-validate": {
+          "status": "pass",
+          "at": "2026-10-11T05:30:28.526Z",
+          "by": "claude-infra",
+          "commitSha": "d8a28b28c3480b919b0226595d0186c5f725a6f9",
+          "evidence": "REPO-VALIDATE, at d8a28b28c3480b919b0226595d0186c5f725a6f9.\n\nnpm run repo:validate passed. node scripts/product-readiness.mjs regenerated coordination/PRODUCT_READINESS.md from the corrected JSON rather than the markdown being hand-edited -- its own header forbids editing it, and a generated view that disagrees with its source is the defect this instrument exists to prevent.\n\nEVERY CORRECTION WAS CHECKED AGAINST THE REPOSITORY BEFORE IT WAS WRITTEN, and the checks are the evidence:\n  - player-controls: apps/web/src/components/player/controls/ holds player-controls.tsx, controls-state.ts, their tests and a stylesheet; grep over the first two finds Fullscreen, volume, Mute, subtitle/Subtitles, audioTrack, selectAudioTrack and seek. e2e/tests/player-controls.spec.ts has 12 tests. grep for selectVariantTrack, qualitySelect and selectQuality across apps/web/src returns NOTHING, which is why the row is partial and not present.\n  - settings: apps/web/src/app/settings/page.tsx exists and renders Language, Diagnostics and About sections; apps/web/src/app/api/v1/profiles/preferences/ holds route.ts, handler.ts, contract.ts and handler.test.ts. \"No screen and no API\" was false on both halves.\n  - live-guide-ui: navigation.ts line 79 is planned(\"live\", \"Live TV\", \"live acquisition is PL-0602, blocked on licensed feed access\") -- a non-link with a stated reason, not a fragment anchor. There is no apps/web/src/app/live and no apps/web/src/components/live, so the state stays absent and only the reason changed.\n\nTHE NUMBERS MOVED AND NO WORK WAS DONE, which is the thing to be explicit about: UI / product polish 63% -> 69%, overall usable-product readiness 60% -> 61%, and the productUi row counts 7 present / 6 partial / 3 absent -> 7 present / 8 partial / 1 absent. That is the instrument catching up with the repository, not progress. Two of the three rows are the \"CORRECTED AND CHANGED\" case rounds 107's own notes distinguish -- the work had landed and the row was never updated -- and the new notes say so in those words.\n\nNOTHING WAS ROUNDED UP TO present. Both corrected rows carry a named missing clause: quality selection for the player, and playback/subtitle preferences plus PL-0744 and PW-0314 for settings. A green row is the one nobody re-checks, so partial with the gap named in the row is the honest state.\n\nNOT CLAIMED: that the remaining rows are right. I verified the three I changed plus the two I extended. The other eleven productUi rows and the six other dimensions were not audited, and rounds 107 and 130 between them have now found five stale rows in this one dimension -- which is a standing argument for an audit task rather than a reason to trust the rest."
+        }
+      }
     }
   ],
   "review": [],

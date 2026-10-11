@@ -872,7 +872,7 @@ REQUIRED: the bound is per-invocation and derived. A silent install of this MSI 
 REQUIRED: a timed-out case is NEVER recorded as pass, and never as not-run with a reason that reads like a deliberate skip -- F2's `not-run` means 'the evidence does not exist', and a stall means 'we did not find out'.
 
 OUT OF SCOPE: changing what any case does, and the step-level bound PL-0736 added, which stays as the outer limit. |
-| PL-0757 | P2 | Infra | IN_PROGRESS | claude-infra | - | The product readiness instrument reports two built surfaces as absent | THE INSTRUMENT IS THE PROJECT'S ANSWER TO "HOW FAR ALONG IS THIS", AND THREE OF ITS productUi ROWS ARE WRONG ABOUT THE REPOSITORY.
+| PL-0757 | P2 | Infra | REVIEW | claude-infra | - | The product readiness instrument reports two built surfaces as absent | THE INSTRUMENT IS THE PROJECT'S ANSWER TO "HOW FAR ALONG IS THIS", AND THREE OF ITS productUi ROWS ARE WRONG ABOUT THE REPOSITORY.
 
 player-controls reads state: absent, note "The browser's native <video> chrome. No play, seek, volume, fullscreen, subtitle, audio or quality control." Six of those seven exist: apps/web/src/components/player/controls/player-controls.tsx and controls-state.ts carry play/pause, seek, volume and mute, fullscreen, an audio-track menu and a subtitle menu, with keyboard operation, and e2e/tests/player-controls.spec.ts holds 12 browser tests over them. The seventh -- quality or rendition selection -- is genuinely absent: nothing in apps/web/src mentions selectVariantTrack or any quality selector, and web-player-adapter.ts collapses variants to one entry per language. So the row is partial, and the note must say which clause survives rather than being flipped wholesale.
 
