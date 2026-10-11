@@ -59,6 +59,22 @@ export const PRIMARY_NAVIGATION: readonly NavigationEntry[] = [
    * else about this module changed. `app-shell.tsx` needed no edit at all: it
    * branches on `href === null` and renders an anchor for everything else.
    */
+  /*
+   * THE SAME ONE-FIELD MIGRATION, EXCEPT THERE WAS NO FIELD TO DELETE
+   * (PL-0756). The catalog surface `docs/PRODUCT_SPEC.md` names among the MVP
+   * capabilities had neither a route nor a `planned` entry here -- home's two
+   * rails and the search box were the whole of browsing, so nothing in this
+   * list was even promising it. The entry is therefore new rather than
+   * migrated.
+   *
+   * AFTER SEARCH RATHER THAN AFTER HOME, which is where a reader would put it.
+   * The comment above claims search is first among the working entries and
+   * gives a reason -- it is the surface this product finished and then hid --
+   * and quietly demoting it would make that sentence false while leaving it in
+   * the file. Browse goes here instead; the order is worth revisiting when
+   * somebody wants to rewrite that claim rather than contradict it.
+   */
+  live("browse", "Browse", "/browse"),
   live("watchlist", "Watchlist", "/watchlist"),
   planned("live", "Live TV", "live acquisition is PL-0602, blocked on licensed feed access"),
   /*

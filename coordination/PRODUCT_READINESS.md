@@ -7,7 +7,7 @@
 it.** `coordination/PROJECT_STATUS.md` answers *has the board been worked*.
 This answers *can a person install this on a Windows PC and watch something*.
 
-## Overall usable-product readiness: 60%
+## Overall usable-product readiness: 61%
 
 Weighted mean of the dimensions below, using the weights in the data file —
 not a mean of means, because the dimensions are not equally load-bearing.
@@ -17,7 +17,7 @@ not a mean of means, because the dimensions are not equally load-bearing.
 | Engineering foundation | **88%** | 10 | 6 | 2 | 0 |
 | Windows desktop integration | **75%** | 20 | 5 | 2 | 1 |
 | Native playback | **55%** | 20 | 3 | 5 | 2 |
-| UI / product polish | **63%** | 20 | 7 | 6 | 3 |
+| UI / product polish | **69%** | 20 | 7 | 8 | 1 |
 | Real-content integration | **10%** | 10 | 0 | 1 | 4 |
 | Packaging and release | **42%** | 10 | 2 | 1 | 3 |
 | Testing and reliability | **71%** | 10 | 4 | 2 | 1 |
@@ -102,34 +102,34 @@ would claim a person can use them.
 - [ ] **hdr-4k-hwdec** — No HDR, no hardware-decoding, no D3D11 handling in code
   - evidence: `absent`
 
-### UI / product polish — 63%
+### UI / product polish — 69%
 
-10 of 16 capability points.
+11 of 16 capability points.
 
 - [x] **app-shell** — One AppShell with a skip link, a global focus rule, a root not-found and a global-error; a guard fails the build if a route grows its own header again
   - evidence: `apps/web/src/components/shell (PW-0301)`
-- [x] **navigation** — Every entry goes somewhere real or states why it is planned; /search is reachable for the first time and the four fragment anchors are gone
-  - evidence: `apps/web/src/components/shell/navigation.ts (PW-0301)`
-- [~] **home-discovery** — CORRECTED round 107 (the instrument was wrong, the product did not change): the rails are no longer two: a Continue Watching rail renders on the home page (PW-0305) and catalog cards carry real artwork rather than CSS gradients (PW-0302). Still partial: the catalog behind it is a small demo set, and a real metadata source is a separate row
-  - evidence: `apps/web/src/app/page.tsx; apps/web/src/components/continue-watching/continue-watching-rail.tsx (PW-0305); apps/web/src/components/artwork (PW-0302)`
+- [x] **navigation** — CHANGED round 130 (the product moved, and the claim in this row became enforceable). PW-0301's arrangement stands -- every entry goes somewhere real or states why it is planned, /search is reachable and the four fragment anchors are gone -- and PL-0756 added two things it did not have: a Browse entry, and a guard that RESOLVES each live href to a page under app/. Until then the only mechanical check was that a live href starts with a slash, which every typo satisfies, so the sentence in this row was a promise rather than a property
+  - evidence: `apps/web/src/components/shell/navigation.ts (PW-0301); apps/web/src/components/shell/shell-usage.test.ts "links only to routes that actually exist" (PL-0756)`
+- [~] **home-discovery** — CORRECTED round 107 (the instrument was wrong, the product did not change): the rails are no longer two: a Continue Watching rail renders on the home page (PW-0305) and catalog cards carry real artwork rather than CSS gradients (PW-0302). Still partial: the catalog behind it is a small demo set, and a real metadata source is a separate row. CHANGED round 130: discovery is no longer home plus a search box. PL-0756 added /browse -- every browsable title, filterable by kind and genre from the URL, through the same port and the same rights gates in the same order -- which is the catalog surface docs/PRODUCT_SPEC.md names among the MVP capabilities and the one that had never been built. Still partial for the unchanged reason: the catalog behind all of it is a small demo set gated behind a non-deployment classification, and a real metadata source is a separate row
+  - evidence: `apps/web/src/app/page.tsx; apps/web/src/components/continue-watching/continue-watching-rail.tsx (PW-0305); apps/web/src/components/artwork (PW-0302); apps/web/src/app/browse (PL-0756)`
 - [~] **title-detail** — CORRECTED round 107 (the instrument was wrong, the product did not change): "the only action is Play" is false: a watchlist add control lives on the title page (PW-0304) and is exercised in the browser, including the refused-write rollback. Series pages carry a season selector, per-episode progress and per-episode rights gating (PW-0307). Still partial: no next-episode affordance at the end of playback, which is PW-0307's last clause and waits on player controls
   - evidence: `apps/web/src/app/title/[titleId]; e2e/tests/watchlist.spec.ts; e2e/tests/series-navigation.spec.ts`
 - [x] **search** — Server-rendered results, debounced client input, hydration adoption, live region
   - evidence: `apps/web/src/components/search (452+478+194 lines)`
 - [~] **series-episodes** — CORRECTED AND CHANGED round 107 (both -- the note was stale AND work landed): "no season selector, no next-episode, no progress" is false on all three counts. PW-0307 shipped the season selector with keyboard operation and a roving tabindex, per-episode watched and in-progress state from the progress API, and resolveNextEpisode as a pure function with its own tests, all with browser coverage. Partial because the last clause -- a next-episode affordance AT THE END OF PLAYBACK, honouring the same per-episode rights gate -- needs a player that can report an ending, which is PW-0306
   - evidence: `apps/web/src/components/title/{episode-list,season-navigation}.tsx; apps/web/src/lib/next-episode.ts; e2e/tests/series-navigation.spec.ts (PW-0307)`
-- [ ] **player-controls** — The browser's native <video> chrome. No play, seek, volume, fullscreen, subtitle, audio or quality control
-  - evidence: `apps/web/src/components/player/player-surface.tsx:264`
+- [~] **player-controls** — CORRECTED AND CHANGED round 130 (both -- the row was stale AND the work had landed): "No play, seek, volume, fullscreen, subtitle, audio or quality control" is false on six of seven counts. PW-0306 shipped a hand-built control bar -- play/pause, a seek slider that speaks its timecode, volume and mute, fullscreen on the stage, an audio-track menu and a subtitle menu -- with keyboard operation and 12 browser tests. Partial because the SEVENTH clause survives exactly as written: there is no quality or rendition selection anywhere, and the web adapter collapses variants to one entry per language, so the renditions are discarded before any control could offer them
+  - evidence: `apps/web/src/components/player/controls/{player-controls.tsx,controls-state.ts}; e2e/tests/player-controls.spec.ts (12 tests) (PW-0306). Missing clause: no selectVariantTrack or quality selector in apps/web/src; apps/web/src/components/player/web-player-adapter.ts collapses getVariantTracks() to one entry per language`
 - [~] **profiles-ui** — CORRECTED round 107 (the instrument was wrong, the product did not change): two of the three reasons are gone. The identity the picker selects within is now a real database-backed session rather than a development header (PW-0403, DONE), and the profile journey is exercised in the browser against a real PostgreSQL by the watchlist suite. ONE reason remains and it is unchanged: there is still no profile PICTURE. PW-0302 shipped artwork for catalog posters, not for avatars -- avatar.ts derives an initial and a hue from the profile id, and profileViewSchema's avatarKey is an opaque storage key with nothing to resolve it against
   - evidence: `apps/web/src/components/profiles (PW-0303, DONE); apps/web/src/components/profiles/avatar.ts; PW-0403 DONE`
 - [x] **watchlist-ui** — CHANGED round 107 (the product moved): PW-0304 shipped both halves the note said were missing: an add control on the title page and a /watchlist list screen. Both are exercised in the browser against a real session and a real database, including a refused write that rolls back and says why rather than rendering as a success
   - evidence: `apps/web/src/app/watchlist/page.tsx; apps/web/src/components/watchlist (PW-0304, DONE); e2e/tests/watchlist.spec.ts`
 - [x] **continue-watching** — CHANGED round 107 (the product moved): PW-0305 shipped the rail. It renders on the home page from the progress API
   - evidence: `apps/web/src/components/continue-watching/continue-watching-rail.tsx; apps/web/src/app/page.tsx (PW-0305, DONE)`
-- [ ] **settings** — No screen and no API
-  - evidence: `absent`
-- [ ] **live-guide-ui** — No route, no component; the home nav Live link points at a fragment
-  - evidence: `absent`
+- [~] **settings** — CORRECTED AND CHANGED round 130 (both): "No screen and no API" is false on both halves. PW-0308 shipped /settings with language preferences, a diagnostics disclosure and an about section, and the preferences API behind it carries route, handler, contract and tests. Partial, and the missing parts are named rather than implied: no playback or subtitle preferences, no add-by-URL surface (PL-0744, which may only exist where the user IS the deployment), and no third-party licences screen (PW-0314) even though the installer already carries the notices
+  - evidence: `apps/web/src/app/settings/page.tsx; apps/web/src/components/settings/{language-preferences,diagnostics-disclosure,about-section}.tsx; apps/web/src/app/api/v1/profiles/preferences/{route,handler,contract}.ts (PW-0308)`
+- [ ] **live-guide-ui** — STILL ABSENT, AND THE STATED REASON WAS CORRECTED round 130 (the row was right, half its note was not): "the home nav Live link points at a fragment" has not been true since PW-0301 removed the four fragment anchors. The entry is a planned() non-link that names its blocker, which is the arrangement that file was designed for. Absent remains correct: there is no /live route and no live component, and PW-0311 deliberately stays in BACKLOG because building a guide over fabricated channels would be fabricating provider success. The contract half IS done -- PL-0603 landed the channel and EPG vocabulary with property tests -- and acquisition is PL-0602, BLOCKED on licensed feed access
+  - evidence: `no apps/web/src/app/live and no apps/web/src/components/live; apps/web/src/components/shell/navigation.ts planned("live", ...) (PW-0301); packages/contracts/src/domains/live.ts (PL-0603); docs/LIVE_TV.md`
 - [x] **artwork** — CHANGED round 107 (the product moved): PW-0302 shipped artwork end to end: an artwork vocabulary in the contracts, a poster component, and real images on catalog cards. "Zero images" and "the contracts carry no artwork field" are both false. Note for the next reader: profile AVATARS are still generated rather than stored, which is counted under profiles-ui and not here
   - evidence: `packages/contracts/src/shared/artwork.ts; apps/web/src/components/artwork (PW-0302, DONE)`
 - [~] **design-system** — Spacing, type, radius, elevation and focus tokens exist and a second breakpoint handles Windows scaling; components still carry px literals and there is no light theme, which is a recorded decision

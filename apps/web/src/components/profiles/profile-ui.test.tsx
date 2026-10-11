@@ -65,14 +65,30 @@ describe("the badge is in the shell, on every route", () => {
     expect(without).toContain("profile-badge");
   });
 
-  it("does not add a sixth navigation entry", () => {
+  it("does not put identity in the navigation", () => {
     /*
-     * `navigation.ts` is read-only to this task. Identity is not a content
-     * destination, and putting it in the nav would make `activeEntryId` have to
-     * decide whether `/profiles` is "where the viewer is".
+     * Identity is not a content destination, and putting it in the nav would
+     * make `activeEntryId` have to decide whether `/profiles` is "where the
+     * viewer is". The badge in the shell is where the session appears.
+     *
+     * THE COUNT USED TO BE THE ASSERTION, and it was the wrong one (PL-0756).
+     * This read `expect(PRIMARY_NAVIGATION).toHaveLength(5)` under the title
+     * "does not add a sixth navigation entry", with the href check beside it.
+     * The count cannot distinguish the thing it was guarding against -- a
+     * profiles entry -- from any legitimate addition, so it failed the moment
+     * `/browse` was added and the failure said nothing about profiles. The href
+     * assertion below is the property, it is exact, and it cannot be satisfied
+     * by coincidence; the count only looked stricter.
+     *
+     * No nav entry may be a profile route either, which the second assertion
+     * states as a prefix so a future `/profiles/<id>` cannot slip past a check
+     * for one exact string.
      */
-    expect(PRIMARY_NAVIGATION).toHaveLength(5);
     expect(PRIMARY_NAVIGATION.map((entry) => entry.href)).not.toContain("/profiles");
+    expect(
+      PRIMARY_NAVIGATION.filter((entry) => entry.href?.startsWith("/profiles")),
+      "identity belongs in the shell badge, not the content navigation"
+    ).toEqual([]);
   });
 
   it("the first paint makes no claim about the session", () => {

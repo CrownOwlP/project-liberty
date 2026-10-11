@@ -274,14 +274,14 @@
         {
           "id": "navigation",
           "state": "present",
-          "note": "Every entry goes somewhere real or states why it is planned; /search is reachable for the first time and the four fragment anchors are gone",
-          "evidence": "apps/web/src/components/shell/navigation.ts (PW-0301)"
+          "note": "CHANGED round 130 (the product moved, and the claim in this row became enforceable). PW-0301's arrangement stands -- every entry goes somewhere real or states why it is planned, /search is reachable and the four fragment anchors are gone -- and PL-0756 added two things it did not have: a Browse entry, and a guard that RESOLVES each live href to a page under app/. Until then the only mechanical check was that a live href starts with a slash, which every typo satisfies, so the sentence in this row was a promise rather than a property",
+          "evidence": "apps/web/src/components/shell/navigation.ts (PW-0301); apps/web/src/components/shell/shell-usage.test.ts \"links only to routes that actually exist\" (PL-0756)"
         },
         {
           "id": "home-discovery",
           "state": "partial",
-          "note": "CORRECTED round 107 (the instrument was wrong, the product did not change): the rails are no longer two: a Continue Watching rail renders on the home page (PW-0305) and catalog cards carry real artwork rather than CSS gradients (PW-0302). Still partial: the catalog behind it is a small demo set, and a real metadata source is a separate row",
-          "evidence": "apps/web/src/app/page.tsx; apps/web/src/components/continue-watching/continue-watching-rail.tsx (PW-0305); apps/web/src/components/artwork (PW-0302)"
+          "note": "CORRECTED round 107 (the instrument was wrong, the product did not change): the rails are no longer two: a Continue Watching rail renders on the home page (PW-0305) and catalog cards carry real artwork rather than CSS gradients (PW-0302). Still partial: the catalog behind it is a small demo set, and a real metadata source is a separate row. CHANGED round 130: discovery is no longer home plus a search box. PL-0756 added /browse -- every browsable title, filterable by kind and genre from the URL, through the same port and the same rights gates in the same order -- which is the catalog surface docs/PRODUCT_SPEC.md names among the MVP capabilities and the one that had never been built. Still partial for the unchanged reason: the catalog behind all of it is a small demo set gated behind a non-deployment classification, and a real metadata source is a separate row",
+          "evidence": "apps/web/src/app/page.tsx; apps/web/src/components/continue-watching/continue-watching-rail.tsx (PW-0305); apps/web/src/components/artwork (PW-0302); apps/web/src/app/browse (PL-0756)"
         },
         {
           "id": "title-detail",
@@ -303,9 +303,9 @@
         },
         {
           "id": "player-controls",
-          "state": "absent",
-          "note": "The browser's native <video> chrome. No play, seek, volume, fullscreen, subtitle, audio or quality control",
-          "evidence": "apps/web/src/components/player/player-surface.tsx:264"
+          "state": "partial",
+          "note": "CORRECTED AND CHANGED round 130 (both -- the row was stale AND the work had landed): \"No play, seek, volume, fullscreen, subtitle, audio or quality control\" is false on six of seven counts. PW-0306 shipped a hand-built control bar -- play/pause, a seek slider that speaks its timecode, volume and mute, fullscreen on the stage, an audio-track menu and a subtitle menu -- with keyboard operation and 12 browser tests. Partial because the SEVENTH clause survives exactly as written: there is no quality or rendition selection anywhere, and the web adapter collapses variants to one entry per language, so the renditions are discarded before any control could offer them",
+          "evidence": "apps/web/src/components/player/controls/{player-controls.tsx,controls-state.ts}; e2e/tests/player-controls.spec.ts (12 tests) (PW-0306). Missing clause: no selectVariantTrack or quality selector in apps/web/src; apps/web/src/components/player/web-player-adapter.ts collapses getVariantTracks() to one entry per language"
         },
         {
           "id": "profiles-ui",
@@ -327,15 +327,15 @@
         },
         {
           "id": "settings",
-          "state": "absent",
-          "note": "No screen and no API",
-          "evidence": "absent"
+          "state": "partial",
+          "note": "CORRECTED AND CHANGED round 130 (both): \"No screen and no API\" is false on both halves. PW-0308 shipped /settings with language preferences, a diagnostics disclosure and an about section, and the preferences API behind it carries route, handler, contract and tests. Partial, and the missing parts are named rather than implied: no playback or subtitle preferences, no add-by-URL surface (PL-0744, which may only exist where the user IS the deployment), and no third-party licences screen (PW-0314) even though the installer already carries the notices",
+          "evidence": "apps/web/src/app/settings/page.tsx; apps/web/src/components/settings/{language-preferences,diagnostics-disclosure,about-section}.tsx; apps/web/src/app/api/v1/profiles/preferences/{route,handler,contract}.ts (PW-0308)"
         },
         {
           "id": "live-guide-ui",
           "state": "absent",
-          "note": "No route, no component; the home nav Live link points at a fragment",
-          "evidence": "absent"
+          "note": "STILL ABSENT, AND THE STATED REASON WAS CORRECTED round 130 (the row was right, half its note was not): \"the home nav Live link points at a fragment\" has not been true since PW-0301 removed the four fragment anchors. The entry is a planned() non-link that names its blocker, which is the arrangement that file was designed for. Absent remains correct: there is no /live route and no live component, and PW-0311 deliberately stays in BACKLOG because building a guide over fabricated channels would be fabricating provider success. The contract half IS done -- PL-0603 landed the channel and EPG vocabulary with property tests -- and acquisition is PL-0602, BLOCKED on licensed feed access",
+          "evidence": "no apps/web/src/app/live and no apps/web/src/components/live; apps/web/src/components/shell/navigation.ts planned(\"live\", ...) (PW-0301); packages/contracts/src/domains/live.ts (PL-0603); docs/LIVE_TV.md"
         },
         {
           "id": "artwork",
