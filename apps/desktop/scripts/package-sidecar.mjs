@@ -38,13 +38,18 @@ import {
   mkdirSync,
   readFileSync,
   readdirSync,
-  readlinkSync,
-  realpathSync,
   rmSync,
   statSync,
   writeFileSync
 } from "node:fs";
-import { dirname, join, relative, resolve, sep } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
+import {
+  STAGING_SUFFIX,
+  classifyLink,
+  materialiseLink,
+  removeLinkOnly,
+  symlinksUnder
+} from "./external-links.mjs";
 import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -330,6 +335,19 @@ if (!existsSync(staticDir)) fail(`no static assets at ${staticDir}`);
 const PRESERVED = [".gitignore", "README.md"];
 
 if (existsSync(sidecarDir)) {
+  /*
+   * ANY LEFTOVER LINK IS REMOVED ON ITS OWN BEFORE THE RECURSIVE WIPE
+   * (PL-0758).
+   *
+   * The wipe below is a recursive delete, and a previous run that died between
+   * copying the tree and materialising its links leaves links in it. Node's
+   * recursive delete does unlink a symlink rather than descend into it, so this
+   * is belt and braces -- but the thing on the other end of one of those links
+   * is `<repo>/node_modules/pg`, and "the implementation probably does the
+   * right thing with a Windows junction" is the exact species of reasoning that
+   * produced PL-0755. `removeLinkOnly` cannot recurse by construction.
+   */
+  for (const link of symlinksUnder(sidecarDir)) removeLinkOnly(link);
   for (const entry of readdirSync(sidecarDir)) {
     if (PRESERVED.includes(entry)) continue;
     rmSync(join(sidecarDir, entry), { recursive: true, force: true, maxRetries: 5 });
@@ -340,94 +358,70 @@ mkdirSync(join(sidecarDir, "server"), { recursive: true });
 const serverDir = join(sidecarDir, "server");
 
 /*
- * EVERY SYMLINK IN THE BUILD OUTPUT IS REPORTED BEFORE IT IS FOLLOWED, AND
- * NONE OF THEM SURVIVES THE COPY (PL-0755).
+ * EVERY LINK THE BUILD LEFT IS CLASSIFIED, REPORTED, AND THEN REPLACED BY WHAT
+ * IT POINTS AT (PL-0755, corrected by PL-0758).
  *
- * THE DEFECT THIS REPLACES REACHED THE COMMANDER'S INSTALLED MSI. Turbopack
- * externalises some server dependencies and emits a BARE import of a hashed
- * alias for each -- `await import("pg-587764f78a6c7a9c")` is in the shipped
- * chunks -- and Next materialises each alias as a RELATIVE symlink under
- * `<distDir>/node_modules/`. This script then copied the tree with `cpSync`,
- * whose documented behaviour for a symlink is to resolve the link against its
- * SOURCE directory and write an ABSOLUTE link at the destination. So the MSI
- * shipped
+ * THE DEFECT PL-0755 FIXED, in one paragraph because the rule below is
+ * unreadable without it. Turbopack externalises some server packages and emits
+ * a BARE import of a hashed alias for each -- the shipped chunks contain
+ * `await import("pg-587764f78a6c7a9c")` -- and Next makes that resolvable by
+ * creating `<distDir>/node_modules/<alias>` as a LINK to the package it traced.
+ * This script copied the tree with `cpSync`, whose documented behaviour for a
+ * symlink is to resolve it against its SOURCE directory and write an ABSOLUTE
+ * link at the destination. So the MSI shipped a pointer at a directory on a
+ * GitHub runner, the import failed with ERR_MODULE_NOT_FOUND, and every page
+ * that reaches the persistence layer answered 500. `pg` itself was never
+ * missing; it is traced into `standalone/node_modules` and copied below.
  *
- *     server/dist/desktop/node_modules/pg-587764f78a6c7a9c
- *       -> D:/a/project-liberty/project-liberty/apps/web/dist/.../node_modules/pg
+ * AND THE RULE PL-0755 USED WAS A LINUX ACCIDENT (PL-0758). It required each
+ * link's target to be inside the standalone tree, which is where a RELATIVE
+ * link lands. On Windows the same build produces an absolute one -- a directory
+ * junction, which is what a process without the symlink privilege creates and
+ * which stores an absolute target -- aimed at the workspace's own hoisted copy:
  *
- * a pointer at a directory on a GitHub runner. On the installed machine the
- * import failed with ERR_MODULE_NOT_FOUND and every page that reaches the
- * persistence layer answered 500. `pg` ITSELF WAS NEVER MISSING: it is traced
- * into `standalone/node_modules` and copied to `server/node_modules/pg` below.
- * Nothing needed adding. A pointer needed to stop leaving the tree.
+ *     ...\standalone\apps\web\dist\desktop\node_modules\pg-587764f78a6c7a9c
+ *       -> D:\a\project-liberty\project-liberty\node_modules\pg
  *
- * AND IT WAS INVISIBLE TO EVERY CHECK, which is why the remedy is structural
- * rather than a corrected path. `sidecar-bootstrap/acceptance.mjs` already
- * starts the packaged sidecar and already asserts `GET / -> 200`; it passed,
- * because on the build machine that absolute link RESOLVES. A tree that is
- * only wrong relative to being MOVED cannot be caught by a check that never
- * moves it. `packaged-server-smoke.mjs`, run at the bottom of this file, is
- * the check that moves it.
+ * That is a dependency-traced package in this repository, and refusing it
+ * turned the Windows package job red. The policy now lives in
+ * `external-links.mjs`, where it is tested against real links of both shapes,
+ * and it is three checks where there was one -- repository containment, a
+ * `node_modules` target, and a `package.json` in it. Two of those did not exist
+ * before; the only loosened one is the boundary, from a directory inside the
+ * build output to the checkout.
  *
- * SO: `dereference: true`. The alias becomes a real directory of real files,
- * which is what an installer can carry. The cost is one duplicated copy of
- * each externalised package (`pg` is 152 KB); the alternative shapes -- a
- * repaired relative link, or a shim package with a `main` that escapes its own
- * directory -- both keep an indirection that has to survive WiX, an MSI, and
- * whatever a future Windows does about symlinks. A real file survives all
- * three by not being a question.
- *
- * REPORTED FIRST, because `dereference: true` is silent: it would follow a
- * link to anywhere, including out of the build output, and write the result
- * into the installer without a word. Each link is named in the log with where
- * it points, and a target OUTSIDE the standalone tree is refused -- the build
- * reaching past its own output is not something to package quietly.
+ * REPORTED BEFORE ANYTHING IS FOLLOWED, because following a link is silent:
+ * every one is named with where it resolves, and every refusal is collected so
+ * a build that grew three new links says so once instead of dying on the first.
  */
-function reportExternalLinks(root, label) {
-  const found = [];
-  const stack = [root];
-  while (stack.length > 0) {
-    const dir = stack.pop();
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      const full = join(dir, entry.name);
-      if (entry.isSymbolicLink()) found.push(full);
-      else if (entry.isDirectory()) stack.push(full);
+function reportBuildOutputLinks(root, label) {
+  const links = symlinksUnder(root);
+  const refusals = [];
+  for (const link of links) {
+    const verdict = classifyLink({ link, repoRoot, standaloneRoot: standalone });
+    if (verdict.ok) {
+      console.log(
+        `package-sidecar: ${label}: will materialise ${relative(root, link)} -> ` +
+          `${relative(repoRoot, verdict.target)} (${verdict.reason})`
+      );
+      continue;
     }
+    refusals.push(`[${verdict.reason}] ${verdict.detail}`);
   }
-  for (const link of found) {
-    let target;
-    try {
-      target = realpathSync(link);
-    } catch (error) {
-      fail(
-        `the build output at ${label} carries a DANGLING symlink: ${link} -> ` +
-          `${readlinkSync(link)} (${error.code ?? error.message}). A broken link in the ` +
-          `input cannot be materialised, and shipping it reproduces the defect PL-0755 fixed.`
-      );
-    }
-    if (!isInside(standalone, target)) {
-      fail(
-        `the build output at ${label} links OUT of the standalone tree: ${link} -> ${target}. ` +
-          `Following it would copy something the build did not produce into the installer. ` +
-          `Work out what emitted it before packaging it.`
-      );
-    }
-    console.log(
-      `package-sidecar: materialising ${relative(root, link)} -> ${relative(standalone, target)}`
+  if (refusals.length > 0) {
+    fail(
+      `the build output at ${label} carries ${refusals.length} link(s) that must not be ` +
+        `packaged:\n  ${refusals.join("\n  ")}\n` +
+        `An installer carries the link and not the machine it points at, which is the whole of ` +
+        `PL-0755 -- so a link that cannot be safely materialised is not one to ship.`
     );
   }
-  return found.length;
+  return links.length;
 }
 
-/** Is `candidate` inside `root`? `root` itself does not count as inside it. */
-function isInside(root, candidate) {
-  const rel = relative(root, candidate);
-  return rel !== "" && !rel.startsWith("..") && !rel.startsWith(`${sep}..`);
-}
-
-const linkedInApp = reportExternalLinks(standaloneApp, "standalone/" + WEB_WORKSPACE);
+const linkedInApp = reportBuildOutputLinks(standaloneApp, `standalone/${WEB_WORKSPACE.split("\\").join("/")}`);
 const linkedInModules = existsSync(standaloneModules)
-  ? reportExternalLinks(standaloneModules, "standalone/node_modules")
+  ? reportBuildOutputLinks(standaloneModules, "standalone/node_modules")
   : 0;
 
 /* The app directory, flattened: `standalone/apps/web/*` -> `server/*`. */
@@ -439,37 +433,29 @@ if (existsSync(standaloneModules)) {
 }
 
 /*
- * THE LINKS ARE REPLACED BY WHAT THEY POINT AT, AFTERWARDS AND EXPLICITLY.
+ * THE LINKS IN THE PACKAGED TREE ARE REPLACED BY REAL FILES, TO A FIXED POINT.
  *
  * `cpSync`'s `dereference: true` IS NOT THIS, and the difference cost a cycle
- * of this round. The option selects which stat is used on the COPY ROOT; a
- * symlink NESTED inside the tree is still copied as a symlink, and still
- * absolutised against the source. Measured on node v22.22.2: copying a
- * directory containing `node_modules/alias -> ../../target` with
- * `dereference: true` produces a destination where `lstat().isSymbolicLink()`
- * is still true. Passing the flag and believing the name would have shipped
- * the same broken installer with a more confident comment above it.
+ * of PL-0755. The option selects which stat is used on the COPY ROOT; a symlink
+ * NESTED inside the tree is still copied as a symlink, and still absolutised
+ * against the source. Measured on node v22.22.2: copying a directory containing
+ * `node_modules/alias -> ../../target` with `dereference: true` produces a
+ * destination where `lstat().isSymbolicLink()` is still true. Passing the flag
+ * and believing the name would have shipped the same broken installer with a
+ * more confident comment above it.
  *
- * A FIXED POINT RATHER THAN ONE PASS, because materialising a link can
- * introduce more: the directory copied in may contain links of its own. The
- * budget is small and the refusal is loud -- an input that needs more than a
- * handful of rounds is not a tree to package quietly.
+ * A FIXED POINT RATHER THAN ONE PASS, because materialising a link can expose
+ * more: the directory copied in may contain links of its own, and
+ * `external-links.test.mjs` pins exactly that case. The budget is small and the
+ * refusal is loud.
+ *
+ * THE POLICY IS RE-APPLIED HERE rather than trusted from the report above. The
+ * report looks at the build output; this looks at the bytes about to be
+ * shipped, and they are not the same files. A link that arrived in the packaged
+ * tree by some other route -- a future step with different copy options, a
+ * directory assembled by hand -- is classified on the same terms.
  */
 const MATERIALISE_PASSES = 8;
-
-function symlinksUnder(root) {
-  const found = [];
-  const stack = [root];
-  while (stack.length > 0) {
-    const dir = stack.pop();
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      const full = join(dir, entry.name);
-      if (entry.isSymbolicLink()) found.push(full);
-      else if (entry.isDirectory()) stack.push(full);
-    }
-  }
-  return found;
-}
 
 let materialised = 0;
 for (let pass = 0; ; pass += 1) {
@@ -483,19 +469,18 @@ for (let pass = 0; ; pass += 1) {
     );
   }
   for (const link of links) {
-    let target;
-    try {
-      target = realpathSync(link);
-    } catch (error) {
+    const verdict = classifyLink({ link, repoRoot, standaloneRoot: standalone });
+    if (!verdict.ok) {
       fail(
-        `${link} points at ${readlinkSync(link)}, which does not exist ` +
-          `(${error.code ?? error.message}). A dangling link cannot be materialised and must ` +
-          `not be shipped; this is the shape the installed MSI had.`
+        `the packaged tree carries a link that must not be followed: [${verdict.reason}] ` +
+          `${verdict.detail}`
       );
     }
-    const asDirectory = statSync(target).isDirectory();
-    rmSync(link, { recursive: true, force: true, maxRetries: 5 });
-    cpSync(target, link, asDirectory ? { recursive: true } : {});
+    try {
+      materialiseLink(link);
+    } catch (error) {
+      fail(`could not materialise ${link}: ${error.message}`);
+    }
     materialised += 1;
   }
 }
@@ -628,55 +613,57 @@ for (const required of [
 }
 
 /*
- * AND NOTHING IN THE PACKAGED TREE POINTS OUT OF IT (PL-0755).
+ * AND THE PACKAGED TREE CONTAINS NO LINK AT ALL (PL-0755, strengthened by
+ * PL-0758).
  *
- * `dereference: true` above is what removes the links. This is the check that
- * they are gone, and it is deliberately a SEPARATE statement rather than trust
- * in the flag -- `cpSync`'s symlink behaviour is the thing that caused the
- * defect, so "the flag I just passed means what I think it means" is the
- * assumption least worth making here. It also catches a link arriving by some
- * other route: a future step that copies with different options, a Node whose
- * semantics change, a tree assembled by hand.
+ * The materialisation above is what removes them. This is the check that they
+ * are gone, and it is deliberately a SEPARATE statement rather than trust in
+ * the loop -- `cpSync`'s symlink behaviour is the thing that caused the defect,
+ * so "the code I just wrote means what I think it means" is the assumption
+ * least worth making here. It also catches a link arriving by some other
+ * route: a future step that copies with different options, a tree assembled by
+ * hand.
  *
- * `realpathSync` rather than `readlinkSync`, because a RELATIVE link that
- * happens to resolve inside the tree is not the defect, and a link to anywhere
- * else is -- including a dangling one, which is what the installed MSI had.
+ * ANY LINK, not merely one that points outside the tree. PL-0755 refused only
+ * escaping links, which left a defensible-looking hole: a link INSIDE the tree
+ * survives an installer only if the installer reproduces links, and WiX, MSI
+ * and whatever a future Windows does about symlinks are three separate
+ * questions this project has no reason to answer. A real file answers all
+ * three by not being a question. Nothing in this build produces such a link
+ * today, so the stricter rule costs nothing and removes the hole.
+ *
+ * AND NO STAGING DIRECTORY, which would mean a materialisation did not finish.
  */
-const strays = [];
+const strays = symlinksUnder(sidecarDir).map((link) => relative(sidecarDir, link));
+if (strays.length > 0) {
+  fail(
+    `the packaged tree still contains ${strays.length} symlink(s):\n  ${strays.join("\n  ")}\n` +
+      `An installer carries the link and not the machine it points at, which is the whole of ` +
+      `PL-0755. Materialise it or work out what put it there.`
+  );
+}
+const unfinished = [];
 {
   const stack = [sidecarDir];
   while (stack.length > 0) {
     const dir = stack.pop();
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       const full = join(dir, entry.name);
-      if (entry.isSymbolicLink()) {
-        let target;
-        try {
-          target = realpathSync(full);
-        } catch {
-          strays.push(`${relative(sidecarDir, full)} -> (dangling) ${readlinkSync(full)}`);
-          continue;
-        }
-        if (!isInside(sidecarDir, target)) {
-          strays.push(`${relative(sidecarDir, full)} -> ${target}`);
-        }
-        continue;
-      }
-      if (entry.isDirectory()) stack.push(full);
+      if (entry.name.endsWith(STAGING_SUFFIX)) unfinished.push(relative(sidecarDir, full));
+      else if (entry.isDirectory()) stack.push(full);
     }
   }
 }
-if (strays.length > 0) {
+if (unfinished.length > 0) {
   fail(
-    `the packaged tree contains ${strays.length} symlink(s) that do not resolve inside it:\n  ` +
-      `${strays.join("\n  ")}\n` +
-      `An installer carries the link and not the machine it points at, which is the whole of ` +
-      `PL-0755. Materialise it or work out what put it there.`
+    `the packaged tree carries ${unfinished.length} unfinished materialisation(s): ` +
+      `${unfinished.join(", ")}. A half-copied dependency is worse than a link, because nothing ` +
+      `downstream can tell it is incomplete.`
   );
 }
 console.log(
-  `package-sidecar: ${linkedInApp + linkedInModules} external alias link(s) in the build ` +
-    `output, ${materialised} materialisation(s) applied, 0 link(s) left in the packaged tree`
+  `package-sidecar: ${linkedInApp + linkedInModules} link(s) in the build output, ` +
+    `${materialised} materialisation(s) applied, 0 link(s) left in the packaged tree`
 );
 
 /*
@@ -759,6 +746,31 @@ console.log(`package-sidecar: laid out ${sidecarDir}`);
  * has been copied out of this repository, that every external specifier in the
  * shipped chunks resolves, and that an authenticated homepage answers 200.
  */
+/*
+ * THE LINK POLICY'S OWN TESTS, RUN HERE FOR THE REASON THE SMOKE TEST IS
+ * (PL-0758).
+ *
+ * `external-links.test.mjs` builds real links of both platform shapes -- the
+ * relative one Linux produces and the absolute junction Windows produces -- and
+ * asserts which may be packaged. The Windows shape is the one that cannot be
+ * reasoned about from a Linux session, and this is the only placement that
+ * executes it on windows-latest: `apps/desktop` is not an npm workspace so no
+ * vitest project reaches it, and `.github/workflows/{ci,windows}.yml` are
+ * reserved by PL-0736. Under a second of runtime.
+ */
+const policy = spawnSync(process.execPath, ["--test", join(here, "external-links.test.mjs")], {
+  encoding: "utf8"
+});
+process.stdout.write(policy.stdout ?? "");
+if (policy.status !== 0) {
+  process.stderr.write(policy.stderr ?? "");
+  fail(
+    `the external-link policy's own tests failed (exit ${String(policy.status)}). The layout rule ` +
+      `this script enforces is wrong on this platform; do not package a tree against a rule that ` +
+      `cannot pass its own fixtures.`
+  );
+}
+
 const smoke = spawnSync(process.execPath, [join(here, "packaged-server-smoke.mjs")], {
   encoding: "utf8"
 });
