@@ -31,6 +31,7 @@ import type {
   PlayerTrack
 } from "../player-adapter";
 import type { BufferedRange } from "../diagnostics/buffered-ranges";
+import { describeRate } from "../playback-rate";
 import { PlayerControls } from "./player-controls";
 
 function fakeAdapter(overrides: Partial<PlayerAdapter> = {}): PlayerAdapter {
@@ -239,5 +240,63 @@ describe("the adapter is the only thing it commands", () => {
      * should know the numbers arrive one tick later. */
     expect(calls).toEqual([]);
     expect(markup).toContain("0:00 / --:--");
+  });
+});
+
+/* ===========================================================================
+ * THE RATE MENU EXISTS ONLY WHEN THE RATE CAN REALLY CHANGE (W132-D item 1)
+ *
+ * This is the test that keeps the control honest. `setPlaybackRate` is an
+ * OPTIONAL member of the adapter port, and the whole value of making it
+ * optional is lost if the bar renders the menu regardless — that would be a
+ * listbox a viewer can operate, with a tick that moves, over playback that does
+ * not change speed. What is still NOT proven here: that clicking a row reaches
+ * the adapter. There is no DOM, so no click happens; that belongs in the e2e
+ * suite, as this file's header says of every other behaviour.
+ * ======================================================================== */
+describe("the speed menu", () => {
+  it("is absent when the adapter cannot change the rate", () => {
+    const markup = render({ adapter: fakeAdapter() });
+    expect(markup).not.toContain('data-testid="control-rate-menu"');
+  });
+
+  it("is present when the adapter implements setPlaybackRate", () => {
+    const markup = render({
+      adapter: fakeAdapter({ setPlaybackRate: async () => {} })
+    });
+    expect(markup).toContain('data-testid="control-rate-menu"');
+  });
+
+  it("is a closed listbox trigger on first render, like the track menus", () => {
+    /*
+     * THE OPTION ROWS ARE NOT ASSERTED AND CANNOT BE, and saying so is the
+     * point: the menu is closed until `menu === "rate"`, which only a click
+     * sets, and there is no DOM here to click in. A first draft of this test
+     * asserted `control-rate-0.25` was present and failed for exactly that
+     * reason. What IS provable is the trigger, its ARIA wiring and the fact
+     * that it is closed; the contents of `PLAYBACK_RATES` are covered by
+     * `playback-rate.test.ts`, and opening the menu belongs to the e2e suite.
+     */
+    const markup = render({ adapter: fakeAdapter({ setPlaybackRate: async () => {} }) });
+    expect(markup).toContain('aria-controls="player-rate-menu"');
+    expect(markup).toContain('aria-haspopup="listbox"');
+    expect(markup).toContain('aria-expanded="false"');
+    expect(markup).not.toContain('id="player-rate-menu"');
+  });
+
+  it("names the rate in force on the trigger, so a viewer need not open it", () => {
+    const markup = render({ adapter: fakeAdapter({ setPlaybackRate: async () => {} }) });
+    expect(markup).toContain(`Speed ${describeRate(1)}`);
+    /* The badge reads the ELEMENT's rate, and first render has had no `rate`
+     * event, so 1x is the only honest thing it can say here. */
+    expect(markup).not.toContain("Speed 1.5");
+  });
+
+  it("shows no time-left-at-rate reading at normal speed, because it would be a second copy", () => {
+    /* The view's rate only moves on a `rate` EVENT from the element, and no
+     * effect runs in this environment, so first render is always 1x — which is
+     * exactly the state this assertion is about. */
+    const markup = render({ adapter: fakeAdapter({ setPlaybackRate: async () => {} }) });
+    expect(markup).not.toContain('data-testid="control-time-remaining"');
   });
 });

@@ -71,7 +71,13 @@ import {
   trackOptions,
   type ControlCommand
 } from "./controls-state";
-import { NO_CHOICE, type TrackChoice } from "../tracks";
+import { NO_CHOICE, reapply, type TrackChoice } from "../tracks";
+import {
+  PLAYBACK_RATES,
+  describeRate,
+  rateStep,
+  remainingWallClockSeconds
+} from "../playback-rate";
 import styles from "./player-controls.module.css";
 
 export interface PlayerControlsProps {
@@ -88,7 +94,7 @@ export interface PlayerControlsProps {
   readonly restarting: boolean;
 }
 
-type MenuName = "audio" | "subtitle" | null;
+type MenuName = "audio" | "subtitle" | "rate" | null;
 
 interface AdapterView {
   readonly positionSeconds: number;
@@ -99,6 +105,8 @@ interface AdapterView {
   readonly subtitleTrackId: string | null;
   readonly volume: number;
   readonly muted: boolean;
+  /** As the ELEMENT last reported it, never as it was last requested. */
+  readonly rate: number;
 }
 
 const INITIAL_VIEW: AdapterView = {
@@ -109,7 +117,10 @@ const INITIAL_VIEW: AdapterView = {
   audioTrackId: null,
   subtitleTrackId: null,
   volume: 1,
-  muted: false
+  muted: false,
+  /* 1 is both the element's initial rate and the value `decodeRate` answers for
+   * a viewer who has never chosen, so the control starts honest either way. */
+  rate: 1
 };
 
 /**
@@ -131,16 +142,75 @@ function falseOnServer(): boolean {
   return false;
 }
 
+/**
+ * Subscribe to the coarse-pointer query, on a host that may not implement the
+ * modern listener API (W132-D, fixed in passing).
+ *
+ * THE DEFECT CLASS: AN EXISTENCE CHECK ON THE WRONG OBJECT. The previous version
+ * guarded `typeof window.matchMedia !== "function"` and then called
+ * `query.addEventListener(...)` — a guard on the FACTORY followed by an
+ * unguarded call on the PRODUCT. `MediaQueryList` only gained
+ * `addEventListener` when it began inheriting from `EventTarget`; before that
+ * the API was `addListener`/`removeListener`, and several embedded WebView
+ * builds still ship the older object. On one of those,
+ * `query.addEventListener is not a function` is thrown from inside a
+ * `useSyncExternalStore` subscribe — which React calls during commit, so the
+ * exception takes down the whole player surface rather than disabling one
+ * pointer heuristic. That is the shape of the Windows-only client TypeError
+ * being chased in the installed WebView2 build, and this is one instance of it.
+ *
+ * Both APIs are therefore probed on the object that has to answer, the
+ * deprecated pair is used as the fallback, and a host with neither gets a
+ * no-op subscription — a player with a working control bar that simply does not
+ * notice a pointer type changing mid-session, which is the correct degradation.
+ */
 function subscribeCoarsePointer(onChange: () => void): () => void {
-  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return () => {};
-  const query = window.matchMedia("(pointer: coarse)");
-  query.addEventListener("change", onChange);
-  return () => query.removeEventListener("change", onChange);
+  const query = coarsePointerQuery();
+  if (query === null) return () => {};
+  if (typeof query.addEventListener === "function") {
+    query.addEventListener("change", onChange);
+    return () => {
+      /* Guarded independently: an object can expose one half of a pair, and a
+       * throw from a cleanup function is an unhandled error during unmount. */
+      if (typeof query.removeEventListener === "function") {
+        query.removeEventListener("change", onChange);
+      }
+    };
+  }
+  const legacy = query as MediaQueryList & {
+    addListener?: (listener: () => void) => void;
+    removeListener?: (listener: () => void) => void;
+  };
+  if (typeof legacy.addListener === "function") {
+    legacy.addListener(onChange);
+    return () => {
+      if (typeof legacy.removeListener === "function") legacy.removeListener(onChange);
+    };
+  }
+  return () => {};
+}
+
+/**
+ * The query object, or `null` on any host that cannot produce one.
+ *
+ * Wrapped in `try`/`catch` as well as guarded, because `matchMedia` is
+ * permitted to throw on a malformed query string and at least one embedded
+ * engine throws on a valid one when no display is attached — a headless
+ * screenshot run, which is where this would be discovered by a failing CI job
+ * rather than by a viewer.
+ */
+function coarsePointerQuery(): MediaQueryList | null {
+  try {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return null;
+    return window.matchMedia("(pointer: coarse)");
+  } catch {
+    return null;
+  }
 }
 
 function readCoarsePointer(): boolean {
-  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false;
-  return window.matchMedia("(pointer: coarse)").matches;
+  const query = coarsePointerQuery();
+  return query === null ? false : query.matches === true;
 }
 
 function subscribeFullscreen(onChange: () => void): () => void {
@@ -251,6 +321,11 @@ export function PlayerControls(props: PlayerControlsProps): React.JSX.Element {
               : { ...c, subtitleTrackId: event.trackId }
           );
           return;
+        case "rate":
+          /* The element answered. Nothing sets this from the request side; see
+           * the `rate` event's own comment on `PlayerAdapterEvent`. */
+          setView((c) => ({ ...c, rate: event.rate }));
+          return;
         case "volume":
           setView((c) => ({ ...c, volume: event.level, muted: event.muted }));
           return;
@@ -344,6 +419,81 @@ export function PlayerControls(props: PlayerControlsProps): React.JSX.Element {
     void fullscreenTarget?.requestFullscreen();
   }, [fullscreenTarget]);
 
+  /**
+   * Apply a rate, or do nothing honestly (W132-D item 1).
+   *
+   * `setPlaybackRate` is an OPTIONAL member of the adapter port, so an adapter
+   * that cannot vary rate is detected rather than assumed — and the menu below
+   * is not rendered at all in that case. A control that moved and changed no
+   * playback is the thing this check exists to prevent.
+   */
+  const setRate = useCallback(
+    (rate: number): void => {
+      if (typeof adapter.setPlaybackRate !== "function") return;
+      /* The refusal path is a rejected promise (an off-list rate, or an element
+       * with no rate property). Nothing is updated optimistically: the view's
+       * rate only ever moves on a `rate` event from the element, so a refused
+       * request leaves the badge showing what is really playing. */
+      void adapter.setPlaybackRate(rate).catch(() => {});
+    },
+    [adapter]
+  );
+
+  /*
+   * HOISTED TO A `useCallback` AHEAD OF `toggleSubtitles` (W132-D item 6),
+   * which now calls it. It was a plain function defined further down with the
+   * other derived values; the behaviour is unchanged and the comments are the
+   * originals. Keeping it as a function declared after its caller would have
+   * meant either a ref dance or a stale closure, both of which are worse than
+   * moving twelve lines.
+   */
+  const selectTrack = useCallback(
+    (kind: "audio" | "subtitle", id: string | null): void => {
+      setMenu(null);
+      /* REMEMBERED BEFORE THE COMMAND, and from the list the menu was built
+       * from, because that is the list the viewer was looking at. */
+      choiceRef.current = rememberFromMenu(choiceRef.current, kind, id, view.tracks);
+      void (
+        kind === "audio" ? adapter.selectAudioTrack(id) : adapter.selectSubtitleTrack(id)
+      ).catch(() => {
+        /* The adapter refuses an unknown id and refuses to deselect audio; it
+         * says so by throwing, and the menu still reflects what is selected
+         * because that comes back as a `trackselected` event or does not. */
+      });
+    },
+    [adapter, view.tracks]
+  );
+
+  /**
+   * `c`: subtitles off, or back to the last real track the viewer chose.
+   *
+   * RESTORING RATHER THAN PICKING THE FIRST TRACK. A toggle that turned text
+   * back on by selecting `tracks[0]` would switch a viewer from the French
+   * subtitles they chose to whatever the manifest happens to list first, every
+   * time they toggled — so the last selection is remembered in `choiceRef`,
+   * which `rememberFromMenu` already maintains for the failover restore, and
+   * `reapply` resolves it against the tracks on the current candidate.
+   *
+   * With nothing remembered and nothing selected there is no honest answer, so
+   * the key OPENS THE MENU instead of guessing: the viewer picks, and the pick
+   * is then what gets toggled.
+   */
+  const toggleSubtitles = useCallback((): void => {
+    if (view.subtitleTrackId !== null) {
+      selectTrack("subtitle", null);
+      return;
+    }
+    const remembered = choiceRef.current.subtitle;
+    if (remembered !== null && remembered !== "off") {
+      const restored = reapply(remembered, view.tracks);
+      if (restored.trackId !== null) {
+        selectTrack("subtitle", restored.trackId);
+        return;
+      }
+    }
+    if (!menuIsEmpty(view.tracks, "subtitle")) setMenu("subtitle");
+  }, [selectTrack, view.subtitleTrackId, view.tracks]);
+
   const runCommand = useCallback(
     (command: ControlCommand): void => {
       switch (command.kind) {
@@ -364,6 +514,24 @@ export function PlayerControls(props: PlayerControlsProps): React.JSX.Element {
           void adapter.setVolume(level, { muted });
           return;
         }
+        case "seek-to-fraction": {
+          /*
+           * `seekTargetFrom` ANSWERS NULL FOR AN UNSEEKABLE PLAYER, and that is
+           * why the digit keys form a fraction rather than a position: a live
+           * stream and a VOD before metadata both have no duration, and a
+           * keystroke must be ignored there rather than seeking to `NaN`.
+           */
+          const target = seekTargetFrom(command.fraction, view.durationSeconds);
+          if (target === null) return;
+          void adapter.seek(target);
+          return;
+        }
+        case "toggle-subtitles":
+          toggleSubtitles();
+          return;
+        case "rate-step":
+          setRate(rateStep(view.rate, command.direction));
+          return;
         case "toggle-mute":
           toggleMute();
           return;
@@ -384,7 +552,7 @@ export function PlayerControls(props: PlayerControlsProps): React.JSX.Element {
           return;
       }
     },
-    [adapter, menu, togglePlay, toggleMute, toggleFullscreen, view]
+    [adapter, menu, togglePlay, toggleMute, toggleFullscreen, toggleSubtitles, setRate, view]
   );
 
   const onKeyDown = useCallback(
@@ -394,6 +562,8 @@ export function PlayerControls(props: PlayerControlsProps): React.JSX.Element {
         altKey: event.altKey,
         ctrlKey: event.ctrlKey,
         metaKey: event.metaKey,
+        /* Forwarded, and deliberately NOT a veto — see `KeyStroke.shiftKey`. */
+        shiftKey: event.shiftKey,
         fromTextEntry: isTextEntry(event.target)
       });
       if (command === null) return;
@@ -424,20 +594,6 @@ export function PlayerControls(props: PlayerControlsProps): React.JSX.Element {
     engineStatus: props.engineStatus,
     restarting: props.restarting
   });
-
-  const selectTrack = (kind: "audio" | "subtitle", id: string | null): void => {
-    setMenu(null);
-    /* REMEMBERED BEFORE THE COMMAND, and from the list the menu was built
-     * from, because that is the list the viewer was looking at. */
-    choiceRef.current = rememberFromMenu(choiceRef.current, kind, id, view.tracks);
-    void (kind === "audio" ? adapter.selectAudioTrack(id) : adapter.selectSubtitleTrack(id)).catch(
-      () => {
-        /* The adapter refuses an unknown id and refuses to deselect audio; it
-         * says so by throwing, and the menu still reflects what is selected
-         * because that comes back as a `trackselected` event or does not. */
-      }
-    );
-  };
 
   return (
     <div
@@ -525,6 +681,29 @@ export function PlayerControls(props: PlayerControlsProps): React.JSX.Element {
           {formatTimecode(view.durationSeconds, view.durationSeconds)}
         </span>
 
+        {/*
+          * TIME LEFT AT THE RATE IN FORCE (W132-D item 1).
+          *
+          * Rendered only when the rate is not 1, which is the honest condition:
+          * at normal speed this number is the one already on the left of the
+          * timecode, and a second copy of it is noise. Off normal speed it is a
+          * DIFFERENT number — thirty minutes of media at 1.5x is twenty minutes
+          * of the viewer's evening — and a bar showing only media time next to a
+          * 1.5x badge is stating a wrong finishing time.
+          *
+          * `remainingWallClockSeconds` answers `null` for an unknown duration,
+          * and `formatTimecode` renders that as `--:--` rather than `0:00`.
+          */}
+        {view.rate !== 1 ? (
+          <span className={styles.time} data-testid="control-time-remaining">
+            {formatTimecode(
+              remainingWallClockSeconds(view.positionSeconds, view.durationSeconds, view.rate),
+              view.durationSeconds
+            )}{" "}
+            left at {describeRate(view.rate)}
+          </span>
+        ) : null}
+
         <button
           type="button"
           className={styles.button}
@@ -570,6 +749,26 @@ export function PlayerControls(props: PlayerControlsProps): React.JSX.Element {
           onToggle={() => setMenu((current) => (current === "audio" ? null : "audio"))}
           onSelect={(id) => selectTrack("audio", id)}
         />
+
+        {/*
+          * THE RATE MENU IS RENDERED ONLY IF THE ADAPTER CAN ACTUALLY CHANGE THE
+          * RATE (W132-D item 1). `setPlaybackRate` is an optional member of the
+          * port, so an adapter without it — a native backend with no such
+          * control — gets no menu at all rather than a menu that moves and
+          * changes nothing. That is the difference between a control and a
+          * decoration, and it is decided here.
+          */}
+        {typeof adapter.setPlaybackRate === "function" ? (
+          <RateMenu
+            open={menu === "rate"}
+            rate={view.rate}
+            onToggle={() => setMenu((current) => (current === "rate" ? null : "rate"))}
+            onSelect={(rate) => {
+              setMenu(null);
+              setRate(rate);
+            }}
+          />
+        ) : null}
 
         <button
           type="button"
@@ -648,6 +847,69 @@ function TrackMenu(props: TrackMenuProps): React.JSX.Element {
               </li>
             ))
           )}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
+interface RateMenuProps {
+  readonly open: boolean;
+  /** The rate the ELEMENT reported, which is what the tick must mark. */
+  readonly rate: number;
+  readonly onToggle: () => void;
+  readonly onSelect: (rate: number) => void;
+}
+
+/**
+ * The speed menu (W132-D item 1).
+ *
+ * A LISTBOX AND NOT A SLIDER, and the same reasoning as the track menus: the
+ * offered rates are a closed set, a slider would imply the values in between
+ * are available, and a viewer dragging one would be guessing at 1.25x. The
+ * rates come from `PLAYBACK_RATES` so this component holds no second list, and
+ * the tick follows `view.rate` — the element's own reading — so a rate the
+ * element refused is not shown as selected.
+ *
+ * Deliberately a separate component from `TrackMenu` rather than a
+ * generalisation of it: `TrackMenu`'s options are `string | null` ids with an
+ * "off" row and an empty state, none of which a rate has. Widening it to carry
+ * both would put a discriminator in a component whose whole job is to render a
+ * list.
+ */
+function RateMenu(props: RateMenuProps): React.JSX.Element {
+  const listId = "player-rate-menu";
+  return (
+    <div className={styles.menuWrap}>
+      <button
+        type="button"
+        className={styles.button}
+        aria-expanded={props.open}
+        aria-controls={listId}
+        aria-haspopup="listbox"
+        onClick={props.onToggle}
+        data-testid="control-rate-menu"
+      >
+        Speed {describeRate(props.rate)}
+      </button>
+      {props.open ? (
+        <ul className={styles.menu} id={listId} role="listbox" aria-label="Playback speed">
+          {PLAYBACK_RATES.map((rate) => (
+            <li key={rate} role="none">
+              <button
+                type="button"
+                role="option"
+                aria-selected={rate === props.rate}
+                className={
+                  rate === props.rate ? `${styles.option} ${styles.chosen}` : styles.option
+                }
+                onClick={() => props.onSelect(rate)}
+                data-testid={`control-rate-${rate}`}
+              >
+                {rate === 1 ? `Normal (${describeRate(rate)})` : describeRate(rate)}
+              </button>
+            </li>
+          ))}
         </ul>
       ) : null}
     </div>

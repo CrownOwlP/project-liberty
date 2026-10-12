@@ -90,3 +90,65 @@
   font-size: 0.85rem;
   color: var(--muted);
 }
+
+/* -------------------------------------------------------------------------
+ * First-run onboarding and the data-reset section (W132-F)
+ *
+ * NO NEW COLOURS, NO NEW SPACING SCALE AND NO NEW FONT SIZES. Everything below
+ * composes `var(--...)` tokens and the existing `.state-panel` / `.section`
+ * shapes from `globals.css`; a second palette living in a module file is how a
+ * design system acquires a shadow copy that drifts. The only thing these rules
+ * do is lay out lists that did not exist before.
+ * ---------------------------------------------------------------------- */
+
+.steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 1rem;
+}
+
+.step h3 {
+  margin: 0 0 0.25rem;
+  font-size: 1rem;
+}
+
+.step p {
+  margin: 0 0 0.35rem;
+}
+
+/*
+ * A BLOCKED STEP IS VISIBLY NOT AN INVITATION. It is dimmed and carries its
+ * reason, rather than being drawn like the actionable ones and simply having no
+ * link -- which reads as a link that failed to load.
+ */
+.stepBlocked {
+  opacity: 0.72;
+}
+
+.resetTargets {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 1.25rem;
+}
+
+.resetTarget {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.resetUnavailable {
+  opacity: 0.72;
+}
+
+/* The confirmation sentence. Deliberately not small print: it is the one
+ * sentence in the product where an unread clause is a consent problem. */
+.confirmation {
+  margin: 0;
+  padding: 0.75rem;
+  border: 1px solid var(--border, currentColor);
+  border-radius: 0.375rem;
+}

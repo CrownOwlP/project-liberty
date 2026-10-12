@@ -15,6 +15,9 @@ import {
   SEEK_STEP_SECONDS,
   VOLUME_STEP,
   bufferedSegments,
+  CONTROL_COMMAND_KINDS,
+  DIGIT_SEEK_KEYS,
+  LONG_SEEK_STEP_SECONDS,
   commandForKey,
   describeSourceState,
   describeTrack,
@@ -188,9 +191,124 @@ describe("keyboard: the keys the acceptance names, and no others", () => {
   });
 
   it("has no opinion about any other key", () => {
-    for (const key of ["a", "Tab", "Enter", "PageDown", "1", "Home", "End"]) {
+    /*
+     * `"1"` WAS IN THIS LIST AND IS DELIBERATELY NO LONGER (W132-D item 6).
+     * The digit keys are now the percentage jump, so the assertion that they
+     * are unbound was a true statement about the old keymap and would now be a
+     * test pinning a missing feature. The digits have their own `describe`
+     * below, and `Home`/`End` stay unbound: they are the page's keys.
+     */
+    for (const key of ["a", "Tab", "Enter", "PageDown", "Home", "End", "/", ";"]) {
       expect(commandForKey({ key })).toBeNull();
     }
+  });
+
+  it("maps the long seek to j and l, in both cases", () => {
+    for (const key of ["j", "J"]) {
+      expect(commandForKey({ key })).toEqual({
+        kind: "seek-by",
+        deltaSeconds: -LONG_SEEK_STEP_SECONDS
+      });
+    }
+    for (const key of ["l", "L"]) {
+      expect(commandForKey({ key })).toEqual({
+        kind: "seek-by",
+        deltaSeconds: LONG_SEEK_STEP_SECONDS
+      });
+    }
+  });
+
+  it("keeps the long seek longer than the arrow seek, which is the point of having both", () => {
+    expect(LONG_SEEK_STEP_SECONDS).toBeGreaterThan(SEEK_STEP_SECONDS);
+  });
+
+  it("maps c to the subtitle toggle, in both cases", () => {
+    expect(commandForKey({ key: "c" })).toEqual({ kind: "toggle-subtitles" });
+    expect(commandForKey({ key: "C" })).toEqual({ kind: "toggle-subtitles" });
+  });
+
+  it("maps the rate keys in their shifted and unshifted forms", () => {
+    for (const key of ["<", ","]) {
+      expect(commandForKey({ key })).toEqual({ kind: "rate-step", direction: "slower" });
+    }
+    for (const key of [">", "."]) {
+      expect(commandForKey({ key })).toEqual({ kind: "rate-step", direction: "faster" });
+    }
+  });
+
+  it("still accepts a rate key with Shift held, which is how `<` is typed at all", () => {
+    /* Shift is NOT in the modifier veto, and this is the test that stops
+     * somebody adding it: `<` on a US layout is Shift+comma, so vetoing Shift
+     * would silently delete the slow-down key on most keyboards. */
+    expect(commandForKey({ key: "<", shiftKey: true })).toEqual({
+      kind: "rate-step",
+      direction: "slower"
+    });
+  });
+
+  it("maps every digit to a fraction of the timeline, 0 at the start", () => {
+    expect(DIGIT_SEEK_KEYS).toHaveLength(10);
+    const fractions = DIGIT_SEEK_KEYS.map((key) => {
+      const command = commandForKey({ key });
+      expect(command?.kind).toBe("seek-to-fraction");
+      return command?.kind === "seek-to-fraction" ? command.fraction : Number.NaN;
+    });
+    expect(fractions).toEqual([0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]);
+  });
+
+  it("binds no key to the very end, so no keystroke can seek into the credits", () => {
+    for (const key of DIGIT_SEEK_KEYS) {
+      const command = commandForKey({ key });
+      if (command?.kind === "seek-to-fraction") expect(command.fraction).toBeLessThan(1);
+    }
+  });
+
+  it("does not read a digit out of a key nobody can press", () => {
+    for (const key of ["1e2", " 3", "", "0.5", "10"]) {
+      expect(commandForKey({ key })).toBeNull();
+    }
+  });
+
+  it("refuses every new key from a text field too", () => {
+    for (const key of ["j", "l", "c", "<", ">", "5", ","]) {
+      expect(commandForKey({ key, fromTextEntry: true })).toBeNull();
+    }
+  });
+
+  it("leaves every new key to the browser when a veto modifier is held", () => {
+    for (const key of ["j", "l", "c", "<", ">", "5"]) {
+      expect(commandForKey({ key, ctrlKey: true })).toBeNull();
+      expect(commandForKey({ key, metaKey: true })).toBeNull();
+      expect(commandForKey({ key, altKey: true })).toBeNull();
+    }
+  });
+
+  it("names every command kind it can produce, and nothing it cannot", () => {
+    const produced = new Set<string>();
+    const keys = [
+      " ",
+      "k",
+      "ArrowLeft",
+      "ArrowRight",
+      "ArrowUp",
+      "ArrowDown",
+      "j",
+      "l",
+      "c",
+      "<",
+      ">",
+      "f",
+      "m",
+      "Escape",
+      ...DIGIT_SEEK_KEYS
+    ];
+    for (const key of keys) {
+      const command = commandForKey({ key });
+      if (command !== null) produced.add(command.kind);
+    }
+    /* Every kind in the union is reachable from a key. A kind nothing can
+     * produce is either dead code or a missing binding, and both are bugs. */
+    expect([...produced].sort()).toEqual([...CONTROL_COMMAND_KINDS].sort());
   });
 
   it("clamps volume and position instead of erroring at the ends", () => {

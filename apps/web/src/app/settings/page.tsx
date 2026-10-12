@@ -25,9 +25,16 @@ import { headers } from "next/headers";
 
 import { resolveAccountState } from "../../components/auth/account-state";
 import { SignedOutPanel } from "../../components/auth/signed-out-panel";
+import {
+  loadProfileLibrary,
+  noProfileSnapshot
+} from "../../components/profiles/profile-library";
+import { profileLibraryPort } from "../../components/profiles/profile-library-server";
 import { AboutSection } from "../../components/settings/about-section";
+import { DataResetSection } from "../../components/settings/data-reset-section";
 import { DiagnosticsDisclosure } from "../../components/settings/diagnostics-disclosure";
 import { LanguagePreferences } from "../../components/settings/language-preferences";
+import { LibraryOnboarding } from "../../components/settings/library-onboarding";
 import { AppShell } from "../../components/shell/app-shell";
 
 export const metadata = {
@@ -42,7 +49,29 @@ export const metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function SettingsPage() {
-  const account = await resolveAccountState(await headers());
+  const requestHeaders = await headers();
+  const account = await resolveAccountState(requestHeaders);
+
+  /*
+   * THE LIBRARY SNAPSHOT IS READ ONCE AND HANDED DOWN AS DATA (W132-F).
+   *
+   * Both new sections need it -- the first-run panel to decide whether to
+   * appear, the reset section to enumerate exactly what it would remove -- and
+   * reading it twice would be two queries that can disagree: a snapshot whose
+   * watchlist is empty in the panel and holds three entries in the
+   * confirmation. `loadProfileLibrary` never throws, so no boundary is needed
+   * around it, and the port resolves the session ONCE so every facet is scoped
+   * to one authorization decision.
+   *
+   * A SIGNED-OUT VIEWER IS NOT ASKED. There is no session to scope a read to
+   * and the port would answer the no-profile snapshot anyway; short-circuiting
+   * means a signed-out request never touches the repository at all, which is
+   * the same arrangement `/profiles` chose for its picker.
+   */
+  const library =
+    account.kind === "signed-out"
+      ? noProfileSnapshot()
+      : await loadProfileLibrary(profileLibraryPort(requestHeaders));
 
   return (
     <AppShell pathname="/settings">
@@ -53,7 +82,25 @@ export default async function SettingsPage() {
       {account.kind === "signed-out" ? (
         <SignedOutPanel next="/settings" what="choose the languages you prefer" />
       ) : (
-        <LanguagePreferences />
+        <>
+          {/*
+            THE FIRST-RUN PANEL IS ABOVE THE FORM, and that order is the point:
+            a new profile has nothing to configure a preference FOR, so the
+            screen's first words explain what fills the product rather than
+            asking for a ranked list of languages. It renders `null` the moment
+            there is anything on this profile, so it cannot become a panel a
+            household has to scroll past forever.
+          */}
+          <LibraryOnboarding snapshot={library} />
+          <LanguagePreferences />
+          {/*
+            THE RESET SECTION IS BELOW EVERYTHING IT WOULD DELETE. A destructive
+            control above the thing it destroys is a mis-tap; this one is last,
+            takes two presses, and names what it keeps as well as what it
+            removes.
+          */}
+          <DataResetSection snapshot={library} />
+        </>
       )}
 
       <DiagnosticsDisclosure />

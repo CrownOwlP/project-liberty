@@ -70,8 +70,52 @@ const WATCHLIST_PRESENCE_AFTER = {
 
 type MutationReason = keyof typeof WATCHLIST_PRESENCE_AFTER;
 
+/**
+ * Whether the server named one of the four mutation reasons.
+ *
+ * ==========================================================================
+ * THIS WAS `Object.hasOwn` AND THAT IS THE DEFECT CLASS REMOVED HERE
+ * ==========================================================================
+ *
+ * The line read `return Object.hasOwn(WATCHLIST_PRESENCE_AFTER, code);`, which
+ * is correct, is shorter, and is the reflex spelling in 2026. It is also an
+ * ES2022 static method, and this module is reached by EVERY CATALOG CARD ON
+ * THE HOME SCREEN through `watchlist-control.tsx` -- so on a runtime without
+ * it, the first press of any "Add to My List" button throws
+ * `TypeError: Object.hasOwn is not a function` from inside a click handler,
+ * where React's error boundary turns one missing method into a blank screen.
+ *
+ * The runtime that matters is the PACKAGED DESKTOP BUILD. It renders in
+ * WebView2, whose version is the Edge runtime the HOST MACHINE happens to have
+ * -- not one this repository pins, not one `package.json` can declare, and on
+ * a Windows install that has not taken an Edge update it can be years behind
+ * the browser the same person browses with. `browserslist` and the Next.js
+ * compiler do not help: this is a BUILT-IN, not syntax, so there is nothing to
+ * transpile and no polyfill is injected. The build is clean, the types are
+ * clean, and the feature is missing at the only moment it is used.
+ *
+ * `Object.prototype.hasOwnProperty.call` is the same question asked in a
+ * spelling that has existed since ES3. `.call` rather than
+ * `WATCHLIST_PRESENCE_AFTER.hasOwnProperty(code)` because the receiver is an
+ * object literal whose own keys are attacker-adjacent strings off the wire: a
+ * reason code of `"hasOwnProperty"` would shadow the method on a plain object
+ * and the direct call would invoke the string, not the check.
+ *
+ * NO `in`, DELIBERATELY. `code in WATCHLIST_PRESENCE_AFTER` is also universal
+ * and also short, and it walks the prototype chain -- so a server answering
+ * `"toString"` or `"constructor"` would be accepted as a mutation reason and
+ * `WATCHLIST_PRESENCE_AFTER[code]` would hand the control a function or
+ * `undefined` as a presence. `hasOwn` was chosen over `in` originally for
+ * exactly that reason and the replacement keeps the property rather than the
+ * spelling.
+ *
+ * NOTHING IN THIS MODULE RUNS AT EVALUATION TIME. Every modern-API decision
+ * here is inside a function body, so a runtime missing something cannot fail
+ * while the module is being loaded -- which would take the whole page down
+ * rather than one control.
+ */
 function isMutationReason(code: string): code is MutationReason {
-  return Object.hasOwn(WATCHLIST_PRESENCE_AFTER, code);
+  return Object.prototype.hasOwnProperty.call(WATCHLIST_PRESENCE_AFTER, code);
 }
 
 export interface WatchlistControlState {

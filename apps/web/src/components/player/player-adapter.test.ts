@@ -218,7 +218,11 @@ describe("the vocabularies are total", () => {
 
   it("publishes every event type, including the resync that is not an error", () => {
     expect(PLAYER_ADAPTER_EVENT_TYPES).toContain("resynchronised");
-    expect(PLAYER_ADAPTER_EVENT_TYPES).toHaveLength(17);
+    /* 18 since W132-D item 1 added `rate`. The count is asserted rather than
+     * derived on purpose — it is what makes an accidentally-dropped event type
+     * a failure — so adding one is meant to land here deliberately. */
+    expect(PLAYER_ADAPTER_EVENT_TYPES).toContain("rate");
+    expect(PLAYER_ADAPTER_EVENT_TYPES).toHaveLength(18);
   });
 });
 

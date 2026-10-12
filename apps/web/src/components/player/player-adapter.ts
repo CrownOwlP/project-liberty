@@ -348,6 +348,19 @@ export type PlayerAdapterEvent =
       readonly trackId: string | null;
     }
   | { readonly type: "volume"; readonly level: number; readonly muted: boolean }
+  /**
+   * The playback rate in force, as the ELEMENT reports it (W132-D item 1).
+   *
+   * An event and not a return value, for the reason `controls-state.ts` states
+   * about every other command: "whether the command is obeyed, and what the
+   * player then is, comes back as events like every other fact". That is not
+   * ceremony here. A media element is permitted to refuse a rate it cannot
+   * apply, and more importantly a rate survives `load()` on some paths and is
+   * reset to 1 on others — so a control bar holding its own idea of the rate
+   * would show a 1.5x badge over a stream that is playing at normal speed after
+   * a failover. The element is asked; the element answers.
+   */
+  | { readonly type: "rate"; readonly rate: number }
   | {
       readonly type: "error";
       readonly loadId: number | null;
@@ -378,6 +391,7 @@ const EVENT_TYPES: Readonly<Record<PlayerAdapterEvent["type"], true>> = {
   tracks: true,
   trackselected: true,
   volume: true,
+  rate: true,
   error: true,
   ended: true,
   telemetry: true,
@@ -413,6 +427,24 @@ export interface PlayerAdapter {
 
   /** `level` is 0–1. Muting is a separate fact, not `level === 0`. */
   setVolume(level: number, options?: { readonly muted?: boolean }): Promise<void>;
+
+  /**
+   * Set the playback rate (W132-D item 1).
+   *
+   * OPTIONAL, and that is the same statement `retryStreaming()` makes on the
+   * engine port and `buffered` makes on `MediaElementLike`: an adapter that
+   * cannot vary rate — a native path whose backend has no such control, or a
+   * structural double written before this method existed — must be able to say
+   * so by not having it, rather than by implementing a method that silently
+   * does nothing. A caller checks for the member; a control bar whose adapter
+   * lacks it does not render the control at all, which is honest, instead of
+   * rendering a menu that changes no playback.
+   *
+   * The argument must be one of `PLAYBACK_RATES` from `./playback-rate`; an
+   * implementation is entitled to reject anything else rather than clamp it,
+   * because clamping in two places is how two clamps come to disagree.
+   */
+  setPlaybackRate?(rate: number): Promise<void>;
 
   /** Pull-side reads, for a consumer that needs a value now rather than the next event. */
   getTimeline(): PlayerTimeline;

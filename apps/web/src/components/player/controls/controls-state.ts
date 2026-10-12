@@ -136,6 +136,38 @@ export const SEEK_STEP_SECONDS = 5;
 export const VOLUME_STEP = 0.05;
 
 /**
+ * The LONG seek, bound to `j` and `l` (W132-D item 6).
+ *
+ * Two seek distances rather than one, because the arrow keys and `j`/`l` are
+ * used for different jobs: five seconds re-hears a line of dialogue, ten
+ * seconds skips past something. A single distance makes one of the two jobs
+ * take a row of keypresses, and the convention of a short arrow step and a
+ * longer `j`/`l` step is the one every viewer already has in their fingers
+ * from other players.
+ */
+export const LONG_SEEK_STEP_SECONDS = 10;
+
+/**
+ * How many digit keys jump to a position, and what fraction each one means.
+ *
+ * `0` IS THE START AND `9` IS 90%, which is the convention, and the thing it
+ * must NOT be is "9 = the end": a key that seeks into the credits is a key that
+ * ends the episode by accident. There is deliberately no key for 100%.
+ */
+export const DIGIT_SEEK_KEYS = Object.freeze([
+  "0",
+  "1",
+  "2",
+  "3",
+  "4",
+  "5",
+  "6",
+  "7",
+  "8",
+  "9"
+] as const);
+
+/**
  * What a keystroke MEANS. Not what it does.
  *
  * A closed union, so adding a key is a compile error everywhere it has to be
@@ -147,16 +179,65 @@ export const VOLUME_STEP = 0.05;
 export type ControlCommand =
   | { readonly kind: "toggle-play" }
   | { readonly kind: "seek-by"; readonly deltaSeconds: number }
+  /**
+   * Jump to a FRACTION of the timeline, from the digit keys.
+   *
+   * A fraction and not a number of seconds, because the command is formed
+   * before anything in this file knows the duration — and a duration is
+   * legitimately unknown (a live stream, or a VOD before metadata). The
+   * dispatcher resolves it through `seekTargetFrom`, which already answers
+   * `null` for an unknown duration, so an unseekable player ignores the key
+   * instead of seeking to `NaN`.
+   */
+  | { readonly kind: "seek-to-fraction"; readonly fraction: number }
   | { readonly kind: "volume-by"; readonly delta: number }
   | { readonly kind: "toggle-mute" }
   | { readonly kind: "toggle-fullscreen" }
+  /** `c`: the subtitle track on/off, restoring the last real track chosen. */
+  | { readonly kind: "toggle-subtitles" }
+  /** `<` and `>`: one step along `PLAYBACK_RATES`, saturating at each end. */
+  | { readonly kind: "rate-step"; readonly direction: "faster" | "slower" }
   | { readonly kind: "dismiss" };
+
+/**
+ * Every command kind, as a value, derived rather than restated — the same trick
+ * `PLAYER_ADAPTER_EVENT_TYPES` uses. A kind added to the union and forgotten
+ * here is a `tsc` error, and a test walks this list to assert that the
+ * dispatcher handles each one.
+ */
+const COMMAND_KINDS: Readonly<Record<ControlCommand["kind"], true>> = {
+  "toggle-play": true,
+  "seek-by": true,
+  "seek-to-fraction": true,
+  "volume-by": true,
+  "toggle-mute": true,
+  "toggle-fullscreen": true,
+  "toggle-subtitles": true,
+  "rate-step": true,
+  dismiss: true
+};
+
+export const CONTROL_COMMAND_KINDS: readonly ControlCommand["kind"][] = Object.keys(
+  COMMAND_KINDS
+) as ControlCommand["kind"][];
 
 export interface KeyStroke {
   readonly key: string;
   readonly altKey?: boolean;
   readonly ctrlKey?: boolean;
   readonly metaKey?: boolean;
+  /**
+   * Accepted and DELIBERATELY NOT VETOED (W132-D item 6).
+   *
+   * Present so a caller can forward the whole event honestly, and so the
+   * asymmetry is visible in the type rather than only in the switch: `<` and
+   * `>` are Shift+comma and Shift+period on most layouts, so vetoing Shift the
+   * way Ctrl, Meta and Alt are vetoed would silently remove the two rate keys
+   * from the majority of keyboards. Shift modifies a character; it does not
+   * claim a keystroke for the browser or the window manager, which is what the
+   * other three do.
+   */
+  readonly shiftKey?: boolean;
   /** True when the event came from a text field, a menu, or anything that owns its keys. */
   readonly fromTextEntry?: boolean;
 }
@@ -191,6 +272,37 @@ export function commandForKey(stroke: KeyStroke): ControlCommand | null {
       return { kind: "volume-by", delta: VOLUME_STEP };
     case "ArrowDown":
       return { kind: "volume-by", delta: -VOLUME_STEP };
+    /*
+     * `j`/`l`: THE LONG SEEK (W132-D item 6). Added beside the arrows rather
+     * than instead of them; see `LONG_SEEK_STEP_SECONDS`.
+     */
+    case "j":
+    case "J":
+      return { kind: "seek-by", deltaSeconds: -LONG_SEEK_STEP_SECONDS };
+    case "l":
+    case "L":
+      return { kind: "seek-by", deltaSeconds: LONG_SEEK_STEP_SECONDS };
+    /* `c`: captions. The letter the rest of the world uses for this. */
+    case "c":
+    case "C":
+      return { kind: "toggle-subtitles" };
+    /*
+     * `<` and `>` ARE MATCHED AS THE CHARACTERS AND ALSO AS SHIFTED COMMAS,
+     * which is not redundancy. `event.key` is the character a layout produced,
+     * so a US keyboard reports `<` only with Shift held and reports `,` without
+     * it — and the guard above drops anything with Ctrl, Meta or Alt but NOT
+     * Shift, precisely so these two can arrive. Accepting the unshifted forms as
+     * well means a layout where `<` is unshifted (several European ones) gets
+     * the same control, and a viewer who nudges `,` gets the slow-down they
+     * meant. The risk of a false positive is nil: neither character does
+     * anything else in a player.
+     */
+    case "<":
+    case ",":
+      return { kind: "rate-step", direction: "slower" };
+    case ">":
+    case ".":
+      return { kind: "rate-step", direction: "faster" };
     case "f":
     case "F":
       return { kind: "toggle-fullscreen" };
@@ -199,8 +311,19 @@ export function commandForKey(stroke: KeyStroke): ControlCommand | null {
       return { kind: "toggle-mute" };
     case "Escape":
       return { kind: "dismiss" };
-    default:
+    default: {
+      /*
+       * THE DIGIT KEYS, resolved from the list rather than ten more cases, so
+       * `DIGIT_SEEK_KEYS` is the single statement of which digits are bound and
+       * a test can walk it. `indexOf` and not `Number(key)`: the latter accepts
+       * `"1e2"`, `" 3"` and `""`, each of which is a key nobody pressed.
+       */
+      const digit = DIGIT_SEEK_KEYS.indexOf(stroke.key as (typeof DIGIT_SEEK_KEYS)[number]);
+      if (digit >= 0) {
+        return { kind: "seek-to-fraction", fraction: digit / DIGIT_SEEK_KEYS.length };
+      }
       return null;
+    }
   }
 }
 

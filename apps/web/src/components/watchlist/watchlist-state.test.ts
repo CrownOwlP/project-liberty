@@ -7,7 +7,9 @@
  * driven through `settleState` and checked for what the control would DRAW,
  * not for what the function returns in the abstract.
  * ---------------------------------------------------------------------- */
-import { describe, expect, it } from "vitest";
+import { readFile } from "node:fs/promises";
+
+import { describe, expect, it, vi } from "vitest";
 
 import {
   controlAffordance,
@@ -206,5 +208,153 @@ describe("the request and the affordance", () => {
 
   it("starts at rest with no notice", () => {
     expect(restingState("on-list")).toEqual({ presence: "on-list", pending: null, notice: null });
+  });
+});
+
+/* =========================================================================
+ * THE MODERN-API GUARD (W132-F)
+ *
+ * ==========================================================================
+ * WHY A SUITE ABOUT A BUILT-IN
+ * ==========================================================================
+ *
+ * `isMutationReason` was `Object.hasOwn(WATCHLIST_PRESENCE_AFTER, code)`. It is
+ * correct, it is shorter, and it is ES2022 -- and this module is reached by
+ * EVERY CATALOG CARD ON THE HOME SCREEN through `watchlist-control.tsx`. On a
+ * runtime without it, the first press of any "Add to My List" throws
+ * `TypeError: Object.hasOwn is not a function` from inside a click handler,
+ * where React turns one missing method into a blank screen.
+ *
+ * The runtime is the PACKAGED DESKTOP BUILD, rendering in a WebView2 whose
+ * version is the Edge runtime the host machine happens to carry. `browserslist`
+ * and the compiler cannot help: a built-in is not syntax, so there is nothing
+ * to transpile and no polyfill is injected. The build is green and the method
+ * is absent at the only moment it is used.
+ *
+ * SO THE TESTS BELOW TAKE THE METHOD AWAY AND ASSERT THE MODULE STILL WORKS.
+ * A source assertion alone would be a rule somebody can satisfy by renaming
+ * something; executing the module without the API is the only check that the
+ * replacement really needs nothing.
+ * ====================================================================== */
+
+describe("nothing in this module needs a post-ES5 built-in", () => {
+  /**
+   * Run `body` with `Object.hasOwn` removed, and always put it back.
+   *
+   * `delete` on the real `Object`, not `vi.stubGlobal`: what has to be
+   * simulated is the static method being ABSENT, which is what an older V8
+   * looks like. The restore is in a `finally` so a failing assertion cannot
+   * leak a crippled `Object` into every later test in this process.
+   */
+  function withoutHasOwn<T>(body: () => T): T {
+    const slot = Object as unknown as { hasOwn?: unknown };
+    const original = slot.hasOwn;
+    try {
+      delete slot.hasOwn;
+      return body();
+    } finally {
+      slot.hasOwn = original;
+    }
+  }
+
+  it("settles a mutation with Object.hasOwn removed from the runtime", () => {
+    withoutHasOwn(() => {
+      expect(Object.hasOwn).toBeUndefined();
+      expect(settleState("off-list", { outcome: "mutated", firstReason: "added" })).toEqual({
+        presence: "on-list",
+        pending: null,
+        notice: null
+      });
+    });
+  });
+
+  it("rolls back an unknown mutation reason with the method removed", () => {
+    /* The guard's OTHER answer has to work on the degraded runtime too: a
+     * version that threw here would be just as broken as one that threw on the
+     * success path, and only one of the two is the obvious test. */
+    withoutHasOwn(() => {
+      const settled = settleState("off-list", { outcome: "mutated", firstReason: "teleported" });
+      expect(settled.presence).toBe("off-list");
+      expect(settled.notice).not.toBeNull();
+    });
+  });
+
+  it("a reason named after a prototype member is not a mutation reason", () => {
+    /*
+     * WHY NOT `code in WATCHLIST_PRESENCE_AFTER`, which is also universal and
+     * also short: `in` walks the prototype chain, so a server answering
+     * `"toString"` would be accepted and `WATCHLIST_PRESENCE_AFTER[code]` would
+     * hand the control a FUNCTION as a presence. `hasOwn` was chosen over `in`
+     * originally for this reason and the replacement keeps the property rather
+     * than the spelling.
+     *
+     * `"hasOwnProperty"` is the second half of the same rule: the check is
+     * `Object.prototype.hasOwnProperty.call(...)` rather than
+     * `WATCHLIST_PRESENCE_AFTER.hasOwnProperty(...)`, so a reason code that
+     * shadows the method on a plain object cannot make the check call the
+     * string.
+     */
+    for (const code of ["toString", "constructor", "hasOwnProperty", "__proto__", "valueOf"]) {
+      const settled = settleState("off-list", { outcome: "mutated", firstReason: code });
+      expect(settled.presence, code).toBe("off-list");
+      expect(settled.notice, code).not.toBeNull();
+    }
+  });
+
+  it("names no post-ES5 built-in anywhere in its source", async () => {
+    /*
+     * THE REGRESSION GUARD. The executable tests above only cover the methods
+     * somebody thought to remove; this is the rule that catches the next
+     * reflex-spelled addition to a module that renders on every card of the
+     * home screen. Each name here is a real WebView2-era gap, not a
+     * stylistic preference.
+     */
+    const raw = await readFile(new URL("./watchlist-state.ts", import.meta.url), "utf8");
+    /* Comments stripped first: the module's own header discusses the method it
+     * no longer calls, and a rule its own explanation can fail is not a rule. */
+    const source = raw.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+
+    for (const forbidden of [
+      "Object.hasOwn",
+      "structuredClone",
+      ".toSorted(",
+      ".toReversed(",
+      ".toSpliced(",
+      ".findLast(",
+      ".findLastIndex(",
+      ".at(",
+      "Array.prototype.group",
+      "Object.groupBy",
+      "Map.groupBy",
+      "AbortSignal.timeout",
+      "Promise.withResolvers",
+      ".replaceAll(",
+      "RegExp.escape",
+      "Intl.Segmenter",
+      "Intl.DurationFormat",
+      "Array.fromAsync"
+    ]) {
+      expect(source, `${forbidden} is not available on every runtime this ships to`).not.toContain(
+        forbidden
+      );
+    }
+
+    /* Non-vacuity: an empty or renamed file would pass every rule above. */
+    expect(source).toContain("hasOwnProperty.call");
+    expect(source).toContain("export function settleState");
+  });
+
+  it("decides nothing about the runtime at module-evaluation time", async () => {
+    /*
+     * A feature test at module scope would take the whole page down rather than
+     * one control. Importing the module fresh with the method removed is what a
+     * packaged build on an old WebView2 does on first paint.
+     */
+    vi.resetModules();
+    const result = await withoutHasOwn(async () => {
+      const fresh = await import("./watchlist-state");
+      return fresh.settleState("off-list", { outcome: "mutated", firstReason: "added" });
+    });
+    expect(result.presence).toBe("on-list");
   });
 });

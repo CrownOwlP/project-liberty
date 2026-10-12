@@ -32,6 +32,7 @@ import {
   type TimeRangesLike
 } from "./diagnostics/buffered-ranges";
 import type { PlaybackController } from "./playback-controller";
+import { PLAYBACK_RATES } from "./playback-rate";
 import {
   candidateForLoad,
   refuse,
@@ -67,6 +68,14 @@ export interface MediaElementLike {
    * empty list is exactly "nothing is held".
    */
   readonly buffered?: TimeRangesLike;
+  /**
+   * OPTIONAL for the same reason `buffered` is (W132-D item 1): every real
+   * media element has it, and a structural double written before rate control
+   * existed does not. Requiring it would break those doubles to express a fact
+   * that is already handled — `setPlaybackRate` refuses when it is absent, and
+   * a refusal is the honest answer for a surface that cannot vary rate.
+   */
+  playbackRate?: number;
   play(): Promise<void>;
   pause(): void;
   addEventListener(type: string, listener: () => void): void;
@@ -109,7 +118,11 @@ const MEDIA_EVENTS = [
   "seeked",
   "timeupdate",
   "durationchange",
-  "ended"
+  "ended",
+  /* W132-D item 1: the element is the authority on the rate in force. See the
+   * `rate` event on `PlayerAdapterEvent` for why this is observed rather than
+   * assumed from the last `setPlaybackRate` call. */
+  "ratechange"
 ] as const;
 
 function readString(source: Record<string, unknown>, key: string): string | null {
@@ -374,6 +387,34 @@ export class WebPlayerAdapter implements PlayerAdapter {
     this.#emit({ type: "volume", level, muted: this.#media.muted });
   }
 
+  /**
+   * Apply a playback rate, or refuse (W132-D item 1).
+   *
+   * THE CLAMP IS NOT REPEATED HERE. `playback-rate.ts` owns the closed set and
+   * this method rejects anything outside it rather than snapping the value,
+   * because a second clamp is a second opinion: a caller that sent 3 and got
+   * 2 back with no error would have no way to learn that its own rate model
+   * had drifted from the one the element is driven by.
+   *
+   * An element with no `playbackRate` property is a refusal and not a silent
+   * success. A surface that cannot vary rate must be able to find that out —
+   * that is the whole reason the port member is optional.
+   *
+   * NOTHING IS EMITTED FROM HERE. The `ratechange` event the assignment causes
+   * is what publishes the new rate, so the one path that reports a rate is the
+   * one that read it off the element. An element that refuses the assignment
+   * therefore publishes nothing, which is correct: the rate did not change.
+   */
+  async setPlaybackRate(rate: number): Promise<void> {
+    if (!(PLAYBACK_RATES as readonly number[]).includes(rate)) {
+      throw new Error(`playback rate ${rate} is not one of the offered rates`);
+    }
+    if (typeof this.#media.playbackRate !== "number") {
+      throw new Error("this media element does not support a playback rate");
+    }
+    this.#media.playbackRate = rate;
+  }
+
   getTimeline(): PlayerTimeline {
     const duration = this.#media.duration;
     return {
@@ -552,6 +593,22 @@ export class WebPlayerAdapter implements PlayerAdapter {
         return;
       case "ended":
         if (loadId !== null) this.#emit({ type: "ended", loadId });
+        return;
+      case "ratechange":
+        /*
+         * READ OFF THE ELEMENT, NOT ECHOED BACK FROM THE REQUEST (W132-D item
+         * 1). The element is the only thing that knows the rate actually in
+         * force, and it legitimately differs from what was last asked for: a
+         * rate can be reset to 1 across a source change on some paths, and a
+         * `ratechange` also fires for a change this adapter did not make.
+         *
+         * A non-numeric reading publishes nothing rather than `NaN`: a double
+         * with no `playbackRate` can still fire this event, and a `rate` event
+         * carrying `NaN` would put `NaN×` on a badge.
+         */
+        if (typeof this.#media.playbackRate === "number" && Number.isFinite(this.#media.playbackRate)) {
+          this.#emit({ type: "rate", rate: this.#media.playbackRate });
+        }
         return;
     }
   }

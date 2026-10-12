@@ -11,6 +11,7 @@ class FakeMedia implements MediaElementLike {
   currentTime = 0;
   volume = 1;
   muted = false;
+  playbackRate = 1;
   duration = Number.NaN;
   readonly played: number[] = [];
   readonly #handlers = new Map<string, Set<() => void>>();
@@ -457,5 +458,77 @@ describe("dispose", () => {
     });
     await expect(adapter.dispose()).resolves.toBeUndefined();
     expect(destroy).toHaveBeenCalledTimes(1);
+  });
+});
+
+/* ===========================================================================
+ * PLAYBACK RATE (W132-D item 1)
+ *
+ * The rate is a REAL element write and a REAL element read, exercised here
+ * against the structural double the rest of this suite already uses. What is
+ * NOT claimed: that a browser applies pitch correction, or that a rate survives
+ * a particular engine's source switch. Those are observations no node test can
+ * make, and nothing below pretends to make them.
+ * ======================================================================== */
+describe("setPlaybackRate", () => {
+  it("writes an offered rate onto the element", async () => {
+    const { adapter, media } = makeAdapter();
+    await adapter.setPlaybackRate(1.5);
+    expect(media.playbackRate).toBe(1.5);
+  });
+
+  it("refuses a rate outside the offered set rather than clamping it", async () => {
+    const { adapter, media } = makeAdapter();
+    await expect(adapter.setPlaybackRate(3)).rejects.toThrow(/not one of the offered rates/);
+    await expect(adapter.setPlaybackRate(0)).rejects.toThrow(/not one of the offered rates/);
+    await expect(adapter.setPlaybackRate(Number.NaN)).rejects.toThrow();
+    /* The element is untouched by a refusal: no half-applied state. */
+    expect(media.playbackRate).toBe(1);
+  });
+
+  it("emits nothing itself, so the only rate published is the one the element reported", async () => {
+    const { adapter, media, events } = makeAdapter();
+    await adapter.setPlaybackRate(1.25);
+    expect(events.filter((event) => event.type === "rate")).toHaveLength(0);
+    media.fire("ratechange");
+    expect(events.filter((event) => event.type === "rate")).toEqual([
+      { type: "rate", rate: 1.25 }
+    ]);
+  });
+
+  it("publishes a rate this adapter did not set, because the element is the authority", () => {
+    const { media, events } = makeAdapter();
+    media.playbackRate = 2;
+    media.fire("ratechange");
+    expect(events).toContainEqual({ type: "rate", rate: 2 });
+  });
+
+  it("publishes nothing for an unreadable rate instead of emitting NaN", () => {
+    const { media, events } = makeAdapter();
+    media.playbackRate = Number.NaN;
+    media.fire("ratechange");
+    expect(events.some((event) => event.type === "rate")).toBe(false);
+  });
+
+  it("refuses when the element has no rate property at all", async () => {
+    /* A double that never had the property, which is the real case the optional
+     * member exists for: a structural implementation written before rate
+     * control, not an element someone set to `undefined`. */
+    const media: MediaElementLike = {
+      currentTime: 0,
+      volume: 1,
+      muted: false,
+      duration: Number.NaN,
+      play: async () => {},
+      pause: () => {},
+      addEventListener: () => {},
+      removeEventListener: () => {}
+    };
+    const controller = {
+      getEnginePlayer: () => ({}),
+      destroy: async () => {}
+    } as unknown as PlaybackController;
+    const adapter = new WebPlayerAdapter({ controller, media, setSource: async () => {} });
+    await expect(adapter.setPlaybackRate(1.5)).rejects.toThrow(/does not support a playback rate/);
   });
 });
