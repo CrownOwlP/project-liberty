@@ -404,7 +404,7 @@ REQUIRED: THE PREMISE IS PINNED WHERE THE COMPONENT LIVES. The assertion is only
 REQUIRED: THE CHECK STATES ITSELF. A check that only speaks when it is unhappy is one nobody knows they have, and six green lines are what made the last green run misleading. It emits its own passing note listing the markers it found.
 
 A PROCESS NOTE, OFFERED RATHER THAN ACTED ON: an acceptance clause phrased as "catches this class of failure" has no closing condition, which is why this task cannot reach DONE by my finding the next member of the class each round. Narrowing it to a specific, checkable set -- or splitting the class-level obligation into a standing quality task -- is gpt-architect's call, and it is the thing most likely to stop this loop. |
-| PL-0759 | P0 | Frontend | IN_PROGRESS | claude-frontend | - | The screen the operator is looking at is the only one that cannot say what failed | THE SYMPTOM, FROM THE OPERATOR'S INSTALLED MSI AT f02703e. Windows package, desktop shell and CI all pass. The MSI installs, the native window opens, the bundled node starts, and the handshake completes -- liberty-sidecar-ready {"host":"127.0.0.1","port":62699}, followed by "catalog metadata source: none requested", which proves instrumentation ran to completion and the sidecar process is healthy. The window then displays:
+| PL-0759 | P0 | Frontend | REVIEW | claude-frontend | - | The screen the operator is looking at is the only one that cannot say what failed | THE SYMPTOM, FROM THE OPERATOR'S INSTALLED MSI AT f02703e. Windows package, desktop shell and CI all pass. The MSI installs, the native window opens, the bundled node starts, and the handshake completes -- liberty-sidecar-ready {"host":"127.0.0.1","port":62699}, followed by "catalog metadata source: none requested", which proves instrumentation ran to completion and the sidecar process is healthy. The window then displays:
 
   Project Liberty could not start this page
   Something failed before the application frame could render.
@@ -450,7 +450,7 @@ THE DECISION REQUESTED, AND IT IS NOT THE IMPLEMENTER'S TO MAKE:
 REQUIRED OF THIS TASK: the decision, recorded with its rationale, and a desktop data-plane document stating what the installed product is supposed to contain. It implements neither option.
 
 MUST NOT: pick one of these by default in an implementation task, ship a store or a source as a side effect of another change, or let the installed application keep presenting "no data" and "no store" as the same unavailable panel. |
-| PL-0767 | P0 | Test | CLAIMED | claude-test | - | Three e2e assertions describe a home page that no longer exists, and two of them never run | MEASURED FROM THE REAL RUN LOGS, run 38268425224, at 7a43a0cbcc6349eb1943443b10b4b3e0a90bba19.
+| PL-0767 | P0 | Test | REVIEW | claude-test | - | Three e2e assertions describe a home page that no longer exists, and two of them never run | MEASURED FROM THE REAL RUN LOGS, run 38268425224, at 7a43a0cbcc6349eb1943443b10b4b3e0a90bba19.
 
   [chromium] tests/critical-journey.spec.ts:114  the home route is served
     Expected: "One place. Fast playback. Clear decisions."

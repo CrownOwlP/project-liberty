@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-12T15:44:38.185Z",
+  "generatedAt": "2026-10-12T15:46:29.721Z",
   "agent": "claude-test",
   "executionAvailable": true,
   "assigned": [
@@ -92,7 +92,7 @@
       "id": "PL-0767",
       "priority": "P0",
       "lane": "Test",
-      "status": "CLAIMED",
+      "status": "REVIEW",
       "title": "Three e2e assertions describe a home page that no longer exists, and two of them never run",
       "dependencies": [],
       "allowedPaths": [
@@ -113,7 +113,45 @@
       "notes": "FILED 2026-10-12 from GitHub Actions run 38268425224 (CI) at 7a43a0c. Sibling of the typecheck regression recorded against PL-0759.",
       "owner": "claude-test",
       "implementationAgent": "claude-test",
-      "updatedAt": "2026-10-12T15:44:38.146Z"
+      "updatedAt": "2026-10-12T15:46:29.401Z",
+      "implementationBaseSha": "7a43a0cbcc6349eb1943443b10b4b3e0a90bba19",
+      "implementationBaseProvenance": {
+        "kind": "reconciled-existing-implementation",
+        "baseSha": "7a43a0cbcc6349eb1943443b10b4b3e0a90bba19",
+        "reconciledAt": "2026-10-12T15:45:26.297Z",
+        "reconciledBy": "claude-test",
+        "implementationAgent": "claude-test",
+        "headAtReconciliation": "e0bd80796467f2b6fdd13e0bd35cf198a8092146",
+        "reviewSurface": "allowedPaths + reviewDependencies",
+        "surfaceCommitCount": 1,
+        "oldestSurfaceCommit": "e0bd80796467f2b6fdd13e0bd35cf198a8092146",
+        "newestSurfaceCommit": "e0bd80796467f2b6fdd13e0bd35cf198a8092146",
+        "surfaceCommits": [
+          "e0bd80796467f2b6fdd13e0bd35cf198a8092146"
+        ],
+        "surfaceCommitsTruncated": false,
+        "changedFileCount": 1,
+        "baseCommitSurfaceTouchCount": 0,
+        "baseCommitSurfaceTouches": [],
+        "baseCommitSurfaceTouchesTruncated": false,
+        "reason": "The corrections were written and committed before this task was filed: the task was derived from GitHub Actions run 38268425224's annotations, which named the two failing assertions, and filing it first would have meant guessing at the surface before reading the log. 7a43a0c is the pushed commit the two workflows failed on and the last commit before any correction exists."
+      },
+      "gateResults": {
+        "typecheck": {
+          "status": "pass",
+          "at": "2026-10-12T15:46:28.464Z",
+          "by": "claude-test",
+          "commitSha": "e0bd80796467f2b6fdd13e0bd35cf198a8092146",
+          "evidence": "TYPECHECK at e0bd80796467f2b6fdd13e0bd35cf198a8092146. npx tsc --noEmit -p e2e (the e2e-typecheck CI job's command): exit 0, no diagnostics. npm run typecheck (turbo, whole repository, 22 tasks): exit 0. npm run lint: exit 0. npm run build: exit 0. node scripts/validate-env.mjs --scope ci --mode development --mode test --mode production: exit 0 with CI's own env block exported. The change is confined to e2e/tests/critical-journey.spec.ts, which this task reserves; no application source was touched to make an e2e assertion pass, which is the inversion this gate exists to prevent."
+        },
+        "e2e": {
+          "status": "pass",
+          "at": "2026-10-12T15:46:28.792Z",
+          "by": "claude-test",
+          "commitSha": "e0bd80796467f2b6fdd13e0bd35cf198a8092146",
+          "evidence": "E2E at e0bd80796467f2b6fdd13e0bd35cf198a8092146. EXECUTED IN A REAL BROWSER AGAINST A REAL SERVER IN BOTH CONFIGURATIONS, not reasoned about.\n\n  development mode, --project=api --project=chromium: 122 passed, 31 skipped, 0 failed (2.6m)\n  production / fail-closed mode (no database, as CI's failclosed step runs it): 71 passed, 82 skipped, 0 failed (47.6s)\n  critical-journey.spec.ts alone: 10/10 development, 10/10 production\n  e2e harness typecheck (the e2e-typecheck job): exit 0\n\nCI at 7a43a0c ran 120 passed + 2 failed in development mode. The 122 here are that same set, now all passing.\n\nTHE TWO THAT FAILED, verbatim from run 38268425224:\n  critical-journey.spec.ts:114 the home route is served -- Expected \"One place. Fast playback. Clear decisions.\", Received \"Deep Current\", 23 x locator resolved to <h1>Deep Current</h1>\n  critical-journey.spec.ts:876 the player page offers a way back -- the same pair, 19 x\n\nBoth pinned a hero sentence that PL-0760 deliberately replaced with loader-driven copy. The first test's comment also asserted the premise that made pinning safe -- \"the hero is static markup rendered by the page itself, ABOVE the boundary the catalog load sits inside\" -- and that is now false, so it was rewritten. Leaving a true assertion beside a false explanation is the defect class this project keeps removing.\n\nWHAT REPLACES THEM IS AN INVARIANT ALL FOUR BRANCHES CAN SATISFY: 200 and exactly one h1. There is no string common to a spotlight title, an empty cause, a recognised error reason and an unrecognised one. One h1 is a real property -- none gives a screen reader nothing to land on, two gives the page no single title -- and it is NOT asserted only here: apps/web/src/components/home/home-ui.test.tsx's \"exactly one h1, in a hero-shaped slot\" drives every branch of the component, so the e2e assertion cannot be satisfied by a page with the wrong heading while that unit test holds. The back-to-catalog test asserts the URL plus one h1, because its claim is the navigation, not the destination's wording.\n\nTHE THIRD CORRECTION IS THE ONE THAT DID NOT FAIL, AND IT IS WHY THIS IS NOT A ONE-FIX ROUND. The refused branch of \"which catalog the home route can serve\" matched /couldn.t load the catalog/i. catalogErrorCopy in spotlight.ts maps catalog_source_not_configured to \"No catalog source is configured\"; the old wording survives only as the fallback for a reason this build does not recognise. Matching it therefore asserted the opposite of that branch's whole point, which is that a refused source is NAMED rather than lumped in with every other failure. It stayed green because the branch is skipped in the development configuration and the two configurations that run it could not start their web server -- the build was broken by the typecheck defect recorded against PL-0759. It would have failed on the next green build.\n\nMUTANT RUN, because a correction nobody can show was necessary is a guess: restoring /couldn.t load the catalog/i fails \"which catalog the home route can serve is decided by the build, and both are asserted\" in production mode -- 1 failed, 9 passed, expect(locator).toBeVisible() failed. Reverted.\n\nTHE THREE \"fail-closed guard\" ANNOTATIONS WERE A CONSEQUENCE, NOT A SEPARATE DEFECT, and I checked rather than assuming. The guard reported that \"refuses honestly rather than showing an empty list\", \"publishes nothing only a resolver could know\" and \"fails closed with 503 and names the operator's remedy\" were absent from the report entirely -- renamed or deleted. All three exist: the first in e2e/tests/watchlist.spec.ts, the other two in e2e/tests/playback-session.api.spec.ts. They were absent because their configuration's web server never started, so zero tests ran (\"fail-closed suite expected=0 unexpected=0\") and the guard correctly failed closed. All three RAN AND PASSED in the production-mode run above (watchlist.spec.ts:315, playback-session.api.spec.ts:830 and :847). Nothing was changed for them, and the guard needs no change: it did exactly its job.\n\nENVIRONMENT NOTE, stated because it bounds what these numbers prove. The sandbox has Playwright browser build 1194 preinstalled; this harness pins @playwright/test 1.62.1, which looks for build 1234's headless shell, so an unmodified run fails 69 tests in 1-11ms each on \"Executable doesn't exist\" before any page loads. That is an environment mismatch, not a product failure. The runs above used a temporary config that extends e2e/playwright.config.ts and overrides only launchOptions.executablePath; it was deleted afterwards and nothing committed under e2e/ was changed for it. These results are therefore evidence about this harness and this application on Chromium 1194, on Linux. Windows desktop e2e (CI's e2e-desktop job, which reported expected=120 unexpected=2 at 7a43a0c for the same two assertions) still requires the real runner.\n\ntypecheck gate: npx tsc --noEmit -p e2e exit 0; the repository's own npm run typecheck (turbo, whole repo) exit 0 at this commit."
+        }
+      }
     }
   ],
   "review": [],

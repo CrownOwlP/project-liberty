@@ -1,6 +1,6 @@
 # Project Liberty - Project Status
 
-> Generated 2026-10-12T15:44:38.180Z from the AI control plane.
+> Generated 2026-10-12T15:46:29.712Z from the AI control plane.
 
 **Overall completion:** 122/164 executable tasks (74%)
 
@@ -8,9 +8,9 @@
 
 - **BACKLOG:** 7
 - **READY:** 2
-- **CLAIMED:** 1
-- **IN_PROGRESS:** 1
-- **REVIEW:** 17
+- **CLAIMED:** 0
+- **IN_PROGRESS:** 0
+- **REVIEW:** 19
 - **BLOCKED:** 14
 - **DONE:** 122
 - **CANCELED:** 0
@@ -41,7 +41,7 @@
 - **PL-0752** [REVIEW] Experiment 1c: can mpv composite beneath WebView2 in one DirectComposition visual tree — owner: claude-media
 - **PL-0754** [REVIEW] The installed MSI never starts its sidecar, and the splash spins forever instead of saying so — owner: claude-infra
 - **PL-0755** [REVIEW] The installed application answers Internal Server Error: the packaged tree points at the build machine — owner: claude-infra
-- **PL-0759** [IN_PROGRESS] The screen the operator is looking at is the only one that cannot say what failed — owner: claude-frontend
+- **PL-0759** [REVIEW] The screen the operator is looking at is the only one that cannot say what failed — owner: claude-frontend
 - **PL-0756** [REVIEW] There is no way to browse the catalog: home shows two rails and search needs you to know the answer — owner: claude-frontend
 - **PL-0757** [REVIEW] The product readiness instrument reports two built surfaces as absent — owner: claude-infra
 - **PL-0760** [REVIEW] The home hero is a hard-coded sentence, so the first screen cannot say what this installation actually has — owner: claude-frontend
@@ -49,7 +49,7 @@
 - **PL-0762** [REVIEW] The player has no rate, no subtitle styling, no sync offset and no resume rule -- and no way to test one if it had — owner: claude-media
 - **PL-0763** [REVIEW] Live TV is a nav entry with no destination, and no code that could read a playlist if a licensed feed arrived — owner: claude-media
 - **PL-0764** [REVIEW] Watchlist, history, resume and preferences are four unrelated reads, so switching profile switches some of them — owner: claude-frontend
-- **PL-0767** [CLAIMED] Three e2e assertions describe a home page that no longer exists, and two of them never run — owner: claude-test
+- **PL-0767** [REVIEW] Three e2e assertions describe a home page that no longer exists, and two of them never run — owner: claude-test
 
 ## Dispatch classification
 
@@ -157,10 +157,10 @@ UNBLOCK WHEN: gpt-architect's security-review arrives, or PL-0754 has cleared th
 
 - **gpt-architect:** 0/6 capacity in use (external lane; not locally executable)
 - **claude-lead:** 0/2 capacity in use, 2 active (2 parked for an external reviewer)
-- **claude-frontend:** 1/5 capacity in use, 5 active (4 parked for an external reviewer)
+- **claude-frontend:** 0/5 capacity in use, 5 active (5 parked for an external reviewer)
 - **claude-backend:** 0/2 capacity in use, 1 active (1 parked for an external reviewer)
 - **claude-media:** 0/2 capacity in use, 3 active (3 parked for an external reviewer)
-- **claude-test:** 1/3 capacity in use, 2 active (1 parked for an external reviewer)
+- **claude-test:** 0/3 capacity in use, 2 active (2 parked for an external reviewer)
 - **claude-security:** 0/1 capacity in use
 - **claude-infra:** 0/5 capacity in use, 6 active (6 parked for an external reviewer)
 - **human-commander:** 0/99 capacity in use (external lane; not locally executable)
