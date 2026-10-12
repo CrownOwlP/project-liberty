@@ -1,0 +1,18 @@
+﻿#EXTM3U
+#PLAYLIST:Synthetic Hostile Playlist (test input; not a channel list)
+# a human comment, which this format cannot distinguish from a directive
+#EXTINF:-1 tvg-id="aurora.news.example" group-title="News, Weather",Aurora News One
+https://edge.example.invalid/synthetic/aurora-news/index.m3u8
+#EXTINF:not-a-number tvg-id="meridian.sport.example" tvg-logo group-title="Sport",Meridian Sport
+https://edge.example.invalid/synthetic/meridian-sport/index.m3u8
+#EXTINF:-1 tvg-id="aurora.news.example" group-title="News",Aurora News One Duplicate
+https://edge.example.invalid/synthetic/aurora-news-copy/index.m3u8
+#EXTINF:-1 tvg-id="orphan.one.example" group-title="News",Orphan With No Address
+#EXTINF:-1 tvg-id="quoted.name.example" tvg-name="The \"Quoted\" Channel" group-title="Oddities",The "Quoted" Channel
+https://edge.example.invalid/synthetic/quoted-name/index.m3u8
+#EXTINF:-1 tvg-id="unterminated.example" group-title="Oddities,Unterminated Attribute
+https://edge.example.invalid/synthetic/unterminated/index.m3u8
+#EXTINF:-1 tvg-id="bad.scheme.example" group-title="Oddities",Bad Scheme
+file:///synthetic/example.invalid/not-a-stream
+https://edge.example.invalid/synthetic/no-extinf-above-me/index.m3u8
+#EXTINF:-1 tvg-id="dangling.example" group-title="Oddities",Dangling Final Entry

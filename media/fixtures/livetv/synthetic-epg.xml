@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SYNTHETIC XMLTV — TEST INPUT ONLY. Every channel, programme and host here is
+  invented; every host is under example.invalid, which can never resolve. See
+  README.md. This file is not a schedule this project carries.
+
+  It deliberately contains, in order: two declared channels with display names
+  and icons; a programme crossing local midnight; a programme spanning the US
+  spring-forward DST transition (start stated at -0500, stop at -0400, so the
+  wall clock moves 1h45m while 45 minutes elapse); offsets of +0530 and -0330,
+  neither of which is a whole number of hours; two overlapping programmes on one
+  channel; a programme with no stop attribute; a programme for a channel this
+  document never declares; an xmltv_ns episode number and an onscreen one; a
+  CDATA description; and a predefined entity in a title.
+-->
+<tv generator-info-name="synthetic-fixture-generator">
+  <channel id="aurora.news.example">
+    <display-name>Aurora News One</display-name>
+    <display-name lang="en">Aurora News</display-name>
+    <icon src="https://logos.example.invalid/aurora-news.png" />
+  </channel>
+  <channel id="meridian.sport.example">
+    <display-name>Meridian Sport</display-name>
+    <icon src="https://logos.example.invalid/meridian-sport.png" />
+  </channel>
+
+  <programme channel="aurora.news.example" start="20261012233000 +0000" stop="20261013003000 +0000">
+    <title>Aurora Night Desk</title>
+    <sub-title>Late Edition</sub-title>
+    <desc>A synthetic programme that crosses midnight in UTC.</desc>
+    <category>News</category>
+    <episode-num system="xmltv_ns">2.11.0/1</episode-num>
+  </programme>
+
+  <programme channel="aurora.news.example" start="20260308013000 -0500" stop="20260308031500 -0400">
+    <title>Aurora Spring Forward Special</title>
+    <desc><![CDATA[Forty-five minutes of real time that reads as 01:30 to 03:15 on an eastern wall clock.]]></desc>
+    <category>News</category>
+    <category>Documentary</category>
+  </programme>
+
+  <programme channel="aurora.news.example" start="20261012090000 +0530" stop="20261012100000 +0530">
+    <title>Aurora Morning Brief &amp; Markets</title>
+    <sub-title>Half-hour offset edition</sub-title>
+    <desc>Stated with a +0530 offset, which is not a whole number of hours.</desc>
+    <category>News</category>
+    <episode-num system="onscreen">Ep 4</episode-num>
+  </programme>
+
+  <programme channel="meridian.sport.example" start="20261012140000 -0330" stop="20261012160000 -0330">
+    <title>Meridian Harbour Regatta</title>
+    <desc>Stated with a -0330 offset.</desc>
+    <category>Sport</category>
+  </programme>
+
+  <programme channel="meridian.sport.example" start="20261012153000 -0330" stop="20261012170000 -0330">
+    <title>Meridian Regatta Overlap Coverage</title>
+    <desc>Genuinely overlaps the programme above, as a regional opt-out would.</desc>
+    <category>Sport</category>
+    <previously-shown />
+  </programme>
+
+  <programme channel="meridian.sport.example" start="20261012200000 +0000">
+    <title>Meridian Late Highlights</title>
+    <desc>No stop attribute. The end time must stay null and must not be inferred.</desc>
+    <new />
+  </programme>
+
+  <programme channel="nowhere.undeclared.example" start="20261012120000 +0000" stop="20261012130000 +0000">
+    <title>Programme For A Channel Nobody Declared</title>
+    <desc>Must be reported and must enter no schedule.</desc>
+  </programme>
+</tv>

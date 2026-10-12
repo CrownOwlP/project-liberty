@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SYNTHETIC XXE ATTEMPT — TEST INPUT ONLY.
+
+  This file exists so that `xmltv.test.ts` can prove the reader refuses the whole
+  document at the declaration rather than resolving anything. The SYSTEM target
+  below is a path that does not exist and is deliberately harmless; the point is
+  that the reader never looks at it, never implements an entity table, and never
+  reaches the `&synthetic;` reference further down.
+-->
+<!DOCTYPE tv [
+  <!ENTITY synthetic SYSTEM "file:///synthetic/example.invalid/nothing-here">
+]>
+<tv generator-info-name="synthetic-xxe-attempt">
+  <channel id="aurora.news.example">
+    <display-name>&synthetic;</display-name>
+  </channel>
+  <programme channel="aurora.news.example" start="20261012120000 +0000">
+    <title>&synthetic;</title>
+  </programme>
+</tv>

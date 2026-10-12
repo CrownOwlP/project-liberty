@@ -1,0 +1,95 @@
+/* -------------------------------------------------------------------------
+ * Live TV surface styles (Wave 132, Worker E).
+ *
+ * A CSS module rather than classes in `globals.css`, following
+ * `components/browse/browse.module.css`: the shared state panels
+ * (`.section`, `.state-panel`, `.code`) stay global because every surface's
+ * empty and failure states must look identical, and only what is specific to a
+ * channel list lives here.
+ * ---------------------------------------------------------------------- */
+
+.heading {
+  margin: 0;
+}
+
+.summary {
+  margin: 0.5rem 0 0;
+  opacity: 0.85;
+}
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin: 0.75rem 0 0;
+}
+
+.groupLink {
+  padding: 0.2rem 0.6rem;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  text-decoration: none;
+  font-size: 0.85rem;
+}
+
+.groupLinkSelected {
+  font-weight: 600;
+  text-decoration: underline;
+}
+
+.channels {
+  list-style: none;
+  margin: 1rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.channel {
+  display: grid;
+  gap: 0.15rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid rgb(255 255 255 / 12%);
+  border-radius: 0.5rem;
+}
+
+.channelName {
+  font-weight: 600;
+}
+
+.channelGroup {
+  font-size: 0.8rem;
+  opacity: 0.7;
+}
+
+.now {
+  font-size: 0.95rem;
+}
+
+.next {
+  font-size: 0.85rem;
+  opacity: 0.8;
+}
+
+.idle {
+  font-size: 0.85rem;
+  opacity: 0.8;
+  font-style: italic;
+}
+
+.favourite {
+  font-size: 0.8rem;
+  opacity: 0.9;
+}
+
+.diagnostics {
+  margin: 1.5rem 0 0;
+  font-size: 0.85rem;
+  opacity: 0.8;
+}
+
+.diagnostics ul {
+  margin: 0.25rem 0 0;
+  padding-left: 1.25rem;
+}
