@@ -4,7 +4,10 @@ import {
   type CatalogItem,
   type CatalogRail
 } from "@liberty/contracts/domains/catalog";
-import { PLAYABLE_CONTENT_RIGHTS } from "@liberty/contracts/shared/rights";
+import {
+  PLAYABLE_CONTENT_RIGHTS,
+  type ContentRights
+} from "@liberty/contracts/shared/rights";
 import { requireCatalogDescription } from "./catalog-ingestion-source";
 import { selectDeclaredItems, type CatalogAnswer } from "./catalog-source";
 import {
@@ -84,6 +87,175 @@ export type CatalogLoadOutcome =
 /** Rights gate. Anything not on the allowlist is never surfaced. */
 export function isSurfaceable(item: CatalogItem): boolean {
   return PLAYABLE_CONTENT_RIGHTS.includes(item.rights);
+}
+
+/* -------------------------------------------------------------------------
+ * WHAT THE RIGHTS GATE DECIDED, IN WORDS (Wave 132, worker C).
+ *
+ * THE DEFECT CLASS REMOVED: an availability indicator that is a guess.
+ *
+ * Browse and search list titles and say nothing about why any of them is
+ * listed. The obvious fix is the wrong one and is worth naming so it is not
+ * attempted again: a badge reading "Available", "Playable" or "Ready to watch"
+ * would be a claim this application cannot support anywhere on the discovery
+ * path. `CatalogItem` carries no stream, no provider and no URL -- deliberately,
+ * by its own contract header -- and a playable stream is resolved through
+ * authorized provider adapters at playback time. An indicator that implied
+ * otherwise would be a plausible-looking invention, which is precisely the thing
+ * the installed desktop's missing catalog source already makes tempting.
+ *
+ * WHAT IS ACTUALLY KNOWN is narrower and completely truthful: the gate above
+ * read `item.rights` and found it on `PLAYABLE_CONTENT_RIGHTS`. That is a real
+ * field of a validated contract, it is the whole of the decision, and it is why
+ * the item is on the page. So that is what these two functions report -- the
+ * decision and its basis, nothing extrapolated from it.
+ *
+ * NO NEW FIELD AND NO SCHEMA CHANGE. Both read `item.rights`, which every
+ * producer already populates because `contentRightsSchema` requires it. Nothing
+ * here needs `packages/contracts` or `packages/catalog-ingestion` to grow a
+ * column, which is the condition this wave set on surfacing availability at all.
+ * ---------------------------------------------------------------------- */
+
+/**
+ * The rights basis, named the way it would be explained out loud.
+ *
+ * Keyed by the contract enum with no `default` branch, so a rights value added
+ * to `contentRightsSchema` later is a TYPE ERROR here rather than a missing
+ * word in the UI -- the same arrangement `PLAYABLE_CONTENT_RIGHTS` uses to make
+ * a new value non-surfaceable until somebody reviews it.
+ */
+const RIGHTS_BASIS_LABEL: Readonly<Record<ContentRights, string>> = {
+  licensed: "Licensed for this installation",
+  owned: "From your own library",
+  "public-domain": "Public domain"
+};
+
+/**
+ * One line a discovery surface can print beside a listed title.
+ *
+ * DELIBERATELY NOT A PLAYABILITY STATEMENT. It is phrased as a statement about
+ * rights, which is the only thing established at this point in the pipeline, and
+ * it is total: the refused branch exists and says so, rather than returning an
+ * empty string that would render as a blank line indistinguishable from a
+ * missing label.
+ *
+ * THE REFUSED BRANCH IS UNREACHABLE FROM BROWSE AND SEARCH, AND IS WRITTEN
+ * ANYWAY. Both surfaces run `isSurfaceable` before they build a list, so every
+ * item that reaches a card has already passed. The branch exists because this
+ * function is exported and the next caller may not have gated first -- and a
+ * describer that silently calls an ungated item "licensed" is how a gate gets
+ * reported as having passed when it was never run.
+ */
+export function describeSurfacedRightsBasis(item: CatalogItem): string {
+  if (!isSurfaceable(item)) {
+    return "Not available here: its rights basis is not one this installation may surface";
+  }
+  return RIGHTS_BASIS_LABEL[item.rights];
+}
+
+/* -------------------------------------------------------------------------
+ * METADATA READ DE-DUPLICATION, MEASURED (Wave 132, worker C).
+ *
+ * THE DEFECT CLASS: a catalog port asked the same question several times inside
+ * one request, and no way to tell whether a fix helped.
+ *
+ * Every discovery surface in this application reaches the metadata port the
+ * same way -- `resolveCatalogMetadataSource(...)`, then `listRecords()`, then
+ * `selectDeclaredItems`, which VALIDATES every record through zod and rebuilds
+ * it. That last step is the expensive one, and it is per read rather than per
+ * record: two reads of an unchanged catalog in one request do the whole
+ * validation pass twice. `app/title/[titleId]/page.tsx` already found this the
+ * hard way -- `generateMetadata` and the component body are two calls for one
+ * request, and it wraps its loader in React's `cache` with a note that the two
+ * answers "are not required to agree": a source that failed between them would
+ * title the tab after a title the page says it could not load. That is the
+ * defect, and it is a correctness defect before it is a performance one.
+ *
+ * WHAT THIS ADDS is the same guarantee as a reusable, MEASURED primitive rather
+ * than one route's local fix, because the next surface to grow a second read
+ * will not remember to repeat it.
+ *
+ * WHY NOT A CACHE WITH A TTL, which is what "metadata caching" usually means:
+ * nothing here would know when to invalidate it. The port has no change feed,
+ * no etag and no generation counter, so a TTL would be a guess about staleness
+ * expressed as a number -- and on a local-first installation whose catalog
+ * changes when the operator imports something, serving a stale list is a worse
+ * failure than reading twice. Single-flight within a scope the caller OWNS has
+ * no staleness window at all: a new scope reads again.
+ *
+ * LOCAL-FIRST AND NO DEPENDENCY, which is not a preference here. The cloud
+ * ceiling is 0.0, so the only cache available to this surface is process memory,
+ * and that is all this is.
+ * ---------------------------------------------------------------------- */
+
+/**
+ * What a memo reports about its own traffic.
+ *
+ * MEASUREMENT IS PART OF THE PRIMITIVE AND NOT AN AFTERTHOUGHT. This wave's
+ * instruction on caching was "measure, do not assume", and a cache with no
+ * counter is a cache nobody can show is working -- or show has stopped working
+ * when a later refactor accidentally constructs a fresh memo per call.
+ * `catalog.test.ts` asserts on these numbers rather than on a feeling.
+ */
+export interface CatalogMemoStats {
+  /** Reads that actually reached the underlying source. */
+  readonly sourceReads: number;
+  /** Reads served from the in-flight or settled answer instead. */
+  readonly reuses: number;
+}
+
+export interface CatalogMemo<T> {
+  read(): Promise<T>;
+  stats(): CatalogMemoStats;
+}
+
+/**
+ * Wrap a read so it happens at most once per memo.
+ *
+ * SINGLE-FLIGHT, AND THE PROMISE IS WHAT IS CACHED -- not the resolved value.
+ * Caching the value would only de-duplicate reads that are strictly sequential;
+ * two surfaces rendering CONCURRENTLY inside one request both arrive before
+ * either answer exists, miss, and read twice, which is the exact case this is
+ * for. Holding the promise means the second caller awaits the first caller's
+ * read.
+ *
+ * A REJECTION IS NOT CACHED, deliberately, and the memo clears it. A cached
+ * rejection would turn one transient provider fault into a permanently poisoned
+ * scope, and these surfaces distinguish "the source threw" from "no source is
+ * configured" precisely so the first one stays retryable. The retry is the next
+ * caller's; this function does not retry on anybody's behalf, because it has no
+ * idea whether asking again would produce anything different.
+ *
+ * `null` IS A VALUE AND IS CACHED LIKE ANY OTHER. On these ports `null` means
+ * "no metadata source is configured", which is a settled fact about the
+ * deployment rather than a failure -- re-asking inside one request cannot change
+ * it, and treating it as a miss would read the registry once per surface to
+ * receive the identical refusal.
+ */
+export function createCatalogMemo<T>(read: () => T | Promise<T>): CatalogMemo<T> {
+  let inFlight: Promise<T> | null = null;
+  let sourceReads = 0;
+  let reuses = 0;
+
+  return {
+    read(): Promise<T> {
+      if (inFlight !== null) {
+        reuses += 1;
+        return inFlight;
+      }
+      sourceReads += 1;
+      const started = (async () => read())().catch((error: unknown) => {
+        /* Not cached: see above. The next caller gets a fresh attempt. */
+        if (inFlight === started) inFlight = null;
+        throw error;
+      });
+      inFlight = started;
+      return started;
+    },
+    stats(): CatalogMemoStats {
+      return { sourceReads, reuses };
+    }
+  };
 }
 
 export function formatRuntime(minutes: number): string {

@@ -1,19 +1,22 @@
-import { AppShell } from "../components/shell/app-shell";
-import Link from "next/link";
 import { Suspense } from "react";
+
+import { AppShell } from "../components/shell/app-shell";
 import { CatalogRail } from "../components/catalog-rail";
 import { ContinueWatchingRail } from "../components/continue-watching/continue-watching-rail";
-import { loadHomeCatalog, type CatalogEmptyCause } from "../lib/catalog";
+import { HomeSpotlight } from "../components/home/home-spotlight";
+import { RailStack } from "../components/home/rail-stack";
+import { loadHomeCatalogOnce } from "../components/home/home-catalog";
+import { HOME_RAIL_KINDS } from "../lib/catalog";
 
 /**
  * Rendered per request rather than prerendered at build time. The catalog is
- * request-scoped data, and a statically baked page would also mean the skeleton
+ * request-scoped data, and a statically baked page would also mean the skeletons
  * below could never actually appear.
  */
 export const revalidate = 0;
 
 /* -------------------------------------------------------------------------
- * WHY THE HOME SKELETON IS INSIDE THIS FILE AND NOT IN `app/loading.tsx`
+ * WHY THE HOME SKELETONS ARE INSIDE THIS FILE AND NOT IN `app/loading.tsx`
  *
  * A `loading.tsx` belongs to a SEGMENT and wraps that segment's child slots in
  * a `<Suspense>`. At the app root that is every route in the application, and
@@ -27,174 +30,160 @@ export const revalidate = 0;
  * address answered 200 with a skeleton. That is PL-0704.
  *
  * The skeleton is not deleted to buy that status back; it is moved to the level
- * that actually wanted it. The boundary that replaces `app/loading.tsx` sits
- * INSIDE this page, around the one thing on the home route that waits — the
- * catalog load. Nothing above it can be affected by it, because there is
- * nothing above it but this page. `app/loading.tsx` itself is gone, deleted in the
- * same change that added the boundary below.
+ * that actually wanted it. The boundaries that replace `app/loading.tsx` sit
+ * INSIDE this page, around the two things on the home route that wait. Nothing
+ * above them can be affected by them, because there is nothing above them but
+ * this page. `app/loading.tsx` itself is gone, deleted in the same change that
+ * added the first boundary.
  *
  * REJECTED: a `(home)` route group holding a copy of `loading.tsx`. It reaches
  * the same scoping through an extra segment, and it is strictly worse here on
  * two counts. It replaces the WHOLE page while the catalog loads, so the topbar
- * and the hero — static markup that is ready immediately — get torn down and
- * rebuilt for a wait they are not part of; the arrangement below keeps them on
- * screen and skeletons only the rails. And it needs `app/page.tsx` moved into
- * the group, which is a second file that has to move in lockstep with the
- * first: miss one and `/` is declared twice and the build fails, rather than
- * simply keeping the old behaviour.
+ * — markup that is ready immediately — gets torn down and rebuilt for a wait it
+ * is not part of; the arrangement below keeps the chrome on screen and
+ * skeletons only what waits. And it needs `app/page.tsx` moved into the group,
+ * which is a second file that has to move in lockstep with the first: miss one
+ * and `/` is declared twice and the build fails, rather than simply keeping the
+ * old behaviour.
  *
  * The rule this file is one half of: NO SUSPENSE BOUNDARY MAY SIT ABOVE A
  * SEGMENT THAT CAN CALL `notFound()`. `watch/route-loading-boundaries.test.ts`
  * enforces it over the whole `app/` tree, so a future root `loading.tsx` fails
  * the unit gate rather than silently restoring the 200.
+ *
+ * ==========================================================================
+ * WHAT CHANGED HERE IN W132-B: THE HERO WAITS NOW, AND IT HAS ITS OWN BOUNDARY
+ * ==========================================================================
+ *
+ * The paragraph above used to end by saying the topbar and the hero were
+ * excluded from the skeleton because they were "static markup that is ready
+ * immediately". That was true and it was the problem: a hero made of constants
+ * described a catalog nobody had read, right above a panel that had read it —
+ * see `components/home/spotlight.ts` for the three false claims it made and
+ * which of them was the primary button on the first screen of the product.
+ *
+ * The hero is now `HomeSpotlight` over the loader's outcome, so it waits, so it
+ * is skeletoned, and the skeleton is `.skeleton-hero` at exactly
+ * `.hero`'s `min-height` — the slot does not move when the catalog arrives in
+ * any of its states, which is the property `.hero-state` not overriding
+ * `min-height` exists to keep.
+ *
+ * TWO BOUNDARIES OVER ONE LOAD, which is what `loadHomeCatalogOnce` is for. The
+ * continue-watching rail has to sit BETWEEN the hero and the catalog rails — a
+ * viewer who left something half-watched came back for it — and it keeps its own
+ * boundary, so the three slots cannot share one. See
+ * `components/home/home-catalog.ts` for why that costs one catalog read rather
+ * than two.
  * ---------------------------------------------------------------------- */
 
-function CatalogUnavailable({ reason }: { reason: string }) {
+/**
+ * The hero's skeleton.
+ *
+ * ONE BOX, AND IT IS THE RIGHT ONE. `.skeleton-hero` has been in `globals.css`
+ * since the deleted `app/loading.tsx` put it there, unused in between, sized
+ * 430px to match `.hero`'s `min-height`. Every state `HomeSpotlight` can render
+ * is a `section.hero`, so this fallback is the same height as whatever replaces
+ * it and the rails below it do not move.
+ */
+function SpotlightSkeleton() {
   return (
-    <section className="section">
-      <div className="state-panel" role="alert">
-        <h2>We couldn&apos;t load the catalog</h2>
-        <p>
-          The catalog service didn&apos;t return a usable response. Nothing is wrong with your
-          account — try again in a moment.
-        </p>
-        <p className="code state-detail">{reason}</p>
-      </div>
-    </section>
-  );
-}
-
-/* -------------------------------------------------------------------------
- * THE EMPTY PANEL IS THREE PANELS, BECAUSE EMPTY IS THREE THINGS
- *
- * This used to be one component reading "No titles are currently available in
- * your region. New titles appear here as soon as they are licensed." Both
- * sentences were wrong, and in the two ways this task is about.
- *
- * THE FIRST SENTENCE ASSERTED A CAUSE NOTHING HAD ESTABLISHED. Nothing in this
- * application evaluates a reader's region on the home path, so "in your region"
- * was a guess rendered as a fact, and it is exactly the sentence
- * `lib/catalog-source-registry.ts` names as the failure mode of collapsing the
- * four states — the line that ends up on screen when nothing has ever been
- * ingested.
- *
- * THE SECOND SENTENCE MADE A PROMISE NOBODY HAD MADE. "New titles appear here as
- * soon as they are licensed" commits this operator to obtaining rights. In the
- * state this task is really about — records exist and every one of them was
- * withheld for want of a rights basis — that is the single most misleading thing
- * the page could say, because it reads as "coming soon" for works no one has
- * undertaken to license, or ever will. Nothing in the repository backs it, so
- * nothing on the page says it, for any of the three causes.
- *
- * WHAT THE COPY IS ALLOWED TO SAY. What is true of the catalog, what is not the
- * reader's fault, and nothing about the future. And NOT the withheld reasons:
- * `rights_basis_not_declared` and its siblings are `@liberty/catalog-ingestion`'s
- * internal policy vocabulary, meaningful to an operator reading a log and to
- * nobody else. They never leave `lib/catalog.ts` — the loader carries a cause,
- * not a reason list — so there is nothing here to leak even by accident.
- * ---------------------------------------------------------------------- */
-
-const EMPTY_PANELS: Readonly<Record<CatalogEmptyCause, { heading: string; body: string }>> = {
-  /*
-   * The source listed nothing. A fact with no remedy, so the panel states it and
-   * stops — no region, no timeline, no undertaking.
-   */
-  catalog_empty: {
-    heading: "There is nothing in this catalog yet",
-    body:
-      "The catalog behind this service has no titles in it. Nothing is wrong with your account."
-  },
-  /*
-   * Records exist and not one of them may be shown here. The reader is told that
-   * much, told it is not about them, and told — plainly — that nobody can say
-   * whether it changes. "We cannot say whether any of them will become
-   * available" is the whole point of this panel: it is the honest answer, and
-   * every softer phrasing of it ("yet", "for now", "check back") smuggles the
-   * promise back in.
-   */
-  no_records_usable: {
-    heading: "Nothing here can be shown right now",
-    body:
-      "This catalog has titles in it, but none of them can be shown on this service. " +
-      "Nothing is wrong with your account and there is nothing for you to do. " +
-      "We cannot say whether any of them will become available."
-  },
-  /*
-   * The source cannot tell the two apart, so the panel claims neither. It does
-   * not guess, and it does not describe the gap in the source to a reader who
-   * has no use for it.
-   */
-  cause_not_stated: {
-    heading: "Nothing to watch yet",
-    body: "There are no titles to show right now. Nothing is wrong with your account."
-  }
-};
-
-function CatalogEmpty({ cause }: { cause: CatalogEmptyCause }) {
-  const panel = EMPTY_PANELS[cause];
-
-  return (
-    <section className="section">
-      <div className="state-panel">
-        <h2>{panel.heading}</h2>
-        <p>{panel.body}</p>
-      </div>
-    </section>
+    <>
+      <div className="skeleton skeleton-hero" aria-hidden="true" />
+      <span className="visually-hidden" role="status">
+        Loading the catalog…
+      </span>
+    </>
   );
 }
 
 /**
- * The skeleton that used to be `app/loading.tsx`, minus the parts that no
- * longer wait.
+ * The rails' skeleton: the real rail geometry, repeated once per rail the home
+ * surface can build.
  *
- * The topbar and the hero are gone from it on purpose rather than by oversight:
- * they are static markup rendered by the page itself and are on screen before
- * this fallback exists, so drawing grey boxes over them would be showing a wait
- * that is not happening. What is left mirrors the real rail geometry, which is
- * what the original skeleton was for — the layout does not jump when the rails
- * arrive.
+ * `HOME_RAIL_KINDS.length` RATHER THAN THE `1` IT USED TO HARD-CODE. This
+ * skeleton drew a single rail while a populated catalog renders one per kind in
+ * `RAIL_DEFINITIONS` — two today — so the page grew by a whole rail's height at
+ * the moment the catalog arrived. A skeleton that shifts the layout is a
+ * skeleton doing the one thing it exists to prevent. Derived from the loader's
+ * own exported list so adding a rail cannot leave this behind.
+ *
+ * IT CAN STILL BE ONE RAIL TOO MANY, and that is stated rather than hidden:
+ * `buildHomeCatalog` omits a rail with no surfaceable items, so a catalog of
+ * films and no series resolves to one rail where this drew two. Nothing on this
+ * side of the load can know which, and over-reserving by a rail is the smaller
+ * error — the content settles upward into space that was already there instead
+ * of pushing the page down.
+ *
+ * THE NAME IS LOAD-BEARING AND IS NOT TO BE "TIDIED". Two guards outside this
+ * file read it out of this source rather than rendering anything:
+ * `watch/route-loading-boundaries.test.ts` requires that `function
+ * CatalogSkeleton(` and `<Suspense fallback={<CatalogSkeleton />}>` both still
+ * exist here, because PL-0704 MOVED this skeleton out of a `loading.tsx` and
+ * deleting it is the shortcut that acceptance forbids; and
+ * `continue-watching/continue-watching-ui.test.tsx` reads the same string as its
+ * non-vacuity check for `fallback={null}` on the rail above. Renaming it to
+ * `RailsSkeleton` -- which is what it draws now that there is also a hero
+ * skeleton -- fails both, in two files this task does not own.
  */
 function CatalogSkeleton() {
   const placeholders = Array.from({ length: 5 }, (_, index) => index);
 
   return (
-    <section className="section" aria-busy="true">
-      <div className="section-head">
-        <div className="skeleton skeleton-heading" />
-      </div>
-      <div className="rail">
-        {placeholders.map((index) => (
-          <div className="card" key={index}>
-            <div className="skeleton skeleton-poster" />
-            <div className="skeleton skeleton-line" />
-            <div className="skeleton skeleton-line skeleton-line-short" />
+    <>
+      {HOME_RAIL_KINDS.map((kind) => (
+        <section className="section" aria-busy="true" key={kind}>
+          <div className="section-head">
+            <div className="skeleton skeleton-heading" />
           </div>
-        ))}
-      </div>
+          <div className="rail">
+            {placeholders.map((index) => (
+              <div className="card" key={index}>
+                <div className="skeleton skeleton-poster" />
+                <div className="skeleton skeleton-line" />
+                <div className="skeleton skeleton-line skeleton-line-short" />
+              </div>
+            ))}
+          </div>
+        </section>
+      ))}
 
       <span className="visually-hidden" role="status">
         Loading catalog…
       </span>
-    </section>
+    </>
   );
 }
 
 /**
- * The only part of this route that waits, so the only part inside the boundary.
+ * The hero, over whatever the loader found.
  *
  * `loadHomeCatalog` converts every expected failure into a handled result, so
  * this component has no not-found path and no throw of its own — which is what
  * makes a Suspense boundary safe here and unsafe on the two routes that do.
  */
-async function Catalog() {
-  const result = await loadHomeCatalog();
+async function Spotlight() {
+  return <HomeSpotlight outcome={await loadHomeCatalogOnce()} />;
+}
+
+/**
+ * The catalog rails, and NOTHING when there are none.
+ *
+ * The panel that used to live here is gone rather than moved twice: the hero
+ * above has already stated whether the catalog is empty, which of the three
+ * empty states it is in, or which of the four failures it hit. Rendering a
+ * second copy of that sentence under it would be the same fact asserted twice
+ * on one screen, which is what this page did before W132-B in the other
+ * direction.
+ */
+async function Rails() {
+  const outcome = await loadHomeCatalogOnce();
+  if (outcome.status !== "ok") return null;
 
   return (
     <>
-      {result.status === "error" && <CatalogUnavailable reason={result.reason} />}
-      {result.status === "empty" && <CatalogEmpty cause={result.cause} />}
-      {result.status === "ok" &&
-        result.response.rails.map((rail) => <CatalogRail key={rail.id} rail={rail} />)}
+      {outcome.response.rails.map((rail) => (
+        <CatalogRail key={rail.id} rail={rail} />
+      ))}
     </>
   );
 }
@@ -202,55 +191,58 @@ async function Catalog() {
 export default function HomePage() {
   return (
     <AppShell pathname="/" badge="Foundation build">
-
-      <section className="hero" id="featured">
-        <div className="hero-copy">
-          <div className="eyebrow">Project Liberty vertical slice</div>
-          <h1>One place. Fast playback. Clear decisions.</h1>
-          <p>
-            This scaffold uses fictional catalog data while the authorized provider layer is implemented.
-            Playback resolution is designed to rank healthy, compatible sources deterministically.
-          </p>
-          <div className="actions">
-            <Link className="button button-primary" href="/watch/aurora-fall">Open demo player</Link>
-            <a className="button button-secondary" href="#catalog">Browse catalog</a>
-          </div>
-        </div>
-      </section>
-
-      {/*
-        THE CONTINUE-WATCHING RAIL HAS ITS OWN BOUNDARY, AND IT IS NOT THE
-        CATALOG'S (PW-0305).
-
-        Two separate `Suspense` boundaries rather than one around both, because
-        the two loads fail and stall for completely different reasons. The
-        catalog comes from a metadata source; this rail reads the identity store
-        and the progress table. Sharing a boundary would make an unreachable
-        database into a slow catalog -- the wrong failure, attributed to the
-        wrong subsystem, in front of the thing the page is actually for.
-
-        `fallback={null}` RATHER THAN A SKELETON, and that is the difference
-        between this rail and the one below it. A skeleton is a promise that
-        something is coming, and it is the right promise for the catalog:
-        `loadHomeCatalog` always produces a rail, a panel or an error. This rail
-        very often resolves to NOTHING -- a viewer who has watched nothing, a
-        session with no profile selected yet, a deployment with no database --
-        and a row of grey boxes that vanishes is a promise broken every time the
-        normal case happens.
-
-        ABOVE THE CATALOG in document order because a viewer who left something
-        half-watched came back for it, and below the hero because the hero is
-        static markup that never waits.
-      */}
-      <Suspense fallback={null}>
-        <ContinueWatchingRail />
+      <Suspense fallback={<SpotlightSkeleton />}>
+        <Spotlight />
       </Suspense>
 
-      <div id="catalog">
-        <Suspense fallback={<CatalogSkeleton />}>
-          <Catalog />
+      {/*
+        THE RAILS ARE ONE KEYBOARD STACK, ACROSS BOTH BOUNDARIES (W132-B).
+
+        `RailStack` wraps the continue-watching boundary AND the catalog
+        boundary rather than sitting inside either, because the arrangement it
+        adds is Up and Down BETWEEN rails and continue watching is one of them.
+        It renders `display: contents`, so the rails keep the exact geometry
+        they had as direct children of `main.shell` and nothing about this
+        surface is laid out differently; see `components/home/rail-stack.tsx`.
+
+        Within a rail, Left/Right/Home/End were already answered by
+        `lib/a11y/roving-group.tsx` on every rail in the product. Nothing here
+        restates any of it.
+      */}
+      <RailStack>
+        {/*
+          THE CONTINUE-WATCHING RAIL HAS ITS OWN BOUNDARY, AND IT IS NOT THE
+          CATALOG'S (PW-0305).
+
+          Two separate `Suspense` boundaries rather than one around both, because
+          the two loads fail and stall for completely different reasons. The
+          catalog comes from a metadata source; this rail reads the identity
+          store and the progress table. Sharing a boundary would make an
+          unreachable database into a slow catalog -- the wrong failure,
+          attributed to the wrong subsystem, in front of the thing the page is
+          actually for.
+
+          `fallback={null}` RATHER THAN A SKELETON, and that is the difference
+          between this rail and the one below it. A skeleton is a promise that
+          something is coming, and it is the right promise for the catalog:
+          `loadHomeCatalog` always produces a rail, a panel or an error. This rail
+          very often resolves to NOTHING -- a viewer who has watched nothing, a
+          session with no profile selected yet, a deployment with no database --
+          and a row of grey boxes that vanishes is a promise broken every time the
+          normal case happens.
+
+          ABOVE THE CATALOG in document order because a viewer who left something
+          half-watched came back for it, and below the hero because the hero is
+          where this page says what the catalog holds.
+        */}
+        <Suspense fallback={null}>
+          <ContinueWatchingRail />
         </Suspense>
-      </div>
+
+        <Suspense fallback={<CatalogSkeleton />}>
+          <Rails />
+        </Suspense>
+      </RailStack>
     </AppShell>
   );
 }

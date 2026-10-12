@@ -1,5 +1,6 @@
+import { cache } from "react";
 import type { CatalogItem } from "@liberty/contracts/domains/catalog";
-import { isSurfaceable } from "../../lib/catalog";
+import { createCatalogMemo, isSurfaceable, type CatalogMemo } from "../../lib/catalog";
 import { selectDeclaredItems } from "../../lib/catalog-source";
 import { resolveCatalogMetadataSource } from "../../lib/catalog-source-registry";
 import { NonDeploymentEnvironment } from "../api/deployment-environment";
@@ -80,13 +81,129 @@ export const KIND_LOCKED_PATHS: ReadonlyMap<string, Exclude<BrowseKindFilter, "a
   [TV_PATH, "series"]
 ]);
 
+/* -------------------------------------------------------------------------
+ * SORT ORDER AS A VIEWER CONTROL (Wave 132, worker C).
+ *
+ * THE DEFECT CLASS REMOVED: one hard-coded order presented as the only order.
+ *
+ * `browseCatalog` has always ordered by `releaseYear desc, title, id`, which is
+ * the right DEFAULT and the wrong only option. The reason is specific rather
+ * than cosmetic: this surface exists to answer "what IS there" (see the header
+ * above), and on a catalog of any size the question is usually asked
+ * alphabetically -- a reader looking for a title they can half remember cannot
+ * use a list ordered by a year they do not know. Narrowing to a genre makes it
+ * worse, not better: the newest-first order is most useful on the unfiltered
+ * page and least useful on the one the reader has just narrowed by hand.
+ *
+ * THE DEFAULT IS BYTE-FOR-BYTE THE PREVIOUS BEHAVIOUR. `newest` produces
+ * exactly the comparator this module had before, so an existing link, an
+ * existing bookmark and every existing assertion describe the same page. A new
+ * control that changes the unparameterised page is a migration disguised as a
+ * feature.
+ *
+ * EVERY ORDER IS TOTAL AND EVERY TIE-BREAK IS EXPLICIT. `SORT_COMPARATORS`
+ * below states a primary key per option and then falls through the SAME tail --
+ * title by code point, then `id` -- so no option can ever return 0 for two
+ * distinct items and no option can fall back on the order the catalog arrived
+ * in. The catalog port promises nothing about that order, so an order that
+ * depends on it is not reproducible from the data.
+ *
+ * BY CODE POINT, NEVER `localeCompare`, which is forbidden for ordering in this
+ * repository because without an explicit locale it uses the host's collation:
+ * two machines would order an identical catalog differently, and an "A-Z" that
+ * is a different A-Z per server is not a sort a reader can use. The defect was
+ * removed from candidate ranking in `@liberty/media-engine` and from search's
+ * result sort before it could be added here.
+ * ---------------------------------------------------------------------- */
+
+/** The orders a viewer may ask for. `newest` is the unchanged default. */
+export type BrowseSortKey = "newest" | "oldest" | "title" | "title-desc";
+
+const SORT_KEYS: ReadonlyArray<BrowseSortKey> = ["newest", "oldest", "title", "title-desc"];
+
+export const DEFAULT_BROWSE_SORT: BrowseSortKey = "newest";
+
+/**
+ * Title, then id: the tail every option shares.
+ *
+ * SPLIT OUT SO IT IS STATED ONCE. Four comparators each ending in their own
+ * copy of two comparisons is four places for the tie-break to drift, and a
+ * drifted tie-break is invisible until two titles collide in production. `id` is
+ * unique within a catalog, so this always decides and the order is total.
+ */
+function byTitleThenId(a: CatalogItem, b: CatalogItem): number {
+  if (a.title !== b.title) return a.title < b.title ? -1 : 1;
+  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+}
+
+/**
+ * One comparator per option, total by construction.
+ *
+ * `title-desc` REVERSES ONLY THE TITLE, not the tail. Negating the whole
+ * comparator would also reverse `id`, which would make the Z-A page's tie-break
+ * the mirror of the A-Z page's rather than the same rule -- defensible, and
+ * harder to reason about than "titles descend, everything else is unchanged".
+ * Two items with the IDENTICAL title still order by ascending `id` in both
+ * directions, so the pair's relative order is a property of the data and not of
+ * which button was pressed.
+ */
+const SORT_COMPARATORS: Readonly<Record<BrowseSortKey, (a: CatalogItem, b: CatalogItem) => number>> =
+  {
+    newest: (a, b) =>
+      a.releaseYear !== b.releaseYear ? b.releaseYear - a.releaseYear : byTitleThenId(a, b),
+    oldest: (a, b) =>
+      a.releaseYear !== b.releaseYear ? a.releaseYear - b.releaseYear : byTitleThenId(a, b),
+    title: (a, b) => byTitleThenId(a, b),
+    "title-desc": (a, b) =>
+      a.title !== b.title ? (a.title < b.title ? 1 : -1) : a.id < b.id ? -1 : a.id > b.id ? 1 : 0
+  };
+
+/** The label a control shows for each order. Beside the comparators, so one cannot exist without the other. */
+export const BROWSE_SORT_LABEL: Readonly<Record<BrowseSortKey, string>> = {
+  newest: "Newest first",
+  oldest: "Oldest first",
+  title: "Title A–Z",
+  "title-desc": "Title Z–A"
+};
+
+/**
+ * The same four orders as they read INSIDE A SENTENCE.
+ *
+ * A SECOND TABLE RATHER THAN `BROWSE_SORT_LABEL[sort].toLowerCase()`, which is
+ * what this was and which produced "4 titles title a–z." -- a control label
+ * lowercased is not a phrase, and an em-dashed range reads as a label and not as
+ * a clause. Both tables are keyed by `BrowseSortKey` with no index signature, so
+ * a new order is a type error in both places rather than a missing word in one.
+ */
+const BROWSE_SORT_SUMMARY: Readonly<Record<BrowseSortKey, string>> = {
+  newest: "newest first",
+  oldest: "oldest first",
+  title: "A–Z by title",
+  "title-desc": "Z–A by title"
+};
+
 export interface BrowseFilters {
   readonly kind: BrowseKindFilter;
   /** The exact genre to show, or `null` for every genre. */
   readonly genre: string | null;
+  /**
+   * The order the viewer asked for.
+   *
+   * REQUIRED RATHER THAN OPTIONAL, which cost a handful of edits to this
+   * module's own tests and is worth it: an optional sort would let a caller
+   * construct a filter set with no stated order and receive the default by
+   * accident, so the one thing this field exists to make explicit would be
+   * implicit again at every call site that forgot it. `UNFILTERED` is the
+   * spelling for "no filters, default order".
+   */
+  readonly sort: BrowseSortKey;
 }
 
-export const UNFILTERED: BrowseFilters = { kind: "all", genre: null };
+export const UNFILTERED: BrowseFilters = {
+  kind: "all",
+  genre: null,
+  sort: DEFAULT_BROWSE_SORT
+};
 
 /** One genre the viewer may filter by, and how many titles carry it. */
 export interface BrowseGenreFacet {
@@ -204,15 +321,26 @@ export function browseCatalog(
   const selected = wanted === null ? surfaced : surfaced.filter((item) => fold(item.genre) === wanted);
 
   /*
-   * Newest first, then title, then id -- the same shape as search's secondary
-   * ordering, by code point for the reason above. `id` is unique within a
-   * catalog, so the last comparison always decides.
+   * THE ORDER THE VIEWER ASKED FOR, and newest-first when they asked for
+   * nothing -- which is byte-for-byte the comparator this line used to inline.
+   * Every option ends in the same `title`-then-`id` tail, by code point for the
+   * reason above, so each is total and the last comparison always decides.
+   *
+   * THE SORT IS THE LAST THING THAT HAPPENS, after the rights gate, the kind
+   * allowlist, the facet count and the genre filter. Ordering cannot admit an
+   * item, so nothing about it can weaken a gate -- and a reader can reorder a
+   * page as often as they like without any of the decisions above being retaken.
    */
-  const ordered = [...selected].sort((a, b) => {
-    if (a.releaseYear !== b.releaseYear) return b.releaseYear - a.releaseYear;
-    if (a.title !== b.title) return a.title < b.title ? -1 : 1;
-    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
-  });
+  /*
+   * The `??` is not dead code even though `BrowseSortKey` makes it unreachable
+   * through the type system. `BrowseFilters` is a plain object: a caller that
+   * built one from parsed JSON, from a stored preference, or from a future
+   * route handler's body has a `sort` TypeScript never checked, and an unknown
+   * key would otherwise index to `undefined` and make `sort` throw mid-render.
+   * `readBrowseSortParam` is the guarded door for URL input; this is the floor
+   * under every other door.
+   */
+  const ordered = [...selected].sort(SORT_COMPARATORS[filters.sort] ?? SORT_COMPARATORS.newest);
 
   return { filters, genres, items: ordered, generatedAt };
 }
@@ -256,7 +384,29 @@ export function readBrowseGenreParam(value: string | string[] | undefined): stri
   return trimmed;
 }
 
-/** Both filters, read from one search-params object. */
+/**
+ * `sort` as it actually arrives from a URL.
+ *
+ * The same first-value rule as `kind`, and the same fallback discipline:
+ * anything unrecognised -- a typo, a probe, a stale link from a future version
+ * that offered an order this one does not -- becomes the DEFAULT order rather
+ * than throwing. A malformed sort is a normally ordered page, not a 500.
+ *
+ * NOT VALIDATED AGAINST THE ITEMS, because an order is a statement about
+ * presentation and cannot fail to apply. That is the one way this differs from
+ * `readBrowseGenreParam`, which deliberately lets an unmatched genre through so
+ * the page can say it matched nothing: an unmatched genre is a fact about the
+ * catalog the reader needs told, whereas an unknown sort key is a fact about the
+ * link and there is nothing truthful to say about it beyond ordering the page.
+ */
+export function readBrowseSortParam(value: string | string[] | undefined): BrowseSortKey {
+  const first = Array.isArray(value) ? value[0] : value;
+  if (typeof first !== "string") return DEFAULT_BROWSE_SORT;
+  const candidate = first.trim() as BrowseSortKey;
+  return SORT_KEYS.includes(candidate) ? candidate : DEFAULT_BROWSE_SORT;
+}
+
+/** Every filter, read from one search-params object. */
 export function readBrowseFilters(
   params: Record<string, string | string[] | undefined>,
   lockedKind: Exclude<BrowseKindFilter, "all"> | null = null
@@ -269,7 +419,14 @@ export function readBrowseFilters(
    */
   return {
     kind: lockedKind ?? readBrowseKindParam(params.kind),
-    genre: readBrowseGenreParam(params.genre)
+    genre: readBrowseGenreParam(params.genre),
+    /*
+     * THE SORT IS NOT LOCKED BY ANY ROUTE. `/movies` and `/tv` fix the KIND
+     * because the path and the heading both state it; neither says anything
+     * about an order, so there is nothing for a locked value to be consistent
+     * with and a reader on `/movies` may sort films however they like.
+     */
+    sort: readBrowseSortParam(params.sort)
   };
 }
 
@@ -294,6 +451,17 @@ export function buildBrowseHref(filters: BrowseFilters, basePath: string = BROWS
     parts.push(`kind=${encodeURIComponent(filters.kind)}`);
   }
   if (filters.genre !== null) parts.push(`genre=${encodeURIComponent(filters.genre)}`);
+  /*
+   * THE DEFAULT ORDER IS NOT EMITTED, which is the rule this function already
+   * applies to `kind=all` and an absent genre: the unfiltered, default-ordered
+   * page is `/browse` and not `/browse?kind=all&genre=&sort=newest`. It also
+   * keeps the default honest in one direction only -- a link that says nothing
+   * about order means "whatever the default is", so changing the default would
+   * move those links rather than stranding them on a frozen copy of it.
+   */
+  if (filters.sort !== DEFAULT_BROWSE_SORT) {
+    parts.push(`sort=${encodeURIComponent(filters.sort)}`);
+  }
   return parts.length === 0 ? basePath : `${basePath}?${parts.join("&")}`;
 }
 
@@ -337,8 +505,67 @@ export type BrowseSource = () =>
   | null
   | Promise<readonly CatalogItem[] | null>;
 
+/* -------------------------------------------------------------------------
+ * ONE METADATA READ PER REQUEST (Wave 132, worker C).
+ *
+ * THE DEFECT CLASS: the same port asked the same question twice in one render,
+ * with no guarantee the two answers agree.
+ *
+ * `app/title/[titleId]/page.tsx` already carries this fix and states the
+ * failure precisely: `generateMetadata` and the component body are two calls
+ * for one request, "and the two answers are not required to agree -- a source
+ * that failed between them would title the tab after a title the page below
+ * says it could not load". That is a CORRECTNESS defect before it is a cost
+ * one, and nothing stopped it recurring here. `/browse`, `/movies` and `/tv`
+ * each render one surface today, so the duplicate read is not yet present on
+ * this route -- which is exactly when to install the guarantee, because the
+ * next person to add a `generateMetadata` to a browse route will not read this
+ * file first.
+ *
+ * TWO MECHANISMS, EACH DOING ONE THING, and neither is a TTL cache:
+ *
+ *  - React's `cache` supplies the SCOPE. It is request-scoped inside a Next
+ *    render, so every caller in one request receives the same memo. Outside a
+ *    render -- in this module's unit tests -- it is a pass-through that returns
+ *    a FRESH memo per call, which is why `browse.test.ts` holds one and reads
+ *    it twice rather than calling this twice and expecting a hit.
+ *  - `createCatalogMemo` supplies single-flight and the COUNTERS. It caches the
+ *    promise rather than the value, so two surfaces rendering concurrently in
+ *    one request -- both arriving before either answer exists -- share one read
+ *    instead of missing twice.
+ *
+ * NO TTL AND NO KEY, deliberately. The port has no change feed, no etag and no
+ * generation counter, so a TTL would be a guess about staleness written as a
+ * number; on a local-first installation whose catalog changes when the operator
+ * imports something, serving a stale list is a worse failure than reading
+ * twice. A scope the caller owns has no staleness window at all -- the next
+ * request reads again. `lib/catalog.ts` records the same reasoning where the
+ * primitive is defined.
+ *
+ * THE CLASSIFICATION STILL HAPPENS AT CALL TIME, never at module scope.
+ * `NonDeploymentEnvironment.classify()` is inside the factory, so it runs on
+ * the first read of each request rather than when this module was first loaded
+ * -- which in a cold start is not necessarily the request's environment.
+ * ---------------------------------------------------------------------- */
+
+const browseItemsMemo = cache(
+  (): CatalogMemo<readonly CatalogItem[] | null> => createCatalogMemo(() => getBrowseItems())
+);
+
+/**
+ * The request's shared catalog read.
+ *
+ * Exported so the de-duplication can be MEASURED rather than assumed -- this
+ * wave's instruction on caching -- and so a future surface on this route reaches
+ * the same memo instead of opening a second read path. `stats()` reports
+ * `sourceReads` and `reuses`; `browse.test.ts` asserts on both.
+ */
+export function browseItemsForRequest(): CatalogMemo<readonly CatalogItem[] | null> {
+  return browseItemsMemo();
+}
+
 /** The source the browse page uses when nothing is injected. */
-export const defaultBrowseSource: BrowseSource = () => getBrowseItems();
+export const defaultBrowseSource: BrowseSource = () => browseItemsForRequest().read();
 
 /**
  * Loader used by the browse route. A source that throws -- a network fault, a
@@ -412,7 +639,7 @@ export function describeBrowseState(result: BrowseLoadResult): string {
       : "No titles match these filters.";
   }
   const count = result.response.items.length;
-  const { kind, genre } = result.response.filters;
+  const { kind, genre, sort } = result.response.filters;
   /*
    * The noun follows the KIND FILTER, so a narrowed page says what it is
    * showing. "series" has no distinct plural, which is why this is a table
@@ -431,5 +658,17 @@ export function describeBrowseState(result: BrowseLoadResult): string {
           : "films"
         : "series";
   const genrePhrase = genre === null ? "" : ` in ${genre}`;
-  return `${count} ${noun}${genrePhrase}.`;
+  /*
+   * THE ORDER IS NAMED ONLY WHEN IT IS NOT THE DEFAULT, and that asymmetry is
+   * the point rather than an inconsistency. The summary is what a screen-reader
+   * user and a scanning reader get instead of looking at the sort control, so it
+   * has to state anything they did not already assume -- and "newest first" is
+   * what this surface has always been, named in the control and unchanged by any
+   * link they followed. Printing it on every page would add a clause to every
+   * sentence to tell the reader nothing, which is how a summary stops being
+   * read. Any other order was chosen, and a chosen order that the page does not
+   * confirm is a control the reader cannot verify worked.
+   */
+  const sortPhrase = sort === DEFAULT_BROWSE_SORT ? "" : `, ${BROWSE_SORT_SUMMARY[sort]}`;
+  return `${count} ${noun}${genrePhrase}${sortPhrase}.`;
 }

@@ -13,6 +13,17 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import { PRIMARY_NAVIGATION, activeEntryId, isReachable } from "./navigation";
+import {
+  BROWSE_PATH,
+  BROWSE_SORT_LABEL,
+  MOVIES_PATH,
+  TV_PATH,
+  UNFILTERED,
+  buildBrowseHref,
+  type BrowseKindFilter,
+  type BrowseSortKey
+} from "../../app/browse/browse";
+import { titleHref } from "../../app/title/title-detail";
 
 const APP_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "app");
 
@@ -165,5 +176,148 @@ describe("the navigation model", () => {
      * where the viewer is, and `/` must not win by prefix. */
     expect(activeEntryId("/watch/aurora-fall")).toBeNull();
     expect(activeEntryId("/title/aurora-fall")).toBeNull();
+  });
+});
+
+/* -------------------------------------------------------------------------
+ * THE SAME GUARD, EXTENDED PAST THE NAV LIST (Wave 132, worker C).
+ *
+ * THE DEFECT CLASS: a link whose destination nothing resolves.
+ *
+ * The guard above answers "does every NAVIGATION ENTRY have a page.tsx", which
+ * is where the four dead fragment anchors lived. It cannot answer for the two
+ * other families of address this application builds, and both are now larger
+ * than the nav list:
+ *
+ *  - `buildBrowseHref` produces an address per filter COMBINATION, and Wave 132
+ *    added a third filter (`sort`). The nav links to `/browse` and the guard
+ *    above resolves it; nothing resolved `/browse?genre=Drama&sort=title`, and
+ *    nothing would have noticed if the sort control had been pointed at a route
+ *    that does not exist.
+ *  - `titleHref` produces a DYNAMIC address, which the guard above refuses by
+ *    name -- "this guard cannot resolve one" -- and therefore skips entirely.
+ *    `activeEntryId("/title/aurora-fall")` is asserted to be null up there, so
+ *    the title route is mentioned by this file while its existence is checked by
+ *    nothing in it.
+ *
+ * `resolvePage` below is the piece that was missing: a resolver that walks
+ * segments and accepts a DYNAMIC directory when no literal one matches, which
+ * is what Next itself does. It is deliberately stricter than Next in one way --
+ * it accepts exactly one dynamic directory per level and fails on an ambiguous
+ * pair rather than guessing which would win -- because a guard that guesses is
+ * a guard that passes for the wrong reason.
+ * ---------------------------------------------------------------------- */
+
+/**
+ * The `page.tsx` a pathname would render, or `null`.
+ *
+ * The QUERY STRING IS DROPPED FIRST, because a query selects no route: it is
+ * the thing `/search?q=` and `/browse?sort=` vary without changing which file
+ * answers. A hash would be dropped the same way, and `PRIMARY_NAVIGATION` is
+ * asserted above to contain none.
+ */
+function resolvePage(href: string): string | null {
+  const path = href.split(/[?#]/)[0] ?? "";
+  const segments = path.split("/").filter((segment) => segment !== "");
+  let directory = APP_DIR;
+
+  for (const segment of segments) {
+    const children = readdirSync(directory, { withFileTypes: true }).filter((entry) =>
+      entry.isDirectory()
+    );
+    const literal = children.find((entry) => entry.name === segment);
+    if (literal !== undefined) {
+      directory = join(directory, literal.name);
+      continue;
+    }
+    /*
+     * A dynamic segment -- `[titleId]`, `[contentId]`. Catch-all forms
+     * (`[...slug]`) are deliberately NOT accepted: this application has none,
+     * and silently matching one would let a future catch-all make every
+     * assertion in this file pass by swallowing every unresolvable address.
+     */
+    const dynamic = children.filter(
+      (entry) => entry.name.startsWith("[") && entry.name.endsWith("]") && !entry.name.includes("...")
+    );
+    if (dynamic.length !== 1) return null;
+    directory = join(directory, dynamic[0]!.name);
+  }
+
+  const page = join(directory, "page.tsx");
+  return routeFiles(APP_DIR).includes(page) ? page : null;
+}
+
+describe("every address this application builds resolves to a route", () => {
+  it("resolves the routes it is supposed to be guarding, and refuses an invented one", () => {
+    /* Non-vacuity in both directions. A resolver that answered for everything
+     * would satisfy every assertion below; one that answered for nothing would
+     * fail them loudly, which is the safer of the two failures and still worth
+     * pinning. */
+    expect(resolvePage("/")).not.toBeNull();
+    expect(resolvePage("/browse")).not.toBeNull();
+    expect(resolvePage("/no-such-route-w132c")).toBeNull();
+    expect(resolvePage("/browse/deeper-than-the-route-goes")).toBeNull();
+  });
+
+  it("agrees with the nav guard on every live entry", () => {
+    for (const entry of PRIMARY_NAVIGATION) {
+      if (!isReachable(entry)) continue;
+      expect(resolvePage(entry.href!), `${entry.id} -> ${entry.href}`).not.toBeNull();
+    }
+  });
+
+  it("resolves the title detail route through its dynamic segment", () => {
+    /*
+     * The route the nav guard above refuses to resolve and this file otherwise
+     * only mentions. `titleHref` percent-encodes its argument, so the awkward
+     * ids are part of the case rather than a separate one.
+     */
+    expect(resolvePage("/title/aurora-fall")).not.toBeNull();
+    expect(resolvePage(titleHref("aurora-fall"))).not.toBeNull();
+    expect(resolvePage(titleHref("a title with spaces"))).not.toBeNull();
+    expect(resolvePage(titleHref("../../etc/passwd"))).not.toBeNull();
+    /* A bare `/title` is NOT a route -- the 404 boundary lives under the
+     * dynamic segment -- and claiming it resolved would hide that. */
+    expect(resolvePage("/title")).toBeNull();
+  });
+
+  it("resolves every address the browse filters can produce, on all three routes", () => {
+    /*
+     * THE WHOLE CROSS PRODUCT, because the point of `buildBrowseHref` is that
+     * the three routes emit different parameters for the same filters: a
+     * kind-locked route must not repeat its kind, and the default sort must not
+     * be emitted at all. Every one of those addresses has to land on a page.
+     */
+    const basePaths = [BROWSE_PATH, MOVIES_PATH, TV_PATH];
+    const kinds: BrowseKindFilter[] = ["all", "movie", "series"];
+    const sorts = Object.keys(BROWSE_SORT_LABEL) as BrowseSortKey[];
+    const genres: (string | null)[] = [null, "Drama", "Science fiction"];
+
+    let checked = 0;
+    for (const basePath of basePaths) {
+      for (const kind of kinds) {
+        for (const sort of sorts) {
+          for (const genre of genres) {
+            const href = buildBrowseHref({ kind, genre, sort }, basePath);
+            expect(resolvePage(href), href).not.toBeNull();
+            checked += 1;
+          }
+        }
+      }
+    }
+    /* Non-vacuity: an empty loop proves nothing. */
+    expect(checked).toBe(basePaths.length * kinds.length * sorts.length * genres.length);
+  });
+
+  it("keeps the unfiltered, default-ordered address as the bare route", () => {
+    /* The property the sort control relies on: a reader who has changed nothing
+     * is on the same address the nav links to, so the nav highlight and the
+     * page agree. */
+    expect(buildBrowseHref(UNFILTERED, BROWSE_PATH)).toBe(BROWSE_PATH);
+    expect(buildBrowseHref({ ...UNFILTERED, kind: "movie" }, MOVIES_PATH)).toBe(MOVIES_PATH);
+    expect(buildBrowseHref({ ...UNFILTERED, kind: "series" }, TV_PATH)).toBe(TV_PATH);
+    for (const path of [BROWSE_PATH, MOVIES_PATH, TV_PATH]) {
+      expect(activeEntryId(path), path).not.toBeNull();
+    }
   });
 });

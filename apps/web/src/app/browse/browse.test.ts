@@ -8,6 +8,11 @@ import type {
 import { NonDeploymentEnvironment } from "../api/deployment-environment";
 import {
   BROWSABLE_KINDS,
+  BROWSE_SORT_LABEL,
+  DEFAULT_BROWSE_SORT,
+  browseItemsForRequest,
+  readBrowseSortParam,
+  type BrowseSortKey,
   KIND_LOCKED_PATHS,
   MOVIES_PATH,
   TV_PATH,
@@ -248,10 +253,9 @@ describe("reading the filters out of a URL", () => {
   });
 
   it("reads both filters from one params object", () => {
-    expect(readBrowseFilters({ kind: "movie", genre: "Drama" })).toEqual({
-      kind: "movie",
-      genre: "Drama"
-    });
+    expect(readBrowseFilters({ kind: "movie", genre: "Drama" })).toEqual(
+      filters({ kind: "movie", genre: "Drama" })
+    );
     expect(readBrowseFilters({})).toEqual(UNFILTERED);
   });
 });
@@ -300,42 +304,41 @@ describe("the routes whose path fixes the kind", () => {
     /* `/movies?kind=series` is a stale link or somebody poking at the surface.
      * Honouring it would serve series under a path and a heading that both say
      * films. */
-    expect(readBrowseFilters({ kind: "series" }, "movie")).toEqual({ kind: "movie", genre: null });
-    expect(readBrowseFilters({ kind: "movie" }, "series")).toEqual({ kind: "series", genre: null });
+    expect(readBrowseFilters({ kind: "series" }, "movie")).toEqual(filters({ kind: "movie" }));
+    expect(readBrowseFilters({ kind: "movie" }, "series")).toEqual(filters({ kind: "series" }));
   });
 
   it("still reads the genre on a locked route", () => {
-    expect(readBrowseFilters({ kind: "series", genre: "Drama" }, "movie")).toEqual({
-      kind: "movie",
-      genre: "Drama"
-    });
+    expect(readBrowseFilters({ kind: "series", genre: "Drama" }, "movie")).toEqual(
+      filters({ kind: "movie", genre: "Drama" })
+    );
   });
 
   it("leaves /browse choosing for itself", () => {
-    expect(readBrowseFilters({ kind: "series" })).toEqual({ kind: "series", genre: null });
+    expect(readBrowseFilters({ kind: "series" })).toEqual(filters({ kind: "series" }));
   });
 
   it("does not repeat a locked kind in the query it builds", () => {
     /* Two sources of truth for one filter is a shareable link that can
      * contradict its own path. */
-    expect(buildBrowseHref({ kind: "movie", genre: null }, MOVIES_PATH)).toBe("/movies");
-    expect(buildBrowseHref({ kind: "movie", genre: "Drama" }, MOVIES_PATH)).toBe(
+    expect(buildBrowseHref(filters({ kind: "movie" }), MOVIES_PATH)).toBe("/movies");
+    expect(buildBrowseHref(filters({ kind: "movie", genre: "Drama" }), MOVIES_PATH)).toBe(
       "/movies?genre=Drama"
     );
-    expect(buildBrowseHref({ kind: "series", genre: null }, TV_PATH)).toBe("/tv");
+    expect(buildBrowseHref(filters({ kind: "series" }), TV_PATH)).toBe("/tv");
   });
 
   it("still emits a kind that the route does NOT fix", () => {
-    expect(buildBrowseHref({ kind: "series", genre: null }, MOVIES_PATH)).toBe("/movies?kind=series");
+    expect(buildBrowseHref(filters({ kind: "series" }), MOVIES_PATH)).toBe("/movies?kind=series");
   });
 
   it("is unchanged for /browse", () => {
-    expect(buildBrowseHref({ kind: "movie", genre: null })).toBe("/browse?kind=movie");
+    expect(buildBrowseHref(filters({ kind: "movie" }))).toBe("/browse?kind=movie");
     expect(buildBrowseHref(UNFILTERED)).toBe("/browse");
   });
 
   it("round-trips a locked route's own address back to the same filters", () => {
-    const asked = { kind: "series" as const, genre: "Science fiction" };
+    const asked = filters({ kind: "series", genre: "Science fiction" });
     const url = new URL(buildBrowseHref(asked, TV_PATH), "https://example.invalid");
     expect(url.pathname).toBe(TV_PATH);
     expect(
@@ -496,5 +499,240 @@ describe("describeBrowseState", () => {
       ISO
     );
     expect(describeBrowseState({ status: "ok", response })).toBe("1 film in Drama.");
+  });
+});
+
+describe("browse sort order (Wave 132)", () => {
+  /*
+   * THE DEFECT CLASS THESE PIN: one hard-coded order presented as the only
+   * order, and -- once there is more than one -- an order that is not total.
+   *
+   * A sort whose comparator can return 0 for two distinct items falls back on
+   * the order the catalog arrived in, and the metadata port promises nothing
+   * about that order. So every case below asserts the FULL list rather than a
+   * leading element, and the determinism case feeds the same catalog in
+   * several arrangements.
+   */
+  const catalog: CatalogItem[] = [
+    movie({ id: "b-old", title: "Blade", releaseYear: 1998 }),
+    movie({ id: "a-new", title: "Aurora", releaseYear: 2024 }),
+    series({ id: "z-mid", title: "Zenith", releaseYear: 2010 }),
+    movie({ id: "a-dup-2", title: "Aurora", releaseYear: 2024 })
+  ];
+
+  it("defaults to the order this surface has always had", () => {
+    expect(DEFAULT_BROWSE_SORT).toBe("newest");
+    /* Newest, then title by code point, then id. Byte-for-byte the previous
+     * comparator, so an existing link describes the same page. */
+    expect(ids(browseCatalog(catalog, UNFILTERED, ISO))).toEqual([
+      "a-dup-2",
+      "a-new",
+      "z-mid",
+      "b-old"
+    ]);
+  });
+
+  it("orders oldest first without reversing the tie-break", () => {
+    expect(ids(browseCatalog(catalog, filters({ sort: "oldest" }), ISO))).toEqual([
+      "b-old",
+      "z-mid",
+      "a-dup-2",
+      "a-new"
+    ]);
+  });
+
+  it("orders A-Z and Z-A by title, with id still ascending in both", () => {
+    /*
+     * `title-desc` REVERSES ONLY THE TITLE. Negating the whole comparator would
+     * also reverse `id`, so two items with the identical title would swap -- the
+     * pair's relative order would then be a property of which button was
+     * pressed rather than of the data.
+     */
+    expect(ids(browseCatalog(catalog, filters({ sort: "title" }), ISO))).toEqual([
+      "a-dup-2",
+      "a-new",
+      "b-old",
+      "z-mid"
+    ]);
+    expect(ids(browseCatalog(catalog, filters({ sort: "title-desc" }), ISO))).toEqual([
+      "z-mid",
+      "b-old",
+      "a-dup-2",
+      "a-new"
+    ]);
+  });
+
+  it("orders titles by CODE POINT, never by the host's collation", () => {
+    /*
+     * `localeCompare` without an explicit locale uses the host's collation: in a
+     * Swedish collation "ä" sorts after "z", in most others beside "a". An
+     * A-Z that is a different A-Z per server is not a sort a reader can use, and
+     * this repository has already removed the defect from candidate ranking and
+     * from search's result sort.
+     */
+    const accented: CatalogItem[] = [
+      movie({ id: "1", title: "Zebra" }),
+      movie({ id: "2", title: "Älv" }),
+      movie({ id: "3", title: "Apple" })
+    ];
+    expect(ids(browseCatalog(accented, filters({ sort: "title" }), ISO))).toEqual(["3", "1", "2"]);
+  });
+
+  it("is total: every order is unchanged by the order the catalog arrived in", () => {
+    for (const sort of Object.keys(BROWSE_SORT_LABEL) as BrowseSortKey[]) {
+      const expected = ids(browseCatalog(catalog, filters({ sort }), ISO));
+      expect(ids(browseCatalog([...catalog].reverse(), filters({ sort }), ISO)), sort).toEqual(
+        expected
+      );
+      for (let shift = 1; shift < catalog.length; shift += 1) {
+        const rotated = [...catalog.slice(shift), ...catalog.slice(0, shift)];
+        expect(ids(browseCatalog(rotated, filters({ sort }), ISO)), `${sort}+${shift}`).toEqual(
+          expected
+        );
+      }
+    }
+  });
+
+  it("sorts last, so no order can admit an item or change a facet", () => {
+    /* Ordering cannot weaken a gate. The same population and the same facets
+     * come back whichever order is asked for. */
+    const refused = [
+      ...catalog,
+      { ...movie({ id: "refused", title: "Aaaa" }), rights: "unreviewed" as never }
+    ];
+    const asc = browseCatalog(refused, filters({ sort: "title" }), ISO);
+    const desc = browseCatalog(refused, filters({ sort: "title-desc" }), ISO);
+    expect(asc.items.length).toBe(4);
+    expect([...ids(asc)].sort()).toEqual([...ids(desc)].sort());
+    expect(asc.genres).toEqual(desc.genres);
+    expect(ids(asc)).not.toContain("refused");
+  });
+
+  it("survives a sort key TypeScript never checked", () => {
+    /*
+     * `BrowseFilters` is a plain object, so a caller that built one from parsed
+     * JSON or a stored preference has a `sort` the type system never saw. An
+     * unknown key must order the page, not throw mid-render.
+     */
+    const smuggled = { ...UNFILTERED, sort: "by-vibes" as unknown as BrowseSortKey };
+    expect(ids(browseCatalog(catalog, smuggled, ISO))).toEqual(
+      ids(browseCatalog(catalog, UNFILTERED, ISO))
+    );
+  });
+});
+
+describe("readBrowseSortParam and the sort in an address", () => {
+  it("takes the first value and ignores anything unrecognised", () => {
+    expect(readBrowseSortParam("oldest")).toBe("oldest");
+    expect(readBrowseSortParam(" title ")).toBe("title");
+    expect(readBrowseSortParam(["title-desc", "oldest"])).toBe("title-desc");
+    /* A typo, a probe or a stale link from a version with more orders. */
+    expect(readBrowseSortParam("by-vibes")).toBe(DEFAULT_BROWSE_SORT);
+    expect(readBrowseSortParam("")).toBe(DEFAULT_BROWSE_SORT);
+    expect(readBrowseSortParam(undefined)).toBe(DEFAULT_BROWSE_SORT);
+    expect(readBrowseSortParam([])).toBe(DEFAULT_BROWSE_SORT);
+  });
+
+  it("is not locked by a kind-locked route, because no path states an order", () => {
+    expect(readBrowseFilters({ kind: "series", sort: "title" }, "movie")).toEqual(
+      filters({ kind: "movie", sort: "title" })
+    );
+  });
+
+  it("omits the default order from the address and round-trips the rest", () => {
+    expect(buildBrowseHref(UNFILTERED)).toBe("/browse");
+    expect(buildBrowseHref(filters({ sort: "newest" }))).toBe("/browse");
+    expect(buildBrowseHref(filters({ sort: "title-desc" }))).toBe("/browse?sort=title-desc");
+    expect(buildBrowseHref(filters({ genre: "Drama", sort: "oldest" }))).toBe(
+      "/browse?genre=Drama&sort=oldest"
+    );
+    expect(buildBrowseHref(filters({ kind: "movie", sort: "title" }), MOVIES_PATH)).toBe(
+      "/movies?sort=title"
+    );
+
+    for (const sort of Object.keys(BROWSE_SORT_LABEL) as BrowseSortKey[]) {
+      const asked = filters({ genre: "Science fiction", sort });
+      const url = new URL(buildBrowseHref(asked), "https://example.invalid");
+      expect(
+        readBrowseFilters({
+          genre: url.searchParams.get("genre") ?? undefined,
+          sort: url.searchParams.get("sort") ?? undefined
+        }),
+        sort
+      ).toEqual(asked);
+    }
+  });
+});
+
+describe("describeBrowseState names a non-default order", () => {
+  const two = [movie({ id: "a", title: "A" }), movie({ id: "b", title: "B" })];
+  const sentence = (sort: BrowseSortKey): string =>
+    describeBrowseState({
+      status: "ok",
+      response: browseCatalog(two, filters({ sort }), ISO)
+    });
+
+  it("says nothing about the default order, which the reader already assumed", () => {
+    expect(sentence("newest")).toBe("2 titles.");
+  });
+
+  it("names any other order, because a chosen order has to be confirmed", () => {
+    expect(sentence("oldest")).toBe("2 titles, oldest first.");
+    expect(sentence("title")).toBe("2 titles, A–Z by title.");
+    expect(sentence("title-desc")).toBe("2 titles, Z–A by title.");
+  });
+
+  it("keeps the genre clause ahead of the order clause", () => {
+    expect(
+      describeBrowseState({
+        status: "ok",
+        response: browseCatalog(two, filters({ genre: "Drama", sort: "oldest" }), ISO)
+      })
+    ).toBe("2 titles in Drama, oldest first.");
+  });
+});
+
+describe("the request-scoped catalog memo (Wave 132)", () => {
+  /*
+   * MEASURED RATHER THAN ASSUMED, which was this wave's instruction. A cache
+   * with no counter is a cache nobody can show is working -- or show has
+   * stopped working when a later refactor accidentally builds a fresh memo per
+   * call.
+   *
+   * `browseItemsForRequest` is `cache`d, which is request-scoped inside a Next
+   * render and a PASS-THROUGH here: there is no React request scope in a vitest
+   * `environment: "node"` suite. So the memo is held once and read twice, which
+   * is what a single request does. The scope itself is React's and is not what
+   * this asserts.
+   */
+  it("reads the metadata port once however many times the surface asks", async () => {
+    const memo = browseItemsForRequest();
+    const first = await memo.read();
+    const second = await memo.read();
+    expect(memo.stats()).toEqual({ sourceReads: 1, reuses: 1 });
+    /* The identical answer, not merely an equal one: one read, one array. */
+    expect(second).toBe(first);
+  });
+
+  it("shares one read between callers that arrive concurrently", async () => {
+    /*
+     * The case that makes this cache the PROMISE and not the value: two surfaces
+     * rendering concurrently both arrive before either answer exists, so a
+     * value cache would miss twice and read twice.
+     */
+    const memo = browseItemsForRequest();
+    const [a, b] = await Promise.all([memo.read(), memo.read()]);
+    expect(memo.stats().sourceReads).toBe(1);
+    expect(a).toBe(b);
+  });
+
+  it("still answers through the loader, with the gates and the order unchanged", async () => {
+    const result = await loadBrowseCatalog(filters({ sort: "title" }));
+    expect(result.status).not.toBe("error");
+    if (result.status !== "ok") return;
+    const titles = result.response.items.map((item) => item.title);
+    expect([...titles]).toEqual(
+      [...titles].sort((a, b) => (a === b ? 0 : a < b ? -1 : 1))
+    );
   });
 });

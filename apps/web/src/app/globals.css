@@ -364,3 +364,185 @@ h1 { margin: 12px 0 14px; font-size: clamp(48px, 7vw, 84px); line-height: .93; l
 @media (prefers-reduced-motion: reduce) {
   .profile-tile { transition: none; }
 }
+
+/* -------------------------------------------------------------------------
+ * The home surface: a hero that states the catalog, and a stack of rails
+ * (W132-B)
+ *
+ * APPENDED RATHER THAN WOVEN IN, and every rule below is either a NEW class or
+ * a more specific selector over an existing one. Nothing above this line is
+ * edited: eight other surfaces are being built against this stylesheet in the
+ * same wave, and a redefinition of `.hero`, `.card` or `.rail` in place would
+ * reach every one of them. `.hero-state` wins over `.hero` by ORDER rather than
+ * by specificity, which only works because this block is last -- see the guard
+ * in `components/home/home-ui.test.tsx`, which asserts that ordering rather
+ * than trusting it.
+ *
+ * `.hero` IS SHARED WITH THE TITLE PAGE (`components/title/title-hero.tsx`),
+ * so the variant classes carry the home-specific parts and the base rule is
+ * left exactly as both surfaces already agree on it.
+ * ---------------------------------------------------------------------- */
+
+/*
+ * The structured facts under a spotlit title -- year, genre, runtime or episode
+ * count. `.hero p` sets the colour and margin of the hero's prose at (0,1,1), so
+ * this needs the descendant form to win; a bare `.hero-facts` would be
+ * overridden by it and the line would read as body copy rather than as metadata.
+ */
+.hero .hero-facts {
+  color: var(--muted);
+  font-size: var(--text-sm);
+  letter-spacing: 0.02em;
+  margin: 0;
+}
+
+/*
+ * The hero when there is no work to spotlight: a catalog that is empty, or one
+ * that could not be read.
+ *
+ * NO `min-height`, AND THAT IS THE POINT OF THE VARIANT. `.hero` fixes the slot
+ * at 430px and `.skeleton-hero` is 430px, so the hero is the same height before
+ * the catalog resolves and after it resolves into any of its states. Shrinking
+ * this panel to fit its two sentences would hand the page a 170px jump at the
+ * exact moment the Suspense boundary resolved, which is the defect the skeleton
+ * exists to prevent.
+ *
+ * The background drops the radial "artwork" highlight `.hero` carries. A panel
+ * that says there is nothing in the catalog should not be lit like a poster for
+ * something.
+ */
+.hero-state {
+  background: linear-gradient(135deg, var(--surface-2), var(--surface) 58%, var(--bg));
+}
+
+.hero-state .hero-copy {
+  display: grid;
+  gap: var(--space-4);
+  /* Wider than the spotlight's 610px: this is prose to read, not a title to
+   * glance at, and 68ch is the measure `.state-panel` already uses for the same
+   * kind of copy. */
+  max-width: 68ch;
+}
+
+/*
+ * Not 84px. `h1`'s clamp is sized for a work's name across a 430px hero; a
+ * sentence explaining why there is no catalog set at that size reads as
+ * shouting, and at `7vw` on a 4K window it would wrap mid-clause.
+ */
+.hero-state h1 {
+  margin: 0;
+  font-size: clamp(28px, 3.4vw, 46px);
+  line-height: 1.08;
+  letter-spacing: -0.03em;
+}
+
+/*
+ * The reason code, in the hero rather than in a `.state-panel`. `.hero p` would
+ * otherwise repaint it as body copy -- the operator-facing detail is the one
+ * part of that panel worth picking out, and `e2e/tests/critical-journey.spec.ts`
+ * reads it to tell a refused source from an empty catalog.
+ */
+.hero .state-detail {
+  color: var(--accent);
+}
+
+/*
+ * `RailStack` is a keyboard container, not a box.
+ *
+ * `display: contents` keeps every rail laid out exactly as it was when the
+ * rails were direct children of `main.shell` -- their own `.section` margins,
+ * their own grid -- while giving `components/home/rail-stack.tsx` a DOM node to
+ * hang a key handler on and to scope its `querySelectorAll` to. A wrapper that
+ * participated in layout would be a redesign of the approved surface smuggled
+ * in as a keyboard fix.
+ */
+.rail-stack {
+  display: contents;
+}
+
+/*
+ * The one animation this surface adds, and it is scoped to rails.
+ *
+ * `.rail .card` rather than `.card`, because `.card` is also the watchlist
+ * entry, the search result and an episode row; a hover behaviour added to the
+ * bare class would arrive on four surfaces this task has not looked at.
+ *
+ * `:focus-within` as well as `:hover` so the keyboard gets the same feedback
+ * the mouse does -- which is the whole point of the arrow-key arrangement
+ * above. The movement is 2px: enough to read as a response, small enough that
+ * it cannot push a focused card under the sticky topbar.
+ */
+.rail .card {
+  transition: transform 140ms ease;
+}
+
+.rail .card:hover,
+.rail .card:focus-within {
+  transform: translateY(-2px);
+}
+
+/* -------------------------------------------------------------------------
+ * The window sizes this actually runs in
+ *
+ * This is a WebView2 window on a Windows desktop, so the range is roughly
+ * 1024px to a 4K panel, and Windows display scaling multiplies into it: at 150%
+ * a 2560px screen is a 1707px viewport, which is why the existing rules key off
+ * CSS pixels alone and why the spacing scale is a 4px grid -- 25% scaling steps
+ * land on whole device pixels on a 4px grid and do not on a 5px one.
+ *
+ * TWO STEPS ADDED, AND NEITHER TOUCHES THE EXISTING TWO. `max-width: 1200px`
+ * (shell padding) and `max-width: 900px` (two-column rails, hidden nav) are
+ * unchanged and still apply.
+ * ---------------------------------------------------------------------- */
+
+/*
+ * 1024-1100px: four columns, not five.
+ *
+ * SCOPED WITH A `min-width` FLOOR, which is load-bearing rather than tidy. The
+ * `max-width: 900px` rule above sets two columns and has the same specificity,
+ * so an unfloored `max-width: 1100px` rule would win below 900px by coming
+ * later in the file and quietly undo it. Five 1fr columns inside a 1024px
+ * window is a 195px card; four is 244px, which is the smallest a poster, a
+ * title and a meta line read comfortably at.
+ */
+@media (min-width: 901px) and (max-width: 1100px) {
+  .rail {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+/*
+ * 1900px and up: let the shell use the window.
+ *
+ * `.shell` is capped at 1440px, which on a 4K panel at 100% scaling is a third
+ * of the width with black on both sides. The cap is raised rather than removed,
+ * and the COLUMN COUNT IS DELIBERATELY NOT CHANGED: `.rail`'s five columns are
+ * what `continue-watching-rail.tsx` sizes `VISIBLE_ENTRIES` against, and a
+ * sixth column would leave that rail one card short of its own row. Five wider
+ * cards at 1760px is 340px each, which the 16/10 poster handles by aspect ratio
+ * with no new rule.
+ */
+@media (min-width: 1900px) {
+  .shell {
+    max-width: 1760px;
+  }
+}
+
+/*
+ * The reduced-motion counterpart to the rail hover above. The product already
+ * answers this query twice -- for `.skeleton`'s shimmer and for `.profile-tile`
+ * -- and a third animation that did not would be the one that made the setting
+ * look broken. Hover and focus still change nothing but position, so with the
+ * transform removed the card simply does not move; no state is carried by the
+ * movement alone, and the focus ring is what actually reports focus.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .rail .card {
+    transition: none;
+  }
+
+  .rail .card:hover,
+  .rail .card:focus-within {
+    transform: none;
+  }
+}

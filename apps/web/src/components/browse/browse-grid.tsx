@@ -1,6 +1,7 @@
 import type { CatalogItem } from "@liberty/contracts/domains/catalog";
 import { CatalogCard } from "../catalog-card";
 import { RovingGroup } from "../../lib/a11y/roving-group";
+import { describeSurfacedRightsBasis } from "../../lib/catalog";
 import styles from "./browse.module.css";
 
 /* -------------------------------------------------------------------------
@@ -54,6 +55,27 @@ export function BrowseGrid({ items }: BrowseGridProps) {
         {items.map((item) => (
           <li className={styles.cell} key={item.id}>
             <CatalogCard item={item} />
+            {/*
+              WHY THIS TITLE IS LISTED, which is the only availability question
+              this surface can answer truthfully (Wave 132).
+
+              NOT "AVAILABLE", NOT "PLAYABLE", NOT A BADGE. `CatalogItem`
+              carries no stream, no provider and no URL -- deliberately, by its
+              own contract header -- and a playable stream is resolved through
+              authorized provider adapters at playback time. Anything implying
+              this page knows a stream exists would be a plausible-looking
+              invention, and on an installation with no catalog metadata source
+              at all it would be an invention on top of an invention.
+
+              `describeSurfacedRightsBasis` reports the decision the gate
+              actually made and the field it read it off: `item.rights`, on
+              `PLAYABLE_CONTENT_RIGHTS`. It is rendered as a SIBLING of the card
+              rather than inside it because `catalog-card.tsx` is another
+              worker's surface this wave, and because the search results list
+              already prints its own reason line the same way -- one pattern, two
+              surfaces, no shared component invented for two lines of text.
+            */}
+            <p className={styles.rightsBasis}>{describeSurfacedRightsBasis(item)}</p>
           </li>
         ))}
       </RovingGroup>

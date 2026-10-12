@@ -9,6 +9,8 @@ import type {
 import {
   appearsOnHome,
   buildHomeCatalog,
+  createCatalogMemo,
+  describeSurfacedRightsBasis,
   formatCatalogMeta,
   formatRuntime,
   isSurfaceable,
@@ -540,5 +542,198 @@ describe("loadHomeCatalog states which empty it is", () => {
     });
 
     expect(result).toEqual({ status: "error", reason: "catalog_source_unavailable" });
+  });
+});
+
+describe("describeSurfacedRightsBasis (Wave 132)", () => {
+  /*
+   * THE DEFECT CLASS THESE PIN: an availability indicator that is a guess.
+   *
+   * The tempting badge on a discovery surface reads "Available" or "Playable",
+   * and this application cannot support either anywhere on that path:
+   * `CatalogItem` carries no stream, no provider and no URL, and a playable
+   * stream is resolved through authorized provider adapters at playback time.
+   * What IS established is the rights basis the gate read, so that is the only
+   * thing this function is allowed to say -- and these cases assert it does not
+   * say anything stronger.
+   */
+  it("reports the rights basis the gate actually read, for every value on the allowlist", () => {
+    expect(describeSurfacedRightsBasis(movie({ id: "a", rights: "licensed" }))).toBe(
+      "Licensed for this installation"
+    );
+    expect(describeSurfacedRightsBasis(movie({ id: "b", rights: "owned" }))).toBe(
+      "From your own library"
+    );
+    expect(describeSurfacedRightsBasis(series({ id: "c", rights: "public-domain" }))).toBe(
+      "Public domain"
+    );
+  });
+
+  it("never claims a title is playable, available, streaming or ready", () => {
+    /*
+     * Asserted as a PROHIBITION on the vocabulary rather than as three more
+     * equality checks, because the failure this guards against is somebody
+     * later improving the copy into a claim. The words are the claim.
+     */
+    const forbidden = ["playable", "available to watch", "streaming", "ready to watch", "watch now"];
+    for (const rights of ["licensed", "owned", "public-domain"] as const) {
+      const sentence = describeSurfacedRightsBasis(movie({ id: rights, rights })).toLowerCase();
+      for (const word of forbidden) {
+        expect(sentence, `${rights}: "${word}"`).not.toContain(word);
+      }
+    }
+  });
+
+  it("says so, rather than naming a basis, for an item the gate would refuse", () => {
+    /*
+     * UNREACHABLE FROM BROWSE AND SEARCH -- both gate before they build a list
+     * -- and written because this function is exported and the next caller may
+     * not gate first. A describer that silently calls an ungated item
+     * "licensed" is how a gate gets reported as having passed when it was never
+     * run. It is also total: no empty string, which would render as a blank
+     * line indistinguishable from a missing label.
+     */
+    const refused = { ...movie({ id: "r" }), rights: "unreviewed" as never };
+    expect(isSurfaceable(refused)).toBe(false);
+    const sentence = describeSurfacedRightsBasis(refused);
+    expect(sentence).toContain("Not available here");
+    expect(sentence.length).toBeGreaterThan(0);
+  });
+});
+
+describe("createCatalogMemo (Wave 132)", () => {
+  /*
+   * THE DEFECT CLASS: one port asked the same question twice inside one
+   * request, with no guarantee the two answers agree.
+   *
+   * `app/title/[titleId]/page.tsx` states the failure exactly -- two reads for
+   * one request whose answers "are not required to agree", so a source that
+   * failed between them would title the tab after a title the page says it
+   * could not load. That is a correctness defect before it is a cost one. These
+   * cases MEASURE the primitive, because this wave's instruction on caching was
+   * "measure, do not assume".
+   */
+  it("reads once and reports both counters", async () => {
+    let reads = 0;
+    const memo = createCatalogMemo(async () => {
+      reads += 1;
+      return ["one"];
+    });
+    expect(memo.stats()).toEqual({ sourceReads: 0, reuses: 0 });
+    expect(await memo.read()).toEqual(["one"]);
+    expect(await memo.read()).toEqual(["one"]);
+    expect(await memo.read()).toEqual(["one"]);
+    expect(reads).toBe(1);
+    expect(memo.stats()).toEqual({ sourceReads: 1, reuses: 2 });
+  });
+
+  it("caches the PROMISE, so concurrent callers share one read", async () => {
+    /*
+     * The case a value cache cannot serve: two surfaces rendering concurrently
+     * in one request both arrive before either answer exists, miss, and read
+     * twice. Deliberately resolved only after both callers have arrived.
+     */
+    let reads = 0;
+    /*
+     * The resolver is captured through a holder rather than a bare `let`, which
+     * TypeScript narrows to `null` because it does not track an assignment made
+     * inside a promise executor -- the resulting `release?.()` is a call
+     * expression on `never` and does not compile.
+     */
+    const latch: { release: () => void } = { release: () => undefined };
+    const gate = new Promise<void>((resolve) => {
+      latch.release = resolve;
+    });
+    const memo = createCatalogMemo(async () => {
+      reads += 1;
+      await gate;
+      return ["one"];
+    });
+
+    const both = Promise.all([memo.read(), memo.read(), memo.read()]);
+    expect(reads).toBe(1);
+    latch.release();
+    const [a, b, c] = await both;
+    expect(a).toBe(b);
+    expect(b).toBe(c);
+    expect(reads).toBe(1);
+    expect(memo.stats()).toEqual({ sourceReads: 1, reuses: 2 });
+  });
+
+  it("accepts a synchronous read without the caller knowing which it got", async () => {
+    /* The metadata port's `listRecords` may answer immediately or with a
+     * promise; that is a fact about one source and not a shape the port
+     * guarantees, so the memo normalises it. */
+    const memo = createCatalogMemo(() => 7);
+    expect(await memo.read()).toBe(7);
+    expect(await memo.read()).toBe(7);
+    expect(memo.stats()).toEqual({ sourceReads: 1, reuses: 1 });
+  });
+
+  it("caches `null`, because 'no source is configured' is a settled answer", async () => {
+    /*
+     * On these ports `null` means the deployment has no metadata source -- a
+     * fact about the deployment, not a failure. Re-asking inside one request
+     * cannot change it, so treating it as a miss would read the registry once
+     * per surface to receive the identical refusal.
+     */
+    let reads = 0;
+    const memo = createCatalogMemo(async () => {
+      reads += 1;
+      return null;
+    });
+    expect(await memo.read()).toBeNull();
+    expect(await memo.read()).toBeNull();
+    expect(reads).toBe(1);
+  });
+
+  it("does NOT cache a rejection, so one transient fault cannot poison the scope", async () => {
+    /*
+     * A cached rejection would turn a single provider fault into a permanently
+     * refusing request scope, and these surfaces keep "the source threw" apart
+     * from "no source is configured" precisely so the first stays retryable.
+     * The memo does not retry on anybody's behalf -- it has no idea whether
+     * asking again would help -- it only stops standing in the way.
+     */
+    let reads = 0;
+    const memo = createCatalogMemo(async () => {
+      reads += 1;
+      if (reads === 1) throw new Error("transient");
+      return ["recovered"];
+    });
+    await expect(memo.read()).rejects.toThrow("transient");
+    expect(await memo.read()).toEqual(["recovered"]);
+    expect(reads).toBe(2);
+    expect(memo.stats()).toEqual({ sourceReads: 2, reuses: 0 });
+  });
+
+  it("does not retry a rejection for the callers already waiting on it", async () => {
+    /* Everyone who joined the failed flight sees the failure; the clearing only
+     * affects the NEXT caller. Otherwise one fault would fan out into one retry
+     * per concurrent surface. */
+    let reads = 0;
+    const memo = createCatalogMemo(async () => {
+      reads += 1;
+      throw new Error("down");
+    });
+    const results = await Promise.allSettled([memo.read(), memo.read()]);
+    expect(results.map((r) => r.status)).toEqual(["rejected", "rejected"]);
+    expect(reads).toBe(1);
+  });
+
+  it("gives separate memos separate state, so a scope cannot leak into another", async () => {
+    /* React's `cache` supplies the scope; this asserts the primitive does not
+     * quietly share one across scopes via module state. */
+    let reads = 0;
+    const read = async () => {
+      reads += 1;
+      return reads;
+    };
+    const first = createCatalogMemo(read);
+    const second = createCatalogMemo(read);
+    expect(await first.read()).toBe(1);
+    expect(await second.read()).toBe(2);
+    expect(first.stats()).toEqual({ sourceReads: 1, reuses: 0 });
+    expect(second.stats()).toEqual({ sourceReads: 1, reuses: 0 });
   });
 });

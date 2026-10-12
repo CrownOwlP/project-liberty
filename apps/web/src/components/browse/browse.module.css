@@ -112,6 +112,23 @@
   min-width: 0;
 }
 
+/*
+ * The rights-basis line under each card (Wave 132).
+ *
+ * Deliberately identical to `.matchReason` in `search.module.css`, down to the
+ * three declarations, because the two discovery surfaces print the same kind of
+ * line for the same reason and the grid comment above already states that they
+ * are meant to look like one product. Duplicated rather than extracted: two
+ * CSS modules sharing three properties through a third file is a layer nobody
+ * reads, and the pair is named here so a later change to one is a deliberate
+ * divergence rather than an accident.
+ */
+.rightsBasis {
+  margin: 6px 2px 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
 @media (max-width: 900px) {
   .grid {
     grid-template-columns: repeat(2, 1fr);

@@ -1,4 +1,12 @@
-import { BROWSE_PATH, type BrowseFilters, type BrowseGenreFacet, type BrowseKindFilter } from "../../app/browse/browse";
+import {
+  BROWSE_PATH,
+  BROWSE_SORT_LABEL,
+  DEFAULT_BROWSE_SORT,
+  type BrowseFilters,
+  type BrowseGenreFacet,
+  type BrowseKindFilter,
+  type BrowseSortKey
+} from "../../app/browse/browse";
 import styles from "./browse.module.css";
 
 /* -------------------------------------------------------------------------
@@ -108,6 +116,45 @@ export function BrowseFilterBar({
           {genres.map((facet) => (
             <option key={facet.genre} value={facet.genre}>
               {facet.genre} ({facet.count})
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {/*
+        THE SORT CONTROL (Wave 132).
+
+        A THIRD NAMED CONTROL ON THE SAME GET FORM, which is the whole reason
+        this stayed a server component: the browser builds `?kind=…&genre=…&
+        sort=…` itself, so a sorted view is shareable and bookmarkable and this
+        file still knows nothing about building a URL.
+
+        RENDERED ON EVERY ROUTE, INCLUDING THE KIND-LOCKED ONES. The kind
+        control is omitted on `/movies` and `/tv` because the path decided it;
+        neither path says anything about an ORDER, so there is nothing for a
+        locked value to be consistent with and a reader on `/movies` may sort
+        films however they like. `readBrowseFilters` records the same boundary.
+
+        `defaultValue` AND NOT `value`, so this is an uncontrolled native select
+        in a server-rendered form with no client reconciler to keep in step --
+        the same arrangement the other two controls use and the reason the
+        surface is complete with JavaScript disabled. The label order matches
+        `BROWSE_SORT_LABEL`'s declaration order, which is the comparator table's
+        order, so the control cannot offer an order the module cannot apply.
+      */}
+      <div className={styles.field}>
+        <label className={styles.label} htmlFor="browse-sort">
+          Sort
+        </label>
+        <select
+          className={styles.select}
+          defaultValue={filters.sort ?? DEFAULT_BROWSE_SORT}
+          id="browse-sort"
+          name="sort"
+        >
+          {(Object.keys(BROWSE_SORT_LABEL) as BrowseSortKey[]).map((key) => (
+            <option key={key} value={key}>
+              {BROWSE_SORT_LABEL[key]}
             </option>
           ))}
         </select>

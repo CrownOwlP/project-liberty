@@ -576,3 +576,98 @@ describe("describeSearchState", () => {
     expect(describeSearchState({ status: "ok", response })).toBe("2 titles match “fall”.");
   });
 });
+
+describe("searchCatalog relevance ranking (Wave 132)", () => {
+  /*
+   * THE DEFECT CLASS THESE PIN: ordinal matching passed off as ranking.
+   *
+   * `classifyMatch` put every non-leading-edge hit into one `title-contains`
+   * bucket, so a title NAMED after the query and a title that merely contains
+   * its letters were declared equally relevant and the tie fell to release
+   * year. `relevance.ts` adds the word-boundary tier between "starts with" and
+   * "contains somewhere"; these cases assert the consequence at the level a
+   * reader experiences it -- the ORDER of the list -- rather than at the level
+   * of the scorer, which `relevance.test.ts` covers on its own.
+   */
+  const ids = (response: { results: readonly { item: { id: string } }[] }): string[] =>
+    response.results.map((result) => result.item.id);
+
+  it("ranks a word-start title hit above a mid-word one, even when the mid-word one is newer", () => {
+    const response = searchCatalog(
+      [
+        movie({ id: "pitfalls", title: "Pitfalls", releaseYear: 2030 }),
+        movie({ id: "aurora", title: "The Fall of Aurora", releaseYear: 1999 })
+      ],
+      "fall",
+      ISO
+    );
+    /* Under the previous classifier this answered ["pitfalls", "aurora"]. */
+    expect(ids(response)).toEqual(["aurora", "pitfalls"]);
+  });
+
+  it("keeps the four published labels and the exact/prefix precedence intact", () => {
+    const response = searchCatalog(
+      [
+        movie({ id: "contains", title: "Pitfalls" }),
+        movie({ id: "genre", title: "Zeppelin", genre: "Fallout drama" }),
+        movie({ id: "exact", title: "Fall" }),
+        movie({ id: "prefix", title: "Fall of Aurora" })
+      ],
+      "fall",
+      ISO
+    );
+    expect(ids(response)).toEqual(["exact", "prefix", "contains", "genre"]);
+    expect(response.results.map((result) => result.matchedOn)).toEqual([
+      "title-exact",
+      "title-prefix",
+      "title-contains",
+      "genre-contains"
+    ]);
+  });
+
+  it("ranks any title hit above a genre hit, including an exact genre hit", () => {
+    const response = searchCatalog(
+      [
+        movie({ id: "by-genre", title: "Zeppelin", genre: "Drama", releaseYear: 2030 }),
+        movie({ id: "by-title", title: "Melodramatic", genre: "Comedy", releaseYear: 1990 })
+      ],
+      "drama",
+      ISO
+    );
+    expect(ids(response)).toEqual(["by-title", "by-genre"]);
+  });
+
+  it("still gates rights before anything is scored", () => {
+    /*
+     * The gate did not move and must not. A record the catalog declines to
+     * surface may not reach a ranking at all, however relevant it would be.
+     */
+    const response = searchCatalog(
+      [
+        { ...movie({ id: "refused", title: "Fall" }), rights: "unreviewed" as never },
+        movie({ id: "allowed", title: "Pitfalls" })
+      ],
+      "fall",
+      ISO
+    );
+    expect(ids(response)).toEqual(["allowed"]);
+  });
+
+  it("is unchanged by the order the catalog arrived in", () => {
+    const items = [
+      movie({ id: "a", title: "Fall", releaseYear: 2001 }),
+      movie({ id: "b", title: "The Fall of Aurora", releaseYear: 2024 }),
+      movie({ id: "c", title: "Pitfalls", releaseYear: 2030 }),
+      series({ id: "d", title: "Fallow Ground", releaseYear: 2001 })
+    ];
+    const expected = ids(searchCatalog(items, "fall", ISO));
+    expect(expected).toEqual(["a", "d", "b", "c"]);
+    expect(ids(searchCatalog([...items].reverse(), "fall", ISO))).toEqual(expected);
+  });
+
+  it("returns nothing for an empty query rather than the whole catalog", () => {
+    const items = [movie({ id: "a", title: "Fall" }), movie({ id: "b", title: "Pitfalls" })];
+    expect(ids(searchCatalog(items, "", ISO))).toEqual([]);
+    expect(ids(searchCatalog(items, "   ", ISO))).toEqual([]);
+  });
+});
