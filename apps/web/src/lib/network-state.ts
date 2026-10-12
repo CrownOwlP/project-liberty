@@ -89,7 +89,24 @@ export const SERVICE_UNAVAILABLE_CODES = {
 export type ServiceUnavailableCode = keyof typeof SERVICE_UNAVAILABLE_CODES;
 
 export function isServiceUnavailableCode(code: string): code is ServiceUnavailableCode {
-  return Object.hasOwn(SERVICE_UNAVAILABLE_CODES, code);
+  /*
+   * `Object.prototype.hasOwnProperty.call`, NOT `Object.hasOwn` (Wave 132).
+   *
+   * The semantics wanted here are hasOwn's and not `in`'s: `in` would accept
+   * "toString" as a service-unavailable code and hand the caller a function as
+   * a presence. What changed is only the spelling. `Object.hasOwn` is a 2021
+   * addition, this module runs in the installed WebView2 build whose JavaScript
+   * environment this project does not get to choose, and the call is reached
+   * from the degraded banner's mount effect -- i.e. inside the application
+   * frame, where a TypeError takes the whole surface down.
+   *
+   * Measurement, so this is not filed as a fix for the Windows failure: the
+   * packaged artifact was driven in Chromium with `Object.hasOwn` deleted and
+   * the homepage still rendered. So this is hardening against a class, not the
+   * identified cause, and it is worth doing because the older spelling is
+   * exactly as correct and strictly more portable.
+   */
+  return Object.prototype.hasOwnProperty.call(SERVICE_UNAVAILABLE_CODES, code);
 }
 
 /**

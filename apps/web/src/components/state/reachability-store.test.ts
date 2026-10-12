@@ -339,3 +339,57 @@ describe("two mounted banners are one observer each, not one flag between them",
     expect(isObserving(), "and now none is").toBe(false);
   });
 });
+
+describe("a host whose navigator.onLine misbehaves must not take the frame down", () => {
+  /* -------------------------------------------------------------------------
+   * WAVE 132, AND THIS IS A MEASURED DEFECT RATHER THAN A HYPOTHETICAL.
+   *
+   * `observeBrowser` read a BARE `navigator.onLine` at its start, forty lines
+   * below a `browserOnLine()` that already guarded the read. The packaged
+   * artifact was booted and its homepage driven in Chromium with a throwing
+   * `onLine` getter: the whole application went to the route error boundary,
+   * because the throw happens inside `useSyncExternalStore`'s subscribe. The
+   * diagnostic frame that run produced resolved to that exact expression in the
+   * shipped chunk (0pokk16szkx7d.js:1:72055).
+   *
+   * Not a claim about WebView2. A claim about an unguarded host read inside a
+   * subscribe callback.
+   * ---------------------------------------------------------------------- */
+  const noop = () => {};
+
+  function mountable(): void {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", { status: 200 })));
+    vi.stubGlobal("window", { addEventListener: noop, removeEventListener: noop });
+    vi.stubGlobal("document", {
+      visibilityState: "visible",
+      addEventListener: noop,
+      removeEventListener: noop
+    });
+  }
+
+  it("mounts, rather than throwing, when the getter throws", () => {
+    resetReachability();
+    browserSays(() => {
+      throw new TypeError("onLine is not available");
+    });
+    mountable();
+    let teardown: (() => void) | null = null;
+    expect(() => {
+      teardown = observeBrowser();
+    }).not.toThrow();
+    expect(isObserving()).toBe(true);
+    teardown?.();
+  });
+
+  it("treats an unreadable answer as online, so the verdict still gets verified", () => {
+    /* Optimistic deliberately. `true` is the value this store already distrusts
+     * and probes; landing on `false` would publish a degraded banner from a
+     * reading it never actually got. */
+    resetReachability();
+    browserSays(() => undefined as unknown as boolean);
+    mountable();
+    const teardown = observeBrowser();
+    expect(snapshot().reachability).not.toBe("offline");
+    teardown();
+  });
+});

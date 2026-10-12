@@ -136,9 +136,28 @@ export function reportAnswer(body: unknown): void {
   report({ kind: "answered", reasonCode: unavailableReasonCode(body) });
 }
 
-/** The browser's current opinion, read defensively so a non-browser cannot throw. */
+/**
+ * The browser's current opinion, read defensively so a non-browser cannot throw.
+ *
+ * WAVE 132: THE GUARD IS NOW THE WHOLE READ, NOT JUST THE EXISTENCE CHECK.
+ * `typeof navigator === "undefined"` covers a server render. It does not cover
+ * a host where the PROPERTY ACCESS itself throws or answers something that is
+ * not a boolean, and this function's one job is to answer a boolean. A
+ * non-boolean here propagates into the state machine as a truthy object and
+ * makes "offline" unreachable, which is worse than a wrong boolean.
+ */
 function browserOnLine(): boolean {
-  return typeof navigator === "undefined" ? true : navigator.onLine;
+  try {
+    if (typeof navigator === "undefined") return true;
+    const value: unknown = navigator.onLine;
+    /* Optimistic on an unreadable answer, for the same reason the header below
+     * gives: `true` is the value this store already treats as unreliable, so
+     * an unknown answer must land on the side that gets verified, not on the
+     * side that short-circuits to a banner. */
+    return typeof value === "boolean" ? value : true;
+  } catch {
+    return true;
+  }
 }
 
 /**
@@ -334,7 +353,26 @@ export function observeBrowser(): () => void {
    * back/forward cache, or rendered from Next's client cache after the sidecar
    * died, can mount with no event ever firing.
    */
-  if (!navigator.onLine) report({ kind: "browser-offline" });
+  /*
+   * MEASURED, AND THIS LINE IS WHY THE FRAME CAPTURE EXISTS (Wave 132).
+   *
+   * This read used to be a bare `navigator.onLine` while a guarded
+   * `browserOnLine()` sat forty lines above it -- the guard existed and this
+   * call site did not use it. Driving the packaged homepage in Chromium with a
+   * throwing `navigator.onLine` getter put the whole surface on the route error
+   * boundary, because the throw happens inside `useSyncExternalStore`'s
+   * subscribe, and the diagnostic frame it produced resolved to exactly this
+   * expression in the shipped chunk:
+   *
+   *     0pokk16szkx7d.js:1:72055
+   *       -> navigator.onLine?f():h({kind:"browser-offline"})
+   *
+   * That is not a claim that WebView2 throws here -- it does not, as far as
+   * anything measured shows. It is that an unguarded host read inside a
+   * subscribe callback takes down the entire application frame, and this store
+   * already owns a guarded reader for precisely that reason.
+   */
+  if (!browserOnLine()) report({ kind: "browser-offline" });
   else void checkLiveness();
 
   return () => {

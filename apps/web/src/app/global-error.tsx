@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import {
   describeClientFailure,
+  formatClientFailureReference,
   reportClientFailure
 } from "../lib/diagnostics/client-failure";
 
@@ -46,17 +47,30 @@ export default function GlobalError({
    * reporter that could throw in here would turn a diagnosable failure back
    * into the blank page this boundary exists to replace.
    */
+  /*
+   * ONE REPORT, USED TWICE (Wave 132). The screen and the log line are now
+   * built from the SAME value rather than from two reads of the error, because
+   * the operator's job is to match what is on the screen against what is in the
+   * file -- and two independently derived strings are two things that can
+   * disagree. `describeClientFailure` is total and pure, so computing it during
+   * render is safe here; `useMemo` keeps it to once per caught error.
+   */
+  const report = useMemo(
+    () =>
+      describeClientFailure(
+        "global-error",
+        error,
+        typeof window === "undefined" ? "/" : window.location.pathname
+      ),
+    [error]
+  );
+
   useEffect(() => {
-    const report = describeClientFailure(
-      "global-error",
-      error,
-      typeof window === "undefined" ? "/" : window.location.pathname
-    );
     /* Visible in the webview's own console as well, for a developer who has it
      * open; the POST is what reaches the file an operator can paste. */
     console.error("liberty: the application frame failed to render", report);
     reportClientFailure(report);
-  }, [error]);
+  }, [report]);
 
   return (
     <html lang="en">
@@ -103,7 +117,20 @@ export default function GlobalError({
               fontSize: "0.8rem"
             }}
           >
-            {error.digest ? `Reference: ${error.digest}` : "No reference was issued for this failure."}
+            {/*
+              * WAVE 132: THE REFERENCE IS NO LONGER JUST THE DIGEST.
+              *
+              * The operator's installed build threw a client-side TypeError,
+              * for which Next mints NO digest -- so the previous version of
+              * this line said "No reference was issued for this failure" on
+              * exactly the failure that was happening, which is the same defect
+              * as the comment that claimed the log had the detail. The
+              * reference now names the boundary, the error's constructor, the
+              * classified shape of its message and the first served-asset frame
+              * -- which is enough to find the expression -- and still carries
+              * no message, no path and no user data.
+              */}
+            {formatClientFailureReference(report)}
           </p>
           <button
             type="button"
